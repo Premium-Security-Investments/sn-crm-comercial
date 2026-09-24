@@ -8,11 +8,11 @@
       "grant_id": "GRANT-FIXTURE-ROLE-0001",
       "gate_type": "PHASE_AUDIT",
       "principal": {
-        "principal_id": "f1c70000-0000-0000-0000-000000000412",
-        "principal_kind": "synthetic",
+        "principal_id": "gerencia",
+        "principal_kind": "human",
         "durable_ref": {
-          "source": "fixture_registry",
-          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000412",
+          "source": "psi_sales_profiles",
+          "locator": "fixture://principal/gerencia",
           "verifiable": true
         },
         "display_label": "Fixture Role Grant Owner Principal"

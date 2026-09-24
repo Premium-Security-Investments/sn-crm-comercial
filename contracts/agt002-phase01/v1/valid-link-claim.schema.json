@@ -9,6 +9,8 @@
     "terms",
     "source_id",
     "target_id",
+    "tender_process_ref",
+    "conversion_decision_id",
     "evidence"
   ],
   "properties": {
@@ -35,7 +37,9 @@
           "opportunity_open",
           "evidence_durable",
           "term_a_entity_l",
-          "term_b_logical"
+          "term_b_logical",
+          "conversion_decision_valid",
+          "no_incompatible_link"
         ]
       }
     },
@@ -46,6 +50,14 @@
     "target_id": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "tender_process_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "conversion_decision_id": {
+      "type": "string",
+      "minLength": 1
     },
     "term_a": {
       "type": "object",
@@ -65,7 +77,10 @@
         },
         "direction": {
           "type": "string",
-          "enum": ["forward", "inverse"]
+          "enum": [
+            "forward",
+            "inverse"
+          ]
         },
         "claimed_table": {
           "type": "string"
@@ -77,6 +92,7 @@
     },
     "evidence": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -102,16 +118,19 @@
             ]
           },
           "locator": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^(?:repo|migration|fixture|evidence)://[A-Za-z0-9._/-]+$"
           },
           "durable": {
             "type": "boolean"
           },
           "content_hash": {
-            "type": ["string", "null"]
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           },
           "captured_at_utc": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?Z$"
           }
         }
       }

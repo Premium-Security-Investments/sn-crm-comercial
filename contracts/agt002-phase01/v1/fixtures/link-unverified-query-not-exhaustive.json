@@ -2,18 +2,36 @@
   "schema_version": "agt002-phase01-valid-link-claim/1.0.0",
   "claim_id": "CLAIM-LINK-UNVERIFIED-QUERY-NOT-EXHAUSTIVE-0001",
   "terms": [
-    "query_exhaustive"
+    "binding_registered",
+    "query_exhaustive",
+    "authoritative_source",
+    "cardinality_exactly_one",
+    "identity_no_conflict",
+    "state_live",
+    "opportunity_open",
+    "evidence_durable",
+    "term_b_logical",
+    "conversion_decision_valid",
+    "no_incompatible_link"
   ],
   "source_id": "f1c70000-0000-0000-0000-000000000501",
   "target_id": "f1c70000-0000-0000-0000-000000000502",
+  "term_b": {
+    "binding_id": "BIND-TENDER-OPPORTUNITY-INVERSE",
+    "direction": "inverse",
+    "claimed_table": "psi_public_tenders",
+    "claimed_column": "converted_opportunity_id"
+  },
   "evidence": [
     {
       "evidence_id": "EVID-LINK-FX-0010",
       "kind": "migration_locator",
       "locator": "migration://supabase/migrations/005_public_tenders_radar.sql",
       "durable": true,
-      "content_hash": "fixture-content-hash-link-0010",
+      "content_hash": "8552fcf9688b6beffb3d8fcdc52c976c38920509adbbe3c0d93e174fcadb33a6",
       "captured_at_utc": "2026-09-23T09:00:00Z"
     }
-  ]
+  ],
+  "tender_process_ref": "PROC-FX-0001",
+  "conversion_decision_id": "DECISION-FX-0001"
 }

@@ -11,7 +11,9 @@
     "opportunity_open",
     "evidence_durable",
     "term_b_logical",
-    "term_a_entity_l"
+    "term_a_entity_l",
+    "conversion_decision_valid",
+    "no_incompatible_link"
   ],
   "source_id": "f1c70000-0000-0000-0000-000000000501",
   "target_id": "f1c70000-0000-0000-0000-000000000502",
@@ -30,8 +32,10 @@
       "kind": "migration_locator",
       "locator": "migration://supabase/migrations/005_public_tenders_radar.sql",
       "durable": true,
-      "content_hash": "fixture-content-hash-link-0002",
+      "content_hash": "8552fcf9688b6beffb3d8fcdc52c976c38920509adbbe3c0d93e174fcadb33a6",
       "captured_at_utc": "2026-09-23T09:00:00Z"
     }
-  ]
+  ],
+  "tender_process_ref": "PROC-FX-0001",
+  "conversion_decision_id": "DECISION-FX-0001"
 }

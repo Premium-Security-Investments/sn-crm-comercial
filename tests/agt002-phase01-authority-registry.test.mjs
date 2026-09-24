@@ -112,6 +112,7 @@ function buildRequest(overrides = {}) {
     grant_id: 'GRANT-TEST-0001',
     delegation: null,
     principal: buildGrant().principal,
+    resource_kind: 'fixture_resource',
     resource_ids: ['f1c70000-0000-0000-0000-000000000011'],
     actions: ['read'],
     now_utc: NOW_UTC,
@@ -166,6 +167,7 @@ test('authority resolution: the full chain resolves VALID for every grant in the
       grant_id: grant.grant_id,
       delegation: null,
       principal: grant.principal,
+      resource_kind: grant.scope.resource_kind,
       resource_ids: [grant.scope.resource_ids[0]],
       actions: [grant.scope.actions[0]],
       now_utc: NOW_UTC,
@@ -315,6 +317,26 @@ test('authority resolution: out-of-validity-window now_utc is authority.grant.ou
   assert.ok(revokedResult.reasons.includes('authority.grant.revoked'));
 });
 
+test('authority resolution: impossible calendar timestamps never cover an instant', () => {
+  const registry = buildRegistry([buildGrant({ valid_from_utc: '2026-02-30T00:00:00Z' })]);
+  const result = resolveAgt002Phase01Authority(registry, buildRequest(), {
+    registry_schema: AUTHORITY_REGISTRY_SCHEMA,
+  });
+  assert.equal(result.verdict, 'INVALID');
+  assert.ok(result.reasons.includes('authority.grant.out_of_validity_window'));
+});
+
+test('authority resolution: now one fractional millisecond after valid_until is out of window', () => {
+  const registry = buildRegistry([buildGrant({ valid_until_utc: '2026-09-24T00:00:00Z' })]);
+  const result = resolveAgt002Phase01Authority(
+    registry,
+    buildRequest({ now_utc: '2026-09-24T00:00:00.001Z' }),
+    { registry_schema: AUTHORITY_REGISTRY_SCHEMA },
+  );
+  assert.equal(result.verdict, 'INVALID');
+  assert.ok(result.reasons.includes('authority.grant.out_of_validity_window'));
+});
+
 // Group 12
 test('authority resolution: delegation — vigente/correcta is VALID; vencida is authority.delegation.expired; profundidad > 1 is authority.delegation.depth_exceeded', () => {
   const baseGrant = buildGrant({ grant_id: 'GRANT-BASE-0001' });
@@ -375,9 +397,48 @@ test('authority resolution: delegation — vigente/correcta is VALID; vencida is
   assert.ok(depthResult.reasons.includes('authority.delegation.depth_exceeded'));
 });
 
+test('authority resolution: delegation rejects a role used as the parent grant principal', () => {
+  const rolePrincipal = {
+    ...buildGrant().principal,
+    principal_id: 'gerencia',
+    display_label: 'Role is not a person',
+  };
+  const baseGrant = buildGrant({
+    grant_id: 'GRANT-ROLE-PARENT-0001',
+    principal: rolePrincipal,
+  });
+  const delegateGrant = buildGrant({
+    grant_id: 'GRANT-ROLE-DELEGATE-0001',
+    delegate_of: baseGrant.grant_id,
+  });
+  const registry = buildRegistry([baseGrant, delegateGrant]);
+  const result = resolveAgt002Phase01Authority(
+    registry,
+    buildRequest({
+      grant_id: baseGrant.grant_id,
+      delegation: {
+        grant_id: delegateGrant.grant_id,
+        delegated_by: 'gerencia',
+        delegate_of: null,
+      },
+    }),
+    { registry_schema: AUTHORITY_REGISTRY_SCHEMA },
+  );
+  assert.equal(result.verdict, 'INVALID');
+  assert.ok(result.reasons.includes('authority.principal.role_is_not_person'));
+});
+
 // Group 13
-test('authority resolution: scope violations resolve resource_out_of_scope / action_out_of_scope / environment_out_of_scope', () => {
+test('authority resolution: scope violations include resource kind, resource id, action and environment', () => {
   const registry = buildRegistry([buildGrant()]);
+
+  const resourceKindOut = resolveAgt002Phase01Authority(
+    registry,
+    buildRequest({ resource_kind: 'other_resource_kind' }),
+    { registry_schema: AUTHORITY_REGISTRY_SCHEMA },
+  );
+  assert.equal(resourceKindOut.verdict, 'INVALID');
+  assert.ok(resourceKindOut.reasons.includes('authority.scope.resource_kind_out_of_scope'));
 
   const resourceOut = resolveAgt002Phase01Authority(
     registry,

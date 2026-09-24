@@ -99,7 +99,7 @@ test('fixtures shape: every fixture validates against its control schema, unless
 });
 
 // Group 3
-test('fixtures evaluation: evaluateAgt002Phase01Fixture matches expected_verdict and expected_reasons ⊆ reasons for every row', () => {
+test('fixtures evaluation: evaluateAgt002Phase01Fixture matches expected_verdict and dedup(sort(reasons)) equals dedup(sort(expected_reasons)) for every row', () => {
   for (const entry of EXPECTATIONS) {
     const result = evaluateAgt002Phase01Fixture(entry, { fixtureDir: FIXTURES_DIR });
     assert.equal(
@@ -107,12 +107,13 @@ test('fixtures evaluation: evaluateAgt002Phase01Fixture matches expected_verdict
       entry.expected_verdict,
       `${entry.file}: expected verdict ${entry.expected_verdict}, got ${result.verdict} (${JSON.stringify(result.reasons)})`,
     );
-    for (const expectedReason of entry.expected_reasons) {
-      assert.ok(
-        result.reasons.includes(expectedReason),
-        `${entry.file}: expected reason "${expectedReason}" missing from ${JSON.stringify(result.reasons)}`,
-      );
-    }
+    const actualReasons = [...new Set(result.reasons)].sort();
+    const expectedReasons = [...new Set(entry.expected_reasons)].sort();
+    assert.deepEqual(
+      actualReasons,
+      expectedReasons,
+      `${entry.file}: expected reasons ${JSON.stringify(expectedReasons)}, got ${JSON.stringify(actualReasons)}`,
+    );
   }
 });
 
@@ -184,4 +185,70 @@ test('fixture contexts: authority_registry_schema_ref (not the boolean authority
       `${name}: expected authority_registry_schema_ref "${EXPECTED_SCHEMA_REF}"`,
     );
   }
+});
+
+// Group 7
+test('fixture contexts regression: fixture-context.schema.json closes the critical inline observation — an unexpected control field and a missing conversion_decision_id on a real inline observation row both fail schema validation', () => {
+  const descriptorName = 'link-base';
+  const descriptor = CONTEXTS[descriptorName];
+  assert.ok(
+    descriptor && descriptor.observation && Array.isArray(descriptor.observation.rows) && descriptor.observation.rows[0],
+    `contexts.json must define ${descriptorName} with an inline observation row`,
+  );
+
+  const contextsWithUnexpectedControlField = structuredClone(CONTEXTS);
+  contextsWithUnexpectedControlField[descriptorName].observation.unexpected_control_field = true;
+  const additionalPropertyResult = validateAgt002Phase01Schema(FIXTURE_CONTEXT_SCHEMA, contextsWithUnexpectedControlField);
+  assert.equal(
+    additionalPropertyResult.ok,
+    false,
+    `expected unexpected_control_field on ${descriptorName}.observation to fail schema validation`,
+  );
+  assert.ok(
+    additionalPropertyResult.errors.some((error) => error.code === 'schema.additional_property'),
+    JSON.stringify(additionalPropertyResult.errors),
+  );
+
+  const contextsWithoutDecisionId = structuredClone(CONTEXTS);
+  delete contextsWithoutDecisionId[descriptorName].observation.rows[0].conversion_decision_id;
+  const requiredResult = validateAgt002Phase01Schema(FIXTURE_CONTEXT_SCHEMA, contextsWithoutDecisionId);
+  assert.equal(
+    requiredResult.ok,
+    false,
+    `expected a missing conversion_decision_id on ${descriptorName}.observation.rows[0] to fail schema validation`,
+  );
+  assert.ok(
+    requiredResult.errors.some((error) => error.code === 'schema.missing_required'),
+    JSON.stringify(requiredResult.errors),
+  );
+});
+
+// Group 8
+test('fixtures coverage: aggregate deduplicated actual reasons across all expectations.json rows cover every required declarative VALID_LINK negative path', () => {
+  const REQUIRED_VALID_LINK_NEGATIVE_REASONS = Object.freeze([
+    'link.decision.absent',
+    'link.decision.not_approved',
+    'link.decision.revoked',
+    'link.decision.window_invalid',
+    'link.identity.incompatible_rows_absent',
+    'link.identity.incompatible_link',
+    'link.evidence.hash_mismatch',
+    'link.evidence.unresolvable',
+    'link.evidence.independent_source_required',
+  ]);
+
+  const actualReasons = new Set();
+  for (const entry of EXPECTATIONS) {
+    const result = evaluateAgt002Phase01Fixture(entry, { fixtureDir: FIXTURES_DIR });
+    for (const reason of result.reasons) {
+      actualReasons.add(reason);
+    }
+  }
+
+  const missingReasons = REQUIRED_VALID_LINK_NEGATIVE_REASONS.filter((reason) => !actualReasons.has(reason));
+  assert.deepEqual(
+    missingReasons,
+    [],
+    `expectations.json fixtures never produce required VALID_LINK negative reason(s): ${JSON.stringify(missingReasons)}`,
+  );
 });

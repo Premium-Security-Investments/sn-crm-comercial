@@ -10,9 +10,15 @@ const EXPECTATIONS_PATH = path.join(FIXTURES_DIR, 'expectations.json');
 
 const expectations = JSON.parse(readFileSync(EXPECTATIONS_PATH, 'utf8'));
 
-function isReasonsSubset(expectedReasons, actualReasons) {
-  const actualSet = new Set(actualReasons);
-  return expectedReasons.every((code) => actualSet.has(code));
+function dedupSort(codes) {
+  return [...new Set(codes)].sort();
+}
+
+function reasonsEqual(expectedReasons, actualReasons) {
+  const expectedSorted = dedupSort(expectedReasons);
+  const actualSorted = dedupSort(actualReasons);
+  if (expectedSorted.length !== actualSorted.length) return false;
+  return expectedSorted.every((code, index) => code === actualSorted[index]);
 }
 
 function emptyCounts() {
@@ -39,6 +45,7 @@ const summary = {
   failed: 0,
   by_control: {},
   by_verdict: {},
+  failures: [],
 };
 
 for (const entry of expectations) {
@@ -54,9 +61,20 @@ for (const entry of expectations) {
   }
 
   const expectedReasons = Array.isArray(entry.expected_reasons) ? entry.expected_reasons : [];
-  const ok = actualVerdict === entry.expected_verdict && isReasonsSubset(expectedReasons, actualReasons);
+  const ok = actualVerdict === entry.expected_verdict && reasonsEqual(expectedReasons, actualReasons);
 
   bumpCounts(summary, ok);
+
+  if (!ok) {
+    summary.failures.push({
+      file: entry.file,
+      control: entry.control,
+      expected_verdict: entry.expected_verdict,
+      actual_verdict: actualVerdict,
+      expected_reasons: dedupSort(expectedReasons),
+      actual_reasons: dedupSort(actualReasons),
+    });
+  }
 
   if (!Object.prototype.hasOwnProperty.call(summary.by_control, entry.control)) {
     summary.by_control[entry.control] = emptyCounts();

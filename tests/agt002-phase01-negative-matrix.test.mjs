@@ -21,10 +21,12 @@ const FIXTURES_DIR = path.join(CONTRACTS_DIR, 'fixtures');
 const EXPECTATIONS_PATH = path.join(FIXTURES_DIR, 'expectations.json');
 const BINDING_REGISTRY_DATA_PATH = path.join(CONTRACTS_DIR, 'binding-registry.json');
 const AUTHORITY_REGISTRY_SCHEMA_PATH = path.join(CONTRACTS_DIR, 'authority-registry.schema.json');
+const VALID_LINK_CLAIM_SCHEMA_PATH = path.join(CONTRACTS_DIR, 'valid-link-claim.schema.json');
 
 const EXPECTATIONS = JSON.parse(readFileSync(EXPECTATIONS_PATH, 'utf8'));
 const BINDING_REGISTRY_DATA = JSON.parse(readFileSync(BINDING_REGISTRY_DATA_PATH, 'utf8'));
 const AUTHORITY_REGISTRY_SCHEMA = JSON.parse(readFileSync(AUTHORITY_REGISTRY_SCHEMA_PATH, 'utf8'));
+const VALID_LINK_CLAIM_SCHEMA = JSON.parse(readFileSync(VALID_LINK_CLAIM_SCHEMA_PATH, 'utf8'));
 
 const NOW_UTC = '2026-09-23T18:00:00Z';
 
@@ -106,10 +108,13 @@ const INLINE_NEGATIVES = Object.freeze({
       terms: ['opportunity_open'],
       source_id: 'f1c70000-0000-0000-0000-000000000101',
       target_id: 'f1c70000-0000-0000-0000-000000000102',
+      tender_process_ref: 'PROC-NEGATIVE-MATRIX-0001',
+      conversion_decision_id: 'DECISION-NEGATIVE-MATRIX-0001',
       evidence: [],
     },
     {
       now_utc: NOW_UTC,
+      claim_schema: VALID_LINK_CLAIM_SCHEMA,
       binding_registry: BINDING_REGISTRY_DATA,
       observation: {
         rows: [

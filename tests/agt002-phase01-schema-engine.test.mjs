@@ -167,6 +167,73 @@ test('validateAgt002Phase01Schema: throws on unknown schema keyword', () => {
   assert.throws(() => validateAgt002Phase01Schema(schema, 'abc'));
 });
 
+test('validateAgt002Phase01Schema: local $defs + $ref resolves and validates', () => {
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['item'],
+    properties: {
+      item: { $ref: '#/$defs/closedItem' },
+    },
+    $defs: {
+      closedItem: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+        },
+      },
+    },
+  };
+
+  const ok = validateAgt002Phase01Schema(schema, { item: { name: 'ok' } });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.errors, []);
+
+  const extra = validateAgt002Phase01Schema(schema, { item: { name: 'ok', extra: 1 } });
+  assert.equal(extra.ok, false);
+  assert.ok(
+    extra.errors.some((e) => e.code === 'schema.additional_property' && e.path === '/item/extra'),
+  );
+
+  const missing = validateAgt002Phase01Schema(schema, { item: {} });
+  assert.equal(missing.ok, false);
+  assert.ok(
+    missing.errors.some((e) => e.code === 'schema.missing_required' && e.path === '/item/name'),
+  );
+});
+
+test('validateAgt002Phase01Schema: unresolved local $ref fails closed without throwing', () => {
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['item'],
+    properties: {
+      item: { $ref: '#/$defs/missing' },
+    },
+  };
+
+  const result = validateAgt002Phase01Schema(schema, { item: { name: 'ok' } });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.code === 'schema.ref_unresolved'));
+});
+
+test('validateAgt002Phase01Schema: external $ref fails closed without network or throwing', () => {
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['item'],
+    properties: {
+      item: { $ref: 'https://example.invalid/schema.json' },
+    },
+  };
+
+  const result = validateAgt002Phase01Schema(schema, { item: { name: 'ok' } });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.code === 'schema.ref_unsupported'));
+});
+
 test('canonicalizeAgt002Phase01: object key order is irrelevant, array order matters', () => {
   const a = canonicalizeAgt002Phase01({ b: 1, a: { d: 2, c: 3 } });
   const b = canonicalizeAgt002Phase01({ a: { c: 3, d: 2 }, b: 1 });

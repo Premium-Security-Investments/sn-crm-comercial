@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -74,6 +75,91 @@ const baseContext = Object.freeze({
   authority_registry: AUTHORITY_REGISTRY,
   authority_registry_schema: AUTHORITY_REGISTRY_SCHEMA,
 });
+
+const PREVIOUS_STATUS_SCHEMA_VERSION = 'agt002-phase01-previous-status-snapshot/1.0.0';
+const LEDGER_SCHEMA_VERSION = 'agt002-phase01-consumption-ledger-snapshot/1.0.0';
+
+function sha256Hex(bytes) {
+  const hash = createHash('sha256');
+  hash.write(bytes);
+  hash.end();
+  return hash.digest('hex');
+}
+
+function resolvedFixture(body, locator, capturedAtUtc, overrides = {}) {
+  const bytes = Buffer.from(JSON.stringify(body));
+  return {
+    provenance: {
+      source: 'fixture_snapshot_store',
+      issuer: 'AGT-002 lifecycle test resolver',
+      locator,
+      content_sha256: sha256Hex(bytes),
+      schema_version: body.schema_version,
+      captured_at_utc: capturedAtUtc,
+      ...overrides,
+    },
+    bytes,
+  };
+}
+
+function consumedContext({
+  gateId = 'GATE_TEST_0001',
+  snapshotAtUtc = '2026-09-20T23:59:59Z',
+  previousStatus = 'OPEN',
+  previousBodyOverrides = {},
+  previousProvenanceOverrides = {},
+  ledgerEntries = [],
+  ledgerBodyOverrides = {},
+  ledgerProvenanceOverrides = {},
+  resolverOverrides = {},
+  disablePreviousResolution = false,
+  disableLedgerResolution = false,
+  contextOverrides = {},
+} = {}) {
+  const previousBody = {
+    schema_version: PREVIOUS_STATUS_SCHEMA_VERSION,
+    gate_id: gateId,
+    status: previousStatus,
+    captured_at_utc: snapshotAtUtc,
+    ...previousBodyOverrides,
+  };
+  const ledgerBody = {
+    schema_version: LEDGER_SCHEMA_VERSION,
+    snapshot_phase: 'pre_consumption',
+    as_of_utc: snapshotAtUtc,
+    entries: ledgerEntries,
+    ...ledgerBodyOverrides,
+  };
+  const previous = resolvedFixture(
+    previousBody,
+    `fixture://gate-status/${gateId}/pre-consumption`,
+    previousBody.captured_at_utc,
+    previousProvenanceOverrides,
+  );
+  const ledger = resolvedFixture(
+    ledgerBody,
+    `fixture://consumption-ledger/${gateId}/pre-consumption`,
+    ledgerBody.as_of_utc,
+    ledgerProvenanceOverrides,
+  );
+  const records = new Map([
+    [previous.provenance.locator, previous.bytes],
+    [ledger.provenance.locator, ledger.bytes],
+  ]);
+  return {
+    ...baseContext,
+    previous_status_provenance: previous.provenance,
+    consumption_ledger_provenance: ledger.provenance,
+    provenance_resolver_kind: 'isolated_fixture',
+    resolve_durable_evidence(locator) {
+      if (disablePreviousResolution && locator === previous.provenance.locator) return null;
+      if (disableLedgerResolution && locator === ledger.provenance.locator) return null;
+      if (Object.hasOwn(resolverOverrides, locator)) return resolverOverrides[locator];
+      return records.get(locator) ?? null;
+    },
+    ...contextOverrides,
+  };
+}
 
 function buildCanonicalGate() {
   return {
@@ -178,10 +264,11 @@ test('gate lifecycle: happy path OPEN is VALID', () => {
   const gate = buildGate();
   const result = validateAgt002Phase01Gate(gate, baseContext);
   assert.equal(result.verdict, 'VALID', JSON.stringify(result.reasons));
+  assert.equal(result.actionability_verdict, 'VALID');
 });
 
 // Group 2
-test('gate lifecycle: happy path CONSUMED/PASS with a fresh receipt and an empty ledger is VALID', () => {
+test('gate lifecycle: happy path CONSUMED/PASS with a fresh receipt and an empty durable ledger is historically VALID but not actionable', () => {
   const gate = buildGate({
     status: 'CONSUMED',
     outcome: 'PASS',
@@ -191,15 +278,21 @@ test('gate lifecycle: happy path CONSUMED/PASS with a fresh receipt and an empty
       consumed_by: 'f1c70000-0000-0000-0000-000000000001',
     },
   });
-  const result = validateAgt002Phase01Gate(gate, { ...baseContext, consumption_ledger: [] });
+  const result = validateAgt002Phase01Gate(gate, consumedContext());
   assert.equal(result.verdict, 'VALID', JSON.stringify(result.reasons));
+  assert.equal(result.actionability_verdict, 'INVALID');
+  assert.ok(result.actionability_reasons.includes('gate.not_actionable.status'));
 });
 
 // Group 3
 test('gate lifecycle: FINAL_AUDIT_PHASE_0 modeled CONSUMED/REJECTED with a failed precondition is VALID (a well-governed rejection)', () => {
   const gate = buildFase0ConsumedGate();
-  const result = validateAgt002Phase01Gate(gate, { ...baseContext, consumption_ledger: [] });
+  const result = validateAgt002Phase01Gate(gate, consumedContext({
+    gateId: gate.gate_id,
+    snapshotAtUtc: '2026-08-14T23:59:59Z',
+  }));
   assert.equal(result.verdict, 'VALID', JSON.stringify(result.reasons));
+  assert.equal(result.actionability_verdict, 'INVALID');
 });
 
 // Group 4 — FINAL_AUDIT_PHASE_0 in OPEN is forbidden. This negative lives
@@ -294,7 +387,7 @@ test('gate lifecycle: CONSUMED with a receipt_id already present in the ledger i
   const ledger = [
     { gate_id: 'GATE_OTHER_0002', receipt_id: 'RCPT-DUP-0001', consumed_at_utc: '2026-09-20T00:00:00Z' },
   ];
-  const result = validateAgt002Phase01Gate(gate, { ...baseContext, consumption_ledger: ledger });
+  const result = validateAgt002Phase01Gate(gate, consumedContext({ ledgerEntries: ledger }));
   assert.equal(result.verdict, 'INVALID');
   assert.ok(result.reasons.includes('gate.consumption.receipt_not_unique'));
 });
@@ -314,7 +407,7 @@ test('gate lifecycle: CONSUMED with a prior ledger entry for the same gate_id an
   const ledger = [
     { gate_id: 'GATE_TEST_0003', receipt_id: 'RCPT-TEST-OLD', consumed_at_utc: '2026-09-20T00:00:00Z' },
   ];
-  const result = validateAgt002Phase01Gate(gate, { ...baseContext, consumption_ledger: ledger });
+  const result = validateAgt002Phase01Gate(gate, consumedContext({ gateId: gate.gate_id, ledgerEntries: ledger }));
   assert.equal(result.verdict, 'INVALID');
   assert.ok(result.reasons.includes('gate.consumption.exceeds_policy'));
 });
@@ -346,7 +439,7 @@ test('gate lifecycle: consumed_at_utc outside [issued_at_utc, now_utc] is INVALI
       consumed_by: 'f1c70000-0000-0000-0000-000000000001',
     },
   });
-  const afterNowResult = validateAgt002Phase01Gate(afterNow, { ...baseContext, consumption_ledger: [] });
+  const afterNowResult = validateAgt002Phase01Gate(afterNow, consumedContext());
   assert.equal(afterNowResult.verdict, 'INVALID');
   assert.ok(afterNowResult.reasons.includes('gate.consumption.timestamp_out_of_range'));
 
@@ -360,7 +453,7 @@ test('gate lifecycle: consumed_at_utc outside [issued_at_utc, now_utc] is INVALI
       consumed_by: 'f1c70000-0000-0000-0000-000000000001',
     },
   });
-  const beforeIssuedResult = validateAgt002Phase01Gate(beforeIssued, { ...baseContext, consumption_ledger: [] });
+  const beforeIssuedResult = validateAgt002Phase01Gate(beforeIssued, consumedContext());
   assert.equal(beforeIssuedResult.verdict, 'INVALID');
   assert.ok(beforeIssuedResult.reasons.includes('gate.consumption.timestamp_out_of_range'));
 });
@@ -400,7 +493,7 @@ test('gate lifecycle: outcome/preconditions coherence', () => {
       consumed_by: 'f1c70000-0000-0000-0000-000000000001',
     },
   });
-  const passResult = validateAgt002Phase01Gate(passWithUnmet, { ...baseContext, consumption_ledger: [] });
+  const passResult = validateAgt002Phase01Gate(passWithUnmet, consumedContext());
   assert.equal(passResult.verdict, 'INVALID');
   assert.ok(passResult.reasons.includes('gate.outcome.pass_with_unmet_precondition'));
 
@@ -416,7 +509,7 @@ test('gate lifecycle: outcome/preconditions coherence', () => {
       consumed_by: 'f1c70000-0000-0000-0000-000000000001',
     },
   });
-  const rejectedResult = validateAgt002Phase01Gate(rejectedWithoutFailed, { ...baseContext, consumption_ledger: [] });
+  const rejectedResult = validateAgt002Phase01Gate(rejectedWithoutFailed, consumedContext());
   assert.equal(rejectedResult.verdict, 'INVALID');
   assert.ok(rejectedResult.reasons.includes('gate.outcome.rejected_without_failed_precondition'));
 
@@ -432,7 +525,7 @@ test('gate lifecycle: outcome/preconditions coherence', () => {
       consumed_by: 'f1c70000-0000-0000-0000-000000000001',
     },
   });
-  const cancelledResult = validateAgt002Phase01Gate(cancelledWithFailed, { ...baseContext, consumption_ledger: [] });
+  const cancelledResult = validateAgt002Phase01Gate(cancelledWithFailed, consumedContext());
   assert.equal(cancelledResult.verdict, 'INVALID');
   assert.ok(cancelledResult.reasons.includes('gate.outcome.cancelled_with_failed_precondition'));
 });
@@ -468,4 +561,259 @@ test('gate lifecycle: missing required field (objective) is INVALID with schema.
   const result = validateAgt002Phase01Gate(withoutObjective, baseContext);
   assert.equal(result.verdict, 'INVALID');
   assert.ok(result.reasons.includes('schema.missing_required'));
+});
+
+test('gate lifecycle: malformed UTC timestamps never pass temporal validation', () => {
+  const gate = buildGate({ expires_at_utc: 'zzzz' });
+  const result = validateAgt002Phase01Gate(gate, baseContext);
+  assert.equal(result.verdict, 'INVALID');
+  assert.ok(result.reasons.includes('gate.timestamp.invalid'));
+});
+
+test('gate lifecycle: strict canonical UTC rejects impossible calendar values and non-Z offsets', () => {
+  const invalidTimestamps = [
+    '2026-13-01T00:00:00Z',
+    '2026-04-31T00:00:00Z',
+    '2026-02-29T00:00:00Z',
+    '2026-01-01T24:00:00Z',
+    '2026-01-01T00:60:00Z',
+    '2026-01-01T00:00:60Z',
+    '2026-01-01T00:00:00+00:00',
+  ];
+
+  for (const issued_at_utc of invalidTimestamps) {
+    const result = validateAgt002Phase01Gate(buildGate({ issued_at_utc }), baseContext);
+    assert.equal(result.verdict, 'INVALID', issued_at_utc);
+    assert.ok(result.reasons.includes('gate.timestamp.invalid'), issued_at_utc);
+    assert.equal(result.actionability_verdict, 'INVALID', issued_at_utc);
+  }
+});
+
+test('gate lifecycle: OPEN is expired when now is one fractional millisecond after expires_at', () => {
+  const gate = buildGate({ expires_at_utc: '2026-09-24T00:00:00Z' });
+  const result = validateAgt002Phase01Gate(gate, {
+    ...baseContext,
+    now_utc: '2026-09-24T00:00:00.001Z',
+  });
+  assert.equal(result.verdict, 'INVALID');
+  assert.ok(result.reasons.includes('gate.status.open_but_expired'));
+  assert.equal(result.actionability_verdict, 'INVALID');
+  assert.equal(result.is_actionable, false);
+});
+
+test('gate lifecycle: consumption one fractional millisecond after expiry is out of range', () => {
+  const gate = buildGate({
+    expires_at_utc: '2026-09-24T00:00:00Z',
+    status: 'CONSUMED',
+    outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-FRACTIONAL-AFTER-EXPIRY',
+      consumed_at_utc: '2026-09-24T00:00:00.001Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  const result = validateAgt002Phase01Gate(gate, consumedContext({
+    contextOverrides: { now_utc: '2026-09-24T00:00:00.002Z' },
+  }));
+  assert.equal(result.verdict, 'INVALID');
+  assert.ok(result.reasons.includes('gate.consumption.timestamp_out_of_range'));
+});
+
+test('gate lifecycle: terminal state without a durable previous status is UNVERIFIED', () => {
+  const gate = buildGate({
+    status: 'CONSUMED',
+    outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-TEST-PREVIOUS-ABSENT',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  const result = validateAgt002Phase01Gate(gate, {
+    ...baseContext,
+    consumption_ledger: [],
+    consumption_ledger_durable: true,
+  });
+  assert.equal(result.verdict, 'UNVERIFIED');
+  assert.ok(result.reasons.includes('gate.transition.previous_status_absent'));
+});
+
+test('gate lifecycle: caller-provided ledger without durable provenance is UNVERIFIED', () => {
+  const gate = buildGate({
+    status: 'CONSUMED',
+    outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-TEST-LEDGER-UNVERIFIED',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  const result = validateAgt002Phase01Gate(gate, {
+    ...baseContext,
+    previous_status: 'OPEN',
+    previous_status_durable: true,
+    consumption_ledger: [],
+  });
+  assert.equal(result.verdict, 'UNVERIFIED');
+  assert.ok(result.reasons.includes('gate.consumption.ledger_unverified'));
+});
+
+
+
+test('gate lifecycle: legacy durable booleans cannot promote a consumed gate to VALID', () => {
+  const gate = buildGate({
+    status: 'CONSUMED', outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-LEGACY-FLAGS-0001',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  const result = validateAgt002Phase01Gate(gate, {
+    ...baseContext,
+    previous_status: 'OPEN',
+    previous_status_durable: true,
+    consumption_ledger: [],
+    consumption_ledger_durable: true,
+  });
+  assert.equal(result.verdict, 'UNVERIFIED', JSON.stringify(result.reasons));
+  assert.ok(result.reasons.includes('gate.transition.previous_status_absent'));
+  assert.ok(result.reasons.includes('gate.consumption.ledger_unverified'));
+});
+
+test('gate lifecycle: unresolved or hash-mismatched provenance is UNVERIFIED and never throws', () => {
+  const gate = buildGate({
+    status: 'CONSUMED', outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-PROVENANCE-0001',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  for (const context of [
+    consumedContext({ disablePreviousResolution: true }),
+    consumedContext({ disableLedgerResolution: true }),
+    consumedContext({ previousProvenanceOverrides: { content_sha256: '0'.repeat(64) } }),
+    consumedContext({ ledgerProvenanceOverrides: { content_sha256: '0'.repeat(64) } }),
+  ]) {
+    let result;
+    assert.doesNotThrow(() => { result = validateAgt002Phase01Gate(gate, context); });
+    assert.equal(result.verdict, 'UNVERIFIED', JSON.stringify(result.reasons));
+  }
+});
+
+test('gate lifecycle: malformed ledger entries {} and [null] fail closed without exceptions', () => {
+  const gate = buildGate({
+    status: 'CONSUMED', outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-MALFORMED-LEDGER-0001',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  for (const entries of [{}, [null]]) {
+    let result;
+    assert.doesNotThrow(() => {
+      result = validateAgt002Phase01Gate(
+        gate,
+        consumedContext({ ledgerBodyOverrides: { entries } }),
+      );
+    });
+    assert.notEqual(result.verdict, 'VALID', JSON.stringify(result.reasons));
+    assert.ok(result.reasons.includes('gate.consumption.ledger_invalid'), JSON.stringify(result.reasons));
+  }
+});
+
+test('gate lifecycle: ledger must be a strictly earlier pre_consumption snapshot', () => {
+  const gate = buildGate({
+    status: 'CONSUMED', outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-LEDGER-CUT-0001',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  const wrongPhase = validateAgt002Phase01Gate(gate, consumedContext({
+    ledgerBodyOverrides: { snapshot_phase: 'post_consumption' },
+  }));
+  assert.equal(wrongPhase.verdict, 'INVALID');
+  assert.ok(wrongPhase.reasons.includes('gate.consumption.ledger_snapshot_phase_invalid'));
+
+  const notEarlier = validateAgt002Phase01Gate(gate, consumedContext({
+    ledgerBodyOverrides: { as_of_utc: '2026-09-21T00:00:00Z' },
+  }));
+  assert.equal(notEarlier.verdict, 'INVALID');
+  assert.ok(notEarlier.reasons.includes('gate.consumption.ledger_snapshot_not_pre_consumption'));
+});
+
+test('gate lifecycle: production previous-status provenance rejects a local fixture locator even when relabeled independent', () => {
+  const gate = buildGate({
+    environment: 'production',
+    status: 'CONSUMED',
+    outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-PROD-PREVIOUS-INDEPENDENT-RELABEL',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  // Same fixture-backed previous-status snapshot as the isolated_fixture
+  // happy path (Group 2) — only the resolver-kind label and gate environment
+  // change. A production CONSUMED gate must never become VALID off a
+  // `fixture://` locator merely because the caller relabels it independent.
+  const context = consumedContext({
+    contextOverrides: { provenance_resolver_kind: 'independent' },
+  });
+  const result = validateAgt002Phase01Gate(gate, context);
+  const previousStatusTerm = result.checked_terms.find((term) => term.term === 'previous_status_durability');
+  assert.equal(previousStatusTerm.verdict, 'UNVERIFIED', JSON.stringify(previousStatusTerm));
+  assert.ok(
+    previousStatusTerm.reasons.includes('gate.transition.previous_status_unverified'),
+    JSON.stringify(previousStatusTerm),
+  );
+  assert.notEqual(result.verdict, 'VALID', JSON.stringify(result.reasons));
+});
+
+test('gate lifecycle: production consumption-ledger provenance rejects a local fixture locator even when relabeled independent', () => {
+  const gate = buildGate({
+    environment: 'production',
+    status: 'CONSUMED',
+    outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-PROD-LEDGER-INDEPENDENT-RELABEL',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000001',
+    },
+  });
+  // Same fixture-backed ledger snapshot as the isolated_fixture happy path
+  // (Group 2) — only the resolver-kind label and gate environment change. A
+  // production CONSUMED gate must never become VALID off a `fixture://`
+  // consumption-ledger locator merely because the caller relabels it
+  // independent.
+  const context = consumedContext({
+    contextOverrides: { provenance_resolver_kind: 'independent' },
+  });
+  const result = validateAgt002Phase01Gate(gate, context);
+  const consumptionTerm = result.checked_terms.find((term) => term.term === 'consumption_receipt');
+  assert.equal(consumptionTerm.verdict, 'UNVERIFIED', JSON.stringify(consumptionTerm));
+  assert.ok(
+    consumptionTerm.reasons.includes('gate.consumption.ledger_unverified'),
+    JSON.stringify(consumptionTerm),
+  );
+  assert.notEqual(result.verdict, 'VALID', JSON.stringify(result.reasons));
+});
+
+test('gate lifecycle: consumed_by must match the authorized gate principal', () => {
+  const gate = buildGate({
+    status: 'CONSUMED',
+    outcome: 'PASS',
+    consumption: {
+      receipt_id: 'RCPT-TEST-UNAUTHORIZED-ACTOR',
+      consumed_at_utc: '2026-09-21T00:00:00Z',
+      consumed_by: 'f1c70000-0000-0000-0000-000000000099',
+    },
+  });
+  const result = validateAgt002Phase01Gate(gate, consumedContext());
+  assert.equal(result.verdict, 'INVALID');
+  assert.ok(result.reasons.includes('gate.consumption.actor_mismatch'));
 });

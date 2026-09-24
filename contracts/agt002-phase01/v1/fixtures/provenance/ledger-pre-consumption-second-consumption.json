@@ -1,0 +1,12 @@
+{
+  "schema_version": "agt002-phase01-consumption-ledger-snapshot/1.0.0",
+  "snapshot_phase": "pre_consumption",
+  "as_of_utc": "2026-09-20T23:59:59Z",
+  "entries": [
+    {
+      "gate_id": "GATE_FX_0008",
+      "receipt_id": "RCPT-PRIOR-0001",
+      "consumed_at_utc": "2026-09-20T23:59:58Z"
+    }
+  ]
+}

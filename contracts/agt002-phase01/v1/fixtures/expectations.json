@@ -9,14 +9,14 @@
   {
     "file": "gate-valid-consumed-pass.json",
     "control": "gate",
-    "context": "gate-base",
+    "context": "gate-consumed-valid",
     "expected_verdict": "VALID",
     "expected_reasons": []
   },
   {
     "file": "gate-valid-consumed-rejected-final-audit-phase-0.json",
     "control": "gate",
-    "context": "gate-base",
+    "context": "gate-consumed-valid-final-audit",
     "expected_verdict": "VALID",
     "expected_reasons": []
   },
@@ -25,7 +25,9 @@
     "control": "gate",
     "context": "gate-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["schema.missing_required"],
+    "expected_reasons": [
+      "schema.missing_required"
+    ],
     "schema_negative": true
   },
   {
@@ -33,84 +35,111 @@
     "control": "gate",
     "context": "gate-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["gate.status.invalid_outcome_for_status"]
+    "expected_reasons": [
+      "gate.status.invalid_outcome_for_status"
+    ]
   },
   {
     "file": "gate-invalid-consumed-without-receipt.json",
     "control": "gate",
     "context": "gate-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["gate.consumption.missing"]
+    "expected_reasons": [
+      "gate.consumption.missing",
+      "gate.transition.previous_status_absent"
+    ]
   },
   {
     "file": "gate-invalid-consumed-duplicate-receipt.json",
     "control": "gate",
     "context": "gate-consumption-duplicate-receipt",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["gate.consumption.receipt_not_unique"]
+    "expected_reasons": [
+      "gate.consumption.receipt_not_unique"
+    ]
   },
   {
     "file": "gate-invalid-consumed-second-consumption.json",
     "control": "gate",
     "context": "gate-consumption-second-consumption",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["gate.consumption.exceeds_policy"]
+    "expected_reasons": [
+      "gate.consumption.exceeds_policy"
+    ]
   },
   {
     "file": "gate-unverified-consumption-ledger-absent.json",
     "control": "gate",
     "context": "gate-consumed-no-ledger",
     "expected_verdict": "UNVERIFIED",
-    "expected_reasons": ["gate.consumption.ledger_absent"]
+    "expected_reasons": [
+      "gate.consumption.ledger_absent",
+      "gate.transition.previous_status_absent"
+    ]
   },
   {
     "file": "gate-invalid-open-but-expired.json",
     "control": "gate",
     "context": "gate-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["gate.status.open_but_expired"]
+    "expected_reasons": [
+      "gate.status.open_but_expired"
+    ]
   },
   {
     "file": "gate-invalid-revoked-without-revocation.json",
     "control": "gate",
     "context": "gate-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["gate.status.revocation_required"]
+    "expected_reasons": [
+      "gate.status.revocation_required",
+      "gate.transition.previous_status_absent"
+    ]
   },
   {
     "file": "gate-invalid-artifact-set-hash.json",
     "control": "gate",
     "context": "gate-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["gate.artifact_set_hash.mismatch"]
+    "expected_reasons": [
+      "gate.artifact_set_hash.mismatch"
+    ]
   },
   {
     "file": "gate-invalid-authority-grant-not-found.json",
     "control": "gate",
     "context": "gate-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["authority.grant.not_found"]
+    "expected_reasons": [
+      "authority.grant.not_found"
+    ]
   },
   {
     "file": "gate-invalid-delegation-expired.json",
     "control": "gate",
     "context": "gate-authority-delegation-expired",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["authority.delegation.expired"]
+    "expected_reasons": [
+      "authority.delegation.expired"
+    ]
   },
   {
     "file": "gate-invalid-scope-ids-out-of-grant.json",
     "control": "gate",
     "context": "gate-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["authority.scope.resource_out_of_scope"]
+    "expected_reasons": [
+      "authority.scope.resource_out_of_scope"
+    ]
   },
   {
     "file": "gate-unverified-authority-registry-absent.json",
     "control": "gate",
     "context": "gate-no-authority",
     "expected_verdict": "UNVERIFIED",
-    "expected_reasons": ["authority.registry.absent"]
+    "expected_reasons": [
+      "authority.registry.absent"
+    ]
   },
   {
     "file": "authority-registry-valid.json",
@@ -124,35 +153,45 @@
     "control": "authority_registry",
     "context": "authority-registry-structural-only",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["authority.registry.duplicate_grant_id"]
+    "expected_reasons": [
+      "authority.registry.duplicate_grant_id"
+    ]
   },
   {
     "file": "authority-registry-invalid-role-as-principal.json",
     "control": "authority_registry",
     "context": "authority-registry-role-principal",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["authority.principal.role_is_not_person"]
+    "expected_reasons": [
+      "authority.principal.role_is_not_person"
+    ]
   },
   {
     "file": "authority-registry-invalid-synthetic-scoped-to-production.json",
     "control": "authority_registry",
     "context": "authority-registry-synthetic-production",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["authority.principal.synthetic_outside_isolated_fixture"]
+    "expected_reasons": [
+      "authority.principal.synthetic_outside_isolated_fixture"
+    ]
   },
   {
     "file": "authority-registry-invalid-delegation-depth.json",
     "control": "authority_registry",
     "context": "authority-registry-delegation-depth",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["authority.delegation.depth_exceeded"]
+    "expected_reasons": [
+      "authority.delegation.depth_exceeded"
+    ]
   },
   {
     "file": "authority-registry-unverified-schema-absent.json",
     "control": "authority_registry",
     "context": "authority-registry-schema-absent",
     "expected_verdict": "UNVERIFIED",
-    "expected_reasons": ["authority.registry.schema_absent"]
+    "expected_reasons": [
+      "authority.registry.schema_absent"
+    ]
   },
   {
     "file": "link-valid-inverse-binding.json",
@@ -166,62 +205,162 @@
     "control": "valid_link",
     "context": "link-base",
     "expected_verdict": "UNVERIFIED",
-    "expected_reasons": ["link.term_a.entity_l_absent"]
+    "expected_reasons": [
+      "link.term_a.entity_l_absent"
+    ]
   },
   {
     "file": "link-unverified-literal-fk-o-tender-id.json",
     "control": "valid_link",
     "context": "link-base",
     "expected_verdict": "UNVERIFIED",
-    "expected_reasons": ["link.term_b.literal_fk_absent"]
+    "expected_reasons": [
+      "link.binding.not_registered",
+      "link.term_b.literal_fk_absent"
+    ]
   },
   {
     "file": "link-invalid-binding-incompatible.json",
     "control": "valid_link",
     "context": "link-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["link.binding.incompatible"]
+    "expected_reasons": [
+      "link.binding.incompatible"
+    ]
   },
   {
     "file": "link-invalid-cardinality-zero.json",
     "control": "valid_link",
     "context": "link-cardinality-zero",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["link.cardinality.zero"]
+    "expected_reasons": [
+      "link.cardinality.zero"
+    ]
   },
   {
     "file": "link-invalid-cardinality-multiple.json",
     "control": "valid_link",
     "context": "link-cardinality-multiple",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["link.cardinality.multiple"]
+    "expected_reasons": [
+      "link.cardinality.multiple"
+    ]
   },
   {
     "file": "link-invalid-identity-conflict.json",
     "control": "valid_link",
     "context": "link-identity-conflict",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["link.identity.conflict"]
+    "expected_reasons": [
+      "link.identity.conflict"
+    ]
   },
   {
     "file": "link-invalid-opportunity-closed.json",
     "control": "valid_link",
     "context": "link-opportunity-closed",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["link.opportunity.closed"]
+    "expected_reasons": [
+      "link.opportunity.closed"
+    ]
   },
   {
     "file": "link-invalid-evidence-not-durable.json",
     "control": "valid_link",
     "context": "link-base",
     "expected_verdict": "INVALID",
-    "expected_reasons": ["link.evidence.not_durable"]
+    "expected_reasons": [
+      "link.evidence.not_durable"
+    ]
   },
   {
     "file": "link-unverified-query-not-exhaustive.json",
     "control": "valid_link",
     "context": "link-query-not-exhaustive",
     "expected_verdict": "UNVERIFIED",
-    "expected_reasons": ["link.query.not_exhaustive"]
+    "expected_reasons": [
+      "link.query.not_exhaustive"
+    ]
+  },
+  {
+    "file": "link-invalid-evidence-hash-mismatch.json",
+    "control": "valid_link",
+    "context": "link-base",
+    "expected_verdict": "INVALID",
+    "expected_reasons": [
+      "link.evidence.hash_mismatch"
+    ]
+  },
+  {
+    "file": "link-unverified-evidence-unresolvable.json",
+    "control": "valid_link",
+    "context": "link-base",
+    "expected_verdict": "UNVERIFIED",
+    "expected_reasons": [
+      "link.evidence.unresolvable"
+    ]
+  },
+  {
+    "file": "link-unverified-decision-absent.json",
+    "control": "valid_link",
+    "context": "link-decision-absent",
+    "expected_verdict": "UNVERIFIED",
+    "expected_reasons": [
+      "link.decision.absent"
+    ]
+  },
+  {
+    "file": "link-invalid-decision-not-approved.json",
+    "control": "valid_link",
+    "context": "link-decision-not-approved",
+    "expected_verdict": "INVALID",
+    "expected_reasons": [
+      "link.decision.not_approved"
+    ]
+  },
+  {
+    "file": "link-invalid-decision-revoked.json",
+    "control": "valid_link",
+    "context": "link-decision-revoked",
+    "expected_verdict": "INVALID",
+    "expected_reasons": [
+      "link.decision.revoked"
+    ]
+  },
+  {
+    "file": "link-invalid-decision-window-invalid.json",
+    "control": "valid_link",
+    "context": "link-decision-window-invalid",
+    "expected_verdict": "INVALID",
+    "expected_reasons": [
+      "link.decision.window_invalid"
+    ]
+  },
+  {
+    "file": "link-unverified-incompatible-rows-absent.json",
+    "control": "valid_link",
+    "context": "link-incompatible-rows-absent",
+    "expected_verdict": "UNVERIFIED",
+    "expected_reasons": [
+      "link.identity.incompatible_rows_absent"
+    ]
+  },
+  {
+    "file": "link-invalid-incompatible-link.json",
+    "control": "valid_link",
+    "context": "link-incompatible-link",
+    "expected_verdict": "INVALID",
+    "expected_reasons": [
+      "link.identity.incompatible_link"
+    ]
+  },
+  {
+    "file": "link-unverified-production-local-evidence.json",
+    "control": "valid_link",
+    "context": "link-production-local-evidence",
+    "expected_verdict": "UNVERIFIED",
+    "expected_reasons": [
+      "link.evidence.independent_source_required"
+    ]
   }
 ]

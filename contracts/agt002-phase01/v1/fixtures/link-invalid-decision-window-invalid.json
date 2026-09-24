@@ -1,6 +1,6 @@
 {
   "schema_version": "agt002-phase01-valid-link-claim/1.0.0",
-  "claim_id": "CLAIM-LINK-UNVERIFIED-LITERAL-FK-0001",
+  "claim_id": "CLAIM-LINK-INVALID-DECISION-WINDOW-INVALID-0001",
   "terms": [
     "binding_registered",
     "query_exhaustive",
@@ -17,12 +17,14 @@
   "source_id": "f1c70000-0000-0000-0000-000000000501",
   "target_id": "f1c70000-0000-0000-0000-000000000502",
   "term_b": {
-    "direction": "forward",
-    "claimed_column": "psi_sales_opportunities.tender_id"
+    "binding_id": "BIND-TENDER-OPPORTUNITY-INVERSE",
+    "direction": "inverse",
+    "claimed_table": "psi_public_tenders",
+    "claimed_column": "converted_opportunity_id"
   },
   "evidence": [
     {
-      "evidence_id": "EVID-LINK-FX-0003",
+      "evidence_id": "EVID-LINK-FX-0014",
       "kind": "migration_locator",
       "locator": "migration://supabase/migrations/005_public_tenders_radar.sql",
       "durable": true,

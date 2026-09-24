@@ -5,29 +5,74 @@
     "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
     "consumption_ledger": []
   },
+  "gate-consumed-valid": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_ref": "contracts/agt002-phase01/v1/authority-registry.json",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "previous_status_provenance": {
+      "source": "agt002_fixture_snapshot_store",
+      "issuer": "AGT002_PHASE01_ISOLATED_FIXTURE",
+      "locator": "fixture://contracts/agt002-phase01/v1/fixtures/provenance/previous-status-pass.json",
+      "content_sha256": "1d70ad5a6be65a072f43c8c6add1d61b18498156384aecd8782383af31da2b91",
+      "schema_version": "agt002-phase01-previous-status-snapshot/1.0.0",
+      "captured_at_utc": "2026-09-20T23:59:58Z"
+    },
+    "consumption_ledger_provenance": {
+      "source": "agt002_fixture_snapshot_store",
+      "issuer": "AGT002_PHASE01_ISOLATED_FIXTURE",
+      "locator": "fixture://contracts/agt002-phase01/v1/fixtures/provenance/ledger-pre-consumption-pass.json",
+      "content_sha256": "45b574e5c3ed7a3b19f3144c1b723c820b7da9c9c800db39fa681c20f0193cd0",
+      "schema_version": "agt002-phase01-consumption-ledger-snapshot/1.0.0",
+      "captured_at_utc": "2026-09-20T23:59:59Z"
+    },
+    "provenance_root_ref": ".",
+    "provenance_resolver_kind": "isolated_fixture"
+  },
   "gate-consumption-duplicate-receipt": {
     "now_utc": "2026-09-23T18:00:00Z",
     "authority_registry_ref": "contracts/agt002-phase01/v1/authority-registry.json",
     "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
-    "consumption_ledger": [
-      {
-        "gate_id": "GATE_OTHER_EXISTING_0001",
-        "receipt_id": "RCPT-FX-0007",
-        "consumed_at_utc": "2026-09-22T00:00:00Z"
-      }
-    ]
+    "previous_status_provenance": {
+      "source": "agt002_fixture_snapshot_store",
+      "issuer": "AGT002_PHASE01_ISOLATED_FIXTURE",
+      "locator": "fixture://contracts/agt002-phase01/v1/fixtures/provenance/previous-status-duplicate-receipt.json",
+      "content_sha256": "39822ca73dd49ff4f6a2cd148d953896cec2873e6521805c11eaf8bca5e5f7c9",
+      "schema_version": "agt002-phase01-previous-status-snapshot/1.0.0",
+      "captured_at_utc": "2026-09-20T23:59:58Z"
+    },
+    "consumption_ledger_provenance": {
+      "source": "agt002_fixture_snapshot_store",
+      "issuer": "AGT002_PHASE01_ISOLATED_FIXTURE",
+      "locator": "fixture://contracts/agt002-phase01/v1/fixtures/provenance/ledger-pre-consumption-duplicate-receipt.json",
+      "content_sha256": "bb0b840d307c014ec061e93e23eeaa248845598ef4122480143a5dbe867b5bef",
+      "schema_version": "agt002-phase01-consumption-ledger-snapshot/1.0.0",
+      "captured_at_utc": "2026-09-20T23:59:59Z"
+    },
+    "provenance_root_ref": ".",
+    "provenance_resolver_kind": "isolated_fixture"
   },
   "gate-consumption-second-consumption": {
     "now_utc": "2026-09-23T18:00:00Z",
     "authority_registry_ref": "contracts/agt002-phase01/v1/authority-registry.json",
     "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
-    "consumption_ledger": [
-      {
-        "gate_id": "GATE_FX_0008",
-        "receipt_id": "RCPT-PRIOR-0001",
-        "consumed_at_utc": "2026-09-22T00:00:00Z"
-      }
-    ]
+    "previous_status_provenance": {
+      "source": "agt002_fixture_snapshot_store",
+      "issuer": "AGT002_PHASE01_ISOLATED_FIXTURE",
+      "locator": "fixture://contracts/agt002-phase01/v1/fixtures/provenance/previous-status-second-consumption.json",
+      "content_sha256": "bc61ccf18249ee663b4e3cf6722924495dc085dbd4df43ffdf3051a8727ddd51",
+      "schema_version": "agt002-phase01-previous-status-snapshot/1.0.0",
+      "captured_at_utc": "2026-09-20T23:59:58Z"
+    },
+    "consumption_ledger_provenance": {
+      "source": "agt002_fixture_snapshot_store",
+      "issuer": "AGT002_PHASE01_ISOLATED_FIXTURE",
+      "locator": "fixture://contracts/agt002-phase01/v1/fixtures/provenance/ledger-pre-consumption-second-consumption.json",
+      "content_sha256": "fb039b3ae0fa40c7b8733638765fc55446ef6890fe3613680ee2b1209cdd0dca",
+      "schema_version": "agt002-phase01-consumption-ledger-snapshot/1.0.0",
+      "captured_at_utc": "2026-09-20T23:59:59Z"
+    },
+    "provenance_root_ref": ".",
+    "provenance_resolver_kind": "isolated_fixture"
   },
   "gate-consumed-no-ledger": {
     "now_utc": "2026-09-23T18:00:00Z",
@@ -64,10 +109,16 @@
           "valid_from_utc": "2026-09-01T00:00:00Z",
           "valid_until_utc": "2027-09-01T00:00:00Z",
           "scope": {
-            "environments": ["isolated_fixture"],
+            "environments": [
+              "isolated_fixture"
+            ],
             "resource_kind": "fixture_resource",
-            "resource_ids": ["f1c70000-0000-0000-0000-000000000302"],
-            "actions": ["read"]
+            "resource_ids": [
+              "f1c70000-0000-0000-0000-000000000302"
+            ],
+            "actions": [
+              "read"
+            ]
           },
           "revoked_at_utc": null
         },
@@ -88,10 +139,16 @@
           "valid_from_utc": "2026-09-01T00:00:00Z",
           "valid_until_utc": "2026-09-10T00:00:00Z",
           "scope": {
-            "environments": ["isolated_fixture"],
+            "environments": [
+              "isolated_fixture"
+            ],
             "resource_kind": "fixture_resource",
-            "resource_ids": ["f1c70000-0000-0000-0000-000000000302"],
-            "actions": ["read"]
+            "resource_ids": [
+              "f1c70000-0000-0000-0000-000000000302"
+            ],
+            "actions": [
+              "read"
+            ]
           },
           "revoked_at_utc": null
         }
@@ -116,8 +173,13 @@
         },
         "display_label": "Fixture Authority Registry Valid Principal"
       },
-      "resource_ids": ["f1c70000-0000-0000-0000-000000000402"],
-      "actions": ["read"]
+      "resource_kind": "fixture_resource",
+      "resource_ids": [
+        "f1c70000-0000-0000-0000-000000000402"
+      ],
+      "actions": [
+        "read"
+      ]
     }
   },
   "authority-registry-structural-only": {
@@ -142,8 +204,13 @@
         },
         "display_label": "Fixture Role Principal"
       },
-      "resource_ids": ["f1c70000-0000-0000-0000-000000000411"],
-      "actions": ["read"]
+      "resource_kind": "fixture_resource",
+      "resource_ids": [
+        "f1c70000-0000-0000-0000-000000000411"
+      ],
+      "actions": [
+        "read"
+      ]
     }
   },
   "authority-registry-synthetic-production": {
@@ -164,8 +231,13 @@
         },
         "display_label": "Fixture Synthetic Production Principal"
       },
-      "resource_ids": ["f1c70000-0000-0000-0000-000000000422"],
-      "actions": ["read"]
+      "resource_kind": "fixture_resource",
+      "resource_ids": [
+        "f1c70000-0000-0000-0000-000000000422"
+      ],
+      "actions": [
+        "read"
+      ]
     }
   },
   "authority-registry-delegation-depth": {
@@ -190,8 +262,13 @@
         },
         "display_label": "Fixture Delegate Principal"
       },
-      "resource_ids": ["f1c70000-0000-0000-0000-000000000432"],
-      "actions": ["read"]
+      "resource_kind": "fixture_resource",
+      "resource_ids": [
+        "f1c70000-0000-0000-0000-000000000432"
+      ],
+      "actions": [
+        "read"
+      ]
     }
   },
   "authority-registry-schema-absent": {
@@ -212,8 +289,12 @@
         },
         "display_label": "Fixture Authority Registry Valid Principal"
       },
-      "resource_ids": ["f1c70000-0000-0000-0000-000000000402"],
-      "actions": ["read"]
+      "resource_ids": [
+        "f1c70000-0000-0000-0000-000000000402"
+      ],
+      "actions": [
+        "read"
+      ]
     }
   },
   "link-base": {
@@ -224,7 +305,9 @@
         {
           "tender_id": "f1c70000-0000-0000-0000-000000000501",
           "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
-          "internal_status": "convertida_oportunidad"
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
         }
       ],
       "query": {
@@ -238,8 +321,23 @@
       "opportunity": {
         "stage_code": "activo",
         "tender_offer_status": "en_preparacion"
-      }
-    }
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
   },
   "link-cardinality-zero": {
     "now_utc": "2026-09-23T18:00:00Z",
@@ -257,8 +355,23 @@
       "opportunity": {
         "stage_code": "activo",
         "tender_offer_status": "en_preparacion"
-      }
-    }
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
   },
   "link-cardinality-multiple": {
     "now_utc": "2026-09-23T18:00:00Z",
@@ -268,12 +381,16 @@
         {
           "tender_id": "f1c70000-0000-0000-0000-000000000501",
           "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
-          "internal_status": "convertida_oportunidad"
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
         },
         {
           "tender_id": "f1c70000-0000-0000-0000-000000000501",
           "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000503",
-          "internal_status": "convertida_oportunidad"
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
         }
       ],
       "query": {
@@ -287,8 +404,23 @@
       "opportunity": {
         "stage_code": "activo",
         "tender_offer_status": "en_preparacion"
-      }
-    }
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
   },
   "link-identity-conflict": {
     "now_utc": "2026-09-23T18:00:00Z",
@@ -298,7 +430,9 @@
         {
           "tender_id": "f1c70000-0000-0000-0000-000000000501",
           "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000599",
-          "internal_status": "convertida_oportunidad"
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
         }
       ],
       "query": {
@@ -312,8 +446,23 @@
       "opportunity": {
         "stage_code": "activo",
         "tender_offer_status": "en_preparacion"
-      }
-    }
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
   },
   "link-opportunity-closed": {
     "now_utc": "2026-09-23T18:00:00Z",
@@ -323,7 +472,9 @@
         {
           "tender_id": "f1c70000-0000-0000-0000-000000000501",
           "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
-          "internal_status": "convertida_oportunidad"
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
         }
       ],
       "query": {
@@ -337,8 +488,23 @@
       "opportunity": {
         "stage_code": "activo",
         "tender_offer_status": "cerrada_no_go"
-      }
-    }
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
   },
   "link-query-not-exhaustive": {
     "now_utc": "2026-09-23T18:00:00Z",
@@ -348,7 +514,9 @@
         {
           "tender_id": "f1c70000-0000-0000-0000-000000000501",
           "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
-          "internal_status": "convertida_oportunidad"
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
         }
       ],
       "query": {
@@ -362,7 +530,333 @@
       "opportunity": {
         "stage_code": "activo",
         "tender_offer_status": "en_preparacion"
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
+  },
+  "link-decision-absent": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 2,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
+  },
+  "link-decision-not-approved": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 2,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "REJECTED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
+  },
+  "link-decision-revoked": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 2,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": "2026-09-23T17:00:00Z"
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
+  },
+  "link-decision-window-invalid": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 2,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-09-23T17:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
+  },
+  "link-incompatible-rows-absent": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 2,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
       }
-    }
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
+  },
+  "link-incompatible-link": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 2,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000504"
+        }
+      ]
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "isolated_fixture",
+    "evidence_resolver_kind": "isolated_fixture"
+  },
+  "link-production-local-evidence": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad",
+          "tender_process_ref": "PROC-FX-0001",
+          "conversion_decision_id": "DECISION-FX-0001"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 2,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      },
+      "decision": {
+        "decision_id": "DECISION-FX-0001",
+        "issuer": "Licitaciones",
+        "decision": "APPROVED",
+        "tender_id": "f1c70000-0000-0000-0000-000000000501",
+        "opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+        "valid_from_utc": "2026-09-01T00:00:00Z",
+        "valid_until_utc": "2026-10-01T00:00:00Z",
+        "revoked_at_utc": null
+      },
+      "incompatible_rows": []
+    },
+    "binding_registry_schema_ref": "contracts/agt002-phase01/v1/binding-registry.schema.json",
+    "evidence_root_ref": ".",
+    "environment": "production",
+    "evidence_resolver_kind": "independent"
+  },
+  "gate-consumed-valid-final-audit": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_ref": "contracts/agt002-phase01/v1/authority-registry.json",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "previous_status_provenance": {
+      "source": "agt002_fixture_snapshot_store",
+      "issuer": "AGT002_PHASE01_ISOLATED_FIXTURE",
+      "locator": "fixture://contracts/agt002-phase01/v1/fixtures/provenance/previous-status-final-audit.json",
+      "content_sha256": "290ffa5be6fd76d611c4a8f245505d52a441a9679be34e11659e6fbfc0a0be0e",
+      "schema_version": "agt002-phase01-previous-status-snapshot/1.0.0",
+      "captured_at_utc": "2026-08-14T23:59:58Z"
+    },
+    "consumption_ledger_provenance": {
+      "source": "agt002_fixture_snapshot_store",
+      "issuer": "AGT002_PHASE01_ISOLATED_FIXTURE",
+      "locator": "fixture://contracts/agt002-phase01/v1/fixtures/provenance/ledger-pre-consumption-final-audit.json",
+      "content_sha256": "941fad4744f244dc6d5c870f25df9b8d6d7f3f322f36eb830dba9217e0dfef1b",
+      "schema_version": "agt002-phase01-consumption-ledger-snapshot/1.0.0",
+      "captured_at_utc": "2026-08-14T23:59:59Z"
+    },
+    "provenance_root_ref": ".",
+    "provenance_resolver_kind": "isolated_fixture"
   }
 }

@@ -5,6 +5,8 @@
   "additionalProperties": false,
   "required": [
     "gate-base",
+    "gate-consumed-valid",
+    "gate-consumed-valid-final-audit",
     "gate-consumption-duplicate-receipt",
     "gate-consumption-second-consumption",
     "gate-consumed-no-ledger",
@@ -21,513 +23,479 @@
     "link-cardinality-multiple",
     "link-identity-conflict",
     "link-opportunity-closed",
-    "link-query-not-exhaustive"
+    "link-query-not-exhaustive",
+    "link-decision-absent",
+    "link-decision-not-approved",
+    "link-decision-revoked",
+    "link-decision-window-invalid",
+    "link-incompatible-rows-absent",
+    "link-incompatible-link",
+    "link-production-local-evidence"
   ],
   "properties": {
-    "gate-base": {
+    "gate-base": { "$ref": "#/$defs/contextDescriptor" },
+    "gate-consumed-valid": { "$ref": "#/$defs/contextDescriptor" },
+    "gate-consumed-valid-final-audit": { "$ref": "#/$defs/contextDescriptor" },
+    "gate-consumption-duplicate-receipt": { "$ref": "#/$defs/contextDescriptor" },
+    "gate-consumption-second-consumption": { "$ref": "#/$defs/contextDescriptor" },
+    "gate-consumed-no-ledger": { "$ref": "#/$defs/contextDescriptor" },
+    "gate-no-authority": { "$ref": "#/$defs/contextDescriptor" },
+    "gate-authority-delegation-expired": { "$ref": "#/$defs/contextDescriptor" },
+    "authority-registry-valid": { "$ref": "#/$defs/contextDescriptor" },
+    "authority-registry-structural-only": { "$ref": "#/$defs/contextDescriptor" },
+    "authority-registry-role-principal": { "$ref": "#/$defs/contextDescriptor" },
+    "authority-registry-synthetic-production": { "$ref": "#/$defs/contextDescriptor" },
+    "authority-registry-delegation-depth": { "$ref": "#/$defs/contextDescriptor" },
+    "authority-registry-schema-absent": { "$ref": "#/$defs/contextDescriptor" },
+    "link-base": { "$ref": "#/$defs/contextDescriptor" },
+    "link-cardinality-zero": { "$ref": "#/$defs/contextDescriptor" },
+    "link-cardinality-multiple": { "$ref": "#/$defs/contextDescriptor" },
+    "link-identity-conflict": { "$ref": "#/$defs/contextDescriptor" },
+    "link-opportunity-closed": { "$ref": "#/$defs/contextDescriptor" },
+    "link-query-not-exhaustive": { "$ref": "#/$defs/contextDescriptor" },
+    "link-decision-absent": { "$ref": "#/$defs/contextDescriptor" },
+    "link-decision-not-approved": { "$ref": "#/$defs/contextDescriptor" },
+    "link-decision-revoked": { "$ref": "#/$defs/contextDescriptor" },
+    "link-decision-window-invalid": { "$ref": "#/$defs/contextDescriptor" },
+    "link-incompatible-rows-absent": { "$ref": "#/$defs/contextDescriptor" },
+    "link-incompatible-link": { "$ref": "#/$defs/contextDescriptor" },
+    "link-production-local-evidence": { "$ref": "#/$defs/contextDescriptor" }
+  },
+  "$defs": {
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "grantId": {
+      "type": "string",
+      "pattern": "^GRANT-[A-Z0-9-]{4,48}$"
+    },
+    "grantIdOrNull": {
+      "type": ["string", "null"],
+      "pattern": "^GRANT-[A-Z0-9-]{4,48}$"
+    },
+    "gateType": {
+      "type": "string",
+      "enum": [
+        "PHASE_AUDIT",
+        "LINK_VERIFICATION",
+        "AUTHORITY_DELEGATION",
+        "STORAGE_DESIGN_REVIEW",
+        "PRODUCTION_ACTION"
+      ]
+    },
+    "environmentEnum": {
+      "type": "string",
+      "enum": ["production", "isolated_fixture"]
+    },
+    "durableRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["source", "locator", "verifiable"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+        "source": {
+          "type": "string",
+          "enum": ["psi_sales_profiles", "agent_identity", "fixture_registry"]
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "locator": { "type": "string" },
+        "verifiable": { "type": "boolean" }
       }
     },
-    "gate-consumption-duplicate-receipt": {
+    "principal": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["principal_id", "principal_kind", "durable_ref", "display_label"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+        "principal_id": { "type": "string" },
+        "principal_kind": {
+          "type": "string",
+          "enum": ["human", "agent", "synthetic"]
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "durable_ref": { "$ref": "#/$defs/durableRef" },
+        "display_label": { "type": "string" }
       }
     },
-    "gate-consumption-second-consumption": {
+    "scope": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["environments", "resource_kind", "resource_ids", "actions"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
+        "environments": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/environmentEnum" }
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "resource_kind": { "type": "string" },
+        "resource_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
       }
     },
-    "gate-consumed-no-ledger": {
+    "grant": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": [
+        "grant_id",
+        "gate_type",
+        "principal",
+        "delegate_of",
+        "valid_from_utc",
+        "valid_until_utc",
+        "scope",
+        "revoked_at_utc"
+      ],
       "properties": {
-        "now_utc": { "type": "string" },
-        "gap_id": { "type": "string", "pattern": "^AGT002-P1-GAP-[0-9]{4}$" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
-        },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "grant_id": { "$ref": "#/$defs/grantId" },
+        "gate_type": { "$ref": "#/$defs/gateType" },
+        "principal": { "$ref": "#/$defs/principal" },
+        "delegate_of": { "$ref": "#/$defs/grantIdOrNull" },
+        "valid_from_utc": { "type": "string" },
+        "valid_until_utc": { "type": "string" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "revoked_at_utc": { "$ref": "#/$defs/nullableString" }
       }
     },
-    "gate-no-authority": {
+    "authorityRegistry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": [
+        "schema_version",
+        "registry_version",
+        "supersedes_registry_version",
+        "issued_at_utc",
+        "grants"
+      ],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+        "schema_version": {
+          "type": "string",
+          "const": "agt002-phase01-authority-registry/1.0.0"
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "registry_version": { "type": "number" },
+        "supersedes_registry_version": { "type": ["number", "null"] },
+        "issued_at_utc": { "type": "string" },
+        "grants": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/grant" }
+        }
       }
     },
-    "gate-authority-delegation-expired": {
-      "type": "object",
+    "delegation": {
+      "type": ["object", "null"],
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["grant_id", "delegated_by", "delegate_of"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
-        },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "grant_id": { "$ref": "#/$defs/grantId" },
+        "delegated_by": { "type": "string" },
+        "delegate_of": { "$ref": "#/$defs/grantIdOrNull" }
       }
     },
-    "authority-registry-valid": {
+    "authorityRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": [
+        "principal",
+        "grant_id",
+        "gate_type",
+        "resource_ids",
+        "actions",
+        "environment",
+        "delegation"
+      ],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
+        "principal": { "$ref": "#/$defs/principal" },
+        "grant_id": { "$ref": "#/$defs/grantId" },
+        "gate_type": { "$ref": "#/$defs/gateType" },
+        "resource_ids": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+          "minItems": 1,
+          "items": { "type": "string" }
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "resource_kind": { "type": "string" },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "environment": { "$ref": "#/$defs/environmentEnum" },
+        "delegation": { "$ref": "#/$defs/delegation" }
       }
     },
-    "authority-registry-structural-only": {
+    "consumptionLedgerEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["gate_id", "receipt_id", "consumed_at_utc"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
-        },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "gate_id": { "type": "string" },
+        "receipt_id": { "type": "string" },
+        "consumed_at_utc": { "type": "string" }
       }
     },
-    "authority-registry-role-principal": {
+    "provenanceRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["source", "issuer", "locator", "content_sha256", "schema_version", "captured_at_utc"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+        "source": { "type": "string" },
+        "issuer": { "type": "string" },
+        "locator": {
+          "type": "string",
+          "pattern": "^fixture://[A-Za-z0-9._/-]+$"
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "schema_version": {
+          "type": "string",
+          "enum": [
+            "agt002-phase01-previous-status-snapshot/1.0.0",
+            "agt002-phase01-consumption-ledger-snapshot/1.0.0"
+          ]
+        },
+        "captured_at_utc": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?Z$"
+        }
       }
     },
-    "authority-registry-synthetic-production": {
+    "observationRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": [
+        "tender_id",
+        "converted_opportunity_id",
+        "internal_status",
+        "tender_process_ref",
+        "conversion_decision_id"
+      ],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
-        },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "tender_id": { "type": "string" },
+        "converted_opportunity_id": { "type": "string" },
+        "internal_status": { "type": "string" },
+        "tender_process_ref": { "type": "string" },
+        "conversion_decision_id": { "type": "string" }
       }
     },
-    "authority-registry-delegation-depth": {
+    "observationQuery": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["paginated", "truncated", "pages_fetched", "page_size", "rows_total_declared"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
-        },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "paginated": { "type": "boolean" },
+        "truncated": { "type": "boolean" },
+        "pages_fetched": { "type": "number" },
+        "page_size": { "type": "number" },
+        "rows_total_declared": { "type": "number" }
       }
     },
-    "authority-registry-schema-absent": {
+    "observationOpportunity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["stage_code", "tender_offer_status"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "gap_id": { "type": "string", "pattern": "^AGT002-P1-GAP-[0-9]{4}$" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
-        },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "stage_code": { "type": "string" },
+        "tender_offer_status": { "type": "string" }
       }
     },
-    "link-base": {
+    "observationDecision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": [
+        "decision_id",
+        "issuer",
+        "decision",
+        "tender_id",
+        "opportunity_id",
+        "valid_from_utc",
+        "valid_until_utc",
+        "revoked_at_utc"
+      ],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
-        },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "decision_id": { "type": "string" },
+        "issuer": { "type": "string" },
+        "decision": { "type": "string" },
+        "tender_id": { "type": "string" },
+        "opportunity_id": { "type": "string" },
+        "valid_from_utc": { "type": "string" },
+        "valid_until_utc": { "type": "string" },
+        "revoked_at_utc": { "$ref": "#/$defs/nullableString" }
       }
     },
-    "link-cardinality-zero": {
+    "incompatibleRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["tender_id", "converted_opportunity_id"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
-        },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "tender_id": { "type": "string" },
+        "converted_opportunity_id": { "type": "string" },
+        "internal_status": { "type": "string" },
+        "tender_process_ref": { "type": "string" },
+        "conversion_decision_id": { "type": "string" }
       }
     },
-    "link-cardinality-multiple": {
+    "observation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["rows", "query", "authoritative", "opportunity"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
+        "rows": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+          "items": { "$ref": "#/$defs/observationRow" }
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "query": { "$ref": "#/$defs/observationQuery" },
+        "authoritative": { "type": "boolean" },
+        "opportunity": { "$ref": "#/$defs/observationOpportunity" },
+        "decision": { "$ref": "#/$defs/observationDecision" },
+        "incompatible_rows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/incompatibleRow" }
+        }
       }
     },
-    "link-identity-conflict": {
+    "bindingEvidenceItem": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["evidence_id", "kind", "fact_id", "locator", "line_start", "line_end", "snippet"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+        "evidence_id": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["migration_locator"]
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "fact_id": {
+          "type": "string",
+          "pattern": "^AGT002-P1-FACT-[0-9]{4}$"
+        },
+        "locator": { "type": "string" },
+        "line_start": { "type": "number" },
+        "line_end": { "type": "number" },
+        "snippet": { "type": "string" }
       }
     },
-    "link-opportunity-closed": {
+    "bindingLiveMetadataGet": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["now_utc"],
+      "required": ["method", "artifact", "observed_at_utc"],
       "properties": {
-        "now_utc": { "type": "string" },
-        "consumption_ledger": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+        "method": {
+          "type": "string",
+          "const": "GET"
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
-        "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "artifact": {
+          "type": "string",
+          "enum": ["attached", "not_attached"]
+        },
+        "observed_at_utc": { "$ref": "#/$defs/nullableString" }
       }
     },
-    "link-query-not-exhaustive": {
+    "bindingEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "binding_id",
+        "logical_term",
+        "status",
+        "table",
+        "column",
+        "gap_id",
+        "unique_constraint",
+        "on_delete",
+        "live_endpoint",
+        "notes",
+        "cutoff_utc",
+        "verified_at_utc",
+        "live_metadata_get",
+        "evidence"
+      ],
+      "properties": {
+        "binding_id": {
+          "type": "string",
+          "pattern": "^BIND-[A-Z0-9-]{3,64}$"
+        },
+        "logical_term": {
+          "type": "string",
+          "enum": ["A", "B"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["confirmed_durable", "absent_live"]
+        },
+        "table": { "$ref": "#/$defs/nullableString" },
+        "column": { "$ref": "#/$defs/nullableString" },
+        "gap_id": { "$ref": "#/$defs/nullableString" },
+        "unique_constraint": { "$ref": "#/$defs/nullableString" },
+        "on_delete": { "$ref": "#/$defs/nullableString" },
+        "live_endpoint": { "$ref": "#/$defs/nullableString" },
+        "notes": { "$ref": "#/$defs/nullableString" },
+        "cutoff_utc": { "type": "string" },
+        "verified_at_utc": { "type": "string" },
+        "live_metadata_get": { "$ref": "#/$defs/bindingLiveMetadataGet" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/bindingEvidenceItem" }
+        }
+      }
+    },
+    "bindingRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "registry_version", "bindings"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "agt002-phase01-binding-registry/1.0.0"
+        },
+        "registry_version": { "type": "number" },
+        "bindings": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/bindingEntry" }
+        }
+      }
+    },
+    "contextDescriptor": {
       "type": "object",
       "additionalProperties": false,
       "required": ["now_utc"],
       "properties": {
         "now_utc": { "type": "string" },
+        "authority_registry_ref": { "type": "string" },
+        "authority_registry_schema_ref": { "type": "string" },
         "consumption_ledger": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["gate_id", "receipt_id", "consumed_at_utc"],
-            "properties": {
-              "gate_id": { "type": "string" },
-              "receipt_id": { "type": "string" },
-              "consumed_at_utc": { "type": "string" }
-            }
-          }
+          "items": { "$ref": "#/$defs/consumptionLedgerEntry" }
         },
-        "authority_registry_ref": { "type": "string" },
-        "authority_registry": { "type": "object" },
-        "authority_request": { "type": "object" },
+        "previous_status_provenance": { "$ref": "#/$defs/provenanceRecord" },
+        "consumption_ledger_provenance": { "$ref": "#/$defs/provenanceRecord" },
+        "provenance_root_ref": { "type": "string" },
+        "provenance_resolver_kind": {
+          "type": "string",
+          "const": "isolated_fixture"
+        },
+        "gap_id": {
+          "type": "string",
+          "pattern": "^AGT002-P1-GAP-[0-9]{4}$"
+        },
+        "authority_registry": { "$ref": "#/$defs/authorityRegistry" },
+        "authority_request": { "$ref": "#/$defs/authorityRequest" },
         "binding_registry_ref": { "type": "string" },
-        "binding_registry": { "type": "object" },
-        "observation": { "type": "object" },
-        "authority_registry_schema_ref": { "type": "string" }
+        "binding_registry": { "$ref": "#/$defs/bindingRegistry" },
+        "observation": { "$ref": "#/$defs/observation" },
+        "binding_registry_schema_ref": { "type": "string" },
+        "evidence_root_ref": { "type": "string" },
+        "environment": { "$ref": "#/$defs/environmentEnum" },
+        "evidence_resolver_kind": {
+          "type": "string",
+          "enum": ["isolated_fixture", "independent"]
+        }
       }
     }
   }
