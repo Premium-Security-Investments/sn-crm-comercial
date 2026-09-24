@@ -1,0 +1,40 @@
+{
+  "$id": "repo://contracts/agt002-radar-reliability/v1/reason-catalog.json",
+  "catalog_version": "agt002-m1-radar-reliability-reason-catalog-v1",
+  "schema_version": "agt002-m1-radar-reliability-v1",
+  "source_module": "agt002-m1-radar-reliability-contract.js",
+  "status": "contract_only_offline",
+  "verdicts": ["VALID", "UNVERIFIED", "INVALID"],
+  "terms": [
+    "schema",
+    "terminal_state",
+    "temporal_integrity",
+    "coverage",
+    "freshness",
+    "evidence",
+    "traceability"
+  ],
+  "reasons": [
+    { "reason": "schema.additional_property", "term": "schema", "severity": "INVALID" },
+    { "reason": "schema.missing_property", "term": "schema", "severity": "INVALID" },
+    { "reason": "schema.invalid_type", "term": "schema", "severity": "INVALID" },
+    { "reason": "schema.invalid_id", "term": "schema", "severity": "INVALID" },
+    { "reason": "schema.invalid_hash", "term": "schema", "severity": "INVALID" },
+    { "reason": "scan.status.invalid", "term": "terminal_state", "severity": "INVALID" },
+    { "reason": "scan.status.failed", "term": "terminal_state", "severity": "INVALID" },
+    { "reason": "scan.status.not_terminal", "term": "terminal_state", "severity": "UNVERIFIED" },
+    { "reason": "temporal.timestamp_format_invalid", "term": "temporal_integrity", "severity": "INVALID" },
+    { "reason": "temporal.timestamp_invalid", "term": "temporal_integrity", "severity": "INVALID" },
+    { "reason": "temporal.order_invalid", "term": "temporal_integrity", "severity": "INVALID" },
+    { "reason": "coverage.partial", "term": "coverage", "severity": "UNVERIFIED" },
+    { "reason": "coverage.first_page_claims_absence", "term": "coverage", "severity": "INVALID" },
+    { "reason": "coverage.pagination_invalid", "term": "coverage", "severity": "INVALID" },
+    { "reason": "freshness.stale", "term": "freshness", "severity": "INVALID" },
+    { "reason": "freshness.invalid", "term": "freshness", "severity": "INVALID" },
+    { "reason": "evidence.absent", "term": "evidence", "severity": "UNVERIFIED" },
+    { "reason": "evidence.duplicate_id", "term": "evidence", "severity": "INVALID" },
+    { "reason": "evidence.invalid_locator", "term": "evidence", "severity": "INVALID" },
+    { "reason": "traceability.source_persistence_mismatch", "term": "traceability", "severity": "INVALID" },
+    { "reason": "traceability.persistence_ui_mismatch", "term": "traceability", "severity": "INVALID" }
+  ]
+}

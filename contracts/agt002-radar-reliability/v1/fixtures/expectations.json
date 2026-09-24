@@ -1,0 +1,92 @@
+[
+  {
+    "file": "valid-promoted.json",
+    "expected_verdict": "VALID",
+    "expected_promotable": true,
+    "expected_reasons": []
+  },
+  {
+    "file": "exhaustive-zero-absence-valid.json",
+    "expected_verdict": "VALID",
+    "expected_promotable": true,
+    "expected_reasons": []
+  },
+  {
+    "file": "partial-unverified.json",
+    "expected_verdict": "UNVERIFIED",
+    "expected_promotable": false,
+    "expected_reasons": ["coverage.partial"]
+  },
+  {
+    "file": "nonterminal-unverified.json",
+    "expected_verdict": "UNVERIFIED",
+    "expected_promotable": false,
+    "expected_reasons": ["scan.status.not_terminal"]
+  },
+  {
+    "file": "stale-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["freshness.stale"]
+  },
+  {
+    "file": "no-evidence-unverified.json",
+    "expected_verdict": "UNVERIFIED",
+    "expected_promotable": false,
+    "expected_reasons": ["evidence.absent"]
+  },
+  {
+    "file": "failed-terminal-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["scan.status.failed"]
+  },
+  {
+    "file": "partial-claims-absence-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["coverage.first_page_claims_absence"]
+  },
+  {
+    "file": "source-persistence-mixed-hash-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["schema.invalid_hash"]
+  },
+  {
+    "file": "persistence-ui-mismatch-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["traceability.persistence_ui_mismatch"]
+  },
+  {
+    "file": "invalid-timestamp-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["temporal.timestamp_invalid"]
+  },
+  {
+    "file": "extra-property-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["schema.additional_property"]
+  },
+  {
+    "file": "invalid-locator-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["evidence.invalid_locator"]
+  },
+  {
+    "file": "duplicate-evidence-id-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["evidence.duplicate_id"]
+  },
+  {
+    "file": "count-mismatch-invalid.json",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["traceability.source_persistence_mismatch"]
+  }
+]
