@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import {
@@ -377,6 +378,142 @@ async function testSchemaCeilingIsMeasuredInBytes() {
   assert.equal(calls.length, 0, 'el techo debe medirse en bytes UTF-8, no en longitud de cadena');
 }
 
+async function testSafeProviderEnvelopeTraceMetadata() {
+  const traces = [];
+  const children = [];
+  const spawn = () => {
+    const child = fakeChild();
+    children.push(child);
+    return child;
+  };
+  const client = createAgt003ClaudeClient({ spawn, persistTrace: trace => traces.push(trace) });
+  const sensitiveResult = 'SECRETO-PROVEEDOR-9f3ac21e-no-debe-propagarse-en-la-traza';
+  const distinctiveSubstring = '9f3ac21e';
+
+  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
+  await settleSoon(() => {
+    children[0].stdout.emit('data', JSON.stringify({
+      is_error: true,
+      subtype: 'success',
+      error: { type: 'invalid_request_error' },
+      result: sensitiveResult,
+    }));
+    children[0].emit('exit', 1, null);
+  });
+  await assert.rejects(pending, error => error.code === 'AGT003_CLAUDE_PROVIDER_ERROR');
+
+  assert.equal(traces.length, 1, 'debe persistirse exactamente una traza');
+  const [trace] = traces;
+  assert.equal(trace.provider_is_error, true);
+  assert.equal(trace.provider_subtype, 'success');
+  assert.equal(trace.provider_error_type, 'invalid_request_error');
+  assert.equal(trace.provider_result_bytes, Buffer.byteLength(sensitiveResult, 'utf8'));
+  assert.equal(trace.provider_result_sha256, createHash('sha256').update(sensitiveResult, 'utf8').digest('hex'));
+  assert.equal(trace.provider_result_classification, 'unclassified_text');
+
+  const serializedTrace = JSON.stringify(trace);
+  assert.equal(serializedTrace.includes(sensitiveResult), false, 'el `result` del proveedor no debe propagarse a la traza');
+  assert.equal(serializedTrace.includes(distinctiveSubstring), false, 'ni siquiera un fragmento distintivo del `result` debe propagarse a la traza');
+}
+
+// Campos del clasificador seguro del `result` del proveedor: sólo átomos
+// booleanos/numéricos derivados pueden cruzar hacia la traza; el texto del
+// `result` en sí nunca se persiste ni se propaga al error del llamador.
+const AGT003_CLASSIFIER_FIELDS = [
+  'mentions_schema',
+  'mentions_json',
+  'mentions_invalid',
+  'mentions_length_or_tokens',
+  'mentions_rate_limit',
+  'mentions_overload',
+  'mentions_auth_or_permission',
+  'mentions_model',
+  'mentions_timeout',
+];
+
+function assertClassifierFieldsEqual(trace, expected, context) {
+  for (const field of AGT003_CLASSIFIER_FIELDS) {
+    assert.equal(trace[field], expected, `${context}: ${field} debe ser ${expected}`);
+  }
+}
+
+async function runProviderEnvelopeAndCapture(resultPayload, { exitCode = 1 } = {}) {
+  const traces = [];
+  const children = [];
+  const spawn = () => {
+    const child = fakeChild();
+    children.push(child);
+    return child;
+  };
+  const client = createAgt003ClaudeClient({ spawn, persistTrace: trace => traces.push(trace) });
+  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
+  await settleSoon(() => {
+    children[0].stdout.emit('data', JSON.stringify(resultPayload));
+    children[0].emit('exit', exitCode, null);
+  });
+  let caughtError = null;
+  await assert.rejects(pending, error => { caughtError = error; return true; });
+  assert.equal(traces.length, 1, 'debe persistirse exactamente una traza');
+  return { error: caughtError, trace: traces[0] };
+}
+
+async function testOpaqueResultYieldsNoClassifierEvidence() {
+  const sensitiveResult = 'SECRETO-PROVEEDOR-ab12ef99-sin-evidencia-reconocida-en-el-clasificador';
+  const distinctiveSubstring = 'ab12ef99';
+  const { error, trace } = await runProviderEnvelopeAndCapture({
+    is_error: true,
+    subtype: 'success',
+    result: sensitiveResult,
+  });
+
+  assert.equal(error.code, 'AGT003_CLAUDE_PROVIDER_ERROR', 'un `result` opaco sin evidencia reconocida no debe sobreclasificarse');
+  const serializedError = `${error.message} ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+  assert.equal(serializedError.includes(sensitiveResult), false, 'el `result` opaco no debe propagarse en la serialización segura del error');
+  assert.equal(serializedError.includes(distinctiveSubstring), false, 'ni un fragmento distintivo del `result` opaco debe propagarse en el error');
+
+  assertClassifierFieldsEqual(trace, false, 'result opaco sin evidencia');
+  assert.equal(trace.embedded_http_status, null, 'sin evidencia reconocida no debe extraerse ningún código HTTP embebido');
+}
+
+async function testAllClassifierCategoriesAndHttpStatusDetected() {
+  const sensitiveFragment = 'RUTA-INTERNA-7c44d0b1';
+  const result = `respuesta sintética: invalid json schema; token length exceeded; `
+    + `rate limit reached; overloaded; permission denied for auth; unknown model; `
+    + `request timeout; status 422; ref ${sensitiveFragment}`;
+  const { error, trace } = await runProviderEnvelopeAndCapture({
+    is_error: true,
+    subtype: 'success',
+    result,
+  });
+
+  assert.equal(error.code, 'AGT003_CLAUDE_PROVIDER_ERROR');
+  assertClassifierFieldsEqual(trace, true, 'result con evidencia sintética de las nueve categorías');
+  assert.equal(trace.embedded_http_status, 422, 'un código HTTP autónomo dentro del `result` debe extraerse a la traza');
+
+  const serializedTrace = JSON.stringify(trace);
+  const serializedError = `${error.message} ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+  assert.equal(serializedTrace.includes(result), false, 'el `result` crudo no debe propagarse a la traza, sólo los átomos derivados');
+  assert.equal(serializedTrace.includes(sensitiveFragment), false, 'ni un fragmento distintivo del `result` debe propagarse a la traza');
+  assert.equal(serializedError.includes(result), false, 'el `result` crudo no debe propagarse al error del llamador');
+  assert.equal(serializedError.includes(sensitiveFragment), false, 'ni un fragmento distintivo del `result` debe propagarse al error del llamador');
+}
+
+async function testNoEvidenceYieldsNullHttpStatusAndFalseFields() {
+  const outOfRangeCases = [
+    'código 999 sin relación, también 42 y 100',
+    'referencia interna 600 y otra 399',
+  ];
+  for (const result of outOfRangeCases) {
+    const { trace } = await runProviderEnvelopeAndCapture({ is_error: true, subtype: 'success', result });
+    assertClassifierFieldsEqual(trace, false, `número fuera de 400..599: ${result}`);
+    assert.equal(trace.embedded_http_status, null, `números fuera de 400..599 no deben producir un código HTTP: ${result}`);
+  }
+
+  const { trace: traceAbsent } = await runProviderEnvelopeAndCapture({ is_error: true, subtype: 'success' });
+  assertClassifierFieldsEqual(traceAbsent, false, 'result ausente');
+  assert.equal(traceAbsent.embedded_http_status, null, 'sin `result` no debe extraerse ningún código HTTP');
+}
+
 async function testInvalidArgumentsRejectedBeforeSpawn() {
   const { client, calls } = harness();
   const base = { model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 };
@@ -401,6 +538,10 @@ await testSessionLimitUsesOnlyTheKnownSafePhrase();
 await testOversizedStdoutFailsClosed();
 await testStderrIsNeverSurfaced();
 await testSpawnFailureFailsClosed();
+await testSafeProviderEnvelopeTraceMetadata();
+await testOpaqueResultYieldsNoClassifierEvidence();
+await testAllClassifierCategoriesAndHttpStatusDetected();
+await testNoEvidenceYieldsNullHttpStatusAndFalseFields();
 await testInvalidArgumentsRejectedBeforeSpawn();
 console.log('agt003-claude-client.test.mjs Paso 2 OK');
 
