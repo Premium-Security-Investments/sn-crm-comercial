@@ -1,0 +1,40 @@
+{
+  "$id": "repo://contracts/agt002-radar-reliability/v1/manifest.json",
+  "manifest_version": "agt002-m1-radar-reliability-manifest-v1",
+  "schema_version": "agt002-m1-radar-reliability-v1",
+  "source_module": "agt002-m1-radar-reliability-contract.js",
+  "phase": "FASE_GREEN_1B",
+  "status": "contract_only_offline",
+  "artifacts": [
+    {
+      "name": "reason-catalog.json",
+      "id": "repo://contracts/agt002-radar-reliability/v1/reason-catalog.json",
+      "role": "Catálogo cerrado y versionado de reason codes con su término y severidad, espejo exacto de AGT002_M1_RADAR_RELIABILITY_REASON_CATALOG.",
+      "status": "contract_only_offline"
+    },
+    {
+      "name": "run-receipt.schema.json",
+      "id": "repo://contracts/agt002-radar-reliability/v1/run-receipt.schema.json",
+      "role": "Esquema del recibo de escaneo: estado terminal, paginación, hash de fuente, evidencia y frescura.",
+      "status": "contract_only_offline"
+    },
+    {
+      "name": "presentation-trace.schema.json",
+      "id": "repo://contracts/agt002-radar-reliability/v1/presentation-trace.schema.json",
+      "role": "Esquema de la traza de custodia fuente -> persistencia -> UI usada por el término de trazabilidad.",
+      "status": "contract_only_offline"
+    },
+    {
+      "name": "promotion-bundle.schema.json",
+      "id": "repo://contracts/agt002-radar-reliability/v1/promotion-bundle.schema.json",
+      "role": "Esquema del bundle atómico y cerrado consumido por validateAgt002M1RadarReliabilityBundle y resolveAgt002M1RadarReliabilityPromotion.",
+      "status": "contract_only_offline"
+    },
+    {
+      "name": "evaluation-context.schema.json",
+      "id": "repo://contracts/agt002-radar-reliability/v1/evaluation-context.schema.json",
+      "role": "Esquema del contexto de evaluación que compone el bundle completo (referencia promotion-bundle.schema.json) junto con el resultado de evaluación por término.",
+      "status": "contract_only_offline"
+    }
+  ]
+}

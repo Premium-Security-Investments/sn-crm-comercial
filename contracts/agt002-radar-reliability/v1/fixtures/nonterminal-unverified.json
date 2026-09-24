@@ -1,0 +1,36 @@
+{
+  "schema_version": "agt002-m1-radar-reliability-v1",
+  "run_id": "synthetic-run-nonterminal-unverified",
+  "scan": {
+    "status": "running",
+    "started_at_utc": "2026-09-20T05:00:00Z",
+    "completed_at_utc": "2026-09-20T05:30:00Z",
+    "pagination": { "pages_fetched": 3, "total_pages_declared": 3, "exhaustive": true, "claims_absence": true },
+    "source_snapshot_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "item_count": 42
+  },
+  "persistence": {
+    "persisted_count": 42,
+    "persisted_snapshot_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "persisted_at_utc": "2026-09-20T05:35:00Z"
+  },
+  "ui_projection": {
+    "rendered_count": 42,
+    "rendered_snapshot_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "rendered_at_utc": "2026-09-20T05:40:00Z"
+  },
+  "evidence": [
+    {
+      "evidence_id": "synthetic-evidence-nonterminal-unverified",
+      "kind": "scan_manifest",
+      "locator": "fixture://agt002-m1-radar-reliability/scan-manifest/synthetic-run-nonterminal-unverified",
+      "captured_at_utc": "2026-09-20T05:30:00Z",
+      "content_sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    }
+  ],
+  "freshness": {
+    "now_utc": "2026-09-20T12:00:00Z",
+    "data_as_of_utc": "2026-09-20T05:30:00Z",
+    "max_staleness_calendar_days": 1
+  }
+}
