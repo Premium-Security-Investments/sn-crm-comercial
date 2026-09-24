@@ -1,0 +1,67 @@
+{
+  "gate_id": "FINAL_AUDIT_PHASE_0",
+  "schema_version": "agt002-phase01-gate/1.0.0",
+  "type": "PHASE_AUDIT",
+  "authority": {
+    "principal": {
+      "principal_id": "f1c70000-0000-0000-0000-000000000301",
+      "principal_kind": "synthetic",
+      "durable_ref": {
+        "source": "fixture_registry",
+        "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000301",
+        "verifiable": true
+      },
+      "display_label": "Fixture Gate Principal"
+    },
+    "grant_id": "GRANT-P1-0001",
+    "delegation": null
+  },
+  "objective": "Model the Phase 0 final audit gate as consumed and rejected, never open",
+  "environment": "isolated_fixture",
+  "synthetic": true,
+  "scope": {
+    "resource_kind": "fixture_resource",
+    "resource_ids": ["f1c70000-0000-0000-0000-000000000201"],
+    "actions": ["read"]
+  },
+  "preconditions": [
+    {
+      "precondition_id": "PRE-FX-0003",
+      "statement": "AGT002-P1-GAP-0003: existe almacenamiento productivo apto para instancias de gate",
+      "verdict": "INVALID",
+      "evidence_ids": ["EVID-FX-0003"]
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "EVID-FX-0003",
+      "kind": "fixture_record",
+      "locator": "fixture://evidence/0003",
+      "durable": true,
+      "content_hash": "fixture-content-hash-0003",
+      "captured_at_utc": "2026-08-01T00:00:00Z"
+    }
+  ],
+  "expires_at_utc": "2026-09-01T00:00:00Z",
+  "consumption_policy": {
+    "max_consumptions": 1,
+    "receipt_required": true,
+    "idempotency_key": "idempotency-key-fx-0003"
+  },
+  "rollback": {
+    "supported": false,
+    "procedure": "Compensate via fixture rollback procedure",
+    "locator": "fixture://rollback/0003"
+  },
+  "issued_at_utc": "2026-08-01T00:00:00Z",
+  "status": "CONSUMED",
+  "outcome": "REJECTED",
+  "consumption": {
+    "receipt_id": "RCPT-FX-0003",
+    "consumed_at_utc": "2026-08-15T00:00:00Z",
+    "consumed_by": "f1c70000-0000-0000-0000-000000000301"
+  },
+  "revocation": null,
+  "artifact_set_hash": "25aa472c5ec0f026bb222e394f2280401c40991101d576667ebd5822c4aebd99",
+  "active_case": null
+}

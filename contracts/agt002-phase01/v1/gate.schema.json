@@ -1,0 +1,247 @@
+{
+  "$id": "https://seguridadnacional.internal/contracts/agt002-phase01/v1/gate.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "gate_id",
+    "schema_version",
+    "type",
+    "authority",
+    "objective",
+    "environment",
+    "synthetic",
+    "scope",
+    "preconditions",
+    "evidence",
+    "expires_at_utc",
+    "consumption_policy",
+    "rollback",
+    "issued_at_utc",
+    "status",
+    "outcome",
+    "consumption",
+    "revocation",
+    "artifact_set_hash",
+    "active_case"
+  ],
+  "properties": {
+    "gate_id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{3,63}$"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "agt002-phase01-gate/1.0.0"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "PHASE_AUDIT",
+        "LINK_VERIFICATION",
+        "AUTHORITY_DELEGATION",
+        "STORAGE_DESIGN_REVIEW",
+        "PRODUCTION_ACTION"
+      ]
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principal", "grant_id", "delegation"],
+      "properties": {
+        "principal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["principal_id", "principal_kind", "durable_ref", "display_label"],
+          "properties": {
+            "principal_id": { "type": "string" },
+            "principal_kind": {
+              "type": "string",
+              "enum": ["human", "agent", "synthetic"]
+            },
+            "durable_ref": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "locator", "verifiable"],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": ["psi_sales_profiles", "agent_identity", "fixture_registry"]
+                },
+                "locator": { "type": "string" },
+                "verifiable": { "type": "boolean" }
+              }
+            },
+            "display_label": { "type": "string" }
+          }
+        },
+        "grant_id": {
+          "type": "string",
+          "pattern": "^GRANT-[A-Z0-9-]{4,48}$"
+        },
+        "delegation": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["grant_id", "delegated_by", "delegate_of"],
+          "properties": {
+            "grant_id": {
+              "type": "string",
+              "pattern": "^GRANT-[A-Z0-9-]{4,48}$"
+            },
+            "delegated_by": { "type": "string" },
+            "delegate_of": { "type": "null" }
+          }
+        }
+      }
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 8
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["production", "isolated_fixture"]
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_kind", "resource_ids", "actions"],
+      "properties": {
+        "resource_kind": { "type": "string" },
+        "resource_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        },
+        "actions": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "preconditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["precondition_id", "statement", "verdict", "evidence_ids"],
+        "properties": {
+          "precondition_id": { "type": "string" },
+          "statement": { "type": "string" },
+          "verdict": {
+            "type": "string",
+            "enum": ["VALID", "INVALID", "UNVERIFIED"]
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidence_id", "kind", "locator", "durable", "content_hash", "captured_at_utc"],
+        "properties": {
+          "evidence_id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["repo_file", "migration_locator", "openapi_metadata", "fixture_record"]
+          },
+          "locator": { "type": "string" },
+          "durable": { "type": "boolean" },
+          "content_hash": { "type": "string" },
+          "captured_at_utc": { "type": "string" }
+        }
+      }
+    },
+    "expires_at_utc": {
+      "type": "string"
+    },
+    "consumption_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_consumptions", "receipt_required", "idempotency_key"],
+      "properties": {
+        "max_consumptions": {
+          "type": "number",
+          "const": 1
+        },
+        "receipt_required": {
+          "type": "boolean",
+          "const": true
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 8
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported", "procedure", "locator"],
+      "properties": {
+        "supported": { "type": "boolean" },
+        "procedure": {
+          "type": "string",
+          "minLength": 8
+        },
+        "locator": { "type": "string" }
+      }
+    },
+    "issued_at_utc": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["DRAFT", "OPEN", "CONSUMED", "EXPIRED", "REVOKED"]
+    },
+    "outcome": {
+      "type": ["string", "null"],
+      "enum": ["PASS", "REJECTED", "CANCELLED", null]
+    },
+    "consumption": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["receipt_id", "consumed_at_utc", "consumed_by"],
+      "properties": {
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^RCPT-[A-Z0-9-]{4,48}$"
+        },
+        "consumed_at_utc": { "type": "string" },
+        "consumed_by": { "type": "string" }
+      }
+    },
+    "revocation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["revoked_at_utc", "revoked_by", "reason"],
+      "properties": {
+        "revoked_at_utc": { "type": "string" },
+        "revoked_by": { "type": "string" },
+        "reason": {
+          "type": "string",
+          "minLength": 8
+        }
+      }
+    },
+    "artifact_set_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "active_case": {
+      "type": "null"
+    }
+  }
+}
