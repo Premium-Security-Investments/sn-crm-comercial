@@ -8,6 +8,8 @@ begin;
 lock table public.psi_sales_opportunities in access exclusive mode;
 lock table public.psi_sales_clients in access exclusive mode;
 
+drop function if exists public.psi_persist_sales_opportunity(text,uuid,uuid,uuid,jsonb,jsonb);
+
 alter table public.psi_sales_opportunities
   drop constraint if exists psi_sales_opportunities_public_tender_client_check;
 
