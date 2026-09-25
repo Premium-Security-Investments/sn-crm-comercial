@@ -1,0 +1,57 @@
+{
+  "schema_version": "f0a.v1",
+  "observed_at_utc": "2026-09-25T11:51:49Z",
+  "host": {
+    "hostname": "funnelly-agent-1",
+    "ipv4": "5.78.140.24"
+  },
+  "freeze_canonical_sha256": "d7123520c4016a4963dfda7c36bdc5d5507f7ac0d5bb2b26c96193b1f95ef4b3",
+  "origin_main_sha": "9a0adb0d96b1a10838cedca9c3f58258d8a6efd0",
+  "surfaces": {
+    "origin_main": {
+      "sha": "9a0adb0d96b1a10838cedca9c3f58258d8a6efd0"
+    },
+    "vercel_production": {
+      "sha": "bb4d134af887e0dfbf99e02ca7cdf23153ab39da",
+      "deployment_id": "dpl_45LcTwzUQHTCVbK1K86rLXHfosCJ"
+    },
+    "bridge": {
+      "sha": "412a7eec125f03bbec9fb900005a08dba1c2c77d",
+      "historical_sha": "412a7eec125f03bbec9fb900005a08dba1c2c77d",
+      "port": "10/10"
+    },
+    "radar_pipeline": {
+      "sha": "b354c55806e1f8b805e5febfdfc6240b554e4867",
+      "dirty": 19
+    },
+    "reanalysis_worker": {
+      "sha": "20655a5d1e0264eaf38906a4f5bb5dd44f30df95"
+    },
+    "workbench_scheduler": {
+      "mode": "curl_wrapper"
+    }
+  },
+  "migration_runners": {
+    "supabase_or_psql": [],
+    "kernel_kthreads_named_migration_N": ["migration/0", "migration/1", "migration/2", "migration/3"],
+    "observer_note": "pgrep supabase/psql empty. Kernel kthreads are not runners. The observer argv containing this classifier is not a runner."
+  },
+  "systemd": {
+    "bridge": "active running",
+    "radar_pipeline": "inactive dead",
+    "reanalysis_worker": "inactive dead",
+    "workbench_scheduler": "inactive dead",
+    "tender_worker_scheduler": "failed",
+    "reanalysis_timer": "inactive since 2026-09-18T07:33:29Z",
+    "radar_timer": "active",
+    "workbench_timer": "active",
+    "tender_timer": "active"
+  },
+  "claims": {
+    "f0a_pass": false,
+    "control_plane_reconciled": false,
+    "release_receipt": false
+  },
+  "env": {},
+  "secrets": false
+}
