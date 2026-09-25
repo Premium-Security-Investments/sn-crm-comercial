@@ -1,6 +1,6 @@
 begin;
 
--- SIIO sales client master (migration 092): private-client source of truth.
+-- SIIO sales client master (migration 093): private-client source of truth.
 -- No row of public.psi_sales_opportunities is deleted by this migration.
 
 -- Canonical trim + whitespace collapse + lowercase. The character set mirrors JavaScript \s,
