@@ -59,11 +59,26 @@ function requireUuid(value, label) {
   return value;
 }
 
+const CONTACT_CHANNELS = new Set(['email', 'whatsapp']);
+const MAX_COMMERCIAL_INTENT_LENGTH = 500;
+
 function parseGenerateBody(body) {
-  if (!exactKeys(body, ['opportunity_id'])) {
-    throw publicError('El cuerpo de generación Vig-IA debe incluir únicamente opportunity_id.', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  if (!exactKeys(body, ['opportunity_id', 'contact_channel'], ['commercial_intent'])) {
+    throw publicError('El cuerpo de generación Vig-IA debe incluir opportunity_id y contact_channel (canal).', 400, 'VIGIA_COPILOT_BAD_REQUEST');
   }
-  return { opportunityId: requireUuid(body.opportunity_id, 'La oportunidad') };
+  if (!CONTACT_CHANNELS.has(body.contact_channel)) {
+    throw publicError('El contact_channel (canal) de generación Vig-IA no es válido.', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  if (body.commercial_intent !== undefined
+    && (typeof body.commercial_intent !== 'string' || body.commercial_intent.length > MAX_COMMERCIAL_INTENT_LENGTH)) {
+    throw publicError('El commercial_intent (intención comercial) de generación Vig-IA no es válido.', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  const trimmedIntent = typeof body.commercial_intent === 'string' ? body.commercial_intent.trim() : '';
+  return {
+    opportunityId: requireUuid(body.opportunity_id, 'La oportunidad'),
+    contactChannel: body.contact_channel,
+    commercialIntent: trimmedIntent || undefined,
+  };
 }
 
 function parseFeedbackBody(body) {
@@ -174,7 +189,7 @@ export function createAgt003CopilotApi(dependencies) {
 
   return Object.freeze({
     async generate({ profile, body }) {
-      const { opportunityId } = parseGenerateBody(body);
+      const { opportunityId, contactChannel, commercialIntent } = parseGenerateBody(body);
       const resource = await dependencies.resolveOpportunityResource(opportunityId, profile);
       requireCommercialDraft(profile, resource);
       if (!dependencies.isConfigured()) {
@@ -195,11 +210,18 @@ export function createAgt003CopilotApi(dependencies) {
         approvedAssets,
         correlationId: correlationId(),
         snapshotId: context.snapshotId,
+        contactChannel,
+        commercialIntent,
       });
+      const intentPresent = Object.hasOwn(request, 'commercial_intent');
+      const { commercial_intent: _commercialIntent, ...persistableRequest } = request;
+      console.info('agt003_copilot_generate', { event: 'agt003_copilot_generate', contact_channel: request.contact_channel, intent_present: intentPresent });
       let idempotencyKey = computeAgt003CopilotIdempotencyKey({
         snapshotId: request.snapshot_id,
         policyVersion: config.policyVersion,
         model: config.model,
+        contactChannel: request.contact_channel,
+        intentPresent,
       });
       let claim;
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -231,7 +253,7 @@ export function createAgt003CopilotApi(dependencies) {
           actorId: profile.id,
           claimId: claim.claim_id,
           idempotencyKey,
-          request,
+          request: persistableRequest,
           response: generated.response,
           usage: generated.usage,
         });
@@ -249,7 +271,7 @@ export function createAgt003CopilotApi(dependencies) {
             actorId: profile.id,
             claimId: claim.claim_id,
             idempotencyKey,
-            request,
+            request: persistableRequest,
             policyVersion: config.policyVersion,
             model: config.model,
             usage: failureUsage(error, config.model),

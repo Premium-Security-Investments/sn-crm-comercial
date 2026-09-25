@@ -490,6 +490,9 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .vigia-preflight-alerts ul,.vigia-preflight-alerts ol{margin:0;padding-left:20px;display:grid;gap:4px}
 .vigia-preflight-context{margin:2px 0 0;font-size:13px;color:#52647d}
 .vigia-copilot-generate{display:grid;gap:6px;margin-top:8px;justify-items:start}
+.vigia-copilot-channel{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:0;margin:0;border:0}
+.vigia-copilot-channel legend{width:100%;padding:0;margin:0 0 6px;font-size:12px;font-weight:900;color:#334e72}
+.vigia-copilot-channel label{display:inline-flex;align-items:center;gap:6px;font-weight:400}
 .vigia-copilot-proposal-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .vigia-copilot-proposal-header h4{margin:0;color:#10213d}
 .vigia-copilot-proposal-header .secondary,.vigia-copilot-actions button{min-height:44px}

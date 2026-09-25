@@ -6,7 +6,7 @@ const CONTRACT_VIOLATION_MESSAGE = 'AGT-003 payload reduction contract violation
 const CANARY_CONSUMED_CODE = 'AGT003_REDUCED_CANARY_ALREADY_CONSUMED';
 const CANARY_CONSUMED_MESSAGE = 'AGT-003 reduced canary already consumed.';
 
-const ACCEPTED_POLICY_SHA256 = 'da9fb39efde3b76c2d6e528efc294b5b28691561c5ffc6215c3990c484a88c4c';
+const ACCEPTED_POLICY_SHA256 = '3d29b35d4672912a2831c8509e54d15f6367434d9e88d8a8223588c9cba2b4d8';
 
 const ANNOTATION_KEYS = new Set(['title', 'description', '$comment', 'examples', 'default', 'readOnly', 'writeOnly', 'deprecated']);
 

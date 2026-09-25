@@ -103,4 +103,50 @@ assert.throws(() => validateAgt003CopilotResponse(noReview, { request: validRequ
 const v1Before = readFileSync(path.join(root, 'contracts/agents/AGT-003/v1/manifest.json'), 'utf8');
 assert.match(v1Before, /"immutable": true/);
 
+// --- RED capa 1: canal de contacto e intención comercial (AÚN NO IMPLEMENTADO) ---
+
+assert.ok(requestSchema.required.includes('contact_channel'), 'requestSchema.required debe incluir contact_channel');
+
+const contactChannelEnum = requestSchema.properties.contact_channel?.enum ?? [];
+assert.deepEqual([...contactChannelEnum].sort(), ['email', 'whatsapp']);
+
+assert.ok(Object.hasOwn(requestSchema.properties, 'commercial_intent'), 'commercial_intent debe estar en properties');
+assert.ok(!requestSchema.required.includes('commercial_intent'), 'commercial_intent no debe ser required');
+assert.equal(requestSchema.properties.commercial_intent?.type, 'string');
+assert.equal(requestSchema.properties.commercial_intent?.maxLength, 500);
+
+const missingChannel = structuredClone(validRequest);
+delete missingChannel.contact_channel;
+assert.throws(() => validateAgt003CopilotRequest(missingChannel), /contact_channel|canal/i);
+
+const smsChannel = structuredClone(validRequest);
+smsChannel.contact_channel = 'sms';
+assert.throws(() => validateAgt003CopilotRequest(smsChannel), /contact_channel|canal/i);
+
+const longIntent = structuredClone(validRequest);
+longIntent.contact_channel = 'email';
+longIntent.commercial_intent = 'x'.repeat(501);
+assert.throws(() => validateAgt003CopilotRequest(longIntent), /intent|intenci[oó]n|500/i);
+
+const subjectSchema = responseSchema.properties.brief.properties.draft.properties.subject;
+const subjectAcceptsNull = (Array.isArray(subjectSchema.type) && subjectSchema.type.includes('null'))
+  || (Array.isArray(subjectSchema.anyOf) && subjectSchema.anyOf.some(option => option.type === 'null'))
+  || (Array.isArray(subjectSchema.oneOf) && subjectSchema.oneOf.some(option => option.type === 'null'));
+assert.ok(subjectAcceptsNull, 'responseSchema brief.draft.subject debe aceptar null');
+
+const emailRequestNullSubject = structuredClone(validRequest);
+emailRequestNullSubject.contact_channel = 'email';
+const nullSubjectResponse = structuredClone(validResponse);
+nullSubjectResponse.brief.draft.subject = null;
+assert.throws(() => validateAgt003CopilotResponse(nullSubjectResponse, { request: emailRequestNullSubject }), /subject|asunto/i);
+
+const whatsappRequestWithSubject = structuredClone(validRequest);
+whatsappRequestWithSubject.contact_channel = 'whatsapp';
+const whatsappSubjectResponse = structuredClone(validResponse);
+whatsappSubjectResponse.brief.draft.subject = 'Asunto no vacío';
+assert.throws(() => validateAgt003CopilotResponse(whatsappSubjectResponse, { request: whatsappRequestWithSubject }), /subject|asunto/i);
+
+assert.equal(requestSchema.properties.authority.properties.crm_write_allowed.const, false);
+assert.equal(requestSchema.properties.authority.properties.external_send_allowed.const, false);
+
 console.log('AGT-003 opportunity copilot v2-draft contract passed');

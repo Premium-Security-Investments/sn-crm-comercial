@@ -21,15 +21,17 @@ const briefUpdated = {
 
 // Escenario A: dos ciclos de generación controlados. Contrato aprobado: no hay traslado
 // programático de foco; tras cada generación el foco permanece en <body> y el estado se anuncia
-// con un `role="status"` sr-only. El segundo ciclo se dispara desde el botón secundario del
-// header de la propuesta (`.vigia-copilot-proposal-header button`), ya que el CTA externo
-// `.vigia-copilot-generate` desaparece una vez existe un borrador (ready).
+// con un `role="status"` sr-only. El botón secundario del header de la propuesta
+// (`.vigia-copilot-proposal-header button`) sólo vuelve al formulario de preparación
+// ("Cambiar preparación"), conservando el canal ya elegido; el segundo ciclo se dispara
+// pulsando de nuevo el CTA de generación del formulario.
 {
   const resolvers = [];
   const request = () => new Promise((resolve) => { resolvers.push(resolve); });
   const view = mountWithJsdom(VigiaOpportunityCopilot, { opportunityId: 'op-1', request, preflight, contextVersion: 'v1' });
   try {
     assert.equal(view.container.querySelector('[role="status"]'), null);
+    await view.click('input[type="radio"][value="email"]');
     await view.click('.vigia-copilot-generate button');
     assert.match(view.container.querySelector('[role="status"]').textContent, /está preparando un borrador acotado/);
     assert.equal(resolvers.length, 1, 'el primer ciclo debe encolar exactamente un resolver');
@@ -41,10 +43,15 @@ const briefUpdated = {
     assert.ok(status, 'debe existir un anuncio sr-only con role="status" en la propuesta');
     assert.equal(status.textContent.trim(), 'Propuesta preparada para revisión.');
 
-    const regenerateButton = view.container.querySelector('.vigia-copilot-proposal-header button');
-    assert.ok(regenerateButton, 'el segundo ciclo se dispara desde el botón del header de la propuesta');
-    assert.equal(regenerateButton.textContent, 'Actualizar propuesta');
+    const changePreparationButton = view.container.querySelector('.vigia-copilot-proposal-header button');
+    assert.ok(changePreparationButton, 'debe existir el botón para volver a la preparación');
+    assert.equal(changePreparationButton.textContent, 'Cambiar preparación');
     await view.click('.vigia-copilot-proposal-header button');
+    assert.equal(resolvers.length, 1, 'cambiar de preparación no dispara una generación automática');
+    const emailRadioAfterChange = view.container.querySelector('input[type="radio"][value="email"]');
+    assert.equal(emailRadioAfterChange.checked, true, 'el canal elegido se conserva al volver a la preparación');
+
+    await view.click('.vigia-copilot-generate button');
     assert.match(view.container.querySelector('[role="status"]').textContent, /está preparando un borrador acotado/);
     assert.equal(resolvers.length, 2, 'el segundo ciclo debe encolar un nuevo resolver (r2)');
     resolvers[1]({ run_id: 'r2', status: 'completed', human_review_required: true, output: { brief: briefUpdated } });
@@ -78,6 +85,7 @@ const briefUpdated = {
   const abstainRequest = () => new Promise((resolve) => { resolveAbstain = resolve; });
   const view = mountWithJsdom(VigiaOpportunityCopilot, { opportunityId: 'op-2', request: abstainRequest, preflight: abstainPreflight, contextVersion: 'v1' });
   try {
+    await view.click('input[type="radio"][value="whatsapp"]');
     await view.click('.vigia-copilot-generate button');
     assert.match(view.container.querySelector('[role="status"]').textContent, /está preparando un borrador acotado/);
     resolveAbstain({ run_id: 'r-abstain', status: 'completed', human_review_required: true, output: { brief: abstainBrief } });

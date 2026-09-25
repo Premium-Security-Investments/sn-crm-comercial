@@ -3,6 +3,7 @@ import { validateAgt003CopilotRequest, validateAgt003CopilotResponse } from './a
 
 const IDEMPOTENCY_KEY = /^[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CONTACT_CHANNELS = new Set(['email', 'whatsapp']);
 
 function requireText(value, label) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} es obligatorio para persistir Vig-IA.`);
@@ -37,11 +38,15 @@ export function computeAgt003CopilotHash(value) {
   return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
 }
 
-export function computeAgt003CopilotIdempotencyKey({ snapshotId, policyVersion, model }) {
+export function computeAgt003CopilotIdempotencyKey({ snapshotId, policyVersion, model, contactChannel, intentPresent = false }) {
   const snapshot = requireText(snapshotId, 'El snapshot');
   const policy = requireText(policyVersion, 'La versión de política');
   const modelId = requireText(model, 'El modelo');
-  return createHash('sha256').update(`agt003-copilot\0${snapshot}\0${policy}\0${modelId}`).digest('hex');
+  if (!CONTACT_CHANNELS.has(contactChannel)) {
+    throw new Error('El contact_channel (canal de contacto) es obligatorio para la clave de idempotencia Vig-IA.');
+  }
+  const intentFlag = Boolean(intentPresent) ? '1' : '0';
+  return createHash('sha256').update(`agt003-copilot\0${snapshot}\0${policy}\0${modelId}\0${contactChannel}\0${intentFlag}`).digest('hex');
 }
 
 export function computeAgt003CopilotRetryKey({ previousKey, failedRunId }) {
@@ -108,6 +113,11 @@ function validateUsage(usage, model) {
   }
 }
 
+function stripCommercialIntent(request) {
+  const { commercial_intent, ...persisted } = request;
+  return { persisted, intentPresent: typeof commercial_intent === 'string' && commercial_intent.trim().length > 0 };
+}
+
 export async function recordAgt003CopilotRun(database, { opportunityId, actorId, claimId, idempotencyKey: claimedIdempotencyKey, request, response, usage }) {
   const opportunity = requireText(opportunityId, 'La oportunidad');
   const actor = requireText(actorId, 'El actor');
@@ -115,10 +125,13 @@ export async function recordAgt003CopilotRun(database, { opportunityId, actorId,
   validateAgt003CopilotRequest(request);
   validateAgt003CopilotResponse(response, { request });
   validateUsage(usage, response.model);
+  const { persisted: persistedRequest, intentPresent } = stripCommercialIntent(request);
   const baseIdempotencyKey = computeAgt003CopilotIdempotencyKey({
     snapshotId: response.snapshot_id,
     policyVersion: response.policy_version,
     model: response.model,
+    contactChannel: request.contact_channel,
+    intentPresent,
   });
   const idempotencyKey = claimedIdempotencyKey === undefined
     ? baseIdempotencyKey
@@ -135,7 +148,7 @@ export async function recordAgt003CopilotRun(database, { opportunityId, actorId,
     p_model: response.model,
     p_output: response,
     p_usage: usage,
-    p_input_hash: computeAgt003CopilotHash(request),
+    p_input_hash: computeAgt003CopilotHash(persistedRequest),
     p_output_hash: computeAgt003CopilotHash(response),
   }), 'El registro de ejecución Vig-IA');
   const runId = requireText(row.id, 'La ejecución Vig-IA');
@@ -170,10 +183,13 @@ export async function recordAgt003CopilotFailure(database, {
   if (typeof failureCode !== 'string' || !/^[A-Z0-9_]{1,80}$/.test(failureCode)) {
     throw new Error('El código de failure Vig-IA no es válido.');
   }
+  const { persisted: persistedRequest, intentPresent } = stripCommercialIntent(request);
   const baseIdempotencyKey = computeAgt003CopilotIdempotencyKey({
     snapshotId: request.snapshot_id,
     policyVersion: policy,
     model: modelId,
+    contactChannel: request.contact_channel,
+    intentPresent,
   });
   const idempotencyKey = claimedIdempotencyKey === undefined
     ? baseIdempotencyKey
@@ -189,7 +205,7 @@ export async function recordAgt003CopilotFailure(database, {
     p_policy_version: policy,
     p_model: modelId,
     p_usage: usage,
-    p_input_hash: computeAgt003CopilotHash(request),
+    p_input_hash: computeAgt003CopilotHash(persistedRequest),
     p_failure_code: failureCode,
   }), 'El registro de fallo Vig-IA');
   return {

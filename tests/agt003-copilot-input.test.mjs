@@ -45,6 +45,7 @@ const request = buildAgt003CopilotRequest({
   approvedAssets: assets,
   correlationId: 'corr-001',
   snapshotId: 'snapshot-001',
+  contactChannel: 'email',
 });
 
 assert.equal(request.contract_version, '2.0-draft.1');
@@ -90,6 +91,7 @@ const reordered = buildAgt003CopilotRequest({
   approvedAssets: structuredClone(assets),
   correlationId: 'corr-001',
   snapshotId: 'snapshot-001',
+  contactChannel: 'email',
 });
 assert.deepEqual(reordered, request, 'input ordering must not change the canonical request');
 

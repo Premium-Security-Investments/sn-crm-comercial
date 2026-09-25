@@ -698,6 +698,7 @@ test('a real M1 canary package built with AGT003_COPILOT_POLICY and createAgt003
     capability_id: 'agt003.opportunity-copilot.preview',
     correlation_id: 'corr-m1m2-int-0001',
     snapshot_id: 'snap-m1m2-int-0001',
+    contact_channel: 'email',
     opportunity: {
       opportunity_id: 'opp-m1m2-int-0001',
       title: 'Oportunidad sintética de integración M1-M2',

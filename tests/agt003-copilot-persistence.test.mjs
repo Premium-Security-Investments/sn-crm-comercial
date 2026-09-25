@@ -27,10 +27,10 @@ const ids = {
 
 assert.match(computeAgt003CopilotHash(request), /^[a-f0-9]{64}$/);
 assert.equal(computeAgt003CopilotHash(request), computeAgt003CopilotHash(structuredClone(request)));
-const key = computeAgt003CopilotIdempotencyKey({ snapshotId: request.snapshot_id, policyVersion: response.policy_version, model: response.model });
+const key = computeAgt003CopilotIdempotencyKey({ snapshotId: request.snapshot_id, policyVersion: response.policy_version, model: response.model, contactChannel: 'email', intentPresent: false });
 assert.match(key, /^[a-f0-9]{64}$/);
-assert.equal(key, computeAgt003CopilotIdempotencyKey({ snapshotId: request.snapshot_id, policyVersion: response.policy_version, model: response.model }));
-assert.notEqual(key, computeAgt003CopilotIdempotencyKey({ snapshotId: `${request.snapshot_id}-other`, policyVersion: response.policy_version, model: response.model }));
+assert.equal(key, computeAgt003CopilotIdempotencyKey({ snapshotId: request.snapshot_id, policyVersion: response.policy_version, model: response.model, contactChannel: 'email', intentPresent: false }));
+assert.notEqual(key, computeAgt003CopilotIdempotencyKey({ snapshotId: `${request.snapshot_id}-other`, policyVersion: response.policy_version, model: response.model, contactChannel: 'email', intentPresent: false }));
 assert.equal(typeof agt003Persistence.computeAgt003CopilotRetryKey, 'function', 'persistencia debe exponer la derivación cerrada de retry');
 const retryKey = agt003Persistence.computeAgt003CopilotRetryKey({ previousKey: key, failedRunId: ids.run });
 assert.match(retryKey, /^[a-f0-9]{64}$/);

@@ -148,11 +148,28 @@ export function buildAgt003Interactions(interactions) {
   return result;
 }
 
-export function buildAgt003CopilotRequest({ opportunity, interactions = [], approvedAssets = [], correlationId, snapshotId, now = () => new Date() }) {
+const CONTACT_CHANNELS = ['email', 'whatsapp'];
+const MAX_COMMERCIAL_INTENT_LENGTH = 500;
+
+export function buildAgt003CopilotRequest({
+  opportunity, interactions = [], approvedAssets = [], correlationId, snapshotId, contactChannel, commercialIntent,
+  now = () => new Date(),
+}) {
   if (!opportunity || typeof opportunity !== 'object' || Array.isArray(opportunity)) throw new Error('La oportunidad es obligatoria.');
   if (!nonEmptyString(correlationId)) throw new Error('correlationId es obligatorio.');
   if (!nonEmptyString(snapshotId)) throw new Error('snapshotId es obligatorio.');
   if (!Array.isArray(approvedAssets)) throw new Error('approvedAssets debe ser un arreglo validado.');
+  if (!CONTACT_CHANNELS.includes(contactChannel)) {
+    throw new Error('contact_channel (canal de contacto) es obligatorio y debe ser "email" o "whatsapp".');
+  }
+  if (commercialIntent !== undefined && commercialIntent !== null
+    && (typeof commercialIntent !== 'string' || commercialIntent.length > MAX_COMMERCIAL_INTENT_LENGTH)) {
+    throw new Error('commercial_intent (intención comercial) debe ser texto de máximo 500 caracteres.');
+  }
+  const trimmedIntent = typeof commercialIntent === 'string' ? commercialIntent.trim() : '';
+  if (trimmedIntent.length > MAX_COMMERCIAL_INTENT_LENGTH) {
+    throw new Error('commercial_intent (intención comercial) debe ser texto de máximo 500 caracteres.');
+  }
   // El backend puede fijar `preparation_date` (misma fuente que el hash del snapshot); en ese caso
   // gobierna sobre `now`, así un run reutilizado no arrastra una fecha vieja ni una nueva inconsistente.
   const preparationDate = nonEmptyString(opportunity.preparation_date)
@@ -164,6 +181,8 @@ export function buildAgt003CopilotRequest({ opportunity, interactions = [], appr
     capability_id: AGT003_COPILOT_CAPABILITY,
     correlation_id: correlationId,
     snapshot_id: snapshotId,
+    contact_channel: contactChannel,
+    ...(trimmedIntent ? { commercial_intent: trimmedIntent } : {}),
     opportunity: {
       opportunity_id: requiredText(opportunity.id, 'id'),
       title: requiredText(opportunity.title, 'title'),

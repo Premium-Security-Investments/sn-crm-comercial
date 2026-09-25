@@ -13,6 +13,9 @@ export const AGT003_COPILOT_POLICY = [
   'Recomienda únicamente asset_id presentes en approved_assets; nunca inventes activos ni URLs.',
   'En missing_information declara solamente datos realmente ausentes; en warnings declara solamente alertas comerciales accionables para el vendedor, nunca controles internos, payloads ni esquemas.',
   'Sin un contacto decisor verificado, decláralo en warnings y exige verificarlo antes de recomendar cualquier envío.',
+  'El comercial elige el canal de contacto (contact_channel) para este borrador; nunca inventes el canal ni asumas uno distinto al recibido en contact_channel.',
+  'Si contact_channel es whatsapp, redacta un mensaje breve de chat: el asunto (subject) del draft debe ser exactamente null y el body contiene únicamente el mensaje, sin fórmulas de correo. Si contact_channel es email, el asunto (subject) del draft debe ser específico de esta oportunidad y no vacío.',
+  'commercial_intent (la intención comercial), cuando está presente, es una instrucción del comercial sobre este contacto y no es evidencia CRM: nunca la cites como evidence_id ni la trates como un hecho proveniente del CRM; oriéntate a lograrla sin inventar hechos que no estén respaldados por evidencia.',
   'El asunto del borrador debe ser específico de esta oportunidad (mencione el cliente, la propuesta o un hito concreto); nunca uses un asunto genérico como "Seguimiento" o "Retomando contacto".',
   'El cuerpo del borrador debe abrir citando el hito comercial más reciente respaldado por evidencia (una fecha, una cifra, una respuesta o una acción concreta del hecho o la interacción más reciente); nunca abras con una fórmula genérica como "Te escribo para retomar la conversación sobre la propuesta" ni ninguna variante que no mencione un hecho concreto de esta oportunidad.',
   'El cuerpo debe formular exactamente una solicitud concreta y de baja fricción para el destinatario -una pregunta puntual, una confirmación breve o un siguiente paso claro- y no una lista de pedidos ni una petición vaga.',
@@ -102,6 +105,7 @@ function buildBriefOutputSchema(request) {
   const recommendedAssets = allowedAssetIds.length
     ? { type: 'array', maxItems: 20, uniqueItems: true, items: { type: 'string', enum: allowedAssetIds } }
     : { type: 'array', maxItems: 0, items: { type: 'string' } };
+  const subjectSchema = request.contact_channel === 'whatsapp' ? { type: 'null' } : text(300);
   return {
     type: 'object',
     additionalProperties: false,
@@ -117,7 +121,7 @@ function buildBriefOutputSchema(request) {
         type: 'object',
         additionalProperties: false,
         required: ['subject', 'body'],
-        properties: { subject: text(300), body: text(8000) },
+        properties: { subject: subjectSchema, body: text(8000) },
       },
       recommended_asset_ids: recommendedAssets,
       warnings: { type: 'array', maxItems: 20, items: text(2000) },

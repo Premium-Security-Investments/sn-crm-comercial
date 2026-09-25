@@ -21,6 +21,7 @@ const okResult = subject => ({
   const view = mountWithJsdom(VigiaOpportunityCopilot, { opportunityId: 'op-1', request, preflight, contextVersion: 'v1' });
   const idleButton = view.container.querySelector('.vigia-copilot-generate button');
   assert.equal(idleButton.className.includes('secondary'), false, 'en idle el CTA de preparación es primario, no secundario');
+  await view.click('input[type="radio"][value="email"]');
   await view.click('.vigia-copilot-generate button');
   assert.deepEqual(calls, ['/api/vigia/copilot/generate']);
   assert.ok(view.container.querySelector('.vigia-copilot-generate button[disabled]'));
@@ -31,8 +32,8 @@ const okResult = subject => ({
   // se dispara únicamente desde el botón secundario dentro del header de la propuesta.
   assert.equal(view.container.querySelector('.vigia-copilot-generate'), null, 'en ready no debe existir el CTA externo de preparación');
   const regenerateButton = view.container.querySelector('.vigia-copilot-proposal-header button');
-  assert.equal(regenerateButton.textContent, 'Actualizar propuesta');
-  assert.ok(regenerateButton.className.includes('secondary'), 'tras generar, "Actualizar propuesta" debe ser visualmente secundario');
+  assert.equal(regenerateButton.textContent, 'Cambiar preparación');
+  assert.ok(regenerateButton.className.includes('secondary'), 'tras generar, "Cambiar preparación" debe ser visualmente secundario');
   const copyButton = [...view.container.querySelectorAll('.vigia-copilot-actions button')].find(b => b.textContent === 'Copiar correo');
   assert.ok(copyButton, 'debe existir el botón primario "Copiar correo"');
   assert.equal(copyButton.className.includes('secondary'), false, '"Copiar correo" sigue siendo la acción primaria');
@@ -43,6 +44,7 @@ const okResult = subject => ({
   const request = () => Promise.reject(new Error('bridge unavailable'));
   const view = mountWithJsdom(VigiaOpportunityCopilot, { opportunityId: 'op-2', request, preflight, contextVersion: 'v1' });
   const alertsBefore = view.container.querySelector('.vigia-preflight-alerts').textContent;
+  await view.click('input[type="radio"][value="email"]');
   await view.click('.vigia-copilot-generate button'); await view.flush();
   assert.equal(view.container.querySelector('.vigia-preflight-alerts').textContent, alertsBefore);
   assert.equal(view.container.querySelector('.vigia-copilot-generate'), null, 'sin botón primario en error');
