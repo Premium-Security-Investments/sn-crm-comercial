@@ -7,6 +7,7 @@ import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { planRadarPhaseIdentitySync, applyOfficialSourceLink } from '../tender-phase-identity.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
 import { createTenderProcessingDrain } from '../tender-processing-drain.js';
@@ -1723,16 +1724,67 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
     return radarPayload(live, new Date().toISOString(), 'live_no_table', diagnostics);
   }
   const now = new Date().toISOString();
-  const rows = persistenceTenders.map(t => ({
-    stable_key: stableTenderKey(t), source: t.source, section: normalizeTenderPersistenceSection(t.section), entity: t.entity, dept: t.dept || null, city: t.city || null,
-    ref: t.ref || null, process_id: t.process_id || null, title: t.title, description: t.desc || null, value: Number(t.value || 0),
-    category: t.category || null, published_at: t.published || null,
-    ...(t.status ? { status: t.status } : {}), ...(t.deadline ? { deadline_at: t.deadline } : {}),
-    score: Number(t.score || 0), reasons: t.reasons || [], risks: t.risks || [], url: t.url || null, raw: t.raw || null, last_seen_at: now
-  }));
+  const tagged = persistenceTenders.map(t => ({ ...t, stable_key: t.stable_key || stableTenderKey(t) }));
+  const fetchedKeys = [...new Set(tagged.map(t => t.stable_key).filter(Boolean))];
+  const { data: existingConverted, error: convertedReadError } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').eq('internal_status', 'convertida_oportunidad');
+  if (convertedReadError) throw convertedReadError;
+  let existingFetched = [];
+  if (fetchedKeys.length) {
+    const { data, error } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').in('stable_key', fetchedKeys);
+    if (error) throw error;
+    existingFetched = data || [];
+  }
+  const existingByKey = new Map();
+  for (const row of [...(existingConverted || []), ...existingFetched]) {
+    if (row?.stable_key) existingByKey.set(row.stable_key, row);
+  }
+  const plan = planRadarPhaseIdentitySync({ fetched: tagged, existing: [...existingByKey.values()] });
+  const omit = new Set(plan.omitStableKeys || []);
+  const overrides = new Map((plan.convertedOverrides || []).map(row => [row.stable_key, row]));
+  const rows = tagged.map(t => {
+    if (omit.has(t.stable_key)) return null;
+    const override = overrides.get(t.stable_key);
+    return {
+      stable_key: t.stable_key || stableTenderKey(t), source: t.source, section: normalizeTenderPersistenceSection(t.section), entity: t.entity, dept: t.dept || null, city: t.city || null,
+      ref: t.ref || null, process_id: override?.process_id || t.process_id || null, title: t.title, description: t.desc || null, value: Number(t.value || 0),
+      category: t.category || null, published_at: t.published || null,
+      ...((override?.status || t.status) ? { status: override?.status || t.status } : {}), ...((override?.deadline_at || t.deadline) ? { deadline_at: override?.deadline_at || t.deadline } : {}),
+      score: Number(t.score || 0), reasons: t.reasons || [], risks: t.risks || [], url: override?.url || t.url || null, raw: t.raw || null, last_seen_at: now
+    };
+  }).filter(Boolean);
+  for (const override of plan.convertedOverrides || []) {
+    if (rows.some(row => row.stable_key === override.stable_key)) continue;
+    const converted = existingByKey.get(override.stable_key);
+    if (!converted) continue;
+    rows.push({
+      stable_key: override.stable_key, source: converted.source, section: normalizeTenderPersistenceSection(converted.section), entity: converted.entity, dept: converted.dept || null, city: converted.city || null,
+      ref: converted.ref || null, process_id: override.process_id || converted.process_id || null, title: converted.title, description: converted.description || converted.desc || null, value: Number(converted.value || 0),
+      category: converted.category || null, published_at: converted.published_at || converted.published || null,
+      ...((override.status || converted.status) ? { status: override.status || converted.status } : {}), ...((override.deadline_at || converted.deadline_at) ? { deadline_at: override.deadline_at || converted.deadline_at } : {}),
+      score: Number(converted.score || 0), reasons: converted.reasons || [], risks: converted.risks || [], url: override.url || converted.url || null, raw: converted.raw || null, last_seen_at: now
+    });
+  }
   if (rows.length) {
     const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows, { onConflict: 'stable_key', defaultToNull: false });
     if (upsertError) throw upsertError;
+  }
+  for (const key of plan.discardStableKeys || []) {
+    const { error: discardError } = await database.from('psi_public_tenders').update({ internal_status: 'descartada' }).eq('stable_key', key).neq('internal_status', 'convertida_oportunidad');
+    if (discardError) throw discardError;
+  }
+  if ((plan.opportunityPatches || []).length) {
+    const ids = plan.opportunityPatches.map(patch => patch.converted_opportunity_id).filter(Boolean);
+    const { data: opportunities, error: opportunityReadError } = await database.from('psi_sales_opportunities').select('id,observaciones,expected_close_date').in('id', ids);
+    if (opportunityReadError) throw opportunityReadError;
+    const byId = new Map((opportunities || []).map(row => [row.id, row]));
+    for (const patch of plan.opportunityPatches) {
+      const opportunity = byId.get(patch.converted_opportunity_id);
+      if (!opportunity) continue;
+      const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl });
+      const expected_close_date = patch.deadline ? String(patch.deadline).slice(0, 10) : opportunity.expected_close_date;
+      const { error: opportunityWriteError } = await database.from('psi_sales_opportunities').update({ observaciones, expected_close_date }).eq('id', opportunity.id);
+      if (opportunityWriteError) throw opportunityWriteError;
+    }
   }
   await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: fetched.length, count_hacer: fetched.filter(r => r.section === 'hacer').length, count_revisar: fetched.filter(r => r.section === 'revisar').length, count_prioridad_baja: fetched.filter(r => r.section === 'prioridad_baja').length, summary: `Radar multifuente sincronizado: ${fetched.length} procesos/eventos visibles; ${rows.length} actualizados. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
   const persisted = await readPersistedTenderRadar(database);
