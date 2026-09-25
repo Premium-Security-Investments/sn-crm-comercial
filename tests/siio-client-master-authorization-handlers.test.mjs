@@ -113,6 +113,7 @@ const clients = {
 
 let clientCounter = 0;
 let opportunityCounter = 0;
+let rpcOpportunityCounter = 0;
 const observed = [];
 
 function record(req, url, body = undefined) {
@@ -134,6 +135,10 @@ function opportunityWrites() {
 
 function clientWrites() {
   return observed.filter(call => call.path === '/rest/v1/psi_sales_clients' && ['POST', 'PATCH'].includes(call.method));
+}
+
+function rpcWrites() {
+  return observed.filter(call => call.path === '/rest/v1/rpc/psi_persist_sales_opportunity' && call.method === 'POST');
 }
 
 const fakeSupabase = http.createServer(async (req, res) => {
@@ -228,6 +233,14 @@ const fakeSupabase = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/rest/v1/rpc/psi_persist_sales_opportunity') {
+    const args = await readJson(req);
+    record(req, url, args);
+    const id = `rpc-created-opportunity-${++rpcOpportunityCounter}`;
+    const clientId = args?.p_requested_client_id || (args?.p_client ? `rpc-created-client-${rpcOpportunityCounter}` : null);
+    return json(res, 200, { id, client_id: clientId });
+  }
+
   record(req, url);
   return json(res, 500, { message: `unexpected Supabase access: ${req.method} ${url.pathname}` });
 });
@@ -272,6 +285,7 @@ try {
     assert.equal(response.status, 403, 'reassigning to a client master with a different customer_segment must be blocked for a profile without can_edit_customer_segment');
     assert.equal(opportunityWrites().length, 0, 'no opportunity write must happen once the effective customer_segment change is unauthorized');
     assert.equal(clientWrites().length, 0, 'no client master write must happen once the request is rejected');
+    assert.equal(rpcWrites().length, 0, 'no persist RPC call must happen once the request is rejected');
   }
 
   // 2) A user authorized to edit opportunity A but not sibling opportunity B
@@ -298,11 +312,14 @@ try {
     assert.equal(response.status, 403, 'a master-field edit that would sync to an unauthorized sibling opportunity must fail closed');
     assert.equal(opportunityWrites().length, 0, 'neither the target opportunity nor its sibling may be written when sibling authorization cannot be established');
     assert.equal(clientWrites().length, 0, 'the shared client master must not be updated when sibling authorization cannot be established');
+    assert.equal(rpcWrites().length, 0, 'no persist RPC call must happen when sibling authorization cannot be established');
   }
 
   // 3) POSTing a licitacion_publica opportunity with company_name must not
   // create or link a psi_sales_clients master row: tender-sourced
-  // opportunities are not customer-master candidates.
+  // opportunities are not customer-master candidates. Persistence now goes
+  // through exactly one call to the psi_persist_sales_opportunity RPC --
+  // never a direct POST/PATCH to psi_sales_clients or psi_sales_opportunities.
   {
     resetObserved();
     const response = await requestJson(appPort, '/api/opportunities', 'admin-token', 'POST', {
@@ -314,10 +331,15 @@ try {
       regional_nombre: 'Nariño',
     });
     assert.equal(response.status, 201, 'licitacion_publica opportunities must still be creatable');
-    assert.equal(clientWrites().filter(call => call.method === 'POST').length, 0, 'licitacion_publica creation must not insert into psi_sales_clients');
-    const insertedOpportunity = opportunityWrites().find(call => call.method === 'POST');
-    assert.ok(insertedOpportunity, 'creation must perform an opportunity insert');
-    assert.equal(insertedOpportunity.body.client_id ?? null, null, 'licitacion_publica opportunities must be created with client_id null');
+    assert.equal(clientWrites().length, 0, 'licitacion_publica creation must not directly write psi_sales_clients');
+    assert.equal(opportunityWrites().length, 0, 'licitacion_publica creation must not directly write psi_sales_opportunities');
+    const rpcCalls = rpcWrites();
+    assert.equal(rpcCalls.length, 1, 'creation must call the atomic persist RPC exactly once');
+    const [rpcCall] = rpcCalls;
+    assert.equal(rpcCall.body.p_mode, 'create', 'creation must invoke the persist RPC in create mode');
+    assert.equal(rpcCall.body.p_requested_client_id ?? null, null, 'licitacion_publica opportunities must be persisted with p_requested_client_id null');
+    assert.equal(rpcCall.body.p_client ?? null, null, 'licitacion_publica opportunities must be persisted with p_client null');
+    assert.equal(rpcCall.body.p_opportunity.service_type_code, 'licitacion_publica', 'the persisted opportunity payload must carry service_type_code licitacion_publica');
   }
 } finally {
   console.error = originalConsoleError;
