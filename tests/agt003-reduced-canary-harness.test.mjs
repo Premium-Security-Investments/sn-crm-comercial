@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
-import { createAgt003ReducedCanaryHarness } from '../agt003-reduced-canary-harness.js';
+import {
+  createAgt003ReducedCanaryHarness,
+  AGT003_REDUCED_CANARY_REVISION_BINDING,
+} from '../agt003-reduced-canary-harness.js';
 import { createAgt003CopilotEngine } from '../agt003-copilot-engine.js';
 import { createAgt003SingleCanaryPackage, reduceAgt003PayloadOffline } from '../agt003-payload-reduction.js';
 
@@ -40,10 +44,12 @@ const SNAPSHOT_MISMATCH_CODE = 'AGT003_REDUCED_CANARY_SNAPSHOT_MISMATCH';
 //     lugar de un ID validado -> AUTHORIZATION_INVALID_REVIEWER_ID_CODE.
 //   - Objeto completo cuyo gate, correlation_id, snapshot_id o revision difieren del valor exigido
 //     (gate='AGT003_SINGLE_REDUCED_CANARY', correlation_id/snapshot_id idénticos a los configurados
-//     en el harness, revision='c66e9603f356648830ec3b4f7c4507c5ce0953e8') -> AUTHORIZATION_MISMATCH_CODE.
+//     en el harness, revision=AGT003_REDUCED_CANARY_REVISION_BINDING.authorization_revision, el
+//     digest canónico que liga main_base_revision y harness_source_revision, nunca un único SHA de
+//     commit pineado) -> AUTHORIZATION_MISMATCH_CODE.
 //   - En todos los casos anteriores, el executor no debe invocarse y no debe auditarse nada.
 const AUTHORIZATION_GATE = 'AGT003_SINGLE_REDUCED_CANARY';
-const AUTHORIZATION_REVISION = 'c66e9603f356648830ec3b4f7c4507c5ce0953e8';
+const AUTHORIZATION_REVISION = AGT003_REDUCED_CANARY_REVISION_BINDING.authorization_revision;
 const DIVERGENT_REVISION = '0000000000000000000000000000000000dead';
 const HUMAN_REVIEWER_ID = 'reviewer-synthetic-0001';
 const REQUIRED_AUTHORIZATION_KEYS = Object.freeze([
@@ -67,6 +73,10 @@ const AUTHORIZATION_MISMATCH_CODE = 'AGT003_REDUCED_CANARY_AUTHORIZATION_MISMATC
 // el sink nunca reciba el evento rechazado ni el texto libre que lo motivó.
 const AUDIT_UNSAFE_RESULT_FIELDS_CODE = 'AGT003_REDUCED_CANARY_AUDIT_UNSAFE_RESULT_FIELDS';
 const AUDIT_UNSAFE_METADATA_VALUE_CODE = 'AGT003_REDUCED_CANARY_AUDIT_UNSAFE_METADATA_VALUE';
+// provider_is_error debe ser consistente con outcome: provider_is_error=false junto a
+// outcome='provider_error' (o viceversa) es un resultado crudo contradictorio del executor y debe
+// rechazarse ANTES de invocar el medidor de costo y ANTES de auditar, nunca aceptarse como éxito.
+const PROVIDER_OUTCOME_INCONSISTENT_CODE = 'AGT003_REDUCED_CANARY_PROVIDER_OUTCOME_INCONSISTENT';
 const ALLOWLISTED_AUDIT_EVENT_NAME = 'agt003_reduced_canary_run_completed';
 const ALLOWLISTED_AUDIT_EVENT_KEYS = Object.freeze([
   'name',
@@ -869,7 +879,7 @@ test('una autorización con gate, correlation_id, snapshot_id o revision diverge
   }
 });
 
-test('una revision de autorización distinta al commit pineado se rechaza aunque gate, IDs y reviewer sean válidos', async () => {
+test('una revision de autorización distinta al digest de revision_binding exigido se rechaza aunque gate, IDs y reviewer sean válidos', async () => {
   const authorization = createValidAuthorization({ revision: DIVERGENT_REVISION });
   const { canaryPackage } = createCanaryPackage();
   const { executor, callsRef: executorCallsRef } = createResolvingExecutor();
@@ -886,10 +896,33 @@ test('una revision de autorización distinta al commit pineado se rechaza aunque
   assert.equal(
     code,
     AUTHORIZATION_MISMATCH_CODE,
-    'una revision distinta al commit pineado c66e9603f356648830ec3b4f7c4507c5ce0953e8 debe rechazarse',
+    'una revision distinta al digest de revision_binding exigido debe rechazarse',
   );
-  assert.equal(executorCallsRef(), 0, 'el executor no debe invocarse con una revision distinta al commit pineado');
+  assert.equal(executorCallsRef(), 0, 'el executor no debe invocarse con una revision distinta al digest de revision_binding exigido');
   assert.equal(entries.length, 0, 'no debe auditarse un recorrido con revision divergente');
+});
+
+test('la revisión obsoleta c66e9603 (antiguo SHA de único commit pineado) se rechaza tras reconciliar el harness con el main publicable', async () => {
+  const authorization = createValidAuthorization({ revision: 'c66e9603f356648830ec3b4f7c4507c5ce0953e8' });
+  const { canaryPackage } = createCanaryPackage();
+  const { executor, callsRef: executorCallsRef } = createResolvingExecutor();
+  const { audit, entries } = createAudit();
+  const harness = createHarness({ canaryPackage, executor, audit, authorization });
+
+  let code = null;
+  try {
+    await harness.run();
+  } catch (error) {
+    code = error?.code ?? null;
+  }
+
+  assert.equal(
+    code,
+    AUTHORIZATION_MISMATCH_CODE,
+    'la revisión obsoleta c66e9603, ya no un único commit pineado sino un valor superado por el digest de revision_binding, debe rechazarse una vez el harness se reconcilia con el main publicable',
+  );
+  assert.equal(executorCallsRef(), 0, 'el executor no debe invocarse con la revisión obsoleta');
+  assert.equal(entries.length, 0, 'no debe auditarse un recorrido con la revisión obsoleta');
 });
 
 test('una autorización completa y exacta permite el recorrido y el executor se invoca exactamente una vez', async () => {
@@ -904,6 +937,71 @@ test('una autorización completa y exacta permite el recorrido y el executor se 
   assert.equal(result.termination, 'normal', 'una autorización válida no debe impedir un recorrido exitoso');
   assert.equal(executorCallsRef(), 1, 'el executor debe invocarse exactamente una vez con autorización válida');
   assert.equal(entries.length, 1, 'un recorrido autorizado y exitoso debe auditarse exactamente una vez');
+});
+
+// --- Grupo 3A: binding de revisión -- digest canónico ligado a main_base_revision y
+// harness_source_revision, nunca seleccionable ni sobreescribible por el caller ---
+
+test('AGT003_REDUCED_CANARY_REVISION_BINDING está congelado, expone exactamente los cuatro campos exigidos, y su authorization_revision es el digest SHA-256 canónico', () => {
+  assert.equal(Object.isFrozen(AGT003_REDUCED_CANARY_REVISION_BINDING), true, 'el binding de revisión debe estar congelado (Object.freeze)');
+
+  assert.deepEqual(
+    Object.keys(AGT003_REDUCED_CANARY_REVISION_BINDING).sort(),
+    ['authorization_revision', 'harness_source_revision', 'main_base_revision', 'scheme'].sort(),
+    'el binding de revisión debe exponer exactamente los cuatro campos exigidos, sin más ni menos',
+  );
+
+  assert.equal(AGT003_REDUCED_CANARY_REVISION_BINDING.scheme, 'agt003-reduced-canary-revision-binding-v1');
+  assert.equal(AGT003_REDUCED_CANARY_REVISION_BINDING.main_base_revision, '932fc4531ecddf4f194ed4e0955b1d4183dad739');
+  assert.equal(AGT003_REDUCED_CANARY_REVISION_BINDING.harness_source_revision, '46f7b8e796c2be359d89cd9ec9f8d8d0d8351f05');
+  assert.equal(AGT003_REDUCED_CANARY_REVISION_BINDING.authorization_revision, 'b46fa84615933c6c7bd4bc833f07e247a37639ab0dade3927f215c730774474a');
+
+  const canonicalText =
+    `${AGT003_REDUCED_CANARY_REVISION_BINDING.scheme}\n` +
+    `main_base_revision=${AGT003_REDUCED_CANARY_REVISION_BINDING.main_base_revision}\n` +
+    `harness_source_revision=${AGT003_REDUCED_CANARY_REVISION_BINDING.harness_source_revision}\n`;
+  const expectedDigest = createHash('sha256').update(canonicalText).digest('hex');
+
+  assert.equal(
+    AGT003_REDUCED_CANARY_REVISION_BINDING.authorization_revision,
+    expectedDigest,
+    'authorization_revision debe ser exactamente el digest SHA-256 del texto canónico que liga main_base_revision y harness_source_revision',
+  );
+});
+
+test('el caller no puede eludir el binding de revisión: opciones desconocidas authorizationRevision/revisionBinding intentando elegir c66 no evitan el rechazo fail-closed', async () => {
+  const authorization = createValidAuthorization({ revision: 'c66e9603f356648830ec3b4f7c4507c5ce0953e8' });
+  const { canaryPackage } = createCanaryPackage();
+  const { executor, callsRef: executorCallsRef } = createResolvingExecutor();
+  const { audit, entries } = createAudit();
+  const harness = createHarness({
+    canaryPackage,
+    executor,
+    audit,
+    authorization,
+    authorizationRevision: 'c66e9603f356648830ec3b4f7c4507c5ce0953e8',
+    revisionBinding: Object.freeze({
+      scheme: 'agt003-reduced-canary-revision-binding-v1',
+      main_base_revision: '932fc4531ecddf4f194ed4e0955b1d4183dad739',
+      harness_source_revision: '46f7b8e796c2be359d89cd9ec9f8d8d0d8351f05',
+      authorization_revision: 'c66e9603f356648830ec3b4f7c4507c5ce0953e8',
+    }),
+  });
+
+  let code = null;
+  try {
+    await harness.run();
+  } catch (error) {
+    code = error?.code ?? null;
+  }
+
+  assert.equal(
+    code,
+    AUTHORIZATION_MISMATCH_CODE,
+    'opciones desconocidas authorizationRevision/revisionBinding no deben permitir al caller elegir ni sobreescribir el binding exigido',
+  );
+  assert.equal(executorCallsRef(), 0, 'el executor no debe invocarse cuando el caller intenta eludir el binding de revisión');
+  assert.equal(entries.length, 0, 'no debe auditarse un recorrido donde el caller intentó eludir el binding de revisión');
 });
 
 // --- Grupo 3A: auditoría segura -- allowlist cerrada de nombres, claves y metadatos ---
@@ -932,7 +1030,7 @@ test('un recorrido exitoso audita exactamente un evento con nombre y claves allo
   assert.ok(isValidatedId(event.snapshot_id), 'snapshot_id auditado debe ser un ID validado');
   assert.ok(isValidatedId(event.human_reviewer_id), 'human_reviewer_id auditado debe ser un ID validado');
   assert.equal(event.gate, AUTHORIZATION_GATE, 'gate auditado debe ser exactamente el gate exigido');
-  assert.equal(event.revision, AUTHORIZATION_REVISION, 'revision auditada debe ser exactamente el commit pineado');
+  assert.equal(event.revision, AUTHORIZATION_REVISION, 'revision auditada debe ser exactamente el digest de revision_binding exigido');
   assert.ok(ALLOWLISTED_AUDIT_OUTCOMES.includes(event.outcome), 'outcome auditado debe pertenecer al enum cerrado');
   assert.ok(ALLOWLISTED_AUDIT_TERMINATIONS.includes(event.termination), 'termination auditada debe pertenecer al enum cerrado');
   assert.equal(typeof event.provider_is_error, 'boolean', 'provider_is_error auditado debe ser booleano');
@@ -1392,6 +1490,92 @@ test('un provider_is_error=true audita exactamente un evento con termination="er
   assert.equal(event.termination, 'error', 'termination auditada debe ser exactamente "error"');
   assert.equal(event.outcome, 'provider_error', 'outcome auditado debe ser exactamente "provider_error"');
   assert.equal(event.provider_is_error, true, 'provider_is_error auditado debe reflejar el error de proveedor');
+});
+
+test('provider_is_error=false con outcome=provider_error falla cerrado antes de costo y auditoría', async () => {
+  const { canaryPackage } = createCanaryPackage();
+  const { executor, callsRef: executorCallsRef } = createResolvingExecutor({
+    result: createSuccessfulRawResult({ outcome: 'provider_error' }),
+  });
+  const { audit, entries } = createAudit();
+  const { costMeter, callsRef: measureCallsRef } = createFixedCostMeter(SYNTHETIC_MEASURED_COST_USD);
+  const harness = createHarness({
+    canaryPackage,
+    executor,
+    audit,
+    cost_ceiling_usd: SYNTHETIC_COST_CEILING_USD,
+    costMeter,
+  });
+
+  let code = null;
+  try {
+    await harness.run();
+  } catch (error) {
+    code = error?.code ?? null;
+  }
+
+  assert.equal(
+    code,
+    PROVIDER_OUTCOME_INCONSISTENT_CODE,
+    'provider_is_error=false junto a outcome=provider_error debe rechazarse por contradictorio',
+  );
+  assert.equal(executorCallsRef(), 1, 'el executor se invocó exactamente una vez antes de detectar la inconsistencia');
+  assert.equal(measureCallsRef(), 0, 'el medidor de costo no debe invocarse cuando el resultado es contradictorio');
+  assert.equal(entries.length, 0, 'no debe auditarse un recorrido con provider_is_error/outcome contradictorios');
+
+  let secondCode = null;
+  try {
+    await harness.run();
+  } catch (error) {
+    secondCode = error?.code ?? null;
+  }
+  assert.equal(secondCode, ALREADY_RUN_CODE, 'una inconsistencia provider_is_error/outcome consume el único intento permitido');
+  assert.equal(executorCallsRef(), 1, 'el executor no debe invocarse una segunda vez tras la inconsistencia');
+  assert.equal(measureCallsRef(), 0, 'el medidor de costo sigue sin invocarse tras el segundo run rechazado');
+  assert.equal(entries.length, 0, 'no debe auditarse nada tras el segundo run rechazado');
+});
+
+test('provider_is_error=true con outcome=success falla cerrado antes de costo y auditoría', async () => {
+  const { canaryPackage } = createCanaryPackage();
+  const { executor, callsRef: executorCallsRef } = createResolvingExecutor({
+    result: createProviderErrorRawResult({ outcome: 'success' }),
+  });
+  const { audit, entries } = createAudit();
+  const { costMeter, callsRef: measureCallsRef } = createFixedCostMeter(SYNTHETIC_MEASURED_COST_USD);
+  const harness = createHarness({
+    canaryPackage,
+    executor,
+    audit,
+    cost_ceiling_usd: SYNTHETIC_COST_CEILING_USD,
+    costMeter,
+  });
+
+  let code = null;
+  try {
+    await harness.run();
+  } catch (error) {
+    code = error?.code ?? null;
+  }
+
+  assert.equal(
+    code,
+    PROVIDER_OUTCOME_INCONSISTENT_CODE,
+    'provider_is_error=true junto a outcome=success debe rechazarse por contradictorio',
+  );
+  assert.equal(executorCallsRef(), 1, 'el executor se invocó exactamente una vez antes de detectar la inconsistencia');
+  assert.equal(measureCallsRef(), 0, 'el medidor de costo no debe invocarse cuando el resultado es contradictorio');
+  assert.equal(entries.length, 0, 'no debe auditarse un recorrido con provider_is_error/outcome contradictorios');
+
+  let secondCode = null;
+  try {
+    await harness.run();
+  } catch (error) {
+    secondCode = error?.code ?? null;
+  }
+  assert.equal(secondCode, ALREADY_RUN_CODE, 'una inconsistencia provider_is_error/outcome consume el único intento permitido');
+  assert.equal(executorCallsRef(), 1, 'el executor no debe invocarse una segunda vez tras la inconsistencia');
+  assert.equal(measureCallsRef(), 0, 'el medidor de costo sigue sin invocarse tras el segundo run rechazado');
+  assert.equal(entries.length, 0, 'no debe auditarse nada tras el segundo run rechazado');
 });
 
 // --- Grupo 4: recorrido end-to-end offline -- engine real -> paquete reducido real -> harness ---

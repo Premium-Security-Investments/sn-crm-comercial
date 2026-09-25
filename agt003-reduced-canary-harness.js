@@ -3,6 +3,18 @@
 // meter, audit sink, executor) is injected by the caller; this module never
 // instantiates a network/provider/CRM client and never reads credentials.
 
+// main_base_revision: the exact origin/main commit this harness was reconciled against.
+// harness_source_revision: the audited local commit applied on top of that base.
+// authorization_revision: the canonical SHA-256 digest binding both revisions together, so
+// the authorization gate can never be satisfied by the self-referential/impossible SHA of
+// this future commit/merge.
+export const AGT003_REDUCED_CANARY_REVISION_BINDING = Object.freeze({
+  scheme: 'agt003-reduced-canary-revision-binding-v1',
+  main_base_revision: '932fc4531ecddf4f194ed4e0955b1d4183dad739',
+  harness_source_revision: '46f7b8e796c2be359d89cd9ec9f8d8d0d8351f05',
+  authorization_revision: 'b46fa84615933c6c7bd4bc833f07e247a37639ab0dade3927f215c730774474a',
+});
+
 const ALREADY_RUN_CODE = 'AGT003_REDUCED_CANARY_ALREADY_RUN';
 const DEFAULT_TIMEOUT_MS = 30000;
 
@@ -17,7 +29,7 @@ const CORRELATION_MISMATCH_CODE = 'AGT003_REDUCED_CANARY_CORRELATION_MISMATCH';
 const SNAPSHOT_MISMATCH_CODE = 'AGT003_REDUCED_CANARY_SNAPSHOT_MISMATCH';
 
 const AUTHORIZATION_GATE = 'AGT003_SINGLE_REDUCED_CANARY';
-const AUTHORIZATION_REVISION = 'c66e9603f356648830ec3b4f7c4507c5ce0953e8';
+const AUTHORIZATION_REVISION = AGT003_REDUCED_CANARY_REVISION_BINDING.authorization_revision;
 
 const AUTHORIZATION_MISSING_CODE = 'AGT003_REDUCED_CANARY_AUTHORIZATION_MISSING';
 const AUTHORIZATION_INCOMPLETE_CODE = 'AGT003_REDUCED_CANARY_AUTHORIZATION_INCOMPLETE';
@@ -36,6 +48,8 @@ const COST_UNKNOWN_CODE = 'AGT003_REDUCED_CANARY_COST_UNKNOWN';
 const COST_CEILING_EXCEEDED_CODE = 'AGT003_REDUCED_CANARY_COST_CEILING_EXCEEDED';
 
 const EXECUTOR_FAILED_CODE = 'AGT003_REDUCED_CANARY_EXECUTOR_FAILED';
+
+const PROVIDER_OUTCOME_INCONSISTENT_CODE = 'AGT003_REDUCED_CANARY_PROVIDER_OUTCOME_INCONSISTENT';
 
 const REQUIRED_AUTHORIZATION_KEYS = Object.freeze([
   'gate',
@@ -246,6 +260,13 @@ function validateRawResultFields(parsed) {
   }
   if (!ALLOWLISTED_OUTCOMES.includes(parsed.outcome)) {
     fail(AUDIT_UNSAFE_METADATA_VALUE_CODE);
+  }
+
+  if (parsed.provider_is_error === false && parsed.outcome === 'provider_error') {
+    fail(PROVIDER_OUTCOME_INCONSISTENT_CODE);
+  }
+  if (parsed.provider_is_error === true && parsed.outcome === 'success') {
+    fail(PROVIDER_OUTCOME_INCONSISTENT_CODE);
   }
 }
 
