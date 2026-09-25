@@ -50,8 +50,13 @@ test('migracion 093 crea maestro de clientes con unique normalizado y FK restric
   }
   assert.match(
     sql,
-    /lower\s*\(\s*regexp_replace\s*\(\s*trim\s*\(\s*company_name\s*\)\s*,\s*'\\s\+'\s*,\s*' '\s*,\s*'g'\s*\)\s*\)/i,
-    'unique por nombre normalizado: trim + espacios colapsados + minusculas',
+    /create (?:or replace )?function public\.psi_sales_normalize_client_name\s*\(\s*input_name text\s*\)/i,
+    '093 debe definir public.psi_sales_normalize_client_name(text)',
+  );
+  assert.match(
+    sql,
+    /create unique index if not exists psi_sales_clients_normalized_name_key\s+on public\.psi_sales_clients\s*\(\s*public\.psi_sales_normalize_client_name\s*\(\s*company_name\s*\)\s*\)/i,
+    'psi_sales_clients_normalized_name_key debe usar public.psi_sales_normalize_client_name',
   );
   assert.match(sql, /add column if not exists client_id uuid/i);
   assert.match(sql, /references public\.psi_sales_clients\s*\(\s*id\s*\)\s+on delete restrict/i);

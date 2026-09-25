@@ -151,7 +151,9 @@ begin
   -- Resolve the client: an explicit requested id wins; otherwise find-or-insert atomically by
   -- canonical normalized company_name (the unique index on psi_sales_clients makes the
   -- insert/select fallback below race-safe without an explicit advisory lock).
-  if p_requested_client_id is not null then
+  if p_opportunity->>'service_type_code' = 'licitacion_publica' then
+    v_client_id := null;
+  elsif p_requested_client_id is not null then
     perform 1 from public.psi_sales_clients where id = p_requested_client_id;
     if not found then
       raise exception 'psi_persist_sales_opportunity: el cliente solicitado % no existe', p_requested_client_id;
@@ -188,17 +190,32 @@ begin
   -- Update mode also applies any supplied client fields to the resolved client master.
   if p_mode = 'update' and p_client is not null and v_client_id is not null then
     update public.psi_sales_clients set
-      company_name = coalesce(p_client->>'company_name', company_name),
-      customer_segment = coalesce(p_client->>'customer_segment', customer_segment),
-      regional_nombre = coalesce(p_client->>'regional_nombre', regional_nombre),
-      sede = coalesce(p_client->>'sede', sede),
-      quote_city = coalesce(p_client->>'quote_city', quote_city),
-      economic_sector = coalesce(p_client->>'economic_sector', economic_sector),
-      decision_maker_name = coalesce(p_client->>'decision_maker_name', decision_maker_name),
-      decision_maker_email = coalesce(p_client->>'decision_maker_email', decision_maker_email),
-      decision_maker_phone = coalesce(p_client->>'decision_maker_phone', decision_maker_phone),
+      company_name = coalesce(nullif(p_client->>'company_name', ''), company_name),
+      customer_segment = p_client->>'customer_segment',
+      regional_nombre = p_client->>'regional_nombre',
+      sede = p_client->>'sede',
+      quote_city = p_client->>'quote_city',
+      economic_sector = p_client->>'economic_sector',
+      decision_maker_name = p_client->>'decision_maker_name',
+      decision_maker_email = p_client->>'decision_maker_email',
+      decision_maker_phone = p_client->>'decision_maker_phone',
       updated_at = now()
     where id = v_client_id;
+
+    update public.psi_sales_opportunities o set
+      company_name = c.company_name,
+      customer_segment = c.customer_segment,
+      regional_nombre = c.regional_nombre,
+      sede = c.sede,
+      quote_city = c.quote_city,
+      economic_sector = c.economic_sector,
+      decision_maker_name = c.decision_maker_name,
+      decision_maker_email = c.decision_maker_email,
+      decision_maker_phone = c.decision_maker_phone,
+      updated_at = now()
+    from public.psi_sales_clients c
+    where c.id = v_client_id
+      and o.client_id = v_client_id;
   end if;
 
   if p_mode = 'create' then

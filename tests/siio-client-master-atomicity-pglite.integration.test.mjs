@@ -124,6 +124,68 @@ const migrationPath = new URL('../supabase/migrations/093_siio_sales_clients.sql
     }
   }
 
+  // Updating client master data synchronizes every sibling opportunity in the same statement.
+  {
+    const db = await migratedDb();
+    try {
+      const created = await callPersist(db, {
+        opportunity: { ...OPPORTUNITY, company_name: 'Hermanas SA' },
+        client: { ...CLIENT, company_name: 'Hermanas SA' },
+      });
+      const clientId = created.rows[0].result.client_id;
+      const firstOpportunityId = created.rows[0].result.opportunity_id;
+      const second = await callPersist(db, {
+        opportunity: { ...OPPORTUNITY, company_name: 'Hermanas SA' },
+        requestedClientId: clientId,
+        client: null,
+      });
+      const secondOpportunityId = second.rows[0].result.opportunity_id;
+
+      await callPersist(db, {
+        mode: 'update',
+        opportunityId: firstOpportunityId,
+        requestedClientId: clientId,
+        opportunity: { ...OPPORTUNITY, company_name: 'Hermanas Actualizada SA', customer_segment: 'cliente_actual' },
+        client: { ...CLIENT, company_name: 'Hermanas Actualizada SA', customer_segment: 'cliente_actual' },
+      });
+
+      const siblings = await db.query(
+        'select id, company_name, customer_segment from public.psi_sales_opportunities where id in ($1,$2) order by id',
+        [firstOpportunityId, secondOpportunityId],
+      );
+      assert.equal(siblings.rows.length, 2);
+      for (const row of siblings.rows) {
+        assert.equal(row.company_name, 'Hermanas Actualizada SA');
+        assert.equal(row.customer_segment, 'cliente_actual');
+      }
+    } finally {
+      await db.close();
+    }
+  }
+
+  // A public tender always detaches the client at the database transaction boundary.
+  {
+    const db = await migratedDb();
+    try {
+      const created = await callPersist(db, {
+        opportunity: { ...OPPORTUNITY, company_name: 'Privada a Publica SA' },
+        client: { ...CLIENT, company_name: 'Privada a Publica SA' },
+      });
+      const opportunityId = created.rows[0].result.opportunity_id;
+      await callPersist(db, {
+        mode: 'update',
+        opportunityId,
+        requestedClientId: created.rows[0].result.client_id,
+        opportunity: { ...OPPORTUNITY, company_name: 'Licitacion Publica', service_type_code: 'licitacion_publica' },
+        client: null,
+      });
+      const { rows } = await db.query('select client_id from public.psi_sales_opportunities where id = $1', [opportunityId]);
+      assert.equal(rows[0].client_id, null);
+    } finally {
+      await db.close();
+    }
+  }
+
   // Duplicate-name race, sequenced deterministically (PGlite has a single connection, so a true
   // concurrent race cannot be reproduced; two immediately-sequential create calls for the same
   // normalized name is the deterministic equivalent this suite can drive). The result must be
