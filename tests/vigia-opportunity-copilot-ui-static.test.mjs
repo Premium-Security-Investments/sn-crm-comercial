@@ -13,9 +13,9 @@ for (const marker of [
   'navigator.clipboard.writeText',
   'export function VigiaCommercialAlerts(',
   'export function VigiaCopilotProposal(',
-  'Preparar próximo seguimiento',
-  'Actualizar propuesta',
-  'onRegenerate',
+  'Generar seguimiento',
+  'Cambiar preparación',
+  'onChangePreparation',
   'No se pudo preparar el seguimiento. Puede continuar registrándolo manualmente.',
   'vigia-copilot-error',
 ]) assert.ok(component.includes(marker), `panel Vig-IA missing marker: ${marker}`);
@@ -77,18 +77,19 @@ assert.match(
   '.vigia-copilot-generate debe fijar justify-items:start para un foco compacto en el CTA primario',
 );
 
-// El botón de generación externo sólo existe mientras no hay propuesta lista: una vez generada,
-// el refresco vive en la cabecera de la propuesta ("Actualizar propuesta"), nunca huérfano.
+// El formulario de preparación (canal + intención + CTA) sólo existe mientras no hay propuesta
+// lista: una vez generada, el control para volver a preparar vive en la cabecera de la propuesta
+// ("Cambiar preparación"), nunca huérfano.
 assert.match(
   component,
-  /\{state\.phase !== 'error' && !ready && <div className="vigia-copilot-generate">/,
-  'el botón de generación externo sólo debe renderizarse mientras no hay propuesta lista (!ready)',
+  /const showForm = state\.phase === 'idle' \|\| state\.phase === 'loading';/,
+  'el formulario de preparación sólo debe mostrarse en idle/loading, nunca una vez lista la propuesta (ready)',
 );
 assert.equal(
   component.includes("className={ready ? 'secondary' : undefined}"),
   false,
   'el botón de generación externo ya no alterna a "secondary": ese slot deja de existir una vez lista la propuesta',
 );
-assert.match(component, /onRegenerate=\{generate\}/, 'VigiaCopilotProposal debe recibir onRegenerate para refrescar desde su propia cabecera');
+assert.match(component, /onChangePreparation=\{\(\) => setState\(current => changeCopilotPreparation\(current\)\)\}/, 'VigiaCopilotProposal debe recibir onChangePreparation para volver a la preparación desde su propia cabecera');
 
 console.log('Vig-IA opportunity copilot UI static contract passed');

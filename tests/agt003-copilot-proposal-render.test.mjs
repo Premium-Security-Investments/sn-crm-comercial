@@ -18,7 +18,7 @@ const brief = {
 };
 const draft = { subject: 'Seguimiento a la propuesta', body: 'Buen día, retomo el contacto…' };
 const noop = () => {};
-const html = renderReactComponent(VigiaCopilotProposal, { brief, draft, alerts: [], onDraftChange: noop, onCopy: noop, onDiscard: noop, onRegenerate: noop });
+const html = renderReactComponent(VigiaCopilotProposal, { brief, draft, channel: 'email', alerts: [], onDraftChange: noop, onCopy: noop, onChangePreparation: noop });
 
 const at = needle => {
   const index = html.indexOf(needle);
@@ -38,14 +38,14 @@ const review = at('vigia-human-warning');
 const actions = at('vigia-copilot-actions');
 const context = at('vigia-copilot-context');
 assert.ok(header < briefSection && briefSection < draftSection, 'orden: cabecera, luego Situación actual/Información por confirmar/Objetivo del próximo contacto, luego el borrador editable');
-assert.ok(draftSection < review && review < actions, 'Revisión humana aparece antes de Copiar correo/Descartar');
+assert.ok(draftSection < review && review < actions, 'Revisión humana aparece antes de Copiar correo');
 assert.ok(actions < context, 'Contexto y evidencia va al final, plegado');
 
-// Cabecera: "Actualizar propuesta" vive junto al título, no aislada entre alertas y resultado.
+// Cabecera: "Cambiar preparación" vive junto al título, no aislada entre alertas y resultado.
 const headerMatch = /<header class="vigia-copilot-proposal-header">([\s\S]*?)<\/header>/.exec(html);
 assert.ok(headerMatch, 'debe existir <header class="vigia-copilot-proposal-header">');
 assert.match(headerMatch[1], /<h4>Propuesta de seguimiento<\/h4>/);
-assert.match(headerMatch[1], /<button type="button" class="secondary">Actualizar propuesta<\/button>/);
+assert.match(headerMatch[1], /<button type="button" class="secondary">Cambiar preparación<\/button>/);
 
 // Situación actual / Información por confirmar / Objetivo del próximo contacto, en ese orden, con rótulo visible.
 const briefMatch = /<section class="vigia-copilot-brief">([\s\S]*?)<\/section>/.exec(html);
@@ -82,12 +82,18 @@ for (const forbidden of ['input no confiable', 'instrucciones embebidas', 'appro
   assert.equal(html.includes(forbidden), false, `la UI no puede exponer "${forbidden}"`);
 }
 assert.ok(html.includes('>Copiar correo</button>'));
-assert.ok(html.includes('>Descartar</button>'));
+assert.equal(html.includes('>Descartar</button>'), false, 'Descartar se retira: "Cambiar preparación" es el único control de la cabecera');
 assert.ok(html.includes('Puede editar esta propuesta sin modificar el historial de la oportunidad. Verifique nombres, fechas, compromisos y tono antes de copiar el mensaje.'));
+
+// Canal WhatsApp: sin campo de asunto, con el botón "Copiar WhatsApp".
+const whatsappHtml = renderReactComponent(VigiaCopilotProposal, { brief, draft, channel: 'whatsapp', alerts: [], onDraftChange: noop, onCopy: noop, onChangePreparation: noop });
+assert.equal(/<label>Asunto/.test(whatsappHtml), false, 'canal WhatsApp no debe renderizar el campo de asunto');
+assert.ok(whatsappHtml.includes('>Copiar WhatsApp</button>'));
+assert.equal(whatsappHtml.includes('>Copiar correo</button>'), false, 'canal WhatsApp no debe ofrecer "Copiar correo"');
 
 const withAssets = renderReactComponent(VigiaCopilotProposal, {
   brief: { ...brief, recommended_asset_ids: ['asset-approved-001'] },
-  draft, alerts: [], onDraftChange: noop, onCopy: noop, onDiscard: noop, onRegenerate: noop,
+  draft, channel: 'email', alerts: [], onDraftChange: noop, onCopy: noop, onChangePreparation: noop,
 });
 assert.ok(withAssets.includes('Adjuntos sugeridos'));
 assert.ok(withAssets.includes('asset-approved-001'));
@@ -95,13 +101,13 @@ assert.ok(withAssets.includes('asset-approved-001'));
 // Criterio 8: el resumen compacto se abstiene si repite una alerta activa; "Siguiente paso" desaparece,
 // el resto de la propuesta (borrador, revisión humana, contexto) sigue visible.
 const redundantAlerts = [{ key: 'next_action:overdue', category: 'next_action', risk_text: 'La próxima gestión está vencida hace 4 días.' }];
-const redundantHtml = renderReactComponent(VigiaCopilotProposal, { brief: { ...brief, strategy: redundantAlerts[0].risk_text }, draft, alerts: redundantAlerts, onDraftChange: noop, onCopy: noop, onDiscard: noop, onRegenerate: noop });
+const redundantHtml = renderReactComponent(VigiaCopilotProposal, { brief: { ...brief, strategy: redundantAlerts[0].risk_text }, draft, channel: 'email', alerts: redundantAlerts, onDraftChange: noop, onCopy: noop, onChangePreparation: noop });
 assert.equal(redundantHtml.includes('vigia-copilot-next-step'), false, 'sin recomendación distinta, no hay "Siguiente paso"');
 assert.ok(redundantHtml.includes('vigia-copilot-draft') && redundantHtml.includes('vigia-copilot-context'), 'el resto de la propuesta sigue visible aunque se abstenga el siguiente paso');
 
 // AGT-003 hotfix (se conserva): un "Siguiente paso" largo se renderiza completo, sin elipsis.
 const longStrategy = ('Confirme con el cliente la fecha exacta de ' + 'la reunión de seguimiento propuesta sigue pendiente de confirmación final '.repeat(4)).trim();
-const longHtml = renderReactComponent(VigiaCopilotProposal, { brief: { ...brief, strategy: longStrategy }, draft, alerts: [], onDraftChange: noop, onCopy: noop, onDiscard: noop, onRegenerate: noop });
+const longHtml = renderReactComponent(VigiaCopilotProposal, { brief: { ...brief, strategy: longStrategy }, draft, channel: 'email', alerts: [], onDraftChange: noop, onCopy: noop, onChangePreparation: noop });
 assert.ok(longStrategy.length > 240, 'el texto de prueba debe superar el antiguo límite de 240 caracteres');
 const longNextStepMatch = /<div class="vigia-copilot-next-step">([\s\S]*?)<\/div>/.exec(longHtml);
 assert.ok(longNextStepMatch, 'el bloque "Siguiente paso" debe existir para una recomendación genuina');

@@ -2,12 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import { VIGIA_VISIBLE_NAMES } from './agentIdentity';
 import {
   beginCopilotGeneration,
+  canGenerateCopilotFollowup,
   changeCopilotOpportunity,
+  changeCopilotPreparation,
   completeCopilotGeneration,
+  copilotClipboardPayload,
   createOpportunityCopilotState,
-  discardCopilotDraft,
   editCopilotDraft,
   failCopilotGeneration,
+  setCopilotCommercialIntent,
+  setCopilotContactChannel,
+  type ContactChannel,
   type CopilotResult,
 } from './opportunity-copilot-state';
 import {
@@ -24,15 +29,15 @@ type Props = {
   preflight: CommercialPreflightInput;
 };
 
-type ProposalDraft = { subject: string; body: string };
+type ProposalDraft = { subject: string | null; body: string };
 type ProposalProps = {
   brief: CopilotPresentationBrief;
   draft: ProposalDraft;
+  channel: ContactChannel | null;
   alerts: ReturnType<typeof buildCommercialAlerts>;
   onDraftChange: (patch: Partial<ProposalDraft>) => void;
   onCopy: () => void;
-  onDiscard: () => void;
-  onRegenerate: () => void;
+  onChangePreparation: () => void;
 };
 
 export function VigiaCommercialAlerts({ alerts }: { alerts: ReturnType<typeof buildCommercialAlerts> }) {
@@ -51,14 +56,15 @@ export function VigiaCommercialAlerts({ alerts }: { alerts: ReturnType<typeof bu
 
 const CONFIDENCE_LABEL: Record<'low' | 'medium' | 'high', string> = { low: 'Baja', medium: 'Media', high: 'Alta' };
 
-export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCopy, onDiscard, onRegenerate }: ProposalProps) {
+export function VigiaCopilotProposal({ brief, draft, channel, alerts, onDraftChange, onCopy, onChangePreparation }: ProposalProps) {
   const presented = presentCopilotBrief(brief);
   const compact = presentCompactCopilotSummary(presented, alerts);
+  const isEmail = channel === 'email';
   return <div className="vigia-copilot-result">
     <p role="status" className="sr-only">Propuesta preparada para revisión.</p>
     <header className="vigia-copilot-proposal-header">
       <h4>Propuesta de seguimiento</h4>
-      <button type="button" className="secondary" onClick={onRegenerate}>Actualizar propuesta</button>
+      <button type="button" className="secondary" onClick={onChangePreparation}>Cambiar preparación</button>
     </header>
     <section className="vigia-copilot-brief">
       <div className="vigia-copilot-brief-row"><strong>Situación actual</strong><p>{presented.summary}</p></div>
@@ -68,9 +74,9 @@ export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCo
     {compact.nextStep && <div className="vigia-copilot-next-step">
       <strong>Siguiente paso:</strong> <span>{compact.nextStep}</span>
     </div>}
-    <div className="vigia-copilot-draft"><label>Asunto<input value={draft.subject} maxLength={300} onChange={event => onDraftChange({ subject: event.target.value })}/></label><label>Cuerpo<textarea value={draft.body} maxLength={8000} rows={10} onChange={event => onDraftChange({ body: event.target.value })}/></label></div>
+    <div className="vigia-copilot-draft">{isEmail && <label>Asunto<input value={draft.subject ?? ''} maxLength={300} onChange={event => onDraftChange({ subject: event.target.value })}/></label>}<label>Cuerpo<textarea value={draft.body} maxLength={8000} rows={10} onChange={event => onDraftChange({ body: event.target.value })}/></label></div>
     <div className="vigia-human-warning"><strong>Revisión humana</strong><span>Puede editar esta propuesta sin modificar el historial de la oportunidad. Verifique nombres, fechas, compromisos y tono antes de copiar el mensaje.</span></div>
-    <div className="vigia-copilot-actions"><button type="button" onClick={onCopy}>Copiar correo</button><button type="button" className="secondary" onClick={onDiscard}>Descartar</button></div>
+    <div className="vigia-copilot-actions"><button type="button" onClick={onCopy}>{isEmail ? 'Copiar correo' : 'Copiar WhatsApp'}</button></div>
     <details className="vigia-copilot-context">
       <summary>Contexto y evidencia · {presented.facts.length} datos · {presented.inferences.length} inferencias · {presented.missingInformation.length} pendientes</summary>
       <section><h5>Datos utilizados</h5>{presented.facts.length ? <ul>{presented.facts.map((fact, index) => <li key={`${fact.text}-${index}`}>{fact.text}</li>)}</ul> : <p className="muted">Sin datos adicionales.</p>}</section>
@@ -84,45 +90,57 @@ export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCo
 export function VigiaOpportunityCopilot({ opportunityId, request, preflight }: Props) {
   const [state, setState] = useState(() => createOpportunityCopilotState(opportunityId));
   const [notice, setNotice] = useState('');
-  const requestSequenceRef = useRef(0);
+  const intentFieldRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    requestSequenceRef.current += 1;
     setState(current => changeCopilotOpportunity(current, opportunityId));
     setNotice('');
   }, [opportunityId]);
 
   const generate = () => {
-    const requestId = ++requestSequenceRef.current;
-    setState(current => beginCopilotGeneration(current, requestId).state);
-    const requestedOpportunityId = opportunityId;
     setNotice('');
-    void request<CopilotResult>('/api/vigia/copilot/generate', {
-      method: 'POST',
-      body: JSON.stringify({ opportunity_id: requestedOpportunityId }),
-    }).then(result => {
-      setState(current => completeCopilotGeneration(current, { opportunityId: requestedOpportunityId, requestId, result }));
-    }).catch(error => {
-      const message = error instanceof Error ? error.message : String(error);
-      setState(current => failCopilotGeneration(current, { opportunityId: requestedOpportunityId, requestId, message }));
+    setState(current => {
+      if (!canGenerateCopilotFollowup(current)) return current;
+      const { requestId, state: loadingState } = beginCopilotGeneration(current);
+      const requestedOpportunityId = opportunityId;
+      const channel = current.preparation.contactChannel;
+      const rawIntent = intentFieldRef.current?.value ?? current.preparation.commercialIntent;
+      const intent = String(rawIntent).trim().slice(0, 500);
+      void request<CopilotResult>('/api/vigia/copilot/generate', {
+        method: 'POST',
+        body: JSON.stringify({ opportunity_id: requestedOpportunityId, contact_channel: channel, commercial_intent: intent || undefined }),
+      }).then(result => {
+        setState(next => completeCopilotGeneration(next, { opportunityId: requestedOpportunityId, requestId, result }));
+      }).catch(error => {
+        const message = error instanceof Error ? error.message : String(error);
+        setState(next => failCopilotGeneration(next, { opportunityId: requestedOpportunityId, requestId, message }));
+      });
+      return loadingState;
     });
   };
 
   const copyDraft = async () => {
     if (state.phase !== 'ready') return;
-    await navigator.clipboard.writeText(`${state.draft.subject}\n\n${state.draft.body}`);
+    await navigator.clipboard.writeText(copilotClipboardPayload(state).text);
     setNotice('Borrador copiado. Revísalo antes de usarlo.');
   };
 
   const alerts = buildCommercialAlerts(preflight);
   const ready = state.phase === 'ready' ? state : null;
   const brief = ready?.result.output.brief;
+  const showForm = state.phase === 'idle' || state.phase === 'loading';
 
   return <section className="vigia-opportunity-copilot" aria-labelledby="vigia-copilot-title">
     <header><div><span className="eyebrow">{VIGIA_VISIBLE_NAMES.commercial}</span><h3 id="vigia-copilot-title">Próximo seguimiento</h3><p>Analiza el contexto y propone un siguiente paso de seguimiento</p></div></header>
     <VigiaCommercialAlerts alerts={alerts} />
-    {state.phase !== 'error' && !ready && <div className="vigia-copilot-generate">
-      <button type="button" disabled={state.phase === 'loading'} onClick={generate}>Preparar próximo seguimiento</button>
+    {showForm && <div className="vigia-copilot-generate">
+      <fieldset className="vigia-copilot-channel">
+        <legend>¿Cómo será el próximo contacto?</legend>
+        <label><input type="radio" name="contact_channel" value="whatsapp" checked={state.preparation.contactChannel === 'whatsapp'} onChange={() => setState(current => setCopilotContactChannel(current, 'whatsapp'))}/> WhatsApp</label>
+        <label><input type="radio" name="contact_channel" value="email" checked={state.preparation.contactChannel === 'email'} onChange={() => setState(current => setCopilotContactChannel(current, 'email'))}/> Correo</label>
+      </fieldset>
+      <label>¿Qué necesita lograr con este contacto?<textarea ref={intentFieldRef} maxLength={500} defaultValue={state.preparation.commercialIntent} onChange={event => setState(current => setCopilotCommercialIntent(current, event.target.value))}/></label>
+      <button type="button" disabled={state.phase === 'loading' || !canGenerateCopilotFollowup(state)} onClick={generate}>Generar seguimiento</button>
     </div>}
     {state.phase === 'idle' && <div className="vigia-copilot-empty"><p className="muted">Prepara un borrador editable de seguimiento, separado del registro original.</p></div>}
     {state.phase === 'loading' && <div className="notice" role="status">{VIGIA_VISIBLE_NAMES.commercial} está preparando un borrador acotado…</div>}
@@ -134,11 +152,11 @@ export function VigiaOpportunityCopilot({ opportunityId, request, preflight }: P
       key={ready.requestId}
       brief={brief}
       draft={ready.draft}
+      channel={ready.preparation.contactChannel}
       alerts={alerts}
       onDraftChange={patch => setState(current => editCopilotDraft(current, patch))}
       onCopy={() => void copyDraft()}
-      onDiscard={() => { setState(current => discardCopilotDraft(current)); setNotice('Borrador descartado localmente.'); }}
-      onRegenerate={generate}
+      onChangePreparation={() => setState(current => changeCopilotPreparation(current))}
     />}
     {notice && <div className="notice" role="status">{notice}</div>}
   </section>;

@@ -7,7 +7,7 @@ import { AGT003_COPILOT_POLICY } from '../agt003-copilot-engine.js';
 
 const MODULE_SPECIFIER = '../agt003-payload-reduction.js';
 const MODULE_FILE_PATH = fileURLToPath(new URL(MODULE_SPECIFIER, import.meta.url));
-const FULL_POLICY_SHA256 = 'da9fb39efde3b76c2d6e528efc294b5b28691561c5ffc6215c3990c484a88c4c';
+const FULL_POLICY_SHA256 = '3d29b35d4672912a2831c8509e54d15f6367434d9e88d8a8223588c9cba2b4d8';
 const VIOLATION_CODE = 'AGT003_PAYLOAD_REDUCTION_CONTRACT_VIOLATION';
 const CANARY_CONSUMED_CODE = 'AGT003_REDUCED_CANARY_ALREADY_CONSUMED';
 
@@ -46,6 +46,7 @@ function buildSourceInput() {
     capability_id: 'agt003.opportunity-copilot.preview',
     correlation_id: 'corr-syn-0001',
     snapshot_id: 'snap-syn-0001',
+    contact_channel: 'email',
     opportunity: {
       opportunity_id: 'opp-syn-0001',
       title: 'Oportunidad sintética Ñoño S.A.',
@@ -241,7 +242,7 @@ test('output schema preserves uncertainty: inferences.confidence, missing_inform
   for (const key of ['human_review_required', 'missing_information', 'warnings']) assert.ok(reduced.outputSchema.required.includes(key));
 });
 
-test('current full policy identity is accepted only at SHA-256 da9fb39efde3b76c2d6e528efc294b5b28691561c5ffc6215c3990c484a88c4c and reduced policy has every required semantic ID exactly once', async () => {
+test('current full policy identity is accepted only at SHA-256 3d29b35d4672912a2831c8509e54d15f6367434d9e88d8a8223588c9cba2b4d8 and reduced policy has every required semantic ID exactly once', async () => {
   const { reduceAgt003PayloadOffline, AGT003_REQUIRED_REDUCTION_SEMANTIC_IDS } = await import(MODULE_SPECIFIER);
   const actualHash = createHash('sha256').update(AGT003_COPILOT_POLICY, 'utf8').digest('hex');
   assert.equal(actualHash, FULL_POLICY_SHA256);

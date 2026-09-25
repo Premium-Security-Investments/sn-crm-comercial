@@ -30,7 +30,7 @@ const base = {
 };
 const build = (opportunity, options = {}) => buildAgt003CopilotRequest({
   opportunity, interactions: [], approvedAssets: [],
-  correlationId: 'corr-001', snapshotId: 'snapshot-001', ...options,
+  correlationId: 'corr-001', snapshotId: 'snapshot-001', contactChannel: 'email', ...options,
 });
 const factValue = (request, field) => request.opportunity.facts.find(item => item.field === field)?.value ?? null;
 
@@ -88,7 +88,7 @@ assert.equal(factValue(build({ ...base, offer_value: Infinity }), 'offer_currenc
 // --- contrato público intacto --------------------------------------------------------------------
 assert.deepEqual(
   Object.keys(today).sort(),
-  ['approved_assets', 'authority', 'capability_id', 'contract_version', 'correlation_id', 'interactions', 'opportunity', 'snapshot_id'],
+  ['approved_assets', 'authority', 'capability_id', 'contact_channel', 'contract_version', 'correlation_id', 'interactions', 'opportunity', 'snapshot_id'],
   'la corrección es aditiva dentro de facts: las claves del contrato no cambian',
 );
 assert.deepEqual(Object.keys(today.opportunity).sort(), ['company_name', 'facts', 'opportunity_id', 'owner_name', 'service', 'stage', 'title']);

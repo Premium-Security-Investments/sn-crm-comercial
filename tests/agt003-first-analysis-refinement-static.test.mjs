@@ -85,11 +85,11 @@ assert.match(timeline, /entry\.migrated && <span className="badge followup-migra
 assert.match(css, /\.followup-migrated-badge\{/);
 
 // --- 6) VIG-IA: estado vacío compacto y CTA único de generación ----------------------------------------
-assert.match(copilot, /state\.phase !== 'error' && !ready && <div className="vigia-copilot-generate">/,
-  'el CTA externo de preparación sólo se renderiza fuera de error y antes de tener un borrador (ready)');
-assert.match(copilot, />Preparar próximo seguimiento</, 'el CTA externo conserva el texto de preparación inicial');
-assert.match(copilot, /onRegenerate=\{generate\}/, 'en ready la propuesta reutiliza la misma función generate para regenerar');
-assert.match(copilot, />Actualizar propuesta</, 'la propuesta ofrece su propio control de actualización');
+assert.match(copilot, /const showForm = state\.phase === 'idle' \|\| state\.phase === 'loading';/,
+  'el formulario de preparación sólo se renderiza antes de tener un borrador (ready)');
+assert.match(copilot, />Generar seguimiento</, 'el CTA del formulario de preparación genera el seguimiento');
+assert.match(copilot, /onChangePreparation=\{\(\) => setState\(current => changeCopilotPreparation\(current\)\)\}/, 'en ready la propuesta puede volver a la preparación');
+assert.match(copilot, />Cambiar preparación</, 'la propuesta ofrece su propio control para volver a la preparación');
 assert.ok(copilot.includes('vigia-copilot-empty'), 'el estado vacío tiene su propio contenedor compacto');
 assert.match(css, /\.vigia-copilot-empty\{/);
 assert.equal(copilot.includes('>Útil<'), false);

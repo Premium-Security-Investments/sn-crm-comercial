@@ -157,7 +157,10 @@
           ],
           "properties": {
             "subject": {
-              "type": "string",
+              "type": [
+                "string",
+                "null"
+              ],
               "minLength": 1,
               "maxLength": 300
             },

@@ -3,7 +3,7 @@
   "capability_id": "agt003.opportunity-copilot.preview",
   "correlation_id": "corr-synthetic-001",
   "snapshot_id": "snapshot-synthetic-001",
-  "contact_channel": "email",
+  "contact_channel": "whatsapp",
   "opportunity": {
     "opportunity_id": "opp-synthetic-001",
     "title": "Modernización de seguridad física",

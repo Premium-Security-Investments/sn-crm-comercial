@@ -1,7 +1,9 @@
 export const AGT003_COPILOT_CAPABILITY = 'agt003.opportunity-copilot.preview';
 export const AGT003_COPILOT_CONTRACT_VERSION = '2.0-draft.1';
 
-const REQUEST_KEYS = ['contract_version', 'capability_id', 'correlation_id', 'snapshot_id', 'opportunity', 'interactions', 'approved_assets', 'authority'];
+const REQUEST_REQUIRED_KEYS = ['contract_version', 'capability_id', 'correlation_id', 'snapshot_id', 'opportunity', 'interactions', 'approved_assets', 'authority'];
+const REQUEST_OPTIONAL_KEYS = ['commercial_intent', 'contact_channel'];
+const CONTACT_CHANNELS = ['email', 'whatsapp'];
 const OPPORTUNITY_KEYS = ['opportunity_id', 'title', 'company_name', 'stage', 'service', 'owner_name', 'facts'];
 const FACT_INPUT_KEYS = ['evidence_id', 'field', 'value', 'source'];
 const INTERACTION_KEYS = ['interaction_id', 'interaction_type', 'occurred_at', 'summary', 'evidence_id', 'untrusted_crm_text'];
@@ -29,6 +31,17 @@ function nonEmptyString(value, max = Infinity) {
 
 function requireClosed(value, keys, label) {
   if (!exactKeys(value, keys)) throw new Error(`${label} debe ser un objeto JSON cerrado sin claves inesperadas.`);
+}
+
+function requireClosedFlexible(value, requiredKeys, optionalKeys, label) {
+  if (!isRecord(value)) throw new Error(`${label} debe ser un objeto JSON cerrado sin claves inesperadas.`);
+  const allowed = new Set([...requiredKeys, ...optionalKeys]);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw new Error(`${label} debe ser un objeto JSON cerrado sin claves inesperadas.`);
+  }
+  for (const key of requiredKeys) {
+    if (!Object.hasOwn(value, key)) throw new Error(`${label} debe ser un objeto JSON cerrado sin claves inesperadas.`);
+  }
 }
 
 function requireStringArray(value, label, maxItems) {
@@ -70,11 +83,18 @@ function validateAsset(value) {
 }
 
 export function validateAgt003CopilotRequest(value) {
-  requireClosed(value, REQUEST_KEYS, 'La solicitud AGT-003');
+  requireClosedFlexible(value, REQUEST_REQUIRED_KEYS, REQUEST_OPTIONAL_KEYS, 'La solicitud AGT-003');
   if (value.contract_version !== AGT003_COPILOT_CONTRACT_VERSION || value.capability_id !== AGT003_COPILOT_CAPABILITY) {
     throw new Error('La identidad contractual de AGT-003 no es válida.');
   }
   if (!nonEmptyString(value.correlation_id) || !nonEmptyString(value.snapshot_id)) throw new Error('correlation_id y snapshot_id son obligatorios.');
+  if (!CONTACT_CHANNELS.includes(value.contact_channel)) {
+    throw new Error('contact_channel (canal de contacto) debe ser "email" o "whatsapp".');
+  }
+  if (Object.hasOwn(value, 'commercial_intent')
+    && !(typeof value.commercial_intent === 'string' && value.commercial_intent.length <= 500)) {
+    throw new Error('commercial_intent (intención comercial) debe ser texto de máximo 500 caracteres.');
+  }
   validateOpportunity(value.opportunity);
   if (!Array.isArray(value.interactions) || value.interactions.length > 20) throw new Error('interactions excede el límite permitido.');
   value.interactions.forEach(validateInteraction);
@@ -129,7 +149,12 @@ export function validateAgt003CopilotResponse(value, { request } = {}) {
   requireStringArray(value.brief.missing_information, 'brief.missing_information', 20);
   if (!nonEmptyString(value.brief.contact_objective, 1000) || !nonEmptyString(value.brief.strategy, 2000)) throw new Error('El objetivo y la estrategia son obligatorios.');
   requireClosed(value.brief.draft, DRAFT_KEYS, 'brief.draft');
-  if (!nonEmptyString(value.brief.draft.subject, 300) || !nonEmptyString(value.brief.draft.body, 8000)) throw new Error('El borrador requiere asunto y cuerpo acotados.');
+  if (!nonEmptyString(value.brief.draft.body, 8000)) throw new Error('El borrador requiere un cuerpo (body) acotado.');
+  if (request.contact_channel === 'email') {
+    if (!nonEmptyString(value.brief.draft.subject, 300)) throw new Error('El borrador de canal email requiere un asunto (subject) no vacío.');
+  } else if (request.contact_channel === 'whatsapp') {
+    if (value.brief.draft.subject !== null) throw new Error('El borrador de canal whatsapp no debe incluir asunto (subject); debe ser null.');
+  }
   requireStringArray(value.brief.recommended_asset_ids, 'brief.recommended_asset_ids', 20);
   for (const assetId of value.brief.recommended_asset_ids) if (!allowed.assets.has(assetId)) throw new Error(`La respuesta recomienda un activo no autorizado: ${assetId}.`);
   requireStringArray(value.brief.warnings, 'brief.warnings', 20);

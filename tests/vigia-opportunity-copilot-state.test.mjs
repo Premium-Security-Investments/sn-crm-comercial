@@ -13,6 +13,7 @@ const {
   discardCopilotDraft,
   editCopilotDraft,
   failCopilotGeneration,
+  setCopilotContactChannel,
 } = await import(moduleUrl);
 
 const opportunityA = '11111111-1111-4111-8111-111111111111';
@@ -26,6 +27,7 @@ assert.equal(canRenderOpportunityCopilot({ ...profile, permissions: ['modulo_vig
 
 let state = createOpportunityCopilotState(opportunityA);
 assert.equal(state.phase, 'idle');
+state = setCopilotContactChannel(state, 'email');
 const first = beginCopilotGeneration(state);
 state = first.state;
 assert.equal(state.phase, 'loading');
@@ -46,6 +48,7 @@ const staleStart = beginCopilotGeneration(state);
 state = changeCopilotOpportunity(staleStart.state, opportunityB);
 assert.equal(state.phase, 'idle');
 assert.equal(completeCopilotGeneration(state, { opportunityId: opportunityA, requestId: staleStart.requestId, result }), state, 'respuesta tardía de otra oportunidad se descarta');
+state = setCopilotContactChannel(state, 'email');
 const currentStart = beginCopilotGeneration(state);
 const staleRegeneration = beginCopilotGeneration(currentStart.state);
 assert.equal(completeCopilotGeneration(staleRegeneration.state, { opportunityId: opportunityB, requestId: currentStart.requestId, result }), staleRegeneration.state, 'regeneración descarta respuesta anterior');

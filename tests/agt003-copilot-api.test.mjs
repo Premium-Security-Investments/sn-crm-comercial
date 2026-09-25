@@ -70,7 +70,7 @@ function dependencies(overrides = {}) {
 {
   const { deps, events } = dependencies();
   const api = createAgt003CopilotApi(deps);
-  const result = await api.generate({ profile, body: { opportunity_id: opportunityId } });
+  const result = await api.generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } });
   assert.equal(result.run_id, runId);
   assert.equal(result.status, 'completed');
   assert.equal(result.reused, false);
@@ -92,7 +92,7 @@ for (const body of [
   const denied = { ...profile, permissions: ['modulo_oportunidades'] };
   const { deps, events } = dependencies();
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile: denied, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile: denied, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => error?.status === 403 && error?.code === 'FORBIDDEN',
   );
   assert.deepEqual(events, ['resolve'], 'scope metadata is the only read before authorization denial');
@@ -102,7 +102,7 @@ for (const body of [
   const outsider = { ...profile, id: 'other-commercial' };
   const { deps, events } = dependencies();
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile: outsider, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile: outsider, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => error?.status === 403,
   );
   assert.deepEqual(events, ['resolve']);
@@ -113,7 +113,7 @@ for (const body of [
     claimRun: async () => { events.push('claim'); return { status: 'existing' }; },
     findRunByKey: async () => { events.push('find-key'); return { run_id: runId, status: 'completed', output }; },
   });
-  const result = await createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } });
+  const result = await createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } });
   assert.equal(result.reused, true);
   assert.deepEqual(events, ['resolve', 'context', 'assets', 'claim', 'find-key']);
 }
@@ -137,7 +137,7 @@ for (const body of [
     persistedKey = input.idempotencyKey;
     return { run_id: runId, status: 'completed', output: input.response };
   };
-  const result = await createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } });
+  const result = await createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } });
   assert.equal(result.reused, false);
   assert.equal(claimKeys.length, 2, 'un failed histórico avanza a una sola clave de retry');
   assert.equal(claimKeys[1], retryKey(claimKeys[0], runId));
@@ -158,7 +158,7 @@ for (const body of [
     return { run_id: runId, status: 'failed', failure_code: 'COPILOT_UNAVAILABLE', output: null };
   };
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => error?.status === 409 && error?.code === 'VIGIA_COPILOT_IN_PROGRESS',
   );
   assert.equal(claimKeys[1], retryKey(claimKeys[0], runId));
@@ -178,7 +178,7 @@ for (const body of [
     if (key === claimKeys[0]) return { run_id: runId, status: 'failed', failure_code: 'COPILOT_UNAVAILABLE', output: null };
     return { run_id: '44444444-4444-4444-8444-444444444444', status: 'completed', output };
   };
-  const result = await createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } });
+  const result = await createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } });
   assert.equal(result.reused, true, 'un retry ya completado se reutiliza');
   assert.equal(result.run_id, '44444444-4444-4444-8444-444444444444');
   assert.equal(claimKeys[1], retryKey(claimKeys[0], runId));
@@ -196,7 +196,7 @@ for (const body of [
     return { run_id, status: 'failed', failure_code: 'COPILOT_UNAVAILABLE', output: null };
   };
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => error?.status === 503 && error?.code === 'VIGIA_COPILOT_RETRY_LIMIT',
   );
   assert.equal(claimKeys.length, 4, 'la cadena está acotada a cuatro intentos totales');
@@ -209,7 +209,7 @@ for (const body of [
 for (const [claimStatus, expectedStatus] of [['in_progress', 409], ['quota', 429], ['saturated', 503]]) {
   const { deps, events } = dependencies({ claimRun: async () => { events.push('claim'); return { status: claimStatus }; } });
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => error?.status === expectedStatus,
   );
   assert.equal(events.includes('provider'), false, `${claimStatus} must never invoke provider`);
@@ -224,7 +224,7 @@ for (const [claimStatus, expectedStatus] of [['in_progress', 409], ['quota', 429
     recordFailure: async input => { events.push('failure'); persistedFailureCode = input.failureCode; return { run_id: runId, status: 'failed', failure_code: input.failureCode }; },
   });
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => error?.status === 502 && error?.code === 'VIGIA_COPILOT_UNAVAILABLE' && !error.message.includes('secret'),
   );
   assert.equal(persistedFailureCode, 'COPILOT_UNAVAILABLE', 'un código desconocido no cruza a persistencia');
@@ -244,7 +244,7 @@ for (const [claimStatus, expectedStatus] of [['in_progress', 409], ['quota', 429
     recordFailure: async input => { events.push('failure'); persistedFailureCode = input.failureCode; return { run_id: runId, status: 'failed', failure_code: input.failureCode }; },
   });
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => {
       assert.equal(error?.status, 503);
       assert.equal(error?.code, 'VIGIA_COPILOT_SESSION_LIMIT');
@@ -278,7 +278,7 @@ for (const [providerCode, expectedCode, expectedMessage] of [
     releaseClaim: async input => { events.push('release'); released = input; return true; },
   });
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => {
       assert.equal(error?.status, 503);
       assert.equal(error?.code, expectedCode);
@@ -310,10 +310,10 @@ for (const [providerCode, expectedCode, expectedMessage] of [
   });
   const api = createAgt003CopilotApi(deps);
   await assert.rejects(
-    () => api.generate({ profile, body: { opportunity_id: opportunityId } }),
+    () => api.generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => error?.status === 503 && error?.code === 'VIGIA_COPILOT_SATURATED',
   );
-  const result = await api.generate({ profile, body: { opportunity_id: opportunityId } });
+  const result = await api.generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } });
   assert.equal(result.status, 'completed');
   assert.equal(result.reused, false);
   assert.equal(claimKeys.length, 2);
@@ -324,7 +324,7 @@ for (const [providerCode, expectedCode, expectedMessage] of [
 {
   const { deps, events } = dependencies({ isConfigured: () => false });
   await assert.rejects(
-    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003CopilotApi(deps).generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } }),
     error => error?.status === 503 && error?.code === 'VIGIA_COPILOT_NOT_CONFIGURED',
   );
   assert.deepEqual(events, ['resolve'], 'configuration is checked after scope but before CRM context');

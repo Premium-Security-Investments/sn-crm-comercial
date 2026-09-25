@@ -35,12 +35,12 @@ const api = createAgt003CopilotApi({
   recordFeedback: async input => ({ id: 'feedback-1', ...input }),
   correlationId: () => 'corr-e2e',
 });
-const result = await api.generate({ profile, body: { opportunity_id: opportunityId } });
+const result = await api.generate({ profile, body: { opportunity_id: opportunityId, contact_channel: 'email' } });
 assert.equal(result.status, 'completed');
 assert.equal(result.human_review_required, true);
 assert.deepEqual(events, ['claim', 'provider', 'persist']);
 assert.equal(providerCalls, 1);
 assert.equal(result.output.brief.recommended_asset_ids.length, 0);
-await assert.rejects(() => api.generate({ profile: { ...profile, permissions: ['modulo_vig_ia'] }, body: { opportunity_id: opportunityId } }), /autorizaci.n/i);
+await assert.rejects(() => api.generate({ profile: { ...profile, permissions: ['modulo_vig_ia'] }, body: { opportunity_id: opportunityId, contact_channel: 'email' } }), /autorizaci.n/i);
 assert.equal(providerCalls, 1, 'módulos parciales fallan antes del proveedor');
 console.log('AGT-003 copilot synthetic end-to-end passed');

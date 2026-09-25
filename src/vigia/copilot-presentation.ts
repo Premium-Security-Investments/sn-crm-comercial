@@ -87,7 +87,7 @@ export type CopilotPresentationBrief = {
   missing_information: string[];
   contact_objective: string;
   strategy: string;
-  draft: { subject: string; body: string };
+  draft: { subject: string | null; body: string };
   recommended_asset_ids: string[];
   warnings: string[];
   human_review_required: true;
