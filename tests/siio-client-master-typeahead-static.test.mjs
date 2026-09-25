@@ -19,8 +19,8 @@ const FROZEN = {
   'ops/agt003-claude-bridge/agt003-bridge.service': '0847b3a05bcb751e0e8989d96ef2aeb7a447521f7a1c9a0213447a93a95fecfd',
 };
 
-const migrationPath = 'supabase/migrations/092_siio_sales_clients.sql';
-const rollbackPath = 'supabase/rollbacks/092_siio_sales_clients_rollback.sql';
+const migrationPath = 'supabase/migrations/093_siio_sales_clients.sql';
+const rollbackPath = 'supabase/rollbacks/093_siio_sales_clients_rollback.sql';
 const CLIENT_FIELDS = [
   'company_name',
   'customer_segment',
@@ -39,8 +39,8 @@ test('cupos, engine y puente no cambian', () => {
   }
 });
 
-test('migracion 092 crea maestro de clientes con unique normalizado y FK restrict', () => {
-  assert.equal(existsSync(resolve(root, migrationPath)), true, '092_siio_sales_clients.sql debe existir');
+test('migracion 093 crea maestro de clientes con unique normalizado y FK restrict', () => {
+  assert.equal(existsSync(resolve(root, migrationPath)), true, '093_siio_sales_clients.sql debe existir');
   const sql = read(migrationPath);
   assert.match(sql, /^begin;/i);
   assert.match(sql, /commit;\s*$/i);
@@ -66,7 +66,7 @@ test('migracion 092 crea maestro de clientes con unique normalizado y FK restric
   assert.match(sql, /licitacion_publica/i);
   assert.doesNotMatch(sql, /vigia_copilot_pilot|dane|secop/i);
   assert.doesNotMatch(sql, /delete from public\.psi_sales_opportunities/i);
-  assert.equal(existsSync(resolve(root, rollbackPath)), true, 'rollback 092 debe existir');
+  assert.equal(existsSync(resolve(root, rollbackPath)), true, 'rollback 093 debe existir');
 });
 
 test('GET /api/client-typeahead autenticado + modulo_oportunidades ve todos los clientes', () => {

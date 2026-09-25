@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 
-const migrationUrl = new URL('../supabase/migrations/092_siio_sales_clients.sql', import.meta.url);
+const migrationUrl = new URL('../supabase/migrations/093_siio_sales_clients.sql', import.meta.url);
+const rollbackUrl = new URL('../supabase/rollbacks/093_siio_sales_clients_rollback.sql', import.meta.url);
 
 const BASE_SCHEMA = `
 create table public.psi_sales_opportunities (
@@ -26,12 +27,17 @@ create table public.psi_sales_opportunities (
 
 async function openDb() {
   const db = new PGlite();
-  await db.exec(BASE_SCHEMA);
+  await db.exec(`
+    create role anon;
+    create role authenticated;
+    create role service_role bypassrls;
+    ${BASE_SCHEMA}
+  `);
   return db;
 }
 
 async function migrate(db) {
-  assert.equal(existsSync(migrationUrl), true, '092_siio_sales_clients.sql debe existir');
+  assert.equal(existsSync(migrationUrl), true, '093_siio_sales_clients.sql debe existir');
   const sql = await readFile(migrationUrl, 'utf8');
   await db.exec(sql);
 }
@@ -130,6 +136,57 @@ test('seed mezcla privada y licitacion escala (RAISE)', async () => {
         ('acme ltd', 'licitacion_publica');
     `);
     await assert.rejects(() => migrate(db), /licitacion|mix|escala|mezcla/i);
+  } finally {
+    await db.close();
+  }
+});
+
+// Blocker E (PR #229 RED): the real operational lifecycle is apply -> seed/backfill -> rollback.
+// Migration 093's own seed+backfill assigns client_id to every private opportunity as part of
+// applying 093 itself. Rollback 093 then refuses to run ("bloqueado: no se puede revertir...")
+// because it fails closed on any non-null client_id -- but that guard, as written, blocks the
+// migration's own backfill output, so 093 can never be rolled back for real once any private
+// opportunity existed before it ran. This test runs the actual shipped migration and rollback
+// files (not a hand-picked easy case) and requires the full lifecycle to succeed while
+// preserving every opportunity row and never issuing a DELETE against psi_sales_opportunities.
+test('rollback real: apply -> seed/backfill -> rollback preserva oportunidades y nunca hace DELETE', async () => {
+  assert.equal(existsSync(rollbackUrl), true, 'rollback 093 debe existir');
+  const rollbackSql = await readFile(rollbackUrl, 'utf8');
+  assert.doesNotMatch(rollbackSql, /delete\s+from\s+public\.psi_sales_opportunities/i, 'el rollback nunca debe hacer DELETE de oportunidades');
+
+  const db = await openDb();
+  try {
+    await db.exec(`
+      insert into public.psi_sales_opportunities (id, company_name, service_type_code, decision_maker_name, created_at, updated_at) values
+        ('11111111-1111-4111-8111-111111111111', 'Acme Ltd', 'vigilancia', 'Titular Acme', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+        ('22222222-2222-4222-8222-222222222222', 'Entidad Publica', 'licitacion_publica', 'Titular Publico', '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z');
+    `);
+    await migrate(db);
+
+    const beforeRollback = await db.query('select id, company_name, service_type_code, client_id from public.psi_sales_opportunities order by id');
+    assert.equal(beforeRollback.rows.length, 2, 'fixture proof: ambas oportunidades existen antes del rollback');
+    assert.ok(beforeRollback.rows.find(r => r.id === '11111111-1111-4111-8111-111111111111').client_id, 'fixture proof: 093 backfillea client_id en la oportunidad privada (esto es lo que bloquea el rollback tal como esta hoy)');
+
+    await assert.doesNotReject(
+      () => db.exec(rollbackSql),
+      'el rollback real de 093 debe poder revertirse despues de un apply -> seed/backfill real, no solo cuando la base quedo vacia',
+    );
+
+    const clientIdColumn = await db.query(`
+      select count(*)::int as n from information_schema.columns
+      where table_schema = 'public' and table_name = 'psi_sales_opportunities' and column_name = 'client_id'
+    `);
+    assert.equal(clientIdColumn.rows[0].n, 0, 'la columna client_id debe quedar eliminada tras el rollback');
+
+    const clientsTable = await db.query(`select to_regclass('public.psi_sales_clients') as relation`);
+    assert.equal(clientsTable.rows[0].relation, null, 'la tabla psi_sales_clients debe quedar eliminada tras el rollback');
+
+    const afterRollback = await db.query('select id, company_name, service_type_code from public.psi_sales_opportunities order by id');
+    assert.deepEqual(
+      afterRollback.rows,
+      beforeRollback.rows.map(({ client_id, ...rest }) => rest),
+      'todas las filas y datos originales de psi_sales_opportunities deben preservarse exactamente (sin client_id) tras el rollback',
+    );
   } finally {
     await db.close();
   }
