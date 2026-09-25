@@ -117,6 +117,11 @@ const fakeSupabase = http.createServer(async (req, res) => {
     if (req.method === 'POST') return json(res, 201, { id: 'created-opportunity' });
     if (req.method === 'PATCH') return json(res, 200, { id: 'opportunity-existing' });
   }
+  if (url.pathname === '/rest/v1/rpc/psi_persist_sales_opportunity') {
+    const body = await readJson(req);
+    record(req, url, body);
+    return json(res, 200, { id: body?.p_opportunity_id || 'created-opportunity', client_id: body?.p_requested_client_id || null });
+  }
   record(req, url);
   return json(res, 500, { message: `unexpected Supabase access: ${req.method} ${url.pathname}` });
 });
@@ -137,7 +142,10 @@ function resetObserved() {
 }
 
 function salesWrites() {
-  return observed.filter(call => call.path === '/rest/v1/psi_sales_opportunities' && ['POST', 'PATCH'].includes(call.method));
+  return observed.filter(call =>
+    (call.path === '/rest/v1/psi_sales_opportunities' && ['POST', 'PATCH'].includes(call.method)) ||
+    (call.path === '/rest/v1/rpc/psi_persist_sales_opportunity' && call.method === 'POST')
+  );
 }
 
 function ownerLookups() {
@@ -198,7 +206,12 @@ try {
     assert.equal(response.status, 200, `${route.label} edit without reassignment remains authorized even when the existing owner is inactive`);
     assert.equal(ownerLookups().length, 0, `${route.label} edit without reassignment does not re-resolve or revalidate the current owner`);
     assert.equal(salesWrites().length, 1, `${route.label} edit without reassignment reaches its authorized opportunity update`);
-    assert.equal(salesWrites()[0].method, 'PATCH');
+    const noReassignWrite = salesWrites()[0];
+    assert.equal(noReassignWrite.path, '/rest/v1/rpc/psi_persist_sales_opportunity');
+    assert.equal(noReassignWrite.method, 'POST');
+    assert.equal(noReassignWrite.body.p_mode, 'update');
+    assert.equal(noReassignWrite.body.p_opportunity_id, 'opportunity-existing');
+    assert.equal(noReassignWrite.body.p_opportunity.owner_id, 'owner-current');
   }
 
   for (const route of [
@@ -210,8 +223,10 @@ try {
     assert.equal(legacyResponse.status, 200, `${route.label} accepts exact legacy regional_nombre whitespace`);
     const legacyWrites = salesWrites();
     assert.equal(legacyWrites.length, 1, `${route.label} legacy regional_nombre update reaches its authorized opportunity update`);
-    assert.equal(legacyWrites[0].method, 'PATCH');
-    assert.equal(legacyWrites[0].body.regional_nombre, ' Nariño ', `${route.label} legacy regional_nombre PATCH body preserves exact whitespace`);
+    assert.equal(legacyWrites[0].path, '/rest/v1/rpc/psi_persist_sales_opportunity');
+    assert.equal(legacyWrites[0].method, 'POST');
+    assert.equal(legacyWrites[0].body.p_mode, 'update');
+    assert.equal(legacyWrites[0].body.p_opportunity.regional_nombre, ' Nariño ', `${route.label} legacy regional_nombre RPC body preserves exact whitespace`);
 
     resetObserved();
     const invalidResponse = await requestJson(appPort, route.path, route.token, 'PUT', { ...opportunityPayload('owner-current'), regional_nombre: 'Bogotá' });
