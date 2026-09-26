@@ -58,7 +58,7 @@ const migrationPath = new URL('../supabase/migrations/093_siio_sales_clients.sql
     return db;
   }
 
-  const RPC_SIGNATURE = 'public.psi_persist_sales_opportunity(text,uuid,uuid,uuid,jsonb,jsonb)';
+  const RPC_SIGNATURE = 'public.psi_persist_sales_opportunity(text,uuid,uuid,uuid,jsonb,jsonb,uuid[])';
   const CLIENT = {
     company_name: 'Fuerza Atomica SA',
     customer_segment: 'cliente_nuevo',
@@ -76,10 +76,13 @@ const migrationPath = new URL('../supabase/migrations/093_siio_sales_clients.sql
     service_type_code: 'vigilancia',
   };
 
-  async function callPersist(db, { mode = 'create', opportunityId = null, actorProfileId = null, requestedClientId = null, opportunity = OPPORTUNITY, client = CLIENT }) {
+  // authorizedSiblingIds defaults to NULL: these are trusted setup/integration calls that bypass
+  // the API's server-authorized sibling-snapshot check, exactly like a trusted/service_role 6-arg
+  // caller would. Only the sibling-sync test below passes the real, exact snapshot array.
+  async function callPersist(db, { mode = 'create', opportunityId = null, actorProfileId = null, requestedClientId = null, opportunity = OPPORTUNITY, client = CLIENT, authorizedSiblingIds = null }) {
     return db.query(
-      `select public.psi_persist_sales_opportunity($1,$2,$3,$4,$5::jsonb,$6::jsonb) as result`,
-      [mode, opportunityId, actorProfileId, requestedClientId, JSON.stringify(opportunity), client === null ? null : JSON.stringify(client)],
+      `select public.psi_persist_sales_opportunity($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::uuid[]) as result`,
+      [mode, opportunityId, actorProfileId, requestedClientId, JSON.stringify(opportunity), client === null ? null : JSON.stringify(client), authorizedSiblingIds],
     );
   }
 
@@ -128,9 +131,13 @@ const migrationPath = new URL('../supabase/migrations/093_siio_sales_clients.sql
   {
     const db = await migratedDb();
     try {
+      // This test exercises the real sibling-authorization mechanism (not the trusted bypass), so
+      // each call passes the exact server-authorized snapshot a real API caller would have
+      // computed immediately beforehand.
       const created = await callPersist(db, {
         opportunity: { ...OPPORTUNITY, company_name: 'Hermanas SA' },
         client: { ...CLIENT, company_name: 'Hermanas SA' },
+        authorizedSiblingIds: [],
       });
       const clientId = created.rows[0].result.client_id;
       const firstOpportunityId = created.rows[0].result.opportunity_id;
@@ -138,6 +145,7 @@ const migrationPath = new URL('../supabase/migrations/093_siio_sales_clients.sql
         opportunity: { ...OPPORTUNITY, company_name: 'Hermanas SA' },
         requestedClientId: clientId,
         client: null,
+        authorizedSiblingIds: [firstOpportunityId],
       });
       const secondOpportunityId = second.rows[0].result.opportunity_id;
 
@@ -147,6 +155,7 @@ const migrationPath = new URL('../supabase/migrations/093_siio_sales_clients.sql
         requestedClientId: clientId,
         opportunity: { ...OPPORTUNITY, company_name: 'Hermanas Actualizada SA', customer_segment: 'cliente_actual' },
         client: { ...CLIENT, company_name: 'Hermanas Actualizada SA', customer_segment: 'cliente_actual' },
+        authorizedSiblingIds: [secondOpportunityId],
       });
 
       const siblings = await db.query(

@@ -6,8 +6,16 @@ begin;
 -- this functionality; opportunity records and their original company_name remain.
 
 lock table public.psi_sales_opportunities in access exclusive mode;
-lock table public.psi_sales_clients in access exclusive mode;
 
+do $$
+begin
+  if to_regclass('public.psi_sales_clients') is not null then
+    execute 'lock table public.psi_sales_clients in access exclusive mode';
+  end if;
+end
+$$;
+
+drop function if exists public.psi_persist_sales_opportunity(text,uuid,uuid,uuid,jsonb,jsonb,uuid[]);
 drop function if exists public.psi_persist_sales_opportunity(text,uuid,uuid,uuid,jsonb,jsonb);
 
 alter table public.psi_sales_opportunities
