@@ -1,0 +1,120 @@
+name: agt002-control-plane
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  f0_suite:
+    name: f0_suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: node --test tests/agt002-f0a-control-plane.test.mjs tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b-chat-query-rollback-pglite.integration.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0b2-rpc-hardening-rollback-pglite.integration.test.mjs tests/agt002-f0e-ci-governance.test.mjs tests/agt002-f0e-grants-static.test.mjs
+
+  backend_parity:
+    name: backend_parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run check:backend-parity
+
+  production_build:
+    name: production_build
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ENV: production
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ci-dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run build
+
+  migration_static:
+    name: migration_static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: node --test tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0e-grants-static.test.mjs
+
+  grants_security:
+    name: grants_security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run check:agt002-grants
+
+  release_receipt:
+    name: release_receipt
+    runs-on: ubuntu-latest
+    needs:
+      - f0_suite
+      - backend_parity
+      - production_build
+      - migration_static
+      - grants_security
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run agt002:release-receipt -- --out agt002-release-receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agt002-release-receipt
+          path: agt002-release-receipt.json
+
+  drift_alert:
+    name: drift_alert
+    runs-on: ubuntu-latest
+    needs:
+      - release_receipt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: agt002-release-receipt
+          path: .
+      - name: Write observed surfaces
+        run: |
+          cat > agt002-observed-surfaces.json <<EOF
+          {
+            "surfaces": {
+              "origin_main": {
+                "sha": "$GITHUB_SHA",
+                "source": "github_sha"
+              }
+            }
+          }
+          EOF
+      - run: npm run check:agt002-drift -- --receipt agt002-release-receipt.json --observed agt002-observed-surfaces.json
