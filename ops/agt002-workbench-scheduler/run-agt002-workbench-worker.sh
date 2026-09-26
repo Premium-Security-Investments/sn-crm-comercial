@@ -10,6 +10,33 @@
 # es independiente de ops/tender-worker-scheduler/ (secreto y endpoint propios).
 set -euo pipefail
 
+# --control-plane: reporte de identidad sin efectos secundarios, resuelto antes de exigir
+# cualquier secreto o de tocar la red. Nunca infiere el sha leyendo el checkout en disco: sólo
+# usa AGT002_DEPLOYED_GIT_SHA/AGT002_DEPLOYED_VERSION si el desplegador los inyectó
+# explícitamente por entorno; si no, la superficie queda honestamente "unobserved".
+#
+# Validación conservadora contra inyección de JSON: sólo un valor que calce por completo con
+# [A-Za-z0-9._-]{1,100} llega al literal JSON. Cualquier otra cosa (vacío, comillas, backslash,
+# saltos de línea, control chars) colapsa a null/"unobserved" en vez de intentar escaparse.
+if [ "${1:-}" = "--control-plane" ]; then
+  safe_token='^[A-Za-z0-9._-]{1,100}$'
+  observed_at="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+  sha="${AGT002_DEPLOYED_GIT_SHA:-}"
+  version="${AGT002_DEPLOYED_VERSION:-}"
+  if [[ "$sha" =~ $safe_token ]]; then
+    if [[ "$version" =~ $safe_token ]]; then
+      version_json="\"${version}\""
+    else
+      version_json='null'
+    fi
+    printf '{"surface":"workbench_scheduler","sha":"%s","version":%s,"source":"workbench_scheduler_deployed_git_sha","observed_at_utc":"%s"}\n' \
+      "$sha" "$version_json" "$observed_at"
+  else
+    printf '{"surface":"workbench_scheduler","sha":null,"version":null,"source":"unobserved","observed_at_utc":"%s"}\n' "$observed_at"
+  fi
+  exit 0
+fi
+
 : "${AGT002_WORKBENCH_WORKER_URL:?Falta AGT002_WORKBENCH_WORKER_URL en /etc/agt002-workbench-scheduler/env}"
 : "${AGT002_WORKBENCH_WORKER_SECRET:?Falta AGT002_WORKBENCH_WORKER_SECRET en /etc/agt002-workbench-scheduler/env}"
 

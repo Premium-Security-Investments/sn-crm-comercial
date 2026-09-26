@@ -9,6 +9,21 @@ function requireEnv(name) {
   return value;
 }
 
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+// Identidad del control plane: sólo el sha (y, opcionalmente, la versión) que el
+// desplegador haya inyectado explícitamente por entorno. Nunca se infiere consultando
+// el repositorio git local ni cualquier otro estado mutable del disco del host -- si
+// no se inyectó nada, la superficie queda honestamente "unobserved" (ver GET
+// /v1/agt002/control-plane en agt002-hetzner-bridge-server.js).
+const deployedSha = nonEmptyString(process.env.AGT002_DEPLOYED_GIT_SHA);
+const deployedVersion = nonEmptyString(process.env.AGT002_DEPLOYED_VERSION);
+const controlPlaneIdentity = deployedSha
+  ? { sha: deployedSha, version: deployedVersion, source: 'bridge_deployed_git_sha' }
+  : {};
+
 const hmacSecret = requireEnv('AGT002_BRIDGE_HMAC_SECRET');
 const port = Number(requireEnv('AGT002_BRIDGE_LISTEN_PORT'));
 const bridgeHost = resolveAgt002BridgeHost(process.env);
@@ -22,7 +37,7 @@ const command = process.env.AGT002_CLAUDE_CLI_BIN || 'claude';
 const claudeClient = createAgt002ClaudeClient({ command, cwd: '/opt/agt002-bridge' });
 // La allowlist de modelos nunca se construye desde el entorno ni se inyecta aquí: el puente
 // (agt002-hetzner-bridge-server.js) siempre usa el contrato frozen compartido.
-const server = createServer(createAgt002BridgeServer({ hmacSecret, codexClient: claudeClient }));
+const server = createServer(createAgt002BridgeServer({ hmacSecret, codexClient: claudeClient, controlPlaneIdentity }));
 server.listen(port, listenHost, () => {
   console.log(JSON.stringify({ event: 'agt002_bridge_listening', port, listen_host: listenHost, host: bridgeHost, run_url: bridgeRunUrl(bridgeHost) }));
 });

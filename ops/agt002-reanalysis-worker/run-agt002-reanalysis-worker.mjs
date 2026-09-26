@@ -4,6 +4,15 @@ import { createAgt002ReanalysisExecutor } from '../../agt002-reanalysis-executor
 import { createAgt002ReanalysisWorker } from '../../agt002-reanalysis-worker.js';
 import { resolveAgt002GovernedDocumentForExecution } from '../../agt002-governed-document-rehydration.js';
 import { resolveAgt002GovernedContextVersionForExecution } from '../../agt002-governed-context-version-rehydration.js';
+import { buildReanalysisWorkerIdentity } from '../../agt002-control-plane-surface-builders.js';
+
+// --control-plane: side-effect-free identity report, gated before any secret/client
+// requirement below. Never reads git/disk state -- only the explicit deployed-sha env var
+// the deployer injected (or none, which stays honestly unobserved).
+if (process.argv.includes('--control-plane')) {
+  console.log(JSON.stringify(buildReanalysisWorkerIdentity({ releaseSha: process.env.AGT002_DEPLOYED_GIT_SHA || null })));
+  process.exit(0);
+}
 
 const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
