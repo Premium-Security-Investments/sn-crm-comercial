@@ -58,6 +58,7 @@ import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMME
 import { evaluateTenderFit } from '../tender-fit-policy.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
+import { getAgt002VercelControlPlaneIdentity } from '../agt002-vercel-control-plane-identity.js';
 import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
 import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
@@ -5938,6 +5939,10 @@ app.get('/api/client-typeahead', async (req, res) => {
     const matches = typeaheadMatches(clients, String(req.query.q || ''));
     res.json(matches.slice(0, 20));
   } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/agt002/control-plane', (req, res) => {
+  res.json(getAgt002VercelControlPlaneIdentity({ env: process.env }));
 });
 
 const distPath = path.join(__dirname, '..', 'dist');

@@ -4,8 +4,10 @@ import { authenticateBridgeRequest } from './agt002-hetzner-bridge-auth.js';
 import { logBridgeEvent } from './agt002-hetzner-bridge-log.js';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
+import { buildAgt002ControlPlaneIdentity } from './agt002-control-plane-identity.js';
 
 const BRIDGE_PATH = '/v1/agt002-preview/run';
+const CONTROL_PLANE_PATH = '/v1/agt002/control-plane';
 export const AGT002_BRIDGE_MAX_BODY_BYTES = 1_048_576;
 /**
  * El puente decide qué modelos existen: nada fuera de la lista llega al argv del proveedor.
@@ -64,6 +66,8 @@ export function createAgt002BridgeServer({
   nonceStore = createNonceStore(),
   now = () => Math.floor(Date.now() / 1000),
   maxBodyBytes = AGT002_BRIDGE_MAX_BODY_BYTES,
+  // Injected observation only — never read from /opt disk inside this server.
+  controlPlaneIdentity = {},
   // Deliberately not a constructor option: the allowlist is never a caller/environment value.
   // The bridge decides which model aliases exist at all, and the only allowlist it may ever
   // enforce is the shared frozen contract re-exported as AGT002_BRIDGE_ALLOWED_MODELS above —
@@ -75,8 +79,16 @@ export function createAgt002BridgeServer({
   const allowedModelSet = new Set(AGT002_BRIDGE_ALLOWED_MODELS);
 
   return function requestListener(req, res) {
-    if (req.method !== 'POST') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
     const url = new URL(req.url, 'http://127.0.0.1');
+    if (req.method === 'GET' && url.pathname === CONTROL_PLANE_PATH) {
+      return sendJson(res, 200, buildAgt002ControlPlaneIdentity({
+        surface: 'bridge',
+        sha: controlPlaneIdentity.sha ?? null,
+        version: controlPlaneIdentity.version ?? null,
+        source: controlPlaneIdentity.source ?? 'unobserved',
+      }));
+    }
+    if (req.method !== 'POST') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
     if (url.pathname !== BRIDGE_PATH) return sendError(res, 404, 'AGT002_BRIDGE_BAD_REQUEST');
     if (String(req.headers['content-type'] || '').split(';')[0].trim() !== 'application/json') {
       return sendError(res, 415, 'AGT002_BRIDGE_UNSUPPORTED_MEDIA_TYPE');

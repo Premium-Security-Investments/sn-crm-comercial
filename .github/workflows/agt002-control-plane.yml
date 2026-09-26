@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
-      - run: node --test tests/agt002-f0a-control-plane.test.mjs tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b-chat-query-rollback-pglite.integration.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0b2-rpc-hardening-rollback-pglite.integration.test.mjs tests/agt002-f0e-ci-governance.test.mjs tests/agt002-f0e-grants-static.test.mjs
+      - run: node --test tests/agt002-f0a-control-plane.test.mjs tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b-chat-query-rollback-pglite.integration.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0b2-rpc-hardening-rollback-pglite.integration.test.mjs tests/agt002-f0e-ci-governance.test.mjs tests/agt002-f0e-grants-static.test.mjs tests/agt002-f0-runtime-reporters.test.mjs
 
   backend_parity:
     name: backend_parity
