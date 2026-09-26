@@ -33,6 +33,7 @@ import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
+import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
@@ -336,6 +337,7 @@ function sendError(res, error, status = 500) {
     return res.status(503).json({ error: 'La fundación de análisis documental no está disponible.', code: 'TENDER_ANALYSIS_FOUNDATION_UNAVAILABLE' });
   }
   if (error?.stage && error?.code) return res.status(status).json({ error: error.message, stage: error.stage, code: error.code });
+  if (error?.code === 'CLIENT_NAME_DUPLICATE' || error?.code === 'CLIENT_REFERENCE_INVALID') return res.status(status).json({ error: error.message, code: error.code });
   console.error(error);
   return res.status(status).json({ error: error?.message || String(error) });
 }
@@ -979,7 +981,7 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment,regional_nombre').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone').eq('id', id).single());
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
 }
@@ -4754,7 +4756,18 @@ app.post('/api/opportunities', async (req, res) => {
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
-    const data = await must(database.from('psi_sales_opportunities').insert(payload).select('id').single());
+    const isPublicTender = payload.service_type_code === 'licitacion_publica';
+    const requestedClientId = isPublicTender ? null : (req.body.client_id || null);
+    const authorizedSiblingIds = isPublicTender ? null : await prepareClientForNewOpportunity(database, currentProfile, payload, requestedClientId);
+    const data = await persistSalesOpportunity(database, {
+      mode: 'create',
+      opportunityId: null,
+      actorProfileId: currentProfile.id,
+      requestedClientId,
+      opportunity: payload,
+      client: isPublicTender ? null : pickClientMasterFields(payload),
+      authorizedSiblingIds,
+    });
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -4768,8 +4781,23 @@ app.put('/api/opportunities/:id', async (req, res) => {
     const payload = cleanOpportunity(req.body, existing.regional_nombre);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
+    const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
+    const clientPlan = isPublicTender
+      ? { kind: 'noop', clientId: null }
+      : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
-    const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', req.params.id).select('id').single());
+    const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
+      ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
+      : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, req.params.id);
+    const data = await persistSalesOpportunity(database, {
+      mode: 'update',
+      opportunityId: req.params.id,
+      actorProfileId: currentProfile.id,
+      requestedClientId,
+      opportunity: payload,
+      client,
+      authorizedSiblingIds,
+    });
     await logCustomerSegmentChange(database, req.params.id, currentProfile.id, existing.customer_segment, payload.customer_segment);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -4883,8 +4911,23 @@ app.put('/api/opportunity', async (req, res) => {
     const payload = cleanOpportunity(req.body, existing.regional_nombre);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
+    const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
+    const clientPlan = isPublicTender
+      ? { kind: 'noop', clientId: null }
+      : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
-    const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', id).select('id').single());
+    const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
+      ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
+      : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, id);
+    const data = await persistSalesOpportunity(database, {
+      mode: 'update',
+      opportunityId: id,
+      actorProfileId: currentProfile.id,
+      requestedClientId,
+      opportunity: payload,
+      client,
+      authorizedSiblingIds,
+    });
     await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -5770,6 +5813,131 @@ app.post('/api/tender-knowledge-versions/:knowledgeVersionId/publish', async (re
     res.set('Cache-Control', 'private, no-store');
     res.status(200).json({ ...data, status: 'publicado' });
   } catch (error) { sendActionableReviewError(res, error); }
+});
+
+const CLIENT_MASTER_FIELD_KEYS = ['company_name', 'customer_segment', 'regional_nombre', 'sede', 'quote_city', 'economic_sector', 'decision_maker_name', 'decision_maker_email', 'decision_maker_phone'];
+const CLIENT_MASTER_SELECT = ['id', ...CLIENT_MASTER_FIELD_KEYS].join(',');
+
+function clientDuplicateNameError(companyName) {
+  const error = new Error(`Ya existe un cliente registrado con un nombre equivalente a "${companyName}". Debe elegir el cliente existente en la lista de sugerencias en lugar de crear uno nuevo.`);
+  error.status = 409;
+  error.code = 'CLIENT_NAME_DUPLICATE';
+  return error;
+}
+function mapClientWriteError(error, companyName) {
+  if (error?.code === '23505') return clientDuplicateNameError(companyName || 'existente');
+  if (error?.code === '23503') { const e = new Error('El cliente referenciado no es válido.'); e.status = 400; e.code = 'CLIENT_REFERENCE_INVALID'; return e; }
+  return error;
+}
+function pickClientMasterFields(source) {
+  const fields = {};
+  for (const key of CLIENT_MASTER_FIELD_KEYS) fields[key] = source[key] ?? null;
+  return fields;
+}
+function applyClientMasterFields(payload, client) { Object.assign(payload, pickClientMasterFields(client)); }
+async function fetchClientMasterById(database, clientId) {
+  const { data, error } = await database.from('psi_sales_clients').select(CLIENT_MASTER_SELECT).eq('id', clientId).maybeSingle();
+  if (error) throw error;
+  if (!data) { const notFound = new Error('El cliente seleccionado no existe.'); notFound.status = 404; throw notFound; }
+  return data;
+}
+async function findClientMasterByName(database, companyName) {
+  const normalized = normalizeClientName(companyName);
+  if (!normalized) return null;
+  const clients = await must(database.from('psi_sales_clients').select(CLIENT_MASTER_SELECT));
+  return clients.find(client => normalizeClientName(client.company_name) === normalized) || null;
+}
+async function preflightNewClientName(database, companyName) {
+  const existing = await findClientMasterByName(database, companyName);
+  if (existing) throw clientDuplicateNameError(companyName);
+}
+async function prepareClientForNewOpportunity(database, profile, payload, requestedClientId) {
+  if (requestedClientId) {
+    const client = await fetchClientMasterById(database, requestedClientId);
+    applyClientMasterFields(payload, client);
+    return requireSiblingOpportunityAuthorization(database, profile, requestedClientId, null, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  }
+  await preflightNewClientName(database, payload.company_name);
+  return [];
+}
+// Authorizes the actor against every owner currently sharing clientId (excluding
+// opportunityIdToSkip) and returns the exact server-fetched sibling id set, so callers can pass it
+// on, unmodified, as the RPC's p_authorized_sibling_ids for it to re-verify under lock.
+async function requireSiblingOpportunityAuthorization(database, profile, clientId, opportunityIdToSkip, action) {
+  let siblingQuery = database.from('psi_sales_opportunities').select('id,owner_id').eq('client_id', clientId);
+  if (opportunityIdToSkip) siblingQuery = siblingQuery.neq('id', opportunityIdToSkip);
+  const siblings = await must(siblingQuery);
+  for (const sibling of siblings) {
+    await requireExistingOpportunityAction(database, profile, sibling.owner_id, action);
+  }
+  return siblings.map(sibling => sibling.id);
+}
+// Side-effect-free: determines what the eventual client_id/master write will be and, for a
+// relink, applies the target client's master fields onto `payload` so the caller can run the
+// customer_segment permission check against the value that will actually be written, before any
+// client-master or sibling opportunity mutation happens.
+async function prepareClientForOpportunityUpdate(database, existing, payload, requestedClientId, body) {
+  const effectiveServiceTypeCode = payload.service_type_code || existing.service_type_code || null;
+  if (effectiveServiceTypeCode === 'licitacion_publica') return { kind: 'noop', clientId: null };
+  const hasOwn = (key) => Object.prototype.hasOwnProperty.call(body, key);
+  const touchesMasterField = CLIENT_MASTER_FIELD_KEYS.some(hasOwn);
+  if (!hasOwn('client_id') && !touchesMasterField) return { kind: 'noop', clientId: existing.client_id || null };
+
+  if (requestedClientId && requestedClientId !== existing.client_id) {
+    const client = await fetchClientMasterById(database, requestedClientId);
+    applyClientMasterFields(payload, client);
+    return { kind: 'relink', clientId: client.id };
+  }
+  if (!existing.client_id) {
+    if (!hasOwn('client_id')) return { kind: 'noop', clientId: null };
+    return { kind: 'createNew' };
+  }
+  if (!touchesMasterField) return { kind: 'noop', clientId: existing.client_id };
+  const changed = CLIENT_MASTER_FIELD_KEYS.some(field => hasOwn(field) && (payload[field] ?? null) !== (existing[field] ?? null));
+  return { kind: changed ? 'syncMaster' : 'noop', clientId: existing.client_id };
+}
+async function resolveClientArgsForOpportunityUpdate(database, profile, plan, payload, opportunityId) {
+  switch (plan.kind) {
+    case 'createNew':
+      await preflightNewClientName(database, payload.company_name);
+      return { requestedClientId: null, client: pickClientMasterFields(payload), authorizedSiblingIds: [] };
+    case 'syncMaster': {
+      const authorizedSiblingIds = await requireSiblingOpportunityAuthorization(database, profile, plan.clientId, opportunityId, ACTIONS.CRM_OPPORTUNITY_EDIT);
+      return { requestedClientId: plan.clientId, client: pickClientMasterFields(payload), authorizedSiblingIds };
+    }
+    case 'relink': {
+      const authorizedSiblingIds = await requireSiblingOpportunityAuthorization(database, profile, plan.clientId, opportunityId, ACTIONS.CRM_OPPORTUNITY_EDIT);
+      return { requestedClientId: plan.clientId, client: null, authorizedSiblingIds };
+    }
+    default:
+      return { requestedClientId: null, client: null, authorizedSiblingIds: null };
+  }
+}
+async function persistSalesOpportunity(database, { mode, opportunityId, actorProfileId, requestedClientId, opportunity, client, authorizedSiblingIds }) {
+  let data;
+  try {
+    data = await must(database.rpc('psi_persist_sales_opportunity', {
+      p_mode: mode,
+      p_opportunity_id: opportunityId,
+      p_actor_profile_id: actorProfileId,
+      p_requested_client_id: requestedClientId,
+      p_opportunity: opportunity,
+      p_client: client,
+      p_authorized_sibling_ids: authorizedSiblingIds ?? null,
+    }));
+  } catch (error) { throw mapClientWriteError(error, opportunity.company_name); }
+  return { id: data?.id ?? data?.opportunity_id, client_id: data?.client_id ?? null };
+}
+
+app.get('/api/client-typeahead', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const clients = await must(database.from('psi_sales_clients').select(CLIENT_MASTER_SELECT).order('company_name', { ascending: true }));
+    const matches = typeaheadMatches(clients, String(req.query.q || ''));
+    res.json(matches.slice(0, 20));
+  } catch (error) { sendAuthError(res, error); }
 });
 
 const distPath = path.join(__dirname, '..', 'dist');

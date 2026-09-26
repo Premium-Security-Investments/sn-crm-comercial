@@ -49,7 +49,7 @@ type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
 type Opportunity = {
-  id: string; owner_id: string | null; company_name: string; owner_name: string | null; owner_email: string | null;
+  id: string; owner_id: string | null; client_id: string | null; company_name: string; owner_name: string | null; owner_email: string | null;
   stage_code: string; stage_name: string; stage_order: number; service_type_code: string | null; service_type_name: string | null;
   offer_value: number; weighted_pipeline_value: number; regional_nombre: string | null; sede: string | null;
   tipo_producto_original: string | null; quote_city: string | null; quote_date: string | null; expected_close_date: string | null;
@@ -86,10 +86,12 @@ type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | '
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
+type ClientSuggestion = { id: string; company_name: string; customer_segment: CustomerSegment | null; regional_nombre: string | null; sede: string | null; quote_city: string | null; economic_sector: string | null; decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
 
+function normalizeClientName(name: string) { return name.trim().replace(/\s+/g, ' ').toLowerCase(); }
 function isManagementRole(role?: string | null) { return navIsManagementRole(role); }
 function canManageUsers(profile?: Profile | null) { return navCanManageUsers(profile); }
 function canManageGoals(profile?: Profile | null) { return canAccessRoute(profile, 'goals'); }
@@ -1314,6 +1316,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   const existing = id ? data.opportunities.find(o => o.id === id) : undefined;
   const [form, setForm] = useState<OpportunityPayload>({
     company_name: existing?.company_name || '',
+    client_id: existing?.client_id || '',
     owner_id: existing?.owner_id || '',
     stage_code: existing?.stage_code || 'prospecto',
     service_type_code: existing?.service_type_code || '',
@@ -1337,6 +1340,66 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   const canEditSegment = canEditOpportunitySegment(data.currentProfile, existing);
   const creationDateValue = existing?.created_at ? String(existing.created_at).slice(0,10) : todayDateInputValue();
   const set = (key: keyof OpportunityPayload, value: string) => setForm(prev => ({ ...prev, [key]: value }));
+  const selectedClientNameRef = useRef(existing?.client_id ? (existing?.company_name || '') : '');
+  const clientTypedRef = useRef(false);
+  const clientRequestSeqRef = useRef(0);
+  const [clientSuggestions, setClientSuggestions] = useState<ClientSuggestion[]>([]);
+  const [clientTypeaheadStatus, setClientTypeaheadStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const setCompanyName = (value: string) => {
+    clientTypedRef.current = true;
+    setForm(prev => {
+      const next = { ...prev, company_name: value };
+      if (prev.client_id && normalizeClientName(value) !== normalizeClientName(selectedClientNameRef.current)) next.client_id = '';
+      return next;
+    });
+  };
+  const selectClientSuggestion = (client: ClientSuggestion) => {
+    selectedClientNameRef.current = client.company_name;
+    setForm(prev => ({
+      ...prev,
+      client_id: client.id,
+      company_name: client.company_name,
+      customer_segment: client.customer_segment || '',
+      regional_nombre: client.regional_nombre || '',
+      sede: client.sede || '',
+      quote_city: client.quote_city || '',
+      economic_sector: client.economic_sector || '',
+      decision_maker_name: client.decision_maker_name || '',
+      decision_maker_email: client.decision_maker_email || '',
+      decision_maker_phone: client.decision_maker_phone || '',
+    }));
+    setClientSuggestions([]);
+    setShowClientSuggestions(false);
+    setClientTypeaheadStatus('idle');
+  };
+  useEffect(() => {
+    if (!clientTypedRef.current) return;
+    const query = String(form.company_name || '').trim();
+    setShowClientSuggestions(false);
+    if (query.length < 2 || normalizeClientName(query) === normalizeClientName(selectedClientNameRef.current)) {
+      setClientSuggestions([]);
+      setClientTypeaheadStatus('idle');
+      return;
+    }
+    const seq = ++clientRequestSeqRef.current;
+    const controller = new AbortController();
+    setClientTypeaheadStatus('loading');
+    const timer = window.setTimeout(async () => {
+      try {
+        const results = await api<ClientSuggestion[]>(`/api/client-typeahead?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+        if (clientRequestSeqRef.current !== seq) return;
+        setClientSuggestions(results);
+        setClientTypeaheadStatus('idle');
+        setShowClientSuggestions(true);
+      } catch (err) {
+        if (controller.signal.aborted || clientRequestSeqRef.current !== seq) return;
+        setClientSuggestions([]);
+        setClientTypeaheadStatus('error');
+      }
+    }, 300);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [form.company_name]);
   const regionalOptions: string[][] = [
     ...(existing?.regional_nombre && !isValidRegionalOption(existing.regional_nombre) ? [[existing.regional_nombre, `${existing.regional_nombre} (histórico)`]] : []),
     ...REGIONAL_OPTIONS.map(r => [r, r]),
@@ -1358,7 +1421,31 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   };
   return <Panel title={id ? 'Editar oportunidad' : 'Nueva oportunidad'}>
     <form onSubmit={submit} className="form gridform">
-      <label>Cliente / empresa<input required value={form.company_name || ''} onChange={e=>set('company_name', e.target.value)}/></label>
+      <label className="client-typeahead-field">Cliente / empresa
+        <input
+          required
+          autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={showClientSuggestions && clientSuggestions.length > 0}
+          aria-controls="client-typeahead-listbox"
+          value={form.company_name || ''}
+          onChange={e=>setCompanyName(e.target.value)}
+          onFocus={() => { if (clientSuggestions.length) setShowClientSuggestions(true); }}
+          onBlur={() => window.setTimeout(() => setShowClientSuggestions(false), 150)}
+        />
+        {clientTypeaheadStatus === 'loading' && <small aria-live="polite">Buscando clientes…</small>}
+        {clientTypeaheadStatus === 'error' && <small aria-live="polite" className="client-typeahead-status error">No se pudo buscar clientes. Intente de nuevo.</small>}
+        {showClientSuggestions && clientSuggestions.length > 0 && (
+          <ul id="client-typeahead-listbox" role="listbox" className="client-typeahead-list">
+            {clientSuggestions.map(client => (
+              <li key={client.id} role="option" aria-selected={form.client_id === client.id}>
+                <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>selectClientSuggestion(client)}>{client.company_name}</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </label>
       <label>Fecha creación oportunidad<input type="date" value={creationDateValue} readOnly disabled/><small>Se asigna automáticamente con la fecha del día en que se crea la oportunidad.</small></label>
       <label>Comercial<Select value={String(form.owner_id || '')} onChange={v=>set('owner_id', v)} options={data.profiles.filter(isCommercialProfile).map(p=>[p.id,p.full_name])} empty="Seleccionar"/></label>
       <label>Etapa<Select value={String(form.stage_code || '')} onChange={v=>set('stage_code', v)} options={data.stages.map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
