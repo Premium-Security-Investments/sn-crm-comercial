@@ -36,10 +36,14 @@ function explicitEnvObservation(surface, env) {
 
 // Optional URL-based observation for one surface: AGT002_OBSERVE_<SURFACE>_URL, fetched with the
 // injected fetchImpl (never the real network in tests) and expected to return JSON shaped like
-// {sha, version, source} -- exactly what the bridge/vercel control-plane GET routes already
-// return. A missing URL, a non-2xx response, or a fetch failure all collapse to null (honestly
-// unobserved) rather than throwing, so one unreachable surface can't take down collection of the
-// other five.
+// {surface, sha, version, source} -- exactly what the bridge/vercel control-plane GET routes
+// already return (buildAgt002ControlPlaneIdentity always stamps its own `surface`). The response's
+// `surface` must exactly equal the surface this URL was configured for: a misconfigured/proxied
+// URL (e.g. the radar_pipeline URL var pointed at the bridge endpoint) must never let one
+// surface's response be relabeled and trusted as a different surface's observation. A missing
+// URL, a non-2xx response, a missing/mismatched `surface`, or a fetch failure all collapse to null
+// (honestly unobserved) rather than throwing, so one unreachable/misconfigured surface can't take
+// down collection of the other five.
 async function fetchedSurfaceObservation(surface, env, fetchImpl) {
   const url = nonEmptyString(env[`${surfaceEnvPrefix(surface)}_URL`]);
   if (!url || typeof fetchImpl !== 'function') return null;
@@ -47,6 +51,7 @@ async function fetchedSurfaceObservation(surface, env, fetchImpl) {
     const response = await fetchImpl(url);
     if (!response.ok) return null;
     const body = await response.json();
+    if (nonEmptyString(body?.surface) !== surface) return null;
     return {
       sha: nonEmptyString(body?.sha),
       version: nonEmptyString(body?.version),

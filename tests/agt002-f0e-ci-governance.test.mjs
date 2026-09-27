@@ -380,3 +380,61 @@ test('drift_alert still needs release_receipt so it runs after it, including on 
   const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
   assert.match(driftAlertSection, /needs:\s*\n\s*-\s*release_receipt/);
 });
+
+// --- PR bootstrap deadlock fix: pull_request runs an offline detector-contract test instead of
+// pretending to observe/produce a production drift result, since no live URLs are configured yet ---
+
+test('drift_alert job runs the offline drift-detection test file only on pull_request', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  const offlineStepIndex = driftAlertSection.search(
+    /if:\s*github\.event_name == 'pull_request'\s*\n\s*run:\s*node --test tests\/agt002-f0-drift-detection\.test\.mjs/,
+  );
+  assert.ok(offlineStepIndex >= 0, 'expected a pull_request-gated step running the offline drift-detection test file');
+});
+
+test('drift_alert live-observation steps are gated off on pull_request', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  const stepStarts = [
+    { name: 'download-artifact', re: /uses:\s*actions\/download-artifact@v4\s*\n\s*if:\s*github\.event_name != 'pull_request'/ },
+    { name: 'Collect observed surfaces', re: /name:\s*Collect observed surfaces\s*\n\s*if:\s*github\.event_name != 'pull_request'/ },
+    { name: 'Check drift', re: /name:\s*Check drift\s*\n\s*if:\s*github\.event_name != 'pull_request'/ },
+  ];
+  for (const step of stepStarts) {
+    assert.match(driftAlertSection, step.re, `expected ${step.name} to be gated off on pull_request`);
+  }
+  assert.match(driftAlertSection, /if:\s*always\(\)\s*&&\s*github\.event_name != 'pull_request'/, 'expected Upload drift result gated off on pull_request');
+  assert.match(
+    driftAlertSection,
+    /if:\s*steps\.drift\.outcome == 'failure'\s*&&\s*github\.event_name != 'pull_request'/,
+    'expected Fail on drift gated off on pull_request',
+  );
+});
+
+test('drift_alert job never claims a production drift result on pull_request: Check drift/Fail on drift only run for non-PR events', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  assert.doesNotMatch(
+    driftAlertSection.slice(0, driftAlertSection.search(/name:\s*Collect observed surfaces/)),
+    /run:\s*npm run check:agt002-drift/,
+    'check:agt002-drift must not run before the pull_request gate',
+  );
+});
+
+test('drift_alert job retains the full live six-surface path unconditionally on push/schedule/workflow_dispatch (only pull_request is excluded)', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  for (const marker of [
+    "if: github.event_name != 'pull_request'",
+    "if: always() && github.event_name != 'pull_request'",
+    "if: steps.drift.outcome == 'failure' && github.event_name != 'pull_request'",
+  ]) {
+    assert.ok(driftAlertSection.includes(marker), `expected exact gate "${marker}"`);
+    assert.doesNotMatch(
+      marker,
+      /schedule|workflow_dispatch|push/,
+      'the live path must only exclude pull_request, never push/schedule/workflow_dispatch',
+    );
+  }
+});

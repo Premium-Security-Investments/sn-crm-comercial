@@ -202,7 +202,10 @@ test('collectAgt002SurfaceObservations: a configured URL is fetched with the inj
     env: { AGT002_OBSERVE_VERCEL_PRODUCTION_URL: 'https://example.invalid/control-plane' },
     fetchImpl: async (url) => {
       calls.push(url);
-      return { ok: true, json: async () => ({ sha: 'vercel-sha', version: '1.2.3', source: 'vercel_git_commit_sha' }) };
+      return {
+        ok: true,
+        json: async () => ({ surface: 'vercel_production', sha: 'vercel-sha', version: '1.2.3', source: 'vercel_git_commit_sha' }),
+      };
     },
   });
   assert.deepEqual(calls, ['https://example.invalid/control-plane']);
@@ -218,7 +221,10 @@ test('collectAgt002SurfaceObservations: radar_pipeline, reanalysis_worker, and w
       env: { [`${prefix}_URL`]: 'https://example.invalid/control-plane' },
       fetchImpl: async (url) => {
         calls.push(url);
-        return { ok: true, json: async () => ({ sha: `${surface}-sha`, version: '1.2.3', source: `${surface}_url_fetch` }) };
+        return {
+          ok: true,
+          json: async () => ({ surface, sha: `${surface}-sha`, version: '1.2.3', source: `${surface}_url_fetch` }),
+        };
       },
     });
     assert.deepEqual(calls, ['https://example.invalid/control-plane']);
@@ -245,6 +251,42 @@ test('collectAgt002SurfaceObservations: a non-2xx response collapses to unobserv
   assert.deepEqual(observations.bridge, {});
 });
 
+// --- trust-boundary fix: a URL response's `surface` must exactly match the surface it was fetched for ---
+
+test('collectAgt002SurfaceObservations: a response whose surface exactly matches the requested surface is trusted', async () => {
+  const observations = await collectAgt002SurfaceObservations({
+    env: { AGT002_OBSERVE_RADAR_PIPELINE_URL: 'https://example.invalid/control-plane' },
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ surface: 'radar_pipeline', sha: 'radar-sha', version: '1.2.3', source: 'radar_pipeline_url_fetch' }),
+    }),
+  });
+  assert.equal(observations.radar_pipeline.sha, 'radar-sha');
+  assert.equal(observations.radar_pipeline.version, '1.2.3');
+});
+
+test('collectAgt002SurfaceObservations: a bridge response served from a radar_pipeline-configured URL must not be relabeled as radar_pipeline', async () => {
+  const observations = await collectAgt002SurfaceObservations({
+    env: { AGT002_OBSERVE_RADAR_PIPELINE_URL: 'https://example.invalid/control-plane' },
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ surface: 'bridge', sha: 'bridge-sha', version: '1.2.3', source: 'bridge_url_fetch' }),
+    }),
+  });
+  assert.deepEqual(observations.radar_pipeline, {}, 'a mismatched surface label must collapse to unobserved, never relabeled');
+});
+
+test('collectAgt002SurfaceObservations: a response missing the surface field entirely collapses to unobserved', async () => {
+  const observations = await collectAgt002SurfaceObservations({
+    env: { AGT002_OBSERVE_WORKBENCH_SCHEDULER_URL: 'https://example.invalid/control-plane' },
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ sha: 'workbench-sha', version: '1.2.3', source: 'workbench_scheduler_url_fetch' }),
+    }),
+  });
+  assert.deepEqual(observations.workbench_scheduler, {}, 'a missing surface field must never be trusted as a match');
+});
+
 test('collectAgt002SurfaceObservations: explicit env sha takes precedence over a configured URL', async () => {
   let fetchCalled = false;
   const observations = await collectAgt002SurfaceObservations({
@@ -254,7 +296,7 @@ test('collectAgt002SurfaceObservations: explicit env sha takes precedence over a
     },
     fetchImpl: async () => {
       fetchCalled = true;
-      return { ok: true, json: async () => ({ sha: 'from-url', version: null, source: 'bridge_url_fetch' }) };
+      return { ok: true, json: async () => ({ surface: 'bridge', sha: 'from-url', version: null, source: 'bridge_url_fetch' }) };
     },
   });
   assert.equal(observations.bridge.sha, 'from-env');
