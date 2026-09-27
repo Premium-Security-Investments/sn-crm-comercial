@@ -1,12 +1,17 @@
 import { SURFACE_NAMES, buildAgt002ControlPlaneIdentity } from './agt002-control-plane-identity.js';
 
-function computeMatchDesired(desiredSha, sha) {
-  if (sha === null) return null;
-  if (typeof desiredSha !== 'string' || desiredSha.length === 0) return null;
-  return desiredSha === sha;
+function computeMatch(desired, observed) {
+  if (observed === null) return null;
+  if (typeof desired !== 'string' || desired.length === 0) return null;
+  return desired === observed;
 }
 
-export function observeAgt002Surfaces({ desiredSha = null, observations = {}, now = () => new Date() } = {}) {
+export function observeAgt002Surfaces({
+  desiredSha = null,
+  desiredVersion = null,
+  observations = {},
+  now = () => new Date(),
+} = {}) {
   const surfaces = {};
 
   for (const surface of SURFACE_NAMES) {
@@ -20,7 +25,8 @@ export function observeAgt002Surfaces({ desiredSha = null, observations = {}, no
     });
     surfaces[surface] = {
       ...identity,
-      match_desired: computeMatchDesired(desiredSha, identity.sha),
+      match_desired: computeMatch(desiredSha, identity.sha),
+      match_desired_version: computeMatch(desiredVersion, identity.version),
     };
   }
 

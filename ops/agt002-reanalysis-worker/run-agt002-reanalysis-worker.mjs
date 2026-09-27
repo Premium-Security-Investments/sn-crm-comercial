@@ -10,7 +10,10 @@ import { buildReanalysisWorkerIdentity } from '../../agt002-control-plane-surfac
 // requirement below. Never reads git/disk state -- only the explicit deployed-sha env var
 // the deployer injected (or none, which stays honestly unobserved).
 if (process.argv.includes('--control-plane')) {
-  console.log(JSON.stringify(buildReanalysisWorkerIdentity({ releaseSha: process.env.AGT002_DEPLOYED_GIT_SHA || null })));
+  console.log(JSON.stringify(buildReanalysisWorkerIdentity({
+    releaseSha: process.env.AGT002_DEPLOYED_GIT_SHA || null,
+    version: process.env.AGT002_DEPLOYED_VERSION || null,
+  })));
   process.exit(0);
 }
 
