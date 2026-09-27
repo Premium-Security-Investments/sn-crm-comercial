@@ -1,47 +1,57 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { SURFACE_NAMES } from '../agt002-control-plane-identity.js';
 
 const DEFAULT_RECEIPT_PATH = 'agt002-release-receipt.json';
 const DEFAULT_OBSERVED_PATH = 'agt002-observed-surfaces.json';
 
-export function checkAgt002Drift({ receipt, observed, githubSha = process.env.GITHUB_SHA }) {
-  const drifts = [];
-  const receiptSurfaces = receipt?.surfaces ?? {};
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+// Fail closed by construction: every one of the six surfaces must show up in `observed` with a
+// non-empty sha AND a non-empty version that both match receipt.desired, or an issue is raised
+// for it. There is no code path that returns ok:true without having checked all six.
+export function checkAgt002Drift({ receipt, observed } = {}) {
+  const issues = [];
+
+  if (receipt?.control_plane_reconciled === true) {
+    issues.push({ type: 'control_plane_reconciled_true', surface: null });
+  }
+
+  const desiredSha = nonEmptyString(receipt?.desired?.sha);
+  const desiredVersion = nonEmptyString(receipt?.desired?.version);
+  if (!desiredSha) issues.push({ type: 'missing_desired_sha', surface: null });
+  if (!desiredVersion) issues.push({ type: 'missing_desired_version', surface: null });
+
   const observedSurfaces = observed?.surfaces ?? {};
 
-  for (const name of Object.keys(receiptSurfaces)) {
-    const receiptSha = receiptSurfaces[name]?.sha;
-    const observedSha = observedSurfaces[name]?.sha;
+  for (const surface of SURFACE_NAMES) {
+    const entry = observedSurfaces[surface];
+    if (!entry || typeof entry !== 'object') {
+      issues.push({ type: 'missing_surface', surface });
+      continue;
+    }
 
-    if (typeof receiptSha === 'string' && typeof observedSha === 'string' && receiptSha !== observedSha) {
-      drifts.push({
-        surface: name,
-        receipt_sha: receiptSha,
-        observed_sha: observedSha,
+    const observedSha = nonEmptyString(entry.sha);
+    const observedVersion = nonEmptyString(entry.version);
+
+    if (!observedSha) issues.push({ type: 'missing_observed_sha', surface });
+    if (!observedVersion) issues.push({ type: 'missing_observed_version', surface });
+
+    if (desiredSha && observedSha && desiredSha !== observedSha) {
+      issues.push({ type: 'sha_mismatch', surface, desired_sha: desiredSha, observed_sha: observedSha });
+    }
+    if (desiredVersion && observedVersion && desiredVersion !== observedVersion) {
+      issues.push({
+        type: 'version_mismatch',
+        surface,
+        desired_version: desiredVersion,
+        observed_version: observedVersion,
       });
     }
   }
 
-  const originMainReceiptSha = receiptSurfaces.origin_main?.sha;
-  const originMainAlreadyChecked = typeof observedSurfaces.origin_main?.sha === 'string';
-  if (
-    !originMainAlreadyChecked &&
-    typeof githubSha === 'string' &&
-    githubSha.length > 0 &&
-    typeof originMainReceiptSha === 'string' &&
-    originMainReceiptSha !== githubSha
-  ) {
-    drifts.push({
-      surface: 'origin_main',
-      receipt_sha: originMainReceiptSha,
-      observed_sha: githubSha,
-    });
-  }
-
-  if (receipt?.control_plane_reconciled === true) {
-    return { ok: false, drifts };
-  }
-
-  return { ok: drifts.length === 0, drifts };
+  return { ok: issues.length === 0, issues };
 }
 
 function readJson(path) {
@@ -51,15 +61,24 @@ function readJson(path) {
 const isCliEntrypoint = import.meta.url === `file://${process.argv[1]}`;
 if (isCliEntrypoint) {
   const args = process.argv.slice(2);
-  const receiptIndex = args.indexOf('--receipt');
-  const observedIndex = args.indexOf('--observed');
-  const receiptPath = receiptIndex >= 0 ? args[receiptIndex + 1] : DEFAULT_RECEIPT_PATH;
-  const observedPath = observedIndex >= 0 ? args[observedIndex + 1] : DEFAULT_OBSERVED_PATH;
+  const readArg = (flag, fallback) => {
+    const index = args.indexOf(flag);
+    return index >= 0 ? args[index + 1] : fallback;
+  };
+  const receiptPath = readArg('--receipt', DEFAULT_RECEIPT_PATH);
+  const observedPath = readArg('--observed', DEFAULT_OBSERVED_PATH);
+  const outPath = readArg('--out', null);
 
-  const receipt = existsSync(receiptPath) ? readJson(receiptPath) : { surfaces: {} };
+  const receipt = existsSync(receiptPath) ? readJson(receiptPath) : {};
   const observed = existsSync(observedPath) ? readJson(observedPath) : { surfaces: {} };
 
   const result = checkAgt002Drift({ receipt, observed });
-  console.log(JSON.stringify(result, null, 2));
+  const json = JSON.stringify(result, null, 2);
+
+  if (outPath) {
+    writeFileSync(outPath, `${json}\n`, 'utf8');
+  } else {
+    console.log(json);
+  }
   process.exit(result.ok ? 0 : 1);
 }

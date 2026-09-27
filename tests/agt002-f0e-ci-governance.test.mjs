@@ -117,33 +117,100 @@ test('generateAgt002ReleaseReceipt keeps origin_main unobserved with no git_sha 
   }
 });
 
-test('checkAgt002Drift reports a drift when origin_main SHAs differ', async () => {
+const SIX_SURFACES = [
+  'origin_main',
+  'vercel_production',
+  'bridge',
+  'radar_pipeline',
+  'reanalysis_worker',
+  'workbench_scheduler',
+];
+
+function fullyObservedSurfaces(sha, version) {
+  const surfaces = {};
+  for (const surface of SIX_SURFACES) {
+    surfaces[surface] = { sha, version, source: `${surface}_test_source` };
+  }
+  return { surfaces };
+}
+
+test('checkAgt002Drift reports ok:true only when all six surfaces have non-empty sha+version matching receipt.desired', async () => {
   const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
-  const receipt = { surfaces: { origin_main: { sha: 'abc123', source: 'github_sha' } } };
-  const observed = { surfaces: { origin_main: { sha: 'def456' } } };
+  const receipt = { desired: { sha: 'abc123', version: '1.2.3' } };
+  const observed = fullyObservedSurfaces('abc123', '1.2.3');
+
+  const result = checkAgt002Drift({ receipt, observed });
+  assert.deepEqual(result, { ok: true, issues: [] });
+});
+
+test('checkAgt002Drift fails closed when a surface is entirely missing from observed', async () => {
+  const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
+  const receipt = { desired: { sha: 'abc123', version: '1.2.3' } };
+  const observed = fullyObservedSurfaces('abc123', '1.2.3');
+  delete observed.surfaces.bridge;
 
   const result = checkAgt002Drift({ receipt, observed });
   assert.equal(result.ok, false);
-  assert.equal(result.drifts.length, 1);
-  assert.equal(result.drifts[0].surface, 'origin_main');
+  assert.ok(result.issues.some((issue) => issue.type === 'missing_surface' && issue.surface === 'bridge'));
 });
 
-test('checkAgt002Drift reports ok:true when origin_main SHAs match', async () => {
+test('checkAgt002Drift distinguishes missing sha, missing version, sha mismatch, and version mismatch', async () => {
   const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
-  const receipt = { surfaces: { origin_main: { sha: 'abc123', source: 'github_sha' } } };
-  const observed = { surfaces: { origin_main: { sha: 'abc123' } } };
-
-  const result = checkAgt002Drift({ receipt, observed });
-  assert.deepEqual(result, { ok: true, drifts: [] });
-});
-
-test('checkAgt002Drift fails when receipt.control_plane_reconciled is true', async () => {
-  const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
-  const receipt = { control_plane_reconciled: true, surfaces: {} };
-  const observed = { surfaces: {} };
+  const receipt = { desired: { sha: 'abc123', version: '1.2.3' } };
+  const observed = fullyObservedSurfaces('abc123', '1.2.3');
+  observed.surfaces.radar_pipeline = { sha: null, version: '1.2.3', source: 'radar_pipeline_git_head' };
+  observed.surfaces.reanalysis_worker = { sha: 'abc123', version: null, source: 'reanalysis_worker_release_sha' };
+  observed.surfaces.vercel_production = { sha: 'def456', version: '1.2.3', source: 'vercel_git_commit_sha' };
+  observed.surfaces.workbench_scheduler = { sha: 'abc123', version: '9.9.9', source: 'workbench_scheduler_deployed_git_sha' };
 
   const result = checkAgt002Drift({ receipt, observed });
   assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.type === 'missing_observed_sha' && issue.surface === 'radar_pipeline'));
+  assert.ok(
+    result.issues.some((issue) => issue.type === 'missing_observed_version' && issue.surface === 'reanalysis_worker'),
+  );
+  assert.ok(
+    result.issues.some(
+      (issue) => issue.type === 'sha_mismatch' && issue.surface === 'vercel_production' && issue.observed_sha === 'def456',
+    ),
+  );
+  assert.ok(
+    result.issues.some(
+      (issue) =>
+        issue.type === 'version_mismatch' && issue.surface === 'workbench_scheduler' && issue.observed_version === '9.9.9',
+    ),
+  );
+});
+
+test('checkAgt002Drift fails closed when receipt.desired is missing sha or version, even with all six surfaces observed', async () => {
+  const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
+  const observed = fullyObservedSurfaces('abc123', '1.2.3');
+
+  const missingVersion = checkAgt002Drift({ receipt: { desired: { sha: 'abc123', version: null } }, observed });
+  assert.equal(missingVersion.ok, false);
+  assert.ok(missingVersion.issues.some((issue) => issue.type === 'missing_desired_version'));
+
+  const missingEverything = checkAgt002Drift({ receipt: {}, observed });
+  assert.equal(missingEverything.ok, false);
+  assert.ok(missingEverything.issues.some((issue) => issue.type === 'missing_desired_sha'));
+  assert.ok(missingEverything.issues.some((issue) => issue.type === 'missing_desired_version'));
+});
+
+test('checkAgt002Drift fails when receipt.control_plane_reconciled is true, even with a fully matching observation', async () => {
+  const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
+  const receipt = { control_plane_reconciled: true, desired: { sha: 'abc123', version: '1.2.3' } };
+  const observed = fullyObservedSurfaces('abc123', '1.2.3');
+
+  const result = checkAgt002Drift({ receipt, observed });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.type === 'control_plane_reconciled_true'));
+});
+
+test('checkAgt002Drift fails closed with no receipt/observed at all', async () => {
+  const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
+  const result = checkAgt002Drift({});
+  assert.equal(result.ok, false);
+  assert.equal(result.issues.filter((issue) => issue.type === 'missing_surface').length, 6);
 });
 
 test('drift_alert job writes observed surfaces and runs check:agt002-drift with --receipt and --observed', () => {
@@ -156,46 +223,218 @@ test('drift_alert job writes observed surfaces and runs check:agt002-drift with 
   );
 });
 
-test('checkAgt002Drift returns ok:false when GITHUB_SHA differs from receipt origin_main sha, even with no observed origin_main', async () => {
-  const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
-  const previousGithubSha = process.env.GITHUB_SHA;
-  process.env.GITHUB_SHA = 'ci-actual-sha';
-  try {
-    const receipt = { surfaces: { origin_main: { sha: 'receipt-recorded-sha', source: 'github_sha' } } };
+test('workflow triggers hourly on a schedule and supports manual workflow_dispatch', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  assert.match(workflowText, /schedule:/);
+  assert.match(workflowText, /cron:\s*'[^']+'/);
+  assert.match(workflowText, /workflow_dispatch:/);
+});
 
-    const resultWithMissingObserved = checkAgt002Drift({ receipt, observed: undefined });
-    assert.equal(resultWithMissingObserved.ok, false);
-    assert.ok(resultWithMissingObserved.drifts.some((drift) => drift.surface === 'origin_main'));
+test('drift_alert job never uses a heredoc to fabricate observed surfaces', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  assert.doesNotMatch(driftAlertSection, /<<\s*['"]?EOF/);
+  assert.match(driftAlertSection, /agt002:observe-surfaces/);
+});
 
-    const resultWithEmptyObserved = checkAgt002Drift({ receipt, observed: { surfaces: {} } });
-    assert.equal(resultWithEmptyObserved.ok, false);
-    assert.ok(resultWithEmptyObserved.drifts.some((drift) => drift.surface === 'origin_main'));
-  } finally {
-    if (previousGithubSha === undefined) {
-      delete process.env.GITHUB_SHA;
-    } else {
-      process.env.GITHUB_SHA = previousGithubSha;
-    }
+test('drift_alert job collects all six surfaces through explicit configured env inputs', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  for (const prefix of [
+    'AGT002_OBSERVE_ORIGIN_MAIN',
+    'AGT002_OBSERVE_VERCEL_PRODUCTION',
+    'AGT002_OBSERVE_BRIDGE',
+    'AGT002_OBSERVE_RADAR_PIPELINE',
+    'AGT002_OBSERVE_REANALYSIS_WORKER',
+    'AGT002_OBSERVE_WORKBENCH_SCHEDULER',
+  ]) {
+    assert.match(driftAlertSection, new RegExp(prefix), `expected drift_alert to configure ${prefix}`);
   }
 });
 
-test('checkAgt002Drift returns ok:true when GITHUB_SHA matches receipt origin_main sha', async () => {
-  const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
-  const previousGithubSha = process.env.GITHUB_SHA;
-  process.env.GITHUB_SHA = 'matching-sha';
-  try {
-    const receipt = {
-      control_plane_reconciled: false,
-      surfaces: { origin_main: { sha: 'matching-sha', source: 'github_sha' } },
-    };
+test('drift_alert job always uploads the structured drift result artifact, even when drift is detected', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  assert.match(driftAlertSection, /continue-on-error:\s*true/);
+  assert.match(driftAlertSection, /if:\s*always\(\)/);
+  assert.match(driftAlertSection, /name:\s*agt002-drift-result/);
+  assert.match(driftAlertSection, /agt002-drift-result\.json/);
+});
 
-    const result = checkAgt002Drift({ receipt, observed: undefined });
-    assert.deepEqual(result, { ok: true, drifts: [] });
-  } finally {
-    if (previousGithubSha === undefined) {
-      delete process.env.GITHUB_SHA;
-    } else {
-      process.env.GITHUB_SHA = previousGithubSha;
-    }
+test('drift_alert job fails the job when drift is detected, after uploading the artifact', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  const uploadIndex = driftAlertSection.indexOf('agt002-drift-result');
+  const failIndex = driftAlertSection.search(/if:\s*steps\.drift\.outcome\s*==\s*'failure'/);
+  assert.ok(failIndex >= 0, 'expected a step that fails the job on steps.drift.outcome == failure');
+  assert.ok(uploadIndex >= 0 && uploadIndex < failIndex, 'the artifact upload must precede the fail step');
+});
+
+// --- PR deadlock fix: drift must target the PR base sha, never the synthetic merge sha ---
+
+test('workflow defines a shared AGT002_DESIRED_SHA: PR base sha on pull_request, github.sha otherwise', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  assert.match(
+    workflowText,
+    /AGT002_DESIRED_SHA:\s*\$\{\{\s*github\.event_name == 'pull_request' && github\.event\.pull_request\.base\.sha \|\| github\.sha\s*\}\}/,
+  );
+});
+
+test('release_receipt job binds --git-sha to the shared AGT002_DESIRED_SHA, not github.sha directly', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const releaseReceiptSection = workflowText.slice(
+    workflowText.indexOf('release_receipt:'),
+    workflowText.indexOf('drift_alert:'),
+  );
+  assert.match(
+    releaseReceiptSection,
+    /agt002:release-receipt.*--git-sha\s+"\$\{\{\s*env\.AGT002_DESIRED_SHA\s*\}\}"/,
+  );
+  assert.doesNotMatch(releaseReceiptSection, /--git-sha\s+"\$\{\{\s*github\.sha\s*\}\}"/);
+});
+
+test('drift_alert job binds both --desired-sha and --git-sha to the shared AGT002_DESIRED_SHA', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  assert.match(driftAlertSection, /--desired-sha\s+"\$\{\{\s*env\.AGT002_DESIRED_SHA\s*\}\}"/);
+  assert.match(driftAlertSection, /--git-sha\s+"\$\{\{\s*env\.AGT002_DESIRED_SHA\s*\}\}"/);
+  assert.doesNotMatch(driftAlertSection, /--desired-sha\s+"\$\{\{\s*github\.sha\s*\}\}"/);
+});
+
+test('drift_alert job no longer hardcodes origin_main sha to github.sha via a separate env var', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  assert.doesNotMatch(driftAlertSection, /AGT002_OBSERVE_ORIGIN_MAIN_SHA/);
+});
+
+// --- fake host observation fix: deployed-sha/version vars are configuration, not live self-report ---
+
+test('workflow no longer configures static deployed sha/version vars for radar_pipeline, reanalysis_worker, or workbench_scheduler', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  for (const staticVar of [
+    'AGT002_RADAR_PIPELINE_DEPLOYED_SHA',
+    'AGT002_RADAR_PIPELINE_DEPLOYED_VERSION',
+    'AGT002_REANALYSIS_WORKER_DEPLOYED_SHA',
+    'AGT002_REANALYSIS_WORKER_DEPLOYED_VERSION',
+    'AGT002_WORKBENCH_SCHEDULER_DEPLOYED_SHA',
+    'AGT002_WORKBENCH_SCHEDULER_DEPLOYED_VERSION',
+  ]) {
+    assert.doesNotMatch(workflowText, new RegExp(staticVar), `expected workflow to no longer reference ${staticVar}`);
+  }
+});
+
+test('drift_alert job configures a read-only URL contract for every non-origin surface', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  for (const urlEnvVar of [
+    'AGT002_OBSERVE_VERCEL_PRODUCTION_URL',
+    'AGT002_OBSERVE_BRIDGE_URL',
+    'AGT002_OBSERVE_RADAR_PIPELINE_URL',
+    'AGT002_OBSERVE_REANALYSIS_WORKER_URL',
+    'AGT002_OBSERVE_WORKBENCH_SCHEDULER_URL',
+  ]) {
+    assert.match(driftAlertSection, new RegExp(urlEnvVar), `expected drift_alert to configure ${urlEnvVar}`);
+  }
+});
+
+// --- cost/efficiency fix: schedule must not rerun build/full suites ---
+
+test('quality jobs are skipped on schedule so the hourly run does not rerun build/full suites', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  for (const jobName of ['f0_suite', 'backend_parity', 'production_build', 'migration_static', 'grants_security']) {
+    const jobStart = workflowText.indexOf(`\n  ${jobName}:`);
+    assert.ok(jobStart >= 0, `expected to find job ${jobName}`);
+    const jobSection = workflowText.slice(jobStart, jobStart + 500);
+    assert.match(
+      jobSection,
+      /if:\s*github\.event_name != 'schedule'/,
+      `expected ${jobName} to skip on schedule`,
+    );
+  }
+});
+
+test('release_receipt job runs on schedule despite skipped quality-job needs, via an explicit always() condition', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const releaseReceiptSection = workflowText.slice(
+    workflowText.indexOf('release_receipt:'),
+    workflowText.indexOf('drift_alert:'),
+  );
+  assert.match(releaseReceiptSection, /if:\s*>/);
+  assert.match(releaseReceiptSection, /always\(\)/);
+  assert.match(releaseReceiptSection, /github\.event_name == 'schedule'/);
+});
+
+test('release_receipt job requires every quality job to succeed on non-schedule events', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const releaseReceiptSection = workflowText.slice(
+    workflowText.indexOf('release_receipt:'),
+    workflowText.indexOf('drift_alert:'),
+  );
+  for (const jobName of ['f0_suite', 'backend_parity', 'production_build', 'migration_static', 'grants_security']) {
+    assert.match(releaseReceiptSection, new RegExp(`needs\\.${jobName}\\.result == 'success'`));
+  }
+});
+
+test('drift_alert still needs release_receipt so it runs after it, including on schedule', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  assert.match(driftAlertSection, /needs:\s*\n\s*-\s*release_receipt/);
+});
+
+// --- PR bootstrap deadlock fix: pull_request runs an offline detector-contract test instead of
+// pretending to observe/produce a production drift result, since no live URLs are configured yet ---
+
+test('drift_alert job runs the offline drift-detection test file only on pull_request', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  const offlineStepIndex = driftAlertSection.search(
+    /if:\s*github\.event_name == 'pull_request'\s*\n\s*run:\s*node --test tests\/agt002-f0-drift-detection\.test\.mjs/,
+  );
+  assert.ok(offlineStepIndex >= 0, 'expected a pull_request-gated step running the offline drift-detection test file');
+});
+
+test('drift_alert live-observation steps are gated off on pull_request', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  const stepStarts = [
+    { name: 'download-artifact', re: /uses:\s*actions\/download-artifact@v4\s*\n\s*if:\s*github\.event_name != 'pull_request'/ },
+    { name: 'Collect observed surfaces', re: /name:\s*Collect observed surfaces\s*\n\s*if:\s*github\.event_name != 'pull_request'/ },
+    { name: 'Check drift', re: /name:\s*Check drift\s*\n\s*if:\s*github\.event_name != 'pull_request'/ },
+  ];
+  for (const step of stepStarts) {
+    assert.match(driftAlertSection, step.re, `expected ${step.name} to be gated off on pull_request`);
+  }
+  assert.match(driftAlertSection, /if:\s*always\(\)\s*&&\s*github\.event_name != 'pull_request'/, 'expected Upload drift result gated off on pull_request');
+  assert.match(
+    driftAlertSection,
+    /if:\s*steps\.drift\.outcome == 'failure'\s*&&\s*github\.event_name != 'pull_request'/,
+    'expected Fail on drift gated off on pull_request',
+  );
+});
+
+test('drift_alert job never claims a production drift result on pull_request: Check drift/Fail on drift only run for non-PR events', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  assert.doesNotMatch(
+    driftAlertSection.slice(0, driftAlertSection.search(/name:\s*Collect observed surfaces/)),
+    /run:\s*npm run check:agt002-drift/,
+    'check:agt002-drift must not run before the pull_request gate',
+  );
+});
+
+test('drift_alert job retains the full live six-surface path unconditionally on push/schedule/workflow_dispatch (only pull_request is excluded)', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  for (const marker of [
+    "if: github.event_name != 'pull_request'",
+    "if: always() && github.event_name != 'pull_request'",
+    "if: steps.drift.outcome == 'failure' && github.event_name != 'pull_request'",
+  ]) {
+    assert.ok(driftAlertSection.includes(marker), `expected exact gate "${marker}"`);
+    assert.doesNotMatch(
+      marker,
+      /schedule|workflow_dispatch|push/,
+      'the live path must only exclude pull_request, never push/schedule/workflow_dispatch',
+    );
   }
 });

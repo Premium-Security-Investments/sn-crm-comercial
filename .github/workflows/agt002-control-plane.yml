@@ -5,25 +5,40 @@ on:
     branches: [main]
   push:
     branches: [main]
+  schedule:
+    # Hourly drift check independent of code changes: catches a surface that drifted out of
+    # band (e.g. a manual hotfix on the Hetzner host) even with no new commit to trigger it.
+    - cron: '17 * * * *'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
+
+env:
+  # The SHA every surface is compared against. On pull_request, github.sha is the synthetic
+  # merge/candidate commit GitHub materializes for the PR -- nothing is ever deployed at that
+  # SHA, so binding drift detection to it makes drift_alert impossible to pass. The real target
+  # is the current tip of the PR's base branch. On push/schedule/workflow_dispatch, github.sha is
+  # the actual commit on main, so it is the correct, authoritative target there.
+  AGT002_DESIRED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
 
 jobs:
   f0_suite:
     name: f0_suite
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: npm ci
-      - run: node --test tests/agt002-f0a-control-plane.test.mjs tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b-chat-query-rollback-pglite.integration.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0b2-rpc-hardening-rollback-pglite.integration.test.mjs tests/agt002-f0e-ci-governance.test.mjs tests/agt002-f0e-grants-static.test.mjs tests/agt002-f0-runtime-reporters.test.mjs
+      - run: node --test tests/agt002-f0a-control-plane.test.mjs tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b-chat-query-rollback-pglite.integration.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0b2-rpc-hardening-rollback-pglite.integration.test.mjs tests/agt002-f0e-ci-governance.test.mjs tests/agt002-f0e-grants-static.test.mjs tests/agt002-f0-runtime-reporters.test.mjs tests/agt002-f0-drift-detection.test.mjs
 
   backend_parity:
     name: backend_parity
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,6 +50,7 @@ jobs:
   production_build:
     name: production_build
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     env:
       VERCEL_ENV: production
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
@@ -50,6 +66,7 @@ jobs:
   migration_static:
     name: migration_static
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,6 +78,7 @@ jobs:
   grants_security:
     name: grants_security
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -78,13 +96,38 @@ jobs:
       - production_build
       - migration_static
       - grants_security
+    # Schedule runs never execute the quality jobs above (they short-circuit on `if:
+    # github.event_name != 'schedule'`), so every one of their `needs` reports skipped rather
+    # than success. `always()` lets this job proceed anyway so the hourly run can still produce a
+    # lightweight receipt for drift_alert to compare against. On pull_request/push/
+    # workflow_dispatch, every quality job must have actually run and passed -- this keeps
+    # release_receipt a real, fail-closed required check on those triggers.
+    if: >
+      always() &&
+      (
+        github.event_name == 'schedule' ||
+        (
+          needs.f0_suite.result == 'success' &&
+          needs.backend_parity.result == 'success' &&
+          needs.production_build.result == 'success' &&
+          needs.migration_static.result == 'success' &&
+          needs.grants_security.result == 'success'
+        )
+      )
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: npm ci
-      - run: npm run agt002:release-receipt -- --out agt002-release-receipt.json
+      # --version is the single explicit, immutable release-version input every one of the six
+      # surfaces is expected to be running (an operator-set repository variable, never inferred
+      # from git/disk). Missing it leaves receipt.desired.version null, which fails drift_alert
+      # closed rather than silently declaring the release versionless-but-fine. --git-sha is the
+      # same desired-target SHA (base sha on PR, current sha otherwise) drift_alert observes
+      # origin_main against, so receipt.desired.sha and the observed origin_main are always bound
+      # to the identical target.
+      - run: npm run agt002:release-receipt -- --out agt002-release-receipt.json --version "${{ vars.AGT002_DESIRED_VERSION }}" --git-sha "${{ env.AGT002_DESIRED_SHA }}"
       - uses: actions/upload-artifact@v4
         with:
           name: agt002-release-receipt
@@ -101,20 +144,54 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
+      # On pull_request there are no repository variables/live URLs configured yet for main to
+      # compare against (this repo predates that configuration) -- observing "production" here
+      # would just report all six surfaces unobserved and fail drift_alert closed on every single
+      # PR forever, permanently deadlocking the required check before anyone could ever configure
+      # it. So on pull_request, drift_alert runs an explicit offline detector-contract test
+      # instead: it proves checkAgt002Drift's own pass/fail-closed logic is correct, with no
+      # network call and no claim about what is actually running in production. The steps below
+      # this one -- the real six-surface live observation -- only ever run on push main, schedule,
+      # and workflow_dispatch, where a real desired-target sha/version exists to compare against.
+      - name: PR offline drift-detector contract test
+        if: github.event_name == 'pull_request'
+        run: node --test tests/agt002-f0-drift-detection.test.mjs
       - uses: actions/download-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: agt002-release-receipt
           path: .
-      - name: Write observed surfaces
-        run: |
-          cat > agt002-observed-surfaces.json <<EOF
-          {
-            "surfaces": {
-              "origin_main": {
-                "sha": "$GITHUB_SHA",
-                "source": "github_sha"
-              }
-            }
-          }
-          EOF
-      - run: npm run check:agt002-drift -- --receipt agt002-release-receipt.json --observed agt002-observed-surfaces.json
+      # Every input below is an explicit, non-secret configuration value (a repository variable
+      # or the run's own desired-target sha) -- never a git/disk inference, never a secret, never
+      # an invented production URL. A repository variable containing a *deployed* sha/version is
+      # static configuration, not live self-reporting, and cannot prove a surface is actually
+      # running that code, so radar_pipeline/reanalysis_worker/workbench_scheduler are observed
+      # only through a read-only URL each surface serves at runtime, exactly like vercel/bridge.
+      # A surface whose URL is unset or unreachable simply stays unobserved and fails drift_alert
+      # closed instead of being skipped or assumed fine. origin_main is the one exception: GitHub
+      # itself is the authoritative live source for what SHA is on main, so it is bound directly
+      # to the same desired-target sha/version used above rather than a URL fetch.
+      - name: Collect observed surfaces
+        if: github.event_name != 'pull_request'
+        env:
+          AGT002_OBSERVE_ORIGIN_MAIN_VERSION: ${{ vars.AGT002_DESIRED_VERSION }}
+          AGT002_OBSERVE_VERCEL_PRODUCTION_URL: ${{ vars.AGT002_VERCEL_PRODUCTION_CONTROL_PLANE_URL }}
+          AGT002_OBSERVE_BRIDGE_URL: ${{ vars.AGT002_BRIDGE_CONTROL_PLANE_URL }}
+          AGT002_OBSERVE_RADAR_PIPELINE_URL: ${{ vars.AGT002_RADAR_PIPELINE_CONTROL_PLANE_URL }}
+          AGT002_OBSERVE_REANALYSIS_WORKER_URL: ${{ vars.AGT002_REANALYSIS_WORKER_CONTROL_PLANE_URL }}
+          AGT002_OBSERVE_WORKBENCH_SCHEDULER_URL: ${{ vars.AGT002_WORKBENCH_SCHEDULER_CONTROL_PLANE_URL }}
+        run: npm run agt002:observe-surfaces -- --desired-sha "${{ env.AGT002_DESIRED_SHA }}" --git-sha "${{ env.AGT002_DESIRED_SHA }}" --desired-version "${{ vars.AGT002_DESIRED_VERSION }}" --out agt002-observed-surfaces.json
+      - name: Check drift
+        if: github.event_name != 'pull_request'
+        id: drift
+        continue-on-error: true
+        run: npm run check:agt002-drift -- --receipt agt002-release-receipt.json --observed agt002-observed-surfaces.json --out agt002-drift-result.json
+      - name: Upload drift result
+        if: always() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agt002-drift-result
+          path: agt002-drift-result.json
+      - name: Fail on drift
+        if: steps.drift.outcome == 'failure' && github.event_name != 'pull_request'
+        run: exit 1

@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { SURFACE_NAMES } from '../agt002-control-plane-identity.js';
 import { observeAgt002Surfaces } from '../agt002-control-plane-observe.js';
 
 function readArgValue(args, flag) {
@@ -6,27 +7,136 @@ function readArgValue(args, flag) {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
-export function buildAgt002ObserveSurfacesResult({ inputPath, desiredSha, gitSha, readFile = readFileSync } = {}) {
-  const observations = inputPath
-    ? JSON.parse(readFile(inputPath, 'utf8'))?.surfaces ?? {}
-    : {};
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
 
-  if (gitSha) {
-    observations.origin_main = { sha: gitSha, source: 'github_sha' };
+function surfaceEnvPrefix(surface) {
+  return `AGT002_OBSERVE_${surface.toUpperCase()}`;
+}
+
+// Explicit env-injected observation for one surface: AGT002_OBSERVE_<SURFACE>_SHA/_VERSION/
+// _SOURCE. Returns null (never invents a source) when neither a sha nor a version was
+// explicitly configured. A version alone (no sha) is still preserved here -- e.g. the
+// origin_main flow where AGT002_OBSERVE_ORIGIN_MAIN_VERSION is set but the sha arrives later
+// via the explicit --git-sha path -- but it stays fail-closed: buildAgt002ControlPlaneIdentity
+// nulls out any version whose sha never materializes, so a version alone can never make a
+// surface count as observed.
+function explicitEnvObservation(surface, env) {
+  const prefix = surfaceEnvPrefix(surface);
+  const sha = nonEmptyString(env[`${prefix}_SHA`]);
+  const version = nonEmptyString(env[`${prefix}_VERSION`]);
+  if (!sha && !version) return null;
+  return {
+    sha,
+    version,
+    source: sha ? nonEmptyString(env[`${prefix}_SOURCE`]) ?? `${surface}_explicit_env` : null,
+  };
+}
+
+// Optional URL-based observation for one surface: AGT002_OBSERVE_<SURFACE>_URL, fetched with the
+// injected fetchImpl (never the real network in tests) and expected to return JSON shaped like
+// {surface, sha, version, source} -- exactly what the bridge/vercel control-plane GET routes
+// already return (buildAgt002ControlPlaneIdentity always stamps its own `surface`). The response's
+// `surface` must exactly equal the surface this URL was configured for: a misconfigured/proxied
+// URL (e.g. the radar_pipeline URL var pointed at the bridge endpoint) must never let one
+// surface's response be relabeled and trusted as a different surface's observation. A missing
+// URL, a non-2xx response, a missing/mismatched `surface`, or a fetch failure all collapse to null
+// (honestly unobserved) rather than throwing, so one unreachable/misconfigured surface can't take
+// down collection of the other five.
+async function fetchedSurfaceObservation(surface, env, fetchImpl) {
+  const url = nonEmptyString(env[`${surfaceEnvPrefix(surface)}_URL`]);
+  if (!url || typeof fetchImpl !== 'function') return null;
+  try {
+    const response = await fetchImpl(url);
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (nonEmptyString(body?.surface) !== surface) return null;
+    return {
+      sha: nonEmptyString(body?.sha),
+      version: nonEmptyString(body?.version),
+      source: nonEmptyString(body?.source) ?? `${surface}_url_fetch`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Reusable collector: gathers an observation for all six surfaces from explicit env inputs
+// first, falling back to an explicit per-surface URL fetch only when configured. No surface is
+// ever invented -- a surface with neither an env sha nor a URL configured comes back as {}.
+export async function collectAgt002SurfaceObservations({ env = {}, fetchImpl = undefined } = {}) {
+  const observations = {};
+  for (const surface of SURFACE_NAMES) {
+    observations[surface] =
+      explicitEnvObservation(surface, env) ?? (await fetchedSurfaceObservation(surface, env, fetchImpl)) ?? {};
+  }
+  return observations;
+}
+
+export async function buildAgt002ObserveSurfacesResult({
+  inputPath,
+  inputJson,
+  desiredSha,
+  desiredVersion,
+  gitSha,
+  env = {},
+  fetchImpl = undefined,
+  readFile = readFileSync,
+} = {}) {
+  const fileObservations = inputJson
+    ? JSON.parse(inputJson)?.surfaces ?? {}
+    : inputPath
+      ? JSON.parse(readFile(inputPath, 'utf8'))?.surfaces ?? {}
+      : {};
+
+  const collected = await collectAgt002SurfaceObservations({ env, fetchImpl });
+
+  const observations = {};
+  for (const surface of SURFACE_NAMES) {
+    const fromFile = fileObservations[surface];
+    observations[surface] = fromFile && (fromFile.sha || fromFile.version) ? fromFile : collected[surface];
   }
 
-  return observeAgt002Surfaces({ desiredSha: desiredSha || null, observations });
+  if (gitSha) {
+    observations.origin_main = {
+      sha: gitSha,
+      version: observations.origin_main?.version ?? null,
+      source: 'github_sha',
+    };
+  }
+
+  return observeAgt002Surfaces({
+    desiredSha: desiredSha || null,
+    desiredVersion: desiredVersion || null,
+    observations,
+  });
 }
 
 const isCliEntrypoint = import.meta.url === `file://${process.argv[1]}`;
 if (isCliEntrypoint) {
   const args = process.argv.slice(2);
-  const inputPath = readArgValue(args, '--input');
+  const rawInputPath = readArgValue(args, '--input');
+  const inputPath = rawInputPath && existsSync(rawInputPath) ? rawInputPath : undefined;
+  const inputJson = readArgValue(args, '--input-json');
   const outPath = readArgValue(args, '--out');
   const desiredSha = readArgValue(args, '--desired-sha');
-  const gitSha = readArgValue(args, '--git-sha');
+  const desiredVersion = readArgValue(args, '--desired-version');
+  // Precedence: an explicit --git-sha wins outright; otherwise fall back to the desired-target
+  // sha (base sha on a PR, current sha otherwise) so origin_main is always bound to the same
+  // target drift is checked against; only with neither flag supplied does GITHUB_SHA (the
+  // synthetic PR merge sha, when this runs unflagged) apply, as a last-resort local-run fallback.
+  const gitSha = readArgValue(args, '--git-sha') || desiredSha || process.env.GITHUB_SHA;
 
-  const result = buildAgt002ObserveSurfacesResult({ inputPath, desiredSha, gitSha });
+  const result = await buildAgt002ObserveSurfacesResult({
+    inputPath,
+    inputJson,
+    desiredSha,
+    desiredVersion,
+    gitSha,
+    env: process.env,
+    fetchImpl: typeof fetch === 'function' ? fetch : undefined,
+  });
   const json = JSON.stringify(result, null, 2);
 
   if (outPath) {

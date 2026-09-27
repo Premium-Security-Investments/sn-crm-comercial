@@ -7,7 +7,10 @@ import { buildRadarPipelineIdentity } from '../../agt002-control-plane-surface-b
 // requirement below. Never reads git/disk state -- only the explicit deployed-sha env var
 // the deployer injected (or none, which stays honestly unobserved).
 if (process.argv.includes('--control-plane')) {
-  console.log(JSON.stringify(buildRadarPipelineIdentity({ headSha: process.env.AGT002_DEPLOYED_GIT_SHA || null })));
+  console.log(JSON.stringify(buildRadarPipelineIdentity({
+    headSha: process.env.AGT002_DEPLOYED_GIT_SHA || null,
+    version: process.env.AGT002_DEPLOYED_VERSION || null,
+  })));
   process.exit(0);
 }
 

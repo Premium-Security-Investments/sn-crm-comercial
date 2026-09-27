@@ -1,24 +1,25 @@
 import { buildAgt002ControlPlaneIdentity } from './agt002-control-plane-identity.js';
 
-export function buildRadarPipelineIdentity({ headSha = null, dirtyCount = 0 } = {}) {
+export function buildRadarPipelineIdentity({ headSha = null, version = null } = {}) {
   if (!headSha) {
     return buildAgt002ControlPlaneIdentity({ surface: 'radar_pipeline' });
   }
   return buildAgt002ControlPlaneIdentity({
     surface: 'radar_pipeline',
     sha: headSha,
-    version: Number.isInteger(dirtyCount) && dirtyCount > 0 ? `dirty+${dirtyCount}` : 'clean',
+    version,
     source: 'radar_pipeline_git_head',
   });
 }
 
-export function buildReanalysisWorkerIdentity({ releaseSha = null } = {}) {
+export function buildReanalysisWorkerIdentity({ releaseSha = null, version = null } = {}) {
   if (!releaseSha) {
     return buildAgt002ControlPlaneIdentity({ surface: 'reanalysis_worker' });
   }
   return buildAgt002ControlPlaneIdentity({
     surface: 'reanalysis_worker',
     sha: releaseSha,
+    version,
     source: 'reanalysis_worker_release_sha',
   });
 }

@@ -29,6 +29,10 @@ function sha256OfFile(path) {
   }
 }
 
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
 function buildSurfaces(inputSurfaces = {}, gitSha = null) {
   const surfaces = {};
   for (const name of SURFACE_NAMES) {
@@ -63,6 +67,12 @@ export function generateAgt002ReleaseReceipt(input = {}) {
   const migration092Sha256 = sha256OfFile(MIGRATION_092_PATH);
   const migration094Sha256 = sha256OfFile(MIGRATION_094_PATH);
   const gitSha = input.git_sha ?? process.env.GITHUB_SHA ?? null;
+  // The single canonical release identity every one of the six surfaces is expected to be
+  // running. Both fields are explicit immutable inputs (an env var GitHub Actions/the deployer
+  // set for this run, or an explicit generator argument) -- never inferred from mutable git/disk
+  // state. A missing version stays null here, which is exactly what keeps drift detection from
+  // ever declaring PASS on an unversioned release.
+  const desiredVersion = nonEmptyString(input.version ?? process.env.AGT002_DESIRED_VERSION ?? null);
 
   const receipt = {
     schema_version: 'agt002.release_receipt.v1',
@@ -71,6 +81,10 @@ export function generateAgt002ReleaseReceipt(input = {}) {
     git_ref: input.git_ref ?? process.env.GITHUB_REF ?? null,
     freeze_canonical_sha256: FREEZE_CANONICAL_SHA256,
     control_plane_reconciled: false,
+    desired: {
+      sha: nonEmptyString(gitSha),
+      version: desiredVersion,
+    },
     surfaces: buildSurfaces(input.surfaces, gitSha),
   };
 
@@ -87,10 +101,18 @@ export function generateAgt002ReleaseReceipt(input = {}) {
 const isCliEntrypoint = import.meta.url === `file://${process.argv[1]}`;
 if (isCliEntrypoint) {
   const args = process.argv.slice(2);
-  const outIndex = args.indexOf('--out');
-  const outPath = outIndex >= 0 ? args[outIndex + 1] : null;
+  const readArg = (flag) => {
+    const index = args.indexOf(flag);
+    return index >= 0 ? args[index + 1] : undefined;
+  };
+  const outPath = readArg('--out') ?? null;
+  const version = readArg('--version');
+  const gitSha = readArg('--git-sha');
 
-  const receipt = generateAgt002ReleaseReceipt();
+  const receipt = generateAgt002ReleaseReceipt({
+    ...(version !== undefined ? { version } : {}),
+    ...(gitSha !== undefined ? { git_sha: gitSha } : {}),
+  });
   const json = JSON.stringify(receipt, null, 2);
 
   if (outPath) {
