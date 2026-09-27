@@ -463,3 +463,23 @@ test('095 rollback restores the pre-095 usuarios ACL/RLS state and the original 
     await db.close();
   }
 });
+
+test('095 rollback restores the exact pre-095 registrar_uso_ia body (live-captured MD5 e4a458b6cacbddb05da83967d1a92c43)', async () => {
+  const db = await freshDb();
+  if (!db) return;
+  try {
+    await db.exec(migrationSql);
+    await db.exec(readFileSync(rollbackPath, 'utf8'));
+
+    const { rows } = await db.query(
+      `select md5(pg_get_functiondef('${FUNC_SIGNATURE}'::regprocedure)) as body_md5`,
+    );
+    assert.equal(
+      rows[0].body_md5,
+      'e4a458b6cacbddb05da83967d1a92c43',
+      'rollback must restore registrar_uso_ia to the exact pre-095 live-captured definition',
+    );
+  } finally {
+    await db.close();
+  }
+});

@@ -71,3 +71,11 @@ No other object (policies, `ia_usage` constraints, `handle_new_user`, DANE/SIIO/
 ## 5. Static-guard remediation (this review)
 
 `scripts/agt002-check-grants-static.mjs`'s `guardedUpsertPattern` previously accepted any `consultas_count < <anything>` clause ahead of `RETURNING`, which would also match a hardcoded, effectively-unbounded constant (e.g. `consultas_count < 999999999`) instead of the intended per-role `v_limite` guard. The pattern is tightened to require the literal guard `consultas_count < v_limite` (optionally alias-prefixed, e.g. `u.consultas_count < v_limite`). A regression mutation asserting that a hardcoded large constant is rejected has been added to `tests/agt002-f0e-grants-static.test.mjs`.
+
+## 6. Rollback exact-MD5 fidelity fix (2026-09-27, this session)
+
+Prior status on this rollback slice was **NO-GO**: `supabase/rollbacks/095_agt002_f0_users_security_rollback.sql` carried a `registrar_uso_ia` function body that was behaviorally equivalent to, but not textually identical to, the pre-095 live-captured definition — migration 095 followed by this rollback reproduced `pg_get_functiondef` MD5 `3cbe0290b0bdc3ce41238329c619afd8`, not the required pre-095 MD5 `e4a458b6cacbddb05da83967d1a92c43` recorded in §2 above.
+
+Remediation (this session, repo-only, no apply): the rollback's `registrar_uso_ia` function body was replaced with the exact pre-095 source text so the restored definition matches the live-captured MD5 byte-for-byte. Only the function body was touched — the `CREATE OR REPLACE FUNCTION` header, `SECURITY DEFINER`, `search_path = pg_catalog, public`, the surrounding table/function grant statements, and migration 095's forward SQL are unchanged.
+
+A regression assertion was added to `tests/agt002-f0-users-security-095-pglite.integration.test.mjs`: after running migration 095 then the rollback against an isolated PGlite instance, `md5(pg_get_functiondef('public.registrar_uso_ia(uuid, integer, integer, text)'::regprocedure))` must equal `e4a458b6cacbddb05da83967d1a92c43`, alongside the pre-existing grant/RLS/behavioral assertions in that file. This note does not assert that the added test (or any other test) has been executed in this session, and makes no claim about production or Supabase state.

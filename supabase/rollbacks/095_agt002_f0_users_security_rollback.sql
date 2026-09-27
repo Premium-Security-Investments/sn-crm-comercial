@@ -30,60 +30,53 @@ language plpgsql
 security definer
 set search_path = pg_catalog, public
 as $function$
-declare
+DECLARE
   v_rol text;
   v_limite_diario integer;
   v_consultas_hoy integer;
-  v_costo_input float := 0.0000008;
+  v_costo_input  float := 0.0000008;
   v_costo_output float := 0.000004;
-  v_costo_total float;
-  v_permitido boolean;
-begin
-  select rol into v_rol
-  from usuarios
-  where id = p_usuario_id;
+  v_costo_total  float;
+  v_permitido    boolean;
+BEGIN
+  SELECT rol INTO v_rol FROM usuarios WHERE id = p_usuario_id;
 
-  v_limite_diario := case v_rol
-    when 'admin' then 10
-    when 'directivo' then 10
-    when 'coordinador' then 5
-    when 'supervisor' then 5
-    when 'cliente' then 5
-    when 'guarda' then 0
-    else 0
-  end;
+  v_limite_diario := CASE v_rol
+    WHEN 'admin'       THEN 10
+    WHEN 'directivo'   THEN 10
+    WHEN 'coordinador' THEN 5
+    WHEN 'supervisor'  THEN 5
+    WHEN 'cliente'     THEN 5
+    WHEN 'guarda'      THEN 0
+    ELSE 0
+  END;
 
-  select coalesce(consultas_count, 0) into v_consultas_hoy
-  from ia_usage
-  where usuario_id = p_usuario_id
-    and fecha = current_date;
+  SELECT COALESCE(consultas_count, 0) INTO v_consultas_hoy
+  FROM ia_usage
+  WHERE usuario_id = p_usuario_id AND fecha = current_date;
 
-  v_permitido := v_consultas_hoy < v_limite_diario;
+  v_permitido   := v_consultas_hoy < v_limite_diario;
+  v_costo_total := (p_tokens_input * v_costo_input) + (p_tokens_output * v_costo_output);
 
-  v_costo_total := p_tokens_input * v_costo_input + p_tokens_output * v_costo_output;
+  IF v_permitido THEN
+    INSERT INTO ia_usage (usuario_id, fecha, consultas_count, tokens_input, tokens_output, costo_estimado)
+    VALUES (p_usuario_id, current_date, 1, p_tokens_input, p_tokens_output, v_costo_total)
+    ON CONFLICT (usuario_id, fecha) DO UPDATE SET
+      consultas_count = ia_usage.consultas_count + 1,
+      tokens_input    = ia_usage.tokens_input    + p_tokens_input,
+      tokens_output   = ia_usage.tokens_output   + p_tokens_output,
+      costo_estimado  = ia_usage.costo_estimado  + v_costo_total,
+      updated_at      = now();
+  END IF;
 
-  if v_permitido then
-    insert into ia_usage (
-      usuario_id, fecha, consultas_count, tokens_input, tokens_output, costo_estimado
-    ) values (
-      p_usuario_id, current_date, 1, p_tokens_input, p_tokens_output, v_costo_total
-    )
-    on conflict (usuario_id, fecha) do update
-      set consultas_count = ia_usage.consultas_count + 1,
-          tokens_input = ia_usage.tokens_input + p_tokens_input,
-          tokens_output = ia_usage.tokens_output + p_tokens_output,
-          costo_estimado = ia_usage.costo_estimado + v_costo_total,
-          updated_at = now();
-  end if;
-
-  return json_build_object(
-    'permitido', v_permitido,
-    'consultas_hoy', v_consultas_hoy + case when v_permitido then 1 else 0 end,
-    'limite', v_limite_diario,
-    'rol', v_rol,
-    'costo', v_costo_total
+  RETURN json_build_object(
+    'permitido',     v_permitido,
+    'consultas_hoy', v_consultas_hoy + CASE WHEN v_permitido THEN 1 ELSE 0 END,
+    'limite',        v_limite_diario,
+    'rol',           v_rol,
+    'costo',         v_costo_total
   );
-end;
+END;
 $function$;
 
 revoke all on function public.registrar_uso_ia(uuid, integer, integer, text) from public;
