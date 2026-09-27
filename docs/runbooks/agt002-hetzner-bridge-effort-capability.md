@@ -81,6 +81,12 @@ confirmar que estos archivos están presentes y actualizados en el host (rutas r
   importado directamente por `agt002-hetzner-bridge-server.js` y `agt002-hetzner-bridge-log.js`.
 - `agt002-preview-allowed-models.js` — contrato compartido, congelado, de la allowlist de modelos
   (`['sonnet']`); importado directamente por `agt002-hetzner-bridge-server.js`.
+- `agt002-control-plane-identity.js` — construye la identidad de control-plane (`surface`/`sha`/
+  `version`/`source`/`observed_at_utc`) de una superficie AGT-002; importado directamente por
+  `agt002-hetzner-bridge-server.js`.
+- `agt002-host-surface-observer.js` — observa vía `systemctl show` el estado y el sha/versión
+  desplegados de las unidades host de AGT-002; importado directamente por
+  `agt002-hetzner-bridge-server.js`.
 - `ops/agt002-hetzner-bridge/agt002-bridge.service` — unidad systemd (reinstalar con
   `systemctl daemon-reload` tras copiarla, antes de `systemctl restart`).
 
