@@ -478,6 +478,25 @@ test('drift_alert job-level fail-closed if does not disturb the real collect-obs
   assert.match(failSection, /run:\s*exit 1/);
 });
 
+// --- f0_suite must actually execute the migration/rollback behavioral test, not just declare it ---
+
+test('f0_suite job runs the users-security-095 pglite migration/rollback integration test', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const f0SuiteStart = workflowText.indexOf('\n  f0_suite:');
+  assert.ok(f0SuiteStart >= 0, 'expected to find the f0_suite job');
+  const nextJobIndex = workflowText.indexOf('\n  backend_parity:');
+  assert.ok(nextJobIndex > f0SuiteStart, 'expected backend_parity job to follow f0_suite');
+  const f0SuiteSection = workflowText.slice(f0SuiteStart, nextJobIndex);
+
+  const runLineMatch = f0SuiteSection.match(/run:\s*node --test [^\n]+/);
+  assert.ok(runLineMatch, 'expected f0_suite to declare a node --test run line');
+  assert.match(
+    runLineMatch[0],
+    /tests\/agt002-f0-users-security-095-pglite\.integration\.test\.mjs\b/,
+    'expected f0_suite\'s node --test command to include tests/agt002-f0-users-security-095-pglite.integration.test.mjs so GitHub actually executes it',
+  );
+});
+
 test('drift_alert job retains the full live six-surface path unconditionally on push/schedule/workflow_dispatch (only pull_request is excluded)', () => {
   const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
   const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
