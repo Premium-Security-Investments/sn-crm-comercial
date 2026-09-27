@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -495,6 +496,58 @@ test('f0_suite job runs the users-security-095 pglite migration/rollback integra
     /tests\/agt002-f0-users-security-095-pglite\.integration\.test\.mjs\b/,
     'expected f0_suite\'s node --test command to include tests/agt002-f0-users-security-095-pglite.integration.test.mjs so GitHub actually executes it',
   );
+});
+
+// --- release receipt migration manifest fix: 095 was merged but omitted from receipt.migrations ---
+
+const REQUIRED_MIGRATIONS = [
+  { name: '092_agt002_f0b_chat_query_revoke.sql' },
+  { name: '094_agt002_f0b2_rpc_hardening.sql' },
+  { name: '095_agt002_f0_users_security.sql' },
+];
+
+function sha256OfRepoFile(relativePath) {
+  const bytes = readFileSync(new URL(`../supabase/migrations/${relativePath}`, import.meta.url));
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+test('supabase/migrations/095_agt002_f0_users_security.sql exists as an explicit immutable receipt input', () => {
+  assert.ok(
+    existsSync(fileURLToPath(new URL('../supabase/migrations/095_agt002_f0_users_security.sql', import.meta.url))),
+    'expected supabase/migrations/095_agt002_f0_users_security.sql to exist',
+  );
+});
+
+test('generateAgt002ReleaseReceipt includes exact SHA-256 entries for migrations 092, 094, and 095', async () => {
+  const { generateAgt002ReleaseReceipt } = await import(RELEASE_RECEIPT_MODULE_SPECIFIER);
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'abc123' });
+
+  assert.ok(receipt.migrations, 'expected receipt.migrations to be present');
+  for (const { name } of REQUIRED_MIGRATIONS) {
+    const expectedSha256 = sha256OfRepoFile(name);
+    assert.equal(
+      receipt.migrations[name]?.sha256,
+      expectedSha256,
+      `expected receipt.migrations[${name}].sha256 to match the independently computed file hash`,
+    );
+  }
+});
+
+test('generateAgt002ReleaseReceipt.migrations contains exactly the required canonical entries, nothing more or less', async () => {
+  const { generateAgt002ReleaseReceipt } = await import(RELEASE_RECEIPT_MODULE_SPECIFIER);
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'abc123' });
+
+  const expectedKeys = REQUIRED_MIGRATIONS.map(({ name }) => name).sort();
+  const actualKeys = Object.keys(receipt.migrations).sort();
+  assert.deepEqual(actualKeys, expectedKeys);
+});
+
+test('generateAgt002ReleaseReceipt preserves control_plane_reconciled=false alongside the completed migration manifest', async () => {
+  const { generateAgt002ReleaseReceipt } = await import(RELEASE_RECEIPT_MODULE_SPECIFIER);
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'abc123' });
+
+  assert.equal(receipt.control_plane_reconciled, false);
+  assert.ok(receipt.migrations);
 });
 
 test('drift_alert job retains the full live six-surface path unconditionally on push/schedule/workflow_dispatch (only pull_request is excluded)', () => {

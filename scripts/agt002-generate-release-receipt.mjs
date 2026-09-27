@@ -19,6 +19,9 @@ const MIGRATION_092_PATH = fileURLToPath(
 const MIGRATION_094_PATH = fileURLToPath(
   new URL('../supabase/migrations/094_agt002_f0b2_rpc_hardening.sql', import.meta.url),
 );
+const MIGRATION_095_PATH = fileURLToPath(
+  new URL('../supabase/migrations/095_agt002_f0_users_security.sql', import.meta.url),
+);
 
 function sha256OfFile(path) {
   try {
@@ -66,6 +69,7 @@ export function generateAgt002ReleaseReceipt(input = {}) {
 
   const migration092Sha256 = sha256OfFile(MIGRATION_092_PATH);
   const migration094Sha256 = sha256OfFile(MIGRATION_094_PATH);
+  const migration095Sha256 = sha256OfFile(MIGRATION_095_PATH);
   const gitSha = input.git_sha ?? process.env.GITHUB_SHA ?? null;
   // The single canonical release identity every one of the six surfaces is expected to be
   // running. Both fields are explicit immutable inputs (an env var GitHub Actions/the deployer
@@ -88,10 +92,11 @@ export function generateAgt002ReleaseReceipt(input = {}) {
     surfaces: buildSurfaces(input.surfaces, gitSha),
   };
 
-  if (migration092Sha256 && migration094Sha256) {
+  if (migration092Sha256 && migration094Sha256 && migration095Sha256) {
     receipt.migrations = {
       '092_agt002_f0b_chat_query_revoke.sql': { sha256: migration092Sha256 },
       '094_agt002_f0b2_rpc_hardening.sql': { sha256: migration094Sha256 },
+      '095_agt002_f0_users_security.sql': { sha256: migration095Sha256 },
     };
   }
 
