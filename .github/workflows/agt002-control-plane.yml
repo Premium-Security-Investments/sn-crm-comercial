@@ -138,6 +138,12 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - release_receipt
+    # release_receipt already encodes "schedule OR every quality job succeeded" in its own if, so
+    # drift_alert only needs to gate on release_receipt's result -- not re-derive the quality-job
+    # logic. Without this explicit always(), a failed/cancelled release_receipt would otherwise be
+    # able to leave drift_alert's default success() checks ambiguous across GitHub Actions
+    # semantics; this pins it fail-closed regardless.
+    if: always() && needs.release_receipt.result == 'success'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

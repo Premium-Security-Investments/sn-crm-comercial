@@ -393,6 +393,38 @@ test('drift_alert job runs the offline drift-detection test file only on pull_re
   assert.ok(offlineStepIndex >= 0, 'expected a pull_request-gated step running the offline drift-detection test file');
 });
 
+// --- fail-closed fix: drift_alert must not run on a failed/skipped release_receipt ---
+
+test('drift_alert job declares a job-level fail-closed if requiring release_receipt to succeed', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertStart = workflowText.indexOf('\n  drift_alert:');
+  assert.ok(driftAlertStart >= 0, 'expected to find the drift_alert job');
+  const stepsIndex = workflowText.indexOf('\n    steps:', driftAlertStart);
+  assert.ok(stepsIndex >= 0, 'expected drift_alert to declare steps:');
+  const driftAlertJobHeader = workflowText.slice(driftAlertStart, stepsIndex);
+
+  assert.match(
+    driftAlertJobHeader,
+    /if:\s*always\(\)\s*&&\s*needs\.release_receipt\.result == 'success'/,
+    'expected a job-level if: always() && needs.release_receipt.result == \'success\' on drift_alert',
+  );
+});
+
+test('drift_alert job-level condition gates only on release_receipt, not on the quality jobs directly, so it still runs on schedule when they are skipped', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertStart = workflowText.indexOf('\n  drift_alert:');
+  const stepsIndex = workflowText.indexOf('\n    steps:', driftAlertStart);
+  const driftAlertJobHeader = workflowText.slice(driftAlertStart, stepsIndex);
+
+  for (const qualityJob of ['f0_suite', 'backend_parity', 'production_build', 'migration_static', 'grants_security']) {
+    assert.doesNotMatch(
+      driftAlertJobHeader,
+      new RegExp(`needs\\.${qualityJob}\\.result`),
+      `drift_alert's own if must not reference needs.${qualityJob}.result -- release_receipt's if already encodes that`,
+    );
+  }
+});
+
 test('drift_alert live-observation steps are gated off on pull_request', () => {
   const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
   const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
@@ -420,6 +452,30 @@ test('drift_alert job never claims a production drift result on pull_request: Ch
     /run:\s*npm run check:agt002-drift/,
     'check:agt002-drift must not run before the pull_request gate',
   );
+});
+
+test('drift_alert job-level fail-closed if does not disturb the real collect-observed-surfaces -> check:agt002-drift -> upload -> fail-on-drift step pipeline', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('\n  drift_alert:'));
+
+  const collectIndex = driftAlertSection.search(/name:\s*Collect observed surfaces/);
+  const checkIndex = driftAlertSection.search(/name:\s*Check drift/);
+  const uploadIndex = driftAlertSection.search(/name:\s*Upload drift result/);
+  const failIndex = driftAlertSection.search(/name:\s*Fail on drift/);
+
+  assert.ok(collectIndex >= 0 && checkIndex > collectIndex, 'Collect observed surfaces must precede Check drift');
+  assert.ok(checkIndex >= 0 && uploadIndex > checkIndex, 'Check drift must precede Upload drift result');
+  assert.ok(uploadIndex >= 0 && failIndex > uploadIndex, 'Upload drift result must precede Fail on drift');
+
+  const collectSection = driftAlertSection.slice(collectIndex, checkIndex);
+  assert.match(collectSection, /run:\s*npm run agt002:observe-surfaces/);
+  const checkSection = driftAlertSection.slice(checkIndex, uploadIndex);
+  assert.match(
+    checkSection,
+    /run:\s*npm run check:agt002-drift.*--receipt\s+agt002-release-receipt\.json\s+--observed\s+agt002-observed-surfaces\.json/,
+  );
+  const failSection = driftAlertSection.slice(failIndex);
+  assert.match(failSection, /run:\s*exit 1/);
 });
 
 test('drift_alert job retains the full live six-surface path unconditionally on push/schedule/workflow_dispatch (only pull_request is excluded)', () => {
