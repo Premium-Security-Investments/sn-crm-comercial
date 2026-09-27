@@ -78,7 +78,10 @@ test('getAgt002VercelControlPlaneIdentity: reports AGT002_DEPLOYED_VERSION along
   assert.equal(noSha.version, null, 'a version with no observed sha must never surface');
 });
 
-// --- ops runners: AGT002_DEPLOYED_VERSION flows through --control-plane, never from disk ---
+// --- ops runners: --control-plane never trusts an env/config claim as identity; sha/version
+// only ever come from canonical release-artifact realpath evidence, never from disk-adjacent
+// AGT002_DEPLOYED_GIT_SHA/AGT002_DEPLOYED_VERSION env vars (see agt002-control-plane-runtime-
+// evidence.js and tests/agt002-f0-runtime-reporters.test.mjs for the resolver's direct coverage) ---
 
 const RADAR_RUNNER = new URL('../ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs', import.meta.url).pathname;
 const REANALYSIS_RUNNER = new URL(
@@ -99,34 +102,34 @@ function soleJsonLine(stdout) {
   return JSON.parse(lines[0]);
 }
 
-test('radar pipeline runner: --control-plane reports AGT002_DEPLOYED_VERSION alongside AGT002_DEPLOYED_GIT_SHA', () => {
+test('radar pipeline runner: --control-plane ignores AGT002_DEPLOYED_GIT_SHA/AGT002_DEPLOYED_VERSION spoofing and stays unobserved from this checkout', () => {
   const result = runControlPlaneScript(RADAR_RUNNER, {
     AGT002_DEPLOYED_GIT_SHA: 'radar-deployed-sha',
     AGT002_DEPLOYED_VERSION: '1.2.3',
   });
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
-  assert.equal(payload.sha, 'radar-deployed-sha');
-  assert.equal(payload.version, '1.2.3');
-});
-
-test('radar pipeline runner: --control-plane with a sha but no version reports version:null, never inferred', () => {
-  const result = runControlPlaneScript(RADAR_RUNNER, { AGT002_DEPLOYED_GIT_SHA: 'radar-deployed-sha' });
-  assert.equal(result.status, 0, result.stderr);
-  const payload = soleJsonLine(result.stdout);
-  assert.equal(payload.sha, 'radar-deployed-sha');
+  assert.equal(payload.sha, null, 'env/config spoof inputs must never produce identity outside the canonical release path');
   assert.equal(payload.version, null);
 });
 
-test('reanalysis worker runner: --control-plane reports AGT002_DEPLOYED_VERSION alongside AGT002_DEPLOYED_GIT_SHA', () => {
+test('radar pipeline runner: --control-plane with only a sha spoofed (no version) still stays unobserved, never partially trusted', () => {
+  const result = runControlPlaneScript(RADAR_RUNNER, { AGT002_DEPLOYED_GIT_SHA: 'radar-deployed-sha' });
+  assert.equal(result.status, 0, result.stderr);
+  const payload = soleJsonLine(result.stdout);
+  assert.equal(payload.sha, null);
+  assert.equal(payload.version, null, 'a missing version must stay null, never inferred');
+});
+
+test('reanalysis worker runner: --control-plane ignores AGT002_DEPLOYED_GIT_SHA/AGT002_DEPLOYED_VERSION spoofing and stays unobserved from this checkout', () => {
   const result = runControlPlaneScript(REANALYSIS_RUNNER, {
     AGT002_DEPLOYED_GIT_SHA: 'reanalysis-deployed-sha',
     AGT002_DEPLOYED_VERSION: '1.2.3',
   });
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
-  assert.equal(payload.sha, 'reanalysis-deployed-sha');
-  assert.equal(payload.version, '1.2.3');
+  assert.equal(payload.sha, null, 'env/config spoof inputs must never produce identity outside the canonical release path');
+  assert.equal(payload.version, null);
 });
 
 // --- release receipt: a single canonical desired {sha, version} every surface is compared to ---

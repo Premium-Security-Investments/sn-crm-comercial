@@ -544,18 +544,30 @@ async function testHostSurfaceObserverCalledWithExactArgsForEachAllowlistedSurfa
     }, { hostSurfaceObserver: observer, controlPlaneIdentity: { sha: 'deployed-sha', version: '1.2.3', source: 'bridge_deployed_git_sha' } });
 
     assert.equal(calls.length, 1, `${surface} debe invocar al observer exactamente una vez`);
-    assert.deepEqual(calls[0], { surface, sha: 'deployed-sha', version: '1.2.3' }, `${surface} debe recibir exactamente surface + sha/version, nada más`);
+    assert.deepEqual(calls[0], { surface }, `${surface} debe recibir exactamente {surface}, nunca la identidad del puente`);
   }
 }
 
-async function testHostSurfaceObserverReceivesNullShaVersionWhenIdentityUnobserved() {
+async function testHostSurfaceObserverNeverReceivesBridgeIdentityEvenWhenConfigured() {
+  const { calls, observer } = fakeHostSurfaceObserver();
+  await withServer(fakeSuccessClient, async (base) => {
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method: 'GET' });
+    assert.equal(response.status, 200);
+  }, { hostSurfaceObserver: observer, controlPlaneIdentity: { sha: 'deployed-sha', version: '1.2.3', source: 'bridge_deployed_git_sha' } });
+
+  assert.deepEqual(calls[0], { surface: 'radar_pipeline' });
+  assert.equal(Object.hasOwn(calls[0], 'sha'), false);
+  assert.equal(Object.hasOwn(calls[0], 'version'), false);
+}
+
+async function testHostSurfaceObserverCalledWithExactArgsWhenIdentityUnobserved() {
   const { calls, observer } = fakeHostSurfaceObserver();
   await withServer(fakeSuccessClient, async (base) => {
     const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method: 'GET' });
     assert.equal(response.status, 200);
   }, { hostSurfaceObserver: observer });
 
-  assert.deepEqual(calls[0], { surface: 'radar_pipeline', sha: null, version: null });
+  assert.deepEqual(calls[0], { surface: 'radar_pipeline' });
 }
 
 async function testNonGetToKnownHostSurfaceReturnsFixed405NoObserverCall() {
@@ -672,7 +684,8 @@ await testCompletedRequestBodyDoesNotCancelRun();
 await testClientDisconnectStillCancelsRun();
 
 await testHostSurfaceObserverCalledWithExactArgsForEachAllowlistedSurface();
-await testHostSurfaceObserverReceivesNullShaVersionWhenIdentityUnobserved();
+await testHostSurfaceObserverNeverReceivesBridgeIdentityEvenWhenConfigured();
+await testHostSurfaceObserverCalledWithExactArgsWhenIdentityUnobserved();
 await testNonGetToKnownHostSurfaceReturnsFixed405NoObserverCall();
 await testUnknownControlPlaneSurfaceReturnsFixed404NoObserverCall();
 await testHostSurfaceObserverRejectionReturnsFixedFailClosed503();

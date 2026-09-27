@@ -111,13 +111,12 @@ export function createAgt002BridgeServer({
       if (req.method !== 'GET') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
       let observationPromise;
       try {
-        // Exact injected args only: the allowlisted surface plus the deployer-injected upstream
-        // sha/version. No headers, query string, or other request data ever reaches the observer.
-        observationPromise = hostSurfaceObserver({
-          surface,
-          sha: controlPlaneIdentity.sha ?? null,
-          version: controlPlaneIdentity.version ?? null,
-        });
+        // Exact injected arg only: the allowlisted surface name. The bridge's own
+        // controlPlaneIdentity (its own sha/version) must never reach the observer -- each host
+        // surface is a distinct systemd unit with its own independent deployment, and the
+        // observer derives that unit's identity itself from its own immutable config. No headers,
+        // query string, bridge identity, or other request data ever reaches the observer.
+        observationPromise = hostSurfaceObserver({ surface });
       } catch {
         return sendJson(res, 503, HOST_SURFACE_OBSERVATION_UNAVAILABLE);
       }
