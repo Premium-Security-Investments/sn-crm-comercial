@@ -1,18 +1,28 @@
 #!/usr/bin/env node
 import { createClient } from '@supabase/supabase-js';
+import { fileURLToPath } from 'node:url';
 import { createAgt002ReanalysisExecutor } from '../../agt002-reanalysis-executor.js';
 import { createAgt002ReanalysisWorker } from '../../agt002-reanalysis-worker.js';
 import { resolveAgt002GovernedDocumentForExecution } from '../../agt002-governed-document-rehydration.js';
 import { resolveAgt002GovernedContextVersionForExecution } from '../../agt002-governed-context-version-rehydration.js';
 import { buildReanalysisWorkerIdentity } from '../../agt002-control-plane-surface-builders.js';
+import { resolveAgt002ReleaseArtifactEvidence } from '../../agt002-control-plane-runtime-evidence.js';
+
+const REANALYSIS_WORKER_RELATIVE_PATH = 'ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs';
 
 // --control-plane: side-effect-free identity report, gated before any secret/client
-// requirement below. Never reads git/disk state -- only the explicit deployed-sha env var
-// the deployer injected (or none, which stays honestly unobserved).
+// requirement below. Never trusts an env-var/config claim -- the sha/version are only ever
+// reported when this exact script's realpath resolves into the immutable releases/<sha>/ tree
+// (see agt002-control-plane-runtime-evidence.js); otherwise the surface stays honestly
+// unobserved.
 if (process.argv.includes('--control-plane')) {
+  const evidence = resolveAgt002ReleaseArtifactEvidence({
+    scriptPath: fileURLToPath(import.meta.url),
+    relativePath: REANALYSIS_WORKER_RELATIVE_PATH,
+  });
   console.log(JSON.stringify(buildReanalysisWorkerIdentity({
-    releaseSha: process.env.AGT002_DEPLOYED_GIT_SHA || null,
-    version: process.env.AGT002_DEPLOYED_VERSION || null,
+    releaseSha: evidence.sha,
+    version: evidence.version,
   })));
   process.exit(0);
 }

@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
 import {
   SURFACE_NAMES,
   buildAgt002ControlPlaneIdentity,
@@ -14,6 +16,11 @@ import {
   buildReanalysisWorkerIdentity,
   buildWorkbenchSchedulerIdentity,
 } from '../agt002-control-plane-surface-builders.js';
+import {
+  AGT002_RELEASES_ROOT,
+  AGT002_RELEASE_VERSION_FILE_NAME,
+  resolveAgt002ReleaseArtifactEvidence,
+} from '../agt002-control-plane-runtime-evidence.js';
 import { createAgt002BridgeServer } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 import { generateAgt002ReleaseReceipt } from '../scripts/agt002-generate-release-receipt.mjs';
@@ -248,12 +255,16 @@ test('generateAgt002ReleaseReceipt: control_plane_reconciled=true in input is re
 });
 
 // --- F0 runtime-reporters wiring: bridge runner, radar pipeline runner, reanalysis worker
-// runner, workbench scheduler script. Each surface below must (a) never infer identity from
-// mutable disk state, (b) require no secret/network/business call to report it, (c) leave the
+// runner, workbench scheduler script. Each surface below must (a) never infer identity from a
+// configuration/env claim -- only from canonical evidence of the effective executable/script
+// runtime path, (b) require no secret/network/business call to report it, (c) leave the
 // existing frozen builders/contract untouched.
 
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
+// The bridge (run-server.mjs) surface is intentionally out of scope for this correction: it is
+// wired directly by a human-controlled systemd EnvironmentFile at deploy time, not by a oneshot
+// --control-plane reporter inferring its own runtime path, so it is unaffected here.
 test('run-server.mjs (bridge): wires controlPlaneIdentity from AGT002_DEPLOYED_GIT_SHA/AGT002_DEPLOYED_VERSION, never from disk', () => {
   const source = readFileSync(new URL('../ops/agt002-hetzner-bridge/run-server.mjs', import.meta.url), 'utf8');
   assert.match(source, /AGT002_DEPLOYED_GIT_SHA/);
@@ -278,29 +289,237 @@ function soleJsonLine(stdout) {
 
 const RADAR_RUNNER = new URL('../ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs', import.meta.url).pathname;
 const REANALYSIS_RUNNER = new URL('../ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs', import.meta.url).pathname;
+const WORKBENCH_SCRIPT = new URL('../ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh', import.meta.url).pathname;
 
-test('radar pipeline runner: --control-plane is gated by the shared builder before the Supabase client, and never reads git/disk', () => {
+// --- Shared helper (agt002-control-plane-runtime-evidence.js): the single canonical parser
+// every one of the three oneshot reporters below is required to defer to -- exercised directly
+// with real filesystem fixtures (mkdtemp) rather than divergent per-surface logic.
+
+function buildReleaseFixture({ relativePath, version } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'agt002-release-'));
+  const sha = '1'.repeat(40);
+  const scriptPath = join(root, sha, relativePath);
+  mkdirSync(dirname(scriptPath), { recursive: true });
+  writeFileSync(scriptPath, '// fixture release artifact\n');
+  if (version !== undefined) {
+    writeFileSync(join(root, sha, AGT002_RELEASE_VERSION_FILE_NAME), version);
+  }
+  return { root, sha, scriptPath };
+}
+
+test('resolveAgt002ReleaseArtifactEvidence: a canonical immutable release-path fixture reports the exact sha and its colocated version', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const { root, sha, scriptPath } = buildReleaseFixture({ relativePath, version: '2026.09.27-1\n' });
+  const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath, releasesRoot: root });
+  assert.equal(evidence.sha, sha);
+  assert.equal(evidence.version, '2026.09.27-1');
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a fixture with no RELEASE_VERSION file reports the sha with a null version', () => {
+  const relativePath = 'ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs';
+  const { root, sha, scriptPath } = buildReleaseFixture({ relativePath });
+  const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath, releasesRoot: root });
+  assert.equal(evidence.sha, sha);
+  assert.equal(evidence.version, null);
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: an unsafe RELEASE_VERSION content nulls only the version, sha stays observed', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const { root, sha, scriptPath } = buildReleaseFixture({ relativePath, version: 'not a safe token!' });
+  const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath, releasesRoot: root });
+  assert.equal(evidence.sha, sha);
+  assert.equal(evidence.version, null);
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a real file in the current dev worktree (not a release checkout) stays unobserved', () => {
+  const evidence = resolveAgt002ReleaseArtifactEvidence({
+    scriptPath: RADAR_RUNNER,
+    relativePath: 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs',
+  });
+  assert.equal(evidence.sha, null);
+  assert.equal(evidence.version, null);
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: never trusts an env-var/config claim -- a non-canonical scriptPath stays unobserved even with AGT002_DEPLOYED_GIT_SHA/VERSION set', () => {
+  process.env.AGT002_DEPLOYED_GIT_SHA = 'a'.repeat(40);
+  process.env.AGT002_DEPLOYED_VERSION = 'v9.9.9';
+  try {
+    const evidence = resolveAgt002ReleaseArtifactEvidence({
+      scriptPath: RADAR_RUNNER,
+      relativePath: 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs',
+    });
+    assert.equal(evidence.sha, null);
+    assert.equal(evidence.version, null);
+  } finally {
+    delete process.env.AGT002_DEPLOYED_GIT_SHA;
+    delete process.env.AGT002_DEPLOYED_VERSION;
+  }
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a symlink placed at a canonical-looking release path but pointing outside the release tree cannot spoof observed', () => {
+  const relativePath = 'ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh';
+  const root = mkdtempSync(join(tmpdir(), 'agt002-release-symlink-'));
+  const sha = '2'.repeat(40);
+  const scriptPath = join(root, sha, relativePath);
+  mkdirSync(dirname(scriptPath), { recursive: true });
+  const outsideTarget = join(root, 'outside-the-release-tree.sh');
+  writeFileSync(outsideTarget, '# not a real release artifact\n');
+  symlinkSync(outsideTarget, scriptPath);
+
+  const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath, releasesRoot: root });
+  assert.equal(evidence.sha, null, 'a symlink escaping the release tree must never be treated as canonical');
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a RELEASE_VERSION symlink escaping its own release directory is never trusted, sha stays observed but version stays null', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const { root, sha, scriptPath } = buildReleaseFixture({ relativePath });
+  const outsideVersionFile = join(root, 'outside-version.txt');
+  writeFileSync(outsideVersionFile, 'v9.9.9');
+  symlinkSync(outsideVersionFile, join(root, sha, AGT002_RELEASE_VERSION_FILE_NAME));
+
+  const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath, releasesRoot: root });
+  assert.equal(evidence.sha, sha);
+  assert.equal(evidence.version, null);
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: unsafe/malformed scriptPath and mismatched shapes collapse to unobserved without throwing', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const unsafeInputs = [
+    null,
+    undefined,
+    '',
+    '/nonexistent/path/does/not/exist.mjs',
+    `${AGT002_RELEASES_ROOT}/not-a-sha/${relativePath}`,
+    `${AGT002_RELEASES_ROOT}/${'g'.repeat(40)}/${relativePath}`,
+    `${AGT002_RELEASES_ROOT}/${'3'.repeat(40)}/${relativePath}/../../../etc/passwd`,
+  ];
+  for (const scriptPath of unsafeInputs) {
+    assert.doesNotThrow(() => {
+      const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath });
+      assert.equal(evidence.sha, null, `expected unobserved for scriptPath=${JSON.stringify(scriptPath)}`);
+      assert.equal(evidence.version, null);
+    });
+  }
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a mismatched relativePath (wrong surface) stays unobserved even under a real release sha', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const { root, scriptPath } = buildReleaseFixture({ relativePath });
+  const evidence = resolveAgt002ReleaseArtifactEvidence({
+    scriptPath,
+    relativePath: 'ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs',
+    releasesRoot: root,
+  });
+  assert.equal(evidence.sha, null);
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: an uppercase-hex sha fails closed, only lowercase 40-hex is trusted', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const root = mkdtempSync(join(tmpdir(), 'agt002-release-'));
+  const sha = 'A'.repeat(40);
+  const scriptPath = join(root, sha, relativePath);
+  mkdirSync(dirname(scriptPath), { recursive: true });
+  writeFileSync(scriptPath, '// fixture release artifact\n');
+  const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath, releasesRoot: root });
+  assert.equal(evidence.sha, null, 'an uppercase-hex sha must never be trusted as canonical');
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a short (39-char) sha fails closed', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const root = mkdtempSync(join(tmpdir(), 'agt002-release-'));
+  const sha = '1'.repeat(39);
+  const scriptPath = join(root, sha, relativePath);
+  mkdirSync(dirname(scriptPath), { recursive: true });
+  writeFileSync(scriptPath, '// fixture release artifact\n');
+  const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath, releasesRoot: root });
+  assert.equal(evidence.sha, null, 'a short sha must never be trusted as canonical');
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a prefix-confusion sibling root (e.g. "<root>-evil") fails closed even though it string-prefixes the real root', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const root = mkdtempSync(join(tmpdir(), 'agt002-release-'));
+  const sha = '1'.repeat(40);
+  const confusedRoot = `${root}-evil`;
+  const scriptPath = join(confusedRoot, sha, relativePath);
+  mkdirSync(dirname(scriptPath), { recursive: true });
+  writeFileSync(scriptPath, '// fixture release artifact\n');
+  const evidence = resolveAgt002ReleaseArtifactEvidence({ scriptPath, relativePath, releasesRoot: root });
+  assert.equal(evidence.sha, null, 'a sibling directory sharing the root as a string prefix must never be trusted as inside it');
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a realpath error on the script path itself fails closed without throwing', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const { root, scriptPath } = buildReleaseFixture({ relativePath, version: '1.2.3' });
+  const evidence = resolveAgt002ReleaseArtifactEvidence({
+    scriptPath,
+    relativePath,
+    releasesRoot: root,
+    realpath: () => { throw new Error('realpath failed'); },
+  });
+  assert.equal(evidence.sha, null);
+  assert.equal(evidence.version, null);
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a realpath error while resolving RELEASE_VERSION nulls only the version, sha stays observed', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const { root, sha, scriptPath } = buildReleaseFixture({ relativePath, version: '1.2.3' });
+  const evidence = resolveAgt002ReleaseArtifactEvidence({
+    scriptPath,
+    relativePath,
+    releasesRoot: root,
+    realpath: (candidate) => {
+      if (candidate.endsWith(AGT002_RELEASE_VERSION_FILE_NAME)) throw new Error('realpath failed');
+      return realpathSync(candidate);
+    },
+  });
+  assert.equal(evidence.sha, sha);
+  assert.equal(evidence.version, null);
+});
+
+test('resolveAgt002ReleaseArtifactEvidence: a readFile error on an otherwise-valid RELEASE_VERSION file nulls only the version, sha stays observed', () => {
+  const relativePath = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
+  const { root, sha, scriptPath } = buildReleaseFixture({ relativePath, version: '1.2.3' });
+  const evidence = resolveAgt002ReleaseArtifactEvidence({
+    scriptPath,
+    relativePath,
+    releasesRoot: root,
+    readFile: () => { throw new Error('read failed'); },
+  });
+  assert.equal(evidence.sha, sha);
+  assert.equal(evidence.version, null);
+});
+
+// --- radar_pipeline oneshot reporter
+
+test('radar pipeline runner: --control-plane is gated by the shared builder + shared runtime-evidence resolver before the Supabase client, never reads git and never trusts AGT002_DEPLOYED_GIT_SHA/VERSION', () => {
   const source = readFileSync(RADAR_RUNNER, 'utf8');
   assert.match(source, /buildRadarPipelineIdentity/);
+  assert.match(source, /resolveAgt002ReleaseArtifactEvidence/);
   assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-surface-builders\.js'/);
+  assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-runtime-evidence\.js'/);
   const controlPlaneIndex = source.indexOf("'--control-plane'");
   const clientIndex = source.indexOf('createClient(');
   assert.ok(controlPlaneIndex >= 0, '--control-plane check must be present');
   assert.ok(clientIndex > controlPlaneIndex, '--control-plane must be checked before the Supabase client is constructed');
   assert.doesNotMatch(source, /execSync|spawnSync|git\s+rev-parse/);
+  assert.doesNotMatch(source, /AGT002_DEPLOYED_GIT_SHA|AGT002_DEPLOYED_VERSION/, 'must never treat the deployed-sha/version env vars as identity evidence');
 });
 
-test('radar pipeline runner: --control-plane is observed from AGT002_DEPLOYED_GIT_SHA, needs no Supabase secret, exactly one JSON line, exit 0', () => {
-  const result = runControlPlaneScript(RADAR_RUNNER, { AGT002_DEPLOYED_GIT_SHA: 'radar-deployed-sha' });
+test('radar pipeline runner: --control-plane ignores AGT002_DEPLOYED_GIT_SHA/VERSION spoofing -- stays unobserved from the dev worktree, needs no Supabase secret, exactly one JSON line, exit 0', () => {
+  const result = runControlPlaneScript(RADAR_RUNNER, {
+    AGT002_DEPLOYED_GIT_SHA: 'a'.repeat(40),
+    AGT002_DEPLOYED_VERSION: 'v1.2.3',
+  });
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
   assert.equal(payload.surface, 'radar_pipeline');
-  assert.equal(payload.sha, 'radar-deployed-sha');
-  assert.equal(payload.source, 'radar_pipeline_git_head');
+  assert.equal(payload.sha, null);
+  assert.equal(payload.version, null);
+  assert.equal(payload.source, 'unobserved');
   assert.match(payload.observed_at_utc, ISO_UTC);
 });
 
-test('radar pipeline runner: --control-plane is unobserved with no AGT002_DEPLOYED_GIT_SHA, still needs no Supabase secret, exit 0', () => {
+test('radar pipeline runner: --control-plane with no env at all is unobserved too (env was never the trust boundary), still needs no Supabase secret, exit 0', () => {
   const result = runControlPlaneScript(RADAR_RUNNER, {});
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
@@ -315,28 +534,37 @@ test('radar pipeline runner: normal mode (no --control-plane) is unchanged and s
   assert.match(result.stderr, /AGT002_RADAR_ENTRYPOINT_CONFIG_INVALID/);
 });
 
-test('reanalysis worker runner: --control-plane is gated by the shared builder before the Supabase client, and never reads git/disk', () => {
+// --- reanalysis_worker oneshot reporter
+
+test('reanalysis worker runner: --control-plane is gated by the shared builder + shared runtime-evidence resolver before the Supabase client, never reads git and never trusts AGT002_DEPLOYED_GIT_SHA/VERSION', () => {
   const source = readFileSync(REANALYSIS_RUNNER, 'utf8');
   assert.match(source, /buildReanalysisWorkerIdentity/);
+  assert.match(source, /resolveAgt002ReleaseArtifactEvidence/);
   assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-surface-builders\.js'/);
+  assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-runtime-evidence\.js'/);
   const controlPlaneIndex = source.indexOf("'--control-plane'");
   const clientIndex = source.indexOf('createClient(');
   assert.ok(controlPlaneIndex >= 0, '--control-plane check must be present');
   assert.ok(clientIndex > controlPlaneIndex, '--control-plane must be checked before the Supabase client is constructed');
   assert.doesNotMatch(source, /execSync|spawnSync|git\s+rev-parse/);
+  assert.doesNotMatch(source, /AGT002_DEPLOYED_GIT_SHA|AGT002_DEPLOYED_VERSION/, 'must never treat the deployed-sha/version env vars as identity evidence');
 });
 
-test('reanalysis worker runner: --control-plane is observed from AGT002_DEPLOYED_GIT_SHA, needs no Supabase secret, exactly one JSON line, exit 0', () => {
-  const result = runControlPlaneScript(REANALYSIS_RUNNER, { AGT002_DEPLOYED_GIT_SHA: 'reanalysis-deployed-sha' });
+test('reanalysis worker runner: --control-plane ignores AGT002_DEPLOYED_GIT_SHA/VERSION spoofing -- stays unobserved from the dev worktree, needs no Supabase secret, exactly one JSON line, exit 0', () => {
+  const result = runControlPlaneScript(REANALYSIS_RUNNER, {
+    AGT002_DEPLOYED_GIT_SHA: 'b'.repeat(40),
+    AGT002_DEPLOYED_VERSION: 'v1.2.3',
+  });
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
   assert.equal(payload.surface, 'reanalysis_worker');
-  assert.equal(payload.sha, 'reanalysis-deployed-sha');
-  assert.equal(payload.source, 'reanalysis_worker_release_sha');
+  assert.equal(payload.sha, null);
+  assert.equal(payload.version, null);
+  assert.equal(payload.source, 'unobserved');
   assert.match(payload.observed_at_utc, ISO_UTC);
 });
 
-test('reanalysis worker runner: --control-plane is unobserved with no AGT002_DEPLOYED_GIT_SHA, still needs no Supabase secret, exit 0', () => {
+test('reanalysis worker runner: --control-plane with no env at all is unobserved too (env was never the trust boundary), still needs no Supabase secret, exit 0', () => {
   const result = runControlPlaneScript(REANALYSIS_RUNNER, {});
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
@@ -351,13 +579,13 @@ test('reanalysis worker runner: normal mode (no --control-plane) is unchanged an
   assert.match(result.stderr, /CONFIG_MISSING/);
 });
 
-const WORKBENCH_SCRIPT = new URL('../ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh', import.meta.url).pathname;
+// --- workbench_scheduler oneshot reporter (bash)
 
-function runWorkbenchScript(args, env) {
-  return spawnSync('bash', [WORKBENCH_SCRIPT, ...args], { encoding: 'utf8', env: { PATH: process.env.PATH, ...env } });
+function runWorkbenchScript(args, env, scriptPath = WORKBENCH_SCRIPT) {
+  return spawnSync('bash', [scriptPath, ...args], { encoding: 'utf8', env: { PATH: process.env.PATH, ...env } });
 }
 
-test('workbench worker script: --control-plane is gated before the worker secret/URL requirement and before curl', () => {
+test('workbench worker script: --control-plane derives sha/version only from realpath release-tree evidence, never from AGT002_DEPLOYED_GIT_SHA/VERSION, and remains gated before the worker secret/URL requirement and curl', () => {
   const source = readFileSync(WORKBENCH_SCRIPT, 'utf8');
   const controlPlaneIndex = source.indexOf('--control-plane');
   const secretIndex = source.indexOf('AGT002_WORKBENCH_WORKER_URL:?');
@@ -365,23 +593,25 @@ test('workbench worker script: --control-plane is gated before the worker secret
   assert.ok(controlPlaneIndex >= 0, '--control-plane check must be present');
   assert.ok(secretIndex > controlPlaneIndex, '--control-plane must precede the required-secret check');
   assert.ok(curlIndex > secretIndex, 'the network call must remain after the secret check');
+  assert.match(source, /realpath/);
+  assert.doesNotMatch(source, /AGT002_DEPLOYED_GIT_SHA|AGT002_DEPLOYED_VERSION/, 'must never treat the deployed-sha/version env vars as identity evidence');
 });
 
-test('workbench worker script: --control-plane is observed from explicit env, needs no worker secret, exactly one JSON line, exit 0', () => {
+test('workbench worker script: --control-plane ignores AGT002_DEPLOYED_GIT_SHA/VERSION spoofing -- stays unobserved from the dev worktree checkout, needs no worker secret, exactly one JSON line, exit 0', () => {
   const result = runWorkbenchScript(['--control-plane'], {
-    AGT002_DEPLOYED_GIT_SHA: 'workbench-deployed-sha',
+    AGT002_DEPLOYED_GIT_SHA: 'c'.repeat(40),
     AGT002_DEPLOYED_VERSION: 'v1.2.3',
   });
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
   assert.equal(payload.surface, 'workbench_scheduler');
-  assert.equal(payload.sha, 'workbench-deployed-sha');
-  assert.equal(payload.version, 'v1.2.3');
-  assert.equal(payload.source, 'workbench_scheduler_deployed_git_sha');
+  assert.equal(payload.sha, null);
+  assert.equal(payload.version, null);
+  assert.equal(payload.source, 'unobserved');
   assert.match(payload.observed_at_utc, ISO_UTC);
 });
 
-test('workbench worker script: --control-plane is unobserved with no explicit env, needs no worker secret, exit 0', () => {
+test('workbench worker script: --control-plane with no env at all is unobserved too (env was never the trust boundary), needs no worker secret, exit 0', () => {
   const result = runWorkbenchScript(['--control-plane'], {});
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
@@ -391,29 +621,63 @@ test('workbench worker script: --control-plane is unobserved with no explicit en
   assert.equal(payload.source, 'unobserved');
 });
 
-test('workbench worker script: an unsafe/injecting sha collapses to unobserved instead of emitting broken JSON', () => {
-  const injected = '"};echo pwned;{"x":"';
-  const result = runWorkbenchScript(['--control-plane'], {
-    AGT002_DEPLOYED_GIT_SHA: injected,
-    AGT002_DEPLOYED_VERSION: injected,
-  });
+// The production releases_root ('/opt/psi-comercial/releases') is a real host path this sandbox
+// cannot (and must not) write to, so these two fixtures run the exact same script text with only
+// that one hardcoded literal textually patched to a throwaway mkdtemp root -- proving the actual
+// realpath/regex algorithm (unchanged) correctly reports/rejects a canonical release checkout,
+// without ever touching a real host path or making the production root configurable at runtime.
+function patchedWorkbenchScriptSource(releasesRoot) {
+  const source = readFileSync(WORKBENCH_SCRIPT, 'utf8');
+  const patched = source.replace("releases_root='/opt/psi-comercial/releases'", `releases_root='${releasesRoot}'`);
+  assert.notEqual(patched, source, 'expected to patch the hardcoded releases_root for this fixture-only copy');
+  return patched;
+}
+
+test('workbench worker script: (fixture) the realpath/regex algorithm reports the exact sha and its colocated version from a canonical release-path checkout', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agt002-workbench-release-'));
+  const sha = '4'.repeat(40);
+  const relativePath = 'ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh';
+  const fixtureScriptPath = join(root, sha, relativePath);
+  mkdirSync(dirname(fixtureScriptPath), { recursive: true });
+  writeFileSync(fixtureScriptPath, patchedWorkbenchScriptSource(root), { mode: 0o755 });
+  writeFileSync(join(root, sha, 'RELEASE_VERSION'), '2026.09.27-1\n');
+
+  const result = runWorkbenchScript(['--control-plane'], {}, fixtureScriptPath);
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
-  assert.equal(payload.sha, null);
-  assert.equal(payload.version, null);
+  assert.equal(payload.surface, 'workbench_scheduler');
+  assert.equal(payload.sha, sha);
+  assert.equal(payload.version, '2026.09.27-1');
+  assert.equal(payload.source, 'workbench_scheduler_checkout_sha');
+});
+
+test('workbench worker script: (fixture) a symlink at a canonical-looking release path pointing outside the release tree cannot spoof observed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agt002-workbench-release-symlink-'));
+  const sha = '5'.repeat(40);
+  const relativePath = 'ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh';
+  const fixtureScriptPath = join(root, sha, relativePath);
+  mkdirSync(dirname(fixtureScriptPath), { recursive: true });
+  const outsideCopyPath = join(root, 'outside-the-release-tree.sh');
+  writeFileSync(outsideCopyPath, patchedWorkbenchScriptSource(root), { mode: 0o755 });
+  symlinkSync(outsideCopyPath, fixtureScriptPath);
+
+  const result = runWorkbenchScript(['--control-plane'], {}, fixtureScriptPath);
+  assert.equal(result.status, 0, result.stderr);
+  const payload = soleJsonLine(result.stdout);
+  assert.equal(payload.sha, null, 'a symlink escaping the release tree must never be treated as canonical');
   assert.equal(payload.source, 'unobserved');
 });
 
-test('workbench worker script: a valid sha with an unsafe version keeps sha observed and nulls only the version', () => {
-  const result = runWorkbenchScript(['--control-plane'], {
-    AGT002_DEPLOYED_GIT_SHA: 'cafebabe',
-    AGT002_DEPLOYED_VERSION: 'not a safe token!',
-  });
+test('workbench worker script: --control-plane output stays a single well-formed JSON line even when invoked through a maliciously-named symlink', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'agt002-workbench-symlink-'));
+  const maliciousPath = join(tmpDir, '"};echo pwned;{"x":"".sh');
+  symlinkSync(WORKBENCH_SCRIPT, maliciousPath);
+  const result = runWorkbenchScript(['--control-plane'], {}, maliciousPath);
   assert.equal(result.status, 0, result.stderr);
   const payload = soleJsonLine(result.stdout);
-  assert.equal(payload.sha, 'cafebabe');
-  assert.equal(payload.version, null);
-  assert.equal(payload.source, 'workbench_scheduler_deployed_git_sha');
+  assert.equal(payload.surface, 'workbench_scheduler');
+  assert.equal(payload.sha, null);
+  assert.equal(payload.source, 'unobserved');
 });
 
 test('workbench worker script: normal mode (no --control-plane) is unchanged and still requires the worker URL/secret env vars', () => {

@@ -1,15 +1,25 @@
 #!/usr/bin/env node
 import { createClient } from '@supabase/supabase-js';
+import { fileURLToPath } from 'node:url';
 import { createAgt002RadarWorker } from '../../agt002-radar-worker.js';
 import { buildRadarPipelineIdentity } from '../../agt002-control-plane-surface-builders.js';
+import { resolveAgt002ReleaseArtifactEvidence } from '../../agt002-control-plane-runtime-evidence.js';
+
+const RADAR_PIPELINE_RELATIVE_PATH = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
 
 // --control-plane: side-effect-free identity report, gated before any secret/client
-// requirement below. Never reads git/disk state -- only the explicit deployed-sha env var
-// the deployer injected (or none, which stays honestly unobserved).
+// requirement below. Never trusts an env-var/config claim -- the sha/version are only ever
+// reported when this exact script's realpath resolves into the immutable releases/<sha>/ tree
+// (see agt002-control-plane-runtime-evidence.js); otherwise the surface stays honestly
+// unobserved.
 if (process.argv.includes('--control-plane')) {
+  const evidence = resolveAgt002ReleaseArtifactEvidence({
+    scriptPath: fileURLToPath(import.meta.url),
+    relativePath: RADAR_PIPELINE_RELATIVE_PATH,
+  });
   console.log(JSON.stringify(buildRadarPipelineIdentity({
-    headSha: process.env.AGT002_DEPLOYED_GIT_SHA || null,
-    version: process.env.AGT002_DEPLOYED_VERSION || null,
+    headSha: evidence.sha,
+    version: evidence.version,
   })));
   process.exit(0);
 }

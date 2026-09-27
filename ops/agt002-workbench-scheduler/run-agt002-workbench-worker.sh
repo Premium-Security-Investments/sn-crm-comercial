@@ -11,25 +11,48 @@
 set -euo pipefail
 
 # --control-plane: reporte de identidad sin efectos secundarios, resuelto antes de exigir
-# cualquier secreto o de tocar la red. Nunca infiere el sha leyendo el checkout en disco: sólo
-# usa AGT002_DEPLOYED_GIT_SHA/AGT002_DEPLOYED_VERSION si el desplegador los inyectó
-# explícitamente por entorno; si no, la superficie queda honestamente "unobserved".
-#
-# Validación conservadora contra inyección de JSON: sólo un valor que calce por completo con
-# [A-Za-z0-9._-]{1,100} llega al literal JSON. Cualquier otra cosa (vacío, comillas, backslash,
-# saltos de línea, control chars) colapsa a null/"unobserved" en vez de intentar escaparse.
+# cualquier secreto o de tocar la red. Nunca confía en ninguna variable de entorno inyectada por
+# el desplegador ni en ninguna otra afirmación de configuración: el único sha/version que puede
+# reportar es el que se desprende de resolver (con realpath, siguiendo cualquier symlink) la
+# ruta real de ESTE script, exigiendo que caiga -- byte a byte, nunca por prefijo/substring --
+# dentro del árbol inmutable releases/<sha-hex-40>/. Ver agt002-control-plane-runtime-evidence.js
+# para la misma regla aplicada a radar_pipeline/reanalysis_worker. Cualquier cosa que no calce
+# (checkout de desarrollo, symlink que escapa del árbol, sha/version ausentes o mal formados)
+# colapsa a null/"unobserved" en vez de intentar inferir o escapar nada.
 if [ "${1:-}" = "--control-plane" ]; then
-  safe_token='^[A-Za-z0-9._-]{1,100}$'
+  releases_root='/opt/psi-comercial/releases'
+  relative_path='ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh'
+  sha_pattern='^[0-9a-f]{40}$'
+  version_pattern='^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
   observed_at="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
-  sha="${AGT002_DEPLOYED_GIT_SHA:-}"
-  version="${AGT002_DEPLOYED_VERSION:-}"
-  if [[ "$sha" =~ $safe_token ]]; then
-    if [[ "$version" =~ $safe_token ]]; then
-      version_json="\"${version}\""
-    else
-      version_json='null'
+
+  sha=""
+  version_json='null'
+
+  script_realpath="$(realpath -- "$0" 2>/dev/null || true)"
+  prefix="${releases_root}/"
+  if [ -n "$script_realpath" ] && [ "${script_realpath#"$prefix"}" != "$script_realpath" ]; then
+    rest="${script_realpath#"$prefix"}"
+    candidate_sha="${rest%%/*}"
+    if [[ "$candidate_sha" =~ $sha_pattern ]] && [ "$rest" = "${candidate_sha}/${relative_path}" ]; then
+      sha="$candidate_sha"
+
+      version_path="${releases_root}/${sha}/RELEASE_VERSION"
+      version_realpath="$(realpath -- "$version_path" 2>/dev/null || true)"
+      version_prefix="${releases_root}/${sha}/"
+      if [ -n "$version_realpath" ] && [ -f "$version_realpath" ] \
+        && [ "${version_realpath#"$version_prefix"}" != "$version_realpath" ]; then
+        candidate_version="$(cat -- "$version_realpath" 2>/dev/null || true)"
+        candidate_version="$(printf '%s' "$candidate_version" | tr -d '\n')"
+        if [[ "$candidate_version" =~ $version_pattern ]]; then
+          version_json="\"${candidate_version}\""
+        fi
+      fi
     fi
-    printf '{"surface":"workbench_scheduler","sha":"%s","version":%s,"source":"workbench_scheduler_deployed_git_sha","observed_at_utc":"%s"}\n' \
+  fi
+
+  if [ -n "$sha" ]; then
+    printf '{"surface":"workbench_scheduler","sha":"%s","version":%s,"source":"workbench_scheduler_checkout_sha","observed_at_utc":"%s"}\n' \
       "$sha" "$version_json" "$observed_at"
   else
     printf '{"surface":"workbench_scheduler","sha":null,"version":null,"source":"unobserved","observed_at_utc":"%s"}\n' "$observed_at"
