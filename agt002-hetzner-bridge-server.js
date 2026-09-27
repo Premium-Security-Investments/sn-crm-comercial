@@ -5,9 +5,22 @@ import { logBridgeEvent } from './agt002-hetzner-bridge-log.js';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 import { buildAgt002ControlPlaneIdentity } from './agt002-control-plane-identity.js';
+import { AGT002_HOST_SURFACE_UNITS } from './agt002-host-surface-observer.js';
 
 const BRIDGE_PATH = '/v1/agt002-preview/run';
 const CONTROL_PLANE_PATH = '/v1/agt002/control-plane';
+const HOST_SURFACE_PATH_PREFIX = `${CONTROL_PLANE_PATH}/`;
+const HOST_SURFACE_NAMES = new Set(Object.keys(AGT002_HOST_SURFACE_UNITS));
+// Deterministic, detail-free body for every host-surface observation failure (rejection, throw, or
+// no observer configured at all): the caller never learns whether the adapter failed, timed out, or
+// was simply never wired up.
+const HOST_SURFACE_OBSERVATION_UNAVAILABLE = Object.freeze({
+  error: { code: 'AGT002_BRIDGE_HOST_SURFACE_UNAVAILABLE', message: 'AGT-002 bridge host surface observation is unavailable.' },
+});
+
+async function defaultHostSurfaceObserver() {
+  throw new Error('AGT002_BRIDGE_HOST_SURFACE_OBSERVER_NOT_CONFIGURED');
+}
 export const AGT002_BRIDGE_MAX_BODY_BYTES = 1_048_576;
 /**
  * El puente decide qué modelos existen: nada fuera de la lista llega al argv del proveedor.
@@ -68,6 +81,10 @@ export function createAgt002BridgeServer({
   maxBodyBytes = AGT002_BRIDGE_MAX_BODY_BYTES,
   // Injected observation only — never read from /opt disk inside this server.
   controlPlaneIdentity = {},
+  // Injected side-effect-free adapter for the three allowlisted host surfaces below. Fails closed
+  // (rejects) by default so a deployment that forgets to wire one up gets a fixed 503, never a
+  // crash or a silently-empty observation.
+  hostSurfaceObserver = defaultHostSurfaceObserver,
   // Deliberately not a constructor option: the allowlist is never a caller/environment value.
   // The bridge decides which model aliases exist at all, and the only allowlist it may ever
   // enforce is the shared frozen contract re-exported as AGT002_BRIDGE_ALLOWED_MODELS above —
@@ -87,6 +104,27 @@ export function createAgt002BridgeServer({
         version: controlPlaneIdentity.version ?? null,
         source: controlPlaneIdentity.source ?? 'unobserved',
       }));
+    }
+    if (url.pathname.startsWith(HOST_SURFACE_PATH_PREFIX)) {
+      const surface = url.pathname.slice(HOST_SURFACE_PATH_PREFIX.length);
+      if (!HOST_SURFACE_NAMES.has(surface)) return sendError(res, 404, 'AGT002_BRIDGE_BAD_REQUEST');
+      if (req.method !== 'GET') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
+      let observationPromise;
+      try {
+        // Exact injected args only: the allowlisted surface plus the deployer-injected upstream
+        // sha/version. No headers, query string, or other request data ever reaches the observer.
+        observationPromise = hostSurfaceObserver({
+          surface,
+          sha: controlPlaneIdentity.sha ?? null,
+          version: controlPlaneIdentity.version ?? null,
+        });
+      } catch {
+        return sendJson(res, 503, HOST_SURFACE_OBSERVATION_UNAVAILABLE);
+      }
+      Promise.resolve(observationPromise)
+        .then(result => sendJson(res, 200, result))
+        .catch(() => sendJson(res, 503, HOST_SURFACE_OBSERVATION_UNAVAILABLE));
+      return;
     }
     if (req.method !== 'POST') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
     if (url.pathname !== BRIDGE_PATH) return sendError(res, 404, 'AGT002_BRIDGE_BAD_REQUEST');

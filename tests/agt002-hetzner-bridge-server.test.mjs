@@ -524,6 +524,109 @@ async function testClientDisconnectStillCancelsRun() {
   });
 }
 
+const HOST_SURFACE_BASE = '/v1/agt002/control-plane';
+const HOST_SURFACES = ['radar_pipeline', 'reanalysis_worker', 'workbench_scheduler'];
+
+function fakeHostSurfaceObserver(result = { ok: true }) {
+  const calls = [];
+  const observer = async (args) => { calls.push(args); return result; };
+  return { calls, observer };
+}
+
+async function testHostSurfaceObserverCalledWithExactArgsForEachAllowlistedSurface() {
+  for (const surface of HOST_SURFACES) {
+    const { calls, observer } = fakeHostSurfaceObserver({ surface, unit_status: { available: true } });
+    await withServer(fakeSuccessClient, async (base) => {
+      const response = await fetch(`${base}${HOST_SURFACE_BASE}/${surface}`, { method: 'GET' });
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.deepEqual(payload, { surface, unit_status: { available: true } });
+    }, { hostSurfaceObserver: observer, controlPlaneIdentity: { sha: 'deployed-sha', version: '1.2.3', source: 'bridge_deployed_git_sha' } });
+
+    assert.equal(calls.length, 1, `${surface} debe invocar al observer exactamente una vez`);
+    assert.deepEqual(calls[0], { surface, sha: 'deployed-sha', version: '1.2.3' }, `${surface} debe recibir exactamente surface + sha/version, nada más`);
+  }
+}
+
+async function testHostSurfaceObserverReceivesNullShaVersionWhenIdentityUnobserved() {
+  const { calls, observer } = fakeHostSurfaceObserver();
+  await withServer(fakeSuccessClient, async (base) => {
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method: 'GET' });
+    assert.equal(response.status, 200);
+  }, { hostSurfaceObserver: observer });
+
+  assert.deepEqual(calls[0], { surface: 'radar_pipeline', sha: null, version: null });
+}
+
+async function testNonGetToKnownHostSurfaceReturnsFixed405NoObserverCall() {
+  for (const method of ['POST', 'PUT', 'DELETE']) {
+    const { calls, observer } = fakeHostSurfaceObserver();
+    await withServer(fakeSuccessClient, async (base) => {
+      const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method });
+      assert.equal(response.status, 405, method);
+      const payload = await response.json();
+      assert.equal(payload.error.code, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
+    }, { hostSurfaceObserver: observer });
+    assert.equal(calls.length, 0, `${method} nunca debe invocar al observer`);
+  }
+}
+
+async function testUnknownControlPlaneSurfaceReturnsFixed404NoObserverCall() {
+  const { calls, observer } = fakeHostSurfaceObserver();
+  await withServer(fakeSuccessClient, async (base) => {
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/bridge`, { method: 'GET' });
+    assert.equal(response.status, 404, 'bridge no es una superficie de host observable bajo este prefijo');
+    const other = await fetch(`${base}${HOST_SURFACE_BASE}/not-a-real-surface`, { method: 'GET' });
+    assert.equal(other.status, 404);
+  }, { hostSurfaceObserver: observer });
+  assert.equal(calls.length, 0, 'una superficie desconocida nunca debe invocar al observer');
+}
+
+async function testHostSurfaceObserverRejectionReturnsFixedFailClosed503() {
+  const observer = async () => { throw new Error('leaky systemd internals /run/systemd/private and env AGT002_BRIDGE_HMAC_SECRET'); };
+  await withServer(fakeSuccessClient, async (base) => {
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/reanalysis_worker`, { method: 'GET' });
+    assert.equal(response.status, 503);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      error: { code: 'AGT002_BRIDGE_HOST_SURFACE_UNAVAILABLE', message: 'AGT-002 bridge host surface observation is unavailable.' },
+    });
+    const serialized = JSON.stringify(payload);
+    assert.equal(serialized.includes('systemd'), false);
+    assert.equal(serialized.includes('AGT002_BRIDGE_HMAC_SECRET'), false);
+  }, { hostSurfaceObserver: observer });
+}
+
+async function testHostSurfaceObserverSynchronousThrowReturnsFixedFailClosed503() {
+  const observer = () => { throw new Error('sync boom, must never leak to the caller'); };
+  await withServer(fakeSuccessClient, async (base) => {
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/workbench_scheduler`, { method: 'GET' });
+    assert.equal(response.status, 503);
+    const payload = await response.json();
+    assert.equal(payload.error.code, 'AGT002_BRIDGE_HOST_SURFACE_UNAVAILABLE');
+    assert.equal(JSON.stringify(payload).includes('sync boom'), false);
+  }, { hostSurfaceObserver: observer });
+}
+
+async function testUnconfiguredHostSurfaceObserverFailsClosedWithFixed503() {
+  await withServer(fakeSuccessClient, async (base) => {
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method: 'GET' });
+    assert.equal(response.status, 503, 'un deployment que nunca inyectó un observer debe fallar cerrado, nunca crashear ni servir datos vacíos');
+    const payload = await response.json();
+    assert.equal(payload.error.code, 'AGT002_BRIDGE_HOST_SURFACE_UNAVAILABLE');
+  });
+}
+
+async function testControlPlaneIdentityRouteUnaffectedByHostSurfaceRouting() {
+  await withServer(fakeSuccessClient, async (base) => {
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}`, { method: 'GET' });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.surface, 'bridge');
+    assert.equal(payload.source, 'unobserved');
+  });
+}
+
 async function testLoginRequiredMappedTo503() {
   const client = { run: async () => { const error = new Error('login'); error.code = 'AGT002_CODEX_LOGIN_REQUIRED'; throw error; } };
   await withServer(client, async (base) => {
@@ -568,10 +671,23 @@ await testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed();
 await testCompletedRequestBodyDoesNotCancelRun();
 await testClientDisconnectStillCancelsRun();
 
+await testHostSurfaceObserverCalledWithExactArgsForEachAllowlistedSurface();
+await testHostSurfaceObserverReceivesNullShaVersionWhenIdentityUnobserved();
+await testNonGetToKnownHostSurfaceReturnsFixed405NoObserverCall();
+await testUnknownControlPlaneSurfaceReturnsFixed404NoObserverCall();
+await testHostSurfaceObserverRejectionReturnsFixedFailClosed503();
+await testHostSurfaceObserverSynchronousThrowReturnsFixedFailClosed503();
+await testUnconfiguredHostSurfaceObserverFailsClosedWithFixed503();
+await testControlPlaneIdentityRouteUnaffectedByHostSurfaceRouting();
+
 // The ops runner must never build an allowlist from the environment: the only allowlist
 // the bridge may ever enforce is the shared frozen contract re-exported above.
 const runner = readFileSync(new URL('../ops/agt002-hetzner-bridge/run-server.mjs', import.meta.url), 'utf8');
 assert.doesNotMatch(runner, /AGT002_BRIDGE_ALLOWED_MODELS/, 'el runner nunca debe leer una allowlist de modelos desde el entorno');
 assert.doesNotMatch(runner, /allowedModels/, 'el runner nunca debe inyectar una allowlist propia al puente');
+
+// The ops runner must instantiate and inject the live host-surface observer.
+assert.match(runner, /createAgt002HostSurfaceObserver\(\)/, 'el runner debe instanciar createAgt002HostSurfaceObserver()');
+assert.match(runner, /createAgt002BridgeServer\(\{[^}]*hostSurfaceObserver/, 'el runner debe inyectar hostSurfaceObserver en el puente');
 
 console.log('agt002-hetzner-bridge-server.test.mjs Step 5 OK');
