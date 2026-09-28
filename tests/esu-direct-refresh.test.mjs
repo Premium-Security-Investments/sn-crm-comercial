@@ -149,7 +149,7 @@ test('upsertTenders returning a fractional, negative, or otherwise non-integer c
   }
 });
 
-test('pipeline refreshes ESU before candidate fetch and continues source-locally on unavailable', async () => {
+test('pipeline is disabled (AI preanalysis retired): AGT002_RADAR_GATE no longer exists in ANALYSIS_FLAG_NAMES, so ESU direct-refresh and candidate fetch are never reached', async () => {
   const calls = [];
   const pipeline = createAgt002RadarPipeline({
     database: {},
@@ -160,7 +160,7 @@ test('pipeline refreshes ESU before candidate fetch and continues source-locally
     evaluateGate: hostile,
     recordGateEvaluation: hostile,
     enqueueJob: hostile,
-    claimJob: async () => null,
+    claimJob: hostile,
     completeJob: hostile,
     failJob: hostile,
     projectLearningObservations: hostile,
@@ -169,9 +169,6 @@ test('pipeline refreshes ESU before candidate fetch and continues source-locally
     recordPreanalysisRun: hostile,
   });
   const result = await pipeline.runOnce();
-  assert.equal(result.status, 'empty');
-  assert.equal(result.esu_refresh.status, 'unavailable');
-  assert.deepEqual(calls, ['esu.refresh', 'agt.fetch']);
-  assert.equal(result.stages[0], 'esu_refresh');
-  assert.equal(result.stages[1], 'fetch');
+  assert.deepEqual(result, { status: 'disabled', stages: [], code: 'AGT002_RADAR_PIPELINE_DISABLED' });
+  assert.deepEqual(calls, [], 'esu.refresh/agt.fetch must never run once the AI preanalysis pipeline is retired');
 });

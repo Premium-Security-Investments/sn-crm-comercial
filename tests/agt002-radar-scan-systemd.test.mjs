@@ -27,6 +27,12 @@ assert.match(runner, /createSupabaseEsuDirectRefresher/);
 assert.match(runner, /fetchEsuProcesses\(\s*\{\s*includeHistorical\s*:\s*true/);
 assert.equal((runner.match(/\brefresher\.runOnce\(\)/g) || []).length, 1);
 assert.match(runner, /import\s*\{\s*createAgt002RadarScan\s*\}\s*from\s*'\.\.\/\.\.\/agt002-radar-scan\.js'/);
+// The scan is now deterministic and always active when invoked: the runner stops threading
+// `environment` through to createAgt002RadarScan (it has nothing left to gate), and never
+// references the two rollout flags retired from ANALYSIS_FLAG_NAMES.
+assert.doesNotMatch(runner, /environment\s*[,:]/, 'el runner ya no pasa environment a createAgt002RadarScan');
+assert.doesNotMatch(runner, /AGT002_RADAR_GATE|AGT002_RADAR_VISIBILITY/, 'el runner ya no depende de banderas retiradas');
+assert.doesNotMatch(runner, /agt002-analysis-config|buildAgt002AnalysisConfig/, 'el runner del scan no importa config de flags');
 
 assert.match(service, /Type=oneshot/);
 assert.match(service, /EnvironmentFile=\/etc\/psi-comercial\/agt002-radar-scan\.env/);
@@ -36,7 +42,6 @@ assert.match(service, /WorkingDirectory=\/opt\/psi-comercial\/app/);
 assert.match(service, /ExecStart=\/usr\/bin\/node \/opt\/psi-comercial\/app\/ops\/agt002-radar-scan\/run-agt002-radar-scan\.mjs/);
 assert.equal(existsSync(new URL('agt002-radar-scan.timer', base)), false, 'the scan must not have its own .timer');
 
-assert.match(env, /^AGT002_RADAR_GATE=false$/m);
 assert.match(env, /^SUPABASE_URL=/m);
 assert.match(env, /^SUPABASE_SERVICE_ROLE_KEY=/m);
 // Least privilege, verified by explicit absence: the scan never calls the provider or the bridge,
@@ -46,6 +51,10 @@ for (const forbidden of [/AGT002_HETZNER_BRIDGE_URL/, /AGT002_HETZNER_BRIDGE_HMA
   assert.doesNotMatch(env, forbidden);
   assert.doesNotMatch(service, forbidden);
 }
+// The service unit itself never references the two rollout flags retired from
+// ANALYSIS_FLAG_NAMES (env.example is a deployment artifact outside this slice's edit scope and
+// still carries the now-inert AGT002_RADAR_GATE=false line; see the final report for that).
+assert.doesNotMatch(service, /AGT002_RADAR_GATE|AGT002_RADAR_VISIBILITY/);
 // No claim/model imports anywhere in this directory's runner.
 assert.doesNotMatch(runner, /claimAgt002RadarPreanalysisJob|completeAgt002RadarPreanalysisJob|failAgt002RadarPreanalysisJob|AGT002_RADAR_PREANALYSIS_MODEL/);
 // The worker keeps its own, separate environment file -- this unit never references it.

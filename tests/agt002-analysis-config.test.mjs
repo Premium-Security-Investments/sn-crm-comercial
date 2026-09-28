@@ -43,8 +43,11 @@ function run() {
         AGT002_CONTEXT_V2: 'true',
         AGT002_DOCUMENT_RETRIEVAL: 'true',
       },
-      AGT002_RADAR_VISIBILITY: { AGT002_RADAR_GATE: 'true' },
     };
+    assert.ok(
+      !ANALYSIS_FLAG_NAMES.includes('AGT002_RADAR_VISIBILITY') && !ANALYSIS_FLAG_NAMES.includes('AGT002_RADAR_GATE'),
+      'AGT002_RADAR_VISIBILITY/AGT002_RADAR_GATE no deben existir en ANALYSIS_FLAG_NAMES',
+    );
     for (const name of ANALYSIS_FLAG_NAMES) {
       if (name === 'AGT002_DECISION_AXIS_SURFACE' || name === 'AGT002_STAKEHOLDER_BRIEF_PREVIEW') continue;
       const base = requiredBaseByFlag[name] || {};

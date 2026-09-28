@@ -1,323 +1,217 @@
-# AGT-002 Radar — gate, preanálisis y visibilidad: runbook operacional
+# AGT-002 Radar — operación determinística: runbook operacional
 
-## 0. Separación scan/worker, 2026-08-28
+> **[Reescrito 2026-09-28, issue #247]** Este runbook reemplaza por completo sus versiones
+> anteriores. El Radar AGT-002 es hoy **exclusivamente determinístico**: no hay preanálisis de IA en
+> operación, no hay flags que encender, no hay cola durable en uso y no hay temporizador corriendo.
+> Este documento describe únicamente el procedimiento vigente; no contiene, ni por referencia, pasos
+> para activar IA/flags/worker/modelo. El estado que codifica está registrado en
+> `CURRENT.md` §17.
 
-**[Actualizado 2026-08-28]** El productor de 15 minutos descrito en este runbook (una sola
-invocación que hacía `esu_refresh → fetch → gate → ledger → claim → aprendizaje → AGT-002 →
-persistencia`) se dividió en **dos procesos con cadencia propia**, sin flag nuevo y sin cambio de
-esquema. Ver `docs/superpowers/specs/2026-08-28-agt002-daily-scan-queue-design.md` y
-`docs/superpowers/plans/2026-08-28-agt002-daily-scan-queue-implementation.md` para el diseño
-completo.
+## 1. Propósito
 
-- **Exploración diaria** (`agt002-radar-scan.js`, `ops/agt002-radar-scan/`): `esu_refresh → fetch →
-  gate → ledger → enqueue`. Corre **una vez al día**, invocada por
-  `ops/agt002-radar-scan/run-agt002-radar-daily-export.sh` justo después de que la exportación de
-  fuente del cron de Hermes persista con éxito (o a mano en QA). Sin `.timer` propio. Nunca reclama
-  un job ni invoca al proveedor.
-- **Drenado de cola cada 15 minutos** (`agt002-radar-worker.js`,
-  `ops/agt002-radar-pipeline/`, mismo `.service`/`.timer` de siempre): **reclama primero** un job de
-  la cola durable y, si no hay ninguno, retorna de inmediato sin refrescar ESU ni leer ninguna
-  página. **Ya no es cierto que "una invocación evalúa una página acotada y reclama como máximo un
-  job"** (frase heredada de la versión anterior de este runbook, corregida abajo): el scan evalúa la
-  página, el worker reclama.
+El Radar de Licitaciones **ingiere y muestra** procesos públicos captados desde la fuente ESU. Su
+única función es filtrar por un gate determinista y versionado, y dejar constancia de cada
+evaluación en un ledger histórico. El Radar no decide, no convierte y no invoca ningún modelo:
 
-**Tres autorizaciones nuevas**, equivalentes a las cuatro de §3 más abajo, aplicadas al proceso de
-exploración: **instalar** `agt002-radar-scan.service` (sin habilitar: no tiene `.timer`), **desplegar
-el wrapper diario** (`run-agt002-radar-daily-export.sh`, versionado pero no instalado por sí solo en
-ningún cron hasta que un humano lo autorice), y **actualizar el crontab de Hermes** para que llame al
-wrapper en vez de al script de exportación directamente — esta última sólo procede después de la QA
-controlada de la Task 8 del plan de implementación, y el cron viejo se conserva hasta entonces.
+- No crea filas en `psi_sales_opportunities`.
+- No invoca `psi_convert_tender_to_opportunity` ni `POST /api/tender-convert`.
+- No escribe `psi_public_tenders.internal_status` ni `converted_opportunity_id`.
+- No emite ni insinúa una decisión GO/NO-GO.
+- No llama a ningún proveedor de IA ni modelo como parte de su flujo operativo: el preanálisis de IA
+  que antes ocupaba ese lugar está retirado (§5).
 
-El módulo combinado `agt002-radar-pipeline.js` **se conserva en el árbol** como artefacto de
-compatibilidad y rollback; ya no es lo que ejecuta el `.timer` de 15 minutos.
+La conversión de una licitación en Oportunidad sigue siendo un acto **exclusivamente humano**, del
+encargado de Licitaciones. `no_mostrar_en_radar` no es un descarte: no toca la fila fuente, es
+reversible por la siguiente corrida del gate y nunca implica una decisión de negocio. El descarte
+real sigue siendo el acto humano que escribe `internal_status = 'descartada'`.
 
-**Alcance:** `docs/superpowers/specs/2026-08-25-agt002-radar-learning-design.md` y
-`docs/superpowers/plans/2026-08-25-agt002-radar-learning-implementation.md`.
+## 2. Flujo determinístico
 
-**Estado al escribir este runbook:** ambos flags (`AGT002_RADAR_GATE`, `AGT002_RADAR_VISIBILITY`)
-están **OFF** por defecto en `agt002-analysis-config.js`; las migraciones `071`/`072` existen en el
-repositorio y **no** se han aplicado a ninguna base real; las unidades `systemd` de
-`ops/agt002-radar-pipeline/` existen en Git y **no** están instaladas ni habilitadas. Este runbook
-no enciende nada: describe el procedimiento que un humano debe seguir, con autorizaciones
-separadas, cuando decida hacerlo.
+El único proceso operativo del Radar es el **scan**, invocado bajo demanda:
 
-## 1. Qué es y qué no es
-
-El Radar **ingiere y muestra**. La conversión de una licitación en Oportunidad es **exclusivamente
-manual**, del encargado de Licitaciones. Ningún artefacto de este alcance:
-
-- crea filas en `psi_sales_opportunities`;
-- invoca `psi_convert_tender_to_opportunity` ni `POST /api/tender-convert`;
-- escribe `psi_public_tenders.internal_status` ni `converted_opportunity_id`;
-- emite una decisión GO/NO-GO.
-
-`no_mostrar_en_radar` **no es un descarte**: no toca la fila, es reversible por la siguiente corrida
-y siempre lleva `human_review_required = true`. El descarte sigue siendo el acto humano que escribe
-`internal_status = 'descartada'`, y ninguna tabla nueva tiene `grant` para ejercerlo.
-
-## 2. Las dos palancas, y por qué son dos
-
-| Flag | Por defecto | Qué habilita |
-|---|---|---|
-| `AGT002_RADAR_GATE` | **OFF** | La cadena productora, dividida desde 2026-08-28 en dos procesos que comparten el mismo flag (§0): exploración diaria (`fetch → gate → ledger → enqueue`) y drenado de cola cada 15 min (`claim → aprendizaje → AGT-002 → persistencia`). **No cambia nada de lo que el Radar muestra.** |
-| `AGT002_RADAR_VISIBILITY` | **OFF** | El filtro de visibilidad en la lectura del Radar. |
-
-Sólo los literales `'true'` y `'1'` (con `trim`, sin distinción de mayúsculas) encienden un flag;
-cualquier otro valor —incluida la ausencia— lo deja apagado.
-
-`AGT002_RADAR_VISIBILITY` sin `AGT002_RADAR_GATE` **lanza** en `buildAgt002AnalysisConfig`
-(`agt002-analysis-config.js`): pedir que sólo se muestre lo preanalizado mientras nada produce
-preanálisis vaciaría el Radar. Es una configuración contradictoria, no una degradación tolerable.
-
-Separarlos es lo que permite el backfill: encender el productor, drenar la cola durante los días que
-haga falta, auditar, y sólo entonces encender el filtro.
-
-## 3. Cuatro autorizaciones distintas
-
-Nunca se conceden juntas ni se infieren una de otra:
-
-1. **Migrar** — aplicar `071_agt002_radar_gate.sql` y `072_agt002_radar_preanalysis_ledger.sql`.
-2. **Instalar** — copiar `.service`/`.timer` a `/etc/systemd/system` (`systemctl` es acto humano).
-3. **Encender el productor** — `AGT002_RADAR_GATE=true` en el `EnvironmentFile` del entorno.
-4. **Habilitar el temporizador** — `systemctl enable --now` del `.timer`.
-
-Y, después de todas ellas y sólo tras la auditoría del §6, la quinta y última:
-**encender `AGT002_RADAR_VISIBILITY`**.
-
-## 4. Precondición dura antes de cualquier acción contra producción
-
-`CURRENT.md` §7.9 lo fija: **producción no es `origin/main`**. Antes de migrar, instalar o cambiar un
-flag contra el entorno productivo hay que **reconfirmar el commit efectivamente desplegado** contra
-el deployment vivo. No se asume la equivalencia; una estimación de impacto calculada sobre otro
-commit no es una estimación.
-
-## 5. Procedimiento por etapas
-
-Corresponde al §12 del spec. Cada etapa tiene criterio de salida propio; no se avanza sin él.
-
-**E0 — todo apagado, esquema aplicado en entorno no productivo.**
-Migraciones `071`/`072` aplicadas fuera de producción; entrypoint creado y **no instalado**; ambos
-flags OFF. Criterio de salida: suites verdes, `GET /api/tenders` sin cambio observable, y ejecutar
-`node ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs` imprime `disabled` y sale con código
-0 **sin tocar la base** (cero lecturas, cero escrituras, cero llamadas al puente).
-
-**E1 — productor encendido, a mano, fuera de producción.**
-`AGT002_RADAR_GATE=true` sólo en el `EnvironmentFile` no productivo. Primero la auditoría read-only
-del §6; después el entrypoint **una invocación a la vez**, sin habilitar el `timer`. Criterio de
-salida: la cola drena de a un job, el ledger se puebla, `psi_public_tenders` no registra ninguna
-fila tocada, y el Radar no cambia.
-
-**E1b — temporizador habilitado fuera de producción.** Autorización separada. Criterio de salida:
-drenado sostenido dentro de `AGT002_RADAR_PREANALYSIS_DAILY_MAX_RUNS`, y ningún job `running` con
-reserva vencida sin cerrar.
-
-**E2 — auditoría histórica sobre datos reales.** Criterio de salida: informe con eliminadas por
-regla, muestras verificables y **`uncovered_visible_tenders = 0`**.
-
-**E3 — filtro de visibilidad.** `AGT002_RADAR_VISIBILITY=true`, con autorización separada y
-explícita. Resultado esperado: el Radar muestra convertidas históricas + no convertidas con
-preanálisis canónico `mostrar_en_radar` **fresco**.
-
-### Condición dura previa a E3
-
-El backfill debe cubrir el **100%** de las licitaciones no convertidas hoy visibles que sobreviven
-el gate. El criterio es conteo cero, no un umbral porcentual: con una sola sin cubrir, encender el
-flag la ocultaría sin haberla evaluado.
-
-"Cubrir" significa **tener corrida canónica**, no tener veredicto `mostrar_en_radar`. Una licitación
-con canónica `no_mostrar_en_radar` o con abstención `no_concluyente` está cubierta —fue evaluada y
-dejó evidencia auditable— aunque E3 la oculte. Lo prohibido es ocultar por **ausencia** de
-preanálisis. Por eso el informe de E2 debe reportar además, con muestras, cuántas visibles hoy
-quedarían ocultas por cada uno de los dos veredictos no-mostrar: ese conteo es el impacto real de
-encender E3 y se revisa **antes** de autorizarlo.
-
-## 6. Auditoría e informes read-only
-
-Los tres scripts exigen `NEXT_PUBLIC_SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`. Sus accesos a
-Supabase usan sólo `GET`, no aceptan ninguna bandera de escritura y **no escriben nada**. Ninguno
-encola, reclama, completa ni falla un job: ese es el criterio que separa "informe" de "ejecución".
-El dry-run sí invoca el puente de preanálisis para validar el sobre de salida; esa llamada externa
-no persiste el resultado ni modifica Supabase.
-
-| Script | Qué produce |
-|---|---|
-| `scripts/agt002-radar-gate-historical-audit.mjs` | total, sobrevivientes, eliminadas por `rule_id`, `data_gaps` por tipo, muestras verificables, convertidas que el gate eliminaría (siguen visibles por I-12), desglose por `visibility_verdict` y **`uncovered_visible_tenders`** |
-| `scripts/agt002-radar-preanalysis-dryrun.mjs` | entrada cerrada + sobre del proveedor **validado** y **no persistido**, para una licitación sobreviviente indicada por ID |
-| `scripts/agt002-radar-learning-signals-report.mjs` | señales candidate-specific y artefacto DRAFT, a `stdout` |
-
-Ejecución manual (ningún comando acepta `--apply`):
-
-```bash
-ENV_FILE=/ruta/al/entorno.env node scripts/agt002-radar-gate-historical-audit.mjs > /tmp/agt002-radar-audit.json
-ENV_FILE=/ruta/al/entorno.env node scripts/agt002-radar-preanalysis-dryrun.mjs <tender-id> > /tmp/agt002-radar-dryrun.json
-ENV_FILE=/ruta/al/entorno.env node scripts/agt002-radar-learning-signals-report.mjs > /tmp/agt002-radar-learning.json
+```text
+esu_refresh → fetch → gate → ledger
 ```
 
-La auditoría histórica sale con código `1` mientras el ledger no esté disponible o exista al menos
-una sobreviviente sin canónica fresca; ese código es el gate de seguridad esperado, no una orden de
-backfill. El dry-run requiere además la configuración del puente y modelo del preanálisis. Ninguno de
-los tres comandos debe ejecutarse con `AGT002_RADAR_VISIBILITY=true` como mecanismo de prueba.
+1. **`esu_refresh`** — intenta refrescar la fuente ESU directa. Un fallo o resultado
+   `skipped_fresh`/`unavailable` **no bloquea** las etapas siguientes: el scan continúa contra lo que
+   ya está persistido en `psi_public_tenders`.
+2. **`fetch`** — lee una página acotada de `psi_public_tenders` (`maxTendersPerRun`, 250 por
+   defecto), ordenada por `last_seen_at` descendente y `id` ascendente.
+3. **`gate`** — evalúa cada fila con el gate determinista vigente (`evaluateAgt002RadarGate`,
+   `agt002-radar-gate.js`), versionado por `AGT002_RADAR_GATE_POLICY_VERSION` y
+   `AGT002_RADAR_GATE_CONTEXT_VERSION`.
+4. **`ledger`** — anota cada evaluación (veredicto, `rule_ids`, razones, `data_gaps`, versiones,
+   hash de la fila fuente, fecha de evaluación efectiva) vía la RPC gobernada
+   `psi_record_agt002_radar_gate_evaluation`, con clave de idempotencia derivada de la evaluación.
 
-El DRAFT del tercero es **para lectura humana**. Cambiar una regla del gate exige que una persona lo
-lea y edite `agt002-radar-gate.js` subiendo `AGT002_RADAR_GATE_POLICY_VERSION`. No existe camino de
-escritura de reglas en tiempo de ejecución.
+**No hay quinta etapa.** El scan no encola, no reclama, no invoca ningún proveedor ni modelo:
+`AGT002_RADAR_SCAN_STAGES` (`agt002-radar-scan.js`) es exactamente
+`['esu_refresh', 'fetch', 'gate', 'ledger']`, sin `enqueue` y sin ningún verbo de cola. El resultado
+de una corrida es `{status:'completed', stages, esu_refresh, evaluated, survivors, eliminated}` o
+`{status:'unavailable', ..., error_code}` ante un fallo de `fetch`/`gate`/`ledger`.
 
-**Vigencia de las decisiones GO/NO-GO en el aprendizaje.** `psi_tender_go_no_go_decisions` no expone
-una relación PostgREST autorreferente sobre `supersedes_decision_id`: pedirla devuelve `HTTP 400
-PGRST200` y tumbaba el reporte y el dry-run completos. La proyección lee la columna plana y resuelve
-la sucesión en JS. Como el lote principal está acotado por `limit`, un sucesor puede quedar fuera de
-él (por ejemplo una corrección retrofechada), así que además se consulta la arista inversa
-`supersedes_decision_id in (…)` acotada a las decisiones que el lote todavía considera vigentes, en
-trozos de 50 identificadores; si un trozo vuelve saturado se subdivide hasta que ninguna decisión
-quede escondida detrás del truncamiento. De cada cadena sobrevive sólo la hoja y, si un tender
-conserva varias hojas, la más reciente por `decided_at` (desempate por `id`). Todo esto son `GET`:
-no hay RPC ni escritura, y la evidencia sigue citando el `id` de la decisión humana proyectada.
+Este flujo es **siempre activo cuando se invoca**: no depende de ningún flag. No existe hoy ningún
+interruptor que lo apague ni que lo encienda de forma distinta a "invocarlo o no invocarlo".
 
-## 7. Qué significa "fresco", y por qué una licitación desaparece
+## 3. Ejecución on-demand del scan
 
-Con `AGT002_RADAR_VISIBILITY` encendido, una fila **no convertida** se muestra si y sólo si:
+El scan se ejecuta manualmente o desde un disparador operativo externo al Radar (por ejemplo, tras
+una exportación de fuente exitosa). No tiene `.timer` propio y no corre en segundo plano:
 
-1. existe corrida canónica para ella;
-2. su `visibility_verdict` es `mostrar_en_radar`;
-3. su `source_row_hash` coincide con el hash recalculado sobre **la fila que se va a mostrar**;
-4. su `policy_version` **y** su `context_version` son las vigentes en el proceso lector;
-5. el **gate determinista vigente** la sigue considerando `sobreviviente` al reevaluarla en lectura.
+```bash
+node -e "
+import('./agt002-radar-scan.js').then(async ({ createAgt002RadarScan }) => {
+  const scan = createAgt002RadarScan({ database, now: () => new Date().toISOString() });
+  console.log(JSON.stringify(await scan.runOnce()));
+});
+"
+```
 
-La quinta condición existe porque una canónica positiva es una **foto del día en que se produjo**.
-El veredicto `fecha_vencida` depende del día calendario en `America/Bogota`, así que una fila
-preanalizada como visible el lunes puede haber cruzado su cierre el martes sin que cambie ni su
-`source_row_hash` ni ninguna versión. La lectura reevalúa el gate con **un único reloj para toda la
-página** —determinista, sin reloj por fila— y oculta lo que ya no sobrevive.
+- `database` debe ser un cliente con acceso de lectura a `psi_public_tenders` y con permiso para
+  invocar `psi_record_agt002_radar_gate_evaluation`.
+- Una invocación procesa **una sola página** (hasta `maxTendersPerRun`) y termina; no hay bucle
+  interno, no hay reintentos automáticos y no hay llamada de red a ningún proveedor de IA.
+- Ejecutarlo dos veces sobre el mismo estado de datos es seguro: la clave de idempotencia del ledger
+  evita duplicar la fila de evaluación del mismo día para la misma licitación.
 
-Las **convertidas históricas nunca se ocultan por preanálisis**, cortocircuitando las cinco
-condiciones: no se ocultan por hash rezagado, por versión vieja ni por no tener preanálisis alguno.
+## 4. Observabilidad
 
-El **cierre vencido sí las oculta**, y no por AGT-002 sino por regla de producto del Radar: el
-Radar **no muestra ningún proceso vencido**, convertido o no. La conversión no es un salvoconducto
-de visibilidad; el proceso vencido sigue íntegro en Oportunidades y en su expediente, y la fila
-reaparece sola si la fuente oficial vuelve a publicar una fecha de cierre vigente. La regla vive en
-`isExpiredRadarProcess` (un único seam compartido por la ruta viva y la persistida de
-`GET /api/tenders`) y está cubierta por `tests/tender-radar-hide-expired.test.mjs`.
+- **Resultado de cada corrida**: el `status` (`completed`/`unavailable`), las `stages` alcanzadas,
+  `evaluated`/`survivors`/`eliminated` y, ante fallo, `error_code` (`provider_error` para reloj/fetch
+  inválidos, `persistence_failure` para fallos de escritura del ledger).
+- **Ledger de gate**: cada fila evaluada queda escrita, éxito o eliminación, con `rule_ids`, razones
+  y `data_gaps`; es la fuente de verdad para auditar qué pasó y por qué en cualquier corrida pasada.
+- **Auditoría histórica de sólo lectura**: `scripts/agt002-radar-gate-historical-audit.mjs` sigue
+  siendo el mecanismo para inspeccionar el ledger acumulado (totales, eliminadas por regla,
+  `data_gaps` por tipo, muestras verificables) sin escribir nada. Usa sólo `GET`, no acepta
+  `--apply` y no invoca ningún RPC de escritura ni de cola.
+- **Diagnóstico de fallo**: un `status:'unavailable'` con `error_code:'persistence_failure'` indica
+  que el ledger no aceptó la escritura (permisos, tabla ausente, error de RPC); revisar el mensaje
+  de error propagado por el cliente de base de datos usado en la invocación, no un log de proceso en
+  segundo plano, porque no hay ninguno corriendo.
 
-Si el reloj o el evaluador no están disponibles, la lectura **no** degrada a "mostrar igual": falla
-cerrado en el mismo borde 503 del §8.
+## 5. `tender-fit-v1` y el gate: afinación gobernada con revisión humana y versionado
 
-Seis causas ocultan, y son deliberadamente indistinguibles en la superficie: sin canónica,
-canónica `no_mostrar_en_radar`, canónica `no_concluyente`, canónica con hash rezagado, canónica con
-versión rezagada, y fila eliminada por el gate vigente. El desglose por causa **existe**, y vive en
-el informe del §6 —que es donde un humano lo necesita—, no en el payload.
+La única superficie de "encaje"/priorización que el Radar expone hoy fuera del gate de
+sobrevivencia es `tender-fit-v1` (`tender-fit-policy.js`): una política **pura, determinística y
+versionada** que deriva un puntaje/banda de encaje en memoria, sin persistencia ni migración, para
+alimentar el filtro y el orden "Encaje" del Radar. No sustituye al gate determinista: el gate decide
+si una fila sobrevive; `tender-fit-v1` sólo prioriza entre las que ya sobrevivieron o ya están
+listadas.
 
-**Una fila oculta por rezago se repara sola.** El triple `(source_row_hash, policy_version,
-context_version)` que oculta es exactamente el que impide al encolado corto circuitar en
-`satisfied`: la siguiente corrida del pipeline la encola, la preanaliza y la devuelve a la
-superficie, al ritmo del temporizador y sin backfill manual.
+Reglas de gobierno, vigentes para **ambos** — el gate (`agt002-radar-gate.js`,
+`AGT002_RADAR_GATE_POLICY_VERSION`) y `tender-fit-v1` (`tender-fit-policy.js`,
+`TENDER_FIT_POLICY_VERSION`):
 
-## 8. Diagnóstico: el Radar responde 503
+- Toda regla o peso está **versionado explícitamente**. Cambiar una regla exige subir la constante
+  de versión correspondiente (`AGT002_RADAR_GATE_POLICY_VERSION` o `TENDER_FIT_POLICY_VERSION`); no
+  existe camino de escritura de reglas en tiempo de ejecución ni desde configuración externa.
+- Todo cambio de peso o regla requiere: (a) una cohorte revisada de datos reales, (b) una
+  comparación sombra entre la versión vigente y la propuesta sobre el mismo cohorte, sin desplegar
+  la nueva versión como activa, (c) la nueva constante de versión, y (d) aprobación humana explícita
+  registrada. Ningún artefacto de este alcance ajusta pesos automáticamente a partir de
+  retroalimentación.
+- En `tender-fit-v1`, el campo `feedback` es **de solo evidencia**: `applied_points` es siempre `0`.
+  Ninguna observación histórica (conversión, análisis canónico, decisión GO/NO-GO, resultado de
+  oferta) mueve el puntaje en la versión vigente.
+- La auditoría de cohorte de sólo lectura (`scripts/tender-fit-cohort-audit.mjs`, siguiendo el mismo
+  patrón que la auditoría del gate) es el mecanismo para comparar distribuciones legado vs. `fit` y
+  para dar contexto descriptivo a partir de observaciones colapsadas por licitación — nunca para
+  ajustar pesos por sí sola. No escribe nada, no acepta `--apply`.
+- Ausencia de dato (valor, fecha de cierre, territorio) nunca se interpreta como mal encaje ni como
+  incumplimiento: se refleja como `data_gaps` y, cuando es crítica, fuerza la banda `por_validar`,
+  nunca oculta ni descarta la fila.
 
-`AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE` (HTTP 503) significa que el flag está encendido y la
-lectura del ledger falló o las tablas no existen. Es deliberado: mostrar todo sin filtrar violaría
-la política y mostrar vacío destruiría la operación, así que la petición falla en voz alta.
+## 6. Tombstone del preanálisis de IA — retirado, no reactivable desde este árbol
 
-**Recuperación: una sola acción — apagar `AGT002_RADAR_VISIBILITY`.** El Radar vuelve
-inmediatamente a su comportamiento previo. Con el flag apagado —el estado por defecto— esta ruta es
-inalcanzable, y la lectura del Radar no emite ninguna consulta adicional.
+El pipeline de preanálisis de IA que antes ocupaba `ops/agt002-radar-pipeline/` está **retirado**:
 
-Causa habitual: se encendió el flag sin haber aplicado `072`, o el `grant select` sobre las tablas
-nuevas no alcanza al rol que lee.
+- `run-agt002-radar-pipeline.mjs` sólo responde a `--control-plane` (reporte de identidad sin efecto
+  secundario, gateado antes de cualquier requisito de secreto). Cualquier otra invocación imprime
+  `{"status":"retired","code":"AGT002_RADAR_AI_RETIRED"}` y termina sin reclamar cola, sin llamar al
+  puente ni al modelo, sin crear cliente de Supabase y sin leer ningún secreto ni variable de
+  entorno.
+- El `.service` y el `.timer` correspondientes son un tombstone: rechazan el arranque manual y no
+  declaran `EnvironmentFile` ni ninguna variable de secreto/configuración. El `.timer` sí tiene un
+  `OnCalendar` sintácticamente presente pero inerte: `ConditionPathExists=/run/agt002-radar-ai-retired-do-not-create`,
+  `RefuseManualStart=true` y la ausencia de sección `[Install]` impiden su inicio. No hay forma de
+  iniciarlos sin editar primero la unidad versionada.
+- El código del worker (`agt002-radar-worker.js`), del runtime de preanálisis
+  (`agt002-radar-preanalysis-runtime.js`) y de las jobs de cola (`agt002-radar-preanalysis-jobs.js`)
+  se conserva en el árbol como historia, pero el worker queda inerte: su función `enabled(...)` lee
+  `AGT002_RADAR_GATE` desde la config canónica, y ese flag ya no existe en `ANALYSIS_FLAG_NAMES`
+  (§7), así que cualquier invocación del worker devuelve `disabled` sin tocar base de datos.
+- El host que ejecutaba este pipeline **sigue apagado**. El runner/tombstone no lee secretos ni
+  `EnvironmentFile` (ver arriba); la configuración inactiva o de respaldo que pueda existir se
+  conserva fuera del alcance de este runbook, sin revelar sus valores aquí.
 
-## 9. Rollback
+**Reactivar cualquiera de estas piezas no es un cambio de configuración ni de flag: es un rediseño**
+que requiere spec, plan y aprobación humana explícita nuevos, fuera del alcance de este documento.
+Este runbook no autoriza ni describe ese camino.
 
-- **De cualquier etapa de encendido:** poner el flag en cualquier valor distinto de `'true'`/`'1'`
-  (o eliminarlo). Si se llegó a E1b, además `systemctl disable --now` del `.timer`.
-  No requiere migración inversa.
-- **El ledger se conserva:** es historia, no estado mutable. Los jobs `queued` sin drenar son
-  inertes —nada los ejecuta si el entrypoint no corre— y el encolado volverá a corto circuitar en
-  `satisfied` cuando exista canónica.
-- **De esquema:** `supabase/rollbacks/072_...` **primero**, luego `supabase/rollbacks/071_...`.
-  Ninguno de los dos toca `psi_public_tenders`.
+## 7. Flags retirados
 
-## 10. Costo y ritmo del backfill
+`AGT002_RADAR_GATE` y `AGT002_RADAR_VISIBILITY` ya no existen en `ANALYSIS_FLAG_NAMES`
+(`agt002-analysis-config.js`): `buildAgt002AnalysisConfig(...)` no los parsea, no los declara como
+clave del objeto de flags devuelto, y su antigua dependencia fail-closed (`VISIBILITY` sin `GATE`
+lanzaba) fue retirada junto con ellos. No hay ningún valor de entorno que active preanálisis de IA ni
+un filtro de visibilidad gobernado por él. El Radar siempre muestra según el gate determinista
+vigente (§2), sin una segunda capa de visibilidad que encender.
 
-El preanálisis es **una llamada al proveedor por licitación sobreviviente**, y una corrida del
-pipeline procesa **a lo sumo un job**. El backfill avanza al ritmo del `timer`, no al de la página
-leída: es una elección deliberada que acota el costo por invocación y el radio de un fallo.
+## 8. Preservación del ledger histórico y de las migraciones
 
-Si el ritmo resulta insuficiente, las palancas son la **frecuencia del `timer`** y
-`AGT002_RADAR_PREANALYSIS_DAILY_MAX_RUNS` — nunca un bucle interno, que reintroduciría exactamente
-el modo de falla que la cola durable elimina.
+- `supabase/migrations/071_agt002_radar_gate.sql` y
+  `supabase/migrations/072_agt002_radar_preanalysis_ledger.sql`, junto con sus rollbacks
+  independientes, permanecen en el árbol. No se eliminan ni se reescriben: son la base del ledger de
+  gate y de preanálisis ya aplicado.
+- El ledger es **append-only**: cada fila escrita por una corrida del scan (§2) o, en su momento,
+  por el pipeline de preanálisis retirado (§6), es historia inmutable. Este cierre no purga, no
+  trunca ni reescribe ninguna fila existente.
+- Cualquier auditoría o reporte que necesite leer ese histórico (§4) sigue disponible sin cambios de
+  esquema. El retiro del pipeline de IA no afecta la legibilidad del ledger acumulado.
 
-### Timeout del proveedor: techo de 5 minutos bajo el lease de 600 s
+## 9. Separación del análisis integral postconversión
 
-`AGT002_RADAR_PREANALYSIS_TIMEOUT_MS` acota una única llamada al proveedor. Rango aceptado
-**`1000`–`300000` ms**, por defecto **`30000`**, que es también el valor recomendado en producción.
-Un valor fuera de rango o malformado **no se recorta**: `getAgt002RadarPreanalysisRuntimeConfig`
-lanza `AGT002_RADAR_RUNTIME_CONFIG_INVALID` y el runtime no llega a construirse.
+El análisis integral que corre **después** de que un humano convierte una licitación en Oportunidad
+(el flujo de Análisis/Decisión del frente decisional, cerrado en `CURRENT.md` §13) es un proceso
+**distinto y separado** del preanálisis de IA del Radar que este runbook documenta como retirado:
 
-El techo existe por la cola durable. El pipeline reclama el job con `leaseSeconds = 600`; después de
-que el proveedor responde todavía quedan aprendizaje, validación del sobre y persistencia. Permitir
-un timeout de 600 000 ms era admitir que la reserva venciera **después** de una respuesta exitosa:
-otro disparo podría reclamar el mismo job mientras el primero aún estaba persistiendo. Con 300 000 ms
-quedan ≥300 s de holgura. El lease y `TimeoutStartSec=720` de la unidad **no** se tocan; subir el
-timeout no es la palanca para un backfill más rápido (véanse la frecuencia del `timer` y
-`AGT002_RADAR_PREANALYSIS_DAILY_MAX_RUNS`, arriba).
+- Nunca dependió del preanálisis de IA del Radar como entrada de autoridad ni como precondición.
+- No usa la cola de preanálisis retirada, no invoca `run-agt002-radar-pipeline.mjs` ni ningún
+  artefacto de `ops/agt002-radar-pipeline/`.
+- El retiro descrito en §5–§7 no cambia, no bloquea ni degrada el análisis integral postconversión.
 
-### Identidad diaria del gate y coalescencia de intentos
+El Radar sigue siendo, de principio a fin, un mecanismo de **detección y listado previo a la
+conversión**; el análisis integral postconversión opera sobre Oportunidades ya creadas, por decisión
+humana, en su propia superficie.
 
-La clave de idempotencia del gate incluye la **fecha calendario efectiva en `America/Bogota`**
-además de `(tender, source_row_hash, policy_version, context_version)`. Sin ella, la misma fila
-producía dos veredictos distintos bajo la misma clave al cruzar su cierre y el ledger append-only
-devolvía `23505` permanente. Consecuencia operativa: el ledger de gate crece una fila por licitación
-y **por día** mientras el productor corra; es historia, no estado mutable.
+## 10. Contrato F1 10
 
-Esa identidad diaria **no** dispara reanálisis diario: el corto circuito `satisfied` del encolado
-sigue comparando sólo `(source_row_hash, policy_version, context_version)` contra la canónica.
+Ver `CURRENT.md` §17.2 para la definición vigente y autoritativa. En resumen, para referencia rápida
+desde este runbook:
 
-Cuando ya existe un job `queued`/`running` para la licitación y llega un intento con la **misma
-entrada semántica** —mismo `source_row_hash` y mismas versiones, aunque el `gate_evaluation_id` y la
-clave de intento sean nuevos por el cambio de día—, el encolado devuelve **el job existente
-conservando su identidad de intento original** en vez de conflictuar. Si la entrada difiere en algo
-material, sigue siendo conflicto `55000`: no se conflacionan fuente, política ni contexto. Ese
-rechazo es de esa fila, no de la corrida: el lote continúa y el `claim` se ejecuta igual.
+- **F1 v2** = las **primeras 10 licitaciones reales** convertidas por un humano a Oportunidad
+  **después del receipt** de este cierre, **únicas por tender**.
+- Cuenta el **análisis inicial postconversión** que alcanza un **estado terminal durable** para esa
+  licitación; los **retries quedan deduplicados** (no generan una segunda entrada).
+- **Reanalysis y preanalysis quedan excluidos** de la cohorte.
+- **Sin ventana de 14/30 días, sin cohortes de 100+100 y sin afirmación estadística**: es un conteo
+  de casos reales, no una muestra ni una proyección.
 
-### `rejected`: sólo el conflicto 55000, nunca un fallo de infraestructura
-
-`rejected` en el resultado de `agt002-radar-scan.js` cuenta **exclusivamente** el conflicto
-semántico esperado de `psi_enqueue_agt002_radar_preanalysis_job` —`SQLSTATE 55000` con el mensaje
-fijo "AGT-002 Radar tender already has a different active job"— descrito arriba: una licitación con
-un job activo bajo una entrada semántica distinta. El scan reconoce ese conflicto exacto (código
-**y** mensaje) por fila, incrementa `rejected` y sigue con el resto del lote.
-
-Cualquier otro fallo de encolado —caída de conexión con Supabase, timeout, error genérico de
-PostgREST, cualquier código distinto de `55000` o el mismo `55000` con un mensaje distinto— **no**
-se cuenta como `rejected`: se propaga y aborta la corrida completa con `status:'unavailable'`,
-`error_code:'persistence_failure'`. Contar un fallo de infraestructura como un rechazo silencioso
-por fila disfrazaría una caída real de Supabase/la cola como una corrida diaria exitosa, y ni la
-unidad `systemd` ni el wrapper de Hermes lo detectarían. El texto crudo del error nunca se expone en
-el resultado del scan, precisamente porque `unavailable`/`persistence_failure` ya es la señal
-suficiente para investigar en `journalctl -u agt002-radar-scan.service`.
-
-### `stale_input`: un job que sobrevivió a su fila
-
-La cola es durable y el gate se reevalúa en cada disparo, así que un job encolado ayer puede
-reclamarse hoy sobre una fila que el gate vigente ya eliminó. Tras el `claim`, el pipeline exige que
-la evaluación vigente siga siendo `sobreviviente` y coincida con `(source_row_hash, policy_version,
-context_version)` del job. Si no coincide, el job se cierra como **`stale_input`** —código terminal
-acotado, mensaje fijo— **sin invocar a AGT-002 y sin persistir corrida**: nunca se produce una
-canónica positiva para una fila actualmente eliminada. Un `stale_input` no bloquea nada: es terminal,
-y la fila se reencola limpia en la corrida siguiente si vuelve a sobrevivir.
-
-Si `AGT002_RADAR_GATE_POLICY_VERSION` cambia con jobs sin drenar, esos jobs conservan la política
-congelada en su fila y se ejecutan igual, atribuidos a la versión con la que se encolaron; el gate
-reevaluará la fila bajo la nueva política en la corrida siguiente. **Purgar la cola es una acción
-humana explícita**, fuera de este runbook.
+Este runbook no define cómo se calcula o reporta F1 10 operativamente más allá de lo anterior; ese
+mecanismo de medición, si se automatiza, requiere su propio diseño y aprobación separados.
 
 ## 11. Lo que este runbook no autoriza
 
-- Aplicar `071`/`072` a producción, ni asumir que producción es `origin/main`.
-- Instalar o habilitar el `.service`/`.timer` como parte de encender el flag: son autorizaciones
-  distintas.
-- Encender `AGT002_RADAR_VISIBILITY` antes de un informe de auditoría con
-  `uncovered_visible_tenders = 0` leído por una persona.
-- Tratar un `no_mostrar_en_radar` como descarte, o escribir `internal_status` a partir de él.
-- Cualquier decisión GO/NO-GO, o cualquier conversión de licitación en Oportunidad: siguen siendo
-  actos exclusivamente humanos, en sus propios componentes, ajenos a este alcance.
+- Encender `AGT002_RADAR_GATE` ni `AGT002_RADAR_VISIBILITY`: ninguno de los dos existe ya como flag
+  parseable (§7).
+- Instalar, habilitar o iniciar manualmente el `.service`/`.timer` del pipeline de preanálisis de IA
+  (§6): están construidos deliberadamente para rechazar el arranque manual; el `.timer` tiene un
+  `OnCalendar` sintáctico pero inerte, bloqueado por `ConditionPathExists`, `RefuseManualStart=true`
+  y la ausencia de sección `[Install]`.
+- Ejecutar el worker de preanálisis, el runtime del modelo o cualquier llamada al puente de IA como
+  parte de la operación normal del Radar.
+- Tratar `no_mostrar_en_radar` como descarte, o escribir `internal_status` a partir de él.
+- Cualquier decisión GO/NO-GO o cualquier conversión de licitación en Oportunidad: siguen siendo
+  actos exclusivamente humanos, ajenos a este alcance.

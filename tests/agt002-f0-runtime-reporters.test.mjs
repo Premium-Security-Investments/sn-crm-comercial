@@ -491,18 +491,18 @@ test('resolveAgt002ReleaseArtifactEvidence: a readFile error on an otherwise-val
 
 // --- radar_pipeline oneshot reporter
 
-test('radar pipeline runner: --control-plane is gated by the shared builder + shared runtime-evidence resolver before the Supabase client, never reads git and never trusts AGT002_DEPLOYED_GIT_SHA/VERSION', () => {
+test('radar pipeline runner: --control-plane is gated by the shared builder + shared runtime-evidence resolver, never reads git, never trusts AGT002_DEPLOYED_GIT_SHA/VERSION, and the AI preanalysis pipeline is retired so the script never constructs a Supabase client at all', () => {
   const source = readFileSync(RADAR_RUNNER, 'utf8');
   assert.match(source, /buildRadarPipelineIdentity/);
   assert.match(source, /resolveAgt002ReleaseArtifactEvidence/);
   assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-surface-builders\.js'/);
   assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-runtime-evidence\.js'/);
-  const controlPlaneIndex = source.indexOf("'--control-plane'");
-  const clientIndex = source.indexOf('createClient(');
-  assert.ok(controlPlaneIndex >= 0, '--control-plane check must be present');
-  assert.ok(clientIndex > controlPlaneIndex, '--control-plane must be checked before the Supabase client is constructed');
+  assert.ok(source.indexOf("'--control-plane'") >= 0, '--control-plane check must be present');
+  assert.doesNotMatch(source, /createClient\(/, 'the retired radar pipeline runner must never construct a Supabase client');
+  assert.doesNotMatch(source, /@supabase\/supabase-js/, 'the retired radar pipeline runner must never import the Supabase client');
   assert.doesNotMatch(source, /execSync|spawnSync|git\s+rev-parse/);
   assert.doesNotMatch(source, /AGT002_DEPLOYED_GIT_SHA|AGT002_DEPLOYED_VERSION/, 'must never treat the deployed-sha/version env vars as identity evidence');
+  assert.match(source, /AGT002_RADAR_AI_RETIRED/, 'normal mode must report the deterministic retirement code');
 });
 
 test('radar pipeline runner: --control-plane ignores AGT002_DEPLOYED_GIT_SHA/VERSION spoofing -- stays unobserved from the dev worktree, needs no Supabase secret, exactly one JSON line, exit 0', () => {
@@ -528,10 +528,11 @@ test('radar pipeline runner: --control-plane with no env at all is unobserved to
   assert.equal(payload.source, 'unobserved');
 });
 
-test('radar pipeline runner: normal mode (no --control-plane) is unchanged and still fails closed without Supabase config', () => {
+test('radar pipeline runner: normal mode (no --control-plane) is retired -- the AI preanalysis pipeline is off, exits 0 with no Supabase config needed, and reports exactly the retirement JSON', () => {
   const result = spawnSync(process.execPath, [RADAR_RUNNER], { encoding: 'utf8', env: { PATH: process.env.PATH } });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /AGT002_RADAR_ENTRYPOINT_CONFIG_INVALID/);
+  assert.equal(result.status, 0, result.stderr);
+  const payload = soleJsonLine(result.stdout);
+  assert.deepEqual(payload, { status: 'retired', code: 'AGT002_RADAR_AI_RETIRED' });
 });
 
 // --- reanalysis_worker oneshot reporter

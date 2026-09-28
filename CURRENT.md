@@ -733,3 +733,76 @@ presentarse como pendiente de publicación**:
 
 Documento de continuidad y aprendizaje para Juan:
 `docs/operations/2026-09-01-agt002-mentoria-y-proximos-pasos.md`.
+
+---
+
+## 17. Radar AGT-002 determinístico único — retiro operativo de IA/flags/timer/visibilidad (2026-09-28, issue #247)
+
+> Esta sección es la autoritativa vigente para el estado operativo del Radar AGT-002 al 2026-09-28.
+> **Supera operativamente** cualquier instrucción previa de este documento (incluidas §14–§16) que
+> hable de encender `AGT002_RADAR_GATE`/`AGT002_RADAR_VISIBILITY`, instalar/habilitar el
+> `.timer`/`.service` de preanálisis, correr el worker/modelo de IA, o esperar visibilidad gobernada
+> por preanálisis. No se reescribe la historia de §14–§16: quedan como registro de lo que ocurrió y
+> por qué, pero **ya no son una guía de activación**. §13 sigue siendo la referencia autoritativa
+> del cierre de publicación del frente decisional; esta sección no la toca.
+
+### 17.1. Estado operativo vigente
+
+- **El Radar es determinístico único.** No hay preanálisis de IA, no hay cola durable en uso, no
+  hay modelo ni puente invocado como parte del flujo operativo.
+- **Los flags fueron retirados del config.** `AGT002_RADAR_GATE` y `AGT002_RADAR_VISIBILITY` ya no
+  existen en `ANALYSIS_FLAG_NAMES` (`agt002-analysis-config.js`); no se parsean, no tienen `default`
+  y su antigua dependencia mutua fue retirada junto con ellos. No hay ningún flag que encender para
+  activar preanálisis IA ni visibilidad gobernada por él.
+- **El scan es `esu_refresh → fetch → gate → ledger`**, sin cola y sin modelo: evalúa la página
+  contra el gate determinista y anota el resultado en el ledger. No encola, no reclama, no invoca
+  ningún proveedor de IA.
+- **El runner de preanálisis IA es un tombstone retirado.** Cualquier invocación fuera de
+  `--control-plane` responde `{"status":"retired","code":"AGT002_RADAR_AI_RETIRED"}` y no hace nada
+  más: no reclama cola, no llama al puente ni al modelo, no crea cliente de Supabase, no lee ningún
+  secreto ni variable de entorno. `--control-plane` sigue siendo el único camino vivo, y es un
+  reporte de identidad sin efectos secundarios.
+- **El `systemd` del pipeline de preanálisis no es iniciable.** El `.service` y el `.timer`
+  correspondientes rechazan el arranque manual y no declaran `EnvironmentFile` ni secreto alguno. El
+  `.timer` sí tiene un `OnCalendar` sintácticamente presente pero inerte: `ConditionPathExists=
+  /run/agt002-radar-ai-retired-do-not-create`, `RefuseManualStart=true` y la ausencia de sección
+  `[Install]` impiden su inicio. No hay forma de iniciarlo sin editar la unidad.
+- **El host que ejecutaba el pipeline sigue apagado.** El runner/tombstone no lee secretos ni
+  `EnvironmentFile`; la configuración inactiva o de respaldo que pueda existir se conserva fuera del
+  alcance de este cierre y de este runbook, sin revelar sus valores aquí.
+- **Las migraciones y el ledger históricos se conservan.** `071_agt002_radar_gate.sql` y
+  `072_agt002_radar_preanalysis_ledger.sql`, junto con sus rollbacks, permanecen en el árbol; el
+  ledger de gate/preanálisis ya escrito es historia append-only y no se borra ni se reescribe. Nada
+  de este cierre purga datos históricos.
+- **El análisis integral postconversión sigue** operando como siempre: es un flujo humano y separado
+  (conversión manual de licitación a Oportunidad, seguida de análisis canónico/integral sobre la
+  Oportunidad ya creada). No depende del preanálisis IA del Radar, no lo usó como entrada de
+  autoridad, y su retiro no le afecta.
+
+### 17.2. Contrato F1 10 — definición vigente
+
+**F1 v2** es la cohorte de referencia para medir el resultado del Radar determinístico tras este
+cierre, y queda definida así, sin ambigüedad:
+
+- Las **primeras 10 licitaciones reales** convertidas por un humano a Oportunidad **después del
+  receipt** de este cierre (es decir, a partir de la evidencia/registro de que el Radar
+  determinístico único quedó operativo).
+- **Únicas por tender**: cada licitación cuenta una sola vez en la cohorte, sin importar cuántos
+  eventos o intentos genere.
+- Con **análisis inicial postconversión terminal y durable**: sólo cuenta el primer análisis
+  postconversión que alcanza un estado terminal persistido para esa licitación.
+- **Retries deduplicados**: reintentos sobre la misma licitación no generan una segunda entrada en
+  la cohorte.
+- **Reanalysis y preanalysis quedan excluidos** de la cohorte: ni un reanálisis posterior ni ningún
+  preanálisis (IA, ya retirado) cuentan para F1.
+- **Sin ventana de 14/30 días**, **sin cohortes de 100+100** y **sin afirmación estadística**: F1 10
+  es un conteo de casos reales, no una muestra ni una proyección estadística, y no se calendariza por
+  días corridos.
+
+### 17.3. Próximo paso
+
+Ver `docs/runbooks/agt002-radar-pipeline.md` (reescrito el 2026-09-28) para el procedimiento
+operativo determinístico vigente: ejecución bajo demanda del scan, observabilidad, afinación
+gobernada de `tender-fit-v1`/gate con revisión humana y versionado, el tombstone del runner de IA y
+su no reactivación, la preservación del ledger histórico, la separación del análisis integral
+postconversión, y el contrato F1 10.

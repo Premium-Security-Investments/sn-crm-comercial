@@ -1,12 +1,11 @@
 [Unit]
-Description=Schedule AGT-002 Radar one-shot pipeline
+Description=RETIRED: AGT-002 Radar AI pipeline is no longer scheduled (see agt002-radar-pipeline.service)
+RefuseManualStart=true
+ConditionPathExists=/run/agt002-radar-ai-retired-do-not-create
 
 [Timer]
-OnBootSec=10m
-OnUnitActiveSec=15m
-RandomizedDelaySec=90
+# Tombstone: OnCalendar is only a syntactic requirement (systemd timers need a trigger to be
+# valid); ConditionPathExists above makes this unit permanently inert regardless of schedule.
+OnCalendar=daily
 Persistent=false
 Unit=agt002-radar-pipeline.service
-
-[Install]
-WantedBy=timers.target
