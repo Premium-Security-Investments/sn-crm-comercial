@@ -9,7 +9,7 @@ if(!url||!key){console.error(JSON.stringify({status:'unavailable',code:'AGT002_R
   const database=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
   const now=()=>new Date().toISOString();
   const refresher=createSupabaseEsuDirectRefresher({database,now,fetchDirectProcesses:()=>fetchEsuProcesses({includeHistorical:true})});
-  const scan=createAgt002RadarScan({database,environment:process.env,now,refreshEsuDirect:()=>refresher.runOnce()});
+  const scan=createAgt002RadarScan({database,now,refreshEsuDirect:()=>refresher.runOnce()});
   const result=await scan.runOnce();console.log(JSON.stringify(result));
   // A silent exit 0 on an unavailable fetch/gate/ledger would read as a good day to the service
   // manager and to the daily wrapper while nothing actually got enqueued, and the next attempt

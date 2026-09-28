@@ -1,7 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { planAgt002RadarGateAudit, runAgt002RadarGateHistoricalAudit } from '../scripts/agt002-radar-gate-historical-audit.mjs';
-import { runAgt002RadarPreanalysisDryRun } from '../scripts/agt002-radar-preanalysis-dryrun.mjs';
 import { runAgt002RadarLearningSignalsReport } from '../scripts/agt002-radar-learning-signals-report.mjs';
 import { computeAgt002RadarSourceRowHash } from '../agt002-radar-gate.js';
 import { agt002RadarDerivedDayWindowLabel } from '../agt002-radar-derived-day-churn.js';
@@ -114,39 +113,28 @@ for (const sample of plan.muestras) {
   assert.ok(sample.tender_id && sample.rule_id && sample.field && String(sample.observed_value).length > 0);
 }
 
+// El preanálisis dry-run (scripts/agt002-radar-preanalysis-dryrun.mjs) construye
+// createAgt002RadarPreanalysisRuntime, que ahora falla cerrado siempre porque AGT002_RADAR_GATE ya
+// no existe en ANALYSIS_FLAG_NAMES (agt002-analysis-config.js): no se ejecuta aquí. Ver
+// tests/agt002-radar-preanalysis-runtime.test.mjs y
+// tests/agt002-radar-preanalysis-usage-authority.test.mjs para esa cobertura del runtime retirado.
+// La auditoría histórica y el reporte de señales de aprendizaje siguen siendo de sólo lectura y se
+// prueban directamente abajo.
 const databaseRequests = [];
-let runtimeRequest;
 const fetchImpl = async (url, options = {}) => {
   databaseRequests.push({ url: String(url), method: options.method });
   const parsed = new URL(url);
   const table = parsed.pathname.split('/').at(-1);
-  const isRequestedTender = table === 'psi_public_tenders' && parsed.searchParams.get('id') === 'eq.t1';
   return {
     ok: true,
     status: 200,
     async json() {
-      if (isRequestedTender) return [tenders[0]];
       if (table === 'psi_public_tenders' && !parsed.searchParams.has('internal_status')) return tenders;
       return [];
     },
   };
 };
-const dryRun = await runAgt002RadarPreanalysisDryRun({
-  tenderId: 't1',
-  baseUrl: 'https://supabase.example.test',
-  serviceKey: 'service-key',
-  environment: {},
-  nowIso: NOW,
-  fetchImpl,
-  createRuntime: () => ({ runOnce: async request => { runtimeRequest = request; return { visibility_verdict: 'mostrar_en_radar' }; } }),
-});
-assert.equal(dryRun.persisted, false);
-assert.equal(dryRun.mode, 'read_only_dry_run');
-assert.equal(databaseRequests.length, 5);
-assert.ok(databaseRequests.every(request => request.method === 'GET'));
-assert.equal(runtimeRequest.learningSignals, null, 'cero señales debe viajar como null, no como sobre vacío');
 
-const auditRequestStart = databaseRequests.length;
 const liveAudit = await runAgt002RadarGateHistoricalAudit({
   baseUrl: 'https://supabase.example.test',
   serviceKey: 'service-key',
@@ -155,7 +143,8 @@ const liveAudit = await runAgt002RadarGateHistoricalAudit({
 });
 assert.equal(liveAudit.total, tenders.length);
 assert.equal(liveAudit.ledger_available, true);
-assert.ok(databaseRequests.slice(auditRequestStart).every(request => request.method === 'GET'));
+assert.ok(databaseRequests.length > 0);
+assert.ok(databaseRequests.every(request => request.method === 'GET'));
 
 const learningRequestStart = databaseRequests.length;
 const learningReport = await runAgt002RadarLearningSignalsReport({
@@ -176,20 +165,46 @@ for (const name of ['agt002-radar-gate-historical-audit', 'agt002-radar-preanaly
   assert.match(source, /SUPABASE_SERVICE_ROLE_KEY/);
 }
 
+// [Reescrito 2026-09-28, issue #247] El README local de ops/agt002-radar-pipeline/ es hoy sólo el
+// tombstone del pipeline de IA retirado, no un runbook operativo: ya no documenta flags, modelo,
+// puente ni Supabase, ni promete pasos de instalación/activación. Ese contrato vigente vive en
+// docs/runbooks/agt002-radar-pipeline.md (comprobado más abajo).
 const runbook = readFileSync(new URL('../ops/agt002-radar-pipeline/README.md', import.meta.url), 'utf8');
 for (const required of [
-  'AGT002_RADAR_GATE=false', 'AGT002_RADAR_VISIBILITY=false',
-  'agt002-radar-gate-historical-audit.mjs', 'agt002-radar-preanalysis-dryrun.mjs',
-  'agt002-radar-learning-signals-report.mjs', 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE',
-  'uncovered_visible_tenders', 'rollback', 'systemctl',
-]) assert.match(runbook, new RegExp(required));
+  'RETIRED', 'issue #247', 'AGT002_RADAR_AI_RETIRED', '--control-plane',
+  'docs/runbooks/agt002-radar-pipeline.md', 'systemctl',
+  'No instalar', 'habilitar', 'activar',
+]) assert.ok(runbook.includes(required), required);
+for (const forbidden of [
+  'AGT002_RADAR_GATE=', 'AGT002_RADAR_VISIBILITY=', 'AGT002_RADAR_PREANALYSIS_MODEL',
+  'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET',
+  'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY',
+]) assert.equal(runbook.includes(forbidden), false, forbidden);
 
+const envExample = readFileSync(new URL('../ops/agt002-radar-pipeline/env.example', import.meta.url), 'utf8');
+assert.ok(envExample.toLowerCase().includes('no configuration accepted'), 'env.example debe declarar no configuration accepted');
+for (const forbidden of [
+  'SUPABASE_URL=', 'SUPABASE_SERVICE_ROLE_KEY=', 'AGT002_RADAR_GATE=', 'AGT002_RADAR_VISIBILITY=',
+  'AGT002_RADAR_PREANALYSIS_MODEL', 'AGT002_RADAR_PREANALYSIS_TIMEOUT_MS',
+  'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET', 'http://', 'https://',
+]) assert.equal(envExample.includes(forbidden), false, forbidden);
+
+// [Reescrito 2026-09-28, issue #247] docs/runbooks/agt002-radar-pipeline.md documenta hoy
+// exclusivamente el flujo determinístico (scan) y el tombstone del preanálisis de IA retirado: ya
+// no promete activar flags ni un umbral operativo de cobertura a encender, así que este test ya no
+// exige esas frases de activación. uncovered_visible_tenders/ready_for_visibility_flag del
+// planificador puro (arriba) siguen siendo métricas históricas descriptivas, no un gate operativo
+// que este runbook encienda.
 const operationalRunbook = readFileSync(new URL('../docs/runbooks/agt002-radar-pipeline.md', import.meta.url), 'utf8');
 for (const required of [
-  'AGT002_RADAR_GATE', 'AGT002_RADAR_VISIBILITY', 'uncovered_visible_tenders = 0',
-  'no_mostrar_en_radar', 'no_concluyente', 'source_row_hash', 'policy_version', 'context_version',
-  'convertidas históricas nunca se ocultan por preanálisis', 'no muestra ningún proceso vencido',
-  'no persiste el resultado ni modifica Supabase',
+  'exclusivamente determinístico',
+  'AGT002_RADAR_AI_RETIRED',
+  'retirado',
+  'esu_refresh',
+  'AGT002_RADAR_GATE',
+  'AGT002_RADAR_VISIBILITY',
+  'ANALYSIS_FLAG_NAMES',
+  'Contrato F1 10',
 ]) assert.ok(operationalRunbook.includes(required), required);
 
-console.log('AGT-002 historical audit and dry-run scripts are deterministic and read-only');
+console.log('AGT-002 deterministic gate audit and learning-signals report stay read-only; AI preanalysis dry-run is retired');

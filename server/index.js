@@ -325,10 +325,6 @@ async function enqueueAgt002CanonicalReanalysis(database, {
 }
 
 function sendError(res, error, status = 500) {
-  if (error?.runtime_boundary_code === 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE') {
-    console.warn('agt002_radar_visibility_ledger_unavailable', { event: 'agt002_radar_visibility_ledger_unavailable' });
-    return res.status(503).json({ error: 'El ledger de visibilidad del Radar no está disponible.', code: 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE' });
-  }
   if (error?.runtime_boundary_code === 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID') {
     console.warn('agt002_runtime_company_evidence_invalid', { event: 'agt002_runtime_company_evidence_invalid' });
     return res.status(503).json({ error: 'El registro de evidencia empresarial AGT-002 no está disponible.', code: 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID' });
