@@ -83,7 +83,9 @@ assert.match(opportunitiesView, /aria-pressed=\{filter === 'por_decidir'\}/, 'El
 assert.match(opportunitiesView, /aria-pressed=\{filter === 'en_curso'\}/, 'El botón En curso debe declarar su estado activo con aria-pressed.');
 const ariaPressedButtons = opportunitiesView.match(/aria-pressed=\{filter ===/g) || [];
 assert.equal(ariaPressedButtons.length, 3, 'Deben existir exactamente tres botones de filtro compactos (ninguno para Cerradas).');
-assert.match(opportunitiesView, /useState<TenderOpportunityPrimaryFilter>\('all'\)/, 'El filtro por defecto debe ser Todas.');
+// Contrato de producto 2026-09-29: la vista inicial de la bandeja es "Por decidir", no "Todas"
+// (ver tests/tender-opportunities-compact-redesign.test.mjs para el resto del rediseño).
+assert.match(opportunitiesView, /useState<TenderOpportunityPrimaryFilter>\('por_decidir'\)/, 'El filtro por defecto debe ser Por decidir.');
 
 // --- Approved contract: every card is truthful about amount, closing date, responsible, reference,
 // location, priority, blocker and last update, degrading to exact fallback copy when data is missing. ---

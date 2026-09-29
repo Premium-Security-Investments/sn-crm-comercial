@@ -40,8 +40,11 @@ assert.match(main, /documentFocusRequested = focusTarget === 'documents'/, 'Oppo
 assert.match(main, /id="tender-document-review"/, 'TenderDocumentReviewPanel needs a stable document-focus anchor.');
 assert.match(main, /tabIndex=\{-1\}/, 'The document-focus anchor must be programmatically focusable.');
 
-for (const label of ['Abrir expediente', 'Recomendación del sistema', 'Decisión humana', 'Estado de oferta', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
+for (const label of ['Abrir expediente', 'Etapa', 'Monto', 'Cierre', 'Encaje', 'Prioridad', 'Siguiente acción', 'Decisión humana', 'Estado de oferta']) {
   assert.ok(opportunities.includes(label), `Oportunidades debe mostrar ${label}`);
+}
+for (const retiredDetail of ['Recomendación del sistema', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
+  assert.doesNotMatch(opportunities, new RegExp(`<dt>${retiredDetail}</dt>`), `Oportunidades ya no debe mostrar ${retiredDetail} como fila de la lista; ese detalle vive en el expediente.`);
 }
 assert.match(opportunities, /Bandeja de oportunidades/);
 assert.match(opportunities, /<h2 id="tender-dossiers-heading">Oportunidades<\/h2>/);
@@ -50,7 +53,7 @@ assert.match(opportunities, /\/api\/tender-documents-import/);
 assert.match(opportunities, /loadTenderOpportunities/);
 assert.doesNotMatch(opportunities, /\/api\/tender-opportunities/, 'La vista debe depender del loader y no duplicar el contrato HTTP.');
 assert.match(apiSource, /loadTenderOpportunities[\s\S]*?\/api\/tender-opportunities/);
-// Los filtros primarios son exactamente cuatro y viven en una sola lista (opportunityStage.ts);
+// Los filtros primarios son exactamente tres y viven en una sola lista (opportunityStage.ts);
 // el detalle GO/preparación/presentada/adjudicada se conserva íntegro en la tarjeta, no en el
 // selector. Ver tests/tender-opportunity-primary-filter.test.mjs para la semántica completa.
 assert.match(opportunities, /role="group"/, 'Oportunidades debe renderizar el selector de filtros primarios como un control agrupado compacto.');
