@@ -53,8 +53,15 @@ assert.match(apiSource, /loadTenderOpportunities[\s\S]*?\/api\/tender-opportunit
 // Los filtros primarios son exactamente cuatro y viven en una sola lista (opportunityStage.ts);
 // el detalle GO/preparación/presentada/adjudicada se conserva íntegro en la tarjeta, no en el
 // selector. Ver tests/tender-opportunity-primary-filter.test.mjs para la semántica completa.
-assert.match(opportunities, /OPPORTUNITY_PRIMARY_FILTER_OPTIONS\.map/, 'Oportunidades debe renderizar el selector desde la lista de filtros primarios.');
-for (const label of ['Todas', 'Por decidir', 'En curso', 'Cerradas']) assert.ok(opportunityStage.includes(`label: '${label}'`), `Oportunidades debe ofrecer el filtro primario ${label}`);
+assert.match(opportunities, /role="group"/, 'Oportunidades debe renderizar el selector de filtros primarios como un control agrupado compacto.');
+assert.match(opportunities, /aria-pressed=\{filter === 'all'\}/, 'El botón Todas debe comparar su estado pulsado contra el filtro all.');
+assert.match(opportunities, /aria-pressed=\{filter === 'por_decidir'\}/, 'El botón Por decidir debe comparar su estado pulsado contra el filtro por_decidir.');
+assert.match(opportunities, /aria-pressed=\{filter === 'en_curso'\}/, 'El botón En curso debe comparar su estado pulsado contra el filtro en_curso.');
+assert.doesNotMatch(opportunities, /aria-pressed=\{filter === 'cerradas'\}/, 'Ya no debe existir un botón de filtro primario para Cerradas.');
+for (const label of ['Todas', 'Por decidir', 'En curso']) assert.ok(opportunities.includes(`>${label}</button>`), `Oportunidades debe mostrar el botón ${label}`);
+assert.ok(!opportunities.includes('>Cerradas</button>'), 'Oportunidades ya no debe ofrecer el botón de filtro Cerradas.');
+for (const label of ['Todas', 'Por decidir', 'En curso']) assert.ok(opportunityStage.includes(`label: '${label}'`), `Oportunidades debe ofrecer el filtro primario ${label}`);
+assert.ok(!opportunityStage.includes("label: 'Cerradas'"), 'opportunityStage.ts ya no debe ofrecer el filtro primario Cerradas.');
 for (const retired of ['Pendiente de decisión', 'GO registrado', 'Presentadas']) assert.ok(!opportunities.includes(retired), `Oportunidades ya no debe ofrecer el filtro ${retired}`);
 assert.match(opportunities, /setFilter\([\s\S]*?setPage\(1\)/, 'Cambiar filtro debe reiniciar la página.');
 assert.match(opportunities, /dossier_error/);

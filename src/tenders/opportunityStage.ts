@@ -16,7 +16,6 @@ export const OPPORTUNITY_PRIMARY_FILTER_OPTIONS: readonly { value: TenderOpportu
   { value: 'all', label: 'Todas' },
   { value: 'por_decidir', label: 'Por decidir' },
   { value: 'en_curso', label: 'En curso' },
-  { value: 'cerradas', label: 'Cerradas' },
 ];
 
 /** Estados de oferta terminales: el proceso ya cerró y no admite más trabajo. */

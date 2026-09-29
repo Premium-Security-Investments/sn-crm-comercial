@@ -1,8 +1,16 @@
 // Filtros primarios de la bandeja de oportunidades (simplify-opportunity-filter).
 //
-// Requisito de producto: los filtros primarios son exactamente Todas / Por decidir / En curso /
-// Cerradas y son mutuamente excluyentes. El detalle GO/preparación/presentada/adjudicada sigue
-// viviendo en la tarjeta: este archivo NO cubre la tarjeta, sólo el clasificador puro y su cableado.
+// Requisito de producto: los filtros primarios SELECCIONABLES en la UI son exactamente Todas /
+// Por decidir / En curso y son mutuamente excluyentes. No existe un botón de Cerradas: las
+// oportunidades cerradas sólo se ven a través de Todas. El detalle GO/preparación/presentada/
+// adjudicada sigue viviendo en la tarjeta: este archivo NO cubre la tarjeta, sólo el clasificador
+// puro y su cableado.
+//
+// El clasificador interno (src/tenders/opportunityStage.ts) sigue particionando la bandeja en TRES
+// estados — por_decidir / en_curso / cerradas — y el backend/RPC/tipo de red siguen aceptando
+// 'cerradas' y el vocabulario legado por compatibilidad (migración 088 sin cambios). Lo único que
+// cambió es qué valores puede elegir un humano en la UI: 'cerradas' ya no es uno de ellos y
+// normaliza a 'all'.
 //
 // Semántica gobernada (una sola fuente de verdad: src/tenders/opportunityStage.ts):
 //   Cerradas  = NO GO humano  O  estado terminal (adjudicada / no_adjudicada / cerrada_no_go)
@@ -41,9 +49,9 @@ const serverBackend = readFileSync(new URL('../server/index.js', import.meta.url
 const apiBackend = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const opportunityTypes = readFileSync(new URL('../src/tenders/types.ts', import.meta.url), 'utf8');
 
-test('los filtros primarios son exactamente Todas / Por decidir / En curso / Cerradas', () => {
-  assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => option.value), ['all', 'por_decidir', 'en_curso', 'cerradas']);
-  assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => option.label), ['Todas', 'Por decidir', 'En curso', 'Cerradas']);
+test('los filtros primarios seleccionables son exactamente Todas / Por decidir / En curso', () => {
+  assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => option.value), ['all', 'por_decidir', 'en_curso']);
+  assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => option.label), ['Todas', 'Por decidir', 'En curso']);
 });
 
 test('Cerradas gana sobre cualquier campo contradictorio rancio', () => {
@@ -109,7 +117,7 @@ const rows = [
   { id: 'go-before-status', decision: 'go', tender_offer_status: 'pendiente_decision' },
 ];
 
-test('los tres estados primarios particionan cualquier bandeja: ni solapamiento ni huérfanos', () => {
+test('los tres estados primarios internos particionan cualquier bandeja: ni solapamiento ni huérfanos', () => {
   const stages = ['por_decidir', 'en_curso', 'cerradas'];
   for (const row of rows) {
     const hits = stages.filter(stage => matchesOpportunityPrimaryFilter(row, stage));
@@ -118,11 +126,14 @@ test('los tres estados primarios particionan cualquier bandeja: ni solapamiento 
   }
 });
 
-test('filterOpportunitySummaries particiona la bandeja con el vocabulario primario', () => {
+test('filterOpportunitySummaries particiona la bandeja con el vocabulario primario seleccionable', () => {
   assert.deepEqual(filterOpportunitySummaries(rows, 'all').map(row => row.id), rows.map(row => row.id));
   assert.deepEqual(filterOpportunitySummaries(rows, 'por_decidir').map(row => row.id), ['pending', 'recommendation-only', 'stale-prep-no-decision']);
   assert.deepEqual(filterOpportunitySummaries(rows, 'en_curso').map(row => row.id), ['go-active', 'go-presented', 'ready', 'go-before-status']);
-  assert.deepEqual(filterOpportunitySummaries(rows, 'cerradas').map(row => row.id), ['pending-decided', 'go-revoked', 'no-go', 'awarded', 'not-awarded']);
+  // 'cerradas' ya no está en OPPORTUNITY_PRIMARY_FILTER_OPTIONS, así que dejó de ser un valor que
+  // filterOpportunitySummaries reconozca como primario; las filas cerradas se siguen viendo a través
+  // de 'all', y el estado interno se prueba aparte con matchesOpportunityPrimaryFilter arriba.
+  assert.throws(() => filterOpportunitySummaries(rows, 'cerradas'), /filtro/i);
 });
 
 test('el vocabulario legado del backend sigue siendo aceptado sin cambiar de semántica', () => {
@@ -133,10 +144,12 @@ test('el vocabulario legado del backend sigue siendo aceptado sin cambiar de sem
   assert.throws(() => filterOpportunitySummaries(rows, 'invalid'), /filtro/i);
 });
 
-test('un valor de filtro viejo o desconocido degrada a Todas', () => {
+test('un valor de filtro viejo, cerrado o desconocido degrada a Todas', () => {
   // No existe persistencia en URL del filtro de oportunidades (el estado vive en useState), así que
-  // ningún valor legado necesita sobrevivir un enlace compartido: degradan todos a Todas.
-  for (const legacy of ['pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed', 'pending', 'preparing', 'awarded', 'rejected', '', null, undefined, 42, {}]) {
+  // ningún valor legado ni el estado interno 'cerradas' necesitan sobrevivir un enlace compartido:
+  // degradan todos a Todas. 'cerradas' dejó de ser seleccionable en la UI (ya no hay botón de
+  // Cerradas); sólo el clasificador interno lo sigue usando.
+  for (const legacy of ['cerradas', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed', 'pending', 'preparing', 'awarded', 'rejected', '', null, undefined, 42, {}]) {
     assert.equal(normalizeOpportunityPrimaryFilter(legacy), 'all', `${String(legacy)} debe degradar a Todas`);
   }
   for (const option of OPPORTUNITY_PRIMARY_FILTER_OPTIONS) {
@@ -144,24 +157,30 @@ test('un valor de filtro viejo o desconocido degrada a Todas', () => {
   }
 });
 
-test('el filtro primario viaja tal cual al backend, sin traducirse a un predicado más estrecho', () => {
-  // Traducir `por_decidir -> pending_decision`, `en_curso -> go_authorized` y `cerradas -> closed`
-  // perdía filas: los predicados legados son MÁS ESTRECHOS que los estados primarios y el cliente
-  // no puede recuperar lo que el SQL no devolvió. El vocabulario primario es ahora el del RPC.
+test('el filtro seleccionable viaja tal cual al backend; cerradas ya no es seleccionable y degrada a Todas', () => {
+  // Traducir `por_decidir -> pending_decision` y `en_curso -> go_authorized` perdía filas: los
+  // predicados legados son MÁS ESTRECHOS que los estados primarios y el cliente no puede recuperar
+  // lo que el SQL no devolvió. El vocabulario primario seleccionable (all/por_decidir/en_curso) es
+  // el que ahora habla el RPC directamente. 'cerradas' sigue siendo válido para el backend/RPC por
+  // compatibilidad, pero ya no es un valor que la UI pueda producir, así que opportunityQueryFilter
+  // lo trata como cualquier otro valor no ofrecido: degrada a Todas.
   assert.equal(opportunityQueryFilter('all'), 'all');
   assert.equal(opportunityQueryFilter('por_decidir'), 'por_decidir');
   assert.equal(opportunityQueryFilter('en_curso'), 'en_curso');
-  assert.equal(opportunityQueryFilter('cerradas'), 'cerradas');
+  assert.equal(opportunityQueryFilter('cerradas'), 'all', 'cerradas ya no es seleccionable en la UI: degrada a Todas');
   assert.equal(opportunityQueryFilter('desconocido'), 'all');
   assert.equal(opportunityQueryFilter('pending_decision'), 'all', 'un valor legado del selector degrada a Todas, no a un predicado estrecho');
 });
 
-test('el vocabulario primario llega intacto al RPC y a la validación de la API', () => {
+test('el vocabulario primario seleccionable llega intacto al RPC y a la validación de la API; cerradas sigue aceptado por compatibilidad', () => {
   const accepted = listingSql.match(/p_filter not in \(([^)]*)\)/)[1].split(',').map(value => value.trim().replace(/'/g, ''));
   for (const option of OPPORTUNITY_PRIMARY_FILTER_OPTIONS) {
     assert.equal(opportunityQueryFilter(option.value), option.value);
     assert.ok(accepted.includes(option.value), `${option.value} debe ser un filtro que el RPC acepta directamente`);
   }
+  // El RPC sigue aceptando 'cerradas' aunque ya no sea seleccionable desde la UI: el clasificador
+  // interno y cualquier consumidor directo del backend lo siguen usando (migración 088 sin cambios).
+  assert.ok(accepted.includes('cerradas'), 'el RPC debe seguir aceptando cerradas por compatibilidad interna');
   // La validación de la API vive duplicada byte a byte en server/index.js y api/[...path].js.
   for (const [name, backend] of [['server/index.js', serverBackend], ['api/[...path].js', apiBackend]]) {
     const declared = backend.match(/const tenderOpportunityFilters = new Set\(\[([^\]]*)\]\)/)[1]
@@ -169,27 +188,36 @@ test('el vocabulario primario llega intacto al RPC y a la validación de la API'
     for (const option of OPPORTUNITY_PRIMARY_FILTER_OPTIONS) {
       assert.ok(declared.includes(option.value), `${name} debe aceptar el filtro primario ${option.value}`);
     }
+    assert.ok(declared.includes('cerradas'), `${name} debe seguir aceptando cerradas por compatibilidad`);
     for (const legacy of ['pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']) {
       assert.ok(declared.includes(legacy), `${name} debe seguir aceptando el filtro legado ${legacy}`);
     }
     assert.ok(!declared.includes('legacy'), `${name} no debe aceptar filtros inventados`);
   }
-  // El tipo del contrato de red debe cubrir ambos vocabularios.
+  // El tipo del contrato de red debe cubrir ambos vocabularios, incluido 'cerradas'.
   const wireFilter = opportunityTypes.match(/export type TenderOpportunityFilter = ([^;]*);/)[1];
   for (const value of ['all', 'por_decidir', 'en_curso', 'cerradas', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']) {
     assert.ok(wireFilter.includes(`'${value}'`), `TenderOpportunityFilter debe incluir ${value}`);
   }
 });
 
-test('la vista de oportunidades ofrece los cuatro filtros primarios y ninguno de los viejos', () => {
-  // El selector se renderiza desde la ÚNICA lista de opciones primarias: no hay rótulos sueltos.
-  assert.match(opportunitiesView, /OPPORTUNITY_PRIMARY_FILTER_OPTIONS\.map/, 'el selector debe renderizarse desde la lista primaria');
-  assert.ok(!/<option value="/.test(opportunitiesView), 'el selector no debe declarar opciones literales fuera de la lista primaria');
+test('la vista de oportunidades ofrece exactamente tres filtros primarios seleccionables y ningún botón de Cerradas', () => {
+  // Los tres filtros seleccionables son botones explícitos con aria-pressed y rótulo visible, no una
+  // lista derivada de OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map: el estado interno "cerradas" sigue
+  // existiendo en el clasificador, pero ya no tiene un control visible en la bandeja.
+  const filterButtons = [...opportunitiesView.matchAll(/aria-pressed=\{filter === '([a-z_]+)'\}[^>]*onClick=\{\(\) => \{ setFilter\('([a-z_]+)'\); setPage\(1\); \}\}>([^<]+)</g)];
+  assert.deepEqual(filterButtons.map(match => [match[1], match[2], match[3]]), [
+    ['all', 'all', 'Todas'],
+    ['por_decidir', 'por_decidir', 'Por decidir'],
+    ['en_curso', 'en_curso', 'En curso'],
+  ], 'debe haber exactamente tres botones, cada uno con aria-pressed y reinicio de página al hacer clic');
+  assert.ok(!/aria-pressed=\{filter === 'cerradas'\}/.test(opportunitiesView), 'no debe existir un control con aria-pressed para cerradas');
+  assert.ok(!opportunitiesView.includes('>Cerradas<'), 'no debe existir un botón visible de Cerradas');
+  assert.ok(!/<option value="/.test(opportunitiesView), 'el selector no debe volver a un <select> con opciones literales');
   for (const retired of ['Pendiente de decisión', 'GO registrado', 'Presentadas', 'pending_decision', 'go_authorized', 'in_preparation']) {
     assert.ok(!opportunitiesView.includes(retired), `la vista ya no debe ofrecer el filtro ${retired}`);
   }
   assert.match(opportunitiesView, /opportunityQueryFilter/, 'la vista debe enviar el filtro primario ya normalizado');
-  assert.match(opportunitiesView, /setFilter\([\s\S]*?setPage\(1\)/, 'cambiar filtro debe reiniciar la página');
 });
 
 test('la vista no vuelve a filtrar la página recibida: eso dejaba páginas ralas', () => {
@@ -206,29 +234,32 @@ test('la vista no vuelve a filtrar la página recibida: eso dejaba páginas rala
   );
 });
 
-test('contrato estático y aislado: filtro primario pasa directo, backend y tipos lo aceptan', () => {
-  // (1) opportunityQueryFilter debe devolver el vocabulario primario tal cual, nunca el legado.
+test('contrato estático y aislado: filtro seleccionable pasa directo, backend y tipos siguen aceptando cerradas', () => {
+  // (1) opportunityQueryFilter debe devolver el vocabulario primario seleccionable tal cual, nunca
+  // el legado. 'cerradas' ya no es seleccionable: degrada a 'all' como cualquier otro valor fuera de
+  // OPPORTUNITY_PRIMARY_FILTER_OPTIONS.
   assert.equal(opportunityQueryFilter('por_decidir'), 'por_decidir');
   assert.equal(opportunityQueryFilter('en_curso'), 'en_curso');
-  assert.equal(opportunityQueryFilter('cerradas'), 'cerradas');
+  assert.equal(opportunityQueryFilter('cerradas'), 'all');
   assert.notEqual(opportunityQueryFilter('por_decidir'), 'pending_decision');
   assert.notEqual(opportunityQueryFilter('en_curso'), 'go_authorized');
-  assert.notEqual(opportunityQueryFilter('cerradas'), 'closed');
 
-  // (2) server/index.js y api/[...path].js deben aceptar los tres valores primarios sin dejar de
-  // aceptar el vocabulario legado (compatibilidad).
+  // (2) server/index.js y api/[...path].js deben seguir aceptando 'cerradas' además de los valores
+  // primarios seleccionables y el vocabulario legado (compatibilidad interna, migración 088 sin
+  // cambios).
   for (const [name, backend] of [['server/index.js', serverBackend], ['api/[...path].js', apiBackend]]) {
     const declared = backend.match(/const tenderOpportunityFilters = new Set\(\[([^\]]*)\]\)/)[1]
       .split(',').map(value => value.trim().replace(/'/g, '')).filter(Boolean);
     for (const primary of ['por_decidir', 'en_curso', 'cerradas']) {
-      assert.ok(declared.includes(primary), `${name} debe aceptar el valor primario ${primary}`);
+      assert.ok(declared.includes(primary), `${name} debe aceptar el valor ${primary}`);
     }
     for (const legacy of ['pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']) {
       assert.ok(declared.includes(legacy), `${name} debe seguir aceptando el valor legado ${legacy} por compatibilidad`);
     }
   }
 
-  // (3) TenderOpportunityFilter debe incluir los tres valores primarios en su unión de tipos.
+  // (3) TenderOpportunityFilter debe seguir incluyendo 'cerradas' además de los valores primarios
+  // seleccionables en su unión de tipos.
   const wireFilter = opportunityTypes.match(/export type TenderOpportunityFilter = ([^;]*);/)[1];
   for (const primary of ['por_decidir', 'en_curso', 'cerradas']) {
     assert.ok(wireFilter.includes(`'${primary}'`), `TenderOpportunityFilter debe incluir '${primary}'`);

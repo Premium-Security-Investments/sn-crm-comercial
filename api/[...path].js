@@ -3883,7 +3883,12 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     decided_by_name: latestDecision?.psi_sales_profiles?.full_name || null, decided_at: latestDecision?.decided_at || null,
     tender_offer_status: opportunity?.tender_offer_status || 'pendiente_decision', risk: 'Pendiente', checklist_progress: null,
     preparation_status: 'pendiente', human_pending_count: 0, sharepoint_status: 'pendiente', sharepoint_url: null,
-    dossier_error: 'No se pudo cargar el expediente.'
+    dossier_error: 'No se pudo cargar el expediente.',
+    owner_name: opportunity?.owner_name || null,
+    offer_value: opportunity?.offer_value ?? tender.value ?? null,
+    expected_close_date: opportunity?.expected_close_date || tender.deadline_at || null,
+    last_updated_at: opportunity?.updated_at || tender.tracking_updated_at || tender.last_seen_at || null,
+    tracking_blocker: tender.tracking_blocker || null,
   };
   try {
     const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id);
