@@ -5,13 +5,14 @@ import {
   AGT002_GOVERNED_WORKSET_MAX_MEMBERS,
   AGT002_GOVERNED_WORKSET_SOURCE_CLASSIFICATIONS,
   AGT002_GOVERNED_WORKSET_SOURCE_CLASSIFICATION_LABELS,
-  agt002GovernedWorksetSelectionCountLabel,
+  agt002GovernedWorksetLiveSummaryLabel,
   agt002GovernedWorksetSelectionErrors,
   buildAgt002GovernedWorksetMembers,
   buildAgt002RecommendedWorksetSelection,
   currentAgt002GovernedWorksetDocuments,
   orderAgt002GovernedWorksetCandidates,
   tenderDocumentExtractionEligibility,
+  type Agt002GovernedAnalysisRunState,
   type Agt002GovernedWorksetDraftEntry,
 } from '../governedWorksetSelection';
 
@@ -28,13 +29,28 @@ type TenderGovernedDocumentWorksetProps = {
   selectionScopeKey: string;
   onFreeze: (members: Agt002GovernedWorksetMemberInput[]) => void | Promise<void>;
   onUploadFiles: (files: File[]) => void | Promise<void>;
+  // Owned by TenderDocumentReviewPanel; drives the CTA's label and busy-guard independently of
+  // the pure selection validity above. Absent/'idle' behaves like the pre-existing default.
+  runState?: Agt002GovernedAnalysisRunState;
+  statusText?: string;
+  statusTone?: 'status' | 'error';
 };
+
+const AGT002_GOVERNED_WORKSET_RUN_STATE_LABELS: Partial<Record<Agt002GovernedAnalysisRunState, string>> = {
+  freezing: 'Congelando…',
+  queued: 'Paquete congelado · En cola',
+  running: 'Análisis en curso',
+};
+
+// These phases represent a run already in flight (or one whose outcome is unknown after polling
+// gave up): the CTA must stay non-clickable so a duplicate freeze/analyze request can never fire.
+const AGT002_GOVERNED_WORKSET_BUSY_RUN_STATES = new Set<Agt002GovernedAnalysisRunState>(['freezing', 'queued', 'running', 'background']);
 
 function baselineEntry(documentVersionId: string): Agt002GovernedWorksetDraftEntry {
   return { document_version_id: documentVersionId, source_classification: '', inclusion_reason: '' };
 }
 
-export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selectionScopeKey, onFreeze, onUploadFiles }: TenderGovernedDocumentWorksetProps) {
+export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selectionScopeKey, onFreeze, onUploadFiles, runState, statusText = '', statusTone = 'status' }: TenderGovernedDocumentWorksetProps) {
   const [selection, setSelection] = useState<Record<string, Agt002GovernedWorksetDraftEntry>>({});
   const [confirmed, setConfirmed] = useState(false);
 
@@ -71,7 +87,9 @@ export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selecti
 
   const entries = Object.values(selection);
   const errors = agt002GovernedWorksetSelectionErrors(entries, confirmed);
-  const canFreeze = errors.length === 0 && canRun && !busy;
+  const runBusy = runState != null && AGT002_GOVERNED_WORKSET_BUSY_RUN_STATES.has(runState);
+  const canFreeze = errors.length === 0 && canRun && !busy && !runBusy;
+  const ctaLabel = (runState && AGT002_GOVERNED_WORKSET_RUN_STATE_LABELS[runState]) || 'Congelar paquete y ejecutar AGT-002';
   const atMaxMembers = entries.length >= AGT002_GOVERNED_WORKSET_MAX_MEMBERS;
   // Selected candidates render grouped first (stable within each group) so a long candidate list
   // keeps the reviewer's picks visible at the top, without reshuffling currentDocuments itself.
@@ -119,7 +137,7 @@ export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selecti
 
     <fieldset className="tender-governed-document-workset-fieldset" disabled={busy}>
       <legend>Documentos candidatos</legend>
-      <p aria-live="polite" className="tender-governed-document-workset-count">{agt002GovernedWorksetSelectionCountLabel(entries.length)}</p>
+      <p aria-live="polite" className="tender-governed-document-workset-count">{agt002GovernedWorksetLiveSummaryLabel(currentDocuments.length, entries.length)}</p>
       {!currentDocuments.length && <p className="muted">No hay documentos vigentes disponibles para seleccionar.</p>}
       {candidates.map(document => {
         const eligibility = tenderDocumentExtractionEligibility(document);
@@ -170,6 +188,7 @@ export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selecti
       <span>{AGT002_GOVERNED_WORKSET_FREEZE_CONFIRMATION_COPY}</span>
     </label>
 
-    <button type="button" className="tender-governed-document-workset-cta" disabled={!canFreeze} onClick={handleFreeze}>Congelar paquete y ejecutar AGT-002</button>
+    {statusText && <div className={statusTone === 'error' ? 'error tender-governed-document-workset-feedback' : 'notice tender-governed-document-workset-feedback'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
+    <button type="button" className="tender-governed-document-workset-cta" disabled={!canFreeze} onClick={handleFreeze}>{ctaLabel}</button>
   </section>;
 }

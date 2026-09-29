@@ -221,8 +221,16 @@ export async function findLatestAgt002GovernedWorksetSnapshotId(database, { oppo
   return data.id;
 }
 
-/** Same id-only-lookup shape as findLatestAgt002GovernedWorksetSnapshotId, scoped additionally to the resolved snapshot. */
-export async function findLatestAgt002GovernedWorksetContextVersionId(database, { opportunityId, tenderId, snapshotId }) {
+/**
+ * Same id-only-lookup shape as findLatestAgt002GovernedWorksetSnapshotId, scoped additionally to
+ * the resolved snapshot. Fails closed on an absent row by default (`allowMissing` unset/false) —
+ * every direct caller/test keeps that exact fail-closed contract. `allowMissing: true` is an
+ * internal-only escape hatch for freezeAgt002GovernedDocumentWorkset, which needs to distinguish
+ * "no row yet" (eligible for first-run bootstrap) from a genuine DB error WITHOUT matching on the
+ * error's message text: a DB error (`error` present) always throws here regardless of
+ * `allowMissing`; only the absent-row case is affected, returning `null` instead of throwing.
+ */
+export async function findLatestAgt002GovernedWorksetContextVersionId(database, { opportunityId, tenderId, snapshotId, allowMissing = false }) {
   const { data, error } = await database
     .from('psi_agt002_context_versions')
     .select('id')
@@ -234,6 +242,7 @@ export async function findLatestAgt002GovernedWorksetContextVersionId(database, 
     .maybeSingle();
   if (error) throw new Error(error.message || String(error));
   if (!data?.id) {
+    if (allowMissing) return null;
     throw governedWorksetConflictError('No existe una versión de contexto AGT-002 registrada para este snapshot; ejecute un análisis AGT-002 antes de congelar un paquete gobernado.');
   }
   return data.id;
@@ -365,9 +374,14 @@ export function projectAgt002GovernedWorksetFreezeResult(result) {
  * document workset. Transactional atomicity (freeze + enqueue together, or neither) lives
  * entirely inside psi_freeze_agt002_governed_document_workset (migration 084); this function
  * only ever makes ONE call to it.
+ *
+ * `buildBootstrapContextVersion` is optional and is only ever invoked when the resolved
+ * snapshot has no AGT-002 context version row yet (a genuine first run): an existing context
+ * version is always used as-is and the callback is never called. When it IS needed but absent,
+ * this fails closed with the same governed_workset_conflict as before this bootstrap existed.
  */
 export async function freezeAgt002GovernedDocumentWorkset(database, {
-  opportunityId, tenderId, actorProfileId, requestedMembers, buildFrozenEngineInputSource,
+  opportunityId, tenderId, actorProfileId, requestedMembers, buildFrozenEngineInputSource, buildBootstrapContextVersion,
 }) {
   requireId(actorProfileId, 'El actor');
   // The server-owned frozen-engine-input source factory is mandatory and is checked before any
@@ -386,7 +400,23 @@ export async function freezeAgt002GovernedDocumentWorkset(database, {
   const capacity = evaluateAgt002GovernedWorksetFreezeCapacityPreflight(evidenceRows);
 
   const snapshotId = await findLatestAgt002GovernedWorksetSnapshotId(database, { opportunityId, tenderId });
-  const contextVersionId = await findLatestAgt002GovernedWorksetContextVersionId(database, { opportunityId, tenderId, snapshotId });
+  // First-run bootstrap: an absent context-version row (never a DB error, which still throws
+  // inside findLatestAgt002GovernedWorksetContextVersionId regardless of allowMissing) is the ONLY
+  // trigger for buildBootstrapContextVersion. An existing context is used as-is and the callback is
+  // never invoked. Concurrency/idempotency for the bootstrapped row itself is owned entirely by the
+  // context-version registration RPC the callback delegates to (never a locally-generated id).
+  let contextVersionId = await findLatestAgt002GovernedWorksetContextVersionId(database, { opportunityId, tenderId, snapshotId, allowMissing: true });
+  if (contextVersionId == null) {
+    if (typeof buildBootstrapContextVersion !== 'function') {
+      throw governedWorksetConflictError('No existe una versión de contexto AGT-002 registrada para este snapshot; ejecute un análisis AGT-002 antes de congelar un paquete gobernado.');
+    }
+    const bootstrapped = await buildBootstrapContextVersion({ opportunityId, tenderId, snapshotId, actorProfileId });
+    const bootstrappedId = bootstrapped && typeof bootstrapped === 'object' ? bootstrapped.id : undefined;
+    if (typeof bootstrappedId !== 'string' || !bootstrappedId.trim() || !UUID_RE.test(bootstrappedId.trim())) {
+      throw new Error('AGT-002 governed workset bootstrap context version callback returned a malformed context version id.');
+    }
+    contextVersionId = bootstrappedId.trim();
+  }
   const idempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
     opportunityId, tenderId, snapshotId, contextVersionId, selectionHash: frozen.selectionHash,
   });

@@ -25,6 +25,7 @@ import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, po
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { isTenderProcessingActive, shouldReloadTenderArtifacts, tenderAnalysisCompletionMessage } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
+import { agt002GovernedRunStateFromReanalysisJob, type Agt002GovernedAnalysisRunState } from './tenders/governedWorksetSelection';
 import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
@@ -951,6 +952,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
   const [statusText, setStatusText] = useState('');
   const [analysisStatus, setAnalysisStatus] = useState<{ message: string; tone: 'status' | 'error' }>({ message: '', tone: 'status' });
+  const [runState, setRunState] = useState<Agt002GovernedAnalysisRunState>('idle');
   const [refreshResult, setRefreshResult] = useState<TenderDocumentRefreshResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeReanalysisJobId, setActiveReanalysisJobId] = useState<string | null>(null);
@@ -975,6 +977,22 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(requestedId)}`);
     if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return undefined;
     setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data);
+    setRunState(agt002GovernedRunStateFromReanalysisJob(data.reanalysis_job));
+    const job = data.reanalysis_job;
+    if (!job || job.status === 'no_job') {
+      setAnalysisStatus({ message: '', tone: 'status' });
+    } else if (job.status === 'queued' || job.status === 'running') {
+      setAnalysisStatus({
+        message: job.status === 'running'
+          ? `Análisis en curso con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`
+          : `Análisis en cola con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`,
+        tone: 'status',
+      });
+    } else if (job.status === 'completed') {
+      setAnalysisStatus({ message: tenderAnalysisCompletionMessage(data.analysis || null), tone: 'status' });
+    } else if (job.status === 'unavailable') {
+      setAnalysisStatus({ message: agt002UnavailableMessage(job.error_code), tone: 'error' });
+    }
     return data;
   };
   const loadProcessingStatus = async () => {
@@ -998,8 +1016,20 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     setActiveReanalysisJobId(null);
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
     processingStatusRef.current = null; terminalReloadedJobRef.current = null;
-    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setAnalysisStatus({ message: '', tone: 'status' }); setBusy(false); onAnalysisChanged?.(null); onQuestionResponsesChanged?.([]); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
-    void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
+    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setAnalysisStatus({ message: '', tone: 'status' }); setRunState('idle'); setBusy(false); onAnalysisChanged?.(null); onQuestionResponsesChanged?.([]); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
+    const mountedOpportunityId = opportunity.id;
+    void loadDocuments().then(data => {
+      if (!data || activeOpportunityRef.current !== mountedOpportunityId) return;
+      const job = data.reanalysis_job;
+      if (job && job.job_id && job.job_id.trim() !== '' && (job.status === 'queued' || job.status === 'running')) {
+        void pollAgt002Reanalysis(job.job_id, mountedOpportunityId).catch(error => {
+          if (activeOpportunityRef.current === mountedOpportunityId) {
+            setAnalysisStatus({ message: error instanceof Error ? error.message : String(error), tone: 'error' });
+            setRunState('error');
+          }
+        });
+      }
+    }).catch(err => { if (activeOpportunityRef.current === mountedOpportunityId) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
     void loadProcessingStatus().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
     const processingTimer = window.setInterval(() => {
       const status = processingStatusRef.current;
@@ -1037,7 +1067,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     void uploadTenderDocumentFiles(selected);
   };
 
-  const pollAgt002Reanalysis = async (jobId: string, requestedOpportunityId: string) => {
+  async function pollAgt002Reanalysis(jobId: string, requestedOpportunityId: string) {
     reanalysisAbortRef.current?.abort();
     const controller = new AbortController();
     reanalysisAbortRef.current = controller;
@@ -1065,6 +1095,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
             reloaded = loaded;
           }
           setAnalysisStatus({ message: tenderAnalysisCompletionMessage(reloaded ? reloaded.analysis : payload.analysis), tone: decision.tone });
+          setRunState('completed');
           return job;
         }
         if (job.status === 'unavailable') {
@@ -1072,6 +1103,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
             message: agt002UnavailableMessage(job.error_code),
             tone: decision.tone,
           });
+          setRunState('error');
           return job;
         }
         setAnalysisStatus({
@@ -1080,12 +1112,14 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
             : `Análisis en cola con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`,
           tone: decision.tone,
         });
+        setRunState(job.status === 'running' ? 'running' : 'queued');
         await new Promise<void>(resolve => {
           const timer = window.setTimeout(resolve, AGT002_REANALYSIS_POLL_INTERVAL_MS);
           controller.signal.addEventListener('abort', () => { window.clearTimeout(timer); resolve(); }, { once: true });
         });
       }
       setAnalysisStatus({ message: 'El análisis continúa en segundo plano. Recargue el expediente más tarde para consultar el resultado.', tone: 'status' });
+      setRunState('background');
       return null;
     } catch (error) {
       if (controller.signal.aborted) return null;
@@ -1096,11 +1130,12 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         setActiveReanalysisJobId(null);
       }
     }
-  };
+  }
 
   const freezeAndAnalyzeGovernedWorkset = async (members: Agt002GovernedWorksetMemberInput[]) => {
     if (activeReanalysisJobId) return;
     setBusy(true);
+    setRunState('freezing');
     setAnalysisStatus({ message: `Preparando análisis con ${VIGIA_VISIBLE_NAMES.tenders}…`, tone: 'status' });
     try {
       const requestedOpportunityId = opportunity.id;
@@ -1110,9 +1145,11 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         message: `${data.status === 'created' ? 'Paquete gobernado congelado' : 'Paquete gobernado ya existente'} (${data.member_count} documento(s)). Análisis en curso con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`,
         tone: 'status',
       });
+      setRunState('queued');
       await pollAgt002Reanalysis(data.reanalysis_job_id, requestedOpportunityId);
     } catch (err) {
       setAnalysisStatus({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+      setRunState('error');
     }
     finally { setBusy(false); }
   };
@@ -1136,8 +1173,9 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       setStatusText('Respuesta registrada con autor, fecha y trazabilidad. La decisión GO / NO GO no cambió.');
       if (data.reanalysis?.job_id) {
         setAnalysisStatus({ message: `Respuesta incorporada. Reanálisis en cola con ${VIGIA_VISIBLE_NAMES.tenders}…`, tone: 'status' });
+        setRunState('queued');
         void pollAgt002Reanalysis(data.reanalysis.job_id, opportunity.id).catch(error => {
-          if (activeOpportunityRef.current === opportunity.id) setAnalysisStatus({ message: error instanceof Error ? error.message : String(error), tone: 'error' });
+          if (activeOpportunityRef.current === opportunity.id) { setAnalysisStatus({ message: error instanceof Error ? error.message : String(error), tone: 'error' }); setRunState('error'); }
         });
       }
     } catch (error) {
@@ -1184,7 +1222,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
     </div>
     <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
-      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} />
+      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} runState={runState} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} />
     </div>
   </>;
 }

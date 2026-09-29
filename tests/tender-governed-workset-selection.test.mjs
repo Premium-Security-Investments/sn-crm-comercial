@@ -21,6 +21,7 @@ const {
   agt002GovernedWorksetSelectionCountLabel,
   buildAgt002RecommendedWorksetSelection,
   orderAgt002GovernedWorksetCandidates,
+  agt002GovernedRunStateFromReanalysisJob,
 } = await import(moduleUrl);
 
 // --- Closed classification vocabulary. ----------------------------------------------------------
@@ -189,5 +190,20 @@ assert.deepEqual(buildAgt002RecommendedWorksetSelection([]), []);
   assert.deepEqual(source.map(candidate => candidate.id), ['a', 'b', 'c', 'd'], 'no debe mutar el arreglo fuente');
   assert.notEqual(ordered, source, 'debe devolver un arreglo nuevo');
 }
+
+// --- agt002GovernedRunStateFromReanalysisJob: pure mapping from the server's reanalysis_job (RED).
+// TenderDocumentReviewPanel.loadDocuments (src/main.tsx) must reconcile runState from
+// `TenderDocumentsPayload.reanalysis_job` on every load, not just retain whatever local
+// idle/background state it already had, so a reload/navigate-away-back always reflects what the
+// server actually knows about the run.
+function reanalysisJob(overrides = {}) {
+  return { job_id: 'job-1', status: 'queued', analysis_run_id: null, error_code: null, ...overrides };
+}
+assert.equal(agt002GovernedRunStateFromReanalysisJob(null), 'idle', 'sin snapshot (null), el estado debe ser idle');
+assert.equal(agt002GovernedRunStateFromReanalysisJob(undefined), 'idle', 'sin snapshot (undefined), el estado debe ser idle');
+assert.equal(agt002GovernedRunStateFromReanalysisJob(reanalysisJob({ status: 'queued' })), 'queued');
+assert.equal(agt002GovernedRunStateFromReanalysisJob(reanalysisJob({ status: 'running' })), 'running');
+assert.equal(agt002GovernedRunStateFromReanalysisJob(reanalysisJob({ status: 'completed', analysis_run_id: 'run-1' })), 'completed');
+assert.equal(agt002GovernedRunStateFromReanalysisJob(reanalysisJob({ status: 'unavailable', error_code: 'agt002_unavailable' })), 'error', 'unavailable en el servidor debe mapear a error en la UI, no quedar oculto');
 
 console.log('AGT-002 governed document workset pure model contract passed');
