@@ -1,3 +1,5 @@
+import type { TenderOpportunityStage } from './opportunityStage';
+
 export type TenderStatusTone = 'success' | 'danger' | 'warning' | 'neutral';
 
 const documentLabels: Record<string, string> = {
@@ -101,4 +103,24 @@ const opportunityPriorityLabels: Record<string, string> = {
 
 export function tenderOpportunityPriorityLabel(section?: string | null): string {
   return opportunityPriorityLabels[String(section || '')] || 'Por definir';
+}
+
+const opportunityStageLabels: Record<TenderOpportunityStage, string> = {
+  por_decidir: 'Por decidir',
+  en_curso: 'En curso',
+  cerradas: 'Cerrada',
+};
+
+const opportunityStageTones: Record<TenderOpportunityStage, TenderStatusTone> = {
+  por_decidir: 'warning',
+  en_curso: 'success',
+  cerradas: 'neutral',
+};
+
+export function tenderOpportunityStageLabel(stage: TenderOpportunityStage): string {
+  return opportunityStageLabels[stage];
+}
+
+export function tenderOpportunityStageTone(stage: TenderOpportunityStage): TenderStatusTone {
+  return opportunityStageTones[stage];
 }

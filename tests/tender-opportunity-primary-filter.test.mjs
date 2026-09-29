@@ -266,9 +266,13 @@ test('contrato estático y aislado: filtro seleccionable pasa directo, backend y
   }
 });
 
-test('la tarjeta conserva su detalle de estado: no hay rediseño visual', () => {
-  for (const label of ['Recomendación del sistema', 'Decisión humana', 'Estado de oferta', 'Documentos', 'Checklist', 'Preparación', 'Pendientes humanos', 'SharePoint / OneDrive']) {
-    assert.ok(opportunitiesView.includes(label), `la tarjeta debe conservar ${label}`);
+// Contrato de producto 2026-09-29 (supera al anterior "no hay rediseño visual"): el detalle
+// extenso de análisis/checklist/SharePoint deja de dominar la lista compacta y pasa a vivir
+// sólo en el expediente ("Abrir expediente"). Ver tests/tender-opportunities-compact-redesign.
+// test.mjs para el resto de la tarjeta compacta (etapa, encaje, días restantes, etc.).
+test('la lista compacta ya no repite el detalle extenso de análisis/checklist/SharePoint', () => {
+  for (const retired of ['Recomendación del sistema', 'Checklist', 'Preparación', 'Pendientes humanos', 'SharePoint / OneDrive']) {
+    assert.ok(!opportunitiesView.includes(retired), `la lista compacta no debe seguir mostrando "${retired}"; ese detalle vive en el expediente`);
   }
   assert.match(opportunitiesView, /tenderOfferStatusLabel\(dossier\.tender_offer_status\)/, 'la tarjeta conserva el badge de estado de oferta');
   assert.match(opportunitiesView, /tenderDecisionLabel\(dossier\.decision\)/, 'la tarjeta conserva la decisión humana detallada');

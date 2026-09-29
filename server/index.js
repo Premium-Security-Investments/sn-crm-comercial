@@ -3889,6 +3889,8 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     expected_close_date: opportunity?.expected_close_date || tender.deadline_at || null,
     last_updated_at: opportunity?.updated_at || tender.tracking_updated_at || tender.last_seen_at || null,
     tracking_blocker: tender.tracking_blocker || null,
+    tracking_next_action: tender.tracking_next_action || null,
+    tracking_due_at: tender.tracking_due_at || null,
   };
   try {
     const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id);

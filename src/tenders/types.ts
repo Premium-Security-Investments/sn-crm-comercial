@@ -63,6 +63,12 @@ export type TenderOpportunitySummary = TenderDossier & {
   dept?: string | null;
   section?: TenderSection | null;
   tracking_blocker?: string | null;
+  tracking_next_action?: string | null;
+  tracking_due_at?: string | null;
+  reasons?: string[] | null;
+  risks?: string[] | null;
+  score?: number | null;
+  fit?: TenderFitProjection | null;
 };
 export type TenderDossierAssignee = { id: string; full_name: string; role: string; active?: boolean; identity_type?: 'human' | 'agent' | null };
 export type TenderDossierItemStatus = 'pendiente' | 'en_progreso' | 'listo' | 'bloqueado';
