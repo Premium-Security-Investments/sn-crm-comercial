@@ -183,9 +183,39 @@ test('al alcanzar 12 seleccionados, los checkboxes elegibles restantes se deshab
     assert.equal(checkboxes.filter(cb => cb.checked).length, 12, 'sigue habiendo exactamente 12 documentos seleccionados');
 
     const text = view.container.textContent || '';
-    assert.match(text, /12 de 12/, 'el contador debe reflejar que se alcanzó el máximo de 12');
+    assert.match(text, /13 archivos vigentes/, 'el contador debe comunicar el tamaño del corpus vigente (13), distinto del tope');
+    assert.match(text, /12 seleccionados/, 'el contador debe comunicar cuántos documentos están seleccionados ahora mismo (12)');
+    assert.match(text, /máximo 12/, 'el contador debe comunicar el tope duro (12) como máximo, no como total de documentos');
+    assert.doesNotMatch(text, /12 de 12/, '12 es el tope, no el total de documentos vigentes: "12 de 12" comunicaría erróneamente que 12 es también el tamaño del corpus');
     const cta = view.container.querySelector('.tender-governed-document-workset-cta');
     assert.equal(cta.disabled, true, 'sin clasificación, motivo ni confirmación para los 12 seleccionados, la CTA sigue deshabilitada');
+  } finally {
+    await view.unmount();
+  }
+});
+
+test('el contador distingue el tamaño del corpus vigente (17) de la selección actual (0) y del tope (12), incluso sin seleccionar nada', async () => {
+  const TenderGovernedDocumentWorkset = await loadReactComponent(
+    'src/tenders/components/TenderGovernedDocumentWorkset.tsx',
+    'TenderGovernedDocumentWorkset',
+  );
+  const seventeenDocs = Array.from({ length: 17 }, (_, i) => ({
+    id: `doc-${i}`, name: `doc-${i}.pdf`, size: 10, document_type: 'otro', current: true, uploaded_at: '2026-09-01T00:00:00.000Z', extraction_status: 'ok',
+  }));
+  const view = mountWithJsdom(TenderGovernedDocumentWorkset, {
+    documents: seventeenDocs,
+    busy: false,
+    canRun: true,
+    onFreeze: async () => {},
+    onUploadFiles: async () => {},
+  });
+  try {
+    await view.flush();
+    const text = view.container.textContent || '';
+    assert.match(text, /17 archivos vigentes/, 'el contador debe comunicar el tamaño real del corpus vigente (17)');
+    assert.match(text, /0 seleccionados/, 'el contador debe comunicar que no hay ninguno seleccionado todavía');
+    assert.match(text, /máximo 12/, 'el contador debe seguir comunicando el tope duro (12), sin confundirlo con el tamaño del corpus');
+    assert.doesNotMatch(text, /12 de 12/, 'el tope nunca debe presentarse como si fuera el total de documentos vigentes');
   } finally {
     await view.unmount();
   }
@@ -254,6 +284,124 @@ test('el checkbox de confirmación declara el texto exacto de congelamiento y nu
   const source = read('src/tenders/components/TenderGovernedDocumentWorkset.tsx');
   assert.match(source, /AGT002_GOVERNED_WORKSET_FREEZE_CONFIRMATION_COPY/, 'debe reutilizar la copia cerrada del modelo puro, no un texto ad hoc');
   assert.match(source, /governedWorksetSelection/);
+});
+
+// --- Feedback (statusText/statusTone) debe vivir junto a la CTA, no sólo arriba de la lista ------
+// Hoy el único feedback visible sobre esta corrida vive en TenderAnalysisSection, por encima de
+// esta lista larga de candidatos. Estos props (futuros: statusText/statusTone/runState) deben
+// permitir que TenderGovernedDocumentWorkset repita ese mismo feedback pegado a su propia CTA,
+// para que Licitaciones no tenga que desplazarse hacia arriba para ver por qué la corrida avanza
+// o falló justo después de pulsar el botón.
+
+test('con statusText/statusTone="status", el feedback se anuncia con role="status" pegado a la CTA, no sólo arriba de la lista de candidatos', async () => {
+  const TenderGovernedDocumentWorkset = await loadReactComponent(
+    'src/tenders/components/TenderGovernedDocumentWorkset.tsx',
+    'TenderGovernedDocumentWorkset',
+  );
+  const view = mountWithJsdom(TenderGovernedDocumentWorkset, {
+    documents: DOCUMENTS,
+    busy: false,
+    canRun: true,
+    statusText: 'Congelando el paquete y enviándolo a análisis…',
+    statusTone: 'status',
+    onFreeze: async () => {},
+    onUploadFiles: async () => {},
+  });
+  try {
+    await view.flush();
+    const cta = view.container.querySelector('.tender-governed-document-workset-cta');
+    assert.ok(cta, 'debe existir la CTA');
+    const feedback = [...view.container.querySelectorAll('[role="status"]')]
+      .find(node => (node.textContent || '').includes('Congelando el paquete'));
+    assert.ok(feedback, 'debe existir un nodo role="status" con el texto de statusText recibido por props');
+    assert.equal(feedback.parentElement, cta.parentElement, 'el feedback debe vivir en el mismo contenedor inmediato que la CTA, no sólo arriba de la lista de candidatos');
+    const fieldset = view.container.querySelector('.tender-governed-document-workset-fieldset');
+    const { DOCUMENT_POSITION_FOLLOWING } = view.window.Node;
+    assert.ok(
+      Boolean(fieldset.compareDocumentPosition(feedback) & DOCUMENT_POSITION_FOLLOWING),
+      'el feedback debe aparecer después de la lista de candidatos (fieldset), junto a la CTA — no únicamente en un bloque anterior a la lista larga',
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+test('con statusTone="error", el mismo feedback junto a la CTA se anuncia con role="alert"', async () => {
+  const TenderGovernedDocumentWorkset = await loadReactComponent(
+    'src/tenders/components/TenderGovernedDocumentWorkset.tsx',
+    'TenderGovernedDocumentWorkset',
+  );
+  const view = mountWithJsdom(TenderGovernedDocumentWorkset, {
+    documents: DOCUMENTS,
+    busy: false,
+    canRun: true,
+    statusText: 'El análisis no pudo completarse.',
+    statusTone: 'error',
+    onFreeze: async () => {},
+    onUploadFiles: async () => {},
+  });
+  try {
+    await view.flush();
+    const cta = view.container.querySelector('.tender-governed-document-workset-cta');
+    const feedback = [...view.container.querySelectorAll('[role="alert"]')]
+      .find(node => (node.textContent || '').includes('El análisis no pudo completarse.'));
+    assert.ok(feedback, 'un error debe anunciarse con role="alert", no role="status"');
+    assert.equal(feedback.parentElement, cta.parentElement, 'el feedback de error también debe vivir pegado a la CTA');
+    const duplicatedAsStatus = [...view.container.querySelectorAll('[role="status"]')]
+      .some(node => (node.textContent || '').includes('El análisis no pudo completarse.'));
+    assert.equal(duplicatedAsStatus, false, 'el mensaje de error no debe duplicarse también en un nodo role="status" (el rol accesible debe ser alert, no status)');
+  } finally {
+    await view.unmount();
+  }
+});
+
+// --- runState controla el rótulo explícito de la CTA y bloquea clics duplicados en fases ocupadas
+test('runState determina el rótulo explícito de la CTA y deshabilita la CTA (sin permitir onFreeze) en cada fase ocupada', async () => {
+  const TenderGovernedDocumentWorkset = await loadReactComponent(
+    'src/tenders/components/TenderGovernedDocumentWorkset.tsx',
+    'TenderGovernedDocumentWorkset',
+  );
+  const cases = [
+    { runState: undefined, label: /Congelar paquete y ejecutar AGT-002/, disabled: false },
+    { runState: 'freezing', label: /Congelando…/, disabled: true },
+    { runState: 'queued', label: /Paquete congelado · En cola/, disabled: true },
+    { runState: 'running', label: /Análisis en curso/, disabled: true },
+  ];
+  for (const { runState, label, disabled } of cases) {
+    let freezeCalls = 0;
+    const props = {
+      documents: DOCUMENTS,
+      busy: false,
+      canRun: true,
+      onFreeze: async () => { freezeCalls += 1; },
+      onUploadFiles: async () => {},
+    };
+    if (runState !== undefined) props.runState = runState;
+    const view = mountWithJsdom(TenderGovernedDocumentWorkset, props);
+    try {
+      await view.flush();
+      // Selección completa y confirmada, para que cualquier diferencia de rótulo/disabled se
+      // deba únicamente a runState, no a los errores de validación de la selección misma.
+      const eligibleRow = [...view.container.querySelectorAll('.tender-governed-document-workset-row')]
+        .find(row => (row.textContent || '').includes('pliego.pdf'));
+      await act_click(view, eligibleRow.querySelector('input[type="checkbox"]'));
+      await act_change(view, eligibleRow.querySelector('select'), 'official');
+      await act_change(view, eligibleRow.querySelector('input[type="text"], textarea'), 'Documento base del proceso.');
+      await act_click(view, view.container.querySelector('.tender-governed-document-workset-confirm input[type="checkbox"]'));
+
+      const cta = view.container.querySelector('.tender-governed-document-workset-cta');
+      assert.match(cta.textContent || '', label, `runState=${runState} debe mostrar su rótulo explícito de CTA`);
+      assert.equal(cta.disabled, disabled, `runState=${runState}: el estado disabled de la CTA no coincide con el contrato`);
+
+      if (disabled) {
+        await view.click('.tender-governed-document-workset-cta');
+        await view.flush();
+        assert.equal(freezeCalls, 0, `runState=${runState} es una fase ocupada: no debe permitir un clic duplicado que invoque onFreeze`);
+      }
+    } finally {
+      await view.unmount();
+    }
+  }
 });
 
 console.log('AGT-002 governed document workset UI contract (RED until the component exists) checked');

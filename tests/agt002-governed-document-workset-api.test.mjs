@@ -1109,3 +1109,142 @@ describe('freezeAgt002GovernedDocumentWorkset — full orchestration', () => {
     });
   }
 });
+
+// TDD RED: first-run bootstrap of the AGT-002 context version does not exist yet in
+// freezeAgt002GovernedDocumentWorkset — findLatestAgt002GovernedWorksetContextVersionId currently
+// always fails closed with governed_workset_conflict when no context version row exists, and
+// there is no buildBootstrapContextVersion callback wired through. These tests describe the
+// intended first-run bootstrap contract and are expected to fail until that support is added.
+describe('freezeAgt002GovernedDocumentWorkset — first-run bootstrap of the AGT-002 context version', () => {
+  const BOOTSTRAPPED_CONTEXT_VERSION_ID = uuid('bootstrap-context-1');
+
+  function noContextDb(overrides = {}) {
+    return fakeDb({
+      rpcResults: {
+        psi_resolve_agt002_governed_document_candidate: { data: candidateFor(0), error: null },
+        psi_freeze_agt002_governed_document_workset: { data: frozenResultShape({ member_count: 1 }), error: null },
+      },
+      fromResults: {
+        psi_tender_document_snapshots: { data: { id: SNAPSHOT_ID }, error: null },
+        psi_agt002_context_versions: { data: null, error: null },
+      },
+      ...overrides,
+    });
+  }
+
+  it('invokes the injected buildBootstrapContextVersion exactly once with opportunityId/tenderId/snapshotId/actorProfileId when no context version row exists', async () => {
+    const db = noContextDb();
+    const bootstrapCalls = [];
+    const buildBootstrapContextVersion = async (args) => {
+      bootstrapCalls.push(args);
+      return { id: BOOTSTRAPPED_CONTEXT_VERSION_ID };
+    };
+    await freezeAgt002GovernedDocumentWorkset(db, {
+      opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID, requestedMembers: [requestedMember(0)],
+      buildFrozenEngineInputSource: canonicalBuildFrozenEngineInputSource(),
+      buildBootstrapContextVersion,
+    });
+    assert.equal(bootstrapCalls.length, 1, 'must bootstrap exactly once when no context version row exists');
+    assert.deepEqual(bootstrapCalls[0], {
+      opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, snapshotId: SNAPSHOT_ID, actorProfileId: ACTOR_ID,
+    });
+  });
+
+  it('flows the bootstrapped context version id into buildFrozenEngineInputSource and p_context_version_id', async () => {
+    const db = noContextDb();
+    const sourceCalls = [];
+    const buildFrozenEngineInputSource = async (resolved) => {
+      sourceCalls.push(resolved);
+      return canonicalFrozenEngineInputSource({ opportunityId: resolved.opportunityId, snapshotId: resolved.snapshotId, idempotencyKey: resolved.idempotencyKey });
+    };
+    const result = await freezeAgt002GovernedDocumentWorkset(db, {
+      opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID, requestedMembers: [requestedMember(0)],
+      buildFrozenEngineInputSource,
+      buildBootstrapContextVersion: async () => ({ id: BOOTSTRAPPED_CONTEXT_VERSION_ID }),
+    });
+    assert.equal(result.status, 'created');
+    assert.equal(sourceCalls.length, 1);
+    assert.equal(sourceCalls[0].contextVersionId, BOOTSTRAPPED_CONTEXT_VERSION_ID, 'the bootstrapped context version id must reach the frozen-engine-input source factory');
+
+    const freezeCall = db.calls.rpc.find((c) => c.name === 'psi_freeze_agt002_governed_document_workset');
+    assert.equal(freezeCall.args.p_context_version_id, BOOTSTRAPPED_CONTEXT_VERSION_ID, 'the bootstrapped context version id must reach the freeze RPC');
+  });
+
+  it('skips bootstrap entirely when a context version already exists for the resolved snapshot', async () => {
+    const db = fakeDb({
+      rpcResults: {
+        psi_resolve_agt002_governed_document_candidate: { data: candidateFor(0), error: null },
+        psi_freeze_agt002_governed_document_workset: { data: frozenResultShape({ member_count: 1 }), error: null },
+      },
+      fromResults: {
+        psi_tender_document_snapshots: { data: { id: SNAPSHOT_ID }, error: null },
+        psi_agt002_context_versions: { data: { id: CONTEXT_VERSION_ID }, error: null },
+      },
+    });
+    const bootstrapCalls = [];
+    const buildBootstrapContextVersion = async (args) => {
+      bootstrapCalls.push(args);
+      return { id: BOOTSTRAPPED_CONTEXT_VERSION_ID };
+    };
+    const result = await freezeAgt002GovernedDocumentWorkset(db, {
+      opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID, requestedMembers: [requestedMember(0)],
+      buildFrozenEngineInputSource: canonicalBuildFrozenEngineInputSource(),
+      buildBootstrapContextVersion,
+    });
+    assert.equal(result.status, 'created');
+    assert.equal(bootstrapCalls.length, 0, 'an existing context version must never be bootstrapped');
+    const freezeCall = db.calls.rpc.find((c) => c.name === 'psi_freeze_agt002_governed_document_workset');
+    assert.equal(freezeCall.args.p_context_version_id, CONTEXT_VERSION_ID, 'the existing context version id must be used, not a bootstrapped one');
+  });
+
+  it('fails closed before the freeze RPC when no context version exists and no buildBootstrapContextVersion callback is supplied', async () => {
+    const db = noContextDb();
+    await assert.rejects(
+      freezeAgt002GovernedDocumentWorkset(db, {
+        opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID, requestedMembers: [requestedMember(0)],
+        buildFrozenEngineInputSource: canonicalBuildFrozenEngineInputSource(),
+      }),
+    );
+    assert.equal(db.calls.rpc.some((c) => c.name === 'psi_freeze_agt002_governed_document_workset'), false, 'must never reach the freeze RPC without a way to bootstrap the missing context version');
+  });
+
+  for (const [label, malformedResult] of [
+    ['null', null],
+    ['undefined', undefined],
+    ['a non-object', 'not-an-object'],
+    ['missing id', {}],
+    ['a blank id', { id: '   ' }],
+    ['a non-string id', { id: 42 }],
+    ['a non-UUID id', { id: 'not-a-uuid' }],
+  ]) {
+    it(`fails closed before the freeze RPC when buildBootstrapContextVersion returns a malformed result: ${label}`, async () => {
+      const db = noContextDb();
+      const bootstrapCalls = [];
+      const buildBootstrapContextVersion = async (args) => {
+        bootstrapCalls.push(args);
+        return malformedResult;
+      };
+      await assert.rejects(
+        freezeAgt002GovernedDocumentWorkset(db, {
+          opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID, requestedMembers: [requestedMember(0)],
+          buildFrozenEngineInputSource: canonicalBuildFrozenEngineInputSource(),
+          buildBootstrapContextVersion,
+        }),
+        (error) => {
+          // Must be rejected BECAUSE the invoked callback's return value was rejected as
+          // malformed — never the pre-existing "no callback supplied"/"no context version
+          // registered" governed_workset_conflict error, which would fire even without ever
+          // calling the callback.
+          assert.notEqual(error.code, 'governed_workset_conflict', 'must not be the old missing-context-version error');
+          assert.equal(error.message.includes('No existe una versión de contexto AGT-002'), false, 'must not be the old missing-context-version error message');
+          return true;
+        },
+      );
+      assert.equal(bootstrapCalls.length, 1, 'the malformed result must come from an actual invocation of the callback, not a skipped call');
+      assert.deepEqual(bootstrapCalls[0], {
+        opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, snapshotId: SNAPSHOT_ID, actorProfileId: ACTOR_ID,
+      });
+      assert.equal(db.calls.rpc.some((c) => c.name === 'psi_freeze_agt002_governed_document_workset'), false);
+    });
+  }
+});

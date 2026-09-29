@@ -5,7 +5,7 @@
 // backend (agt002-governed-document-worksets.js, lines 115-120) is the final authority: it
 // rejects any evidence row whose extraction_status !== 'ok', so this module fails closed on the
 // exact same condition — 'legacy', missing, or any other status is never selectable here either.
-import type { Agt002GovernedWorksetMemberInput, Agt002GovernedWorksetSourceClassification, TenderDocumentRecord } from './types';
+import type { Agt002GovernedWorksetMemberInput, Agt002GovernedWorksetSourceClassification, Agt002ReanalysisJob, TenderDocumentRecord } from './types';
 
 export const AGT002_GOVERNED_WORKSET_SOURCE_CLASSIFICATIONS: Agt002GovernedWorksetSourceClassification[] = ['official', 'corporate', 'draft'];
 
@@ -97,6 +97,48 @@ export function buildAgt002GovernedWorksetMembers(entries: Agt002GovernedWorkset
 
 export function agt002GovernedWorksetSelectionCountLabel(count: number): string {
   return `${count} de ${AGT002_GOVERNED_WORKSET_MAX_MEMBERS} documentos seleccionados (mínimo ${AGT002_GOVERNED_WORKSET_MIN_MEMBERS}).`;
+}
+
+// 12 is the hard selection maximum, not the size of the current document corpus, so the live
+// summary states both counts separately — never as "N de 12" where 12 could be misread as the
+// corpus size.
+export function agt002GovernedWorksetLiveSummaryLabel(currentDocumentCount: number, selectedCount: number): string {
+  return `${currentDocumentCount} archivos vigentes · ${selectedCount} seleccionados (máximo ${AGT002_GOVERNED_WORKSET_MAX_MEMBERS}, mínimo ${AGT002_GOVERNED_WORKSET_MIN_MEMBERS}).`;
+}
+
+// Owned by TenderDocumentReviewPanel (src/main.tsx): tracks the AGT-002 governed-analysis run
+// across freeze POST -> poll -> terminal outcome. 'idle' before any run this opportunity;
+// 'background' when polling exhausted its bound without reaching a terminal status, at which
+// point the CTA must stay non-clickable exactly like the active phases, since a run may still be
+// in flight server-side.
+export type Agt002GovernedAnalysisRunState = 'idle' | 'freezing' | 'queued' | 'running' | 'completed' | 'error' | 'background';
+
+// Pure reconciliation of the server-owned reanalysis_job snapshot (TenderDocumentReviewPanel,
+// src/main.tsx) into the UI's run state, so every load — not just the freeze/poll cycle that
+// started in this session — reflects what the server actually knows about the run. No snapshot
+// (absent, or a job object reporting 'no_job') means no run to reconcile: idle. 'unavailable' maps
+// to 'error', never left silently unmapped, so a terminal server-side failure always surfaces.
+export function agt002GovernedRunStateFromReanalysisJob(job: Agt002ReanalysisJob | null | undefined): Agt002GovernedAnalysisRunState {
+  if (!job) return 'idle';
+  switch (job.status) {
+    case 'no_job':
+      return 'idle';
+    case 'queued':
+      return 'queued';
+    case 'running':
+      return 'running';
+    case 'completed':
+      return 'completed';
+    case 'unavailable':
+      return 'error';
+    default: {
+      // Fails closed on any status outside the closed union above, rather than silently keeping
+      // whatever run state the UI already had.
+      const unexpected: never = job.status;
+      void unexpected;
+      return 'error';
+    }
+  }
 }
 
 // AGT-002 / Vig-IA server-owned preselection (.hermes/plans/2026-09-21-vigia-document-preselection.md).

@@ -142,8 +142,15 @@ test('main.tsx deriva el cierre del helper y del análisis recién recargado, nu
     'loadDocuments debe declarar que devuelve el payload cargado, o undefined si quedó superado',
   );
 
-  const completedBranch = mainSource.match(/if \(job\.status === 'completed'\) \{[\s\S]*?\n {8}\}/);
-  assert.ok(completedBranch, 'la rama de job completado debe seguir existiendo');
+  // Se ubica primero dentro de pollAgt002Reanalysis: main.tsx ahora también trae una rama
+  // `job.status === 'completed'` separada dentro de loadDocuments (reconciliación de estado al
+  // recargar el expediente), que nunca recarga documentos ni deriva el cierre del análisis recién
+  // recargado. Sólo la rama del sondeo conserva esa garantía original.
+  const pollFunctionStart = mainSource.indexOf('async function pollAgt002Reanalysis(');
+  assert.ok(pollFunctionStart >= 0, 'pollAgt002Reanalysis debe seguir existiendo');
+  const pollFunctionSource = mainSource.slice(pollFunctionStart);
+  const completedBranch = pollFunctionSource.match(/if \(job\.status === 'completed'\) \{[\s\S]*?\n {8}\}/);
+  assert.ok(completedBranch, 'la rama de job completado dentro de pollAgt002Reanalysis debe seguir existiendo');
   assert.match(
     completedBranch[0],
     /const \[loaded\] = await Promise\.all\(\[loadDocuments\(\), onReload\?\.\(\)\]\)/,

@@ -36,6 +36,7 @@ for (const relative of ['server/index.js', 'api/[...path].js']) {
   // never spread/passed through raw. tender_id is never read off the client body at all.
   assert.match(route, /validateAgt002GovernedWorksetFreezeRequest\(req\.body\)/);
   assert.doesNotMatch(route, /req\.body\.snapshot_id|req\.body\.content_hash|req\.body\.extraction_id|req\.body\.frozen_engine_input|req\.body\.tender_id/);
+  assert.doesNotMatch(route, /req\.body\.context_version_id|req\.body\.actor_id|req\.body\.bootstrap/, `${relative} must never read a client field to control first-run context-version bootstrap`);
 
   // Server derives the tender id itself — it is never accepted from the client.
   assert.match(route, /getTenderIdForOpportunity\(database, opportunityId\)/);
@@ -43,6 +44,29 @@ for (const relative of ['server/index.js', 'api/[...path].js']) {
   // Freeze/enqueue happens through the single orchestration entry point (one call, no ad hoc RPCs here).
   assert.match(route, /freezeAgt002GovernedDocumentWorkset\(database, \{/);
   assert.doesNotMatch(route, /database\.rpc\(/, `${relative}'s route itself must never call an RPC directly — only through freezeAgt002GovernedDocumentWorkset`);
+
+  // First-run bootstrap of the AGT-002 context version: a server-owned callback, wired into the
+  // SAME freezeAgt002GovernedDocumentWorkset call, with no client-controlled input.
+  const freezeCallStart = route.indexOf('freezeAgt002GovernedDocumentWorkset(database, {');
+  const freezeCallEnd = route.indexOf('});', freezeCallStart);
+  const freezeCallBlock = route.slice(freezeCallStart, freezeCallEnd);
+  assert.match(freezeCallBlock, /buildBootstrapContextVersion:\s*\(identity\)\s*=>\s*buildAgt002GovernedWorksetBootstrapContextVersion\(database,/, `${relative} must wire buildBootstrapContextVersion into the freeze call`);
+  assert.doesNotMatch(freezeCallBlock, /req\.body|req\.query|req\.params/, `${relative} must never let a client-controlled request field reach the freeze call, including the bootstrap callback`);
+
+  const bootstrapFnStart = source.indexOf('async function buildAgt002GovernedWorksetBootstrapContextVersion');
+  assert.ok(bootstrapFnStart >= 0, `${relative} must define the first-run context-version bootstrap callback`);
+  const bootstrapFnEnd = source.indexOf('\n}\n', bootstrapFnStart);
+  const bootstrapFnBody = source.slice(bootstrapFnStart, bootstrapFnEnd);
+  // Same canonical context v2 shape requestAgt002 registers.
+  assert.match(bootstrapFnBody, /AGT002_OPPORTUNITY_CONTEXT_SELECT/);
+  assert.match(bootstrapFnBody, /loadAgt002OpportunityContextV2\(/);
+  assert.match(bootstrapFnBody, /loadAgt002CompanyDossier\(/);
+  assert.match(bootstrapFnBody, /loadAgt002IntegralV3GovernanceIfEnabled\(/);
+  assert.match(bootstrapFnBody, /registerAgt002ContextVersion\(database, \{/);
+  assert.match(bootstrapFnBody, /human_evidence:\s*\[\]/);
+  // Never invokes a model/preview runtime or authorizes a GO/NO-GO decision.
+  assert.doesNotMatch(bootstrapFnBody, /createAgt002PreviewRuntime|claimAgt002PreviewRun|callTenderGoNoGoDecision|requireTenderGoForPreparation/, `${relative}'s bootstrap callback must never invoke a model or a GO/NO-GO decision`);
+  assert.doesNotMatch(bootstrapFnBody, /req\.body|req\.query|req\.params/, `${relative}'s bootstrap callback must never read the client request directly`);
 
   // Response is the sanitized public projection only.
   assert.match(route, /projectAgt002GovernedWorksetFreezeResult\(result\)/);
