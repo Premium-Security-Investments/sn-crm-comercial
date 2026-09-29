@@ -1,15 +1,28 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { formatDateOnly } from '../dateOnly';
 import { loadTenderOpportunities } from './api';
 import { TenderStatusBadge } from './components/TenderStatusBadge';
 import { tenderDetailSectionHref } from './detailNavigationState';
 import { tenderDossierQueueState } from './dossierUtils';
-import { OPPORTUNITY_PRIMARY_FILTER_OPTIONS, opportunityQueryFilter, type TenderOpportunityPrimaryFilter } from './opportunityStage';
-import { tenderDecisionLabel, tenderDocumentStatusLabel, tenderOfferStatusLabel, tenderPreparationStatusLabel, tenderSharePointStatusLabel, tenderStatusTone } from './statusLabels';
+import { opportunityQueryFilter, type TenderOpportunityPrimaryFilter } from './opportunityStage';
+import { tenderDecisionLabel, tenderDocumentStatusLabel, tenderOfferStatusLabel, tenderOpportunityPriorityLabel, tenderPreparationStatusLabel, tenderSharePointStatusLabel, tenderStatusTone } from './statusLabels';
 import { beginTenderRefresh, finishTenderRefresh, safePublicTenderSourceUrl } from './tenderUiState';
 import { dossierPageQuery, reloadCurrentDossierPage as reloadDossierPage } from './viewUtils';
 import type { TenderDocumentRefreshResult, TenderOpportunitySummary, TendersModuleProps } from './types';
 
 const PAGE_SIZE = 25;
+
+const opportunityOfferValueFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+
+function formatOpportunityOfferValue(value: number | null | undefined, fallback: string): string {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? opportunityOfferValueFormatter.format(value) : fallback;
+}
+
+function formatOpportunityLastUpdatedAt(value: string | null | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
+}
 
 type TenderOpportunitiesViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
 
@@ -58,12 +71,15 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
     <header className="tracking-header"><div><span className="eyebrow">Bandeja de oportunidades</span><h2 id="tender-dossiers-heading">Oportunidades</h2><p>Gestione oportunidades convertidas, su expediente, decisión y preparación.</p></div><button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></header>
     {moduleNavigation}
     {error && <div className="error" role="alert">{error}</div>}
-    <label className="field"><span>Filtrar oportunidades</span><select value={filter} onChange={event => { setFilter(event.target.value as TenderOpportunityPrimaryFilter); setPage(1); }} disabled={loading}>
-      {OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-    </select></label>
+    <div className="opportunity-primary-filters" role="group" aria-label="Filtrar oportunidades">
+      <button type="button" className="secondary" aria-pressed={filter === 'all'} disabled={loading} onClick={() => { setFilter('all'); setPage(1); }}>Todas</button>
+      <button type="button" className="secondary" aria-pressed={filter === 'por_decidir'} disabled={loading} onClick={() => { setFilter('por_decidir'); setPage(1); }}>Por decidir</button>
+      <button type="button" className="secondary" aria-pressed={filter === 'en_curso'} disabled={loading} onClick={() => { setFilter('en_curso'); setPage(1); }}>En curso</button>
+    </div>
     {!rows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{rows.map(dossier => { const queueState = tenderDossierQueueState(dossier); const dossierError = queueState.error || dossier.dossier_error || dossier.document_import_error; return <article key={dossier.opportunity_id} className="card tracking-row">
       <div className="tracking-row-head"><div><div className="tender-card-kickers"><TenderStatusBadge label={tenderDocumentStatusLabel(dossier.document_import_status)} tone={tenderStatusTone(dossier.document_import_status)} /><TenderStatusBadge label={dossier.risk || 'Riesgo pendiente'} tone={tenderStatusTone(dossier.risk)} /></div><h3>{dossier.entity || 'Oportunidad convertida'}</h3><p>{dossier.title || dossier.opportunity_id}</p></div><TenderStatusBadge label={tenderOfferStatusLabel(dossier.tender_offer_status)} tone={tenderStatusTone(dossier.tender_offer_status)} /></div>
       {dossierError && <div className="error" role="alert">{dossierError}</div>}
+      <dl className="tracking-metadata opportunity-priority-metadata"><div><dt>Monto</dt><dd>{formatOpportunityOfferValue(dossier.offer_value, 'Monto por definir')}</dd></div><div><dt>Cierre</dt><dd>{formatDateOnly(dossier.expected_close_date, 'Cierre por definir')}</dd></div><div><dt>Responsable</dt><dd>{dossier.owner_name || 'Responsable por asignar'}</dd></div><div><dt>Referencia</dt><dd>{dossier.ref || 'Referencia por definir'}</dd></div><div><dt>Ubicación</dt><dd>{dossier.city || dossier.dept || 'Ubicación por definir'}</dd></div><div><dt>Prioridad</dt><dd>{tenderOpportunityPriorityLabel(dossier.section)}</dd></div><div><dt>Bloqueador</dt><dd>{dossier.tracking_blocker || 'Sin bloqueadores'}</dd></div><div><dt>Última actualización</dt><dd>{formatOpportunityLastUpdatedAt(dossier.last_updated_at, 'Actualización por definir')}</dd></div></dl>
       <dl className="tracking-metadata"><div><dt>Proceso actual</dt><dd>{queueState.process}</dd></div><div><dt>Siguiente acción</dt><dd>{queueState.nextAction}</dd></div><div><dt>Recomendación del sistema</dt><dd>{dossier.recommendation || 'Pendiente'}</dd></div><div><dt>Decisión humana</dt><dd>{tenderDecisionLabel(dossier.decision)}{dossier.decided_by_name ? ` · ${dossier.decided_by_name}` : ''}{dossier.decided_at ? ` · ${new Date(dossier.decided_at).toLocaleDateString('es-CO')}` : ''}</dd></div><div><dt>Estado de oferta</dt><dd>{tenderOfferStatusLabel(dossier.tender_offer_status)}</dd></div><div><dt>Documentos</dt><dd>{dossier.document_count} cargados · {dossier.missing_document_count} faltantes</dd></div><div><dt>Checklist</dt><dd>{dossier.checklist_progress ? `${dossier.checklist_progress.auto_generated || 0}/${dossier.checklist_progress.total || 0} automático` : 'Pendiente de análisis'}</dd></div><div><dt>Preparación</dt><dd>{tenderPreparationStatusLabel(dossier.preparation_status)}</dd></div><div><dt>Pendientes humanos</dt><dd>{dossier.human_pending_count || 0}</dd></div><div><dt>SharePoint / OneDrive</dt><dd>{safePublicTenderSourceUrl(dossier.sharepoint_url) ? <a href={safePublicTenderSourceUrl(dossier.sharepoint_url) || undefined} target="_blank" rel="noreferrer">{tenderSharePointStatusLabel(dossier.sharepoint_status)}</a> : tenderSharePointStatusLabel(dossier.sharepoint_status)}</dd></div></dl>
       {refreshResults[dossier.opportunity_id] && <p className="muted" role="status">Actualización: {refreshResults[dossier.opportunity_id].new_count} nuevos · {refreshResults[dossier.opportunity_id].updated_count} actualizados · {refreshResults[dossier.opportunity_id].unchanged_count} sin cambios · {refreshResults[dossier.opportunity_id].failed_count} fallidos.</p>}
       <div className="row-actions">{safePublicTenderSourceUrl(dossier.url) && <a className="button secondary" href={safePublicTenderSourceUrl(dossier.url) || undefined} target="_blank" rel="noreferrer">Abrir fuente oficial</a>}<button onClick={() => navigate(tenderDetailSectionHref(dossier.opportunity_id, 'tender-document-review'))}>Abrir expediente</button><button className="secondary" onClick={() => void refreshDocuments(dossier)} disabled={retrying.has(dossier.opportunity_id)}>{retrying.has(dossier.opportunity_id) ? 'Actualizando…' : dossier.document_import_status === 'fallo_importacion' ? 'Reintentar actualización' : 'Actualizar documentos'}</button></div>

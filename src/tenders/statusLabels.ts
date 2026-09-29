@@ -92,3 +92,13 @@ export function tenderSharePointStatusLabel(value?: string | null) {
 export function tenderStatusTone(value?: string | null): TenderStatusTone {
   return tones[String(value || '').toLowerCase()] || 'neutral';
 }
+
+const opportunityPriorityLabels: Record<string, string> = {
+  hacer: 'Alta',
+  revisar: 'Media',
+  prioridad_baja: 'Baja',
+};
+
+export function tenderOpportunityPriorityLabel(section?: string | null): string {
+  return opportunityPriorityLabels[String(section || '')] || 'Por definir';
+}

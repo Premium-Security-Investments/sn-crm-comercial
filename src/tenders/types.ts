@@ -54,6 +54,15 @@ export type TenderOpportunitySummary = TenderDossier & {
   decided_by_name: string | null;
   decided_at: string | null;
   tender_offer_status: TenderOfferStatus;
+  owner_name?: string | null;
+  offer_value?: number | null;
+  expected_close_date?: string | null;
+  last_updated_at?: string | null;
+  ref?: string | null;
+  city?: string | null;
+  dept?: string | null;
+  section?: TenderSection | null;
+  tracking_blocker?: string | null;
 };
 export type TenderDossierAssignee = { id: string; full_name: string; role: string; active?: boolean; identity_type?: 'human' | 'agent' | null };
 export type TenderDossierItemStatus = 'pendiente' | 'en_progreso' | 'listo' | 'bloqueado';
