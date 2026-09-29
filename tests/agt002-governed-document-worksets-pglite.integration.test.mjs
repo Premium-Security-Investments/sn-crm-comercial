@@ -33,6 +33,12 @@ const migration084 = migrationSource('084_agt002_governed_document_worksets.sql'
 // RED: not yet authored. Exercises the future public.psi_backfill_legacy_tender_document_extraction
 // RPC's atomic superseded-version guard on top of the real, untouched 026/057/065 registers.
 const migration085 = migrationSource('085_legacy_extraction_backfill_guard.sql');
+// The real tender processing job queue (032), needed only by the migration 096 handoff tests below.
+const migration032 = migrationSource('032_tender_processing_jobs.sql');
+// RED: migration 096 is not yet authored. Read lazily (a thunk, not a module-level const) so its
+// absence only fails the handoff tests below at the moment they actually load it, instead of
+// crashing every other test in this file with an unreadable-file error at import time.
+const migration096 = () => migrationSource('096_agt002_governed_freeze_processing_handoff.sql');
 
 const O = '10000000-0000-4000-8000-000000000001';
 const T = '10000000-0000-4000-8000-000000000002';
@@ -63,7 +69,7 @@ async function callRpc(pg, name, params) {
   return result.rows[0]?.data ?? null;
 }
 
-async function freshDb() {
+async function createBaseFixture() {
   const pg = new PGlite();
   await pg.exec(`
     create role authenticated; create role service_role; create role anon;
@@ -127,8 +133,61 @@ async function freshDb() {
   await pg.exec(migration085);
   await pg.exec(migration051);
   await pg.exec(migration068);
+  return pg;
+}
+
+async function freshDb() {
+  const pg = await createBaseFixture();
   await pg.exec(migration084);
   return pg;
+}
+
+/** RED: extends the base fixture with the real migration 032 (the tender processing job
+ * queue) before migration 084, and — unless explicitly suppressed — the future migration 096
+ * after it. Kept separate from freshDb() so every already-green migration 084/085 test above
+ * keeps running against exactly the fixture it always has, never against a migration that does
+ * not exist yet. Passing { applyMigration096: false } lets a test apply migration 096 itself,
+ * mid-test, to exercise its one-time backfill against artifacts created before it existed. */
+async function freshDbWithProcessingHandoff({ applyMigration096 = true } = {}) {
+  const pg = await createBaseFixture();
+  await pg.exec(migration032);
+  await pg.exec(migration084);
+  if (applyMigration096) {
+    await pg.exec(migration096());
+  }
+  return pg;
+}
+
+/** Directly seeds a psi_tender_processing_jobs row (032) the way the real pipeline would have
+ * left it mid-flight: 'awaiting_analysis_authorization' with an active lease, by default. Bypasses
+ * RLS via the default (superuser) PGlite connection, exactly like the rest of this fixture. */
+async function insertProcessingJob(pg, overrides = {}) {
+  const opts = {
+    opportunityId: O, tenderId: T, snapshotId: S1, pipelineVersion: 'agt002-v1',
+    idempotencyKey: 'job-default', status: 'awaiting_analysis_authorization',
+    currentStep: 'awaiting_analysis_authorization', requestedBy: ACTOR,
+    leaseId: '40000000-0000-4000-8000-000000000001',
+    ...overrides,
+  };
+  const snapshotSql = opts.snapshotId === null ? 'null' : `'${opts.snapshotId}'`;
+  const leaseIdSql = opts.leaseId === null ? 'null' : `'${opts.leaseId}'`;
+  const leaseExpiresSql = opts.leaseId === null ? 'null' : `now() + interval '5 minutes'`;
+  const row = (await pg.query(`
+    insert into public.psi_tender_processing_jobs
+      (tender_id, opportunity_id, pipeline_version, idempotency_key, status, current_step, requested_by, snapshot_id, lease_id, lease_expires_at)
+    values
+      ('${opts.tenderId}', '${opts.opportunityId}', '${opts.pipelineVersion}', '${opts.idempotencyKey}', '${opts.status}', '${opts.currentStep}', '${opts.requestedBy}', ${snapshotSql}, ${leaseIdSql}, ${leaseExpiresSql})
+    returning id
+  `)).rows[0];
+  return row.id;
+}
+
+async function fetchProcessingJob(pg, jobId) {
+  return (await pg.query(`
+    select status, current_step, completed_at, lease_id, lease_expires_at, analysis_authorized_by, analysis_authorized_at,
+           opportunity_id, tender_id, snapshot_id
+    from public.psi_tender_processing_jobs where id = '${jobId}'
+  `)).rows[0];
 }
 
 async function recordContextVersion(pg, { opportunityId = O, tenderId = T, snapshotId, idempotencyKey, actorId = ACTOR }) {
@@ -1100,6 +1159,176 @@ test('rollback 085 disables the legacy backfill RPC but leaves every already-bac
     assert.equal(row.parser, 'legacy-version-column');
     assert.equal(row.status, 'ok');
     assert.equal(row.extracted_text, legacyText);
+  } finally {
+    await pg.close();
+  }
+});
+
+// ---------------------------------------------------------------------------------------
+// Migration 096 (RED): public.psi_freeze_agt002_governed_document_workset does not yet hand
+// off a matching, in-flight psi_tender_processing_jobs row (032) to the governed workset it
+// just froze. All ids/content below are synthetic; no real expediente.
+// ---------------------------------------------------------------------------------------
+
+test('migration 096 hands off the first successful freeze to the exact matching awaiting_analysis_authorization job, without resurrecting 087\'s retired authorization columns', async () => {
+  const pg = await freshDbWithProcessingHandoff();
+  try {
+    const jobId = await insertProcessingJob(pg, { idempotencyKey: 'job-handoff-happy', snapshotId: S1 });
+
+    const doc = await seedOkDocument(pg, {
+      sourceDocumentId: 'doc-handoff-happy', name: 'Documento handoff feliz.pdf',
+      contentHash: hash('contenido-handoff-happy'), extractedText: 'Contenido handoff feliz.',
+    });
+    const member = memberFromCandidate(doc.candidate);
+    const cv = await recordContextVersion(pg, { snapshotId: S1, idempotencyKey: 'ctx-handoff-happy' });
+
+    const result = await freezeWorkset(pg, { snapshotId: S1, contextVersionId: cv.id, idempotencyKey: 'idem-handoff-happy', members: [member] });
+    assert.equal(result.status, 'created');
+
+    const job = await fetchProcessingJob(pg, jobId);
+    assert.equal(job.status, 'completed');
+    assert.equal(job.current_step, 'analysis_handed_off_to_governed_workset');
+    assert.ok(job.completed_at, 'completed_at must be stamped on handoff');
+    assert.equal(job.lease_id, null, 'the handoff must clear any lease the job was holding');
+    assert.equal(job.lease_expires_at, null);
+    assert.equal(job.analysis_authorized_by, null, "087 retired analysis_authorized_by/at: the governed freeze's own custody check must never resurrect them");
+    assert.equal(job.analysis_authorized_at, null);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('migration 096 leaves an awaiting_analysis_authorization job for a different snapshot, or a different opportunity/tender entirely, untouched', async () => {
+  const pg = await freshDbWithProcessingHandoff();
+  try {
+    const jobDifferentSnapshot = await insertProcessingJob(pg, { idempotencyKey: 'job-diff-snapshot', snapshotId: S2 });
+
+    const O3 = '10000000-0000-4000-8000-000000000005';
+    const T3 = '10000000-0000-4000-8000-000000000006';
+    const S3 = '20000000-0000-4000-8000-000000000003';
+    await pg.exec(`
+      insert into public.psi_sales_opportunities (id) values ('${O3}');
+      insert into public.psi_public_tenders (id, converted_opportunity_id) values ('${T3}', '${O3}');
+      insert into public.psi_tender_document_snapshots (id, opportunity_id, tender_id) values ('${S3}', '${O3}', '${T3}');
+    `);
+    const jobDifferentOpportunity = await insertProcessingJob(pg, {
+      idempotencyKey: 'job-diff-opportunity', opportunityId: O3, tenderId: T3, snapshotId: S3,
+    });
+
+    const doc = await seedOkDocument(pg, {
+      sourceDocumentId: 'doc-handoff-untouched', name: 'Documento handoff no relacionado.pdf',
+      contentHash: hash('contenido-handoff-untouched'), extractedText: 'Contenido handoff no relacionado.',
+    });
+    const member = memberFromCandidate(doc.candidate);
+    const cv = await recordContextVersion(pg, { snapshotId: S1, idempotencyKey: 'ctx-handoff-untouched' });
+
+    const result = await freezeWorkset(pg, { snapshotId: S1, contextVersionId: cv.id, idempotencyKey: 'idem-handoff-untouched', members: [member] });
+    assert.equal(result.status, 'created');
+
+    const untouchedSnapshot = await fetchProcessingJob(pg, jobDifferentSnapshot);
+    assert.equal(untouchedSnapshot.status, 'awaiting_analysis_authorization', 'a job awaiting authorization for a different snapshot of the same opportunity/tender must not be touched');
+    assert.equal(untouchedSnapshot.completed_at, null);
+    assert.notEqual(untouchedSnapshot.lease_id, null, "an unrelated job's lease must survive an unrelated freeze");
+
+    const untouchedOpportunity = await fetchProcessingJob(pg, jobDifferentOpportunity);
+    assert.equal(untouchedOpportunity.status, 'awaiting_analysis_authorization', 'a job awaiting authorization for an entirely different opportunity/tender must not be touched');
+    assert.equal(untouchedOpportunity.completed_at, null);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('migration 096 leaves a job outside status awaiting_analysis_authorization untouched even when its opportunity/tender/snapshot match exactly', async () => {
+  const pg = await freshDbWithProcessingHandoff();
+  try {
+    const jobId = await insertProcessingJob(pg, {
+      idempotencyKey: 'job-non-awaiting', snapshotId: S1, status: 'analyzing', currentStep: 'analyzing',
+    });
+
+    const doc = await seedOkDocument(pg, {
+      sourceDocumentId: 'doc-handoff-non-awaiting', name: 'Documento handoff no en espera.pdf',
+      contentHash: hash('contenido-handoff-non-awaiting'), extractedText: 'Contenido handoff no en espera.',
+    });
+    const member = memberFromCandidate(doc.candidate);
+    const cv = await recordContextVersion(pg, { snapshotId: S1, idempotencyKey: 'ctx-handoff-non-awaiting' });
+
+    const result = await freezeWorkset(pg, { snapshotId: S1, contextVersionId: cv.id, idempotencyKey: 'idem-handoff-non-awaiting', members: [member] });
+    assert.equal(result.status, 'created');
+
+    const job = await fetchProcessingJob(pg, jobId);
+    assert.equal(job.status, 'analyzing', 'a job already past awaiting_analysis_authorization must never be pulled back into the handoff');
+    assert.equal(job.current_step, 'analyzing');
+    assert.equal(job.completed_at, null);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('migration 096\'s handoff is idempotent across repeated freeze RPC calls for the same workset identity', async () => {
+  const pg = await freshDbWithProcessingHandoff();
+  try {
+    const jobId = await insertProcessingJob(pg, { idempotencyKey: 'job-handoff-replay', snapshotId: S1 });
+
+    const doc = await seedOkDocument(pg, {
+      sourceDocumentId: 'doc-handoff-replay', name: 'Documento handoff repetido.pdf',
+      contentHash: hash('contenido-handoff-replay'), extractedText: 'Contenido handoff repetido.',
+    });
+    const member = memberFromCandidate(doc.candidate);
+    const cv = await recordContextVersion(pg, { snapshotId: S1, idempotencyKey: 'ctx-handoff-replay' });
+
+    const first = await freezeWorkset(pg, { snapshotId: S1, contextVersionId: cv.id, idempotencyKey: 'idem-handoff-replay', members: [member] });
+    assert.equal(first.status, 'created');
+    const afterFirst = await fetchProcessingJob(pg, jobId);
+    assert.equal(afterFirst.status, 'completed');
+    assert.ok(afterFirst.completed_at);
+
+    const replay = await freezeWorkset(pg, { snapshotId: S1, contextVersionId: cv.id, idempotencyKey: 'idem-handoff-replay', members: [member] });
+    assert.equal(replay.status, 'existing');
+
+    const afterReplay = await fetchProcessingJob(pg, jobId);
+    assert.equal(afterReplay.status, 'completed');
+    assert.equal(afterReplay.current_step, 'analysis_handed_off_to_governed_workset');
+    assert.equal(
+      new Date(afterReplay.completed_at).toISOString(), new Date(afterFirst.completed_at).toISOString(),
+      'a replay of an already-created freeze must never re-stamp completed_at on a job already handed off',
+    );
+    assert.equal(afterReplay.analysis_authorized_by, null);
+    assert.equal(afterReplay.analysis_authorized_at, null);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('migration 096 backfills the handoff, on apply, for a governed workset already frozen against a still-queued processing job (reconciling a pre-existing production artifact)', async () => {
+  const pg = await freshDbWithProcessingHandoff({ applyMigration096: false });
+  try {
+    const jobId = await insertProcessingJob(pg, { idempotencyKey: 'job-handoff-backfill', snapshotId: S1 });
+
+    const doc = await seedOkDocument(pg, {
+      sourceDocumentId: 'doc-handoff-backfill', name: 'Documento handoff retroactivo.pdf',
+      contentHash: hash('contenido-handoff-backfill'), extractedText: 'Contenido handoff retroactivo.',
+    });
+    const member = memberFromCandidate(doc.candidate);
+    const cv = await recordContextVersion(pg, { snapshotId: S1, idempotencyKey: 'ctx-handoff-backfill' });
+
+    // Before migration 096 exists, today's freeze RPC has no handoff logic: the job must be
+    // left exactly where the pipeline last parked it.
+    const result = await freezeWorkset(pg, { snapshotId: S1, contextVersionId: cv.id, idempotencyKey: 'idem-handoff-backfill', members: [member] });
+    assert.equal(result.status, 'created');
+    const beforeMigration096 = await fetchProcessingJob(pg, jobId);
+    assert.equal(beforeMigration096.status, 'awaiting_analysis_authorization');
+    assert.equal(beforeMigration096.completed_at, null);
+
+    await pg.exec(migration096());
+
+    const backfilled = await fetchProcessingJob(pg, jobId);
+    assert.equal(backfilled.status, 'completed', 'applying migration 096 must reconcile the already-frozen governed workset into its job, not just govern freezes from this point forward');
+    assert.equal(backfilled.current_step, 'analysis_handed_off_to_governed_workset');
+    assert.ok(backfilled.completed_at);
+    assert.equal(backfilled.lease_id, null);
+    assert.equal(backfilled.lease_expires_at, null);
+    assert.equal(backfilled.analysis_authorized_by, null);
+    assert.equal(backfilled.analysis_authorized_at, null);
   } finally {
     await pg.close();
   }

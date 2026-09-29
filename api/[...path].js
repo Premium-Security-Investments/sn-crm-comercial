@@ -4398,18 +4398,38 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
 
 app.post('/api/tender-documents-analyze-agent-preview', rejectUngovernedAgt002Route);
 
-app.get('/api/agt002-reanalysis-status', async (req, res) => {
-  try {
-    const { profile: currentProfile } = await getAuthContext(req);
-    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
-    const database = requireDb();
-    const opportunityId = String(req.query.opportunity_id || '');
-    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
-    await ensureTenderOpportunity(database, opportunityId, currentProfile);
-    const job = await findLatestAgt002ReanalysisStatusForOpportunity(database, opportunityId);
-    return res.json(presentAgt002ReanalysisStatus(job));
-  } catch (error) { sendError(res, error, error?.status || 400); }
-});
+// AGT-002 governed document worksets — first-run bootstrap of the AGT-002 context version.
+// Invoked by freezeAgt002GovernedDocumentWorkset ONLY when no psi_agt002_context_versions row
+// exists yet for the resolved (opportunity, tender, snapshot) scope — never on every freeze.
+// Builds the SAME canonical context v2 shape requestAgt002/enqueueAgt002CanonicalReanalysis
+// register (AGT002_OPPORTUNITY_CONTEXT_SELECT + loadAgt002OpportunityContextV2 +
+// loadAgt002CompanyDossier + loadAgt002IntegralV3GovernanceIfEnabled's evidence identity,
+// registered via the SAME registerAgt002ContextVersion RPC-backed call), then delegates entirely
+// to that RPC for concurrency/idempotency — this function never mints its own id. It never
+// invokes a model or the preview/reanalysis runtime, and never authorizes a GO/NO-GO decision:
+// it only registers the read-only context a later analysis run would consult. Declared here,
+// well away from GET /api/agt002-reanalysis-status below, which never touches any of this.
+async function buildAgt002GovernedWorksetBootstrapContextVersion(database, {
+  opportunityId, tenderId, snapshotId, actorProfileId,
+}) {
+  const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(AGT002_OPPORTUNITY_CONTEXT_SELECT).eq('id', opportunityId).single());
+  const contextV2Sections = await loadAgt002OpportunityContextV2(database, { opportunityId, tenderId, opportunity });
+  const companyDossierV2 = await loadAgt002CompanyDossier(database);
+  const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
+  return registerAgt002ContextVersion(database, {
+    opportunity_id: opportunityId,
+    tender_id: tenderId,
+    snapshot_id: snapshotId,
+    actor_id: actorProfileId,
+    company_evidence_identity: integralV3Governance?.evidenceIdentity ?? null,
+    context: {
+      snapshot_id: snapshotId,
+      ...contextV2Sections,
+      company_dossier: companyDossierV2,
+      human_evidence: [],
+    },
+  });
+}
 
 // AGT-002 governed document worksets — the canonical frozen-engine-input SOURCE this route
 // freezes into every newly queued governed job. Server-owned config/governance only, exactly
@@ -4449,6 +4469,19 @@ async function buildAgt002GovernedWorksetFrozenEngineInputSource(database, {
   });
 }
 
+app.get('/api/agt002-reanalysis-status', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const job = await findLatestAgt002ReanalysisStatusForOpportunity(database, opportunityId);
+    return res.json(presentAgt002ReanalysisStatus(job));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 // AGT-002 governed document worksets — Phase 3 of
 // .hermes/plans/2026-09-17-agt002-governed-document-worksets.md. Body is closed to exactly
 // {opportunity_id, documents[]}; the browser has no reliable tender_id before the first AGT-002
@@ -4470,6 +4503,9 @@ app.post('/api/tender-agt002-governed-document-worksets', async (req, res) => {
     const result = await freezeAgt002GovernedDocumentWorkset(database, {
       opportunityId, tenderId, actorProfileId: currentProfile.id, requestedMembers,
       buildFrozenEngineInputSource: (identity) => buildAgt002GovernedWorksetFrozenEngineInputSource(database, {
+        opportunityId, tenderId, ...identity,
+      }),
+      buildBootstrapContextVersion: (identity) => buildAgt002GovernedWorksetBootstrapContextVersion(database, {
         opportunityId, tenderId, ...identity,
       }),
     });

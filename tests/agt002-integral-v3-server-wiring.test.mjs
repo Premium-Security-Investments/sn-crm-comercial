@@ -33,12 +33,14 @@ assert.match(server, /if \(!agt002AnalysisConfig\.AGT002_INTEGRAL_CONTRACT_V3\) 
 assert.match(server, /loadAgt002CompanyEvidenceRegistryEntries\(database\)/);
 assert.match(server, /loadAgt002IntegralGovernanceOverrides\(database, opportunityId\)/);
 
-// All three preparation flows load the same governed data. The one remaining direct-runtime
+// All four preparation flows load the same governed data. The one remaining direct-runtime
 // path (requestAgt002) forwards it in the server; the durable canonical path and the governed
 // document workset builder both freeze the complete governance object into the frozen engine
 // input instead, and the durable executor/direct-host executor reconstructs the durable runtime
-// from that frozen object.
-assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3, 'los tres flujos deben cargar la gobernanza v3');
+// from that frozen object. The fourth flow — the first-run governed workset bootstrap context
+// registration — only needs the evidence identity to bind into the new context version; it never
+// constructs a runtime, so it never forwards the registry/overrides maps checked below.
+assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 4, 'los cuatro flujos deben cargar la gobernanza v3');
 for (const token of [
   'companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,',
   'categoryOverrides: integralV3Governance.categoryOverrides,',

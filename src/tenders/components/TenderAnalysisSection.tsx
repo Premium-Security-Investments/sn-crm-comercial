@@ -10,6 +10,7 @@ import type { Agt002GovernedWorksetMemberInput, TenderAnalysisFinding, TenderCur
 import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionResponseCard';
 import { shouldShowTenderOperationalPendingProjection, TenderOperationalPendingProjection } from './TenderOperationalPendingProjection';
 import { TenderGovernedDocumentWorkset } from './TenderGovernedDocumentWorkset';
+import type { Agt002GovernedAnalysisRunState } from '../governedWorksetSelection';
 
 type TenderAnalysisSectionProps = {
   analysis: TenderDocumentAnalysis | null;
@@ -20,6 +21,9 @@ type TenderAnalysisSectionProps = {
   onUploadGovernedFiles: (files: File[]) => void | Promise<void>;
   statusText?: string;
   statusTone?: 'status' | 'error';
+  // Owned by TenderDocumentReviewPanel; reaches the governed workset CTA so it can label itself
+  // explicitly (congelando/en cola/corriendo) and refuse a duplicate click while a run is active.
+  runState?: Agt002GovernedAnalysisRunState;
   analysisEngine?: TenderDocumentsPayload['analysis_engine'];
   questionResponses?: TenderQuestionResponse[];
   canAnswerQuestions?: boolean;
@@ -56,7 +60,7 @@ function normalizeQuestion(item: TenderAnalysisFinding, index: number): Normaliz
   };
 }
 
-export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onFreezeGovernedWorkset, onUploadGovernedFiles, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl }: TenderAnalysisSectionProps) {
+export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onFreezeGovernedWorkset, onUploadGovernedFiles, statusText = '', statusTone = 'status', runState, analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
@@ -137,7 +141,8 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
       </div>
     </section>}
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> {VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
-    {statusText && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
+    {/* El selector gobernado repite este feedback junto a su propia CTA; este bloque sólo se conserva cuando el selector no se monta, para no duplicarlo. */}
+    {statusText && !(hasDocuments && canRunPreview) && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
     <div className="tender-analysis-actions">
       {hasDocuments && canRunPreview && <TenderGovernedDocumentWorkset
         documents={documents}
@@ -146,6 +151,9 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
         selectionScopeKey={opportunityId}
         onFreeze={onFreezeGovernedWorkset}
         onUploadFiles={onUploadGovernedFiles}
+        runState={runState}
+        statusText={statusText}
+        statusTone={statusTone}
       />}
       {analysis && <small>{tenderAnalysisProducerDisclosure(analysis.producer)}</small>}
     </div>

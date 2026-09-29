@@ -120,11 +120,12 @@ assert.equal(
   assert.match(loader, /AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID/);
 }
 
-// Every flow still loads governance exactly once, before the idempotency reservation, so the
-// snapshot is necessarily bound before any run identity is computed or claimed. The legacy
+// Every flow still loads governance exactly once, before the idempotency reservation (or, for
+// the first-run bootstrap, before the context version it registers), so the snapshot is
+// necessarily bound before any run identity is computed, claimed, or bootstrapped. The legacy
 // non-canonical preview and fixed-snapshot routes are retired (410 governed_workset_required,
 // tests/agt002-governed-route-retirement.test.mjs) and never load this governance at all.
-assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3);
+assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 4);
 for (const [label, startToken, endToken] of [
   ['flow1 (enqueueAgt002CanonicalReanalysis)', 'async function enqueueAgt002CanonicalReanalysis(database, {', 'function sendError(res, error, status = 500) {'],
   ['flow2 (requestAgt002)', 'requestAgt002: async ({ jobId, tenderId, opportunityId, snapshotId }) => {', 'export async function buildTenderOpportunitySummary('],
@@ -134,6 +135,24 @@ for (const [label, startToken, endToken] of [
     'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)',
     'computeAgt002PreviewIdempotencyKey({',
   ], `${label}: governance (and its snapshot) must be loaded before the idempotency key`);
+}
+
+// Flow 4 — the governed document workset first-run bootstrap context registration: it never
+// computes an idempotency key at all (it delegates entirely to the registerAgt002ContextVersion
+// RPC for concurrency/idempotency), but governance (and the snapshot it carries) must still
+// precede the context version registration it binds company_evidence_identity into.
+{
+  const flow4 = slice(
+    server,
+    'async function buildAgt002GovernedWorksetBootstrapContextVersion(database, {',
+    'async function buildAgt002GovernedWorksetFrozenEngineInputSource(database, {',
+    'flow4 (governed document workset bootstrap context registration)',
+  );
+  assertOrder(flow4, [
+    'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)',
+    'return registerAgt002ContextVersion(database, {',
+  ], 'flow4: governance (and its snapshot) must be loaded before the context version is registered');
+  assert.equal(count(flow4, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 1, 'flow4: exactamente una carga, sin releer');
 }
 
 // Flow 3 — the governed document workset frozen-input builder: it never computes its own

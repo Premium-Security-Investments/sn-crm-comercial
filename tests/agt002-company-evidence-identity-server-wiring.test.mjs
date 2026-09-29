@@ -11,9 +11,10 @@ import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js'
 // governance load must now also carry the run-binding company evidence identity
 // (buildAgt002CompanyEvidenceIdentity, agt002-company-evidence-identity.js), loaded BEFORE
 // the context version is registered and BEFORE the idempotency reservation is
-// computed/claimed/found in all three real analysis flows (durable canonical enqueue,
-// requestAgt002 processing worker — the one remaining direct internal runtime call site, and
-// the governed document workset frozen-input builder) — never reloaded within a flow. The
+// computed/claimed/found in all four real analysis flows (durable canonical enqueue,
+// requestAgt002 processing worker — the one remaining direct internal runtime call site, the
+// governed document workset first-run bootstrap context registration, and the governed document
+// workset frozen-input builder) — never reloaded within a flow. The
 // legacy non-canonical preview and fixed-snapshot routes are retired (410
 // governed_workset_required, tests/agt002-governed-route-retirement.test.mjs) and never touch
 // this governance at all. The identity must then reach the idempotency key (as an atomic
@@ -84,8 +85,8 @@ assert.equal(count(server, 'agt002EvidenceIdentityKeyParams(integralV3Governance
 
 // Exactly one governance load per real flow (mirrors the governed-data wiring contract),
 // and exactly one direct registerAgt002PreviewAnalysis registration carries evidenceIdentity.
-assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3);
-assert.equal(count(server, 'company_evidence_identity: integralV3Governance?.evidenceIdentity ?? null,'), 2, 'las dos flujos con context version deben incluir sólo company_evidence_identity');
+assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 4);
+assert.equal(count(server, 'company_evidence_identity: integralV3Governance?.evidenceIdentity ?? null,'), 3, 'los tres flujos con context version (enqueue, requestAgt002 y el bootstrap de primer registro) deben incluir sólo company_evidence_identity');
 assert.equal(count(server, 'evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null'), 1, 'el único registro directo debe pasar evidenceIdentity');
 
 // Flow 1 — durable canonical enqueue: governance load precedes the context version
@@ -152,6 +153,27 @@ assert.match(
   /integralV3Governance,\s*\n\s*idempotencyKey,\s*\n\s*\}\);/,
   'flow3 debe pasar la gobernanza v3 completa (identidad + evidenceAsOf) al frozen engine input',
 );
+
+// Flow 4 — the governed document workset first-run bootstrap context registration: governance
+// load precedes the context version registration, which binds company_evidence_identity exactly
+// like flows 1 and 2. Invoked only when no context version yet exists for the resolved scope —
+// it never computes/claims an idempotency key, never constructs a runtime, and never analyzes
+// anything; it only registers the read-only context a later analysis run will consult.
+const flow4 = slice(
+  server,
+  'async function buildAgt002GovernedWorksetBootstrapContextVersion(database, {',
+  'async function buildAgt002GovernedWorksetFrozenEngineInputSource(database, {',
+  'flow4 (governed document workset bootstrap context registration)',
+);
+assertOrder(flow4, [
+  'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)',
+  'return registerAgt002ContextVersion(database, {',
+  'company_evidence_identity: integralV3Governance?.evidenceIdentity ?? null,',
+], 'flow4');
+assert.equal(count(flow4, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 1, 'flow4: exactamente una carga, sin releer');
+assert.doesNotMatch(flow4, /createAgt002PreviewRuntime\(/, 'flow4 nunca construye un runtime ni ejecuta un modelo: sólo registra el contexto');
+assert.doesNotMatch(flow4, /computeAgt002PreviewIdempotencyKey\(/, 'flow4 nunca computa su propia idempotency key: delega enteramente en el RPC de registerAgt002ContextVersion');
+assert.doesNotMatch(flow4, /claimAgt002PreviewRun\(/, 'flow4 nunca reclama una corrida: sólo bootstrapea el contexto');
 
 // The frozen governance object handed to the durable job (flow 1) is the SAME object the
 // loader returned — it is never rebuilt, so evidenceIdentity necessarily survives freezing.
