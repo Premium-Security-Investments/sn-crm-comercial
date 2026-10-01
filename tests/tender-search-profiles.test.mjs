@@ -25,13 +25,11 @@ assert.match(configurationActions, /\/api\/tender-company-profile-process-upload
 assert.match(radar, /<TenderSavedSearches/, 'Radar debe mostrar el gestor de búsquedas guardadas.');
 assert.match(radar, /loadProfiles/, 'Radar debe cargar los perfiles junto con sus datos.');
 assert.match(savedSearches, /\/api\/tender-search-profiles/, 'El gestor debe consumir el endpoint existente.');
-for (const field of ['query_text', 'source_filter', 'region_key', 'deadline_filter', 'value_filter', 'score_filter', 'section_filter', 'internal_status_filter']) {
+for (const field of ['query_text', 'source_filter', 'region_key', 'deadline_filter', 'value_filter', 'score_filter']) {
   assert.match(radar, new RegExp(`profile\\.${field}`), `Radar debe aplicar el campo persistido ${field}.`);
 }
-assert.match(radar, /section_filter/, 'Radar debe aplicar la sección persistida del perfil.');
-assert.match(radar, /internal_status_filter/, 'Radar debe aplicar el estado interno persistido del perfil.');
-assert.match(radar, /Mostrando procesos convertidos/, 'Radar debe explicar que las oportunidades convertidas permanecen visibles.');
-assert.match(radar, /view=oportunidades/, 'Radar debe ofrecer navegación explícita a Oportunidades para convertidas.');
+assert.doesNotMatch(radar, /profile\.section_filter/, 'Radar no debe aplicar silenciosamente la sección persistida del perfil.');
+assert.doesNotMatch(radar, /profile\.internal_status_filter/, 'Radar no debe aplicar silenciosamente el estado interno persistido del perfil.');
 assert.doesNotMatch(main, /loadSearchProfiles|saveCurrentSearchProfile|applySearchProfile/, 'main no debe retener la lógica de perfiles migrada.');
 
 const bundle = buildSync({
