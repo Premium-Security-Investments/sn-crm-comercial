@@ -61,6 +61,31 @@ export type TenderRadarRunReceipt = {
 };
 export type TenderRadarRunReceiptLatestPayload = { run_receipt: TenderRadarRunReceipt | null };
 export type TenderRadarRunReceiptHistoryPayload = { run_receipts: TenderRadarRunReceipt[] };
+// Radar Corte 3 (mitad UI) — delta de sólo lectura entre las dos corridas persistidas más
+// recientes (ver agt002-radar-run-delta.js). Espejo exacto del contrato del servidor; nunca se
+// construye en el cliente, sólo se presenta.
+export type TenderRadarRunDeltaCategory = 'new' | 'deadline_changed' | 'fit_changed' | 'expired' | 'source_recovered' | 'source_degraded';
+export type TenderRadarRunDeltaRunSummary = { run_id: string; finished_at: string; status: TenderRadarRunReceiptStatus };
+export type TenderRadarRunDeltaChange = {
+  category: TenderRadarRunDeltaCategory;
+  label: string;
+  stable_key?: string;
+  source: string;
+  title?: string;
+  before?: string | null;
+  after?: string | null;
+  reason?: string | null;
+  deadline?: string | null;
+  still_listed?: boolean;
+};
+export type TenderRadarRunDelta = {
+  run: TenderRadarRunDeltaRunSummary;
+  previous_run: TenderRadarRunDeltaRunSummary | null;
+  baseline_available: boolean;
+  counts: Record<TenderRadarRunDeltaCategory, number>;
+  changes: TenderRadarRunDeltaChange[];
+};
+export type TenderRadarRunDeltaPayload = { delta: TenderRadarRunDelta | null };
 export type TenderDocumentImportStatus = 'analisis_generado' | 'documentos_cargados' | 'fallo_importacion' | 'pendiente_documentos' | 'no_aplica' | 'error';
 export type TenderConversionResult = { id: string; duplicate: boolean; document_import_status: TenderDocumentImportStatus; document_import_error: string | null };
 export type TenderDocumentRefreshResult = { new_count: number; updated_count: number; unchanged_count: number; failed_count: number; analysis_generated: boolean };

@@ -87,6 +87,8 @@ import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId } from '../esu-direct-crawl.js';
 import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
 import { buildAgt002RadarRunReceipt, readAgt002RadarRunReceiptHistory, readLatestAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../agt002-radar-run-receipt.js';
+import { buildAgt002RadarRunSnapshot, computeAgt002RadarRunDelta } from '../agt002-radar-run-delta.js';
+import { readAgt002RadarRunDeltaPair, recordAgt002RadarRunSnapshot } from '../agt002-radar-run-delta-persistence.js';
 import {
   ACTIONABLE_REVIEW_ATTACHMENT_DOWNLOAD_TTL_SECONDS,
   actionableReviewForbiddenError,
@@ -1773,6 +1775,43 @@ function radarRunReceiptSourcesFromDiagnostics(diagnostics) {
     error: d.status === 'error' ? d.message : null,
   }));
 }
+// Fecha de cierre canónica (YYYY-MM-DD) o `null` si el valor crudo de `deadline_at` no es una fecha
+// parseable; nunca lanza, nunca filtra el valor crudo (sólo su recorte a fecha).
+function canonicalRadarSnapshotDeadline(value) {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null;
+}
+// Proyecta el recibo real de esta corrida (Corte 3) a partir de las filas ya resueltas de
+// `psi_public_tenders` (post identity-sync, el estado final que de verdad se persiste) y del mismo
+// `diagnostics` por fuente que alimenta el recibo del Corte 2. Reusa `evaluateTenderFit` (política
+// de encaje ya existente, sin reclasificar nada) como `fit_band`/`fit_reasons` del contrato puro.
+function buildAgt002RadarRunSnapshotReceiptFromRun({ runId, finishedAt, diagnostics, rows, nowIso }) {
+  const rowsBySource = new Map();
+  for (const row of rows) {
+    const list = rowsBySource.get(row.source) || [];
+    list.push(row);
+    rowsBySource.set(row.source, list);
+  }
+  return {
+    run_id: runId,
+    finished_at: finishedAt,
+    sources: (diagnostics || []).map(d => {
+      if (d.status !== 'ok') return { source: d.source, status: 'failed' };
+      const candidates = (rowsBySource.get(d.source) || []).map(row => {
+        const canonicalDeadline = resolveCanonicalTenderDeadline(row);
+        const fit = evaluateTenderFit({ ...row, deadline_at: canonicalDeadline }, { nowIso });
+        return {
+          stable_key: row.stable_key, source: row.source, title: row.title, entity: row.entity,
+          deadline: canonicalRadarSnapshotDeadline(canonicalDeadline), fit_band: fit.band,
+          fit_reasons: fit.reasons.map(reason => reason.detail),
+          known_phases: Array.isArray(row.raw?.phase_continuity?.known_phases) ? row.raw.phase_continuity.known_phases : [],
+        };
+      });
+      return { source: d.source, status: 'success', candidates };
+    }),
+  };
+}
 async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   // run_id se genera antes de tocar el pipeline real para que, incluso si la corrida resulta
   // fatal, el recibo fallido pueda referenciarla de forma estable e idempotente (Corte 2).
@@ -1870,6 +1909,19 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
     count_revisar: fetched.filter(r => r.section === 'revisar').length, count_prioridad_baja: fetched.filter(r => r.section === 'prioridad_baja').length,
     summary: `Radar multifuente sincronizado: ${fetched.length} procesos/eventos visibles; ${rows.length} actualizados. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}`,
   });
+  // Corte 3: snapshot mínimo de esta corrida para el delta contra la anterior. Se construye y
+  // graba aquí (camino feliz/parcial, con filas reales ya resueltas), nunca en el catch fatal, que
+  // no tiene candidatos confiables con los que proyectar un snapshot válido. Aislado en su propio
+  // try/catch local: el recibo feliz/parcial ya se grabó arriba, así que una falla aquí es
+  // best-effort y nunca debe relanzar, volver a grabar el recibo, ni cambiar licitaciones.
+  try {
+    const radarRunSnapshot = buildAgt002RadarRunSnapshot(buildAgt002RadarRunSnapshotReceiptFromRun({
+      runId: radarRunId, finishedAt: radarRunReceipt.finished_at, diagnostics, rows, nowIso: radarRunReceipt.finished_at,
+    }));
+    await recordAgt002RadarRunSnapshot(database, radarRunSnapshot);
+  } catch (snapshotError) {
+    console.warn('agt002_radar_run_snapshot_failed', { event: 'agt002_radar_run_snapshot_failed', message: snapshotError?.message });
+  }
   const persisted = await readPersistedTenderRadar(database);
   return { ...persisted, diagnostics, run_receipt: radarRunReceipt };
   } catch (fatalError) {
@@ -2345,6 +2397,19 @@ app.get('/api/tenders/radar-runs/history', async (req, res) => {
     const requestedLimit = Number.parseInt(req.query.limit, 10);
     res.json({ run_receipts: await readAgt002RadarRunReceiptHistory(database, Number.isInteger(requestedLimit) ? { limit: requestedLimit } : undefined) });
   } catch (error) { sendRadarRunReceiptError(res, error); }
+});
+
+// Corte 3 (backend): delta de sólo lectura entre las dos corridas persistidas más recientes con
+// snapshot válido. Misma autorización que GET /api/tenders. Nunca escribe; `null` si todavía no hay
+// ninguna corrida con snapshot, `baseline_available:false` si sólo hay una.
+app.get('/api/tenders/radar-runs/delta', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const pair = await readAgt002RadarRunDeltaPair(database);
+    res.json({ delta: pair.latest ? computeAgt002RadarRunDelta(pair.previous, pair.latest) : null });
+  } catch (error) { sendAuthError(res, error); }
 });
 
 app.patch('/api/tender-status', async (req, res) => {
