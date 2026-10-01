@@ -1911,11 +1911,17 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   });
   // Corte 3: snapshot mínimo de esta corrida para el delta contra la anterior. Se construye y
   // graba aquí (camino feliz/parcial, con filas reales ya resueltas), nunca en el catch fatal, que
-  // no tiene candidatos confiables con los que proyectar un snapshot válido.
-  const radarRunSnapshot = buildAgt002RadarRunSnapshot(buildAgt002RadarRunSnapshotReceiptFromRun({
-    runId: radarRunId, finishedAt: radarRunReceipt.finished_at, diagnostics, rows, nowIso: radarRunReceipt.finished_at,
-  }));
-  await recordAgt002RadarRunSnapshot(database, radarRunSnapshot);
+  // no tiene candidatos confiables con los que proyectar un snapshot válido. Aislado en su propio
+  // try/catch local: el recibo feliz/parcial ya se grabó arriba, así que una falla aquí es
+  // best-effort y nunca debe relanzar, volver a grabar el recibo, ni cambiar licitaciones.
+  try {
+    const radarRunSnapshot = buildAgt002RadarRunSnapshot(buildAgt002RadarRunSnapshotReceiptFromRun({
+      runId: radarRunId, finishedAt: radarRunReceipt.finished_at, diagnostics, rows, nowIso: radarRunReceipt.finished_at,
+    }));
+    await recordAgt002RadarRunSnapshot(database, radarRunSnapshot);
+  } catch (snapshotError) {
+    console.warn('agt002_radar_run_snapshot_failed', { event: 'agt002_radar_run_snapshot_failed', message: snapshotError?.message });
+  }
   const persisted = await readPersistedTenderRadar(database);
   return { ...persisted, diagnostics, run_receipt: radarRunReceipt };
   } catch (fatalError) {

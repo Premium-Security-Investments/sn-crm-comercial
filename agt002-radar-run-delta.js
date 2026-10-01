@@ -262,10 +262,11 @@ function normalizeFitBand(band) {
   return band.trim().toLowerCase();
 }
 
-// Instante de cierre = fin del día canónico de `deadline`, en milisegundos. Pura función de una
-// cadena ya validada — nunca lee el reloj real.
+// Instante de cierre = fin del día canónico de `deadline` en America/Bogota (UTC-5 fijo, sin
+// horario de verano), en milisegundos. Pura función de una cadena ya validada — nunca lee el
+// reloj real.
 function deadlineClosesAtMs(deadline) {
-  return Date.parse(`${deadline}T23:59:59.999Z`);
+  return Date.parse(`${deadline}T23:59:59.999-05:00`);
 }
 
 function pushChange(changes, change) {

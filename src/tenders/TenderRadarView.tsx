@@ -55,6 +55,7 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
   const [runReceiptError, setRunReceiptError] = useState<string | null>(null);
   const [runReceiptLoading, setRunReceiptLoading] = useState(true);
   const [runDelta, setRunDelta] = useState<TenderRadarRunDelta | null>(null);
+  const [runDeltaError, setRunDeltaError] = useState<string | null>(null);
   const [selectedDeltaCategory, setSelectedDeltaCategory] = useState<TenderRadarRunDeltaCategory | null>(null);
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('todas');
@@ -92,8 +93,13 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
   };
   // Delta de corrida: independiente de la lista de licitaciones, nunca debe bloquearla si falla.
   const loadRunDelta = async () => {
+    setRunDeltaError(null);
     try { setRunDelta((await loadRadarRunDelta(request)).delta); }
-    catch { setRunDelta(null); }
+    catch {
+      setRunDelta(null);
+      setSelectedDeltaCategory(null);
+      setRunDeltaError('No fue posible actualizar los cambios desde la corrida anterior.');
+    }
   };
   useEffect(() => { void load(); void loadRunReceipts(); void loadRunDelta(); }, []);
   const applyProfile = (profile: TenderSearchProfile) => {
@@ -141,7 +147,7 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
 
   const deduped = useMemo(() => deduplicateTenders(payload?.tenders || []), [payload]);
   const sortedRows = useMemo(() => sortTenderCards(filterRadarTenders(deduped, { query, source, region, deadline, value, score, section, internalStatus }), sort, direction), [deduped, query, source, region, deadline, value, score, section, internalStatus, sort, direction]);
-  const deltaSelectedKeys = useMemo(() => selectedDeltaCategory ? tenderRadarRunDeltaStableKeysForCategory(runDelta, selectedDeltaCategory) : null, [runDelta, selectedDeltaCategory]);
+  const deltaSelectedKeys = useMemo(() => (runDelta && runDelta.baseline_available && selectedDeltaCategory) ? tenderRadarRunDeltaStableKeysForCategory(runDelta, selectedDeltaCategory) : null, [runDelta, selectedDeltaCategory]);
   const rows = useMemo(() => deltaSelectedKeys ? sortedRows.filter(tender => deltaSelectedKeys.has(tender.stable_key || tender.id)) : sortedRows, [sortedRows, deltaSelectedKeys]);
   const sourceOptions = useMemo(() => Array.from(new Set([...TENDER_OFFICIAL_SOURCES, ...(payload?.tenders || []).map(tender => tender.source).filter(Boolean)])).sort(), [payload]);
   const filters: TenderRadarFilters = { query, source, region, deadline, value, score, section, internalStatus };
@@ -183,9 +189,10 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
     </section>
     <section className="tender-radar-run-delta" aria-label="Cambios desde la corrida anterior">
       <strong>Cambios desde la corrida anterior</strong>
-      {!runDelta && <p className="muted">Aún no hay datos de cambios entre corridas.</p>}
-      {runDelta && !runDelta.baseline_available && <p className="muted">Todavía no hay una corrida anterior con la que comparar.</p>}
-      {runDelta && runDelta.baseline_available && <>
+      {runDeltaError && <div className="error" role="status">{runDeltaError}</div>}
+      {!runDeltaError && !runDelta && <p className="muted">Aún no hay datos de cambios entre corridas.</p>}
+      {!runDeltaError && runDelta && !runDelta.baseline_available && <p className="muted">Todavía no hay una corrida anterior con la que comparar.</p>}
+      {!runDeltaError && runDelta && runDelta.baseline_available && <>
         <div className="tender-radar-run-delta-summary">
           {TENDER_RADAR_RUN_DELTA_SELECTABLE_CATEGORIES.map(category => <button key={category} className={`badge${selectedDeltaCategory === category ? ' badge-active' : ''}`} data-radar-delta-category={category} onClick={() => setSelectedDeltaCategory(category)}>{tenderRadarRunDeltaCategoryLabel(category)}: {runDelta.counts[category]}</button>)}
           <button className="secondary" data-radar-delta-show-all onClick={() => setSelectedDeltaCategory(null)}>Mostrar todos</button>

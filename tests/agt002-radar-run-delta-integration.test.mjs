@@ -93,4 +93,86 @@ assert.match(
   'evaluateTenderFit debe recibir deadline_at igual a la fecha canónica del snapshot (igual que dbTenderToPublic), para que el fit del snapshot no diverja del que ve la UI'
 );
 
+// 5. El build+record del snapshot del Corte 3 debe vivir en su propio try/catch LOCAL, después de la
+//    llamada feliz/parcial a recordAgt002RadarRunReceipt y antes de leer/retornar el Radar. Si no tiene
+//    su propio catch, una falla auxiliar al grabar el snapshot (p. ej. un error transitorio de DB) cae
+//    al catch fatal exterior de persistTenderRadar, que vuelve a llamar recordAgt002RadarRunReceipt con
+//    un recibo 'failed' y sobrescribe el recibo exitoso que ya se grabó unas líneas antes. El catch
+//    local tampoco debe relanzar (el snapshot es best-effort, igual que el recibo fatal lo es en el
+//    catch exterior) ni volver a llamar recordAgt002RadarRunReceipt.
+function skipBalancedCall(src, openParenIdx) {
+  let depth = 1;
+  let i = openParenIdx + 1;
+  for (; i < src.length && depth > 0; i += 1) {
+    if (src[i] === '(') depth += 1;
+    else if (src[i] === ')') depth -= 1;
+  }
+  return i;
+}
+
+function skipBalancedBlock(src, openBraceIdx) {
+  let depth = 1;
+  let i = openBraceIdx + 1;
+  for (; i < src.length && depth > 0; i += 1) {
+    if (src[i] === '{') depth += 1;
+    else if (src[i] === '}') depth -= 1;
+  }
+  return i;
+}
+
+const happyReceiptMarker = 'await recordAgt002RadarRunReceipt(';
+const happyReceiptIdx = tryBody.indexOf(happyReceiptMarker);
+assert.ok(happyReceiptIdx !== -1, 'persistTenderRadar debe grabar el recibo feliz/parcial con recordAgt002RadarRunReceipt dentro del try');
+const happyReceiptOpenParenIdx = happyReceiptIdx + happyReceiptMarker.length - 1;
+const happyReceiptCallEndIdx = skipBalancedCall(tryBody, happyReceiptOpenParenIdx);
+const afterHappyReceiptSemiIdx = tryBody.indexOf(';', happyReceiptCallEndIdx);
+const afterHappyReceiptCall = tryBody.slice(afterHappyReceiptSemiIdx + 1);
+
+const localTryIdx = afterHappyReceiptCall.indexOf('try {');
+assert.ok(
+  localTryIdx !== -1,
+  'el build+record del snapshot del Corte 3 debe vivir en un try local propio, después de recordAgt002RadarRunReceipt'
+);
+const localTryBraceIdx = afterHappyReceiptCall.indexOf('{', localTryIdx);
+const localTryEndIdx = skipBalancedBlock(afterHappyReceiptCall, localTryBraceIdx);
+const localTryBody = afterHappyReceiptCall.slice(localTryBraceIdx, localTryEndIdx);
+
+const afterLocalTry = afterHappyReceiptCall.slice(localTryEndIdx);
+const catchMatch = afterLocalTry.match(/^\s*catch\s*(\([^)]*\))?\s*\{/);
+assert.ok(
+  catchMatch,
+  'el try local del Corte 3 debe tener su propio catch inmediatamente después (no debe depender del catch fatal exterior)'
+);
+const localCatchBraceIdx = catchMatch[0].length - 1;
+const localCatchEndIdx = skipBalancedBlock(afterLocalTry, localCatchBraceIdx);
+const localCatchBody = afterLocalTry.slice(localCatchBraceIdx, localCatchEndIdx);
+const afterLocalCatch = afterLocalTry.slice(localCatchEndIdx);
+
+assert.match(
+  localTryBody,
+  /recordAgt002RadarRunSnapshot\(/,
+  'el build+record del snapshot del Corte 3 debe estar dentro de su try local'
+);
+assert.doesNotMatch(
+  localCatchBody,
+  /throw/,
+  'el catch local del Corte 3 nunca debe relanzar (el snapshot es best-effort, no debe tumbar una corrida ya exitosa)'
+);
+assert.doesNotMatch(
+  localCatchBody,
+  /recordAgt002RadarRunReceipt\(/,
+  'el catch local del Corte 3 nunca debe volver a llamar recordAgt002RadarRunReceipt (pisaría el recibo exitoso ya grabado)'
+);
+
+const readPersistedIdx = afterLocalCatch.indexOf('readPersistedTenderRadar(');
+assert.ok(
+  readPersistedIdx !== -1,
+  'la lectura del Radar persistido debe seguir después del try/catch local del Corte 3'
+);
+const returnIdx = afterLocalCatch.indexOf('return', readPersistedIdx);
+assert.ok(
+  returnIdx !== -1,
+  'el return del Radar debe seguir después del try/catch local del Corte 3 y de leer el Radar persistido'
+);
+
 console.log('AGT-002 radar run delta server/api parity + fatal-path structural checks (Corte 3) — expected to fail until the /delta route and its wiring exist');

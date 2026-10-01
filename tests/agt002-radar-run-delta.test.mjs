@@ -187,6 +187,16 @@ const assertThrowsValidation = (fn, message) => assert.throws(fn, Agt002RadarRun
   const currentC = snap('run-2', '2026-10-20T08:00:00.000Z', [src('SECOP II', 'success', [])]);
   const deltaC = computeAgt002RadarRunDelta(previousC, currentC);
   assert.equal(deltaC.counts.expired, 0, 'un cierre ya vencido antes de la corrida anterior no cruza entre estas dos corridas');
+
+  // 9d. Falso vencido por confundir "fin de día UTC" con "fin de día America/Bogota": el cierre
+  //     real del 2026-10-05 ocurre a las 2026-10-06T05:00:00Z (medianoche en Bogotá, UTC-5).
+  //     Tanto la corrida anterior (20:00Z del 05) como la actual (02:00Z del 06) caen ANTES de
+  //     ese instante real, así que no debe emitirse "expired".
+  const previousD = snap('run-1', '2026-10-05T20:00:00.000Z', [src('SECOP II', 'success', [candidate({ deadline: '2026-10-05' })])]);
+  const currentD = snap('run-2', '2026-10-06T02:00:00.000Z', [src('SECOP II', 'success', [candidate({ deadline: '2026-10-05' })])]);
+  const deltaD = computeAgt002RadarRunDelta(previousD, currentD);
+  assert.equal(deltaD.counts.expired, 0, 'el cierre del 2026-10-05 en America/Bogota sigue vigente hasta las 2026-10-06T05:00:00Z');
+  assert.equal(findChange(deltaD.changes, 'expired', 'k-1'), undefined);
 }
 
 // 10. Ausencia SIN cruce verificable: nunca se deriva como vencido.

@@ -60,15 +60,18 @@ const NO_BASELINE_DELTA = {
   changes: [],
 };
 
-function makeRequest({ delta = RUN_DELTA, deltaFails = false, calls = [] } = {}) {
+function makeRequest({ delta = RUN_DELTA, deltaFails = false, deltaFailsFromCall = null, calls = [] } = {}) {
+  let deltaCallCount = 0;
   return async path => {
     calls.push(path);
     if (path === '/api/tenders') return RADAR_PAYLOAD;
     if (path === '/api/tender-search-profiles') return [];
     if (path === '/api/tenders/radar-runs/latest') return { run_receipt: null };
     if (path.startsWith('/api/tenders/radar-runs/history')) return { run_receipts: [] };
+    if (path === '/api/tender-refresh') return RADAR_PAYLOAD;
     if (path === '/api/tenders/radar-runs/delta') {
-      if (deltaFails) throw new Error('fallo de red simulado');
+      deltaCallCount += 1;
+      if (deltaFails || (deltaFailsFromCall !== null && deltaCallCount >= deltaFailsFromCall)) throw new Error('fallo de red simulado');
       return { delta };
     }
     throw new Error(`ruta no esperada en la prueba: ${path}`);
@@ -217,6 +220,37 @@ test('si falla la carga del resumen de cambios, la lista de licitaciones no se b
     await settle(view);
     const text = view.container.textContent;
     assert.match(text, /Entidad Nueva/, 'la lista debe cargar aunque el resumen de cambios falle');
+  } finally {
+    await view.unmount();
+  }
+});
+
+test('si la resincronización falla al recargar el delta: se limpia la vista temporal seleccionada, la lista completa sigue visible y aparece un estado de error explícito', async () => {
+  const view = mountRadar({ deltaFailsFromCall: 2 });
+  try {
+    await settle(view);
+
+    await view.click('[data-radar-delta-category="new"]');
+    await settle(view);
+    const filteredText = view.container.textContent;
+    assert.match(filteredText, /Entidad Nueva/, 'la vista temporal "Nuevo" debe quedar activa antes de resincronizar');
+    assert.doesNotMatch(filteredText, /Entidad Cierre/, 'la vista temporal "Nuevo" debe excluir otras categorías antes de resincronizar');
+
+    await view.click('.row-actions button:last-child');
+    await settle(view);
+
+    const text = view.container.textContent;
+    assert.match(text, /Entidad Nueva/, 'la lista completa debe seguir visible tras el fallo de la resincronización');
+    assert.match(text, /Entidad Cierre/, 'la selección temporal debe limpiarse y volver a mostrar todas las categorías');
+    assert.match(text, /Entidad Sin Cambios/, 'la selección temporal debe limpiarse y volver a mostrar los procesos sin cambios');
+
+    const activeCategoryButtons = view.container.querySelectorAll('[data-radar-delta-category].badge-active');
+    assert.equal(activeCategoryButtons.length, 0, 'ninguna categoría debe seguir marcada como seleccionada tras el fallo de la resincronización');
+
+    assert.doesNotMatch(text, /Aún no hay datos de cambios entre corridas\./, 'el fallo de la resincronización no debe mostrarse como si nunca hubiera existido un delta');
+    const deltaSection = view.container.querySelector('.tender-radar-run-delta');
+    assert.ok(deltaSection, 'debe existir la sección de cambios entre corridas');
+    assert.match(deltaSection.textContent, /error|no fue posible|fallo/i, 'debe mostrarse un estado de error explícito sobre el fallo al recargar el delta');
   } finally {
     await view.unmount();
   }
