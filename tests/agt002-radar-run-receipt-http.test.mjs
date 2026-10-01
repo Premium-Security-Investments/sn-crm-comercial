@@ -81,6 +81,11 @@ const actors = {
 const actorByAuthId = new Map(Object.values(actors).map(actor => [actor.user.id, actor]));
 const observedRadarRunsRequests = [];
 let rows = [PARTIAL_ROW, FAILED_ROW, COMPLETE_ROW];
+let forceRadarRunsError = false;
+// Mensaje de error interno de PostgREST tal como lo devolvería Postgres al fallar la conexión:
+// trae embebidas credenciales y un query string reales que nunca deben llegar al cliente.
+const LEAKED_SECRET = 'RADAR_RECEIPT_CANARY_VALUE_7F3A';
+const POSTGREST_INTERNAL_MESSAGE = `connection to server at "db.internal.example" failed: FATAL: password authentication failed for user "service_role" (dsn=postgres://service_role:${LEAKED_SECRET}@db.internal.example:5432/postgres?sslmode=require&apikey=${LEAKED_SECRET})`;
 
 function bearer(req) { return String(req.headers.authorization || '').replace(/^Bearer\s+/i, ''); }
 
@@ -104,6 +109,7 @@ const fakeSupabase = http.createServer((req, res) => {
   }
   if (url.pathname === '/rest/v1/psi_tender_radar_runs') {
     observedRadarRunsRequests.push({ method: req.method, limit: url.searchParams.get('limit'), schemaFilter: url.searchParams.get('errors->>schema_version') });
+    if (forceRadarRunsError) return json(res, 500, { message: POSTGREST_INTERNAL_MESSAGE, code: 'XX000' });
     // Replica el filtro real de PostgREST sobre la columna jsonb: se aplica ANTES del límite, para
     // que filas ajenas sin recibo (p.ej. mode:'company_profile') nunca entren en la ventana.
     const schemaFilter = url.searchParams.get('errors->>schema_version');
@@ -190,6 +196,19 @@ try {
   const emptyHistory = await requestJson(appPort, '/api/tenders/radar-runs/history', 'licitaciones-token');
   assert.equal(emptyHistory.status, 200);
   assert.deepEqual(emptyHistory.body.run_receipts, []);
+
+  // 6. Regresión de seguridad: si PostgREST falla con un mensaje interno que trae credenciales y un
+  //    query string embebidos, el cliente debe recibir un 500 genérico, nunca el mensaje crudo ni
+  //    el secreto que contiene.
+  rows = [PARTIAL_ROW, FAILED_ROW, COMPLETE_ROW];
+  forceRadarRunsError = true;
+  observedRadarRunsRequests.length = 0;
+  const latestWithUpstreamError = await requestJson(appPort, '/api/tenders/radar-runs/latest', 'licitaciones-token');
+  const rawResponseText = JSON.stringify(latestWithUpstreamError.body);
+  assert.equal(latestWithUpstreamError.status, 500, 'un error interno de PostgREST debe traducirse a un 500 genérico');
+  assert.ok(!rawResponseText.includes(LEAKED_SECRET), 'la respuesta nunca debe filtrar el secreto embebido en el mensaje de PostgREST');
+  assert.ok(!rawResponseText.includes(POSTGREST_INTERNAL_MESSAGE), 'la respuesta nunca debe reenviar el mensaje crudo de PostgREST al cliente');
+  forceRadarRunsError = false;
 } finally {
   console.error = originalConsoleError;
   if (appServer?.listening) await new Promise(resolve => appServer.close(resolve));

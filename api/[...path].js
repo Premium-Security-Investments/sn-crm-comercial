@@ -2276,6 +2276,16 @@ app.post('/api/tender-refresh', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+// Nunca reenvía al cliente un error.message crudo de Supabase/PostgREST: esos mensajes pueden
+// traer credenciales/DSN embebidos (ver fixture de prueba). 401/403 de autorización sí conservan
+// su mensaje controlado (nunca viene de Supabase/PostgREST); cualquier otro error se registra
+// internamente y se responde con un mensaje genérico y un código estable del recibo.
+function sendRadarRunReceiptError(res, error) {
+  if (error?.status === 401 || error?.status === 403) return sendAuthError(res, error);
+  console.error(error);
+  return res.status(500).json({ error: 'No fue posible leer el recibo de corrida del Radar.', code: 'AGT002_RADAR_RUN_RECEIPT_READ_FAILED' });
+}
+
 // Corte 2 (backend): lectura de sólo lectura del recibo de la última corrida real del Radar.
 // Misma autorización que GET /api/tenders. Nunca escribe; `null` cuando la fila más reciente de
 // psi_tender_radar_runs todavía no trae un recibo (filas previas a este cambio).
@@ -2285,7 +2295,7 @@ app.get('/api/tenders/radar-runs/latest', async (req, res) => {
     if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
     const database = requireDb();
     res.json({ run_receipt: await readLatestAgt002RadarRunReceipt(database) });
-  } catch (error) { sendAuthError(res, error); }
+  } catch (error) { sendRadarRunReceiptError(res, error); }
 });
 
 // Corte 2 (backend): historial de sólo lectura de recibos de corrida, acotado siempre a un máximo
@@ -2298,7 +2308,7 @@ app.get('/api/tenders/radar-runs/history', async (req, res) => {
     const database = requireDb();
     const requestedLimit = Number.parseInt(req.query.limit, 10);
     res.json({ run_receipts: await readAgt002RadarRunReceiptHistory(database, Number.isInteger(requestedLimit) ? { limit: requestedLimit } : undefined) });
-  } catch (error) { sendAuthError(res, error); }
+  } catch (error) { sendRadarRunReceiptError(res, error); }
 });
 
 app.patch('/api/tender-status', async (req, res) => {
