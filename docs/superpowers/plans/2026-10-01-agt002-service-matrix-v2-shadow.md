@@ -91,3 +91,72 @@ Invocado el skill `code-review` sobre el diff acumulado. Revisó la lógica (inc
 
 ## Tarea 6 — Commit [PENDIENTE]
 No se ejecuta en este paso; no se hizo commit en esta sesión. Commit, PR y despliegue quedan pendientes de un paso posterior.
+
+## Tarea 7 (RED, sin código de producción) — Captura diaria del reporte sombra [COMPLETADA en esta sesión]
+Cierra el modo sombra de dos semanas (§1 del spec) sin DB, sin timer nuevo y sin tocar ninguna decisión. Contrato completo en spec §8.
+
+1. **Spec**: añadida la sección 8 (`docs/superpowers/specs/2026-10-01-agt002-service-matrix-v2-shadow.md`) con el contrato íntegro de `scripts/agt002-service-v2-shadow-report.mjs`: exports, alias de entrada estilo Radar, forma del item (incluido `flags` derivado solo de `status`/`excluded`, sin reimplementar matching), prioridad de `classification`, forma del reporte y `summary` con claves explícitas en cero, validación fail-closed, y contrato de escritura atómica diaria+`latest.json`.
+2. **Test nuevo**: `tests/agt002-service-v2-shadow-report.test.mjs`, script plano con `assert` de `node:assert/strict` a nivel superior (mismo estilo que `tests/tender-service-matrix-v2.test.mjs`), que importa de `../scripts/agt002-service-v2-shadow-report.mjs` (no existe) y de `../tender-fit-policy.js` / `../tender-service-matrix-v2.js` (existen, solo para comparar `policy_version`/`matrix_version` sin hardcodearlos). Cubre:
+   - Forma completa del reporte y de cada item para seis casos de texto que cubren las cuatro `classification` (`SAME_SERVICE_POINTS` por puntos iguales detectados y por ambos en cero, `POINTS_CHANGED`, `CURRENT_IN_V2_OUT` vía exclusión dura con ancla presente, `CURRENT_OUT_V2_IN` vía ancla v2 que v1 no reconoce y vía `AMBIGUA`/`POR_VALIDAR`), con `current_v1.total_score`/`band` calculados a mano reusando las reglas ya verificadas de `tender-fit-policy.js`.
+   - `summary` con las cuatro claves de `by_classification`, las cuatro de `by_v2_status` y las seis de `by_v2_family` siempre presentes (incluida al menos una en cero), más `changed_count`.
+   - Aceptación de payload `{items:[...]}` y de arreglo directo con resultado idéntico.
+   - Orden determinístico y estable por `stable_key`, independiente del orden de entrada.
+   - Alias de Radar (`object`/`summary`/`budget`/`municipality`/`department`/`closing_date`/`notice_id`) produciendo el mismo resultado que los nombres canónicos.
+   - `existing_decision` presente solo si el item de entrada lo trae (`decision`), ausente en caso contrario.
+   - `stable_key` cayendo a `source_url` como último recurso cuando no hay `stable_key`/`notice_id`/`id`.
+   - No-copia de campos arbitrarios/`password`/`secret`/`token`/`api_key` del input: allowlist exacta de claves del item de salida y ausencia de los valores sensibles en el reporte serializado.
+   - Validación fail-closed de `build...`: `nowIso` ausente, no canónico (sin hora/`Z`) o inválido; `payload` que no es objeto/arreglo; `items` que no es arreglo; item `null`/string/no-objeto.
+   - Escritura atómica: `outputDir` anidado se crea; `<YYYY-MM-DD>.json` y `latest.json` con contenido idéntico y un único newline final; devuelve `{ report, dailyPath, latestPath }`; no es JSONL.
+   - Rerun el mismo día reemplaza (no acumula) el archivo de ese día.
+   - Retención: escribir un día nuevo no borra el artefacto del día anterior; `latest.json` siempre refleja la corrida más reciente.
+   - Validación fail-closed de `write...`: `outputDir` vacío/ausente, `nowIso`/`payload` inválidos — ninguna corrida inválida deja un artefacto escrito.
+
+**Ejecutar y confirmar rojo:**
+```
+node --test tests/agt002-service-v2-shadow-report.test.mjs
+```
+**Fallo esperado:** `ERR_MODULE_NOT_FOUND` al resolver `../scripts/agt002-service-v2-shadow-report.mjs` — el archivo de test falla por completo en la fase de `import`, antes de que corra ninguna aserción. Este es el rojo correcto y suficiente para esta fase: fija el contrato íntegro de spec §8 que la fase GREEN futura debe satisfacer literalmente.
+
+No se modifica ningún archivo de producción en esta tarea (ni `tender-fit-policy.js`, ni `tender-service-matrix-v2.js`, ni ningún script existente). `scripts/agt002-service-v2-shadow-report.mjs` queda pendiente de implementación.
+
+## Tarea 8 (GREEN de la Tarea 7) — [COMPLETADA]
+Implementado `scripts/agt002-service-v2-shadow-report.mjs` satisfaciendo literalmente spec §8 y el contrato fijado en `tests/agt002-service-v2-shadow-report.test.mjs`, sin modificar `tender-fit-policy.js` ni `tender-service-matrix-v2.js`.
+
+**Verificación dirigida:**
+```
+node --test tests/agt002-service-v2-shadow-report.test.mjs
+```
+Resultado: **24 pass, 0 fail** (el rojo inicial fue `ERR_MODULE_NOT_FOUND`, confirmado en la Tarea 7 antes de esta implementación). La fórmula productiva de Servicio v1 (`evaluateServicioAxis`, `tender-fit-v1`) no se tocó.
+
+## Tarea 8.1 (RED, corrección de bug de alias detectado en revisión independiente) — [COMPLETADA]
+Una revisión de código independiente sobre `scripts/agt002-service-v2-shadow-report.mjs` detectó que la resolución de alias de entrada (spec §8.3) no trataba siempre un `null` explícito en un alias como "no presente": cuando el primer alias de una fila de la tabla llegaba con valor `null` explícito (en vez de estar simplemente ausente/`undefined`), la resolución no caía de forma consistente al siguiente alias de la lista, dejando en `null` campos del reporte para items que sí traían un alias real y válido más adelante en el orden de preferencia; los casos de alias "reales" (valores no-canónicos presentes) tampoco tenían cobertura de prueba explícita. Corregido con TDD: se añadieron primero los casos rojos correspondientes a `tests/agt002-service-v2-shadow-report.test.mjs` (alias con `null` explícito cayendo al siguiente alias de la lista; alias real no-canónico resuelto correctamente), confirmando el fallo, y después se corrigió `scripts/agt002-service-v2-shadow-report.mjs` para que la regla "primer campo presente y no `undefined`/`null` gana" (spec §8.3) se aplique literalmente a cada campo de la tabla. Documentado en spec §8.3.1.
+
+## Tarea 8.2 (GREEN de la Tarea 8.1 + verificación dirigida) — [COMPLETADA]
+```
+node --test tests/agt002-service-v2-shadow-report.test.mjs
+```
+Resultado: **29 pass, 0 fail** (frente a las 24 de la Tarea 8, por los casos nuevos de alias `null`/alias real de la Tarea 8.1).
+
+Verificación dirigida ampliada (service-matrix-v2 + fit-policy + proyecciones + reporte sombra), ejecutada por el parent de esta sesión:
+```
+node --test tests/tender-service-matrix-v2.test.mjs tests/tender-fit-policy.test.mjs tests/tender-fit-backend-projection.test.mjs tests/tender-fit-cohort-audit.test.mjs tests/tender-fit-frontend.test.mjs tests/tender-radar-card-fit-humanized.test.mjs tests/agt002-service-v2-shadow-report.test.mjs
+```
+Resultado: **34 pass, 0 fail**.
+```
+npm run build
+```
+Resultado: **exit 0**.
+
+## Tarea 8.3 — Corrida seca sobre archivo real [COMPLETADA]
+`buildAgt002ServiceV2ShadowReport`/`writeAgt002ServiceV2ShadowReport` ejecutado en modo seco (solo lectura/observación, sin tocar ninguna decisión existente de Radar) sobre el archivo real `secop_psi_radar_latest.json`: **137 items** procesados, resultando en **54 `SAME_SERVICE_POINTS`**, **75 `POINTS_CHANGED`**, **6 `CURRENT_OUT_V2_IN`**, **2 `CURRENT_IN_V2_OUT`**, **3 `EXCLUIDA`**. El script sigue siendo de solo observación (spec §8.7); ninguna decisión fue modificada por esta corrida.
+
+## Tarea 8.4 — Suite completa de seguimiento [COMPLETADA]
+```
+npm test -- --test-concurrency=1
+```
+Ejecutado por el parent de esta sesión: **exit 0**, 2846 tests, 2836 pass, 0 fail, 10 skipped, duración 388248.604145ms.
+
+**El código capturador (`scripts/agt002-service-v2-shadow-report.mjs`) y su validación quedan completos.** Pendiente: integración en el wrapper diario externo (Tarea 9), commit, PR, despliegue y la corrida inicial canónica en producción.
+
+## Tarea 9 — Integración en wrapper diario y despliegue [PENDIENTE]
+Añadir la invocación de `writeAgt002ServiceV2ShadowReport` (`outputDir: '/root/.hermes/state/agt002-service-v2-shadow'`) como paso **no bloqueante** dentro del wrapper diario externo que ya ejecuta Radar (fuera de este worktree), sin crear ningún timer/systemd nuevo: una falla en este paso debe quedar como **warning** en el log del wrapper y no debe interrumpir la ejecución de Radar ni el envío a Discord. Pendiente también: commit, PR, despliegue y la corrida inicial canónica en producción.
