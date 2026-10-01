@@ -1,4 +1,4 @@
-import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -13,6 +13,11 @@ export async function loadRadarRunReceiptLatest(request: TenderRequest): Promise
 /** Historial de sólo lectura de corridas del Radar, acotado por el servidor a un máximo de 10. */
 export async function loadRadarRunReceiptHistory(request: TenderRequest, limit = 10): Promise<TenderRadarRunReceiptHistoryPayload> {
   return request<TenderRadarRunReceiptHistoryPayload>(`/api/tenders/radar-runs/history?limit=${limit}`);
+}
+
+/** Delta de sólo lectura entre las dos corridas persistidas más recientes (Corte 3, mitad UI). Nunca escribe. */
+export async function loadRadarRunDelta(request: TenderRequest): Promise<TenderRadarRunDeltaPayload> {
+  return request<TenderRadarRunDeltaPayload>('/api/tenders/radar-runs/delta');
 }
 
 export async function loadTracking<T>(request: TenderRequest): Promise<T> {

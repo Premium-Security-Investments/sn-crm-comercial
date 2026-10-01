@@ -1,4 +1,4 @@
-import type { PublicTender, TenderDeadlineFilter, TenderFitBand, TenderFitProjection, TenderInternalStatus, TenderRadarRunReceipt, TenderRadarRunReceiptSource, TenderRadarRunReceiptStatus, TenderRegionKey, TenderScoreFilter, TenderSection, TenderSortKey, TenderValueFilter } from './types';
+import type { PublicTender, TenderDeadlineFilter, TenderFitBand, TenderFitProjection, TenderInternalStatus, TenderRadarRunDelta, TenderRadarRunDeltaCategory, TenderRadarRunReceipt, TenderRadarRunReceiptSource, TenderRadarRunReceiptStatus, TenderRegionKey, TenderScoreFilter, TenderSection, TenderSortKey, TenderValueFilter } from './types';
 
 const FIT_BAND_LABELS: Record<TenderFitBand, string> = { alto: 'Encaje alto', medio: 'Encaje medio', por_validar: 'Encaje por validar', bajo: 'Encaje bajo' };
 
@@ -207,6 +207,48 @@ export function tenderRadarRunReceiptCoverageRatio(receipt: TenderRadarRunReceip
 // (AGT002_RADAR_RUN_RECEIPT_HISTORY_MAX), pero la UI nunca debe depender únicamente de eso.
 export function tenderRadarRunReceiptHistoryOrdered(receipts: TenderRadarRunReceipt[]): TenderRadarRunReceipt[] {
   return [...receipts].sort((left, right) => right.started_at.localeCompare(left.started_at)).slice(0, 10);
+}
+
+// Radar Corte 3 (mitad UI) — delta de corrida. Sólo estas cuatro categorías de candidato se
+// ofrecen como vista temporal seleccionable; `source_recovered`/`source_degraded` son eventos de
+// fuente, sin stable_key, y quedan únicamente en el resumen.
+export const TENDER_RADAR_RUN_DELTA_SELECTABLE_CATEGORIES: TenderRadarRunDeltaCategory[] = ['new', 'deadline_changed', 'fit_changed', 'expired'];
+
+const RADAR_RUN_DELTA_CATEGORY_LABELS: Record<TenderRadarRunDeltaCategory, string> = {
+  new: 'Nuevo', deadline_changed: 'Cierre modificado', fit_changed: 'Encaje actualizado', expired: 'Vencido desde la última corrida',
+  source_recovered: 'Fuente recuperada', source_degraded: 'Fuente degradada',
+};
+
+export function tenderRadarRunDeltaCategoryLabel(category: TenderRadarRunDeltaCategory): string {
+  return RADAR_RUN_DELTA_CATEGORY_LABELS[category] || category;
+}
+
+// Claves estables de los candidatos que pertenecen a una categoría seleccionable, para la vista
+// temporal del Radar. `null`/sin baseline/categoría no seleccionable -> conjunto vacío, nunca
+// inventa pertenencia.
+export function tenderRadarRunDeltaStableKeysForCategory(delta: TenderRadarRunDelta | null, category: TenderRadarRunDeltaCategory): Set<string> {
+  const keys = new Set<string>();
+  if (!delta || !delta.baseline_available || !TENDER_RADAR_RUN_DELTA_SELECTABLE_CATEGORIES.includes(category)) return keys;
+  for (const change of delta.changes) {
+    if (change.category === category && change.stable_key) keys.add(change.stable_key);
+  }
+  return keys;
+}
+
+// Etiquetas discretas exactas (ya traducidas por el servidor) que aplican a un candidato concreto;
+// nunca incluye eventos de fuente (`source_recovered`/`source_degraded`), que no tienen stable_key.
+export function tenderRadarRunDeltaCardLabels(delta: TenderRadarRunDelta | null, stableKey: string): string[] {
+  if (!delta || !delta.baseline_available || !stableKey) return [];
+  return delta.changes.filter(change => change.stable_key === stableKey).map(change => change.label);
+}
+
+// Eventos de salud de fuente (recuperada/degradada) del delta, sólo para el resumen: nunca se
+// presentan como etiqueta de una tarjeta.
+export function tenderRadarRunDeltaSourceEvents(delta: TenderRadarRunDelta | null): Array<{ category: TenderRadarRunDeltaCategory; source: string; label: string }> {
+  if (!delta || !delta.baseline_available) return [];
+  return delta.changes
+    .filter(change => change.category === 'source_recovered' || change.category === 'source_degraded')
+    .map(change => ({ category: change.category, source: change.source, label: change.label }));
 }
 
 export function sortTenderCards(rows: PublicTender[], key: TenderSortKey, direction: 'asc' | 'desc'): PublicTender[] {
