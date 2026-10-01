@@ -85,6 +85,7 @@ import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId } from '../esu-direct-crawl.js';
 import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
+import { buildAgt002RadarRunReceipt, readAgt002RadarRunReceiptHistory, readLatestAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../agt002-radar-run-receipt.js';
 import {
   ACTIONABLE_REVIEW_ATTACHMENT_DOWNLOAD_TTL_SECONDS,
   actionableReviewForbiddenError,
@@ -1536,14 +1537,18 @@ async function fetchPublicTenderRadar() {
     if (result.status === 'fulfilled') {
       batches.push(result.value);
       const visibleCount = result.value.filter(t => !isExpiredRadarProcess(t) && isTenderTrackable(t)).length;
-      diagnostics.push({ source, status: 'ok', count: visibleCount, message: visibleCount ? `${visibleCount} candidato(s)` : 'Sin candidatos relevantes hoy' });
+      // pages_read: un ciclo de lectura real por fuente intentada en esta orquestación (no cuenta
+      // la paginación interna de cada fetcher). records_read: tamaño real del lote que esa fuente
+      // devolvió al orquestador en esta corrida, antes de la deduplicación entre fuentes. Ambos
+      // alimentan el recibo de corrida (agt002-radar-run-receipt.js); nunca son inventados.
+      diagnostics.push({ source, status: 'ok', count: visibleCount, pages_read: 1, records_read: result.value.length, message: visibleCount ? `${visibleCount} candidato(s)` : 'Sin candidatos relevantes hoy' });
     } else {
       const message = source === 'TVEC'
         ? `TVEC no disponible temporalmente: ${result.reason?.message || result.reason}`
         : source === 'ESU Contratación directo'
           ? `ESU Contratación no disponible temporalmente (directo): ${result.reason?.message || result.reason}`
           : `${source} no disponible temporalmente: ${result.reason?.message || result.reason}`;
-      diagnostics.push({ source, status: 'error', count: 0, message });
+      diagnostics.push({ source, status: 'error', count: 0, pages_read: 1, records_read: 0, message });
     }
   });
   const seen = new Set();
@@ -1725,11 +1730,27 @@ function withPhaseIdentityRaw(baseRaw, { identityReview = false, knownPhases = [
   if (knownPhases.length > 1) return { ...(baseRaw || {}), phase_continuity: { known_phases: knownPhases } };
   return baseRaw || null;
 }
+function radarRunReceiptSourcesFromDiagnostics(diagnostics) {
+  return (diagnostics || []).map(d => ({
+    name: d.source, attempted: true, succeeded: d.status === 'ok',
+    pages_read: d.pages_read || 0, records_read: d.records_read || 0, candidates_found: d.count || 0,
+    error: d.status === 'error' ? d.message : null,
+  }));
+}
 async function persistTenderRadar(database, actorProfile, mode = 'manual') {
+  // run_id se genera antes de tocar el pipeline real para que, incluso si la corrida resulta
+  // fatal, el recibo fallido pueda referenciarla de forma estable e idempotente (Corte 2).
+  const radarRunId = randomUUID();
+  const radarRunStartedAt = new Date().toISOString();
+  // Inicializado en [] antes del try: si fetchPublicTenderRadar mismo revienta (fallo fatal antes
+  // de que el pipeline reporte nada por fuente), el catch sigue pudiendo construir un recibo
+  // 'failed' válido en vez de reventar al armar el recibo del propio fallo.
+  let diagnostics = [];
+  try {
   const fetchedPayload = await fetchPublicTenderRadar();
   const fetched = fetchedPayload.tenders;
   const persistenceTenders = fetchedPayload.persistenceTenders || fetched;
-  const diagnostics = fetchedPayload.diagnostics;
+  diagnostics = fetchedPayload.diagnostics;
   if (!(await tenderTableAvailable(database))) {
     const live = await enrichLiveTendersWithConversions(database, fetched);
     return radarPayload(live, new Date().toISOString(), 'live_no_table', diagnostics);
@@ -1804,9 +1825,35 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
       if (opportunityWriteError) throw opportunityWriteError;
     }
   }
-  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: fetched.length, count_hacer: fetched.filter(r => r.section === 'hacer').length, count_revisar: fetched.filter(r => r.section === 'revisar').length, count_prioridad_baja: fetched.filter(r => r.section === 'prioridad_baja').length, summary: `Radar multifuente sincronizado: ${fetched.length} procesos/eventos visibles; ${rows.length} actualizados. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
+  const radarRunReceipt = buildAgt002RadarRunReceipt({
+    runId: radarRunId, startedAt: radarRunStartedAt, finishedAt: new Date().toISOString(),
+    sources: radarRunReceiptSourcesFromDiagnostics(diagnostics),
+  });
+  await recordAgt002RadarRunReceipt(database, radarRunReceipt, {
+    run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: fetched.length, count_hacer: fetched.filter(r => r.section === 'hacer').length,
+    count_revisar: fetched.filter(r => r.section === 'revisar').length, count_prioridad_baja: fetched.filter(r => r.section === 'prioridad_baja').length,
+    summary: `Radar multifuente sincronizado: ${fetched.length} procesos/eventos visibles; ${rows.length} actualizados. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}`,
+  });
   const persisted = await readPersistedTenderRadar(database);
-  return { ...persisted, diagnostics };
+  return { ...persisted, diagnostics, run_receipt: radarRunReceipt };
+  } catch (fatalError) {
+    // Corrida fatal (§ Corte 2): aunque algunas fuentes hubieran terminado antes del fallo, el
+    // recibo entero queda 'failed' -- nunca se reporta 'complete'/'partial' para una corrida que no
+    // terminó. La escritura del recibo es best-effort: si también falla, nunca enmascara el error
+    // real, que siempre se vuelve a lanzar tal cual para no cambiar el comportamiento ya existente
+    // de los llamadores de persistTenderRadar.
+    const fatalReceipt = buildAgt002RadarRunReceipt({
+      runId: radarRunId, startedAt: radarRunStartedAt, finishedAt: new Date().toISOString(),
+      sources: radarRunReceiptSourcesFromDiagnostics(diagnostics), fatalError,
+    });
+    try {
+      await recordAgt002RadarRunReceipt(database, fatalReceipt, {
+        triggered_by: actorProfile?.id || null, mode, count_total: 0, count_hacer: 0, count_revisar: 0, count_prioridad_baja: 0,
+        summary: 'Corrida de Radar fallida; ver recibo de corrida (run_receipt).',
+      });
+    } catch { /* best-effort: nunca enmascara fatalError */ }
+    throw fatalError;
+  }
 }
 async function buildTenderRadar(database, currentProfile, forceRefresh = false) {
   if (forceRefresh) return await persistTenderRadar(database, currentProfile, 'manual');
@@ -2226,6 +2273,31 @@ app.post('/api/tender-refresh', async (req, res) => {
     if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
     const database = requireDb();
     res.json(await persistTenderRadar(database, currentProfile, 'manual'));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+// Corte 2 (backend): lectura de sólo lectura del recibo de la última corrida real del Radar.
+// Misma autorización que GET /api/tenders. Nunca escribe; `null` cuando la fila más reciente de
+// psi_tender_radar_runs todavía no trae un recibo (filas previas a este cambio).
+app.get('/api/tenders/radar-runs/latest', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
+    const database = requireDb();
+    res.json({ run_receipt: await readLatestAgt002RadarRunReceipt(database) });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+// Corte 2 (backend): historial de sólo lectura de recibos de corrida, acotado siempre a un máximo
+// de 10 (ver AGT002_RADAR_RUN_RECEIPT_HISTORY_MAX), sin importar lo que pida el cliente. Misma
+// autorización que GET /api/tenders. `[]` cuando todavía no hay ningún recibo nuevo.
+app.get('/api/tenders/radar-runs/history', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    res.json({ run_receipts: await readAgt002RadarRunReceiptHistory(database, Number.isInteger(requestedLimit) ? { limit: requestedLimit } : undefined) });
   } catch (error) { sendAuthError(res, error); }
 });
 
