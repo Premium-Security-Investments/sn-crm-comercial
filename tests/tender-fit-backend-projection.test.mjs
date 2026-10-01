@@ -19,11 +19,11 @@ function baseRow(o = {}) {
 for (const path of ['../server/index.js', '../api/[...path].js']) {
   const { dbTenderToPublic, tenderScoreFilters, compareTenderRadarRows, radarPayload } = await import(path);
 
-  // dbTenderToPublic: legacy score preserved, nested fit policy tender-fit-v1/alto for physical guard, COP2.5b, Bogotá, deadline 2026-10-10.
+  // dbTenderToPublic: legacy score preserved, nested fit policy tender-fit-v2/alto for physical guard, COP2.5b, Bogotá, deadline 2026-10-10.
   const row = baseRow();
   const pub = dbTenderToPublic(row, { nowIso: NOW });
   assert.equal(pub.score, 190, `${path}: score legado intacto`);
-  assert.equal(pub.fit.policy_version, 'tender-fit-v1', `${path}: fit nuevo con versión de política`);
+  assert.equal(pub.fit.policy_version, 'tender-fit-v2', `${path}: fit nuevo con versión de política`);
   assert.equal(pub.fit.band, 'alto', `${path}: fit se deriva de la fila, no del score legado`);
   assert.equal(pub.fit.evaluated_at, NOW, `${path}: fit.evaluated_at refleja el nowIso capturado`);
 

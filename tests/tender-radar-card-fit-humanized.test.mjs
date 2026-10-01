@@ -1,16 +1,18 @@
-// Contrato de presentación del Radar para el badge "Encaje" gobernado por tender-fit-v1.
+// Contrato de presentación del Radar para el badge "Encaje" gobernado por tender-fit-v2.
 // Fija, contra TenderRadarView.tsx + radarUtils.ts (tenderFitBadgeLabel / tenderFitReasonDetails),
 // el comportamiento de la tarjeta del Radar:
 //   (1) la tarjeta no debe mostrar el score legado (`tender.score`) ni el texto "Score N".
 //   (2) la tarjeta debe mostrar únicamente la banda humanizada ("Encaje alto" / "Encaje medio" /
 //       "Encaje por validar" / "Encaje bajo"), sin ningún score numérico de `fit` ni el slug
 //       crudo (`por_validar`) — para las cuatro bandas, e incluso cuando `tender.fit` está
-//       ausente (fallback seguro sin score).
+//       ausente (fallback seguro sin score). Tampoco debe exponerse ninguna etiqueta cruda de
+//       prioridad (p.ej. `impact_priority` o su número) en el texto visible de la tarjeta.
 //   (3) las razones visibles deben venir de `tender.fit.reasons` y `tender.fit.data_gaps`, nunca
 //       del `tender.reasons` legado — cubriendo un encaje normal (razón) y una brecha `por_validar`
 //       (data gap).
-//   (4) como máximo se muestran dos detalles de razón/brecha por tarjeta, y en `por_validar` las
-//       brechas críticas se muestran antes que las no críticas.
+//   (4) como máximo se muestran dos detalles de razón/brecha por tarjeta, ordenados por
+//       `impact_priority` ascendente (no por puntaje ni por severidad), y las filas legadas sin
+//       `impact_priority` se muestran después de las priorizadas, preservando su orden original.
 // No se cambian filtros, orden, backend, API, esquema, persistencia, migraciones ni despliegue.
 // Esta prueba monta el componente real (esbuild + jsdom), no HTML copiado a mano.
 import { strict as assert } from 'node:assert';
@@ -65,19 +67,19 @@ const MEDIO_REASON_DETAIL = 'Servicio de aseo detectado con evidencia parcial en
 const BAJO_REASON_DETAIL = 'Objeto contractual fuera del alcance habitual de la operación';
 const NO_FIT_FALLBACK_DETAIL = 'Sin datos de encaje: no fue posible calcular el fit del proceso';
 
-const CAP_REASON_HIGH_DETAIL = 'Razón de mayor puntaje: control de acceso perimetral';
-const CAP_REASON_MID_DETAIL = 'Razón de puntaje medio: monitoreo CCTV adicional';
-const CAP_REASON_LOW_DETAIL = 'Razón de menor puntaje: no debe verse en la tarjeta';
+const CAP_REASON_FIRST_DETAIL = 'Razón de mayor prioridad de impacto: plazo insuficiente';
+const CAP_REASON_SECOND_DETAIL = 'Razón de segunda prioridad de impacto: servicio ambiguo';
+const CAP_REASON_LEGACY_DETAIL = 'Razón legada sin impact_priority, con el mayor puntaje del arreglo: no debe verse en la tarjeta';
 
-const CAP_GAP_CRITICAL_DETAIL = 'Brecha crítica: no se reportó el objeto contractual';
-const CAP_GAP_NONCRITICAL_FIRST_DETAIL = 'Brecha no crítica listada primero en el arreglo de origen';
-const CAP_GAP_NONCRITICAL_THIRD_DETAIL = 'Brecha no crítica que no debe verse en la tarjeta';
+const CAP_GAP_FIRST_DETAIL = 'Brecha de mayor prioridad de impacto: plazo';
+const CAP_GAP_SECOND_DETAIL = 'Brecha de segunda prioridad de impacto: valor';
+const CAP_GAP_LEGACY_DETAIL = 'Brecha legada sin impact_priority: no debe verse en la tarjeta';
 
 const ALTO_ROW = {
   id: 'tender-alfa', source: 'SECOP II', section: 'hacer', entity: 'Entidad Alfa', title: 'Servicio de vigilancia',
   value: 950000000, score: 97, reasons: ['RAZON_LEGADA_NO_DEBE_VERSE_ALFA'], risks: [],
   fit: {
-    policy_version: 'tender-fit-v1', score: 61, band: 'alto', confidence: 'alta', participation_hint: 'directa',
+    policy_version: 'tender-fit-v2', score: 61, band: 'alto', confidence: 'alta', participation_hint: 'directa',
     reasons: [{ axis: 'servicio', points: 50, code: 'servicio_fisico', detail: ALTO_REASON_DETAIL, source: 'title' }],
     data_gaps: [],
     feedback: { mode: 'evidence_only', applied_points: 0, policy: 'human_reviewed_version_only' },
@@ -89,7 +91,7 @@ const POR_VALIDAR_ROW = {
   id: 'tender-beta', source: 'SECOP II', section: 'revisar', entity: 'Entidad Beta', title: 'Servicio de CCTV',
   value: 0, score: 88, reasons: ['RAZON_LEGADA_NO_DEBE_VERSE_BETA'], risks: [],
   fit: {
-    policy_version: 'tender-fit-v1', score: 40, band: 'por_validar', confidence: 'baja', participation_hint: 'por_definir',
+    policy_version: 'tender-fit-v2', score: 40, band: 'por_validar', confidence: 'baja', participation_hint: 'por_definir',
     reasons: [{ axis: 'servicio', points: 40, code: 'servicio_electronico', detail: 'Servicio de CCTV detectado en el objeto contractual', source: 'title' }],
     data_gaps: [{ gap_id: 'valor_no_reportado', field: 'value', severity: 'critical', detail: POR_VALIDAR_GAP_DETAIL, source: 'value' }],
     feedback: { mode: 'evidence_only', applied_points: 0, policy: 'human_reviewed_version_only' },
@@ -100,14 +102,14 @@ const POR_VALIDAR_ROW = {
 const NO_FIT_ROW = {
   id: 'tender-gamma', source: 'SECOP II', section: 'hacer', entity: 'Entidad Gamma', title: 'Proceso sin evaluación de encaje',
   value: 10000000, score: 55, reasons: ['RAZON_LEGADA_NO_DEBE_VERSE_GAMMA'], risks: [],
-  // sin `fit`: simula un registro todavía no evaluado por tender-fit-v1.
+  // sin `fit`: simula un registro todavía no evaluado por tender-fit-v2.
 };
 
 const MEDIO_ROW = {
   id: 'tender-delta', source: 'SECOP II', section: 'revisar', entity: 'Entidad Delta', title: 'Servicio de aseo',
   value: 120000000, score: 70, reasons: ['RAZON_LEGADA_NO_DEBE_VERSE_DELTA'], risks: [],
   fit: {
-    policy_version: 'tender-fit-v1', score: 45, band: 'medio', confidence: 'media', participation_hint: 'alianza_probable',
+    policy_version: 'tender-fit-v2', score: 45, band: 'medio', confidence: 'media', participation_hint: 'alianza_probable',
     reasons: [{ axis: 'servicio', points: 30, code: 'servicio_aseo', detail: MEDIO_REASON_DETAIL, source: 'title' }],
     data_gaps: [],
     feedback: { mode: 'evidence_only', applied_points: 0, policy: 'human_reviewed_version_only' },
@@ -119,7 +121,7 @@ const BAJO_ROW = {
   id: 'tender-epsilon', source: 'SECOP II', section: 'hacer', entity: 'Entidad Epsilon', title: 'Suministro de papelería',
   value: 8000000, score: 20, reasons: ['RAZON_LEGADA_NO_DEBE_VERSE_EPSILON'], risks: [],
   fit: {
-    policy_version: 'tender-fit-v1', score: 13, band: 'bajo', confidence: 'alta', participation_hint: 'por_definir',
+    policy_version: 'tender-fit-v2', score: 13, band: 'bajo', confidence: 'alta', participation_hint: 'por_definir',
     reasons: [{ axis: 'servicio', points: 5, code: 'fuera_de_alcance', detail: BAJO_REASON_DETAIL, source: 'title' }],
     data_gaps: [],
     feedback: { mode: 'evidence_only', applied_points: 0, policy: 'human_reviewed_version_only' },
@@ -127,17 +129,19 @@ const BAJO_ROW = {
   },
 };
 
-// Tres razones a propósito desordenadas por puntaje: fija que sólo se muestran las dos de mayor
-// puntaje (ordenadas por puntaje descendente) y que la de menor puntaje queda oculta.
+// Tres razones a propósito desordenadas y con puntaje invertido respecto a la prioridad: fija que
+// el orden mostrado depende de `impact_priority` ascendente (no del puntaje ni del orden de
+// cálculo), y que la razón legada sin `impact_priority` —aunque tenga el mayor puntaje del
+// arreglo— se trata como la de menor prioridad y queda oculta.
 const REASON_CAP_ROW = {
   id: 'tender-zeta', source: 'SECOP II', section: 'revisar', entity: 'Entidad Zeta', title: 'Servicio de vigilancia con CCTV',
   value: 500000000, score: 90, reasons: ['RAZON_LEGADA_NO_DEBE_VERSE_ZETA'], risks: [],
   fit: {
-    policy_version: 'tender-fit-v1', score: 55, band: 'alto', confidence: 'alta', participation_hint: 'directa',
+    policy_version: 'tender-fit-v2', score: 55, band: 'alto', confidence: 'alta', participation_hint: 'directa',
     reasons: [
-      { axis: 'servicio', points: 30, code: 'servicio_cctv', detail: CAP_REASON_MID_DETAIL, source: 'title' },
-      { axis: 'servicio', points: 50, code: 'servicio_perimetral', detail: CAP_REASON_HIGH_DETAIL, source: 'title' },
-      { axis: 'servicio', points: 10, code: 'servicio_menor', detail: CAP_REASON_LOW_DETAIL, source: 'title' },
+      { axis: 'valor', points: 99, code: 'valor_legado_alto_puntaje', detail: CAP_REASON_LEGACY_DETAIL, source: 'value' },
+      { axis: 'tiempo', points: 0, code: 'plazo_insuficiente', detail: CAP_REASON_FIRST_DETAIL, source: 'deadline_at', impact_priority: 0 },
+      { axis: 'servicio', points: 5, code: 'servicio_ambiguo', detail: CAP_REASON_SECOND_DETAIL, source: 'title', impact_priority: 1 },
     ],
     data_gaps: [],
     feedback: { mode: 'evidence_only', applied_points: 0, policy: 'human_reviewed_version_only' },
@@ -145,19 +149,19 @@ const REASON_CAP_ROW = {
   },
 };
 
-// Brechas a propósito desordenadas: la crítica va en el medio del arreglo de origen para probar
-// que el orden mostrado depende de la severidad y no del orden de llegada, y que sólo se
-// muestran dos (la tercera, no crítica, queda oculta).
+// Brechas a propósito desordenadas: la de mayor prioridad va al final del arreglo de origen para
+// probar que el orden mostrado depende de `impact_priority` ascendente y no del orden de llegada,
+// y que la brecha legada sin `impact_priority` queda oculta (va después de las priorizadas).
 const GAP_CAP_ROW = {
   id: 'tender-eta', source: 'SECOP II', section: 'hacer', entity: 'Entidad Eta', title: 'Servicio de CCTV sin objeto claro',
   value: 0, score: 33, reasons: ['RAZON_LEGADA_NO_DEBE_VERSE_ETA'], risks: [],
   fit: {
-    policy_version: 'tender-fit-v1', score: 35, band: 'por_validar', confidence: 'baja', participation_hint: 'por_definir',
+    policy_version: 'tender-fit-v2', score: 35, band: 'por_validar', confidence: 'baja', participation_hint: 'por_definir',
     reasons: [{ axis: 'servicio', points: 35, code: 'servicio_electronico', detail: 'Servicio de CCTV detectado en el objeto contractual', source: 'title' }],
     data_gaps: [
-      { gap_id: 'no_critica_primero', field: 'city', severity: 'noncritical', detail: CAP_GAP_NONCRITICAL_FIRST_DETAIL, source: 'city' },
-      { gap_id: 'critica', field: 'object', severity: 'critical', detail: CAP_GAP_CRITICAL_DETAIL, source: 'object' },
-      { gap_id: 'no_critica_tercera', field: 'value', severity: 'noncritical', detail: CAP_GAP_NONCRITICAL_THIRD_DETAIL, source: 'value' },
+      { gap_id: 'legado', field: 'city', severity: 'critical', detail: CAP_GAP_LEGACY_DETAIL, source: 'city' },
+      { gap_id: 'segunda', field: 'value', severity: 'critical', detail: CAP_GAP_SECOND_DETAIL, source: 'value', impact_priority: 1 },
+      { gap_id: 'primera', field: 'deadline_at', severity: 'critical', detail: CAP_GAP_FIRST_DETAIL, source: 'deadline_at', impact_priority: 0 },
     ],
     feedback: { mode: 'evidence_only', applied_points: 0, policy: 'human_reviewed_version_only' },
     evaluated_at: '2026-09-20T00:00:00.000Z',
@@ -239,36 +243,37 @@ test('las razones visibles vienen de fit.reasons/data_gaps, nunca del reasons le
   }
 });
 
-test('se muestran como máximo dos razones, ordenadas por puntaje descendente, y la tercera queda oculta', async () => {
+test('se muestran como máximo dos razones, ordenadas por impact_priority ascendente (no por puntaje), y la legada queda oculta', async () => {
   const view = mountRadar(PAYLOAD);
   try {
     await settle(view);
     const card = findCardByEntity(view, 'Entidad Zeta');
     const details = fitDetailsText(card);
-    assert.match(details, new RegExp(CAP_REASON_HIGH_DETAIL), 'debe mostrarse la razón de mayor puntaje');
-    assert.match(details, new RegExp(CAP_REASON_MID_DETAIL), 'debe mostrarse la razón de puntaje medio');
-    assert.doesNotMatch(card.textContent, new RegExp(CAP_REASON_LOW_DETAIL), 'la tercera razón (menor puntaje) no debe aparecer en la tarjeta');
+    assert.match(details, new RegExp(CAP_REASON_FIRST_DETAIL), 'debe mostrarse la razón de mayor prioridad de impacto');
+    assert.match(details, new RegExp(CAP_REASON_SECOND_DETAIL), 'debe mostrarse la razón de segunda prioridad de impacto');
+    assert.doesNotMatch(card.textContent, new RegExp(CAP_REASON_LEGACY_DETAIL), 'la razón legada sin impact_priority no debe aparecer en la tarjeta, pese a tener el mayor puntaje');
     assert.ok(
-      details.indexOf(CAP_REASON_HIGH_DETAIL) < details.indexOf(CAP_REASON_MID_DETAIL),
-      'la razón de mayor puntaje debe mostrarse antes que la de puntaje medio',
+      details.indexOf(CAP_REASON_FIRST_DETAIL) < details.indexOf(CAP_REASON_SECOND_DETAIL),
+      'la razón de mayor prioridad de impacto (impact_priority menor) debe mostrarse antes que la de segunda prioridad',
     );
+    assert.doesNotMatch(details, /impact_priority/i, 'no debe exponerse el nombre crudo del campo impact_priority en el texto visible');
   } finally {
     await view.unmount();
   }
 });
 
-test('en por_validar se muestran como máximo dos brechas, las críticas antes que las no críticas, y la tercera queda oculta', async () => {
+test('en por_validar se muestran como máximo dos brechas, ordenadas por impact_priority ascendente, y la legada queda oculta', async () => {
   const view = mountRadar(PAYLOAD);
   try {
     await settle(view);
     const card = findCardByEntity(view, 'Entidad Eta');
     const details = fitDetailsText(card);
-    assert.match(details, new RegExp(CAP_GAP_CRITICAL_DETAIL), 'debe mostrarse la brecha crítica');
-    assert.match(details, new RegExp(CAP_GAP_NONCRITICAL_FIRST_DETAIL), 'debe mostrarse la primera brecha no crítica');
-    assert.doesNotMatch(card.textContent, new RegExp(CAP_GAP_NONCRITICAL_THIRD_DETAIL), 'la tercera brecha (no crítica) no debe aparecer en la tarjeta');
+    assert.match(details, new RegExp(CAP_GAP_FIRST_DETAIL), 'debe mostrarse la brecha de mayor prioridad de impacto');
+    assert.match(details, new RegExp(CAP_GAP_SECOND_DETAIL), 'debe mostrarse la brecha de segunda prioridad de impacto');
+    assert.doesNotMatch(card.textContent, new RegExp(CAP_GAP_LEGACY_DETAIL), 'la brecha legada sin impact_priority no debe aparecer en la tarjeta');
     assert.ok(
-      details.indexOf(CAP_GAP_CRITICAL_DETAIL) < details.indexOf(CAP_GAP_NONCRITICAL_FIRST_DETAIL),
-      'la brecha crítica debe mostrarse antes que la no crítica, aunque en el arreglo de origen venga después',
+      details.indexOf(CAP_GAP_FIRST_DETAIL) < details.indexOf(CAP_GAP_SECOND_DETAIL),
+      'la brecha de mayor prioridad de impacto debe mostrarse antes que la de segunda prioridad, aunque en el arreglo de origen venga después',
     );
   } finally {
     await view.unmount();
