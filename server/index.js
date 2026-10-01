@@ -1263,6 +1263,17 @@ function tenderMoney(value) { const n = Number(String(value || '0').replace(/[^0
 function tenderDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }
 function tenderDaysUntil(value) { const d = tenderDate(value); if (!d) return null; const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0); return Math.round((d.getTime() - today.getTime()) / 86400000); }
 function tenderWindow(days) { if (days === null) return 'sin fecha de cierre reportada'; if (days <= 7) return 'urgente (0-7 días)'; if (days <= 15) return 'revisar rápido (8-15 días)'; if (days <= 30) return 'buena ventana (16-30 días)'; return 'ventana amplia'; }
+// Resuelve la fecha de cierre canónica de un tender (vivo o persistido). `deadline_at` es una
+// columna timestamptz: al guardar una fecha de calendario sin hora, Postgres la ancla a medianoche
+// UTC, y esa misma fecha de calendario puede desplazarse un día al reconvertirse a America/Bogota
+// (UTC-5) en el cliente. Cuando `raw.deadline` trae la fecha de calendario exacta (YYYY-MM-DD) de
+// la fuente, esa es la autoridad y evita el desplazamiento; si no está presente o no es una fecha
+// exacta, se preserva el `deadline_at`/`deadline` existente tal cual (semántica sin cambios).
+export function resolveCanonicalTenderDeadline(item) {
+  const rawDeadline = item?.raw?.deadline;
+  if (typeof rawDeadline === 'string' && isCalendarDate(rawDeadline)) return rawDeadline;
+  return item?.deadline_at ?? item?.deadline ?? null;
+}
 // Regla de producto del Radar: no se muestra NINGÚN proceso vencido, ni siquiera uno convertido en
 // oportunidad. La conversión archiva el proceso en Oportunidades/expediente (que siguen intactos),
 // no lo mantiene visible aquí. Este es el único seam de vencimiento y lo comparten la ruta viva
@@ -1270,7 +1281,7 @@ function tenderWindow(days) { if (days === null) return 'sin fecha de cierre rep
 // para que no puedan divergir. Sin fecha de cierre reportada no hay evidencia de vencimiento, así
 // que la fila permanece visible; si la fuente oficial republica una fecha vigente, reaparece sola.
 export function isExpiredRadarProcess(item) {
-  const days = item?.days === undefined ? tenderDaysUntil(item?.deadline_at ?? item?.deadline ?? null) : item.days;
+  const days = item?.days === undefined ? tenderDaysUntil(resolveCanonicalTenderDeadline(item)) : item.days;
   return days !== null && days !== undefined && days < 0;
 }
 function tenderText(row) { return normTenderText(Object.values(row || {}).filter(v => typeof v === 'string').join(' ')); }
@@ -1602,6 +1613,8 @@ async function tenderTableAvailable(database) {
 }
 export function dbTenderToPublic(row, options) {
   const nowIso = options?.nowIso || new Date().toISOString();
+  const deadline = resolveCanonicalTenderDeadline(row);
+  const days = tenderDaysUntil(deadline);
   return {
     id: row.stable_key,
     stable_key: row.stable_key,
@@ -1610,7 +1623,7 @@ export function dbTenderToPublic(row, options) {
     entity: row.entity,
     dept: row.dept || '', city: row.city || '', ref: row.ref || '', process_id: row.process_id || '',
     title: row.title, desc: row.description || '', value: Number(row.value || 0), status: row.status || '', category: row.category || '',
-    published: row.published_at, deadline: row.deadline_at, days: tenderDaysUntil(row.deadline_at), window: tenderWindow(tenderDaysUntil(row.deadline_at)),
+    published: row.published_at, deadline, days, window: tenderWindow(days),
     score: Number(row.score || 0), reasons: row.reasons || [], risks: row.risks || [], url: row.url || '',
     internal_status: row.internal_status || 'nueva', converted_opportunity_id: row.converted_opportunity_id || null,
     reviewed_by: row.reviewed_by || null, reviewed_at: row.reviewed_at || null, detected_at: row.detected_at || row.created_at || null, last_seen_at: row.last_seen_at || null,
@@ -1618,7 +1631,9 @@ export function dbTenderToPublic(row, options) {
     // the raw provider payload itself never reaches the client past this point.
     known_phases: Array.isArray(row.raw?.phase_continuity?.known_phases) ? row.raw.phase_continuity.known_phases : [],
     identity_review_required: Boolean(row.raw?.phase_identity_review),
-    fit: evaluateTenderFit(row, { nowIso })
+    // deadline_at se alinea con la fecha de cierre canónica para que el eje "tiempo" del fit
+    // (días hábiles hasta el cierre) nunca diverja de lo que el Radar muestra en pantalla.
+    fit: evaluateTenderFit({ ...row, deadline_at: deadline }, { nowIso })
   };
 }
 function isConvertedTenderRecord(row) {
