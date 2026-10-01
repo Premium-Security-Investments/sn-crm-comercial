@@ -1609,6 +1609,10 @@ export function dbTenderToPublic(row, options) {
     score: Number(row.score || 0), reasons: row.reasons || [], risks: row.risks || [], url: row.url || '',
     internal_status: row.internal_status || 'nueva', converted_opportunity_id: row.converted_opportunity_id || null,
     reviewed_by: row.reviewed_by || null, reviewed_at: row.reviewed_at || null, detected_at: row.detected_at || row.created_at || null, last_seen_at: row.last_seen_at || null,
+    // Derived, non-sensitive summaries of row.raw for successor-phase continuity (Radar Corte 1):
+    // the raw provider payload itself never reaches the client past this point.
+    known_phases: Array.isArray(row.raw?.phase_continuity?.known_phases) ? row.raw.phase_continuity.known_phases : [],
+    identity_review_required: Boolean(row.raw?.phase_identity_review),
     fit: evaluateTenderFit(row, { nowIso })
   };
 }
@@ -1713,6 +1717,14 @@ const TENDER_PERSISTENCE_SECTIONS = new Set(['hacer', 'revisar', 'prioridad_baja
 export function normalizeTenderPersistenceSection(section) {
   return TENDER_PERSISTENCE_SECTIONS.has(section) ? section : 'prioridad_baja';
 }
+// Reuses the existing `raw` jsonb column to carry phase-continuity metadata (Radar Corte 1)
+// without a migration: either the ambiguous-identity flag or the known-phases summary, never both,
+// and never anything the provider's own raw payload didn't already have alongside it.
+function withPhaseIdentityRaw(baseRaw, { identityReview = false, knownPhases = [] } = {}) {
+  if (identityReview) return { ...(baseRaw || {}), phase_identity_review: true };
+  if (knownPhases.length > 1) return { ...(baseRaw || {}), phase_continuity: { known_phases: knownPhases } };
+  return baseRaw || null;
+}
 async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   const fetchedPayload = await fetchPublicTenderRadar();
   const fetched = fetchedPayload.tenders;
@@ -1737,9 +1749,10 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   for (const row of [...(existingConverted || []), ...existingFetched]) {
     if (row?.stable_key) existingByKey.set(row.stable_key, row);
   }
-  const plan = planRadarPhaseIdentitySync({ fetched: tagged, existing: [...existingByKey.values()] });
+  const plan = planRadarPhaseIdentitySync({ fetched: tagged, existing: [...existingByKey.values()], now });
   const omit = new Set(plan.omitStableKeys || []);
   const overrides = new Map((plan.convertedOverrides || []).map(row => [row.stable_key, row]));
+  const identityReview = new Set(plan.identityReviewStableKeys || []);
   const rows = tagged.map(t => {
     if (omit.has(t.stable_key)) return null;
     const override = overrides.get(t.stable_key);
@@ -1748,7 +1761,10 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
       ref: t.ref || null, process_id: override?.process_id || t.process_id || null, title: t.title, description: t.desc || null, value: Number(t.value || 0),
       category: t.category || null, published_at: t.published || null,
       ...((override?.status || t.status) ? { status: override?.status || t.status } : {}), ...((override?.deadline_at || t.deadline) ? { deadline_at: override?.deadline_at || t.deadline } : {}),
-      score: Number(t.score || 0), reasons: t.reasons || [], risks: t.risks || [], url: override?.url || t.url || null, raw: t.raw || null, last_seen_at: now
+      score: Number(t.score || 0), reasons: t.reasons || [], risks: t.risks || [],
+      url: override?.url || t.url || null,
+      raw: withPhaseIdentityRaw(t.raw || null, { identityReview: identityReview.has(t.stable_key), knownPhases: override?.known_phases || [] }),
+      last_seen_at: now
     };
   }).filter(Boolean);
   for (const override of plan.convertedOverrides || []) {
@@ -1760,7 +1776,10 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
       ref: converted.ref || null, process_id: override.process_id || converted.process_id || null, title: converted.title, description: converted.description || converted.desc || null, value: Number(converted.value || 0),
       category: converted.category || null, published_at: converted.published_at || converted.published || null,
       ...((override.status || converted.status) ? { status: override.status || converted.status } : {}), ...((override.deadline_at || converted.deadline_at) ? { deadline_at: override.deadline_at || converted.deadline_at } : {}),
-      score: Number(converted.score || 0), reasons: converted.reasons || [], risks: converted.risks || [], url: override.url || converted.url || null, raw: converted.raw || null, last_seen_at: now
+      score: Number(converted.score || 0), reasons: converted.reasons || [], risks: converted.risks || [],
+      url: override.url || converted.url || null,
+      raw: withPhaseIdentityRaw(converted.raw || null, { knownPhases: override.known_phases || [] }),
+      last_seen_at: now
     });
   }
   if (rows.length) {
@@ -1779,7 +1798,7 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
     for (const patch of plan.opportunityPatches) {
       const opportunity = byId.get(patch.converted_opportunity_id);
       if (!opportunity) continue;
-      const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl });
+      const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl, phaseChange: patch.phaseChange });
       const expected_close_date = patch.deadline ? String(patch.deadline).slice(0, 10) : opportunity.expected_close_date;
       const { error: opportunityWriteError } = await database.from('psi_sales_opportunities').update({ observaciones, expected_close_date }).eq('id', opportunity.id);
       if (opportunityWriteError) throw opportunityWriteError;

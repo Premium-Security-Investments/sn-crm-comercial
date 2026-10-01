@@ -31,6 +31,11 @@ export type PublicTender = {
   ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string;
   category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null;
   score: number; reasons: string[]; risks: string[]; url?: string; fit?: TenderFitProjection;
+  // Radar Corte 1 — continuidad de fase sucesora SECOP (derivado del raw jsonb persistido, nunca el
+  // propio raw). `known_phases` sólo se presenta en la tarjeta cuando tiene más de una fase.
+  // `identity_review_required` marca una identidad ambigua (empate de fase/plazo) que debe
+  // quedar fuera del flujo normal de conversión hasta revisión humana.
+  known_phases?: string[]; identity_review_required?: boolean;
 };
 export type TenderTrackingUpdate = { id: string; tracking_owner_id: string; tracking_status: TenderTrackingStatus; tracking_next_action?: string | null; tracking_due_at?: string | null; tracking_blocker?: string | null; note?: string | null; expected_tracking_updated_at: string | null };
 export type TenderTrackingEvent = { id: string; tender_id: string; event_type: string; actor_kind?: 'human' | 'system' | 'agent' | null; note?: string | null; from_status?: string | null; to_status?: string | null; assigned_to?: string | null; next_action?: string | null; due_at?: string | null; blocker?: string | null; created_by?: string | null; source_ref_type?: string | null; source_ref_id?: string | null; metadata?: Record<string, unknown> | null; created_at: string };

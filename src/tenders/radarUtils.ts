@@ -6,6 +6,14 @@ export function tenderFitBadgeLabel(fit?: TenderFitProjection | null): string {
   return FIT_BAND_LABELS[fit?.band as TenderFitBand] || FIT_BAND_LABELS.por_validar;
 }
 
+// Radar Corte 1: sólo se señala continuidad de fase cuando hay más de una fase sucesora conocida;
+// con una fase única o ninguna, el aviso no debe aparecer.
+export function tenderPhaseContinuityLabel(tender: PublicTender): string | null {
+  const phases = (tender.known_phases || []).filter(Boolean);
+  if (phases.length <= 1) return null;
+  return `${phases.length} fases activas · ${phases.join(' · ')}`;
+}
+
 function compareByImpactPriority(left: { impact_priority?: number }, right: { impact_priority?: number }): number {
   const leftHasPriority = typeof left.impact_priority === 'number';
   const rightHasPriority = typeof right.impact_priority === 'number';
@@ -67,7 +75,11 @@ export function deduplicateTenders(tenders: PublicTender[]): PublicTender[] {
   const byKey = new Map<string, PublicTender>();
   const order: string[] = [];
   for (const tender of tenders) {
-    const key = canonicalTenderKey(tender);
+    // A tender flagged for ambiguous successor-identity review (Radar Corte 1) must never be
+    // silently merged into another row that happens to share its canonical process key: that
+    // sharing is exactly why it was routed to review, and collapsing it would hide the very
+    // candidate a human still needs to see and choose between.
+    const key = tender.identity_review_required ? `identity-review:${tender.id}` : canonicalTenderKey(tender);
     if (!byKey.has(key)) { byKey.set(key, tender); order.push(key); continue; }
     const current = byKey.get(key)!;
     const currentDate = String(current.last_seen_at || current.detected_at || current.published || '');

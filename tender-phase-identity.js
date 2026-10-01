@@ -41,25 +41,56 @@ function uniqueStrings(values) {
   return [...new Set((values || []).filter(Boolean))];
 }
 
-export function applyOfficialSourceLink(observaciones, { officialUrl, historicalUrl } = {}) {
+// Two or more successor candidates tied on the same official phase rank with the same (or equally
+// missing) deadline cannot be told apart deterministically. Silently picking one would risk merging
+// the wrong process into the converted opportunity, so this is surfaced as ambiguous instead.
+function hasAmbiguousSuccessors(successorCandidates) {
+  if (successorCandidates.length < 2) return false;
+  const maxRank = Math.max(...successorCandidates.map(officialPhaseRank));
+  const topCandidates = successorCandidates.filter(row => officialPhaseRank(row) === maxRank);
+  if (topCandidates.length < 2) return false;
+  return new Set(topCandidates.map(deadlineMs)).size === 1;
+}
+
+function knownPhasesFor(rows) {
+  return uniqueStrings(rows.map(row => String(row?.status || '').trim()))
+    .sort((a, b) => officialPhaseRank({ status: a }) - officialPhaseRank({ status: b }));
+}
+
+function phaseHistoryLinePrefix(previousPhase, newPhase) {
+  return `Fase detectada: ${previousPhase || 'sin fase registrada'} → ${newPhase}`;
+}
+
+export function applyOfficialSourceLink(observaciones, { officialUrl, historicalUrl, phaseChange } = {}) {
   const text = String(observaciones || '');
-  if (!officialUrl) return text;
-  const linkRe = /^Link fuente:\s*(\S+)/m;
-  const match = text.match(linkRe);
-  if (!match) {
-    return text ? `${text}\nLink fuente: ${officialUrl}` : `Link fuente: ${officialUrl}`;
+  let next = text;
+  if (officialUrl) {
+    const linkRe = /^Link fuente:\s*(\S+)/m;
+    const match = next.match(linkRe);
+    if (!match) {
+      next = next ? `${next}\nLink fuente: ${officialUrl}` : `Link fuente: ${officialUrl}`;
+    } else if (match[1] !== officialUrl) {
+      const current = match[1];
+      next = next.replace(linkRe, `Link fuente: ${officialUrl}`);
+      const historical = historicalUrl || current;
+      if (historical && historical !== officialUrl && !next.includes(historical)) {
+        next += `\nLink fuente histórico: ${historical}`;
+      }
+    }
   }
-  const current = match[1];
-  if (current === officialUrl) return text;
-  let next = text.replace(linkRe, `Link fuente: ${officialUrl}`);
-  const historical = historicalUrl || current;
-  if (historical && historical !== officialUrl && !next.includes(historical)) {
-    next += `\nLink fuente histórico: ${historical}`;
+  if (phaseChange?.newPhase && phaseChange.newPhase !== phaseChange.previousPhase) {
+    const prefix = phaseHistoryLinePrefix(phaseChange.previousPhase, phaseChange.newPhase);
+    const alreadyRecorded = next.split('\n').some(line => line.startsWith(prefix));
+    if (!alreadyRecorded) {
+      const detectedAt = phaseChange.detectedAt ? ` (${phaseChange.detectedAt})` : '';
+      next += `\n${prefix}${detectedAt}`;
+    }
   }
   return next;
 }
 
-export function planRadarPhaseIdentitySync({ fetched = [], existing = [] } = {}) {
+export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } = {}) {
+  const nowIso = now || new Date().toISOString();
   const fetchedRows = Array.isArray(fetched) ? fetched : [];
   const existingRows = Array.isArray(existing) ? existing : [];
   const converted = existingRows.filter(row => row?.internal_status === 'convertida_oportunidad' || row?.converted_opportunity_id);
@@ -67,6 +98,7 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [] } = {})
   const discardStableKeys = [];
   const convertedOverrides = [];
   const opportunityPatches = [];
+  const identityReviewStableKeys = [];
   const existingByKey = new Map(existingRows.filter(row => row?.stable_key).map(row => [row.stable_key, row]));
 
   for (const convertedRow of converted) {
@@ -75,17 +107,23 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [] } = {})
     const fetchedSame = fetchedRows.filter(row => canonicalTenderProcessKey(row) === canonicalKey);
     if (!fetchedSame.length) continue;
 
+    const successorCandidates = fetchedSame.filter(row => row?.stable_key && row.stable_key !== convertedRow.stable_key);
+    if (hasAmbiguousSuccessors(successorCandidates)) {
+      // Fail closed: do not merge, discard or patch anything for this process while two or more
+      // successor candidates are tied. Route them outside the normal conversion flow instead.
+      identityReviewStableKeys.push(...successorCandidates.map(row => row.stable_key));
+      continue;
+    }
+
     const official = fetchedSame.reduce(preferOfficialIdentity, convertedRow);
-    const successorKeys = uniqueStrings(
-      fetchedSame
-        .map(row => row?.stable_key)
-        .filter(key => key && key !== convertedRow.stable_key),
-    );
+    const successorKeys = uniqueStrings(successorCandidates.map(row => row.stable_key));
     omitStableKeys.push(...successorKeys);
     discardStableKeys.push(...successorKeys.filter(key => {
       const persisted = existingByKey.get(key);
       return persisted && persisted.internal_status !== 'convertida_oportunidad';
     }));
+
+    const knownPhases = knownPhasesFor([convertedRow, ...fetchedSame]);
 
     convertedOverrides.push({
       stable_key: convertedRow.stable_key,
@@ -93,16 +131,21 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [] } = {})
       process_id: official.process_id || convertedRow.process_id || null,
       status: official.status || convertedRow.status || null,
       deadline_at: deadlineValue(official) || deadlineValue(convertedRow) || null,
+      known_phases: knownPhases,
     });
 
     const officialUrl = official.url || null;
-    if (convertedRow.converted_opportunity_id && officialUrl && officialUrl !== convertedRow.url) {
+    const officialStatus = official.status || convertedRow.status || null;
+    const urlChanged = Boolean(officialUrl) && officialUrl !== convertedRow.url;
+    const phaseChanged = Boolean(officialStatus) && officialStatus !== convertedRow.status;
+    if (convertedRow.converted_opportunity_id && (urlChanged || phaseChanged)) {
       opportunityPatches.push({
         converted_opportunity_id: convertedRow.converted_opportunity_id,
-        officialUrl,
+        officialUrl: officialUrl || convertedRow.url || null,
         historicalUrl: convertedRow.url || null,
         processId: official.process_id || convertedRow.process_id || null,
         deadline: deadlineValue(official) || deadlineValue(convertedRow) || null,
+        phaseChange: phaseChanged ? { previousPhase: convertedRow.status || null, newPhase: officialStatus, detectedAt: nowIso } : null,
       });
     }
   }
@@ -112,5 +155,6 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [] } = {})
     discardStableKeys: uniqueStrings(discardStableKeys),
     convertedOverrides,
     opportunityPatches,
+    identityReviewStableKeys: uniqueStrings(identityReviewStableKeys),
   };
 }
