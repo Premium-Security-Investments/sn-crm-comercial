@@ -38,6 +38,15 @@ const TERRITORY_CITY_10_SET = new Set(TERRITORY_EXACT_CITY_POINTS_10.map(normali
 const TERRITORY_DEPT_5_SET = new Set(TERRITORY_DEPARTMENTS_POINTS_5.map(normalizeTenderFitV2Text));
 const TERRITORY_NATIONAL_COVERAGE_PHRASES_NORMALIZED = TERRITORY_NATIONAL_COVERAGE_PHRASES.map(normalizeTenderFitV2Text);
 
+const SERVICE_REASON_DETAIL_BY_CODE = Object.freeze({
+  servicio_hibrida: 'servicio híbrido de vigilancia y seguridad electrónica',
+  servicio_electronica: 'servicio de seguridad electrónica',
+  servicio_fisica: 'servicio de vigilancia física',
+  servicio_suministro: 'suministro o instalación de seguridad electrónica',
+  servicio_ambiguo: 'servicio de seguridad ambiguo; requiere confirmación',
+  servicio_fuera_de_alcance: 'servicio fuera del alcance principal',
+});
+
 const DATA_GAP_FIELD_BY_CODE = {
   servicio_ambiguo: 'title+description+detail',
   valor_ausente: 'value',
@@ -149,7 +158,7 @@ function evaluateServicioAxis(tender) {
     axis: 'servicio',
     points: matrixResult.points,
     code,
-    detail: `evaluateTenderServiceMatrixV2: status ${matrixResult.status}${matrixResult.family ? `, familia ${matrixResult.family}` : ''}`,
+    detail: SERVICE_REASON_DETAIL_BY_CODE[code],
     source: 'title+description+detail',
     critical,
     family: matrixResult.family,
