@@ -169,10 +169,61 @@ test('getAgt002VercelControlPlaneIdentity: falls back to GITHUB_SHA', () => {
   assert.equal(identity.source, 'github_sha');
 });
 
+test('getAgt002VercelControlPlaneIdentity: falls back to AGT002_DEPLOYED_GIT_SHA when neither VERCEL_GIT_COMMIT_SHA nor GITHUB_SHA is set', () => {
+  const identity = getAgt002VercelControlPlaneIdentity({ env: { AGT002_DEPLOYED_GIT_SHA: 'deployed-sha' } });
+  assert.equal(identity.sha, 'deployed-sha');
+  assert.equal(identity.source, 'agt002_deployed_git_sha');
+});
+
+test('getAgt002VercelControlPlaneIdentity: VERCEL_GIT_COMMIT_SHA and GITHUB_SHA both take precedence over AGT002_DEPLOYED_GIT_SHA', () => {
+  const vercelWins = getAgt002VercelControlPlaneIdentity({
+    env: { VERCEL_GIT_COMMIT_SHA: 'vercel-sha', GITHUB_SHA: 'github-sha', AGT002_DEPLOYED_GIT_SHA: 'deployed-sha' },
+  });
+  assert.equal(vercelWins.sha, 'vercel-sha');
+  assert.equal(vercelWins.source, 'vercel_git_commit_sha');
+
+  const githubWins = getAgt002VercelControlPlaneIdentity({
+    env: { GITHUB_SHA: 'github-sha', AGT002_DEPLOYED_GIT_SHA: 'deployed-sha' },
+  });
+  assert.equal(githubWins.sha, 'github-sha');
+  assert.equal(githubWins.source, 'github_sha');
+});
+
 test('getAgt002VercelControlPlaneIdentity: unobserved when neither env var is set', () => {
   const identity = getAgt002VercelControlPlaneIdentity({ env: {} });
   assert.equal(identity.sha, null);
   assert.equal(identity.source, 'unobserved');
+});
+
+test('getAgt002VercelControlPlaneIdentity: a native Vercel full 40-hex sha derives version f0-<first 7 chars> when AGT002_DEPLOYED_VERSION is absent', () => {
+  const sha = 'a'.repeat(40);
+  const identity = getAgt002VercelControlPlaneIdentity({ env: { VERCEL_GIT_COMMIT_SHA: sha } });
+  assert.equal(identity.sha, sha);
+  assert.equal(identity.version, `f0-${sha.slice(0, 7)}`);
+});
+
+test('getAgt002VercelControlPlaneIdentity: an explicit AGT002_DEPLOYED_VERSION still wins over a derivable full 40-hex sha', () => {
+  const sha = 'b'.repeat(40);
+  const identity = getAgt002VercelControlPlaneIdentity({
+    env: { VERCEL_GIT_COMMIT_SHA: sha, AGT002_DEPLOYED_VERSION: 'v9.9.9' },
+  });
+  assert.equal(identity.sha, sha);
+  assert.equal(identity.version, 'v9.9.9');
+});
+
+test('getAgt002VercelControlPlaneIdentity: an invalid/short sha never derives a version', () => {
+  const uppercase = getAgt002VercelControlPlaneIdentity({
+    env: { VERCEL_GIT_COMMIT_SHA: 'C'.repeat(40) },
+  });
+  assert.equal(uppercase.version, null);
+
+  const shortSha = getAgt002VercelControlPlaneIdentity({ env: { GITHUB_SHA: 'c0ffee' } });
+  assert.equal(shortSha.version, null);
+
+  const nonHex = getAgt002VercelControlPlaneIdentity({
+    env: { AGT002_DEPLOYED_GIT_SHA: 'z'.repeat(40) },
+  });
+  assert.equal(nonHex.version, null);
 });
 
 test('static: api/[...path].js exposes an unauthenticated GET /api/agt002/control-plane route', () => {

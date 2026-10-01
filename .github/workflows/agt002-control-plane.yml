@@ -120,14 +120,22 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
-      # --version is the single explicit, immutable release-version input every one of the six
-      # surfaces is expected to be running (an operator-set repository variable, never inferred
-      # from git/disk). Missing it leaves receipt.desired.version null, which fails drift_alert
-      # closed rather than silently declaring the release versionless-but-fine. --git-sha is the
-      # same desired-target SHA (base sha on PR, current sha otherwise) drift_alert observes
-      # origin_main against, so receipt.desired.sha and the observed origin_main are always bound
-      # to the identical target.
-      - run: npm run agt002:release-receipt -- --out agt002-release-receipt.json --version "${{ vars.AGT002_DESIRED_VERSION }}" --git-sha "${{ env.AGT002_DESIRED_SHA }}"
+      # --version is derived directly from the same desired-target sha drift_alert observes
+      # origin_main against (f0-<first 7 chars>), never trusted from a manually maintained
+      # repository variable that could drift out of sync with what is actually on main. The sha
+      # is validated as full lowercase 40-hex first, so a malformed desired sha fails this step
+      # closed instead of silently deriving a bogus version. --git-sha is that same desired-target
+      # SHA (base sha on PR, current sha otherwise), so receipt.desired.sha and the observed
+      # origin_main are always bound to the identical target.
+      - name: Derive desired version from desired sha
+        run: |
+          sha="${AGT002_DESIRED_SHA}"
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "AGT002_DESIRED_SHA is not a full lowercase 40-hex sha: $sha" >&2
+            exit 1
+          fi
+          echo "AGT002_DESIRED_VERSION=f0-${sha:0:7}" >> "$GITHUB_ENV"
+      - run: npm run agt002:release-receipt -- --out agt002-release-receipt.json --version "$AGT002_DESIRED_VERSION" --git-sha "${{ env.AGT002_DESIRED_SHA }}"
       - uses: actions/upload-artifact@v4
         with:
           name: agt002-release-receipt
@@ -169,24 +177,34 @@ jobs:
           path: .
       # Every input below is an explicit, non-secret configuration value (a repository variable
       # or the run's own desired-target sha) -- never a git/disk inference, never a secret, never
-      # an invented production URL. A repository variable containing a *deployed* sha/version is
-      # static configuration, not live self-reporting, and cannot prove a surface is actually
-      # running that code, so radar_pipeline/reanalysis_worker/workbench_scheduler are observed
-      # only through a read-only URL each surface serves at runtime, exactly like vercel/bridge.
-      # A surface whose URL is unset or unreachable simply stays unobserved and fails drift_alert
-      # closed instead of being skipped or assumed fine. origin_main is the one exception: GitHub
-      # itself is the authoritative live source for what SHA is on main, so it is bound directly
-      # to the same desired-target sha/version used above rather than a URL fetch.
+      # an invented production URL. The desired *version* is derived directly from the
+      # desired-target sha (f0-<first 7 chars>), never trusted from a manually maintained
+      # repository variable that could drift out of sync with what is actually on main, so
+      # radar_pipeline/reanalysis_worker/workbench_scheduler are observed only through a read-only
+      # URL each surface serves at runtime, exactly like vercel/bridge. A surface whose URL is
+      # unset or unreachable simply stays unobserved and fails drift_alert closed instead of being
+      # skipped or assumed fine. origin_main is the one exception: GitHub itself is the
+      # authoritative live source for what SHA is on main, so it is bound directly to the same
+      # desired-target sha/version used above rather than a URL fetch.
+      - name: Derive desired version from desired sha
+        if: github.event_name != 'pull_request'
+        run: |
+          sha="${AGT002_DESIRED_SHA}"
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "AGT002_DESIRED_SHA is not a full lowercase 40-hex sha: $sha" >&2
+            exit 1
+          fi
+          echo "AGT002_DESIRED_VERSION=f0-${sha:0:7}" >> "$GITHUB_ENV"
+          echo "AGT002_OBSERVE_ORIGIN_MAIN_VERSION=f0-${sha:0:7}" >> "$GITHUB_ENV"
       - name: Collect observed surfaces
         if: github.event_name != 'pull_request'
         env:
-          AGT002_OBSERVE_ORIGIN_MAIN_VERSION: ${{ vars.AGT002_DESIRED_VERSION }}
           AGT002_OBSERVE_VERCEL_PRODUCTION_URL: ${{ vars.AGT002_VERCEL_PRODUCTION_CONTROL_PLANE_URL }}
           AGT002_OBSERVE_BRIDGE_URL: ${{ vars.AGT002_BRIDGE_CONTROL_PLANE_URL }}
           AGT002_OBSERVE_RADAR_PIPELINE_URL: ${{ vars.AGT002_RADAR_PIPELINE_CONTROL_PLANE_URL }}
           AGT002_OBSERVE_REANALYSIS_WORKER_URL: ${{ vars.AGT002_REANALYSIS_WORKER_CONTROL_PLANE_URL }}
           AGT002_OBSERVE_WORKBENCH_SCHEDULER_URL: ${{ vars.AGT002_WORKBENCH_SCHEDULER_CONTROL_PLANE_URL }}
-        run: npm run agt002:observe-surfaces -- --desired-sha "${{ env.AGT002_DESIRED_SHA }}" --git-sha "${{ env.AGT002_DESIRED_SHA }}" --desired-version "${{ vars.AGT002_DESIRED_VERSION }}" --out agt002-observed-surfaces.json
+        run: npm run agt002:observe-surfaces -- --desired-sha "${{ env.AGT002_DESIRED_SHA }}" --git-sha "${{ env.AGT002_DESIRED_SHA }}" --desired-version "$AGT002_DESIRED_VERSION" --out agt002-observed-surfaces.json
       - name: Check drift
         if: github.event_name != 'pull_request'
         id: drift

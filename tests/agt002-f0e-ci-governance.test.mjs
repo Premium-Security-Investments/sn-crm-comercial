@@ -550,6 +550,47 @@ test('generateAgt002ReleaseReceipt preserves control_plane_reconciled=false alon
   assert.ok(receipt.migrations);
 });
 
+// --- stop trusting the manually maintained AGT002_DESIRED_VERSION repo variable: derive it
+// from the validated desired sha instead ---
+
+test('workflow no longer trusts the manually maintained AGT002_DESIRED_VERSION repository variable', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  assert.doesNotMatch(workflowText, /vars\.AGT002_DESIRED_VERSION/);
+});
+
+test('release_receipt and drift_alert jobs each validate AGT002_DESIRED_SHA as full lowercase 40-hex before deriving AGT002_DESIRED_VERSION=f0-<first 7 chars>', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const releaseReceiptSection = workflowText.slice(
+    workflowText.indexOf('release_receipt:'),
+    workflowText.indexOf('drift_alert:'),
+  );
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+
+  for (const section of [releaseReceiptSection, driftAlertSection]) {
+    assert.match(section, /\^\[0-9a-f\]\{40\}\$/, 'expected a full lowercase 40-hex validation regex');
+    assert.match(section, /AGT002_DESIRED_VERSION=f0-\$\{sha:0:7\}/, 'expected desired version to be derived as f0-<first 7 chars>');
+    assert.match(section, />>\s*"\$GITHUB_ENV"/, 'expected the derived version to be exported via GITHUB_ENV');
+  }
+
+  assert.match(releaseReceiptSection, /--version\s+"\$AGT002_DESIRED_VERSION"/);
+  assert.doesNotMatch(releaseReceiptSection, /--version\s+"\$\{\{\s*env\.AGT002_DESIRED_VERSION\s*\}\}"/);
+  assert.match(driftAlertSection, /--desired-version\s+"\$AGT002_DESIRED_VERSION"/);
+  assert.doesNotMatch(driftAlertSection, /--desired-version\s+"\$\{\{\s*env\.AGT002_DESIRED_VERSION\s*\}\}"/);
+  assert.doesNotMatch(releaseReceiptSection, /AGT002_OBSERVE_ORIGIN_MAIN_VERSION/);
+  assert.match(driftAlertSection, /AGT002_OBSERVE_ORIGIN_MAIN_VERSION=f0-\$\{sha:0:7\}/, 'expected origin_main.version to be derived alongside AGT002_DESIRED_VERSION');
+});
+
+test('drift_alert job derives AGT002_DESIRED_VERSION only off pull_request, before Collect observed surfaces', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  const deriveIndex = driftAlertSection.search(
+    /name:\s*Derive desired version from desired sha\s*\n\s*if:\s*github\.event_name != 'pull_request'/,
+  );
+  const collectIndex = driftAlertSection.search(/name:\s*Collect observed surfaces/);
+  assert.ok(deriveIndex >= 0, 'expected a pull_request-gated Derive desired version step');
+  assert.ok(collectIndex > deriveIndex, 'Derive desired version must precede Collect observed surfaces');
+});
+
 test('drift_alert job retains the full live six-surface path unconditionally on push/schedule/workflow_dispatch (only pull_request is excluded)', () => {
   const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
   const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
