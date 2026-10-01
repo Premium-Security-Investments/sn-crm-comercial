@@ -1,4 +1,5 @@
 import { extractTenderCoreServiceTerms } from './tender-relevance-terms.js';
+import { evaluateTenderServiceMatrixV2 } from './tender-service-matrix-v2.js';
 
 export const TENDER_FIT_POLICY_VERSION = 'tender-fit-v1';
 
@@ -173,5 +174,8 @@ export function evaluateTenderFit(tender, options) {
     data_gaps: dataGaps,
     feedback: { mode: 'evidence_only', applied_points: 0, policy: 'human_reviewed_version_only' },
     evaluated_at: nowIso,
+    shadow: {
+      servicio_v2: evaluateTenderServiceMatrixV2({ title: tender.title, description: tender.description, detail: tender.detail }),
+    },
   };
 }
