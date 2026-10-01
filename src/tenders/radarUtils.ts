@@ -1,4 +1,24 @@
-import type { PublicTender, TenderDeadlineFilter, TenderInternalStatus, TenderRegionKey, TenderScoreFilter, TenderSection, TenderSortKey, TenderValueFilter } from './types';
+import type { PublicTender, TenderDeadlineFilter, TenderFitBand, TenderFitProjection, TenderInternalStatus, TenderRegionKey, TenderScoreFilter, TenderSection, TenderSortKey, TenderValueFilter } from './types';
+
+const FIT_BAND_LABELS: Record<TenderFitBand, string> = { alto: 'Encaje alto', medio: 'Encaje medio', por_validar: 'Encaje por validar', bajo: 'Encaje bajo' };
+
+export function tenderFitBadgeLabel(fit?: TenderFitProjection | null): string {
+  return FIT_BAND_LABELS[fit?.band as TenderFitBand] || FIT_BAND_LABELS.por_validar;
+}
+
+export function tenderFitReasonDetails(fit?: TenderFitProjection | null): string[] {
+  if (!fit) return ['Sin datos de encaje: no fue posible calcular el fit del proceso'];
+  const pool = fit.band === 'por_validar'
+    ? [...fit.data_gaps].sort((left, right) => (left.severity === right.severity ? 0 : left.severity === 'critical' ? -1 : 1))
+    : [...fit.reasons].sort((left, right) => (right.points || 0) - (left.points || 0));
+  const details: string[] = [];
+  for (const item of pool) {
+    const detail = item.detail?.trim();
+    if (detail && !details.includes(detail)) details.push(detail);
+    if (details.length === 2) break;
+  }
+  return details;
+}
 
 export const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
 
