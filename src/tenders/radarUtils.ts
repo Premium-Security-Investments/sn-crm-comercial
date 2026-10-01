@@ -1,4 +1,4 @@
-import type { PublicTender, TenderDeadlineFilter, TenderFitBand, TenderFitProjection, TenderInternalStatus, TenderRegionKey, TenderScoreFilter, TenderSection, TenderSortKey, TenderValueFilter } from './types';
+import type { PublicTender, TenderDeadlineFilter, TenderFitBand, TenderFitProjection, TenderInternalStatus, TenderRadarRunReceipt, TenderRadarRunReceiptSource, TenderRadarRunReceiptStatus, TenderRegionKey, TenderScoreFilter, TenderSection, TenderSortKey, TenderValueFilter } from './types';
 
 const FIT_BAND_LABELS: Record<TenderFitBand, string> = { alto: 'Encaje alto', medio: 'Encaje medio', por_validar: 'Encaje por validar', bajo: 'Encaje bajo' };
 
@@ -177,6 +177,36 @@ export function filterRadarTenders(tenders: PublicTender[], filters: RadarFilter
       scoreMatches &&
       (!filters.query || `${tender.entity} ${tender.city || ''} ${tender.dept || ''} ${tender.title} ${tender.ref || ''} ${tender.source}`.toLowerCase().includes(filters.query.toLowerCase()));
   });
+}
+
+const RADAR_RUN_RECEIPT_STATUS_LABELS: Record<TenderRadarRunReceiptStatus, string> = { complete: 'Completa', partial: 'Parcial', failed: 'Fallida' };
+
+export function tenderRadarRunReceiptStatusLabel(status: TenderRadarRunReceiptStatus): string {
+  return RADAR_RUN_RECEIPT_STATUS_LABELS[status] || 'Desconocida';
+}
+
+const radarRunReceiptTimeFormat = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
+
+export function tenderRadarRunReceiptTimeLabel(value?: string | null): string {
+  if (!value) return 'Sin fecha';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'Sin fecha' : radarRunReceiptTimeFormat.format(parsed);
+}
+
+export function tenderRadarRunReceiptSourceStatusLabel(source: TenderRadarRunReceiptSource): string {
+  if (!source.attempted) return 'No intentada';
+  return source.succeeded ? 'Exitosa' : 'Fallida';
+}
+
+// "X/Y": fuentes exitosas sobre fuentes intentadas en la corrida.
+export function tenderRadarRunReceiptCoverageRatio(receipt: TenderRadarRunReceipt): string {
+  return `${receipt.sources_succeeded.length}/${receipt.sources_attempted.length}`;
+}
+
+// Newest-first, acotado a 10 en el propio cliente: el servidor ya aplica este tope
+// (AGT002_RADAR_RUN_RECEIPT_HISTORY_MAX), pero la UI nunca debe depender únicamente de eso.
+export function tenderRadarRunReceiptHistoryOrdered(receipts: TenderRadarRunReceipt[]): TenderRadarRunReceipt[] {
+  return [...receipts].sort((left, right) => right.started_at.localeCompare(left.started_at)).slice(0, 10);
 }
 
 export function sortTenderCards(rows: PublicTender[], key: TenderSortKey, direction: 'asc' | 'desc'): PublicTender[] {

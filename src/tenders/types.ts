@@ -43,6 +43,24 @@ export type TenderTrackingEventsPage = { events: TenderTrackingEvent[]; next_cur
 export type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 export type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number; fit?: { alto: number; medio: number; porValidar: number; bajo: number; sinDatos: number } }; tenders: PublicTender[] };
 export type TenderRadarFilters = { query: string; source: string; region: TenderRegionKey; deadline: TenderDeadlineFilter; value: TenderValueFilter; score: TenderScoreFilter; section: TenderSection | 'todas'; internalStatus: TenderInternalStatus | 'todas' };
+// Radar Corte 2 (mitad UI) — recibo de corrida de sólo lectura (ver agt002-radar-run-receipt.js).
+// Espejo exacto del contrato del servidor: nunca se construye en el cliente, sólo se presenta.
+export type TenderRadarRunReceiptStatus = 'complete' | 'partial' | 'failed';
+export type TenderRadarRunReceiptSource = {
+  name: string; attempted: boolean; succeeded: boolean;
+  pages_read: number; records_read: number; candidates_found: number; error: string | null;
+};
+export type TenderRadarRunReceipt = {
+  schema_version: string; run_id: string; started_at: string; finished_at: string;
+  status: TenderRadarRunReceiptStatus;
+  sources_attempted: string[]; sources_succeeded: string[]; sources_failed: string[];
+  sources: TenderRadarRunReceiptSource[];
+  totals: { pages_read: number; records_read: number; candidates_found: number };
+  fatal_error: string | null;
+  absence_notice: string | null;
+};
+export type TenderRadarRunReceiptLatestPayload = { run_receipt: TenderRadarRunReceipt | null };
+export type TenderRadarRunReceiptHistoryPayload = { run_receipts: TenderRadarRunReceipt[] };
 export type TenderDocumentImportStatus = 'analisis_generado' | 'documentos_cargados' | 'fallo_importacion' | 'pendiente_documentos' | 'no_aplica' | 'error';
 export type TenderConversionResult = { id: string; duplicate: boolean; document_import_status: TenderDocumentImportStatus; document_import_error: string | null };
 export type TenderDocumentRefreshResult = { new_count: number; updated_count: number; unchanged_count: number; failed_count: number; analysis_generated: boolean };

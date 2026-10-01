@@ -1,8 +1,18 @@
-import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
   return request<T>('/api/tenders');
+}
+
+/** Recibo de sólo lectura de la última corrida del Radar (Corte 2, mitad UI). Nunca escribe. */
+export async function loadRadarRunReceiptLatest(request: TenderRequest): Promise<TenderRadarRunReceiptLatestPayload> {
+  return request<TenderRadarRunReceiptLatestPayload>('/api/tenders/radar-runs/latest');
+}
+
+/** Historial de sólo lectura de corridas del Radar, acotado por el servidor a un máximo de 10. */
+export async function loadRadarRunReceiptHistory(request: TenderRequest, limit = 10): Promise<TenderRadarRunReceiptHistoryPayload> {
+  return request<TenderRadarRunReceiptHistoryPayload>(`/api/tenders/radar-runs/history?limit=${limit}`);
 }
 
 export async function loadTracking<T>(request: TenderRequest): Promise<T> {
