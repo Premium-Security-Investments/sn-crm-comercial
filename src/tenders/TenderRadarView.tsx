@@ -50,8 +50,8 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
   const [score, setScore] = useState<TenderScoreFilter>('todas');
   const [section, setSection] = useState<TenderSection | 'todas'>('todas');
   const [internalStatus, setInternalStatus] = useState<TenderInternalStatus | 'todas'>('todas');
-  const [sort, setSort] = useState<TenderSortKey>('deadline');
-  const [direction, setDirection] = useState<'asc' | 'desc'>('asc');
+  const [sort, setSort] = useState<TenderSortKey>('score');
+  const [direction, setDirection] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const profileId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('profile') || '';
   const focusTenderId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('tender') || '';

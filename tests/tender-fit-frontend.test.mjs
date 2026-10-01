@@ -33,4 +33,11 @@ const bajo = { ...conFit, id: 'bajo', fit: { band: 'bajo', score: 10 } };
 assert.deepEqual(sortTenderCards([bajo, alto], 'score', 'desc').map(t => t.id), ['alto', 'bajo']);
 assert.deepEqual(sortTenderCards([{ ...sinFit, id: 'la', score: 90 }, { ...sinFit, id: 'lb', score: 10 }], 'score', 'desc').map(t => t.id), ['la', 'lb'], 'fallback legado sin fit');
 assert.match(view, /<option value="medio">Medio<\/option><option value="por_validar">Por validar<\/option><option value="bajo">Bajo<\/option>/);
+// Regresión: el Radar debe abrir con "Mayor encaje primero" (sort='score', direction='desc'), no con el legado "Cierre más próximo" (sort='deadline', direction='asc').
+assert.match(view, /const \[sort, setSort\] = useState<TenderSortKey>\('score'\);/, 'Radar debe inicializar sort en "score" (Mayor encaje primero) por defecto');
+assert.match(view, /const \[direction, setDirection\] = useState<'asc' \| 'desc'>\('desc'\);/, 'Radar debe inicializar direction en "desc" por defecto');
+assert.doesNotMatch(view, /const \[sort, setSort\] = useState<TenderSortKey>\('deadline'\);/, 'Radar no debe inicializar sort en "deadline" (regresión al valor legado)');
+assert.doesNotMatch(view, /const \[direction, setDirection\] = useState<'asc' \| 'desc'>\('asc'\);/, 'Radar no debe inicializar direction en "asc" (regresión al valor legado)');
+assert.match(view, /<option value="score:desc">Mayor encaje primero<\/option>/, 'La opción "Mayor encaje primero" debe seguir existiendo en el selector de Orden');
+assert.match(view, /<option value="deadline:asc">Cierre más próximo<\/option>/, 'La opción "Cierre más próximo" debe seguir existiendo (seleccionable manualmente) tras cambiar el valor por defecto');
 console.log('tender-fit-frontend: OK');
