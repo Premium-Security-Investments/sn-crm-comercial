@@ -57,17 +57,19 @@ assert.equal(
 // A. Servicio: debe igualar exactamente tender-service-matrix-v2
 // ---------------------------------------------------------------------------
 const SERVICIO_CASES = [
-  { title: 'Vigilancia armada con CCTV y control de acceso', points: 50, code: 'servicio_hibrida' },
-  { title: 'Instalación de CCTV y control de acceso perimetral', points: 48, code: 'servicio_electronica' },
-  { title: 'Contrato de vigilancia armada en sede principal', points: 45, code: 'servicio_fisica' },
-  { title: 'Suministro e instalación de cámaras para sede principal', points: 40, code: 'servicio_suministro' },
-  { title: 'Suministro de papelería', description: 'Oficina', points: 0, code: 'servicio_fuera_de_alcance' },
+  { title: 'Vigilancia armada con CCTV y control de acceso', points: 50, code: 'servicio_hibrida', detail: 'servicio híbrido de vigilancia y seguridad electrónica' },
+  { title: 'Instalación de CCTV y control de acceso perimetral', points: 48, code: 'servicio_electronica', detail: 'servicio de seguridad electrónica' },
+  { title: 'Contrato de vigilancia armada en sede principal', points: 45, code: 'servicio_fisica', detail: 'servicio de vigilancia física' },
+  { title: 'Suministro e instalación de cámaras para sede principal', points: 40, code: 'servicio_suministro', detail: 'suministro o instalación de seguridad electrónica' },
+  { title: 'Suministro de papelería', description: 'Oficina', points: 0, code: 'servicio_fuera_de_alcance', detail: 'servicio fuera del alcance principal' },
 ];
-for (const { title, description = '', points, code } of SERVICIO_CASES) {
+for (const { title, description = '', points, code, detail } of SERVICIO_CASES) {
   const result = evaluateTenderFit(tender({ title, description }), { nowIso: NOW });
   const servicio = axisReason(result, 'servicio');
   assert.equal(servicio.points, points, `servicio points para "${title}" debe coincidir con tender-service-matrix-v2`);
   assert.equal(servicio.code, code, `servicio code para "${title}"`);
+  assert.equal(servicio.detail, detail, `servicio detail para "${title}" debe ser una razón comercial legible`);
+  assert.doesNotMatch(servicio.detail, /evaluateTenderServiceMatrixV2|status|familia/i, 'la razón visible no debe exponer nombres internos');
 }
 
 // Ambigua confirmada (AMBIGUA/POR_VALIDAR en la matriz v2) = 30 puntos y
@@ -78,6 +80,7 @@ const ambiguaResult = evaluateTenderFit(tender({ title: 'Servicio de escolta con
 const servicioAmbigua = axisReason(ambiguaResult, 'servicio');
 assert.equal(servicioAmbigua.points, 30);
 assert.equal(servicioAmbigua.code, 'servicio_ambiguo');
+assert.equal(servicioAmbigua.detail, 'servicio de seguridad ambiguo; requiere confirmación');
 assert.ok(
   criticalGapIds(ambiguaResult).includes('servicio_ambiguo'),
   'una familia AMBIGUA/POR_VALIDAR en el eje servicio debe producir una brecha crítica de Por validar con el mismo código servicio_ambiguo',
