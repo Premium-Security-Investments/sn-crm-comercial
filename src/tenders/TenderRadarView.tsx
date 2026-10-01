@@ -9,9 +9,17 @@ import type { PublicTender, TenderConversionResult, TenderDeadlineFilter, Tender
 
 const PAGE_SIZE = 24;
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
-const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
+const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-function deadlineLabel(value?: string | null) { return value ? date.format(new Date(value)) : 'Sin fecha'; }
+function deadlineLabel(value?: string | null) {
+  if (!value) return 'Sin fecha';
+  if (DATE_ONLY_PATTERN.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return date.format(new Date(Date.UTC(year, month - 1, day, 12)));
+  }
+  return date.format(new Date(value));
+}
 function statusLabel(tender: PublicTender) { return tender.internal_status === 'convertida_oportunidad' ? 'Convertida en oportunidad' : tender.internal_status === 'en_revision' ? 'En seguimiento' : tender.internal_status === 'descartada' ? 'Descartada' : 'Nueva'; }
 function importMessage(result: TenderConversionResult) {
   if (result.document_import_status === 'analisis_generado') return 'Oportunidad creada. Documentos oficiales importados y análisis generado.';
