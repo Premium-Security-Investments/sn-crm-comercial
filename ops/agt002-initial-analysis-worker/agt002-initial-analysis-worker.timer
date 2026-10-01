@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the SIIO AGT-002 initial-analysis worker periodically
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60
+RandomizedDelaySec=5s
+Persistent=false
+Unit=agt002-initial-analysis-worker.service
