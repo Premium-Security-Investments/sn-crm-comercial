@@ -9,6 +9,7 @@ import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-sug
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink } from '../tender-phase-identity.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
+import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
 import { createTenderProcessingDrain } from '../tender-processing-drain.js';
 import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
@@ -1017,7 +1018,7 @@ const tenderSources = {
   'SECOP II': {
     base: 'https://www.datos.gov.co/resource/p6dx-8zbt.json',
     dateField: 'fecha_de_publicacion_del',
-    select: 'entidad,departamento_entidad,ciudad_entidad,id_del_proceso,referencia_del_proceso,nombre_del_procedimiento,descripci_n_del_procedimiento,fase,estado_del_procedimiento,fecha_de_publicacion_del,fecha_de_recepcion_de,precio_base,codigo_principal_de_categoria,urlproceso',
+    select: 'entidad,departamento_entidad,ciudad_entidad,id_del_proceso,referencia_del_proceso,nombre_del_procedimiento,descripci_n_del_procedimiento,fase,estado_del_procedimiento,fecha_de_publicacion_del,fecha_de_recepcion_de,precio_base,codigo_principal_de_categoria,urlproceso,modalidad_de_contratacion',
     nameFields: ['nombre_del_procedimiento','descripci_n_del_procedimiento']
   },
   'SECOP I': {
@@ -1568,7 +1569,9 @@ async function fetchPublicTenderRadar() {
     if (seen.has(key)) return false;
     seen.add(key); return true;
   });
-  const tenders = deduplicateTenderProcesses(persistenceTenders.filter(t => !isExpiredRadarProcess(t) && isTenderTrackable(t))).sort((a,b) => {
+  const tenders = filterActiveTenderCompetibilityRows(
+    deduplicateTenderProcesses(persistenceTenders.filter(t => !isExpiredRadarProcess(t) && isTenderTrackable(t))),
+  ).sort((a,b) => {
     const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
   });
@@ -1718,8 +1721,13 @@ async function readPersistedTenderRadar(database) {
   const visibleRows = trackableRows;
   const noGoOpportunityIds = await readNoGoOpportunityIds(database, visibleRows);
   const nowIso = new Date().toISOString();
-  const rows = visibleRows
-    .filter(row => !isConvertedTenderRecord(row) || !noGoOpportunityIds.has(row.converted_opportunity_id))
+  // La competibilidad se filtra sobre las filas crudas de la BD, antes de dbTenderToPublic: las
+  // convertidas siempre pasan (bypass), y una no convertida en no_competible/por_verificar se
+  // oculta del Radar sin tocar su persistencia.
+  const rows = filterActiveTenderCompetibilityRows(
+    visibleRows.filter(row => !isConvertedTenderRecord(row) || !noGoOpportunityIds.has(row.converted_opportunity_id)),
+    { nowIso },
+  )
     .map(row => dbTenderToPublic(row, { nowIso })).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort(compareTenderRadarRows);
   return radarPayload(rows, latestRunAt || rows[0]?.last_seen_at || new Date().toISOString(), 'supabase', [{ source: 'Supabase', status: 'ok', count: rows.length, message: latestRunAt ? `Radar historizado desde última corrida (${latestRunResult.data?.mode || 'run'})` : 'Radar historizado' }]);
 }
@@ -1731,6 +1739,19 @@ async function enrichLiveTendersWithConversions(database, tenders) {
   return tenders.map(t => {
     const opportunityId = bySource.get(`secop_radar:${t.source}:${stableTenderKey(t)}`) || null;
     return { ...t, converted_opportunity_id: opportunityId, internal_status: opportunityId ? 'convertida_oportunidad' : (t.internal_status || 'nueva') };
+  });
+}
+// Sin tabla de persistencia: el estado de conversión solo se sabe tras enriquecer, así que el
+// enriquecimiento va primero y el filtrado de vencimiento/trazabilidad/competibilidad después,
+// para que una fila convertida no quede oculta por haberse evaluado antes de saber que está convertida.
+async function buildLiveNoTableTenderRows(database, fetchedPayload) {
+  const persistenceTenders = fetchedPayload.persistenceTenders || fetchedPayload.tenders;
+  const enriched = await enrichLiveTendersWithConversions(database, persistenceTenders);
+  const trackable = enriched.filter(t => !isExpiredRadarProcess(t) && (isConvertedTenderRecord(t) || isTenderTrackable(t)));
+  const active = filterActiveTenderCompetibilityRows(trackable);
+  return deduplicateTenderProcesses(active).sort((a, b) => {
+    const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
+    return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
   });
 }
 const TENDER_PERSISTENCE_SECTIONS = new Set(['hacer', 'revisar', 'prioridad_baja']);
@@ -1767,7 +1788,7 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   const persistenceTenders = fetchedPayload.persistenceTenders || fetched;
   diagnostics = fetchedPayload.diagnostics;
   if (!(await tenderTableAvailable(database))) {
-    const live = await enrichLiveTendersWithConversions(database, fetched);
+    const live = await buildLiveNoTableTenderRows(database, fetchedPayload);
     return radarPayload(live, new Date().toISOString(), 'live_no_table', diagnostics);
   }
   const now = new Date().toISOString();
@@ -1878,7 +1899,7 @@ async function buildTenderRadar(database, currentProfile, forceRefresh = false) 
     return await persistTenderRadar(database, currentProfile, 'auto_empty');
   }
   const fetchedPayload = await fetchPublicTenderRadar();
-  const live = await enrichLiveTendersWithConversions(database, fetchedPayload.tenders);
+  const live = await buildLiveNoTableTenderRows(database, fetchedPayload);
   return radarPayload(live, new Date().toISOString(), 'live_no_table', fetchedPayload.diagnostics);
 }
 async function findTenderOwner(database, currentProfile) {
@@ -3577,7 +3598,9 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
   if (!isTenderTrackableStatus(tenderRecord)) throw trackingError('No se puede convertir una licitación cancelada, revocada o declarada desierta.', 409);
   const officialState = await revalidateTenderOfficialStatus(tenderRecord);
   if (!isTenderTrackableStatus(officialState)) throw trackingError('No se puede convertir una licitación cancelada, revocada o declarada desierta.', 409);
-  const canonicalTender = dbTenderToPublic({ ...tenderRecord, status: officialState.status, raw: officialState.raw });
+  const revalidatedTenderRow = { ...tenderRecord, status: officialState.status, raw: { ...tenderRecord?.raw, ...officialState?.raw } };
+  requireTenderCompetibleForConversion(revalidatedTenderRow);
+  const canonicalTender = dbTenderToPublic(revalidatedTenderRow);
   const owner = await findTenderOwner(database, currentProfile);
   const payload = buildTenderOpportunityPayload(canonicalTender, currentProfile.role === 'comercial' ? currentProfile : owner);
   const conversion = await callTenderOpportunityConversion(database, tenderRecord.id, payload, tenderRecord.tracking_updated_at, currentProfile);
