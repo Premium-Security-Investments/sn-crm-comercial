@@ -1,7 +1,8 @@
-// Componente de Servicio v2 data-driven (modo sombra).
-// Ver docs/superpowers/specs/2026-10-01-agt002-service-matrix-v2-shadow.md para el contrato completo.
+// Componente de Servicio v2 data-driven, integrado directamente (sin modo sombra)
+// como el eje A (Servicio) de la fórmula canónica de producción tender-fit-v2.
+// Ver docs/superpowers/specs/2026-10-01-agt002-service-matrix-v2-shadow.md para el contrato original de diseño.
 
-export const TENDER_SERVICE_MATRIX_V2_VERSION = 'tender-service-matrix-v2-shadow-v1';
+export const TENDER_SERVICE_MATRIX_V2_VERSION = 'tender-service-matrix-v2';
 export const TENDER_SERVICE_MATRIX_V2_ROLES = Object.freeze(['ANCLA', 'AMBIGUA', 'CONTEXTO', 'EXCLUSION']);
 export const TENDER_SERVICE_MATRIX_V2_FAMILIES = Object.freeze(['FISICA', 'ELECTRONICA', 'SUMINISTRO']);
 

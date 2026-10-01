@@ -1,10 +1,13 @@
-// Contrato vigente del componente de Servicio v2 data-driven en modo sombra
-// (ver docs/superpowers/specs/2026-10-01-agt002-service-matrix-v2-shadow.md).
-// Secciones 1-16: forma de exports, validación fail-closed, tabla de puntaje por
+// Contrato vigente del componente de Servicio v2 data-driven, hoy integrado
+// directamente (sin modo sombra) como el eje A (Servicio) de la fórmula canónica
+// tender-fit-v2 (ver tests/tender-fit-policy.test.mjs). Este módulo
+// (tender-service-matrix-v2.js) no cambia por ese reemplazo.
+// Secciones 1-15: forma de exports, validación fail-closed, tabla de puntaje por
 // combinación de familias ancladas, confirmación AMBIGUA/CONTEXTO, exclusión dura/
-// condicional por campo, normalización/límites de frase, traza/determinismo, y
-// compatibilidad sombra con evaluateTenderFit. Sección 17: absorción de anclas
-// ELECTRONICA contenidas en el span de una ancla SUMINISTRO (spec §4.3.1).
+// condicional por campo, normalización/límites de frase, traza/determinismo.
+// Sección 16: integración directa (no sombra) con evaluateTenderFit. Sección 17:
+// absorción de anclas ELECTRONICA contenidas en el span de una ancla SUMINISTRO
+// (spec §4.3.1 de docs/superpowers/specs/2026-10-01-agt002-service-matrix-v2-shadow.md).
 import assert from 'node:assert/strict';
 import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit } from '../tender-fit-policy.js';
 import {
@@ -34,6 +37,7 @@ function normalizeLikeMatrix(value) {
 // ---------------------------------------------------------------------------
 assert.equal(typeof TENDER_SERVICE_MATRIX_V2_VERSION, 'string');
 assert.ok(TENDER_SERVICE_MATRIX_V2_VERSION.trim().length > 0, 'la versión de la matriz no debe estar vacía');
+assert.equal(TENDER_SERVICE_MATRIX_V2_VERSION, 'tender-service-matrix-v2', 'la identidad de la matriz debe ser la canónica de producción, no la de modo sombra');
 assert.ok(Array.isArray(TENDER_SERVICE_MATRIX_V2));
 assert.equal(Object.isFrozen(TENDER_SERVICE_MATRIX_V2), true, 'la matriz exportada debe estar congelada');
 assert.deepEqual([...TENDER_SERVICE_MATRIX_V2_ROLES].sort(), ['AMBIGUA', 'ANCLA', 'CONTEXTO', 'EXCLUSION']);
@@ -309,7 +313,11 @@ assert.doesNotThrow(
 );
 
 // ---------------------------------------------------------------------------
-// 16. Compatibilidad sombra: v1 no cambia; shadow.servicio_v2 se añade de forma aditiva
+// 16. Integración directa con tender-fit-v2 (reemplazo autorizado de v1, no sombra):
+//     la razón del eje `servicio` de evaluateTenderFit debe coincidir EXACTAMENTE con
+//     evaluateTenderServiceMatrixV2 sobre los mismos campos. No existe ya ningún
+//     campo `shadow`: v2 es la fórmula de producción directa, no una proyección
+//     aditiva sobre v1 (ver tests/tender-fit-policy.test.mjs, sección 1).
 // ---------------------------------------------------------------------------
 function baseTender(o = {}) {
   return {
@@ -320,20 +328,14 @@ function baseTender(o = {}) {
 const tender = baseTender();
 const result = evaluateTenderFit(tender, { nowIso: NOW });
 
-// El eje servicio v1 y el resto del contrato de evaluateTenderFit no deben cambiar.
 assert.equal(result.policy_version, TENDER_FIT_POLICY_VERSION);
-assert.equal(TENDER_FIT_POLICY_VERSION, 'tender-fit-v1', 'la versión de política v1 no debe cambiar por introducir v2 en sombra');
-assert.equal(result.band, 'alto');
-assert.ok(result.score >= 75);
-assert.equal(result.reasons.map(r => r.axis).join(','), 'servicio,escala_comercial,territorio,ventana_operativa');
-const servicioReasonV1 = result.reasons.find(r => r.axis === 'servicio');
-assert.equal(servicioReasonV1.points, 50, 'el eje servicio v1 (evaluateServicioAxis) no debe cambiar su puntaje por la introducción de v2');
+assert.equal(TENDER_FIT_POLICY_VERSION, 'tender-fit-v2', 'tender-fit-v2 es la fórmula de producción única (reemplazo autorizado de v1)');
+assert.equal('shadow' in result, false, 'no debe quedar ningún campo shadow: v2 ya no es un modo sombra');
+assert.equal(result.reasons.slice(0, 4).map(r => r.axis).join(','), 'servicio,valor,territorio,tiempo');
 
-// La proyección sombra debe existir, ser interna (no reemplaza nada del contrato v1) y coincidir con una llamada directa al evaluador v2.
-assert.ok(result.shadow, 'evaluateTenderFit debe exponer un campo shadow aditivo');
-assert.ok(result.shadow.servicio_v2, 'shadow.servicio_v2 debe existir');
+const servicioReasonV2 = result.reasons.find(r => r.axis === 'servicio');
 const directV2 = evaluateTenderServiceMatrixV2({ title: tender.title, description: tender.description, detail: tender.detail });
-assert.deepEqual(result.shadow.servicio_v2, directV2, 'shadow.servicio_v2 debe coincidir exactamente con evaluateTenderServiceMatrixV2 sobre los mismos campos');
+assert.equal(servicioReasonV2.points, directV2.points, 'los puntos de la razón del eje servicio deben coincidir exactamente con evaluateTenderServiceMatrixV2 sobre los mismos campos (title/description/detail)');
 
 // ---------------------------------------------------------------------------
 // 17. Corrección 2026-10-01: ancla ELECTRONICA totalmente contenida en el span

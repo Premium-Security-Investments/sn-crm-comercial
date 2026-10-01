@@ -10,8 +10,8 @@ export type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'por_validar' | 'ba
 export type TenderFitBand = 'alto' | 'medio' | 'por_validar' | 'bajo';
 export type TenderFitConfidence = 'alta' | 'media' | 'baja';
 export type TenderFitParticipationHint = 'directa' | 'alianza_probable' | 'por_definir';
-export type TenderFitReason = { axis: string; points: number; code: string; detail: string; source: string };
-export type TenderFitDataGap = { gap_id: string; field: string; severity: 'critical' | 'noncritical'; detail: string; source: string };
+export type TenderFitReason = { axis: string; points: number; code: string; detail: string; source: string; critical?: boolean; impact_priority?: number };
+export type TenderFitDataGap = { gap_id: string; field: string; severity: 'critical' | 'noncritical'; detail: string; source: string; impact_priority?: number };
 export type TenderFitFeedback = { mode: 'evidence_only'; applied_points: 0; policy: 'human_reviewed_version_only' };
 export type TenderFitProjection = {
   policy_version: string; score: number; band: TenderFitBand; confidence: TenderFitConfidence;

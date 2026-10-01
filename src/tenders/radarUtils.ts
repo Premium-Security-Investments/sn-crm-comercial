@@ -6,11 +6,19 @@ export function tenderFitBadgeLabel(fit?: TenderFitProjection | null): string {
   return FIT_BAND_LABELS[fit?.band as TenderFitBand] || FIT_BAND_LABELS.por_validar;
 }
 
+function compareByImpactPriority(left: { impact_priority?: number }, right: { impact_priority?: number }): number {
+  const leftHasPriority = typeof left.impact_priority === 'number';
+  const rightHasPriority = typeof right.impact_priority === 'number';
+  if (leftHasPriority && rightHasPriority) return (left.impact_priority as number) - (right.impact_priority as number);
+  if (leftHasPriority) return -1;
+  if (rightHasPriority) return 1;
+  return 0;
+}
+
 export function tenderFitReasonDetails(fit?: TenderFitProjection | null): string[] {
   if (!fit) return ['Sin datos de encaje: no fue posible calcular el fit del proceso'];
-  const pool = fit.band === 'por_validar'
-    ? [...fit.data_gaps].sort((left, right) => (left.severity === right.severity ? 0 : left.severity === 'critical' ? -1 : 1))
-    : [...fit.reasons].sort((left, right) => (right.points || 0) - (left.points || 0));
+  const pool = fit.band === 'por_validar' ? [...fit.data_gaps] : [...fit.reasons];
+  pool.sort(compareByImpactPriority);
   const details: string[] = [];
   for (const item of pool) {
     const detail = item.detail?.trim();
