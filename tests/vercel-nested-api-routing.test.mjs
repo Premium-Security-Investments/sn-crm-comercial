@@ -14,5 +14,10 @@ assert.ok(
   Number(config.functions?.['api/[...path].js']?.maxDuration) >= 180,
   'the catch-all function must leave enough wall-clock budget for the 120s AGT-002 model timeout plus DB work',
 );
+assert.equal(
+  config.installCommand,
+  'corepack pnpm install --frozen-lockfile',
+  'vercel.json installCommand must be exactly "corepack pnpm install --frozen-lockfile" because this deployment-level setting overrides the dashboard\'s legacy "npm install" setting',
+);
 
 console.log('Vercel nested API routing contract OK');

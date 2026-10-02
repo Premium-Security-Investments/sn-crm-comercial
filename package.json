@@ -3,10 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "pnpm@10.34.6",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "server": "node --env-file=.env.local server/index.js",
-    "build": "npm run check:deployment-safety && tsc && vite build",
+    "build": "corepack pnpm run check:deployment-safety && tsc && vite build",
     "postbuild": "node scripts/ensure_katherine_company_permission.mjs",
     "check:deployment-safety": "node tests/katherine-company-permission-deployment.test.mjs",
     "check:siio-integration": "node tests/siio-main-integration-static.test.mjs",
@@ -16,7 +22,7 @@
     "check:backend-parity": "node scripts/check_backend_parity.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:agt002-m2-synthetic-vertical": "node --test tests/agt002-m2-synthetic-vertical.test.mjs",
-    "test:agt002-runtime": "node --test tests/agt002-workbench-contract.test.mjs tests/agt002-workbench-worker.test.mjs tests/agt002-workbench-persistence.test.mjs tests/agt002-workbench-end-to-end.integration.test.mjs tests/agt002-workbench-responder.test.mjs tests/agt002-workbench-runtime.test.mjs tests/agt002-workbench-worker-route.test.mjs tests/agt002-workbench-scheduler-ops-static.test.mjs tests/agt002-workbench-runtime-hardening-pglite.integration.test.mjs tests/agt002-governance-draft-proposal.test.mjs tests/agt002-governance-draft-proposal-runtime-isolation-static.test.mjs && npm run check:backend-parity && npm run build",
+    "test:agt002-runtime": "node --test tests/agt002-workbench-contract.test.mjs tests/agt002-workbench-worker.test.mjs tests/agt002-workbench-persistence.test.mjs tests/agt002-workbench-end-to-end.integration.test.mjs tests/agt002-workbench-responder.test.mjs tests/agt002-workbench-runtime.test.mjs tests/agt002-workbench-worker-route.test.mjs tests/agt002-workbench-scheduler-ops-static.test.mjs tests/agt002-workbench-runtime-hardening-pglite.integration.test.mjs tests/agt002-governance-draft-proposal.test.mjs tests/agt002-governance-draft-proposal-runtime-isolation-static.test.mjs && corepack pnpm run check:backend-parity && corepack pnpm run build",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node --env-file=.env.local server/index.js",
     "test:agt002-f0": "node --test tests/agt002-f0a-control-plane.test.mjs tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b-chat-query-rollback-pglite.integration.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0b2-rpc-hardening-rollback-pglite.integration.test.mjs tests/agt002-f0-users-security-095-pglite.integration.test.mjs tests/agt002-f0e-ci-governance.test.mjs tests/agt002-f0e-grants-static.test.mjs tests/agt002-f0-runtime-reporters.test.mjs tests/agt002-f0-drift-detection.test.mjs tests/agt002-host-surface-observer.test.mjs",
@@ -26,25 +32,25 @@
     "check:agt002-drift": "node scripts/agt002-check-drift.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "latest",
-    "@vitejs/plugin-react": "latest",
+    "@supabase/supabase-js": "2.106.2",
+    "@vitejs/plugin-react": "6.0.2",
     "@xmldom/xmldom": "^0.8.15",
     "adm-zip": "^0.6.1",
-    "express": "latest",
+    "express": "5.2.1",
     "mammoth": "^1.12.0",
     "pdf-parse": "^1.1.1",
-    "react": "latest",
-    "react-dom": "latest",
-    "typescript": "latest",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "typescript": "6.0.3",
     "undici": "^6.29.0",
     "vite": "^8.1.4"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
-    "@types/express": "latest",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
+    "@types/express": "5.0.6",
+    "@types/node": "25.9.1",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
     "esbuild": "^0.28.1",
     "jsdom": "^30.0.1",
     "pg": "^8.23.0"
