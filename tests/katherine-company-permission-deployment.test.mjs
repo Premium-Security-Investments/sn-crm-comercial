@@ -179,7 +179,7 @@ for (const extraEnv of [{ VERCEL_ENV: 'production' }, { VERCEL_ENV: 'production'
 
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 assert.equal(packageJson.scripts['check:deployment-safety'], 'node tests/katherine-company-permission-deployment.test.mjs');
-assert.match(packageJson.scripts.build, /^npm run check:deployment-safety && /, 'Cada build debe ejecutar primero el contrato de seguridad del postbuild.');
+assert.match(packageJson.scripts.build, /^corepack pnpm run check:deployment-safety && /, 'Cada build debe ejecutar primero el contrato de seguridad del postbuild.');
 assert.equal(packageJson.scripts.postbuild, 'node scripts/ensure_katherine_company_permission.mjs');
 
 const migration = readFileSync(new URL('../supabase/migrations/060_katherine_company_profile_permission.sql', import.meta.url), 'utf8');

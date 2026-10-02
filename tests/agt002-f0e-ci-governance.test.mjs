@@ -450,7 +450,7 @@ test('drift_alert job never claims a production drift result on pull_request: Ch
   const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
   assert.doesNotMatch(
     driftAlertSection.slice(0, driftAlertSection.search(/name:\s*Collect observed surfaces/)),
-    /run:\s*npm run check:agt002-drift/,
+    /run:\s*corepack pnpm run check:agt002-drift/,
     'check:agt002-drift must not run before the pull_request gate',
   );
 });
@@ -469,11 +469,11 @@ test('drift_alert job-level fail-closed if does not disturb the real collect-obs
   assert.ok(uploadIndex >= 0 && failIndex > uploadIndex, 'Upload drift result must precede Fail on drift');
 
   const collectSection = driftAlertSection.slice(collectIndex, checkIndex);
-  assert.match(collectSection, /run:\s*npm run agt002:observe-surfaces/);
+  assert.match(collectSection, /run:\s*corepack pnpm run agt002:observe-surfaces/);
   const checkSection = driftAlertSection.slice(checkIndex, uploadIndex);
   assert.match(
     checkSection,
-    /run:\s*npm run check:agt002-drift.*--receipt\s+agt002-release-receipt\.json\s+--observed\s+agt002-observed-surfaces\.json/,
+    /run:\s*corepack pnpm run check:agt002-drift.*--receipt\s+agt002-release-receipt\.json\s+--observed\s+agt002-observed-surfaces\.json/,
   );
   const failSection = driftAlertSection.slice(failIndex);
   assert.match(failSection, /run:\s*exit 1/);

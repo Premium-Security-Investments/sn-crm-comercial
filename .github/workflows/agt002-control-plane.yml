@@ -32,7 +32,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
+      - run: corepack pnpm install --frozen-lockfile
       - run: node --test tests/agt002-f0a-control-plane.test.mjs tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b-chat-query-rollback-pglite.integration.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0b2-rpc-hardening-rollback-pglite.integration.test.mjs tests/agt002-f0e-ci-governance.test.mjs tests/agt002-f0e-grants-static.test.mjs tests/agt002-f0-runtime-reporters.test.mjs tests/agt002-f0-drift-detection.test.mjs tests/agt002-f0-users-security-095-pglite.integration.test.mjs
 
   backend_parity:
@@ -44,8 +44,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
-      - run: npm run check:backend-parity
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm run check:backend-parity
 
   production_build:
     name: production_build
@@ -60,8 +60,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
-      - run: npm run build
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm run build
 
   migration_static:
     name: migration_static
@@ -72,7 +72,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
+      - run: corepack pnpm install --frozen-lockfile
       - run: node --test tests/agt002-f0b-chat-query.test.mjs tests/agt002-f0b2-rpc-hardening.test.mjs tests/agt002-f0e-grants-static.test.mjs
 
   grants_security:
@@ -84,8 +84,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
-      - run: npm run check:agt002-grants
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm run check:agt002-grants
 
   release_receipt:
     name: release_receipt
@@ -119,7 +119,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
+      - run: corepack pnpm install --frozen-lockfile
       # --version is derived directly from the same desired-target sha drift_alert observes
       # origin_main against (f0-<first 7 chars>), never trusted from a manually maintained
       # repository variable that could drift out of sync with what is actually on main. The sha
@@ -135,7 +135,7 @@ jobs:
             exit 1
           fi
           echo "AGT002_DESIRED_VERSION=f0-${sha:0:7}" >> "$GITHUB_ENV"
-      - run: npm run agt002:release-receipt -- --out agt002-release-receipt.json --version "$AGT002_DESIRED_VERSION" --git-sha "${{ env.AGT002_DESIRED_SHA }}"
+      - run: corepack pnpm run agt002:release-receipt -- --out agt002-release-receipt.json --version "$AGT002_DESIRED_VERSION" --git-sha "${{ env.AGT002_DESIRED_SHA }}"
       - uses: actions/upload-artifact@v4
         with:
           name: agt002-release-receipt
@@ -157,7 +157,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
+      - run: corepack pnpm install --frozen-lockfile
       # On pull_request there are no repository variables/live URLs configured yet for main to
       # compare against (this repo predates that configuration) -- observing "production" here
       # would just report all six surfaces unobserved and fail drift_alert closed on every single
@@ -204,12 +204,12 @@ jobs:
           AGT002_OBSERVE_RADAR_PIPELINE_URL: ${{ vars.AGT002_RADAR_PIPELINE_CONTROL_PLANE_URL }}
           AGT002_OBSERVE_REANALYSIS_WORKER_URL: ${{ vars.AGT002_REANALYSIS_WORKER_CONTROL_PLANE_URL }}
           AGT002_OBSERVE_WORKBENCH_SCHEDULER_URL: ${{ vars.AGT002_WORKBENCH_SCHEDULER_CONTROL_PLANE_URL }}
-        run: npm run agt002:observe-surfaces -- --desired-sha "${{ env.AGT002_DESIRED_SHA }}" --git-sha "${{ env.AGT002_DESIRED_SHA }}" --desired-version "$AGT002_DESIRED_VERSION" --out agt002-observed-surfaces.json
+        run: corepack pnpm run agt002:observe-surfaces -- --desired-sha "${{ env.AGT002_DESIRED_SHA }}" --git-sha "${{ env.AGT002_DESIRED_SHA }}" --desired-version "$AGT002_DESIRED_VERSION" --out agt002-observed-surfaces.json
       - name: Check drift
         if: github.event_name != 'pull_request'
         id: drift
         continue-on-error: true
-        run: npm run check:agt002-drift -- --receipt agt002-release-receipt.json --observed agt002-observed-surfaces.json --out agt002-drift-result.json
+        run: corepack pnpm run check:agt002-drift -- --receipt agt002-release-receipt.json --observed agt002-observed-surfaces.json --out agt002-drift-result.json
       - name: Upload drift result
         if: always() && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4

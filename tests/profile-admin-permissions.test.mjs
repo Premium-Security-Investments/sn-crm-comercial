@@ -368,5 +368,5 @@ assert.match(src, /\['junta','Junta'\]/);
 assert.match(src, /Permisos/);
 assert.doesNotMatch(src.slice(src.indexOf('function UsersAdmin'), src.indexOf('createRoot')), /<label>Área comercial/);
 
-execFileSync('npm', ['run', 'build'], { stdio: 'inherit', cwd: new URL('..', import.meta.url) });
+execFileSync('corepack', ['pnpm', 'run', 'build'], { stdio: 'inherit', cwd: new URL('..', import.meta.url) });
 console.log('profile admin permissions checks passed');
