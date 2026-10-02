@@ -19,9 +19,9 @@ La app consume las tablas y vistas `psi_sales_*` existentes en Supabase mediante
 
 ```bash
 cd /root/psi-comercial/plataforma-ventas/app
-npm install
-npm run build
-npm start
+corepack pnpm install --frozen-lockfile
+corepack pnpm run build
+corepack pnpm start
 ```
 
 URL local:
@@ -33,8 +33,8 @@ http://127.0.0.1:4173
 Para desarrollo con recarga en caliente:
 
 ```bash
-npm run server
-npm run dev
+corepack pnpm run server
+corepack pnpm run dev
 ```
 
 Vite proxya `/api` hacia `http://localhost:4173`.
@@ -77,7 +77,7 @@ Regla operativa: todo cambio nuevo del CRM debe entrar por `origin` hacia `Premi
 
 ## Verificación realizada
 
-- `npm run build` pasa.
+- `corepack pnpm run build` pasa.
 - `/api/bootstrap` devuelve 266 oportunidades y los KPIs esperados.
 - Se verificó en navegador la pantalla de inicio, listado, detalle y dashboard.
 - Se probó flujo temporal de crear oportunidad, validar pérdida sin motivo, editar, registrar seguimiento y limpiar el registro de QA.
