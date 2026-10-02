@@ -106,6 +106,39 @@ test('an earlier source date creates a deterministic, deduplicated raw conflict 
   assert.equal(third.patch.raw.deadline_conflicts.length, 1, 'a repeated identical conflict must be deduplicated, not appended again');
 });
 
+// --- 2b. Earlier source date must never clobber a valid, already-persisted raw.deadline -----
+
+test('an earlier source date does not overwrite a valid persisted raw.deadline with the earlier source date', () => {
+  const existing = existingRow({
+    deadline_at: '2026-10-06T00:00:00+00:00',
+    raw: { id_del_proceso: 'CO1.REQ.123', deadline: '2026-10-06' },
+  });
+  const source = sourceRow({ fecha_de_recepcion_de: '2026-10-05T00:00:00.000' });
+
+  const { patch } = reconcileTenderSource(existing, source, { now: '2026-09-25T12:00:00.000Z' });
+
+  assert.equal(Object.hasOwn(patch, 'deadline_at'), false, 'an earlier source date must never move the deadline backwards');
+  assert.equal(patch.raw.deadline, '2026-10-06', 'a persisted/confirmed raw.deadline must survive an earlier, conflicting source date');
+  assert.equal(patch.raw.fecha_de_recepcion_de, '2026-10-05T00:00:00.000', 'the raw source evidence field itself may still reflect what the source actually sent');
+  assert.equal(patch.raw.deadline_conflicts.length, 1, 'the earlier date must still be recorded as a conflict');
+});
+
+// --- 2c. Earlier source date with a missing/invalid raw.deadline derives it from deadline_at -
+
+test('an earlier source date derives raw.deadline from the persisted deadline_at when the existing raw.deadline is missing', () => {
+  const existing = existingRow({
+    deadline_at: '2026-10-06T00:00:00+00:00',
+    raw: { id_del_proceso: 'CO1.REQ.123' },
+  });
+  const source = sourceRow({ fecha_de_recepcion_de: '2026-10-05T00:00:00.000' });
+
+  const { patch } = reconcileTenderSource(existing, source, { now: '2026-09-25T12:00:00.000Z' });
+
+  assert.equal(Object.hasOwn(patch, 'deadline_at'), false);
+  assert.equal(patch.raw.deadline, '2026-10-06', 'a missing raw.deadline must be safely derived from the persisted deadline_at, not set to the earlier source date');
+  assert.equal(patch.raw.deadline_conflicts.length, 1);
+});
+
 // --- 3. Equal date omits the deadline patch -------------------------------------------------
 
 test('an equal source date omits the deadline patch and records no conflict', () => {

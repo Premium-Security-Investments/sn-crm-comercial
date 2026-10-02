@@ -61,6 +61,10 @@ export function reconcileTenderSource(existingTender, sourceRow, { now } = {}) {
   const conflicts = Array.isArray(existingRaw.deadline_conflicts) ? existingRaw.deadline_conflicts.slice() : [];
   const history = Array.isArray(existingRaw.deadline_history) ? existingRaw.deadline_history.slice() : [];
 
+  // Defaults to the source's own calendar date (correct when the source is applied, or when it
+  // merely ties the current persisted date). Only the earlier-source branch below overrides this.
+  let rawDeadline = date;
+
   if (sourceDeadlineAt) {
     if (currentInstant === null || sourceInstant > currentInstant) {
       patch.deadline_at = sourceDeadlineAt;
@@ -72,6 +76,11 @@ export function reconcileTenderSource(existingTender, sourceRow, { now } = {}) {
       if (!alreadyPresent) {
         conflicts.push({ source_deadline: sourceDeadlineAt, current_deadline: currentDeadlineAt, detected_at: now });
       }
+      // The display-facing raw.deadline must never regress to the earlier, rejected source date:
+      // keep the existing raw.deadline when it already represents the persisted calendar date,
+      // otherwise safely derive that calendar date from deadline_at itself.
+      const currentCalendarDate = parseCalendarDate(currentDeadlineAt);
+      rawDeadline = parseCalendarDate(existingRaw.deadline) === currentCalendarDate ? existingRaw.deadline : currentCalendarDate;
     }
     if (patch.deadline_at) {
       const alreadyRecorded = history.some(entry => toInstant(entry?.deadline_at) === sourceInstant);
@@ -89,7 +98,7 @@ export function reconcileTenderSource(existingTender, sourceRow, { now } = {}) {
   patch.raw = {
     ...existingRaw,
     ...source,
-    deadline: date,
+    deadline: rawDeadline,
     deadline_conflicts: conflicts,
     deadline_history: history,
   };
