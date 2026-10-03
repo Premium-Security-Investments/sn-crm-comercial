@@ -62,6 +62,16 @@ export const AGT002_INTEGRAL_LEGAL_STATUSES = Object.freeze([
   'supported', 'partially_supported', 'unsupported', 'not_verified', 'not_applicable',
 ]);
 
+// Closed, content-free diagnostic rules for the four legal-assessment relationships that
+// share `v3_legal_assessment_invariant`. These literals may be emitted in observability; no
+// unit id, reference, validator message, or model content may ever be used as a rule value.
+export const AGT002_INTEGRAL_LEGAL_VALIDATION_RULES = Object.freeze({
+  BASIS_REF_NOT_ALLOWLISTED: 'legal_basis_ref_not_allowlisted',
+  SUPPORTED_REQUIRES_BASIS_REFS: 'legal_supported_requires_basis_refs',
+  NOT_VERIFIED_REQUIRES_HUMAN_REVIEW: 'legal_not_verified_requires_human_review',
+  STATUS_REQUIRES_PUBLISHED_CORPUS: 'legal_status_requires_published_corpus',
+});
+
 export const AGT002_INTEGRAL_ACTION_TYPES = Object.freeze([
   'obtain_evidence', 'verify_validity', 'validate_applicability', 'remediate_gap',
   'estimate_delivery', 'estimate_financial_exposure', 'human_decision',
@@ -139,9 +149,10 @@ function isRecord(value) {
 // `code`, when given, is attached as `error.code` — but ONLY ever a fixed literal passed by
 // the caller at the (few) call sites below whose message never interpolates a model-supplied
 // id/path/value. It must never be derived from `message` itself.
-function fail(message, code) {
+function fail(message, code, validationRule) {
   const error = new Error(`AGT-002 integral-analysis-v3: ${message}`);
   if (code) error.code = code;
+  if (validationRule) error.validationRule = validationRule;
   throw error;
 }
 
@@ -153,7 +164,7 @@ const failConclusionCompliance = message => fail(message, 'v3_conclusion_complia
 const failEvidenceReference = message => fail(message, 'v3_evidence_reference_invariant');
 const failMissingEvidence = message => fail(message, 'v3_missing_evidence_invariant');
 const failBlockingAction = message => fail(message, 'v3_blocking_action_invariant');
-const failLegalAssessment = message => fail(message, 'v3_legal_assessment_invariant');
+const failLegalAssessment = (message, validationRule) => fail(message, 'v3_legal_assessment_invariant', validationRule);
 const failAction = message => fail(message, 'v3_action_invariant');
 const failMilestone = message => fail(message, 'v3_milestone_invariant');
 const failEscalation = message => fail(message, 'v3_escalation_invariant');
@@ -482,7 +493,12 @@ function validateLegalAssessment(legalAssessment, unitId, ctx) {
   for (const [index, ref] of legalAssessment.basis_refs.entries()) {
     const label = `analysis_units[${unitId}].legal_assessment.basis_refs[${index}]`;
     boundedString(ref, ID_MAX_LENGTH, label);
-    if (!ctx.allowlist.legal_corpus.has(ref)) failLegalAssessment(`${label} no está en la allowlist del corpus jurídico publicado: ${ref}.`);
+    if (!ctx.allowlist.legal_corpus.has(ref)) {
+      failLegalAssessment(
+        `${label} no está en la allowlist del corpus jurídico publicado: ${ref}.`,
+        AGT002_INTEGRAL_LEGAL_VALIDATION_RULES.BASIS_REF_NOT_ALLOWLISTED,
+      );
+    }
   }
   boundedString(legalAssessment.summary, TEXT_MAX_LENGTH, `analysis_units[${unitId}].legal_assessment.summary`);
   requireBoolean(legalAssessment.human_legal_review_required, `analysis_units[${unitId}].legal_assessment.human_legal_review_required`);
@@ -682,13 +698,22 @@ function validateUnitInvariants(unit, ctx) {
 
   // Legal assessment (7.8) and corpus-null invariant (design section 5, invariant 7).
   if (legalAssessment.status === 'supported' && legalAssessment.basis_refs.length === 0) {
-    failLegalAssessment(`analysis_units[${unitId}]: legal_assessment.status "supported" exige basis_refs no vacío.`);
+    failLegalAssessment(
+      `analysis_units[${unitId}]: legal_assessment.status "supported" exige basis_refs no vacío.`,
+      AGT002_INTEGRAL_LEGAL_VALIDATION_RULES.SUPPORTED_REQUIRES_BASIS_REFS,
+    );
   }
   if (legalAssessment.status === 'not_verified' && legalAssessment.human_legal_review_required !== true) {
-    failLegalAssessment(`analysis_units[${unitId}]: legal_assessment.status "not_verified" exige human_legal_review_required=true.`);
+    failLegalAssessment(
+      `analysis_units[${unitId}]: legal_assessment.status "not_verified" exige human_legal_review_required=true.`,
+      AGT002_INTEGRAL_LEGAL_VALIDATION_RULES.NOT_VERIFIED_REQUIRES_HUMAN_REVIEW,
+    );
   }
   if (ctx.legalCorpusVersionId === null && !['not_applicable', 'not_verified'].includes(legalAssessment.status)) {
-    failLegalAssessment(`analysis_units[${unitId}]: sin legal_corpus_version_id publicado, legal_assessment.status debe ser "not_applicable" o "not_verified".`);
+    failLegalAssessment(
+      `analysis_units[${unitId}]: sin legal_corpus_version_id publicado, legal_assessment.status debe ser "not_applicable" o "not_verified".`,
+      AGT002_INTEGRAL_LEGAL_VALIDATION_RULES.STATUS_REQUIRES_PUBLISHED_CORPUS,
+    );
   }
 
   // Actions / roles (7.9).

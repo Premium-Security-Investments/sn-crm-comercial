@@ -189,7 +189,7 @@ test('record() stamps every event with its own emission time from the injected c
 test('output_rejected declares its closed field allowlist and stage enum', () => {
   assert.deepEqual(
     [...AGT002_OBSERVABILITY_EVENT_FIELDS.output_rejected].sort(),
-    ['content_bytes', 'content_sha256', 'effort', 'input_tokens', 'output_tokens', 'snapshot_id', 'stage', 'validation_code'].sort(),
+    ['content_bytes', 'content_sha256', 'effort', 'input_tokens', 'output_tokens', 'snapshot_id', 'stage', 'validation_code', 'validation_rule'].sort(),
   );
   assert.deepEqual(Object.values(AGT002_OUTPUT_REJECTION_STAGES).sort(), ['content_extraction', 'envelope', 'json_parse', 'semantic_validation', 'usage'].sort());
 });
@@ -243,6 +243,26 @@ test('output_rejected only forwards the allowlisted fields and drops anything ra
   for (const forbiddenKey of ['content', 'raw_content', 'prompt', 'error_message']) {
     assert.equal(record[forbiddenKey], undefined, `forbidden field leaked: ${forbiddenKey}`);
   }
+});
+
+test('output_rejected only forwards a closed legal validation rule and drops free-form detail', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 10 });
+  observability.record('output_rejected', {
+    stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
+    validation_code: 'v3_legal_assessment_invariant',
+    validation_rule: 'legal_supported_requires_basis_refs',
+  });
+  assert.equal(emitted[0].validation_rule, 'legal_supported_requires_basis_refs');
+
+  const rejected = [];
+  const rejectingObservability = createAgt002AnalysisObservability({ emit: record => rejected.push(record), now: () => 10 });
+  rejectingObservability.record('output_rejected', {
+    stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
+    validation_code: 'v3_legal_assessment_invariant',
+    validation_rule: 'analysis_units[UNIT-SECRET] leaked model detail',
+  });
+  assert.equal(rejected[0].validation_rule, undefined);
 });
 
 test('output_rejected content_sha256 must be a 64-hex digest or it is dropped, never forwarded as free text', () => {

@@ -529,7 +529,42 @@ function assertEscalationGoverned(unit) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// (5) Anti-relaxation: everything the batch validator already fails closed on must keep failing
+// (5) Legal normalization parity: the batch assembler must apply the same conservative downgrade
+//     as the single-turn assembler before critical-escalation normalization. This is the exact
+//     production signature behind Cali generation 1: `supported` with no legal basis reached the
+//     shared validator only on durable_batched_v1 and failed with v3_legal_assessment_invariant.
+// ---------------------------------------------------------------------------------------------
+{
+  const validationContext = buildValidationContext();
+  const value = buildBatchTurn(BATCH_A.requirement_ids);
+  const wireHab = findUnit(value.integral_analysis.analysis_units, 'REQ-HAB-1');
+  wireHab.legal_assessment = {
+    status: 'supported', basis_refs: [], summary: 'Afirmación jurídica sin fundamento citado.', human_legal_review_required: false,
+  };
+  wireHab.escalation = { required: false, level: 'none', reason: 'El modelo omitió la revisión jurídica.' };
+  const before = structuredClone(value);
+
+  const result = validateAgt002PreviewModelOutputV3Batch(value, { validationContext, batch: BATCH_A });
+  const normalized = findUnit(result.analysis_units, 'REQ-HAB-1');
+  assert.deepEqual(normalized.legal_assessment, {
+    status: 'not_verified', basis_refs: [], summary: 'Afirmación jurídica sin fundamento citado.', human_legal_review_required: true,
+  });
+  assert.deepEqual(normalized.escalation, {
+    required: true, level: 'role_review', reason: 'El modelo omitió la revisión jurídica.',
+  });
+  assert.deepEqual(value, before, 'batch legal normalization must not mutate the model payload');
+
+  const singleTurnValue = buildSingleTurn(ALL_REQUIREMENT_IDS);
+  const singleHab = findUnit(singleTurnValue.integral_analysis.analysis_units, 'REQ-HAB-1');
+  singleHab.legal_assessment = structuredClone(wireHab.legal_assessment);
+  singleHab.escalation = structuredClone(wireHab.escalation);
+  const singleResult = validateAgt002PreviewModelOutputV3(singleTurnValue, buildValidationContext());
+  assert.deepEqual(normalized.legal_assessment, findUnit(singleResult.analysis_units, 'REQ-HAB-1').legal_assessment);
+  assert.deepEqual(normalized.escalation, findUnit(singleResult.analysis_units, 'REQ-HAB-1').escalation);
+}
+
+// ---------------------------------------------------------------------------------------------
+// (6) Anti-relaxation: everything the batch validator already fails closed on must keep failing
 //     closed, with critical conditions present on the turn. Escalation normalization must not
 //     become a side door around identity, coverage, allowlists, the legal-assessment invariant
 //     or the human/abstention gates.
@@ -573,6 +608,23 @@ function assertEscalationGoverned(unit) {
       () => validateAgt002PreviewModelOutputV3Batch(value, { validationContext, batch: BATCH_B }),
       /allowlist|citation/i,
       'a tender_document ref outside this batch citation_allowlist must stay rejected',
+    );
+  }
+
+  // Legal normalization never rewrites or drops citations. An off-allowlist legal basis remains
+  // a hard failure and carries only the new fixed, content-free rule discriminator.
+  {
+    const validationContext = buildValidationContext();
+    const value = buildBatchTurn(BATCH_A.requirement_ids);
+    const hab = findUnit(value.integral_analysis.analysis_units, 'REQ-HAB-1');
+    hab.legal_assessment = {
+      status: 'supported', basis_refs: ['LC-NOT-ALLOWLISTED'], summary: 'Fundamento no gobernado.', human_legal_review_required: false,
+    };
+    assert.throws(
+      () => validateAgt002PreviewModelOutputV3Batch(value, { validationContext, batch: BATCH_A }),
+      error => error?.code === 'v3_legal_assessment_invariant'
+        && error?.validationRule === 'legal_basis_ref_not_allowlisted',
+      'an off-allowlist legal basis must remain rejected with a fixed diagnostic rule',
     );
   }
 

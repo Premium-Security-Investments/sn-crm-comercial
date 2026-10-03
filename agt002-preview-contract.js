@@ -1158,11 +1158,12 @@ export function buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationCon
 // from the same governed maps the single-turn assembler
 // (`assembleAgt002GovernedIntegralAnalysisV3Units`) already uses.
 //
-// The assembled unit is then run through the EXISTING, unchanged `normalizeAgt002ActionsUnit`
-// and `normalizeAgt002CriticalEscalationUnit` — the same conservative normalizations the
-// single-turn assembler already applies, in the same order — before the shared validator sees
-// it (production `v3_action_invariant` and `v3_escalation_invariant` rejections on
-// durable_batched_v1). This is a parity fix, not a relaxation: the batch wire contract
+// The assembled unit is then run through the EXISTING, unchanged
+// `normalizeAgt002ConservativeLegalAssessmentUnit`, `normalizeAgt002ActionsUnit` and
+// `normalizeAgt002CriticalEscalationUnit` — the same conservative normalizations the single-turn
+// assembler already applies, in the same order — before the shared validator sees it (production
+// `v3_legal_assessment_invariant`, `v3_action_invariant` and `v3_escalation_invariant` rejections
+// on durable_batched_v1). This is a parity fix, not a relaxation: the batch wire contract
 // removes `unit_id` from the unit key set entirely, so the deterministic `UNIT-<requirement_id>`
 // that `actions[].basis_unit_id` must equal is structurally invisible to the model on a batch
 // turn — it is a server-owned identity the model cannot govern, exactly like the duplicate
@@ -1191,8 +1192,11 @@ export function buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationCon
 // exactly the lowering the single-turn path already performs on the same input. `reason` is
 // never touched. Everything else stays with the unweakened validator: a malformed `escalation`
 // object, an invalid `escalation.level` enum on an escalation that is in fact required, an
-// unevidenced critical condition, the legal-assessment invariant and the human-validation gate
-// are never repaired here and still fail closed.
+// unevidenced critical condition, an off-allowlist legal basis ref and the human-validation gate
+// are never repaired here and still fail closed. Legal normalization only performs the same
+// conservative downgrade as the single-turn path: unsupported `supported`, `not_verified`
+// without mandatory review, or a positive status without a published corpus becomes
+// `not_verified` with human review required; it never invents or changes a basis ref.
 function assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, requirementId, validationContext) {
   const ctx = isRecord(validationContext) ? validationContext : {};
   const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
@@ -1202,13 +1206,15 @@ function assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, requirementId, vali
   const evidenceStateEntry = evidenceStateManifest.find(entry => entry?.requirement_id === requirementId);
   const governedEvidenceState = evidenceStateEntry?.evidence_state;
   return normalizeAgt002CriticalEscalationUnit(
-    normalizeAgt002ActionsUnit({
-      ...wireUnit,
-      unit_id: `UNIT-${requirementId}`,
-      sequence: manifestIndex + 1,
-      category: manifestEntry?.category ?? null,
-      evidence_state: isRecord(governedEvidenceState) ? { ...governedEvidenceState } : (governedEvidenceState ?? null),
-    }),
+    normalizeAgt002ActionsUnit(
+      normalizeAgt002ConservativeLegalAssessmentUnit({
+        ...wireUnit,
+        unit_id: `UNIT-${requirementId}`,
+        sequence: manifestIndex + 1,
+        category: manifestEntry?.category ?? null,
+        evidence_state: isRecord(governedEvidenceState) ? { ...governedEvidenceState } : (governedEvidenceState ?? null),
+      }, validationContext),
+    ),
   );
 }
 

@@ -1,5 +1,6 @@
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { safeAgt002PersistenceSubcode } from './agt002-persistence-retry.js';
+import { AGT002_INTEGRAL_LEGAL_VALIDATION_RULES } from './agt002-integral-analysis-v3.js';
 
 // Safe, structured operational metrics for the AGT-002 / Vig-IA durable
 // pipeline (conversion -> job -> claim -> snapshot -> agent -> run). Every
@@ -145,7 +146,7 @@ export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
   // token counts) without ever needing, and therefore never risking, the raw content or the
   // validator's own message text.
   output_rejected: Object.freeze([
-    'stage', 'validation_code', 'content_sha256', 'content_bytes', 'snapshot_id', 'input_tokens', 'output_tokens', 'effort',
+    'stage', 'validation_code', 'validation_rule', 'content_sha256', 'content_bytes', 'snapshot_id', 'input_tokens', 'output_tokens', 'effort',
   ]),
   canonical_preview_unavailable: Object.freeze([
     'correlation_id', 'stage', 'error_code', 'bridge_invocation_started', 'duration_ms',
@@ -212,6 +213,7 @@ export function boundAgt002ValidationCode(code) {
 const AGT002_CANONICAL_PREVIEW_STAGE_VALUES = new Set(Object.values(AGT002_CANONICAL_PREVIEW_STAGES));
 const AGT002_POST_BRIDGE_STAGE_VALUES = new Set(Object.values(AGT002_POST_BRIDGE_STAGES));
 const AGT002_POST_BRIDGE_ERROR_CODE_VALUES = new Set(Object.values(AGT002_POST_BRIDGE_ERROR_CODES));
+const AGT002_LEGAL_VALIDATION_RULE_VALUES = new Set(Object.values(AGT002_INTEGRAL_LEGAL_VALIDATION_RULES));
 
 function sanitizeAgt002FieldValue(eventType, key, value) {
   if (value === null || value === undefined) return undefined;
@@ -261,6 +263,9 @@ function sanitizeAgt002FieldValue(eventType, key, value) {
   if (key === 'error_message') return boundAgt002ErrorMessage(value);
   if (key === 'error_code') return boundAgt002ErrorCode(value);
   if (key === 'validation_code') return boundAgt002ValidationCode(value);
+  // Narrower than validation_code: this is a closed content-free discriminator for the four
+  // legal-assessment relationships only. Unknown/free-form values are dropped, never bounded.
+  if (key === 'validation_rule') return AGT002_LEGAL_VALIDATION_RULE_VALUES.has(value) ? value : undefined;
   // Closed allowlist, never free text: only a real AGT-002 reasoning-effort level survives.
   if (key === 'effort') return isAgt002PreviewReasoningEffort(value) ? value : undefined;
   // content_sha256 is only ever a digest this codebase computed itself (never a raw string
