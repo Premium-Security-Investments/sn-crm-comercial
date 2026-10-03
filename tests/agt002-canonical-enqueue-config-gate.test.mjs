@@ -27,7 +27,7 @@ import { buildAgt002FrozenEngineInput, isAgt002QueueableTimeoutMs } from '../agt
 function configuredEnv(overrides = {}) {
   return {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
-    AGT002_PREVIEW_MODEL: 'synthetic-codex-model',
+    AGT002_PREVIEW_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
     ...overrides,
@@ -56,6 +56,15 @@ test('a fully configured host with an unusable numeric override is blocked as in
   assert.equal(agt002CanonicalEnqueueBlockCode(configuredEnv({ AGT002_PREVIEW_DAILY_MAX_RUNS: '-1' })), AGT002_RUNTIME_CONFIG_INVALID_CODE);
 });
 
+test('an unsupported preview model is blocked as invalid config, never as "not configured"', () => {
+  // Every required variable is present and non-empty, so the deployment IS configured — an
+  // unsupported model alias must classify exactly like the unfundable timeout above, not as
+  // though the model variable were missing.
+  const code = agt002CanonicalEnqueueBlockCode(configuredEnv({ AGT002_PREVIEW_MODEL: 'gpt-5.6-luna' }));
+  assert.equal(code, AGT002_RUNTIME_CONFIG_INVALID_CODE);
+  assert.notEqual(code, AGT002_NOT_CONFIGURED_CODE, 'the deployment IS configured; saying otherwise sends operators to the wrong remediation');
+});
+
 test('an absent configuration keeps its own code, and a usable one does not block the enqueue', () => {
   assert.equal(agt002CanonicalEnqueueBlockCode({}), AGT002_NOT_CONFIGURED_CODE);
   assert.equal(agt002CanonicalEnqueueBlockCode(configuredEnv({ AGT002_PREVIEW_MODEL: '   ' })), AGT002_NOT_CONFIGURED_CODE);
@@ -75,7 +84,7 @@ test('the enqueue gate stops exactly at the timeout the worker can fund, so no d
 
 test('the frozen queue contract refuses what the worker refuses', () => {
   const source = {
-    runtimeConfig: { model: 'm', policyVersion: 'p', timeoutMs: 285_000, dailyMaxRuns: 20, maxConcurrent: 2 },
+    runtimeConfig: { model: 'sonnet', policyVersion: 'p', timeoutMs: 285_000, dailyMaxRuns: 20, maxConcurrent: 2 },
     analysisConfig: { AGT002_CANONICAL_ONLY: true, AGT002_CONTEXT_V2: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: false },
     analysisContext: { opportunity: { id: 'opp' }, documents: [], snapshotId: 'snap', canonicalOnly: true },
     idempotencyKey: 'key',

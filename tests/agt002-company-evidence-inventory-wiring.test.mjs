@@ -121,8 +121,10 @@ assert.equal(
 }
 
 // Every flow still loads governance exactly once, before the idempotency reservation, so the
-// snapshot is necessarily bound before any run identity is computed or claimed.
-assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3);
+// snapshot is necessarily bound before any run identity is computed or claimed. The governed
+// document workset freeze route's own canonical frozen-engine-input source factory is a fourth
+// such flow.
+assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 4);
 for (const [label, startToken, endToken] of [
   ['flow1 (enqueueAgt002CanonicalReanalysis)', 'async function enqueueAgt002CanonicalReanalysis(database, {', 'function sendError(res, error, status = 500) {'],
   ['flow2 (requestAgt002)', 'requestAgt002: async ({ jobId, tenderId, opportunityId, snapshotId }) => {', 'export async function buildTenderOpportunitySummary('],
@@ -178,7 +180,7 @@ assert.match(
 function v3Env(overrides = {}) {
   return {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
-    AGT002_PREVIEW_MODEL: 'synthetic-codex-model',
+    AGT002_PREVIEW_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
     AGT002_CANONICAL_ONLY: 'true', AGT002_CONTEXT_V2: 'true', AGT002_DOCUMENT_RETRIEVAL: 'true',
@@ -259,7 +261,7 @@ for (const badSnapshot of [
 // ===========================================================================
 function frozenSource(governanceOverrides = {}) {
   return {
-    runtimeConfig: { model: 'm', policyVersion: 'p', timeoutMs: 165000, dailyMaxRuns: 20, maxConcurrent: 2 },
+    runtimeConfig: { model: 'sonnet', policyVersion: 'p', timeoutMs: 165000, dailyMaxRuns: 20, maxConcurrent: 2 },
     analysisConfig: { AGT002_CANONICAL_ONLY: true, AGT002_CONTEXT_V2: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: true },
     analysisContext: { opportunity: { id: 'opp' }, documents: [{ id: 'doc' }], snapshotId: 'snap', canonicalOnly: true },
     legalCorpusContext: null,

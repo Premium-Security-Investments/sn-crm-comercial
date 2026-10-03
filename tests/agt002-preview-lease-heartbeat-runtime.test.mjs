@@ -40,7 +40,7 @@ const IDEMPOTENCY_KEY = 'd'.repeat(64);
 function baseEnv(overrides = {}) {
   return {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
-    AGT002_PREVIEW_MODEL: 'synthetic-codex-model',
+    AGT002_PREVIEW_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
     ...overrides,
@@ -139,7 +139,7 @@ const ANALYZE_CONTEXT = Object.freeze({
 function engineWithHook({ beforeProviderCall, events, clientRun }) {
   return createAgt002PreviewEngine({
     client: { run: async request => { events.push('provider_call'); return clientRun(request); } },
-    model: 'synthetic-codex-model',
+    model: 'sonnet',
     policyVersion: 'agt002-preview-policy-v2',
     countDailyRuns: async () => 0,
     beforeProviderCall,
@@ -186,7 +186,7 @@ test('an engine with no hook injected keeps its exact current behaviour', async 
   const events = [];
   const engine = createAgt002PreviewEngine({
     client: { run: async () => { events.push('provider_call'); throw new Error('synthetic provider failure'); } },
-    model: 'synthetic-codex-model',
+    model: 'sonnet',
     policyVersion: 'agt002-preview-policy-v2',
     countDailyRuns: async () => 0,
   });
@@ -207,7 +207,7 @@ function legacyEnvelope() {
     producer: 'AGT-002', agent_id: 'AGT-002', method: 'agent_ai',
     schema_version: 'agt002-preview-v1',
     policy_version: 'agt002-preview-policy-v2',
-    usage: { model: 'synthetic-codex-model' },
+    usage: { model: 'sonnet' },
     recommendation: 'no_go',
     summary: 'Resumen sintético.',
     strengths: [], weaknesses: [], blockers: [], questions: [], unverified: [],

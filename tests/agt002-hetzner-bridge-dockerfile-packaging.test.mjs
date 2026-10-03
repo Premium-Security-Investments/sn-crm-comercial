@@ -19,6 +19,8 @@ const BRIDGE_RUNTIME_FILES = [
   'agt002-claude-client.js',
 ];
 
+const ENTRYPOINT_FILE = 'ops/agt002-hetzner-bridge/run-server.mjs';
+
 function dockerfileCopiedRootFiles() {
   const copyLine = dockerfile.split('\n').find(line => line.startsWith('COPY ') && line.includes('agt002-hetzner-bridge-server.js'));
   assert.ok(copyLine, 'el Dockerfile debe tener una línea COPY para los módulos raíz del bridge');
@@ -28,6 +30,10 @@ function dockerfileCopiedRootFiles() {
 
 function directLocalImports(source) {
   return [...source.matchAll(/from\s+'\.\/([\w-]+\.js)'/g)].map(m => m[1]);
+}
+
+function entrypointRootImports(source) {
+  return [...source.matchAll(/from\s+'\.\.\/\.\.\/([\w-]+\.js)'/g)].map(m => m[1]);
 }
 
 function testDockerfileCopiesEveryDirectLocalImportOfBridgeRuntimeFiles() {
@@ -40,6 +46,13 @@ function testDockerfileCopiesEveryDirectLocalImportOfBridgeRuntimeFiles() {
         `el Dockerfile debe COPY '${imported}' porque '${file}' lo importa directamente`,
       );
     }
+  }
+  const entrypointSource = read(ENTRYPOINT_FILE);
+  for (const imported of entrypointRootImports(entrypointSource)) {
+    assert.ok(
+      copied.has(imported),
+      `el Dockerfile debe COPY '${imported}' porque '${ENTRYPOINT_FILE}' lo importa directamente`,
+    );
   }
 }
 

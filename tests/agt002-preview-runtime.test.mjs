@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY } from '../agt002-preview-engine.js';
 import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
 import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../agt002-v3-prompt-budget.js';
@@ -10,7 +11,7 @@ import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../agt002-v3-prompt-b
 function baseEnv(overrides = {}) {
   return {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
-    AGT002_PREVIEW_MODEL: 'synthetic-codex-model',
+    AGT002_PREVIEW_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
     ...overrides,
@@ -169,6 +170,34 @@ assert.throws(
     environment: baseEnv({ AGT002_PREVIEW_REASONING_EFFORT: 'medium' }), countDailyRuns: async () => 0, createEngine: spyEngine2,
   });
   assert.equal(capturedOptions2.effort, 'medium');
+}
+
+// AGT002_PREVIEW_MODEL must be drawn from the same shared allowlist every other
+// model-consuming caller enforces (AGT002_PREVIEW_ALLOWED_MODELS, agt002-preview-allowed-
+// models.js) — never a runtime-local free-form string. Both getAgt002PreviewRuntimeConfig
+// and createAgt002PreviewRuntime must fail closed on an unsupported alias or on a value that
+// is not an EXACT match (no trim/case normalization), exactly like every other numeric/enum
+// override above.
+{
+  assert.deepEqual(AGT002_PREVIEW_ALLOWED_MODELS, ['sonnet']);
+  assert.equal(getAgt002PreviewRuntimeConfig(baseEnv()).model, 'sonnet');
+  assert.equal(
+    typeof createAgt002PreviewRuntime({ environment: baseEnv(), countDailyRuns: async () => 0 }).analyze,
+    'function',
+  );
+
+  for (const badModel of ['gpt-5.6-luna', ' sonnet ']) {
+    assert.throws(
+      () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_MODEL: badModel })),
+      /no está configurado/i,
+      `${JSON.stringify(badModel)} must fail closed instead of silently reaching the provider`,
+    );
+    assert.throws(
+      () => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_PREVIEW_MODEL: badModel }), countDailyRuns: async () => 0 }),
+      /no está configurado/i,
+      `${JSON.stringify(badModel)} must fail closed instead of silently reaching the provider`,
+    );
+  }
 }
 
 // Explicit numeric overrides are honored when valid.
@@ -442,7 +471,7 @@ assert.doesNotMatch(source, /readFileSync/, 'the runtime must never read the loc
 assert.doesNotMatch(source, /AGT002_[A-Z0-9_]*SEMANTIC/, 'semantic discovery must not be gated by an environment flag of its own; it belongs to the V3 wiring');
 
 function testConfiguredRequiresHetznerBridgeUrlAndSecret() {
-  const baseEnv = { TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview', AGT002_PREVIEW_MODEL: 'gpt-x' };
+  const baseEnv = { TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview', AGT002_PREVIEW_MODEL: 'sonnet' };
   assert.equal(isAgt002PreviewConfigured(baseEnv), false, 'sin URL de puente, debe fallar cerrado (kill switch apagado por defecto)');
   assert.equal(isAgt002PreviewConfigured({ ...baseEnv, AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run' }), false, 'sin secreto HMAC, debe fallar cerrado');
   assert.equal(isAgt002PreviewConfigured({
@@ -455,7 +484,7 @@ function testConfiguredRequiresHetznerBridgeUrlAndSecret() {
 function testRuntimeBuildsHetznerBridgeClientNotLocalSpawn() {
   const environment = {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
-    AGT002_PREVIEW_MODEL: 'gpt-x',
+    AGT002_PREVIEW_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
   };

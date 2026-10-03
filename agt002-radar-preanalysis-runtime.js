@@ -3,6 +3,7 @@ import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA, AGT002_RADAR_PREANALYSIS_POLICY_VERSION, validateAgt002RadarPreanalysis } from './agt002-radar-preanalysis-contract.js';
 import { buildAgt002RadarPreanalysisInput } from './agt002-radar-preanalysis-input.js';
 import { AGT002_RADAR_PREANALYSIS_UNTRUSTED_USAGE_CODE, measureAgt002RadarPreanalysisUsage } from './agt002-radar-preanalysis-usage.js';
+import { AGT002_PREVIEW_SONNET_MODEL } from './agt002-preview-allowed-models.js';
 
 const REQUIRED=['AGT002_RADAR_PREANALYSIS_MODEL','AGT002_HETZNER_BRIDGE_URL','AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
 const DEFAULT_TIMEOUT_MS=30_000;
@@ -19,7 +20,7 @@ Cuando evidence_type sea learning_signal, evidence.reference debe copiar exactam
 No emitas determinaciones comerciales, conversiones, recomendaciones ni decisiones; sólo visibilidad preliminar para revisión humana.`;
 function nonempty(value){return typeof value==='string'&&value.trim().length>0;}
 function boundary(error,code,message='AGT-002 Radar preanalysis unavailable.') { const wrapped=error instanceof Error?error:new Error(message); wrapped.runtime_boundary_code=code; return wrapped; }
-export function isAgt002RadarPreanalysisConfigured(environment=process.env){let gateEnabled=false;try{gateEnabled=buildAgt002AnalysisConfig(environment).AGT002_RADAR_GATE;}catch{return false;}return gateEnabled&&REQUIRED.every(key=>nonempty(environment[key]));}
+export function isAgt002RadarPreanalysisConfigured(environment=process.env){let gateEnabled=false;try{gateEnabled=buildAgt002AnalysisConfig(environment).AGT002_RADAR_GATE;}catch{return false;}return gateEnabled&&REQUIRED.every(key=>nonempty(environment[key]))&&environment.AGT002_RADAR_PREANALYSIS_MODEL===AGT002_PREVIEW_SONNET_MODEL;}
 export function getAgt002RadarPreanalysisRuntimeConfig(environment=process.env){
   if(!isAgt002RadarPreanalysisConfigured(environment)){const error=new Error('AGT002_RADAR_RUNTIME_CONFIG_INVALID: runtime is off or incomplete');error.code='AGT002_RADAR_RUNTIME_CONFIG_INVALID';throw error;}
   const timeoutMs=nonempty(environment.AGT002_RADAR_PREANALYSIS_TIMEOUT_MS)?Number(environment.AGT002_RADAR_PREANALYSIS_TIMEOUT_MS):DEFAULT_TIMEOUT_MS;

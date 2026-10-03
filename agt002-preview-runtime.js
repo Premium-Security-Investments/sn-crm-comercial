@@ -8,6 +8,7 @@ import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort
 import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 import { renewAgt002PreviewClaim } from './agt002-preview-persistence.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -126,8 +127,11 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   if (!isAgt002PreviewReasoningEffort(effort)) {
     throw new Error('AGT-002 Preview no está configurado.');
   }
+  if (!AGT002_PREVIEW_ALLOWED_MODELS.includes(environment.AGT002_PREVIEW_MODEL)) {
+    throw new Error('AGT-002 Preview no está configurado.');
+  }
   return {
-    model: environment.AGT002_PREVIEW_MODEL.trim(),
+    model: environment.AGT002_PREVIEW_MODEL,
     policyVersion: nonEmpty(environment.AGT002_PREVIEW_POLICY_VERSION) ? environment.AGT002_PREVIEW_POLICY_VERSION.trim() : AGT002_PREVIEW_DEFAULT_POLICY_VERSION,
     timeoutMs,
     maxConcurrent,

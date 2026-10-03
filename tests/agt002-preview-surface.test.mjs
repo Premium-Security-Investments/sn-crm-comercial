@@ -55,13 +55,16 @@ assert.match(engine, /allowedLegalCitationIds: legalCitationIds\.all/);
 assert.match(engine, /evidence_refs\.items\.enum = \[\.\.\.allowedEvidenceIds\]/);
 
 assert.match(ui, /can\(currentProfile, ACTIONS\.AI_ANALYSIS_RUN\)/);
-assert.match(ui, /tender-documents-analyze-agent-preview/);
+assert.match(ui, /tender-agt002-governed-document-worksets/);
+assert.doesNotMatch(ui, /tender-documents-analyze-agent-preview/);
 assert.match(ui, /agt002-reanalysis-status\?opportunity_id/);
 assert.match(ui, /reanalysisAbortRef\.current\?\.abort\(\)/);
 assert.match(ui, /busy=\{busy \|\| Boolean\(activeReanalysisJobId\)\}/);
-assert.match(section, /Analizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/);
-assert.match(section, /Actualizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/);
-assert.match(section, /Volver a analizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/);
+// El CTA directo legado (Analizar/Actualizar/Volver a analizar con Vig-IA Licitaciones) fue
+// reemplazado por el selector gobernado TenderGovernedDocumentWorkset: única CTA de análisis.
+assert.match(section, /import \{ TenderGovernedDocumentWorkset \} from '\.\/TenderGovernedDocumentWorkset'/);
+assert.match(section, /<TenderGovernedDocumentWorkset/);
+assert.doesNotMatch(section, /onAnalyzePreview/);
 assert.doesNotMatch(section, /Generar análisis preliminar|>Actualizar análisis</);
 assert.match(section, /No registra ni autoriza GO \/ NO GO/);
 

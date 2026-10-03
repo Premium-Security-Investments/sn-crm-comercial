@@ -1,0 +1,21 @@
+/* AGT-002 governed document workset builder — Phase 4 of
+   .hermes/plans/2026-09-17-agt002-governed-document-worksets.md. Minimal, consistent with the
+   existing .tender-analysis-section / .tender-document-section look (same border/background/
+   color tokens); no redesign of unrelated surfaces. */
+.tender-governed-document-workset{display:grid;gap:14px;margin:0;padding:16px;border:1px solid #dbe7f5;border-radius:16px;background:#f8fbff}
+.tender-governed-document-workset legend{padding:0 6px;color:#10213d;font-weight:800;font-size:14px}
+.tender-governed-document-workset>p{margin:0;color:#526173;line-height:1.4}
+.tender-governed-document-workset-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.tender-governed-document-workset-row{display:grid;gap:8px;padding:12px;border:1px solid #e2eaf5;border-radius:12px;background:#fff}
+.tender-governed-document-workset-row-check{display:flex;align-items:center;gap:8px;font-weight:700;color:#10213d}
+.tender-governed-document-workset-ineligible-reason{margin:0;padding:8px 10px;border-radius:8px;background:#fff1f2;color:#a20f2c;font-size:12px;line-height:1.4}
+.tender-governed-document-workset-row-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding-top:4px;border-top:1px solid #eef2f7}
+.tender-governed-document-workset-row-fields label{display:grid;gap:5px;color:#40516b;font-size:12px;font-weight:900}
+.tender-governed-document-workset-row-fields select,.tender-governed-document-workset-row-fields input{box-sizing:border-box;width:100%;min-height:38px;padding:7px 9px;border:1px solid #b8c9dd;border-radius:9px;background:#fff;color:#10213d;font:inherit}
+.tender-governed-document-workset-counter{margin:0;color:#40516b;font-size:13px;font-weight:700}
+.tender-governed-document-workset-upload{display:grid;gap:5px;color:#40516b;font-size:12px;font-weight:900}
+.tender-governed-document-workset-confirm{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border:1px dashed #8fb3d1;border-radius:12px;background:#f7fbff;color:#10213d;font-size:13px;line-height:1.4}
+.tender-governed-document-workset-confirm input{margin-top:3px}
+.tender-governed-document-workset-errors{margin:0;padding-left:20px;color:#a20f2c;font-size:12px;line-height:1.5}
+.tender-governed-document-workset-cta{justify-self:start}
+@media(max-width:640px){.tender-governed-document-workset-row-fields{grid-template-columns:1fr}}

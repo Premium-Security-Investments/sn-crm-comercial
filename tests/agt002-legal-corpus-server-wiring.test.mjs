@@ -11,7 +11,7 @@ function count(source, token) {
 
 assert.equal(server, api, 'server/index.js y api/[...path].js deben permanecer byte-idénticos');
 assert.match(server, /import \{ loadPublishedAgt002LegalCorpus \} from '\.\.\/agt002-legal-corpus-store\.js';/);
-assert.equal(count(server, 'await loadAgt002LegalCorpusContextIfEnabled(database)'), 3, 'los tres flujos canónicos deben cargar el corpus antes del claim');
+assert.equal(count(server, 'await loadAgt002LegalCorpusContextIfEnabled(database)'), 4, 'los cuatro flujos canónicos deben cargar el corpus antes del claim (incluida la fuente canónica del freeze de worksets gobernados)');
 assert.equal(count(server, 'legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id'), 3, 'las tres claves deben ligarse al UUID publicado');
 assert.equal(count(server, 'legalCorpusContext,'), 3, 'los tres runtimes deben recibir el mismo contexto validado');
 assert.doesNotMatch(runtime, /legal-corpus-v1\.json|readFileSync|readFile\(/, 'runtime E5 no puede leer fixtures locales');

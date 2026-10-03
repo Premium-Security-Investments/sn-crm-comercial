@@ -43,7 +43,7 @@ function spyObservability() {
 function baseEngineOptions(overrides = {}) {
   return {
     client: { run: async () => { throw new Error('client.run must not be reached: a local pre-provider-call frontier must fail before the analysis turn is ever issued'); } },
-    model: 'synthetic-codex-model',
+    model: 'sonnet',
     policyVersion: 'agt002-preview-policy-v1',
     timeoutMs: 2000,
     maxConcurrent: 2,

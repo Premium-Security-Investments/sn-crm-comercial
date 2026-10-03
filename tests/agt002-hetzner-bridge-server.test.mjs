@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createAgt002BridgeServer, AGT002_BRIDGE_MAX_BODY_BYTES, AGT002_BRIDGE_ALLOWED_MODELS } from '../agt002-hetzner-bridge-server.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 
 const SECRET = 'a'.repeat(32);
@@ -258,15 +260,38 @@ async function testUnsupportedModelRejectedByDefaultAllowlist() {
 
 function testDefaultAllowedModelsIsSonnetOnly() {
   assert.deepEqual(AGT002_BRIDGE_ALLOWED_MODELS, ['sonnet']);
+  assert.equal(AGT002_BRIDGE_ALLOWED_MODELS, AGT002_PREVIEW_ALLOWED_MODELS, 'the bridge must re-export the shared allowlist, never restate its own frozen array');
 }
 
-async function testInjectedAllowedModelsOverridesTheDefault() {
+// The shared allowlist (agt002-preview-allowed-models.js) is the single source of truth every
+// model-consuming caller enforces. A caller-supplied allowedModels option must never be able to
+// widen what actually reaches the provider argv beyond that shared list.
+async function testInjectedAllowedModelsCannotWidenAcceptedModel() {
   await withServer(fakeSuccessClient, async (base) => {
     const payload = { model: 'custom-alias', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-model-2' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
-    assert.equal(response.status, 200, 'una allowlist inyectada debe poder aceptar otros alias de modelo');
+    assert.equal(response.status, 400, 'una allowlist inyectada nunca debe poder aceptar un alias fuera de la lista compartida');
+    const result = await response.json();
+    assert.equal(result.error.code, 'AGT002_BRIDGE_BAD_REQUEST');
   }, { allowedModels: ['custom-alias'] });
+}
+
+// Symmetric to the above: a caller-supplied allowedModels option must also never be able to
+// remove sonnet from what the bridge accepts.
+async function testInjectedAllowedModelsCannotRemoveSonnet() {
+  await withServer(fakeSuccessClient, async (base) => {
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-model-3' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 200, 'una allowlist inyectada nunca debe poder retirar sonnet de lo aceptado');
+  }, { allowedModels: ['custom-alias'] });
+}
+
+function testRunnerSourceNeverInjectsAnAllowedModelsOverride() {
+  const source = readFileSync(new URL('../ops/agt002-hetzner-bridge/run-server.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /AGT002_BRIDGE_ALLOWED_MODELS/, 'the runner must never read or forward an allowlist override env var');
+  assert.doesNotMatch(source, /allowedModels/, 'the runner must never inject an allowedModels option into the bridge server');
 }
 
 async function testClaudeErrorCodesMapOntoExistingCodexWireCodes() {
@@ -459,8 +484,10 @@ await testSuccessLogNeverLeaksAMismatchedEffortAck();
 await testEffortIsRecordedOnErrorSafeLog();
 await testUnsupportedEffortRejectedWithBadRequest();
 testDefaultAllowedModelsIsSonnetOnly();
+testRunnerSourceNeverInjectsAnAllowedModelsOverride();
 await testUnsupportedModelRejectedByDefaultAllowlist();
-await testInjectedAllowedModelsOverridesTheDefault();
+await testInjectedAllowedModelsCannotWidenAcceptedModel();
+await testInjectedAllowedModelsCannotRemoveSonnet();
 await testClaudeErrorCodesMapOntoExistingCodexWireCodes();
 await testCwdInBodyRejected();
 await testConcurrentRequestsAreAccepted();

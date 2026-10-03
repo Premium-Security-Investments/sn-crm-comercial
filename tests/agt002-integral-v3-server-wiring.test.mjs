@@ -33,10 +33,12 @@ assert.match(server, /if \(!agt002AnalysisConfig\.AGT002_INTEGRAL_CONTRACT_V3\) 
 assert.match(server, /loadAgt002CompanyEvidenceRegistryEntries\(database\)/);
 assert.match(server, /loadAgt002IntegralGovernanceOverrides\(database, opportunityId\)/);
 
-// All three preparation flows load the same governed data. Two legacy direct-runtime
+// All four preparation flows load the same governed data. Two legacy direct-runtime
 // paths forward it in the server; the durable canonical path freezes the complete
-// governance object and the direct-host executor reconstructs the third runtime.
-assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3, 'los tres flujos deben cargar la gobernanza v3');
+// governance object and the direct-host executor reconstructs the third runtime; the governed
+// document workset freeze route's own canonical frozen-engine-input source factory loads it a
+// fourth time, so every newly queued governed job carries the same real governance too.
+assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 4, 'los cuatro flujos deben cargar la gobernanza v3');
 for (const token of [
   'companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,',
   'categoryOverrides: integralV3Governance.categoryOverrides,',

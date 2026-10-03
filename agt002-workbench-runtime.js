@@ -7,6 +7,7 @@ import {
   sweepExpiredLeases,
 } from './agt002-workbench-persistence.js';
 import { runAgt002WorkbenchWorker } from './agt002-workbench-worker.js';
+import { AGT002_PREVIEW_SONNET_MODEL } from './agt002-preview-allowed-models.js';
 
 // Fase B1: puente de producción mínimo de la Mesa Vig-IA, sin ruta HTTP ni
 // programador todavía. Ningún gate de esta fábrica lee AGT002_PREVIEW_* — la Mesa
@@ -79,6 +80,7 @@ export function getAgt002WorkbenchRuntimeConfig(environment = process.env) {
   const workerId = environment.AGT002_WORKBENCH_WORKER_ID;
 
   if (!nonEmpty(model)) throw new Error('La Mesa Vig-IA no está configurada: falta AGT002_WORKBENCH_MODEL.');
+  if (model !== AGT002_PREVIEW_SONNET_MODEL) throw new Error('La Mesa Vig-IA no está configurada: AGT002_WORKBENCH_MODEL no está en la lista de modelos permitidos.');
   if (!validHttps(bridgeUrl)) throw new Error('La Mesa Vig-IA no está configurada: la URL del puente no es HTTPS válida.');
   if (typeof hmacSecret !== 'string' || Buffer.byteLength(hmacSecret) < 32) {
     throw new Error('La Mesa Vig-IA no está configurada: el secreto HMAC debe tener al menos 32 bytes.');

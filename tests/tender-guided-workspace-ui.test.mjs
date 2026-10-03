@@ -23,7 +23,7 @@ assert.match(documents, /documentsByType|groupedDocuments/);
 assert.doesNotMatch(documents, /<details[^>]*\sopen(?:=|>)/, 'Listado/uploader deben iniciar cerrados.');
 
 for (const state of ['Análisis pendiente', 'Análisis desactualizado', 'Análisis fallido', 'Sin documentos']) assert.match(analysis, new RegExp(state));
-for (const label of ['Analizar', 'Actualizar', 'Volver a analizar']) assert.match(analysis, new RegExp(`${label} con \\$\\{VIGIA_VISIBLE_NAMES\\.tenders\\}`));
+assert.match(analysis, /<TenderGovernedDocumentWorkset/, 'La acción canónica de análisis vive ahora en el selector gobernado.');
 assert.doesNotMatch(analysis, /Generar análisis preliminar|Actualizar análisis/, 'No debe reaparecer una acción determinística equivalente a Vig-IA.');
 assert.match(analysis, /tenderAnalysisMethodLabel\(analysis\.producer\)/);
 assert.doesNotMatch(analysis, /id="tender-analysis"/, 'El componente interno no debe duplicar el ancla de Análisis.');

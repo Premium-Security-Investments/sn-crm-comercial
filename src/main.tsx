@@ -23,7 +23,7 @@ import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, po
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { shouldReloadTenderArtifacts, tenderAnalysisCompletionMessage } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
-import type { Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
+import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
@@ -1004,9 +1004,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       window.clearInterval(processingTimer);
     };
   }, [opportunity.id]);
-  const addFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.currentTarget.files || []);
-    event.currentTarget.value = '';
+  const uploadTenderDocumentFiles = async (selected: File[]) => {
     if (!selected.length) return;
     setBusy(true); setStatusText('Subiendo y extrayendo texto…');
     onNavigationStateChanged?.({ phase: 'pending', label: 'Carga documental en curso' }, { phase: 'ready', value: payload.analysis || null });
@@ -1022,6 +1020,12 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
+  };
+  const addFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = '';
+    if (!selected.length) return;
+    void uploadTenderDocumentFiles(selected);
   };
 
   const pollAgt002Reanalysis = async (jobId: string, requestedOpportunityId: string) => {
@@ -1085,31 +1089,19 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     }
   };
 
-  const analyzeDocumentsWithAgt002 = async () => {
+  const freezeAndAnalyzeGovernedWorkset = async (members: Agt002GovernedWorksetMemberInput[]) => {
     if (activeReanalysisJobId) return;
     setBusy(true);
     setAnalysisStatus({ message: `Preparando análisis con ${VIGIA_VISIBLE_NAMES.tenders}…`, tone: 'status' });
     try {
       const requestedOpportunityId = opportunity.id;
-      const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: requestedOpportunityId }) });
+      const data = await api<Agt002GovernedDocumentWorksetFreezeResponse>('/api/tender-agt002-governed-document-worksets', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, documents: members }) });
       if (activeOpportunityRef.current !== requestedOpportunityId) return;
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true);
-      if (data.reanalysis_job?.job_id) {
-        setAnalysisStatus({
-          message: data.reanalysis_job.status === 'running'
-            ? `Análisis en curso con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`
-            : `Análisis en cola con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`,
-          tone: 'status',
-        });
-        await pollAgt002Reanalysis(data.reanalysis_job.job_id, requestedOpportunityId);
-      } else {
-        setAnalysisStatus({
-          // Éxito inmediato sin job: la cobertura se lee del análisis que acaba de devolver la
-          // petición, no del estado de React todavía sin actualizar.
-          message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : tenderAnalysisCompletionMessage(data.analysis),
-          tone: 'status',
-        });
-      }
+      setAnalysisStatus({
+        message: `${data.status === 'created' ? 'Paquete gobernado congelado' : 'Paquete gobernado ya existente'} (${data.member_count} documento(s)). Análisis en curso con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`,
+        tone: 'status',
+      });
+      await pollAgt002Reanalysis(data.reanalysis_job_id, requestedOpportunityId);
     } catch (err) {
       setAnalysisStatus({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
     }
@@ -1183,7 +1175,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
     </div>
     <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
-      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} />
+      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} />
     </div>
   </>;
 }

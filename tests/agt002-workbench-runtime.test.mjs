@@ -15,7 +15,7 @@ function baseEnv(overrides = {}) {
   return {
     AGT002_WORKBENCH_RUNTIME: AGT002_WORKBENCH_ENGINE_ID,
     AGT002_WORKBENCH_DRAIN_ENABLED: 'true',
-    AGT002_WORKBENCH_MODEL: 'vigia-workbench-model',
+    AGT002_WORKBENCH_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
     AGT002_WORKBENCH_AGENT_ID: AGENT_ID,
@@ -104,7 +104,36 @@ assert.throws(() => createAgt002WorkbenchRuntime({ environment: {} }), /no est[a
 {
   const runtime = createAgt002WorkbenchRuntime({ environment: baseEnv() });
   assert.equal(typeof runtime.responder.respond, 'function');
-  assert.equal(runtime.config.model, 'vigia-workbench-model');
+  assert.equal(runtime.config.model, 'sonnet');
+}
+
+// --- Source: the runtime must import/use the named AGT002_PREVIEW_SONNET_MODEL constant
+// (the single source of truth for the allowed model) and must not restate
+// AGT002_PREVIEW_ALLOWED_MODELS as loose text in this module ---
+{
+  const workbenchRuntimeSource = readFileSync(new URL('../agt002-workbench-runtime.js', import.meta.url), 'utf8');
+  assert.match(workbenchRuntimeSource, /AGT002_PREVIEW_SONNET_MODEL/, 'el runtime de la Mesa debe importar/usar AGT002_PREVIEW_SONNET_MODEL');
+  assert.doesNotMatch(workbenchRuntimeSource, /AGT002_PREVIEW_ALLOWED_MODELS/, 'el runtime de la Mesa no debe seguir usando AGT002_PREVIEW_ALLOWED_MODELS');
+}
+
+// --- Model allowlist: only 'sonnet' is a valid model, exact and case/whitespace sensitive;
+// other identifiers (other providers, or 'sonnet' with stray whitespace/casing) fail closed ---
+for (const rejectedModel of ['gpt-4.1', 'gpt-x', ' sonnet', 'sonnet ', 'SONNET', 'Sonnet']) {
+  assert.equal(
+    isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_MODEL: rejectedModel })),
+    false,
+    `modelo rechazado ${rejectedModel} no debe habilitar el drain`,
+  );
+  assert.throws(
+    () => getAgt002WorkbenchRuntimeConfig(baseEnv({ AGT002_WORKBENCH_MODEL: rejectedModel })),
+    /no est[aá] configurad/i,
+    `AGT002_WORKBENCH_MODEL=${rejectedModel} debe rechazarse en getAgt002WorkbenchRuntimeConfig`,
+  );
+  assert.throws(
+    () => createAgt002WorkbenchRuntime({ environment: baseEnv({ AGT002_WORKBENCH_MODEL: rejectedModel }) }),
+    /no est[aá] configurad/i,
+    `AGT002_WORKBENCH_MODEL=${rejectedModel} debe impedir la construcción del runtime`,
+  );
 }
 
 // --- Never manages an API key/bearer token directly; secrets stay in env only ---
@@ -156,6 +185,23 @@ function fakeDatabase(handlers) {
 function fakeBridgeClient(runImpl) {
   const calls = [];
   return { calls, async run(args) { calls.push(args); return runImpl(args); } };
+}
+
+// --- Model allowlist regression: a non-allowlisted model (including exact-token variants
+// of 'sonnet' with stray whitespace/casing) must disable the drain gate entirely, before
+// any database RPC or supplied bridge-client call happens ---
+for (const rejectedModel of ['gpt-4.1', 'gpt-x', ' sonnet', 'sonnet ', 'SONNET', 'Sonnet']) {
+  const database = fakeDatabase({});
+  const bridgeClient = fakeBridgeClient(async () => ({}));
+  const drain = createAgt002WorkbenchDrain({
+    database,
+    environment: baseEnv({ AGT002_WORKBENCH_MODEL: rejectedModel }),
+    bridgeClient,
+  });
+  const result = await drain.runOnce();
+  assert.deepEqual(result, { status: 'disabled' }, `modelo rechazado ${rejectedModel} debe dejar el drain deshabilitado`);
+  assert.equal(database.calls.length, 0, `modelo rechazado ${rejectedModel} no debe emitir RPC de base de datos`);
+  assert.equal(bridgeClient.calls.length, 0, `modelo rechazado ${rejectedModel} no debe invocar el cliente de puente`);
 }
 
 function validReplyModelClient() {

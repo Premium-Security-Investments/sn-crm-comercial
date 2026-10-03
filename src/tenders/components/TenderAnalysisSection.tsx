@@ -6,16 +6,18 @@ import { tenderBriefUnavailableCopy } from '../tenderDecisionBriefModel';
 import { tenderDecisionBlockers, tenderDecisionConditionAnchor, tenderDecisionConditions, tenderDecisionPreparationActions, tenderDecisionSupportedAspects } from '../tenderDecisionSurface';
 import { tenderDecisionAxisViews } from '../tenderDecisionAxisSurface';
 import { tenderAnalysisCoverageReady, tenderIntegralOpenUnitsPresentation, tenderIntegralOperationalGroups } from '../tenderIntegralAnalysisPresentation';
-import type { TenderAnalysisFinding, TenderCurrentProfile, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderRequest } from '../types';
+import type { Agt002GovernedWorksetMemberInput, TenderAnalysisFinding, TenderCurrentProfile, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderRequest } from '../types';
 import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionResponseCard';
 import { shouldShowTenderOperationalPendingProjection, TenderOperationalPendingProjection } from './TenderOperationalPendingProjection';
+import { TenderGovernedDocumentWorkset } from './TenderGovernedDocumentWorkset';
 
 type TenderAnalysisSectionProps = {
   analysis: TenderDocumentAnalysis | null;
   documents: TenderDocumentRecord[];
   busy: boolean;
   canRunPreview: boolean;
-  onAnalyzePreview: () => void;
+  onFreezeGovernedWorkset: (members: Agt002GovernedWorksetMemberInput[]) => void | Promise<void>;
+  onUploadGovernedFiles: (files: File[]) => void | Promise<void>;
   statusText?: string;
   statusTone?: 'status' | 'error';
   analysisEngine?: TenderDocumentsPayload['analysis_engine'];
@@ -54,7 +56,7 @@ function normalizeQuestion(item: TenderAnalysisFinding, index: number): Normaliz
   };
 }
 
-export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl }: TenderAnalysisSectionProps) {
+export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onFreezeGovernedWorkset, onUploadGovernedFiles, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
@@ -93,9 +95,6 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const stale = Boolean(analysis && !analysis.current);
   const processingPresentation = deriveTenderProcessingPresentation(processingStatus, analysis);
   const state = !hasDocuments ? 'Pendiente' : failed ? 'Análisis fallido' : stale ? 'Análisis desactualizado' : !analysis ? 'Pendiente' : 'Análisis vigente';
-  const actionLabel = failed || stale ? `Volver a analizar con ${VIGIA_VISIBLE_NAMES.tenders}` : analysis ? `Actualizar con ${VIGIA_VISIBLE_NAMES.tenders}` : `Analizar con ${VIGIA_VISIBLE_NAMES.tenders}`;
-  const analysisActionDisabled = busy || !hasDocuments || processingPresentation.primaryAction === 'disabled';
-  const showAnalysisAction = canRunPreview && processingPresentation.primaryAction !== 'hidden';
   const unavailable = tenderBriefUnavailableCopy();
   return <div className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`}>
     {!hasIntegralV3Payload && <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con {VIGIA_VISIBLE_NAMES.tenders}</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong></div></header>}
@@ -140,7 +139,13 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> {VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
     {statusText && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
     <div className="tender-analysis-actions">
-      {showAnalysisAction && <button type="button" className="tender-analysis-primary-cta" onClick={onAnalyzePreview} disabled={analysisActionDisabled}>{busy ? 'Procesando…' : actionLabel}</button>}
+      {hasDocuments && canRunPreview && <TenderGovernedDocumentWorkset
+        documents={documents}
+        busy={busy}
+        canRun={canRunPreview && processingPresentation.primaryAction !== 'disabled'}
+        onFreeze={onFreezeGovernedWorkset}
+        onUploadFiles={onUploadGovernedFiles}
+      />}
       {analysis && <small>{tenderAnalysisProducerDisclosure(analysis.producer)}</small>}
     </div>
   </div>;

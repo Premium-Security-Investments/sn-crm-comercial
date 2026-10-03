@@ -80,7 +80,9 @@ assert.equal(count(server, 'agt002EvidenceIdentityKeyParams(integralV3Governance
 
 // Exactly one governance load per real flow (mirrors the governed-data wiring contract),
 // and exactly two direct registerAgt002PreviewAnalysis registrations carry evidenceIdentity.
-assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3);
+// The governed document workset freeze route's own canonical frozen-engine-input source
+// factory is a fourth flow that loads the same governance.
+assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 4);
 assert.equal(count(server, 'company_evidence_identity: integralV3Governance?.evidenceIdentity ?? null,'), 2, 'las dos flujos con context version deben incluir sólo company_evidence_identity');
 assert.equal(count(server, 'evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null'), 2, 'los dos registros directos deben pasar evidenceIdentity');
 

@@ -182,7 +182,7 @@ test('E4.3 — decisionSurfaceElsewhere suprime la lectura competidora y el mont
   }
   // Conserva los controles de corrida y el disclosure de productor.
   assert.ok(suppressed.includes('tender-analysis-actions'));
-  assert.ok(suppressed.includes('tender-analysis-primary-cta'));
+  assert.ok(suppressed.includes('tender-governed-document-workset'));
   // Por defecto es false: el render con el flag apagado es idéntico al de hoy.
   assert.match(analysisSectionSource, /decisionSurfaceElsewhere = false/);
   // La lectura V3 duplicada ya no se monta en main: la superficie para decidir es única.
@@ -194,8 +194,8 @@ test('E4.4 — el panel documental propaga el literal y el saver sin duplicar la
   assert.match(main, /onDecisionSurfaceFlagChanged\?\.\(data\.decision_axis_surface_enabled === true\)/);
   assert.equal(
     count(main, 'onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true)'),
-    4,
-    'carga, upload, análisis preview e import deben repropagar el literal server-owned',
+    3,
+    'carga, upload e import deben repropagar el literal server-owned',
   );
   assert.match(main, /decisionSurfaceElsewhere=\{payload\.decision_axis_surface_enabled === true\}/);
   assert.match(main, /onQuestionResponseSaverReady\?\.\(saveQuestionResponse\)/);

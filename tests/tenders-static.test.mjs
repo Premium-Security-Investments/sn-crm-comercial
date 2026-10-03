@@ -61,7 +61,7 @@ assert.ok(radar.includes('TenderSavedSearches') && viewUtils.includes('view=rada
 
 for (const marker of ['TenderDocumentReviewPanel', 'TenderOfferPreparationPanel']) assert.ok(main.includes(marker), `El detalle protegido debe conservar: ${marker}`);
 assert.ok(documentSection.includes('Documentos vigentes del proceso'), 'El detalle debe conservar la revisión documental extraída.');
-assert.ok(analysisSection.includes('Analizar con ${VIGIA_VISIBLE_NAMES.tenders}'), 'El detalle debe conservar la acción separada y canónica de Vig-IA Licitaciones.');
+assert.ok(analysisSection.includes('<TenderGovernedDocumentWorkset'), 'El detalle debe conservar la acción canónica de análisis, ahora vía el selector gobernado.');
 assert.ok(!analysisSection.includes('Generar análisis preliminar'), 'El detalle no debe reintroducir la acción determinística alternativa.');
 assert.doesNotMatch(analysisSection, /brief de decisión/i, 'La validación humana no debe reintroducir la copia obsoleta "brief de decisión".');
 assert.doesNotMatch(decisionBrief, /brief de decisión/i, 'El brief de decisión no debe reintroducir la copia obsoleta "brief de decisión".');

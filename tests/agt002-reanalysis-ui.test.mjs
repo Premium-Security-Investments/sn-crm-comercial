@@ -27,8 +27,10 @@ assert.match(main, /AGT002_REANALYSIS_MAX_POLLS/);
 assert.match(main, /classifyAgt002ReanalysisPoll/);
 assert.match(main, /busy=\{busy \|\| Boolean\(activeReanalysisJobId\)\}/);
 
-const postCount = (main.match(/tender-documents-analyze-agent-preview/g) || []).length;
-assert.equal(postCount, 1, 'polling must never resubmit the analysis POST');
+const legacyEnqueueCount = (main.match(/tender-documents-analyze-agent-preview/g) || []).length;
+assert.equal(legacyEnqueueCount, 0, 'governed UI must never reintroduce the unbounded legacy enqueue path');
+const governedEnqueueCount = (main.match(/\/api\/tender-agt002-governed-document-worksets/g) || []).length;
+assert.equal(governedEnqueueCount, 1, 'the governed freeze/enqueue path is the only analysis submission route');
 assert.match(main, /\/api\/agt002-reanalysis-status\?opportunity_id=/);
 
 console.log('AGT-002 finite cancellable UI polling contract passed');

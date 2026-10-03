@@ -4,15 +4,40 @@ import { createAgt002RadarPreanalysisRuntime, getAgt002RadarPreanalysisRuntimeCo
 import { AGT002_RADAR_GATE_POLICY_VERSION } from '../agt002-radar-gate.js';
 import { AGT002_RADAR_PREANALYSIS_POLICY_VERSION } from '../agt002-radar-preanalysis-contract.js';
 
-const env = { AGT002_RADAR_GATE:'true', AGT002_RADAR_PREANALYSIS_MODEL:'m1', AGT002_HETZNER_BRIDGE_URL:'https://bridge.example.test/run', AGT002_HETZNER_BRIDGE_HMAC_SECRET:'x'.repeat(48) };
+const env = { AGT002_RADAR_GATE:'true', AGT002_RADAR_PREANALYSIS_MODEL:'sonnet', AGT002_HETZNER_BRIDGE_URL:'https://bridge.example.test/run', AGT002_HETZNER_BRIDGE_HMAC_SECRET:'x'.repeat(48) };
 assert.equal(isAgt002RadarPreanalysisConfigured(env), true);
 assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_GATE:' 1 '}), true);
 assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_GATE:'TRUE'}), true);
 assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_GATE:'false'}), false);
 assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_PREANALYSIS_MODEL:''}), false);
 assert.equal(isAgt002RadarPreanalysisConfigured({}), false);
-assert.equal(getAgt002RadarPreanalysisRuntimeConfig(env).model, 'm1');
+assert.equal(getAgt002RadarPreanalysisRuntimeConfig(env).model, 'sonnet');
 assert.throws(() => createAgt002RadarPreanalysisRuntime({environment:{}}), /AGT002_RADAR_RUNTIME_CONFIG_INVALID/);
+
+// Fuente: el runtime debe importar/usar la constante nombrada AGT002_PREVIEW_SONNET_MODEL
+// (la única fuente de verdad del modelo permitido) y no puede restatear el array
+// AGT002_PREVIEW_ALLOWED_MODELS como texto suelto en este módulo.
+const radarRuntimeSource = readFileSync(new URL('../agt002-radar-preanalysis-runtime.js', import.meta.url), 'utf8');
+assert.match(radarRuntimeSource, /AGT002_PREVIEW_SONNET_MODEL/, 'el runtime del Radar debe importar/usar AGT002_PREVIEW_SONNET_MODEL');
+assert.doesNotMatch(radarRuntimeSource, /AGT002_PREVIEW_ALLOWED_MODELS/, 'el runtime del Radar no debe seguir usando AGT002_PREVIEW_ALLOWED_MODELS');
+
+// Allowlist de modelo: sólo 'sonnet' es un modelo válido, exacto y sensible a mayúsculas/espacios.
+// Cualquier otro identificador (variantes de token exactas de otros proveedores, o de 'sonnet'
+// con espacios/mayúsculas) debe rechazarse en fail-closed, sin crear cliente de puente inyectado.
+for(const rejectedModel of ['gpt-4.1','gpt-x',' sonnet','sonnet ','SONNET','Sonnet']){
+  assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_PREANALYSIS_MODEL:rejectedModel}), false, `modelo rechazado ${rejectedModel} no debe configurar el runtime`);
+  assert.throws(
+    () => getAgt002RadarPreanalysisRuntimeConfig({...env,AGT002_RADAR_PREANALYSIS_MODEL:rejectedModel}),
+    error => error.code === 'AGT002_RADAR_RUNTIME_CONFIG_INVALID',
+    `AGT002_RADAR_PREANALYSIS_MODEL=${rejectedModel} debe rechazarse`,
+  );
+  let rejectedModelClientCreated = false;
+  assert.throws(
+    () => createAgt002RadarPreanalysisRuntime({environment:{...env,AGT002_RADAR_PREANALYSIS_MODEL:rejectedModel},createClient:() => {rejectedModelClientCreated = true; return {run:async () => ({})};}}),
+    error => error.runtime_boundary_code === 'AGT002_RADAR_RUNTIME_CONFIG_INVALID' && error.code === 'AGT002_RADAR_RUNTIME_CONFIG_INVALID',
+  );
+  assert.equal(rejectedModelClientCreated, false, `no debe crearse cliente de puente con modelo rechazado ${rejectedModel}`);
+}
 
 // Timeout del proveedor: por defecto 30 s, mínimo 1 s, techo 5 min.
 // El techo existe porque el pipeline reclama el job con leaseSeconds=600: un timeout igual al lease
@@ -68,12 +93,12 @@ const invalid = createAgt002RadarPreanalysisRuntime({ environment:env, createCli
 await assert.rejects(() => invalid.runOnce({tenderRow,gateEvaluation,learningSignals:null}), error => error.runtime_boundary_code === 'AGT002_RADAR_PREANALYSIS_INVALID_OUTPUT');
 
 let request;
-const validOutput = { schema_version:'agt002-radar-preanalysis-v1',agent_id:'AGT-002',run_id:'run1',policy_version:AGT002_RADAR_PREANALYSIS_POLICY_VERSION,context_version:gateEvaluation.context_version,tender_id:tenderRow.id,gate_evaluation_id:gateEvaluation.id,status:'completed',visibility_verdict:'mostrar_en_radar',summary:'Vigilancia verificable.',signals:[{signal_id:'s1',text:'Compatible.',evidence_refs:['e1']}],evidence:[{evidence_id:'e1',evidence_type:'tender_field',reference:'title',observed_value:'Vigilancia',policy_version:AGT002_RADAR_PREANALYSIS_POLICY_VERSION,context_version:gateEvaluation.context_version}],data_gaps:[],human_review_required:true,usage:{provider:'hetzner_bridge',model:'m1',input_tokens:1,output_tokens:1,cost_usd:null} };
+const validOutput = { schema_version:'agt002-radar-preanalysis-v1',agent_id:'AGT-002',run_id:'run1',policy_version:AGT002_RADAR_PREANALYSIS_POLICY_VERSION,context_version:gateEvaluation.context_version,tender_id:tenderRow.id,gate_evaluation_id:gateEvaluation.id,status:'completed',visibility_verdict:'mostrar_en_radar',summary:'Vigilancia verificable.',signals:[{signal_id:'s1',text:'Compatible.',evidence_refs:['e1']}],evidence:[{evidence_id:'e1',evidence_type:'tender_field',reference:'title',observed_value:'Vigilancia',policy_version:AGT002_RADAR_PREANALYSIS_POLICY_VERSION,context_version:gateEvaluation.context_version}],data_gaps:[],human_review_required:true,usage:{provider:'hetzner_bridge',model:'sonnet',input_tokens:1,output_tokens:1,cost_usd:null} };
 // El fixture del cliente de puente (línea siguiente) devuelve usage sin `cost_usd`, así que el
 // costo medido es `null` (no medido), no `0`.
 const runtime = createAgt002RadarPreanalysisRuntime({environment:env,createClient:()=>({run:async value => {request=value; return {content:JSON.stringify(validOutput),usage:{input_tokens:1,output_tokens:1}};}})});
 assert.deepEqual(await runtime.runOnce({tenderRow,gateEvaluation,learningSignals:null,idempotencyKey:'idem'}),validOutput);
-assert.equal(request.model,'m1'); assert.equal(request.idempotencyKey,'idem'); assert.equal(request.input.learning_signals,null);
+assert.equal(request.model,'sonnet'); assert.equal(request.idempotencyKey,'idem'); assert.equal(request.input.learning_signals,null);
 // Regresión producción 2026-08-26: el JSON Schema no puede expresar referencias cruzadas.
 // La política enviada al proveedor debe explicar las dos copias exactas que el validador exige.
 assert.match(request.policy, /signals\[\]\.evidence_refs[\s\S]*evidence\[\]\.evidence_id/i);
