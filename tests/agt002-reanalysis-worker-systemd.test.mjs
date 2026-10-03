@@ -40,6 +40,7 @@ assert.match(env, /SUPABASE_URL=/);
 assert.match(env, /SUPABASE_SERVICE_ROLE_KEY=/);
 assert.match(env, /AGT002_HETZNER_BRIDGE_URL=/);
 assert.match(env, /AGT002_HETZNER_BRIDGE_HMAC_SECRET=/);
+assert.match(env, /AGT002_REANALYSIS_TARGET_JOB_ID=/);
 assert.doesNotMatch(env, /AGT002_PREVIEW_BRIDGE_/);
 assert.doesNotMatch(env, /eyJ|https:\/\/[a-z0-9-]+\.supabase\.co/);
 
@@ -48,5 +49,7 @@ assert.match(readme, /no instala|instalación manual|No ejecut/i);
 assert.match(readme, /un solo job|máximo un job/i);
 assert.match(readme, /sin reintento|no reintenta/i);
 assert.doesNotMatch(readme, /curl .*api|Vercel.*worker endpoint/i);
+assert.match(runner, /AGT002_REANALYSIS_TARGET_JOB_ID/);
+assert.match(runner, /claimAgt002ReanalysisJobById/);
 
 console.log('AGT-002 direct systemd worker artifact contract passed');

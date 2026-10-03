@@ -7,6 +7,7 @@ import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.
 import { computeAgt002GovernedWorksetIdempotencyKey } from '../agt002-governed-document-workset-api.js';
 import { computeAgt002WorksetSelectionHash, freezeAgt002WorksetEvidence } from '../agt002-governed-document-worksets.js';
 import { classifyAgt002ReanalysisWorkerError } from '../agt002-reanalysis-worker.js';
+import { computeAgt002CheckpointGenerationRecoveryKey } from '../agt002-checkpoint-generation-recovery.js';
 
 function sha256Hex(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex');
@@ -346,6 +347,84 @@ test('rejects malformed, over-budget, or identity-mismatched frozen input before
   assert.deepEqual(overBudget, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
   assert.equal(calls.claim.length, 0);
   assert.equal(calls.runtime.length, 0);
+});
+
+test('accepts only a byte-exact generation-1 recovery of a governed root identity', async () => {
+  const opportunityId = '11111111-1111-4111-8111-111111111111';
+  const tenderId = '22222222-2222-4222-8222-222222222222';
+  const snapshotId = '33333333-3333-4333-8333-333333333333';
+  const contextVersionId = '44444444-4444-4444-8444-444444444444';
+  const sourceJobId = '55555555-5555-4555-8555-555555555555';
+  const sourceWorksetId = '66666666-6666-4666-8666-666666666666';
+  const documentText = 'Governed recovery fixture.';
+  const members = [{
+    document_version_id: '77777777-7777-4777-8777-777777777777',
+    source_classification: 'official',
+    inclusion_reason: 'required by pliego',
+    content_hash: 'a'.repeat(64),
+    extraction_id: '88888888-8888-4888-8888-888888888888',
+    extraction_text_hash: sha256Hex(documentText),
+  }];
+  const selectionHash = computeAgt002WorksetSelectionHash({ opportunityId, tenderId, members });
+  const rootIdempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({ opportunityId, tenderId, snapshotId, contextVersionId, selectionHash });
+  const repairCommitSha = 'b'.repeat(40);
+  const recoveryIdempotencyKey = computeAgt002CheckpointGenerationRecoveryKey({
+    rootIdempotencyKey, sourceJobId, checkpointGeneration: 1, repairCommitSha,
+  });
+  const recoveryIdentity = {
+    contract_version: 'agt002-checkpoint-generation-recovery-v1',
+    reason_code: 'checkpoint_contract_drift',
+    root_idempotency_key: rootIdempotencyKey,
+    source_job_id: sourceJobId,
+    source_workset_id: sourceWorksetId,
+    checkpoint_generation: 1,
+    repair_commit_sha: repairCommitSha,
+  };
+  const job = {
+    ...JOB,
+    jobId: '99999999-9999-4999-8999-999999999999',
+    opportunityId, tenderId, snapshotId, contextVersionId,
+    idempotencyKey: recoveryIdempotencyKey,
+    executionMode: 'durable_batched_v1',
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      schema_version: 2,
+      engine_identity: { ...JOB.frozenEngineInput.engine_identity, idempotency_key: recoveryIdempotencyKey },
+      analysis_context: {
+        ...JOB.frozenEngineInput.analysis_context,
+        opportunity: { id: opportunityId }, snapshotId,
+        documents: members.map(({ document_version_id, source_classification, inclusion_reason }) => ({ document_version_id, source_classification, inclusion_reason })),
+      },
+      document_workset_identity: { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, context_version_id: contextVersionId, selection_hash: selectionHash },
+      governed_workset_members: members,
+      checkpoint_generation_recovery: recoveryIdentity,
+    },
+  };
+  const governedDocumentResolver = buildGovernedDocumentResolver({ [members[0].document_version_id]: documentText });
+  const options = { getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-new', published: false }), governedDocumentResolver };
+
+  const accepted = harness(options);
+  const acceptedResult = await accepted.executor({ kind: 'db' }, job);
+  assert.equal(acceptedResult.status, 'completed');
+  assert.equal(accepted.calls.claim.length, 1);
+
+  const wrongRoot = harness(options);
+  const wrongRootResult = await wrongRoot.executor({ kind: 'db' }, {
+    ...job,
+    frozenEngineInput: {
+      ...job.frozenEngineInput,
+      checkpoint_generation_recovery: { ...recoveryIdentity, root_idempotency_key: 'c'.repeat(64) },
+    },
+  });
+  assert.deepEqual(wrongRootResult, SAFE_CONFIG_REJECTION);
+  assert.equal(wrongRoot.calls.claim.length, 0);
+
+  const legacyBypass = harness(options);
+  const { document_workset_identity, governed_workset_members, ...withoutGoverned } = job.frozenEngineInput;
+  void document_workset_identity; void governed_workset_members;
+  const legacyResult = await legacyBypass.executor({ kind: 'db' }, { ...job, frozenEngineInput: withoutGoverned });
+  assert.deepEqual(legacyResult, SAFE_CONFIG_REJECTION);
+  assert.equal(legacyBypass.calls.claim.length, 0);
 });
 
 // Contract: validFrozenInput accepts a frozen model only if it is an EXACT, case-sensitive

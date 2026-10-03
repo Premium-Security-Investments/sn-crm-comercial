@@ -10,6 +10,7 @@ Estos archivos son artefactos locales de instalación manual. Este cambio **no i
 - Un fallo cierra el job como `unavailable` y conserva el análisis canónico anterior.
 - El timer agenda el siguiente ciclo después de finalizar el anterior, por lo que no solapa instancias del mismo servicio.
 - Los logs sólo contienen eventos y códigos cerrados; nunca valores del `EnvironmentFile` ni mensajes crudos del proveedor.
+- `AGT002_REANALYSIS_TARGET_JOB_ID` queda vacío en el timer normal. Una recuperación de generación autorizada se ejecuta de forma transitoria con el UUID exacto devuelto por la función administrativa; nunca se usa para escoger libremente otro job.
 
 ## Presupuesto de tiempo por turno
 

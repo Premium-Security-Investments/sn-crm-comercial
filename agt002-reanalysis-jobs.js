@@ -66,6 +66,19 @@ function extractModernClaimFields(claim) {
 /** Claims at most one queued job with a bounded lease; null when nothing is claimable. */
 export async function claimAgt002ReanalysisJob(database, { leaseSeconds = 90 } = {}) {
   const claim = await rpc(database, 'psi_claim_agt002_reanalysis_job', { p_lease_seconds: leaseSeconds });
+  return mapAgt002ReanalysisClaim(claim);
+}
+
+/** Claims one owner-authorized checkpoint-generation recovery by exact job id. */
+export async function claimAgt002ReanalysisJobById(database, { jobId, leaseSeconds = 90 } = {}) {
+  const claim = await rpc(database, 'psi_claim_agt002_reanalysis_job_by_id', {
+    p_job_id: requireId(jobId, 'El job objetivo'),
+    p_lease_seconds: leaseSeconds,
+  });
+  return mapAgt002ReanalysisClaim(claim);
+}
+
+function mapAgt002ReanalysisClaim(claim) {
   if (claim?.status === 'empty') return null;
   const requiredFields = [
     'job_id', 'lease_id', 'lease_expires_at', 'opportunity_id', 'tender_id',
