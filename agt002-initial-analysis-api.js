@@ -9,8 +9,11 @@ import {
   AGT002_INITIAL_ANALYSIS_WORKER_ID,
 } from './agt002-initial-analysis-jobs.js';
 
-const ADMIT_BODY_KEYS = Object.freeze(['opportunity_id', 'tender_id', 'idempotency_key', 'payload', 'requested_by']);
-const ADMIT_REQUIRED_STRING_FIELDS = Object.freeze(['opportunity_id', 'tender_id', 'idempotency_key', 'requested_by']);
+const ADMIT_BODY_KEYS = Object.freeze([
+  'authorization_id', 'workflow_instance_id', 'opportunity_id', 'tender_id', 'package_version_id',
+  'package_hash', 'g1_scope', 'policy_version', 'idempotency_key', 'payload', 'requested_by',
+]);
+const ADMIT_REQUIRED_STRING_FIELDS = Object.freeze(ADMIT_BODY_KEYS.filter(key => key !== 'payload'));
 const ADMIT_BODY_KEY_SET = new Set(ADMIT_BODY_KEYS);
 
 function assertKillSwitchesEnabled(environment) {
@@ -34,8 +37,14 @@ export async function admitAgt002InitialAnalysisJob(database, body, environment)
   }
 
   return admitJob(database, {
+    authorizationId: body.authorization_id,
+    workflowInstanceId: body.workflow_instance_id,
     opportunityId: body.opportunity_id,
     tenderId: body.tender_id,
+    packageVersionId: body.package_version_id,
+    packageHash: body.package_hash,
+    g1Scope: body.g1_scope,
+    policyVersion: body.policy_version,
     idempotencyKey: body.idempotency_key,
     payload: body.payload,
     requestedBy: body.requested_by,

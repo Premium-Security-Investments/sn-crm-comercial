@@ -31,10 +31,13 @@ function fakeDb({ rpcResults = {} } = {}) {
 const ENABLED = Object.freeze({ AGT002_INITIAL_ANALYSIS_ADMISSION_ENABLED: 'true', AGT002_MODEL_CALLS_ENABLED: 'true' });
 
 const VALID_BODY = Object.freeze({
-  opportunity_id: 'opp-1', tender_id: 'tender-1', idempotency_key: 'key-1', payload: { manifest: 'v1' }, requested_by: 'user-1',
+  authorization_id: 'auth-1', workflow_instance_id: 'workflow-1',
+  opportunity_id: 'opp-1', tender_id: 'tender-1', package_version_id: 'package-version-1',
+  package_hash: 'a'.repeat(64), g1_scope: 'A', policy_version: 'policy-v1',
+  idempotency_key: 'key-1', payload: { manifest: 'v1' }, requested_by: 'user-1',
 });
 
-const ADMIT_RPC = 'psi_admit_agt002_initial_analysis_job';
+const ADMIT_RPC = 'psi_admit_authorized_agt002_initial_analysis_job';
 const CLAIM_RPC = 'psi_claim_agt002_initial_analysis_job';
 
 const KILL_SWITCH_CASES = [
@@ -78,6 +81,12 @@ test('admit proceeds to the database once both kill switches read exactly "true"
   assert.equal(result.status, 'admitted');
   assert.equal(result.jobId, 'job-1');
   assert.equal(db.rpcCalls.length, 1);
+  assert.deepEqual(db.rpcCalls[0].args, {
+    p_authorization_id: 'auth-1', p_workflow_instance_id: 'workflow-1',
+    p_opportunity_id: 'opp-1', p_tender_id: 'tender-1', p_package_version_id: 'package-version-1',
+    p_package_hash: 'a'.repeat(64), p_g1_scope: 'A', p_policy_version: 'policy-v1',
+    p_idempotency_key: 'key-1', p_payload: { manifest: 'v1' }, p_actor_profile_id: 'user-1',
+  });
 });
 
 test('claim proceeds to the database once both kill switches read exactly "true", always using the fixed worker identity', async () => {
@@ -103,7 +112,10 @@ test('admit rejects a request body with keys outside the closed request shape', 
   assert.equal(db.rpcCalls.length, 0);
 });
 
-for (const field of ['opportunity_id', 'tender_id', 'idempotency_key', 'requested_by']) {
+for (const field of [
+  'authorization_id', 'workflow_instance_id', 'opportunity_id', 'tender_id', 'package_version_id',
+  'package_hash', 'g1_scope', 'policy_version', 'idempotency_key', 'requested_by',
+]) {
   test(`admit rejects a request body missing "${field}" before any RPC call`, async () => {
     const db = fakeDb();
     const body = { ...VALID_BODY };

@@ -30,6 +30,8 @@ const migration098 = migrationSource('098_agt002_initial_workflow_and_g1.sql');
 const migration099 = migrationSource('099_agt002_initial_analysis_jobs.sql');
 // RED: not yet authored.
 const migration100 = () => migrationSource('100_agt002_initial_analysis_canonical_persistence.sql');
+const migration101 = () => migrationSource('101_agt002_initial_analysis_atomic_admission.sql');
+const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/101_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
 
 const O = '10000000-0000-4000-8000-000000000001';
 const T = '10000000-0000-4000-8000-000000000002';
@@ -138,6 +140,7 @@ async function createBaseFixture() {
 async function freshDb() {
   const pg = await createBaseFixture();
   await pg.exec(migration100());
+  await pg.exec(migration101());
   return pg;
 }
 
@@ -163,7 +166,7 @@ async function seedEvidencePackageVersion(pg, { opportunityId = O, tenderId = T,
   return { packageId: packageRow.id, packageVersionId: versionRow.id, packageHash };
 }
 
-async function setUpAuthorizedConsumedWorkflow(pg, { label, opportunityId = O, tenderId = T } = {}) {
+async function setUpAuthorizedWorkflow(pg, { label, opportunityId = O, tenderId = T, expiresAt = '2026-12-31T00:00:00.000Z' } = {}) {
   const instance = await callRpc(pg, 'psi_create_agt002_workflow_instance', {
     p_opportunity_id: opportunityId, p_tender_id: tenderId, p_workflow_type: 'INITIAL', p_scope: 'A',
     p_profile_snapshot_id: null, p_profile_snapshot_hash: null, p_idempotency_key: `idem-instance-${label}`, p_actor_profile_id: ACTOR,
@@ -171,15 +174,37 @@ async function setUpAuthorizedConsumedWorkflow(pg, { label, opportunityId = O, t
   const evidence = await seedEvidencePackageVersion(pg, { opportunityId, tenderId, label });
   const grant = await callRpc(pg, 'psi_grant_agt002_g1_analysis_authorization', {
     p_workflow_instance_id: instance.workflow_instance_id, p_package_version_id: evidence.packageVersionId,
-    p_package_hash: evidence.packageHash, p_expires_at: '2026-12-31T00:00:00.000Z',
+    p_package_hash: evidence.packageHash, p_expires_at: expiresAt,
     p_idempotency_key: `idem-grant-${label}`, p_actor_profile_id: ACTOR,
   });
-  await callRpc(pg, 'psi_consume_agt002_analysis_authorization', {
-    p_authorization_id: grant.authorization_id, p_workflow_instance_id: instance.workflow_instance_id,
-    p_opportunity_id: opportunityId, p_tender_id: tenderId, p_package_version_id: evidence.packageVersionId,
-    p_package_hash: evidence.packageHash, p_idempotency_key: `idem-consume-${label}`, p_actor_profile_id: ACTOR,
-  });
   return { workflowInstanceId: instance.workflow_instance_id, authorizationId: grant.authorization_id, evidence };
+}
+
+async function setUpAuthorizedConsumedWorkflow(pg, options = {}) {
+  const { label, opportunityId = O, tenderId = T } = options;
+  const workflow = await setUpAuthorizedWorkflow(pg, options);
+  await callRpc(pg, 'psi_consume_agt002_analysis_authorization', {
+    p_authorization_id: workflow.authorizationId, p_workflow_instance_id: workflow.workflowInstanceId,
+    p_opportunity_id: opportunityId, p_tender_id: tenderId, p_package_version_id: workflow.evidence.packageVersionId,
+    p_package_hash: workflow.evidence.packageHash, p_idempotency_key: `idem-consume-${label}`, p_actor_profile_id: ACTOR,
+  });
+  return workflow;
+}
+
+async function admitAuthorized(pg, workflow, { idempotencyKey, payload = { manifest: 'v1' }, g1Scope = 'A', policyVersion = 'policy-v1' } = {}) {
+  return callRpc(pg, 'psi_admit_authorized_agt002_initial_analysis_job', {
+    p_authorization_id: workflow.authorizationId,
+    p_workflow_instance_id: workflow.workflowInstanceId,
+    p_opportunity_id: O,
+    p_tender_id: T,
+    p_package_version_id: workflow.evidence.packageVersionId,
+    p_package_hash: workflow.evidence.packageHash,
+    p_g1_scope: g1Scope,
+    p_policy_version: policyVersion,
+    p_idempotency_key: idempotencyKey,
+    p_payload: payload,
+    p_actor_profile_id: ACTOR,
+  });
 }
 
 async function admitAndClaim(pg, { idempotencyKey, opportunityId = O, tenderId = T, payload = { manifest: 'v1' } } = {}) {
@@ -294,6 +319,149 @@ test('migration 100 applies cleanly and defines the three new tables and the com
       select to_regprocedure('public.psi_complete_agt002_initial_analysis_job(uuid,uuid,integer,uuid,uuid,uuid,uuid,text,text,text,text,text,jsonb,text)') is not null as present
     `)).rows[0];
     assert.equal(fn.present, true);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('migration 101 exposes only the atomic authorized admission RPC to service_role', async () => {
+  const pg = await freshDb();
+  try {
+    const privileges = (await pg.query(`
+      select
+        to_regprocedure('public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)') is not null as atomic_present,
+        has_function_privilege('service_role', 'public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)', 'EXECUTE') as atomic_execute,
+        has_function_privilege('service_role', 'public.psi_admit_agt002_initial_analysis_job(uuid,uuid,text,jsonb,text)', 'EXECUTE') as legacy_execute
+    `)).rows[0];
+    assert.equal(privileges.atomic_present, true);
+    assert.equal(privileges.atomic_execute, true);
+    assert.equal(privileges.legacy_execute, false, 'service_role must not bypass G1 consumption through the migration-099 primitive');
+  } finally {
+    await pg.close();
+  }
+});
+
+test('authorized admission consumes G1 and creates one job atomically, overwrites caller persistence, and replays idempotently', async () => {
+  const pg = await freshDb();
+  try {
+    const workflow = await setUpAuthorizedWorkflow(pg, { label: 'atomic-happy' });
+    await pg.exec('set role service_role');
+    const first = await admitAuthorized(pg, workflow, {
+      idempotencyKey: 'idem-atomic-happy',
+      payload: { manifest: 'v1', persistence: { attackerControlled: true } },
+    });
+    assert.equal(first.status, 'admitted');
+    assert.deepEqual(first.payload, {
+      manifest: 'v1',
+      persistence: {
+        workflowInstanceId: workflow.workflowInstanceId,
+        authorizationId: workflow.authorizationId,
+        packageVersionId: workflow.evidence.packageVersionId,
+        packageHash: workflow.evidence.packageHash,
+        g1Scope: 'A',
+        policyVersion: 'policy-v1',
+      },
+    });
+    assert.equal(first.requested_by, ACTOR);
+
+    const replay = await admitAuthorized(pg, workflow, {
+      idempotencyKey: 'idem-atomic-happy',
+      payload: { manifest: 'v1', persistence: { ignoredAgain: true } },
+    });
+    await pg.exec('reset role');
+    assert.equal(replay.status, 'existing');
+    assert.equal(replay.job_id, first.job_id);
+
+    const counts = (await pg.query(`
+      select
+        (select count(*)::int from public.psi_agt002_initial_analysis_jobs) as jobs,
+        (select count(*)::int from public.psi_agt002_workflow_events where workflow_instance_id = '${workflow.workflowInstanceId}' and to_state = 'CONSUMED') as consumed
+    `)).rows[0];
+    assert.deepEqual(counts, { jobs: 1, consumed: 1 });
+  } finally {
+    await pg.close();
+  }
+});
+
+test('a job-admission conflict rolls back G1 consumption; no consumed-without-job split state is possible', async () => {
+  const pg = await freshDb();
+  try {
+    await admitAndClaim(pg, { idempotencyKey: 'idem-existing-active' });
+    const workflow = await setUpAuthorizedWorkflow(pg, { label: 'atomic-conflict' });
+
+    await assert.rejects(
+      admitAuthorized(pg, workflow, { idempotencyKey: 'idem-atomic-conflict' }),
+      /Ya existe un job AGT-002 initial-analysis activo/,
+    );
+
+    const state = (await pg.query(`
+      select to_state from public.psi_agt002_workflow_events
+      where workflow_instance_id = '${workflow.workflowInstanceId}'
+      order by created_at desc, id desc limit 1
+    `)).rows[0];
+    assert.equal(state.to_state, 'AUTHORIZED');
+    const consumed = (await pg.query(`
+      select count(*)::int as n from public.psi_agt002_workflow_events
+      where workflow_instance_id = '${workflow.workflowInstanceId}' and to_state = 'CONSUMED'
+    `)).rows[0].n;
+    assert.equal(consumed, 0);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('authorized admission rejects a scope mismatch and an expired grant without creating a job or consuming G1', async () => {
+  const pg = await freshDb();
+  try {
+    const mismatch = await setUpAuthorizedWorkflow(pg, { label: 'atomic-mismatch' });
+    await assert.rejects(
+      admitAuthorized(pg, mismatch, { idempotencyKey: 'idem-atomic-mismatch', g1Scope: 'A_PLUS_B' }),
+      /autorización G1 no coincide/,
+    );
+
+    const expired = await setUpAuthorizedWorkflow(pg, { label: 'atomic-expired' });
+    await pg.exec(`alter table public.psi_agt002_analysis_authorizations disable trigger psi_agt002_analysis_authorizations_immutable`);
+    await pg.exec(`
+      update public.psi_agt002_analysis_authorizations
+      set granted_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute'
+      where id = '${expired.authorizationId}'
+    `);
+    await pg.exec(`alter table public.psi_agt002_analysis_authorizations enable trigger psi_agt002_analysis_authorizations_immutable`);
+    await assert.rejects(
+      admitAuthorized(pg, expired, { idempotencyKey: 'idem-atomic-expired' }),
+      /expiró/,
+    );
+
+    const stateRows = (await pg.query(`
+      select workflow_instance_id, to_state from public.psi_agt002_workflow_events
+      where workflow_instance_id in ('${mismatch.workflowInstanceId}', '${expired.workflowInstanceId}')
+      order by created_at desc, id desc
+    `)).rows;
+    assert.ok(stateRows.every(row => row.to_state !== 'CONSUMED'));
+    const jobs = (await pg.query(`select count(*)::int as n from public.psi_agt002_initial_analysis_jobs`)).rows[0].n;
+    assert.equal(jobs, 0);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('rollback 101 removes only the atomic wrapper and restores the prior legacy service-role grant', async () => {
+  const pg = await freshDb();
+  try {
+    await pg.exec(rollback101());
+    const state = (await pg.query(`
+      select
+        to_regprocedure('public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)') is null as atomic_removed,
+        has_function_privilege('service_role', 'public.psi_admit_agt002_initial_analysis_job(uuid,uuid,text,jsonb,text)', 'EXECUTE') as legacy_restored,
+        to_regclass('public.psi_agt002_initial_analysis_jobs') is not null as jobs_preserved,
+        to_regclass('public.psi_agt002_analysis_authorizations') is not null as authorizations_preserved
+    `)).rows[0];
+    assert.deepEqual(state, {
+      atomic_removed: true,
+      legacy_restored: true,
+      jobs_preserved: true,
+      authorizations_preserved: true,
+    });
   } finally {
     await pg.close();
   }

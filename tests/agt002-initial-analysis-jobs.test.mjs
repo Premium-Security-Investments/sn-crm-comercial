@@ -33,8 +33,10 @@ function fakeDb({ rpcResults = {} } = {}) {
 }
 
 const IDENTITY = Object.freeze({
-  opportunityId: 'opp-1', tenderId: 'tender-1', idempotencyKey: 'key-1',
-  payload: { manifest: 'v1' }, requestedBy: 'user-1',
+  authorizationId: 'auth-1', workflowInstanceId: 'workflow-1',
+  opportunityId: 'opp-1', tenderId: 'tender-1', packageVersionId: 'package-version-1',
+  packageHash: 'a'.repeat(64), g1Scope: 'A', policyVersion: 'policy-v1',
+  idempotencyKey: 'key-1', payload: { manifest: 'v1' }, requestedBy: 'user-1',
 });
 
 // --- Source coupling / shape guard (static, mirrors scripts/agt002_initial_analysis_guard.mjs) ---
@@ -61,10 +63,10 @@ test('QUEUED, CLAIMED, RUNNING and NEEDS_ATTENTION are active; COMPLETED and FAI
 
 // --- admit ---
 
-test('admit maps params to snake_case and returns camelCase on a fresh admission', async () => {
+test('authorized admit maps every G1/job binding to one atomic RPC and returns camelCase on a fresh admission', async () => {
   const db = fakeDb({
     rpcResults: {
-      psi_admit_agt002_initial_analysis_job: {
+      psi_admit_authorized_agt002_initial_analysis_job: {
         data: {
           status: 'admitted', job_id: 'job-1', opportunity_id: 'opp-1', tender_id: 'tender-1',
           idempotency_key: 'key-1', payload: { manifest: 'v1' }, requested_by: 'user-1', job_status: 'QUEUED',
@@ -75,10 +77,12 @@ test('admit maps params to snake_case and returns camelCase on a fresh admission
   });
   const result = await admitAgt002InitialAnalysisJob(db, IDENTITY);
   assert.deepEqual(db.rpcCalls[0], {
-    name: 'psi_admit_agt002_initial_analysis_job',
+    name: 'psi_admit_authorized_agt002_initial_analysis_job',
     args: {
-      p_opportunity_id: 'opp-1', p_tender_id: 'tender-1', p_idempotency_key: 'key-1',
-      p_payload: { manifest: 'v1' }, p_requested_by: 'user-1',
+      p_authorization_id: 'auth-1', p_workflow_instance_id: 'workflow-1',
+      p_opportunity_id: 'opp-1', p_tender_id: 'tender-1', p_package_version_id: 'package-version-1',
+      p_package_hash: 'a'.repeat(64), p_g1_scope: 'A', p_policy_version: 'policy-v1',
+      p_idempotency_key: 'key-1', p_payload: { manifest: 'v1' }, p_actor_profile_id: 'user-1',
     },
   });
   assert.deepEqual(result, {
@@ -87,8 +91,11 @@ test('admit maps params to snake_case and returns camelCase on a fresh admission
   });
 });
 
-test('admit rejects an incomplete identity before any RPC call', async () => {
-  for (const field of ['opportunityId', 'tenderId', 'idempotencyKey', 'requestedBy']) {
+test('admit rejects an incomplete authorization/job identity before any RPC call', async () => {
+  for (const field of [
+    'authorizationId', 'workflowInstanceId', 'opportunityId', 'tenderId', 'packageVersionId',
+    'packageHash', 'g1Scope', 'policyVersion', 'idempotencyKey', 'requestedBy',
+  ]) {
     const db = fakeDb();
     const bad = { ...IDENTITY, [field]: '' };
     await assert.rejects(admitAgt002InitialAnalysisJob(db, bad), `missing ${field} must fail closed`);
@@ -99,7 +106,7 @@ test('admit rejects an incomplete identity before any RPC call', async () => {
 test('an exact idempotent replay returns the original job, not an error', async () => {
   const db = fakeDb({
     rpcResults: {
-      psi_admit_agt002_initial_analysis_job: {
+      psi_admit_authorized_agt002_initial_analysis_job: {
         data: {
           status: 'existing', job_id: 'job-1', opportunity_id: 'opp-1', tender_id: 'tender-1',
           idempotency_key: 'key-1', payload: { manifest: 'v1' }, requested_by: 'user-1', job_status: 'RUNNING',
@@ -119,7 +126,7 @@ test('an exact idempotent replay returns the original job, not an error', async 
 test('a payload mismatch under the same idempotency key fails closed without mutation', async () => {
   const db = fakeDb({
     rpcResults: {
-      psi_admit_agt002_initial_analysis_job: {
+      psi_admit_authorized_agt002_initial_analysis_job: {
         data: { status: 'payload_mismatch', job_id: 'job-1' },
         error: null,
       },
@@ -133,7 +140,7 @@ for (const activeStatus of AGT002_INITIAL_ANALYSIS_ACTIVE_JOB_STATUSES) {
   test(`admit rejects a second active job for the same opportunity (existing status ${activeStatus})`, async () => {
     const db = fakeDb({
       rpcResults: {
-        psi_admit_agt002_initial_analysis_job: {
+        psi_admit_authorized_agt002_initial_analysis_job: {
           data: null,
           error: { code: '55000', status: 409, message: `Ya existe un job AGT-002 initial-analysis activo (${activeStatus}) para la oportunidad` },
         },
@@ -150,7 +157,7 @@ for (const activeStatus of AGT002_INITIAL_ANALYSIS_ACTIVE_JOB_STATUSES) {
 test('admit rejects when a COMPLETED initial job already exists for the opportunity (canonical-run proxy until P0-06)', async () => {
   const db = fakeDb({
     rpcResults: {
-      psi_admit_agt002_initial_analysis_job: {
+      psi_admit_authorized_agt002_initial_analysis_job: {
         data: null,
         error: { code: '55001', status: 409, message: 'Ya existe un análisis inicial COMPLETED para la oportunidad' },
       },

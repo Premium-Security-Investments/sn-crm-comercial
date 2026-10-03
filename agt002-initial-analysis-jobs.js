@@ -32,19 +32,47 @@ function requireNonBlank(value, label) {
   return value;
 }
 
-/** Idempotent admission of one durable psi_agt002_initial_analysis_jobs row. */
-export async function admitAgt002InitialAnalysisJob(database, { opportunityId, tenderId, idempotencyKey, payload, requestedBy } = {}) {
+/**
+ * Atomically consumes one exact G1 authorization and admits its durable INITIAL job. The
+ * database constructs payload.persistence from the governed bindings; callers cannot supply a
+ * different lineage envelope through payload.
+ */
+export async function admitAgt002InitialAnalysisJob(database, {
+  authorizationId, workflowInstanceId, opportunityId, tenderId, packageVersionId, packageHash,
+  g1Scope, policyVersion, idempotencyKey, payload, requestedBy,
+} = {}) {
+  requireNonBlank(authorizationId, 'La autorización G1');
+  requireNonBlank(workflowInstanceId, 'La instancia de flujo de trabajo');
   requireNonBlank(opportunityId, 'La oportunidad');
   requireNonBlank(tenderId, 'La licitación');
+  requireNonBlank(packageVersionId, 'La versión del paquete de evidencia');
+  requireNonBlank(packageHash, 'La huella del paquete de evidencia');
+  requireNonBlank(g1Scope, 'El alcance G1');
+  requireNonBlank(policyVersion, 'La versión de política');
   requireNonBlank(idempotencyKey, 'La clave de idempotencia');
   requireNonBlank(requestedBy, 'El solicitante');
+  if (!/^[0-9a-f]{64}$/.test(packageHash)) {
+    throw new Error('La huella del paquete de evidencia debe ser SHA-256 hexadecimal en minúscula.');
+  }
+  if (!['A', 'A_PLUS_B'].includes(g1Scope)) {
+    throw new Error('El alcance G1 no es válido.');
+  }
+  if (payload != null && (typeof payload !== 'object' || Array.isArray(payload))) {
+    throw new Error('El payload del análisis inicial debe ser un objeto.');
+  }
 
-  const data = await rpc(database, 'psi_admit_agt002_initial_analysis_job', {
+  const data = await rpc(database, 'psi_admit_authorized_agt002_initial_analysis_job', {
+    p_authorization_id: authorizationId,
+    p_workflow_instance_id: workflowInstanceId,
     p_opportunity_id: opportunityId,
     p_tender_id: tenderId,
+    p_package_version_id: packageVersionId,
+    p_package_hash: packageHash,
+    p_g1_scope: g1Scope,
+    p_policy_version: policyVersion,
     p_idempotency_key: idempotencyKey,
     p_payload: payload,
-    p_requested_by: requestedBy,
+    p_actor_profile_id: requestedBy,
   });
 
   if (!data || data.status === 'payload_mismatch') {
