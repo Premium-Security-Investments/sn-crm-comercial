@@ -18,6 +18,8 @@ test('runtime flags are fail-closed and identity/readback is mandatory', () => {
     maxCostUsd: null,
     timeoutMs: null,
     reasoningEffort: null,
+    inputCostPerMillionUsd: null,
+    outputCostPerMillionUsd: null,
   });
   const ready = readAgt002InitialAnalysisRuntimeConfig({
     AGT002_INITIAL_ANALYSIS_ADMISSION_ENABLED: 'true',
@@ -28,6 +30,8 @@ test('runtime flags are fail-closed and identity/readback is mandatory', () => {
     AGT002_INITIAL_ANALYSIS_MAX_COST_USD: '9.50',
     AGT002_INITIAL_ANALYSIS_TIMEOUT_MS: '30000',
     AGT002_INITIAL_ANALYSIS_REASONING_EFFORT: 'medium',
+    AGT002_INITIAL_ANALYSIS_INPUT_COST_PER_MILLION_USD: '2.50',
+    AGT002_INITIAL_ANALYSIS_OUTPUT_COST_PER_MILLION_USD: '10',
   });
   assert.equal(ready.runtimeReady, true);
   assert.equal(ready.maxTotalTokens, 12000);
@@ -44,6 +48,8 @@ test('malformed budget or unknown effort keeps runtime fail-closed', () => {
     AGT002_INITIAL_ANALYSIS_MAX_COST_USD: 'x',
     AGT002_INITIAL_ANALYSIS_TIMEOUT_MS: '0',
     AGT002_INITIAL_ANALYSIS_REASONING_EFFORT: 'extreme',
+    AGT002_INITIAL_ANALYSIS_INPUT_COST_PER_MILLION_USD: '2.50',
+    AGT002_INITIAL_ANALYSIS_OUTPUT_COST_PER_MILLION_USD: '10',
   });
   assert.equal(config.runtimeReady, false);
   assert.equal(config.maxTotalTokens, null);

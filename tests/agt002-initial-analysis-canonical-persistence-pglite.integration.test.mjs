@@ -31,6 +31,8 @@ const migration100 = migrationSource('101_agt002_initial_analysis_jobs.sql');
 // RED: not yet authored.
 const migration101 = () => migrationSource('102_agt002_initial_analysis_canonical_persistence.sql');
 const migration102 = () => migrationSource('103_agt002_initial_analysis_atomic_admission.sql');
+const migration103 = () => migrationSource('104_agt002_initial_analysis_server_owned_execution.sql');
+const rollback103 = () => strip(readFileSync(new URL('../supabase/rollbacks/104_agt002_initial_analysis_server_owned_execution_rollback.sql', import.meta.url), 'utf8'));
 const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/103_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
 
 const O = '10000000-0000-4000-8000-000000000001';
@@ -143,6 +145,25 @@ async function freshDb() {
   await pg.exec(migration102());
   return pg;
 }
+
+test('migration 104 applies after the real 099-103 chain and preserves the one atomic admission signature', async () => {
+  const pg = await freshDb();
+  try {
+    await pg.exec(migration103());
+    const row = (await pg.query(`select
+      to_regprocedure('public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)') is not null as present,
+      has_function_privilege('service_role', 'public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)', 'EXECUTE') as executable
+    `)).rows[0];
+    assert.deepEqual(row, { present: true, executable: true });
+    await pg.exec(rollback103());
+    const restored = (await pg.query(`select pg_get_functiondef(
+      'public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)'::regprocedure
+    ) as definition`)).rows[0].definition;
+    assert.doesNotMatch(restored, /analysisRunId|sourceBatchIndexes/);
+  } finally {
+    await pg.close();
+  }
+});
 
 async function seedEvidencePackageVersion(pg, { opportunityId = O, tenderId = T, actorId = ACTOR, label = 'default' } = {}) {
   let packageRow = (await pg.query(

@@ -23,6 +23,9 @@ export function createAgt002InitialAnalysisExecutor({ rehydrateMembers, assertMe
     }
 
     let synthesisOutput;
+    let usedTotalTokens = 0;
+    let usedCostUsd = 0;
+    const memberBatchOutputs = new Map();
 
     for (const batch of job.payload.batches) {
       let checkpoint;
@@ -38,13 +41,27 @@ export function createAgt002InitialAnalysisExecutor({ rehydrateMembers, assertMe
       }
 
       if (checkpoint) {
+        usedTotalTokens += Number(checkpoint.usage?.totalTokens || 0);
+        usedCostUsd += Number(checkpoint.usage?.costUsd || 0);
+        if (batch.phase === 'member_batch_analysis') memberBatchOutputs.set(batch.batchIndex, {
+          output: checkpoint.output, outputSha256: checkpoint.outputSha256,
+        });
         if (batch.phase === 'synthesis') synthesisOutput = checkpoint.output;
         continue;
       }
 
       let members;
       try {
-        members = await rehydrateMembers(database, batch.memberIds);
+        members = batch.phase === 'synthesis' && Array.isArray(batch.sourceBatchIndexes)
+          ? batch.sourceBatchIndexes.map(index => ({
+              memberId: `batch:${index}`,
+              content: memberBatchOutputs.get(index)?.output,
+              contentHash: memberBatchOutputs.get(index)?.outputSha256,
+            }))
+          : await rehydrateMembers(database, batch.memberIds, { job, batch });
+        if (members.some(member => member.content === undefined)) {
+          return { status: 'unavailable', error_code: 'resume_invalid' };
+        }
         assertMembersMatchHashes(members);
       } catch (error) {
         return { status: 'unavailable', error_code: mapErrorCode(error) };
@@ -52,10 +69,19 @@ export function createAgt002InitialAnalysisExecutor({ rehydrateMembers, assertMe
 
       let result;
       try {
-        result = await runBatch({ modelId: batch.modelId, members, expectedMemberIds: batch.expectedMemberIds });
+        result = await runBatch({
+          job, batch, modelId: batch.modelId, members, expectedMemberIds: batch.expectedMemberIds,
+          usedTotalTokens, usedCostUsd,
+        });
       } catch (error) {
         return { status: 'unavailable', error_code: mapErrorCode(error) };
       }
+
+      usedTotalTokens += Number(result.usage?.totalTokens || 0);
+      usedCostUsd += Number(result.usage?.costUsd || 0);
+      if (batch.phase === 'member_batch_analysis') memberBatchOutputs.set(batch.batchIndex, {
+        output: result.output, outputSha256: result.outputSha256,
+      });
 
       try {
         await renewLease(database, { jobId: job.jobId, leaseId: job.leaseId, fenceVersion: job.fenceVersion });

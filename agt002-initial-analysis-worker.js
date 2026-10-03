@@ -17,7 +17,7 @@ export function createAgt002InitialAnalysisWorker({ database, leaseSeconds, clai
       } catch {
         const errorCode = 'executor_failure';
         await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, fenceVersion: job.fenceVersion, errorCode });
-        return { status: 'unavailable', errorCode };
+        return { status: 'unavailable', jobId: job.jobId, errorCode };
       }
 
       if (outcome?.status === 'completed') {
@@ -27,13 +27,13 @@ export function createAgt002InitialAnalysisWorker({ database, leaseSeconds, clai
         } catch {
           const errorCode = 'persistence_failure';
           await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, fenceVersion: job.fenceVersion, errorCode });
-          return { status: 'unavailable', errorCode };
+          return { status: 'unavailable', jobId: job.jobId, errorCode };
         }
       }
 
       const errorCode = outcome?.error_code;
       await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, fenceVersion: job.fenceVersion, errorCode });
-      return { status: 'unavailable', errorCode };
+      return { status: 'unavailable', jobId: job.jobId, errorCode };
     },
   });
 }

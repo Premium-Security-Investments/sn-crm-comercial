@@ -47,15 +47,19 @@ export function readAgt002InitialAnalysisRuntimeConfig(environment = {}) {
   const maxTotalTokens = positiveInteger(environment.AGT002_INITIAL_ANALYSIS_MAX_TOTAL_TOKENS);
   const maxCostUsd = positiveNumber(environment.AGT002_INITIAL_ANALYSIS_MAX_COST_USD);
   const timeoutMs = positiveInteger(environment.AGT002_INITIAL_ANALYSIS_TIMEOUT_MS);
+  const inputCostPerMillionUsd = positiveNumber(environment.AGT002_INITIAL_ANALYSIS_INPUT_COST_PER_MILLION_USD);
+  const outputCostPerMillionUsd = positiveNumber(environment.AGT002_INITIAL_ANALYSIS_OUTPUT_COST_PER_MILLION_USD);
   const effortValue = String(environment.AGT002_INITIAL_ANALYSIS_REASONING_EFFORT || '').trim();
   const reasoningEffort = EFFORTS.has(effortValue) ? effortValue : null;
   const runtimeReady = admissionEnabled && modelCallsEnabled
     && runtimeIdentity === 'agt002-initial-analysis-worker'
     && modelId !== null && maxTotalTokens !== null && maxCostUsd !== null
-    && timeoutMs !== null && reasoningEffort !== null;
+    && timeoutMs !== null && reasoningEffort !== null
+    && inputCostPerMillionUsd !== null && outputCostPerMillionUsd !== null;
   return Object.freeze({
     admissionEnabled, modelCallsEnabled, runtimeReady, runtimeIdentity, modelId,
     maxTotalTokens, maxCostUsd, timeoutMs, reasoningEffort,
+    inputCostPerMillionUsd, outputCostPerMillionUsd,
   });
 }
 
