@@ -1,195 +1,268 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-**Corte autoritativo:** 2026-07-30 22:31 COT · 2026-07-31 03:31 UTC
-**Producción:** https://seguridad-nacional-crm.vercel.app
-**Commit productivo:** `5bb33047d43550e1753bcfafd78fd35f1ed68d56`
-**Deployment Vercel:** `dpl_ZiGjr5aSqLnM8ZvZrzaqGGMwyKFg` · `READY`
+**Corte autoritativo:** 2026-08-06 08:33 COT · 2026-08-06 13:33 UTC
+
+**Repositorio verificado:** `/root/worktrees/siio-vigia-phase1-gpt`
+
+**Rama de trabajo:** `fix/agt002-canonical-current`
+
+**HEAD verificado:** `2904efb` — `test(agt002): cover missing worker secret fail-closed (#79)`
+
+**Base:** `origin/main` en el mismo commit
+
+**Producción canónica:** https://seguridad-nacional-crm.vercel.app
+
+**Estado productivo del rediseño integral:** no desplegado; la versión exacta de producción y los flags deben verificarse nuevamente antes de cualquier rollout.
 
 ## 1. Regla funcional vigente
 
-El encargado de Licitaciones selecciona manualmente un caso del Radar y lo convierte en **Oportunidad**. Esa conversión humana es el gate funcional para entrar al pipeline durable y ejecutar Vig‑IA cuando se cumplan las precondiciones documentales.
+El encargado de Licitaciones selecciona manualmente un caso del Radar y lo convierte en **Oportunidad**. Esa conversión humana es el gate para entrar al pipeline durable.
 
-Vig‑IA no debe:
+Vig‑IA debe analizar y organizar evidencia; nunca debe:
 
 - analizar indiscriminadamente todo el Radar;
 - convertir procesos en oportunidades;
-- procesar casos no convertidos o terminales;
 - decidir GO/NO GO;
-- enviar, firmar o presentar ofertas.
+- firmar, enviar o presentar ofertas;
+- convertir presencia documental en cumplimiento automático;
+- inventar responsables nominales, fechas, vigencia o aplicabilidad.
 
-Las recomendaciones y runs son insumos para revisión humana. No constituyen decisión comercial o jurídica.
+Orden operativo obligatorio del análisis:
 
-## 2. Estado actual del programa por fases
+1. alertas de descarte;
+2. habilitantes jurídicos y empresariales;
+3. requisitos técnicos;
+4. capacidad financiera y riesgos de ejecución;
+5. conveniencia comercial y estratégica.
 
-| Fase | Estado productivo | Límite |
-|---|---|---|
-| **E1** | Ruta durable verificada; drain continuo activado después del canary unitario | Dispatch inmediato permanece apagado; drain libera leases en cada checkpoint |
-| **E2** | **Activa y verificada en producción** | Solo Vig‑IA canónico; cero fallback silencioso |
-| **E3** | **Activa y verificada en producción** | Contexto v2 trazable; gaps empresariales explícitos |
-| **E4** | **Apagada — gate pendiente** | No existe hoy un snapshot nuevo de 14 documentos elegible para canary E2E |
-| **E5** | **Apagada — dependencia E4** | Corpus productivo todavía vacío; manifest local validado, no publicado |
+La decisión GO/NO GO permanece humana y trazable. `CT-02B` continúa en `NO_GO` hasta una nueva decisión humana explícita.
 
-Configuración desplegada:
+## 2. Estado confirmado al corte
 
-- `TENDER_IMMEDIATE_DISPATCH=false`
-- `TENDER_CONTINUOUS_DRAIN=true`
-- `AGT002_CANONICAL_ONLY=true`
-- `AGT002_CONTEXT_V2=true`
-- `AGT002_DOCUMENT_RETRIEVAL=false`
-- `AGT002_LEGAL_CORPUS=false`
+### 2.1 Caso Pereira corregido
 
-El dispatch inmediato continúa apagado, por lo que una conversión futura no dispara por sí sola el worker. El scheduler durable y las invocaciones operativas conservan exclusión por lease. E4/E5 no deben activarse hasta satisfacer sus gates independientes.
+Se completó el reanálisis corregido de Rama Judicial Pereira 2026 sobre un snapshot inmutable de 17 documentos.
 
-## 3. Migración 055 — lectura backend mínima
+- oportunidad: `54190e51-15fb-46af-b0aa-8f13461a3110`;
+- snapshot: `c33159a5-defe-4a6f-8fa4-68c5ceb60e59`;
+- contexto corregido: `2f11db30-0165-4a24-bd80-e2b655caf7ab`;
+- run histórico preservado: `50f798f0-a526-421f-bd26-7b0e5dd0d5da`;
+- run corregido: `df57f945-79ea-49dd-8300-9005f3da9c60`;
+- política: `agt002-preview-policy-v2`;
+- estado: `completed`.
 
-PR técnica única: **#53**
-Commit focal: `edd9d93fb4818523b3ebdd60c453f691b480f0cb`
-Merge commit: `5bb33047d43550e1753bcfafd78fd35f1ed68d56`
+La licencia de SuperVigilancia ya no se trata como ausente. El análisis reconoce la Resolución `20214100005697`, con vigencia observada hasta `2029-05-10`. La duda pendiente se limita correctamente a su aplicabilidad contractual: servicio armado, medios/armas autorizados y cobertura territorial exigida al cierre.
 
-La migración `055_agt002_company_documents_service_read.sql` corrige el mismatch `42501` del loader empresarial sobre `public.psi_company_procurement_documents`.
+La validación visual de Pereira confirmó que no se inventaron respuestas humanas ni se solicitó volver a cargar la licencia.
 
-Estado productivo verificado:
+### 2.2 Evidencia empresarial disponible
 
-```text
-service_select=true
-service_insert=false
-service_update=false
-service_delete=false
-service_truncate=false
-service_references=false
-service_trigger=false
-public_select=false
-anon_select=false
-authenticated_select=false
-RLS=true
-marker 055=1/1
-```
+La migración `061_agt002_company_evidence_registry.sql` registra 17 clases de evidencia de Base Maestra. Todas permanecen como información reportada, pendientes de revisión humana y validación de aplicabilidad por proceso.
 
-El permiso no llega al frontend y no se expone ninguna clave `service_role` al navegador. El rollback transaccional específico revoca `SELECT` de `service_role`; la verificación terminal exige cero privilegios para `service_role`, `public`, `anon` y `authenticated`, con RLS activa.
+Límite estructural confirmado:
 
-## 4. Reentrada controlada E1
+- sólo la licencia de SuperVigilancia se transporta como campo empresarial específico;
+- las otras 16 clases se comprimen dentro de `recurring_documents`;
+- esa compresión mezcla RUP, RUT, comunicaciones, uniformes, sanciones, armas, pólizas, experiencia, financieros, certificación bancaria, horas extras, antecedentes, representantes, personal y criterios diferenciales;
+- la presencia del metadato no prueba contenido, vigencia, suficiencia, aplicabilidad ni cumplimiento.
 
-Se preservó y reanudó el mismo job durable:
+### 2.3 SharePoint / Base Maestra
 
-- job: `dda4a2d6-bf58-4023-9f7a-5574bdfb703d`;
-- snapshot: `be9d136f-fa26-49fc-acce-23ad0a7d6a32`;
-- documentos: **14/14**;
-- chunks: **1.466**;
-- documentos fallidos: **0**;
-- `attempt_count=0`;
-- estado terminal: `completed/done`;
-- `analysis_run_id=898d7f9e-5eac-4d4d-a26b-8c8387f8f554`.
+No existe evidencia de una sincronización directa y completa de SharePoint en cada análisis. El enlace directo auditado no fue accesible desde este entorno y la documentación original ubicaba SharePoint fuera del MVP.
 
-El run enlazado ya existía antes del job controlado y fue reutilizado idempotentemente:
+Por tanto, no se debe afirmar que Vig‑IA “usó todo SharePoint”. El estado honesto es:
 
-- run total para el snapshot: **1**;
-- producer: `AGT-002`;
-- status: `completed`;
-- no se creó run sustituto ni duplicado.
+- registro provisional de 17 clases disponible;
+- cobertura documental completa no demostrada;
+- reconciliación idempotente SharePoint → registro → dossier/contexto pendiente;
+- PII, armas, banca y anexos nominales deben permanecer segregados en bóvedas restringidas.
 
-Evidencia del scheduler post‑055:
+### 2.4 Contrato, prompt y UI actuales
 
-```text
-processed=0 · status=empty · stop_reason=empty
-processed=1 · status=completed · stop_reason=yield
-```
+La auditoría confirmó:
 
-Verificaciones finales:
+- el contrato v2 produce recomendación, resumen y listas narrativas;
+- no obliga a incluir impacto, evidencia faltante, responsable, hito, escalamiento, subsanabilidad ni condición de cierre;
+- la política evita alucinaciones y GO/NO GO automático, pero no obliga a convertir hallazgos en trabajo priorizado;
+- la recuperación documental se concentra en frentes `legal`, `financial` y `technical`;
+- faltan dominios explícitos para capacidad organizacional, experiencia, operación, SST/personal, seguros/garantías, evaluación comercial y estrategia;
+- la UI compactada eliminó la presentación jurídica sin reemplazarla por una vista operativa integral;
+- persisten códigos internos que deben traducirse a lenguaje de Licitaciones.
 
-- otros jobs reclamables: **0**;
-- job con ese ID: **1**;
-- snapshot con ese ID: **1**;
-- run para el snapshot: **1**;
-- decisiones GO/NO‑GO para el caso: **0**;
-- `last_error_code=null`;
-- no se crearon jobs, snapshots, runs ni decisiones duplicadas.
+### 2.5 Corpus jurídico
 
-## 5. Canary productivo E2 — canonicidad
+El corpus auditado contiene seis fuentes. Al corte de la revisión, sólo una era elegible como fuente jurídica verificada; las demás exigían abstención por vigencia, modificación o aplicabilidad no confirmadas.
 
-Caso controlado sobre la misma oportunidad de E1:
+Debe preservarse el comportamiento fail-closed. Las normas serán soporte desplegable de cada requisito, no una lista principal ni una conclusión automática.
 
-- job: `fb54938d-012b-47af-9fdb-7e86f39e4381`;
-- snapshot reutilizado: `be9d136f-fa26-49fc-acce-23ad0a7d6a32`;
-- documentos: **14/14**;
-- fallidos: **0**;
-- run nuevo: `7acb0ed3-d57a-401b-acb0-10eaf77fb62e`;
-- `producer=AGT-002`, `method=agent_ai`, `canonical=true`, `status=completed`;
-- eventos append-only: `queued → running → completed` con una misma `attempt_key`;
-- cero decisiones GO/NO-GO;
-- lease final liberado;
-- idempotencia de job: **1**.
+### 2.6 Auditoría independiente con Claude Opus
 
-El primer reintento E3 sobre ese mismo snapshot reutilizó correctamente el run E2. Esa reutilización demostró idempotencia, pero no se contó como canary E3 porque no hubo una invocación nueva del agente.
+La auditoría propia comercial, jurídica, documental, técnica y de arquitectura está realizada. La revisión independiente nueva con Claude Opus **no se ejecutó**.
 
-## 6. Canary productivo E3 — contexto v2
-
-Se usó un segundo caso ya convertido por Juan Botero, sin run canónico ni job activo. El objeto contractual era vigilancia y seguridad privada; no se creó ni convirtió una oportunidad nueva.
-
-- job: `15f9bf06-75b1-4266-a680-effea966f60b`;
-- snapshot nuevo: `29e801d0-3d8d-4fc3-aa32-3e82b7eeedad`;
-- documentos: **9/9**;
-- fallidos: **0**;
-- run canónico: `8c122c04-c613-4bcb-8d58-b8f04b746bbe`;
-- contexto: `35ae6f3c-e221-468c-92b4-533bf6293e3d`, `context_version=2`;
-- secciones: `commercial_context`, `company_dossier`, `context_version`, `human_evidence`, `opportunity`, `snapshot_id`;
-- `human_evidence_count=0`;
-- gaps del dossier expresados explícitamente;
-- sin campos prohibidos de contacto, OAuth, claves, GO/NO-GO o análisis profundo;
-- eventos append-only: `queued → running → completed`;
-- cero decisiones GO/NO-GO.
-
-## 7. Gate real E4
-
-E4 permanece apagada. El contrato aprobado exige un canary end-to-end sobre un snapshot representativo de **14 documentos**. El único snapshot de 14 documentos ya está ligado idempotentemente al run E2; activar retrieval y reencolar el mismo snapshot reutiliza ese run y no prueba el nuevo evidence packet. El único snapshot nuevo disponible tiene 9 documentos.
-
-No se clonaron snapshots, no se inventó evidencia humana y no se activó retrieval sobre casos futuros. E4 podrá continuar cuando exista uno de estos insumos gobernados:
-
-1. un nuevo snapshot real de 14 documentos sobre una oportunidad ya convertida; o
-2. una nueva versión de contexto originada por respuesta humana auténtica que habilite reanálisis idempotente distinto.
-
-E5 también permanece apagada por dependencia. El manifest local `legal-corpus-v1` pasó validación con 6 fuentes; las tablas productivas siguen en cero y no se publicó corpus sin el gate E4.
-
-## 8. QA y revisión
-
-TDD y gates ejecutados secuencialmente:
-
-- RED real: fallo por ausencia del artefacto 055;
-- GREEN DB real: apply, rollback y privilegios exactos;
-- runner real PGlite: preflight, estado absent/applied, marker, apply/apply y rollback/rollback;
-- detección de grant backend inesperado: `unsafe_service_table_grants=1`, normalizado atómicamente;
-- migraciones relacionadas y seguridad/RLS: PASS;
-- paridad Express/Vercel: PASS;
-- TypeScript: PASS;
-- build Vite: PASS;
-- `git diff --check`: PASS;
-- Gitleaks oficial: 54,34 KB, cero filtraciones;
-- suite completa: **298 tests · 297 pass · 1 fallo histórico**;
-- gate fresco E2: **13/13** + backend parity + build;
-- gates frescos E3–E5: **20/20**;
-- ACL/RLS productivas 051–053: solo `service_role:SELECT`, RLS activa;
-- estado final de jobs activos: **0**.
-
-El único fallo es:
+Todos los intentos recientes fueron bloqueados antes de llamar a Claude por:
 
 ```text
-tests/tender-radar-relevance.test.mjs
-ReferenceError: tenderContextualPhysicalSecurityReason is not defined
+Heavy-work concurrency limit reached. Active category=dynamic-execution, pid=2366109.
 ```
 
-Fue reproducido de forma idéntica en un worktree limpio de `origin/main`; no es regresión del lote 055.
+El PID corresponde al gateway permanente de Hermes, no a una prueba o revisor hijo visible. No se reinició ni detuvo el gateway sin autorización. No se debe atribuir a Claude ninguna opinión inexistente.
 
-Revisión independiente única con Claude Code Opus (`claude-opus-4-8`): **APPROVE · cero Critical/Important**. No se hizo re‑revisión.
+## 3. Evaluación del análisis actual
 
-## 9. Release y límites
+El análisis vigente aporta diagnóstico preliminar, pero todavía no funciona como sistema operativo de Licitaciones.
 
-- Deployment productivo: `dpl_ZiGjr5aSqLnM8ZvZrzaqGGMwyKFg` · `READY`.
-- Alias canónico: https://seguridad-nacional-crm.vercel.app · HTTP 200.
-- Migraciones 049–055: `applied`; 055 marker `1/1`.
-- E1: validada; drain continuo activo, dispatch inmediato apagado.
-- E2: activa y validada en producción.
-- E3: activa y validada en producción.
-- E4/E5: apagadas por gate explícito; no son rollback de E2/E3.
-- No se autoriza procesamiento indiscriminado del Radar.
-- No se automatizó GO/NO GO ni firma, envío o presentación.
+Problemas principales:
 
-El cierre previo de Aerocivil, INDER Medellín y Bucaramanga LPR permanece como historial operativo anterior; este corte documenta el avance productivo E1–E3 y el gate real que protege E4/E5.
+1. mezcla evidencia reportada con fortalezas comprobadas;
+2. agrupa demasiados frentes en recomendaciones generales;
+3. no prioriza bloqueadores, subsanables, validaciones internas, consultas externas y riesgos de ejecución;
+4. obliga a la encargada a deducir tareas, responsables y fechas;
+5. no muestra con precisión qué condición habilita solicitar la decisión humana;
+6. no acredita cobertura completa de las fuentes empresariales;
+7. no integra el fundamento jurídico con el requisito y la acción.
+
+Conclusión: el rediseño debe ser estructural —contrato, contexto, política, persistencia y UI—, no un ajuste cosmético del prompt o una restauración literal del panel jurídico anterior.
+
+## 4. Diseño objetivo acordado como base de revisión
+
+Cada requisito del pliego debe conectar:
+
+> requisito → evidencia del proceso → evidencia empresarial → estado → impacto → conclusión → acción → responsable sugerido → fecha/hito → criterio de escalamiento → condición de cierre → soporte jurídico.
+
+Dominios mínimos:
+
+- descarte;
+- jurídico/habilitante;
+- financiero;
+- organizacional;
+- experiencia;
+- técnico;
+- operativo;
+- SST y personal;
+- seguros y garantías;
+- comercial;
+- estratégico.
+
+Estados de cumplimiento operativos:
+
+- cumplimiento comprobado;
+- evidencia encontrada pendiente de validación;
+- pendiente documental;
+- requiere aclaración;
+- posible incumplimiento;
+- no aplica.
+
+Impactos que deben permanecer separados:
+
+- inhabilitante o de descarte;
+- subsanable;
+- previo a presentar;
+- afecta puntaje;
+- obligación contractual o riesgo de ejecución;
+- riesgo comercial;
+- sin impacto actual en habilitación.
+
+La UI objetivo será compacta y ordenada así:
+
+1. recomendación condicionada y estado de preparación;
+2. bloqueadores críticos y tiempo/hito próximo;
+3. matriz priorizada por requisito;
+4. plan de acción derivado;
+5. riesgos de participación y ejecución;
+6. evidencia, cobertura y normas en desplegables;
+7. decisión humana separada.
+
+## 5. Próximos pasos determinados
+
+### P0 — Cerrar la revisión antes de código
+
+1. Resolver el bloqueo de concurrencia de Hermes mediante reinicio controlado del gateway, sólo con autorización.
+2. Ejecutar Claude Code CLI con `--model opus` en modo read-only.
+3. Contrastar tres alternativas:
+   - parche UI/prompt;
+   - contrato integral versionado sobre fuentes verificables;
+   - integración completa de SharePoint antes del rediseño.
+4. Consolidar recomendación y obtener aprobación humana del diseño.
+
+**Gate P0:** no iniciar implementación integral ni desplegar cambios de UI sin contraste y aprobación del diseño.
+
+### P1 — Verdad de datos y canonicidad
+
+5. Implementar con TDD la promoción transaccional del run `current/canonical`:
+   - un solo canónico por oportunidad;
+   - historial preservado;
+   - supersesión explícita;
+   - concurrencia segura;
+   - idempotencia demostrada.
+6. Transportar las 17 clases empresariales como objetos separados y tipados.
+7. Implementar cobertura explícita: fuentes disponibles, seleccionadas, omitidas, vencidas, inaccesibles o pendientes de revisión.
+8. Cerrar la reconciliación idempotente SharePoint/Base Maestra → registro → dossier/contexto, sin mover datos sensibles a la capa general.
+
+**Gate P1:** ninguna evidencia `reported` puede aparecer como cumplimiento; dos runs nunca pueden permanecer `canonical=true` para una misma oportunidad.
+
+### P2 — Contrato integral v3
+
+9. Crear pruebas rojas del nuevo contrato y compatibilidad legacy.
+10. Versionar esquema, política y flag fail-closed.
+11. Incorporar matriz por requisito, impactos, evidencia faltante, acción, rol, hito, escalamiento y condición de cierre.
+12. Integrar el corpus jurídico por requisito y conservar la abstención.
+13. Derivar el plan de trabajo desde requisitos pendientes/bloqueados; no producir una segunda lista desconectada.
+14. Mantener los runs históricos v2 consultables sin reescribirlos.
+
+**Gate P2:** hallazgos sin evidencia permitida son rechazados; fechas y responsables nominales no pueden ser inventados por el modelo.
+
+### P3 — UI operativa
+
+15. Sustituir listas narrativas por la vista compacta integral.
+16. Restituir lo jurídico dentro de cada requisito, con normas desplegables.
+17. Humanizar códigos internos como `pending_case_validation` y `human_legal_review`.
+18. Mostrar cobertura parcial y última reconciliación sin afirmar uso completo de SharePoint.
+19. Mantener la decisión humana GO/NO GO fuera del análisis automático.
+
+**Gate P3:** Licitaciones debe poder identificar en una sola vista qué bloquea, qué hacer, quién debe resolverlo y antes de qué hito.
+
+### P4 — Verificación y rollout
+
+20. Ejecutar pruebas unitarias y de contrato.
+21. Ejecutar integración DB y concurrencia canónica.
+22. Verificar paridad Express/Vercel.
+23. Ejecutar TypeScript, build y regresión completa secuencial.
+24. Validar ruta ordinaria E5 con un caso controlado.
+25. Reanalizar un caso histórico sin sobrescribir versiones previas.
+26. Realizar una revisión independiente única del lote.
+27. QA visual autenticado operado por Juan: un paso, esperar captura y no avanzar sin validación.
+28. Validar con la sesión de Katherine que Configuración permite editar la ficha y mantiene documentos en sólo lectura.
+29. Desplegar gradualmente, verificar producción, observabilidad y rollback.
+30. Actualizar nuevamente `CURRENT.md` con commit, deployment, flags y evidencia mecánica reales.
+
+**Gate P4:** no declarar listo ni desplegar ampliamente sin pruebas frescas, build, revisión independiente y validación visual.
+
+## 6. Prioridad inmediata al retomar
+
+1. Autorizar o coordinar el reinicio controlado del gateway para liberar la revisión Opus.
+2. Cerrar diseño integral y aprobación humana.
+3. Implementar primero unicidad canónica y catálogo empresarial tipado.
+4. Implementar contrato v3 y UI operativa con TDD.
+5. Completar E5, QA visual y rollout.
+
+## 7. Pendientes que siguen abiertos
+
+- revisión independiente nueva con Claude Opus;
+- aprobación del diseño integral;
+- unicidad/promoción canónica;
+- ruta ordinaria E5;
+- sincronización completa SharePoint/Base Maestra;
+- contrato integral v3;
+- bloque jurídico accionable;
+- brief operativo y nomenclatura humanizada;
+- pruebas, build, revisión independiente, QA visual y deploy;
+- validación visual con Katherine.
+
+## 8. Límites y seguridad
+
+- No se exponen credenciales, tokens, cookies, cadenas de conexión ni archivos `.env`.
+- No se copian PII, inventarios de armas, cuentas bancarias o anexos nominales a la capa general.
+- No se automatiza GO/NO GO, firma, envío o presentación.
+- No se afirma cobertura SharePoint completa sin reconciliación demostrable.
+- No se sobrescriben análisis históricos.
+- No se hará deploy del rediseño hasta completar sus gates.
