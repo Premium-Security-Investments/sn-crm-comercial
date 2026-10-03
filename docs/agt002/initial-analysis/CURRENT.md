@@ -94,3 +94,27 @@ fails closed rather than passing on an unreadable repository.
 `npm run check:agt002-initial-analysis-guard` runs the CLI entrypoint
 (`node scripts/agt002_initial_analysis_guard.mjs`) against the current
 working tree.
+
+## P0-06 — canonical persistence closure (2026-10-03)
+
+P0-06 extends the isolated INITIAL path without changing the frozen P0-00 identity literals. Its
+local contract is:
+
+- only a claimed INITIAL job with a valid lease/fence may complete;
+- the job must carry workflow, G1 authorization, frozen package and policy bindings before any
+  model work starts, and the atomic completion RPC independently requires that G1 authorization to
+  be `CONSUMED`;
+- exactly one synthesis checkpoint exists per job and its stored output must equal the completion
+  envelope;
+- one atomic RPC creates the analysis run and immutable aggregate version, marks the job completed
+  and advances the INITIAL workflow, or commits none of those changes;
+- retrying the identical completion is idempotent, while a changed run identity, envelope, lineage
+  or binding fails closed;
+- a failed job never publishes a partial aggregate and malformed optional workflow metadata cannot
+  prevent the job itself from reaching `FAILED`;
+- completion does not reinterpret the expiry of an authorization already consumed validly before a
+  long-running analysis.
+
+The migration and rollback remain unapplied. No service manifest, timer, production environment,
+REANALYSIS queue, REANALYSIS RPC or live opportunity is changed by this closure. Verification is
+recorded in `docs/evidence/2026-10-03-agt002-initial-analysis-p0-06-verification.md`.

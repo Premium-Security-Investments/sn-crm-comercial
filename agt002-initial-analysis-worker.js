@@ -22,7 +22,7 @@ export function createAgt002InitialAnalysisWorker({ database, leaseSeconds, clai
 
       if (outcome?.status === 'completed') {
         try {
-          await completeJob(database, { jobId: job.jobId, leaseId: job.leaseId, fenceVersion: job.fenceVersion });
+          await completeJob(database, { jobId: job.jobId, leaseId: job.leaseId, fenceVersion: job.fenceVersion, completion: outcome.completion });
           return { status: 'completed', jobId: job.jobId };
         } catch {
           const errorCode = 'persistence_failure';

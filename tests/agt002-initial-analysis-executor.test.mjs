@@ -24,15 +24,31 @@ import { readFileSync } from 'node:fs';
 import { createAgt002InitialAnalysisWorker } from '../agt002-initial-analysis-worker.js';
 import { createAgt002InitialAnalysisExecutor } from '../agt002-initial-analysis-executor.js';
 
+const PERSISTENCE_BINDINGS = Object.freeze({
+  workflowInstanceId: 'wf-1', authorizationId: 'auth-1', packageVersionId: 'pkgver-1',
+  packageHash: 'h'.repeat(64), g1Scope: 'A', policyVersion: 'policy-v1',
+});
+
+// Every job fixture below carries both a 'member_batch_analysis' batch and a trailing
+// 'synthesis' batch (P0-06): the executor now only ever reports 'completed' once a synthesis
+// phase has actually produced an envelope and job.payload.persistence carries the completion
+// bindings the worker hands to the persistence adapter.
 const JOB = Object.freeze({
   jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1,
   opportunityId: 'opp-1', tenderId: 'tender-1', idempotencyKey: 'key-1', requestedBy: 'user-1',
   payload: Object.freeze({
     budget: { maxTotalTokens: 10_000 },
-    batches: [Object.freeze({
-      batchIndex: 0, phase: 'member_batch_analysis', modelId: 'model-a',
-      memberIds: ['m-1', 'm-2'], expectedMemberIds: ['m-1', 'm-2'], requestHash: 'h'.repeat(64),
-    })],
+    persistence: PERSISTENCE_BINDINGS,
+    batches: [
+      Object.freeze({
+        batchIndex: 0, phase: 'member_batch_analysis', modelId: 'model-a',
+        memberIds: ['m-1', 'm-2'], expectedMemberIds: ['m-1', 'm-2'], requestHash: 'h'.repeat(64),
+      }),
+      Object.freeze({
+        batchIndex: 1, phase: 'synthesis', modelId: 'model-b',
+        memberIds: ['m-1', 'm-2'], expectedMemberIds: ['m-1', 'm-2'], requestHash: 'j'.repeat(64),
+      }),
+    ],
   }),
 });
 
@@ -62,10 +78,11 @@ function baseDeps(overrides = {}) {
   };
 }
 
-test('completes a job whose single batch rehydrates, analyzes and persists cleanly', async () => {
+test('completes a job whose member-analysis and synthesis batches rehydrate, analyze and persist cleanly, and hands back a completion payload for the P0-06 persistence adapter', async () => {
   const executor = createAgt002InitialAnalysisExecutor(baseDeps());
   const result = await executor({ kind: 'db' }, JOB);
   assert.equal(result.status, 'completed');
+  assert.deepEqual(result.completion, { ...PERSISTENCE_BINDINGS, envelope: { memberId: 'm-1' } });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -102,7 +119,7 @@ test('a resume check against a mismatched persisted checkpoint fails closed rath
   assert.equal(result.error_code, 'resume_invalid');
 });
 
-test('a valid resumed checkpoint is reused: the batch is never re-rehydrated, re-analyzed or re-persisted', async () => {
+test('a valid resumed checkpoint is reused: the batch is never re-rehydrated, re-analyzed or re-persisted, and its output still becomes the completion envelope', async () => {
   const calls = { rehydrate: 0, runBatch: 0, store: 0 };
   const executor = createAgt002InitialAnalysisExecutor(baseDeps({
     resumeCheckpoint: async () => ({ output: { memberId: 'm-1' }, usage: { totalTokens: 10 } }),
@@ -113,6 +130,7 @@ test('a valid resumed checkpoint is reused: the batch is never re-rehydrated, re
   const result = await executor({ kind: 'db' }, JOB);
   assert.equal(result.status, 'completed');
   assert.deepEqual(calls, { rehydrate: 0, runBatch: 0, store: 0 });
+  assert.deepEqual(result.completion, { ...PERSISTENCE_BINDINGS, envelope: { memberId: 'm-1' } });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -200,17 +218,19 @@ test('a failed model call never retries with a different model id: runBatch is i
 
 // ---------------------------------------------------------------------------------------------
 // 8) a job with multiple batches runs every batch in order, each rehydrated/analyzed/persisted
-//    on its own, before the job is reported completed.
+//    on its own, before the job is reported completed — and only the trailing synthesis batch's
+//    own output becomes the completion envelope, never a member-analysis batch's.
 // ---------------------------------------------------------------------------------------------
 
-test('a job with two batches rehydrates, analyzes and persists each batch before completing', async () => {
-  const TWO_BATCH_JOB = {
+test('a job with two member-analysis batches plus a synthesis batch rehydrates, analyzes and persists each batch before completing, with only the synthesis output becoming the completion envelope', async () => {
+  const THREE_BATCH_JOB = {
     ...JOB,
     payload: {
       ...JOB.payload,
       batches: [
         { batchIndex: 0, phase: 'member_batch_analysis', modelId: 'model-a', memberIds: ['m-1', 'm-2'], expectedMemberIds: ['m-1', 'm-2'], requestHash: 'h'.repeat(64) },
         { batchIndex: 1, phase: 'member_batch_analysis', modelId: 'model-b', memberIds: ['m-3', 'm-4'], expectedMemberIds: ['m-3', 'm-4'], requestHash: 'i'.repeat(64) },
+        { batchIndex: 2, phase: 'synthesis', modelId: 'model-c', memberIds: ['m-1', 'm-2', 'm-3', 'm-4'], expectedMemberIds: ['m-1', 'm-2', 'm-3', 'm-4'], requestHash: 'j'.repeat(64) },
       ],
     },
   };
@@ -220,14 +240,52 @@ test('a job with two batches rehydrates, analyzes and persists each batch before
     resumeCheckpoint: async () => null,
     runBatch: async ({ modelId }) => {
       seenModelIds.push(modelId);
-      return { output: { memberId: 'm-1' }, outputSha256: 'o'.repeat(64), usage: { totalTokens: 10 } };
+      return { output: { producedBy: modelId }, outputSha256: 'o'.repeat(64), usage: { totalTokens: 10 } };
     },
     storeCheckpoint: async (_database, { batchIndex }) => { seenBatchIndexes.push(batchIndex); return { status: 'created' }; },
   }));
-  const result = await executor({ kind: 'db' }, TWO_BATCH_JOB);
+  const result = await executor({ kind: 'db' }, THREE_BATCH_JOB);
   assert.equal(result.status, 'completed');
-  assert.deepEqual(seenModelIds, ['model-a', 'model-b']);
-  assert.deepEqual(seenBatchIndexes, [0, 1]);
+  assert.deepEqual(seenModelIds, ['model-a', 'model-b', 'model-c']);
+  assert.deepEqual(seenBatchIndexes, [0, 1, 2]);
+  assert.deepEqual(result.completion, { ...PERSISTENCE_BINDINGS, envelope: { producedBy: 'model-c' } });
+});
+
+// ---------------------------------------------------------------------------------------------
+// 9) P0-06: no synthesis output, or no persistence bindings, must never report a hollow
+//    'completed' — the executor fails closed with a dedicated closed error code instead.
+// ---------------------------------------------------------------------------------------------
+
+test('a job whose batches never include a synthesis phase fails closed with persistence_failure instead of completing with no envelope', async () => {
+  const NO_SYNTHESIS_JOB = {
+    ...JOB,
+    payload: {
+      ...JOB.payload,
+      batches: [JOB.payload.batches[0]],
+    },
+  };
+  const executor = createAgt002InitialAnalysisExecutor(baseDeps());
+  const result = await executor({ kind: 'db' }, NO_SYNTHESIS_JOB);
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.error_code, 'persistence_failure');
+  assert.equal(result.completion, undefined);
+});
+
+test('a job with a synthesis batch but no job.payload.persistence bindings fails closed before reading checkpoints or invoking the model', async () => {
+  const calls = { resume: 0, rehydrate: 0, runBatch: 0, store: 0, renew: 0 };
+  const NO_PERSISTENCE_JOB = { ...JOB, payload: { ...JOB.payload, persistence: undefined } };
+  const executor = createAgt002InitialAnalysisExecutor(baseDeps({
+    resumeCheckpoint: async () => { calls.resume += 1; return null; },
+    rehydrateMembers: async () => { calls.rehydrate += 1; return []; },
+    runBatch: async () => { calls.runBatch += 1; return {}; },
+    storeCheckpoint: async () => { calls.store += 1; return {}; },
+    renewLease: async () => { calls.renew += 1; return {}; },
+  }));
+  const result = await executor({ kind: 'db' }, NO_PERSISTENCE_JOB);
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.error_code, 'persistence_failure');
+  assert.equal(result.completion, undefined);
+  assert.deepEqual(calls, { resume: 0, rehydrate: 0, runBatch: 0, store: 0, renew: 0 });
 });
 
 // ---------------------------------------------------------------------------------------------

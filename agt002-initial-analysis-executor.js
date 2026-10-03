@@ -2,7 +2,7 @@
 // dependency-injected orchestration of one claimed P0-04 initial-analysis job across its
 // member-rehydration, per-batch analysis, checkpoint persistence and lease-fencing concerns.
 // Wired as the `executeJob` dependency createAgt002InitialAnalysisWorker expects. Never imports,
-// and is never imported by, any agt002-reanalysis-*.js module.
+// and is never imported by, any parallel operational runtime module.
 
 const ERROR_CODE_MAP = Object.freeze({
   AGT002_ENGINE_MEMBER_HASH_MISMATCH: 'member_hash_mismatch',
@@ -18,6 +18,12 @@ function mapErrorCode(error) {
 
 export function createAgt002InitialAnalysisExecutor({ rehydrateMembers, assertMembersMatchHashes, runBatch, resumeCheckpoint, storeCheckpoint, renewLease }) {
   return async function execute(database, job) {
+    if (!job?.payload?.persistence) {
+      return { status: 'unavailable', error_code: 'persistence_failure' };
+    }
+
+    let synthesisOutput;
+
     for (const batch of job.payload.batches) {
       let checkpoint;
       try {
@@ -31,7 +37,10 @@ export function createAgt002InitialAnalysisExecutor({ rehydrateMembers, assertMe
         return { status: 'unavailable', error_code: mapErrorCode(error) };
       }
 
-      if (checkpoint) continue;
+      if (checkpoint) {
+        if (batch.phase === 'synthesis') synthesisOutput = checkpoint.output;
+        continue;
+      }
 
       let members;
       try {
@@ -69,8 +78,14 @@ export function createAgt002InitialAnalysisExecutor({ rehydrateMembers, assertMe
       } catch (error) {
         return { status: 'unavailable', error_code: mapErrorCode(error) };
       }
+
+      if (batch.phase === 'synthesis') synthesisOutput = result.output;
     }
 
-    return { status: 'completed' };
+    if (synthesisOutput === undefined) {
+      return { status: 'unavailable', error_code: 'persistence_failure' };
+    }
+
+    return { status: 'completed', completion: { ...job.payload.persistence, envelope: synthesisOutput } };
   };
 }

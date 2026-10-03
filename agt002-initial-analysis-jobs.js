@@ -104,3 +104,35 @@ export async function renewAgt002InitialAnalysisJobLease(database, { jobId, leas
 
   return { status: 'renewed', leaseExpiresAt: data.lease_expires_at };
 }
+
+const AGT002_INITIAL_ANALYSIS_ERROR_CODE_PATTERN = /^[a-z0-9_]{3,80}$/;
+
+/**
+ * Closes a claimed job as FAILED using a closed snake_case error code; the database never
+ * receives raw provider/model/DB text through this wrapper, and a raw DB-side rejection is never
+ * relayed to the caller verbatim — only a sanitized, closed message is ever thrown.
+ */
+export async function failAgt002InitialAnalysisJob(database, { jobId, leaseId, fenceVersion, errorCode } = {}) {
+  requireNonBlank(jobId, 'El job');
+  requireNonBlank(leaseId, 'La reserva');
+  if (!Number.isInteger(fenceVersion)) {
+    throw new Error('La versión de fence del job de análisis inicial AGT-002 es obligatoria.');
+  }
+  if (typeof errorCode !== 'string' || !AGT002_INITIAL_ANALYSIS_ERROR_CODE_PATTERN.test(errorCode)) {
+    throw new Error('El código de error del job de análisis inicial AGT-002 no es válido.');
+  }
+
+  let data;
+  try {
+    data = await rpc(database, 'psi_fail_agt002_initial_analysis_job', {
+      p_job_id: jobId, p_lease_id: leaseId, p_fence_version: fenceVersion, p_error_code: errorCode,
+    });
+  } catch {
+    throw new Error('El cierre del job de análisis inicial AGT-002 no pudo completarse.');
+  }
+
+  if (!data || !['unavailable', 'existing'].includes(data.status)) {
+    throw new Error('El cierre del job de análisis inicial AGT-002 no devolvió un resultado válido.');
+  }
+  return { status: data.status, jobId: data.job_id, errorCode: data.error_code };
+}

@@ -2,14 +2,15 @@
 // AGT-002 P0-05 — initial-analysis durable worker runner (docs/agt002/initial-analysis/
 // CURRENT.md). Fails closed on both kill switches, then on missing Supabase config, before any
 // Supabase client is ever created. Wires the real initial-analysis jobs/checkpoints/engine
-// helpers; never imports, and is never imported by, any agt002-reanalysis-*.js module.
+// helpers; never imports, and is never imported by, any parallel operational runtime module.
 import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { createAgt002InitialAnalysisWorker } from '../../agt002-initial-analysis-worker.js';
 import { createAgt002InitialAnalysisExecutor } from '../../agt002-initial-analysis-executor.js';
-import { claimAgt002InitialAnalysisJob, renewAgt002InitialAnalysisJobLease } from '../../agt002-initial-analysis-jobs.js';
+import { claimAgt002InitialAnalysisJob, renewAgt002InitialAnalysisJobLease, failAgt002InitialAnalysisJob } from '../../agt002-initial-analysis-jobs.js';
 import { resumeAgt002InitialAnalysisCheckpoint, storeAgt002InitialAnalysisCheckpoint } from '../../agt002-initial-analysis-checkpoints.js';
 import { assertAgt002RehydratedMembersMatchHashes, runAgt002AnalysisBatch } from '../../agt002-analysis-engine.js';
+import { completeAgt002InitialAnalysisJob } from '../../agt002-initial-analysis-persistence.js';
 
 const LEASE_SECONDS = 600;
 
@@ -38,20 +39,6 @@ async function rehydrateAgt002InitialAnalysisMembers() {
 
 async function callAgt002InitialAnalysisModel() {
   throw new Error('AGT-002 initial-analysis: la llamada al modelo aún no está disponible.');
-}
-
-async function completeAgt002InitialAnalysisJob(db, { jobId, leaseId, fenceVersion }) {
-  const { error } = await db.rpc('psi_complete_agt002_initial_analysis_job', {
-    p_job_id: jobId, p_lease_id: leaseId, p_fence_version: fenceVersion,
-  });
-  if (error) throw new Error(error.message || String(error));
-}
-
-async function failAgt002InitialAnalysisJob(db, { jobId, leaseId, fenceVersion, errorCode }) {
-  const { error } = await db.rpc('psi_fail_agt002_initial_analysis_job', {
-    p_job_id: jobId, p_lease_id: leaseId, p_fence_version: fenceVersion, p_error_code: errorCode,
-  });
-  if (error) throw new Error(error.message || String(error));
 }
 
 function executeJob(db, job) {

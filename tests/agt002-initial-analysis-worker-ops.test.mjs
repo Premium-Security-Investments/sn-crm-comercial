@@ -26,6 +26,18 @@ assert.doesNotMatch(runner, /agt002-reanalysis-worker/);
 assert.doesNotMatch(runner, /agt002-reanalysis-executor/);
 assert.doesNotMatch(runner, /agt002-reanalysis-api/);
 
+// P0-06: the runner must wire the real canonical-persistence adapter for job completion, never a
+// local, incomplete, hand-rolled RPC call bypassing its schema/invariant validation.
+assert.match(runner, /agt002-initial-analysis-persistence\.js/);
+assert.match(runner, /completeAgt002InitialAnalysisJob/);
+assert.doesNotMatch(runner, /psi_complete_agt002_initial_analysis_job/, 'the runner must call the RPC only through the persistence adapter, never directly');
+
+// P0-06 (fail boundary): the runner must wire the real jobs-adapter wrapper for job failure,
+// never a local, hand-rolled RPC call that bypasses its closed-error-code validation and
+// sanitization.
+assert.match(runner, /failAgt002InitialAnalysisJob/);
+assert.doesNotMatch(runner, /psi_fail_agt002_initial_analysis_job/, 'the runner must call the RPC only through the jobs adapter, never directly');
+
 assert.match(runner, /AGT002_INITIAL_ANALYSIS_ADMISSION_ENABLED/);
 assert.match(runner, /AGT002_MODEL_CALLS_ENABLED/);
 // Fail-closed: a kill-switch check must appear before any Supabase client construction.

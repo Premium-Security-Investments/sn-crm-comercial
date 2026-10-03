@@ -40,6 +40,21 @@ test('claims exactly one job under the fixed worker identity and completes it', 
   assert.equal(calls.fail.length, 0);
 });
 
+// P0-06: the worker never calls a "simple" completeJob(jobId/lease/fence) — the executor's own
+// completion payload (the P0-06 canonical-persistence bindings + synthesis envelope) always rides
+// along, fenced by the exact same job/lease/fence identity.
+test('hands the executor\'s completion payload through to completeJob, always alongside the fencing identity, never a bare complete', async () => {
+  const completion = Object.freeze({
+    workflowInstanceId: 'wf-1', authorizationId: 'auth-1', packageVersionId: 'pkgver-1',
+    packageHash: 'h'.repeat(64), g1Scope: 'A', policyVersion: 'policy-v1', envelope: { meta: { schema_version: 'pre_go_analysis.v1' } },
+  });
+  const { worker, calls } = harness({ outcome: { status: 'completed', completion } });
+  const result = await worker.runOnce();
+  assert.equal(result.status, 'completed');
+  assert.equal(calls.complete.length, 1);
+  assert.deepEqual(calls.complete[0][1], { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, completion });
+});
+
 test('the fixed worker identity can never be overridden by a factory option', async () => {
   const calls = { claim: [] };
   const worker = createAgt002InitialAnalysisWorker({

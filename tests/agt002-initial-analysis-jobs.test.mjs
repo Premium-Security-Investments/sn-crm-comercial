@@ -16,6 +16,7 @@ import {
   admitAgt002InitialAnalysisJob,
   claimAgt002InitialAnalysisJob,
   renewAgt002InitialAnalysisJobLease,
+  failAgt002InitialAnalysisJob,
 } from '../agt002-initial-analysis-jobs.js';
 
 function fakeDb({ rpcResults = {} } = {}) {
@@ -251,4 +252,99 @@ test('a late worker writing on a lost lease fails closed', async () => {
   const db = fakeDb({ rpcResults: { psi_renew_agt002_initial_analysis_job_lease: { data: { status: 'lost' }, error: null } } });
   await assert.rejects(renewAgt002InitialAnalysisJobLease(db, { jobId: 'job-1', leaseId: 'lease-2', fenceVersion: 3, leaseSeconds: 90 }));
   assert.equal(db.rpcCalls.length, 1);
+});
+
+// --- fail (P0-06) ---
+
+test('fail maps params to snake_case and returns camelCase on a fresh failure', async () => {
+  const db = fakeDb({
+    rpcResults: {
+      psi_fail_agt002_initial_analysis_job: {
+        data: { status: 'unavailable', job_id: 'job-1', error_code: 'model_call_failed' },
+        error: null,
+      },
+    },
+  });
+  const result = await failAgt002InitialAnalysisJob(db, { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, errorCode: 'model_call_failed' });
+  assert.deepEqual(db.rpcCalls[0], {
+    name: 'psi_fail_agt002_initial_analysis_job',
+    args: { p_job_id: 'job-1', p_lease_id: 'lease-1', p_fence_version: 1, p_error_code: 'model_call_failed' },
+  });
+  assert.deepEqual(result, { status: 'unavailable', jobId: 'job-1', errorCode: 'model_call_failed' });
+});
+
+test('an exact idempotent replay with the same error code returns the existing result', async () => {
+  const db = fakeDb({
+    rpcResults: {
+      psi_fail_agt002_initial_analysis_job: {
+        data: { status: 'existing', job_id: 'job-1', error_code: 'lease_lost' },
+        error: null,
+      },
+    },
+  });
+  const result = await failAgt002InitialAnalysisJob(db, { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, errorCode: 'lease_lost' });
+  assert.deepEqual(result, { status: 'existing', jobId: 'job-1', errorCode: 'lease_lost' });
+});
+
+test('fail rejects an incomplete identity before any RPC call', async () => {
+  const BASE = { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, errorCode: 'lease_lost' };
+  for (const [field, badValue] of [['jobId', ''], ['leaseId', ''], ['fenceVersion', null], ['fenceVersion', 1.5], ['fenceVersion', 'one']]) {
+    const db = fakeDb();
+    await assert.rejects(failAgt002InitialAnalysisJob(db, { ...BASE, [field]: badValue }), `missing/invalid ${field} must fail closed`);
+    assert.equal(db.rpcCalls.length, 0, `missing/invalid ${field} must never reach the database`);
+  }
+});
+
+test('fail rejects any error code that is not a closed snake_case code, including raw provider/DB text', async () => {
+  for (const errorCode of [
+    '', 'Lease_Lost', 'lease-lost', 'lease lost', 'ab', 'a'.repeat(81),
+    'Error: connection refused at line 42', 'ORA-00001: unique constraint violated',
+    undefined, null, 123,
+  ]) {
+    const db = fakeDb();
+    await assert.rejects(
+      failAgt002InitialAnalysisJob(db, { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, errorCode }),
+      `errorCode=${JSON.stringify(errorCode)} must be rejected before any RPC`,
+    );
+    assert.equal(db.rpcCalls.length, 0);
+  }
+});
+
+test('fail accepts the full closed snake_case alphabet at both length extremes', async () => {
+  for (const errorCode of ['abc', 'a'.repeat(80), 'model_call_failed', 'persistence_failure_v2_0']) {
+    const db = fakeDb({
+      rpcResults: {
+        psi_fail_agt002_initial_analysis_job: { data: { status: 'unavailable', job_id: 'job-1', error_code: errorCode }, error: null },
+      },
+    });
+    await failAgt002InitialAnalysisJob(db, { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, errorCode });
+    assert.equal(db.rpcCalls.length, 1, errorCode);
+  }
+});
+
+test('fail sanitizes a raw database rejection rather than relaying it verbatim', async () => {
+  const db = fakeDb({
+    rpcResults: {
+      psi_fail_agt002_initial_analysis_job: {
+        data: null,
+        error: { code: '55000', status: 409, message: 'raw postgres detail: relation "psi_x" column 7 at offset 42 leaked internal state' },
+      },
+    },
+  });
+  await assert.rejects(
+    failAgt002InitialAnalysisJob(db, { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, errorCode: 'lease_lost' }),
+    error => !/raw postgres detail|relation|offset 42/i.test(error.message),
+  );
+});
+
+test('fail rejects a conflicting replay (database reports a different prior error code) without relaying the raw conflict detail', async () => {
+  const db = fakeDb({
+    rpcResults: {
+      psi_fail_agt002_initial_analysis_job: {
+        data: null,
+        error: { code: '23505', status: 409, message: 'El job de análisis inicial ya falló con un código de error distinto.' },
+      },
+    },
+  });
+  await assert.rejects(failAgt002InitialAnalysisJob(db, { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, errorCode: 'model_call_failed' }));
 });
