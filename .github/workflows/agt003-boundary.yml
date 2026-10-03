@@ -1,0 +1,30 @@
+name: agt003-boundary
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agt003-boundary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: agt003_boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm run test:agt003
+      - run: corepack pnpm run check:backend-parity
+      - run: corepack pnpm run build
