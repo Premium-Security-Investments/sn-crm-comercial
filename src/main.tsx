@@ -25,6 +25,7 @@ import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, po
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { isTenderProcessingActive, shouldReloadTenderArtifacts, tenderAnalysisCompletionMessage } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
+import { parseAgt002InitialAnalysisProjection, type Agt002InitialAnalysisProjection } from './tenders/agt002InitialAnalysisProjection';
 import { agt002GovernedRunStateFromReanalysisJob, type Agt002GovernedAnalysisRunState } from './tenders/governedWorksetSelection';
 import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
@@ -950,6 +951,7 @@ function fileToBase64(file: File) {
 function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onQuestionResponsesChanged, onDecisionSurfaceFlagChanged, onQuestionResponseSaverReady, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onQuestionResponsesChanged?: (responses: TenderQuestionResponse[]) => void; onDecisionSurfaceFlagChanged?: (enabled: boolean) => void; onQuestionResponseSaverReady?: (saver: ((input: TenderQuestionResponseInput, files: File[]) => Promise<void>) | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
+  const [initialAnalysis, setInitialAnalysis] = useState<Agt002InitialAnalysisProjection | null>(null);
   const [statusText, setStatusText] = useState('');
   const [analysisStatus, setAnalysisStatus] = useState<{ message: string; tone: 'status' | 'error' }>({ message: '', tone: 'status' });
   const [runState, setRunState] = useState<Agt002GovernedAnalysisRunState>('idle');
@@ -1009,6 +1011,12 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       if (activeOpportunityRef.current === requestedId) setStatusText('Procesamiento completado y expediente actualizado.');
     }
   };
+  const loadInitialAnalysisStatus = async () => {
+    const requestedId = opportunity.id;
+    const value = await api<unknown>(`/api/agt002-initial-analysis-status?opportunity_id=${encodeURIComponent(requestedId)}`);
+    if (activeOpportunityRef.current !== requestedId) return;
+    setInitialAnalysis(parseAgt002InitialAnalysisProjection(value));
+  };
   useEffect(() => {
     reanalysisAbortRef.current?.abort();
     reanalysisAbortRef.current = null;
@@ -1016,7 +1024,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     setActiveReanalysisJobId(null);
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
     processingStatusRef.current = null; terminalReloadedJobRef.current = null;
-    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setAnalysisStatus({ message: '', tone: 'status' }); setRunState('idle'); setBusy(false); onAnalysisChanged?.(null); onQuestionResponsesChanged?.([]); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
+    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setInitialAnalysis(null); setRefreshResult(null); setStatusText(''); setAnalysisStatus({ message: '', tone: 'status' }); setRunState('idle'); setBusy(false); onAnalysisChanged?.(null); onQuestionResponsesChanged?.([]); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     const mountedOpportunityId = opportunity.id;
     void loadDocuments().then(data => {
       if (!data || activeOpportunityRef.current !== mountedOpportunityId) return;
@@ -1031,10 +1039,11 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       }
     }).catch(err => { if (activeOpportunityRef.current === mountedOpportunityId) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
     void loadProcessingStatus().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
+    void loadInitialAnalysisStatus().catch(() => { if (activeOpportunityRef.current === opportunity.id) setInitialAnalysis(null); });
     const processingTimer = window.setInterval(() => {
       const status = processingStatusRef.current;
-      if (status !== null && !isTenderProcessingActive(status.status)) return;
-      void loadProcessingStatus().catch(() => undefined);
+      if (status === null || isTenderProcessingActive(status.status)) void loadProcessingStatus().catch(() => undefined);
+      void loadInitialAnalysisStatus().catch(() => undefined);
     }, 10_000);
     return () => {
       requestVersionRef.current += 1;
@@ -1222,7 +1231,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
     </div>
     <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
-      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} runState={runState} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} />
+      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} runState={runState} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} initialAnalysis={initialAnalysis} />
     </div>
   </>;
 }
