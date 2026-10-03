@@ -1,8 +1,123 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-## 0. Corte autoritativo final — canary único `unavailable` y rollback estable, 2026-08-14
+## 0. Corte autoritativo vigente — observabilidad cerrada desplegada, V3 apagado, 2026-08-14 21:43 UTC
 
-**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo.** Se verificó contra Git local/remoto, GitHub, Supabase productivo, Vercel, el marcador/resultados locales y el bridge. Los bloques siguientes conservan trazabilidad histórica, pero no mandan cuando contradigan este corte.
+**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo.** Se verificó contra Git local/remoto, GitHub, Vercel, Supabase productivo, evidencia del canary autorizado y el control plane PSI. Los bloques siguientes conservan trazabilidad histórica, pero no mandan cuando contradigan este corte.
+
+### 0.1 Resumen ejecutivo
+
+AGT‑002 V3 continúa **bloqueado para activación permanente**, pero el diagnóstico avanzó de una indisponibilidad genérica a una frontera técnica concreta y segura:
+
+1. PR **#91** integró observabilidad canónica post‑bridge en `82aa6d3299f392ee8c96e049fff636c6215a4d5c`.
+2. Se ejecutó **exactamente un** canary productivo autorizado, sin retry ni fallback.
+3. El bridge respondió y el resultado alcanzó `semantic_validation`; el contrato fue rechazado con `v3_invariant_violation` / `AGT002_INTEGRAL_V3_INVALID`.
+4. No se persistió `analysis_run_id`; el lifecycle durable terminó `queued → running → unavailable`.
+5. Se hizo rollback completo a `AGT002_INTEGRAL_CONTRACT_V3=false`.
+6. PR **#92** integró y desplegó un catálogo cerrado de **13 subcódigos de invariantes**, con fallback genérico para cualquier código desconocido.
+7. No se ejecutó otro canary después de PR #92. Por tanto, el subcódigo exacto de la invariante incumplida todavía no ha sido observado.
+
+No existe run V3 canónico ni brief pre‑GO nuevo. No hubo decisión GO/NO‑GO, firma, envío, presentación, garantías ni compromiso de recursos.
+
+### 0.2 Verdad Git, PR y deployment
+
+```text
+repository=Premium-Security-Investments/sn-crm-comercial
+origin/main=92d4114f1dd10e6aa5beca429ee0980dda04debb
+PR_91=MERGED
+PR_91_merge=82aa6d3299f392ee8c96e049fff636c6215a4d5c
+PR_92=MERGED
+PR_92_merge=92d4114f1dd10e6aa5beca429ee0980dda04debb
+production_deployment=dpl_8L6KjEVGC5vjSCaU7GawdUfYSPCS
+production_status=READY
+canonical_alias=https://seguridad-nacional-crm.vercel.app
+canonical_alias_http=200
+```
+
+PR #92 modificó únicamente:
+
+- `agt002-integral-analysis-v3.js`;
+- `agt002-preview-engine.js`;
+- `tests/agt002-preview-engine.test.mjs`.
+
+Verificación fresca sobre el commit fusionado:
+
+- suite AGT‑002: **308/308 PASS**;
+- `npm run build`: **PASS**;
+- `git diff --check`: **PASS**;
+- catálogo validador/allowlist: **13/13**, sin faltantes ni sobrantes;
+- revisión independiente Claude Code Opus: **GREEN_TO_INTEGRATE**, sin Critical ni Important;
+- Minor no bloqueante: cobertura representativa de tests, no una aserción individual para cada uno de los 13 subcódigos.
+
+### 0.3 Único canary posterior a PR #91
+
+Evidencia durable y sanitaria:
+
+```text
+attempts=1
+retries=0
+fallbacks=0
+http_status=503
+lifecycle=queued -> running -> unavailable
+stage=semantic_validation
+validation_code=v3_invariant_violation
+error_code=AGT002_INTEGRAL_V3_INVALID
+bridge_invocation_started=true
+bridge_response_received=true
+context_version_id=ecdfc211-222a-47a4-9fe9-7dbeb34088cf
+analysis_run_id=null
+input_tokens=77689
+output_tokens=4031
+v3_runs=0
+active_claims=0
+```
+
+El canary demuestra la frontera del fallo **actual**: la respuesta del bridge llegó, pero incumplió una invariante semántica del contrato V3 antes de persistir una corrida canónica. No demuestra cuál de las 13 invariantes fue la responsable porque los subcódigos se desplegaron después. Tampoco autoriza atribuir retrospectivamente esta causa al incidente histórico anterior.
+
+### 0.4 Estado seguro post‑deploy
+
+```text
+AGT002_INTEGRAL_CONTRACT_V3=false
+v3_runs=0
+active_claims=0
+production=READY
+canonical_alias_http=200
+```
+
+No se ejecutó canary adicional, no se activó V3 permanentemente y no se modificaron migraciones, scheduler, timer, permisos, RLS, secretos durables, GO/NO‑GO ni datos sustantivos del caso.
+
+### 0.5 Bloqueo material y siguiente gate
+
+**Bloqueo material vigente:** el subcódigo cerrado exacto sólo puede observarse en una ejecución nueva realizada después del deployment de PR #92. Esa ejecución no está autorizada por este corte.
+
+El siguiente paso técnicamente válido es preparar y, sólo después de una autorización humana expresa, ejecutar **exactamente un** canary diagnóstico con:
+
+1. preflight read‑only completo desde cero;
+2. V3 activado únicamente durante la ventana controlada;
+3. una sola invocación, sin retry ni fallback;
+4. captura exclusiva del subcódigo cerrado, etapa, correlación y lifecycle durable;
+5. cero contenido bruto, prompts, payloads, mensajes libres, PII o secretos;
+6. rollback obligatorio y verificado a `V3=false`, incluso ante fallo;
+7. verificación terminal de `v3_runs`, `active_claims`, deployment y alias.
+
+La eventual activación permanente de V3 es un gate humano **distinto y posterior**. Un canary exitoso no la autoriza automáticamente.
+
+### 0.6 Orquestación y canal ejecutor
+
+- Este canal conserva la **orquestación, custodia de contexto y gates humanos**.
+- El canal AGT `<#1527706694665113670>` es el **ejecutor del siguiente bloque técnico**.
+- El canal ejecutor debe leer este `CURRENT.md`, el control plane y las fuentes vivas; no debe depender de relay manual entre canales.
+- Debe reportar sólo estado terminal o un impedimento material real.
+- No debe hacer baterías de preguntas: el siguiente gate humano es uno solo, para una única ejecución diagnóstica.
+
+### 0.7 Estado documental de esta actualización
+
+Este corte fue actualizado localmente en `/root/worktrees/agt002-canonical-observability/CURRENT.md` sobre el commit fusionado `92d4114`. La actualización documental todavía **no tiene commit, push, PR, merge ni deploy**.
+
+---
+
+## Historial — corte autoritativo anterior: canary único `unavailable` y rollback estable, 2026-08-14
+
+**Este bloque fue autoritativo en su corte.** Se conserva para trazabilidad histórica; el corte §0 anterior manda ante cualquier conflicto.
 
 ### 0.1 Resultado terminal
 
