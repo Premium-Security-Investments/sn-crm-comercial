@@ -117,19 +117,69 @@ export function recomputeAgt002M2RecordHash(record) {
   return hashOf(rest);
 }
 
-// Public, pure reconstruction check: walks the exported chain shape in fixed phase order and
-// verifies both the hash-chain linkage (previous_hash) and each record's own recomputed hash.
-// A phase that was never reached (e.g. post_go after a NO-GO) is simply absent, not a mismatch.
+// Public, pure reconstruction check: validates the exact exported chain shape, then walks records in
+// fixed phase order. A not-yet-reached suffix may be null, but the chain must remain contiguous;
+// malformed records, metadata drift, unknown slots, hash/linkage drift, and post-GO after NO-GO
+// all fail closed with deterministic reason codes.
 export function verifyAgt002M2ChainIntegrity(chain) {
+  if (!isPlainObject(chain)) {
+    return Object.freeze({ verdict: 'INVALID', reasons: Object.freeze(['chain.shape_invalid']) });
+  }
+
   const reasons = [];
+  const knownPhases = new Set(PHASE_ORDER);
+  for (const phase of Object.keys(chain).filter((key) => !knownPhases.has(key)).sort()) {
+    reasons.push(`chain.unknown_phase.${phase}`);
+  }
+
   let previousHash = null;
+  let sawAbsentPhase = false;
   for (const phase of PHASE_ORDER) {
-    const record = chain ? chain[phase] : null;
-    if (record === null || record === undefined) continue;
+    if (!Object.prototype.hasOwnProperty.call(chain, phase)) {
+      reasons.push(`chain.${phase}.missing_slot`);
+      sawAbsentPhase = true;
+      continue;
+    }
+
+    const record = chain[phase];
+    if (record === null) {
+      sawAbsentPhase = true;
+      continue;
+    }
+    if (sawAbsentPhase) reasons.push(`chain.${phase}.gap_before_phase`);
+    if (!isPlainObject(record)) {
+      reasons.push(`chain.${phase}.record_invalid`);
+      continue;
+    }
+
+    const expectedPhase = phase.toUpperCase();
+    if (record.phase !== expectedPhase) reasons.push(`chain.${phase}.phase_mismatch`);
+    if (record.environment !== AGT002_M2_ENVIRONMENT) reasons.push(`chain.${phase}.environment_mismatch`);
+
+    if (phase === 'source') {
+      if (record.previous_hash !== null) reasons.push(`chain.${phase}.previous_hash_invalid`);
+    } else if (!HASH64_RE.test(record.previous_hash)) {
+      reasons.push(`chain.${phase}.previous_hash_invalid`);
+    }
     if (record.previous_hash !== previousHash) reasons.push(`chain.${phase}.previous_hash_mismatch`);
-    if (recomputeAgt002M2RecordHash(record) !== record.record_hash) reasons.push(`chain.${phase}.record_hash_mismatch`);
+
+    if (!HASH64_RE.test(record.record_hash)) {
+      reasons.push(`chain.${phase}.record_hash_invalid`);
+    } else if (recomputeAgt002M2RecordHash(record) !== record.record_hash) {
+      reasons.push(`chain.${phase}.record_hash_mismatch`);
+    }
     previousHash = record.record_hash;
   }
+
+  if (
+    isPlainObject(chain.decision)
+    && chain.decision.verdict === 'NO-GO'
+    && chain.post_go !== null
+    && chain.post_go !== undefined
+  ) {
+    reasons.push('chain.post_go.forbidden_after_no_go');
+  }
+
   return Object.freeze({ verdict: reasons.length === 0 ? 'VALID' : 'INVALID', reasons: Object.freeze(reasons) });
 }
 

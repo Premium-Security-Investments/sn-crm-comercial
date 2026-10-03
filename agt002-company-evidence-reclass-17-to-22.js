@@ -32,6 +32,14 @@
 // REQUIRED input shape and fails closed — with an explicit, itemized blocker per missing or
 // conflicting input — whenever the supplied repositoryInputs bundle does not fully resolve
 // them. It never guesses a value to make READY true.
+//
+// declaredArchiveOnlySourceIds/archiveOnlyProvenance: a source whose approved provenance is
+// deprecated/archive-only (e.g. an original the approved canonical transformation text marks
+// as "deprecated, no authorization observed, archived as process-specific") may be declared
+// here instead of being forced into an active mapping. This is explicit opt-in only, requires
+// a non-empty justification per declared source, is mutually exclusive with declaring the same
+// source a split, and such a source must still be archived (archive-not-delete) like every
+// other source — it simply produces zero active target classes.
 
 import { createHash } from 'node:crypto';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from './agt002-company-evidence-classes.js';
@@ -107,15 +115,80 @@ function isCanonicalSafeValuePath(path) {
   return CANONICAL_SAFE_VALUE_PATH_PATTERNS.some(pattern => pattern.test(path));
 }
 
+// Deliberately stricter than "any non-array object": a Date/RegExp/Map/Set/typed array/
+// class instance/null-prototype object/boxed primitive is typeof 'object' and not an array,
+// but is NOT a JSON-plain object — treating it as one lets canonicalize() silently collapse
+// it to `{}` (none of those have own enumerable string-keyed data properties reflecting
+// their real content) and lets a validator accept it as a stand-in for a required section
+// just because it happens to carry the right-named own properties. Only an object literal
+// (or JSON.parse output, or structuredClone of one) has prototype === Object.prototype —
+// requiring that exactly is what makes both hashing and validation fail closed on every
+// other object shape instead of silently accepting or colliding.
 function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  return (
+    value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype
+  );
 }
 
-function canonicalize(value) {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (isPlainObject(value)) {
-    return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalize(value[key])]));
+// Freezes the given value AND every nested array/object reachable from it — a bare
+// Object.freeze(report) only locks report's own top-level properties; a caller could still
+// mutate a nested array in place (e.g. report.archiveOnly.push(...)) because the array
+// object itself remains unfrozen. This recurses into every own value (both array elements
+// and object properties, since Object.values works on both) so the ENTIRE returned report,
+// including every nested array added after this function was written, is truly immutable.
+function deepFreeze(value) {
+  if (value === null || typeof value !== 'object') return value;
+  if (Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  Object.values(value).forEach(deepFreeze);
+  return value;
+}
+
+// Anything reaching this point is neither an array nor a JSON-plain object (see
+// isPlainObject above) — a Date/RegExp/Map/Set/typed array/class instance/null-prototype
+// object/boxed primitive would otherwise fall through untouched and either silently
+// collapse to `{}` (no own enumerable data properties) or be silently dropped/nulled by
+// JSON.stringify (functions, symbols) — corrupting the exact-content hash binding without
+// ever raising a visible error. A function, symbol, or BigInt is rejected the same way for
+// the same reason (JSON.stringify either drops it silently or, for BigInt, throws its own
+// native TypeError — rejecting it here instead means canonicalize() itself, used for the
+// full-graph shape check ahead of any hashing, already catches it). Fails closed with a
+// TypeError instead.
+function rejectUnsupportedCanonicalizeShape(value, path) {
+  const type = typeof value;
+  if (value !== null && type === 'object') {
+    throw new TypeError(`Forma de objeto no canonicalizable en ${path || '(raíz)'}: no es un objeto plano JSON (Date/RegExp/Map/Set/typed array/instancia de clase/objeto sin prototipo/primitivo envuelto).`);
   }
+  if (type === 'function' || type === 'symbol' || type === 'bigint') {
+    throw new TypeError(`Valor no canonicalizable en ${path || '(raíz)'}: tipo '${type}' no serializable en JSON.`);
+  }
+}
+
+// `ancestors` tracks the current recursion stack (added on entry, removed on exit) so a
+// circular reference is detected as soon as a container revisits one of its own ancestors —
+// a fast, clear TypeError instead of relying on a stack-overflow RangeError. A value shared
+// by two independent, non-nested branches (not an actual cycle) is deliberately NOT flagged.
+function canonicalize(value, path = '', ancestors = new Set()) {
+  if (Array.isArray(value)) {
+    if (ancestors.has(value)) throw new TypeError(`Referencia circular detectada en ${path || '(raíz)'}.`);
+    ancestors.add(value);
+    const result = value.map((item, index) => canonicalize(item, `${path}[${index}]`, ancestors));
+    ancestors.delete(value);
+    return result;
+  }
+  if (isPlainObject(value)) {
+    if (ancestors.has(value)) throw new TypeError(`Referencia circular detectada en ${path || '(raíz)'}.`);
+    ancestors.add(value);
+    const result = Object.fromEntries(
+      Object.keys(value).sort().map(key => [key, canonicalize(value[key], `${path}.${key}`.replace(/^\./, ''), ancestors)]),
+    );
+    ancestors.delete(value);
+    return result;
+  }
+  rejectUnsupportedCanonicalizeShape(value, path);
   return value;
 }
 
@@ -123,6 +196,17 @@ function canonicalize(value) {
  * Deterministic sha256 over exactly the supplied (already-validated) input — key order
  * never affects the result. Computes over what it is given only; never fetches, infers or
  * invents anything itself.
+ *
+ * Direct-call contract: throws a TypeError — never silently coerces or produces a colliding
+ * hash — when `input`, at any depth, contains a non-JSON-plain object shape (Date, RegExp,
+ * Map, Set, a typed array, a class instance, a null-prototype object, a boxed primitive), a
+ * function, a symbol, a BigInt, or a circular reference. Those shapes would otherwise either
+ * silently canonicalize away to `{}` or be silently dropped/rejected unpredictably by
+ * JSON.stringify, letting differently shaped input collide on the same hash. This module's
+ * own never-throw wrapper APIs
+ * (validateAgt002Reclass17To22RepositoryInputs / buildAgt002Reclass17To22DryRunReport) always
+ * call this indirectly and catch such a TypeError themselves, turning it into a fail-closed
+ * blocker rather than letting it escape.
  */
 export function computeAgt002Reclass17To22Hash(input) {
   return createHash('sha256').update(JSON.stringify(canonicalize(input))).digest('hex');
@@ -131,9 +215,11 @@ export function computeAgt002Reclass17To22Hash(input) {
 // Recursively scans the ENTIRE supplied bundle — archive, approval, acknowledgements,
 // rules, target manifest, target entries, everything — for forbidden raw-reference keys
 // (by name) and PII-ish raw-reference values (by shape), regardless of where they appear.
-function findForbiddenRawRefIssues(value, path = '') {
+function findForbiddenRawRefIssues(value, path = '', ancestors = new Set()) {
   const hits = [];
   if (Array.isArray(value)) {
+    if (ancestors.has(value)) throw new TypeError(`Referencia circular detectada en ${path || '(raíz)'}.`);
+    ancestors.add(value);
     value.forEach((item, index) => {
       const itemPath = `${path}[${index}]`;
       if (
@@ -143,9 +229,12 @@ function findForbiddenRawRefIssues(value, path = '') {
       ) {
         hits.push(itemPath);
       }
-      hits.push(...findForbiddenRawRefIssues(item, itemPath));
+      hits.push(...findForbiddenRawRefIssues(item, itemPath, ancestors));
     });
+    ancestors.delete(value);
   } else if (isPlainObject(value)) {
+    if (ancestors.has(value)) throw new TypeError(`Referencia circular detectada en ${path || '(raíz)'}.`);
+    ancestors.add(value);
     for (const [key, nested] of Object.entries(value)) {
       const nestedPath = `${path}.${key}`.replace(/^\./, '');
       if (FORBIDDEN_RAW_REF_KEYS.includes(key)) hits.push(nestedPath);
@@ -156,8 +245,9 @@ function findForbiddenRawRefIssues(value, path = '') {
       ) {
         hits.push(nestedPath);
       }
-      hits.push(...findForbiddenRawRefIssues(nested, nestedPath));
+      hits.push(...findForbiddenRawRefIssues(nested, nestedPath, ancestors));
     }
+    ancestors.delete(value);
   }
   return hits;
 }
@@ -252,7 +342,7 @@ function validateTargetManifest(targetManifest, blockers) {
   return ids.length ? [...uniqueIds] : null;
 }
 
-function validateMappingRules(mappingRules, declaredSplitSourceIds, targetIds, blockers) {
+function validateMappingRules(mappingRules, declaredSplitSourceIds, declaredArchiveOnlySourceIds, archiveOnlyProvenance, targetIds, blockers) {
   if (!Array.isArray(mappingRules) || !mappingRules.length) {
     blockers.push('mappingRules ausente: no existe en este repositorio una regla de mapeo 17→22 con merges/splits explícitos — debe suministrarse explícitamente.');
     return;
@@ -266,6 +356,42 @@ function validateMappingRules(mappingRules, declaredSplitSourceIds, targetIds, b
         blockers.push(`declaredSplitSourceIds[${index}] (${String(sourceId)}) fuera del catálogo cerrado de 17 clases fuente.`);
       }
     });
+  }
+
+  // A source whose approved provenance is deprecated/archive-only (e.g. overtime_authorization
+  // per the approved canonical transformation text) may be declared here instead of being
+  // forced into an active mapping — but only with an explicit, non-empty justification per
+  // source, never as a silent default, and never for a source also declared a split.
+  const declaredArchiveOnly = new Set(Array.isArray(declaredArchiveOnlySourceIds) ? declaredArchiveOnlySourceIds : []);
+  if (declaredArchiveOnlySourceIds !== undefined && !Array.isArray(declaredArchiveOnlySourceIds)) {
+    blockers.push('declaredArchiveOnlySourceIds debe ser una lista (puede ser vacía) de entry_id fuente declarados explícitamente como archive-only (sin mapeo activo).');
+  } else if (Array.isArray(declaredArchiveOnlySourceIds)) {
+    declaredArchiveOnlySourceIds.forEach((sourceId, index) => {
+      if (!AGT002_RECLASS_17_TO_22_SOURCE_CLASS_IDS.includes(sourceId)) {
+        blockers.push(`declaredArchiveOnlySourceIds[${index}] (${String(sourceId)}) fuera del catálogo cerrado de 17 clases fuente.`);
+      }
+      if (declaredSplits.has(sourceId)) {
+        blockers.push(`declaredArchiveOnlySourceIds contiene "${sourceId}", que también está declarada en declaredSplitSourceIds — una fuente no puede ser simultáneamente split y archive-only.`);
+      }
+    });
+  }
+
+  if (!isPlainObject(archiveOnlyProvenance)) {
+    if (declaredArchiveOnly.size) {
+      blockers.push('archiveOnlyProvenance ausente: se requiere una justificación de texto no vacía por cada fuente declarada archive-only.');
+    }
+  } else {
+    for (const sourceId of declaredArchiveOnly) {
+      const justification = archiveOnlyProvenance[sourceId];
+      if (typeof justification !== 'string' || !justification.trim()) {
+        blockers.push(`archiveOnlyProvenance.${sourceId} debe ser una justificación de texto no vacía (archive-only requiere procedencia explícita).`);
+      }
+    }
+    for (const key of Object.keys(archiveOnlyProvenance)) {
+      if (!declaredArchiveOnly.has(key)) {
+        blockers.push(`archiveOnlyProvenance contiene una clave no declarada en declaredArchiveOnlySourceIds: "${key}".`);
+      }
+    }
   }
 
   const targetIdSet = new Set(targetIds || []);
@@ -292,6 +418,9 @@ function validateMappingRules(mappingRules, declaredSplitSourceIds, targetIds, b
         blockers.push(`mappingRules[${index}]: sourceClassIds contiene un id fuera del catálogo cerrado de 17 clases: ${sourceId}.`);
         continue;
       }
+      if (declaredArchiveOnly.has(sourceId)) {
+        blockers.push(`mappingRules[${index}]: la fuente ${sourceId} está declarada archive-only y no debe aparecer en ninguna regla de mapeo activo.`);
+      }
       sourceOccurrences.set(sourceId, (sourceOccurrences.get(sourceId) || 0) + 1);
     }
   });
@@ -302,7 +431,8 @@ function validateMappingRules(mappingRules, declaredSplitSourceIds, targetIds, b
     }
   }
   for (const sourceId of AGT002_RECLASS_17_TO_22_SOURCE_CLASS_IDS) {
-    if (!sourceOccurrences.has(sourceId)) blockers.push(`mappingRules: la clase fuente ${sourceId} no quedó mapeada a ninguna clase objetivo (toda fuente debe mapearse).`);
+    if (declaredArchiveOnly.has(sourceId)) continue;
+    if (!sourceOccurrences.has(sourceId)) blockers.push(`mappingRules: la clase fuente ${sourceId} no quedó mapeada a ninguna clase objetivo (toda fuente debe mapearse, salvo declarada explícitamente archive-only).`);
   }
   for (const [sourceId, count] of sourceOccurrences.entries()) {
     if (count > 1 && !declaredSplits.has(sourceId)) {
@@ -454,15 +584,40 @@ function validateTargetEntries(targetEntries, targetIds, mappingRules, archivedB
   return built;
 }
 
-/**
- * Validates a repositoryInputs bundle and returns the full list of blockers (empty when
- * everything required is present and internally consistent). Never throws on missing
- * sections — missing input is reported as a blocker, not an exception, so a dry-run report
- * can list every gap at once instead of stopping at the first one.
- */
-export function validateAgt002Reclass17To22RepositoryInputs(repositoryInputs) {
+// A hostile caller can pass a circular structure (infinite recursion during
+// canonicalize/findForbiddenRawRefIssues), a Proxy whose traps (get/ownKeys/has/
+// getOwnPropertyDescriptor) throw, an object with a throwing accessor, a BigInt (JSON.stringify
+// cannot serialize it), or any other malformed shape. None of that is a validation failure
+// that belongs in the blockers list — it is an input the module cannot safely introspect at
+// all — so it is caught here and reported as a single fail-closed blocker instead of ever
+// propagating as an exception to the caller.
+function hostileInputBlockerMessage(error) {
+  const detail = error && typeof error.message === 'string' && error.message ? error.message : 'error desconocido';
+  return (
+    `Entrada no procesable de forma segura: ${detail} — tratada como bloqueo total en lugar de ` +
+    'inventar o ignorar datos (estructura circular, Proxy/accessor que lanza excepción, o forma malformada).'
+  );
+}
+
+function validateAgt002Reclass17To22RepositoryInputsUnsafe(repositoryInputs) {
   const blockers = [];
   const input = isPlainObject(repositoryInputs) ? repositoryInputs : {};
+
+  // Assert the ENTIRE input graph — archivedEntries, targetEntries, governanceAcknowledgements,
+  // approvalRecord, mappingRules, targetManifest, every nested value anywhere, not only the
+  // fields section validators happen to name — is JSON-plain (no circular reference, no
+  // Date/RegExp/Map/Set/typed array/class instance/null-prototype object/boxed primitive, no
+  // function/symbol/BigInt) BEFORE any section validator or the raw-ref scanner walks it. Without
+  // this, an exotic value tucked under a key no section validator inspects (or under
+  // archivedEntries/targetEntries/governanceAcknowledgements/approvalRecord, none of which are
+  // covered by validateApprovalBinding's hash of {targetManifest, mappingRules}) would sail
+  // through with zero blockers here while buildAgt002Reclass17To22DryRunReport() — which
+  // hashes this same full `input` — fails closed at hash time. Running the exact same check
+  // computeAgt002Reclass17To22Hash() relies on, this early and over the same full graph, keeps
+  // the two public exports consistent: either both accept the shape or neither does. Any thrown
+  // TypeError here is caught by validateAgt002Reclass17To22RepositoryInputs() below and turned
+  // into the same single fail-closed blocker as any other hostile input.
+  canonicalize(input);
 
   const forbiddenIssues = findForbiddenRawRefIssues(input);
   if (forbiddenIssues.length) {
@@ -470,7 +625,14 @@ export function validateAgt002Reclass17To22RepositoryInputs(repositoryInputs) {
   }
 
   const targetIds = validateTargetManifest(input.targetManifest, blockers);
-  validateMappingRules(input.mappingRules, input.declaredSplitSourceIds, targetIds, blockers);
+  validateMappingRules(
+    input.mappingRules,
+    input.declaredSplitSourceIds,
+    input.declaredArchiveOnlySourceIds,
+    input.archiveOnlyProvenance,
+    targetIds,
+    blockers,
+  );
   const archivedById = validateArchivedEntries(input.archivedEntries, blockers);
   validateApprovalRecord(input.approvalRecord, blockers);
   validateApprovalBinding(input.approvalRecord, input.targetManifest, input.mappingRules, blockers);
@@ -481,12 +643,29 @@ export function validateAgt002Reclass17To22RepositoryInputs(repositoryInputs) {
 }
 
 /**
+ * Validates a repositoryInputs bundle and returns the full list of blockers (empty when
+ * everything required is present and internally consistent). Never throws — on missing
+ * sections, missing input is reported as a blocker, not an exception, so a dry-run report
+ * can list every gap at once instead of stopping at the first one; on hostile input (circular
+ * structures, a throwing Proxy/accessor, or any other shape the module cannot safely
+ * introspect) a single fail-closed blocker is returned instead of letting the exception
+ * escape. The returned array is frozen — callers cannot mutate it after the fact.
+ */
+export function validateAgt002Reclass17To22RepositoryInputs(repositoryInputs) {
+  try {
+    return Object.freeze(validateAgt002Reclass17To22RepositoryInputsUnsafe(repositoryInputs));
+  } catch (error) {
+    return Object.freeze([hostileInputBlockerMessage(error)]);
+  }
+}
+
+/**
  * Pure dry-run report: validates repositoryInputs and, only when there are zero blockers,
  * computes a stable hash and a summary (merges/splits/one-to-one, archived source ids,
  * revalidation queue). Never reconciles with any live system — this is a static
  * computation over exactly the input it is given.
  */
-export function buildAgt002Reclass17To22DryRunReport(repositoryInputs = {}) {
+function buildAgt002Reclass17To22DryRunReportUnsafe(repositoryInputs) {
   const blockers = validateAgt002Reclass17To22RepositoryInputs(repositoryInputs);
   const ready = blockers.length === 0;
 
@@ -499,12 +678,13 @@ export function buildAgt002Reclass17To22DryRunReport(repositoryInputs = {}) {
       'ninguna base de datos, SharePoint u otro sistema en vivo; no aplica ni escribe nada.',
   };
 
-  if (!ready) return Object.freeze(report);
+  if (!ready) return deepFreeze(report);
 
   const input = repositoryInputs;
   const merges = input.mappingRules.filter(rule => rule.sourceClassIds.length > 1).map(rule => rule.targetClassId).sort();
   const oneToOne = input.mappingRules.filter(rule => rule.sourceClassIds.length === 1).map(rule => rule.targetClassId).sort();
   const splits = [...new Set(input.declaredSplitSourceIds || [])].sort();
+  const archiveOnly = [...new Set(input.declaredArchiveOnlySourceIds || [])].sort();
   const revalidationQueue = input.targetEntries
     .filter(entryRecord => AGT002_RECLASS_17_TO_22_SEMANTIC_STATE_KEYS.some(key => entryRecord[key] !== true))
     .map(entryRecord => entryRecord.entryId)
@@ -514,10 +694,34 @@ export function buildAgt002Reclass17To22DryRunReport(repositoryInputs = {}) {
   report.targetClassIds = input.targetManifest.classes.map(cls => cls.id).sort();
   report.merges = merges;
   report.splits = splits;
+  report.archiveOnly = archiveOnly;
   report.oneToOne = oneToOne;
   report.archived = input.archivedEntries.map(entryRecord => entryRecord.entryId).sort();
   report.revalidationQueue = revalidationQueue;
   report.hash = computeAgt002Reclass17To22Hash(input);
 
-  return Object.freeze(report);
+  return deepFreeze(report);
+}
+
+/**
+ * Public entry point for the dry-run report. Delegates to the unsafe implementation above and
+ * never throws: any exception raised while introspecting a hostile repositoryInputs bundle
+ * (circular structures, a throwing Proxy/accessor, a BigInt JSON.stringify cannot serialize, or
+ * any other malformed shape) is caught here and turned into a deterministic, deep-frozen,
+ * not-ready report carrying a single fail-closed blocker — never a thrown exception, never a
+ * guessed/partial result.
+ */
+export function buildAgt002Reclass17To22DryRunReport(repositoryInputs = {}) {
+  try {
+    return buildAgt002Reclass17To22DryRunReportUnsafe(repositoryInputs);
+  } catch (error) {
+    return deepFreeze({
+      ready: false,
+      blockers: [hostileInputBlockerMessage(error)],
+      reconciliation_claim: false,
+      disclaimer:
+        'Reporte estático y puro sobre exactamente el input suministrado. No reconcilia con ' +
+        'ninguna base de datos, SharePoint u otro sistema en vivo; no aplica ni escribe nada.',
+    });
+  }
 }

@@ -281,6 +281,124 @@ test('deterministic reconstructible chain: identical synthetic inputs on two iso
   assert.equal(recomputeAgt002M2RecordHash(chain.source), chain.source.record_hash);
 });
 
+test('chain integrity rejects malformed shapes and unknown phase slots fail-closed', () => {
+  const malformed = verifyAgt002M2ChainIntegrity([]);
+  assert.equal(malformed.verdict, 'INVALID');
+  assert.deepEqual(malformed.reasons, ['chain.shape_invalid']);
+
+  const vertical = createAgt002M2SyntheticVertical();
+  buildThroughRecommendation(vertical, { suffix: 'integrity-shape' });
+  vertical.decide(validDecisionParams('integrity-shape', humanActor('synthetic-actor-integrity-shape')));
+
+  const withUnknownPhase = { ...vertical.getChain(), injected_phase: null };
+  const integrity = verifyAgt002M2ChainIntegrity(withUnknownPhase);
+  assert.equal(integrity.verdict, 'INVALID');
+  assert.ok(integrity.reasons.includes('chain.unknown_phase.injected_phase'));
+});
+
+test('chain integrity rejects wrong phase/environment metadata even when the tampered record is rehashed', () => {
+  const vertical = createAgt002M2SyntheticVertical();
+  buildThroughRecommendation(vertical, { suffix: 'integrity-metadata' });
+  vertical.decide(validDecisionParams('integrity-metadata', humanActor('synthetic-actor-integrity-metadata')));
+  const chain = vertical.getChain();
+
+  const wrongPhase = { ...chain.analysis, phase: 'RECOMMENDATION' };
+  wrongPhase.record_hash = recomputeAgt002M2RecordHash(wrongPhase);
+  const wrongEnvironment = { ...chain.post_go, environment: 'production' };
+  wrongEnvironment.record_hash = recomputeAgt002M2RecordHash(wrongEnvironment);
+
+  const integrity = verifyAgt002M2ChainIntegrity({
+    ...chain,
+    analysis: wrongPhase,
+    post_go: wrongEnvironment,
+  });
+  assert.equal(integrity.verdict, 'INVALID');
+  assert.ok(integrity.reasons.includes('chain.analysis.phase_mismatch'));
+  assert.ok(integrity.reasons.includes('chain.post_go.environment_mismatch'));
+});
+
+test('chain integrity rejects gaps and any post-GO record after a NO-GO decision', () => {
+  const goVertical = createAgt002M2SyntheticVertical();
+  buildThroughRecommendation(goVertical, { suffix: 'integrity-gap' });
+  goVertical.decide(validDecisionParams('integrity-gap', humanActor('synthetic-actor-integrity-gap')));
+  const goChain = goVertical.getChain();
+  const gapIntegrity = verifyAgt002M2ChainIntegrity({ ...goChain, analysis: null });
+  assert.equal(gapIntegrity.verdict, 'INVALID');
+  assert.ok(gapIntegrity.reasons.includes('chain.recommendation.gap_before_phase'));
+
+  const noGoVertical = createAgt002M2SyntheticVertical();
+  buildThroughRecommendation(noGoVertical, { taxonomy: 'unfavorable', suffix: 'integrity-nogo' });
+  noGoVertical.decide({
+    ...validDecisionParams('integrity-nogo', humanActor('synthetic-actor-integrity-nogo')),
+    verdict: 'NO-GO',
+  });
+  const noGoChain = noGoVertical.getChain();
+  const forbiddenPostGo = { ...goChain.post_go, previous_hash: noGoChain.decision.record_hash };
+  forbiddenPostGo.record_hash = recomputeAgt002M2RecordHash(forbiddenPostGo);
+  const noGoIntegrity = verifyAgt002M2ChainIntegrity({ ...noGoChain, post_go: forbiddenPostGo });
+  assert.equal(noGoIntegrity.verdict, 'INVALID');
+  assert.ok(noGoIntegrity.reasons.includes('chain.post_go.forbidden_after_no_go'));
+});
+
+test('chain integrity distinguishes invalid record/hash shapes, recomputed hash mismatches, and linkage mismatches', () => {
+  const vertical = createAgt002M2SyntheticVertical();
+  buildThroughRecommendation(vertical, { suffix: 'integrity-hashes' });
+  vertical.decide(validDecisionParams('integrity-hashes', humanActor('synthetic-actor-integrity-hashes')));
+  const chain = vertical.getChain();
+
+  const malformedRecord = verifyAgt002M2ChainIntegrity({ ...chain, analysis: [] });
+  assert.ok(malformedRecord.reasons.includes('chain.analysis.record_invalid'));
+
+  const invalidHash = verifyAgt002M2ChainIntegrity({
+    ...chain,
+    analysis: { ...chain.analysis, record_hash: 'not-a-sha256' },
+  });
+  assert.ok(invalidHash.reasons.includes('chain.analysis.record_hash_invalid'));
+
+  const recomputedMismatch = verifyAgt002M2ChainIntegrity({
+    ...chain,
+    analysis: { ...chain.analysis, available: false },
+  });
+  assert.ok(recomputedMismatch.reasons.includes('chain.analysis.record_hash_mismatch'));
+
+  const linkageMismatch = verifyAgt002M2ChainIntegrity({
+    ...chain,
+    recommendation: { ...chain.recommendation, previous_hash: hex64('wrong-link') },
+  });
+  assert.ok(linkageMismatch.reasons.includes('chain.recommendation.previous_hash_mismatch'));
+});
+
+test('chain integrity rejects malformed previous_hash format and a completely absent phase slot', () => {
+  const vertical = createAgt002M2SyntheticVertical();
+  buildThroughRecommendation(vertical, { suffix: 'integrity-prevhash' });
+  vertical.decide(validDecisionParams('integrity-prevhash', humanActor('synthetic-actor-integrity-prevhash')));
+  const chain = vertical.getChain();
+
+  // The genesis record (source) must carry previous_hash: null; any non-null value is invalid
+  // regardless of whether it happens to look like a well-formed hash.
+  const sourceWithPreviousHash = { ...chain.source, previous_hash: chain.conversion.previous_hash };
+  sourceWithPreviousHash.record_hash = recomputeAgt002M2RecordHash(sourceWithPreviousHash);
+  const sourcePreviousHash = verifyAgt002M2ChainIntegrity({ ...chain, source: sourceWithPreviousHash });
+  assert.equal(sourcePreviousHash.verdict, 'INVALID');
+  assert.ok(sourcePreviousHash.reasons.includes('chain.source.previous_hash_invalid'));
+
+  // A non-source phase's previous_hash must be a well-formed 64-hex hash, independent of whether
+  // it links to the right prior record.
+  const conversionMalformedPreviousHash = { ...chain.conversion, previous_hash: 'not-a-hash' };
+  conversionMalformedPreviousHash.record_hash = recomputeAgt002M2RecordHash(conversionMalformedPreviousHash);
+  const conversionPreviousHash = verifyAgt002M2ChainIntegrity({ ...chain, conversion: conversionMalformedPreviousHash });
+  assert.equal(conversionPreviousHash.verdict, 'INVALID');
+  assert.ok(conversionPreviousHash.reasons.includes('chain.conversion.previous_hash_invalid'));
+
+  // A phase slot that is entirely absent (not even present as null) must fail closed distinctly
+  // from an explicit null, and must still trigger a gap on every phase that follows it.
+  const { workset, ...chainWithoutWorkset } = chain;
+  const missingSlot = verifyAgt002M2ChainIntegrity(chainWithoutWorkset);
+  assert.equal(missingSlot.verdict, 'INVALID');
+  assert.ok(missingSlot.reasons.includes('chain.workset.missing_slot'));
+  assert.ok(missingSlot.reasons.includes('chain.analysis.gap_before_phase'));
+});
+
 // --- Negative: PHASE_TRANSITION_SENTINEL --------------------------------------------------------
 
 test('negative: a wrong or missing PHASE_TRANSITION_SENTINEL is denied fail-closed and audited, at the first and at a later phase', () => {
