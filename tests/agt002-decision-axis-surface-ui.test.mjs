@@ -68,7 +68,7 @@ function openIntegralUnit(index, category) {
   };
 }
 
-function analysisFixture({ paused = false } = {}) {
+function analysisFixture({ paused = false, confirmedLegalBlocker = false } = {}) {
   const axes = Object.fromEntries(AXES.map(axis => [axis, {
     axis,
     state: 'No evaluado',
@@ -76,6 +76,25 @@ function analysisFixture({ paused = false } = {}) {
     counts: { blocker: 0, decision_question: 0, supported: 0 },
   }]));
   if (!paused) {
+    if (confirmedLegalBlocker) {
+      axes.legal = {
+        axis: 'legal',
+        state: 'Impedimento material',
+        findings: [{
+          ...finding('blocker'),
+          id: 'finding-legal-rup-1',
+          requirement_id: 'legal-rup-validity',
+          label: 'RUP sin vigencia documental acreditada',
+          presentation: {
+            title: 'RUP sin vigencia documental acreditada',
+            summary: 'La vigencia documental debe acreditarse con evidencia gobernada.',
+            missing: 'Soporte vigente del RUP.',
+            action_required: 'Verificar el soporte documental vigente.',
+          },
+        }],
+        counts: { blocker: 1, decision_question: 0, supported: 0 },
+      };
+    }
     axes.experiencia_financiera = {
       axis: 'experiencia_financiera',
       state: 'Por confirmar',
@@ -174,6 +193,23 @@ test('D1.3 — existe exactamente una CTA primaria y respeta la precedencia de p
   const html = render(analysisFixture());
   assert.equal(count(html, 'class="tender-decision-axis-cta"'), 1);
   assert.ok(html.includes('Resolver la pregunta prioritaria'));
+});
+
+test('AGT-002 decisión primero — el resumen legible prioriza bloqueador, siguiente acción y control formal', () => {
+  const html = render(analysisFixture({ confirmedLegalBlocker: true }));
+  for (const copy of [
+    'Decisión en revisión',
+    'Qué impide decidir',
+    '1 impedimento material confirmado',
+    'RUP sin vigencia documental acreditada',
+    'Siguiente acción',
+    '1 pregunta pendiente',
+    'Resolver la pregunta prioritaria',
+  ]) assert.ok(html.includes(copy), 'falta copy de decisión primero');
+  assert.equal(count(html, 'class="tender-decision-axis-cta"'), 1);
+  assert.equal(count(html, 'Decisión GO / NO GO'), 1);
+  assert.equal(html.includes('Brief de evidencia 5/5/5'), false);
+  assert.ok(html.indexOf('Decisión GO / NO GO') < html.indexOf('Eje seleccionado'));
 });
 
 test('D1.4-D1.5 — tabla y dl conservan cinco campos y el banner usa aria-live polite', () => {

@@ -215,6 +215,37 @@
   background: #f0f8f3;
 }
 
+.tender-decision-axis-overview {
+  display: grid;
+  gap: .85rem;
+  padding: clamp(1rem, 2.2vw, 1.35rem);
+  border: 1px solid var(--axis-line);
+  border-radius: 18px;
+  background: var(--axis-paper);
+}
+
+.tender-decision-axis-overview > header h3 { margin: .2rem 0 0; letter-spacing: -.02em; }
+.tender-decision-axis-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: .85rem;
+  align-items: stretch;
+}
+
+.tender-decision-axis-overview-grid > section {
+  min-width: 0;
+  padding: .8rem .9rem;
+  border-left: 3px solid var(--axis-line);
+  background: #fff;
+}
+
+.tender-decision-axis-overview-grid h4 { margin: 0 0 .5rem; font-size: .9rem; }
+.tender-decision-axis-overview-grid p { margin: .25rem 0; color: var(--axis-muted); overflow-wrap: anywhere; }
+.tender-decision-axis-overview-grid strong { color: var(--axis-ink); }
+.tender-decision-axis-overview-grid ul { margin: .5rem 0 0; padding-left: 1.1rem; }
+.tender-decision-axis-overview-grid li { overflow-wrap: anywhere; }
+.tender-decision-axis-overview-cta { display: flex; align-items: center; }
+
 .tender-decision-axis-cta {
   flex: 0 0 auto;
   display: inline-flex;
@@ -420,6 +451,8 @@
 
 @media (max-width: 820px) {
   .tender-decision-axis-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tender-decision-axis-overview-grid { grid-template-columns: minmax(0, 1fr); }
+  .tender-decision-axis-overview-cta { width: 100%; }
   .tender-decision-axis-hero,
   .tender-decision-axis-banner,
   .tender-decision-operational > header,
