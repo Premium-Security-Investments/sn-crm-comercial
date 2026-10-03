@@ -1,6 +1,6 @@
-# CURRENT — AGT-002 Decision Front Consolidation — CHECKPOINT AUTORITATIVO (§13: PUBLICADO / QA PROD PASS)
+# CURRENT — AGT-002 Decision Front Consolidation — CHECKPOINT AUTORITATIVO (§13: PUBLICADO / QA PROD PASS; §14: RADAR + PREANÁLISIS AGT-002 — DISEÑO ABIERTO, NO IMPLEMENTAR)
 
-> Estado vigente al 2026-08-21: **AGT-002 está PUBLICADO / QA PROD PASS, sin pendientes**. La sección autoritativa vigente es la **§13**, que sustituye expresamente a §1–§12 únicamente para el estado final de publicación, QA de producción, limpieza y próximos pasos. Las secciones §1–§12 se conservan intactas como historial. El cierre documental no modifica la aplicación ni requiere redeploy.
+> Estado vigente al 2026-08-21: **AGT-002 está PUBLICADO / QA PROD PASS, sin pendientes**. La sección **§13** sigue siendo la autoritativa para el estado publicado de AGT-002 (publicación, QA de producción, limpieza y próximos pasos) y sustituye expresamente a §1–§12 sólo en eso. La sección **§14**, añadida el 2026-08-25 (corte 2026-08-24 COT), es autoritativa únicamente para la conversación/diseño abierto sobre el radar de licitaciones y el posible preanálisis temprano de AGT-002; no modifica ni reabre el estado de publicación de §13. Las secciones §1–§12 se conservan intactas como historial.
 
 ## 1. Estado y alcance autoritativo
 
@@ -452,3 +452,97 @@ node --test tests/tender-decision-front-render.test.mjs
 - Este cambio modifica **únicamente `CURRENT.md`**.
 - Es un cierre exclusivamente documental: **sin cambios de aplicación y sin redeploy de Vercel**.
 - Estado final: **PUBLICADO / QA PROD PASS, sin pendientes**.
+
+## 14. Radar de licitaciones + preanálisis AGT-002 — conversación/diseño abierto 2026-08-24/25 — **NO IMPLEMENTAR**
+
+> **Esta sección es autoritativa únicamente para la conversación/diseño abierto del radar de licitaciones y el posible involucramiento temprano de AGT-002 como preanálisis.** No sustituye ni reabre §13, que sigue mandando en solitario sobre el estado publicado de AGT-002. Fecha de corte: **2026-08-24 COT / 2026-08-25 UTC**.
+>
+> **MARCA EXPLÍCITA: NO IMPLEMENTAR.** Al retomar, todo lo aquí descrito es conversación/diseño. No hay autorización para código, cron, CRM, DB, deploy, restart ni cambio de términos hasta que exista aprobación expresa de diseño.
+
+### 14.1. Alcance de esta sección
+
+- Se trabajó exclusivamente en **análisis estratégico** del radar de licitaciones y el posible **involucramiento temprano de AGT-002** como preanálisis selectivo.
+- Fue **conversación y diseño**, sin ejecución de código ni cambios operativos.
+- No hay proceso, worker, prueba ni corrida derivados de este análisis en curso al pausar.
+
+### 14.2. Política de seguridad electrónica aprobada (2026-08-18)
+
+- Es una **vía adicional** de captación; **no reemplaza** la vía tradicional ya existente y **no se retiran** los términos vigentes de esa vía tradicional.
+- Señales que califican como seguridad electrónica: **VMS/NVR/DVR/PSIM**; **CCTV/analítica**; **biometría/LPR**; **control de acceso/torniquetes/barreras**; **alarmas/intrusión/sensores/cercos**; **centros de monitoreo**; **instalación/mantenimiento/integración/operación** de esos sistemas.
+- **Gate de cuantía:** > **COP 10.000.000**.
+- Debe existir **señal tecnológica + servicio**; el **suministro puro no califica**.
+
+### 14.3. Estado verificado del radar (al corte)
+
+- **Cron activo.**
+- **Última corrida oficial exitosa: 2026-08-24.**
+- **Gate de fuentes núcleo intacto.**
+- **Tests de discovery: 45/45 PASS.**
+- **Snapshot: 87 registros** → **19 hacer, 59 revisar, 9 descartar**.
+
+### 14.4. Auditoría de calidad realizada
+
+- **27 registros** con señales amplias de seguridad electrónica.
+- **12 expanded-only.**
+- Los **12 expanded-only no tienen fecha** y **todos** están clasificados en **revisar**.
+- De **11 expanded-only en SECOP II**, **4** estaban en estado **Seleccionado + Contratación directa**.
+- Se detectó **ruido** proveniente de **monitoreo ambiental** y de registros **sin competencia/fecha**.
+
+### 14.5. Hallazgo sistémico (fechas y estado de competencia)
+
+- **57/87** registros del snapshot **sin fecha**.
+- **17/19** registros en **hacer** están **sin fecha**.
+- Reconsulta directa de esos **17** en SECOP II:
+  - **11** en estado **Seleccionado**.
+  - **7** en **Contratación directa** (estos 7 también aparecen como seleccionados).
+- **Regla de interpretación acordada:** no interpretar la fase **"Presentación de oferta"** como oportunidad abierta si el estado principal dice **Seleccionado**.
+- **Publicado en SECOP no equivale a competencia abierta.**
+
+### 14.6. Recomendaciones discutidas — **NO IMPLEMENTADAS**
+
+1. Excluir del **radar activo** los registros **Seleccionado/celebrado/directa sin competencia abierta**, **conservando trazabilidad** (no borrar, sólo sacar de "activo").
+2. **Nunca** clasificar en **hacer** un registro **sin fecha**.
+3. Un registro **sin fecha** sólo se valida por una **ventana corta** de verificación, no se asume abierto.
+4. Para la señal **"centro de monitoreo"**, exigir **contexto de seguridad** explícito (CCTV, videovigilancia, alarmas, control de acceso, biometría, VMS/NVR/DVR, LPR, SIES/123, seguridad/convivencia); **no dejar entrar** por esa vía el monitoreo **ambiental/financiero/clínico/administrativo**.
+5. Separar la clasificación en cuatro categorías: **vía tradicional (CRM)**, **expanded-only**, **abierta confirmada**, y **señal sin fecha**.
+6. Cubrir con **tests** los **falsos positivos reales** encontrados y hacer una **corrida read-only** antes de persistir cualquier cambio.
+
+### 14.7. Tesis de producto acordada (recomendación, no aprobada para implementación)
+
+- El **radar** debe priorizar **alta cobertura** y **filtros determinísticos**.
+- **AGT-002** interviene de forma **selectiva**, **después** del gate básico del radar y **antes** de marcar un registro como **"opcionado"**.
+- El **preanálisis de AGT-002** verificaría:
+  - documentos exactos requeridos;
+  - vigencia;
+  - fecha de cierre;
+  - modalidad/tipo de competencia;
+  - si exige manifestación de interés, sorteo, visita o inscripción previa;
+  - si existe pliego definitivo/adendas;
+  - requisitos particulares y faltantes.
+- AGT-002 presentaría **condiciones en Análisis** y **síntesis en Decisión**; el **humano decide GO/NO GO**.
+- El **análisis profundo** actual sigue ejecutándose **después** de opcionar, sin cambios.
+- **No** se debe correr AGT con preanálisis sobre los **~1.120 candidatos brutos** del radar; el preanálisis es selectivo, no masivo.
+
+### 14.8. Aprendizaje sobre casos de referencia
+
+- **Pereira/SharePoint** es la referencia **adjudicada** (caso ya cerrado, usado como ejemplo).
+- **Manizales** es un **ejercicio de ajuste** (no es un caso real de producción).
+- **Bogotá DSAJBO-SAMC-006-2026** es el **primer caso real** trabajado bajo esta óptica y **mostró manifestación de interés previa** como requisito.
+- **Cada licitación define sus propios requisitos.** La conclusión es **reutilizar el método/las preguntas** de verificación, **no convertir** los requisitos de un caso concreto en una **lista fija universal**.
+
+### 14.9. Próximo punto para mañana
+
+- **Diseñar el boundary y el contrato del preanálisis** antes de tocar código, cubriendo:
+  1. **Trigger/selectividad** y **capacidad diaria** del preanálisis;
+  2. **Estados/salidas** posibles del preanálisis;
+  3. **Evidencia/fuentes** que respaldan cada verificación;
+  4. **Integración con el CRM**;
+  5. **Aprendizaje/fixtures** (cómo se acumulan casos reales como Bogotá sin fijar una lista universal);
+  6. **Relación con el análisis profundo existente** (qué reemplaza, qué precede, qué no toca).
+- **Presentar 2-3 alternativas de diseño** y **pedir aprobación de diseño** antes de cualquier código.
+- **No ejecutar** código, cron, CRM, DB, deploy, restart, ni cambiar términos de la política de seguridad electrónica ni de la vía tradicional, sin **orden expresa**.
+
+### 14.10. Estado al pausar
+
+- **No hay proceso, worker, prueba ni corrida en curso** por este tema.
+- Este cambio de checkpoint modifica **únicamente `CURRENT.md`**; no hubo commit, push, deploy ni cambio operativo alguno.
