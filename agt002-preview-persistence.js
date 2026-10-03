@@ -546,12 +546,13 @@ export async function appendAgt002AnalysisAttempt(database, context, { eventKeyG
 }
 
 /** Returns the latest safe lifecycle projection; raw provider error messages never leave persistence. */
-export async function getLatestAgt002AnalysisAttempt(database, opportunityId, { snapshotId = null } = {}) {
+export async function getLatestAgt002AnalysisAttempt(database, opportunityId, { snapshotId = null, attemptKey = null } = {}) {
   const normalizedOpportunityId = requireId(opportunityId, 'La oportunidad');
   let query = database.from('psi_agt002_analysis_attempt_events')
     .select('id,snapshot_id,tender_id,attempt_key,producer,state,error_code,analysis_run_id,created_at')
     .eq('opportunity_id', normalizedOpportunityId);
   if (snapshotId != null) query = query.eq('snapshot_id', requireId(snapshotId, 'El snapshot documental'));
+  if (attemptKey != null) query = query.eq('attempt_key', requireId(attemptKey, 'La clave del intento'));
   const response = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1);
   if (response?.error) throw new Error(response.error.message || String(response.error));
   const row = Array.isArray(response?.data) ? response.data[0] : response?.data;

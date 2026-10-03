@@ -616,6 +616,7 @@ export function createAgt002ReanalysisExecutor({
         snapshotId: job.snapshotId,
         contextVersionId: job.contextVersionId,
         attemptKey: job.idempotencyKey,
+        resumeCount: job.resumeCount,
         correlationId: createCorrelationId(),
         claimId: previewClaimId,
         idempotencyKey: job.idempotencyKey,

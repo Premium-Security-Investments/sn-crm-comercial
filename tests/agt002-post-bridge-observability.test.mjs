@@ -222,6 +222,27 @@ function fakeDatabase({ onRecordRun, onAppendAttempt, onReleaseClaim } = {}) {
   };
 }
 
+function withLatestAttempt(database, latestAttempt) {
+  return {
+    ...database,
+    from(table) {
+      assert.equal(table, 'psi_agt002_analysis_attempt_events');
+      const filters = [];
+      const chain = {
+        select() { return chain; },
+        eq(key, value) { filters.push([key, value]); return chain; },
+        order() { return chain; },
+        limit(count) {
+          assert.equal(count, 1);
+          const matches = filters.every(([key, value]) => latestAttempt?.[key] === value);
+          return Promise.resolve({ data: matches ? [latestAttempt] : [], error: null });
+        },
+      };
+      return chain;
+    },
+  };
+}
+
 function requestContext(overrides = {}) {
   return {
     opportunityId: IDS.opportunity,
@@ -248,6 +269,38 @@ function releaseClaimCallCount(database) {
 function recordRunCallCount(database) {
   return database.calls.filter(call => call.name === 'psi_record_agt002_canonical_analysis_run').length;
 }
+
+test('a reclaimed attempt left running is reconciled through retry_wait before queued and running, without changing its attempt identity', async () => {
+  const { client, telemetry } = trackedClient(async () => ({ content: 'not json at all', usage: { input_tokens: 1, output_tokens: 1 } }));
+  const engine = createAgt002PreviewEngine({ client, ...engineOptions() });
+  const baseDatabase = fakeDatabase();
+  const context = requestContext({ resumeCount: 1, requireTenderRequirementInventory: false });
+  const database = withLatestAttempt(baseDatabase, {
+    id: 'attempt-event-stale-running',
+    opportunity_id: IDS.opportunity,
+    snapshot_id: IDS.snapshot,
+    tender_id: IDS.tender,
+    attempt_key: context.attemptKey,
+    producer: 'AGT-002',
+    state: 'running',
+    error_code: null,
+    analysis_run_id: null,
+    created_at: '2026-10-02T20:40:33.819077Z',
+  });
+
+  const result = await runAgt002PostBridgeAnalysis(database, context, {
+    engine,
+    observability: spyObservability(),
+    analysisContext,
+    bridgeTelemetry: telemetry,
+  });
+
+  assert.equal(result.status, 'unavailable');
+  assert.deepEqual(attemptStates(baseDatabase), ['retry_wait', 'queued', 'running', 'unavailable']);
+  const attemptCalls = baseDatabase.calls.filter(call => call.name === 'psi_append_agt002_analysis_attempt');
+  assert.ok(attemptCalls.every(call => call.params.p_attempt_key === context.attemptKey));
+  assert.equal(attemptCalls[0].params.p_error_code, 'AGT002_LEASE_LOST');
+});
 
 // --- Requirement 2/3: transport failure vs a genuine bridge_success (response_received). ---
 

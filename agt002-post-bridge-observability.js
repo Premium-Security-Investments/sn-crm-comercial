@@ -30,6 +30,7 @@ import {
 } from './agt002-analysis-observability.js';
 import {
   appendAgt002AnalysisAttempt,
+  getLatestAgt002AnalysisAttempt,
   registerAgt002PreviewAnalysis,
   releaseAgt002PreviewClaim,
   renewAgt002PreviewClaim,
@@ -262,6 +263,43 @@ async function safeAppendAttempt(database, params) {
 }
 
 /**
+ * A durable queue reclaim preserves the original attempt identity. If the previous process was
+ * killed after it wrote `queued -> running`, the append-only attempt ledger is still `running`
+ * even though the outer job lease has expired. Re-opening that same identity with another
+ * `queued` event would violate migration 050's state machine. Close only that known interrupted
+ * shape through its already-supported `running|queued -> retry_wait -> queued` route before the
+ * ordinary lifecycle below continues. Other terminal/retry states already accept `queued`
+ * directly and therefore need no synthetic transition.
+ *
+ * The lookup and append remain best-effort like every attempt-ledger write in this module: an
+ * observability outage never changes the real engine outcome. Filtering by the exact attempt key
+ * prevents another analysis for the same opportunity/snapshot from influencing this repair.
+ */
+async function reconcileResumedAttemptLifecycle(database, attemptBase, resumeCount) {
+  if (!Number.isInteger(resumeCount) || resumeCount <= 0) return;
+
+  let latestAttempt;
+  try {
+    latestAttempt = await getLatestAgt002AnalysisAttempt(database, attemptBase.opportunity_id, {
+      snapshotId: attemptBase.snapshot_id,
+      attemptKey: attemptBase.attempt_key,
+    });
+  } catch (error) {
+    const { error_code } = classifyAgt002PostBridgeFailure({ phase: 'attempt_update', error });
+    console.warn('agt002_post_bridge_attempt_write_failed', { event: 'agt002_post_bridge_attempt_write_failed', error_code });
+    return;
+  }
+
+  if (latestAttempt?.state !== 'queued' && latestAttempt?.state !== 'running') return;
+  await safeAppendAttempt(database, {
+    ...attemptBase,
+    state: 'retry_wait',
+    error_code: AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST,
+    error_message: AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES[AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST],
+  });
+}
+
+/**
  * Runs one AGT-002 post-bridge analysis attempt end to end: queued -> running -> completed |
  * unavailable, persisted durably via the existing psi_agt002_analysis_attempt_events
  * infrastructure, with exactly one closed-catalog observability event and exactly one claim
@@ -273,6 +311,7 @@ async function safeAppendAttempt(database, params) {
  * @param {object} database Supabase-shaped `.rpc()` client (real or a verifiable double).
  * @param {{opportunityId:string, tenderId:string, snapshotId:string, contextVersionId:string,
  *   attemptKey:string, correlationId:string, claimId:?string, idempotencyKey:?string,
+ *   resumeCount?:number,
  *   canonicalOnly?:boolean}} context
  * @param {{engine:{analyze:Function}, observability?:{record:Function}, analysisContext:object,
  *   bridgeTelemetry?:{invocationStarted?:boolean, responseReceived?:boolean},
@@ -287,7 +326,7 @@ async function safeAppendAttempt(database, params) {
 export async function runAgt002PostBridgeAnalysis(database, context = {}, deps = {}) {
   const {
     opportunityId, tenderId, snapshotId, contextVersionId, attemptKey,
-    correlationId, claimId, idempotencyKey, canonicalOnly = true,
+    correlationId, claimId, idempotencyKey, resumeCount = 0, canonicalOnly = true,
     requireTenderRequirementInventory = true,
     // F3: the run-binding company evidence identity, handed down verbatim (never re-derived
     // here) from the caller's already-loaded governance — forwarded as-is to persistence.
@@ -320,6 +359,7 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
   const startedAt = Date.now();
   const attemptBase = { snapshot_id: snapshotId, opportunity_id: opportunityId, tender_id: tenderId, attempt_key: attemptKey };
 
+  await reconcileResumedAttemptLifecycle(database, attemptBase, resumeCount);
   await safeAppendAttempt(database, { ...attemptBase, state: 'queued' });
   await safeAppendAttempt(database, { ...attemptBase, state: 'running' });
 
