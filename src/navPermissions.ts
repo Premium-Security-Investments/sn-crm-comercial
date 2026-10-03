@@ -102,7 +102,8 @@ export function canManageUsers(profile?: NavProfile) {
 }
 
 export function canViewTenders(profile?: NavProfile) {
-  return hasModuleAccess(profile, 'licitaciones');
+  return hasModuleAccess(profile, 'licitaciones')
+    || (profile?.active === true && Boolean(profile.permissions?.includes('licitaciones_lectura')));
 }
 
 export function canAccessSiio(profile?: NavProfile) {
@@ -110,6 +111,8 @@ export function canAccessSiio(profile?: NavProfile) {
 }
 
 export function canAccessRoute(profile: NavProfile, page: NavRoutePage) {
+  if (page === 'tenders') return canViewTenders(profile);
+  if (page === 'detail') return hasModuleAccess(profile, 'modulo_oportunidades') || canViewTenders(profile);
   if (page === 'alerts' || page === 'centinel') {
     return hasModuleAccess(profile, 'modulo_alertas_comerciales') || hasModuleAccess(profile, 'modulo_vig_ia');
   }

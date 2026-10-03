@@ -86,7 +86,7 @@ assert.match(uploadAttachmentsBody[0], /response_ticket:\s*responseTicket/, 'upl
 assert.match(uploadAttachmentsBody[0], /return\s*\{[^}]*response_ticket[^}]*\}/, 'uploadAttachments debe devolver el response_ticket final junto con el response_id.');
 
 assert.match(main, /response_ticket/, 'El contenedor debe reenviar el response_ticket en el POST final de respuestas.');
-assert.match(main, /canAnswerQuestions=\{currentProfile\.identity_type == null \|\| currentProfile\.identity_type === 'human'\}/, 'La UI debe mostrar el formulario a humanos explícitos y perfiles humanos legacy, igual que el backend.');
+assert.match(main, /canAnswerQuestions=\{canOperateTender && \(currentProfile\.identity_type == null \|\| currentProfile\.identity_type === 'human'\)\}/, 'La UI debe mostrar el formulario sólo a humanos con autoridad operativa; los perfiles legacy siguen reconocidos como humanos.');
 assert.doesNotMatch(main, /canAnswerQuestions=\{currentProfile\.identity_type === 'human'\}/, 'La comparación estricta no debe ocultar el formulario a perfiles humanos legacy.');
 const saveQuestionResponseBody = main.match(/const saveQuestionResponse = async[\s\S]*?\n {2}\};/);
 assert.ok(saveQuestionResponseBody, 'Debe existir saveQuestionResponse en el contenedor.');

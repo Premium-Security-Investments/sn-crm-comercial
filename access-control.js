@@ -54,6 +54,7 @@ export const ACTIONS = Object.freeze({
 
 const KNOWN_ACTIONS = new Set(Object.values(ACTIONS));
 const TENDER_PERMISSION = 'licitaciones';
+const TENDER_READ_PERMISSION = 'licitaciones_lectura';
 const TENDER_CUSTODY_PERMISSION = 'licitaciones_custodia';
 const TENDER_COMPANY_PERMISSION = 'licitaciones_empresa';
 const HUMAN_TENDER_ROLES = new Set(['admin', 'gerencia', 'director', 'comercial']);
@@ -197,6 +198,17 @@ function canHumanTenderAction(profile) {
   return hasHumanRole(profile, HUMAN_TENDER_ROLES) && hasPermission(profile, TENDER_PERMISSION);
 }
 
+function canHumanTenderView(profile) {
+  return canHumanTenderAction(profile)
+    || (isHuman(profile) && hasPermission(profile, TENDER_READ_PERMISSION));
+}
+
+function canReadTenderOpportunity(profile, resource) {
+  return validCrmResource(resource)
+    && resource.service_type_code === 'licitacion_publica'
+    && canHumanTenderView(profile);
+}
+
 function canTenderCustodyAction(profile) {
   return isHuman(profile)
     && hasPermission(profile, TENDER_PERMISSION)
@@ -271,7 +283,7 @@ export function can(profile, action, resource = {}) {
         || isCommercialDirector(profile)
         || hasHumanRole(profile, COMMERCIAL_ROLES);
     case ACTIONS.NAV_LICITACIONES_VIEW:
-      return canHumanTenderAction(profile);
+      return canHumanTenderView(profile);
 
     case ACTIONS.MODULE_SIIO_VIEW:
       return hasEligibleModule(profile, 'modulo_siio_gerencial');
@@ -295,6 +307,11 @@ export function can(profile, action, resource = {}) {
         || (hasHumanRole(profile, DIRECTOR_ROLE) && canDirectorCommercialResource(profile, resource))
         || hasHumanRole(profile, COMMERCIAL_ROLES);
     case ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW:
+      if (canReadTenderOpportunity(profile, resource)) return true;
+      if (!validCrmResource(resource)) return false;
+      return hasHumanRole(profile, PRIVILEGED_ROLES)
+        || canDirectorCommercialResource(profile, resource)
+        || (hasHumanRole(profile, COMMERCIAL_ROLES) && ownsResource(profile, resource, 'owner_id'));
     case ACTIONS.CRM_OPPORTUNITY_EDIT:
     case ACTIONS.CRM_OPPORTUNITY_CREATE:
       if (!validCrmResource(resource)) return false;
@@ -306,6 +323,7 @@ export function can(profile, action, resource = {}) {
         && (hasHumanRole(profile, PRIVILEGED_ROLES) || canDirectorCommercialResource(profile, resource));
 
     case ACTIONS.LICITACIONES_VIEW:
+      return canHumanTenderView(profile);
     case ACTIONS.LICITACIONES_WORKBENCH_USE:
     case ACTIONS.LICITACIONES_SYNC:
     case ACTIONS.LICITACIONES_DISCARD_PROPOSE:

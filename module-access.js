@@ -15,6 +15,7 @@ export const MODULE_PERMISSIONS = Object.freeze([
 export const MODULE_PERMISSION_CODES = Object.freeze(MODULE_PERMISSIONS.map(({ code }) => code));
 
 export const CAPABILITY_PERMISSIONS = Object.freeze([
+  freezePermission('licitaciones_lectura', 'Licitaciones — solo lectura', 'Consulta de Radar, seguimiento, oportunidades y análisis de Licitaciones sin autoridad para ejecutar, editar o decidir.'),
   freezePermission('licitaciones_custodia', 'Custodia de Licitaciones', 'Autoridad exclusiva para convertir detecciones y aprobar perfiles, reglas y fuentes corporativas de Licitaciones.'),
   freezePermission('vigia_copilot_pilot', 'Piloto Copiloto Vig-IA', 'Autoridad temporal y explícita para ejecutar el copiloto comercial de Vig-IA durante el canary.'),
 ]);

@@ -786,6 +786,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
+  const canOperateTender = can(data.currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
+  const tenderReadOnly = o.service_type_code === 'licitacion_publica' && !canOperateTender;
   const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
   const action = nextActionStatus(o);
   const tenderNavigationSnapshot: TenderDetailStatusSnapshot = {
@@ -818,11 +820,12 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   };
   return <section className="stack">
     <div id="tender-summary" className="tender-detail-anchor">
-      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
+      <div className="hero"><div><Badge>{o.stage_name}</Badge>{tenderReadOnly && <Badge>Solo lectura</Badge>}<h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions">{!tenderReadOnly && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && canOperateTender && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
     {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
+    {tenderReadOnly && <div className="notice" role="status"><strong>Acceso de solo lectura.</strong> Puede consultar el expediente y su evidencia; toda edición, carga, ejecución o decisión está bloqueada.</div>}
     {o.service_type_code === 'licitacion_publica' ? <>
       <Panel title="Resumen de la oportunidad">
         <div className="tender-opportunity-summary-grid">
@@ -871,6 +874,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   activeOpportunityRef.current = opportunity.id;
   const documents = payload.documents || [];
   const analysis = payload.analysis;
+  const canOperateTender = can(currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
   const emitNavigationPayload = (data: TenderDocumentsPayload) => onNavigationStateChanged?.(
     { phase: 'ready', value: { currentDocumentCount: (data.documents || []).filter(document => document.current !== false).length, importError: Boolean(data.import_error) } },
     { phase: 'ready', value: data.analysis || null },
@@ -1074,8 +1078,8 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   };
   const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
-    <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
+    <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} canManage={canOperateTender} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={canOperateTender && can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={canOperateTender && (currentProfile.identity_type == null || currentProfile.identity_type === 'human')} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
     <details id="tender-technical-analysis" className="tender-integral-analysis-trace"><summary>Ver análisis técnico completo</summary><TenderIntegralAnalysisV3View analysis={analysis} /></details>
   </div>;
 }
@@ -1175,6 +1179,7 @@ function publicActuationLabel(value: string) { return businessEventLabels[value]
 function technicalActuationLabel(value: string) { return technicalEventLabels[value] || 'Evento técnico'; }
 type TenderProcessHistoryItem = { id: string; title: string; createdAt: string; actor: string; note?: string | null; sourceUrl?: string | null };
 function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { opportunity: Opportunity; profiles: Profile[]; currentProfile: Profile }) {
+  const canOperateTender = can(currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
   const [events, setEvents] = useState<TenderTrackingEvent[]>([]);
   const [technicalEvents, setTechnicalEvents] = useState<TenderTrackingEvent[]>([]);
   const [decisions, setDecisions] = useState<TenderGoNoGoDecision[]>([]);
@@ -1226,7 +1231,7 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
     ...offerHistory.map(event => ({ id: `offer-${event.id}`, title: `${offerStatusLabels[event.from_status] || event.from_status} → ${offerStatusLabels[event.to_status] || event.to_status}`, createdAt: event.changed_at, actor: event.psi_sales_profiles?.full_name || event.actor_id || 'Persona autorizada', note: event.note })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [events, decisions, offerHistory, profiles]);
   return <div className="stack">
-    <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><Select value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><textarea required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
+    {canOperateTender && <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><Select value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><textarea required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>}
     <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
     <details className="tender-technical-audit"><summary>Auditoría técnica de {VIGIA_VISIBLE_NAMES.tenders}</summary><p className="muted">Procesamiento documental, análisis y fallas técnicas. No representa el avance comercial.</p><div className="timeline">{technicalEvents.length ? technicalEvents.map(event => <div className="event" key={event.id}><strong>{technicalActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}</div>) : <p className="muted">Sin eventos técnicos registrados.</p>}</div></details>
   </div>;

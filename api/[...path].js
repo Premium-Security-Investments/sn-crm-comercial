@@ -280,6 +280,10 @@ export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
 export function requireModuleAction(profile, endpointModule) {
   return requireAction(profile, MODULE_ENDPOINT_ACTIONS[endpointModule], {});
 }
+export function requireOpportunityDetailModule(profile) {
+  if (can(profile, ACTIONS.MODULE_OPPORTUNITIES_VIEW) || can(profile, ACTIONS.LICITACIONES_VIEW)) return true;
+  return requireAction(profile, ACTIONS.MODULE_OPPORTUNITIES_VIEW, {});
+}
 export function requirePrioritiesAction(profile) {
   if (can(profile, ACTIONS.MODULE_ALERTS_VIEW) || can(profile, ACTIONS.MODULE_VIGIA_VIEW)) return true;
   return requireAction(profile, ACTIONS.MODULE_VIGIA_VIEW, {});
@@ -599,6 +603,33 @@ export async function getAuthContext(req) {
     throw authContextUnavailable(error);
   }
 }
+const SAFE_READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const TENDER_API_PATH = /^\/api\/(?:tenders?(?:$|[-/])|agt002(?:$|[-/]))/;
+export function isTenderReadonlyProfile(profile) {
+  return profile?.active === true
+    && (profile.identity_type == null || profile.identity_type === 'human')
+    && profile.permissions?.includes('licitaciones_lectura')
+    && !profile.permissions?.includes('licitaciones');
+}
+export function requireTenderReadonlyBoundary(profile, method, requestPath) {
+  if (SAFE_READ_METHODS.has(String(method || '').toUpperCase()) || !TENDER_API_PATH.test(String(requestPath || ''))) return true;
+  if (!isTenderReadonlyProfile(profile)) return true;
+  const error = new Error('La cuenta tiene acceso de solo lectura a Licitaciones.');
+  error.status = 403;
+  error.code = 'FORBIDDEN';
+  throw error;
+}
+app.use(async (req, res, next) => {
+  const hasBearerSession = /^Bearer\s+/i.test(String(req.headers.authorization || ''));
+  if (!hasBearerSession || SAFE_READ_METHODS.has(req.method) || !TENDER_API_PATH.test(req.path)) return next();
+  try {
+    const { profile } = await getAuthContext(req);
+    requireTenderReadonlyBoundary(profile, req.method, req.path);
+    return next();
+  } catch (error) {
+    return sendAuthError(res, error);
+  }
+});
 function sendAuthError(res, error) {
   sendError(res, error, error?.status || 500);
 }
@@ -624,10 +655,11 @@ function recomputeSummary(stages, opportunities) {
 }
 export function clientProfileForTenderUi(profile, environment = process.env) {
   if (!profile || isTenderPublicUiEnabled(environment)) return profile;
-  if (!Array.isArray(profile.permissions) || !profile.permissions.includes('licitaciones')) return profile;
+  const tenderPermissions = new Set(['licitaciones', 'licitaciones_lectura']);
+  if (!Array.isArray(profile.permissions) || !profile.permissions.some(permission => tenderPermissions.has(permission))) return profile;
   return {
     ...profile,
-    permissions: profile.permissions.filter(permission => permission !== 'licitaciones'),
+    permissions: profile.permissions.filter(permission => !tenderPermissions.has(permission)),
   };
 }
 
@@ -642,7 +674,12 @@ export function bootstrapCapabilities(profile) {
 }
 const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active';
 function crmResource(ownerId, assignment = {}) {
-  return { area_code: assignment.area_code || 'comercial', subarea_code: assignment.subarea_code ?? null, owner_id: ownerId };
+  return {
+    area_code: assignment.area_code || 'comercial',
+    subarea_code: assignment.subarea_code ?? null,
+    owner_id: ownerId,
+    ...(assignment.service_type_code ? { service_type_code: assignment.service_type_code } : {}),
+  };
 }
 function assignmentsByProfile(rows = []) {
   const result = new Map();
@@ -735,8 +772,10 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   const owner = await resolveActiveOpportunityOwner(database, ownerId);
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
-async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment').eq('id', id).single());
+export async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment,service_type_code').eq('id', id).single());
+  if (action === ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW
+    && can(profile, action, crmResource(opportunity.owner_id, { service_type_code: opportunity.service_type_code }))) return opportunity;
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
 }
@@ -2418,7 +2457,7 @@ app.all('/api/bootstrap', (_req, res) => res.status(405).json({ error: 'Método 
 app.get('/api/opportunities/:id', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    requireModuleAction(currentProfile, 'opportunities');
+    requireOpportunityDetailModule(currentProfile);
     const database = requireDb();
     const id = req.params.id;
     await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
@@ -4576,7 +4615,7 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
 app.get('/api/opportunity-detail', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    requireModuleAction(currentProfile, 'opportunities');
+    requireOpportunityDetailModule(currentProfile);
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
