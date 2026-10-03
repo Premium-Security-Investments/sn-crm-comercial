@@ -460,15 +460,17 @@ function assertActionsGoverned(unit) {
     );
   }
 
-  // The material-omission abstention gate stays closed.
+  // The material-omission gate is a governed fact, not the model's to choose: an assessed
+  // turn is coerced to abstained (never rejected — see
+  // tests/agt002-integral-analysis-batch-contract.test.mjs section (7)), and action
+  // normalization must not interfere with that coercion.
   {
     const validationContext = buildValidationContext();
     validationContext.materialOmissionsObserved = true;
-    assert.throws(
-      () => validateAgt002PreviewModelOutputV3Batch(buildBatchTurn(BATCH_B.requirement_ids), { validationContext, batch: BATCH_B }),
-      error => error?.code === 'v3_material_omissions_abstention_required',
-      'the material-omission abstention gate must stay closed regardless of action normalization',
-    );
+    const result = validateAgt002PreviewModelOutputV3Batch(buildBatchTurn(BATCH_B.requirement_ids), { validationContext, batch: BATCH_B });
+    for (const unit of result.analysis_units) {
+      assert.equal(unit.assessment_mode, 'abstained', 'material omissions must coerce every unit to abstained regardless of action normalization');
+    }
   }
 
   // A strategic_consideration unit stays rejected on a batch turn.

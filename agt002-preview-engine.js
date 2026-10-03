@@ -15,6 +15,7 @@ import {
   validateAgt002PreviewModelOutputV3,
   validateAgt002PreviewModelOutputV3Batch,
   mergeAgt002IntegralAnalysisV3Batches,
+  buildAgt002MaterialOmissionAbstainedBatchModelOutput,
 } from './agt002-preview-contract.js';
 import {
   planAgt002IntegralAnalysisBatches,
@@ -1862,6 +1863,18 @@ export async function runAgt002BatchedV3Analysis({
   }));
 
   async function executeBatch({ batch, providerIdempotencyKey, signal: batchSignal }) {
+    // Material omissions is a governed fact the model cannot change (design invariant 5):
+    // every unit of this batch is already destined to be coerced into the abstained shape by
+    // validateAgt002PreviewModelOutputV3Batch's own coercion, so a real provider turn here can
+    // only ever burn a model call on an outcome already decided. The lease/heartbeat contract
+    // (beforeProviderCall) is still honored once, exactly where the provider call would have been.
+    if (validationContext.materialOmissionsObserved === true) {
+      if (beforeProviderCall) await beforeProviderCall();
+      const stub = buildAgt002MaterialOmissionAbstainedBatchModelOutput({ validationContext, batch });
+      const validated = validateAgt002PreviewModelOutputV3Batch(stub, { validationContext, batch });
+      return { output: validated, usage: { input_tokens: 0, output_tokens: 0 } };
+    }
+
     const projectedInput = projectAgt002IntegralAnalysisBatch({ previewInput: governedInput, batch });
     // The only place this projection is ever enabled for a batch turn: the durable envelope
     // (finalizeEnvelope below, built from the ORIGINAL previewInput) keeps the two per-source-unit

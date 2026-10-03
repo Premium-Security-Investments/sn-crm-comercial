@@ -145,7 +145,7 @@ export function classifyAgt002PersistenceError(error) {
 
 /**
  * Defaults sized against the durable job's own lease budget. agt002-reanalysis-input.js funds a
- * claim of `2*ceil(timeout_ms/1000) + 30` seconds; the trailing 30s is the executor's entire
+ * claim of `ceil(timeout_ms/1000) + 30` seconds; the trailing 30s is the executor's entire
  * post-bridge buffer, which already has to cover persistence, the durable attempt write, the claim
  * release and the queue transition. ONE extra persistence attempt is therefore the whole retry
  * budget: it recovers the single-blip frontier without ever being able to spend the buffer twice

@@ -41,7 +41,7 @@ export function agt002CanonicalEnqueueBlockCode(environment = process.env) {
     // only classification a caller may act on or persist.
     return AGT002_RUNTIME_CONFIG_INVALID_CODE;
   }
-  // Resolvable is not enough: a turn timeout the worker's two-turn claim lease cannot fund would
-  // reserve a job the executor rejects pre-claim on every cycle — a corrida that can never run.
+  // Resolvable is not enough: a turn timeout the worker's claim lease cannot fund would reserve a
+  // job the executor rejects pre-claim on every cycle — a corrida that can never run.
   return isAgt002QueueableTimeoutMs(config.timeoutMs) ? null : AGT002_RUNTIME_CONFIG_INVALID_CODE;
 }

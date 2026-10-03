@@ -109,15 +109,16 @@ function proposalWith(requirements, derivedOwnerIds) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v9',
-    'the wire contract this catalog feeds is v9: the label enum is pinned, a requirement carries no '
+    'tender-semantic-discovery.v10',
+    'the wire contract this catalog feeds is v10: the label enum is pinned, a requirement carries no '
     + 'model-provided source id (the server derives front_evidence/citations from this same catalog), '
     + 'an undispositioned source unit is completed into unresolved instead of rejecting the turn, the '
     + 'disposition lists themselves are optional, an exact repetition of one catalog label is '
     + 'canonicalized once, the input is now one of possibly several batches (batch index/count) '
     + 'instead of a single request, a self-contradicting claim is retracted instead of rejecting '
     + 'the whole batch, and the per-batch source-char budget (and therefore the batch plan itself) '
-    + 'was lowered — each a material model-facing change that must bump the policy version',
+    + 'was lowered twice (v9, then v10 for Claude) — each a material model-facing change that must '
+    + 'bump the policy version',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,

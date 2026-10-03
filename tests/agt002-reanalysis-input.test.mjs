@@ -114,13 +114,17 @@ test('fails closed when canonical identity/config are incomplete or exceed the w
   const source = createSource();
   assert.throws(() => buildAgt002FrozenEngineInput({ ...source, analysisConfig: { ...source.analysisConfig, AGT002_CANONICAL_ONLY: false } }));
   assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 0 } }));
-  // The worker lease budget IS the queue budget: the executor rejects an unfundable two-turn lease
-  // before claiming, so a job frozen above 285_000ms (2*285+30 = 600 exactly) could only be
-  // reserved and then die on its first cycle. This contract used to stop at 480_000ms, which let
-  // the enqueue reserve corridas the worker always refused.
+  // The worker lease budget IS the queue budget: the executor rejects an unfundable one-turn lease
+  // before claiming, so a job frozen above 570_000ms (570+30 = 600 exactly) could only be
+  // reserved and then die on its first cycle. Durable batched analysis renews the preview claim at
+  // every provider boundary, so the lease only ever has to fund ONE turn, not the whole run — this
+  // contract used to require funding two sequential turns under a single lease, which capped the
+  // largest fundable timeout at 285_000ms.
   assert.doesNotThrow(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 285_000 } }));
-  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 285_001 } }));
-  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 480_000 } }));
+  assert.doesNotThrow(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 450_000 } }));
+  assert.doesNotThrow(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 480_000 } }));
+  assert.doesNotThrow(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 570_000 } }));
+  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 570_001 } }));
 });
 
 // C: the frozen JSON clone is deep-frozen — not merely its own top-level properties — so no

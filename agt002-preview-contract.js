@@ -1143,6 +1143,24 @@ export function buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationCon
   const fullUnitSchema = buildV3AnalysisUnitSchema(scopedValidationContext);
   const unitProperties = {};
   for (const key of AGT002_INTEGRAL_ANALYSIS_BATCH_UNIT_KEYS) unitProperties[key] = fullUnitSchema.properties[key];
+
+  // A governed fact (material omissions observed in retrieval) is not the model's to
+  // choose (design invariant 5, mirrored server-side in the coercion below): when the
+  // context observed them, the wire schema itself only offers the abstained shape, so
+  // the model cannot even attempt the assessed path this batch's turn is doomed to fail.
+  if (ctx.materialOmissionsObserved === true) {
+    unitProperties.assessment_mode = { type: 'string', enum: ['abstained'] };
+    unitProperties.conclusion = v3ClosedObject({
+      ...unitProperties.conclusion.properties,
+      status: { type: 'string', enum: ['insufficient_evidence', 'human_validation_required'] },
+      confidence: { type: 'string', enum: ['unavailable'] },
+    });
+    unitProperties.blocking = v3ClosedObject({
+      ...unitProperties.blocking.properties,
+      effect: { type: 'string', enum: ['undetermined'] },
+    });
+  }
+
   const unitSchema = v3ClosedObject(unitProperties);
 
   return v3ClosedObject({
@@ -1212,14 +1230,124 @@ function assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, requirementId, vali
   );
 }
 
+// Whether the governed context observed material retrieval omissions is not the model's
+// to choose — it is a server-owned fact, exactly like the duplicate `action_id` or the
+// deterministic escalation `required`/`level` correspondence normalized above. When it
+// holds, a wire unit is coerced (never rejected) into the abstained shape the invariant
+// (`v3_material_omissions_abstention_required`, both here and in the final merge) already
+// requires: `assessment_mode` "abstained", `conclusion.confidence` "unavailable",
+// `conclusion.status` pinned to the abstained-compatible pair, `blocking.effect` moved off
+// the "blocker" the abstained mode forbids (and its `curability` neutralized only if it
+// would otherwise fail the independent not-curable-needs-support invariant), and — if the
+// resulting "insufficient_evidence" status would otherwise carry zero `missing_evidence` —
+// one closed, deterministic entry recording the omission itself. No key is added or
+// removed; `AGT002_INTEGRAL_ANALYSIS_BATCH_UNIT_KEYS` stays exact.
+function coerceAgt002BatchUnitForMaterialOmissions(wireUnit) {
+  if (!isRecord(wireUnit)) return wireUnit;
+  const conclusion = isRecord(wireUnit.conclusion) ? wireUnit.conclusion : {};
+  const blocking = isRecord(wireUnit.blocking) ? wireUnit.blocking : {};
+  const status = ['insufficient_evidence', 'human_validation_required'].includes(conclusion.status)
+    ? conclusion.status
+    : 'insufficient_evidence';
+
+  const wasBlocker = blocking.effect === 'blocker';
+  const evidenceRefs = Array.isArray(wireUnit.evidence_refs) ? wireUnit.evidence_refs : [];
+  const hasBlockingSupport = evidenceRefs.some(
+    ref => isRecord(ref) && (ref.source_type === 'tender_document' || ref.source_type === 'legal_corpus'),
+  );
+  const curability = wasBlocker && blocking.curability === 'not_curable' && !hasBlockingSupport
+    ? 'undetermined'
+    : blocking.curability;
+
+  const missingEvidence = Array.isArray(wireUnit.missing_evidence) ? wireUnit.missing_evidence : [];
+  const requirementId = typeof wireUnit.requirement_id === 'string' ? wireUnit.requirement_id : '';
+  const needsMissingEvidence = status === 'insufficient_evidence' && missingEvidence.length === 0;
+
+  return {
+    ...wireUnit,
+    assessment_mode: 'abstained',
+    conclusion: { ...conclusion, status, confidence: 'unavailable' },
+    blocking: { ...blocking, effect: wasBlocker ? 'undetermined' : blocking.effect, curability },
+    missing_evidence: needsMissingEvidence
+      ? [...missingEvidence, {
+        missing_id: `omit-${requirementId}`.slice(0, V3_WIRE_ID_MAX_LENGTH),
+        evidence_class_id: null,
+        needed_source_type: 'tender_document',
+        reason: 'El retrieval de este lote observó omisiones materiales; no hay evidencia suficiente para evaluar el requisito.',
+        critical: true,
+      }]
+      : missingEvidence,
+  };
+}
+
+/**
+ * Deterministic replacement for an entire batch's model turn when the governed context
+ * already observed material retrieval omissions (design invariant 5): every unit in that
+ * batch is already destined to be coerced into the abstained shape by
+ * `coerceAgt002BatchUnitForMaterialOmissions` above, so a real model call can only ever
+ * waste a turn on an outcome the model has no way to change. Builds the closed abstained
+ * wire shape directly, one unit per `batch.requirement_ids` in assigned order — the exact
+ * `{ integral_analysis: { analysis_units } }` shape `validateAgt002PreviewModelOutputV3Batch`
+ * below accepts (and, run through it, ends up producing).
+ */
+export function buildAgt002MaterialOmissionAbstainedBatchModelOutput({ validationContext, batch } = {}) {
+  const ctx = isRecord(validationContext) ? validationContext : {};
+  const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
+  const requirementIds = Array.isArray(batch?.requirement_ids) ? batch.requirement_ids : [];
+
+  const analysisUnits = requirementIds.map((requirementId) => {
+    const manifestEntry = requirementManifest.find(entry => entry?.requirement_id === requirementId);
+    const title = typeof manifestEntry?.title === 'string' && manifestEntry.title.trim()
+      ? manifestEntry.title
+      : 'Requisito sin título';
+
+    return {
+      unit_kind: 'tender_requirement',
+      requirement_id: requirementId,
+      title,
+      assessment_mode: 'abstained',
+      conclusion: {
+        status: 'insufficient_evidence',
+        summary: 'Omisiones materiales de retrieval; no se evalúa este requisito.',
+        confidence: 'unavailable',
+      },
+      blocking: {
+        effect: 'undetermined',
+        curability: 'undetermined',
+        reason: 'Sin determinación automática por omisiones materiales.',
+      },
+      evidence_refs: [],
+      missing_evidence: [{
+        missing_id: `omit-${requirementId}`.slice(0, V3_WIRE_ID_MAX_LENGTH),
+        evidence_class_id: null,
+        needed_source_type: 'tender_document',
+        reason: 'El retrieval de este lote observó omisiones materiales; no hay evidencia suficiente para evaluar el requisito.',
+        critical: true,
+      }],
+      commercial_impact: { level: 'unknown', summary: 'No determinado.', dimension: 'unknown' },
+      legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+      actions: [],
+      milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+      escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+      closure: { status: 'human_confirmation_required', condition: 'Persona autorizada revisa omisiones de retrieval.', evidence_required: [] },
+      human_validation: { required: true, status: 'pending', reason: 'Dictamen en abstención por omisiones materiales.' },
+    };
+  });
+
+  return { integral_analysis: { analysis_units: analysisUnits } };
+}
+
 /**
  * Runtime validator + assembler for one batch's raw model turn (Task 5B). Rejects any of
  * the four server-owned unit keys if present at all (the batch unit key set is exact, so an
- * extra key fails the structural check below), any non-`tender_requirement` unit, any
- * coverage other than the exact assigned `requirement_ids` once each in assigned order, any
- * `tender_document` evidence ref outside `batch.citation_allowlist`, and any unit that
- * remains non-abstained while the governed context observed material omissions. Every unit
- * is then validated with the extracted, unweakened `validateAgt002IntegralAnalysisV3Unit`.
+ * extra key fails the structural check below), any non-`tender_requirement` unit, and any
+ * coverage other than the exact assigned `requirement_ids` once each in assigned order; any
+ * `tender_document` evidence ref outside `batch.citation_allowlist` still fails closed inside
+ * `validateAgt002IntegralAnalysisV3Unit` below. When the governed context observed material
+ * omissions, every unit is coerced into the abstained shape first (see
+ * `coerceAgt002BatchUnitForMaterialOmissions`) rather than rejected — that fact is not the
+ * model's to get wrong. Every unit is then validated with the extracted, unweakened
+ * `validateAgt002IntegralAnalysisV3Unit`.
  * Returns `{ analysis_units }` only — batch-local, fully governed units ready for merge;
  * never a full envelope (no `contract_version`/`coverage` at this stage).
  */
@@ -1265,15 +1393,10 @@ export function validateAgt002PreviewModelOutputV3Batch(value, { validationConte
       error.code = 'v3_batch_unit_kind_invariant';
       throw error;
     }
-    if (materialOmissionsObserved && wireUnit.assessment_mode !== 'abstained') {
-      const error = new Error(
-        `analysis_units[${index}]: el contexto gobernado observó omisiones materiales; toda unidad del lote debe `
-        + 'usar assessment_mode "abstained".',
-      );
-      error.code = 'v3_material_omissions_abstention_required';
-      throw error;
-    }
-    return assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, wireUnit.requirement_id, scopedContext);
+    const governedWireUnit = materialOmissionsObserved
+      ? coerceAgt002BatchUnitForMaterialOmissions(wireUnit)
+      : wireUnit;
+    return assembleAgt002IntegralAnalysisV3BatchUnit(governedWireUnit, governedWireUnit.requirement_id, scopedContext);
   });
 
   const actualRequirementIds = assembledUnits.map(unit => unit.requirement_id);

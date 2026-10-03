@@ -47,7 +47,7 @@ function validFrozenInput(job) {
   if (!isObject(input) || (input.schema_version !== 1 && input.schema_version !== 2) || !isObject(identity) || !isObject(flags) || !isObject(context)) return null;
   if (typeof identity.model !== 'string' || !identity.model.trim()
     || typeof identity.policy_version !== 'string' || !identity.policy_version.trim()
-    || !Number.isInteger(identity.timeout_ms) || identity.timeout_ms <= 0 || identity.timeout_ms > 480_000
+    || !Number.isInteger(identity.timeout_ms) || identity.timeout_ms <= 0 || identity.timeout_ms > 570_000
     || !Number.isInteger(identity.daily_max_runs) || identity.daily_max_runs <= 0
     || !Number.isInteger(identity.max_concurrent) || identity.max_concurrent <= 0) return null;
   // AGT-002 root-cause fix: `effort` is optional here (never rejected merely for being absent) so
@@ -56,10 +56,10 @@ function validFrozenInput(job) {
   // still be a real allowlisted reasoning effort, or a corrupted/hostile frozen input could push
   // an unsupported value all the way to the provider.
   if (identity.effort !== undefined && !isAgt002PreviewReasoningEffort(identity.effort)) return null;
-  // A timeout whose two-turn lease the reservation ceiling cannot fund is a frozen-config error,
+  // A timeout whose one-turn lease the reservation ceiling cannot fund is a frozen-config error,
   // not a capacity state: reject it here — before any claim, runtime construction or post-bridge
-  // call — exactly like the other pre-claim validation failures. 285_000ms is the largest fundable
-  // timeout (2*285+30 = 600 exactly); 285_001ms needs 602s and is rejected.
+  // call — exactly like the other pre-claim validation failures. 570_000ms is the largest fundable
+  // timeout (570+30 = 600 exactly); 570_001ms needs 601s and is rejected.
   if (agt002RequiredPreviewClaimLeaseSeconds(identity.timeout_ms) > AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS) return null;
   if (identity.idempotency_key != null && identity.idempotency_key !== job.idempotencyKey) return null;
   if (context?.opportunity?.id !== job.opportunityId

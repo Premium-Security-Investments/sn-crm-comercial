@@ -106,12 +106,11 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   // defaults to the unchanged safe floor, so behavior is byte-identical to before this override
   // existed.
   const promptMaxInputTokens = positiveIntFromEnv(environment, 'AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS', AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS);
-  // A V3 run spends TWO sequential provider turns under one reservation — semantic discovery
-  // (discoverTenderSemanticManifest) and then the analysis turn — and `timeoutMs` bounds EACH
-  // turn independently, so each turn is rounded up to whole seconds on its own before they are
-  // summed, plus a 15s buffer. A lease sized for a single turn expires while the analysis turn
-  // is still in flight and the run gets reclaimed underneath itself.
-  const leaseSeconds = 2 * Math.ceil(timeoutMs / 1000) + 15;
+  // The claim is renewed before each provider turn (see beforeProviderCall below), so the lease
+  // only needs to cover ONE turn at a time — `timeoutMs` bounds that turn — plus a 15s buffer.
+  // A lease sized for less than one turn expires while that turn is still in flight and the run
+  // gets reclaimed underneath itself.
+  const leaseSeconds = Math.ceil(timeoutMs / 1000) + 15;
   if (!Number.isInteger(timeoutMs) || !Number.isInteger(maxConcurrent) || !Number.isInteger(dailyMaxRuns) || !Number.isInteger(promptMaxInputTokens) || leaseSeconds > 600) {
     throw new Error('AGT-002 Preview no está configurado.');
   }

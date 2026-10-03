@@ -14,7 +14,7 @@ Estos archivos son artefactos locales de instalación manual. Este cambio **no i
 ## Presupuesto de tiempo por turno
 
 - `AGT002_PREVIEW_TIMEOUT_MS` se lee **donde se encola** el job (el host de la aplicación), no en este `EnvironmentFile`: el worker reconstruye el motor desde la identidad congelada del job y sobrescribe esa variable.
-- Una corrida V3 gasta **dos turnos secuenciales** del proveedor bajo un mismo claim, así que el lease requerido es `2 * ceil(timeout_ms / 1000) + 30` y el techo de la reserva es 600 s: el mayor timeout financiable es **285 000 ms**. Un valor mayor no se recorta —recortarlo reclamaría la corrida en pleno vuelo— sino que se rechaza antes de reservar nada.
+- El análisis por lotes durable renueva el claim en cada frontera de proveedor, así que el lease sólo tiene que financiar UN turno a la vez: el lease requerido es `ceil(timeout_ms / 1000) + 30` y el techo de la reserva es 600 s, así que el mayor timeout financiable es **570 000 ms**. Un valor mayor no se recorta —recortarlo reclamaría la corrida en pleno vuelo— sino que se rechaza antes de reservar nada.
 - Un valor fuera de rango cierra la solicitud como estado de operador (`unavailable` / `not_configured`) con el código `AGT002_RUNTIME_CONFIG_INVALID` en el intento registrado; no es un despliegue sin configurar y no crea corrida.
 
 ## Esfuerzo de razonamiento por turno (AGT002_PREVIEW_REASONING_EFFORT)

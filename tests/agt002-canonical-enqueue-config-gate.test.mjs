@@ -64,13 +64,15 @@ test('an absent configuration keeps its own code, and a usable one does not bloc
 });
 
 test('the enqueue gate stops exactly at the timeout the worker can fund, so no doomed corrida is reserved', () => {
-  // The worker rejects an unfundable two-turn lease before claiming (2*t+30 > 600), so anything
-  // above 285_000ms would be queued and then die on its first cycle without reaching the provider.
+  // The worker rejects an unfundable one-turn lease before claiming (t+30 > 600), so anything
+  // above 570_000ms would be queued and then die on its first cycle without reaching the provider.
   assert.equal(isAgt002QueueableTimeoutMs(285_000), true);
-  assert.equal(isAgt002QueueableTimeoutMs(285_001), false);
-  assert.equal(isAgt002QueueableTimeoutMs(480_000), false);
+  assert.equal(isAgt002QueueableTimeoutMs(480_000), true);
+  assert.equal(isAgt002QueueableTimeoutMs(570_000), true);
+  assert.equal(isAgt002QueueableTimeoutMs(570_001), false);
   assert.equal(agt002CanonicalEnqueueBlockCode(configuredEnv({ AGT002_PREVIEW_TIMEOUT_MS: '285000' })), null);
-  assert.equal(agt002CanonicalEnqueueBlockCode(configuredEnv({ AGT002_PREVIEW_TIMEOUT_MS: '285001' })), AGT002_RUNTIME_CONFIG_INVALID_CODE);
+  assert.equal(agt002CanonicalEnqueueBlockCode(configuredEnv({ AGT002_PREVIEW_TIMEOUT_MS: '570000' })), null);
+  assert.equal(agt002CanonicalEnqueueBlockCode(configuredEnv({ AGT002_PREVIEW_TIMEOUT_MS: '570001' })), AGT002_RUNTIME_CONFIG_INVALID_CODE);
 });
 
 test('the frozen queue contract refuses what the worker refuses', () => {
@@ -81,8 +83,8 @@ test('the frozen queue contract refuses what the worker refuses', () => {
     idempotencyKey: 'key',
   };
   assert.doesNotThrow(() => buildAgt002FrozenEngineInput(source));
-  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 285_001 } }));
-  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 480_000 } }));
+  assert.doesNotThrow(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 570_000 } }));
+  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 570_001 } }));
 });
 
 const backends = [

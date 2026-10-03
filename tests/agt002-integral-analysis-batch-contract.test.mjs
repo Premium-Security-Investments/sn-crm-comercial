@@ -25,6 +25,9 @@
 //       tender_document evidence_ref outside `batch.citation_allowlist` (company/legal/human/
 //       objective-validation refs stay governed by the full, unsliced validationContext.allowlist,
 //       matching design §6 "keep company evidence and legal evidence... as governed context").
+//       When the governed context observed material omissions, every unit is COERCED into the
+//       abstained shape rather than rejected — that fact is not the model's to get wrong, and a
+//       hard rejection here can never be fixed by retrying (production incident d14a1a46).
 //       Assembles the server-owned unit_id (deterministic: `UNIT-${requirement_id}`) and the GLOBAL
 //       sequence (the requirement's 1-based position in the FULL validationContext.requirementManifest,
 //       never a batch-local index), plus governed category/evidence_state, then validates each
@@ -302,6 +305,21 @@ const GOVERNED_TD_REF = { 'REQ-DISCARD-1': 'TD-DISCARD-1', 'REQ-HAB-1': 'TD-HAB-
   assertRecursivelyClosed(schema);
 }
 
+// (1b) Material omissions is a governed fact, not the model's to choose: when the context
+//      observed them, the wire schema itself narrows assessment_mode/conclusion/blocking so the
+//      model cannot even offer the assessed shape that would otherwise be doomed to fail.
+{
+  const validationContext = buildValidationContext();
+  validationContext.materialOmissionsObserved = true;
+  const schema = Agt002PreviewContract.buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationContext, BATCH_A);
+  const unitSchema = schema.properties.integral_analysis.properties.analysis_units.items;
+
+  assert.deepEqual(unitSchema.properties.assessment_mode.enum, ['abstained'], 'assessment_mode must be pinned to exactly "abstained" when material omissions were observed');
+  assert.deepEqual([...unitSchema.properties.conclusion.properties.confidence.enum], ['unavailable']);
+  assert.deepEqual([...unitSchema.properties.conclusion.properties.status.enum].sort(), ['human_validation_required', 'insufficient_evidence']);
+  assert.deepEqual([...unitSchema.properties.blocking.properties.effect.enum], ['undetermined']);
+}
+
 // ---------------------------------------------------------------------------------------------
 // (2) Happy path + deterministic server-owned assembly (unit_id, GLOBAL sequence, category,
 //     evidence_state) — batch B starts at global position 3, proving sequence is never a
@@ -459,19 +477,42 @@ const GOVERNED_TD_REF = { 'REQ-DISCARD-1': 'TD-DISCARD-1', 'REQ-HAB-1': 'TD-HAB-
 }
 
 // ---------------------------------------------------------------------------------------------
-// (7) Omission/abstention violation: when the governed context observed material omissions, a
-//     batch turn that still presents an assessed (non-abstained) unit must be rejected — this is
-//     the existing full-document invariant (validateMaterialOmissionsInvariant), now also caught
-//     as early as per-batch validation rather than only surfacing later at merge time.
+// (7) Material omissions is a governed fact, not the model's to choose: when the governed
+//     context observed them, a batch turn that still presents an assessed (non-abstained) unit
+//     is silently coerced into the abstained shape and VALIDATES, rather than rejected. Retrying
+//     an assessed turn against this exact invariant can never succeed — the model has no way to
+//     "fix" a fact it does not control — so a hard rejection here would only ever strand an
+//     already-completed batch run (production incident: job d14a1a46 finished discovery 69/69
+//     and then died forever at v3_material_omissions_abstention_required).
 // ---------------------------------------------------------------------------------------------
 {
   const validationContext = buildValidationContext();
   validationContext.materialOmissionsObserved = true;
   const value = buildBatchTurn(BATCH_A.requirement_ids); // both units are "assessed", not abstained
-  assert.throws(
-    () => Agt002PreviewContract.validateAgt002PreviewModelOutputV3Batch(value, { validationContext, batch: BATCH_A }),
-    /abstained|abstenci|material_omissions|omisi/i,
-  );
+  const result = Agt002PreviewContract.validateAgt002PreviewModelOutputV3Batch(value, { validationContext, batch: BATCH_A });
+  assert.equal(result.analysis_units.length, 2);
+  for (const unit of result.analysis_units) {
+    assert.equal(unit.assessment_mode, 'abstained', 'every unit must be coerced to "abstained" when material omissions were observed');
+    assert.equal(unit.conclusion.confidence, 'unavailable');
+    assert.ok(
+      ['insufficient_evidence', 'human_validation_required'].includes(unit.conclusion.status),
+      'assessment_mode "abstained" only permits these two conclusion.status values',
+    );
+    assert.ok(unit.missing_evidence.length > 0, 'a coerced "insufficient_evidence" unit must carry at least one missing_evidence entry');
+  }
+}
+
+// Regression: a unit that arrived as blocking.effect "blocker" (invalid alongside assessment_mode
+// "abstained") is coerced to "undetermined" rather than rejected or left inconsistent.
+{
+  const validationContext = buildValidationContext();
+  validationContext.materialOmissionsObserved = true;
+  const value = buildBatchTurn(BATCH_B.requirement_ids); // REQ-FIN-1 arrives with blocking.effect "blocker"
+  const result = Agt002PreviewContract.validateAgt002PreviewModelOutputV3Batch(value, { validationContext, batch: BATCH_B });
+  const finUnit = result.analysis_units.find(unit => unit.requirement_id === 'REQ-FIN-1');
+  assert.equal(finUnit.assessment_mode, 'abstained');
+  assert.notEqual(finUnit.blocking.effect, 'blocker', 'blocking.effect "blocker" must never survive alongside assessment_mode "abstained"');
+  assert.equal(finUnit.blocking.effect, 'undetermined');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -581,6 +622,63 @@ const GOVERNED_TD_REF = { 'REQ-DISCARD-1': 'TD-DISCARD-1', 'REQ-HAB-1': 'TD-HAB-
     broken.analysis_units[1] = { ...broken.analysis_units[1], sequence: broken.analysis_units[0].sequence };
     assert.throws(() => validateAgt002IntegralAnalysisV3(broken, validationContext), /sequence|secuencia/i);
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// (11) buildAgt002MaterialOmissionAbstainedBatchModelOutput: a deterministic, model-free
+//      replacement for an entire batch turn once the governed context has already observed
+//      material retrieval omissions (production incident: job 10753262 died mid-run wasting
+//      model turns that were always going to be coerced to abstention anyway). Its output must
+//      pass validateAgt002PreviewModelOutputV3Batch exactly like a real model turn would.
+// ---------------------------------------------------------------------------------------------
+{
+  assert.equal(
+    typeof Agt002PreviewContract.buildAgt002MaterialOmissionAbstainedBatchModelOutput, 'function',
+    'agt002-preview-contract.js must export buildAgt002MaterialOmissionAbstainedBatchModelOutput({ validationContext, batch })',
+  );
+
+  const validationContext = buildValidationContext();
+  validationContext.materialOmissionsObserved = true;
+
+  const stub = Agt002PreviewContract.buildAgt002MaterialOmissionAbstainedBatchModelOutput({ validationContext, batch: BATCH_A });
+  assert.deepEqual(Object.keys(stub), ['integral_analysis']);
+  assert.equal(stub.integral_analysis.analysis_units.length, BATCH_A.requirement_ids.length);
+  assert.deepEqual(stub.integral_analysis.analysis_units.map(unit => unit.requirement_id), BATCH_A.requirement_ids);
+
+  const result = Agt002PreviewContract.validateAgt002PreviewModelOutputV3Batch(stub, { validationContext, batch: BATCH_A });
+  assert.equal(result.analysis_units.length, BATCH_A.requirement_ids.length);
+  for (const unit of result.analysis_units) {
+    assert.equal(unit.assessment_mode, 'abstained');
+    assert.equal(unit.conclusion.status, 'insufficient_evidence');
+    assert.equal(unit.conclusion.confidence, 'unavailable');
+    assert.equal(unit.human_validation.required, true);
+    assert.equal(unit.human_validation.status, 'pending');
+    assert.ok(unit.missing_evidence.length > 0);
+  }
+
+  // The full merge + unchanged full validator must also accept it end to end, across every
+  // batch of the run, exactly like a real (coerced) model turn would.
+  const resultB = Agt002PreviewContract.validateAgt002PreviewModelOutputV3Batch(
+    Agt002PreviewContract.buildAgt002MaterialOmissionAbstainedBatchModelOutput({ validationContext, batch: BATCH_B }),
+    { validationContext, batch: BATCH_B },
+  );
+  const merged = Agt002PreviewContract.mergeAgt002IntegralAnalysisV3Batches([result, resultB], validationContext);
+  assert.equal(merged.coverage.material_omissions, true);
+  assert.deepEqual(merged.analysis_units.map(unit => unit.requirement_id), ['REQ-DISCARD-1', 'REQ-HAB-1', 'REQ-TECH-1', 'REQ-FIN-1']);
+
+  // Title falls back to the Spanish default when the governed manifest carries none (today's
+  // real production shape — requirementManifest entries carry only requirement_id/category).
+  assert.equal(result.analysis_units[0].title, 'Requisito sin título');
+
+  // When the manifest DOES carry a title, it is used verbatim instead of the fallback.
+  const withTitleCtx = buildValidationContext();
+  withTitleCtx.materialOmissionsObserved = true;
+  withTitleCtx.requirementManifest = withTitleCtx.requirementManifest.map(entry => (
+    entry.requirement_id === 'REQ-DISCARD-1' ? { ...entry, title: 'Causal de descarte X' } : entry
+  ));
+  const withTitleStub = Agt002PreviewContract.buildAgt002MaterialOmissionAbstainedBatchModelOutput({ validationContext: withTitleCtx, batch: BATCH_A });
+  const withTitleResult = Agt002PreviewContract.validateAgt002PreviewModelOutputV3Batch(withTitleStub, { validationContext: withTitleCtx, batch: BATCH_A });
+  assert.equal(withTitleResult.analysis_units[0].title, 'Causal de descarte X');
 }
 
 console.log('agt002-integral-analysis-batch-contract passed');

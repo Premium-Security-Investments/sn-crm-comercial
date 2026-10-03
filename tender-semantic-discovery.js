@@ -314,14 +314,29 @@ import {
 // re-keyed, and the analysis identities (AGT002_INTEGRAL_V3_POLICY_VERSION,
 // AGT002_PREVIEW_DEFAULT_POLICY_VERSION), the manifest assembler and its own hashes stay untouched,
 // exactly as under v8.
-export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v9';
+//
+// v10 (AGT-002 V3 semantic discovery size remediation, Claude Sonnet). Two real Claude Sonnet
+// production Procuraduria jobs (fa472145, e6563f5a) completed batch 0 and batch 1 and then timed
+// out/cancelled on batch 2 at approximately five minutes — the same batch-2 timeout pattern v9
+// already fixed for Luna by lowering the per-batch source-char budget from 40_000 to 20_000. v9's
+// 20_000-char default is still too large for Claude to finish batch 2 inside the bridge's timeout,
+// so v10 halves it again. Same rules as v9 apply unchanged: no source unit is silently omitted,
+// `planTenderSemanticDiscoveryBatches` still assigns every unit to a batch or an explicit failure
+// reason before any provider call, and a single unit larger than the per-batch budget still gets its
+// own oversized-singleton batch rather than being dropped or truncated
+// (tender-semantic-discovery-batches.js). This is a size remediation, not a coverage or correctness
+// change. The batch PLAN for a given snapshot changes again at the new, smaller budget, and the
+// per-batch idempotency identity is derived from this policy version string, so the policy version
+// moves with it: a response reserved under the v9 contract, at v9's batch boundaries, must never be
+// replayed for a v10 request that asks a differently-shaped question.
+export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v10';
 export const TENDER_SEMANTIC_CATEGORIES = Object.freeze([
   'discard', 'habilitating', 'technical', 'financial_execution',
 ]);
-// v9: lowered from 40_000 to 20_000 to shrink per-batch serialized request size and remediate the
-// real AGT-002 Procuraduria batch-2 bridge timeouts (see the v9 note above for the offline
-// measurements this default was chosen from).
-export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 20_000;
+// v10: lowered from 20_000 to 10_000 to shrink per-batch serialized request size further and
+// remediate real Claude Sonnet production Procuraduria batch-2 timeouts/cancellations at v9's
+// 20_000-char default (see the v10 note above).
+export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 10_000;
 
 // Bounded per-batch retry for AGT-002 `AGT002_CODEX_TIMEOUT`, after a real 20k-char v9
 // Procuraduria run succeeded five batches (latencies 19.6-57.6s) and then batch 6 hit exactly that

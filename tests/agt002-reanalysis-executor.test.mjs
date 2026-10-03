@@ -202,11 +202,11 @@ test('retrieval-off jobs never require the tender inventory at persistence', asy
   assert.equal(context.requireTenderRequirementInventory, false);
 });
 
-// Release blocker: the semantic V3 path spends TWO sequential provider timeouts (discovery
-// then analysis) under a single durable claim, so the claim lease must fund both turns plus
-// the executor's 30s buffer — 2 * ceil(timeout_ms / 1000) + 30. A one-timeout lease expires
-// while the second turn is in flight and the run is reclaimed underneath itself.
-test('claims a preview lease covering both sequential provider turns plus buffer', async () => {
+// Durable batched analysis renews the preview claim at every provider boundary
+// (agt002-preview-runtime.js beforeProviderCall -> renewAgt002PreviewClaim), so the claim lease
+// only ever has to fund ONE provider turn plus the executor's 30s buffer — ceil(timeout_ms / 1000)
+// + 30, never two turns summed under one lease.
+test('claims a preview lease covering one provider turn plus buffer', async () => {
   const job = {
     ...JOB,
     frozenEngineInput: {
@@ -219,20 +219,20 @@ test('claims a preview lease covering both sequential provider turns plus buffer
   assert.equal(calls.claim.length, 1);
   assert.equal(
     calls.claim[0][1].leaseSeconds,
-    90,
-    'a 30s identity timeout funds two turns, so the claim lease must be 2*30+30=90s, not 60s',
+    60,
+    'a 30s identity timeout funds one turn, so the claim lease must be 30+30=60s',
   );
 });
 
-// Clamping a two-turn lease to the 600s ceiling would be worse than useless: it hands back a
-// lease that silently underfunds both turns (2*480+30=990s of work under a 600s lease), so the
+// Clamping a one-turn lease to the 600s ceiling would be worse than useless: it hands back a
+// lease that silently underfunds the turn (e.g. 601+30=631s of work under a 600s lease), so the
 // run is reclaimed mid-flight after the provider has already been paid. A timeout the ceiling
 // cannot fund is a frozen-config error, and the only safe close is to reject it as unclaimable
 // config — before any provider claim, exactly like the other pre-claim validation failures.
 const SAFE_CONFIG_REJECTION = { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false };
 
-test('rejects a timeout the 600s ceiling cannot fund for two turns before claiming', async () => {
-  for (const timeout_ms of [285_001, 300_000, 480_000]) {
+test('rejects a timeout the 600s ceiling cannot fund for one turn before claiming', async () => {
+  for (const timeout_ms of [570_001, 600_000]) {
     const job = {
       ...JOB,
       frozenEngineInput: {
@@ -242,7 +242,7 @@ test('rejects a timeout the 600s ceiling cannot fund for two turns before claimi
     };
     const { executor, calls } = harness();
     const result = await executor({ kind: 'db' }, job);
-    const required = 2 * Math.ceil(timeout_ms / 1000) + 30;
+    const required = Math.ceil(timeout_ms / 1000) + 30;
     assert.ok(required > 600, `${timeout_ms}ms must be an unfundable timeout for this case`);
     assert.deepEqual(result, SAFE_CONFIG_REJECTION, `${timeout_ms}ms needs ${required}s > 600s and must close safely`);
     assert.equal(calls.claim.length, 0, 'an unfundable lease must never reach claimPreviewRun');
@@ -252,17 +252,34 @@ test('rejects a timeout the 600s ceiling cannot fund for two turns before claimi
   }
 });
 
-test('the largest two-turn-fundable timeout still claims at exactly the 600s ceiling', async () => {
+test('a job frozen with a longer single-turn timeout (450s/480s) still claims and executes', async () => {
+  for (const timeout_ms of [450_000, 480_000]) {
+    const job = {
+      ...JOB,
+      frozenEngineInput: {
+        ...JOB.frozenEngineInput,
+        engine_identity: { ...JOB.frozenEngineInput.engine_identity, timeout_ms },
+      },
+    };
+    const { executor, calls } = harness();
+    const result = await executor({ kind: 'db' }, job);
+    assert.equal(result.status, 'completed', `${timeout_ms}ms must be fundable and executable under the one-turn lease`);
+    assert.equal(calls.claim.length, 1);
+    assert.equal(calls.claim[0][1].leaseSeconds, Math.ceil(timeout_ms / 1000) + 30);
+  }
+});
+
+test('the largest one-turn-fundable timeout still claims at exactly the 600s ceiling', async () => {
   const job = {
     ...JOB,
     frozenEngineInput: {
       ...JOB.frozenEngineInput,
-      engine_identity: { ...JOB.frozenEngineInput.engine_identity, timeout_ms: 285_000 },
+      engine_identity: { ...JOB.frozenEngineInput.engine_identity, timeout_ms: 570_000 },
     },
   };
   const { executor, calls } = harness();
   await executor({ kind: 'db' }, job);
-  assert.equal(calls.claim.length, 1, '2*285+30=600 fits the ceiling exactly and stays claimable');
+  assert.equal(calls.claim.length, 1, '570+30=600 fits the ceiling exactly and stays claimable');
   assert.equal(calls.claim[0][1].leaseSeconds, 600);
 });
 
@@ -288,7 +305,7 @@ test('releases the preview lease exactly once if runtime construction fails befo
 test('rejects malformed, over-budget, or identity-mismatched frozen input before any provider claim', async () => {
   const { executor, calls } = harness();
   const mismatch = await executor({ kind: 'db' }, { ...JOB, frozenEngineInput: { ...JOB.frozenEngineInput, analysis_context: { ...JOB.frozenEngineInput.analysis_context, snapshotId: 'other' } } });
-  const overBudget = await executor({ kind: 'db' }, { ...JOB, frozenEngineInput: { ...JOB.frozenEngineInput, engine_identity: { ...JOB.frozenEngineInput.engine_identity, timeout_ms: 480_001 } } });
+  const overBudget = await executor({ kind: 'db' }, { ...JOB, frozenEngineInput: { ...JOB.frozenEngineInput, engine_identity: { ...JOB.frozenEngineInput.engine_identity, timeout_ms: 600_000 } } });
   assert.deepEqual(mismatch, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
   assert.deepEqual(overBudget, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
   assert.equal(calls.claim.length, 0);

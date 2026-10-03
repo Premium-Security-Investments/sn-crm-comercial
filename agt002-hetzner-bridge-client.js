@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { bridgeRunUrl, resolveAgt002BridgeHost } from './agt002-bridge-host.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from './agt002-hetzner-bridge-signing.js';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
@@ -82,20 +83,34 @@ export function createAgt002HetznerBridgeClient({ url = bridgeRunUrl(resolveAgt0
       const marginTimer = setTimeout(() => controller.abort(), timeoutMs + 2_000);
       marginTimer.unref?.();
 
+      // Node/undici defaults headersTimeout to 300_000ms. Claude discovery batches often
+      // send no response headers until the model finishes, so the default aborted the
+      // socket at 300s even when timeoutMs was 450_000. Size the dispatcher to the turn.
+      const fetchOptions = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-AGT002-Timestamp': timestamp,
+          'X-AGT002-Nonce': nonce,
+          'X-AGT002-Signature': signature,
+          'Idempotency-Key': idempotencyKey,
+        },
+        body,
+        signal: controller.signal,
+      };
       let response;
       try {
-        response = await fetchImpl(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-AGT002-Timestamp': timestamp,
-            'X-AGT002-Nonce': nonce,
-            'X-AGT002-Signature': signature,
-            'Idempotency-Key': idempotencyKey,
-          },
-          body,
-          signal: controller.signal,
-        });
+        if (fetchImpl === fetch) {
+          response = await undiciFetch(url, {
+            ...fetchOptions,
+            dispatcher: new Agent({
+              headersTimeout: timeoutMs + 30_000,
+              bodyTimeout: timeoutMs + 30_000,
+            }),
+          });
+        } else {
+          response = await fetchImpl(url, fetchOptions);
+        }
       } catch {
         throw transportError('El servicio de AGT-002 Preview no está disponible.', 'AGT002_CODEX_TRANSPORT_ERROR');
       } finally {

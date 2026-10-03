@@ -14,29 +14,27 @@ import {
 } from '../tender-semantic-discovery-batches.js';
 import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
 
-// AGT-002 V3 semantic discovery, policy v9 — batch-size remediation for two observed real
-// Procuraduria timeout attempts. Offline replay of the exact frozen 13-document snapshot from
-// those attempts through the official batch planner showed the timing-out batch (batch 2,
-// serialized request chars 320041) was the third attempted request and timed out twice; it was
-// not the largest batch the previous default (`maxSourceChars = 40_000`) produced — that plan's
-// actual maximum was a different batch, at 353001 chars. The same snapshot at
-// `maxSourceChars = 20_000` plans more, smaller batches (35 instead of 18) and brings the maximum
-// serialized request down to 199057 chars. This file pins the product change with a synthetic
-// corpus (no network, no provider, no DB) instead of replaying the real snapshot:
+// AGT-002 V3 semantic discovery, policy v10 — a second batch-size remediation, this time for two
+// real Claude Sonnet production Procuraduria jobs (fa472145, e6563f5a) that completed batch 0 and
+// batch 1 and then timed out/cancelled on batch 2 at approximately five minutes. This is the same
+// batch-2 timeout pattern v9 already fixed for Luna by lowering
+// `TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS` from 40_000 to 20_000, but Claude still cannot finish
+// batch 2 at v9's 20_000-char default, so v10 halves it again. This file pins the product change
+// with a synthetic corpus (no network, no provider, no DB) instead of replaying a real snapshot:
 //
-//   1. the exported default is exactly 20_000, half the previous 40_000;
-//   2. the policy version moved to v9, because both the model-facing batch plan and the per-batch
+//   1. the exported default is exactly 10_000, half the previous v9 default of 20_000;
+//   2. the policy version moved to v10, because both the model-facing batch plan and the per-batch
 //      idempotency identity change under the new default;
 //   3. a synthetic corpus above 20_000 chars, run through `discoverTenderSemanticManifest` WITHOUT
 //      an explicit `maxSourceChars` (so the new default governs), produces more than one sequential
 //      provider call, and every source unit the planner could assign is sent in exactly one of those
-//      calls — the same corpus plans strictly fewer, larger batches at the old 40_000 budget, which
-//      is the size reduction this remediation exists to produce;
+//      calls — the same corpus plans strictly fewer, larger batches at the old v9 20_000 budget,
+//      which is the size reduction this remediation exists to produce;
 //   4. the merged run's own `discoveryLedger` accounts for every unit as assigned or explicitly
 //      failed (never silently short), matching the planner's own ledger;
 //   5. the per-batch idempotency identity stays deterministic across a repeat run, and differs from
-//      what the same batch would hash to under a literal 'tender-semantic-discovery.v8' policy
-//      version — a response reserved under v8 must never be replayed for a v9 request.
+//      what the same batch would hash to under a literal 'tender-semantic-discovery.v9' policy
+//      version — a response reserved under v9 must never be replayed for a v10 request.
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 function document(id, text) {
@@ -108,41 +106,41 @@ const orderedUnits = [...resolvedTexts.entries()]
 const totalCorpusChars = orderedUnits.reduce((total, unit) => total + unit.text.length, 0);
 
 // ---------------------------------------------------------------------------------------------
-// 0. Exported identities: the default source-char budget is 20_000, and the policy version moved
-//    to v9 with it.
+// 0. Exported identities: the default source-char budget is 10_000, and the policy version moved
+//    to v10 with it.
 // ---------------------------------------------------------------------------------------------
 assert.equal(
-  TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS, 20_000,
-  'the default per-batch source-char budget must be lowered from 40_000 to 20_000 to remediate the '
-  + 'real AGT-002 Procuraduria batch-2 bridge timeouts',
+  TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS, 10_000,
+  'the default per-batch source-char budget must be lowered from 20_000 to 10_000 to remediate the '
+  + 'real Claude Sonnet production Procuraduria batch-2 timeouts/cancellations',
 );
 assert.equal(
-  TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION, 'tender-semantic-discovery.v9',
+  TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION, 'tender-semantic-discovery.v10',
   'lowering the default source-char budget changes the model-facing batch plan and the per-batch '
   + 'idempotency identity, so the policy version must move',
 );
 
 // ---------------------------------------------------------------------------------------------
-// 1. Fixture sanity: the synthetic corpus must exceed both the new 20_000 default AND the old
-//    40_000 default, so the comparison below is not an artefact of a corpus too small to matter.
+// 1. Fixture sanity: the synthetic corpus must exceed both the new 10_000 default AND the old v9
+//    20_000 default, so the comparison below is not an artefact of a corpus too small to matter.
 // ---------------------------------------------------------------------------------------------
 assert.ok(
-  totalCorpusChars > 40_000,
-  `fixture corpus must exceed the old 40_000-char default to be a meaningful regression fixture, got ${totalCorpusChars}`,
+  totalCorpusChars > 20_000,
+  `fixture corpus must exceed the old v9 20_000-char default to be a meaningful regression fixture, got ${totalCorpusChars}`,
 );
 
 // ---------------------------------------------------------------------------------------------
 // 2. Pure planner comparison: the SAME corpus plans strictly more (and smaller) batches at the new
-//    20_000 default than it would have at the old 40_000 default — the size reduction this
-//    remediation exists to produce, mirrored from the real snapshot's offline 18-vs-35 measurement.
+//    10_000 default than it would have at the old v9 20_000 default — the size reduction this
+//    remediation exists to produce.
 // ---------------------------------------------------------------------------------------------
 const planAtNewDefault = planTenderSemanticDiscoveryBatches({
   units: orderedUnits, maxSourceCharsPerBatch: TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS,
 });
-const planAtOldDefault = planTenderSemanticDiscoveryBatches({ units: orderedUnits, maxSourceCharsPerBatch: 40_000 });
+const planAtOldDefault = planTenderSemanticDiscoveryBatches({ units: orderedUnits, maxSourceCharsPerBatch: 20_000 });
 assert.ok(
   planAtNewDefault.batches.length > planAtOldDefault.batches.length,
-  `the 20_000 default must plan more batches than the old 40_000 default over the same corpus `
+  `the 10_000 default must plan more batches than the old v9 20_000 default over the same corpus `
   + `(got ${planAtNewDefault.batches.length} vs ${planAtOldDefault.batches.length})`,
 );
 assert.ok(planAtNewDefault.batches.length > 1, 'the new default must still split this corpus into multiple batches');
@@ -179,7 +177,7 @@ const result = await discoverTenderSemanticManifest({
   client: capture,
   model: 'test-model',
   timeoutMs: 1000,
-  idempotencyKey: 'idem-v9-default-batch-size',
+  idempotencyKey: 'idem-v10-default-batch-size',
   inventory,
   documents,
   // Generous on purpose: this file tests the SOURCE budget default, not the label-catalog budget,
@@ -234,7 +232,7 @@ await discoverTenderSemanticManifest({
   client: secondCapture,
   model: 'test-model',
   timeoutMs: 1000,
-  idempotencyKey: 'idem-v9-default-batch-size',
+  idempotencyKey: 'idem-v10-default-batch-size',
   inventory,
   documents,
   maxLabelCatalogChars: 500_000,
@@ -247,9 +245,9 @@ assert.deepEqual(
 
 // ---------------------------------------------------------------------------------------------
 // 6. Per-batch identity: the hash (and therefore the idempotencyKey) a real batch reduces to under
-//    the current v9 policy version must differ from what the identical batch would reduce to under
-//    a literal 'tender-semantic-discovery.v8' policy version — a response reserved under v8 must
-//    never be replayed for a v9 request that asks a differently-shaped question.
+//    the current v10 policy version must differ from what the identical batch would reduce to under
+//    a literal 'tender-semantic-discovery.v9' policy version — a response reserved under v9 must
+//    never be replayed for a v10 request that asks a differently-shaped question.
 // ---------------------------------------------------------------------------------------------
 {
   const sampleBatch = planAtNewDefault.batches[0];
@@ -260,24 +258,24 @@ assert.deepEqual(
     batchIndex: sampleBatch.batch_index,
     units: sampleBatch.units,
   };
-  const hashAtV9 = computeTenderSemanticDiscoveryBatchHash({ ...baseHashInput, policyVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION });
-  const hashAtV8Literal = computeTenderSemanticDiscoveryBatchHash({ ...baseHashInput, policyVersion: 'tender-semantic-discovery.v8' });
-  assert.match(hashAtV9, /^[0-9a-f]{64}$/, 'the batch hash must be a stable 64-char lowercase hex digest');
+  const hashAtV10 = computeTenderSemanticDiscoveryBatchHash({ ...baseHashInput, policyVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION });
+  const hashAtV9Literal = computeTenderSemanticDiscoveryBatchHash({ ...baseHashInput, policyVersion: 'tender-semantic-discovery.v9' });
+  assert.match(hashAtV10, /^[0-9a-f]{64}$/, 'the batch hash must be a stable 64-char lowercase hex digest');
   assert.notEqual(
-    hashAtV9, hashAtV8Literal,
-    'the same batch must hash differently under the real v9 policy version than under a literal v8 policy version',
+    hashAtV10, hashAtV9Literal,
+    'the same batch must hash differently under the real v10 policy version than under a literal v9 policy version',
   );
   assert.equal(
-    hashAtV9,
+    hashAtV10,
     computeTenderSemanticDiscoveryBatchHash({ ...baseHashInput, policyVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION }),
-    'the same input must re-derive the exact same hash under v9',
+    'the same input must re-derive the exact same hash under v10',
   );
 
-  const keyAtV9 = tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey: 'run-1', batchIndex: sampleBatch.batch_index, batchHash: hashAtV9 });
-  const keyAtV8Literal = tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey: 'run-1', batchIndex: sampleBatch.batch_index, batchHash: hashAtV8Literal });
+  const keyAtV10 = tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey: 'run-1', batchIndex: sampleBatch.batch_index, batchHash: hashAtV10 });
+  const keyAtV9Literal = tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey: 'run-1', batchIndex: sampleBatch.batch_index, batchHash: hashAtV9Literal });
   assert.notEqual(
-    keyAtV9, keyAtV8Literal,
-    'the per-batch idempotencyKey must differ between v9 and a literal v8 policy version, so a v8 response is never replayed for a v9 request',
+    keyAtV10, keyAtV9Literal,
+    'the per-batch idempotencyKey must differ between v10 and a literal v9 policy version, so a v9 response is never replayed for a v10 request',
   );
 }
 

@@ -90,10 +90,10 @@ async function assertRejection(promiseFactory, { code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v9',
-    'v8 changed how a contradictory answer is canonicalized and what the policy states about it, and '
-    + 'v9 lowered the per-batch source-char budget (changing the batch plan itself) — the policy '
-    + 'version must move with the more recent change too',
+    'tender-semantic-discovery.v10',
+    'v8 changed how a contradictory answer is canonicalized and what the policy states about it, v9 '
+    + 'lowered the per-batch source-char budget (changing the batch plan itself), and v10 lowered it '
+    + 'again for Claude — the policy version must move with the more recent changes too',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
