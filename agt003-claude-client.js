@@ -63,6 +63,27 @@ const LOGIN_SUBTYPES = new Set([
 const KILL_GRACE_MS = 200;
 const FLUSH_GRACE_MS = 250;
 const SESSION_LIMIT_PHRASE = "you've hit your session limit";
+const STDERR_TRACE_CHAR_LIMIT = 16_384;
+const REDACTED = '[REDACTED]';
+
+/**
+ * Redacta un volcado de stderr sólo para la traza interna: nunca se usa para
+ * construir el error que ve el llamador. El texto se acota primero para no
+ * cargar en memoria ni procesar con regex un stderr arbitrariamente grande.
+ */
+function redactStderrForTrace(text) {
+  if (!text) return '';
+  let out = text.slice(0, STDERR_TRACE_CHAR_LIMIT);
+  out = out.replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, `Bearer ${REDACTED}`);
+  out = out.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, REDACTED);
+  out = out.replace(
+    /\b(token|secret|authorization|api[_-]?key|password)\b\s*[:=]\s*("[^"]*"|'[^']*'|\S+)/gi,
+    (_match, key) => `${key}=${REDACTED}`,
+  );
+  out = out.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, REDACTED);
+  out = out.replace(/\S{80,}/g, REDACTED);
+  return out;
+}
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -121,6 +142,7 @@ export function createAgt003ClaudeClient({
   command = 'claude',
   cwd = tmpdir(),
   env = process.env,
+  persistTrace,
 } = {}) {
   if (typeof spawn !== 'function' || !nonEmptyString(command)) {
     throw new Error('El cliente de AGT-003 no está configurado.');
@@ -149,9 +171,13 @@ export function createAgt003ClaudeClient({
       if (typeof serializedSchema !== 'string') return Promise.reject(new Error('AGT-003 requiere un outputSchema cerrado.'));
       // El techo se mide en bytes UTF-8, no en caracteres: el límite del kernel
       // también lo es. El esquema rechazado nunca se cita en el error.
-      if (Buffer.byteLength(serializedSchema, 'utf8') > AGT003_CLAUDE_MAX_SCHEMA_BYTES) {
+      const schemaBytes = Buffer.byteLength(serializedSchema, 'utf8');
+      if (schemaBytes > AGT003_CLAUDE_MAX_SCHEMA_BYTES) {
         return Promise.reject(failure('El outputSchema de AGT-003 excede el tamaño permitido.', 'AGT003_CLAUDE_SCHEMA_TOO_LARGE'));
       }
+
+      const serializedInput = JSON.stringify(input);
+      const stdinBytes = Buffer.byteLength(serializedInput, 'utf8');
 
       const args = [
         '-p',
@@ -166,6 +192,10 @@ export function createAgt003ClaudeClient({
         '--safe-mode',
         '--system-prompt', policy,
       ];
+      const argvBytes = [command, ...args].reduce(
+        (sum, part) => sum + Buffer.byteLength(String(part), 'utf8'),
+        0,
+      );
 
       return new Promise((resolve, reject) => {
         let child;
@@ -175,6 +205,7 @@ export function createAgt003ClaudeClient({
           reject(failure('El servicio de AGT-003 no está disponible.', 'AGT003_CLAUDE_TRANSPORT_ERROR'));
           return;
         }
+        const tSpawn = Date.now();
 
         let settled = false;
         let stdout = '';
@@ -182,7 +213,13 @@ export function createAgt003ClaudeClient({
         let stdoutEnded = false;
         let exited = false;
         let exitCode = null;
+        let exitSignal = null;
         let flushTimer = null;
+        let tFirstStdout = null;
+        let tFirstStderr = null;
+        let tClose = null;
+        let stderrBytes = 0;
+        let stderrCaptured = '';
         const stdoutIsStream = typeof child.stdout?.pipe === 'function';
 
         const settle = (fn, value) => {
@@ -198,6 +235,24 @@ export function createAgt003ClaudeClient({
             try { child.kill('SIGTERM'); } catch { /* best effort */ }
             const killer = setTimeout(() => { try { if (!child.killed) child.kill('SIGKILL'); } catch { /* best effort */ } }, KILL_GRACE_MS);
             killer.unref?.();
+          }
+          if (typeof persistTrace === 'function') {
+            try {
+              persistTrace({
+                t_spawn: tSpawn,
+                t_first_stdout_byte: tFirstStdout,
+                t_first_stderr_byte: tFirstStderr,
+                t_close: tClose,
+                exit_code: exitCode,
+                exit_signal: exitSignal,
+                stdout_bytes: stdoutBytes,
+                stderr_bytes: stderrBytes,
+                stderr_redacted: redactStderrForTrace(stderrCaptured),
+                schema_bytes: schemaBytes,
+                stdin_bytes: stdinBytes,
+                argv_bytes: argvBytes,
+              });
+            } catch { /* la traza nunca puede hacer fallar el turno */ }
           }
           fn(value);
         };
@@ -247,9 +302,10 @@ export function createAgt003ClaudeClient({
           });
         };
 
-        const noteExit = code => {
+        const noteExit = (code, exitedSignal) => {
           exited = true;
           if (typeof code === 'number') exitCode = code;
+          if (typeof exitedSignal === 'string') exitSignal = exitedSignal;
           if (settled) return;
           if (!stdoutIsStream || stdoutEnded) { setImmediate(finalize); return; }
           if (!flushTimer) {
@@ -263,16 +319,24 @@ export function createAgt003ClaudeClient({
 
         child.on('error', () => settle(reject, failure('El servicio de AGT-003 no está disponible.', 'AGT003_CLAUDE_TRANSPORT_ERROR')));
         child.on('exit', noteExit);
-        child.on('close', code => { stdoutEnded = true; noteExit(code); });
+        child.on('close', (code, closeSignal) => { stdoutEnded = true; tClose = Date.now(); noteExit(code, closeSignal); });
 
-        // stderr se consume para no bloquear la tubería y se descarta: nunca se
-        // acumula, ni se registra, ni se adjunta al error del llamador.
-        child.stderr?.on?.('data', () => { /* el detalle del proveedor jamás sale de aquí */ });
+        // stderr se cuenta y se captura (acotado) sólo para la traza interna;
+        // nunca se acumula sin límite ni se adjunta al error del llamador.
+        child.stderr?.on?.('data', chunk => {
+          if (tFirstStderr === null) tFirstStderr = Date.now();
+          const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+          stderrBytes += Buffer.byteLength(text, 'utf8');
+          if (stderrCaptured.length < STDERR_TRACE_CHAR_LIMIT) {
+            stderrCaptured = (stderrCaptured + text).slice(0, STDERR_TRACE_CHAR_LIMIT);
+          }
+        });
         child.stdin?.on?.('error', () => { /* el subproceso puede cerrar stdin antes de leerlo */ });
 
         child.stdout?.on?.('end', () => { stdoutEnded = true; if (exited) finalize(); });
         child.stdout.on('data', chunk => {
           if (settled) return;
+          if (tFirstStdout === null) tFirstStdout = Date.now();
           const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
           stdoutBytes += Buffer.byteLength(text, 'utf8');
           if (stdoutBytes > AGT003_CLAUDE_MAX_STDOUT_BYTES) {
@@ -286,7 +350,7 @@ export function createAgt003ClaudeClient({
         // La entrada no confiable del CRM viaja sólo por stdin, nunca por argv:
         // así no aparece en la tabla de procesos ni en ningún registro del host.
         try {
-          child.stdin.write(JSON.stringify(input));
+          child.stdin.write(serializedInput);
           child.stdin.end();
         } catch {
           settle(reject, failure('El servicio de AGT-003 no está disponible.', 'AGT003_CLAUDE_TRANSPORT_ERROR'));

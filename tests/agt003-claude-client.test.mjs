@@ -39,7 +39,7 @@ function fakeChild() {
   return child;
 }
 
-function harness({ command, cwd, env } = {}) {
+function harness({ command, cwd, env, persistTrace } = {}) {
   const calls = [];
   const children = [];
   const spawn = (spawnCommand, args, options) => {
@@ -48,7 +48,13 @@ function harness({ command, cwd, env } = {}) {
     calls.push({ command: spawnCommand, args, options });
     return child;
   };
-  const client = createAgt003ClaudeClient({ spawn, ...(command ? { command } : {}), ...(cwd ? { cwd } : {}), ...(env ? { env } : {}) });
+  const client = createAgt003ClaudeClient({
+    spawn,
+    ...(command ? { command } : {}),
+    ...(cwd ? { cwd } : {}),
+    ...(env ? { env } : {}),
+    ...(persistTrace ? { persistTrace } : {}),
+  });
   return { client, calls, children };
 }
 
@@ -175,6 +181,54 @@ async function testTimeoutKillsTheSubprocess() {
   const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 20 });
   await assert.rejects(pending, error => error.code === 'AGT003_CLAUDE_TIMEOUT');
   assert.ok(children[0].signals.includes('SIGTERM'), 'un turno vencido debe terminar el subproceso');
+}
+
+// Un timeout debe dejar una traza con tiempos y tamaños, nunca con el
+// contenido de la entrada, la política o el esquema.
+async function testTimeoutPersistsPhasesAndSizes() {
+  const traces = [];
+  const persistTrace = trace => traces.push(trace);
+  const { client, calls } = harness({ persistTrace });
+  const before = Date.now();
+  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 20 });
+  await assert.rejects(pending, error => error.code === 'AGT003_CLAUDE_TIMEOUT');
+  const after = Date.now();
+
+  assert.equal(traces.length, 1, 'un timeout debe persistir exactamente una traza');
+  const [trace] = traces;
+
+  assert.equal(typeof trace.t_spawn, 'number');
+  assert.ok(Number.isFinite(trace.t_spawn));
+  assert.ok(trace.t_spawn >= before && trace.t_spawn <= after);
+  assert.equal(trace.t_first_stdout_byte, null);
+  assert.equal(trace.t_first_stderr_byte, null);
+  assert.equal(trace.t_close, null, 'el timeout dispara antes del close');
+  assert.equal(trace.exit_code, null);
+  assert.equal(trace.exit_signal, null);
+  assert.equal(trace.stdout_bytes, 0);
+  assert.equal(trace.stderr_bytes, 0);
+  assert.equal(typeof trace.stderr_redacted, 'string');
+  assert.equal(trace.schema_bytes, Buffer.byteLength(JSON.stringify(SCHEMA), 'utf8'));
+  assert.equal(trace.stdin_bytes, Buffer.byteLength(JSON.stringify(INPUT), 'utf8'));
+
+  const [call] = calls;
+  const expectedArgvBytes = [call.command, ...call.args].reduce(
+    (sum, part) => sum + Buffer.byteLength(String(part), 'utf8'),
+    0,
+  );
+  assert.equal(trace.argv_bytes, expectedArgvBytes);
+
+  // La traza (y el error) nunca deben filtrar la entrada no confiable ni la política.
+  const serializedTrace = JSON.stringify(trace);
+  assert.equal(serializedTrace.includes('texto no confiable'), false, 'la traza no debe incluir la entrada');
+  assert.equal(serializedTrace.includes(POLICY), false, 'la traza no debe incluir la política');
+  try {
+    await pending;
+  } catch (error) {
+    const serializedError = `${error.message} ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+    assert.equal(serializedError.includes('texto no confiable'), false, 'el error no debe incluir la entrada');
+    assert.equal(serializedError.includes(POLICY), false, 'el error no debe incluir la política');
+  }
 }
 
 async function testAbortCancelsTheRun() {
@@ -393,6 +447,7 @@ await testStructuredOutputParsed();
 console.log('agt003-claude-client.test.mjs Paso 1 OK');
 
 await testTimeoutKillsTheSubprocess();
+await testTimeoutPersistsPhasesAndSizes();
 await testAbortCancelsTheRun();
 await testPreAbortedSignalNeverSpawns();
 await testMalformedOutputsFailClosed();
