@@ -2,7 +2,6 @@ import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
-import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 
 function object(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -13,23 +12,22 @@ export const AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS = 600;
 
 /**
  * The durable claim lease one queued job needs, and the single source both the enqueue contract
- * and the worker executor read. Durable batched analysis RENEWS the preview claim at every
- * provider boundary (agt002-preview-runtime.js beforeProviderCall -> renewAgt002PreviewClaim), so
- * the lease only ever has to fund ONE provider turn at a time, not the whole run: `timeout_ms`
- * bounds that single turn, rounded up to whole seconds, plus the executor's 30s buffer. The result
- * is NEVER clamped: clamping hands back a lease that silently underfunds the turn and the run is
- * reclaimed mid-flight after the provider has already been paid.
+ * and the worker executor read. A V3 run spends TWO sequential provider turns under one claim
+ * (semantic discovery, then analysis) and `timeout_ms` bounds each turn independently, so each
+ * turn rounds up to whole seconds on its own before they are summed, plus the executor's 30s
+ * buffer. The result is NEVER clamped: clamping hands back a lease that silently underfunds both
+ * turns and the run is reclaimed mid-flight after the provider has already been paid.
  */
 export function agt002RequiredPreviewClaimLeaseSeconds(timeoutMs) {
-  return Math.ceil(timeoutMs / 1000) + 30;
+  return 2 * Math.ceil(timeoutMs / 1000) + 30;
 }
 
 /**
  * Whether a job frozen with this turn timeout can ever be executed. The worker rejects an
  * unfundable lease BEFORE claiming, on every cycle, so queueing one only creates a corrida that
  * dies without ever reaching the provider — the enqueue side must refuse exactly what the worker
- * refuses. 570_000ms is the largest fundable timeout (570+30 = 600 exactly); 570_001ms needs 601s
- * and is refused here instead of being queued and rejected later. 285_000ms remains valid.
+ * refuses. 285_000ms is the largest fundable timeout (2*285+30 = 600 exactly); 285_001ms needs
+ * 602s and is refused here instead of being queued and rejected later.
  */
 export function isAgt002QueueableTimeoutMs(timeoutMs) {
   return Number.isInteger(timeoutMs)
@@ -79,7 +77,6 @@ export function buildAgt002FrozenEngineInput({
   const resolvedEffort = runtimeConfig?.effort === undefined ? AGT002_PREVIEW_DEFAULT_REASONING_EFFORT : runtimeConfig.effort;
   if (!object(runtimeConfig)
     || typeof runtimeConfig.model !== 'string' || !runtimeConfig.model.trim()
-    || !AGT002_PREVIEW_ALLOWED_MODELS.includes(runtimeConfig.model)
     || typeof runtimeConfig.policyVersion !== 'string' || !runtimeConfig.policyVersion.trim()
     || !isAgt002QueueableTimeoutMs(runtimeConfig.timeoutMs)
     || !Number.isInteger(runtimeConfig.dailyMaxRuns) || runtimeConfig.dailyMaxRuns <= 0

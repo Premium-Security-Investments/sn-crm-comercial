@@ -8,7 +8,6 @@ import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort
 import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 import { renewAgt002PreviewClaim } from './agt002-preview-persistence.js';
-import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -92,7 +91,6 @@ export function isAgt002PreviewConfigured(environment = process.env) {
 /** Single validated source for both the DB reservation and local runtime limits. */
 export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   if (!isAgt002PreviewConfigured(environment)) throw new Error('AGT-002 Preview no está configurado.');
-  if (!AGT002_PREVIEW_ALLOWED_MODELS.includes(environment.AGT002_PREVIEW_MODEL)) throw new Error('AGT-002 Preview no está configurado.');
   const timeoutMs = positiveIntFromEnv(environment, 'AGT002_PREVIEW_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
   const maxConcurrent = positiveIntFromEnv(environment, 'AGT002_PREVIEW_MAX_CONCURRENT', DEFAULT_MAX_CONCURRENT);
   const dailyMaxRuns = positiveIntFromEnv(environment, 'AGT002_PREVIEW_DAILY_MAX_RUNS', DEFAULT_DAILY_MAX_RUNS);
@@ -108,11 +106,12 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   // defaults to the unchanged safe floor, so behavior is byte-identical to before this override
   // existed.
   const promptMaxInputTokens = positiveIntFromEnv(environment, 'AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS', AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS);
-  // The claim is renewed before each provider turn (see beforeProviderCall below), so the lease
-  // only needs to cover ONE turn at a time — `timeoutMs` bounds that turn — plus a 15s buffer.
-  // A lease sized for less than one turn expires while that turn is still in flight and the run
-  // gets reclaimed underneath itself.
-  const leaseSeconds = Math.ceil(timeoutMs / 1000) + 15;
+  // A V3 run spends TWO sequential provider turns under one reservation — semantic discovery
+  // (discoverTenderSemanticManifest) and then the analysis turn — and `timeoutMs` bounds EACH
+  // turn independently, so each turn is rounded up to whole seconds on its own before they are
+  // summed, plus a 15s buffer. A lease sized for a single turn expires while the analysis turn
+  // is still in flight and the run gets reclaimed underneath itself.
+  const leaseSeconds = 2 * Math.ceil(timeoutMs / 1000) + 15;
   if (!Number.isInteger(timeoutMs) || !Number.isInteger(maxConcurrent) || !Number.isInteger(dailyMaxRuns) || !Number.isInteger(promptMaxInputTokens) || leaseSeconds > 600) {
     throw new Error('AGT-002 Preview no está configurado.');
   }
@@ -128,7 +127,7 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
     throw new Error('AGT-002 Preview no está configurado.');
   }
   return {
-    model: environment.AGT002_PREVIEW_MODEL,
+    model: environment.AGT002_PREVIEW_MODEL.trim(),
     policyVersion: nonEmpty(environment.AGT002_PREVIEW_POLICY_VERSION) ? environment.AGT002_PREVIEW_POLICY_VERSION.trim() : AGT002_PREVIEW_DEFAULT_POLICY_VERSION,
     timeoutMs,
     maxConcurrent,
