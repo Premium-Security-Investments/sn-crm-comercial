@@ -333,6 +333,14 @@ export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 20_000;
 // the very first attempt, exactly as before this constant existed.
 export const TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS = 3;
 
+// A provider structured-output-retry-exhaustion condition is transient in the same sense as a
+// timeout: the request itself was not malformed, the provider simply failed to converge on a
+// schema-valid answer within its own internal retry budget. `AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED`
+// is its own dedicated wire code for exactly that provider condition, so it shares the same bounded
+// retry as a timeout, within the same TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS bound. The
+// generic AGT002_CODEX_PROVIDER_ERROR remains terminal on the first attempt.
+const RETRYABLE_BATCH_ERROR_CODES = new Set(['AGT002_CODEX_TIMEOUT', 'AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED']);
+
 // Closed, privacy-safe internal codes for a rejection that happens AFTER a real bridge response
 // (schema-valid or not) reaches this module: the provider answered, but the answer failed one of
 // this module's own local semantic gates — citation anchoring, source_unit uniqueness, or a
@@ -1360,12 +1368,13 @@ export async function discoverTenderSemanticManifest({
             raw = await client.run(request);
             break;
           } catch (runError) {
-            // The ONLY retryable failure: the bridge's own exact transport-timeout code, which the real
-            // Procuraduria v9 run showed can be transient/stalled rather than a symptom of an oversized
-            // request. Every other client.run rejection — a different provider error, cancellation/
-            // abort, or anything else — still fails this batch (and therefore the whole run) closed on
-            // the very first attempt, exactly as before this loop existed.
-            if (runError?.code === 'AGT002_CODEX_TIMEOUT' && attempt < TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS) {
+            // The ONLY retryable failures: the bridge's own exact transport-timeout code and its
+            // dedicated structured-output-retry-exhausted code (see RETRYABLE_BATCH_ERROR_CODES above),
+            // both known to be transient in production. Every other client.run rejection — a
+            // different (generic) provider error, cancellation/abort, or anything else — still fails
+            // this batch (and therefore the whole run) closed on the very first attempt, exactly as
+            // before this loop existed.
+            if (RETRYABLE_BATCH_ERROR_CODES.has(runError?.code) && attempt < TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS) {
               continue;
             }
             throw runError;

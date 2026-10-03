@@ -69,6 +69,8 @@ const LOGIN_SUBTYPES = new Set([
 const KILL_GRACE_MS = 200;
 const FLUSH_GRACE_MS = 250;
 const SESSION_LIMIT_PHRASE = "you've hit your session limit";
+/** Único subtype/error.type del proveedor que obtiene su propio código nativo. */
+const STRUCTURED_OUTPUT_RETRY_EXHAUSTED_ATOM = 'error_max_structured_output_retries';
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -105,6 +107,9 @@ function providerFailure(parsed) {
     : safeProviderAtom(parsed?.error?.type);
   if (atom && LOGIN_SUBTYPES.has(atom)) {
     return failure('AGT-002 requiere una sesión de Claude Code iniciada; no se inició sesión automáticamente.', 'AGT002_CLAUDE_LOGIN_REQUIRED');
+  }
+  if (atom === STRUCTURED_OUTPUT_RETRY_EXHAUSTED_ATOM) {
+    return failure('AGT-002 agotó los reintentos de salida estructurada del proveedor.', 'AGT002_CLAUDE_STRUCTURED_OUTPUT_RETRY_EXHAUSTED', atom);
   }
   return failure('El servicio de AGT-002 devolvió un error.', 'AGT002_CLAUDE_PROVIDER_ERROR', atom);
 }

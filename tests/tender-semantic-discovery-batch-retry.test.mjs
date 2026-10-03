@@ -297,4 +297,62 @@ await assertsSingleAttemptFailure(
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// 6. A provider structured-output-retry-exhaustion rejection must not collapse into the generic
+//    AGT002_CODEX_PROVIDER_ERROR wire code, since this loop only retries AGT002_CODEX_TIMEOUT. Once
+//    the wire carries the dedicated AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED code, it must
+//    retry within the SAME TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS bound as a timeout: one
+//    failed attempt followed by success costs exactly 2 client.run calls, 2 heartbeats, and a
+//    completed ledger entry with attempt_count 2.
+// ---------------------------------------------------------------------------------------------
+function structuredOutputRetryExhaustedError(attemptNumber) {
+  const error = new Error(`AGT-002 agoto los reintentos de salida estructurada (intento de prueba ${attemptNumber}).`);
+  error.code = 'AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED';
+  error.providerErrorCode = 'error_max_structured_output_retries';
+  return error;
+}
+
+{
+  const client = sequencedClient([
+    { type: 'error', error: structuredOutputRetryExhaustedError(1) },
+    { type: 'success' },
+  ]);
+  const events = [];
+  const beforeProviderCall = heartbeatTracker(events);
+
+  const result = await run(client, { beforeProviderCall });
+
+  assert.equal(client.calls.length, 2, 'must retry once and succeed on the 2nd attempt, within the existing max-attempts bound');
+  assert.equal(events.length, 2, 'the heartbeat must be awaited before both attempts');
+  assert.equal(client.calls[0], client.calls[1], 'every attempt must send the SAME request object, not a rebuilt one');
+
+  assert.equal(result.discoveryLedger.status, 'completed');
+  assert.equal(result.discoveryLedger.batches.length, 1);
+  assert.equal(result.discoveryLedger.batches[0].status, 'completed');
+  assert.equal(result.discoveryLedger.batches[0].attempt_count, 2, 'a batch that needed 2 attempts must report attempt_count 2');
+}
+
+// ---------------------------------------------------------------------------------------------
+// 7. The generic AGT002_CODEX_PROVIDER_ERROR wire code must still NOT be retried: only the
+//    dedicated transient codes (AGT002_CODEX_TIMEOUT, AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED)
+//    are retryable — a generic provider error still fails the batch closed on the first attempt.
+// ---------------------------------------------------------------------------------------------
+{
+  const providerError = new Error('El servicio de AGT-002 Preview devolvio un error.');
+  providerError.code = 'AGT002_CODEX_PROVIDER_ERROR';
+  const client = sequencedClient([{ type: 'error', error: providerError }, { type: 'success' }]);
+  const events = [];
+  const beforeProviderCall = heartbeatTracker(events);
+
+  await assert.rejects(
+    () => run(client, { beforeProviderCall }),
+    error => {
+      assert.equal(error, providerError, 'a generic provider error must never be retried or wrapped');
+      assert.equal(client.calls.length, 1, 'a generic provider error must cost exactly 1 client.run call');
+      assert.equal(events.length, 1, 'exactly one heartbeat for the one attempt actually made');
+      return true;
+    },
+  );
+}
+
 console.log('tests/tender-semantic-discovery-batch-retry.test.mjs OK');

@@ -214,6 +214,12 @@ async function testProviderErrorsMapToSafeCodes() {
     [{ is_error: true, subtype: 'authentication_error' }, 'AGT002_CLAUDE_LOGIN_REQUIRED', undefined],
     [{ is_error: true, subtype: 'overloaded_error' }, 'AGT002_CLAUDE_PROVIDER_ERROR', 'overloaded_error'],
     [{ is_error: true, subtype: 'Detalle Muy Largo Con Espacios' }, 'AGT002_CLAUDE_PROVIDER_ERROR', undefined],
+    // A provider structured-output-retry-exhaustion subtype/error.type must not collapse into the
+    // generic AGT002_CODEX_PROVIDER_ERROR: tender-semantic-discovery.js only retries
+    // AGT002_CODEX_TIMEOUT, so this condition needs its OWN dedicated native safe code so the wire
+    // layer and the batch retry can single it out.
+    [{ is_error: true, subtype: 'error_max_structured_output_retries' }, 'AGT002_CLAUDE_STRUCTURED_OUTPUT_RETRY_EXHAUSTED', 'error_max_structured_output_retries'],
+    [{ is_error: true, subtype: 'success', error: { type: 'error_max_structured_output_retries' } }, 'AGT002_CLAUDE_STRUCTURED_OUTPUT_RETRY_EXHAUSTED', 'error_max_structured_output_retries'],
   ];
   for (const [payload, expectedCode, expectedAtom] of cases) {
     const { client, children } = harness();

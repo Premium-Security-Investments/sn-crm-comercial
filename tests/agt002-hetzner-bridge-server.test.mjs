@@ -301,6 +301,10 @@ async function testClaudeErrorCodesMapOntoExistingCodexWireCodes() {
     ['AGT002_CLAUDE_TRANSPORT_ERROR', 502, 'AGT002_CODEX_TRANSPORT_ERROR'],
     ['AGT002_CLAUDE_INVALID_RESPONSE', 422, 'AGT002_CODEX_INVALID_RESPONSE'],
     ['AGT002_CLAUDE_SESSION_LIMIT', 502, 'AGT002_CODEX_PROVIDER_ERROR'],
+    // A structured-output-retry-exhausted provider envelope must map onto its OWN dedicated wire
+    // code, not the generic AGT002_CODEX_PROVIDER_ERROR, so the worker/tender-semantic-discovery
+    // retry loop can single it out from every other provider error.
+    ['AGT002_CLAUDE_STRUCTURED_OUTPUT_RETRY_EXHAUSTED', 502, 'AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED'],
   ];
   for (const [claudeCode, expectedStatus, expectedWireCode] of cases) {
     const client = { run: async () => { const error = new Error('claude detail'); error.code = claudeCode; throw error; } };
@@ -373,6 +377,42 @@ async function testProviderErrorMappedTo502() {
   assert.equal(event.provider_status, 'failed');
   assert.equal(event.provider_error_code, 'rate_limited');
   assert.equal(JSON.stringify(event).includes('provider secret detail'), false);
+}
+
+// The dedicated structured-output-retry-exhaustion wire code must reach the caller as 502, carry
+// the safe provider_error_code onto the safe log, and never leak the raw provider error detail
+// either in the HTTP response body or the safe log line — same discipline as testProviderErrorMappedTo502.
+async function testStructuredOutputRetryExhaustedMapsToDedicatedWireCodeWithoutLeakage() {
+  const originalLog = console.log;
+  const lines = [];
+  console.log = line => { lines.push(line); };
+  const client = {
+    run: async () => {
+      const error = new Error('raw provider structured-output-retry detail, must never leak');
+      error.code = 'AGT002_CLAUDE_STRUCTURED_OUTPUT_RETRY_EXHAUSTED';
+      error.providerErrorCode = 'error_max_structured_output_retries';
+      throw error;
+    },
+  };
+  try {
+    await withServer(client, async (base) => {
+      const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-structured-retry-1' };
+      const body = JSON.stringify(payload);
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+      assert.equal(response.status, 502);
+      const result = await response.json();
+      assert.equal(result.error.code, 'AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED');
+      assert.equal(JSON.stringify(result).includes('raw provider structured-output-retry detail'), false,
+        'la respuesta jamás debe filtrar el detalle crudo del proveedor');
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const event = lines.map(line => JSON.parse(line)).find(item => item.code === 'AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED');
+  assert.ok(event, 'debe emitirse un evento de log seguro para el código dedicado');
+  assert.equal(event.provider_error_code, 'error_max_structured_output_retries');
+  assert.equal(JSON.stringify(event).includes('raw provider structured-output-retry detail'), false,
+    'el log seguro jamás debe filtrar el detalle crudo del proveedor');
 }
 
 async function testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed() {
@@ -491,6 +531,7 @@ await testClaudeErrorCodesMapOntoExistingCodexWireCodes();
 await testCwdInBodyRejected();
 await testConcurrentRequestsAreAccepted();
 await testProviderErrorMappedTo502();
+await testStructuredOutputRetryExhaustedMapsToDedicatedWireCodeWithoutLeakage();
 await testLoginRequiredMappedTo503();
 await testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed();
 await testCompletedRequestBodyDoesNotCancelRun();
