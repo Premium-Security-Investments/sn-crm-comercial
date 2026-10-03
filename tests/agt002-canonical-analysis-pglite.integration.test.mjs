@@ -42,6 +42,17 @@ const running = (await pg.query(`select public.psi_append_agt002_analysis_attemp
 assert.equal(running.state, 'running');
 await assert.rejects(pg.query(`select public.psi_append_agt002_analysis_attempt('${S}','${O}','${T}','attempt-x','event-x','siio_rules_v1','queued',null,null,null)`), /AGT-002|productor/i);
 
+await pg.query(`select public.psi_append_agt002_analysis_attempt('${S}','${O}','${T}','attempt-resume','resume-1','AGT-002','queued',null,null,null)`);
+await pg.query(`select public.psi_append_agt002_analysis_attempt('${S}','${O}','${T}','attempt-resume','resume-2','AGT-002','running',null,null,null)`);
+const retryWait = (await pg.query(`select public.psi_append_agt002_analysis_attempt(
+  '${S}','${O}','${T}','attempt-resume','resume-3','AGT-002','retry_wait','AGT002_LEASE_LOST','La reserva anterior expiró.',null
+) r`)).rows[0].r;
+assert.equal(retryWait.state, 'retry_wait', 'an interrupted running attempt must use the existing retry_wait transition before reopening');
+const resumedQueued = (await pg.query(`select public.psi_append_agt002_analysis_attempt('${S}','${O}','${T}','attempt-resume','resume-4','AGT-002','queued',null,null,null) r`)).rows[0].r;
+assert.equal(resumedQueued.state, 'queued');
+const resumedRunning = (await pg.query(`select public.psi_append_agt002_analysis_attempt('${S}','${O}','${T}','attempt-resume','resume-5','AGT-002','running',null,null,null) r`)).rows[0].r;
+assert.equal(resumedRunning.state, 'running');
+
 const canonical = (await pg.query(`select public.psi_record_agt002_canonical_analysis_run(
   '${S}','${O}','${T}','{"summary":"Vig-IA"}'::jsonb,0,'canonical-1','schema-1','policy-1','model-1','{"input_tokens":1,"output_tokens":1}'::jsonb
 ) r`)).rows[0].r;

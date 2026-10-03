@@ -591,6 +591,7 @@ test('a reclaimed schema_version 2 durable_batched_v1 job (new leaseId, resumeCo
   assert.equal(context.idempotencyKey, JOB.idempotencyKey);
   assert.equal(context.expectedIdempotencyKey, JOB.idempotencyKey);
   assert.equal(context.attemptKey, JOB.idempotencyKey);
+  assert.equal(context.resumeCount, 1, 'the post-bridge lifecycle must know this is a reclaimed invocation');
 
   const seenIdentityKeys = new Set([deriveCalls[0].idempotencyKey, context.idempotencyKey, context.expectedIdempotencyKey, context.attemptKey]);
   assert.deepEqual([...seenIdentityKeys], [JOB.idempotencyKey], 'no alternate identity key derived from the reclaimed leaseId/resumeCount may appear anywhere in the workset identity or post-bridge identity');
