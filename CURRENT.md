@@ -1,6 +1,6 @@
-# CURRENT — AGT-002 Decision Front Consolidation — CHECKPOINT AUTORITATIVO (§16: Cierre AGT-002 y continuidad)
+# CURRENT — AGT-002 — CHECKPOINT AUTORITATIVO (§18: canario Cali, INITIAL y continuidad)
 
-> Estado vigente al 2026-09-01: la sección autoritativa vigente es la **§16 — Cierre AGT-002 y continuidad**. §13 sigue siendo la referencia histórica autoritativa para publicación/QA de producción del frente decisional tal como quedó el 2026-08-21, y §15 sigue siendo la referencia histórica autoritativa para el estado operativo del Radar tal como quedó el 2026-08-28; ninguna de las dos fue reescrita. §16 añade el corte de cierre de AGT-002 y continuidad hacia la próxima licitación, sin modificar lo ya registrado en §1–§15.
+> Estado vigente al 2026-10-03: la sección autoritativa para la continuidad general es la **§18 — Canario Cali, INITIAL y siguiente gate**. §13 conserva la referencia histórica de publicación/QA del frente decisional; §17 conserva la autoridad específica sobre el Radar determinístico único. La §18 no reescribe esos cierres: registra el estado vivo del canario de Cali, la pausa de INITIAL/P0-06, el trabajo documental realizado y el siguiente gate.
 
 ## 1. Estado y alcance autoritativo
 
@@ -806,3 +806,133 @@ operativo determinístico vigente: ejecución bajo demanda del scan, observabili
 gobernada de `tender-fit-v1`/gate con revisión humana y versionado, el tombstone del runner de IA y
 su no reactivación, la preservación del ledger histórico, la separación del análisis integral
 postconversión, y el contrato F1 10.
+
+---
+
+## 18. Canario Cali, INITIAL y siguiente gate (2026-10-03)
+
+> Esta sección es la referencia autoritativa vigente para la continuidad general de AGT-002 desde
+> el 2026-10-03. No sustituye a §13 en publicación del frente decisional ni a §17 en la operación
+> del Radar determinístico. Sí sustituye instrucciones previas de continuidad que propongan ejecutar
+> otra oportunidad, reactivar automáticamente workers o tratar REANALYSIS como ruta INITIAL.
+
+### 18.1. Producto y fronteras vigentes
+
+- El flujo de producto sigue siendo: Radar → conversión humana a Oportunidad → descarga de documentos
+  → análisis inicial → reporte visible → decisión humana.
+- **INITIAL** es la ruta nueva, aditiva y aislada para crear la primera corrida canónica. No reutiliza
+  la cola, worker, tablas ni RPC operativos de REANALYSIS.
+- **REANALYSIS** permanece como ruta posterior para producir versiones incrementales sin sustituir una
+  versión válida hasta completar correctamente la nueva.
+- Plataforma Agentes conserva la función transversal de identidad, contratos, políticas, trazabilidad
+  y control. No absorbe el runtime ni los datos de AGT-002.
+- No hay autorización vigente para Fase 2 de Plataforma, implementación R1, despliegue INITIAL,
+  migraciones productivas ni ejecución de otras oportunidades.
+
+### 18.2. Trabajo realizado el 2026-10-02 y 2026-10-03
+
+1. Se diagnosticó el `AGT002_PROVIDER_ERROR` del primer intento de Cali. La evidencia de sesión lo
+   correlacionó con la sesión OAuth dedicada del bridge vencida o vacía, no con una caída de red.
+2. Se reautenticó el bridge bajo su identidad dedicada y una sonda sintética respondió correctamente
+   en aproximadamente 2,9 segundos, sin tocar oportunidades.
+3. Juan autorizó una sola ejecución con la instrucción `ejecute cali`.
+4. Se reencoló exclusivamente el job existente de Cali con precondiciones estrictas y se inició una
+   única invocación manual. El timer permaneció deshabilitado.
+5. No se ejecutaron otras oportunidades, no se habilitó procesamiento automático y no se modificó
+   código de AGT-002 ni de Plataforma durante el canario.
+6. Se produjo un informe completo de situación para asesor externo y un resumen específico del
+   incidente de Cali. Son documentos de trabajo; no autorizan implementación ni operación.
+
+### 18.3. Resultado del canario de Cali — NO PASÓ
+
+- Job: `ad4bb7c8-758d-4df8-b4a2-98d478211a3b`.
+- Oportunidad: `5f65461c-f25a-45da-ba9f-82b59dd5d80d`.
+- Licitación: `1d354467-e84c-4f40-9836-13ff1501535d`.
+- Workset: `7c48e93d-de1c-46c7-8657-d5035744845c`.
+- Inicio del worker: `2026-10-02T20:40:30Z`.
+- Descubrimiento semántico previo conservado: `54/54`.
+- Plan de análisis integral: `101` lotes secuenciales.
+- Avance durable alcanzado: `28/101`; último lote completado: índice `27`.
+- Último progreso: `2026-10-02T21:53:56.500689Z`.
+- La unidad tenía `TimeoutStartSec=4500` y systemd terminó el proceso con `SIGTERM` al cumplir
+  exactamente 75 minutos, a las `2026-10-02T21:55:30Z`.
+- El proceso no estaba inmóvil: siguió produciendo checkpoints hasta menos de dos minutos antes del
+  timeout.
+- Los primeros 28 lotes consumieron aproximadamente 73 minutos y 23 segundos desde el arranque. Al
+  ritmo observado, completar 101 lotes habría requerido cerca de 4 horas y 25 minutos, más margen
+  para consolidación y persistencia final.
+- El canario **no** produjo `analysis_run_id`, publicación del workset ni reporte canónico.
+
+### 18.4. Estado vivo leído de vuelta
+
+Corte read-only: `2026-10-03T02:04:01.915305Z`.
+
+- `agt002-reanalysis-worker.service`: `failed/failed`, `Result=timeout`; no hay proceso worker activo.
+- Fila durable: `status=running`, fase `integral_analysis`, progreso `28/101`.
+- Lease vencido: `2026-10-02T22:03:56.500689Z`.
+- `completed_at=null`, `error_code=null`, `analysis_run_id=null`.
+- Workset: `published=false`, `published_analysis_run_id=null`.
+- Corridas de análisis de la oportunidad: `0`.
+- Bridge: `active`.
+- Timer de reanálisis: `disabled/inactive`.
+
+La fila está **atascada durablemente**: el proceso real murió, pero el registro continúa en
+`running`. No debe interpretarse como ejecución activa.
+
+### 18.5. Diagnóstico
+
+El incidente combina dos defectos operativos:
+
+1. **Ventana incompatible con el trabajo:** un proceso de 101 llamadas secuenciales no cabe en el
+   límite global de 75 minutos observado.
+2. **Cierre incompleto ante terminación externa:** `SIGTERM` impidió la transición terminal. El
+   vencimiento posterior del lease no reconcilió automáticamente la fila a un estado recuperable.
+
+No hay evidencia de que un lote específico, un documento o el proveedor se hubieran congelado en el
+segundo intento. Aumentar el timeout podría permitir mayor avance, pero por sí solo no resuelve
+recuperación, fencing, duración, costo, granularidad de lotes ni experiencia del usuario.
+
+### 18.6. Estado de INITIAL / P0-06
+
+- Worktree: `/root/worktrees/agt002-initial-analysis-p0`.
+- Rama: `feat/agt002-initial-analysis-p0`.
+- HEAD observado: `c471acbb89f339f51636810e53ec796ffcba3d33`.
+- Baseline congelado: `9ec9626be21df0c7dfae5da281f8d90fda085fa1`.
+- La pausa operativa fue levantada el `2026-10-03` mediante autorización expresa para continuar de
+  forma autónoma con trabajo local, reversible y no destructivo.
+- P0-06 fue retomado únicamente en esta rama aislada. No se aplicaron migraciones, no se desplegó
+  código y no se ejecutó ningún job con datos reales.
+- La revisión reforzó la persistencia atómica, el replay idempotente, la correspondencia exacta entre
+  checkpoint de síntesis y agregado, la identidad del workflow, el cierre fail-closed y el rechazo
+  temprano de jobs sin vínculos de persistencia antes de invocar al modelo.
+- El resultado local y sus verificaciones quedan registrados en
+  `docs/evidence/2026-10-03-agt002-initial-analysis-p0-06-verification.md`.
+
+### 18.7. Documentos de asesoría producidos
+
+- Informe integral:
+  `/root/.hermes/workspaces/external-advisor-report-final-20261002/INFORME_SITUACION_PLATAFORMA_AGENTES_Y_AGT002_2026-10-02.md`.
+- Resumen focal del incidente Cali:
+  `/root/.hermes/workspaces/agt002-cali-advisor-brief-20261003/RESUMEN_INCIDENTE_CANARIO_CALI_PARA_ASESORIA_2026-10-03.md`.
+- Ambos distinguen hechos observados, diseño previsto, trabajo local, despliegue y autorización. No
+  contienen secretos y no constituyen GO para cambios técnicos ni productivos.
+
+### 18.8. Gates y siguiente paso exacto
+
+Estado de Cali: **DETENIDO / REQUIERE GATE INDIVIDUAL**. Estado de P0-06: **REANUDADO PARA CIERRE
+LOCAL; SIN AUTORIZACIÓN DE DESPLIEGUE**.
+
+1. No reiniciar, reencolar, marcar terminal ni modificar Cali sin una autorización nueva y acotada.
+2. No ejecutar FONDO, Risaralda, INDER, DANE ni otra oportunidad.
+3. Obtener recomendación externa sobre granularidad y paralelismo de lotes, orquestación de trabajos
+   largos, relación timeout/lease, manejo de `SIGTERM`, reconciliación y reanudación fenced desde el
+   checkpoint 28.
+4. Con esa recomendación, definir una propuesta de disposición para el job atascado y someterla a
+   aprobación humana. La propuesta debe preservar checkpoints válidos, impedir doble ejecución y
+   garantizar una sola publicación canónica completa.
+5. Cerrar P0-06 mediante revisión, pruebas focalizadas, compilación, commit local y recibo. La suite
+   completa debe reportarse con sus limitaciones de entorno; no se autoriza deploy ni migración
+   productiva por inferencia.
+6. La secuencia de oportunidades convertidas continúa bloqueada hasta que Cali termine y produzca el
+   reporte esperado; después, cada oportunidad requerirá su gate individual y se detendrá ante el
+   primer fallo.
