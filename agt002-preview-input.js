@@ -24,7 +24,10 @@ export const AGT002_RETRIEVAL_MAX_CHARS = 40000;
 export const AGT002_RETRIEVAL_MAX_TOKENS = 12000;
 
 const RETRIEVAL_FRONTS = ['legal', 'financial', 'technical'];
-const RETRIEVAL_TERM_PATTERN = /[\p{L}\p{N}]{3,}/gu;
+// Keep short alphabetic noise out of retrieval (articles, units such as C/F), while preserving
+// two-or-more digit values that can be the only meaningful anchors in a source-declared range.
+// This must stay aligned with tenderSemanticRetrievalTerms in tender-semantic-manifest.js.
+const RETRIEVAL_TERM_PATTERN = /[\p{L}\p{N}]{3,}|\p{N}{2,}/gu;
 
 const COMPANY_PROFILE_FIELDS = [
   'working_capital',

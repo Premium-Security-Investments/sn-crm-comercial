@@ -59,6 +59,7 @@ import {
   assembleTenderSemanticManifest,
   buildTenderSemanticManifest,
   validateTenderSemanticManifest,
+  tenderSemanticRetrievalTerms,
   toAgt002RequirementManifest,
   toAgt002RetrievalRequirements,
   resolveTenderSemanticFrontier,
@@ -245,6 +246,42 @@ const byKey = (manifest, key) => manifest.requirements.find(item => item.obligat
   assert.ok(
     accessibilityRetrieval.terms.includes('accesibilidad'),
     'retrieval terms are derived from the source-declared subject, so the clause is actually findable',
+  );
+
+  assert.deepEqual(
+    tenderSemanticRetrievalTerms('°C a 35 °C (50 °F a 95 °F'),
+    ['35', '50', '95'],
+    'a source-declared numeric range remains retrievable even when every alphabetic fragment is shorter than three characters',
+  );
+  assert.deepEqual(
+    tenderSemanticRetrievalTerms('a de °C °F'),
+    [],
+    'short alphabetic noise and unit symbols remain excluded',
+  );
+
+  const numericRangeText = [
+    'REQUISITOS TÉCNICOS',
+    '°C a 35 °C (50 °F a 95 °F: el equipo deberá operar dentro de este rango.',
+  ].join('\n');
+  const numericRangeDocuments = [document({
+    id: 'numeric-range',
+    version: 'numeric-range-v1',
+    text: numericRangeText,
+    type: 'anexo',
+  })];
+  const numericRangeInventory = inventoryFor(
+    'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    numericRangeDocuments,
+  );
+  const numericRangeManifest = buildTenderSemanticManifest({
+    inventory: numericRangeInventory,
+    documents: numericRangeDocuments,
+  });
+  assert.equal(numericRangeManifest.requirements[0].label, '°C a 35 °C (50 °F a 95 °F');
+  assert.deepEqual(
+    toAgt002RetrievalRequirements(numericRangeManifest)[0].terms,
+    ['35', '50', '95'],
+    'the complete semantic-manifest projection accepts the Cali numeric-range label',
   );
 }
 
