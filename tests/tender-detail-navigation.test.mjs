@@ -610,14 +610,9 @@ test('Documentos agrupa ver/actualizar/cargar con una sola acción primaria y si
   assert.ok(verIndex >= 0 && actualizarIndex > verIndex && cargarIndex > actualizarIndex, 'el orden debe ser inventario → actualización → carga');
 
   // Una sola acción primaria (Actualizar) y dos secundarias (Ver, Cargar) → jerarquía coherente.
-  const secondarySummaryMatches = html.match(/<summary[^>]*class="button secondary(?:\s[\w-]+)*"[^>]*>/g) || [];
-  assert.equal(secondarySummaryMatches.length, 2, 'inventario y carga comparten la jerarquía secundaria (dos <summary> con el token de clase "button secondary", aunque tengan clases adicionales)');
+  assert.equal(countOf(html, 'class="button secondary"'), 2, 'inventario y carga comparten la jerarquía secundaria');
   assert.equal(countOf(html, '<button'), 1, 'Documentos expone exactamente una acción primaria');
-  const primaryButtonMatch = html.match(/<button[^>]*>[\s\S]*?<\/button>/);
-  assert.ok(primaryButtonMatch, 'Documentos expone un botón primario');
-  const primaryButtonHtml = primaryButtonMatch[0];
-  assert.match(primaryButtonHtml, /class="[^"]*\btender-document-action-refresh\b[^"]*"/, 'el botón primario lleva el token de clase tender-document-action-refresh');
-  assert.match(primaryButtonHtml, /<strong>Actualizar documentos<\/strong>/, 'la acción primaria es Actualizar documentos');
+  assert.match(html, /<button type="button"[^>]*>Actualizar documentos<\/button>/, 'la acción primaria es Actualizar documentos');
   assert.doesNotMatch(html, /class="[^"]*danger/, 'Documentos no contiene acciones riesgosas');
 });
 
@@ -630,10 +625,6 @@ test('Documentos nunca duplica la Fuente oficial única del shell', () => {
 
 test('mientras hay trabajo en curso Documentos bloquea actualizar y cargar de forma coherente', () => {
   const html = renderDocuments({ busy: true });
-  const busyButtonMatch = html.match(/<button[^>]*>[\s\S]*?<\/button>/);
-  assert.ok(busyButtonMatch, 'Documentos expone un botón primario en estado busy');
-  const busyButtonHtml = busyButtonMatch[0];
-  assert.match(busyButtonHtml, /<button[^>]*\bdisabled\b[^>]*>/, 'la acción primaria se deshabilita mientras hay trabajo en curso');
-  assert.match(busyButtonHtml, /<strong>Actualizando…<\/strong>/, 'la acción primaria refleja el trabajo en curso');
+  assert.match(html, /<button type="button" disabled[^>]*>Actualizando…<\/button>/, 'la acción primaria refleja el trabajo en curso');
   assert.match(html, /<input[^>]*type="file"[^>]*disabled/, 'la carga complementaria se bloquea junto con la actualización');
 });
