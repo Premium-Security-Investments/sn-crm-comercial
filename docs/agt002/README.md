@@ -97,7 +97,7 @@ Las responsabilidades actuales se agrupan así:
 | Persistencia y recuperación | claims, jobs, reintentos, reanálisis, checkpoints y SLO | `agt002-*-persistence.js`, `agt002-reanalysis-*`, `agt002-analysis-checkpoints.js`, `agt002-runtime-slo.js` |
 | Revisión y conocimiento | revisión accionable, briefs, workbench y publicación de conocimiento | `agt002-actionable-review-*`, `agt002-stakeholder-brief*`, `agt002-workbench-*`, `agt002-knowledge-*` |
 | Control y seguridad | identidad, autoridad, gates, observación de superficies y drift | `agt002-control-plane-*`, `agt002-f0*`, `contracts/agt002-phase01/` |
-| INITIAL | primera corrida, paquete, autorización, workflow, job y persistencia propia | worktree aislado `feat/agt002-initial-analysis-p0`; no fusionado ni desplegado |
+| INITIAL | primera corrida, paquete, autorización, workflow, job y persistencia propia | P0-00..P0-06 fusionado por `#279`; migraciones sin aplicar, runner/superficie final pendientes y no desplegado |
 | REANALYSIS/R1 | versiones sucesoras, checkpoints y delta futuro | `agt002-reanalysis-*`, `agt002-analysis-checkpoints.js`; R1 aún es diseño |
 | Minería histórica | corpus de procesos cerrados y familias metodológicas | plan aislado; no implementado ni programado |
 | Integración HTTP | rutas y composición con el backend del CRM | `server/index.js` y su espejo `api/[...path].js` |
