@@ -25,6 +25,8 @@ const chain = [
 ];
 const migration097 = migration('097_agt002_checkpoint_generation_recovery.sql');
 const rollback097 = strip(readFileSync(new URL('../supabase/rollbacks/097_agt002_checkpoint_generation_recovery_rollback.sql', import.meta.url), 'utf8'));
+const migration098 = migration('098_agt002_checkpoint_generation_2_recovery.sql');
+const rollback098 = strip(readFileSync(new URL('../supabase/rollbacks/098_agt002_checkpoint_generation_2_recovery_rollback.sql', import.meta.url), 'utf8'));
 
 const PROFILE = '44444444-4444-4444-8444-444444444444';
 const OPPORTUNITY = '11111111-1111-4111-8111-111111111111';
@@ -47,7 +49,7 @@ async function rpc(pg, name, params) {
   return result.rows[0].data;
 }
 
-async function database() {
+async function database({ generation2 = false } = {}) {
   const pg = new PGlite();
   await pg.exec(`
     create role authenticated; create role service_role; create role anon;
@@ -76,6 +78,7 @@ async function database() {
   `);
   for (const name of chain) await pg.exec(migration(name));
   await pg.exec(migration097);
+  if (generation2) await pg.exec(migration098);
   const context = await rpc(pg, 'psi_record_agt002_context_version', {
     p_opportunity_id: OPPORTUNITY, p_tender_id: TENDER, p_snapshot_id: SNAPSHOT,
     p_context_version: 2, p_context: { snapshot_id: SNAPSHOT, human_evidence: [] },
@@ -134,6 +137,64 @@ function authorize(pg, source, overrides = {}) {
     p_expected_request_hash: REQUEST_HASH,
     p_expected_output_sha256: OUTPUT_HASH,
     p_repair_commit_sha: REPAIR_SHA,
+    ...overrides,
+  });
+}
+
+async function failedGeneration1(pg) {
+  const rootSource = await failedSource(pg);
+  const generation1 = await authorize(pg, rootSource);
+  const claim = await rpc(pg, 'psi_claim_agt002_reanalysis_job_by_id', {
+    p_job_id: generation1.recovery_job_id, p_lease_seconds: 600,
+  });
+  const workset = await rpc(pg, 'psi_get_or_create_agt002_analysis_workset', {
+    p_opportunity_id: OPPORTUNITY, p_tender_id: TENDER, p_snapshot_id: SNAPSHOT,
+    p_context_version_id: pg.contextVersionId,
+    p_idempotency_key: generation1.recovery_idempotency_key,
+    p_frozen_identity: { fixture: 'generation-1' },
+  });
+  const checkpoint = async ({ stage, index, requestHash, outputHash, phase, completed, total }) => rpc(pg, 'psi_record_agt002_analysis_checkpoint', {
+    p_job_id: generation1.recovery_job_id, p_lease_id: claim.lease_id, p_workset_id: workset.workset_id,
+    p_stage: stage, p_batch_index: index, p_request_hash: requestHash,
+    p_stage_contract_version: `${stage}-v1`, p_output: { stage, index }, p_output_sha256: outputHash,
+    p_usage: {}, p_provider_idempotency_key: `provider:generation-1:${stage}:${index}`,
+    p_progress_phase: phase, p_completed_batch_count: completed, p_total_batch_count: total,
+  });
+  await checkpoint({
+    stage: 'semantic_discovery_batch', index: 0,
+    requestHash: '7'.repeat(64), outputHash: '8'.repeat(64),
+    phase: 'semantic_discovery', completed: 1, total: 2,
+  });
+  const manifest = await checkpoint({
+    stage: 'semantic_manifest', index: 0,
+    requestHash: '9'.repeat(64), outputHash: '0'.repeat(64),
+    phase: 'semantic_discovery', completed: 2, total: 2,
+  });
+  await rpc(pg, 'psi_fail_agt002_reanalysis_job', {
+    p_job_id: generation1.recovery_job_id, p_lease_id: claim.lease_id, p_error_code: 'invalid_output',
+  });
+  return {
+    rootSource,
+    generation1,
+    worksetId: workset.workset_id,
+    lastCheckpointId: manifest.checkpoint_id,
+  };
+}
+
+function authorizeGeneration2(pg, source, overrides = {}) {
+  return rpc(pg, 'psi_authorize_agt002_checkpoint_generation_2_recovery', {
+    p_source_generation_recovery_id: source.generation1.checkpoint_generation_recovery_id,
+    p_source_job_id: source.generation1.recovery_job_id,
+    p_source_workset_id: source.worksetId,
+    p_last_checkpoint_id: source.lastCheckpointId,
+    p_expected_discovery_checkpoint_count: 1,
+    p_expected_completed_batch_count: 2,
+    p_expected_total_batch_count: 2,
+    p_expected_last_request_hash: '9'.repeat(64),
+    p_expected_last_output_sha256: '0'.repeat(64),
+    p_rejected_output_sha256: 'f'.repeat(64),
+    p_rejected_content_bytes: 28753,
+    p_repair_commit_sha: 'e'.repeat(40),
     ...overrides,
   });
 }
@@ -245,6 +306,80 @@ test('097 privileges keep authorization owner-only while service_role can claim 
     assert.deepEqual(privileges, {
       authorize: false, target_claim: true, audit_insert: false, audit_update: false, audit_delete: false,
     });
+  } finally {
+    await pg.close();
+  }
+});
+
+test('098 creates one audited generation 2, preserves both source generations, and isolates it from FIFO', async () => {
+  const pg = await database({ generation2: true });
+  try {
+    const source = await failedGeneration1(pg);
+    const result = await authorizeGeneration2(pg, source);
+    const expectedKey = computeAgt002CheckpointGenerationRecoveryKey({
+      rootIdempotencyKey: ROOT_KEY,
+      sourceJobId: source.generation1.recovery_job_id,
+      checkpointGeneration: 2,
+      repairCommitSha: 'e'.repeat(40),
+    });
+    assert.equal(result.checkpoint_generation, 2);
+    assert.equal(result.recovery_idempotency_key, expectedKey);
+    assert.equal((await pg.query('select count(*)::int n from public.psi_agt002_checkpoint_generation_recoveries')).rows[0].n, 1);
+    assert.equal((await pg.query('select count(*)::int n from public.psi_agt002_checkpoint_generation_2_recoveries')).rows[0].n, 1);
+
+    const sourceJob = (await pg.query(`select status, error_code, phase, completed_batch_count, total_batch_count from public.psi_agt002_reanalysis_jobs where id='${source.generation1.recovery_job_id}'`)).rows[0];
+    assert.deepEqual(sourceJob, {
+      status: 'unavailable', error_code: 'invalid_output', phase: 'semantic_discovery',
+      completed_batch_count: 2, total_batch_count: 2,
+    });
+    assert.equal((await pg.query(`select count(*)::int n from public.psi_agt002_analysis_checkpoints where workset_id='${source.worksetId}'`)).rows[0].n, 2);
+
+    const recovery = (await pg.query(`select status, idempotency_key, frozen_engine_input from public.psi_agt002_reanalysis_jobs where id='${result.recovery_job_id}'`)).rows[0];
+    assert.equal(recovery.status, 'queued');
+    assert.equal(recovery.idempotency_key, expectedKey);
+    assert.deepEqual(recovery.frozen_engine_input.checkpoint_generation_recovery, {
+      contract_version: 'agt002-checkpoint-generation-recovery-v2',
+      reason_code: 'batched_legal_normalization_parity',
+      root_idempotency_key: ROOT_KEY,
+      source_job_id: source.generation1.recovery_job_id,
+      source_workset_id: source.worksetId,
+      checkpoint_generation: 2,
+      repair_commit_sha: 'e'.repeat(40),
+    });
+
+    const fifo = await rpc(pg, 'psi_claim_agt002_reanalysis_job', { p_lease_seconds: 600 });
+    assert.equal(fifo.status, 'empty');
+    const targeted = await rpc(pg, 'psi_claim_agt002_reanalysis_job_by_id', {
+      p_job_id: result.recovery_job_id, p_lease_seconds: 600,
+    });
+    assert.equal(targeted.job_id, result.recovery_job_id);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('098 rejects mismatched frontier evidence atomically and rollback refuses used evidence', async () => {
+  const pg = await database({ generation2: true });
+  try {
+    const source = await failedGeneration1(pg);
+    await assert.rejects(authorizeGeneration2(pg, source, { p_expected_last_output_sha256: 'a'.repeat(64) }));
+    assert.equal((await pg.query('select count(*)::int n from public.psi_agt002_checkpoint_generation_2_recoveries')).rows[0].n, 0);
+    const result = await authorizeGeneration2(pg, source);
+    assert.ok(result.recovery_job_id);
+    await assert.rejects(pg.exec(rollback098), /bloqueado/);
+    assert.equal((await pg.query('select count(*)::int n from public.psi_agt002_checkpoint_generation_2_recoveries')).rows[0].n, 1);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('098 rollback succeeds before use and restores the generation-1 exact-id surface', async () => {
+  const pg = await database({ generation2: true });
+  try {
+    await pg.exec(rollback098);
+    assert.equal((await pg.query("select to_regclass('public.psi_agt002_checkpoint_generation_2_recoveries') v")).rows[0].v, null);
+    assert.ok((await pg.query("select to_regprocedure('public.psi_claim_agt002_reanalysis_job_by_id(uuid,integer)') v")).rows[0].v);
+    assert.ok((await pg.query("select to_regprocedure('public.psi_authorize_agt002_checkpoint_generation_recovery(uuid,uuid,uuid,integer,integer,text,text,text)') v")).rows[0].v);
   } finally {
     await pg.close();
   }
