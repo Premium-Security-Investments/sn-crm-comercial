@@ -22,8 +22,10 @@
 - `check:backend-parity`: PASS.
 - `build` (TypeScript + Vite): PASS.
 
-La suite completa y los checks de CI se registrarán en el PR de integración; este recibo no los
-anticipa.
+- `test:agt002`: PASS — 2.673 aprobadas, 11 omitidas, 0 fallidas.
+- `test:agt003`: PASS — 178 aprobadas, 0 fallidas.
+
+Los checks remotos de CI se registran en el PR de integración; este recibo no los anticipa.
 
 ## Fronteras preservadas
 
