@@ -4,6 +4,14 @@
 #
 # Duplicate-safe production deploy to Vercel for AGT-002.
 #
+# Manual production policy:
+#   - run only from /root/worktrees/siio-e6-scheduler-fix
+#   - require that worktree to be clean and HEAD == origin/main
+#   - invoke this script; never invoke `vercel --prod` directly
+#   - pass AGT002_VERCEL_PRODUCTION_CONTROL_PLANE_URL explicitly on the invocation
+# AGT002_DEPLOY_REPO_DIR remains configurable for the isolated mock test harness; it is not an
+# authorization to deploy manually from any other checkout.
+#
 # Safety properties:
 #   - a nonblocking flock prevents two concurrent invocations from both deploying
 #   - the worktree must be clean and HEAD must be exactly origin/main (no local-only
