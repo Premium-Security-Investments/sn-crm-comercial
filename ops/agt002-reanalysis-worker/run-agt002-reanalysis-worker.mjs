@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { fileURLToPath } from 'node:url';
 import { createAgt002ReanalysisExecutor } from '../../agt002-reanalysis-executor.js';
 import { createAgt002ReanalysisWorker } from '../../agt002-reanalysis-worker.js';
+import { claimAgt002ReanalysisJobById } from '../../agt002-reanalysis-jobs.js';
 import { resolveAgt002GovernedDocumentForExecution } from '../../agt002-governed-document-rehydration.js';
 import { resolveAgt002GovernedContextVersionForExecution } from '../../agt002-governed-context-version-rehydration.js';
 import { buildReanalysisWorkerIdentity } from '../../agt002-control-plane-surface-builders.js';
@@ -29,8 +30,10 @@ if (process.argv.includes('--control-plane')) {
 
 const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const targetJobId = String(process.env.AGT002_REANALYSIS_TARGET_JOB_ID || '').trim();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-if (!supabaseUrl || !serviceRoleKey) {
+if (!supabaseUrl || !serviceRoleKey || (targetJobId && !UUID_RE.test(targetJobId))) {
   console.error(JSON.stringify({ event: 'agt002_reanalysis_worker_unavailable', code: 'CONFIG_MISSING' }));
   process.exit(1);
 }
@@ -41,7 +44,10 @@ const executeJob = createAgt002ReanalysisExecutor({
   governedDocumentResolver: args => resolveAgt002GovernedDocumentForExecution(database, args),
   governedContextVersionResolver: resolveAgt002GovernedContextVersionForExecution,
 });
-const worker = createAgt002ReanalysisWorker({ database, executeJob, leaseSeconds: 600 });
+const claimJob = targetJobId
+  ? (db, { leaseSeconds }) => claimAgt002ReanalysisJobById(db, { jobId: targetJobId, leaseSeconds })
+  : undefined;
+const worker = createAgt002ReanalysisWorker({ database, executeJob, leaseSeconds: 600, ...(claimJob ? { claimJob } : {}) });
 
 try {
   const result = await worker.runOnce();

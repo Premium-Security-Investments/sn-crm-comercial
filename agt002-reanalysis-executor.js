@@ -12,6 +12,7 @@ import {
 import { createAgt002PreviewRuntime } from './agt002-preview-runtime.js';
 import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLeaseSeconds, validateAgt002GovernedWorksetExtension } from './agt002-reanalysis-input.js';
 import { computeAgt002GovernedWorksetIdempotencyKey, computeAgt002WorksetSelectionHash } from './agt002-governed-document-worksets.js';
+import { validateAgt002CheckpointGenerationRecoveryIdentity } from './agt002-checkpoint-generation-recovery.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
@@ -130,6 +131,8 @@ function validFrozenInput(job) {
   // timeout (2*285+30 = 600 exactly); 285_001ms needs 602s and is rejected.
   if (agt002RequiredPreviewClaimLeaseSeconds(identity.timeout_ms) > AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS) return null;
   if (identity.idempotency_key != null && identity.idempotency_key !== job.idempotencyKey) return null;
+  const recoveryKey = validateAgt002CheckpointGenerationRecoveryIdentity(input.checkpoint_generation_recovery);
+  if (recoveryKey === undefined || (recoveryKey !== null && recoveryKey !== job.idempotencyKey)) return null;
   if (context?.opportunity?.id !== job.opportunityId
     || context.snapshotId !== job.snapshotId
     || context.canonicalOnly !== true
@@ -177,7 +180,11 @@ function validFrozenInput(job) {
       contextVersionId: identityScope.context_version_id,
       selectionHash: identityScope.selection_hash,
     });
-    if (expectedGovernedIdempotencyKey !== job.idempotencyKey) return null;
+    if (recoveryKey === null) {
+      if (expectedGovernedIdempotencyKey !== job.idempotencyKey) return null;
+    } else if (expectedGovernedIdempotencyKey !== input.checkpoint_generation_recovery.root_idempotency_key) {
+      return null;
+    }
     const members = validatedExtension.governed_workset_members;
     // The identity's own selection_hash is never trusted verbatim either: it is re-derived here
     // from the re-validated six-field members, byte-for-byte via the same canonical hash
@@ -200,6 +207,10 @@ function validFrozenInput(job) {
         || document.source_classification !== member.source_classification
         || document.inclusion_reason !== member.inclusion_reason) return null;
     }
+  } else if (recoveryKey !== null) {
+    // Generation recovery is intentionally limited to a governed freeze. It must never
+    // become a general bypass for a legacy/non-governed first canonical analysis.
+    return null;
   }
   return input;
 }
