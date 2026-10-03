@@ -1,6 +1,6 @@
 begin;
 
--- Rollback for supabase/migrations/099_agt002_initial_analysis_jobs.sql.
+-- Rollback for supabase/migrations/100_agt002_initial_analysis_jobs.sql.
 --
 -- Fails closed while ANY initial-analysis job row still exists: rollback must never silently
 -- delete or truncate queue history. This rollback is only for an installation that has never
@@ -9,7 +9,7 @@ do $$
 begin
   if to_regclass('public.psi_agt002_initial_analysis_jobs') is not null
      and exists (select 1 from public.psi_agt002_initial_analysis_jobs limit 1) then
-    raise exception 'Rollback 099 bloqueado: existen jobs de análisis inicial AGT-002 (historial); el rollback se bloquea para no extraviar la cola.';
+    raise exception 'Rollback 100 bloqueado: existen jobs de análisis inicial AGT-002 (historial); el rollback se bloquea para no extraviar la cola.';
   end if;
 end $$;
 

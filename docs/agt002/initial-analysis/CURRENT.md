@@ -121,13 +121,13 @@ recorded in `docs/evidence/2026-10-03-agt002-initial-analysis-p0-06-verification
 
 ## Atomic G1/job admission closure (2026-10-03)
 
-Migration 101 closes P0-06's remaining admission gate without changing the frozen P0-00 identity
+Migration 102 closes P0-06's remaining admission gate without changing the frozen P0-00 identity
 literals. `psi_admit_authorized_agt002_initial_analysis_job` is now the only admission RPC exposed
 to `service_role`: it re-verifies the exact INITIAL workflow/G1/package bindings, consumes G1 and
 creates the durable job in one transaction, and reconstructs `payload.persistence` server-side.
 Any admission conflict rolls the G1 consumption back; an exact replay returns the same job.
 
-The migration and rollback remain unapplied. The legacy migration-099 admission function remains an
+The migration and rollback remain unapplied. The legacy migration-100 admission function remains an
 internal implementation primitive but is no longer executable by `service_role` while migration
-101 is installed. Verification is recorded in
+102 is installed. Verification is recorded in
 `docs/evidence/2026-10-03-agt002-initial-analysis-atomic-admission-verification.md`.

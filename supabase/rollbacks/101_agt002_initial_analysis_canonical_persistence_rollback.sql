@@ -1,6 +1,6 @@
 begin;
 
--- Rollback for supabase/migrations/100_agt002_initial_analysis_canonical_persistence.sql.
+-- Rollback for supabase/migrations/101_agt002_initial_analysis_canonical_persistence.sql.
 --
 -- Fails closed while ANY INITIAL canonical run, lineage row, aggregate envelope or persisted
 -- checkpoint still exists: rollback must never silently delete or truncate an append-only
@@ -19,7 +19,7 @@ begin
      or (to_regclass('public.psi_agt002_initial_analysis_jobs') is not null
         and exists (select 1 from public.psi_agt002_initial_analysis_jobs where error_code is not null limit 1))
   then
-    raise exception 'Rollback 100 bloqueado: existe historial de análisis inicial AGT-002 (checkpoints, linaje, agregados, corridas canónicas o fallos registrados); el rollback se bloquea para no extraviarlo.';
+    raise exception 'Rollback 101 bloqueado: existe historial de análisis inicial AGT-002 (checkpoints, linaje, agregados, corridas canónicas o fallos registrados); el rollback se bloquea para no extraviarlo.';
   end if;
 end $$;
 

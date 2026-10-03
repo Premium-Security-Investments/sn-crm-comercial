@@ -2,7 +2,7 @@
 //
 // Pins agt002-initial-analysis-persistence.js: schema validation first, then INITIAL-shape
 // invariants, then a deterministic canonical envelope hash computed locally (never accepted from
-// the caller), and only then the exact 14-param RPC call migration 100 defines. No PGlite, no
+// the caller), and only then the exact 14-param RPC call migration 101 defines. No PGlite, no
 // network — database is a hand-rolled fake capturing the exact rpc(name, args) call.
 import { strict as assert } from 'node:assert';
 import test from 'node:test';

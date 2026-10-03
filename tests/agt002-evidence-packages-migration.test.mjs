@@ -1,7 +1,7 @@
-// AGT-002 P0-02 evidence packages — migration 097 structural contract (RED, no production
+// AGT-002 P0-02 evidence packages — migration 098 structural contract (RED, no production
 // change). Mirrors the conventions of tests/agt002-governed-document-worksets-migration.test.mjs
 // (Phase 2 of the governed document worksets plan), but pins a DISTINCT, neutral migration for
-// the initial-analysis slice: supabase/migrations/097_agt002_evidence_packages.sql. Unlike 084,
+// the initial-analysis slice: supabase/migrations/098_agt002_evidence_packages.sql. Unlike 084,
 // this migration must NEVER touch, reference, or enqueue into the reanalysis operational surface
 // (psi_agt002_reanalysis_jobs and its four RPCs) anywhere in the file — the evidence package
 // freeze is a neutral, job-free persistence operation.
@@ -9,8 +9,8 @@ import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
 
-const MIGRATION_URL = new URL('../supabase/migrations/097_agt002_evidence_packages.sql', import.meta.url);
-const ROLLBACK_URL = new URL('../supabase/rollbacks/097_agt002_evidence_packages_rollback.sql', import.meta.url);
+const MIGRATION_URL = new URL('../supabase/migrations/098_agt002_evidence_packages.sql', import.meta.url);
+const ROLLBACK_URL = new URL('../supabase/rollbacks/098_agt002_evidence_packages_rollback.sql', import.meta.url);
 
 const PACKAGE_TABLE = 'psi_agt002_evidence_packages';
 const VERSION_TABLE = 'psi_agt002_evidence_package_versions';
@@ -63,22 +63,22 @@ function withoutComments(sql) {
 function readSql(url, label) {
   assert.ok(
     existsSync(url),
-    `${label} must exist: AGT-002 P0-02 needs the next available additive migration 097_agt002_evidence_packages`,
+    `${label} must exist: AGT-002 P0-02 needs the next available additive migration 098_agt002_evidence_packages`,
   );
   return readFileSync(url, 'utf8');
 }
 
 function migrationSql() {
-  return withoutComments(readSql(MIGRATION_URL, 'supabase/migrations/097_agt002_evidence_packages.sql'));
+  return withoutComments(readSql(MIGRATION_URL, 'supabase/migrations/098_agt002_evidence_packages.sql'));
 }
 
 function rollbackSql() {
-  return withoutComments(readSql(ROLLBACK_URL, 'supabase/rollbacks/097_agt002_evidence_packages_rollback.sql'));
+  return withoutComments(readSql(ROLLBACK_URL, 'supabase/rollbacks/098_agt002_evidence_packages_rollback.sql'));
 }
 
 function tableBlock(sql, name) {
   const start = sql.search(new RegExp(String.raw`create\s+table\s+(if\s+not\s+exists\s+)?public\.${name}\b`, 'i'));
-  assert.notEqual(start, -1, `migration 097 must define public.${name}`);
+  assert.notEqual(start, -1, `migration 098 must define public.${name}`);
   let depth = 0;
   let end = -1;
   for (let i = sql.indexOf('(', start); i < sql.length; i += 1) {
@@ -94,7 +94,7 @@ function tableBlock(sql, name) {
 
 function functionBlock(sql, name) {
   const start = sql.search(new RegExp(String.raw`create\s+or\s+replace\s+function\s+public\.${name}\b`, 'i'));
-  assert.notEqual(start, -1, `migration 097 must define public.${name}`);
+  assert.notEqual(start, -1, `migration 098 must define public.${name}`);
   const end = sql.indexOf('$$;', start);
   assert.notEqual(end, -1, `public.${name} must be a complete function body`);
   return sql.slice(start, end + 3);
@@ -102,7 +102,7 @@ function functionBlock(sql, name) {
 
 function triggerBlockOn(sql, table) {
   const start = sql.search(new RegExp(String.raw`create\s+trigger\s+\S+\s+before\s+update\s+or\s+delete\s+on\s+public\.${table}\b`, 'i'));
-  assert.notEqual(start, -1, `migration 097 must define an append-only trigger on public.${table}`);
+  assert.notEqual(start, -1, `migration 098 must define an append-only trigger on public.${table}`);
   const end = sql.indexOf(';', start);
   assert.notEqual(end, -1, `the trigger on public.${table} must be a complete statement`);
   return sql.slice(start, end + 1);
@@ -140,31 +140,31 @@ function assertServiceRoleOnlyRpc(sql, name, args) {
   );
 }
 
-test('migration 097 exists, is one transaction, and stays additive beside every preexisting AGT-002/document object', () => {
+test('migration 098 exists, is one transaction, and stays additive beside every preexisting AGT-002/document object', () => {
   const migration = migrationSql();
   assert.match(migration, /^\s*begin;/im, 'the migration must run inside one transaction');
   assert.match(migration, /^\s*commit;/im, 'the migration must commit its single transaction');
-  assert.doesNotMatch(migration, /drop\s+table/i, 'migration 097 must never drop an existing table');
-  assert.doesNotMatch(migration, /alter\s+table[^;]*drop\s+column/i, 'migration 097 must never drop an existing column');
+  assert.doesNotMatch(migration, /drop\s+table/i, 'migration 098 must never drop an existing table');
+  assert.doesNotMatch(migration, /alter\s+table[^;]*drop\s+column/i, 'migration 098 must never drop an existing column');
 
   for (const fn of PREEXISTING_TO_PRESERVE) {
     assert.doesNotMatch(
       migration, new RegExp(String.raw`create\s+or\s+replace\s+function\s+public\.${fn}\b`, 'i'),
-      `migration 097 must never redefine the preexisting public.${fn}`,
+      `migration 098 must never redefine the preexisting public.${fn}`,
     );
   }
 });
 
-test('migration 097 never references the reanalysis operational surface — the evidence package is neutral and job-free', () => {
+test('migration 098 never references the reanalysis operational surface — the evidence package is neutral and job-free', () => {
   const migration = migrationSql();
   assert.doesNotMatch(
     migration, new RegExp(REANALYSIS_TABLE_NAME, 'i'),
-    'migration 097 must never reference psi_agt002_reanalysis_jobs anywhere: freezing an evidence package must create zero reanalysis jobs',
+    'migration 098 must never reference psi_agt002_reanalysis_jobs anywhere: freezing an evidence package must create zero reanalysis jobs',
   );
   for (const rpc of REANALYSIS_RPC_NAMES) {
     assert.doesNotMatch(
       migration, new RegExp(rpc, 'i'),
-      `migration 097 must never call or reference ${rpc}: freezing an evidence package must create zero reanalysis jobs`,
+      `migration 098 must never call or reference ${rpc}: freezing an evidence package must create zero reanalysis jobs`,
     );
   }
 });
@@ -481,4 +481,4 @@ test('the rollback exists, is one transaction, and fails closed while any packag
   }
 });
 
-console.log('AGT-002 evidence packages migration 097 static structural contract passed');
+console.log('AGT-002 evidence packages migration 098 static structural contract passed');
