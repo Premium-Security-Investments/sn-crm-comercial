@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const migration = readFileSync(new URL('../supabase/migrations/102_agt002_initial_analysis_atomic_admission.sql', import.meta.url), 'utf8');
-const rollback = readFileSync(new URL('../supabase/rollbacks/102_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../supabase/migrations/103_agt002_initial_analysis_atomic_admission.sql', import.meta.url), 'utf8');
+const rollback = readFileSync(new URL('../supabase/rollbacks/103_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8');
 
 const RPC = 'psi_admit_authorized_agt002_initial_analysis_job';
 

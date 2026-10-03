@@ -74,7 +74,7 @@ not claim that the full repository suite passed.
 
 ## Production and operational readback
 
-- migration `101_agt002_initial_analysis_canonical_persistence.sql`: **not applied**;
+- migration `102_agt002_initial_analysis_canonical_persistence.sql`: **not applied**;
 - rollback: **not executed** against a shared or persistent database;
 - INITIAL service/timer: **not installed or started**;
 - REANALYSIS worker/timer: **not modified or restarted**;
@@ -85,7 +85,7 @@ not claim that the full repository suite passed.
 
 1. Re-run the composite build and full suite in an environment that permits the repository's local
    sockets and subprocess harnesses.
-2. Keep migration 101 unapplied until an explicit environment/migration gate exists.
+2. Keep migration 102 unapplied until an explicit environment/migration gate exists.
 3. Complete the server-side INITIAL admission path so workflow authorization consumption and job
    creation are one governed transition; P0-06 validates those bindings again at completion but does
    not itself create the job.

@@ -19,7 +19,7 @@ real INITIAL admission
 - The production recovery migration remains
   `097_agt002_checkpoint_generation_recovery.sql`.
 - The five unapplied INITIAL migrations and matching rollbacks were renumbered contiguously to
-  `098` through `102`; every code, test, SQL comment, rollback diagnostic, and evidence reference
+  `099` through `103`; every code, test, SQL comment, rollback diagnostic, and evidence reference
   was updated with the same mapping.
 - A local recovery branch preserves the pre-integration state at
   `backup/agt002-initial-analysis-p0-pre-main-20261003`.
@@ -58,6 +58,6 @@ PASS — 149 modules transformed
 
 ## Boundary statement
 
-This receipt does not authorize or claim a production deployment. Migrations `098`–`102` remain
+This receipt does not authorize or claim a production deployment. Migrations `099`–`103` remain
 unapplied; INITIAL admission and model-call switches remain outside this integration action;
 REANALYSIS and the targeted Cali recovery were not modified by this branch work.

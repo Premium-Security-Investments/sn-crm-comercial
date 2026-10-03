@@ -1,7 +1,7 @@
-// AGT-002 P0-04 PGlite integration for migration 100 (RED then GREEN).
+// AGT-002 P0-04 PGlite integration for migration 101 (RED then GREEN).
 //
-// 100's job table has no FK to 098/099's tables, so this fixture applies only 100 against a
-// minimal role/grant harness rather than the full 098+099+100 migration chain.
+// 101's job table has no FK to 099/100's tables, so this fixture applies only 101 against a
+// minimal role/grant harness rather than the full 099+100+101 migration chain.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { PGlite } from '@electric-sql/pglite';
 const strip = value => value.replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
 const migrationSource = name => strip(readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8'));
 
-const migration100 = () => migrationSource('100_agt002_initial_analysis_jobs.sql');
+const migration100 = () => migrationSource('101_agt002_initial_analysis_jobs.sql');
 
 const O = '10000000-0000-4000-8000-000000000001';
 const T = '10000000-0000-4000-8000-000000000002';
@@ -82,7 +82,7 @@ async function expireLease(pg, jobId) {
   await pg.exec(`update public.psi_agt002_initial_analysis_jobs set lease_expires_at = now() - interval '1 hour' where id = '${jobId}'`);
 }
 
-test('migration 100 applies cleanly and defines the table and three RPCs', async () => {
+test('migration 101 applies cleanly and defines the table and three RPCs', async () => {
   const pg = await freshDb();
   try {
     const table = (await pg.query(`select to_regclass('public.psi_agt002_initial_analysis_jobs') is not null as present`)).rows[0];
@@ -213,7 +213,7 @@ test('admit never inserts into any reanalysis-named table', async (t) => {
       where table_schema = 'public' and table_name ilike '%reanalysis%'
     `)).rows;
     if (reanalysisTables.length === 0) {
-      t.skip('068 (psi_agt002_reanalysis_jobs) is not part of the 100-only fixture');
+      t.skip('068 (psi_agt002_reanalysis_jobs) is not part of the 101-only fixture');
       return;
     }
     await admit(pg, { idempotencyKey: 'idem-no-reanalysis' });
@@ -230,7 +230,7 @@ test('the rollback refuses to run while any job row exists, and succeeds against
   const seeded = await freshDb();
   try {
     await admit(seeded, { idempotencyKey: 'idem-rollback-guard' });
-    const rollback099 = strip(readFileSync(new URL('../supabase/rollbacks/100_agt002_initial_analysis_jobs_rollback.sql', import.meta.url), 'utf8'));
+    const rollback099 = strip(readFileSync(new URL('../supabase/rollbacks/101_agt002_initial_analysis_jobs_rollback.sql', import.meta.url), 'utf8'));
     await assert.rejects(seeded.exec(rollback099), /./);
   } finally {
     await seeded.close();
@@ -238,13 +238,13 @@ test('the rollback refuses to run while any job row exists, and succeeds against
 
   const pristine = await freshDb();
   try {
-    const rollback099 = strip(readFileSync(new URL('../supabase/rollbacks/100_agt002_initial_analysis_jobs_rollback.sql', import.meta.url), 'utf8'));
+    const rollback099 = strip(readFileSync(new URL('../supabase/rollbacks/101_agt002_initial_analysis_jobs_rollback.sql', import.meta.url), 'utf8'));
     await pristine.exec(rollback099);
     const table = (await pristine.query(`select to_regclass('public.psi_agt002_initial_analysis_jobs') is null as gone`)).rows[0];
     assert.equal(table.gone, true);
 
     const preserved = (await pristine.query(`select exists (select 1 from pg_roles where rolname = 'service_role') as still_there`)).rows[0];
-    assert.equal(preserved.still_there, true, 'rollback 100 must never touch preexisting harness state');
+    assert.equal(preserved.still_there, true, 'rollback 101 must never touch preexisting harness state');
   } finally {
     await pristine.close();
   }

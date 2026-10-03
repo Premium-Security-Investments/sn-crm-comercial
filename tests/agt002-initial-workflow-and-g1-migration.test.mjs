@@ -1,10 +1,10 @@
-// AGT-002 P0-03 — migration 099 structural contract (RED, no production change). Mirrors the
+// AGT-002 P0-03 — migration 100 structural contract (RED, no production change). Mirrors the
 // conventions of tests/agt002-evidence-packages-migration.test.mjs (P0-02), but pins a
 // DISTINCT, neutral migration for the initial-analysis slice:
-// supabase/migrations/099_agt002_initial_workflow_and_g1.sql. This migration must NEVER touch,
+// supabase/migrations/100_agt002_initial_workflow_and_g1.sql. This migration must NEVER touch,
 // reference, or enqueue into the reanalysis operational surface
 // (psi_agt002_reanalysis_jobs and its four RPCs), and must NEVER redefine any preexisting
-// AGT-002 object — in particular every object 098 (evidence packages) introduced stays
+// AGT-002 object — in particular every object 099 (evidence packages) introduced stays
 // byte-for-byte untouched.
 //
 // Contract pinned here:
@@ -29,8 +29,8 @@ import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
 
-const MIGRATION_URL = new URL('../supabase/migrations/099_agt002_initial_workflow_and_g1.sql', import.meta.url);
-const ROLLBACK_URL = new URL('../supabase/rollbacks/099_agt002_initial_workflow_and_g1_rollback.sql', import.meta.url);
+const MIGRATION_URL = new URL('../supabase/migrations/100_agt002_initial_workflow_and_g1.sql', import.meta.url);
+const ROLLBACK_URL = new URL('../supabase/rollbacks/100_agt002_initial_workflow_and_g1_rollback.sql', import.meta.url);
 
 const INSTANCE_TABLE = 'psi_agt002_workflow_instances';
 const EVENT_TABLE = 'psi_agt002_workflow_events';
@@ -95,22 +95,22 @@ function withoutComments(sql) {
 function readSql(url, label) {
   assert.ok(
     existsSync(url),
-    `${label} must exist: AGT-002 P0-03 needs the next available additive migration 099_agt002_initial_workflow_and_g1`,
+    `${label} must exist: AGT-002 P0-03 needs the next available additive migration 100_agt002_initial_workflow_and_g1`,
   );
   return readFileSync(url, 'utf8');
 }
 
 function migrationSql() {
-  return withoutComments(readSql(MIGRATION_URL, 'supabase/migrations/099_agt002_initial_workflow_and_g1.sql'));
+  return withoutComments(readSql(MIGRATION_URL, 'supabase/migrations/100_agt002_initial_workflow_and_g1.sql'));
 }
 
 function rollbackSql() {
-  return withoutComments(readSql(ROLLBACK_URL, 'supabase/rollbacks/099_agt002_initial_workflow_and_g1_rollback.sql'));
+  return withoutComments(readSql(ROLLBACK_URL, 'supabase/rollbacks/100_agt002_initial_workflow_and_g1_rollback.sql'));
 }
 
 function tableBlock(sql, name) {
   const start = sql.search(new RegExp(String.raw`create\s+table\s+(if\s+not\s+exists\s+)?public\.${name}\b`, 'i'));
-  assert.notEqual(start, -1, `migration 099 must define public.${name}`);
+  assert.notEqual(start, -1, `migration 100 must define public.${name}`);
   let depth = 0;
   let end = -1;
   for (let i = sql.indexOf('(', start); i < sql.length; i += 1) {
@@ -126,7 +126,7 @@ function tableBlock(sql, name) {
 
 function functionBlock(sql, name) {
   const start = sql.search(new RegExp(String.raw`create\s+or\s+replace\s+function\s+public\.${name}\b`, 'i'));
-  assert.notEqual(start, -1, `migration 099 must define public.${name}`);
+  assert.notEqual(start, -1, `migration 100 must define public.${name}`);
   const end = sql.indexOf('$$;', start);
   assert.notEqual(end, -1, `public.${name} must be a complete function body`);
   return sql.slice(start, end + 3);
@@ -134,7 +134,7 @@ function functionBlock(sql, name) {
 
 function triggerBlockOn(sql, table) {
   const start = sql.search(new RegExp(String.raw`create\s+trigger\s+\S+\s+before\s+update\s+or\s+delete\s+on\s+public\.${table}\b`, 'i'));
-  assert.notEqual(start, -1, `migration 099 must define an append-only trigger on public.${table}`);
+  assert.notEqual(start, -1, `migration 100 must define an append-only trigger on public.${table}`);
   const end = sql.indexOf(';', start);
   assert.notEqual(end, -1, `the trigger on public.${table} must be a complete statement`);
   return sql.slice(start, end + 1);
@@ -172,34 +172,34 @@ function assertServiceRoleOnlyRpc(sql, name, args) {
   );
 }
 
-test('migration 099 exists, is one transaction, and stays additive beside every preexisting AGT-002 object', () => {
+test('migration 100 exists, is one transaction, and stays additive beside every preexisting AGT-002 object', () => {
   const migration = migrationSql();
   assert.match(migration, /^\s*begin;/im, 'the migration must run inside one transaction');
   assert.match(migration, /^\s*commit;/im, 'the migration must commit its single transaction');
-  assert.doesNotMatch(migration, /drop\s+table/i, 'migration 099 must never drop an existing table');
-  assert.doesNotMatch(migration, /alter\s+table[^;]*drop\s+column/i, 'migration 099 must never drop an existing column');
+  assert.doesNotMatch(migration, /drop\s+table/i, 'migration 100 must never drop an existing table');
+  assert.doesNotMatch(migration, /alter\s+table[^;]*drop\s+column/i, 'migration 100 must never drop an existing column');
 
   for (const fn of PREEXISTING_TO_PRESERVE) {
     assert.doesNotMatch(
       migration, new RegExp(String.raw`create\s+or\s+replace\s+function\s+public\.${fn}\b`, 'i'),
-      `migration 099 must never redefine the preexisting public.${fn}`,
+      `migration 100 must never redefine the preexisting public.${fn}`,
     );
   }
 });
 
-test('migration 099 never references the reanalysis operational surface, and never creates a job of any kind', () => {
+test('migration 100 never references the reanalysis operational surface, and never creates a job of any kind', () => {
   const migration = migrationSql();
   assert.doesNotMatch(
     migration, new RegExp(REANALYSIS_TABLE_NAME, 'i'),
-    'migration 099 must never reference psi_agt002_reanalysis_jobs anywhere: P0-03 prepares the consume RPC contract but never creates a job',
+    'migration 100 must never reference psi_agt002_reanalysis_jobs anywhere: P0-03 prepares the consume RPC contract but never creates a job',
   );
   for (const rpc of REANALYSIS_RPC_NAMES) {
     assert.doesNotMatch(
       migration, new RegExp(rpc, 'i'),
-      `migration 099 must never call or reference ${rpc}`,
+      `migration 100 must never call or reference ${rpc}`,
     );
   }
-  assert.doesNotMatch(migration, /create\s+table[^;]*\bjobs?\b/i, 'migration 099 must never define any job table: job creation is P0-04\'s scope, not P0-03\'s');
+  assert.doesNotMatch(migration, /create\s+table[^;]*\bjobs?\b/i, 'migration 100 must never define any job table: job creation is P0-04\'s scope, not P0-03\'s');
 });
 
 test('every new table is additive: RLS on, revoked from every direct role, service_role read-only', () => {
@@ -336,7 +336,7 @@ test('psi_agt002_analysis_authorizations: G1 authorizes only INITIAL, exactly on
 
   assert.match(
     block, new RegExp(String.raw`package_version_id\s+uuid\s+not\s+null\s+references\s+public\.psi_agt002_evidence_package_versions`, 'i'),
-    'the authorization must bind to a real, existing frozen evidence package version from 098',
+    'the authorization must bind to a real, existing frozen evidence package version from 099',
   );
   assert.match(block, /package_hash\s+text\s+not\s+null[^,]*check\s*\([^)]*package_hash\s*~\s*'\^\[0-9a-f\]\{64\}\$'\)/is);
 
@@ -379,7 +379,7 @@ test('psi_grant_agt002_g1_analysis_authorization re-asserts G1 authorizes only I
   assert.match(block, /raise\s+exception/i, 'granting against a REANALYSIS workflow instance must fail closed');
   assert.match(
     block, new RegExp(String.raw`from\s+public\.psi_agt002_evidence_package_versions`, 'i'),
-    'the grant RPC must re-verify the package_version/package_hash pair against the live frozen version from 098',
+    'the grant RPC must re-verify the package_version/package_hash pair against the live frozen version from 099',
   );
 });
 
@@ -484,4 +484,4 @@ test('the rollback exists, is one transaction, and fails closed while any workfl
   }
 });
 
-console.log('AGT-002 initial workflow and G1 migration 099 static structural contract passed');
+console.log('AGT-002 initial workflow and G1 migration 100 static structural contract passed');

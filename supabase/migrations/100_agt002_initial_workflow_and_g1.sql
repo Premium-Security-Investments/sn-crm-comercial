@@ -1,5 +1,5 @@
 -- AGT-002 P0-03 — initial workflow and G1 authorization (initial-analysis slice). Strictly
--- additive beside every deployed AGT-002 object from 098: nothing here drops a table or a
+-- additive beside every deployed AGT-002 object from 099: nothing here drops a table or a
 -- column, and no preexisting function is redefined.
 --
 -- Three new service-role-only, permanently append-only tables:
@@ -11,7 +11,7 @@
 --     psi_append_agt002_workflow_event by walking the prior event's to_state, never merely by a
 --     table CHECK.
 --   * psi_agt002_analysis_authorizations -- exactly one G1 grant per workflow instance, bound to
---     a real frozen evidence package version+hash from 098. workflow_type is CHECK-pinned to
+--     a real frozen evidence package version+hash from 099. workflow_type is CHECK-pinned to
 --     'INITIAL': G1 never authorizes REANALYSIS.
 --
 -- Four new SECURITY DEFINER, search_path-pinned, service_role-only RPCs:
@@ -333,7 +333,7 @@ $$;
 -- ---------------------------------------------------------------------------------------
 -- RPC: psi_grant_agt002_g1_analysis_authorization
 -- Re-asserts G1 authorizes only INITIAL, re-verifies the package_version/package_hash pair
--- against the live frozen version from 098 (and that it belongs to the same opportunity/tender
+-- against the live frozen version from 099 (and that it belongs to the same opportunity/tender
 -- as the workflow instance), then writes the AUTHORIZED event and the authorization row
 -- atomically. A replay under the same idempotency_key with matching bindings is idempotent; a
 -- divergent payload fails closed.

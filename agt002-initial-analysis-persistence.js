@@ -1,6 +1,6 @@
 // AGT-002 P0-06 — initial-analysis canonical persistence adapter (docs/agt002/initial-analysis/
 // CURRENT.md). The sole JS-side gateway to psi_complete_agt002_initial_analysis_job (migration
-// 101). Every identity field (analysis_run_id, analysis_core_hash, schema_version) is derived
+// 102). Every identity field (analysis_run_id, analysis_core_hash, schema_version) is derived
 // from the synthesis envelope itself — this module never accepts an envelope hash from the
 // caller, it always recomputes the canonical SHA-256 of the envelope's own deterministic JSON.
 // The envelope is validated first against the immutable pre_go_analysis.v1 schema

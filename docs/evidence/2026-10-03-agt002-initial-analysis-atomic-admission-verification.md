@@ -14,7 +14,7 @@
 
 ## Scope closed
 
-Migration 102 introduces one service-role-only admission boundary that:
+Migration 103 introduces one service-role-only admission boundary that:
 
 - independently re-verifies the authorization, INITIAL workflow, opportunity, tender, frozen
   package/hash and G1 scope;
@@ -23,7 +23,7 @@ Migration 102 introduces one service-role-only admission boundary that:
 - strips any caller-provided `payload.persistence` member and reconstructs the six completion
   bindings server-side;
 - preserves exact replay idempotency under one job idempotency key;
-- revokes `service_role` execution of the migration-100 admission primitive so the atomic G1 gate
+- revokes `service_role` execution of the migration-101 admission primitive so the atomic G1 gate
   cannot be bypassed through the supported service surface;
 - adds a data-preserving rollback that removes only the wrapper and restores the prior grant.
 
@@ -38,15 +38,15 @@ npm run test:agt002-initial-analysis-jobs
 ```
 
 Result: six test files passed, including unit/API mapping, migration static safety, worker
-compatibility and the migration-100 PGlite regression.
+compatibility and the migration-101 PGlite regression.
 
 ```text
 node --test tests/agt002-initial-analysis-canonical-persistence-pglite.integration.test.mjs
 ```
 
-Result: the full migration-101/102 PGlite integration file passed. Its new migration-102 scenarios
+Result: the full migration-102/103 PGlite integration file passed. Its new migration-103 scenarios
 verified the exposed grants, atomic happy path, server-built persistence envelope, exact replay,
-rollback of G1 consumption on job conflict, scope mismatch, expired grant and rollback 102.
+rollback of G1 consumption on job conflict, scope mismatch, expired grant and rollback 103.
 
 ```text
 node --test \
@@ -72,7 +72,7 @@ green. Its constants or allow-list were not weakened.
 
 ## Production and operational readback
 
-- migrations 098 through 102 remain unapplied by this worktree;
+- migrations 099 through 103 remain unapplied by this worktree;
 - no INITIAL service or timer was installed or started;
 - no real opportunity, workflow, authorization, job or canonical run was written;
 - no commit, push, merge or release was performed;

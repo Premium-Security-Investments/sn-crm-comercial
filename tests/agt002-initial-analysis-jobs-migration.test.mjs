@@ -1,4 +1,4 @@
-// AGT-002 P0-04 (RED) — 100_agt002_initial_analysis_jobs.sql static contract.
+// AGT-002 P0-04 (RED) — 101_agt002_initial_analysis_jobs.sql static contract.
 //
 // Mirrors the static-safety conventions of tests/agt002-reanalysis-rollback-safety.test.mjs and
 // tests/agt002-radar-preanalysis-ledger-migration-static.test.mjs. This migration/rollback pair
@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const migration = readFileSync(new URL('../supabase/migrations/100_agt002_initial_analysis_jobs.sql', import.meta.url), 'utf8');
-const rollback = readFileSync(new URL('../supabase/rollbacks/100_agt002_initial_analysis_jobs_rollback.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../supabase/migrations/101_agt002_initial_analysis_jobs.sql', import.meta.url), 'utf8');
+const rollback = readFileSync(new URL('../supabase/rollbacks/101_agt002_initial_analysis_jobs_rollback.sql', import.meta.url), 'utf8');
 
 // Table and closed state machine.
 assert.match(migration, /create table if not exists public\.psi_agt002_initial_analysis_jobs/i);

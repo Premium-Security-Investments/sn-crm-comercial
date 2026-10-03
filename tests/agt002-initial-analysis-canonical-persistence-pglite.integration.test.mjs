@@ -1,12 +1,12 @@
-// AGT-002 P0-06 — PGlite integration for migration 101 (RED then GREEN).
+// AGT-002 P0-06 — PGlite integration for migration 102 (RED then GREEN).
 //
 // Mirrors the fixture/helper conventions of
-// tests/agt002-initial-workflow-and-g1-pglite.integration.test.mjs (026/057/065/098/099 real
+// tests/agt002-initial-workflow-and-g1-pglite.integration.test.mjs (026/057/065/099/100 real
 // migrations on a minimal hand-rolled opportunity/tender/profile core) and
-// tests/agt002-initial-analysis-jobs-pglite.integration.test.mjs (100's admit/claim helpers),
+// tests/agt002-initial-analysis-jobs-pglite.integration.test.mjs (101's admit/claim helpers),
 // extended with a hand-rolled psi_tender_analysis_runs mirroring the final 025+050+063 shape
 // (canonical, supersedes_run_id, the append-only guard with its one canonical-demotion
-// exception) since this suite's purpose is exercising migration 101's ADDITIVE adaptation of
+// exception) since this suite's purpose is exercising migration 102's ADDITIVE adaptation of
 // that exact table, not re-deriving 025/050/063 from scratch via dozens of unrelated
 // migrations.
 import assert from 'node:assert/strict';
@@ -25,13 +25,13 @@ const migration065 = strip(migration065Raw)
   .replace(/create schema if not exists extensions;\s*create extension if not exists pgcrypto with schema extensions;\s*/i, '')
   .replace(/encode\(extensions\.digest\(convert_to\(extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'text_hash')
   .replace(/encode\(extensions\.digest\(convert_to\(p_extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'p_text_hash');
-const migration098 = migrationSource('098_agt002_evidence_packages.sql');
-const migration099 = migrationSource('099_agt002_initial_workflow_and_g1.sql');
-const migration100 = migrationSource('100_agt002_initial_analysis_jobs.sql');
+const migration098 = migrationSource('099_agt002_evidence_packages.sql');
+const migration099 = migrationSource('100_agt002_initial_workflow_and_g1.sql');
+const migration100 = migrationSource('101_agt002_initial_analysis_jobs.sql');
 // RED: not yet authored.
-const migration101 = () => migrationSource('101_agt002_initial_analysis_canonical_persistence.sql');
-const migration102 = () => migrationSource('102_agt002_initial_analysis_atomic_admission.sql');
-const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/102_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
+const migration101 = () => migrationSource('102_agt002_initial_analysis_canonical_persistence.sql');
+const migration102 = () => migrationSource('103_agt002_initial_analysis_atomic_admission.sql');
+const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/103_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
 
 const O = '10000000-0000-4000-8000-000000000001';
 const T = '10000000-0000-4000-8000-000000000002';
@@ -57,7 +57,7 @@ async function callRpc(pg, name, params) {
 }
 
 // Hand-rolled final (025+050+063) shape of psi_tender_analysis_runs: this suite's purpose is
-// exercising 101's ADDITIVE adaptation of this exact table, not re-deriving 025/050/063 from
+// exercising 102's ADDITIVE adaptation of this exact table, not re-deriving 025/050/063 from
 // their own dozens of unrelated legacy dependencies (psi_tender_go_no_go_decisions,
 // psi_sales_interactions, psi_profile_permissions, ...).
 const HAND_ROLLED_ANALYSIS_RUNS = `
@@ -302,7 +302,7 @@ async function runCounts(pg) {
 const RUN_1 = '40000000-0000-4000-8000-000000000001';
 const RUN_2 = '40000000-0000-4000-8000-000000000002';
 
-test('migration 101 applies cleanly and defines the three new tables and the completion RPC', async () => {
+test('migration 102 applies cleanly and defines the three new tables and the completion RPC', async () => {
   const pg = await freshDb();
   try {
     const tables = (await pg.query(`
@@ -324,7 +324,7 @@ test('migration 101 applies cleanly and defines the three new tables and the com
   }
 });
 
-test('migration 102 exposes only the atomic authorized admission RPC to service_role', async () => {
+test('migration 103 exposes only the atomic authorized admission RPC to service_role', async () => {
   const pg = await freshDb();
   try {
     const privileges = (await pg.query(`
@@ -335,7 +335,7 @@ test('migration 102 exposes only the atomic authorized admission RPC to service_
     `)).rows[0];
     assert.equal(privileges.atomic_present, true);
     assert.equal(privileges.atomic_execute, true);
-    assert.equal(privileges.legacy_execute, false, 'service_role must not bypass G1 consumption through the migration-100 primitive');
+    assert.equal(privileges.legacy_execute, false, 'service_role must not bypass G1 consumption through the migration-101 primitive');
   } finally {
     await pg.close();
   }
@@ -445,7 +445,7 @@ test('authorized admission rejects a scope mismatch and an expired grant without
   }
 });
 
-test('rollback 102 removes only the atomic wrapper and restores the prior legacy service-role grant', async () => {
+test('rollback 103 removes only the atomic wrapper and restores the prior legacy service-role grant', async () => {
   const pg = await freshDb();
   try {
     await pg.exec(rollback101());
@@ -781,7 +781,7 @@ test('RED: completing a second job for the same opportunity once a canonical INI
       packageVersionId: first.workflow.evidence.packageVersionId, packageHash: first.workflow.evidence.packageHash,
     });
 
-    // Simulate a hypothetical second active job for the same opportunity (100 already blocks
+    // Simulate a hypothetical second active job for the same opportunity (101 already blocks
     // this through normal admission once a COMPLETED job exists; this directly proves the
     // completion RPC itself is ALSO fail-closed, in depth, at the opportunity-canonical level).
     const job2 = (await pg.query(`
@@ -802,7 +802,7 @@ test('RED: completing a second job for the same opportunity once a canonical INI
       secondEnvelope,
     );
 
-    // p_workflow_instance_id is mandatory (migration 101); reusing the first workflow's already-
+    // p_workflow_instance_id is mandatory (migration 102); reusing the first workflow's already-
     // COMPLETED instance id here is irrelevant to what actually trips this call — the canonical
     // check runs before the workflow-state check, so this must fail on "ya existe un análisis
     // canónico", never on a null/missing workflow id.
@@ -1467,7 +1467,7 @@ test('the rollback refuses to run while any job carries a recorded FAILED histor
     const counts = await runCounts(seeded);
     assert.deepEqual(counts, { runs: 0, lineage: 0, aggregates: 0 }, 'sanity: this installation never produced any canonical run');
 
-    const rollback100 = strip(readFileSync(new URL('../supabase/rollbacks/101_agt002_initial_analysis_canonical_persistence_rollback.sql', import.meta.url), 'utf8'));
+    const rollback100 = strip(readFileSync(new URL('../supabase/rollbacks/102_agt002_initial_analysis_canonical_persistence_rollback.sql', import.meta.url), 'utf8'));
     await assert.rejects(seeded.exec(rollback100), /./, 'FAILED-only history must still block the rollback, not just COMPLETED history');
   } finally {
     await seeded.close();
@@ -1483,7 +1483,7 @@ test('the rollback refuses to run while any INITIAL analysis history exists, and
       analysisRunId: RUN_1, workflowInstanceId: workflow.workflowInstanceId, authorizationId: workflow.authorizationId,
       packageVersionId: workflow.evidence.packageVersionId, packageHash: workflow.evidence.packageHash,
     });
-    const rollback100 = strip(readFileSync(new URL('../supabase/rollbacks/101_agt002_initial_analysis_canonical_persistence_rollback.sql', import.meta.url), 'utf8'));
+    const rollback100 = strip(readFileSync(new URL('../supabase/rollbacks/102_agt002_initial_analysis_canonical_persistence_rollback.sql', import.meta.url), 'utf8'));
     await assert.rejects(seeded.exec(rollback100), /./);
   } finally {
     await seeded.close();
@@ -1491,7 +1491,7 @@ test('the rollback refuses to run while any INITIAL analysis history exists, and
 
   const pristine = await freshDb();
   try {
-    const rollback100 = strip(readFileSync(new URL('../supabase/rollbacks/101_agt002_initial_analysis_canonical_persistence_rollback.sql', import.meta.url), 'utf8'));
+    const rollback100 = strip(readFileSync(new URL('../supabase/rollbacks/102_agt002_initial_analysis_canonical_persistence_rollback.sql', import.meta.url), 'utf8'));
     await pristine.exec(rollback100);
     const tables = (await pristine.query(`
       select
@@ -1504,7 +1504,7 @@ test('the rollback refuses to run while any INITIAL analysis history exists, and
     assert.equal(tables.checkpoints_gone, true);
 
     const preserved = (await pristine.query(`select exists (select 1 from pg_roles where rolname = 'service_role') as still_there`)).rows[0];
-    assert.equal(preserved.still_there, true, 'rollback 101 must never touch preexisting harness state');
+    assert.equal(preserved.still_there, true, 'rollback 102 must never touch preexisting harness state');
   } finally {
     await pristine.close();
   }

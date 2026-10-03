@@ -5,7 +5,7 @@
 // imported by, and never imports, any agt002-reanalysis-*.js module. It pins: G1 authorizes
 // only INITIAL workflows (never REANALYSIS); the active/unexpired/unrevoked/unconsumed
 // status derivation used by the consume-on-create boundary that P0-04 job creation will call
-// through psi_consume_agt002_analysis_authorization (migration 099, not authored in this
+// through psi_consume_agt002_analysis_authorization (migration 100, not authored in this
 // phase); and the exact-binding matcher (workflow/package version+hash/opportunity/tender)
 // that fails closed on any mismatch.
 //

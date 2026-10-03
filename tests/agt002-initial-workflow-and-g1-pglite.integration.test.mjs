@@ -1,15 +1,15 @@
-// AGT-002 P0-03 — PGlite integration for migration 099 (RED).
+// AGT-002 P0-03 — PGlite integration for migration 100 (RED).
 //
 // Mirrors the fixture/helper conventions of
 // tests/agt002-evidence-packages-pglite.integration.test.mjs, but scoped to a DELIBERATELY
 // SMALLER fixture: this suite seeds one frozen evidence package version directly (header +
-// version row only, no members/batches) rather than replaying the full 098 freeze flow, since
+// version row only, no members/batches) rather than replaying the full 099 freeze flow, since
 // the workflow/authorization contract only ever binds to a package_version_id/package_hash
 // pair — it never reads a package's members. Migration 026/057/065 are still applied because
-// 098's own table/RPC bodies reference psi_tender_document_versions/extractions, and 098 itself
+// 099's own table/RPC bodies reference psi_tender_document_versions/extractions, and 099 itself
 // is a hard FK dependency of psi_agt002_analysis_authorizations.package_version_id.
 //
-// psi_agt002_reanalysis_jobs (068) is deliberately NOT part of this fixture: migration 099 must
+// psi_agt002_reanalysis_jobs (068) is deliberately NOT part of this fixture: migration 100 must
 // never reference it, and this suite proves that by construction — there is no job table for
 // the consume RPC to accidentally write into.
 import assert from 'node:assert/strict';
@@ -28,9 +28,9 @@ const migration065 = strip(migration065Raw)
   .replace(/create schema if not exists extensions;\s*create extension if not exists pgcrypto with schema extensions;\s*/i, '')
   .replace(/encode\(extensions\.digest\(convert_to\(extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'text_hash')
   .replace(/encode\(extensions\.digest\(convert_to\(p_extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'p_text_hash');
-const migration098 = migrationSource('098_agt002_evidence_packages.sql');
+const migration098 = migrationSource('099_agt002_evidence_packages.sql');
 // RED: not yet authored.
-const migration099 = () => migrationSource('099_agt002_initial_workflow_and_g1.sql');
+const migration099 = () => migrationSource('100_agt002_initial_workflow_and_g1.sql');
 
 const O = '10000000-0000-4000-8000-000000000001';
 const T = '10000000-0000-4000-8000-000000000002';
@@ -92,7 +92,7 @@ async function freshDb() {
 
 /** Seeds one frozen evidence package version directly (no members/batches — the
  * workflow/authorization contract only ever binds to package_version_id/package_hash). The
- * header row is a one-per-(opportunity_id,tender_id) identity per 098's unique constraint, so a
+ * header row is a one-per-(opportunity_id,tender_id) identity per 099's unique constraint, so a
  * second seed against the same scope reuses the existing header and appends the next
  * version_number under it — it never inserts a second header and never touches a prior frozen
  * version row. */
@@ -191,7 +191,7 @@ async function coreCounts(pg) {
   `)).rows[0];
 }
 
-test('migration 099 applies cleanly and defines the three tables and four RPCs', async () => {
+test('migration 100 applies cleanly and defines the three tables and four RPCs', async () => {
   const pg = await freshDb();
   try {
     const tables = (await pg.query(`
@@ -709,7 +709,7 @@ test('the rollback refuses to run while any workflow/event/authorization history
   const seeded = await freshDb();
   try {
     await seedAuthorizedWorkflow(seeded, { label: 'rollback-guard' });
-    const rollback098 = strip(readFileSync(new URL('../supabase/rollbacks/099_agt002_initial_workflow_and_g1_rollback.sql', import.meta.url), 'utf8'));
+    const rollback098 = strip(readFileSync(new URL('../supabase/rollbacks/100_agt002_initial_workflow_and_g1_rollback.sql', import.meta.url), 'utf8'));
     await assert.rejects(seeded.exec(rollback098), /./);
   } finally {
     await seeded.close();
@@ -717,7 +717,7 @@ test('the rollback refuses to run while any workflow/event/authorization history
 
   const pristine = await freshDb();
   try {
-    const rollback098 = strip(readFileSync(new URL('../supabase/rollbacks/099_agt002_initial_workflow_and_g1_rollback.sql', import.meta.url), 'utf8'));
+    const rollback098 = strip(readFileSync(new URL('../supabase/rollbacks/100_agt002_initial_workflow_and_g1_rollback.sql', import.meta.url), 'utf8'));
     await pristine.exec(rollback098);
     const tables = (await pristine.query(`
       select
@@ -730,7 +730,7 @@ test('the rollback refuses to run while any workflow/event/authorization history
     assert.equal(tables.authorizations_gone, true);
 
     const preserved = (await pristine.query(`select to_regclass('public.psi_agt002_evidence_packages') is not null as still_there`)).rows[0];
-    assert.equal(preserved.still_there, true, 'rollback 099 must never touch the preexisting 098 evidence package tables');
+    assert.equal(preserved.still_there, true, 'rollback 100 must never touch the preexisting 099 evidence package tables');
   } finally {
     await pristine.close();
   }

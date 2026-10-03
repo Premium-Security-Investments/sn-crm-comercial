@@ -1,8 +1,8 @@
-// AGT-002 P0-02 evidence packages — PGlite integration for migration 098 (RED).
+// AGT-002 P0-02 evidence packages — PGlite integration for migration 099 (RED).
 //
 // Mirrors the fixture/helper conventions of
 // tests/agt002-governed-document-worksets-pglite.integration.test.mjs, but scoped to a
-// DELIBERATELY SMALLER fixture: migration 098's own tables/RPCs never reference a document
+// DELIBERATELY SMALLER fixture: migration 099's own tables/RPCs never reference a document
 // snapshot or an AGT-002 context version (051) — psi_tender_document_snapshots/
 // psi_agt002_context_versions/psi_tender_analysis_runs are seeded here only because migration
 // 068 (the reanalysis job queue) has a hard FK dependency on them, and 068 is applied ONLY so
@@ -26,13 +26,13 @@ const migration065 = strip(migration065Raw)
   .replace(/encode\(extensions\.digest\(convert_to\(extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'text_hash')
   .replace(/encode\(extensions\.digest\(convert_to\(p_extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'p_text_hash');
 // The real AGT-002 context version register (051) — a pure FK dependency of migration 068 below,
-// never touched by migration 098's own tables/RPCs.
+// never touched by migration 099's own tables/RPCs.
 const migration051 = migrationSource('051_agt002_context_versions.sql');
 // The real reanalysis job queue (068) — applied ONLY so this suite can assert freezing an
-// evidence package never inserts into it. Migration 098 itself never references this table.
+// evidence package never inserts into it. Migration 099 itself never references this table.
 const migration068 = migrationSource('068_agt002_reanalysis_jobs.sql');
 // RED: not yet authored.
-const migration098 = () => migrationSource('098_agt002_evidence_packages.sql');
+const migration098 = () => migrationSource('099_agt002_evidence_packages.sql');
 
 const O = '10000000-0000-4000-8000-000000000001';
 const T = '10000000-0000-4000-8000-000000000002';
@@ -84,7 +84,7 @@ async function createBaseFixture() {
       primary key (profile_id, permission_code)
     );
 
-    -- Pure FK dependencies of migration 068 (below) that migration 098 itself never touches:
+    -- Pure FK dependencies of migration 068 (below) that migration 099 itself never touches:
     -- a minimal snapshots table and a minimal analysis-runs table, exactly like
     -- tests/agt002-governed-document-worksets-pglite.integration.test.mjs's fixture.
     create table public.psi_tender_document_snapshots (
@@ -251,7 +251,7 @@ async function coreCounts(pg) {
   `)).rows[0];
 }
 
-test('migration 098 applies cleanly and defines the four evidence package tables and both RPCs', async () => {
+test('migration 099 applies cleanly and defines the four evidence package tables and both RPCs', async () => {
   const pg = await freshDb();
   try {
     const tables = (await pg.query(`

@@ -46,7 +46,7 @@
 --     pre_go_analysis.v1.schema.json, so SQL only cross-checks identity fields, never the full
 --     shape); inserts the canonical run, the lineage row and the aggregate v1 envelope; marks
 --     the job COMPLETED; and always appends the governed CONSUMED -> COMPLETED workflow event
---     (099) in the same transaction — p_workflow_instance_id is mandatory, never optional, so an
+--     (100) in the same transaction — p_workflow_instance_id is mandatory, never optional, so an
 --     INITIAL completion can never leave its driving workflow instance without its terminal
 --     event. Any failure at any step rolls back every write in the same call — there is no
 --     partial terminal state. An exact replay (same job, already COMPLETED with the same run)
@@ -59,7 +59,7 @@
 --     model/DB text. A replay with the same error code against an already-FAILED job is
 --     idempotent; any other terminal state, or a stale/lost lease or fence, is rejected. If the
 --     job's own payload.persistence.workflowInstanceId is bound and that workflow instance is
---     CONSUMED, the governed CONSUMED -> FAILED event (099) is appended in the same transaction
+--     CONSUMED, the governed CONSUMED -> FAILED event (100) is appended in the same transaction
 --     with evidence limited to {error_code}; a job that never reached a bound workflow instance
 --     (an early failure, or a legacy admission) is still marked FAILED without inventing an
 --     event. jobs.error_code (plain additive text column, closed-shape CHECK) backs this RPC.

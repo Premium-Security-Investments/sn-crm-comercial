@@ -1,4 +1,4 @@
-// AGT-002 P0-06 (RED) — 101_agt002_initial_analysis_canonical_persistence.sql static contract.
+// AGT-002 P0-06 (RED) — 102_agt002_initial_analysis_canonical_persistence.sql static contract.
 //
 // Mirrors the static-safety conventions of tests/agt002-initial-analysis-jobs-migration.test.mjs.
 // This migration/rollback pair does not exist yet: readFileSync throwing ENOENT is the RED
@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const migration = readFileSync(new URL('../supabase/migrations/101_agt002_initial_analysis_canonical_persistence.sql', import.meta.url), 'utf8');
-const rollback = readFileSync(new URL('../supabase/rollbacks/101_agt002_initial_analysis_canonical_persistence_rollback.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../supabase/migrations/102_agt002_initial_analysis_canonical_persistence.sql', import.meta.url), 'utf8');
+const rollback = readFileSync(new URL('../supabase/rollbacks/102_agt002_initial_analysis_canonical_persistence_rollback.sql', import.meta.url), 'utf8');
 
 // New append-only tables.
 for (const table of [
