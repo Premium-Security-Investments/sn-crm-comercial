@@ -23,6 +23,20 @@ env:
   AGT002_DESIRED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
 
 jobs:
+  agt002_suite:
+    name: agt002_suite
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: corepack pnpm install --frozen-lockfile
+      # Discover every AGT-002 test, including tender integration tests whose
+      # filenames contain (rather than begin with) the subsystem identifier.
+      - run: corepack pnpm run test:agt002
+
   f0_suite:
     name: f0_suite
     runs-on: ubuntu-latest
@@ -51,10 +65,6 @@ jobs:
     name: production_build
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
-    env:
-      VERCEL_ENV: production
-      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-      SUPABASE_SERVICE_ROLE_KEY: ci-dummy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -91,6 +101,7 @@ jobs:
     name: release_receipt
     runs-on: ubuntu-latest
     needs:
+      - agt002_suite
       - f0_suite
       - backend_parity
       - production_build
@@ -107,6 +118,7 @@ jobs:
       (
         github.event_name == 'schedule' ||
         (
+          needs.agt002_suite.result == 'success' &&
           needs.f0_suite.result == 'success' &&
           needs.backend_parity.result == 'success' &&
           needs.production_build.result == 'success' &&

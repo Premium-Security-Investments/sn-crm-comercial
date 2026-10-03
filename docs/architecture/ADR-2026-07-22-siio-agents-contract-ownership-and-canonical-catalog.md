@@ -1,5 +1,14 @@
 # ADR — Ownership de contratos SIIO–Agentes y catálogo institucional canónico
 
+> **Nota de vigencia (2026-10-03):** la caracterización de Agente IT como
+> “molde técnico” sin identidad propia fue precisada y parcialmente sustituida
+> por el
+> [ADR del mapa institucional](./ADR-2026-10-02-plataforma-y-mapa-institucional-de-agentes.md)
+> y `DEC-AGT-003` del
+> [registro autoritativo](./agent-decision-registry.md): `agente-it` implementa
+> `AGT-000`, mientras Plataforma Agentes es el plano común y no es un agente.
+> El ownership de SIIO, AGT-002 y AGT-003 definido aquí continúa vigente.
+
 - **Estado:** Aceptado para P0 documental
 - **Fecha de decisión:** 2026-07-22
 - **Decisor:** Juan Botero

@@ -46,6 +46,24 @@ Vite proxya `/api` hacia `http://localhost:4173`.
 - `server/index.js`: API Express + conexión Supabase server-side.
 - `.env.local.example`: variables necesarias.
 
+## Subsistemas
+
+- [AGT-002 — mapa, límites y hoja de ruta](docs/agt002/README.md): análisis
+  gobernado de licitaciones, radar, evidencia, runtime, revisión humana y
+  operación.
+- [AGT-003 — mapa, límites y hoja de ruta](docs/agt003/README.md): priorización
+  comercial privada, preflight, copiloto de seguimiento, evidencia y revisión
+  humana.
+- [Mapa del ecosistema de agentes](docs/architecture/agent-ecosystem-map.md):
+  responsabilidades y relación entre CRM, `agente-it` y
+  `plataforma-agentes`.
+- [ADR del mapa institucional](docs/architecture/ADR-2026-10-02-plataforma-y-mapa-institucional-de-agentes.md):
+  Plataforma Agentes cobija AGT-000..AGT-006 y Agente IT corresponde a
+  AGT-000.
+- [Registro autoritativo de decisiones](docs/architecture/agent-decision-registry.md):
+  decisiones vigentes, sustituciones documentales, gates y orden inmediato de
+  trabajo.
+
 ## Repositorio oficial y remotos
 
 Desde julio de 2026 el repositorio oficial del CRM vive en la organización empresarial de Premium Security Investments:
