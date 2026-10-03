@@ -97,8 +97,8 @@ Las responsabilidades actuales se agrupan así:
 | Persistencia y recuperación | claims, jobs, reintentos, reanálisis, checkpoints y SLO | `agt002-*-persistence.js`, `agt002-reanalysis-*`, `agt002-analysis-checkpoints.js`, `agt002-runtime-slo.js` |
 | Revisión y conocimiento | revisión accionable, briefs, workbench y publicación de conocimiento | `agt002-actionable-review-*`, `agt002-stakeholder-brief*`, `agt002-workbench-*`, `agt002-knowledge-*` |
 | Control y seguridad | identidad, autoridad, gates, observación de superficies y drift | `agt002-control-plane-*`, `agt002-f0*`, `contracts/agt002-phase01/` |
-| INITIAL | primera corrida, paquete, autorización, workflow, job y persistencia propia | P0-00..P0-06 fusionado por `#279`; migraciones sin aplicar, runner/superficie final pendientes y no desplegado |
-| REANALYSIS/R1 | versiones sucesoras, checkpoints y delta futuro | `agt002-reanalysis-*`, `agt002-analysis-checkpoints.js`; R1 aún es diseño |
+| INITIAL | primera corrida, paquete, autorización, workflow, job y persistencia propia | P0-00..P0-06 fusionado por `#279`; P0-10..P0-12 construido/verificado en aislamiento; migraciones `099`–`104` sin aplicar y no desplegado |
+| REANALYSIS/R1 | versiones sucesoras, checkpoints y delta futuro | `agt002-reanalysis-*`, `agt002-analysis-checkpoints.js`; [gate R1 alcanzado, implementación cerrada](./r1-gate-2026-10-03.md) |
 | Minería histórica | corpus de procesos cerrados y familias metodológicas | plan aislado; no implementado ni programado |
 | Integración HTTP | rutas y composición con el backend del CRM | `server/index.js` y su espejo `api/[...path].js` |
 | Integración UI | análisis integral, dossier, worksets, revisión y polling | `src/tenders/` y `src/main.tsx` |
@@ -122,6 +122,7 @@ Leer primero:
 8. [Onboarding de un proceso](../runbooks/agt002-process-onboarding-gate.md).
 9. [Análisis de una licitación nueva](../runbooks/agt002-new-tender-analysis.md).
 10. [Checklist de observabilidad](../runbooks/agt002-observability-checklist.md).
+11. [Gate de entrada y punto de alto de R1](./r1-gate-2026-10-03.md).
 
 Operación por capacidad:
 

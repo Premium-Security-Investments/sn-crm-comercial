@@ -1,17 +1,19 @@
-# AGT-002 Initial Analysis — Current Authorized State (P0-00)
+# AGT-002 Initial Analysis — estado construido y verificado en aislamiento
 
-This document describes the P0-00 guard that is authorized to run against
-the AGT-002 initial-analysis worktree today. It is the single source of
-truth for the frozen branch, repository root, and baseline commit literals
-that the guard enforces, and for every category of violation the guard
-detects. The guard implementation lives at
+**Corte:** 2026-10-03
+**Estado:** P0-00..P0-12 reducido construido; verificación E0 sintética, sin migración ni
+despliegue. Un canario INITIAL real y su aceptación E2E requieren gates separados.
+
+El guard P0-00 conserva como evidencia histórica la identidad del worktree donde comenzó la
+implementación. Ya no describe la rama de cierre posterior a la integración de `#279`. Su
+implementación vive en
 `scripts/agt002_initial_analysis_guard.mjs` and exports a pure function,
 `runAgt002InitialAnalysisGuard(observation)`, plus a direct-execution CLI
 that observes real Git state and exits fail-closed.
 
-## Frozen identity literals
+## Identidad congelada histórica de P0-00
 
-The guard compares an observation against three exact literals. None of
+The guard compares an observation against three exact historical literals. None of
 these are read from an environment variable or a CLI flag — they are
 hardcoded in the guard module so no production invocation can point the
 guard at a different branch, root, or baseline.
@@ -131,3 +133,46 @@ The migration and rollback remain unapplied. The legacy migration-101 admission 
 internal implementation primitive but is no longer executable by `service_role` while migration
 103 is installed. Verification is recorded in
 `docs/evidence/2026-10-03-agt002-initial-analysis-atomic-admission-verification.md`.
+
+## P0-10 reducido — verdad visible de interfaz
+
+La interfaz consume una proyección server-side separada de REANALYSIS con exactamente cuatro
+estados: `pending`, `running`, `ready` y `failed`. `ready` exige readback del job `COMPLETED` y de
+su corrida `INITIAL` exacta, canónica, vigente y versión 1; un job completo sin esa corrida se
+presenta como fallo cerrado. El reporte se marca disponible sólo en `ready` y la UI declara que
+la decisión posterior sigue siendo humana.
+
+## P0-11 reducido — runtime, presupuesto, switches y readback
+
+- el runner rehidrata por `package_version_id`, `document_version_id`, `extraction_id` y
+  `extraction_text_hash` congelados;
+- cada llamada usa el bridge firmado con idempotencia por job/fase/lote/request hash;
+- la síntesis se valida contra `pre_go_analysis.v1` y contra run, autorización, paquete y scope
+  reservados server-side;
+- tokens y costo USD se acumulan y fallan cerrado antes de persistir si exceden el presupuesto o
+  si el costo no puede comprobarse;
+- flags desconocidos, identidad de runtime ausente, modelo/timeout/effort/tarifas inválidos o
+  divergencia entre job y readback equivalen a runtime no disponible;
+- observabilidad acepta sólo eventos y metadatos cerrados, sin contenido documental, prompts ni
+  errores brutos.
+
+La migración aditiva `104` deriva lotes y `analysisRunId` desde el paquete congelado, descartando
+`batches` y `persistence` aportados por el caller. Su rollback restaura el contrato de `103` sólo
+si no existe evidencia creada bajo `104`.
+
+## P0-12 reducido — integración E0
+
+La vertical sintética ejercita dos alcances (`A` y `A_PLUS_B`) con 13 documentos gobernados: dos
+lotes de miembros, una síntesis basada en sus checkpoints, validación contractual y exactamente
+una llamada a la persistencia canónica. No usa red, proveedor, Supabase real ni documentos reales.
+
+Los gates focalizados incluyen runtime, worker, persistencia, migración/rollback PGlite, UI,
+paridad backend, TypeScript y build. El receipt está en
+`docs/evidence/2026-10-03-agt002-initial-analysis-e0-closure.md`.
+
+## Límite operativo
+
+Nada de este cierre aplica las migraciones `099`–`104`, instala o activa el timer, enciende los
+kill switches, consume un modelo real, crea una corrida de producción ni constituye aceptación
+operativa. R1 sólo puede pasar de gate/diseño a implementación después de una primera corrida
+INITIAL válida y aceptada extremo a extremo.

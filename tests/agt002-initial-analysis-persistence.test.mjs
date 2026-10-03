@@ -40,6 +40,7 @@ function baseCompletion(overrides = {}) {
     packageHash: BASE_ENVELOPE.meta.package_hash,
     g1Scope: BASE_ENVELOPE.meta.g1_scope,
     policyVersion: 'policy-v1',
+    analysisRunId: BASE_ENVELOPE.meta.analysis_run_id,
     envelope: BASE_ENVELOPE,
     ...overrides,
   };
@@ -136,7 +137,7 @@ test('rejects a malformed call: missing jobId/leaseId/fenceVersion/completion', 
 
 test('rejects a malformed completion: each required completion field is individually mandatory', async () => {
   const database = fakeDatabase({ data: SUCCESS_RESPONSE });
-  for (const field of ['workflowInstanceId', 'authorizationId', 'packageVersionId', 'packageHash', 'g1Scope', 'policyVersion', 'envelope']) {
+  for (const field of ['workflowInstanceId', 'authorizationId', 'packageVersionId', 'packageHash', 'g1Scope', 'policyVersion', 'analysisRunId', 'envelope']) {
     const completion = baseCompletion({ [field]: undefined });
     await assert.rejects(
       completeAgt002InitialAnalysisJob(database, { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, completion }),

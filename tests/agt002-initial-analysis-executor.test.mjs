@@ -251,6 +251,35 @@ test('a job with two member-analysis batches plus a synthesis batch rehydrates, 
   assert.deepEqual(result.completion, { ...PERSISTENCE_BINDINGS, envelope: { producedBy: 'model-c' } });
 });
 
+test('governed synthesis consumes prior batch checkpoints instead of rehydrating all source documents again', async () => {
+  const governed = {
+    ...JOB,
+    payload: {
+      ...JOB.payload,
+      batches: [
+        { batchIndex: 0, phase: 'member_batch_analysis', modelId: 'model-a', memberIds: ['m-1'], expectedMemberIds: ['m-1'], requestHash: 'h'.repeat(64) },
+        { batchIndex: 1, phase: 'member_batch_analysis', modelId: 'model-a', memberIds: ['m-2'], expectedMemberIds: ['m-2'], requestHash: 'i'.repeat(64) },
+        { batchIndex: 2, phase: 'synthesis', modelId: 'model-a', memberIds: [], expectedMemberIds: ['batch:0', 'batch:1'], sourceBatchIndexes: [0, 1], requestHash: 'j'.repeat(64) },
+      ],
+    },
+  };
+  const seen = [];
+  const executor = createAgt002InitialAnalysisExecutor(baseDeps({
+    assertMembersMatchHashes: () => {},
+    runBatch: async ({ batch, members, usedTotalTokens }) => {
+      seen.push({ phase: batch.phase, ids: members.map(member => member.memberId), usedTotalTokens });
+      return { output: { phase: batch.phase }, outputSha256: 'a'.repeat(64), usage: { totalTokens: 10, costUsd: 0.01 } };
+    },
+  }));
+  const result = await executor({}, governed);
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(seen, [
+    { phase: 'member_batch_analysis', ids: ['m-1'], usedTotalTokens: 0 },
+    { phase: 'member_batch_analysis', ids: ['m-2'], usedTotalTokens: 10 },
+    { phase: 'synthesis', ids: ['batch:0', 'batch:1'], usedTotalTokens: 20 },
+  ]);
+});
+
 // ---------------------------------------------------------------------------------------------
 // 9) P0-06: no synthesis output, or no persistence bindings, must never report a hollow
 //    'completed' — the executor fails closed with a dedicated closed error code instead.
