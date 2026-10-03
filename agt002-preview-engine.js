@@ -36,6 +36,9 @@ import {
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import { AGT002_CHECKPOINT_STAGES } from './agt002-analysis-checkpoints.js';
+import { AGT002_INTEGRAL_LEGAL_VALIDATION_RULES } from './agt002-integral-analysis-v3.js';
+
+const AGT002_INTEGRAL_LEGAL_VALIDATION_RULE_SET = new Set(Object.values(AGT002_INTEGRAL_LEGAL_VALIDATION_RULES));
 
 // design section 5: fixed version tag for the 17-class company-evidence catalog. The
 // catalog itself is fixed by code (agt002-company-evidence-classes.js), not by a stored
@@ -705,11 +708,12 @@ export function createAgt002PreviewEngine({
    * ever risking a leak. `content` is hashed/measured here and only here; it is never passed
    * to `observability.record` or included in the thrown SAFE_INVALID error.
    */
-  function recordOutputRejected({ stage, validationCode, content, snapshotId, usage }) {
+  function recordOutputRejected({ stage, validationCode, validationRule, content, snapshotId, usage }) {
     const contentText = typeof content === 'string' ? content : '';
     observability.record('output_rejected', {
       stage,
       validation_code: validationCode,
+      validation_rule: AGT002_INTEGRAL_LEGAL_VALIDATION_RULE_SET.has(validationRule) ? validationRule : undefined,
       content_sha256: createHash('sha256').update(contentText, 'utf8').digest('hex'),
       content_bytes: Buffer.byteLength(contentText, 'utf8'),
       snapshot_id: snapshotId,
@@ -1034,6 +1038,7 @@ export function createAgt002PreviewEngine({
       const validationCode = isAllowlistedValidationCode ? error.code : 'v3_invariant_violation';
       recordOutputRejected({
         stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, validationCode,
+        validationRule: error?.validationRule,
         content: rawContent, snapshotId: previewInput.snapshot_id, usage: raw?.usage,
       });
       // Attach the closed validation subcode as structural metadata ONLY when it is an allowlisted
@@ -1933,6 +1938,7 @@ export async function runAgt002BatchedV3Analysis({
       recordOutputRejected({
         stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
         validationCode: isAllowlistedValidationCode ? error.code : 'v3_invariant_violation',
+        validationRule: error?.validationRule,
         content: raw.content,
         snapshotId: previewInput.snapshot_id,
         usage: raw.usage,

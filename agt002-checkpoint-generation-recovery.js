@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 export const AGT002_CHECKPOINT_GENERATION_RECOVERY_CONTRACT = 'agt002-checkpoint-generation-recovery-v1';
 export const AGT002_CHECKPOINT_GENERATION_RECOVERY_REASON = 'checkpoint_contract_drift';
+export const AGT002_CHECKPOINT_GENERATION_2_RECOVERY_CONTRACT = 'agt002-checkpoint-generation-recovery-v2';
+export const AGT002_CHECKPOINT_GENERATION_2_RECOVERY_REASON = 'batched_legal_normalization_parity';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -22,14 +24,19 @@ export function computeAgt002CheckpointGenerationRecoveryKey({
   checkpointGeneration,
   repairCommitSha,
 } = {}) {
+  const contractVersion = checkpointGeneration === 1
+    ? AGT002_CHECKPOINT_GENERATION_RECOVERY_CONTRACT
+    : checkpointGeneration === 2
+      ? AGT002_CHECKPOINT_GENERATION_2_RECOVERY_CONTRACT
+      : null;
   if (!HEX64.test(rootIdempotencyKey || '')
       || !UUID.test(sourceJobId || '')
-      || checkpointGeneration !== 1
+      || contractVersion === null
       || !HEX40.test(repairCommitSha || '')) {
     throw new Error('AGT-002 checkpoint recovery identity is invalid.');
   }
   return createHash('sha256').update([
-    AGT002_CHECKPOINT_GENERATION_RECOVERY_CONTRACT,
+    contractVersion,
     rootIdempotencyKey.trim(),
     sourceJobId,
     String(checkpointGeneration),
@@ -50,9 +57,13 @@ export function validateAgt002CheckpointGenerationRecoveryIdentity(value) {
     'root_idempotency_key', 'source_job_id', 'source_workset_id',
   ].sort();
   if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) return undefined;
-  if (value.contract_version !== AGT002_CHECKPOINT_GENERATION_RECOVERY_CONTRACT
-      || value.reason_code !== AGT002_CHECKPOINT_GENERATION_RECOVERY_REASON
-      || value.checkpoint_generation !== 1
+  const validGeneration1 = value.contract_version === AGT002_CHECKPOINT_GENERATION_RECOVERY_CONTRACT
+    && value.reason_code === AGT002_CHECKPOINT_GENERATION_RECOVERY_REASON
+    && value.checkpoint_generation === 1;
+  const validGeneration2 = value.contract_version === AGT002_CHECKPOINT_GENERATION_2_RECOVERY_CONTRACT
+    && value.reason_code === AGT002_CHECKPOINT_GENERATION_2_RECOVERY_REASON
+    && value.checkpoint_generation === 2;
+  if ((!validGeneration1 && !validGeneration2)
       || !nonEmpty(value.root_idempotency_key)
       || !HEX64.test(value.root_idempotency_key)
       || !UUID.test(value.source_job_id || '')

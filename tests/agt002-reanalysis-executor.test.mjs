@@ -349,7 +349,7 @@ test('rejects malformed, over-budget, or identity-mismatched frozen input before
   assert.equal(calls.runtime.length, 0);
 });
 
-test('accepts only a byte-exact generation-1 recovery of a governed root identity', async () => {
+test('accepts only a byte-exact, version-matched recovery of a governed root identity', async () => {
   const opportunityId = '11111111-1111-4111-8111-111111111111';
   const tenderId = '22222222-2222-4222-8222-222222222222';
   const snapshotId = '33333333-3333-4333-8333-333333333333';
@@ -407,6 +407,31 @@ test('accepts only a byte-exact generation-1 recovery of a governed root identit
   const acceptedResult = await accepted.executor({ kind: 'db' }, job);
   assert.equal(acceptedResult.status, 'completed');
   assert.equal(accepted.calls.claim.length, 1);
+
+  const generation2SourceJobId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const generation2Key = computeAgt002CheckpointGenerationRecoveryKey({
+    rootIdempotencyKey, sourceJobId: generation2SourceJobId, checkpointGeneration: 2, repairCommitSha,
+  });
+  const generation2Identity = {
+    ...recoveryIdentity,
+    contract_version: 'agt002-checkpoint-generation-recovery-v2',
+    reason_code: 'batched_legal_normalization_parity',
+    source_job_id: generation2SourceJobId,
+    checkpoint_generation: 2,
+  };
+  const generation2Job = {
+    ...job,
+    idempotencyKey: generation2Key,
+    frozenEngineInput: {
+      ...job.frozenEngineInput,
+      engine_identity: { ...job.frozenEngineInput.engine_identity, idempotency_key: generation2Key },
+      checkpoint_generation_recovery: generation2Identity,
+    },
+  };
+  const acceptedGeneration2 = harness(options);
+  const acceptedGeneration2Result = await acceptedGeneration2.executor({ kind: 'db' }, generation2Job);
+  assert.equal(acceptedGeneration2Result.status, 'completed');
+  assert.equal(acceptedGeneration2.calls.claim.length, 1);
 
   const wrongRoot = harness(options);
   const wrongRootResult = await wrongRoot.executor({ kind: 'db' }, {

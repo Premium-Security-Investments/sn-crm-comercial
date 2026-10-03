@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   AGT002_CHECKPOINT_GENERATION_RECOVERY_CONTRACT,
   AGT002_CHECKPOINT_GENERATION_RECOVERY_REASON,
+  AGT002_CHECKPOINT_GENERATION_2_RECOVERY_CONTRACT,
+  AGT002_CHECKPOINT_GENERATION_2_RECOVERY_REASON,
   computeAgt002CheckpointGenerationRecoveryKey,
   validateAgt002CheckpointGenerationRecoveryIdentity,
 } from '../agt002-checkpoint-generation-recovery.js';
@@ -64,6 +66,31 @@ test('recovery identity is optional, but any present malformed or extended shape
   ]) {
     assert.equal(validateAgt002CheckpointGenerationRecoveryIdentity(value), undefined);
   }
+});
+
+test('generation-2 identity is deterministic, versioned, and cannot be confused with generation 1', () => {
+  const value = identity({
+    contract_version: AGT002_CHECKPOINT_GENERATION_2_RECOVERY_CONTRACT,
+    reason_code: AGT002_CHECKPOINT_GENERATION_2_RECOVERY_REASON,
+    checkpoint_generation: 2,
+  });
+  const expected = computeAgt002CheckpointGenerationRecoveryKey({
+    rootIdempotencyKey: ROOT_KEY,
+    sourceJobId: SOURCE_JOB_ID,
+    checkpointGeneration: 2,
+    repairCommitSha: REPAIR_SHA,
+  });
+  assert.match(expected, /^[0-9a-f]{64}$/);
+  assert.equal(validateAgt002CheckpointGenerationRecoveryIdentity(value), expected);
+  assert.notEqual(expected, computeAgt002CheckpointGenerationRecoveryKey({
+    rootIdempotencyKey: ROOT_KEY,
+    sourceJobId: SOURCE_JOB_ID,
+    checkpointGeneration: 1,
+    repairCommitSha: REPAIR_SHA,
+  }));
+  assert.equal(validateAgt002CheckpointGenerationRecoveryIdentity({
+    ...value, contract_version: AGT002_CHECKPOINT_GENERATION_RECOVERY_CONTRACT,
+  }), undefined, 'generation and contract version must move together');
 });
 
 test('exact-id claim adapter calls only the targeted recovery RPC and maps the modern claim', async () => {
