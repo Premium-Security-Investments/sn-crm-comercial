@@ -1,18 +1,33 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-## 0. Corte autoritativo vigente — brief AGT-002 en prod, `main` sin merge, 2026-08-19
+## 0. Corte autoritativo vigente — brief AGT-002 en prod, `main` sin merge; sesión de comentarios y preparación de GO, 2026-08-20
 
 **Este bloque manda para retomar AGT-002** (canal Discord AGT `<#1527706694665113670>`). El corte 2026-08-17 (piloto Manizales V3) **sigue válido para el motor, el flag y la persistencia**; no se revirtió el runtime V3. Lo que cambió después es la experiencia de decisión y el desalineamiento prod / `main`.
+
+### 0.0 Cierre operativo para retomar el 2026-08-21
+
+Juan revisará **todas las actualizaciones que hoy componen AGT-002** y dará sus comentarios funcionales para cerrar la experiencia. El objetivo de la sesión es dejar **una licitación real preparada para que Juan pueda pasarla a GO**, si la evidencia y la revisión humana lo permiten.
+
+Orden de trabajo acordado:
+
+1. Recorrer la experiencia completa de AGT-002 sobre las licitaciones disponibles y registrar los comentarios de Juan sin reinterpretarlos.
+2. Ajustar el brief y la experiencia únicamente según los comentarios confirmados; mantener separados potencial, impedimentos, condiciones pendientes y preparación.
+3. Elegir con Juan la licitación candidata; no asumir desde este cierre que será Manizales ni preseleccionar otra automáticamente.
+4. Validar en el expediente real documentos, evidencia contextual, incertidumbres y condiciones antes de comprometer recursos.
+5. Dejar el caso listo para la **decisión humana**. AGT-002 prepara; Juan decide y registra GO/NO GO.
+6. Si la UI queda aceptada, alinear después Git y producción mediante PR/merge/deploy autorizados; hoy prod sigue distinta de `main`.
+
+Este cierre **no registra GO/NO GO**, no selecciona una licitación en nombre de Juan y no autoriza firma, envío, presentación, garantías, compromiso de recursos, merge ni deploy.
 
 ### 0.1 Estado terminal verificado
 
 ```text
 origin/main     = 9cd6d2afa8b7dc2d997a1d14a7ce11dfb1cb61a1   #111 revert
 árbol main      = idéntico a 2703312 (#108)
-rama brief      = fix/agt002-decision-brief-contract @ 7ad7b91   (pusheada)
+rama brief      = fix/agt002-decision-brief-contract @ 408dbc1   (tip pusheado; solo docs CURRENT)
 prod alias      = https://seguridad-nacional-crm.vercel.app
 prod deploy     = dpl_6oz2Qh7h28K73fMUvf4v1Q7BYTKR  2026-08-19 20:36 UTC READY
-prod commit     = 7ad7b91   (NO es origin/main)
+prod commit     = 7ad7b91   (NO es origin/main; NO es el tip)
 build           = 127 módulos (Vite)
 caso piloto     = Manizales SA-24-2026 / oportunidad 54190e51-15fb-46af-b0aa-8f13461a3110
 ```
@@ -24,7 +39,7 @@ Redesplegar desde el worktree canónico de `main` **borra el brief** de producci
 | Rol | Path | Realidad |
 |---|---|---|
 | Checkout de `main` / deploy canónico | `/root/worktrees/siio-e6-scheduler-fix` | Único `main`. Solo `git pull` + `vercel --prod`. **No implementar features aquí.** |
-| Brief AGT-002 (código nuevo) | `/root/worktrees/agt002-decision-brief-contract` | Rama `fix/agt002-decision-brief-contract` @ `7ad7b91` |
+| Brief AGT-002 (código nuevo) | `/root/worktrees/agt002-decision-brief-contract` | Tip `408dbc1` (docs). Código en prod = `7ad7b91` |
 | NO es main | `/root/psi-comercial/plataforma-ventas/app` | Rama `docs/tender-opportunities-navigation-design` |
 
 Hay ~30 worktrees. `git log origin/main` desde el directorio incorrecto puede mostrar el commit bueno y construir un árbol viejo (ayer: ~90 módulos vs 127). Antes de deploy: `git worktree list`.
@@ -63,7 +78,11 @@ Traído de #110, **sin** el reorden de nav:
 
 Verificado: `tsc --noEmit` PASS; 23 tests AGT/tenders PASS. Bundle vivo contiene esas cadenas y **no** contiene `GO recomendado`.
 
+Re-verificado 2026-08-19 ~20:43 UTC contra el alias: `dpl_6oz2Qh7h28K73fMUvf4v1Q7BYTKR` sigue siendo prod; `index-m1EO3ReG.js` tiene `Validar primero`, `Avanzar el flujo de evidencia`, `Clasificación ejecutiva no disponible`, `No se afirma que no existan`, `Registrar GO`. No tiene `GO recomendado` ni `tender-executive-summary`.
+
 Login CRM no está en este host. QA visual autenticada de Manizales la hace Juan.
+
+No hay PR de `fix/agt002-decision-brief-contract`. No abrir ni mergear uno hasta que Juan confirme la UI.
 
 ### 0.5 Contrato AGT-002 — no reabrir el producto
 
@@ -78,10 +97,11 @@ AGT-002 **prepara** el brief. **No decide** GO/NO GO.
 ### 0.6 Qué sigue (AGT-002)
 
 1. Juan confirma o rechaza la UI de prod (Manizales).
-2. Si confirma: merge de `fix/agt002-decision-brief-contract` a `main` (para que prod = git). Si no: redesplegar canónico y se vuelve al árbol #108.
+2. Si confirma: abrir PR de `fix/agt002-decision-brief-contract` (hoy **no existe**) y mergear a `main` para que prod = git. Si no: redesplegar canónico y se vuelve al árbol #108.
 3. No mergear #112.
 4. No reabrir el contrato de producto. Siguiente trabajo de agentes: motor / worker / segundo proceso, con este CURRENT como ancla.
 5. Documentar el worktree canónico en README/CLAUDE.md del repo queda pendiente de orden.
+6. Radar diario: no reejecutar a ciegas. El fallo de hoy es cuota Codex, no del export.
 
 ### 0.7 Cómo retomar en el canal AGT
 
@@ -89,6 +109,22 @@ AGT-002 **prepara** el brief. **No decide** GO/NO GO.
 2. Código del brief: `/root/worktrees/agt002-decision-brief-contract`.
 3. `main` / deploy canónico: `/root/worktrees/siio-e6-scheduler-fix`.
 4. Grok orquesta; código de producto → `claude -p`. No usar el bot Discord ClaudeSDK ni `delegate_task` como si fuera Claude.
+
+### 0.8 Radar SECOP (operación, no brief)
+
+Cron `91b507d02a7a` — `0 13 * * *` UTC — entrega `discord:1507243583143673907`.
+
+| Corrida | Resultado |
+|---|---|
+| 2026-08-19 13:00 UTC | **FAILED** — `Codex provider quota exhausted (429)`; retry ~52402s. El export **no se ejecutó**. |
+| 2026-08-18 | FAILED — timeout 300s del script (corridas 13:05 y 13:08). |
+| 2026-08-17 13:04 UTC | Última salida útil persistida en el log del cron. |
+
+Próxima: 2026-08-20 13:00 UTC. Fail-closed: no persistir corrida incompleta; no segundo intento a ciegas.
+
+**Decisión 2026-08-19:** no subir timeouts. El HTTP SECOP II sigue en 45 s × 3 (igual desde junio; con eso corrió 9–17 ago). El techo de 300 s del cron solo aplica si se reengancha `script`; hoy el job no tiene script y el agente pide 600 s. La vía de seguridad electrónica (18 ago) agrandó el WHERE; es la hipótesis de por qué el 18 se fue a 300 s. Esperar la corrida de mañana (Grok) y ajustar solo si SECOP II vuelve a fallar — entonces el ajuste es la consulta/paginación, no el 45 s.
+
+La vía ampliada (>$10M, instalación/mantenimiento/monitoreo, sin exigir guardas; excluye sanitaria/agro/vet, «aunar esfuerzos», celebrados) sigue siendo la regla operativa. El archivo de skill `siio-agt002.md` **no está** en disco; no rederivar el producto del radar desde conversación.
 
 ---
 
@@ -851,7 +887,9 @@ Sólo después del canary, Juan decide si se habilita el timer. Si se autoriza:
 
 ### Paso 5 — siguiente evolución de producto, separada del cierre operativo
 
-Después de cerrar F2 visual y E6 humano, diseñar la siguiente versión del análisis integral:
+**Superseded por el corte §0 vigente (2026-08-19).** El brief de decisión comercial ya no es “evolución lejana”: es el trabajo de producto abierto, detenido en QA visual de Manizales. Ver §0.5–0.6. No reabrir este diseño aquí.
+
+Después de cerrar F2 visual y E6 humano, el archivo histórico pedía diseñar:
 
 - matriz por requisito del pliego;
 - evidencia empresarial tipada y aplicabilidad por caso;
