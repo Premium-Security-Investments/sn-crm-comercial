@@ -1039,3 +1039,21 @@ operación incierta.
   INITIAL, lectura systemd, recibo backup/restore, control plane y preflight DB observables.
 - No se ejecutaron migraciones, despliegue, cambios de servicio, llamadas al proveedor, jobs ni
   canario. Evidencia: `docs/evidence/2026-10-04-agt002-initial-c1a-host-preflight.md`.
+
+### 19.7. Readbacks administrados posteriores al merge de C1A
+
+- PR #284 quedó fusionado con todos sus checks en PASS; `origin/main` protegido y Vercel producción
+  convergen en el commit firmado `526c4a5e97ea1b1a971e485177b39cfe758d1e00`. El deployment
+  `dpl_DHQkK1NY8N6H9QcZfRrFCYMdgbfb` está `READY`, con alias asignado y sin error.
+- La lectura Supabase del proyecto exacto confirmó `missing_prerequisites=0`, cadena `099`–`104`
+  completamente `absent` y contadores `unsafe_grants=0`, `rls_missing=0`,
+  `missing_service_access=0`. No hay drift estructural y no se aplicó SQL.
+- El backup físico `1863369048` del `2026-10-04T04:58:38.408Z` está `COMPLETED`. Esto demuestra
+  respaldo vigente, no restore probado: PITR está desactivado, la rama normal no copia datos y la
+  conexión disponible no ofrece restore aislado a proyecto nuevo. No se restauró sobre producción.
+- Se crearon y leyeron de vuelta en Vercel, exclusivamente para `production`, los dos switches
+  `AGT002_INITIAL_ANALYSIS_ADMISSION_ENABLED=false` y `AGT002_MODEL_CALLS_ENABLED=false`. Sólo
+  afectarán un despliegue posterior; no se atribuyen al artefacto vigente ni habilitan ejecución.
+- C1A continúa `BLOCKED` y `authorizes=NOTHING`: el host aún no puede hacer fetch fresco ni leer
+  systemd/control plane, falta `/etc/psi-agt002-initial-analysis/env`, falta el restore aislado y no
+  existe un receipt integrado completamente verde. No se abre E2, canario, F1, C3 ni C4.
