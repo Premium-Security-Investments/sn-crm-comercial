@@ -1,6 +1,6 @@
-# CURRENT — AGT-002 — CHECKPOINT AUTORITATIVO (§18: canario Cali, INITIAL y continuidad)
+# CURRENT — AGT-002 — CHECKPOINT AUTORITATIVO (§19: autorización continua C1A a R1)
 
-> Estado vigente al 2026-10-03: la sección autoritativa para la continuidad general es la **§18 — Canario Cali, INITIAL y siguiente gate**. §13 conserva la referencia histórica de publicación/QA del frente decisional; §17 conserva la autoridad específica sobre el Radar determinístico único. La §18 no reescribe esos cierres: registra el estado vivo del canario de Cali, la pausa de INITIAL/P0-06, el trabajo documental realizado y el siguiente gate.
+> Estado vigente al 2026-10-04: la sección autoritativa para la continuidad general es la **§19 — Autorización continua C1A a R1**. §13 conserva la referencia histórica de publicación/QA del frente decisional; §17 conserva la autoridad específica sobre el Radar determinístico único; §18 conserva el historial del primer intento de Cali y de INITIAL. La §19 registra el resultado posterior de Cali y la autorización programática vigente.
 
 ## 1. Estado y alcance autoritativo
 
@@ -936,3 +936,67 @@ LOCAL; SIN AUTORIZACIÓN DE DESPLIEGUE**.
 6. La secuencia de oportunidades convertidas continúa bloqueada hasta que Cali termine y produzca el
    reporte esperado; después, cada oportunidad requerirá su gate individual y se detendrá ante el
    primer fallo.
+
+---
+
+## 19. Autorización continua C1A a R1 (2026-10-04)
+
+> Esta sección sustituye únicamente los estados de continuidad y autorización de §18.8 y del plan
+> integrado que exigían volver a solicitar confirmaciones humanas separadas. No sustituye los
+> controles técnicos, las fronteras de producto ni la evidencia histórica.
+
+### 19.1. Resultado posterior de Cali
+
+- La recuperación generación 2 terminó el 2026-10-03 en `status=unavailable` y
+  `error_code=invalid_output`.
+- Completó descubrimiento `54/54`, conservó 53 checkpoints de descubrimiento y un manifiesto, pero
+  produjo cero checkpoints de plan/integral, `analysis_run_id=null` y ningún reporte canónico.
+- El cierre fail-closed ocurrió antes de persistir una corrida: el envelope registró
+  `validation_code=v4_discovered_input_assembly_failed`, contenido rechazado de cero bytes y
+  `persistence_attempts=0`.
+- Por tanto Cali **sigue sin pasar**. El problema de timeout del primer intento no es el fallo terminal
+  más reciente; ahora el bloqueo concreto es el ensamblaje de entrada descubierta cuando el manifiesto
+  final queda vacío.
+- Evidencia: `docs/evidence/2026-10-03-agt002-cali-generation2-terminal-result.md`.
+
+### 19.2. Estado de INITIAL
+
+- C1 quedó integrado en `origin/main` mediante PR #280, SHA
+  `c06786d7f551b352694fc1f3e501b5603fa8c47d`.
+- Verificación aislada del 2026-10-04: motor INITIAL 44/44, persistencia/migraciones canónicas 107/107,
+  cierre E0 28/28, paridad backend y build en PASS.
+- La suite AGT-002 amplia no mostró una regresión C1: los 21 fallos observados corresponden a
+  restricciones del sandbox (17 `listen EPERM` y 4 `spawn`/`spawnSync EPERM`).
+- C1A todavía no está aceptado E2E: no se han aplicado aquí las migraciones productivas, no existe
+  readback conforme del release y no se ha ejecutado el canario INITIAL ni F1.
+
+### 19.3. Autorización programática vigente
+
+El propietario autorizó explícitamente avanzar sin nuevas solicitudes de aprobación por
+`C1A -> C2 -> C3 -> C4 -> C5 -> C6 -> C7 -> C8`, hasta aceptar R1 E2E, y ordenó detenerse antes de
+Fase 2 de Plataforma Agentes. El alcance, límites, controles y aplicación al único intento futuro de
+Cali están fijados en:
+
+`docs/evidence/2026-10-04-agt002-r1-continuous-program-authorization.md`.
+
+La autorización permite consumir cada gate humano intermedio cuando sus precondiciones técnicas estén
+demostradas; no permite declarar el resultado del gate sin evidencia ni repetir automáticamente una
+operación incierta.
+
+### 19.4. Estado operativo de arranque
+
+- Rama aislada: `feat/agt002-c1a-r1-program-20261004`.
+- Base: `origin/main@c06786d7f551b352694fc1f3e501b5603fa8c47d`.
+- La clase generalizada de ensamblaje vacío por una etiqueta semántica válida sin tokens ordinarios
+  quedó corregida y verificada en aislamiento. La regresión sintética demuestra manifiesto,
+  recuperación de chunk y llegada al proveedor sin `v4_discovered_input_assembly_failed`; evidencia:
+  `docs/evidence/2026-10-04-agt002-cali-tokenless-retrieval-assembly-fix.md`.
+- Este resultado es `VERIFIED_ISOLATED`, no un diagnóstico exacto del payload productivo de Cali: la
+  red productiva no estuvo disponible para leer ese checkpoint. No se hizo deploy, llamada a
+  proveedor ni reintento y la autorización de una recuperación futura permanece sin consumir.
+- C1A producción: bloqueado en este entorno mientras no puedan comprobarse conectividad, credenciales,
+  migraciones 099-104, despliegue apagado y readback exacto.
+- Trabajo local permitido mientras se restablecen esas precondiciones: preparar el paquete reproducible
+  de release y diagnosticar/corregir por TDD el fallo exacto de Cali. Ningún nuevo job se ejecuta antes
+  de desplegar y leer de vuelta la corrección.
+- Punto de detención obligatorio: después de `AGT002_INCREMENTAL_E2E_ACCEPTED`, antes de C9/Fase 2/P3.2.
