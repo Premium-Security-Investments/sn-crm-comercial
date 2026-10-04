@@ -29,6 +29,39 @@ Record without secrets:
 6. database backup identifier and a verified restore procedure;
 7. current structural state from the migration runner.
 
+The backup evidence is a protected JSON receipt produced from the actual provider backup and an
+isolated restore test. Do not create it from an assumption or from the migration runner itself. Its
+closed shape is:
+
+```json
+{
+  "schema_version": "agt002-c1a-backup-receipt-v1",
+  "backup_id": "provider-backup-id",
+  "created_at_utc": "2026-10-04T12:00:00.000Z",
+  "database_host": "exact-project-ref.supabase.co",
+  "integrity_verified": true,
+  "restore_procedure_id": "isolated-restore-procedure-id",
+  "restore_tested_at_utc": "2026-10-04T12:20:00.000Z",
+  "restore_result": "PASS"
+}
+```
+
+Run the consolidated, read-only host preflight from the fixed deployment worktree. It performs a
+fresh `git fetch origin main`, observes the control plane and database, verifies that the INITIAL
+service/timer/process are off, checks the protected environment without emitting secrets, and binds
+the backup receipt to the exact database hostname:
+
+```bash
+cd /root/worktrees/siio-e6-scheduler-fix
+AGT002_C1A_BACKUP_RECEIPT_FILE=/absolute/protected/agt002-c1a-backup-receipt.json \
+  npm run preflight:agt002-initial-c1a
+```
+
+Only `decision: READY_FOR_E2` is a valid pre-change result. `BLOCKED`, an unobserved check, a
+non-zero exit, or a missing field authorizes nothing. Even a passing receipt authorizes only
+migrations `099`–`104` plus deployment with both flags OFF; it explicitly leaves the canary
+unauthorized.
+
 Use an explicit protected environment file for database access:
 
 ```bash
@@ -86,4 +119,3 @@ Any mismatch is stop-on-fail. Do not open E3 or create a canary job.
 E2 closes only when all readbacks match the receipt. E3 may then select cases read-only. E4 is a
 separate single INITIAL canary with one opportunity, one click, concurrency one and no timer. Its
 identity and terminal disposition must be recorded before F1 can open.
-

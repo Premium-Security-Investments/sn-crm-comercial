@@ -1022,3 +1022,20 @@ operación incierta.
   volver a comprobar el inventario al iniciar C3/C4.
 - C2 no está cerrado: falta demostrar salud actual de transporte/proveedor y leer de vuelta las
   identidades productivas. No se emite todavía `AGT002_INCREMENTAL_DESIGN_RECONCILED` ni se abre C4.
+
+### 19.6. Preflight operativo unificado de C1A
+
+- Se añadió un preflight fail-closed que reúne en un recibo sanitizado el fetch/SHA exacto, entorno
+  protegido completo, flags OFF, estado de unidad/timer/proceso, respaldo con restore probado,
+  control plane y preflight estructural de base.
+- La prueba local final del contrato reporta 19/19 PASS; la suite AGT-002 completa sobre la
+  implementación núcleo reportó 2.695 PASS, 0 FAIL y 11 SKIP. El build productivo pasó antes del
+  endurecimiento final de estados `static`/patrón de proceso; su repetición local chocó con el
+  `spawnSync EPERM` intermitente del sandbox en un gate ajeno, por lo que CI remoto conserva el
+  readback final de build.
+- La primera ejecución contra el host real confirmó worktree limpio, `HEAD == origin/main ==
+  90bf8662debf56d29a44ddf4a6515b62c9c93ec1` y cero procesos INITIAL.
+- El resultado global fue `BLOCKED`, `authorizes=NOTHING`: siguen faltando fetch remoto, entorno
+  INITIAL, lectura systemd, recibo backup/restore, control plane y preflight DB observables.
+- No se ejecutaron migraciones, despliegue, cambios de servicio, llamadas al proveedor, jobs ni
+  canario. Evidencia: `docs/evidence/2026-10-04-agt002-initial-c1a-host-preflight.md`.

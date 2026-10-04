@@ -34,6 +34,7 @@
     "check:agt002-drift": "node scripts/agt002-check-drift.mjs",
     "check:agt002-initial-analysis-guard": "node scripts/agt002_initial_analysis_guard.mjs",
     "migrate:agt002-initial-analysis": "node scripts/agt002-initial-analysis-migrations.mjs",
+    "preflight:agt002-initial-c1a": "node scripts/agt002-initial-analysis-c1a-preflight.mjs",
     "test:agt002-pre-go-analysis-v1": "node --test tests/agt002-pre-go-analysis-v1.test.mjs",
     "test:agt002-evidence-packages": "node --test tests/agt002-evidence-packages.test.mjs tests/agt002-evidence-package-api.test.mjs tests/agt002-evidence-packages-migration.test.mjs tests/agt002-evidence-packages-pglite.integration.test.mjs",
     "test:agt002-initial-workflow": "node --test tests/agt002-initial-workflow.test.mjs tests/agt002-analysis-authorizations.test.mjs tests/agt002-initial-workflow-and-g1-migration.test.mjs tests/agt002-initial-workflow-and-g1-pglite.integration.test.mjs",
