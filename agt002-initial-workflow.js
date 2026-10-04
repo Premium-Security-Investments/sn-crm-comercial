@@ -24,9 +24,9 @@ export const AGT002_WORKFLOW_TERMINAL_STATES = Object.freeze([
 
 export const AGT002_WORKFLOW_ACTOR_KINDS = Object.freeze(['human', 'system']);
 
-export const AGT002_WORKFLOW_AUTHORITIES = Object.freeze(['G1', 'SYSTEM']);
+export const AGT002_WORKFLOW_AUTHORITIES = Object.freeze(['REQUESTER', 'G1', 'SYSTEM']);
 
-export const AGT002_WORKFLOW_ENVS = Object.freeze(['production', 'isolated_fixture']);
+export const AGT002_WORKFLOW_ENVS = Object.freeze(['production', 'staging', 'test']);
 
 // Sentinel key for the creation transition (null/undefined "from"). Deliberately not itself a
 // member of AGT002_WORKFLOW_STATES so it can never collide with a real state.

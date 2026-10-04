@@ -18,6 +18,8 @@ import {
   AGT002_WORKFLOW_SCOPES,
   AGT002_WORKFLOW_STATES,
   AGT002_WORKFLOW_TERMINAL_STATES,
+  AGT002_WORKFLOW_AUTHORITIES,
+  AGT002_WORKFLOW_ENVS,
   AGT002_WORKFLOW_CREATION_SENTINEL,
   AGT002_WORKFLOW_TRANSITION_MATRIX,
   isLegalAgt002WorkflowTransition,
@@ -58,6 +60,11 @@ describe('AGT-002 initial-analysis workflow constants', () => {
 
   it('pins exactly the two legal scopes: A or A_PLUS_B, no more, no fewer', () => {
     assert.deepEqual([...AGT002_WORKFLOW_SCOPES].sort(), ['A', 'A_PLUS_B']);
+  });
+
+  it('matches migration 100 authority and environment vocabularies exactly', () => {
+    assert.deepEqual([...AGT002_WORKFLOW_AUTHORITIES].sort(), ['G1', 'REQUESTER', 'SYSTEM']);
+    assert.deepEqual([...AGT002_WORKFLOW_ENVS].sort(), ['production', 'staging', 'test']);
   });
 
   it('pins the closed set of workflow states, including every terminal state', () => {
@@ -231,7 +238,7 @@ describe('buildAgt002WorkflowEventEnvelope — every transition carries actor/au
     assert.throws(() => buildAgt002WorkflowEventEnvelope(baseEventInput({ env: 'prod' })), /env/i);
   });
 
-  it('authority is a closed vocabulary (G1 or SYSTEM only)', () => {
+  it('authority is a closed vocabulary (REQUESTER, G1 or SYSTEM only)', () => {
     assert.throws(() => buildAgt002WorkflowEventEnvelope(baseEventInput({ authority: 'G2' })), /authority/i);
   });
 

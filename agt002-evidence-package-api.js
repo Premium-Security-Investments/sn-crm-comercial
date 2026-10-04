@@ -7,6 +7,7 @@
 // (docs/agt002/initial-analysis/CURRENT.md) and must never reference the reanalysis operational
 // surface (modules, tables, RPCs) that scripts/agt002_initial_analysis_guard.mjs (P0-00) guards.
 import {
+  computeAgt002EvidencePackageIdempotencyKey,
   freezeAgt002EvidencePackageEvidence,
   normalizeRequestedAgt002EvidencePackageMembers,
 } from './agt002-evidence-packages.js';
@@ -125,10 +126,16 @@ export async function freezeAgt002EvidencePackage(database, { opportunityId, ten
     extraction_id: member.extraction_id,
     extraction_text_hash: member.extraction_text_hash,
   }));
+  const idempotencyKey = computeAgt002EvidencePackageIdempotencyKey({
+    opportunityId,
+    tenderId,
+    packageHash: frozen.packageHash,
+  });
 
   const { data, error } = await database.rpc('psi_freeze_agt002_evidence_package', {
     p_opportunity_id: opportunityId,
     p_tender_id: tenderId,
+    p_idempotency_key: idempotencyKey,
     p_actor_profile_id: actorProfileId,
     p_members: pMembers,
     p_document_manifest_hash: frozen.documentManifestHash,
@@ -147,6 +154,13 @@ export async function freezeAgt002EvidencePackage(database, { opportunityId, ten
     || !isNonEmptyString(data.document_manifest_hash)
     || !isNonEmptyString(data.semantic_manifest_hash)) {
     throw evidencePackageConflictError('Freezing the AGT-002 evidence package did not return a valid result.');
+  }
+  if (data.package_hash !== frozen.packageHash
+    || data.document_manifest_hash !== frozen.documentManifestHash
+    || data.semantic_manifest_hash !== frozen.semanticManifestHash
+    || data.member_count !== frozen.members.length
+    || data.batch_count !== frozen.batches.length) {
+    throw evidencePackageConflictError('El resultado congelado no coincide con el paquete de evidencia calculado por el servidor.');
   }
   return data;
 }
