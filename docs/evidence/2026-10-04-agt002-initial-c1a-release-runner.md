@@ -33,6 +33,9 @@ job admission
 - Existing canonical persistence PGlite integration and server-owned 104 behavior: PASS.
 - Five authoritative INITIAL package gates (evidence packages, workflow/G1, jobs, canonical
   persistence and E0 closure): 28/28 PASS.
+- The first read-only operator invocation exposed that the production-style environment uses
+  `SUPABASE_URL` while the runner initially accepted only `NEXT_PUBLIC_SUPABASE_URL`. A RED/green
+  contract now accepts either name without trying to load a missing local dotenv file.
 - No secrets were read or written and no remote operation ran.
 
 ## Operational disposition
@@ -40,4 +43,5 @@ job admission
 The operator path is now reproducible, but E2 is not accepted until a production preflight,
 backup/restore receipt, migration application, application deployment with both flags off and exact
 post-deploy readback all succeed. The current environment cannot reach that target, so no command
-from the mutating portions of the runbook has been executed.
+from the mutating portions of the runbook has been executed. A read-only state request ended in
+`fetch failed` during the current DNS outage and produced no database result or mutation.
