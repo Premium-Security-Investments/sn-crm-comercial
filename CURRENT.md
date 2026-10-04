@@ -994,6 +994,10 @@ operación incierta.
 - Este resultado es `VERIFIED_ISOLATED`, no un diagnóstico exacto del payload productivo de Cali: la
   red productiva no estuvo disponible para leer ese checkpoint. No se hizo deploy, llamada a
   proveedor ni reintento y la autorización de una recuperación futura permanece sin consumir.
+- C1A ya dispone de un runner gobernado único para la cadena `099 -> 104`, con preflight read-only,
+  aplicación atómica del sufijo pendiente, verificación de estructura/RLS/grants y rollback completo
+  fail-closed. Su verificación PGlite y el runbook de flags/timer apagados están registrados en
+  `docs/evidence/2026-10-04-agt002-initial-c1a-release-runner.md`.
 - C1A producción: bloqueado en este entorno mientras no puedan comprobarse conectividad, credenciales,
   migraciones 099-104, despliegue apagado y readback exacto.
 - Trabajo local permitido mientras se restablecen esas precondiciones: preparar el paquete reproducible
