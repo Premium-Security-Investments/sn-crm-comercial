@@ -1009,3 +1009,16 @@ operación incierta.
   de release y diagnosticar/corregir por TDD el fallo exacto de Cali. Ningún nuevo job se ejecuta antes
   de desplegar y leer de vuelta la corrección.
 - Punto de detención obligatorio: después de `AGT002_INCREMENTAL_E2E_ACCEPTED`, antes de C9/Fase 2/P3.2.
+
+### 19.5. Preparación read-only de C2
+
+- El diseño documental `2d5ca05`, la recuperación V3/V4 `7e404a1` y el baseline integrado
+  `origin/main@7cabe31dbb9454b1424c2c6533458da1a4e5a99e` quedaron reconciliados en
+  `docs/agt002/r1-c2-baseline-reconciliation-2026-10-04.md`.
+- El baseline correcto para R1 es `origin/main`: conserva el worker V3/V4 byte a byte y contiene
+  reemplazos posteriores para normalización legal, recuperación numérica/tokenless, ledger de
+  intentos y generaciones de checkpoints.
+- La numeración `097` del diseño antiguo está ocupada; el siguiente slot R1 es `105`, sujeto a
+  volver a comprobar el inventario al iniciar C3/C4.
+- C2 no está cerrado: falta demostrar salud actual de transporte/proveedor y leer de vuelta las
+  identidades productivas. No se emite todavía `AGT002_INCREMENTAL_DESIGN_RECONCILED` ni se abre C4.
