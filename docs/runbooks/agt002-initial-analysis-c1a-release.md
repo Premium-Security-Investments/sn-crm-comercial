@@ -119,3 +119,31 @@ Any mismatch is stop-on-fail. Do not open E3 or create a canary job.
 E2 closes only when all readbacks match the receipt. E3 may then select cases read-only. E4 is a
 separate single INITIAL canary with one opportunity, one click, concurrency one and no timer. Its
 identity and terminal disposition must be recorded before F1 can open.
+
+### Bounded admission for the selected E4 identity
+
+E3 must produce one protected JSON manifest (mode `0400` or `0600`, with no group/other access)
+using schema `agt002-initial-analysis-admission-v1`. It binds exactly one opportunity, tender,
+authorized Licitaciones actor, G1 expiry, policy version, scope and explicit current document
+versions. It must not contain credentials, extracted text, storage paths or more than one
+opportunity.
+
+After the canary window has independently read back both kill switches as `true`, admit only that
+manifest from the immutable release:
+
+```bash
+node scripts/agt002-initial-analysis-admit.mjs \
+  --manifest /absolute/protected/agt002-initial-analysis-e4-manifest.json
+```
+
+The command computes every package/workflow/authorization/job idempotency key server-side. It
+freezes the exact evidence, records and immediately consumes G1, and creates one queued INITIAL
+job. It does not claim or execute the job, scan for another opportunity, start a service, or enable
+a timer. Preserve the sanitized `agt002_initial_analysis_admitted` receipt, then invoke the worker
+unit exactly once and verify the admitted job reaches one terminal state. An ambiguous admission
+must be resolved by readback under the same identities; never submit a different manifest as a
+blind retry.
+
+After the terminal readback, restore both kill switches to `false`, confirm the worker and timer
+are inactive, and record the canonical run, lineage, aggregate version and report projection (or
+the closed failure code). F1 remains closed until this disposition is complete.

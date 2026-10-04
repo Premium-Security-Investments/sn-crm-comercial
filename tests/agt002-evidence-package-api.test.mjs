@@ -23,6 +23,7 @@ import {
   freezeAgt002EvidencePackage,
   projectAgt002EvidencePackageFreezeResult,
 } from '../agt002-evidence-package-api.js';
+import { computeAgt002EvidencePackageIdempotencyKey } from '../agt002-evidence-packages.js';
 
 function uuid(label) {
   const hex = Buffer.from(String(label)).toString('hex').padEnd(32, '0').slice(0, 32).split('');
@@ -209,21 +210,21 @@ describe('freezeAgt002EvidencePackage — orchestration', () => {
     return fakeDb({
       rpcResults: {
         psi_resolve_agt002_evidence_package_candidate: members.map((m, i) => ({ data: candidateFor(DOC_IDS.indexOf(m.document_version_id)), error: null })),
-        psi_freeze_agt002_evidence_package: {
+        psi_freeze_agt002_evidence_package: (args) => ({
           data: {
             status: 'created',
             package_id: uuid('package-1'),
             package_version_id: uuid('package-version-1'),
             version_number: 1,
-            batch_count: 1,
+            batch_count: Math.ceil(members.length / 12),
             member_count: members.length,
-            package_hash: hex64('package-hash'),
-            document_manifest_hash: hex64('doc-manifest'),
-            semantic_manifest_hash: hex64('semantic-manifest'),
+            package_hash: args.p_package_hash,
+            document_manifest_hash: args.p_document_manifest_hash,
+            semantic_manifest_hash: args.p_semantic_manifest_hash,
             ...overrides,
           },
           error: null,
-        },
+        }),
       },
     });
   }
@@ -241,6 +242,15 @@ describe('freezeAgt002EvidencePackage — orchestration', () => {
     assert.equal(result.status, 'created');
     const freezeCalls = db.calls.rpc.filter((c) => c.name === 'psi_freeze_agt002_evidence_package');
     assert.equal(freezeCalls.length, 1);
+    assert.equal(
+      freezeCalls[0].args.p_idempotency_key,
+      computeAgt002EvidencePackageIdempotencyKey({
+        opportunityId: OPPORTUNITY_ID,
+        tenderId: TENDER_ID,
+        packageHash: freezeCalls[0].args.p_package_hash,
+      }),
+      'the API adapter must satisfy migration 099 with the server-computed package identity',
+    );
   });
 
   it('accepts 13 requested members end to end (no functional package member limit), producing 2 batches', async () => {
@@ -292,6 +302,20 @@ describe('freezeAgt002EvidencePackage — orchestration', () => {
       },
     });
     await assert.rejects(freezeAgt002EvidencePackage(db, { opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID, requestedMembers: members }));
+  });
+
+  it('fails closed when the RPC returns hashes that differ from the server-computed package', async () => {
+    const members = [requestedMember(0)];
+    const db = happyDb(members, { package_hash: 'f'.repeat(64) });
+    await assert.rejects(
+      freezeAgt002EvidencePackage(db, {
+        opportunityId: OPPORTUNITY_ID,
+        tenderId: TENDER_ID,
+        actorProfileId: ACTOR_ID,
+        requestedMembers: members,
+      }),
+      /coincide/i,
+    );
   });
 });
 
