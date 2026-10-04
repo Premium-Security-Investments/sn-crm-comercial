@@ -11,6 +11,7 @@ import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionR
 import { shouldShowTenderOperationalPendingProjection, TenderOperationalPendingProjection } from './TenderOperationalPendingProjection';
 import { TenderGovernedDocumentWorkset } from './TenderGovernedDocumentWorkset';
 import type { Agt002GovernedAnalysisRunState } from '../governedWorksetSelection';
+import { agt002InitialAnalysisStateLabel, type Agt002InitialAnalysisProjection } from '../agt002InitialAnalysisProjection';
 
 type TenderAnalysisSectionProps = {
   analysis: TenderDocumentAnalysis | null;
@@ -43,6 +44,7 @@ type TenderAnalysisSectionProps = {
   request: TenderRequest;
   apiDownload: (url: string) => Promise<Blob>;
   uploadToSignedUrl?: (path: string, token: string, file: Blob) => Promise<{ error: unknown | null }>;
+  initialAnalysis?: Agt002InitialAnalysisProjection | null;
 };
 
 function EvidenceList({ items, empty }: { items: unknown; empty: string }) {
@@ -60,7 +62,7 @@ function normalizeQuestion(item: TenderAnalysisFinding, index: number): Normaliz
   };
 }
 
-export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onFreezeGovernedWorkset, onUploadGovernedFiles, statusText = '', statusTone = 'status', runState, analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl }: TenderAnalysisSectionProps) {
+export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onFreezeGovernedWorkset, onUploadGovernedFiles, statusText = '', statusTone = 'status', runState, analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl, initialAnalysis = null }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
@@ -101,6 +103,11 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const state = !hasDocuments ? 'Pendiente' : failed ? 'Análisis fallido' : stale ? 'Análisis desactualizado' : !analysis ? 'Pendiente' : 'Análisis vigente';
   const unavailable = tenderBriefUnavailableCopy();
   return <div className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`}>
+    {initialAnalysis && <section className={`notice agt002-initial-state state-${initialAnalysis.state}`} role={initialAnalysis.state === 'failed' ? 'alert' : 'status'} aria-label="Estado del análisis inicial">
+      <strong>INITIAL: {agt002InitialAnalysisStateLabel(initialAnalysis.state)}</strong>
+      <span>{initialAnalysis.action.message}</span>
+      {initialAnalysis.state === 'ready' && <small>El reporte está disponible. La decisión continúa siendo exclusivamente humana.</small>}
+    </section>}
     {!hasIntegralV3Payload && <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con {VIGIA_VISIBLE_NAMES.tenders}</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong></div></header>}
     {!hasDocuments && <div className="document-empty-state"><strong>Sin documentos</strong><span>Actualice o cargue documentos antes de analizar con {VIGIA_VISIBLE_NAMES.tenders}.</span></div>}
     {hasDocuments && !analysis && !processingPresentation.visible && <div className="document-empty-state"><strong>Análisis pendiente</strong><span>Hay documentos vigentes, pero todavía no existe una conclusión preliminar para revisar.</span></div>}

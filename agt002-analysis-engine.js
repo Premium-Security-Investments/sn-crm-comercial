@@ -38,7 +38,10 @@ function canonicalSha256(value) {
 /** Fails closed if any rehydrated member's content no longer re-derives its declared hash. */
 export function assertAgt002RehydratedMembersMatchHashes(members) {
   for (const member of members) {
-    if (canonicalSha256(member.content) !== member.contentHash) {
+    const derivedHash = member.hashKind === 'utf8_text' && typeof member.content === 'string'
+      ? createHash('sha256').update(member.content).digest('hex')
+      : canonicalSha256(member.content);
+    if (derivedHash !== member.contentHash) {
       throw engineError(
         AGT002_ANALYSIS_ENGINE_ERROR_CODES.MEMBER_HASH_MISMATCH,
         'AGT-002 analysis engine: el contenido rehidratado de un miembro no coincide con su hash declarado.',
@@ -83,7 +86,7 @@ export function validateAgt002AnalysisBatch({ members, expectedMemberIds }) {
  * remaining job budget. A raw provider payload (e.g. `raw_response`) never surfaces in any
  * thrown error.
  */
-export async function runAgt002AnalysisBatch({ members, expectedMemberIds, modelId, budget, usedTotalTokens, callModel }) {
+export async function runAgt002AnalysisBatch({ members, expectedMemberIds, modelId, budget, usedTotalTokens, usedCostUsd = 0, callModel }) {
   validateAgt002AnalysisBatch({ members, expectedMemberIds });
   assertAgt002RehydratedMembersMatchHashes(members);
 
@@ -104,5 +107,15 @@ export async function runAgt002AnalysisBatch({ members, expectedMemberIds, model
     );
   }
 
-  return { output: response.output, usage: response.usage };
+  if (budget.maxCostUsd !== undefined
+      && (!Number.isFinite(response.usage.costUsd)
+        || response.usage.costUsd < 0
+        || usedCostUsd + response.usage.costUsd > budget.maxCostUsd)) {
+    throw engineError(
+      AGT002_ANALYSIS_ENGINE_ERROR_CODES.BUDGET_EXCEEDED,
+      'AGT-002 analysis engine: la respuesta excedería o no permite comprobar el presupuesto de costo.',
+    );
+  }
+
+  return { output: response.output, outputSha256: response.outputSha256, usage: response.usage };
 }

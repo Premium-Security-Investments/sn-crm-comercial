@@ -23,7 +23,7 @@ export const AGT002_INITIAL_ANALYSIS_PERSISTENCE_ERROR_CODES = Object.freeze({
 });
 
 const REQUIRED_COMPLETION_FIELDS = Object.freeze([
-  'workflowInstanceId', 'authorizationId', 'packageVersionId', 'packageHash', 'g1Scope', 'policyVersion', 'envelope',
+  'workflowInstanceId', 'authorizationId', 'packageVersionId', 'packageHash', 'g1Scope', 'policyVersion', 'analysisRunId', 'envelope',
 ]);
 
 function persistenceError(code, message) {
@@ -135,6 +135,7 @@ export async function completeAgt002InitialAnalysisJob(database, { jobId, leaseI
   assertInvariant(meta.g1_authorization_id === completion.authorizationId, 'AGT-002 initial-analysis persistence: meta.g1_authorization_id no coincide con la autorización indicada.');
   assertInvariant(meta.g1_scope === completion.g1Scope, 'AGT-002 initial-analysis persistence: meta.g1_scope no coincide con el alcance indicado.');
   assertInvariant(meta.package_hash === completion.packageHash, 'AGT-002 initial-analysis persistence: meta.package_hash no coincide con la huella del paquete indicado.');
+  assertInvariant(meta.analysis_run_id === completion.analysisRunId, 'AGT-002 initial-analysis persistence: meta.analysis_run_id no coincide con la identidad reservada por el servidor.');
 
   const analysisRunId = meta.analysis_run_id;
   const analysisCoreHash = meta.analysis_core_hash;

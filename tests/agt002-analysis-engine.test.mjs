@@ -25,6 +25,36 @@ import {
   runAgt002AnalysisBatch,
 } from '../agt002-analysis-engine.js';
 
+test('rehydrated text members may bind directly to the frozen extraction_text_hash', () => {
+  const text = 'contenido extraído gobernado';
+  const contentHash = createHash('sha256').update(text).digest('hex');
+  assert.doesNotThrow(() => assertAgt002RehydratedMembersMatchHashes([
+    { memberId: 'doc-1', content: text, contentHash, hashKind: 'utf8_text' },
+  ]));
+});
+
+test('a model response that crosses the USD budget fails closed before it can be checkpointed', async () => {
+  await assert.rejects(
+    () => runAgt002AnalysisBatch({
+      members: [], expectedMemberIds: [], modelId: 'model-a',
+      budget: { maxTotalTokens: 100, maxCostUsd: 0.01 }, usedTotalTokens: 0, usedCostUsd: 0,
+      callModel: async () => ({ output: {}, usage: { totalTokens: 1, costUsd: 0.02 } }),
+    }),
+    error => error?.code === 'AGT002_ENGINE_BUDGET_EXCEEDED',
+  );
+});
+
+test('missing/non-finite cost accounting fails closed when a USD budget exists', async () => {
+  await assert.rejects(
+    () => runAgt002AnalysisBatch({
+      members: [], expectedMemberIds: [], modelId: 'model-a',
+      budget: { maxTotalTokens: 100, maxCostUsd: 1 }, usedTotalTokens: 0, usedCostUsd: 0,
+      callModel: async () => ({ output: {}, usage: { totalTokens: 1 } }),
+    }),
+    error => error?.code === 'AGT002_ENGINE_BUDGET_EXCEEDED',
+  );
+});
+
 function stableForHash(value) {
   if (Array.isArray(value)) return value.map(stableForHash);
   if (value !== null && typeof value === 'object') {

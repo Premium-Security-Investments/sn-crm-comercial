@@ -14,6 +14,11 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
+import {
+  apply as applyInitialMigrationChain,
+  rollback as rollbackInitialMigrationChain,
+  verify as verifyInitialMigrationChain,
+} from '../scripts/agt002-initial-analysis-migrations.mjs';
 
 const strip = value => value.replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
 const migrationSource = name => strip(readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8'));
@@ -31,6 +36,8 @@ const migration100 = migrationSource('101_agt002_initial_analysis_jobs.sql');
 // RED: not yet authored.
 const migration101 = () => migrationSource('102_agt002_initial_analysis_canonical_persistence.sql');
 const migration102 = () => migrationSource('103_agt002_initial_analysis_atomic_admission.sql');
+const migration103 = () => migrationSource('104_agt002_initial_analysis_server_owned_execution.sql');
+const rollback103 = () => strip(readFileSync(new URL('../supabase/rollbacks/104_agt002_initial_analysis_server_owned_execution_rollback.sql', import.meta.url), 'utf8'));
 const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/103_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
 
 const O = '10000000-0000-4000-8000-000000000001';
@@ -107,7 +114,7 @@ const HAND_ROLLED_ANALYSIS_RUNS = `
     for each row execute function public.psi_tender_analysis_runs_prevent_mutation();
 `;
 
-async function createBaseFixture() {
+async function createPreInitialFixture() {
   const pg = new PGlite();
   await pg.exec(`
     create role authenticated; create role service_role; create role anon;
@@ -122,6 +129,11 @@ async function createBaseFixture() {
       id uuid primary key, active boolean not null default true, identity_type text default 'human',
       role text not null default 'admin', microsoft_email text not null default 'test@example.test'
     );
+    create table public.psi_access_permissions (code text primary key);
+    create table public.psi_profile_permissions (
+      profile_id uuid not null references public.psi_sales_profiles(id),
+      permission_code text not null references public.psi_access_permissions(code)
+    );
 
     insert into public.psi_sales_opportunities (id) values ('${O}');
     insert into public.psi_public_tenders (id, converted_opportunity_id) values ('${T}', '${O}');
@@ -130,10 +142,15 @@ async function createBaseFixture() {
   await pg.exec(migration026);
   await pg.exec(migration057);
   await pg.exec(migration065);
+  await pg.exec(HAND_ROLLED_ANALYSIS_RUNS);
+  return pg;
+}
+
+async function createBaseFixture() {
+  const pg = await createPreInitialFixture();
   await pg.exec(migration098);
   await pg.exec(migration099);
   await pg.exec(migration100);
-  await pg.exec(HAND_ROLLED_ANALYSIS_RUNS);
   return pg;
 }
 
@@ -143,6 +160,64 @@ async function freshDb() {
   await pg.exec(migration102());
   return pg;
 }
+
+test('migration 104 applies after the real 099-103 chain and preserves the one atomic admission signature', async () => {
+  const pg = await freshDb();
+  try {
+    await pg.exec(migration103());
+    const row = (await pg.query(`select
+      to_regprocedure('public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)') is not null as present,
+      has_function_privilege('service_role', 'public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)', 'EXECUTE') as executable
+    `)).rows[0];
+    assert.deepEqual(row, { present: true, executable: true });
+    await pg.exec(rollback103());
+    const restored = (await pg.query(`select pg_get_functiondef(
+      'public.psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)'::regprocedure
+    ) as definition`)).rows[0].definition;
+    assert.doesNotMatch(restored, /analysisRunId|sourceBatchIndexes/);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('INITIAL release runner recognizes the real 099-104 chain and its security posture', async () => {
+  const pg = await freshDb();
+  try {
+    await pg.exec(migration103());
+    const result = await verifyInitialMigrationChain(async sql => (await pg.query(sql)).rows);
+    assert.equal(result.status, 'applied');
+    assert.deepEqual(result.migrations, {
+      '099': true,
+      '100': true,
+      '101': true,
+      '102': true,
+      '103': true,
+      '104': true,
+    });
+    assert.equal(result.unsafe_grants, 0);
+    assert.equal(result.rls_missing, 0);
+    assert.equal(result.missing_service_access, 0);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('INITIAL release runner atomically applies and safely rolls back the real empty 099-104 chain', async () => {
+  const pg = await createPreInitialFixture();
+  const execSql = async sql => {
+    if (/AGT002_INITIAL_RUNNER:(?:STATE|PREREQUISITES)/.test(sql)) return (await pg.query(sql)).rows;
+    await pg.exec(sql);
+    return [];
+  };
+  try {
+    const applied = await applyInitialMigrationChain(execSql);
+    assert.equal(applied.status, 'applied');
+    const rolledBack = await rollbackInitialMigrationChain(execSql);
+    assert.deepEqual(rolledBack, { ok: true, previous: 'applied', status: 'absent' });
+  } finally {
+    await pg.close();
+  }
+});
 
 async function seedEvidencePackageVersion(pg, { opportunityId = O, tenderId = T, actorId = ACTOR, label = 'default' } = {}) {
   let packageRow = (await pg.query(
