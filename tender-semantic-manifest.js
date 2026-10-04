@@ -198,7 +198,15 @@ export function tenderSemanticRetrievalTerms(label) {
   // Alphabetic fragments shorter than three characters remain noise (articles and unit symbols),
   // but two-or-more digit values are valid source anchors for requirements expressed only as a
   // numeric range, for example "°C a 35 °C (50 °F a 95 °F".
-  return [...new Set(folded(label).match(/[\p{L}\p{N}]{3,}|\p{N}{2,}/gu) ?? [])];
+  const normalized = folded(label).replace(/\s+/g, ' ').trim();
+  const tokens = [...new Set(normalized.match(/[\p{L}\p{N}]{3,}|\p{N}{2,}/gu) ?? [])];
+  // A label accepted by the semantic-manifest contract is source-anchored and non-empty, but it
+  // can legitimately consist only of symbols, units, roman numerals or one-character words. The
+  // old empty list made that valid checkpoint impossible to project into retrieval and failed the
+  // run later as v4_discovered_input_assembly_failed. Preserve the complete normalized source
+  // phrase as the single honest fallback; never invent a keyword or fall back to the historical
+  // requirement catalog.
+  return tokens.length > 0 ? tokens : (normalized ? [normalized] : []);
 }
 
 // ---------------------------------------------------------------------------------------------

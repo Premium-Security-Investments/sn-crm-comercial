@@ -255,8 +255,8 @@ const byKey = (manifest, key) => manifest.requirements.find(item => item.obligat
   );
   assert.deepEqual(
     tenderSemanticRetrievalTerms('a de °C °F'),
-    [],
-    'short alphabetic noise and unit symbols remain excluded',
+    ['a de °c °f'],
+    'short fragments are never emitted as invented independent keywords; a tokenless source label is preserved only as one exact phrase',
   );
 
   const numericRangeText = [

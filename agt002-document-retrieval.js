@@ -115,6 +115,8 @@ function normalizeForSearch(text) {
   return text
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
+    // Keep whole-phrase fallback terms stable across PDF whitespace variants such as NBSP.
+    .replace(/\s+/g, ' ')
     .toLowerCase();
 }
 

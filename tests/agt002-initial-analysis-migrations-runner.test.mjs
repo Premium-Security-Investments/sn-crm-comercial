@@ -1,0 +1,92 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const runnerUrl = new URL('../scripts/agt002-initial-analysis-migrations.mjs', import.meta.url);
+const {
+  MIGRATION_ORDER,
+  ROLLBACK_ORDER,
+  stripTopLevelTransactionWrapper,
+  classifyChainState,
+  buildAtomicApplySql,
+  buildAtomicRollbackSql,
+  preflight,
+  apply,
+  verify,
+} = await import(runnerUrl);
+
+assert.deepEqual(MIGRATION_ORDER, ['099', '100', '101', '102', '103', '104']);
+assert.deepEqual(ROLLBACK_ORDER, ['104', '103', '102', '101', '100', '099']);
+
+for (const id of MIGRATION_ORDER) {
+  const migration = readFileSync(new URL(`../supabase/migrations/${id}_agt002_${({
+    '099': 'evidence_packages',
+    '100': 'initial_workflow_and_g1',
+    '101': 'initial_analysis_jobs',
+    '102': 'initial_analysis_canonical_persistence',
+    '103': 'initial_analysis_atomic_admission',
+    '104': 'initial_analysis_server_owned_execution',
+  })[id]}.sql`, import.meta.url), 'utf8');
+  const stripped = stripTopLevelTransactionWrapper(migration);
+  assert.doesNotMatch(stripped.trim().split(/\r?\n/)[0], /^begin;$/i);
+  assert.doesNotMatch(stripped.trim(), /\bcommit;\s*$/i);
+}
+
+assert.equal(classifyChainState({ m099: false, m100: false, m101: false, m102: false, m103: false, m104: false }), 'absent');
+assert.equal(classifyChainState({ m099: true, m100: true, m101: false, m102: false, m103: false, m104: false }), 'partial');
+assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true }), 'applied');
+assert.equal(classifyChainState({ m099: true, m100: false, m101: true, m102: false, m103: false, m104: false }), 'drift');
+assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, unsafe_grants: 1 }), 'drift');
+
+const migrationSql = Object.fromEntries(MIGRATION_ORDER.map(id => [id, `begin;\nselect '${id}' as migration_${id};\ncommit;`]));
+const applySql = buildAtomicApplySql(migrationSql, { m099: false, m100: false, m101: false, m102: false, m103: false, m104: false });
+assert.match(applySql, /pg_advisory_xact_lock/);
+for (let index = 1; index < MIGRATION_ORDER.length; index += 1) {
+  assert.ok(applySql.indexOf(`migration_${MIGRATION_ORDER[index - 1]}`) < applySql.indexOf(`migration_${MIGRATION_ORDER[index]}`));
+}
+
+const rollbackSql = Object.fromEntries(ROLLBACK_ORDER.map(id => [id, `begin;\nselect '${id}' as rollback_${id};\ncommit;`]));
+const rollbackBatch = buildAtomicRollbackSql(rollbackSql);
+assert.match(rollbackBatch, /pg_advisory_xact_lock/);
+for (let index = 1; index < ROLLBACK_ORDER.length; index += 1) {
+  assert.ok(rollbackBatch.indexOf(`rollback_${ROLLBACK_ORDER[index - 1]}`) < rollbackBatch.indexOf(`rollback_${ROLLBACK_ORDER[index]}`));
+}
+
+const appliedRow = {
+  missing_prerequisites: 0,
+  m099: true, m100: true, m101: true, m102: true, m103: true, m104: true,
+  unsafe_grants: 0, rls_missing: 0, missing_service_access: 0,
+};
+
+await assert.rejects(
+  preflight(async sql => /PREREQUISITES/.test(sql) ? [{ missing_prerequisites: 1 }] : [appliedRow]),
+  /prerrequisitos/i,
+);
+
+await assert.rejects(
+  verify(async () => [{ ...appliedRow, m100: false }]),
+  /drift/i,
+);
+
+{
+  const calls = [];
+  let stateReads = 0;
+  const execSql = async sql => {
+    calls.push(sql);
+    if (/PREREQUISITES/.test(sql)) return [{ missing_prerequisites: 0 }];
+    if (/STATE/.test(sql)) {
+      stateReads += 1;
+      return [stateReads === 1
+        ? { ...appliedRow, m099: false, m100: false, m101: false, m102: false, m103: false, m104: false }
+        : appliedRow];
+    }
+    return [];
+  };
+  const result = await apply(execSql);
+  assert.equal(result.status, 'applied');
+  assert.equal(calls.filter(sql => /ATOMIC_APPLY/.test(sql)).length, 1);
+  const atomic = calls.find(sql => /ATOMIC_APPLY/.test(sql));
+  assert.match(atomic, /psi_agt002_evidence_packages/);
+  assert.match(atomic, /analysisRunId/);
+}
+
+console.log('AGT-002 INITIAL migration runner contract passed');
