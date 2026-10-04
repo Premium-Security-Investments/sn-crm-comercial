@@ -9,6 +9,7 @@ const {
   classifyChainState,
   buildAtomicApplySql,
   buildAtomicRollbackSql,
+  createExecSql,
   preflight,
   apply,
   verify,
@@ -90,3 +91,27 @@ await assert.rejects(
 }
 
 console.log('AGT-002 INITIAL migration runner contract passed');
+
+{
+  const previousUrl = process.env.SUPABASE_URL;
+  const previousPublicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.SUPABASE_URL = 'https://initial-runner.test';
+  delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service-key';
+  try {
+    let endpoint = null;
+    const execSql = createExecSql({
+      fetchImpl: async url => {
+        endpoint = url;
+        return { ok: true, status: 200, json: async () => ({ ok: true, rows: [] }) };
+      },
+    });
+    await execSql('select 1');
+    assert.equal(endpoint, 'https://initial-runner.test/rest/v1/rpc/exec_sql');
+  } finally {
+    if (previousUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = previousUrl;
+    if (previousPublicUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL; else process.env.NEXT_PUBLIC_SUPABASE_URL = previousPublicUrl;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+  }
+}

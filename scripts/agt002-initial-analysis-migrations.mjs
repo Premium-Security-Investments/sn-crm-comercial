@@ -259,14 +259,14 @@ function loadEnvFile(path) {
 }
 
 export function createExecSql({ fetchImpl = fetch, envPath, baseUrl, serviceKey } = {}) {
-  let base = baseUrl;
-  let key = serviceKey;
+  let base = baseUrl || process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  let key = serviceKey || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!base || !key) {
     loadEnvFile(envPath || process.env.ENV_FILE || resolve(root, '.env.local'));
-    base ||= process.env.NEXT_PUBLIC_SUPABASE_URL;
+    base ||= process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     key ||= process.env.SUPABASE_SERVICE_ROLE_KEY;
   }
-  if (!base || !key) throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
+  if (!base || !key) throw new Error('Faltan SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
   const endpoint = `${base.replace(/\/$/, '')}/rest/v1/rpc/exec_sql`;
   return async sql => {
     const response = await fetchImpl(endpoint, {

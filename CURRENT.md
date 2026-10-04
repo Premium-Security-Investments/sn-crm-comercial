@@ -998,6 +998,11 @@ operación incierta.
   aplicación atómica del sufijo pendiente, verificación de estructura/RLS/grants y rollback completo
   fail-closed. Su verificación PGlite y el runbook de flags/timer apagados están registrados en
   `docs/evidence/2026-10-04-agt002-initial-c1a-release-runner.md`.
+- PR #281 integró la corrección y el runner en `origin/main` como
+  `46b9a930710e697e041b018a147b17b69aeb1122`, con todos los checks remotos en PASS. El primer
+  readback de estado productivo no alcanzó la base por fallo DNS; no ejecutó migración ni otra
+  mutación. La incompatibilidad local `SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_URL` descubierta por ese
+  preflight quedó cubierta por una regresión posterior.
 - C1A producción: bloqueado en este entorno mientras no puedan comprobarse conectividad, credenciales,
   migraciones 099-104, despliegue apagado y readback exacto.
 - Trabajo local permitido mientras se restablecen esas precondiciones: preparar el paquete reproducible
