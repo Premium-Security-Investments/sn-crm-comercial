@@ -25,12 +25,15 @@ export async function readAgt002InitialAnalysisStatus(database, opportunityId) {
   if (job?.analysis_run_id) {
     const { data, error } = await database
       .from('psi_tender_analysis_runs')
-      .select('id,status,canonical,current,analysis_kind,analysis_version')
+      .select('id,status,canonical,analysis_kind,analysis_version')
       .eq('id', job.analysis_run_id)
       .eq('opportunity_id', opportunityId)
       .maybeSingle();
     if (error) throw readError('No fue posible verificar la corrida canónica del análisis inicial.');
-    run = data;
+    // psi_tender_analysis_runs has no `current` column. "Current" is defined by the database itself: the partial
+    // unique index psi_tender_analysis_runs_one_canonical_current_idx allows at most one row per opportunity with
+    // canonical = true and status = 'completed', and promoting a newer run demotes the previous one (migration 063).
+    run = data ? { ...data, current: data.canonical === true && data.status === 'completed' } : null;
   }
 
   return projectAgt002InitialAnalysisState({ job, run });
