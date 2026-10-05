@@ -127,6 +127,30 @@ function sanitizeEnv(source) {
   return sanitized;
 }
 
+// Claude Code valida --json-schema con un Ajv estricto de otra generación que la del
+// esquema canónico y la API rechaza condicionales en la raíz. Sólo lo que el proveedor no
+// acepta se retira del esquema que viaja en argv; la respuesta se vuelve a validar aguas
+// abajo con el esquema canónico completo, así que esto no relaja ninguna garantía.
+const PROVIDER_UNSUPPORTED_ANYWHERE = new Set(['$schema', 'minContains', 'maxContains']);
+const PROVIDER_UNSUPPORTED_AT_ROOT = ['allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else'];
+
+function stripProviderUnsupported(node) {
+  if (Array.isArray(node)) return node.map(stripProviderUnsupported);
+  if (!isRecord(node)) return node;
+  const out = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (PROVIDER_UNSUPPORTED_ANYWHERE.has(key)) continue;
+    out[key] = stripProviderUnsupported(value);
+  }
+  return out;
+}
+
+export function toClaudeProviderOutputSchema(schema) {
+  const adapted = stripProviderUnsupported(schema);
+  for (const key of PROVIDER_UNSUPPORTED_AT_ROOT) delete adapted[key];
+  return adapted;
+}
+
 export function createAgt002ClaudeClient({
   spawn = defaultSpawn,
   command = 'claude',
@@ -158,7 +182,7 @@ export function createAgt002ClaudeClient({
       void callerCwd; // se acepta y se descarta: el cwd nunca lo elige la petición.
 
       let serializedSchema;
-      try { serializedSchema = JSON.stringify(outputSchema); }
+      try { serializedSchema = JSON.stringify(toClaudeProviderOutputSchema(outputSchema)); }
       catch { return Promise.reject(new Error('AGT-002 requiere un outputSchema cerrado.')); }
       if (typeof serializedSchema !== 'string') return Promise.reject(new Error('AGT-002 requiere un outputSchema cerrado.'));
 
