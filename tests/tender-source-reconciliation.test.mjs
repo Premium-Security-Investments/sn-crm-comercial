@@ -633,3 +633,72 @@ test('a concurrent deadline change defeats the CAS: the row is counted as failed
   const casCalls = calls.filter(call => call.afterUpdate && call.column === 'deadline_at');
   assert.equal(casCalls[0].value, '2026-11-01T00:00:00.000Z', 'the CAS still targets the value observed at read time, not the concurrent one');
 });
+
+// --- 12. Persist modalidad / proveedor / adjudicado without clobbering existing raw --------
+
+test("createTenderSourceReconciliation's default Socrata $select includes modalidad_de_contratacion, nombre_del_proveedor and adjudicado", async () => {
+  const rows = [durableRow('d-sel-1', 'P-SEL-1')];
+  const { database } = fakeDatabase({ rows });
+  const seenUrls = [];
+  const fetchImpl = async url => {
+    seenUrls.push(url);
+    return [sourceRow({ id_del_proceso: 'P-SEL-1', fecha_de_recepcion_de: '2026-11-20T00:00:00.000' })];
+  };
+
+  const reconciliation = createTenderSourceReconciliation({
+    database, fetchImpl, now: () => '2026-09-25T12:00:00.000Z', pageSize: 10, chunkSize: 7,
+  });
+  await reconciliation.runOnce();
+
+  assert.equal(seenUrls.length, 1);
+  const select = new URL(seenUrls[0]).searchParams.get('$select') || '';
+  const tokens = select.split(',');
+  for (const field of ['modalidad_de_contratacion', 'nombre_del_proveedor', 'adjudicado']) {
+    assert.ok(tokens.includes(field), `$select must include ${field}`);
+  }
+});
+
+test('reconcileTenderSource copies modalidad_de_contratacion, nombre_del_proveedor and adjudicado into patch.raw', () => {
+  const existing = existingRow();
+  const source = sourceRow({
+    modalidad_de_contratacion: 'Contratación régimen especial',
+    nombre_del_proveedor: 'ESTATAL DE SEGURIDAD LTDA',
+    adjudicado: 'Si',
+  });
+  const { patch } = reconcileTenderSource(existing, source, { now: '2026-09-25T12:00:00.000Z' });
+  assert.equal(patch.raw.modalidad_de_contratacion, 'Contratación régimen especial');
+  assert.equal(patch.raw.nombre_del_proveedor, 'ESTATAL DE SEGURIDAD LTDA');
+  assert.equal(patch.raw.adjudicado, 'Si');
+});
+
+test('reconcileTenderSource does not clobber persisted modalidad_de_contratacion, nombre_del_proveedor or adjudicado with a blank source', () => {
+  const existing = existingRow({
+    raw: {
+      id_del_proceso: 'CO1.REQ.123',
+      modalidad_de_contratacion: 'Contratación régimen especial',
+      nombre_del_proveedor: 'ESTATAL DE SEGURIDAD LTDA',
+      adjudicado: 'Si',
+    },
+  });
+  const source = sourceRow({
+    modalidad_de_contratacion: '',
+    nombre_del_proveedor: '  ',
+    adjudicado: null,
+  });
+  const { patch } = reconcileTenderSource(existing, source, { now: '2026-09-25T12:00:00.000Z' });
+  assert.equal(patch.raw.modalidad_de_contratacion, 'Contratación régimen especial');
+  assert.equal(patch.raw.nombre_del_proveedor, 'ESTATAL DE SEGURIDAD LTDA');
+  assert.equal(patch.raw.adjudicado, 'Si');
+});
+
+test('reconcileTenderSource keeps persisted modalidad when the source omits the field', () => {
+  const existing = existingRow({
+    raw: {
+      id_del_proceso: 'CO1.REQ.123',
+      modalidad_de_contratacion: 'Contratación régimen especial',
+    },
+  });
+  const source = sourceRow();
+  const { patch } = reconcileTenderSource(existing, source, { now: '2026-09-25T12:00:00.000Z' });
+  assert.equal(patch.raw.modalidad_de_contratacion, 'Contratación régimen especial');
+});

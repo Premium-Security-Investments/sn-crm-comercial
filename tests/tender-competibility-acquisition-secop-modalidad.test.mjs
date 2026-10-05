@@ -1,14 +1,7 @@
-// TDD (RED) — P1 adquisición: el select real de SECOP II nunca pedía
-// `modalidad_de_contratacion` a la fuente (datos.gov.co), así que la política de
-// competibilidad (`tender-competibility-policy.js`) nunca podía detectar régimen especial vía
-// `raw.modalidad_de_contratacion` en producción, aunque la política ya sabía leer ese campo.
-//
-// Este contrato extrae las piezas REALES de ambos backends (server/index.js y
-// api/[...path].js, que deben permanecer byte-idénticos) y prueba, sin reimplementar nada:
-//   1. El `$select` real de SECOP II pide `modalidad_de_contratacion`.
-//   2. La vía de normalización real (`normalizeTender`) retiene ese campo en `raw` tal cual.
-//   3. La política PURA (import real) clasifica ese caso -régimen especial sin plazo
-//      verificable- como `por_verificar`.
+// TDD — P1 adquisición: el `$select` de SECOP II pide `modalidad_de_contratacion` y
+// `normalizeTender` lo retiene en `raw`. La política NARROW no oculta un especial
+// sin plazo si no hay proveedor nombrado ni ref CTO/CONTRATO (convocatoria viva).
+// Pereira (CTO 08 DE 2025) sí es `no_competible`.
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -23,9 +16,6 @@ function extract(source, path, label, regex) {
   return match[0];
 }
 
-// Reconstruye, a partir del código fuente REAL de cada backend, el `tenderSources` real
-// (para el `select`) y la función `normalizeTender` real (para probar la retención en `raw`),
-// con sus dependencias directas. No reimplementa ninguna lógica propia.
 function loadSecopAcquisitionPath(source, path) {
   const pieces = [
     extract(source, path, 'tenderSources', /const tenderSources = \{[\s\S]*?\n\};\n/),
@@ -44,9 +34,6 @@ function loadSecopAcquisitionPath(source, path) {
   );
 }
 
-// Fixture sintética: una fila como la que hoy sí devuelve datos.gov.co para SECOP II, ahora
-// con `modalidad_de_contratacion` presente (porque el `$select` ya la pide) y SIN
-// `fecha_de_recepcion_de` (sin plazo verificable), igual que el caso real reportado.
 const secopIIRawRow = {
   entidad: 'Empresas Públicas de Medellín E.S.P.',
   departamento_entidad: 'Antioquia',
@@ -64,17 +51,27 @@ const secopIIRawRow = {
   modalidad_de_contratacion: 'Contratación régimen especial',
 };
 
+const pereiraRawRow = {
+  ...secopIIRawRow,
+  entidad: 'EMPRESA DE ENERGIA DE PEREIRA SA ESP',
+  departamento_entidad: 'Risaralda',
+  ciudad_entidad: 'Pereira',
+  id_del_proceso: 'CO1.REQ.10512285',
+  referencia_del_proceso: 'CTO 08 DE 2025',
+  nombre_del_procedimiento: 'Contratar un servicio integral de seguridad privada',
+  descripci_n_del_procedimiento: 'Servicio de vigilancia Pereira y Cartago',
+  modalidad_de_contratacion: 'Contratación régimen especial',
+};
+
 for (const path of backendPaths) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
   const { tenderSources, normalizeTender } = loadSecopAcquisitionPath(source, path);
 
-  // 1. El select real de SECOP II debe pedir modalidad_de_contratacion a la fuente.
   assert.ok(
     tenderSources['SECOP II'].select.split(',').includes('modalidad_de_contratacion'),
     `${path}: el $select de SECOP II debe incluir modalidad_de_contratacion`,
   );
 
-  // 2. La normalización REAL retiene ese campo en raw, sin transformarlo.
   const scored = { score: 10, reasons: ['test'], risks: [] };
   const tender = normalizeTender(secopIIRawRow, 'SECOP II', scored);
   assert.equal(
@@ -84,13 +81,18 @@ for (const path of backendPaths) {
   );
   assert.equal(tender.deadline, null, `${path}: sin fecha_de_recepcion_de reportada no hay plazo verificable`);
 
-  // 3. La política PURA (import real, sin reimplementar) clasifica régimen especial detectado
-  //    sólo vía raw.modalidad_de_contratacion, sin plazo verificable, como por_verificar.
   const result = evaluateTenderCompetibility(tender, { nowIso: '2026-10-01T12:00:00.000Z' });
   assert.equal(
     result.status,
-    'por_verificar',
-    `${path}: régimen especial (vía raw.modalidad_de_contratacion) sin plazo verificable debe ser por_verificar`,
+    'competible',
+    `${path}: régimen especial sin plazo, sin proveedor nombrado y sin CTO/CONTRATO debe ser competible`,
+  );
+
+  const pereira = normalizeTender(pereiraRawRow, 'SECOP II', scored);
+  assert.equal(
+    evaluateTenderCompetibility(pereira, { nowIso: '2026-10-01T12:00:00.000Z' }).status,
+    'no_competible',
+    `${path}: Pereira CTO 08 DE 2025 (especial sin plazo + ref CTO) debe ser no_competible`,
   );
 }
 
