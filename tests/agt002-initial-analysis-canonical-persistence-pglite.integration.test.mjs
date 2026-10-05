@@ -37,6 +37,9 @@ const migration100 = migrationSource('101_agt002_initial_analysis_jobs.sql');
 const migration101 = () => migrationSource('102_agt002_initial_analysis_canonical_persistence.sql');
 const migration102 = () => migrationSource('103_agt002_initial_analysis_atomic_admission.sql');
 const migration103 = () => migrationSource('104_agt002_initial_analysis_server_owned_execution.sql');
+// 105 corrige la resolución de pgcrypto en la RPC de admisión: extensions.digest(...) en lugar de
+// digest(...) sin calificar bajo `search_path = public, pg_temp`.
+const migration104 = () => migrationSource('105_agt002_initial_admission_digest_schema_qualification.sql');
 const rollback103 = () => strip(readFileSync(new URL('../supabase/rollbacks/104_agt002_initial_analysis_server_owned_execution_rollback.sql', import.meta.url), 'utf8'));
 const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/103_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
 
@@ -180,10 +183,11 @@ test('migration 104 applies after the real 099-103 chain and preserves the one a
   }
 });
 
-test('INITIAL release runner recognizes the real 099-104 chain and its security posture', async () => {
+test('INITIAL release runner recognizes the real 099-105 chain and its security posture', async () => {
   const pg = await freshDb();
   try {
     await pg.exec(migration103());
+    await pg.exec(migration104());
     const result = await verifyInitialMigrationChain(async sql => (await pg.query(sql)).rows);
     assert.equal(result.status, 'applied');
     assert.deepEqual(result.migrations, {
@@ -193,6 +197,7 @@ test('INITIAL release runner recognizes the real 099-104 chain and its security 
       '102': true,
       '103': true,
       '104': true,
+      '105': true,
     });
     assert.equal(result.unsafe_grants, 0);
     assert.equal(result.rls_missing, 0);
