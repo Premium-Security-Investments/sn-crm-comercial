@@ -55,6 +55,32 @@ test('labels are in Spanish and unknown codes fall through instead of disappeari
   assert.equal(initialReportLabels.severity('SOMETHING_NEW'), 'SOMETHING_NEW');
 });
 
+test('every schema code the report shows has a Spanish label (no raw English codes on screen)', () => {
+  const schema = JSON.parse(readFileSync(new URL('../schemas/agt002/pre_go_analysis.v2.schema.json', import.meta.url), 'utf8'));
+  const defs = schema.$defs;
+  const cases = [
+    [defs.requirement.properties.category.enum, initialReportLabels.requirementCategory],
+    [defs.requirement.properties.company_evaluation.enum, initialReportLabels.companyEvaluation],
+    [defs.openItem.properties.kind.enum, initialReportLabels.openItemKind],
+    [defs.contradiction.properties.impact.enum, initialReportLabels.contradictionImpact],
+    [defs.finding.properties.severity.enum, initialReportLabels.severity],
+    [defs.claim.properties.evidence_status.enum, initialReportLabels.evidenceStatus],
+    [defs.coverage.properties.block.enum, initialReportLabels.coverageBlock],
+    [defs.coverage.properties.status.enum, initialReportLabels.coverageStatus],
+    [defs.recommendation.properties.kind.enum, initialReportLabels.recommendation],
+  ];
+  for (const [codes, label] of cases) for (const code of codes) assert.notEqual(label(code), code, `${code} needs a Spanish label`);
+});
+
+test('the report styles use the CRM light card tokens, never the dark design-token surface', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const block = css.slice(css.indexOf('/* AGT-002 INITIAL review report'));
+  assert.match(block, /\.initial-report \{[^}]*background: var\(--card, #fff\)/);
+  assert.match(block, /\.initial-report \{[^}]*color: var\(--text, #172033\)/);
+  assert.doesNotMatch(block, /var\(--surface/);
+  assert.match(block, /\.agt002-initial-state \{[^}]*gap:/);
+});
+
 test('claims resolve in order and sources read as "document — locator"', () => {
   const report = serverReport();
   const ids = report.claims.slice(0, 2).map(claim => claim.id);
