@@ -54,3 +54,14 @@ test('rejects a malformed identity or document selection before database access'
     /member|document/i,
   );
 });
+
+test('attempt is optional, defaults to null and must be an integer >= 2', () => {
+  assert.equal(parseAgt002InitialAnalysisAdmissionManifest(JSON.stringify(BASE)).attempt, null);
+  assert.equal(parseAgt002InitialAnalysisAdmissionManifest(JSON.stringify({ ...BASE, attempt: 2 })).attempt, 2);
+  for (const bad of [1, 0, -1, 2.5, '2', true]) {
+    assert.throws(
+      () => parseAgt002InitialAnalysisAdmissionManifest(JSON.stringify({ ...BASE, attempt: bad })),
+      /attempt/i,
+    );
+  }
+});
