@@ -58,10 +58,13 @@ const COVERAGE_BLOCK: Record<string, string> = {
 };
 const DEADLINE_KIND: Record<string, string> = { OBSERVATIONS: 'Observaciones', ADDENDA: 'Adendas', SUBMISSION: 'Entrega de ofertas', OTHER: 'Otro plazo' };
 const CERTAINTY: Record<string, string> = { CONFIRMED: 'confirmado', INFERRED: 'inferido', CONTRADICTED: 'contradictorio', UNKNOWN: 'desconocido' };
-const REQUIREMENT_CATEGORY: Record<string, string> = { TECHNICAL: 'Técnico', LEGAL: 'Jurídico', FINANCIAL: 'Financiero', EXPERIENCE: 'Experiencia', PERSONNEL: 'Personal' };
-const COMPANY_EVALUATION: Record<string, string> = { NOT_EVALUATED: 'Sin evaluar', VERIFIED: 'Verificado', AVAILABLE: 'Disponible', PENDING: 'Pendiente', BLOCKER: 'Impedimento' };
+const REQUIREMENT_CATEGORY: Record<string, string> = {
+  TECHNICAL: 'Técnico', LEGAL: 'Jurídico', FINANCIAL: 'Financiero', EXPERIENCE: 'Experiencia', PERSONNEL: 'Personal',
+  LICENSE: 'Licencias y permisos', INSURANCE: 'Garantías y seguros', ECONOMIC: 'Económico', TIMELINE: 'Cronograma', OTHER: 'Otro',
+};
+const COMPANY_EVALUATION: Record<string, string> = { NOT_EVALUATED: 'Sin evaluar', VERIFIED: 'Verificado', AVAILABLE: 'Disponible', PENDING: 'Pendiente', BLOCKER: 'Impedimento', NOT_APPLICABLE: 'No aplica' };
 const OPEN_ITEM_KIND: Record<string, string> = { EVIDENCE_GAP: 'Falta evidencia', QUESTION: 'Pregunta', CONDITION: 'Condición', CONTRADICTION: 'Contradicción', ACTION: 'Acción' };
-const CONTRADICTION_IMPACT: Record<string, string> = { ELIGIBILITY: 'Habilitación', SCORE: 'Puntaje', TIMELINE: 'Cronograma', PRICE: 'Precio', CONTRACT_RISK: 'Riesgo contractual' };
+const CONTRADICTION_IMPACT: Record<string, string> = { ELIGIBILITY: 'Habilitación', SCORE: 'Puntaje', TIMELINE: 'Cronograma', PRICE: 'Precio', CONTRACT_RISK: 'Riesgo contractual', MINOR: 'Menor' };
 const EVIDENCE_STATUS: Record<string, string> = {
   SUPPORTED: 'Respaldada', PARTIALLY_SUPPORTED: 'Parcialmente respaldada', ABSENT: 'Sin evidencia', CONTRADICTED: 'Contradicha',
   INFERRED: 'Inferida', SUPERSEDED: 'Reemplazada', UNRESOLVABLE: 'No resoluble',
