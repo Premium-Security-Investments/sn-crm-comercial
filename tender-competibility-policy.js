@@ -159,9 +159,10 @@ function specialRegimeDeadline(row) {
 }
 
 function isConvertedRow(row) {
+  // Convertida de verdad: confirmación manual o estado interno. Un converted_opportunity_id
+  // colgado (fila aún `nueva`) no bypass: EPM CW396234 vive así y debe seguir no_competible.
   return row?.converted === true
-    || row?.internal_status === 'convertida_oportunidad'
-    || isNonEmptyString(row?.converted_opportunity_id);
+    || row?.internal_status === 'convertida_oportunidad';
 }
 
 export function evaluateTenderCompetibility(row, { nowIso } = {}) {
