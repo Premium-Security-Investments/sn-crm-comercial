@@ -9,7 +9,7 @@
 // fields. A converted tender still gets its deadline/status kept fresh.
 
 const SECOP_II_RESOURCE = 'https://www.datos.gov.co/resource/p6dx-8zbt.json';
-const SECOP_II_SELECT = 'id_del_proceso,entidad,fase,estado_del_procedimiento,estado_resumen,fecha_de_recepcion_de,fecha_de_ultima_publicaci';
+const SECOP_II_SELECT = 'id_del_proceso,entidad,fase,estado_del_procedimiento,estado_resumen,fecha_de_recepcion_de,fecha_de_ultima_publicaci,modalidad_de_contratacion,nombre_del_proveedor,adjudicado';
 const STATUS_FIELD_PRECEDENCE = ['estado_resumen', 'fase', 'estado_del_procedimiento'];
 
 function isBlank(value) {
@@ -95,9 +95,17 @@ export function reconcileTenderSource(existingTender, sourceRow, { now } = {}) {
     patch.status = resolvedStatus;
   }
 
+  const PRESERVE_RAW_IF_SOURCE_BLANK = ['modalidad_de_contratacion', 'nombre_del_proveedor', 'adjudicado'];
+  const mergedSource = { ...source };
+  for (const key of PRESERVE_RAW_IF_SOURCE_BLANK) {
+    if (isBlank(source[key]) && !isBlank(existingRaw[key])) {
+      mergedSource[key] = existingRaw[key];
+    }
+  }
+
   patch.raw = {
     ...existingRaw,
-    ...source,
+    ...mergedSource,
     deadline: rawDeadline,
     deadline_conflicts: conflicts,
     deadline_history: history,

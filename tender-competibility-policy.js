@@ -1,6 +1,8 @@
 // Política pura de competibilidad de procesos (tender-competibility-policy): decide si un
 // proceso de Radar sigue siendo una competencia abierta real o si evidencia conjunta
 // verificable (o la falta de ella) obliga a ocultarlo o marcarlo incierto antes de convertir.
+// Hide automático estrecho tipo Pereira: modalidad EXACTA `Contratación régimen especial`
+// (no "con ofertas") + sin plazo + (proveedor nombrado o ref CTO/CONTRATO) → no_competible.
 
 const CONTINUITY_TEXT_PATTERN = /prorroga|renovacion|continuidad/;
 const ACCEPTANCE_TEXT_PATTERN = /adjudicacion|aceptacion|ejecucion/;
@@ -96,6 +98,16 @@ export const CURATED_COMPETIBILITY_EVIDENCE_REGISTRY = [
       evidence_url: 'https://community.secop.gov.co/Public/Tendering/NoticeDetail/Index?noticeUID=CO1.NTC.10678178',
     },
   },
+  {
+    ref: 'CTO 08 DE 2025',
+    process_id: 'CO1.REQ.10512285',
+    evidence: {
+      continuity_or_renewal: true,
+      acceptance_award_or_execution: true,
+      incumbent: 'ESTATAL DE SEGURIDAD LTDA',
+      evidence_url: 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.10396378',
+    },
+  },
 ];
 
 function curatedEvidenceEntryForRow(row) {
@@ -155,7 +167,37 @@ function isSpecialRegimen(row) {
 
 function specialRegimeDeadline(row) {
   const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
-  return row?.deadline_at ?? row?.deadline ?? raw.deadline;
+  return row?.deadline_at ?? row?.deadline ?? raw.deadline ?? raw.fecha_de_recepcion_de;
+}
+
+const EXACT_SPECIAL_REGIMEN = 'Contratación régimen especial';
+const UNNAMED_PROVEEDOR = new Set(['', 'no definido', 'no aplica', 'n/a', 'na', '.', '-', 'none', 'null']);
+
+function isExactSpecialRegimenNotConOfertas(row) {
+  const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+  const candidates = [row?.modalidad_de_contratacion, raw.modalidad_de_contratacion];
+  return candidates.some(value => String(value || '').trim() === EXACT_SPECIAL_REGIMEN);
+}
+
+function isNamedProveedor(row) {
+  const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+  const candidates = [row?.nombre_del_proveedor, raw.nombre_del_proveedor];
+  return candidates.some(value => {
+    const trimmed = String(value ?? '').trim();
+    return trimmed.length > 0 && !UNNAMED_PROVEEDOR.has(normalizeText(trimmed));
+  });
+}
+
+function hasCtoOrContratoRef(row) {
+  const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+  const ref = `${row?.ref || ''} ${raw.referencia_del_proceso || ''}`;
+  return /\bCTO\b|CONTRATO/i.test(ref);
+}
+
+function isSpecialRegimePublicity(row, nowIso) {
+  if (!isExactSpecialRegimenNotConOfertas(row)) return false;
+  if (hasValidFutureDeadline(specialRegimeDeadline(row), nowIso)) return false;
+  return isNamedProveedor(row) || hasCtoOrContratoRef(row);
 }
 
 function isConvertedRow(row) {
@@ -168,7 +210,7 @@ function isConvertedRow(row) {
 export function evaluateTenderCompetibility(row, { nowIso } = {}) {
   if (isConvertedRow(row)) return { status: 'competible' };
   if (hasBlockingStructuredEvidence(row) || hasCuratedBlockingEvidence(row)) return { status: 'no_competible' };
-  if (isSpecialRegimen(row) && !hasValidFutureDeadline(specialRegimeDeadline(row), nowIso)) return { status: 'por_verificar' };
+  if (isSpecialRegimePublicity(row, nowIso)) return { status: 'no_competible' };
   const signals = freeTextSignals(row);
   if (signals.continuity && signals.acceptance) return { status: 'por_verificar' };
   return { status: 'competible' };
