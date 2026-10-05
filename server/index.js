@@ -10,6 +10,7 @@ import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTen
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink } from '../tender-phase-identity.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
+import { fetchTenderRadarSourceRows } from '../tender-radar-source-fetch.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
 import { createTenderProcessingDrain } from '../tender-processing-drain.js';
 import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
@@ -1703,17 +1704,17 @@ async function readPersistedTenderRadar(database) {
   const cutoff = latestRunAt;
   const activeDeadlineCutoff = new Date();
   activeDeadlineCutoff.setUTCHours(0, 0, 0, 0);
-  let query = database.from('psi_public_tenders').select('*').order('last_seen_at', { ascending: false }).limit(250);
-  if (cutoff) query = query.or(`last_seen_at.gte.${cutoff},deadline_at.gte.${activeDeadlineCutoff.toISOString()}`);
-  let { data, error } = await query;
-  if (error) {
+  let data;
+  try {
+    data = await fetchTenderRadarSourceRows(database, cutoff
+      ? { cutoffIso: cutoff, activeDeadlineIso: activeDeadlineCutoff.toISOString() }
+      : {});
+  } catch (error) {
     if (isMissingTenderTable(error)) return null;
     throw error;
   }
   if ((!data || !data.length) && cutoff) {
-    const fallback = await database.from('psi_public_tenders').select('*').order('last_seen_at', { ascending: false }).limit(250);
-    if (fallback.error) throw fallback.error;
-    data = fallback.data || [];
+    data = await fetchTenderRadarSourceRows(database, {});
   }
   let convertedRows;
   try {
