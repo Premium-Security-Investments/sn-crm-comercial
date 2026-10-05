@@ -73,7 +73,22 @@ function executeJob(db, job) {
         budget,
         usedTotalTokens,
         usedCostUsd,
-        callModel: args => runtime.callModel({ ...args, job: executingJob, batch }),
+        callModel: async args => {
+          try {
+            return await runtime.callModel({ ...args, job: executingJob, batch, database: db });
+          } catch (error) {
+            // The engine collapses every model-call failure into one generic code; this closed diagnostic (reason
+            // and validator paths/codes only, never model or document content) keeps the cause observable.
+            console.error(JSON.stringify({
+              event: 'agt002_initial_analysis_model_call_diagnostic',
+              job_id: executingJob.jobId,
+              phase: batch.phase,
+              code: typeof error?.code === 'string' ? error.code : 'UNKNOWN',
+              ...(error?.diagnostic ? { diagnostic: error.diagnostic } : {}),
+            }));
+            throw error;
+          }
+        },
       });
       return result;
     },
