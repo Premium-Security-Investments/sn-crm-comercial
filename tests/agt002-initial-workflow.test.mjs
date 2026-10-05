@@ -196,6 +196,15 @@ describe('computeAgt002WorkflowInstanceIdempotencyKey / computeAgt002WorkflowEve
     }
   });
 
+  it('attempt is absent-neutral and, when set, yields a distinct instance identity', () => {
+    const base = computeAgt002WorkflowInstanceIdempotencyKey(baseInstance);
+    assert.equal(computeAgt002WorkflowInstanceIdempotencyKey({ ...baseInstance, attempt: null }), base);
+    assert.equal(computeAgt002WorkflowInstanceIdempotencyKey({ ...baseInstance, attempt: undefined }), base);
+    const second = computeAgt002WorkflowInstanceIdempotencyKey({ ...baseInstance, attempt: 2 });
+    assert.notEqual(second, base);
+    assert.notEqual(second, computeAgt002WorkflowInstanceIdempotencyKey({ ...baseInstance, attempt: 3 }));
+  });
+
   it('computeAgt002WorkflowEventIdempotencyKey is deterministic and field-sensitive', () => {
     const baseEvent = {
       workflowInstanceId: UUID_A, fromState: 'REQUESTED', toState: 'AUTHORIZED',

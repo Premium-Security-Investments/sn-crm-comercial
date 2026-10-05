@@ -58,6 +58,7 @@ export async function admitAgt002InitialAnalysis(database, {
   profileSnapshotHash = null,
   expiresAt,
   policyVersion,
+  attempt = null,
   environment = {},
 } = {}) {
   requireNonBlank(opportunityId, 'La oportunidad');
@@ -91,6 +92,7 @@ export async function admitAgt002InitialAnalysis(database, {
     scope: normalizedScope.scope,
     profileSnapshotHash: normalizedScope.profileSnapshotHash,
     requestedBy: actorProfileId,
+    attempt,
   });
   const workflow = await rpc(database, 'psi_create_agt002_workflow_instance', {
     p_opportunity_id: opportunityId,

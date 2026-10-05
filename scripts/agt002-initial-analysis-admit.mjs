@@ -21,6 +21,7 @@ const MANIFEST_KEYS = new Set([
   'profile_snapshot_id',
   'profile_snapshot_hash',
   'documents',
+  'attempt',
 ]);
 
 function requireUuid(value, label) {
@@ -52,6 +53,9 @@ export function parseAgt002InitialAnalysisAdmissionManifest(source) {
   if (typeof value.policy_version !== 'string' || value.policy_version.trim() === '') {
     throw new Error('policy_version es obligatoria.');
   }
+  if (value.attempt !== undefined && (!Number.isInteger(value.attempt) || value.attempt < 2)) {
+    throw new Error('attempt debe ser un entero mayor o igual a 2 cuando se indica.');
+  }
   const normalizedScope = normalizeAgt002WorkflowScopeSnapshot({
     scope: value.scope,
     profileSnapshotId: value.profile_snapshot_id,
@@ -64,6 +68,7 @@ export function parseAgt002InitialAnalysisAdmissionManifest(source) {
     requestedMembers,
     expiresAt: value.expires_at,
     policyVersion: value.policy_version.trim(),
+    attempt: value.attempt ?? null,
     ...normalizedScope,
   });
 }

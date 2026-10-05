@@ -96,8 +96,13 @@ function computeAgt002WorkflowHash(value) {
 }
 
 export function computeAgt002WorkflowInstanceIdempotencyKey(instance) {
-  const { opportunityId, tenderId, workflowType, scope, profileSnapshotHash, requestedBy } = instance;
-  return computeAgt002WorkflowHash({ opportunityId, tenderId, workflowType, scope, profileSnapshotHash, requestedBy });
+  const { opportunityId, tenderId, workflowType, scope, profileSnapshotHash, requestedBy, attempt } = instance;
+  // `attempt` is only part of the identity when explicitly set, so existing keys never change.
+  // A retry after an unconsumed, expired G1 needs a fresh workflow instance (AUTHORIZED cannot re-grant).
+  return computeAgt002WorkflowHash({
+    opportunityId, tenderId, workflowType, scope, profileSnapshotHash, requestedBy,
+    ...(attempt === undefined || attempt === null ? {} : { attempt }),
+  });
 }
 
 export function computeAgt002WorkflowEventIdempotencyKey(event) {
