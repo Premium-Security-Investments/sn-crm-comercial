@@ -11,7 +11,7 @@ import {
   completeAgt002InitialAnalysisJob,
   AGT002_INITIAL_ANALYSIS_PERSISTENCE_ERROR_CODES,
 } from '../agt002-initial-analysis-persistence.js';
-import { buildBaselineScopeA } from './fixtures/agt002-pre-go-analysis-v1.mjs';
+import { buildInitialScopeAV2 as buildBaselineScopeA } from './fixtures/agt002-pre-go-analysis-v2.mjs';
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -148,7 +148,7 @@ test('rejects a malformed completion: each required completion field is individu
   assert.equal(database.calls.length, 0);
 });
 
-test('rejects an envelope that fails pre_go_analysis.v1 schema validation', async () => {
+test('rejects an envelope that fails pre_go_analysis.v2 schema validation', async () => {
   const database = fakeDatabase({ data: SUCCESS_RESPONSE });
   const completion = baseCompletion({ envelope: { not: 'a valid envelope' } });
   await assert.rejects(

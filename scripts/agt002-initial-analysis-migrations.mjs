@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 
-export const MIGRATION_ORDER = Object.freeze(['099', '100', '101', '102', '103', '104', '105']);
+export const MIGRATION_ORDER = Object.freeze(['099', '100', '101', '102', '103', '104', '105', '106']);
 export const ROLLBACK_ORDER = Object.freeze([...MIGRATION_ORDER].reverse());
 
 const FILES = Object.freeze({
@@ -14,6 +14,7 @@ const FILES = Object.freeze({
   '103': '103_agt002_initial_analysis_atomic_admission.sql',
   '104': '104_agt002_initial_analysis_server_owned_execution.sql',
   '105': '105_agt002_initial_admission_digest_schema_qualification.sql',
+  '106': '106_agt002_initial_v2_aggregate_schema_version.sql',
 });
 
 const TABLES = Object.freeze([
@@ -73,6 +74,10 @@ const MARKERS = Object.freeze({
   m105: `(exists (select 1 from pg_proc p where p.oid=to_regprocedure('public.${SERVICE_FUNCTIONS[12]}')
     and pg_get_functiondef(p.oid) like '%extensions.digest%'
     and pg_get_functiondef(p.oid) not like '%encode(digest(%'))`,
+  // 106 is detected by the INITIAL completion RPC requiring the pre_go_analysis.v2 envelope.
+  m106: `(exists (select 1 from pg_proc p where p.oid=to_regprocedure('public.${SERVICE_FUNCTIONS[10]}')
+    and pg_get_functiondef(p.oid) like '%pre_go_analysis.v2%'
+    and pg_get_functiondef(p.oid) not like '%pre_go_analysis.v1%'))`,
 });
 
 const tableList = TABLES.map(q).join(', ');
@@ -104,6 +109,7 @@ select
   ${MARKERS.m103} as m103,
   ${MARKERS.m104} as m104,
   ${MARKERS.m105} as m105,
+  ${MARKERS.m106} as m106,
   (select count(*)::int from pg_class c
     join pg_namespace n on n.oid=c.relnamespace
     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r',c.relowner))) a

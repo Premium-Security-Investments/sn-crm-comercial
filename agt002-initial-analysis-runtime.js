@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { resolveAgt002GovernedDocumentForExecution } from './agt002-governed-document-rehydration.js';
-import { validatePreGoAnalysisV1 } from './agt002-pre-go-analysis-v1.js';
+import { validatePreGoAnalysisV2, PRE_GO_SCHEMA_V2 } from './agt002-pre-go-analysis-v2.js';
 
-const PRE_GO_SCHEMA = JSON.parse(readFileSync(new URL('./schemas/agt002/pre_go_analysis.v1.schema.json', import.meta.url), 'utf8'));
+const PRE_GO_SCHEMA = PRE_GO_SCHEMA_V2;
 const MEMBER_OUTPUT_SCHEMA = Object.freeze({
   type: 'object', additionalProperties: false,
   required: ['analysis_notes', 'open_items'],
@@ -46,7 +45,7 @@ export function createAgt002InitialAnalysisRuntime({
   bridgeClient,
   loadBindings = defaultLoadBindings,
   resolveDocument = resolveAgt002GovernedDocumentForExecution,
-  validateEnvelope = validatePreGoAnalysisV1,
+  validateEnvelope = validatePreGoAnalysisV2,
 } = {}) {
   if (!bridgeClient || typeof bridgeClient.run !== 'function') throw new Error('El runtime INITIAL requiere un bridge client.');
 
@@ -96,7 +95,7 @@ export function createAgt002InitialAnalysisRuntime({
       const synthesis = batch.phase === 'synthesis';
       const outputSchema = synthesis ? PRE_GO_SCHEMA : MEMBER_OUTPUT_SCHEMA;
       const policy = synthesis
-        ? 'Produzca exactamente pre_go_analysis.v1 usando sólo los análisis de lote suministrados. No decida GO/NO-GO ni ejecute acciones.'
+        ? 'Produzca exactamente pre_go_analysis.v2 usando sólo los análisis de lote suministrados. No decida GO/NO-GO ni ejecute acciones.'
         : 'Analice únicamente la evidencia suministrada. Separe hallazgos y pendientes; no decida GO/NO-GO ni ejecute acciones.';
       const response = await bridgeClient.run({
         model: modelId,
@@ -117,7 +116,7 @@ export function createAgt002InitialAnalysisRuntime({
       catch { throw runtimeError('AGT002_ENGINE_MODEL_CALL_FAILED', 'La respuesta INITIAL no es JSON válido.'); }
       if (synthesis) {
         const validation = validateEnvelope(output);
-        if (!validation.ok) throw runtimeError('AGT002_ENGINE_MODEL_CALL_FAILED', 'La síntesis INITIAL no cumple pre_go_analysis.v1.');
+        if (!validation.ok) throw runtimeError('AGT002_ENGINE_MODEL_CALL_FAILED', 'La síntesis INITIAL no cumple pre_go_analysis.v2.');
         const persistence = job.payload.persistence;
         if (output?.meta?.analysis_run_id !== persistence.analysisRunId
             || output?.meta?.g1_authorization_id !== persistence.authorizationId

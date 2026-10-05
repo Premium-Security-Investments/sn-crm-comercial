@@ -3,13 +3,13 @@
 // 102). Every identity field (analysis_run_id, analysis_core_hash, schema_version) is derived
 // from the synthesis envelope itself — this module never accepts an envelope hash from the
 // caller, it always recomputes the canonical SHA-256 of the envelope's own deterministic JSON.
-// The envelope is validated first against the immutable pre_go_analysis.v1 schema
+// The envelope is validated first against the pre_go_analysis.v2 schema (the first-analysis schema; v1 stays immutable for later stages)
 // (agt002-pre-go-analysis-v1.js), then against the INITIAL-shape invariants this RPC call
 // requires, before the RPC is ever invoked. Never imports, and is never imported by, any
 // parallel operational runtime module.
 
 import { createHash } from 'node:crypto';
-import { validatePreGoAnalysisV1 } from './agt002-pre-go-analysis-v1.js';
+import { validatePreGoAnalysisV2 } from './agt002-pre-go-analysis-v2.js';
 
 export const AGT002_INITIAL_ANALYSIS_PERSISTENCE_ERROR_CODES = Object.freeze({
   INVALID_CALL: 'AGT002_INITIAL_PERSISTENCE_INVALID_CALL',
@@ -117,16 +117,16 @@ export async function completeAgt002InitialAnalysisJob(database, { jobId, leaseI
 
   const { envelope } = completion;
 
-  const validation = validatePreGoAnalysisV1(envelope);
+  const validation = validatePreGoAnalysisV2(envelope);
   if (!validation.ok) {
     throw persistenceError(
       AGT002_INITIAL_ANALYSIS_PERSISTENCE_ERROR_CODES.ENVELOPE_SCHEMA_INVALID,
-      'AGT-002 initial-analysis persistence: el agregado de síntesis no cumple el esquema pre_go_analysis.v1.',
+      'AGT-002 initial-analysis persistence: el agregado de síntesis no cumple el esquema pre_go_analysis.v2.',
     );
   }
 
   const meta = envelope.meta;
-  assertInvariant(meta.schema_version === 'pre_go_analysis.v1', 'AGT-002 initial-analysis persistence: meta.schema_version debe ser pre_go_analysis.v1.');
+  assertInvariant(meta.schema_version === 'pre_go_analysis.v2', 'AGT-002 initial-analysis persistence: meta.schema_version debe ser pre_go_analysis.v2.');
   assertInvariant(meta.aggregate_stage === 'ANALYSIS_PUBLISHED', 'AGT-002 initial-analysis persistence: meta.aggregate_stage del primer agregado debe ser ANALYSIS_PUBLISHED.');
   assertInvariant(meta.aggregate_version === 1, 'AGT-002 initial-analysis persistence: meta.aggregate_version del primer agregado debe ser 1.');
   assertInvariant(meta.analysis_kind === 'INITIAL', 'AGT-002 initial-analysis persistence: meta.analysis_kind debe ser INITIAL.');

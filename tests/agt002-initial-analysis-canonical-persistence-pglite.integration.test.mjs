@@ -40,6 +40,8 @@ const migration103 = () => migrationSource('104_agt002_initial_analysis_server_o
 // 105 corrige la resolución de pgcrypto en la RPC de admisión: extensions.digest(...) en lugar de
 // digest(...) sin calificar bajo `search_path = public, pg_temp`.
 const migration104 = () => migrationSource('105_agt002_initial_admission_digest_schema_qualification.sql');
+// 106: INITIAL completes with the pre_go_analysis.v2 envelope (v1 minus the render manifest).
+const migration105 = () => migrationSource('106_agt002_initial_v2_aggregate_schema_version.sql');
 const rollback103 = () => strip(readFileSync(new URL('../supabase/rollbacks/104_agt002_initial_analysis_server_owned_execution_rollback.sql', import.meta.url), 'utf8'));
 const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/103_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
 
@@ -161,6 +163,7 @@ async function freshDb() {
   const pg = await createBaseFixture();
   await pg.exec(migration101());
   await pg.exec(migration102());
+  await pg.exec(migration105());
   return pg;
 }
 
@@ -183,7 +186,7 @@ test('migration 104 applies after the real 099-103 chain and preserves the one a
   }
 });
 
-test('INITIAL release runner recognizes the real 099-105 chain and its security posture', async () => {
+test('INITIAL release runner recognizes the real 099-106 chain and its security posture', async () => {
   const pg = await freshDb();
   try {
     await pg.exec(migration103());
@@ -198,6 +201,7 @@ test('INITIAL release runner recognizes the real 099-105 chain and its security 
       '103': true,
       '104': true,
       '105': true,
+      '106': true,
     });
     assert.equal(result.unsafe_grants, 0);
     assert.equal(result.rls_missing, 0);
@@ -311,7 +315,7 @@ async function storeSynthesisCheckpoint(pg, { job_id, lease_id, fence_version },
 
 function buildEnvelope({ analysisRunId, analysisCoreHash, authorizationId, g1Scope, packageHash, opportunityId = O, tenderId = T, overrides = {} }) {
   const meta = {
-    schema_version: 'pre_go_analysis.v1',
+    schema_version: 'pre_go_analysis.v2',
     analysis_kind: 'INITIAL',
     analysis_version: 1,
     source_analysis_run_id: null,
@@ -348,7 +352,7 @@ async function completeJob(pg, params) {
     p_g1_scope: params.g1Scope ?? 'A',
     p_analysis_core_hash: analysisCoreHash,
     p_policy_version: params.policyVersion ?? 'policy-v1',
-    p_schema_version: params.schemaVersion ?? 'pre_go_analysis.v1',
+    p_schema_version: params.schemaVersion ?? 'pre_go_analysis.v2',
     p_envelope: envelope,
     p_envelope_hash: params.envelopeHash ?? hash(JSON.stringify(envelope)),
   });
@@ -967,7 +971,7 @@ test('RED: completing without a persisted synthesis checkpoint is rejected, and 
   }
 });
 
-test('RED: an envelope whose meta.schema_version does not match pre_go_analysis.v1 is rejected, rolling back every write', async () => {
+test('RED: an envelope whose meta.schema_version does not match pre_go_analysis.v2 is rejected, rolling back every write', async () => {
   const pg = await freshDb();
   try {
     const { claimed, workflow } = await setUpReadyJob(pg, { label: 'bad-schema' });
@@ -975,7 +979,7 @@ test('RED: an envelope whose meta.schema_version does not match pre_go_analysis.
     const envelope = buildEnvelope({
       analysisRunId: RUN_1, analysisCoreHash, authorizationId: workflow.authorizationId,
       g1Scope: 'A', packageHash: workflow.evidence.packageHash,
-      overrides: { meta: { schema_version: 'pre_go_analysis.v2' } },
+      overrides: { meta: { schema_version: 'pre_go_analysis.v1' } },
     });
 
     await assert.rejects(completeJob(pg, {
