@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
-import { buildBaselineScopeA, buildBaselineScopeAPlusB } from './fixtures/agt002-pre-go-analysis-v1.mjs';
+import { buildInitialScopeAV2 as buildBaselineScopeA, buildInitialScopeAPlusBV2 as buildBaselineScopeAPlusB } from './fixtures/agt002-pre-go-analysis-v2.mjs';
 import { createAgt002InitialAnalysisRuntime } from '../agt002-initial-analysis-runtime.js';
 import { createAgt002InitialAnalysisExecutor } from '../agt002-initial-analysis-executor.js';
 import { createAgt002InitialAnalysisWorker } from '../agt002-initial-analysis-worker.js';

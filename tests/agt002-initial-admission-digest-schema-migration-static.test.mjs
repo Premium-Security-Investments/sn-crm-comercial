@@ -21,7 +21,7 @@ const rollback = readFileSync(rollbackPath, 'utf8');
 
 // --- 105 is registered in the governed runner chain -------------------------------------------
 assert.ok(MIGRATION_ORDER.includes('105'), '105 must be part of the governed migration chain');
-assert.equal(MIGRATION_ORDER[MIGRATION_ORDER.length - 1], '105', '105 must be the last slot in the chain');
+assert.ok(MIGRATION_ORDER.indexOf('105') >= 0 && MIGRATION_ORDER.indexOf('105') < MIGRATION_ORDER.indexOf('106'), '105 must precede 106 in the chain');
 
 // --- 105 shape --------------------------------------------------------------------------------
 assert.match(migration, /^--/, '105 must open with its rationale');
