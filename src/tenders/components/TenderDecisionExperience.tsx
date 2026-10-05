@@ -51,7 +51,7 @@ export function TenderDecisionExperience(props: TenderDecisionExperienceProps) {
   } = props;
   const initialReport = props.initialReport ?? null;
 
-  if (decisionAxisSurfaceEnabled && !initialReport) {
+  if (decisionAxisSurfaceEnabled) {
     return <TenderDecisionAxisSurface
       opportunityId={opportunityId}
       opportunityName={opportunityName}
