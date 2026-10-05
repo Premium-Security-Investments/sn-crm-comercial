@@ -242,11 +242,42 @@ test('un registro convertido con la misma identidad EPM del registro curado sigu
   assert.equal(evaluateTenderCompetibility(convertedCurated, { nowIso: NOW }).status, 'competible');
 });
 
-// 10. Bypass de convertidos: cualquier `converted_opportunity_id` no vacío también cuenta como
-//     convertido, además de las señales existentes (`converted === true` / `internal_status`).
-test('converted_opportunity_id no vacío clasifica como competible (bypass de convertidos)', () => {
-  const convertedViaOpportunityId = { ...epmCw396234, id: 'CONVERTED-VIA-OPP-ID', converted_opportunity_id: 'OPP-0001' };
-  assert.equal(evaluateTenderCompetibility(convertedViaOpportunityId, { nowIso: NOW }).status, 'competible');
+// 10. Un `converted_opportunity_id` colgado no es conversión. El Radar trata como convertida
+//     sólo `converted === true` o `internal_status === 'convertida_oportunidad'`. El caso vivo
+//     EPM CW396234 / CO1.REQ.10871299 está en `nueva` con oportunidad ligada y debe seguir
+//     oculto: es renovación ya aceptada (ENETEL), no competencia abierta.
+const liveEpmNuevaWithOpportunityLink = {
+  ...curatedExactMatch,
+  id: 'd51b18fc-8d05-4271-a4b8-a5edf9517956',
+  ref: 'CW396234',
+  process_id: 'CO1.REQ.10871299',
+  internal_status: 'nueva',
+  converted_opportunity_id: 'b8c0b564-c5d3-4787-9c04-6ed7d6becac5',
+};
+
+test('identidad EPM exacta en nueva con converted_opportunity_id sigue no_competible', () => {
+  assert.equal(
+    evaluateTenderCompetibility(liveEpmNuevaWithOpportunityLink, { nowIso: NOW }).status,
+    'no_competible',
+  );
+});
+
+test('filterActiveTenderCompetibilityRows oculta EPM nueva aunque tenga converted_opportunity_id', () => {
+  const active = filterActiveTenderCompetibilityRows(
+    [liveEpmNuevaWithOpportunityLink],
+    { nowIso: NOW },
+  );
+  assert.deepEqual(active.map(row => row.id), []);
+});
+
+test('internal_status convertida_oportunidad sí clasifica como competible (bypass real)', () => {
+  const convertedByStatus = {
+    ...curatedExactMatch,
+    id: 'CURATED-CONVERTIDA-STATUS',
+    internal_status: 'convertida_oportunidad',
+    converted_opportunity_id: 'b8c0b564-c5d3-4787-9c04-6ed7d6becac5',
+  };
+  assert.equal(evaluateTenderCompetibility(convertedByStatus, { nowIso: NOW }).status, 'competible');
 });
 
 // 11. El mensaje público de bloqueo debe ser genérico: no puede filtrar etiquetas internas de
