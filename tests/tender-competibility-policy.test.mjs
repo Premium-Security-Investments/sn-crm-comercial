@@ -1,12 +1,13 @@
-// Contrato RED (TDD) de la política de competibilidad de procesos (tender-competibility-policy).
-// Motivado por el caso EPM CW396234: un proceso que luce abierto pero que, por evidencia
-// conjunta estructurada (continuidad/renovación + aceptación/adjudicación/ejecución +
-// incumbente + URL de evidencia verificable), es en realidad la continuidad de un contrato
-// vigente con el incumbente y por tanto NO es competible. Cuando la evidencia es solo texto
-// libre (sin prueba estructurada) o el régimen es especial sin plazo verificable, el estado
-// correcto es "por_verificar" (incierto, no bloqueante de forma definitiva pero tampoco
-// aprobado). Un registro "convertido" (confirmado manualmente) siempre se trata como
-// competible, sin importar las demás señales.
+// Contrato TDD de la política de competibilidad de procesos (tender-competibility-policy).
+// Motivado por EPM CW396234 (renovación ya aceptada que luce abierta) y Pereira
+// CTO 08 DE 2025 (publicidad SECOP II de un contrato de régimen especial ya firmado).
+//
+// Hide automático estrecho (tipo Pereira): modalidad EXACTA `Contratación régimen especial`
+// (no "con ofertas") + sin plazo verificable + (proveedor con nombre real O ref CTO/CONTRATO)
+// → `no_competible`. Un régimen especial sin esas señales extra es convocatoria viva
+// (SINCHI) y permanece `competible`. No se ocultan las ~370 especiales-sin-plazo.
+// Texto libre combinado (renovación+adjudicación sin prueba estructurada) sigue
+// `por_verificar`. Un registro convertido siempre es `competible`.
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -39,8 +40,6 @@ function baseTender(o = {}) {
   };
 }
 
-// 1. Caso EPM CW396234: evidencia conjunta ESTRUCTURADA (continuidad/renovación +
-//    aceptación/adjudicación/ejecución + incumbente + URL de evidencia) -> no_competible.
 const epmCw396234 = baseTender({
   id: 'CW396234',
   title: 'Prórroga del contrato de interventoría integral de subestaciones',
@@ -60,8 +59,6 @@ test('evidencia conjunta estructurada tipo EPM CW396234 clasifica como no_compet
   assert.equal(result.status, 'no_competible');
 });
 
-// 2. Régimen especial sin plazo verificable (sin evidencia estructurada, sin señales de
-//    texto libre) -> por_verificar.
 const regimenEspecialSinPlazo = baseTender({
   id: 'EPM-0002',
   title: 'Suministro de materiales eléctricos para subestaciones',
@@ -70,27 +67,21 @@ const regimenEspecialSinPlazo = baseTender({
   deadline_at: null,
 });
 
-test('régimen especial sin plazo verificable clasifica como por_verificar', () => {
+test('régimen especial sin plazo verificable sin proveedor ni CTO/CONTRATO clasifica como competible', () => {
   const result = evaluateTenderCompetibility(regimenEspecialSinPlazo, { nowIso: NOW });
-  assert.equal(result.status, 'por_verificar');
+  assert.equal(result.status, 'competible');
 });
 
-// 2b. Caso SECOP/EPM: el régimen especial sólo se indica en el campo crudo
-//     `raw.modalidad_de_contratacion` (sin row.regimen), y sin plazo verificable
-//     -> por_verificar.
 const regimenEspecialSoloRawModalidad = {
   raw: { modalidad_de_contratacion: 'Contratación régimen especial' },
   deadline_at: null,
 };
 
-test('régimen especial detectado sólo vía raw.modalidad_de_contratacion sin plazo verificable clasifica como por_verificar', () => {
+test('régimen especial detectado sólo vía raw.modalidad_de_contratacion sin plazo ni CTO/proveedor clasifica como competible', () => {
   const result = evaluateTenderCompetibility(regimenEspecialSoloRawModalidad, { nowIso: NOW });
-  assert.equal(result.status, 'por_verificar');
+  assert.equal(result.status, 'competible');
 });
 
-// 2c. Ambos backends (server/index.js y api/[...path].js) deben solicitar
-//     `modalidad_de_contratacion` en el `select` de SECOP II: es la fuente real del
-//     `raw.modalidad_de_contratacion` que el caso 2b depende de que exista en la fila.
 test('el select de SECOP II en server/index.js y api/[...path].js incluye modalidad_de_contratacion', () => {
   const serverSelect = secopIiSelectFrom(readFileSync(resolve(projectRoot, 'server/index.js'), 'utf8'));
   const apiSelect = secopIiSelectFrom(readFileSync(resolve(projectRoot, 'api/[...path].js'), 'utf8'));
@@ -106,8 +97,6 @@ test('el select de SECOP II en server/index.js y api/[...path].js incluye modali
   );
 });
 
-// 3. Una sola señal de prórroga aislada (sin señal de aceptación/adjudicación/ejecución,
-//    sin evidencia estructurada), con plazo competitivo futuro válido -> competible.
 const loneProrroga = baseTender({
   id: 'ORD-0003',
   title: 'Prórroga del plazo del proceso de selección',
@@ -121,9 +110,6 @@ test('prórroga aislada con plazo competitivo futuro válido clasifica como comp
   assert.equal(result.status, 'competible');
 });
 
-// 4. Señales combinadas de renovación + aceptación/adjudicación en texto libre, SIN prueba
-//    estructurada (sin competibility_evidence) -> por_verificar (no es definitivo como el
-//    caso 1 porque no hay prueba estructurada ni incumbente/URL verificables).
 const combinedFreeTextSignals = baseTender({
   id: 'ORD-0004',
   title: 'Prórroga y adjudicación directa al contratista actual',
@@ -138,8 +124,6 @@ test('señales combinadas de renovación/aceptación en texto libre sin prueba e
   assert.equal(result.status, 'por_verificar');
 });
 
-// 5. Un registro "convertido" (confirmado manualmente) siempre pasa como competible, incluso
-//    con la misma evidencia bloqueante del caso 1.
 const convertedRecord = { ...epmCw396234, id: 'CW396234-CONVERTIDO', converted: true };
 
 test('un registro convertido manualmente siempre clasifica como competible', () => {
@@ -147,19 +131,15 @@ test('un registro convertido manualmente siempre clasifica como competible', () 
   assert.equal(result.status, 'competible');
 });
 
-// 6. Filtrado de filas activas: oculta no_competible/por_verificar no convertidos, pero
-//    conserva competible y convertido.
 test('filterActiveTenderCompetibilityRows oculta no_competible/por_verificar no convertidos y conserva competible/convertido', () => {
   const rows = [epmCw396234, regimenEspecialSinPlazo, loneProrroga, convertedRecord];
   const active = filterActiveTenderCompetibilityRows(rows, { nowIso: NOW });
   assert.deepEqual(
     active.map(row => row.id).sort(),
-    [loneProrroga.id, convertedRecord.id].sort(),
+    [regimenEspecialSinPlazo.id, loneProrroga.id, convertedRecord.id].sort(),
   );
 });
 
-// 7. Helper de conversión: bloquea (lanza) para no_competible y por_verificar, con
-//    code TENDER_COMPETIBILITY_BLOCKED y status 409; no lanza para competible.
 test('requireTenderCompetibleForConversion lanza TENDER_COMPETIBILITY_BLOCKED/409 para no_competible', () => {
   assert.throws(
     () => requireTenderCompetibleForConversion(epmCw396234, { nowIso: NOW }),
@@ -169,7 +149,7 @@ test('requireTenderCompetibleForConversion lanza TENDER_COMPETIBILITY_BLOCKED/40
 
 test('requireTenderCompetibleForConversion lanza TENDER_COMPETIBILITY_BLOCKED/409 para por_verificar', () => {
   assert.throws(
-    () => requireTenderCompetibleForConversion(regimenEspecialSinPlazo, { nowIso: NOW }),
+    () => requireTenderCompetibleForConversion(combinedFreeTextSignals, { nowIso: NOW }),
     err => err.code === 'TENDER_COMPETIBILITY_BLOCKED' && err.status === 409,
   );
 });
@@ -178,13 +158,10 @@ test('requireTenderCompetibleForConversion no lanza para competible', () => {
   assert.doesNotThrow(() => requireTenderCompetibleForConversion(loneProrroga, { nowIso: NOW }));
 });
 
-// 8. `requireTenderCompetibleForConversion` es una API SOLO DE FILA: nunca debe tratar un
-//    `row.status` ordinario (texto de estado del proceso, no resultado de política) como si
-//    fuera el resultado de la política. Siempre debe evaluar la fila completa.
 const statusCollisionBlocked = {
   ...epmCw396234,
   id: 'STATUS-COLLISION-BLOCKED',
-  status: 'competible', // valor de estado ordinario que coincide por accidente con un status de política
+  status: 'competible',
 };
 
 test('requireTenderCompetibleForConversion bloquea pese a row.status="competible" si hay evidencia bloqueante', () => {
@@ -197,17 +174,13 @@ test('requireTenderCompetibleForConversion bloquea pese a row.status="competible
 const statusCollisionAllowed = {
   ...loneProrroga,
   id: 'STATUS-COLLISION-ALLOWED',
-  status: 'por_verificar', // valor de estado ordinario que coincide por accidente con un status de política
+  status: 'por_verificar',
 };
 
 test('requireTenderCompetibleForConversion permite pese a row.status="por_verificar" si no hay riesgo real', () => {
   assert.doesNotThrow(() => requireTenderCompetibleForConversion(statusCollisionAllowed, { nowIso: NOW }));
 });
 
-// 9. Registro curado de evidencia verificada: caso ya verificado EPM ref CW396234 /
-//    process_id CO1.REQ.10871299 (continuidad+aceptación, incumbente ENETEL S.A.S.).
-//    Coincidencia EXACTA de ambos identificadores -> no_competible, sin necesidad de evidencia
-//    estructurada en la fila. Una coincidencia parcial ("near-match") NO debe activar el registro.
 const curatedExactMatch = baseTender({
   id: 'CURATED-EXACT',
   ref: 'CW396234',
@@ -242,10 +215,6 @@ test('un registro convertido con la misma identidad EPM del registro curado sigu
   assert.equal(evaluateTenderCompetibility(convertedCurated, { nowIso: NOW }).status, 'competible');
 });
 
-// 10. Un `converted_opportunity_id` colgado no es conversión. El Radar trata como convertida
-//     sólo `converted === true` o `internal_status === 'convertida_oportunidad'`. El caso vivo
-//     EPM CW396234 / CO1.REQ.10871299 está en `nueva` con oportunidad ligada y debe seguir
-//     oculto: es renovación ya aceptada (ENETEL), no competencia abierta.
 const liveEpmNuevaWithOpportunityLink = {
   ...curatedExactMatch,
   id: 'd51b18fc-8d05-4271-a4b8-a5edf9517956',
@@ -280,8 +249,6 @@ test('internal_status convertida_oportunidad sí clasifica como competible (bypa
   assert.equal(evaluateTenderCompetibility(convertedByStatus, { nowIso: NOW }).status, 'competible');
 });
 
-// 11. El mensaje público de bloqueo debe ser genérico: no puede filtrar etiquetas internas de
-//     decisión (`no_competible`, `por_verificar`) al cliente HTTP.
 test('el mensaje de requireTenderCompetibleForConversion no contiene etiquetas internas de decisión', () => {
   try {
     requireTenderCompetibleForConversion(epmCw396234, { nowIso: NOW });
@@ -293,7 +260,7 @@ test('el mensaje de requireTenderCompetibleForConversion no contiene etiquetas i
     assert.equal(err.status, 409);
   }
   try {
-    requireTenderCompetibleForConversion(regimenEspecialSinPlazo, { nowIso: NOW });
+    requireTenderCompetibleForConversion(combinedFreeTextSignals, { nowIso: NOW });
     assert.fail('se esperaba que lanzara');
   } catch (err) {
     assert.equal(err.message.includes('no_competible'), false);
@@ -301,4 +268,131 @@ test('el mensaje de requireTenderCompetibleForConversion no contiene etiquetas i
     assert.equal(err.code, 'TENDER_COMPETIBILITY_BLOCKED');
     assert.equal(err.status, 409);
   }
+});
+
+const pereiraLive = baseTender({
+  id: '19f0ef56-5387-4c75-b08f-8a2850eaeb55',
+  ref: 'CTO 08 DE 2025',
+  process_id: 'CO1.REQ.10512285',
+  entity: 'EMPRESA DE ENERGIA DE PEREIRA SA ESP',
+  title: 'Contratar un servicio integral de seguridad privada',
+  deadline_at: null,
+  raw: {
+    modalidad_de_contratacion: 'Contratación régimen especial',
+    nombre_del_proveedor: 'No Definido',
+    referencia_del_proceso: 'CTO 08 DE 2025',
+  },
+});
+
+test('Pereira CTO 08 DE 2025 (especial sin plazo, ref CTO, proveedor No Definido) clasifica como no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(pereiraLive, { nowIso: NOW }).status, 'no_competible');
+});
+
+test('identidad Pereira exacta sin modalidad en raw sigue no_competible vía registro curado', () => {
+  const withoutModalidad = {
+    ...pereiraLive,
+    id: 'PEREIRA-REGISTRY-ONLY',
+    raw: {},
+  };
+  assert.equal(evaluateTenderCompetibility(withoutModalidad, { nowIso: NOW }).status, 'no_competible');
+});
+
+test('filterActiveTenderCompetibilityRows oculta Pereira CTO 08 DE 2025', () => {
+  const active = filterActiveTenderCompetibilityRows([pereiraLive], { nowIso: NOW });
+  assert.deepEqual(active.map(row => row.id), []);
+});
+
+const syntheticCtoPublicity = baseTender({
+  id: 'SYN-CTO-PUBLICITY',
+  ref: 'CTO 99 DE 2099',
+  process_id: 'CO1.REQ.NOT-IN-REGISTRY',
+  deadline_at: null,
+  raw: { modalidad_de_contratacion: 'Contratación régimen especial' },
+});
+
+test('especial exacta sin plazo con ref CTO (fuera del registro curado) clasifica como no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(syntheticCtoPublicity, { nowIso: NOW }).status, 'no_competible');
+});
+
+const namedProveedorPublicity = baseTender({
+  id: 'SYN-NAMED-PROVEEDOR',
+  ref: 'CP-XX-2099',
+  process_id: 'CO1.REQ.NAMED-PROVEEDOR',
+  deadline_at: null,
+  raw: {
+    modalidad_de_contratacion: 'Contratación régimen especial',
+    nombre_del_proveedor: 'ESTATAL DE SEGURIDAD LTDA',
+  },
+});
+
+test('especial exacta sin plazo con proveedor nombrado clasifica como no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(namedProveedorPublicity, { nowIso: NOW }).status, 'no_competible');
+});
+
+const noDefinidoWithoutCto = baseTender({
+  id: 'SYN-NO-DEFINIDO',
+  ref: 'CP-YY-2099',
+  process_id: 'CO1.REQ.NO-DEFINIDO',
+  deadline_at: null,
+  raw: {
+    modalidad_de_contratacion: 'Contratación régimen especial',
+    nombre_del_proveedor: 'No Definido',
+  },
+});
+
+test('especial exacta sin plazo con proveedor No Definido y sin CTO/CONTRATO clasifica como competible', () => {
+  assert.equal(evaluateTenderCompetibility(noDefinidoWithoutCto, { nowIso: NOW }).status, 'competible');
+});
+
+const contratoRefPublicity = baseTender({
+  id: 'SYN-CONTRATO-REF',
+  ref: 'CONTRATO 12 DE 2025',
+  process_id: 'CO1.REQ.CONTRATO-REF',
+  deadline_at: null,
+  raw: { modalidad_de_contratacion: 'Contratación régimen especial' },
+});
+
+test('especial exacta sin plazo con ref CONTRATO clasifica como no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(contratoRefPublicity, { nowIso: NOW }).status, 'no_competible');
+});
+
+const sinchiConvocatoria = baseTender({
+  id: 'SINCHI-008-2026',
+  ref: 'CONVOCATORIA PUBLICA 008 DE 2026',
+  process_id: 'CO1.REQ.SINCHI-008',
+  deadline_at: null,
+  raw: { modalidad_de_contratacion: 'Contratación régimen especial' },
+});
+
+test('SINCHI CONVOCATORIA PUBLICA 008 DE 2026 (especial sin plazo, sin proveedor ni CTO) clasifica como competible', () => {
+  assert.equal(evaluateTenderCompetibility(sinchiConvocatoria, { nowIso: NOW }).status, 'competible');
+});
+
+test('filterActiveTenderCompetibilityRows conserva SINCHI CONVOCATORIA PUBLICA 008 DE 2026', () => {
+  const active = filterActiveTenderCompetibilityRows([sinchiConvocatoria], { nowIso: NOW });
+  assert.deepEqual(active.map(row => row.id), [sinchiConvocatoria.id]);
+});
+
+const especialConOfertasConPlazo = baseTender({
+  id: 'ESP-CON-OFERTAS-PLAZO',
+  ref: 'LP-260007',
+  process_id: 'CO1.REQ.CON-OFERTAS-PLAZO',
+  deadline_at: '2026-12-15T17:00:00.000Z',
+  raw: { modalidad_de_contratacion: 'Contratación régimen especial con ofertas' },
+});
+
+test('régimen especial con ofertas y plazo futuro clasifica como competible', () => {
+  assert.equal(evaluateTenderCompetibility(especialConOfertasConPlazo, { nowIso: NOW }).status, 'competible');
+});
+
+const especialConOfertasSinPlazo = baseTender({
+  id: 'ESP-CON-OFERTAS-SIN-PLAZO',
+  ref: 'CP-08-2026',
+  process_id: 'CO1.REQ.CON-OFERTAS-SIN',
+  deadline_at: null,
+  raw: { modalidad_de_contratacion: 'Contratación régimen especial con ofertas' },
+});
+
+test('régimen especial con ofertas sin plazo ni CTO/proveedor clasifica como competible', () => {
+  assert.equal(evaluateTenderCompetibility(especialConOfertasSinPlazo, { nowIso: NOW }).status, 'competible');
 });
