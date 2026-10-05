@@ -33,6 +33,8 @@ export type TenderDetailStatusSnapshot = {
   decision: TenderPanelState<TenderGoNoGoDecision | null>;
   preparation: TenderPanelState<TenderPreparationNavigationValue>;
   followUp: TenderFollowUpNavigationValue;
+  /** An INITIAL analysis report is ready: it is the analysis of record for the Análisis and Decisión chips. */
+  initialAnalysisReady?: boolean;
 };
 
 export type TenderDetailIndicator = { tone: TenderIndicatorTone; label: string };
@@ -84,7 +86,8 @@ export function resolveTenderDetailIndicators(
       : { tone: 'unknown', label: 'Sin estado documental confirmado' });
 
   const analysisFallback = fromPanelError(snapshot.analysis);
-  if (analysisFallback) indicators['tender-analysis'] = analysisFallback;
+  if (snapshot.initialAnalysisReady) indicators['tender-analysis'] = { tone: 'ready', label: 'Análisis inicial listo' };
+  else if (analysisFallback) indicators['tender-analysis'] = analysisFallback;
   else if (snapshot.analysis.phase === 'ready') {
     const analysis = snapshot.analysis.value;
     indicators['tender-analysis'] = !analysis
@@ -100,9 +103,9 @@ export function resolveTenderDetailIndicators(
   if (decisionFallback) indicators['tender-decision'] = decisionFallback;
   else if (snapshot.decision.phase === 'ready') {
     const decision = snapshot.decision.value;
-    const analysisIsReady = snapshot.analysis.phase === 'ready'
+    const analysisIsReady = Boolean(snapshot.initialAnalysisReady) || (snapshot.analysis.phase === 'ready'
       && snapshot.analysis.value?.status === 'completed'
-      && snapshot.analysis.value.current;
+      && snapshot.analysis.value.current);
     indicators['tender-decision'] = decision
       ? { tone: 'ready', label: decision.decision === 'go' ? 'GO autorizado' : 'NO GO autorizado' }
       : analysisIsReady

@@ -27,6 +27,7 @@ import { isTenderProcessingActive, shouldReloadTenderArtifacts, tenderAnalysisCo
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
 import { parseAgt002InitialAnalysisProjection, type Agt002InitialAnalysisProjection } from './tenders/agt002InitialAnalysisProjection';
 import { parseAgt002InitialReportResponse, type Agt002InitialReport } from './tenders/agt002InitialReportProjection';
+import { useAgt002InitialReport } from './tenders/useAgt002InitialReport';
 import { agt002GovernedRunStateFromReanalysisJob, type Agt002GovernedAnalysisRunState } from './tenders/governedWorksetSelection';
 import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
@@ -722,6 +723,18 @@ function tenderDeadlineTone(tender: PublicTender) {
   if (bucket === 'sin_fecha') return 'muted';
   return 'success';
 }
+/** "Faltan N días" / "Cierra hoy" / "Cerró hace N días" for an ISO date (date-only, local calendar). */
+function tenderCloseCountdown(value?: string | null) {
+  if (!value) return 'Sin fecha de cierre';
+  const close = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(close.getTime())) return '';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Math.round((close.getTime() - today.getTime()) / 86_400_000);
+  if (days === 0) return 'Cierra hoy';
+  if (days === 1) return 'Falta 1 día';
+  if (days > 1) return `Faltan ${days} días`;
+  return days === -1 ? 'Cerró hace 1 día' : `Cerró hace ${-days} días`;
+}
 function tenderDeadlineClass(tender: PublicTender) {
   const bucket = tenderDeadlineBucket(tender);
   if (bucket === 'vencida') return 'tender-deadline-overdue';
@@ -817,6 +830,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   }, [id]);
   useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
+  const tenderInitialReport = useAgt002InitialReport(id, api, detail?.opportunity.service_type_code === 'licitacion_publica');
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
   const followUpHistory = buildFollowUpHistory(o, detail.interactions);
@@ -827,6 +841,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     decision: tenderDecisionNavigationState,
     preparation: tenderPreparationNavigationState,
     followUp: action,
+    initialAnalysisReady: Boolean(tenderInitialReport),
   };
   const locationChip = [o.quote_city, o.sede].map(v => (v || '').trim()).filter(Boolean).join(' · ');
   const decisionMakerSummary = [o.decision_maker_name, o.decision_maker_email, o.decision_maker_phone].map(v => (v || '').trim()).filter(Boolean).join(' · ') || 'Por completar';
@@ -865,9 +880,10 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} expectedCloseDate={o.expected_close_date} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
     {o.service_type_code === 'licitacion_publica' ? <>
       <Panel title="Resumen de la oportunidad" className="tender-opportunity-summary-panel">
-        <div className="tender-opportunity-summary-grid">
-          <Info label="Entidad" value={o.company_name}/><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Sector" value={o.economic_sector}/><Info label="Ciudad" value={o.quote_city || 'Ciudad por confirmar'}/>
-          <Info label="Cuantía" value={fmtMoney(o.offer_value)}/><Info label="Cierre oficial" value={fmtDateOnly(o.expected_close_date)}/><Info label="Responsable" value={o.owner_name || 'Sin comercial'}/>
+        {/* Entity, amount and owner already head the page: the summary only adds the closing date and the process facts. */}
+        <div className="tender-summary-compact">
+          <div className="tender-summary-close"><small>Cierre oficial</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{tenderCloseCountdown(o.expected_close_date)}</span></div>
+          <p className="tender-summary-facts">{[o.service_type_name || o.tipo_producto_original, o.economic_sector, o.quote_city || 'Ciudad por confirmar'].filter(Boolean).join(' · ')}</p>
         </div>
       </Panel>
     </> : <section className="opportunity-insight-grid opportunity-priority-grid" aria-label="Resumen prioritario de la oportunidad"><div className={`opportunity-insight-card ${priorityNextAction.className}`}><small>Próxima gestión</small><strong>{fmtDate(o.next_action_at)}</strong><span>{priorityNextAction.detail}</span></div><div className="opportunity-insight-card"><small>Último seguimiento</small><strong>{fmtDate(o.last_interaction_at)}</strong><span>{followUpAgeLabel(o.last_interaction_at)}</span></div><div className={`opportunity-insight-card ${priorityClose.className}`}><small>Cierre estimado</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{priorityClose.detail}</span></div><div className={`opportunity-insight-card ${priorityDecisionMaker.className}`}><small>Contacto decisor</small><strong>{decisionMakerSummary}</strong><span>{priorityDecisionMaker.detail}</span></div></section>}
@@ -878,6 +894,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         opportunityId={o.id}
         opportunityName={o.company_name || 'Oportunidad de licitación'}
         analysis={tenderAnalysis}
+        initialReport={tenderInitialReport}
         questionResponses={tenderQuestionResponses}
         currentProfile={data.currentProfile}
         request={api}
@@ -1244,7 +1261,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
     </div>
     <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
-      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} runState={runState} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} initialAnalysis={initialAnalysis} initialReport={initialReport} />
+      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} runState={runState} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} initialAnalysis={initialAnalysis} initialReport={initialReport} officialCloseDate={opportunity.expected_close_date} />
     </div>
   </>;
 }

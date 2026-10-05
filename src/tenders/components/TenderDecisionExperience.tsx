@@ -11,6 +11,8 @@ import type {
 import { TenderDecisionAxisSurface } from './TenderDecisionAxisSurface';
 import { TenderDecisionBrief } from './TenderDecisionBrief';
 import { TenderGoNoGoDecisionPanel } from './TenderGoNoGoDecisionPanel';
+import { TenderInitialDecisionSummary } from './TenderInitialDecisionSummary';
+import type { Agt002InitialReport } from '../agt002InitialReportProjection';
 
 export type TenderDecisionExperienceProps = {
   decisionAxisSurfaceEnabled: boolean;
@@ -27,6 +29,7 @@ export type TenderDecisionExperienceProps = {
   onDecisionNavigationStateChanged?: (state: TenderPanelState<TenderGoNoGoDecision | null>) => void;
   onOpenHelpDesk: () => void;
   commercialContext?: TenderCommercialContext;
+  initialReport?: Agt002InitialReport | null;
 };
 
 export function TenderDecisionExperience(props: TenderDecisionExperienceProps) {
@@ -46,6 +49,7 @@ export function TenderDecisionExperience(props: TenderDecisionExperienceProps) {
     questionResponses,
     request,
   } = props;
+  const initialReport = props.initialReport ?? null;
 
   if (decisionAxisSurfaceEnabled) {
     return <TenderDecisionAxisSurface
@@ -65,7 +69,10 @@ export function TenderDecisionExperience(props: TenderDecisionExperienceProps) {
   }
 
   return <>
-    <TenderDecisionBrief analysis={analysis} questionResponses={questionResponses} commercialContext={commercialContext} />
+    {/* With an INITIAL analysis, its verdict replaces the legacy-engine brief (which would only say "no disponible"). */}
+    {initialReport
+      ? <TenderInitialDecisionSummary report={initialReport} />
+      : <TenderDecisionBrief analysis={analysis} questionResponses={questionResponses} commercialContext={commercialContext} />}
     <TenderGoNoGoDecisionPanel
       opportunityId={opportunityId}
       opportunityName={opportunityName}

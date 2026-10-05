@@ -7,7 +7,7 @@ function SourcedClaims({ report, ids }: { report: Agt002InitialReport; ids: stri
   const claims = initialReportClaims(report, ids);
   if (claims.length === 0) return null;
   return <details className="initial-report-support">
-    <summary>Ver respaldo ({claims.length})</summary>
+    <summary>Ver fuente ({claims.length})</summary>
     <ul>{claims.map(claim => <ClaimItem key={claim.id} claim={claim} />)}</ul>
   </details>;
 }
@@ -29,47 +29,46 @@ function formatDate(value: string | null): string {
   return Number.isNaN(time.getTime()) ? value : time.toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-/** Read-only review report of the first (INITIAL) analysis. It states what was NOT evaluated; it decides nothing. */
-export function TenderInitialReport({ report }: { report: Agt002InitialReport }) {
+function formatDay(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const time = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(time.getTime()) ? null : time.toLocaleDateString('es-CO', { dateStyle: 'medium' });
+}
+
+// The model's own limitations often restate what the server already states (no company profile, the decision is human).
+const REDUNDANT_LIMITATION = /perfil de (la )?empresa|go\s*\/\s*no[- ]?go|decisi[oó]n (humana|.*no se toma)/i;
+
+/** One deduplicated "scope" line: what this analysis did not evaluate. It closes the report; it does not open it. */
+export function initialReportScope(report: Agt002InitialReport): string[] {
+  const scope: string[] = [];
+  if (!report.companyFitAuthorized) scope.push('sin perfil de empresa: no evalúa si la empresa cumple');
+  if (!report.checksExecuted) scope.push('sin las verificaciones de la metodología');
+  if (report.processStatus === 'WITHHELD_COVERAGE_GAP') scope.push('documentos con cobertura parcial');
+  for (const limit of report.recommendation.limitations) {
+    if (!REDUNDANT_LIMITATION.test(limit)) scope.push(limit.replace(/\.$/, ''));
+  }
+  return [...new Set(scope)];
+}
+
+/**
+ * Read-only review report of the first (INITIAL) analysis, ordered for a decision: verdict, what blocks it, requirements,
+ * what is missing, contradictions, dates and coverage; detail folded; the scope in one line at the end. It decides nothing.
+ */
+export function TenderInitialReport({ report, officialCloseDate = null }: { report: Agt002InitialReport; officialCloseDate?: string | null }) {
   const { recommendation } = report;
   const openCritical = report.openItems.filter(item => item.critical);
+  const officialClose = formatDay(officialCloseDate);
+  const scope = initialReportScope(report);
   return <article className="initial-report" aria-label="Reporte del análisis inicial">
     <header className="initial-report-head">
-      <small>Reporte del análisis inicial</small>
+      <small>Análisis inicial</small>
       <strong>{labels.recommendation(recommendation.kind)}</strong>
       <p>{recommendation.label}</p>
       <small className="initial-report-meta">Confianza {labels.confidence(recommendation.confidence)} · Documentos hasta {formatDate(report.cutoffAt)}</small>
     </header>
 
-    <section className="notice initial-report-limits" role="note" aria-label="Alcance del análisis">
-      <strong>Qué no evalúa este análisis</strong>
-      <ul>
-        {!report.companyFitAuthorized && <li>No hay perfil de empresa autorizado: no valora si la empresa encaja ni cumple.</li>}
-        {!report.checksExecuted && <li>No se ejecutó ninguna de las verificaciones de la metodología.</li>}
-        {report.processStatus === 'WITHHELD_COVERAGE_GAP' && <li>La cobertura de los documentos es incompleta: la lectura del proceso es parcial.</li>}
-        {recommendation.limitations.map((limit, index) => <li key={index}>{limit}</li>)}
-      </ul>
-      <small>La decisión GO/NO-GO continúa siendo exclusivamente humana.</small>
-    </section>
-
-    {report.deadlines.length > 0 && <section aria-label="Plazos">
-      <h4>Plazos</h4>
-      <ul>{report.deadlines.map(deadline => <li key={deadline.kind}>
-        <strong>{labels.deadlineKind(deadline.kind)}:</strong> {deadline.value ? formatDate(deadline.value) : 'sin fecha en los documentos'}
-        <small className="initial-report-meta"> · {labels.certainty(deadline.certainty)}</small>
-      </li>)}</ul>
-    </section>}
-
-    <section aria-label="Cobertura">
-      <h4>Cobertura de los documentos</h4>
-      <ul>{report.coverage.map(entry => <li key={entry.block}>
-        <strong>{labels.coverageBlock(entry.block)}:</strong> {labels.coverageStatus(entry.status)}{entry.critical ? ' (crítico)' : ''}
-        {entry.gapReason && <small className="initial-report-meta"> · {entry.gapReason}</small>}
-      </li>)}</ul>
-    </section>
-
     <section aria-label="Hallazgos">
-      <h4>Hallazgos ({report.findings.length})</h4>
+      <h4>Lo que hay que saber ({report.findings.length})</h4>
       {report.findings.length === 0 ? <p>Sin hallazgos registrados.</p> : <ul>{report.findings.map(finding => <li key={finding.id}>
         <span className={`initial-report-chip severity-${finding.severity.toLowerCase()}`}>{labels.severity(finding.severity)}</span>
         {finding.blocker && <span className="initial-report-chip severity-blocker">Impedimento</span>}
@@ -83,18 +82,19 @@ export function TenderInitialReport({ report }: { report: Agt002InitialReport })
       <h4>Requisitos ({report.requirements.length})</h4>
       {report.requirements.length === 0 ? <p>Sin requisitos registrados.</p> : <ul>{report.requirements.map(requirement => {
         const text = initialReportClaims(report, [requirement.textClaimId])[0];
+        const evaluated = requirement.companyEvaluation && requirement.companyEvaluation !== 'NOT_EVALUATED';
         return <li key={requirement.id}>
           <strong>{labels.requirementCategory(requirement.category)}</strong>
           {requirement.blocker && <span className="initial-report-chip severity-blocker">Impedimento</span>}
           <span>: {text?.text ?? requirement.textClaimId}</span>
-          <small className="initial-report-meta"> · Evaluación de la empresa: {labels.companyEvaluation(requirement.companyEvaluation)}</small>
-          {requirement.requiredAction && <p>Acción requerida: {requirement.requiredAction}</p>}
+          {evaluated && <small className="initial-report-meta"> · Empresa: {labels.companyEvaluation(requirement.companyEvaluation)}</small>}
+          {requirement.requiredAction && <p>Qué hacer: {requirement.requiredAction}</p>}
         </li>;
       })}</ul>}
     </section>
 
     <section aria-label="Pendientes">
-      <h4>Pendientes ({report.openItems.length}{openCritical.length ? `, ${openCritical.length} críticos` : ''})</h4>
+      <h4>Qué falta ({report.openItems.length}{openCritical.length ? `, ${openCritical.length} críticos` : ''})</h4>
       {report.openItems.length === 0 ? <p>Sin pendientes registrados.</p> : <ul>{report.openItems.map(item => <li key={item.id}>
         <strong>{labels.openItemKind(item.kind)}{item.critical ? ' · crítico' : ''}:</strong> {item.description}
       </li>)}</ul>}
@@ -105,18 +105,38 @@ export function TenderInitialReport({ report }: { report: Agt002InitialReport })
       <ul>{report.contradictions.map(item => <li key={item.id}>
         <strong>{item.topic}</strong>
         <small className="initial-report-meta"> · Afecta: {labels.contradictionImpact(item.impact)}</small>
-        {item.requiredAction && <p>Acción requerida: {item.requiredAction}</p>}
+        {item.requiredAction && <p>Qué hacer: {item.requiredAction}</p>}
         <SourcedClaims report={report} ids={item.claimIds} />
       </li>)}</ul>
     </section>}
 
+    <section aria-label="Plazos">
+      <h4>Fechas</h4>
+      <ul>
+        {officialClose && <li><strong>Cierre oficial (CRM):</strong> {officialClose}</li>}
+        {report.deadlines.map(deadline => <li key={deadline.kind}>
+          <strong>{labels.deadlineKind(deadline.kind)}:</strong> {deadline.value ? formatDate(deadline.value) : 'no aparece en los documentos analizados'}
+          {deadline.value && <small className="initial-report-meta"> · {labels.certainty(deadline.certainty)}</small>}
+        </li>)}
+      </ul>
+    </section>
+
     <details className="initial-report-all-claims">
-      <summary>Todas las afirmaciones y sus fuentes ({report.claims.length})</summary>
+      <summary>Ver detalle: cobertura, afirmaciones y fuentes ({report.claims.length})</summary>
+      <section aria-label="Cobertura">
+        <h4>Cobertura de los documentos</h4>
+        <ul>{report.coverage.map(entry => <li key={entry.block}>
+          <strong>{labels.coverageBlock(entry.block)}:</strong> {labels.coverageStatus(entry.status)}{entry.critical ? ' (crítico)' : ''}
+          {entry.gapReason && <small className="initial-report-meta"> · {entry.gapReason}</small>}
+        </li>)}</ul>
+      </section>
+      <h4>Afirmaciones y fuentes</h4>
       <ul>{report.claims.map(claim => <ClaimItem key={claim.id} claim={claim} />)}</ul>
+      <small>Documentos analizados ({report.documents.length}): {report.documents.map(document => document.name ?? 'Documento sin nombre').join('; ')}</small>
     </details>
 
     <footer className="initial-report-foot">
-      <small>Documentos analizados ({report.documents.length}): {report.documents.map(document => document.name ?? 'Documento sin nombre').join('; ')}</small>
+      <small>{scope.length > 0 && <>Alcance: {scope.join(' · ')}. </>}Análisis generado por IA, no vinculante: la decisión GO/NO-GO es humana.</small>
     </footer>
   </article>;
 }
