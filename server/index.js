@@ -85,6 +85,7 @@ import { agt002CanonicalEnqueueBlockCode } from '../agt002-canonical-enqueue-gat
 import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../agt002-reanalysis-jobs.js';
 import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
+import { readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
 import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId } from '../esu-direct-crawl.js';
 import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
@@ -394,6 +395,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-reanalysis-status': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-initial-analysis-status': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
+  'GET /api/agt002-initial-analysis-report': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
@@ -4764,6 +4766,19 @@ app.get('/api/agt002-initial-analysis-status', async (req, res) => {
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
     res.set('Cache-Control', 'private, no-store');
     return res.json(await readAgt002InitialAnalysisStatus(database, opportunityId));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/agt002-initial-analysis-report', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json(await readAgt002InitialAnalysisReport(database, opportunityId));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

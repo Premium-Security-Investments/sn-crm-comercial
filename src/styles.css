@@ -522,3 +522,26 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 
 /* Licitaciones — cola transaccional de seguimiento */
 .tender-tracking-view{gap:16px}.tracking-header{display:flex;align-items:end;justify-content:space-between;gap:16px;padding:18px;border:1px solid #dbe7f5;border-radius:22px;background:linear-gradient(135deg,#f8fbff,#fff)}.tracking-header h2{margin:6px 0;color:#10213d}.tracking-header p{margin:0;color:#526173}.tracking-filters{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr)) auto;gap:12px;align-items:end;padding:14px;border:1px solid #dbe7f5;border-radius:18px;background:#f8fbff}.tracking-filters label,.tracking-form label{display:grid;gap:6px;color:#40516b;font-size:12px;font-weight:900}.tracking-filters select,.tracking-form input,.tracking-form select,.tracking-form textarea{width:100%;box-sizing:border-box}.tracking-queue{display:grid;gap:12px}.tracking-row{display:grid;gap:13px;border-left:5px solid #16a34a}.tracking-row.semaphore-amarillo{border-left-color:#d97706}.tracking-row.semaphore-rojo{border-left-color:#dc2626}.tracking-row-head{display:flex;justify-content:space-between;gap:12px}.tracking-row-head h3{margin:6px 0 3px;color:#10213d}.tracking-row-head p{margin:0;color:#526173}.tracking-metadata{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px;margin:0}.tracking-metadata>div{padding:10px;border-radius:12px;background:#f8fbff}.tracking-metadata dt{color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.tracking-metadata dd{margin:5px 0 0;color:#10213d;font-size:13px;font-weight:800;overflow-wrap:anywhere}.tracking-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;padding:14px;border:1px solid #bfdbfe;border-radius:16px;background:#eff6ff}.tracking-form textarea{min-height:70px;resize:vertical}.tracking-form .row-actions{grid-column:1/-1}.tracking-history{padding:12px 14px;border:1px solid #e2eaf5;border-radius:14px;background:#fff}.tracking-history h4{margin:0 0 8px;color:#10213d}.tracking-history ol{margin:0;padding-left:20px;color:#40516b}.tracking-history li+li{margin-top:6px}.opportunity-primary-filters{display:flex;flex-wrap:wrap;gap:6px;width:max-content;max-width:100%;align-self:flex-start;padding:4px;border:1px solid #dbe7f5;border-radius:999px;background:#f1f5fb}.opportunity-primary-filters button{flex:none;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid transparent;background:#fff;color:#40516b}.opportunity-primary-filters button[aria-pressed="true"]{background:#1b64f2;border-color:#1b64f2;color:#fff}.opportunity-priority-metadata{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}@media(max-width:760px){.tracking-header{align-items:flex-start;flex-direction:column}.tracking-filters,.tracking-form{grid-template-columns:1fr}.tracking-filters strong{padding:4px 0}.tracking-row-head{flex-direction:column}}
+
+/* AGT-002 INITIAL review report (read-only). */
+.initial-report { border: 1px solid var(--border, #d9dde3); border-radius: 12px; padding: 1rem 1.25rem; margin: 1rem 0; display: grid; gap: 1rem; background: var(--surface, #fff); }
+.initial-report h4 { margin: 0 0 .4rem; font-size: 1rem; }
+.initial-report ul { margin: 0; padding-left: 1.1rem; display: grid; gap: .45rem; }
+.initial-report p { margin: .25rem 0; }
+.initial-report-head { display: grid; gap: .15rem; }
+.initial-report-head strong { font-size: 1.35rem; }
+.initial-report-meta { opacity: .75; }
+.initial-report-limits ul { margin-top: .35rem; }
+.initial-report-chip { display: inline-block; font-size: .75rem; font-weight: 600; padding: .05rem .5rem; border-radius: 999px; margin-right: .35rem; background: #eef1f5; color: #28313d; }
+.initial-report-chip.severity-critical, .initial-report-chip.severity-blocker { background: #fde3e1; color: #8a1f17; }
+.initial-report-chip.severity-high { background: #fdebd6; color: #8a4a0b; }
+.initial-report-chip.severity-medium { background: #fdf6cf; color: #6b5a08; }
+.initial-report-sources { list-style: none; padding-left: .5rem; }
+.initial-report-support summary, .initial-report-all-claims summary { cursor: pointer; font-size: .9rem; }
+.initial-report-foot { opacity: .8; }
+@media (prefers-color-scheme: dark) {
+  .initial-report-chip { background: #2a313b; color: #e6ebf2; }
+  .initial-report-chip.severity-critical, .initial-report-chip.severity-blocker { background: #4a1f1c; color: #ffd6d2; }
+  .initial-report-chip.severity-high { background: #4a3217; color: #ffe2bd; }
+  .initial-report-chip.severity-medium { background: #433c12; color: #fff1a8; }
+}
