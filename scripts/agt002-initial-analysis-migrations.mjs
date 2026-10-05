@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 
-export const MIGRATION_ORDER = Object.freeze(['099', '100', '101', '102', '103', '104']);
+export const MIGRATION_ORDER = Object.freeze(['099', '100', '101', '102', '103', '104', '105']);
 export const ROLLBACK_ORDER = Object.freeze([...MIGRATION_ORDER].reverse());
 
 const FILES = Object.freeze({
@@ -13,6 +13,7 @@ const FILES = Object.freeze({
   '102': '102_agt002_initial_analysis_canonical_persistence.sql',
   '103': '103_agt002_initial_analysis_atomic_admission.sql',
   '104': '104_agt002_initial_analysis_server_owned_execution.sql',
+  '105': '105_agt002_initial_admission_digest_schema_qualification.sql',
 });
 
 const TABLES = Object.freeze([
@@ -67,6 +68,11 @@ const MARKERS = Object.freeze({
   m104: `(exists (select 1 from pg_proc p where p.oid=to_regprocedure('public.${SERVICE_FUNCTIONS[12]}')
     and pg_get_functiondef(p.oid) like '%analysisRunId%'
     and pg_get_functiondef(p.oid) like '%sourceBatchIndexes%'))`,
+  // 105 is detected by the schema-qualified pgcrypto call: unqualified digest() cannot resolve under
+  // this function's `search_path = public, pg_temp`, which is the defect 105 closes.
+  m105: `(exists (select 1 from pg_proc p where p.oid=to_regprocedure('public.${SERVICE_FUNCTIONS[12]}')
+    and pg_get_functiondef(p.oid) like '%extensions.digest%'
+    and pg_get_functiondef(p.oid) not like '%encode(digest(%'))`,
 });
 
 const tableList = TABLES.map(q).join(', ');
@@ -97,6 +103,7 @@ select
   ${MARKERS.m102} as m102,
   ${MARKERS.m103} as m103,
   ${MARKERS.m104} as m104,
+  ${MARKERS.m105} as m105,
   (select count(*)::int from pg_class c
     join pg_namespace n on n.oid=c.relnamespace
     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r',c.relowner))) a
