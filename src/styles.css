@@ -545,3 +545,16 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .initial-report-sources { list-style: none; padding-left: .5rem; }
 .initial-report-support summary, .initial-report-all-claims summary { cursor: pointer; font-size: .9rem; color: #1d4ed8; }
 .initial-report-foot { color: var(--muted, #5d6b82); border-top: 1px solid var(--line, #e2e8f0); padding-top: .75rem; }
+
+/* Compact opportunity summary and INITIAL decision summary. */
+.tender-summary-compact { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 2rem; }
+.tender-summary-close { display: grid; gap: .1rem; padding: .75rem 1rem; border: 1px solid var(--line, #e2e8f0); border-radius: 12px; background: var(--card, #fff); min-width: 12rem; }
+.tender-summary-close small { text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--muted, #5d6b82); }
+.tender-summary-close strong { font-size: 1.3rem; color: var(--text, #172033); }
+.tender-summary-close span { font-weight: 600; color: #b45309; }
+.tender-summary-facts { margin: 0; font-size: 1.05rem; color: var(--text, #172033); }
+.initial-decision-summary { border: 1px solid var(--line, #e2e8f0); border-radius: 14px; padding: 1rem 1.25rem; margin-bottom: 1rem; display: grid; gap: .35rem; background: var(--card, #fff); color: var(--text, #172033); }
+.initial-decision-summary > small:first-child { text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--muted, #5d6b82); }
+.initial-decision-summary strong { font-size: 1.35rem; }
+.initial-decision-summary h4 { margin: .4rem 0 .2rem; font-size: 1rem; }
+.initial-decision-summary ul { margin: 0; padding-left: 1.1rem; }

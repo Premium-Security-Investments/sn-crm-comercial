@@ -98,9 +98,13 @@ test('the report component renders the recommendation, the limits and the source
   const html = renderToStaticMarkup(createElement(TenderInitialReport, { report }));
   assert.match(html, /Reporte del análisis inicial/);
   assert.match(html, new RegExp(initialReportLabels.recommendation(report.recommendation.kind)));
-  assert.match(html, /No hay perfil de empresa autorizado/);
-  assert.match(html, /No se ejecutó ninguna de las verificaciones/);
-  assert.match(html, /exclusivamente humana/);
+  assert.match(html, /Alcance: sin perfil de empresa/);
+  assert.match(html, /sin las verificaciones de la metodología/);
+  assert.match(html, /la decisión GO\/NO-GO es humana/);
+  // The verdict opens the report and the scope closes it.
+  assert.ok(html.indexOf('Análisis inicial') < html.indexOf('Lo que hay que saber'));
+  assert.ok(html.indexOf('Lo que hay que saber') < html.indexOf('Alcance:'));
+  assert.doesNotMatch(html, /Qué no evalúa este análisis/);
   for (const finding of report.findings) assert.match(html, new RegExp(finding.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').slice(0, 30)));
   assert.match(html, /(pliego|anexo)\.pdf/);
   assert.doesNotMatch(html, /[0-9a-f]{64}/);
@@ -113,5 +117,65 @@ test('the CRM asks for the report only when the INITIAL status is ready, once pe
   assert.match(main, /projection\.state !== 'ready' \|\| !projection\.runId/);
   assert.match(main, /initialReportRunIdRef\.current === ?|knownRunId === projection\.runId/);
   assert.match(main, /initialReport=\{initialReport\}/);
-  assert.match(section, /initialAnalysis\?\.state === 'ready' && initialReport && <TenderInitialReport/);
+  assert.match(section, /initialAnalysis\.state === 'ready' && initialReport && <TenderInitialReport report=\{initialReport\} officialCloseDate=/);
+});
+
+test('with an INITIAL analysis the legacy-engine blocks are not rendered, and without it the legacy view stays', () => {
+  const section = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
+  const start = section.indexOf('if (initialFirst && initialAnalysis) {');
+  assert.ok(start > 0);
+  const initialBranch = section.slice(start, section.indexOf('\n  }\n', start));
+  for (const legacy of ['Análisis pendiente', 'Recomendación preliminar', 'TenderGovernedDocumentWorkset', 'Análisis integral pausado', 'tenderAnalysisProducerDisclosure']) {
+    assert.equal(initialBranch.includes(legacy), false, `${legacy} must not render next to the INITIAL analysis`);
+  }
+  assert.match(section.slice(start + initialBranch.length), /TenderGovernedDocumentWorkset/, 'the legacy view is unchanged for opportunities without INITIAL');
+});
+
+test('the scope line merges server limits with the model limitations without repeating them', async () => {
+  const { initialReportScope } = await load('../src/tenders/components/TenderInitialReport.tsx', { jsx: true });
+  const report = serverReport();
+  report.recommendation.limitations = [
+    'Sin perfil de empresa autorizado; no se evalúa ajuste a la empresa.',
+    'La decisión GO/NO-GO corresponde a quien tenga autoridad y no se toma aquí.',
+    'El análisis se basa solo en las notas de lote de 7 documentos.',
+  ];
+  const scope = initialReportScope(report);
+  assert.equal(scope.filter(item => /perfil de empresa/i.test(item)).length, 1);
+  assert.equal(scope.some(item => /GO\/NO-GO/.test(item)), false);
+  assert.ok(scope.includes('El análisis se basa solo en las notas de lote de 7 documentos'));
+});
+
+test('the decision tab shows the INITIAL verdict and its blockers instead of the legacy brief', async () => {
+  const { TenderInitialDecisionSummary } = await load('../src/tenders/components/TenderInitialDecisionSummary.tsx', { jsx: true });
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { createElement } = await import('react');
+  const report = serverReport();
+  report.findings = [{ id: 'FND-1', severity: 'HIGH', category: 'Experiencia', title: 'Falta acreditar 100 cámaras', impact: 'Sin esto no habilita.', blocker: true, claimIds: [] }];
+  const html = renderToStaticMarkup(createElement(TenderInitialDecisionSummary, { report }));
+  assert.match(html, /Resultado del análisis inicial/);
+  assert.match(html, new RegExp(initialReportLabels.recommendation(report.recommendation.kind)));
+  assert.match(html, /Lo que hoy impide avanzar/);
+  assert.match(html, /href="#tender-analysis"/);
+  const experience = readFileSync(new URL('../src/tenders/components/TenderDecisionExperience.tsx', import.meta.url), 'utf8');
+  assert.match(experience, /initialReport\s*\?\s*<TenderInitialDecisionSummary/);
+});
+
+test('the section chips read the INITIAL analysis: "Análisis inicial listo" and a pending human decision', async () => {
+  const { resolveTenderDetailIndicators } = await load('../src/tenders/detailNavigationState.ts');
+  const ready = value => ({ phase: 'ready', value });
+  const indicators = resolveTenderDetailIndicators({
+    documents: ready({ currentDocumentCount: 19, importError: null }),
+    analysis: ready(null),
+    decision: ready(null),
+    preparation: ready({ preparationStatus: null, humanPendingCount: 0 }),
+    followUp: { tone: 'unknown', label: '-' },
+    initialAnalysisReady: true,
+  });
+  assert.equal(indicators['tender-analysis'].label, 'Análisis inicial listo');
+  assert.equal(indicators['tender-decision'].label, 'Decisión humana pendiente');
+  const legacy = resolveTenderDetailIndicators({
+    documents: ready({ currentDocumentCount: 19, importError: null }), analysis: ready(null), decision: ready(null),
+    preparation: ready({ preparationStatus: null, humanPendingCount: 0 }), followUp: { tone: 'unknown', label: '-' },
+  });
+  assert.equal(legacy['tender-analysis'].label, 'Sin análisis vigente');
 });

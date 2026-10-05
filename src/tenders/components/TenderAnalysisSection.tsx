@@ -48,6 +48,7 @@ type TenderAnalysisSectionProps = {
   uploadToSignedUrl?: (path: string, token: string, file: Blob) => Promise<{ error: unknown | null }>;
   initialAnalysis?: Agt002InitialAnalysisProjection | null;
   initialReport?: Agt002InitialReport | null;
+  officialCloseDate?: string | null;
 };
 
 function EvidenceList({ items, empty }: { items: unknown; empty: string }) {
@@ -65,7 +66,7 @@ function normalizeQuestion(item: TenderAnalysisFinding, index: number): Normaliz
   };
 }
 
-export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onFreezeGovernedWorkset, onUploadGovernedFiles, statusText = '', statusTone = 'status', runState, analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl, initialAnalysis = null, initialReport = null }: TenderAnalysisSectionProps) {
+export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onFreezeGovernedWorkset, onUploadGovernedFiles, statusText = '', statusTone = 'status', runState, analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl, initialAnalysis = null, initialReport = null, officialCloseDate = null }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
@@ -105,6 +106,28 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const processingPresentation = deriveTenderProcessingPresentation(processingStatus, analysis);
   const state = !hasDocuments ? 'Pendiente' : failed ? 'Análisis fallido' : stale ? 'Análisis desactualizado' : !analysis ? 'Pendiente' : 'Análisis vigente';
   const unavailable = tenderBriefUnavailableCopy();
+  // Once an INITIAL analysis exists for the opportunity it is the only analysis shown here: the legacy-engine blocks
+  // (badge, "Análisis pendiente", preliminary brief, V3 blocks, the governed workset that queues the legacy reanalysis)
+  // would render empty or contradict it. Opportunities without INITIAL keep the legacy view unchanged.
+  const initialFirst = Boolean(initialAnalysis && initialAnalysis.state !== 'pending');
+  if (initialFirst && initialAnalysis) {
+    return <div className="tender-analysis-section tender-detail-anchor is-initial-first">
+      {initialAnalysis.state !== 'ready' && <section className={`notice agt002-initial-state state-${initialAnalysis.state}`} role={initialAnalysis.state === 'failed' ? 'alert' : 'status'} aria-label="Estado del análisis inicial">
+        <strong>Análisis inicial: {agt002InitialAnalysisStateLabel(initialAnalysis.state)}</strong>
+        <span>{initialAnalysis.action.message}</span>
+      </section>}
+      {initialAnalysis.state === 'ready' && !initialReport && <section className="notice agt002-initial-state state-ready" role="status" aria-label="Estado del análisis inicial">
+        <strong>Análisis inicial: {agt002InitialAnalysisStateLabel(initialAnalysis.state)}</strong>
+        <span>Cargando el reporte…</span>
+      </section>}
+      {initialAnalysis.state === 'ready' && initialReport && <TenderInitialReport report={initialReport} officialCloseDate={officialCloseDate} />}
+      {processingPresentation.visible && <div className={processingPresentation.tone === 'error' ? 'error' : 'notice'} role={processingPresentation.tone === 'error' ? 'alert' : 'status'}>
+        <p>{processingPresentation.message}</p>
+        {processingPresentation.showRetry && <button type="button" disabled={busy} onClick={onRetryProcessing}>Reintentar</button>}
+      </div>}
+      {statusText && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
+    </div>;
+  }
   return <div className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`}>
     {initialAnalysis && <section className={`notice agt002-initial-state state-${initialAnalysis.state}`} role={initialAnalysis.state === 'failed' ? 'alert' : 'status'} aria-label="Estado del análisis inicial">
       <strong>INITIAL: {agt002InitialAnalysisStateLabel(initialAnalysis.state)}</strong>
