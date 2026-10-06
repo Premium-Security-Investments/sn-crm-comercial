@@ -1,0 +1,31 @@
+[Unit]
+Description=SIIO AGT-002 automatic first analysis after a conversion (documents, then INITIAL admission)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=psi-agt002
+Group=psi-agt002
+# Release path is set by the deploy script drop-in (10-release.conf).
+WorkingDirectory=/opt/psi-comercial/app
+EnvironmentFile=/etc/psi-agt002-initial-analysis/env
+EnvironmentFile=/etc/tender-worker-scheduler/env
+# Owner decision 2026-10-06: conversions from this instant on are analyzed automatically, at most 5 per Bogotá day.
+Environment=AGT002_AUTO_INITIAL_SINCE=2026-10-06T17:00:00Z
+Environment=AGT002_AUTO_INITIAL_DAILY_CAP=5
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-auto-initial/run-agt002-auto-initial.mjs
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
