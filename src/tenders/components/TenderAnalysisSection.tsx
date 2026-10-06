@@ -115,7 +115,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   // retired legacy engine's controls. Opportunities that do hold a legacy analysis keep their legacy view unchanged.
   if (!initialFirst && !analysis && initialAnalysis?.state === 'pending') {
     return <div className="tender-analysis-section tender-detail-anchor is-pre-analysis">
-      <TenderPreAnalysisPanel documentsCount={documents.length} statusText={statusText} statusTone={statusTone} />
+      <TenderPreAnalysisPanel documentsCount={documents.length} processing={processingStatus} statusText={statusText} statusTone={statusTone} />
     </div>;
   }
   if (initialFirst && initialAnalysis) {
@@ -129,10 +129,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
         <span>Cargando el reporte…</span>
       </section>}
       {initialAnalysis.state === 'ready' && initialReport && <TenderInitialReport report={initialReport} officialCloseDate={officialCloseDate} />}
-      {processingPresentation.visible && <div className={processingPresentation.tone === 'error' ? 'error' : 'notice'} role={processingPresentation.tone === 'error' ? 'alert' : 'status'}>
-        <p>{processingPresentation.message}</p>
-        {processingPresentation.showRetry && <button type="button" disabled={busy} onClick={onRetryProcessing}>Reintentar</button>}
-      </div>}
+      {/* With an INITIAL analysis the legacy processing job's notices ("congele el paquete", "procesando") no longer apply. */}
       {statusText && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
     </div>;
   }

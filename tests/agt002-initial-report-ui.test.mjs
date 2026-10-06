@@ -296,8 +296,20 @@ test('a new opportunity shows where it stands and the next step, never the retir
   const loaded = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, { documentsCount: 35 }));
   assert.match(loaded, /35 cargados/);
   for (const html of [empty, loaded]) {
-    assert.doesNotMatch(html, /INITIAL|AGT-002|procesando|Congelar|pausad/i);
+    const visibleText = html.replace(/<[^>]+>/g, ' ');
+    assert.doesNotMatch(visibleText, /INITIAL|AGT-002|procesando|Congelar|pausad/i);
   }
+  const downloading = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, {
+    documentsCount: 3, processing: { status: 'importing_documents', counts: { discovered: 35, processed: 12, imported: 12, unchanged: 0, failed: 0 } },
+  }));
+  assert.match(downloading, /Bajando los documentos de SECOP/);
+  assert.match(downloading, /12 de 35/);
+  const ready = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, { documentsCount: 35, processing: { status: 'awaiting_analysis_authorization', counts: { discovered: 35, processed: 35, imported: 35, unchanged: 0, failed: 0 } } }));
+  assert.match(ready, /el análisis arranca en unos minutos/);
+  assert.doesNotMatch(ready.replace(/<[^>]+>/g, ' '), /congele|Congelar/i);
+  const stopped = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, { documentsCount: 0, processing: { status: 'needs_attention', last_error_message: 'SECOP no respondió' } }));
+  assert.match(stopped, /Se detuvo antes de empezar/);
+  assert.match(stopped, /SECOP no respondió/);
   const section = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
   assert.match(section, /!initialFirst && !analysis && initialAnalysis\?\.state === 'pending'[\s\S]*<TenderPreAnalysisPanel/);
   assert.doesNotMatch(section, /<strong>INITIAL:/, 'the internal name never labels a visible state');
