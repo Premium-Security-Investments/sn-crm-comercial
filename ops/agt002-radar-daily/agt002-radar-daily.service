@@ -1,0 +1,13 @@
+[Unit]
+Description=AGT-002 Radar daily chain: import -> fit scan -> official reconciliation -> Discord Top 5 text
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Each step is its own hardened oneshot unit; `systemctl start` blocks until it finishes and a failure stops the chain.
+ExecStart=/bin/systemctl start agt002-radar-import-daily.service
+ExecStart=/bin/systemctl start agt002-radar-scan.service
+ExecStart=/bin/systemctl start agt002-radar-reconciliation.service
+ExecStart=/bin/systemctl start agt002-radar-top5.service
+TimeoutStartSec=60min

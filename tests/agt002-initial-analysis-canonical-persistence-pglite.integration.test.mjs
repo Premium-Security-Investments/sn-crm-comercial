@@ -46,6 +46,7 @@ const migration105 = () => migrationSource('106_agt002_initial_v2_aggregate_sche
 const migration106 = () => migrationSource('107_agt002_company_profile_snapshots.sql');
 // 108: REANALYSIS successor path.
 const migration107 = () => migrationSource('108_agt002_initial_reanalysis_succession.sql');
+const migration108 = () => migrationSource('109_agt002_radar_import_requests.sql');
 const rollback103 = () => strip(readFileSync(new URL('../supabase/rollbacks/104_agt002_initial_analysis_server_owned_execution_rollback.sql', import.meta.url), 'utf8'));
 const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/103_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
 
@@ -197,6 +198,7 @@ test('INITIAL release runner recognizes the real 099-108 chain and its security 
     await pg.exec(migration103());
     await pg.exec(migration104());
     await pg.exec(migration107());
+    await pg.exec(migration108());
     const result = await verifyInitialMigrationChain(async sql => (await pg.query(sql)).rows);
     assert.equal(result.status, 'applied');
     assert.deepEqual(result.migrations, {
@@ -210,6 +212,7 @@ test('INITIAL release runner recognizes the real 099-108 chain and its security 
       '106': true,
       '107': true,
       '108': true,
+      '109': true,
     });
     assert.equal(result.unsafe_grants, 0);
     assert.equal(result.rls_missing, 0);

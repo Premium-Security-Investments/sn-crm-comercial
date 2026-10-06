@@ -11,6 +11,7 @@ import { planRadarPhaseIdentitySync, applyOfficialSourceLink } from '../tender-p
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
 import { fetchTenderRadarSourceRows } from '../tender-radar-source-fetch.js';
+import { DIRECT_SERVICE_REASON as RADAR_DEEP_DIRECT_SERVICE_REASON, RADAR_DEEP_CATEGORY_FIELD, RADAR_DEEP_CHUNK_DAYS, RADAR_DEEP_MAX_ROWS_PER_WINDOW, RADAR_DEEP_PAGE_LIMIT, evaluateElectronicSecurityPath, isHighValueVigilanceTender, radarDeepKeywordWhere, radarDeepUnspscFamilyWhere, radarDeepWindows } from '../tender-radar-deep-search.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
 import { createTenderProcessingDrain } from '../tender-processing-drain.js';
 import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
@@ -1445,6 +1446,67 @@ function keywordWhere(fields) {
   for (const field of fields) for (const term of terms) clauses.push(`lower(${field}) like '%${term.toLowerCase()}%'`);
   return clauses.join(' OR ');
 }
+// Deep daily import (moved from Hermes, owner decision 2026-10-06): Socrata offset pagination in date windows, the
+// keyword + UNSPSC filter plus a dedicated UNSPSC-family query, and two extra inclusion paths ("seguridad electrónica
+// ofertable" and "vigilancia ≥ $1.000 M"). The manual "Actualizar" keeps the light query below.
+async function fetchSecopPage(source, cfg, where, offset, limit) {
+  const params = new URLSearchParams({ '$select': cfg.select, '$where': where, '$order': `${cfg.dateField} DESC`, '$limit': String(limit), '$offset': String(offset) });
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar-Daily/1.0' } });
+    if (response.ok) return response.json();
+    if (attempt >= 3 || ![429, 500, 502, 503, 504].includes(response.status)) throw new Error(`${source} respondió ${response.status}`);
+    await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+  }
+}
+async function fetchSecopPaged(source, cfg, where, maxRows) {
+  const rows = [];
+  for (let offset = 0; offset < maxRows; offset += RADAR_DEEP_PAGE_LIMIT) {
+    const page = await fetchSecopPage(source, cfg, where, offset, Math.min(RADAR_DEEP_PAGE_LIMIT, maxRows - offset));
+    rows.push(...page);
+    if (page.length < RADAR_DEEP_PAGE_LIMIT) break;
+  }
+  return rows;
+}
+async function fetchSecopSourceDeep(source, cfg, today = new Date()) {
+  const categoryField = RADAR_DEEP_CATEGORY_FIELD[source] || null;
+  const windows = radarDeepWindows(today, { chunkDays: RADAR_DEEP_CHUNK_DAYS[source] || 0 });
+  const keywordFilter = radarDeepKeywordWhere(cfg.nameFields, categoryField);
+  const familyFilter = radarDeepUnspscFamilyWhere(categoryField);
+  const perWindow = RADAR_DEEP_MAX_ROWS_PER_WINDOW;
+  const rows = [];
+  for (const window of windows) {
+    const dateFilter = `${cfg.dateField} >= '${window.start}T00:00:00'` + (window.end ? ` AND ${cfg.dateField} < '${window.end}T00:00:00'` : '');
+    rows.push(...await fetchSecopPaged(source, cfg, `${dateFilter} AND ${keywordFilter}`, perWindow));
+    if (familyFilter) rows.push(...await fetchSecopPaged(source, cfg, `${dateFilter} AND ${familyFilter}`, perWindow));
+  }
+  const seen = new Set();
+  const tenders = [];
+  for (const row of rows) {
+    if (isEsuEntityRow(row, source)) continue;
+    const scored = scoreTender(row, cfg.nameFields);
+    let included = hasTenderServiceSignal(scored);
+    if (!included) {
+      const value = tenderMoney(source === 'SECOP II' ? row.precio_base : row.cuantia_proceso);
+      const electronic = evaluateElectronicSecurityPath(row, value);
+      if (electronic.ok) {
+        scored.score = Math.max(scored.score, electronic.score);
+        scored.reasons = [...new Set([RADAR_DEEP_DIRECT_SERVICE_REASON, ...electronic.reasons, ...(scored.reasons || [])])].slice(0, 7);
+        scored.risks = [...new Set([...(scored.risks || []), ...electronic.risks])].slice(0, 5);
+        included = true;
+      }
+    }
+    let tender = normalizeTender(row, source, scored);
+    if (!included && isHighValueVigilanceTender(tender)) {
+      tender = normalizeTender(row, source, { ...scored, reasons: [...new Set([RADAR_DEEP_DIRECT_SERVICE_REASON, ...(scored.reasons || []), 'vigilancia de $1.000 millones o más'])].slice(0, 7) });
+      included = true;
+    }
+    if (!included || (tender.days !== null && tender.days !== undefined && tender.days < 0)) continue;
+    if (seen.has(tender.stable_key)) continue;
+    seen.add(tender.stable_key);
+    tenders.push(tender);
+  }
+  return tenders;
+}
 async function fetchSecopSource(source, cfg) {
   const start = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10) + 'T00:00:00';
   const params = new URLSearchParams({ '$select': cfg.select, '$where': `${cfg.dateField} >= '${start}' AND (${keywordWhere(cfg.nameFields)})`, '$order': `${cfg.dateField} DESC`, '$limit': '120' });
@@ -1547,9 +1609,9 @@ async function fetchEsuDatosGovProcesses() {
   }
   return candidates.sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
 }
-async function fetchPublicTenderRadar() {
+export async function fetchPublicTenderRadar({ deep = false } = {}) {
   const tasks = [
-    ...Object.entries(tenderSources).map(([source, cfg]) => ({ source, run: () => fetchSecopSource(source, cfg) })),
+    ...Object.entries(tenderSources).map(([source, cfg]) => ({ source, run: () => (deep ? fetchSecopSourceDeep(source, cfg) : fetchSecopSource(source, cfg)) })),
     { source: 'TVEC', run: fetchTvecEvents },
     { source: 'ESU Contratación directo', run: fetchEsuProcesses },
     { source: 'ESU vía datos.gov.co', run: fetchEsuDatosGovProcesses }
@@ -1576,6 +1638,11 @@ async function fetchPublicTenderRadar() {
       diagnostics.push({ source, status: 'error', count: 0, pages_read: 1, records_read: 0, message });
     }
   });
+  // The daily import is fail-closed on SECOP (as the Hermes export was): a partial SECOP read never refreshes the Radar.
+  if (deep) {
+    const failedSecop = diagnostics.filter(d => Object.hasOwn(tenderSources, d.source) && d.status !== 'ok');
+    if (failedSecop.length) throw new Error(`Importación diaria cancelada: ${failedSecop.map(d => d.message).join(' · ')}`);
+  }
   const seen = new Set();
   const persistenceTenders = batches.flat().filter(t => {
     const key = t.stable_key || stableTenderKey(t);
@@ -1699,7 +1766,7 @@ export function compareTenderRadarRows(a, b) {
     || tenderRadarUrgency(a) - tenderRadarUrgency(b)
     || b.score - a.score;
 }
-async function readPersistedTenderRadar(database) {
+export async function readPersistedTenderRadar(database) {
   const latestRunResult = await database.from('psi_tender_radar_runs').select('run_at,mode').order('run_at', { ascending: false }).limit(1).maybeSingle();
   if (latestRunResult.error && !isMissingTenderTable(latestRunResult.error)) throw latestRunResult.error;
   const latestRunAt = latestRunResult.data?.run_at || null;
@@ -1823,7 +1890,7 @@ function buildAgt002RadarRunSnapshotReceiptFromRun({ runId, finishedAt, diagnost
     }),
   };
 }
-async function persistTenderRadar(database, actorProfile, mode = 'manual') {
+export async function persistTenderRadar(database, actorProfile, mode = 'manual', { deep = false } = {}) {
   // run_id se genera antes de tocar el pipeline real para que, incluso si la corrida resulta
   // fatal, el recibo fallido pueda referenciarla de forma estable e idempotente (Corte 2).
   const radarRunId = randomUUID();
@@ -1833,7 +1900,7 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   // 'failed' válido en vez de reventar al armar el recibo del propio fallo.
   let diagnostics = [];
   try {
-  const fetchedPayload = await fetchPublicTenderRadar();
+  const fetchedPayload = await fetchPublicTenderRadar({ deep });
   const fetched = fetchedPayload.tenders;
   const persistenceTenders = fetchedPayload.persistenceTenders || fetched;
   diagnostics = fetchedPayload.diagnostics;
@@ -2347,12 +2414,39 @@ app.post('/api/tender-company-profile-upload', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+// The "Sincronizar fuentes oficiales" button requests the SAME full import as the daily one (owner decision
+// 2026-10-06). It takes ~5 minutes, so the host job runs it: the request is recorded and the current Radar returned.
+// Before migration 109 exists the button keeps the previous light refresh.
+function isMissingRadarImportRequestsTable(error) {
+  const msg = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+  return msg.includes('42p01') || msg.includes('pgrst205') || msg.includes('psi_agt002_radar_import_requests');
+}
+async function requestTenderRadarFullImport(database, currentProfile) {
+  const readOpen = () => database.from('psi_agt002_radar_import_requests').select('id,status,requested_at').in('status', ['pending', 'running']).maybeSingle();
+  const open = await readOpen();
+  if (open.error) {
+    if (isMissingRadarImportRequestsTable(open.error)) return null;
+    throw open.error;
+  }
+  let request = open.data;
+  if (!request) {
+    const inserted = await database.from('psi_agt002_radar_import_requests').insert({ requested_by: currentProfile?.id || null }).select('id,status,requested_at').single();
+    if (inserted.error && inserted.error.code !== '23505') throw inserted.error;
+    request = inserted.data || (await readOpen()).data;
+  }
+  const persisted = await readPersistedTenderRadar(database);
+  return { ...persisted, sync_request: { id: request?.id || null, status: request?.status || 'pending', requested_at: request?.requested_at || null, already_open: Boolean(open.data) } };
+}
+async function tenderRadarManualSync(database, currentProfile) {
+  return (await requestTenderRadarFullImport(database, currentProfile)) || persistTenderRadar(database, currentProfile, 'manual');
+}
+
 app.post('/api/tenders/refresh', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
     const database = requireDb();
-    res.json(await persistTenderRadar(database, currentProfile, 'manual'));
+    res.json(await tenderRadarManualSync(database, currentProfile));
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -2382,7 +2476,7 @@ app.post('/api/tender-refresh', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
     const database = requireDb();
-    res.json(await persistTenderRadar(database, currentProfile, 'manual'));
+    res.json(await tenderRadarManualSync(database, currentProfile));
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -6292,7 +6386,8 @@ const distPath = path.join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
 app.use((_req, res) => res.sendFile(path.join(distPath, 'index.html')));
 
-if (!process.env.VERCEL) {
+// CRM_SKIP_LISTEN: host jobs (the daily Radar import) import this module for its functions, never to serve HTTP.
+if (!process.env.VERCEL && process.env.CRM_SKIP_LISTEN !== '1') {
   const port = process.env.PORT || 4173;
   app.listen(port, () => console.log(`CRM Comercial SN escuchando en http://localhost:${port}`));
 }

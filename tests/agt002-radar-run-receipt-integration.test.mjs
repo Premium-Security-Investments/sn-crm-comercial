@@ -13,7 +13,8 @@ const apiSrc = readFileSync(new URL('../api/[...path].js', import.meta.url), 'ut
 function extractFunction(src, name) {
   const headIdx = src.indexOf(`async function ${name}(`);
   assert.ok(headIdx !== -1, `${name} not found`);
-  const bodyStart = src.indexOf('{', headIdx);
+  // The body opens after the parameter list, which may itself contain `{ … }` option destructuring.
+  const bodyStart = src.indexOf(') {', headIdx) + 2;
   let depth = 1;
   let i = bodyStart + 1;
   for (; i < src.length && depth > 0; i += 1) {
@@ -47,8 +48,8 @@ assert.ok(catchIdx !== -1 && catchIdx > tryIdx, 'persistTenderRadar debe tener u
 const beforeTry = serverPersist.slice(0, tryIdx);
 const tryBody = serverPersist.slice(tryIdx, catchIdx);
 assert.match(beforeTry, /let diagnostics = \[\];/, 'diagnostics debe inicializarse en [] antes del try (default seguro si el fetch nunca llega a reportar nada)');
-assert.doesNotMatch(beforeTry, /await fetchPublicTenderRadar\(\)/, 'fetchPublicTenderRadar no debe llamarse antes del try');
-assert.match(tryBody, /await fetchPublicTenderRadar\(\)/, 'fetchPublicTenderRadar debe quedar dentro del try/catch');
+assert.doesNotMatch(beforeTry, /await fetchPublicTenderRadar\((\{ deep \})?\)/, 'fetchPublicTenderRadar no debe llamarse antes del try');
+assert.match(tryBody, /await fetchPublicTenderRadar\((\{ deep \})?\)/, 'fetchPublicTenderRadar debe quedar dentro del try/catch');
 assert.match(tryBody, /await tenderTableAvailable\(database\)/, 'tenderTableAvailable debe quedar dentro del try/catch');
 const catchBody = serverPersist.slice(catchIdx);
 assert.match(catchBody, /buildAgt002RadarRunReceipt\(\{[\s\S]*?fatalError,?\s*\}\)/, 'el catch debe construir el recibo fatal con fatalError');

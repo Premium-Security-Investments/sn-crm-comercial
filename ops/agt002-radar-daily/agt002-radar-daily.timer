@@ -1,0 +1,9 @@
+[Unit]
+Description=AGT-002 Radar daily chain, Monday to Friday 8:00 a.m. Bogotá (13:00 UTC)
+
+[Timer]
+OnCalendar=Mon..Fri 13:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
