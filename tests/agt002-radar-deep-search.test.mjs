@@ -61,3 +61,14 @@ test('the CRM import wires the deep search only for the daily/full import, fail-
     assert.match(source, /process\.env\.CRM_SKIP_LISTEN !== '1'/);
   }
 });
+
+test('the full import never sends one oversized request: existing-key lookups in groups of 200, upserts in batches of 100', () => {
+  for (const path of ['../api/[...path].js', '../server/index.js']) {
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.match(source, /\.in\('stable_key', fetchedKeys\.slice\(index, index \+ 200\)\)/);
+    assert.doesNotMatch(source, /\.in\('stable_key', fetchedKeys\)/);
+    assert.match(source, /upsert\(rows\.slice\(index, index \+ 100\), \{ onConflict: 'stable_key', defaultToNull: false \}\)/);
+  }
+  const runner = readFileSync(new URL('../ops/agt002-radar-daily/run-agt002-radar-import.mjs', import.meta.url), 'utf8');
+  assert.match(runner, /deadline: String\(t\.deadline \|\| t\.deadline_at \|\| ''\)\.slice\(0, 10\)/, 'the Discord message shows a day, not a timestamp');
+});
