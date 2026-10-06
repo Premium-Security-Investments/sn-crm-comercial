@@ -22,6 +22,8 @@ const MANIFEST_KEYS = new Set([
   'profile_snapshot_hash',
   'documents',
   'attempt',
+  'analysis_kind',
+  'source_analysis_run_id',
 ]);
 
 function requireUuid(value, label) {
@@ -56,6 +58,15 @@ export function parseAgt002InitialAnalysisAdmissionManifest(source) {
   if (value.attempt !== undefined && (!Number.isInteger(value.attempt) || value.attempt < 2)) {
     throw new Error('attempt debe ser un entero mayor o igual a 2 cuando se indica.');
   }
+  // REANALYSIS (migration 108): both keys travel together; INITIAL manifests carry neither.
+  const analysisKind = value.analysis_kind ?? 'INITIAL';
+  if (analysisKind !== 'INITIAL' && analysisKind !== 'REANALYSIS') throw new Error('analysis_kind debe ser INITIAL o REANALYSIS.');
+  const sourceAnalysisRunId = analysisKind === 'REANALYSIS'
+    ? requireUuid(value.source_analysis_run_id, 'source_analysis_run_id')
+    : null;
+  if (analysisKind === 'INITIAL' && value.source_analysis_run_id != null) {
+    throw new Error('Un manifiesto INITIAL no lleva source_analysis_run_id.');
+  }
   const normalizedScope = normalizeAgt002WorkflowScopeSnapshot({
     scope: value.scope,
     profileSnapshotId: value.profile_snapshot_id,
@@ -69,6 +80,7 @@ export function parseAgt002InitialAnalysisAdmissionManifest(source) {
     expiresAt: value.expires_at,
     policyVersion: value.policy_version.trim(),
     attempt: value.attempt ?? null,
+    ...(analysisKind === 'REANALYSIS' ? { analysisKind, sourceAnalysisRunId } : {}),
     ...normalizedScope,
   });
 }

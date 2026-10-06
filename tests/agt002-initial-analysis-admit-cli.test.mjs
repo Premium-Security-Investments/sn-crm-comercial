@@ -65,3 +65,14 @@ test('attempt is optional, defaults to null and must be an integer >= 2', () => 
     );
   }
 });
+
+test('REANALYSIS manifests carry kind and source together; INITIAL manifests carry neither', () => {
+  const source = '40000000-0000-4000-8000-000000000001';
+  const parsed = parseAgt002InitialAnalysisAdmissionManifest(JSON.stringify({ ...BASE, analysis_kind: 'REANALYSIS', source_analysis_run_id: source }));
+  assert.equal(parsed.analysisKind, 'REANALYSIS');
+  assert.equal(parsed.sourceAnalysisRunId, source);
+  assert.equal(parseAgt002InitialAnalysisAdmissionManifest(JSON.stringify(BASE)).analysisKind, undefined);
+  assert.throws(() => parseAgt002InitialAnalysisAdmissionManifest(JSON.stringify({ ...BASE, analysis_kind: 'REANALYSIS' })), /source_analysis_run_id/);
+  assert.throws(() => parseAgt002InitialAnalysisAdmissionManifest(JSON.stringify({ ...BASE, source_analysis_run_id: source })), /INITIAL/);
+  assert.throws(() => parseAgt002InitialAnalysisAdmissionManifest(JSON.stringify({ ...BASE, analysis_kind: 'OTHER' })), /analysis_kind/);
+});

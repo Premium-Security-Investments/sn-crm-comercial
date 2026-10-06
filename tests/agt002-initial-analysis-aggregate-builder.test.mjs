@@ -180,3 +180,15 @@ test('an A_PLUS_B aggregate stamps the evaluated company fit with the frozen pro
   const scopeErrors = result.errors.filter(error => /company_fit|g1_scope/.test(error.path));
   assert.deepEqual(scopeErrors, [], 'the A_PLUS_B company_fit contract holds');
 });
+
+test('a REANALYSIS identity (108) stamps kind, version and source, and the v2 aggregate stays valid', () => {
+  const source = '40000000-0000-4000-8000-000000000001';
+  const base = inputs();
+  const envelope = buildInitialAggregate({ ...base, identity: { ...base.identity, analysisKind: 'REANALYSIS', analysisVersion: 2, sourceAnalysisRunId: source } });
+  assert.deepEqual(validatePreGoAnalysisV2(envelope).errors, []);
+  assert.equal(envelope.meta.analysis_kind, 'REANALYSIS');
+  assert.equal(envelope.meta.analysis_version, 2);
+  assert.equal(envelope.meta.source_analysis_run_id, source);
+  const initial = buildInitialAggregate(inputs());
+  assert.deepEqual([initial.meta.analysis_kind, initial.meta.analysis_version, initial.meta.source_analysis_run_id], ['INITIAL', 1, null]);
+});

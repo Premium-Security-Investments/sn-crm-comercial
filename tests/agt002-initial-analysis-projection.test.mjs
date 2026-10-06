@@ -82,3 +82,12 @@ test('unknown or contradictory durable states fail closed', () => {
     assert.equal(projection.errorCode, 'state_invalid');
   }
 });
+
+// --- Migration 108: a REANALYSIS successor is the canonical analysis from version 2 on ---
+test('a completed canonical REANALYSIS run (v>=2) is ready; a REANALYSIS claiming v1 is not', async () => {
+  const { projectAgt002InitialAnalysisState } = await import('../agt002-initial-analysis-projection.js');
+  const job = { id: 'job-2', status: 'COMPLETED', analysis_run_id: 'run-2', error_code: null };
+  const run = { id: 'run-2', status: 'completed', canonical: true, current: true, analysis_kind: 'REANALYSIS', analysis_version: 2 };
+  assert.equal(projectAgt002InitialAnalysisState({ job, run }).state, 'ready');
+  assert.equal(projectAgt002InitialAnalysisState({ job, run: { ...run, analysis_version: 1 } }).errorCode, 'canonical_run_missing');
+});

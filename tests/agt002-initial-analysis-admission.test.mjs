@@ -67,7 +67,7 @@ function fakeDatabase() {
       if (name === 'psi_grant_agt002_g1_analysis_authorization') {
         return { data: { status: 'created', authorization_id: AUTHORIZATION_ID }, error: null };
       }
-      if (name === 'psi_admit_authorized_agt002_initial_analysis_job') {
+      if (name === 'psi_admit_authorized_agt002_initial_analysis_job' || name === 'psi_admit_authorized_agt002_initial_reanalysis_job') {
         return { data: {
           status: 'created', job_id: JOB_ID, opportunity_id: OPPORTUNITY_ID,
           tender_id: TENDER_ID, idempotency_key: args.p_idempotency_key,
@@ -155,4 +155,39 @@ test('admission fails closed before any RPC unless the complete runtime readback
     /runtime/i,
   );
   assert.equal(database.calls.length, 0);
+});
+
+test('REANALYSIS: same chain with a REANALYSIS workflow, a source-bound admission key and the 108 admission RPC', async () => {
+  const SOURCE_RUN_ID = '10000000-0000-4000-8000-000000000011';
+  const database = fakeDatabase();
+  const result = await admitAgt002InitialAnalysis(database, {
+    opportunityId: OPPORTUNITY_ID,
+    tenderId: TENDER_ID,
+    actorProfileId: ACTOR_ID,
+    requestedMembers: [{ document_version_id: DOCUMENT_ID, source_classification: 'official', inclusion_reason: 'Pliego.' }],
+    expiresAt: EXPIRES_AT,
+    policyVersion: 'agt002-initial-c1a.v1',
+    analysisKind: 'REANALYSIS',
+    sourceAnalysisRunId: SOURCE_RUN_ID,
+    environment: ENVIRONMENT,
+  });
+  const byName = Object.fromEntries(database.calls.map(call => [call.name, call.args]));
+  assert.equal(byName.psi_create_agt002_workflow_instance.p_workflow_type, 'REANALYSIS');
+  const admission = byName.psi_admit_authorized_agt002_initial_reanalysis_job;
+  assert.ok(admission, 'uses the 108 admission RPC');
+  assert.equal(byName.psi_admit_authorized_agt002_initial_analysis_job, undefined);
+  assert.equal(admission.p_source_analysis_run_id, SOURCE_RUN_ID);
+  const initialKey = computeAgt002InitialAnalysisAdmissionIdempotencyKey({
+    workflowInstanceId: WORKFLOW_ID, authorizationId: AUTHORIZATION_ID, packageVersionId: PACKAGE_VERSION_ID,
+    packageHash: admission.p_package_hash, policyVersion: 'agt002-initial-c1a.v1',
+  });
+  assert.notEqual(admission.p_idempotency_key, initialKey);
+  assert.equal(result.analysisKind, 'REANALYSIS');
+  assert.equal(result.sourceAnalysisRunId, SOURCE_RUN_ID);
+
+  await assert.rejects(admitAgt002InitialAnalysis(fakeDatabase(), {
+    opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID,
+    requestedMembers: [{ document_version_id: DOCUMENT_ID, source_classification: 'official', inclusion_reason: 'Pliego.' }],
+    expiresAt: EXPIRES_AT, policyVersion: 'agt002-initial-c1a.v1', analysisKind: 'REANALYSIS', environment: ENVIRONMENT,
+  }), /corrida fuente/);
 });

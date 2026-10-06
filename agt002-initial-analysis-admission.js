@@ -30,23 +30,27 @@ async function rpc(database, name, args) {
 }
 
 export function computeAgt002InitialAnalysisAdmissionIdempotencyKey({
-  workflowInstanceId, authorizationId, packageVersionId, packageHash, policyVersion,
+  workflowInstanceId, authorizationId, packageVersionId, packageHash, policyVersion, sourceAnalysisRunId = null,
 }) {
+  // INITIAL keys stay byte-identical; a REANALYSIS key also binds the run it succeeds.
   return hash({
-    kind: 'agt002_initial_analysis_admission',
+    kind: sourceAnalysisRunId ? 'agt002_initial_reanalysis_admission' : 'agt002_initial_analysis_admission',
     workflowInstanceId,
     authorizationId,
     packageVersionId,
     packageHash,
     policyVersion,
+    ...(sourceAnalysisRunId ? { sourceAnalysisRunId } : {}),
   });
 }
 
 /**
  * Bounded C1A admission transaction chain for one exact opportunity and an explicit governed
  * document selection. Each database boundary is independently idempotent; the final admission
- * RPC atomically consumes G1 and creates the INITIAL job. This function never claims or executes
- * the job and never touches the REANALYSIS queue.
+ * RPC atomically consumes G1 and creates the INITIAL job. With `analysisKind: 'REANALYSIS'` and
+ * `sourceAnalysisRunId`, the same chain admits the successor of the opportunity's current
+ * canonical analysis (migration 108). This function never claims or executes the job and never
+ * touches the v1 reanalysis queue.
  */
 export async function admitAgt002InitialAnalysis(database, {
   opportunityId,
@@ -59,6 +63,8 @@ export async function admitAgt002InitialAnalysis(database, {
   expiresAt,
   policyVersion,
   attempt = null,
+  analysisKind = 'INITIAL',
+  sourceAnalysisRunId = null,
   environment = {},
 } = {}) {
   requireNonBlank(opportunityId, 'La oportunidad');
@@ -67,6 +73,12 @@ export async function admitAgt002InitialAnalysis(database, {
   requireNonBlank(expiresAt, 'La expiración G1');
   requireNonBlank(policyVersion, 'La versión de política');
   if (!Number.isFinite(Date.parse(expiresAt))) throw new Error('La expiración G1 no es válida.');
+  if (analysisKind !== 'INITIAL' && analysisKind !== 'REANALYSIS') throw new Error('El tipo de análisis no es válido.');
+  const reanalysis = analysisKind === 'REANALYSIS';
+  if (reanalysis) requireNonBlank(sourceAnalysisRunId, 'La corrida fuente del reanálisis');
+  else if (sourceAnalysisRunId !== null && sourceAnalysisRunId !== undefined) {
+    throw new Error('Un análisis INITIAL no tiene corrida fuente.');
+  }
 
   const runtime = readAgt002InitialAnalysisRuntimeConfig(environment);
   if (!runtime.runtimeReady) {
@@ -88,7 +100,7 @@ export async function admitAgt002InitialAnalysis(database, {
   const workflowIdempotencyKey = computeAgt002WorkflowInstanceIdempotencyKey({
     opportunityId,
     tenderId,
-    workflowType: 'INITIAL',
+    workflowType: analysisKind,
     scope: normalizedScope.scope,
     profileSnapshotHash: normalizedScope.profileSnapshotHash,
     requestedBy: actorProfileId,
@@ -97,7 +109,7 @@ export async function admitAgt002InitialAnalysis(database, {
   const workflow = await rpc(database, 'psi_create_agt002_workflow_instance', {
     p_opportunity_id: opportunityId,
     p_tender_id: tenderId,
-    p_workflow_type: 'INITIAL',
+    p_workflow_type: analysisKind,
     p_scope: normalizedScope.scope,
     p_profile_snapshot_id: normalizedScope.profileSnapshotId,
     p_profile_snapshot_hash: normalizedScope.profileSnapshotHash,
@@ -105,7 +117,7 @@ export async function admitAgt002InitialAnalysis(database, {
     p_actor_profile_id: actorProfileId,
   });
   const workflowInstanceId = workflow?.workflow_instance_id;
-  requireNonBlank(workflowInstanceId, 'La instancia INITIAL creada');
+  requireNonBlank(workflowInstanceId, `La instancia ${analysisKind} creada`);
 
   const authorizationIdempotencyKey = computeAgt002AnalysisAuthorizationIdempotencyKey({
     workflowInstanceId,
@@ -130,6 +142,7 @@ export async function admitAgt002InitialAnalysis(database, {
     packageVersionId: frozen.package_version_id,
     packageHash: frozen.package_hash,
     policyVersion,
+    sourceAnalysisRunId: reanalysis ? sourceAnalysisRunId : null,
   });
   const job = await admitAgt002InitialAnalysisJob(database, {
     authorization_id: authorizationId,
@@ -155,6 +168,7 @@ export async function admitAgt002InitialAnalysis(database, {
       },
     },
     requested_by: actorProfileId,
+    ...(reanalysis ? { source_analysis_run_id: sourceAnalysisRunId } : {}),
   }, environment);
 
   return Object.freeze({
@@ -162,6 +176,8 @@ export async function admitAgt002InitialAnalysis(database, {
     packageHash: frozen.package_hash,
     workflowInstanceId,
     authorizationId,
+    analysisKind,
+    sourceAnalysisRunId: reanalysis ? sourceAnalysisRunId : null,
     jobId: job.jobId,
     jobStatus: job.jobStatus,
     admissionStatus: job.status,

@@ -14,7 +14,9 @@ const ADMIT_BODY_KEYS = Object.freeze([
   'package_hash', 'g1_scope', 'policy_version', 'idempotency_key', 'payload', 'requested_by',
 ]);
 const ADMIT_REQUIRED_STRING_FIELDS = Object.freeze(ADMIT_BODY_KEYS.filter(key => key !== 'payload'));
-const ADMIT_BODY_KEY_SET = new Set(ADMIT_BODY_KEYS);
+// REANALYSIS (migration 108) adds exactly one key: the run it succeeds.
+const ADMIT_OPTIONAL_KEYS = Object.freeze(['source_analysis_run_id']);
+const ADMIT_BODY_KEY_SET = new Set([...ADMIT_BODY_KEYS, ...ADMIT_OPTIONAL_KEYS]);
 
 function assertKillSwitchesEnabled(environment) {
   const env = environment || {};
@@ -27,13 +29,17 @@ export async function admitAgt002InitialAnalysisJob(database, body, environment)
   assertKillSwitchesEnabled(environment);
 
   const keys = Object.keys(body || {});
-  if (keys.length !== ADMIT_BODY_KEYS.length || keys.some(key => !ADMIT_BODY_KEY_SET.has(key))) {
+  const optionalCount = ADMIT_OPTIONAL_KEYS.filter(key => keys.includes(key)).length;
+  if (keys.length !== ADMIT_BODY_KEYS.length + optionalCount || keys.some(key => !ADMIT_BODY_KEY_SET.has(key))) {
     throw new Error('El cuerpo de la solicitud de admisión AGT-002 initial-analysis tiene una forma no permitida.');
   }
   for (const field of ADMIT_REQUIRED_STRING_FIELDS) {
     if (typeof body[field] !== 'string' || body[field].trim() === '') {
       throw new Error(`El campo ${field} es obligatorio.`);
     }
+  }
+  if (optionalCount && (typeof body.source_analysis_run_id !== 'string' || body.source_analysis_run_id.trim() === '')) {
+    throw new Error('El campo source_analysis_run_id no es válido.');
   }
 
   return admitJob(database, {
@@ -48,6 +54,7 @@ export async function admitAgt002InitialAnalysisJob(database, body, environment)
     idempotencyKey: body.idempotency_key,
     payload: body.payload,
     requestedBy: body.requested_by,
+    ...(optionalCount ? { sourceAnalysisRunId: body.source_analysis_run_id } : {}),
   });
 }
 

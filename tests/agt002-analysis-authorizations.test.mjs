@@ -42,22 +42,21 @@ function baseAuthorization(overrides = {}) {
   };
 }
 
-describe('AGT-002 G1 gate — authorizes exactly INITIAL, never REANALYSIS', () => {
+describe('AGT-002 G1 gate — authorizes INITIAL and its governed REANALYSIS successor (108)', () => {
   it('pins exactly one known gate today: G1', () => {
     assert.deepEqual([...AGT002_ANALYSIS_AUTHORIZATION_GATES], ['G1']);
   });
 
-  it('pins exactly one G1-authorizable workflow type: INITIAL', () => {
-    assert.deepEqual([...AGT002_G1_AUTHORIZABLE_WORKFLOW_TYPES], ['INITIAL']);
+  it('pins exactly two G1-authorizable workflow types: INITIAL and REANALYSIS', () => {
+    assert.deepEqual([...AGT002_G1_AUTHORIZABLE_WORKFLOW_TYPES], ['INITIAL', 'REANALYSIS']);
   });
 
   it('assertAgt002G1CanAuthorize accepts INITIAL', () => {
     assert.doesNotThrow(() => assertAgt002G1CanAuthorize('INITIAL'));
   });
 
-  it('assertAgt002G1CanAuthorize fails closed for REANALYSIS: the G1 INITIAL gate can never authorize reanalysis', () => {
-    assert.throws(() => assertAgt002G1CanAuthorize('REANALYSIS'), /G1/i);
-    assert.throws(() => assertAgt002G1CanAuthorize('REANALYSIS'), /INITIAL/i);
+  it('assertAgt002G1CanAuthorize accepts REANALYSIS: a human authorizes every run that costs money', () => {
+    assert.doesNotThrow(() => assertAgt002G1CanAuthorize('REANALYSIS'));
   });
 
   it('assertAgt002G1CanAuthorize fails closed for any unknown workflow type', () => {
