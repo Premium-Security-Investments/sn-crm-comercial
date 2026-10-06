@@ -4,6 +4,7 @@ import { validatePreGoAnalysisV2 } from './agt002-pre-go-analysis-v2.js';
 import {
   agt002InitialDiagnosticError, buildInitialAggregate, buildInitialMemberOutputSchema, buildInitialSynthesisModelSchema,
 } from './agt002-initial-analysis-aggregate-builder.js';
+import { loadAgt002CompanyProfileSnapshotForWorkflow } from './agt002-company-profile-snapshot.js';
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
@@ -52,6 +53,7 @@ async function defaultLoadPackage(database, packageVersionId) {
 }
 
 const MEMBER_POLICY = 'Analice únicamente la evidencia suministrada. Cada nota debe indicar el documento del que sale (document_id) y dónde lo encontró (locator). No invente datos que el documento no contenga; separe lo hallado de lo pendiente. No decida GO/NO-GO ni ejecute acciones.';
+const SYNTHESIS_COMPANY_POLICY = 'Produzca el análisis inicial usando sólo las notas de lote, el catálogo de evidencia y el perfil congelado de la empresa (company_profile). Cite fuentes de la licitación únicamente como {document_id, locator}. Para cada requisito evalúe a la empresa contra ese perfil (company_evaluation): VERIFIED sólo si el perfil lo demuestra; AVAILABLE si el perfil lo declara pero falta soporte; PENDING si falta información; BLOCKER si el perfil muestra que no cumple. Lo que afirme sobre la empresa va como marked_inference con inference_basis que diga qué dato del perfil lo respalda; el perfil es declarado y está pendiente de revisión humana: dígalo, no invente lo que no esté. Dé company_fit (APTO / PARTIAL_NOT_READY / NO_APTO) y una recomendación. No decida GO/NO-GO ni ejecute acciones.';
 const SYNTHESIS_POLICY = 'Produzca el análisis inicial usando sólo las notas de lote y el catálogo de evidencia suministrados. Cite cada fuente únicamente como {document_id, locator} tomados de las notas; no cite nada que las notas no respalden. Cubra todos los bloques de cobertura y declare como pendiente o ausente lo que la evidencia no permita afirmar. No hay perfil de empresa autorizado: la recomendación sólo puede ser HOLD_RECOMMENDED, NO_GO_RECOMMENDED o INSUFFICIENT_INFORMATION. No decida GO/NO-GO ni ejecute acciones.';
 
 /** Creates the real INITIAL rehydration/model boundaries. Dependencies stay injectable for E0. */
@@ -61,6 +63,7 @@ export function createAgt002InitialAnalysisRuntime({
   resolveDocument = resolveAgt002GovernedDocumentForExecution,
   validateEnvelope = validatePreGoAnalysisV2,
   loadPackage = defaultLoadPackage,
+  loadCompanyProfile = loadAgt002CompanyProfileSnapshotForWorkflow,
   executorVersion = process.env.AGT002_DEPLOYED_VERSION || 'agt002-initial-analysis-worker',
   now = () => new Date(),
 } = {}) {
@@ -113,12 +116,18 @@ export function createAgt002InitialAnalysisRuntime({
       const persistence = job.payload.persistence;
 
       let pkg = null;
+      let company = null;
       let outputSchema;
       const extraInput = {};
       if (synthesis) {
         pkg = await loadPackage(database, persistence.packageVersionId);
         if (pkg?.version?.package_hash !== persistence.packageHash) throw agt002InitialDiagnosticError('package_hash_mismatch');
-        outputSchema = buildInitialSynthesisModelSchema({ documentIds: pkg.members.map(member => member.document_version_id) });
+        if (persistence.g1Scope === 'A_PLUS_B') {
+          try { company = await loadCompanyProfile(database, persistence.workflowInstanceId); }
+          catch (error) { throw agt002InitialDiagnosticError(error?.diagnostic?.reason || 'company_profile_unavailable'); }
+          extraInput.company_profile = company.snapshot;
+        }
+        outputSchema = buildInitialSynthesisModelSchema({ documentIds: pkg.members.map(member => member.document_version_id), scope: persistence.g1Scope });
         extraInput.evidence_catalog = pkg.members.map(member => ({
           document_id: member.document_version_id,
           source_classification: member.source_classification,
@@ -130,7 +139,7 @@ export function createAgt002InitialAnalysisRuntime({
 
       const response = await bridgeClient.run({
         model: modelId,
-        policy: synthesis ? SYNTHESIS_POLICY : MEMBER_POLICY,
+        policy: synthesis ? (company ? SYNTHESIS_COMPANY_POLICY : SYNTHESIS_POLICY) : MEMBER_POLICY,
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,
@@ -159,6 +168,8 @@ export function createAgt002InitialAnalysisRuntime({
             policyVersion: persistence.policyVersion,
             opportunityId: job.opportunityId,
             tenderId: job.tenderId,
+            profileSnapshotId: company?.profileSnapshotId ?? null,
+            profileSnapshotHash: company?.profileSnapshotHash ?? null,
           },
           pkg,
           now: now(),

@@ -42,6 +42,8 @@ const migration103 = () => migrationSource('104_agt002_initial_analysis_server_o
 const migration104 = () => migrationSource('105_agt002_initial_admission_digest_schema_qualification.sql');
 // 106: INITIAL completes with the pre_go_analysis.v2 envelope (v1 minus the render manifest).
 const migration105 = () => migrationSource('106_agt002_initial_v2_aggregate_schema_version.sql');
+// 107: company-profile snapshots for scope A_PLUS_B.
+const migration106 = () => migrationSource('107_agt002_company_profile_snapshots.sql');
 const rollback103 = () => strip(readFileSync(new URL('../supabase/rollbacks/104_agt002_initial_analysis_server_owned_execution_rollback.sql', import.meta.url), 'utf8'));
 const rollback101 = () => strip(readFileSync(new URL('../supabase/rollbacks/103_agt002_initial_analysis_atomic_admission_rollback.sql', import.meta.url), 'utf8'));
 
@@ -164,6 +166,7 @@ async function freshDb() {
   await pg.exec(migration101());
   await pg.exec(migration102());
   await pg.exec(migration105());
+  await pg.exec(migration106());
   return pg;
 }
 
@@ -186,7 +189,7 @@ test('migration 104 applies after the real 099-103 chain and preserves the one a
   }
 });
 
-test('INITIAL release runner recognizes the real 099-106 chain and its security posture', async () => {
+test('INITIAL release runner recognizes the real 099-107 chain and its security posture', async () => {
   const pg = await freshDb();
   try {
     await pg.exec(migration103());
@@ -202,6 +205,7 @@ test('INITIAL release runner recognizes the real 099-106 chain and its security 
       '104': true,
       '105': true,
       '106': true,
+      '107': true,
     });
     assert.equal(result.unsafe_grants, 0);
     assert.equal(result.rls_missing, 0);
