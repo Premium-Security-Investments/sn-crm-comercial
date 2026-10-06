@@ -63,7 +63,7 @@ const MARKERS = Object.freeze({
     LEGACY_ADMISSION,
     ...SERVICE_FUNCTIONS.slice(6, 8),
   ])})`,
-  m102: `(${allTables(TABLES.slice(8))} and ${allFunctions(SERVICE_FUNCTIONS.slice(8, 12))}
+  m102: `(${allTables(TABLES.slice(8, 11))} and ${allFunctions(SERVICE_FUNCTIONS.slice(8, 12))}
     and exists (select 1 from information_schema.columns where table_schema='public' and table_name='psi_tender_analysis_runs' and column_name='analysis_kind')
     and exists (select 1 from information_schema.columns where table_schema='public' and table_name='psi_agt002_initial_analysis_jobs' and column_name='analysis_run_id'))`,
   m103: `(to_regprocedure('public.${SERVICE_FUNCTIONS[12]}') is not null
