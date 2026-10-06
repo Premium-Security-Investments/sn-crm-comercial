@@ -82,7 +82,7 @@ test('régimen especial detectado sólo vía raw.modalidad_de_contratacion sin p
   assert.equal(result.status, 'competible');
 });
 
-test('el select de SECOP II en server/index.js y api/[...path].js incluye modalidad_de_contratacion', () => {
+test('el select de SECOP II en server/index.js y api/[...path].js incluye modalidad_de_contratacion y nombre_del_proveedor', () => {
   const serverSelect = secopIiSelectFrom(readFileSync(resolve(projectRoot, 'server/index.js'), 'utf8'));
   const apiSelect = secopIiSelectFrom(readFileSync(resolve(projectRoot, 'api/[...path].js'), 'utf8'));
   assert.ok(serverSelect, 'no se encontró el select de SECOP II en server/index.js');
@@ -94,6 +94,14 @@ test('el select de SECOP II en server/index.js y api/[...path].js incluye modali
   assert.ok(
     apiSelect.split(',').includes('modalidad_de_contratacion'),
     'el select de SECOP II en api/[...path].js debe incluir modalidad_de_contratacion',
+  );
+  assert.ok(
+    serverSelect.split(',').includes('nombre_del_proveedor'),
+    'el select de SECOP II en server/index.js debe incluir nombre_del_proveedor',
+  );
+  assert.ok(
+    apiSelect.split(',').includes('nombre_del_proveedor'),
+    'el select de SECOP II en api/[...path].js debe incluir nombre_del_proveedor',
   );
 });
 
@@ -327,6 +335,29 @@ const namedProveedorPublicity = baseTender({
 
 test('especial exacta sin plazo con proveedor nombrado clasifica como no_competible', () => {
   assert.equal(evaluateTenderCompetibility(namedProveedorPublicity, { nowIso: NOW }).status, 'no_competible');
+});
+
+const bancoAgrarioPac20261065 = baseTender({
+  id: 'PAC-2026-1065',
+  ref: 'PAC-2026-1065',
+  process_id: 'CO1.REQ.11046654',
+  deadline_at: null,
+  raw: {
+    modalidad_de_contratacion: 'Contratación régimen especial',
+    nombre_del_proveedor: 'UT GSBCOM 2026',
+    adjudicado: 'No',
+    fase: 'Presentación de oferta',
+    estado_del_procedimiento: 'Publicado',
+  },
+});
+
+test('Banco Agrario PAC-2026-1065 (especial sin plazo, proveedor UT GSBCOM 2026) clasifica como no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(bancoAgrarioPac20261065, { nowIso: NOW }).status, 'no_competible');
+});
+
+test('filterActiveTenderCompetibilityRows oculta Banco Agrario PAC-2026-1065', () => {
+  const active = filterActiveTenderCompetibilityRows([bancoAgrarioPac20261065], { nowIso: NOW });
+  assert.deepEqual(active.map(row => row.id), []);
 });
 
 const noDefinidoWithoutCto = baseTender({

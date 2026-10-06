@@ -1025,7 +1025,7 @@ const tenderSources = {
   'SECOP II': {
     base: 'https://www.datos.gov.co/resource/p6dx-8zbt.json',
     dateField: 'fecha_de_publicacion_del',
-    select: 'entidad,departamento_entidad,ciudad_entidad,id_del_proceso,referencia_del_proceso,nombre_del_procedimiento,descripci_n_del_procedimiento,fase,estado_del_procedimiento,fecha_de_publicacion_del,fecha_de_recepcion_de,precio_base,codigo_principal_de_categoria,urlproceso,modalidad_de_contratacion',
+    select: 'entidad,departamento_entidad,ciudad_entidad,id_del_proceso,referencia_del_proceso,nombre_del_procedimiento,descripci_n_del_procedimiento,fase,estado_del_procedimiento,fecha_de_publicacion_del,fecha_de_recepcion_de,precio_base,codigo_principal_de_categoria,urlproceso,modalidad_de_contratacion,nombre_del_proveedor',
     nameFields: ['nombre_del_procedimiento','descripci_n_del_procedimiento']
   },
   'SECOP I': {
