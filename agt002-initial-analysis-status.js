@@ -12,14 +12,30 @@ export async function readAgt002InitialAnalysisStatus(database, opportunityId) {
     throw readError('La oportunidad es obligatoria.');
   }
 
-  const { data: job, error: jobError } = await database
+  const { data: latestJob, error: jobError } = await database
     .from('psi_agt002_initial_analysis_jobs')
-    .select('id,status,analysis_run_id,error_code,created_at,updated_at')
+    .select('id,status,analysis_run_id,error_code,created_at,updated_at,analysis_kind')
     .eq('opportunity_id', opportunityId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (jobError) throw readError('No fue posible leer el estado del análisis inicial.');
+
+  // A REANALYSIS that is still running or that failed never hides the analysis it would succeed:
+  // until it completes, the latest COMPLETED job (whose run is still canonical) stays the one shown.
+  let job = latestJob;
+  if (latestJob?.analysis_kind === 'REANALYSIS' && latestJob.status !== 'COMPLETED') {
+    const { data: completedJob, error: completedError } = await database
+      .from('psi_agt002_initial_analysis_jobs')
+      .select('id,status,analysis_run_id,error_code,created_at,updated_at,analysis_kind')
+      .eq('opportunity_id', opportunityId)
+      .eq('status', 'COMPLETED')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (completedError) throw readError('No fue posible leer el estado del análisis inicial.');
+    if (completedJob) job = completedJob;
+  }
 
   let run = null;
   if (job?.analysis_run_id) {

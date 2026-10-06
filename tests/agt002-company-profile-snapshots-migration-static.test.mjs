@@ -8,7 +8,7 @@ const migration = read('../supabase/migrations/107_agt002_company_profile_snapsh
 const rollback = read('../supabase/rollbacks/107_agt002_company_profile_snapshots_rollback.sql');
 const sql = text => text.replace(/--[^\n]*/g, '');
 
-assert.equal(MIGRATION_ORDER.at(-1), '107', '107 must be the last slot in the governed chain');
+assert.equal(MIGRATION_ORDER[MIGRATION_ORDER.indexOf('106') + 1], '107', '107 must follow 106 in the governed chain');
 assert.match(migration, /^--/);
 assert.match(migration, /begin;/i);
 assert.match(migration, /commit;\s*$/i);

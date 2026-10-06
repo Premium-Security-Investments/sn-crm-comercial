@@ -35,11 +35,13 @@ function requireNonBlank(value, label) {
 /**
  * Atomically consumes one exact G1 authorization and admits its durable INITIAL job. The
  * database constructs payload.persistence from the governed bindings; callers cannot supply a
- * different lineage envelope through payload.
+ * different lineage envelope through payload. With `sourceAnalysisRunId` the job is a REANALYSIS
+ * (migration 108): the successor of that run, which must be the opportunity's current canonical
+ * analysis.
  */
 export async function admitAgt002InitialAnalysisJob(database, {
   authorizationId, workflowInstanceId, opportunityId, tenderId, packageVersionId, packageHash,
-  g1Scope, policyVersion, idempotencyKey, payload, requestedBy,
+  g1Scope, policyVersion, idempotencyKey, payload, requestedBy, sourceAnalysisRunId = null,
 } = {}) {
   requireNonBlank(authorizationId, 'La autorización G1');
   requireNonBlank(workflowInstanceId, 'La instancia de flujo de trabajo');
@@ -61,7 +63,12 @@ export async function admitAgt002InitialAnalysisJob(database, {
     throw new Error('El payload del análisis inicial debe ser un objeto.');
   }
 
-  const data = await rpc(database, 'psi_admit_authorized_agt002_initial_analysis_job', {
+  const reanalysis = sourceAnalysisRunId !== null && sourceAnalysisRunId !== undefined;
+  if (reanalysis) requireNonBlank(sourceAnalysisRunId, 'La corrida fuente del reanálisis');
+
+  const data = await rpc(database, reanalysis
+    ? 'psi_admit_authorized_agt002_initial_reanalysis_job'
+    : 'psi_admit_authorized_agt002_initial_analysis_job', {
     p_authorization_id: authorizationId,
     p_workflow_instance_id: workflowInstanceId,
     p_opportunity_id: opportunityId,
@@ -73,6 +80,7 @@ export async function admitAgt002InitialAnalysisJob(database, {
     p_idempotency_key: idempotencyKey,
     p_payload: payload,
     p_actor_profile_id: requestedBy,
+    ...(reanalysis ? { p_source_analysis_run_id: sourceAnalysisRunId } : {}),
   });
 
   if (!data || data.status === 'payload_mismatch') {

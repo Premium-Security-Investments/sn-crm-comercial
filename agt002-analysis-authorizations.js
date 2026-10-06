@@ -2,8 +2,8 @@
 //
 // Distinct, neutral module belonging to the initial-analysis slice
 // (docs/agt002/initial-analysis/CURRENT.md): this module is never imported by, and never
-// imports, any agt002-reanalysis-*.js module. It pins: G1 authorizes only INITIAL workflows
-// (never REANALYSIS); the active/unexpired/unrevoked/unconsumed status derivation used by the
+// imports, any agt002-reanalysis-*.js module. It pins: G1 authorizes INITIAL workflows and, since
+// migration 108, REANALYSIS workflows (the governed successor of the canonical analysis); the active/unexpired/unrevoked/unconsumed status derivation used by the
 // consume-on-create boundary that P0-04 job creation will call through
 // psi_consume_agt002_analysis_authorization (migration 100, not authored in this phase); and
 // the exact-binding matcher (workflow/package version+hash/opportunity/tender) that fails
@@ -15,11 +15,11 @@ import { createHash } from 'node:crypto';
 
 export const AGT002_ANALYSIS_AUTHORIZATION_GATES = Object.freeze(['G1']);
 
-export const AGT002_G1_AUTHORIZABLE_WORKFLOW_TYPES = Object.freeze(['INITIAL']);
+export const AGT002_G1_AUTHORIZABLE_WORKFLOW_TYPES = Object.freeze(['INITIAL', 'REANALYSIS']);
 
 export function assertAgt002G1CanAuthorize(workflowType) {
   if (!AGT002_G1_AUTHORIZABLE_WORKFLOW_TYPES.includes(workflowType)) {
-    throw new Error(`agt002-analysis-authorizations: G1 authorizes only INITIAL workflows, got "${workflowType}"`);
+    throw new Error(`agt002-analysis-authorizations: G1 authorizes only INITIAL or REANALYSIS workflows, got "${workflowType}"`);
   }
 }
 

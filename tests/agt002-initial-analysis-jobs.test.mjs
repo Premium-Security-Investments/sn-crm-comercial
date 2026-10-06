@@ -1,10 +1,10 @@
 // AGT-002 P0-04 (RED) — initial-analysis jobs adapter.
 //
 // This is the neutral initial-analysis queue adapter (docs/agt002/initial-analysis/CURRENT.md):
-// it must never mention or import the reanalysis operational surface (agt002-reanalysis-*.js
-// modules, psi_agt002_reanalysis_jobs, or any psi_*_agt002_reanalysis_* RPC), and its admitted
-// job shape carries no source_analysis_run_id — this is the FIRST run for an opportunity, not a
-// re-run of one. The wished module ../agt002-initial-analysis-jobs.js does not exist yet: that
+// it must never mention or import the v1 reanalysis operational surface (agt002-reanalysis-*.js
+// modules, psi_agt002_reanalysis_jobs, or any psi_*_agt002_reanalysis_* RPC). Since migration 108
+// the same queue also admits the governed REANALYSIS successor of the canonical analysis, only
+// through its own RPC (psi_admit_authorized_agt002_initial_reanalysis_job). The wished module ../agt002-initial-analysis-jobs.js does not exist yet: that
 // absence (ERR_MODULE_NOT_FOUND) is the RED signal for every test below.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -46,7 +46,8 @@ test('the jobs module source never references the reanalysis operational surface
   assert.doesNotMatch(source, /agt002-reanalysis-(api|jobs|worker|input|executor|error-message)\.js/);
   assert.doesNotMatch(source, /psi_agt002_reanalysis_jobs/);
   assert.doesNotMatch(source, /psi_(create|claim|complete|fail)_agt002_reanalysis_job/);
-  assert.doesNotMatch(source, /source_analysis_run_id/, 'an initial-analysis job is never framed as re-running a prior source run');
+  assert.doesNotMatch(source, /psi_agt002_reanalysis_|agt002_reanalysis_job\b/);
+  assert.match(source, /psi_admit_authorized_agt002_initial_reanalysis_job/, 'REANALYSIS goes only through the 108 successor RPC');
 });
 
 // --- Status vocabulary ---

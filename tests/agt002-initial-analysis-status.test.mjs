@@ -64,3 +64,49 @@ test('a demoted (non-canonical) run is not reported as the current initial analy
   assert.equal(result.errorCode, 'canonical_run_missing');
   assert.equal(result.reportAvailable, false);
 });
+
+// --- Migration 108: a running or failed REANALYSIS never hides the analysis it would succeed ---
+function databaseWithJobs({ latest, completed, run }) {
+  const jobQueries = [];
+  return {
+    jobQueries,
+    from(table) {
+      if (table === 'psi_agt002_initial_analysis_jobs') {
+        const filters = [];
+        const chain = {};
+        chain.select = () => chain;
+        chain.order = () => chain;
+        chain.limit = () => chain;
+        chain.eq = (column, value) => { filters.push([column, value]); return chain; };
+        chain.maybeSingle = async () => {
+          jobQueries.push(filters);
+          const onlyCompleted = filters.some(([column, value]) => column === 'status' && value === 'COMPLETED');
+          return { data: onlyCompleted ? completed : latest, error: null };
+        };
+        return chain;
+      }
+      return query({ data: run, error: null });
+    },
+  };
+}
+
+test('a REANALYSIS in progress or failed keeps the current canonical analysis visible', async () => {
+  for (const latest of [
+    { id: 'job-2', status: 'RUNNING', analysis_run_id: null, error_code: null, analysis_kind: 'REANALYSIS' },
+    { id: 'job-2', status: 'FAILED', analysis_run_id: null, error_code: 'model_call_failed', analysis_kind: 'REANALYSIS' },
+  ]) {
+    const database = databaseWithJobs({ latest, completed: { ...COMPLETED_JOB, analysis_kind: 'INITIAL' }, run: REAL_RUN });
+    const result = await readAgt002InitialAnalysisStatus(database, 'opp-1');
+    assert.equal(result.state, 'ready', latest.status);
+    assert.equal(result.runId, 'run-1');
+    assert.equal(database.jobQueries.length, 2);
+  }
+});
+
+test('an INITIAL in progress is still reported as running (no fallback outside REANALYSIS)', async () => {
+  const latest = { id: 'job-1', status: 'RUNNING', analysis_run_id: null, error_code: null, analysis_kind: 'INITIAL' };
+  const database = databaseWithJobs({ latest, completed: null, run: null });
+  const result = await readAgt002InitialAnalysisStatus(database, 'opp-1');
+  assert.equal(result.state, 'running');
+  assert.equal(database.jobQueries.length, 1);
+});

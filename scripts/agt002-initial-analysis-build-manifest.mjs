@@ -11,7 +11,10 @@
 //
 // Usage: ENV_FILE=/root/.agt002-prod.env node scripts/agt002-initial-analysis-build-manifest.mjs \
 //   --opportunity <uuid> --actor <uuid> --out /root/manifest.json [--scope A|A_PLUS_B --profile-snapshot-id <uuid>
-//   --profile-snapshot-hash <hex>] [--attempt N]
+//   --profile-snapshot-hash <hex>] [--attempt N] [--reanalysis]
+//
+// --reanalysis (migration 108): the manifest admits a REANALYSIS whose source is the opportunity's current canonical
+// AGT-002 analysis, read here; admission re-verifies it is still the canonical one.
 import { readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 
@@ -68,6 +71,15 @@ if (direct) {
     const hasText = extraction?.status === 'ok' && Number(extraction.char_count) > 0;
     return { version, chars: Number(extraction?.char_count || 0), ...classifyAgt002InitialDocument({ name: version.name, hasText, gapReason: extraction?.gap_reason }) };
   });
+  let source = null;
+  if (process.argv.includes('--reanalysis')) {
+    const { data: canonical, error: canonicalError } = await db.from('psi_tender_analysis_runs')
+      .select('id,analysis_kind,analysis_version,g1_scope,completed_at')
+      .eq('opportunity_id', opportunityId).eq('canonical', true).eq('status', 'completed')
+      .not('analysis_kind', 'is', null).maybeSingle();
+    if (canonicalError || !canonical) { console.error('No hay un análisis canónico AGT-002 vigente para reanalizar.'); process.exit(2); }
+    source = canonical;
+  }
   const included = rows.filter(row => row.include).sort((a, b) => a.rank - b.rank || b.chars - a.chars);
   const excluded = rows.filter(row => !row.include);
   const tenderId = versions?.[0]?.tender_id;
@@ -79,12 +91,14 @@ if (direct) {
     profile_snapshot_id: scope === 'A_PLUS_B' ? arg('profile-snapshot-id') : null,
     profile_snapshot_hash: scope === 'A_PLUS_B' ? arg('profile-snapshot-hash') : null,
     ...(arg('attempt') ? { attempt: Number(arg('attempt')) } : {}),
+    ...(source ? { analysis_kind: 'REANALYSIS', source_analysis_run_id: source.id } : {}),
     documents: included.map(row => ({ document_version_id: row.version.id, source_classification: 'official', inclusion_reason: row.reason.slice(0, 500) })),
   };
   writeFileSync(out, JSON.stringify(manifest, null, 2) + '\n');
   chmodSync(out, 0o600);
   const totalChars = included.reduce((sum, row) => sum + row.chars, 0);
   console.log(`${opportunity?.company_name}`);
+  if (source) console.log(`Reanálisis: sucede al análisis vigente v${source.analysis_version} (${source.analysis_kind}, alcance ${source.g1_scope}, ${source.completed_at}) → quedará v${source.analysis_version + 1}`);
   console.log(`Incluidos ${included.length} de ${rows.length} · ${totalChars.toLocaleString('es-CO')} caracteres · ${Math.ceil(included.length / 12)} lote(s) · ~${Math.ceil(totalChars / 300000)} llamadas de lectura`);
   for (const row of included) console.log(`  + ${row.version.name} (${row.chars.toLocaleString('es-CO')})`);
   for (const row of excluded) console.log(`  - ${row.version.name}: ${row.reason}`);

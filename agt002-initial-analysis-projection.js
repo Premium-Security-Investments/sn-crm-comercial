@@ -60,8 +60,9 @@ export function projectAgt002InitialAnalysisState({ job, run } = {}) {
       && run.status === 'completed'
       && run.canonical === true
       && run.current === true
-      && run.analysis_kind === 'INITIAL'
-      && run.analysis_version === 1;
+      && ((run.analysis_kind === 'INITIAL' && run.analysis_version === 1)
+        // Migration 108: a REANALYSIS successor is the opportunity's canonical analysis from version 2 on.
+        || (run.analysis_kind === 'REANALYSIS' && Number.isInteger(run.analysis_version) && run.analysis_version >= 2));
     if (!runMatches) {
       return failed(jobId, 'canonical_run_missing', 'El job terminó, pero su corrida canónica no está disponible.');
     }

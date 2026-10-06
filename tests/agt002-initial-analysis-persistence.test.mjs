@@ -229,3 +229,42 @@ test('a DB error is wrapped into a closed code and never leaks the raw database 
 });
 
 console.log('AGT-002 initial-analysis canonical persistence adapter unit suite passed');
+
+// --- Migration 108: REANALYSIS successor ---
+
+const SOURCE_RUN_ID = '40000000-0000-4000-8000-0000000000aa';
+const REANALYSIS_ENVELOPE = validEnvelope({ meta: { analysis_kind: 'REANALYSIS', analysis_version: 2, source_analysis_run_id: SOURCE_RUN_ID } });
+
+function reanalysisCompletion(overrides = {}) {
+  return baseCompletion({
+    envelope: REANALYSIS_ENVELOPE, analysisKind: 'REANALYSIS', analysisVersion: 2, sourceAnalysisRunId: SOURCE_RUN_ID, ...overrides,
+  });
+}
+
+test('REANALYSIS: completes through its own 108 RPC with the same 14 params and reports the superseded run', async () => {
+  const database = fakeDatabase({ data: { ...SUCCESS_RESPONSE, supersedes_run_id: SOURCE_RUN_ID } });
+  const result = await completeAgt002InitialAnalysisJob(database, {
+    jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, completion: reanalysisCompletion(),
+  });
+  assert.equal(database.calls[0].name, 'psi_complete_agt002_initial_reanalysis_job');
+  assert.equal(Object.keys(database.calls[0].args).length, 14);
+  assert.equal(database.calls[0].args.p_envelope_hash, expectedEnvelopeHash(REANALYSIS_ENVELOPE));
+  assert.equal(result.supersedesRunId, SOURCE_RUN_ID);
+});
+
+test('REANALYSIS: an envelope whose kind, version or source disagrees with the admitted job never reaches the database', async () => {
+  const cases = [
+    reanalysisCompletion({ envelope: BASE_ENVELOPE }),
+    reanalysisCompletion({ analysisVersion: 3 }),
+    reanalysisCompletion({ sourceAnalysisRunId: '40000000-0000-4000-8000-0000000000bb' }),
+    baseCompletion({ envelope: REANALYSIS_ENVELOPE }),
+  ];
+  for (const completion of cases) {
+    const database = fakeDatabase({ data: SUCCESS_RESPONSE });
+    await assert.rejects(
+      completeAgt002InitialAnalysisJob(database, { jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1, completion }),
+      error => error.code === AGT002_INITIAL_ANALYSIS_PERSISTENCE_ERROR_CODES.ENVELOPE_INVARIANT_VIOLATION,
+    );
+    assert.equal(database.calls.length, 0);
+  }
+});

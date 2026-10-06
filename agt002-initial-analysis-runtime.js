@@ -269,6 +269,10 @@ export function createAgt002InitialAnalysisRuntime({
             packageHash: persistence.packageHash,
             g1Scope: persistence.g1Scope,
             policyVersion: persistence.policyVersion,
+            // REANALYSIS jobs (migration 108) carry their kind/version/source in the server-built persistence.
+            analysisKind: persistence.analysisKind ?? 'INITIAL',
+            analysisVersion: persistence.analysisVersion ?? 1,
+            sourceAnalysisRunId: persistence.sourceAnalysisRunId ?? null,
             opportunityId: job.opportunityId,
             tenderId: job.tenderId,
             profileSnapshotId: company?.profileSnapshotId ?? null,

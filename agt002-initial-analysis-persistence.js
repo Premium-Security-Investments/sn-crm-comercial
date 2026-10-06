@@ -129,8 +129,17 @@ export async function completeAgt002InitialAnalysisJob(database, { jobId, leaseI
   assertInvariant(meta.schema_version === 'pre_go_analysis.v2', 'AGT-002 initial-analysis persistence: meta.schema_version debe ser pre_go_analysis.v2.');
   assertInvariant(meta.aggregate_stage === 'ANALYSIS_PUBLISHED', 'AGT-002 initial-analysis persistence: meta.aggregate_stage del primer agregado debe ser ANALYSIS_PUBLISHED.');
   assertInvariant(meta.aggregate_version === 1, 'AGT-002 initial-analysis persistence: meta.aggregate_version del primer agregado debe ser 1.');
-  assertInvariant(meta.analysis_kind === 'INITIAL', 'AGT-002 initial-analysis persistence: meta.analysis_kind debe ser INITIAL.');
-  assertInvariant(meta.analysis_version === 1, 'AGT-002 initial-analysis persistence: meta.analysis_version de un análisis INITIAL debe ser 1.');
+  const expectedKind = completion.analysisKind ?? 'INITIAL';
+  if (expectedKind === 'REANALYSIS') {
+    // Migration 108: the successor of the opportunity's canonical run, bound to the server-built job identity.
+    assertInvariant(meta.analysis_kind === 'REANALYSIS', 'AGT-002 initial-analysis persistence: meta.analysis_kind debe ser REANALYSIS.');
+    assertInvariant(Number.isInteger(completion.analysisVersion) && completion.analysisVersion >= 2 && meta.analysis_version === completion.analysisVersion, 'AGT-002 initial-analysis persistence: meta.analysis_version no coincide con la versión admitida del reanálisis.');
+    assertInvariant(isPresent(completion.sourceAnalysisRunId) && meta.source_analysis_run_id === completion.sourceAnalysisRunId, 'AGT-002 initial-analysis persistence: meta.source_analysis_run_id no coincide con la corrida fuente admitida.');
+  } else {
+    assertInvariant(expectedKind === 'INITIAL', 'AGT-002 initial-analysis persistence: tipo de análisis no reconocido.');
+    assertInvariant(meta.analysis_kind === 'INITIAL', 'AGT-002 initial-analysis persistence: meta.analysis_kind debe ser INITIAL.');
+    assertInvariant(meta.analysis_version === 1, 'AGT-002 initial-analysis persistence: meta.analysis_version de un análisis INITIAL debe ser 1.');
+  }
   assertInvariant(envelope.human_decision === null, 'AGT-002 initial-analysis persistence: human_decision del primer agregado (ANALYSIS_PUBLISHED) debe ser nulo.');
   assertInvariant(meta.g1_authorization_id === completion.authorizationId, 'AGT-002 initial-analysis persistence: meta.g1_authorization_id no coincide con la autorización indicada.');
   assertInvariant(meta.g1_scope === completion.g1Scope, 'AGT-002 initial-analysis persistence: meta.g1_scope no coincide con el alcance indicado.');
@@ -142,7 +151,10 @@ export async function completeAgt002InitialAnalysisJob(database, { jobId, leaseI
   const schemaVersion = meta.schema_version;
   const envelopeHash = canonicalEnvelopeHash(envelope);
 
-  const { data, error } = await database.rpc('psi_complete_agt002_initial_analysis_job', {
+  const rpcName = expectedKind === 'REANALYSIS'
+    ? 'psi_complete_agt002_initial_reanalysis_job'
+    : 'psi_complete_agt002_initial_analysis_job';
+  const { data, error } = await database.rpc(rpcName, {
     p_job_id: jobId,
     p_lease_id: leaseId,
     p_fence_version: fenceVersion,
@@ -169,5 +181,6 @@ export async function completeAgt002InitialAnalysisJob(database, { jobId, leaseI
     analysisRunId: data.analysis_run_id,
     aggregateVersion: data.aggregate_version,
     lineageId: data.lineage_id ?? null,
+    ...(expectedKind === 'REANALYSIS' ? { supersedesRunId: data.supersedes_run_id ?? null } : {}),
   };
 }
