@@ -131,3 +131,17 @@ console.log('AGT-002 INITIAL migration runner contract passed');
     if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
   }
 }
+
+{
+  // Each marker must only detect its own slot: a later migration's objects must never become a requirement of an
+  // earlier marker (107 once leaked into m102 through an open-ended TABLES.slice(8) and made production read "drift").
+  const { STATE_SQL } = await import(runnerUrl);
+  const parts = STATE_SQL.split(/ as m(\d{3}),/);
+  const markers = {};
+  for (let i = 1; i < parts.length; i += 2) markers[parts[i]] = parts[i - 1].slice(parts[i - 1].lastIndexOf('\n  ('));
+  for (const id of ['099', '100', '101', '102', '103', '104', '105', '106']) {
+    assert.ok(markers[id], `marker m${id} present`);
+    assert.doesNotMatch(markers[id], /psi_agt002_company_profile_snapshots|psi_freeze_agt002_company_profile_snapshot/, `m${id} must not depend on migration 107`);
+  }
+  assert.match(markers['107'], /psi_agt002_company_profile_snapshots/);
+}
