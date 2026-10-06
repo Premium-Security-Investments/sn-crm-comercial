@@ -284,3 +284,23 @@ test('without a company profile, or when the evidence is the requirement text it
   assert.deepEqual(initialReportFindingNote({ ...base, companyFitAuthorized: false }, finding).company, []);
   assert.deepEqual(initialReportFindingNote({ ...base, companyFitAuthorized: true }, finding).company, ['El perfil trae la póliza.']);
 });
+
+// --- Before the first analysis (owner review 2026-10-06): one plain block, no retired-engine controls. ---
+test('a new opportunity shows where it stands and the next step, never the retired engine controls', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { createElement } = await import('react');
+  const { TenderPreAnalysisPanel } = await load('../src/tenders/components/TenderPreAnalysisPanel.tsx', { jsx: true });
+  const empty = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, { documentsCount: 0 }));
+  assert.match(empty, /Todavía no se ha hecho/);
+  assert.match(empty, /Actualizar documentos/);
+  const loaded = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, { documentsCount: 35 }));
+  assert.match(loaded, /35 cargados/);
+  for (const html of [empty, loaded]) {
+    assert.doesNotMatch(html, /INITIAL|AGT-002|procesando|Congelar|pausad/i);
+  }
+  const section = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
+  assert.match(section, /!initialFirst && !analysis && initialAnalysis\?\.state === 'pending'[\s\S]*<TenderPreAnalysisPanel/);
+  assert.doesNotMatch(section, /<strong>INITIAL:/, 'the internal name never labels a visible state');
+  const experience = readFileSync(new URL('../src/tenders/components/TenderDecisionExperience.tsx', import.meta.url), 'utf8');
+  assert.match(experience, /Todavía no hay análisis/);
+});

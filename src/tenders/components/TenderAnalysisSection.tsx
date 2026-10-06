@@ -11,6 +11,7 @@ import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionR
 import { shouldShowTenderOperationalPendingProjection, TenderOperationalPendingProjection } from './TenderOperationalPendingProjection';
 import { TenderGovernedDocumentWorkset } from './TenderGovernedDocumentWorkset';
 import { TenderInitialReport } from './TenderInitialReport';
+import { TenderPreAnalysisPanel } from './TenderPreAnalysisPanel';
 import type { Agt002InitialReport } from '../agt002InitialReportProjection';
 import type { Agt002GovernedAnalysisRunState } from '../governedWorksetSelection';
 import { agt002InitialAnalysisStateLabel, type Agt002InitialAnalysisProjection } from '../agt002InitialAnalysisProjection';
@@ -110,6 +111,13 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   // (badge, "Análisis pendiente", preliminary brief, V3 blocks, the governed workset that queues the legacy reanalysis)
   // would render empty or contradict it. Opportunities without INITIAL keep the legacy view unchanged.
   const initialFirst = Boolean(initialAnalysis && initialAnalysis.state !== 'pending');
+  // A new opportunity (no INITIAL yet and no legacy analysis) gets one plain "before the analysis" block instead of the
+  // retired legacy engine's controls. Opportunities that do hold a legacy analysis keep their legacy view unchanged.
+  if (!initialFirst && !analysis && initialAnalysis?.state === 'pending') {
+    return <div className="tender-analysis-section tender-detail-anchor is-pre-analysis">
+      <TenderPreAnalysisPanel documentsCount={documents.length} statusText={statusText} statusTone={statusTone} />
+    </div>;
+  }
   if (initialFirst && initialAnalysis) {
     return <div className="tender-analysis-section tender-detail-anchor is-initial-first">
       {initialAnalysis.state !== 'ready' && <section className={`notice agt002-initial-state state-${initialAnalysis.state}`} role={initialAnalysis.state === 'failed' ? 'alert' : 'status'} aria-label="Estado del análisis inicial">
@@ -130,7 +138,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   }
   return <div className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`}>
     {initialAnalysis && <section className={`notice agt002-initial-state state-${initialAnalysis.state}`} role={initialAnalysis.state === 'failed' ? 'alert' : 'status'} aria-label="Estado del análisis inicial">
-      <strong>INITIAL: {agt002InitialAnalysisStateLabel(initialAnalysis.state)}</strong>
+      <strong>Análisis inicial: {agt002InitialAnalysisStateLabel(initialAnalysis.state)}</strong>
       <span>{initialAnalysis.action.message}</span>
       {initialAnalysis.state === 'ready' && <small>El reporte está disponible. La decisión continúa siendo exclusivamente humana.</small>}
     </section>}
