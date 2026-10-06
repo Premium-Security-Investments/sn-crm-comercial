@@ -204,3 +204,31 @@ test('a member batch that needs several calls merges their notes, renews the lea
   assert.deepEqual(result.output.open_items, ['p', 'p']);
   assert.deepEqual(result.usage, { inputTokens: 20, outputTokens: 10, totalTokens: 30, costUsd: 0.00008 });
 });
+
+test('the synthesis receives the official CRM process data and is told to use the closing date and assign owners', async () => {
+  let request;
+  const configured = runtime({
+    loadPackage: async () => stubPackage(),
+    loadOfficialContext: async (_db, { tenderId }) => ({ entidad: 'FONDO ÚNICO TIC', cierre_oficial: '2026-10-20T00:00:00+00:00', tenderId }),
+    bridgeClient: { run: async value => { request = value; return { content: JSON.stringify({ claims: [], process_analysis: {}, requirements: [], findings: [], contradictions: [], coverage: [], recommendation: {}, open_items: [], process_deadlines: [] }), usage: { input_tokens: 1, output_tokens: 1 } }; } },
+    validateEnvelope: () => ({ ok: true, errors: [] }),
+  });
+  await configured.callModel({ job: synthesisJob, batch: synthesisBatch, modelId: 'model-a', members: batchMember });
+  assert.equal(request.input.official_crm_data.cierre_oficial, '2026-10-20T00:00:00+00:00');
+  assert.equal(request.input.official_crm_data.tenderId, synthesisJob.tenderId);
+  assert.match(request.policy, /dato oficial del CRM \(SECOP\)/);
+  assert.match(request.policy, /owner_role/);
+});
+
+test('without official CRM data the synthesis proceeds unchanged (the context is supplementary)', async () => {
+  let request;
+  const configured = runtime({
+    loadPackage: async () => stubPackage(),
+    loadOfficialContext: async () => null,
+    bridgeClient: { run: async value => { request = value; return { content: JSON.stringify({ claims: [], process_analysis: {}, requirements: [], findings: [], contradictions: [], coverage: [], recommendation: {}, open_items: [], process_deadlines: [] }), usage: { input_tokens: 1, output_tokens: 1 } }; } },
+    validateEnvelope: () => ({ ok: true, errors: [] }),
+  });
+  await configured.callModel({ job: synthesisJob, batch: synthesisBatch, modelId: 'model-a', members: batchMember });
+  assert.equal('official_crm_data' in request.input, false);
+  assert.doesNotMatch(request.policy, /official_crm_data/);
+});
