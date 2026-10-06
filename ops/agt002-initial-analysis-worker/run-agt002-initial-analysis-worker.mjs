@@ -75,7 +75,13 @@ function executeJob(db, job) {
         usedCostUsd,
         callModel: async args => {
           try {
-            return await runtime.callModel({ ...args, job: executingJob, batch, database: db });
+            return await runtime.callModel({
+              ...args, job: executingJob, batch, database: db,
+              // Several model calls inside one durable batch: keep the lease alive between them.
+              heartbeat: () => renewAgt002InitialAnalysisJobLease(db, {
+                jobId: executingJob.jobId, leaseId: executingJob.leaseId, fenceVersion: executingJob.fenceVersion, leaseSeconds: LEASE_SECONDS,
+              }),
+            });
           } catch (error) {
             // The engine collapses every model-call failure into one generic code; this closed diagnostic (reason
             // and validator paths/codes only, never model or document content) keeps the cause observable.
