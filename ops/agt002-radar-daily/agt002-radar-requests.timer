@@ -1,0 +1,10 @@
+[Unit]
+Description=Check every 2 minutes for a pending Radar full-import request
+
+[Timer]
+OnBootSec=90
+OnUnitInactiveSec=120
+RandomizedDelaySec=5s
+
+[Install]
+WantedBy=timers.target

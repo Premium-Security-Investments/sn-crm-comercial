@@ -117,7 +117,17 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
 
   const synchronize = async () => {
     setSyncing(true); setError(null);
-    try { setPayload(await request<TenderRadarPayload>('/api/tender-refresh', { method: 'POST' })); setNotice('Fuentes oficiales sincronizadas.'); void loadRunReceipts(); void loadRunDelta(); }
+    try {
+      const result = await request<TenderRadarPayload & { sync_request?: { status: string; already_open: boolean } }>('/api/tender-refresh', { method: 'POST' });
+      setPayload(result);
+      // The full import runs on the server (~5 minutes); the light refresh only remains before migration 109.
+      setNotice(result.sync_request
+        ? (result.sync_request.already_open
+          ? 'Ya hay una sincronización completa en curso. Tarda unos 5 minutos; luego pulse "Recargar vista".'
+          : 'Sincronización completa solicitada: trae todo de SECOP, TVEC y ESU, igual que la diaria. Tarda unos 5 minutos; luego pulse "Recargar vista".')
+        : 'Fuentes oficiales sincronizadas.');
+      void loadRunReceipts(); void loadRunDelta();
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setSyncing(false); }
   };

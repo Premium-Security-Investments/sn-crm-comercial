@@ -139,6 +139,7 @@ async function freshDb({ with108 = true } = {}) {
   await pg.exec(HAND_ROLLED_ANALYSIS_RUNS);
   for (const name of CHAIN) await pg.exec(migrationSource(name));
   if (with108) await pg.exec(migrationSource(MIGRATION_108));
+  if (with108) await pg.exec(migrationSource('109_agt002_radar_import_requests.sql'));
   return pg;
 }
 
@@ -403,6 +404,7 @@ test('the runs table itself refuses a REANALYSIS without a superseded run or at 
 test('rollback 108 is refused once REANALYSIS evidence exists, and restores the INITIAL-only shape on a pristine install', async () => {
   const pristine = await freshDb();
   try {
+    await pristine.exec(rollbackSource('109_agt002_radar_import_requests_rollback.sql'));
     await pristine.exec(rollbackSource(ROLLBACK_108));
     const state = await verifyInitialMigrationChain(async sql => (await pristine.query(sql)).rows).catch(error => error);
     assert.match(String(state.message), /partial/);

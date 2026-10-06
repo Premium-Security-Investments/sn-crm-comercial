@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 
-export const MIGRATION_ORDER = Object.freeze(['099', '100', '101', '102', '103', '104', '105', '106', '107', '108']);
+export const MIGRATION_ORDER = Object.freeze(['099', '100', '101', '102', '103', '104', '105', '106', '107', '108', '109']);
 export const ROLLBACK_ORDER = Object.freeze([...MIGRATION_ORDER].reverse());
 
 const FILES = Object.freeze({
@@ -17,6 +17,7 @@ const FILES = Object.freeze({
   '106': '106_agt002_initial_v2_aggregate_schema_version.sql',
   '107': '107_agt002_company_profile_snapshots.sql',
   '108': '108_agt002_initial_reanalysis_succession.sql',
+  '109': '109_agt002_radar_import_requests.sql',
 });
 
 const TABLES = Object.freeze([
@@ -32,6 +33,7 @@ const TABLES = Object.freeze([
   'psi_agt002_initial_analysis_run_lineage',
   'psi_agt002_pre_go_analysis_versions',
   'psi_agt002_company_profile_snapshots',
+  'psi_agt002_radar_import_requests',
 ]);
 
 const SERVICE_FUNCTIONS = Object.freeze([
@@ -89,6 +91,8 @@ const MARKERS = Object.freeze({
   // 108: REANALYSIS successor path — its two RPCs and the job's analysis_kind column.
   m108: `(${allFunctions(SERVICE_FUNCTIONS.slice(14, 16))}
     and exists (select 1 from information_schema.columns where table_schema='public' and table_name='psi_agt002_initial_analysis_jobs' and column_name='analysis_kind'))`,
+  // 109: the Radar import request queue (the manual button runs the full import on the host).
+  m109: `(${allTables(TABLES.slice(12, 13))})`,
 });
 
 const tableList = TABLES.map(q).join(', ');
@@ -123,6 +127,7 @@ select
   ${MARKERS.m106} as m106,
   ${MARKERS.m107} as m107,
   ${MARKERS.m108} as m108,
+  ${MARKERS.m109} as m109,
   (select count(*)::int from pg_class c
     join pg_namespace n on n.oid=c.relnamespace
     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r',c.relowner))) a
