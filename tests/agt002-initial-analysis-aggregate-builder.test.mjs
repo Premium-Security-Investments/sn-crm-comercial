@@ -131,7 +131,8 @@ test('the 22-check catalog is registered as not started: the first analysis clai
 
 test('fails closed, with a closed reason, for an unsupported scope or an inconsistent package', () => {
   const base = inputs();
-  assert.throws(() => buildInitialAggregate({ ...base, identity: { ...IDENTITY, g1Scope: 'A_PLUS_B' } }), error => error.diagnostic.reason === 'scope_not_supported');
+  assert.throws(() => buildInitialAggregate({ ...base, identity: { ...IDENTITY, g1Scope: 'B' } }), error => error.diagnostic.reason === 'scope_not_supported');
+  assert.throws(() => buildInitialAggregate({ ...base, identity: { ...IDENTITY, g1Scope: 'A_PLUS_B' } }), error => error.diagnostic.reason === 'company_profile_snapshot_missing');
   assert.throws(() => buildInitialAggregate({ ...base, pkg: undefined }), error => error.diagnostic.reason === 'package_unavailable');
   assert.throws(() => buildInitialAggregate({
     ...base, pkg: { ...base.pkg, version: { ...base.pkg.version, member_count: 9 } },
@@ -149,4 +150,33 @@ test('analysis_core_hash is deterministic, order-independent and sensitive to th
   changed.claims[0].display_text += ' (editado)';
   assert.notEqual(computeInitialAnalysisCoreHash(changed), hash);
   assert.equal(buildInitialAggregate(inputs()).meta.analysis_core_hash, hash);
+});
+
+const COMPANY_IDENTITY = { ...IDENTITY, g1Scope: 'A_PLUS_B', profileSnapshotId: '70000000-0000-4000-8000-000000000001', profileSnapshotHash: 'e'.repeat(64) };
+
+test('with a company profile (A_PLUS_B) the model also judges the company fit, and the recommendation is not restricted', () => {
+  const schema = buildInitialSynthesisModelSchema({ documentIds: DOCUMENTS.map(document => document.id), scope: 'A_PLUS_B' });
+  assert.ok('company_fit' in schema.properties);
+  assert.deepEqual(schema.properties.company_fit.properties.overall_label.enum, ['APTO', 'PARTIAL_NOT_READY', 'NO_APTO']);
+  assert.equal('status' in schema.properties.company_fit.properties, false, 'the server stamps status');
+  assert.equal('profile_snapshot_id' in schema.properties.company_fit.properties, false, 'the server stamps the snapshot identity');
+  assert.ok(schema.$defs.recommendation.properties.kind.enum.includes('CONTINUE_RECOMMENDED'));
+  const scopeA = buildInitialSynthesisModelSchema({ documentIds: DOCUMENTS.map(document => document.id) });
+  assert.equal('company_fit' in scopeA.properties, false);
+  assert.throws(() => buildInitialSynthesisModelSchema({ documentIds: ['x'], scope: 'B' }), error => error.diagnostic.reason === 'scope_not_supported');
+});
+
+test('an A_PLUS_B aggregate stamps the evaluated company fit with the frozen profile identity and validates as v2', () => {
+  const base = inputs(analysis => {
+    analysis.company_fit = { overall_label: 'PARTIAL_NOT_READY', requirement_ids: [], limitation_claim_ids: [], status: 'NOT_AUTHORIZED', profile_snapshot_id: null };
+  });
+  const envelope = buildInitialAggregate({ ...base, identity: COMPANY_IDENTITY });
+  assert.deepEqual(envelope.company_fit, {
+    status: 'EVALUATED', profile_snapshot_id: COMPANY_IDENTITY.profileSnapshotId, profile_snapshot_hash: COMPANY_IDENTITY.profileSnapshotHash,
+    overall_label: 'PARTIAL_NOT_READY', requirement_ids: [], limitation_claim_ids: [],
+  });
+  assert.equal(envelope.meta.g1_scope, 'A_PLUS_B');
+  const result = validatePreGoAnalysisV2(envelope);
+  const scopeErrors = result.errors.filter(error => /company_fit|g1_scope/.test(error.path));
+  assert.deepEqual(scopeErrors, [], 'the A_PLUS_B company_fit contract holds');
 });

@@ -18,6 +18,9 @@ export const INITIAL_MODEL_ANALYSIS_KEYS = Object.freeze([
   'claims', 'process_analysis', 'requirements', 'findings', 'contradictions', 'coverage',
   'recommendation', 'open_items', 'process_deadlines',
 ]);
+// With an authorized company profile (scope A_PLUS_B) the model also writes the company fit verdict.
+export const INITIAL_MODEL_COMPANY_KEYS = Object.freeze([...INITIAL_MODEL_ANALYSIS_KEYS, 'company_fit']);
+export const INITIAL_SCOPES = Object.freeze(['A', 'A_PLUS_B']);
 
 // First INITIAL analyses carry no authorized company profile (scope A): the recommendation space is fixed.
 const SCOPE_A_RECOMMENDATION_KINDS = Object.freeze(['HOLD_RECOMMENDED', 'NO_GO_RECOMMENDED', 'INSUFFICIENT_INFORMATION']);
@@ -51,7 +54,8 @@ const sha256 = value => createHash('sha256').update(value).digest('hex');
 
 /** SHA-256 of the canonical JSON of the analytical sections exactly as the model produced them. */
 export function computeInitialAnalysisCoreHash(analysis) {
-  const core = Object.fromEntries(INITIAL_MODEL_ANALYSIS_KEYS.map(key => [key, analysis?.[key]]));
+  const keys = analysis && 'company_fit' in analysis ? INITIAL_MODEL_COMPANY_KEYS : INITIAL_MODEL_ANALYSIS_KEYS;
+  const core = Object.fromEntries(keys.map(key => [key, analysis?.[key]]));
   return sha256(JSON.stringify(stable(core)));
 }
 
@@ -63,7 +67,8 @@ function omitProperties(definition, keys) {
 }
 
 /** The schema the MODEL fills for the synthesis phase: analytical sections only, sources as {document_id, locator}. */
-export function buildInitialSynthesisModelSchema({ documentIds }) {
+export function buildInitialSynthesisModelSchema({ documentIds, scope = 'A' }) {
+  if (!INITIAL_SCOPES.includes(scope)) throw agt002InitialDiagnosticError('scope_not_supported', { scope: String(scope) });
   if (!Array.isArray(documentIds) || documentIds.length === 0) {
     throw agt002InitialDiagnosticError('synthesis_schema_requires_documents');
   }
@@ -77,10 +82,24 @@ export function buildInitialSynthesisModelSchema({ documentIds }) {
     required: ['document_id', 'locator'],
     properties: { document_id: { enum: [...documentIds] }, locator: nonEmptyText },
   };
-  defs.recommendation.properties.kind = { enum: [...SCOPE_A_RECOMMENDATION_KINDS] };
+  if (scope === 'A') defs.recommendation.properties.kind = { enum: [...SCOPE_A_RECOMMENDATION_KINDS] };
+  const keys = scope === 'A_PLUS_B' ? INITIAL_MODEL_COMPANY_KEYS : INITIAL_MODEL_ANALYSIS_KEYS;
 
   const properties = {};
-  for (const key of INITIAL_MODEL_ANALYSIS_KEYS) {
+  for (const key of keys) {
+    if (key === 'company_fit') {
+      // The server stamps status and the snapshot identity; the model only judges the fit against the frozen profile.
+      properties.company_fit = {
+        type: 'object', additionalProperties: false,
+        required: ['overall_label', 'requirement_ids', 'limitation_claim_ids'],
+        properties: {
+          overall_label: { enum: ['APTO', 'PARTIAL_NOT_READY', 'NO_APTO'] },
+          requirement_ids: { $ref: '#/$defs/idArray' },
+          limitation_claim_ids: { $ref: '#/$defs/idArray' },
+        },
+      };
+      continue;
+    }
     properties[key] = key === 'process_deadlines'
       ? structuredClone(defs.meta.properties.process_deadlines)
       : structuredClone(schema.properties[key]);
@@ -90,7 +109,7 @@ export function buildInitialSynthesisModelSchema({ documentIds }) {
     title: 'AGT-002 INITIAL synthesis model output',
     type: 'object',
     additionalProperties: false,
-    required: [...INITIAL_MODEL_ANALYSIS_KEYS],
+    required: [...keys],
     properties,
     $defs: defs,
   };
@@ -193,7 +212,9 @@ function expandSourceRef(ref, membersByDocument, cutoffAt) {
  */
 export function buildInitialAggregate({ analysis, identity, pkg, now, executor }) {
   if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) throw agt002InitialDiagnosticError('analysis_not_object');
-  if (identity?.g1Scope !== 'A') throw agt002InitialDiagnosticError('scope_not_supported', { scope: String(identity?.g1Scope) });
+  if (!INITIAL_SCOPES.includes(identity?.g1Scope)) throw agt002InitialDiagnosticError('scope_not_supported', { scope: String(identity?.g1Scope) });
+  const withCompany = identity.g1Scope === 'A_PLUS_B';
+  if (withCompany && (!identity.profileSnapshotId || !identity.profileSnapshotHash)) throw agt002InitialDiagnosticError('company_profile_snapshot_missing');
   const { version, members } = pkg ?? {};
   if (!version || !Array.isArray(members) || members.length === 0) throw agt002InitialDiagnosticError('package_unavailable');
   if (members.length !== version.member_count) throw agt002InitialDiagnosticError('package_member_count_mismatch');
@@ -242,14 +263,23 @@ export function buildInitialAggregate({ analysis, identity, pkg, now, executor }
     evidence_package: evidencePackage,
     claims,
     process_analysis: analysis.process_analysis,
-    company_fit: {
-      status: 'NOT_AUTHORIZED',
-      profile_snapshot_id: null,
-      profile_snapshot_hash: null,
-      overall_label: 'NOT_AUTHORIZED',
-      requirement_ids: [],
-      limitation_claim_ids: [],
-    },
+    company_fit: withCompany
+      ? {
+        status: 'EVALUATED',
+        profile_snapshot_id: identity.profileSnapshotId,
+        profile_snapshot_hash: identity.profileSnapshotHash,
+        overall_label: analysis.company_fit?.overall_label,
+        requirement_ids: Array.isArray(analysis.company_fit?.requirement_ids) ? analysis.company_fit.requirement_ids : [],
+        limitation_claim_ids: Array.isArray(analysis.company_fit?.limitation_claim_ids) ? analysis.company_fit.limitation_claim_ids : [],
+      }
+      : {
+        status: 'NOT_AUTHORIZED',
+        profile_snapshot_id: null,
+        profile_snapshot_hash: null,
+        overall_label: 'NOT_AUTHORIZED',
+        requirement_ids: [],
+        limitation_claim_ids: [],
+      },
     requirements: analysis.requirements,
     findings: analysis.findings,
     checks: buildCheckCatalog(),

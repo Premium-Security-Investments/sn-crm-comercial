@@ -14,8 +14,7 @@ const sqlOnly = sql => sql.replace(/--[^\n]*/g, '');
 const fn = 'psi_complete_agt002_initial_analysis_job';
 
 // --- registered in the governed chain, right after 105 -------------------------------------------
-assert.equal(MIGRATION_ORDER.at(-1), '106', '106 must be the last slot in the governed chain');
-assert.equal(MIGRATION_ORDER.at(-2), '105');
+assert.equal(MIGRATION_ORDER[MIGRATION_ORDER.indexOf('106') - 1], '105', '106 must follow 105 in the governed chain');
 
 // --- shape ---------------------------------------------------------------------------------------
 assert.match(migration, /^--/, '106 must open with its rationale');

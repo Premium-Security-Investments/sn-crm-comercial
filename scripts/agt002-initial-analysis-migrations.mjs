@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 
-export const MIGRATION_ORDER = Object.freeze(['099', '100', '101', '102', '103', '104', '105', '106']);
+export const MIGRATION_ORDER = Object.freeze(['099', '100', '101', '102', '103', '104', '105', '106', '107']);
 export const ROLLBACK_ORDER = Object.freeze([...MIGRATION_ORDER].reverse());
 
 const FILES = Object.freeze({
@@ -15,6 +15,7 @@ const FILES = Object.freeze({
   '104': '104_agt002_initial_analysis_server_owned_execution.sql',
   '105': '105_agt002_initial_admission_digest_schema_qualification.sql',
   '106': '106_agt002_initial_v2_aggregate_schema_version.sql',
+  '107': '107_agt002_company_profile_snapshots.sql',
 });
 
 const TABLES = Object.freeze([
@@ -29,6 +30,7 @@ const TABLES = Object.freeze([
   'psi_agt002_initial_analysis_checkpoints',
   'psi_agt002_initial_analysis_run_lineage',
   'psi_agt002_pre_go_analysis_versions',
+  'psi_agt002_company_profile_snapshots',
 ]);
 
 const SERVICE_FUNCTIONS = Object.freeze([
@@ -45,6 +47,7 @@ const SERVICE_FUNCTIONS = Object.freeze([
   'psi_complete_agt002_initial_analysis_job(uuid,uuid,integer,uuid,uuid,uuid,uuid,text,text,text,text,text,jsonb,text)',
   'psi_fail_agt002_initial_analysis_job(uuid,uuid,integer,text)',
   'psi_admit_authorized_agt002_initial_analysis_job(uuid,uuid,uuid,uuid,uuid,text,text,text,text,jsonb,uuid)',
+  'psi_freeze_agt002_company_profile_snapshot(jsonb,text,uuid)',
 ]);
 
 const LEGACY_ADMISSION = 'psi_admit_agt002_initial_analysis_job(uuid,uuid,text,jsonb,text)';
@@ -78,6 +81,8 @@ const MARKERS = Object.freeze({
   m106: `(exists (select 1 from pg_proc p where p.oid=to_regprocedure('public.${SERVICE_FUNCTIONS[10]}')
     and pg_get_functiondef(p.oid) like '%pre_go_analysis.v2%'
     and pg_get_functiondef(p.oid) not like '%pre_go_analysis.v1%'))`,
+  // 107: the company-profile snapshot table and its freeze RPC (scope A_PLUS_B).
+  m107: `(${allTables(TABLES.slice(11, 12))} and ${allFunctions(SERVICE_FUNCTIONS.slice(13, 14))})`,
 });
 
 const tableList = TABLES.map(q).join(', ');
@@ -110,6 +115,7 @@ select
   ${MARKERS.m104} as m104,
   ${MARKERS.m105} as m105,
   ${MARKERS.m106} as m106,
+  ${MARKERS.m107} as m107,
   (select count(*)::int from pg_class c
     join pg_namespace n on n.oid=c.relnamespace
     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r',c.relowner))) a

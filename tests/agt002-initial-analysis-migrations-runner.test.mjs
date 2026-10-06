@@ -15,8 +15,8 @@ const {
   verify,
 } = await import(runnerUrl);
 
-assert.deepEqual(MIGRATION_ORDER, ['099', '100', '101', '102', '103', '104', '105', '106']);
-assert.deepEqual(ROLLBACK_ORDER, ['106', '105', '104', '103', '102', '101', '100', '099']);
+assert.deepEqual(MIGRATION_ORDER, ['099', '100', '101', '102', '103', '104', '105', '106', '107']);
+assert.deepEqual(ROLLBACK_ORDER, ['107', '106', '105', '104', '103', '102', '101', '100', '099']);
 
 for (const id of MIGRATION_ORDER) {
   const migration = readFileSync(new URL(`../supabase/migrations/${id}_agt002_${({
@@ -28,22 +28,25 @@ for (const id of MIGRATION_ORDER) {
     '104': 'initial_analysis_server_owned_execution',
     '105': 'initial_admission_digest_schema_qualification',
     '106': 'initial_v2_aggregate_schema_version',
+    '107': 'company_profile_snapshots',
   })[id]}.sql`, import.meta.url), 'utf8');
   const stripped = stripTopLevelTransactionWrapper(migration);
   assert.doesNotMatch(stripped.trim().split(/\r?\n/)[0], /^begin;$/i);
   assert.doesNotMatch(stripped.trim(), /\bcommit;\s*$/i);
 }
 
-assert.equal(classifyChainState({ m099: false, m100: false, m101: false, m102: false, m103: false, m104: false, m105: false, m106: false }), 'absent');
-assert.equal(classifyChainState({ m099: true, m100: true, m101: false, m102: false, m103: false, m104: false, m105: false, m106: false }), 'partial');
+assert.equal(classifyChainState({ m099: false, m100: false, m101: false, m102: false, m103: false, m104: false, m105: false, m106: false, m107: false }), 'absent');
+assert.equal(classifyChainState({ m099: true, m100: true, m101: false, m102: false, m103: false, m104: false, m105: false, m106: false, m107: false }), 'partial');
 // 104 applied without 105 is a real intermediate state: the admission RPC exists but cannot resolve
 // pgcrypto, so the chain is not complete until 105 lands.
-assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: false, m106: false }), 'partial');
+assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: false, m106: false, m107: false }), 'partial');
 // 105 applied without 106 is a real intermediate state: INITIAL can admit jobs but cannot persist a v2 aggregate.
-assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: false }), 'partial');
-assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: true }), 'applied');
-assert.equal(classifyChainState({ m099: true, m100: false, m101: true, m102: false, m103: false, m104: false, m105: false, m106: false }), 'drift');
-assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: true, unsafe_grants: 1 }), 'drift');
+assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: false, m107: false }), 'partial');
+// 106 applied without 107: INITIAL works in scope A but cannot freeze a company-profile snapshot (A_PLUS_B).
+assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: true, m107: false }), 'partial');
+assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: true, m107: true }), 'applied');
+assert.equal(classifyChainState({ m099: true, m100: false, m101: true, m102: false, m103: false, m104: false, m105: false, m106: false, m107: false }), 'drift');
+assert.equal(classifyChainState({ m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: true, m107: true, unsafe_grants: 1 }), 'drift');
 
 const migrationSql = Object.fromEntries(MIGRATION_ORDER.map(id => [id, `begin;\nselect '${id}' as migration_${id};\ncommit;`]));
 const applySql = buildAtomicApplySql(migrationSql, { m099: false, m100: false, m101: false, m102: false, m103: false, m104: false });
@@ -61,7 +64,7 @@ for (let index = 1; index < ROLLBACK_ORDER.length; index += 1) {
 
 const appliedRow = {
   missing_prerequisites: 0,
-  m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: true,
+  m099: true, m100: true, m101: true, m102: true, m103: true, m104: true, m105: true, m106: true, m107: true,
   unsafe_grants: 0, rls_missing: 0, missing_service_access: 0,
 };
 
@@ -84,7 +87,7 @@ await assert.rejects(
     if (/STATE/.test(sql)) {
       stateReads += 1;
       return [stateReads === 1
-        ? { ...appliedRow, m099: false, m100: false, m101: false, m102: false, m103: false, m104: false, m105: false, m106: false }
+        ? { ...appliedRow, m099: false, m100: false, m101: false, m102: false, m103: false, m104: false, m105: false, m106: false, m107: false }
         : appliedRow];
     }
     return [];
@@ -100,6 +103,7 @@ await assert.rejects(
   assert.match(atomic, /extensions\.digest\(/);
   // 106: the completion RPC must require the v2 envelope in the same atomic apply.
   assert.match(atomic, /pre_go_analysis\.v2/);
+  assert.match(atomic, /psi_agt002_company_profile_snapshots/);
 }
 
 console.log('AGT-002 INITIAL migration runner contract passed');

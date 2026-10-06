@@ -126,3 +126,39 @@ test('synthesis fails closed when the frozen package does not match the job', as
     error => error.diagnostic?.reason === 'package_hash_mismatch',
   );
 });
+
+test('with scope A_PLUS_B the synthesis receives the frozen company profile and the aggregate carries its identity', async () => {
+  let request;
+  const companyJob = { ...synthesisJob, payload: { ...synthesisJob.payload, persistence: { ...synthesisJob.payload.persistence, g1Scope: 'A_PLUS_B', workflowInstanceId: 'wf-1' } } };
+  const configured = runtime({
+    loadPackage: async () => stubPackage(),
+    loadCompanyProfile: async (_db, workflowInstanceId) => {
+      assert.equal(workflowInstanceId, 'wf-1');
+      return { profileSnapshotId: '70000000-0000-4000-8000-000000000001', profileSnapshotHash: 'e'.repeat(64), snapshot: { profile: { legal_name: 'SN' } } };
+    },
+    bridgeClient: { run: async value => {
+      request = value;
+      return { content: JSON.stringify({ claims: [], process_analysis: {}, requirements: [], findings: [], contradictions: [], coverage: [], recommendation: {}, open_items: [], process_deadlines: [], company_fit: { overall_label: 'APTO', requirement_ids: [], limitation_claim_ids: [] } }), usage: { input_tokens: 1, output_tokens: 1 } };
+    } },
+    validateEnvelope: () => ({ ok: true, errors: [] }),
+  });
+  const result = await configured.callModel({ job: companyJob, batch: synthesisBatch, modelId: 'model-a', members: batchMember });
+  assert.deepEqual(request.input.company_profile, { profile: { legal_name: 'SN' } });
+  assert.ok('company_fit' in request.outputSchema.properties);
+  assert.match(request.policy, /perfil congelado de la empresa/);
+  assert.equal(result.output.company_fit.status, 'EVALUATED');
+  assert.equal(result.output.company_fit.profile_snapshot_hash, 'e'.repeat(64));
+});
+
+test('an A_PLUS_B synthesis without a verifiable company profile fails closed before calling the model', async () => {
+  let called = false;
+  const companyJob = { ...synthesisJob, payload: { ...synthesisJob.payload, persistence: { ...synthesisJob.payload.persistence, g1Scope: 'A_PLUS_B', workflowInstanceId: 'wf-1' } } };
+  const configured = runtime({
+    loadPackage: async () => stubPackage(),
+    loadCompanyProfile: async () => { const error = new Error('x'); error.diagnostic = { reason: 'snapshot_content_mismatch' }; throw error; },
+    bridgeClient: { run: async () => { called = true; return {}; } },
+  });
+  await assert.rejects(() => configured.callModel({ job: companyJob, batch: synthesisBatch, modelId: 'model-a', members: batchMember }),
+    error => error.diagnostic?.reason === 'snapshot_content_mismatch');
+  assert.equal(called, false);
+});
