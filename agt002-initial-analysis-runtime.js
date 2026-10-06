@@ -56,6 +56,37 @@ const MEMBER_POLICY = 'Analice únicamente la evidencia suministrada. Cada nota 
 const SYNTHESIS_COMPANY_POLICY = 'Produzca el análisis inicial usando sólo las notas de lote, el catálogo de evidencia y el perfil congelado de la empresa (company_profile). Cite fuentes de la licitación únicamente como {document_id, locator}. Para cada requisito evalúe a la empresa contra ese perfil (company_evaluation): VERIFIED sólo si el perfil lo demuestra; AVAILABLE si el perfil lo declara pero falta soporte; PENDING si falta información; BLOCKER si el perfil muestra que no cumple. Lo que afirme sobre la empresa va como marked_inference con inference_basis que diga qué dato del perfil lo respalda; el perfil es declarado y está pendiente de revisión humana: dígalo, no invente lo que no esté. Dé company_fit (APTO / PARTIAL_NOT_READY / NO_APTO) y una recomendación. No decida GO/NO-GO ni ejecute acciones.';
 const SYNTHESIS_POLICY = 'Produzca el análisis inicial usando sólo las notas de lote y el catálogo de evidencia suministrados. Cite cada fuente únicamente como {document_id, locator} tomados de las notas; no cite nada que las notas no respalden. Cubra todos los bloques de cobertura y declare como pendiente o ausente lo que la evidencia no permita afirmar. No hay perfil de empresa autorizado: la recomendación sólo puede ser HOLD_RECOMMENDED, NO_GO_RECOMMENDED o INSUFFICIENT_INFORMATION. No decida GO/NO-GO ni ejecute acciones.';
 
+
+/**
+ * Member documents can exceed what one model call reads. Documents longer than the limit are split into ordered parts at
+ * line boundaries (never silently truncated), and parts are grouped into calls that each stay under the limit.
+ */
+export function planAgt002InitialMemberCalls(members, maxChars) {
+  const pieces = [];
+  for (const member of members) {
+    const text = typeof member.content === 'string' ? member.content : JSON.stringify(member.content ?? '');
+    if (text.length <= maxChars) { pieces.push({ member, content: text, part: null }); continue; }
+    const parts = [];
+    let rest = text;
+    while (rest.length > maxChars) {
+      let cut = rest.lastIndexOf('\n', maxChars);
+      if (cut < maxChars * 0.5) cut = maxChars;
+      parts.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    if (rest.length) parts.push(rest);
+    parts.forEach((content, index) => pieces.push({ member, content, part: `${index + 1}/${parts.length}` }));
+  }
+  const calls = [];
+  let current = []; let size = 0;
+  for (const piece of pieces) {
+    if (current.length && size + piece.content.length > maxChars) { calls.push(current); current = []; size = 0; }
+    current.push(piece); size += piece.content.length;
+  }
+  if (current.length) calls.push(current);
+  return calls;
+}
+
 /** Creates the real INITIAL rehydration/model boundaries. Dependencies stay injectable for E0. */
 export function createAgt002InitialAnalysisRuntime({
   bridgeClient,
@@ -64,6 +95,7 @@ export function createAgt002InitialAnalysisRuntime({
   validateEnvelope = validatePreGoAnalysisV2,
   loadPackage = defaultLoadPackage,
   loadCompanyProfile = loadAgt002CompanyProfileSnapshotForWorkflow,
+  memberCallMaxChars = Number(process.env.AGT002_INITIAL_ANALYSIS_MEMBER_CALL_MAX_CHARS) || 300_000,
   executorVersion = process.env.AGT002_DEPLOYED_VERSION || 'agt002-initial-analysis-worker',
   now = () => new Date(),
 } = {}) {
@@ -108,7 +140,7 @@ export function createAgt002InitialAnalysisRuntime({
       return members;
     },
 
-    async callModel({ job, batch, modelId, members, database }) {
+    async callModel({ job, batch, modelId, members, database, heartbeat }) {
       const execution = job?.payload?.execution;
       const budget = job?.payload?.budget;
       if (!execution || !budget) throw runtimeError('AGT002_ENGINE_MODEL_CALL_FAILED', 'La configuración de ejecución INITIAL no está disponible.');
@@ -137,9 +169,54 @@ export function createAgt002InitialAnalysisRuntime({
         outputSchema = buildInitialMemberOutputSchema({ memberIds: members.map(member => member.memberId) });
       }
 
+      if (!synthesis) {
+        // One durable member batch may need several model calls: split by size, renew the lease between calls.
+        const memberIds = new Set(members.map(member => member.memberId));
+        const calls = planAgt002InitialMemberCalls(members, memberCallMaxChars);
+        const analysisNotes = []; const openItems = [];
+        let inputTokens = 0; let outputTokens = 0;
+        for (let index = 0; index < calls.length; index += 1) {
+          if (index > 0 && typeof heartbeat === 'function') await heartbeat();
+          const callResponse = await bridgeClient.run({
+            model: modelId,
+            policy: MEMBER_POLICY,
+            input: {
+              analysis_kind: 'INITIAL', phase: batch.phase,
+              opportunity_id: job.opportunityId, tender_id: job.tenderId,
+              package_version_id: persistence.packageVersionId,
+              members: calls[index].map(piece => ({
+                id: piece.member.memberId,
+                metadata: { ...(piece.member.metadata ?? {}), ...(piece.part ? { part: piece.part } : {}) },
+                content: piece.content,
+              })),
+            },
+            outputSchema,
+            timeoutMs: execution.timeoutMs,
+            effort: execution.reasoningEffort,
+            idempotencyKey: `${job.jobId}:${batch.phase}:${batch.batchIndex}:${batch.requestHash}${calls.length > 1 ? `:${index + 1}/${calls.length}` : ''}`,
+          });
+          let parsedCall;
+          try { parsedCall = JSON.parse(callResponse.content); }
+          catch { throw agt002InitialDiagnosticError('response_not_json'); }
+          const notes = Array.isArray(parsedCall?.analysis_notes) ? parsedCall.analysis_notes : [];
+          if (notes.some(note => !memberIds.has(note?.document_id))) throw agt002InitialDiagnosticError('member_note_unknown_document');
+          analysisNotes.push(...notes);
+          openItems.push(...(Array.isArray(parsedCall?.open_items) ? parsedCall.open_items : []));
+          inputTokens += callResponse.usage.input_tokens; outputTokens += callResponse.usage.output_tokens;
+        }
+        const output = { analysis_notes: analysisNotes, open_items: openItems };
+        const costUsd = (inputTokens * budget.inputCostPerMillionUsd + outputTokens * budget.outputCostPerMillionUsd) / 1_000_000;
+        if (!Number.isFinite(costUsd)) throw runtimeError('AGT002_ENGINE_BUDGET_EXCEEDED', 'No fue posible comprobar el costo INITIAL.');
+        return {
+          output,
+          outputSha256: hashAgt002InitialAnalysisOutput(output),
+          usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, costUsd },
+        };
+      }
+
       const response = await bridgeClient.run({
         model: modelId,
-        policy: synthesis ? (company ? SYNTHESIS_COMPANY_POLICY : SYNTHESIS_POLICY) : MEMBER_POLICY,
+        policy: company ? SYNTHESIS_COMPANY_POLICY : SYNTHESIS_POLICY,
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,
