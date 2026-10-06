@@ -63,6 +63,19 @@ const pereiraRawRow = {
   modalidad_de_contratacion: 'Contratación régimen especial',
 };
 
+const bancoAgrarioRawRow = {
+  ...secopIIRawRow,
+  entidad: 'Banco Agrario de Colombia S.A.',
+  departamento_entidad: 'Bogotá D.C.',
+  ciudad_entidad: 'Bogotá',
+  id_del_proceso: 'CO1.REQ.11046654',
+  referencia_del_proceso: 'PAC-2026-1065',
+  nombre_del_procedimiento: 'PAC-2026-1065',
+  descripci_n_del_procedimiento: 'Proceso de contratación régimen especial',
+  modalidad_de_contratacion: 'Contratación régimen especial',
+  nombre_del_proveedor: 'UT GSBCOM 2026',
+};
+
 for (const path of backendPaths) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
   const { tenderSources, normalizeTender } = loadSecopAcquisitionPath(source, path);
@@ -70,6 +83,10 @@ for (const path of backendPaths) {
   assert.ok(
     tenderSources['SECOP II'].select.split(',').includes('modalidad_de_contratacion'),
     `${path}: el $select de SECOP II debe incluir modalidad_de_contratacion`,
+  );
+  assert.ok(
+    tenderSources['SECOP II'].select.split(',').includes('nombre_del_proveedor'),
+    `${path}: el $select de SECOP II debe incluir nombre_del_proveedor`,
   );
 
   const scored = { score: 10, reasons: ['test'], risks: [] };
@@ -93,6 +110,18 @@ for (const path of backendPaths) {
     evaluateTenderCompetibility(pereira, { nowIso: '2026-10-01T12:00:00.000Z' }).status,
     'no_competible',
     `${path}: Pereira CTO 08 DE 2025 (especial sin plazo + ref CTO) debe ser no_competible`,
+  );
+
+  const bancoAgrario = normalizeTender(bancoAgrarioRawRow, 'SECOP II', scored);
+  assert.equal(
+    bancoAgrario.raw.nombre_del_proveedor,
+    'UT GSBCOM 2026',
+    `${path}: Banco Agrario PAC-2026-1065 debe retener nombre_del_proveedor en raw`,
+  );
+  assert.equal(
+    evaluateTenderCompetibility(bancoAgrario, { nowIso: '2026-10-01T12:00:00.000Z' }).status,
+    'no_competible',
+    `${path}: Banco Agrario PAC-2026-1065 (especial sin plazo + proveedor UT GSBCOM 2026) debe ser no_competible`,
   );
 }
 
