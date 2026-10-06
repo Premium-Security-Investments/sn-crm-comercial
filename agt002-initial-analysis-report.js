@@ -44,6 +44,7 @@ export function projectAgt002InitialReport(envelope, documentNames = new Map()) 
     },
     processStatus: text(envelope?.process_analysis?.status),
     companyFitAuthorized: envelope?.company_fit?.status !== 'NOT_AUTHORIZED',
+    companyFitLabel: text(envelope?.company_fit?.overall_label),
     checksExecuted: arr(envelope?.checks).some(check => check?.execution_status === 'EXECUTED'),
     documents: arr(envelope?.evidence_package?.member_refs).map(member => ({
       id: text(member.document_id),
@@ -85,6 +86,8 @@ export function projectAgt002InitialReport(envelope, documentNames = new Map()) 
       description: text(item.description),
       critical: item.critical === true,
       status: text(item.status),
+      ownerRole: typeof item.owner_role === 'string' ? item.owner_role : null,
+      dueAt: typeof item.due_at === 'string' ? item.due_at : null,
     })),
     contradictions: arr(envelope?.contradictions).map(item => ({
       id: text(item.contradiction_id),

@@ -15,7 +15,7 @@ function load(relative, { jsx = false } = {}) {
   return import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString('base64')}`);
 }
 const projectionModule = await load('../src/tenders/agt002InitialReportProjection.ts');
-const { parseAgt002InitialReportResponse, initialReportLabels, initialReportClaims, formatInitialReportSource } = projectionModule;
+const { parseAgt002InitialReportResponse, initialReportLabels, initialReportClaims, formatInitialReportSource, initialReportVerdict, initialReportAxes, initialReportTasks, initialReportAlerts, initialReportCompanyFit } = projectionModule;
 
 const DOCUMENTS = [1, 2].map(index => ({ id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, classification: 'official' }));
 const IDENTITY = {
@@ -97,13 +97,15 @@ test('the report component renders the recommendation, the limits and the source
   const report = serverReport();
   const html = renderToStaticMarkup(createElement(TenderInitialReport, { report }));
   assert.match(html, /Reporte del análisis inicial/);
-  assert.match(html, new RegExp(initialReportLabels.recommendation(report.recommendation.kind)));
+  assert.match(html, new RegExp(initialReportVerdict(report.recommendation.kind).label));
   assert.match(html, /Alcance: sin perfil de empresa/);
   assert.match(html, /sin las verificaciones de la metodología/);
   assert.match(html, /la decisión GO\/NO-GO es humana/);
   // The verdict opens the report and the scope closes it.
-  assert.ok(html.indexOf('Análisis inicial') < html.indexOf('Lo que hay que saber'));
-  assert.ok(html.indexOf('Lo que hay que saber') < html.indexOf('Alcance:'));
+  assert.ok(html.indexOf('para decidir') < html.indexOf('Qué hay que hacer'));
+  assert.ok(html.indexOf('Qué hay que hacer') < html.indexOf('Ver el análisis completo'));
+  assert.ok(html.indexOf('Ver el análisis completo') < html.indexOf('Alcance:'));
+  for (const axis of ['Jurídico y garantías', 'Financiero', 'Técnico, licencias y personal', 'Experiencia', 'Económico']) assert.match(html, new RegExp(axis));
   assert.doesNotMatch(html, /Qué no evalúa este análisis/);
   for (const finding of report.findings) assert.match(html, new RegExp(finding.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').slice(0, 30)));
   assert.match(html, /(pliego|anexo)\.pdf/);
@@ -153,7 +155,8 @@ test('the decision tab shows the INITIAL verdict and its blockers instead of the
   report.findings = [{ id: 'FND-1', severity: 'HIGH', category: 'Experiencia', title: 'Falta acreditar 100 cámaras', impact: 'Sin esto no habilita.', blocker: true, claimIds: [] }];
   const html = renderToStaticMarkup(createElement(TenderInitialDecisionSummary, { report }));
   assert.match(html, /Resultado del análisis inicial/);
-  assert.match(html, new RegExp(initialReportLabels.recommendation(report.recommendation.kind)));
+  assert.match(html, new RegExp(initialReportVerdict(report.recommendation.kind).label));
+  assert.match(html, /Empresa:/);
   assert.match(html, /Lo que hoy impide avanzar/);
   assert.match(html, /href="#tender-analysis"/);
   const experience = readFileSync(new URL('../src/tenders/components/TenderDecisionExperience.tsx', import.meta.url), 'utf8');
@@ -178,4 +181,52 @@ test('the section chips read the INITIAL analysis: "Análisis inicial listo" and
     preparation: ready({ preparationStatus: null, humanPendingCount: 0 }), followUp: { tone: 'unknown', label: '-' },
   });
   assert.equal(legacy['tender-analysis'].label, 'Sin análisis vigente');
+});
+
+test('the verdict speaks the decision language', () => {
+  assert.equal(initialReportVerdict('CONTINUE_RECOMMENDED').label, 'Participar');
+  assert.equal(initialReportVerdict('CONTINUE_CONDITIONAL_RECOMMENDED').label, 'Participar con condiciones');
+  assert.equal(initialReportVerdict('HOLD_RECOMMENDED').label, 'Evaluar a fondo');
+  assert.match(initialReportVerdict('INSUFFICIENT_INFORMATION').label, /falta información/);
+  assert.equal(initialReportVerdict('NO_GO_RECOMMENDED').tone, 'nogo');
+});
+
+test('the five axes turn red on a blocker, amber when unconfirmed, green when verified, grey without data', () => {
+  const report = serverReport();
+  report.requirements = [
+    { id: 'R1', category: 'FINANCIAL', textClaimId: '', applicability: 'APPLICABLE', companyEvaluation: 'VERIFIED', blocker: false, requiredAction: null },
+    { id: 'R2', category: 'EXPERIENCE', textClaimId: '', applicability: 'APPLICABLE', companyEvaluation: 'BLOCKER', blocker: true, requiredAction: 'Conseguir certificación de 100 cámaras' },
+    { id: 'R3', category: 'LICENSE', textClaimId: '', applicability: 'APPLICABLE', companyEvaluation: 'PENDING', blocker: false, requiredAction: 'Verificar licencia canina' },
+    { id: 'R4', category: 'LEGAL', textClaimId: '', applicability: 'NOT_APPLICABLE', companyEvaluation: 'NOT_APPLICABLE', blocker: false, requiredAction: null },
+  ];
+  const axes = Object.fromEntries(initialReportAxes(report).map(axis => [axis.key, axis.light]));
+  assert.deepEqual(axes, { juridico: 'sin_datos', financiero: 'cumple', tecnico: 'por_confirmar', experiencia: 'no_cumple', economico: 'sin_datos' });
+  const tasks = initialReportTasks({ ...report, openItems: [] });
+  assert.equal(tasks[0].text, 'Conseguir certificación de 100 cámaras', 'blocking actions come first');
+  assert.equal(tasks[0].critical, true);
+});
+
+test('tasks are at most five, deduplicated, critical first; alerts are the three most serious, blockers first', () => {
+  const report = serverReport();
+  report.requirements = [];
+  report.openItems = Array.from({ length: 8 }, (_, i) => ({ id: `O${i}`, kind: 'ACTION', description: i === 3 ? 'Obtener el cronograma' : i === 4 ? 'OBTENER EL CRONOGRAMA' : `Tarea ${i}`, critical: i === 6, status: 'OPEN', ownerRole: i === 6 ? 'Jurídico' : null, dueAt: null }));
+  const tasks = initialReportTasks(report);
+  assert.equal(tasks.length, 5);
+  assert.equal(tasks[0].text, 'Tarea 6');
+  assert.equal(tasks[0].owner, 'Jurídico');
+  assert.equal(tasks.filter(task => /cronograma/i.test(task.text)).length, 1);
+  report.findings = [
+    { id: 'F1', severity: 'MEDIUM', title: 'm', impact: '', blocker: false, claimIds: [] },
+    { id: 'F2', severity: 'HIGH', title: 'h', impact: '', blocker: false, claimIds: [] },
+    { id: 'F3', severity: 'MEDIUM', title: 'b', impact: '', blocker: true, claimIds: [] },
+    { id: 'F4', severity: 'CRITICAL', title: 'c', impact: '', blocker: false, claimIds: [] },
+  ];
+  assert.deepEqual(initialReportAlerts(report).map(finding => finding.id), ['F3', 'F4', 'F2']);
+});
+
+test('the company fit reads plainly, including when there is no profile', () => {
+  const report = serverReport();
+  assert.equal(initialReportCompanyFit({ ...report, companyFitAuthorized: false, companyFitLabel: 'NOT_AUTHORIZED' }), 'Sin perfil de empresa');
+  assert.equal(initialReportCompanyFit({ ...report, companyFitAuthorized: true, companyFitLabel: 'NO_APTO' }), 'Hoy no cumple');
+  assert.equal(initialReportCompanyFit({ ...report, companyFitAuthorized: true, companyFitLabel: 'PARTIAL_NOT_READY' }), 'Cumple en parte · aún no lista');
 });
