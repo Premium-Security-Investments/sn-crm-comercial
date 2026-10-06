@@ -1,5 +1,6 @@
 import {
-  formatInitialReportSource, initialReportClaims, initialReportLabels as labels,
+  formatInitialReportSource, initialReportAlerts, initialReportAxes, initialReportClaims, initialReportCompanyFit,
+  initialReportLabels as labels, initialReportTasks, initialReportVerdict,
   type Agt002InitialReport, type Agt002InitialReportClaim,
 } from '../agt002InitialReportProjection';
 
@@ -59,16 +60,64 @@ export function TenderInitialReport({ report, officialCloseDate = null }: { repo
   const openCritical = report.openItems.filter(item => item.critical);
   const officialClose = formatDay(officialCloseDate);
   const scope = initialReportScope(report);
+  const verdict = initialReportVerdict(recommendation.kind);
+  const axes = initialReportAxes(report);
+  const tasks = initialReportTasks(report);
+  const alerts = initialReportAlerts(report);
+  const datedDeadlines = report.deadlines.filter(deadline => deadline.value);
+  const LIGHT_LABEL = { cumple: 'Cumple', por_confirmar: 'Por confirmar', no_cumple: 'No cumple', sin_datos: 'Sin datos' } as const;
   return <article className="initial-report" aria-label="Reporte del análisis inicial">
-    <header className="initial-report-head">
-      <small>Análisis inicial</small>
-      <strong>{labels.recommendation(recommendation.kind)}</strong>
+    <header className={`initial-report-verdict tone-${verdict.tone}`}>
+      <small>Análisis inicial · para decidir</small>
+      <strong>{verdict.label}</strong>
       <p>{recommendation.label}</p>
-      <small className="initial-report-meta">Confianza {labels.confidence(recommendation.confidence)} · Documentos hasta {formatDate(report.cutoffAt)}</small>
+      <div className="initial-report-verdict-meta">
+        <span><b>Empresa:</b> {initialReportCompanyFit(report)}</span>
+        <span><b>Confianza:</b> {labels.confidence(recommendation.confidence)}</span>
+        {officialClose && <span><b>Cierre:</b> {officialClose}</span>}
+      </div>
     </header>
 
+    <section aria-label="Cinco ejes" className="initial-report-axes">
+      {axes.map(axis => <div key={axis.key} className={`initial-report-axis light-${axis.light}`}>
+        <small>{axis.label}</small>
+        <strong>{LIGHT_LABEL[axis.light]}</strong>
+        <span>{axis.total === 0 ? 'Sin requisitos identificados' : `${axis.total} requisito(s)${axis.blockers ? ` · ${axis.blockers} impide(n)` : ''}${axis.pending ? ` · ${axis.pending} por confirmar` : ''}`}</span>
+      </div>)}
+    </section>
+
+    <section aria-label="Qué hay que hacer">
+      <h4>Qué hay que hacer</h4>
+      {tasks.length === 0 ? <p>Sin tareas pendientes registradas.</p> : <ol>{tasks.map((task, index) => <li key={index}>
+        {task.critical && <span className="initial-report-chip severity-blocker">Crítico</span>}
+        <span>{task.text}</span>
+        {(task.owner || task.dueAt) && <small className="initial-report-meta"> · {[task.owner, task.dueAt ? formatDate(task.dueAt) : null].filter(Boolean).join(' · ')}</small>}
+      </li>)}</ol>}
+    </section>
+
+    <div className="initial-report-twin">
+      <section aria-label="Alertas">
+        <h4>Alertas</h4>
+        {alerts.length === 0 ? <p>Sin alertas.</p> : <ul>{alerts.map(finding => <li key={finding.id}>
+          <span className={`initial-report-chip severity-${finding.severity.toLowerCase()}`}>{labels.severity(finding.severity)}</span>
+          {finding.blocker && <span className="initial-report-chip severity-blocker">Impedimento</span>}
+          <strong> {finding.title}</strong>
+        </li>)}</ul>}
+      </section>
+      <section aria-label="Fechas clave">
+        <h4>Fechas clave</h4>
+        <ul>
+          {officialClose && <li><strong>Cierre oficial (CRM):</strong> {officialClose}</li>}
+          {datedDeadlines.map(deadline => <li key={deadline.kind}><strong>{labels.deadlineKind(deadline.kind)}:</strong> {formatDate(deadline.value)} <small className="initial-report-meta">· {labels.certainty(deadline.certainty)}</small></li>)}
+          {!officialClose && datedDeadlines.length === 0 && <li>Las fechas no aparecen en los documentos analizados.</li>}
+        </ul>
+      </section>
+    </div>
+
+    <details className="initial-report-all-claims initial-report-detail">
+      <summary>Ver el análisis completo: hallazgos, requisitos, pendientes, contradicciones y fuentes</summary>
     <section aria-label="Hallazgos">
-      <h4>Lo que hay que saber ({report.findings.length})</h4>
+      <h4>Hallazgos ({report.findings.length})</h4>
       {report.findings.length === 0 ? <p>Sin hallazgos registrados.</p> : <ul>{report.findings.map(finding => <li key={finding.id}>
         <span className={`initial-report-chip severity-${finding.severity.toLowerCase()}`}>{labels.severity(finding.severity)}</span>
         {finding.blocker && <span className="initial-report-chip severity-blocker">Impedimento</span>}
@@ -110,16 +159,6 @@ export function TenderInitialReport({ report, officialCloseDate = null }: { repo
       </li>)}</ul>
     </section>}
 
-    <section aria-label="Plazos">
-      <h4>Fechas</h4>
-      <ul>
-        {officialClose && <li><strong>Cierre oficial (CRM):</strong> {officialClose}</li>}
-        {report.deadlines.map(deadline => <li key={deadline.kind}>
-          <strong>{labels.deadlineKind(deadline.kind)}:</strong> {deadline.value ? formatDate(deadline.value) : 'no aparece en los documentos analizados'}
-          {deadline.value && <small className="initial-report-meta"> · {labels.certainty(deadline.certainty)}</small>}
-        </li>)}
-      </ul>
-    </section>
 
     <details className="initial-report-all-claims">
       <summary>Ver detalle: cobertura, afirmaciones y fuentes ({report.claims.length})</summary>
@@ -133,6 +172,8 @@ export function TenderInitialReport({ report, officialCloseDate = null }: { repo
       <h4>Afirmaciones y fuentes</h4>
       <ul>{report.claims.map(claim => <ClaimItem key={claim.id} claim={claim} />)}</ul>
       <small>Documentos analizados ({report.documents.length}): {report.documents.map(document => document.name ?? 'Documento sin nombre').join('; ')}</small>
+    </details>
+
     </details>
 
     <footer className="initial-report-foot">
