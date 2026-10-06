@@ -163,7 +163,7 @@ test('E4.2 — flag on monta una sola superficie, un solo panel formal y ningún
   assert.equal(count(html, 'class="tender-decision-axis-cta"'), 1, 'una sola CTA primaria');
   // El único punto de montaje del panel formal es la superficie: no hay rama alterna en el shell.
   assert.equal(count(experienceSource, '<TenderGoNoGoDecisionPanel'), 1);
-  assert.match(experienceSource, /if \(decisionAxisSurfaceEnabled && !initialReport\)[\s\S]*<TenderDecisionAxisSurface/);
+  assert.match(experienceSource, /if \(decisionAxisSurfaceEnabled && !initialReport && !nothingAnalyzed\)[\s\S]*<TenderDecisionAxisSurface/);
 });
 
 test('E4.3 — decisionSurfaceElsewhere suprime la lectura competidora y el montaje técnico duplicado, conservando controles', () => {

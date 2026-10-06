@@ -2018,12 +2018,23 @@ async function revalidateTenderOfficialStatus(tender) {
     '$where': `${identityField}='${escapeSocrataLiteral(identityValue)}'`,
     '$limit': '2',
   });
-  let response;
-  try {
-    response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tender-Conversion-Guard/1.0' } });
-  } catch {
-    throw trackingError('SECOP no está disponible para verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
+  // datos.gov.co intermittently rejects requests from shared serverless addresses (owner report 2026-10-06): retry a
+  // few times with a short pause before giving up, and log what SECOP answered so a persistent refusal is diagnosable.
+  let response = null;
+  let lastFailure = 'sin respuesta';
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tender-Conversion-Guard/1.0' } });
+      if (response.ok) break;
+      lastFailure = `HTTP ${response.status}`;
+    } catch (error) {
+      response = null;
+      lastFailure = error?.name || 'fetch_failed';
+    }
+    console.warn(JSON.stringify({ event: 'tender_conversion_secop_check_failed', attempt, failure: lastFailure, process: identityValue }));
+    if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 700 * attempt));
   }
+  if (!response) throw trackingError('SECOP no está disponible para verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
   if (!response.ok) throw trackingError('SECOP no pudo verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
   const rows = await response.json();
   if (!Array.isArray(rows) || rows.length !== 1) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);

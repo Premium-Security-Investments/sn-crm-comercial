@@ -53,7 +53,9 @@ export function TenderDecisionExperience(props: TenderDecisionExperienceProps) {
 
   // The legacy five-axis surface reads the legacy engine's analysis; with an INITIAL report it would only say "pausado"
   // and contradict the verdict, so the INITIAL summary takes its place.
-  if (decisionAxisSurfaceEnabled && !initialReport) {
+  // Nothing analyzed yet (no INITIAL report, no legacy analysis): a plain notice instead of five empty axes.
+  const nothingAnalyzed = !initialReport && !analysis;
+  if (decisionAxisSurfaceEnabled && !initialReport && !nothingAnalyzed) {
     return <TenderDecisionAxisSurface
       opportunityId={opportunityId}
       opportunityName={opportunityName}
@@ -74,7 +76,13 @@ export function TenderDecisionExperience(props: TenderDecisionExperienceProps) {
     {/* With an INITIAL analysis, its verdict replaces the legacy-engine brief (which would only say "no disponible"). */}
     {initialReport
       ? <TenderInitialDecisionSummary report={initialReport} />
-      : <TenderDecisionBrief analysis={analysis} questionResponses={questionResponses} commercialContext={commercialContext} />}
+      : nothingAnalyzed
+        ? <section className="initial-decision-summary is-empty" aria-label="Resultado del análisis inicial">
+          <small>Resultado del análisis inicial</small>
+          <strong>Todavía no hay análisis</strong>
+          <p>Cuando el análisis esté listo, aquí verá el veredicto, cómo está la empresa frente a cada eje y lo que impide avanzar.</p>
+        </section>
+        : <TenderDecisionBrief analysis={analysis} questionResponses={questionResponses} commercialContext={commercialContext} />}
     <TenderGoNoGoDecisionPanel
       opportunityId={opportunityId}
       opportunityName={opportunityName}

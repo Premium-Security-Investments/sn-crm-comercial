@@ -593,3 +593,11 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
   .initial-report-note dl { grid-template-columns: 1fr; }
   .initial-report-note dd { margin-bottom: 6px; }
 }
+
+/* Before the first analysis (owner review 2026-10-06): one plain block instead of the retired engine's controls. */
+.tender-pre-analysis { display: grid; gap: .4rem; padding: 1.1rem 1.25rem; border: 1px solid var(--line, #e2e8f0); border-radius: 14px; background: var(--card, #fff); }
+.tender-pre-analysis > small { text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--muted, #5d6b82); }
+.tender-pre-analysis > strong { font-size: 1.35rem; color: var(--text, #172033); }
+.tender-pre-analysis ol { margin: .4rem 0 0; padding-left: 1.3rem; display: grid; gap: .45rem; }
+.tender-pre-analysis li.is-done { color: #166534; }
+.tender-pre-analysis li.is-next b { color: #b45309; }
