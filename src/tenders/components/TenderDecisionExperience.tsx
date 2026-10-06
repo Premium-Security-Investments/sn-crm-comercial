@@ -51,7 +51,9 @@ export function TenderDecisionExperience(props: TenderDecisionExperienceProps) {
   } = props;
   const initialReport = props.initialReport ?? null;
 
-  if (decisionAxisSurfaceEnabled) {
+  // The legacy five-axis surface reads the legacy engine's analysis; with an INITIAL report it would only say "pausado"
+  // and contradict the verdict, so the INITIAL summary takes its place.
+  if (decisionAxisSurfaceEnabled && !initialReport) {
     return <TenderDecisionAxisSurface
       opportunityId={opportunityId}
       opportunityName={opportunityName}

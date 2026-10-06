@@ -99,8 +99,8 @@ test('the report component renders the recommendation, the limits and the source
   assert.match(html, /Reporte del análisis inicial/);
   assert.match(html, new RegExp(initialReportVerdict(report.recommendation.kind).label));
   assert.match(html, /Alcance: sin perfil de empresa/);
-  assert.match(html, /sin las verificaciones de la metodología/);
-  assert.match(html, /la decisión GO\/NO-GO es humana/);
+  assert.match(html, /sin la revisión punto por punto de la metodología/);
+  assert.match(html, /Participar o no lo decide una persona/);
   // The verdict opens the report and the scope closes it.
   assert.ok(html.indexOf('para decidir') < html.indexOf('Qué hay que hacer'));
   assert.ok(html.indexOf('Qué hay que hacer') < html.indexOf('Ver el análisis completo'));
@@ -229,4 +229,58 @@ test('the company fit reads plainly, including when there is no profile', () => 
   assert.equal(initialReportCompanyFit({ ...report, companyFitAuthorized: false, companyFitLabel: 'NOT_AUTHORIZED' }), 'Sin perfil de empresa');
   assert.equal(initialReportCompanyFit({ ...report, companyFitAuthorized: true, companyFitLabel: 'NO_APTO' }), 'Hoy no cumple');
   assert.equal(initialReportCompanyFit({ ...report, companyFitAuthorized: true, companyFitLabel: 'PARTIAL_NOT_READY' }), 'Cumple en parte · aún no lista');
+});
+
+// --- Owner review 2026-10-06: one requirement once, notes readable without opening sources, no internal codes. ---
+test('requirements over the same text are grouped once, with their points; axes count requirements, not points', async () => {
+  const { initialReportRequirementGroups, initialReportAxes } = await import('../src/tenders/agt002InitialReportProjection.ts');
+  const report = {
+    requirements: [
+      { id: 'R1', category: 'FINANCIAL', textClaimId: 'C-FIN', applicability: 'APPLICABLE', companyEvaluation: 'VERIFIED', blocker: false, requiredAction: 'Confirmar liquidez.' },
+      { id: 'R2', category: 'FINANCIAL', textClaimId: 'C-FIN', applicability: 'APPLICABLE', companyEvaluation: 'BLOCKER', blocker: true, requiredAction: 'Confirmar endeudamiento.' },
+      { id: 'R3', category: 'FINANCIAL', textClaimId: 'C-FIN', applicability: 'APPLICABLE', companyEvaluation: 'PENDING', blocker: false, requiredAction: 'Recalcular.' },
+      { id: 'R4', category: 'LEGAL', textClaimId: 'C-LEG', applicability: 'APPLICABLE', companyEvaluation: 'VERIFIED', blocker: false, requiredAction: null },
+    ],
+    claims: [{ id: 'C-FIN', text: 'Indicadores financieros.' }, { id: 'C-LEG', text: 'RUP vigente.' }],
+  };
+  const groups = initialReportRequirementGroups(report);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].text, 'Indicadores financieros.');
+  assert.equal(groups[0].blocker, true);
+  assert.deepEqual(groups[0].points.map(point => point.evaluation), ['BLOCKER', 'PENDING', 'VERIFIED']);
+  const financial = initialReportAxes(report).find(axis => axis.key === 'financiero');
+  assert.equal(financial.total, 1);
+  assert.equal(financial.blockers, 1);
+});
+
+test('a finding note says what is demanded, how the company stands and what to do, from the stored analysis', async () => {
+  const { initialReportFindingNote, initialReportAcronyms, cleanInitialReportText, initialReportRecommendationText } = await import('../src/tenders/agt002InitialReportProjection.ts');
+  const report = {
+    companyFitAuthorized: true,
+    requirements: [{ id: 'REQ-EXP', category: 'EXPERIENCE', textClaimId: 'CLM-REQ-EXP', applicability: 'APPLICABLE', companyEvaluation: 'PENDING', blocker: true, requiredAction: 'Buscar un aliado con ese contrato.', evidenceClaimIds: ['CLM-CO-EXP'] }],
+    claims: [
+      { id: 'CLM-REQ-EXP', text: 'Un contrato con 1.800 cámaras e integración con SECAD y 40 licencias LPR.' },
+      { id: 'CLM-CO-EXP', text: 'El perfil no declara contratos de VMS (ver CLM-REQ-EXP).' },
+    ],
+  };
+  const finding = { id: 'F1', severity: 'CRITICAL', category: 'Experiencia', title: 'Falta la experiencia específica', impact: 'La oferta sería rechazada.', blocker: true, claimIds: ['CLM-REQ-EXP', 'CLM-CO-EXP'] };
+  const note = initialReportFindingNote(report, finding);
+  assert.deepEqual(note.demand, ['Un contrato con 1.800 cámaras e integración con SECAD y 40 licencias LPR.']);
+  assert.deepEqual(note.company, ['El perfil no declara contratos de VMS.']);
+  assert.deepEqual(note.actions, ['Buscar un aliado con ese contrato.']);
+  assert.match(note.certainty, /Por confirmar/);
+  assert.deepEqual(initialReportAcronyms([...note.demand, ...note.company]).map(entry => entry.acronym), ['SECAD', 'LPR', 'VMS']);
+  assert.equal(cleanInitialReportText("Perfil experience; la evidencia accredited_experience es 'pending_case_validation' en CLM-REQ-EXP-ESP."), "Perfil experiencia; la evidencia experiencia acreditada es 'pendiente de validar' en el requisito citado.");
+  assert.equal(initialReportRecommendationText('Esperar a confirmar el RUP. Esta recomendación no es una decisión GO/NO-GO.'), 'Esperar a confirmar el RUP.');
+});
+
+test('without a company profile, or when the evidence is the requirement text itself, there is no "Cómo estamos"', async () => {
+  const { initialReportFindingNote } = await import('../src/tenders/agt002InitialReportProjection.ts');
+  const base = {
+    requirements: [{ id: 'R', category: 'LEGAL', textClaimId: 'C-REQ', applicability: 'APPLICABLE', companyEvaluation: 'NOT_EVALUATED', blocker: false, requiredAction: 'Revisar.', evidenceClaimIds: ['C-REQ', 'C-CO'] }],
+    claims: [{ id: 'C-REQ', text: 'Garantía de seriedad del 10%.' }, { id: 'C-CO', text: 'El perfil trae la póliza.' }],
+  };
+  const finding = { id: 'F', severity: 'HIGH', category: 'Jurídico', title: 'Garantía', impact: 'Causa rechazo.', blocker: false, claimIds: ['C-REQ', 'C-CO'] };
+  assert.deepEqual(initialReportFindingNote({ ...base, companyFitAuthorized: false }, finding).company, []);
+  assert.deepEqual(initialReportFindingNote({ ...base, companyFitAuthorized: true }, finding).company, ['El perfil trae la póliza.']);
 });

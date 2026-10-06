@@ -66,7 +66,7 @@ test('el montaje con flag conserva brief + registro formal adyacentes en fallbac
   assert.ok(briefIndex >= 0 && panelIndex > briefIndex);
   const briefTagEnd = experience.indexOf('/>', briefIndex) + 2;
   assert.ok(!experience.slice(briefTagEnd, panelIndex).includes('<Tender'), 'ningún componente se interpone entre el brief y el panel en fallback');
-  assert.match(experience, /if \(decisionAxisSurfaceEnabled\)[\s\S]*<TenderDecisionAxisSurface/);
+  assert.match(experience, /if \(decisionAxisSurfaceEnabled && !initialReport\)[\s\S]*<TenderDecisionAxisSurface/);
   assert.match(panel, /<TenderGoNoGoDecisionSummary loading=\{loading\} current=\{current\} \/>/);
   assert.match(summary, /Decisión humana vigente/);
   assert.match(summary, /Sin decisión humana registrada/);
