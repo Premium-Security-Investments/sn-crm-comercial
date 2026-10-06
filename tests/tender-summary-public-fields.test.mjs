@@ -20,12 +20,19 @@ for (const duplicatedGroup of ['Proceso oficial', 'Cronograma y cuantía', 'Gest
 }
 assert.doesNotMatch(publicBlock, /tender-opportunity-technical/, 'Los datos técnicos internos no deben aparecer en la vista operativa.');
 
-// The required labels must exist in the public branch.
-// AGT-002 Task 6: the seven governed fields are the whole public summary. "Días restantes" was
-// removed because its overdue branch printed "Vencida" a second time, next to the single
-// Vigente/Vencida badge owned by TenderDetailNavigation.
-for (const label of ['Entidad', 'Servicio', 'Sector', 'Ciudad', 'Cuantía', 'Cierre oficial', 'Responsable']) {
-  assert.match(publicBlock, new RegExp(`label="${label}"`), `El resumen público debe incluir el campo "${label}".`);
+// The governed public fields (compact summary, 2026-10): entity, owner and amount head the page once (the hero);
+// the summary adds only the official close and the process facts (service, sector, city), never repeating them.
+const heroStart = main.indexOf('id="tender-summary"');
+const hero = main.slice(heroStart, main.indexOf('</div>', main.indexOf('className="hero"', heroStart)));
+assert.match(hero, /\{o\.company_name\}/, 'La entidad encabeza la ficha.');
+assert.match(hero, /o\.owner_name/, 'El responsable encabeza la ficha.');
+assert.match(hero, /fmtMoney\(o\.offer_value\)/, 'La cuantía encabeza la ficha.');
+assert.match(publicBlock, /<small>Cierre oficial<\/small>/, 'El resumen público debe incluir el cierre oficial.');
+for (const field of ['o.service_type_name', 'o.economic_sector', 'o.quote_city']) {
+  assert.ok(publicBlock.includes(field), `El resumen público debe incluir ${field}.`);
+}
+for (const repeated of ['o.company_name', 'o.owner_name', 'o.offer_value']) {
+  assert.ok(!publicBlock.includes(repeated), `El resumen público no debe repetir ${repeated}, que ya encabeza la ficha.`);
 }
 
 // CRM-only fields must not leak into the public branch.
@@ -45,7 +52,7 @@ for (const hidden of ['Snapshot', 'Productor', 'Estado técnico']) {
 
 // Postgres date-only values must use the timezone-safe formatter; the generic timestamp
 // formatter shifts 2026-08-06 to 05/08 in America/Bogota.
-assert.match(publicBlock, /label="Cierre oficial" value=\{fmtDateOnly\(o\.expected_close_date\)\}/);
+assert.match(publicBlock, /<strong>\{fmtDateOnly\(o\.expected_close_date\)\}<\/strong>/);
 
 // AGT-002 Task 6 · la vigencia temporal aparece una sola vez, en el banner del shell.
 assert.doesNotMatch(publicBlock, /label="Días restantes"/, 'El resumen público no debe repetir la vigencia como conteo regresivo.');

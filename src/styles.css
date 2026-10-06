@@ -581,3 +581,15 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .initial-decision-axes li::before { content: ''; position: absolute; left: 0; top: .45em; width: .55rem; height: .55rem; border-radius: 50%; background: #cbd5e1; }
 .initial-decision-axes li.light-cumple::before { background: #16a34a; } .initial-decision-axes li.light-por_confirmar::before { background: #d97706; }
 .initial-decision-axes li.light-no_cumple::before { background: #dc2626; }
+
+/* INITIAL report notes (owner review 2026-10-06): a finding readable without opening its sources. */
+.initial-report-note dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 8px 0 4px; }
+.initial-report-note dt { font-weight: 700; color: #334155; white-space: nowrap; }
+.initial-report-note dd { margin: 0; color: #1e293b; }
+.initial-report-why > ul > li + li { margin-top: 14px; }
+.initial-report-points { margin: 4px 0 0; padding-left: 18px; }
+.initial-report-acronyms { margin-top: 10px; }
+@media (max-width: 640px) {
+  .initial-report-note dl { grid-template-columns: 1fr; }
+  .initial-report-note dd { margin-bottom: 6px; }
+}

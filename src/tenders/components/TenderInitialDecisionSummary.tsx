@@ -1,5 +1,5 @@
 import {
-  initialReportAxes, initialReportCompanyFit, initialReportLabels as labels, initialReportVerdict, type Agt002InitialReport,
+  initialReportAxes, initialReportCompanyFit, initialReportLabels as labels, initialReportRecommendationText, initialReportVerdict, type Agt002InitialReport,
 } from '../agt002InitialReportProjection';
 
 const LIGHT_LABEL = { cumple: 'Cumple', por_confirmar: 'Por confirmar', no_cumple: 'No cumple', sin_datos: 'Sin datos' } as const;
@@ -11,7 +11,7 @@ export function TenderInitialDecisionSummary({ report }: { report: Agt002Initial
   return <section className="initial-decision-summary" aria-label="Resultado del análisis inicial">
     <small>Resultado del análisis inicial</small>
     <strong>{verdict.label}</strong>
-    <p>{report.recommendation.label}</p>
+    <p>{initialReportRecommendationText(report.recommendation.label)}</p>
     <p><b>Empresa:</b> {initialReportCompanyFit(report)} · <b>Confianza:</b> {labels.confidence(report.recommendation.confidence)}</p>
     <ul className="initial-decision-axes">{initialReportAxes(report).map(axis => <li key={axis.key} className={`light-${axis.light}`}><b>{axis.label}:</b> {LIGHT_LABEL[axis.light]}</li>)}</ul>
     {blockers.length > 0 && <div>

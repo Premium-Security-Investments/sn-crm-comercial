@@ -16,10 +16,9 @@ const banner = main.indexOf('id="tender-summary"');
 const hero = main.indexOf('className="hero"', banner);
 const moduleNav = main.indexOf('<TenderModuleNavigation active="oportunidades"', banner);
 const detailNav = main.indexOf('<TenderDetailNavigation', banner);
-// El resumen de licitación usa su propia cuadrícula compacta (ver `tender-opportunity-compact-summary`);
-// `grid three` ya no marca contenido de la ficha (AGT-003 — refinamiento posterior, ver
-// `agt003-first-analysis-refinement-static`), así que el marcador de contenido pasa a ser ese grid.
-const infoGrid = main.indexOf('tender-opportunity-summary-grid', banner);
+// El resumen de licitación es el bloque compacto de cierre + hechos del proceso (ver
+// `tender-opportunity-compact-summary`), así que el marcador de contenido pasa a ser ese bloque.
+const infoGrid = main.indexOf('tender-summary-compact', banner);
 assert.ok(banner >= 0 && banner < hero && hero < moduleNav && moduleNav < detailNav && detailNav < infoGrid, 'el orden debe ser banner → navegación de módulo → barra híbrida → contenido');
 assert.match(styles, /\.tender-module-navigation\{[^}]*display:flex/);
 assert.match(styles, /\.tender-module-navigation \.tender-module-tabs\.module-segmented-nav\{[^}]*width:auto/);

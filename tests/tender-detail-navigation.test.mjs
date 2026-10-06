@@ -71,16 +71,23 @@ const summaryStart = main.indexOf('<Panel title="Resumen de la oportunidad"');
 const summaryEnd = main.indexOf('</Panel>', summaryStart) + '</Panel>'.length;
 assert.ok(summaryStart >= 0 && summaryEnd > summaryStart, 'debe existir el panel de Resumen.');
 const summaryBlock = main.slice(summaryStart, summaryEnd);
-for (const label of ['Entidad', 'Servicio', 'Sector', 'Ciudad', 'Cuantía', 'Cierre oficial', 'Responsable']) {
-  const count = summaryBlock.split(`label="${label}"`).length - 1;
-  assert.equal(count, 1, `el campo ${label} debe aparecer exactamente una vez en Resumen.`);
+// Resumen compacto (2026-10): entidad, cuantía y responsable ya encabezan la ficha; el Resumen muestra una sola vez el
+// cierre oficial y una sola línea con servicio · sector · ciudad.
+for (const field of ['Cierre oficial</small>', 'o.service_type_name', 'o.economic_sector', 'o.quote_city']) {
+  const count = summaryBlock.split(field).length - 1;
+  assert.equal(count, 1, `el campo ${field} debe aparecer exactamente una vez en Resumen.`);
+}
+for (const repeated of ['o.company_name', 'o.offer_value', 'o.owner_name']) {
+  assert.ok(!summaryBlock.includes(repeated), `${repeated} ya encabeza la ficha y no debe repetirse en Resumen.`);
 }
 assert.doesNotMatch(summaryBlock, /label="Etapa"/, 'Etapa ya se expresa en el shell (Badge) y no debe repetirse en Resumen.');
 assert.match(summaryBlock, /Ciudad por confirmar/, 'la ciudad ausente debe usar exactamente "Ciudad por confirmar".');
 assert.doesNotMatch(main, /daysLabel: tenderDaysRemainingLabel/, 'Decisión no debe recibir un texto capaz de imprimir Vencida de nuevo.');
-// El Resumen es exactamente esa lista de siete campos: cualquier campo extra reabre la puerta a
+// El Resumen es exactamente la tarjeta de cierre y la línea de hechos: cualquier campo extra reabre la puerta a
 // duplicar datos ya expresados por el shell (Etapa, Responsable, Fuente oficial o la vigencia).
-assert.equal(countOfSource(summaryBlock, '<Info '), 7, 'el Resumen debe mostrar exactamente los siete campos gobernados.');
+assert.equal(countOfSource(summaryBlock, '<Info '), 0, 'el Resumen compacto no usa tarjetas de campo sueltas.');
+assert.equal(countOfSource(summaryBlock, 'tender-summary-close'), 1, 'el Resumen muestra una sola tarjeta de cierre.');
+assert.equal(countOfSource(summaryBlock, 'tender-summary-facts'), 1, 'el Resumen muestra una sola línea de hechos del proceso.');
 // La vigencia temporal vive una sola vez, en el banner del shell. El Resumen puede mostrar la
 // fecha de cierre pero no una segunda alerta de vencimiento («Días restantes» → «Vencida»).
 assert.doesNotMatch(summaryBlock, /label="Días restantes"/, 'el Resumen no debe repetir la vigencia como Días restantes.');

@@ -79,6 +79,7 @@ export function projectAgt002InitialReport(envelope, documentNames = new Map()) 
       companyEvaluation: text(requirement.company_evaluation),
       blocker: requirement.blocker === true,
       requiredAction: typeof requirement.required_action === 'string' ? requirement.required_action : null,
+      evidenceClaimIds: arr(requirement.evidence_claim_ids).map(text),
     })),
     openItems: arr(envelope?.open_items).map(item => ({
       id: text(item.open_item_id),
