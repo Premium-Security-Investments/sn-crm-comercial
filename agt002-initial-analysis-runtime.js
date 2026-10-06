@@ -52,6 +52,29 @@ async function defaultLoadPackage(database, packageVersionId) {
   return { version: versionResult.data, members: membersResult.data };
 }
 
+// Official process data the CRM already holds (captured from SECOP by Radar). Supplementary: if it cannot be read the
+// synthesis proceeds without it rather than failing the analysis.
+async function defaultLoadOfficialContext(database, { tenderId }) {
+  try {
+    const { data } = await database
+      .from('psi_public_tenders')
+      .select('entity,ref,process_id,title,value,status,published_at,deadline_at,dept,city,source,url')
+      .eq('id', tenderId)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      fuente: 'CRM (capturado de SECOP por Radar)',
+      entidad: data.entity ?? null, referencia: data.ref ?? null, proceso_secop: data.process_id ?? null,
+      objeto: data.title ?? null, presupuesto_cop: data.value ?? null, estado_secop: data.status ?? null,
+      publicado: data.published_at ?? null, cierre_oficial: data.deadline_at ?? null,
+      ubicacion: [data.city, data.dept].filter(Boolean).join(', ') || null, url: data.url ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const OFFICIAL_CONTEXT_POLICY = ' Datos oficiales del CRM (official_crm_data, capturados de SECOP): úselos para entidad, referencia, presupuesto, estado y fecha de cierre. Si ningún documento lo contradice, registre el cierre oficial como plazo SUBMISSION con certeza CONFIRMED, apoyado en una afirmación marked_inference cuya inference_basis diga "dato oficial del CRM (SECOP)"; si un documento lo contradice, regístrelo como contradicción. En cada pendiente (open_items) indique owner_role (área responsable: Licitaciones, Jurídico, Financiero, Operaciones o Comercial) y due_at cuando la fecha se pueda derivar del cronograma o del cierre.';
 const MEMBER_POLICY = 'Analice únicamente la evidencia suministrada. Cada nota debe indicar el documento del que sale (document_id) y dónde lo encontró (locator). No invente datos que el documento no contenga; separe lo hallado de lo pendiente. No decida GO/NO-GO ni ejecute acciones.';
 const SYNTHESIS_COMPANY_POLICY = 'Produzca el análisis inicial usando sólo las notas de lote, el catálogo de evidencia y el perfil congelado de la empresa (company_profile). Cite fuentes de la licitación únicamente como {document_id, locator}. Para cada requisito evalúe a la empresa contra ese perfil (company_evaluation): VERIFIED sólo si el perfil lo demuestra; AVAILABLE si el perfil lo declara pero falta soporte; PENDING si falta información; BLOCKER si el perfil muestra que no cumple. Lo que afirme sobre la empresa va como marked_inference con inference_basis que diga qué dato del perfil lo respalda; el perfil es declarado y está pendiente de revisión humana: dígalo, no invente lo que no esté. Dé company_fit (APTO / PARTIAL_NOT_READY / NO_APTO) y una recomendación. No decida GO/NO-GO ni ejecute acciones.';
 const SYNTHESIS_POLICY = 'Produzca el análisis inicial usando sólo las notas de lote y el catálogo de evidencia suministrados. Cite cada fuente únicamente como {document_id, locator} tomados de las notas; no cite nada que las notas no respalden. Cubra todos los bloques de cobertura y declare como pendiente o ausente lo que la evidencia no permita afirmar. No hay perfil de empresa autorizado: la recomendación sólo puede ser HOLD_RECOMMENDED, NO_GO_RECOMMENDED o INSUFFICIENT_INFORMATION. No decida GO/NO-GO ni ejecute acciones.';
@@ -96,6 +119,7 @@ export function createAgt002InitialAnalysisRuntime({
   loadPackage = defaultLoadPackage,
   loadCompanyProfile = loadAgt002CompanyProfileSnapshotForWorkflow,
   memberCallMaxChars = Number(process.env.AGT002_INITIAL_ANALYSIS_MEMBER_CALL_MAX_CHARS) || 300_000,
+  loadOfficialContext = defaultLoadOfficialContext,
   executorVersion = process.env.AGT002_DEPLOYED_VERSION || 'agt002-initial-analysis-worker',
   now = () => new Date(),
 } = {}) {
@@ -160,6 +184,8 @@ export function createAgt002InitialAnalysisRuntime({
           extraInput.company_profile = company.snapshot;
         }
         outputSchema = buildInitialSynthesisModelSchema({ documentIds: pkg.members.map(member => member.document_version_id), scope: persistence.g1Scope });
+        const officialContext = await loadOfficialContext(database, { opportunityId: job.opportunityId, tenderId: job.tenderId });
+        if (officialContext) extraInput.official_crm_data = officialContext;
         extraInput.evidence_catalog = pkg.members.map(member => ({
           document_id: member.document_version_id,
           source_classification: member.source_classification,
@@ -216,7 +242,7 @@ export function createAgt002InitialAnalysisRuntime({
 
       const response = await bridgeClient.run({
         model: modelId,
-        policy: company ? SYNTHESIS_COMPANY_POLICY : SYNTHESIS_POLICY,
+        policy: (company ? SYNTHESIS_COMPANY_POLICY : SYNTHESIS_POLICY) + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : ''),
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,
