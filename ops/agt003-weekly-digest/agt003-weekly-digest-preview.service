@@ -1,0 +1,35 @@
+[Unit]
+Description=AGT-003 weekly digest PREVIEW: one salesperson + manager summary, all addressed to Juan (manual one-off)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=psi-comercial
+Group=psi-comercial
+# SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (sólo lectura en este proceso). Se reutiliza el archivo del radar; las
+# variables opcionales AGT003_DIGEST_* van en /etc/psi-comercial/agt003-weekly-digest.env (el "-" lo hace opcional).
+EnvironmentFile=/etc/psi-comercial/agt002-radar-scan.env
+EnvironmentFile=-/etc/psi-comercial/agt003-weekly-digest.env
+# Release path is set by the deploy drop-in (10-release.conf).
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt003-weekly-digest/run-agt003-weekly-digest.mjs --mode=preview --sample=1
+TimeoutStartSec=5min
+# Outbox legible por Hermes (root); systemd exporta STATE_DIRECTORY=/var/lib/agt003-weekly-digest.
+StateDirectory=agt003-weekly-digest
+StateDirectoryMode=0755
+UMask=0022
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native

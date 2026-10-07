@@ -1,0 +1,10 @@
+[Unit]
+Description=AGT-003 weekly digest generation, Monday 6:45 a.m. Bogotá (11:45 UTC); Hermes sends at 12:00 UTC
+
+[Timer]
+OnCalendar=Mon *-*-* 11:45:00 UTC
+Persistent=true
+Unit=agt003-weekly-digest.service
+
+[Install]
+WantedBy=timers.target
