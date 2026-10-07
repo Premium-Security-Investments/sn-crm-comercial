@@ -3033,7 +3033,7 @@ export async function loadCommercialBehavior(database, profile, now = new Date()
     lastSeenAvailable = false;
   }
   // El mes (Bogotá) se recorta en la regla pura; aquí sólo se traen las metas más recientes de estos comerciales.
-  const goals = await must(database.from('psi_sales_goals').select('user_id,period_month,sales_budget').in('user_id', ids).order('period_month', { ascending: false }).limit(1000));
+  const goals = await must(database.from('psi_sales_goals').select('user_id,period_month,sales_budget,service_type_code').in('user_id', ids).order('period_month', { ascending: false }).limit(1000));
   const report = buildCommercialBehavior({
     salespeople,
     opportunities,

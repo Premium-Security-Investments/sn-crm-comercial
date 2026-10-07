@@ -121,3 +121,33 @@ test('navegación de consulta: SIIO, Dashboard comercial, Oportunidades y Radar;
   assert.equal(canWriteGoals(profile), false);
   assert.equal(preferredLandingRoute(profile), 'siio');
 });
+
+test('la interfaz oculta las acciones de escritura al rol de solo consulta', () => {
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const detail = main.slice(main.indexOf('function OpportunityDetail('), main.indexOf('const tenderDocumentTypeOptions'));
+  assert.match(detail, /const readOnly = isReadOnlyProfile\(data\.currentProfile\);/);
+  assert.match(detail, /\{canAccessRoute\(data\.currentProfile, 'edit'\) && <button onClick=\{\(\) => go\(`#\/edit\/\$\{o\.id\}`\)\}>Editar<\/button>\}/);
+  assert.match(detail, /\{!readOnly && o\.service_type_code === 'licitacion_publica' && o\.stage_code !== 'descartado'/, 'sin botones de salida de licitación');
+  assert.match(detail, /\{!readOnly && o\.service_type_code !== 'licitacion_publica' && !isTerminalStage\(o\.stage_code\) && <OpportunityDecisionPanel/);
+  assert.match(detail, /\{!readOnly && <div id="opportunity-follow-up"[\s\S]{0,200}<FollowUpForm/);
+  assert.match(main, /\{!siioShell && canAccessRoute\(currentProfile, 'new'\) && <button onClick=\{\(\) => go\('#\/new'\)\}>Nueva oportunidad<\/button>\}/);
+  assert.match(main, /\['consulta','Directivo de solo consulta'\]/, 'el selector de rol de Usuarios incluye consulta');
+  assert.match(main, /consulta: 'Directivo de solo consulta'/);
+  const siio = readFileSync(new URL('../src/siio/SiioDashboard.tsx', import.meta.url), 'utf8');
+  assert.match(siio, /\{!readOnly && <button type="button" onClick=\{\(\) => setBoardDraftOpen\(true\)\}>Preparar informe de Junta<\/button>\}/);
+  const tenderPermissions = readFileSync(new URL('../src/tenders/permissions.ts', import.meta.url), 'utf8');
+  assert.match(tenderPermissions, /export function isTenderReadOnlyProfile/);
+  for (const file of ['../src/tenders/TenderRadarView.tsx', '../src/tenders/TenderTrackingView.tsx']) {
+    assert.match(readFileSync(new URL(file, import.meta.url), 'utf8'), /const readOnly = isTenderReadOnlyProfile\(data\.currentProfile\);/, file);
+  }
+});
+
+test('Vista Admin / Vista Comercial: selector en Sesión activa, guardado por persona con try/catch y sólo presentación', () => {
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.match(main, /try \{ return window\.localStorage\.getItem\(`\$\{VIEW_MODE_STORAGE_PREFIX\}\$\{profileId\}`\) === 'comercial' \? 'comercial' : 'admin'; \} catch \{ return 'admin'; \}/);
+  assert.match(main, /try \{ window\.localStorage\.setItem\(/);
+  assert.match(main, /<div className="session-card">[\s\S]{0,400}canUseCommercialView\(realProfile\)[\s\S]{0,300}Vista Admin[\s\S]{0,300}Vista Comercial/);
+  assert.match(main, /opportunities: data\.opportunities\.filter\(own\)/, 'en Vista Comercial sólo sus oportunidades');
+  assert.match(main, /<RouterView route=\{route\} data=\{viewData\} refresh=\{refresh\} \/>/);
+  assert.doesNotMatch(main, /viewMode[^\n]*api\(/, 'el modo nunca viaja al servidor');
+});

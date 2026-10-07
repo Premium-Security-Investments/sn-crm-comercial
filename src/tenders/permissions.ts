@@ -9,15 +9,21 @@ function isActiveHuman(profile: TenderPermissionProfile): profile is TenderCurre
   return !Object.prototype.hasOwnProperty.call(profile, 'identity_type') || profile.identity_type == null || profile.identity_type === 'human';
 }
 
+/** Directivo de solo consulta: ve Licitaciones y nunca opera (el servidor rechaza cualquier escritura de este rol). */
+export function isTenderReadOnlyProfile(profile: TenderPermissionProfile): boolean {
+  return Boolean(profile) && profile!.role === 'consulta';
+}
+
 /** Mirrors LICITACIONES_COMPANY_PROFILE_UPDATE for textual company-profile edits. */
 export function canConfigureTenders(profile: TenderPermissionProfile): boolean {
-  if (!isActiveHuman(profile) || !Array.isArray(profile.permissions) || !profile.permissions.includes('licitaciones')) return false;
+  if (!isActiveHuman(profile) || isTenderReadOnlyProfile(profile) || !Array.isArray(profile.permissions) || !profile.permissions.includes('licitaciones')) return false;
   return profile.permissions.includes('licitaciones_empresa') || profile.permissions.includes('licitaciones_custodia');
 }
 
 /** Mirrors LICITACIONES_CONFIGURE: custody is required for RUP/document mutations. */
 export function canManageTenderCompanyDocuments(profile: TenderPermissionProfile): boolean {
   return isActiveHuman(profile)
+    && !isTenderReadOnlyProfile(profile)
     && Array.isArray(profile.permissions)
     && profile.permissions.includes('licitaciones')
     && profile.permissions.includes('licitaciones_custodia');

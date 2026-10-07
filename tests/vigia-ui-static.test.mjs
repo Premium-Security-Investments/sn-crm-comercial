@@ -40,9 +40,9 @@ assert.ok(!component.includes('AGT-003'), 'Vig-IA UI must not expose the interna
 assert.ok(component.includes('Puntaje de riesgo'), 'priority card must label the score as Puntaje de riesgo');
 assert.ok(component.includes('Más alto = mayor urgencia'), 'priority card must show the risk score helper copy');
 assert.ok(!component.includes('<small>Score</small>'), 'priority card must not expose the old Score label');
-assert.ok(main.includes('parseVigiaDashboardFilters(window.location.hash'), 'dashboard consumes validated Vig-IA hash filters');
+// El Dashboard comercial de tres preguntas ya no tiene filtros (decisión del dueño, 2026-10-07); el parser de enlaces
+// gobernados se conserva como contrato compartido.
 assert.ok(parser.includes("params.get('owner')") && parser.includes("params.get('stage')") && parser.includes("params.get('service')"), 'dashboard deep-link parser applies governed filters');
 assert.ok(parser.includes('VIGIA_DASHBOARD_FILTER_KEYS') && parser.includes("__invalid_vigia_filter__"), 'dashboard deep-link rejects unknown or malformed filters to empty scope');
-assert.ok(main.includes('Enlace de ${VIGIA_VISIBLE_NAMES.commercial} inválido o manipulado'), 'dashboard explains fail-closed deep-link state');
 for (const marker of ['.vigia-commercial', '.vigia-priority-grid', '.vigia-priority-card', '.vigia-signal-list', '.vigia-feedback']) assert.ok(css.includes(marker), `styles.css missing ${marker}`);
 console.log('vigia commercial UI static contract passed');

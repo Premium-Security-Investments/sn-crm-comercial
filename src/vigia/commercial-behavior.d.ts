@@ -30,7 +30,7 @@ type BehaviorOpportunity = {
   approved_at?: string | null;
   updated_at?: string | null;
 };
-type BehaviorGoal = { user_id?: string | null; period_month?: string | null; sales_budget?: number | string | null };
+type BehaviorGoal = { user_id?: string | null; period_month?: string | null; sales_budget?: number | string | null; service_type_code?: string | null };
 export const BEHAVIOR_RULES: BehaviorRules;
 export const BEHAVIOR_FOLLOW_UP_TYPES: readonly string[];
 export const BEHAVIOR_STATUS_ORDER: readonly BehaviorStatus[];

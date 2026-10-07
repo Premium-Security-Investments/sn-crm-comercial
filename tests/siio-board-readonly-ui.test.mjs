@@ -5,7 +5,7 @@ const dashboard = readFileSync(new URL('../src/siio/SiioDashboard.tsx', import.m
 const boardReadonly = readFileSync(new URL('../src/siio/SiioBoardReadonlyView.tsx', import.meta.url), 'utf8');
 
 assert.match(dashboard, /currentProfile\.role === 'junta'[\s\S]{0,600}?return <SiioBoardReadonlyView payload=\{payload\} loading=\{loading\} status=\{status\} onRetry=\{load\} \/>/, 'Junta must branch before the management dashboard and render its dedicated read-only view.');
-assert.match(dashboard, /useEffect\(\(\) => \{[\s\S]{0,220}if \(!isManagementRole\(currentProfile\.role\) && currentProfile\.role !== 'junta'\) return;[\s\S]{0,120}void load\(\);/, 'Junta must load the reduced bootstrap payload instead of being blocked before loading.');
+assert.match(dashboard, /useEffect\(\(\) => \{[\s\S]{0,220}if \(!isDirectiveViewerRole\(currentProfile\.role\) && currentProfile\.role !== 'junta'\) return;[\s\S]{0,120}void load\(\);/, 'Junta must load the reduced bootstrap payload instead of being blocked before loading.');
 
 assert.match(boardReadonly, /payload\.boardReports/, 'The Junta view must consume only boardReports from bootstrap.');
 assert.match(boardReadonly, /period_month/, 'The Junta view must render each report period.');

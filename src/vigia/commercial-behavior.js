@@ -25,7 +25,7 @@
 //
 // Nunca devuelve el texto de las interacciones (notas): sólo conteos y fechas.
 
-import { isAgt003CommercialOpportunity } from './commercial-scope.js';
+import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity } from './commercial-scope.js';
 import { bogotaDay, FOLLOW_UP_TYPES, isOutOfActivePipeline, isTerminalStage, pendingDecisions } from './opportunity-decision-rules.js';
 
 export const BEHAVIOR_RULES = Object.freeze({ inactiveDays: 7, agendaOkPct: 70, version: 'behavior-v1' });
@@ -73,7 +73,8 @@ function latest(a, b) {
  * inflan el cumplimiento). Devuelve { approved, budget, pct } con pct null cuando no hay presupuesto cargado.
  */
 export function monthlyGoalCompliance({ opportunities = [], goals = [], month, ownerId = null } = {}) {
-  const monthGoals = list(goals).filter(g => String(g?.period_month || '').slice(0, 7) === month && (!ownerId || g.user_id === ownerId));
+  // Las metas de licitaciones públicas (AGT-002) no son metas comerciales.
+  const monthGoals = list(goals).filter(g => String(g?.period_month || '').slice(0, 7) === month && (!ownerId || g.user_id === ownerId) && g.service_type_code !== AGT002_TENDER_SERVICE_TYPE);
   const ownersWithGoal = new Set(monthGoals.map(g => g.user_id));
   const approved = list(opportunities)
     .filter(o => isAgt003CommercialOpportunity(o) && o.stage_code === 'aprobado' && (ownerId ? o.owner_id === ownerId : ownersWithGoal.has(o.owner_id)))

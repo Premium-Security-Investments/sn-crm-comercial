@@ -35,11 +35,11 @@ test('la API de prioridades de AGT-003 excluye las licitaciones en ambos servido
 
 test('el Dashboard comercial cuenta sólo el pipeline comercial y resume las licitaciones aparte', () => {
   const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-  const v2 = src.slice(src.indexOf('function ManagerDashboardV2('), src.indexOf('function ConsultantDetail('));
+  const v2 = src.slice(src.indexOf('function ManagerDashboardV2('), src.indexOf('\nfunction MyDayHome('));
   assert.match(v2, /splitByAgentDomain\(data\.opportunities\)/);
   assert.doesNotMatch(v2, /data\.opportunities\.filter\(/, 'ningún cálculo del tablero parte del universo mezclado');
   assert.match(v2, /v2-tender-aside/);
-  assert.match(v2, /buildMonthlyTrendRows\(commercialData\)/);
+  assert.match(v2, /monthlyGoalCompliance\(\{ opportunities: allCommercialOpportunities/, 'la meta se mide sobre el pipeline comercial');
 });
 
 test('una sola regional por comercial: la de su meta, o la más frecuente normalizada', () => {

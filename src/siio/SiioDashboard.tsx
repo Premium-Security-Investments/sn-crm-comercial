@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import './siio.css';
 import { api } from '../apiClient';
-import { isManagementRole } from '../navPermissions';
+import { isReadOnlyRole } from '../../access-control.js';
+import { isDirectiveViewerRole } from '../navPermissions';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, deriveTrackingItems, navigateSiioView, parseSiioRouteState, toSiioHash } from './selectors';
 import { SiioExecutiveView } from './SiioExecutiveView';
@@ -49,7 +50,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   }, []);
 
   useEffect(() => {
-    if (!isManagementRole(currentProfile.role) && currentProfile.role !== 'junta') return;
+    if (!isDirectiveViewerRole(currentProfile.role) && currentProfile.role !== 'junta') return;
     void load();
   }, [currentProfile.role]);
 
@@ -60,7 +61,9 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
     window.location.hash = toSiioHash(state);
   };
 
-  if (!isManagementRole(currentProfile.role)) {
+  // El directivo de solo consulta ve la vista gerencial completa (no la de junta), sin acciones de escritura.
+  const readOnly = isReadOnlyRole(currentProfile.role);
+  if (!isDirectiveViewerRole(currentProfile.role)) {
     if (currentProfile.role === 'junta') return <SiioBoardReadonlyView payload={payload} loading={loading} status={status} onRetry={load} />;
     return <section className="stack"><div className="error">SIIO / Gestión Gerencial y Control es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
   }
@@ -68,7 +71,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   return <section className="stack siio-dashboard">
     <section className="executive-hero">
       <div><span className="eyebrow">SIIO — Sistema Interno de Inteligencia Operativa</span><h2>Centro de Control Gerencial</h2><p>Información permanente para dirección: resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad.</p></div>
-      <div className="hero-facts"><div><small>Perfil</small><strong>{currentProfile.role}</strong></div><button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button></div>
+      <div className="hero-facts"><div><small>Perfil</small><strong>{currentProfile.role}</strong></div>{!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}</div>
     </section>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     <SiioNavigation activeView={routeState.view} onSelect={selectView} />
@@ -79,6 +82,6 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
         : routeState.view === 'inteligencia'
           ? <SiioSourcesIntelligenceView payload={payload} routeState={routeState} onNavigate={onNavigate} />
           : <SiioAgentsView payload={payload} routeState={routeState} onNavigate={onNavigate} />}
-    {payload && snapshot ? <SiioBoardDraftAction open={boardDraftOpen} onClose={() => setBoardDraftOpen(false)} payload={payload} snapshot={snapshot} trackingItems={trackingItems} recommendations={recommendations} /> : null}
+    {payload && snapshot && !readOnly ? <SiioBoardDraftAction open={boardDraftOpen} onClose={() => setBoardDraftOpen(false)} payload={payload} snapshot={snapshot} trackingItems={trackingItems} recommendations={recommendations} /> : null}
   </section>;
 }

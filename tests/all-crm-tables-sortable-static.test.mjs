@@ -9,8 +9,6 @@ const requiredMarkers = [
   "sortedConsultantMonthlyRows",
   "consultantOpportunitySortConfig",
   "sortedConsultantOpportunities",
-  "personalCriticalSortConfig",
-  "sortedPersonalCriticalRows",
   "stageActionSortConfig",
   "sortedStageActionRows",
   "centinelOpportunitySortConfig",

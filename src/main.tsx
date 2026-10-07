@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { formatDateOnly } from './dateOnly';
 import { bogotaToday, followUpDateToIso } from './followUpDate';
-import { canAccessRoute, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, preferredLandingRoute } from './navPermissions';
+import { canAccessRoute, canManageUsers as navCanManageUsers, canUseCommercialView, canViewTenders as navCanViewTenders, canWriteGoals, effectiveNavProfile, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, isReadOnlyProfile, preferredLandingRoute, type NavViewMode } from './navPermissions';
 import { api, apiDownload, exitTenderOpportunity, setApiAccessToken } from './apiClient';
 import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
 import { agt002UnavailableMessage } from '../agt002-reanalysis-error-message.js';
@@ -43,16 +43,17 @@ import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
-import { DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
+import { bogotaDay, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
+import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
-import { ACTIONS, can } from '../access-control.js';
+import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
 type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
 type AccessCatalog = { areas: Array<{ code: string; name: string }>; subareas: Array<{ code: string; area_code: string; name: string }>; permissions: Array<{ code: string; name: string; description: string }> };
-type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
+type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; can_own_opportunities?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
 type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
@@ -67,12 +68,13 @@ type Opportunity = {
   loss_reason_code: string | null; loss_reason_name: string | null; loss_notes: string | null; commission_rate: number | null; created_at: string; updated_at: string; approved_at?: string | null;
   customer_segment?: CustomerSegment | null; owner_commercial_area?: CommercialArea | null; owner_can_edit_customer_segment?: boolean | null; source_url?: string | null; tender_offer_status?: TenderOfferStatus | null;
   frozen_until?: string | null; frozen_reason?: string | null; delete_requested_at?: string | null; delete_request_reason?: string | null;
+  lost_at?: string | null; discarded_at?: string | null;
 };
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
-type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; areas: AccessAssignment[]; permissions: string[]; can_edit_customer_segment?: boolean };
+type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; areas: AccessAssignment[]; permissions: string[]; can_edit_customer_segment?: boolean; can_own_opportunities?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'prioridad_baja';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
 type TenderQuickFilter = 'hacer' | 'en_revision' | 'high_value' | 'convertidas' | null;
@@ -103,8 +105,11 @@ const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio
 function normalizeClientName(name: string) { return name.trim().replace(/\s+/g, ' ').toLowerCase(); }
 function isManagementRole(role?: string | null) { return navIsManagementRole(role); }
 function canManageUsers(profile?: Profile | null) { return navCanManageUsers(profile); }
-function canManageGoals(profile?: Profile | null) { return canAccessRoute(profile, 'goals'); }
+// Sólo gerencia y admin cargan metas (PUT /api/goals); los demás consultan su meta en la misma pantalla.
+function canManageGoals(profile?: Profile | null) { return canWriteGoals(profile); }
 function canViewTenders(profile?: Profile | null) { return navCanViewTenders(profile); }
+// "Puede tener oportunidades propias (vista comercial)" sólo aplica a roles humanos no comerciales y nunca a solo consulta.
+function canOwnOpportunitiesApplies(role: string) { return role !== 'comercial' && !isReadOnlyRole(role); }
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
 const PRODUCT_OPERATIONAL_UNITS: Record<string, string> = {
@@ -130,7 +135,7 @@ const PRODUCT_OPERATIONAL_UNITS_BY_NAME: Record<string, string> = {
 };
 const OPPORTUNITIES_PAGE_SIZE = 25;
 const TENDERS_PAGE_SIZE = 24;
-const ROLE_LABELS: Record<string, string> = { director: 'Directivo', gerencia: 'Gerencia', admin: 'Admin', comercial: 'Comercial', colaborador: 'Colaborador', junta: 'Junta' };
+const ROLE_LABELS: Record<string, string> = { director: 'Directivo', gerencia: 'Gerencia', admin: 'Admin', comercial: 'Comercial', colaborador: 'Colaborador', junta: 'Junta', consulta: 'Directivo de solo consulta' };
 const REGION_ALIAS_CANONICAL: Record<string, string> = {
   'bogota': 'Bogotá', 'bogotá': 'Bogotá', 'distrito capital de bogota': 'Bogotá', 'distrito capital de bogotá': 'Bogotá',
   'medellin': 'Medellín', 'medellín': 'Medellín',
@@ -216,6 +221,33 @@ function productOperationalUnit(serviceCode?: string | null, serviceName?: strin
 function isApprovedSale(o: Opportunity) { return o.stage_code === 'aprobado'; }
 function monthReferenceDate(o: Opportunity) { return o.approved_at || o.created_at || o.quote_date || o.updated_at; }
 function canEditOpportunitySegment(current: Profile, opportunity?: Opportunity | null) { return !opportunity || isManagementRole(current.role) || (current.can_edit_customer_segment && opportunity.owner_id === current.id); }
+
+// Vista Admin / Vista Comercial: modo de presentación por persona, guardado sólo en este navegador. El servidor sigue
+// autorizando con el perfil real; aquí sólo cambia el menú, la pantalla de llegada y los datos que se muestran.
+const VIEW_MODE_STORAGE_PREFIX = 'crm.viewMode.';
+function readViewMode(profileId?: string | null): NavViewMode {
+  if (!profileId) return 'admin';
+  try { return window.localStorage.getItem(`${VIEW_MODE_STORAGE_PREFIX}${profileId}`) === 'comercial' ? 'comercial' : 'admin'; } catch { return 'admin'; }
+}
+function writeViewMode(profileId: string, mode: NavViewMode) {
+  try { window.localStorage.setItem(`${VIEW_MODE_STORAGE_PREFIX}${profileId}`, mode); } catch { /* sin almacenamiento: el modo dura la sesión */ }
+}
+/** En Vista Comercial la persona ve el CRM como un comercial: sólo sus oportunidades, sus metas y sus KPIs. */
+function bootstrapForViewMode(data: Bootstrap, viewMode: NavViewMode): Bootstrap {
+  const effective = effectiveNavProfile(data.currentProfile, viewMode);
+  if (!effective || effective === data.currentProfile) return data;
+  const selfId = data.currentProfile.id;
+  const own = (o: Opportunity) => o.owner_id === selfId;
+  return {
+    ...data,
+    currentProfile: effective,
+    opportunities: data.opportunities.filter(own),
+    stalled: data.stalled.filter(own),
+    topClosing: data.topClosing.filter(own),
+    monthlyKpis: data.monthlyKpis.filter(k => k.owner_id === selfId),
+    goals: data.goals.filter(g => g.user_id === selfId),
+  };
+}
 
 function parseRoute(): Route {
   const hash = window.location.hash.replace(/^#\/?/, '');
@@ -356,12 +388,22 @@ function App() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  const [viewMode, setViewMode] = useState<NavViewMode>('admin');
+  useEffect(() => { setViewMode(readViewMode(data?.currentProfile?.id)); }, [data?.currentProfile?.id]);
+  const viewData = useMemo(() => data ? bootstrapForViewMode(data, viewMode) : null, [data, viewMode]);
+  const changeViewMode = (mode: NavViewMode) => {
+    const realProfile = data?.currentProfile;
+    if (!realProfile) return;
+    writeViewMode(realProfile.id, mode);
+    setViewMode(mode);
+    go(`#/${preferredLandingRoute(effectiveNavProfile(realProfile, mode))}`);
+  };
   useEffect(() => {
-    const profile = data?.currentProfile;
+    const profile = viewData?.currentProfile;
     if (!profile || !isInitialAppHash(window.location.hash)) return;
     const target = preferredLandingRoute(profile);
     window.location.replace(`${window.location.pathname}${window.location.search}#/${target}`);
-  }, [data?.currentProfile]);
+  }, [viewData?.currentProfile]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useEffect(() => { setSidebarOpen(false); }, [route.page, route.id]);
   useEffect(() => {
@@ -377,7 +419,8 @@ function App() {
   if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
   if (!session) return <LoginScreen siioMode={siioShell} />;
   if (passwordRecovery) return <PasswordResetScreen onDone={() => setPasswordRecovery(false)} />;
-  const currentProfile = data?.currentProfile || null;
+  const currentProfile = viewData?.currentProfile || null;
+  const realProfile = data?.currentProfile || null;
   const closeSidebar = () => setSidebarOpen(false);
   return <div className={`app ${sidebarOpen ? 'sidebar-visible' : ''}`}>
     {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
@@ -385,7 +428,12 @@ function App() {
       <div className="brand"><small>Seguridad Nacional Ltda</small><em>{siioShell ? 'SIIO Gerencial' : 'Dashboard Comercial'}</em></div>
       <div className="sidebar-nav-scroll"><Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} /></div>
       <div className="sidebar-footer-compact">
-        <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
+        <div className="session-card"><small>Sesión activa</small><strong>{realProfile?.full_name || session.user.email}</strong><span>{realProfile ? roleLabel(realProfile.role) : 'perfil'}</span>
+          {realProfile && canUseCommercialView(realProfile) && <div className="view-mode-toggle" role="group" aria-label="Modo de vista">
+            <button type="button" className={viewMode === 'admin' ? 'active' : 'secondary'} aria-pressed={viewMode === 'admin'} onClick={() => changeViewMode('admin')}>Vista Admin</button>
+            <button type="button" className={viewMode === 'comercial' ? 'active' : 'secondary'} aria-pressed={viewMode === 'comercial'} onClick={() => changeViewMode('comercial')}>Vista Comercial</button>
+          </div>}
+        </div>
         <div className="sidebar-footer-actions"><button className="secondary full" onClick={refresh}>Actualizar</button><button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Salir</button></div>
       </div>
     </aside>
@@ -397,7 +445,7 @@ function App() {
       </header>
       {loading && <div className="notice">{siioShell ? 'Cargando SIIO Gerencial…' : 'Cargando información comercial…'}</div>}
       {error && <div className="error">{error}</div>}
-      {!loading && data && <RouterView route={route} data={data} refresh={refresh} />}
+      {!loading && viewData && <RouterView route={route} data={viewData} refresh={refresh} />}
     </main>
   </div>;
 }
@@ -477,7 +525,7 @@ function titleFor(route: Route) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
-  const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
+  const isActiveHref = (href: string) => href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
     {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}>{item.label}</a>)}</div>)}
@@ -614,6 +662,9 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [customerSegmentFilter, setCustomerSegmentFilter] = useState(hashQueryParam('segment')); const [period, setPeriod] = useState<DashboardPeriodFilter>(hashQueryParam('period') as DashboardPeriodFilter); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all');
   const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'regional'|'stage'|'product'|'segment'|'value'|'close'|'last'>>({ key: 'client', direction: 'asc' });
   const [opportunitiesPage, setOpportunitiesPage] = useState(1);
+  // "Ordenar por urgencia": usa el motor de prioridades de AGT-003 (antes la pantalla Prioridades Comerciales).
+  const [urgencySort, setUrgencySort] = useState(false);
+  const priorities = usePrioritiesById(urgencySort);
   const commercialProfiles = data.profiles.filter(isCommercialProfile);
   const regionals = useMemo(() => {
     const canonical = new Map<string, string>();
@@ -625,7 +676,7 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   const listBase = showTenders ? data.opportunities : data.opportunities.filter(isAgt003CommercialOpportunity);
   const hiddenTenderCount = showTenders ? 0 : data.opportunities.length - listBase.length;
   const filtered = listBase.filter(o => matchesDashboardPeriod(o, period) && (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!owner || o.owner_id===owner) && (!regional || normalizeRegion(o.regional_nombre) === regional) && (!stage || o.stage_code===stage) && (!service || o.service_type_code===service) && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter) && (!onlyActive || !isTerminalStage(o.stage_code)));
-  useEffect(() => { setOpportunitiesPage(1); }, [q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, sortConfig.key, sortConfig.direction]);
+  useEffect(() => { setOpportunitiesPage(1); }, [q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, sortConfig.key, sortConfig.direction, urgencySort]);
   const filteredTotals = filtered.reduce((acc, o) => {
     const value = Number(o.offer_value || 0);
     acc.pipeline += value;
@@ -656,15 +707,22 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   ];
   const sortedOpportunities = [...filtered].sort((a,b) => {
     const value = (o: Opportunity) => sortConfig.key === 'client' ? o.company_name : sortConfig.key === 'owner' ? (o.owner_name || '') : sortConfig.key === 'regional' ? (o.regional_nombre || '') : sortConfig.key === 'stage' ? (o.stage_order || 0) : sortConfig.key === 'product' ? (o.tipo_producto_original || o.service_type_name || '') : sortConfig.key === 'segment' ? customerSegmentLabel(o.customer_segment) : sortConfig.key === 'value' ? Number(o.offer_value || 0) : sortConfig.key === 'close' ? (o.expected_close_date || '') : (o.last_interaction_at || '');
+    if (urgencySort && priorities.status === 'ready') {
+      const urgency = (priorities.byId.get(b.id)?.score ?? -1) - (priorities.byId.get(a.id)?.score ?? -1);
+      if (urgency) return urgency;
+    }
     return compareSortValues(value(a), value(b), sortConfig.direction);
   });
   const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
+  const showUrgency = urgencySort && priorities.status === 'ready';
   const pagedOpportunities = sortedOpportunities.slice((opportunitiesPage - 1) * OPPORTUNITIES_PAGE_SIZE, opportunitiesPage * OPPORTUNITIES_PAGE_SIZE);
   return <section className="stack">
-    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button className="secondary" onClick={()=>{ setQ(''); setPeriod(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
+    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button type="button" className={urgencySort ? '' : 'secondary'} aria-pressed={urgencySort} onClick={() => setUrgencySort(current => !current)}>Ordenar por urgencia</button><button className="secondary" onClick={()=>{ setQ(''); setPeriod(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
+    {urgencySort && priorities.status === 'loading' && <p className="muted">Calculando urgencia…</p>}
+    {urgencySort && priorities.status === 'error' && <p className="muted">La urgencia no está disponible en este momento; se mantiene el orden actual.</p>}
     <p className="muted filter-summary"><strong>{filtered.length}</strong> de {listBase.length} oportunidades {showTenders ? 'de licitación' : 'comerciales'} visibles.{hiddenTenderCount ? <> Las {hiddenTenderCount} licitaciones públicas se trabajan en <a href="#/tenders?view=oportunidades">Licitaciones</a>.</> : null}</p>
     <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>Oportunidad líder: {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
-    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDateOnly(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
+    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/>{showUrgency && <th>Urgencia</th>}</tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDateOnly(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td>{showUrgency && <td>{(() => { const priority = priorities.byId.get(o.id); return priority ? <><Badge tone={priority.level === 'alto' ? 'danger' : priority.level === 'medio' ? 'amber' : 'blue'}>{priorityReason(priority)}</Badge><br/><small>{priority.recommendation}</small></> : <small className="muted">Sin alerta</small>; })()}</td>}</tr>)}</tbody></table></div>
     <Pagination page={opportunitiesPage} pageSize={OPPORTUNITIES_PAGE_SIZE} total={filtered.length} onChange={setOpportunitiesPage} label="Paginación de oportunidades" />
   </section>;
 }
@@ -878,6 +936,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const legacyId = (o.legacy_excel_id || '').trim();
   const legacySheet = (o.excel_hoja_origen || '').trim();
   const legacyStatus = (o.estado_pipeline_original || '').trim();
+  // Directivo de solo consulta: ve toda la ficha, sin editar, decidir, registrar seguimientos ni sacar licitaciones.
+  const readOnly = isReadOnlyProfile(data.currentProfile);
   const exitTender = async (destination: 'radar' | 'seguimiento') => {
     const confirmed = window.confirm(destination === 'radar' ? 'La licitación volverá al Radar y dejará de ser una oportunidad activa. ¿Desea continuar?' : 'La licitación quedará en Seguimiento y dejará de ser una oportunidad activa. ¿Desea continuar?');
     if (!confirmed) return;
@@ -900,7 +960,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   };
   return <section className={o.service_type_code === 'licitacion_publica' ? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'}>
     <div id="tender-summary" className="tender-summary-anchor tender-detail-anchor" tabIndex={-1}>
-      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
+      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
@@ -925,7 +985,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         questionResponses={tenderQuestionResponses}
         currentProfile={data.currentProfile}
         request={api}
-        canAnswerQuestions={data.currentProfile.identity_type == null || data.currentProfile.identity_type === 'human'}
+        canAnswerQuestions={!readOnly && (data.currentProfile.identity_type == null || data.currentProfile.identity_type === 'human')}
         onSaveQuestionResponse={async (input, files) => {
           if (!tenderQuestionResponseSaveRef.current) throw new Error('La respuesta humana aún no está disponible.');
           await tenderQuestionResponseSaveRef.current(input, files);
@@ -938,13 +998,13 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       />
     </div>}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} readinessRevision={tenderDossierReadinessRevision} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} onChanged={() => { if (activeDetailIdRef.current === o.id) setTenderDossierReadinessRevision(revision => revision + 1); }} /></div>}
-    {o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code) && <OpportunityDecisionPanel opportunity={o} data={data} onChanged={async () => { await load(); await refresh(); }} />}
+    {!readOnly && o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code) && <OpportunityDecisionPanel opportunity={o} data={data} onChanged={async () => { await load(); await refresh(); }} />}
     <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
       <h2 className="followup-section-title">Seguimiento comercial</h2>
       <div className="followup-section-grid">
-        <div id="opportunity-follow-up" className="opportunity-follow-up-anchor followup-form-slot" tabIndex={-1} ref={followUpRef}>
+        {!readOnly && <div id="opportunity-follow-up" className="opportunity-follow-up-anchor followup-form-slot" tabIndex={-1} ref={followUpRef}>
           <FollowUpForm opportunityId={id} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} />
-        </div>
+        </div>}
         <Panel title="Historial de seguimiento" className="followup-history">
           <div className="timeline followup-timeline">{followUpHistory.length
             ? followUpHistory.map(i => { const entry = presentFollowUpEntry(i); return <div className="event" key={i.id}>
@@ -1413,7 +1473,7 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
     ...offerHistory.map(event => ({ id: `offer-${event.id}`, title: `${offerStatusLabels[event.from_status] || event.from_status} → ${offerStatusLabels[event.to_status] || event.to_status}`, createdAt: event.changed_at, actor: event.psi_sales_profiles?.full_name || event.actor_id || 'Persona autorizada', note: event.note })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [events, decisions, offerHistory, profiles]);
   return <div className="stack">
-    <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required aria-describedby={!note.trim() ? 'tender-follow-up-note-help' : undefined} placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/>{!note.trim() && <small id="tender-follow-up-note-help" className="form-helper">Escriba una descripción para habilitar Guardar actuación.</small>}<small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
+    {!isReadOnlyProfile(currentProfile) && <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required aria-describedby={!note.trim() ? 'tender-follow-up-note-help' : undefined} placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/>{!note.trim() && <small id="tender-follow-up-note-help" className="form-helper">Escriba una descripción para habilitar Guardar actuación.</small>}<small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>}
     <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline tender-business-timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
   </div>;
 }
@@ -1528,7 +1588,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   if (blockingDecisions) return <Panel title="Nueva oportunidad">
     <div className="decision-blocked"><strong>Primero decida {blockingDecisions === 1 ? 'la oportunidad pendiente' : `sus ${blockingDecisions} oportunidades pendientes`}.</strong>
       <p>Toda oportunidad abierta debe tener una decisión vigente (sigue viva con fecha, avanza, congelada, descartada o eliminación pedida). Cuando no tenga pendientes podrá crear nuevas.</p>
-      <a className="button" href="#/">Ir a Mi día</a></div>
+      <a className="button" href="#/home">Ir a Mi día</a></div>
   </Panel>;
   return <Panel title={id ? 'Editar oportunidad' : 'Nueva oportunidad'}>
     <form onSubmit={submit} className="form gridform">
@@ -1646,7 +1706,7 @@ function businessUnitRuleRows(data: Bootstrap, periodMonth: string) {
   });
 }
 
-function CommercialPersonalDashboard({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) { return <ConsultantDetail data={data} ownerId={data.currentProfile.id} personal refresh={refresh} />; }
+function CommercialPersonalDashboard({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) { return <MyDayHome data={data} refresh={refresh} />; }
 
 function ManagerDashboard({ data }: { data: Bootstrap }) {
   const [period, setPeriod] = useState<DashboardPeriodFilter>('');
@@ -1988,490 +2048,254 @@ function goalMatchesV2Scope(goal: SalesGoal, service: string, regional: string) 
   return (!service || goalService === service) && (!regional || goalRegional === regional || goalRegional === 'todas');
 }
 
+// Prioridades de AGT-003 (GET /api/vigia/priorities): el motor de "Prioridades Comerciales" sigue vivo y alimenta el
+// Dashboard comercial y el orden "por urgencia" de Oportunidades. Sólo se usan estos campos.
+type CommercialPriority = { id: string; company_name: string; owner_name: string | null; offer_value: number; score: number; level: string; recommendation: string; explanation?: string | null; signals?: Array<{ label: string }> };
+type CommercialPrioritiesPayload = { priorities: CommercialPriority[] };
+function usePrioritiesById(enabled: boolean) {
+  const [state, setState] = useState<{ status: 'idle' | 'loading' | 'ready' | 'error'; byId: Map<string, CommercialPriority>; list: CommercialPriority[] }>({ status: 'idle', byId: new Map(), list: [] });
+  useEffect(() => {
+    if (!enabled || state.status !== 'idle') return;
+    let cancelled = false;
+    setState(current => ({ ...current, status: 'loading' }));
+    api<CommercialPrioritiesPayload>('/api/vigia/priorities')
+      .then(payload => { if (!cancelled) { const list = Array.isArray(payload?.priorities) ? payload.priorities : []; setState({ status: 'ready', byId: new Map(list.map(item => [item.id, item])), list }); } })
+      .catch(() => { if (!cancelled) setState({ status: 'error', byId: new Map(), list: [] }); });
+    return () => { cancelled = true; };
+  }, [enabled]);
+  return state;
+}
+function priorityReason(priority: CommercialPriority) {
+  return priority.signals?.[0]?.label || priority.explanation || 'Requiere revisión';
+}
+
+const BEHAVIOR_STATUS_LABELS: Record<BehaviorStatus, string> = { inactivo: 'Inactivo', atrasado: 'Atrasado', al_dia: 'Al día' };
+const BEHAVIOR_STATUS_TONES: Record<BehaviorStatus, string> = { inactivo: 'danger', atrasado: 'amber', al_dia: 'success' };
+function sinceLabel(days: number | null) { return days === null ? 'sin registro' : days === 0 ? 'hoy' : days === 1 ? 'hace 1 día' : `hace ${days} días`; }
+
+/** "¿Quién necesita ayuda?": comportamiento por comercial (GET /api/vigia/commercial-behavior, regla behavior-v1). */
+function CommercialBehaviorTable() {
+  const [report, setReport] = useState<(BehaviorReport & { lastSeenAvailable?: boolean }) | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    api<BehaviorReport & { lastSeenAvailable?: boolean }>('/api/vigia/commercial-behavior')
+      .then(next => { if (!cancelled) setReport(next); })
+      .catch(err => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); });
+    return () => { cancelled = true; };
+  }, []);
+  if (error) return <div className="notice">No se pudo cargar el comportamiento del equipo: {error}</div>;
+  if (!report) return <div className="notice">Cargando comportamiento del equipo…</div>;
+  const rules = report.rules;
+  return <>
+    <div className="tablewrap crm-readable-table behavior-table"><table><thead><tr><th>Comercial</th><th>Último seguimiento</th><th>Seguimientos semana / 30 d</th><th>Decisiones semana</th><th>Pendientes de decidir</th><th>% agenda al día</th><th>Último ingreso al CRM</th><th>Meta %</th><th>Estado</th></tr></thead><tbody>{report.rows.map(row => <tr key={row.profileId}>
+      <td><a href={ownerRoute(row.profileId)}><strong>{formatDisplayName(row.name)}</strong></a></td>
+      <td>{row.lastFollowUpAt ? fmtDate(row.lastFollowUpAt) : '—'}<br/><small>{sinceLabel(row.daysSinceFollowUp)}</small></td>
+      <td className="numeric-value">{row.followUpsWeek} / {row.followUps30d}</td>
+      <td className="numeric-value">{row.decisionsWeek}</td>
+      <td className="numeric-value"><strong>{row.pendingDecisions}</strong></td>
+      <td className="numeric-value">{row.agendaPct === null ? '—' : `${row.agendaPct}%`}</td>
+      <td>{row.lastSeenAt ? fmtDate(row.lastSeenAt) : '—'}<br/><small>{row.lastSeenAt ? sinceLabel(row.daysSinceSeen) : 'sin registro'}</small></td>
+      <td className="numeric-value">{row.goalPct === null ? 'Sin meta' : `${row.goalPct}%`}</td>
+      <td><span title={row.reason}><Badge tone={BEHAVIOR_STATUS_TONES[row.status]}>{BEHAVIOR_STATUS_LABELS[row.status]}</Badge></span></td>
+    </tr>)}</tbody></table></div>
+    {!report.rows.length && <EmptyState title="Sin comerciales en su alcance" text="Cuando haya comerciales con oportunidades aparecerá su comportamiento." />}
+    <p className="muted behavior-explanation">Inactivo: sin seguimientos ni ingresos al CRM en {rules.inactiveDays} días o más (si aún no hay registro de ingreso, no se marca inactivo). Atrasado: tiene oportunidades pendientes de decidir o menos del {rules.agendaOkPct}% de su agenda al día. Seguimientos = llamadas, correos, reuniones, WhatsApp y notas que el comercial registró en oportunidades comerciales (sin licitaciones); la semana empieza el lunes. Meta % = ventas aprobadas del mes contra su meta del mes.{report.lastSeenAvailable === false ? ' El registro de ingresos al CRM todavía no está activo.' : ''} Pase el cursor sobre el estado para ver el motivo. Regla {rules.version}.</p>
+  </>;
+}
+
 function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
-  type V2HeroMetricKey = 'cumplimiento' | 'pipeline' | 'cierres' | 'forecast';
-  const [activeV2Metric, setActiveV2Metric] = useState<V2HeroMetricKey>('cumplimiento');
-  const [period, setPeriod] = useState<DashboardPeriodFilter>('');
-  const [customerSegmentFilter, setCustomerSegmentFilter] = useState<CustomerSegment | ''>('');
-  const [focusedDashboardTarget, setFocusedDashboardTarget] = useState<string | null>(null);
-  const [q, setQ] = useState('');
+  const now = useMemo(() => new Date(), [data]);
   // Dominio AGT-003: el tablero comercial cuenta sólo el pipeline privado. Las licitaciones (AGT-002) se resumen aparte.
   const { commercial: allCommercialOpportunities, tenders: tenderOpportunities } = useMemo(() => splitByAgentDomain(data.opportunities), [data.opportunities]);
   // Congeladas vigentes y con eliminación pedida ya están decididas y no cuentan en pipeline, forecast ni alertas.
-  const commercialOpportunities = useMemo(() => allCommercialOpportunities.filter(o => !isOutOfActivePipeline(o)), [allCommercialOpportunities]);
-  const frozenRows = allCommercialOpportunities.filter(o => isFrozen(o));
+  const commercialOpportunities = useMemo(() => allCommercialOpportunities.filter(o => !isOutOfActivePipeline(o, now)), [allCommercialOpportunities, now]);
   const deleteRequestRows = allCommercialOpportunities.filter(o => isDeleteRequested(o));
   const canResolveDelete = Boolean(data.currentProfile.permissions?.includes(DELETE_PERMISSION));
-  const pendingByOwner = Array.from(pendingDecisions(allCommercialOpportunities).reduce((map, o) => {
-    const key = ownerKey(o);
-    const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', count: 0 };
-    row.count++;
-    map.set(key, row);
-    return map;
-  }, new Map<string, { ownerId: string; owner: string; count: number }>()).values()).sort((a, b) => b.count - a.count);
-  const commercialData = useMemo(() => ({ ...data, opportunities: commercialOpportunities }), [data, commercialOpportunities]);
-  const commercialServices = data.services.filter(s => s.code !== AGT002_TENDER_SERVICE_TYPE);
   const activeTenderRows = tenderOpportunities.filter(o => !isTerminalStage(o.stage_code));
   const activeTenderValue = activeTenderRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
-  const initialVigiaFilters = useMemo(() => parseVigiaDashboardFilters(window.location.hash, {
-    owners: commercialOpportunities.map(ownerKey),
-    stages: data.stages.map(item => item.code),
-    services: data.services.map(item => item.code),
-  }), [data]);
-  const [owner, setOwner] = useState(initialVigiaFilters.owner);
-  const [regional, setRegional] = useState('');
-  const [stage, setStage] = useState(initialVigiaFilters.stage);
-  const [service, setService] = useState(initialVigiaFilters.service);
-  const [onlyActive, setOnlyActive] = useState(initialVigiaFilters.onlyActive);
-  const commercialProfiles = data.profiles.filter(isCommercialProfile);
-  const managerRegionalOptions = useMemo(() => {
-    const canonical = new Map<string, string>();
-    commercialOpportunities.forEach(o => { const c = normalizeRegion(o.regional_nombre); if (c && !canonical.has(c)) canonical.set(c, c); });
-    return Array.from(canonical.values()).sort((a,b) => a.localeCompare(b));
-  }, [commercialOpportunities]);
-  const v2BaseScopeMatches = (o: Opportunity) =>
-    matchesDashboardPeriod(o, period) &&
-    (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) &&
-    (!owner || ownerKey(o) === owner) &&
-    (!regional || normalizeRegion(o.regional_nombre) === regional) &&
-    (!service || o.service_type_code === service) &&
-    (!customerSegmentFilter || o.customer_segment === customerSegmentFilter);
-  const scopedOpportunities = useMemo(() => commercialOpportunities.filter(o =>
-    v2BaseScopeMatches(o) &&
-    (!stage || o.stage_code === stage) &&
-    (!onlyActive || !isTerminalStage(o.stage_code))
-  ), [commercialOpportunities, period, q, owner, regional, stage, service, customerSegmentFilter, onlyActive]);
-  const performanceRows = useMemo(() => commercialOpportunities.filter(v2BaseScopeMatches), [commercialOpportunities, period, q, owner, regional, service, customerSegmentFilter]);
-  const sourceRows = scopedOpportunities;
-  const activeRows = sourceRows.filter(o => !isTerminalStage(o.stage_code));
-  const performanceActiveRows = performanceRows.filter(o => !isTerminalStage(o.stage_code));
-  const approvedRows = performanceRows.filter(isApprovedSale);
+  const priorities = usePrioritiesById(true);
+
+  // 1. ¿Vamos a llegar a la meta?
+  const month = bogotaMonth(now);
+  const year = month.slice(0, 4);
+  const monthCompliance = monthlyGoalCompliance({ opportunities: allCommercialOpportunities, goals: data.goals, month });
+  const yearMonths = Array.from({ length: Number(month.slice(5, 7)) }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`);
+  const yearCompliance = yearMonths.reduce((acc, key) => {
+    const row = monthlyGoalCompliance({ opportunities: allCommercialOpportunities, goals: data.goals, month: key });
+    return { approved: acc.approved + row.approved, budget: acc.budget + row.budget };
+  }, { approved: 0, budget: 0 });
+  const yearPct = ownerCompliancePct(yearCompliance.approved, yearCompliance.budget);
   const stageProbability = new Map(data.stages.map(s => [s.code, Number(s.close_probability || 0)]));
+  const activeRows = commercialOpportunities.filter(o => !isTerminalStage(o.stage_code));
   const totalPipeline = activeRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
-  const totalApproved = approvedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const weightedPipeline = activeRows.reduce((sum, o) => sum + Number(o.weighted_pipeline_value || 0), 0);
-  const selectedService = service ? data.services.find(s => s.code === service) : null;
-  const productOperationalUnitLabel = productOperationalUnit(service, selectedService?.name || (service ? 'producto seleccionado' : ''));
-  const serviceScopedGoalsV2 = data.goals.filter(goal => goalMatchesV2Scope(goal, service, regional));
-  // Una sola regional por comercial en todas las tablas (la de su meta, o la más frecuente de sus oportunidades).
-  const regionalByOwner = ownerRegionalMap(performanceRows, serviceScopedGoalsV2, normalizeRegion, ownerKey);
-  const ownerProfilesInScope = data.profiles.filter(profile => performanceRows.some(o => ownerKey(o) === profile.id) || serviceScopedGoalsV2.some(goal => goal.user_id === profile.id));
-  const serviceScopedBudgetRowsV2 = ownerProfilesInScope.map(profile => {
-    const ownerRows = performanceRows.filter(o => ownerKey(o) === profile.id);
-    const ownerApprovedRows = ownerRows.filter(isApprovedSale);
-    const ownerGoals = serviceScopedGoalsV2.filter(goal => goal.user_id === profile.id);
-    const budget = ownerGoals.reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
-    const approved = ownerApprovedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
-    const pipeline = performanceActiveRows.filter(o => ownerKey(o) === profile.id).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
-    const clients = new Set(ownerApprovedRows.map(o => o.company_name).filter(Boolean)).size;
-    const regional = regionalOf(regionalByOwner, profile.id);
-    const monthlyProjectedUnits = Math.max(0, ...ownerGoals.map(goal => Number(goal.operational_unit_target || 0)));
-    const projectedUnits = monthlyProjectedUnits;
-    return { ownerId: profile.id, owner: profile.full_name, cargo: roleLabel(profile.role), regional, budget, approved, pipeline, clients, projectedUnits, compliance: ownerCompliancePct(approved, budget) };
-  }).filter(row => row.budget || row.approved || row.pipeline || row.projectedUnits).sort((a,b)=>b.approved-a.approved || b.pipeline-a.pipeline || b.budget-a.budget);
-  const totalBudget = serviceScopedBudgetRowsV2.reduce((sum, row) => sum + Number(row.budget || 0), 0);
-  const compliancePct = totalBudget ? Math.round((totalApproved / totalBudget) * 100) : null;
-  const projectionRowsV2 = serviceScopedBudgetRowsV2.map(row => {
-    const monthlyBudget = row.budget ? row.budget / 12 : 0;
-    const estimatedMonthlyUnits = monthlyBudget ? Math.max(1, Math.round(monthlyBudget / 18_818_714)) : row.pipeline ? row.clients || 1 : 0;
-    return { ...row, projectedUnits: row.projectedUnits || estimatedMonthlyUnits, monthlyBudget };
-  });
-  const visibleProjectionRowsV2 = projectionRowsV2.slice(0, 8);
-  const salesYear = new Date().getFullYear();
-  const salesQuarters = elapsedQuarters(new Date());
-  const monthlySalesRowsV2 = serviceScopedBudgetRowsV2.slice(0, 8).map(row => {
-    const ownerApprovedRows = approvedRows.filter(o => ownerKey(o) === row.ownerId);
-    const quarterValue = (quarter: number) => ownerApprovedRows.filter(o => {
-      const rawDate = monthReferenceDate(o);
-      const d = rawDate ? new Date(rawDate) : null;
-      return d && d.getFullYear() === salesYear && Math.floor(d.getMonth() / 3) === quarter;
-    }).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
-    const quarters = salesQuarters.map(quarterValue);
-    return { ...row, quarters, accumulated: quarters.reduce((sum, value) => sum + value, 0) };
-  });
-  const projectionCardsV2 = [
-    { label: 'Ventas aprobadas', value: fmtMoneyCompact(totalApproved), detail: `${approvedRows.length} cierres registrados`, tone: 'green', targetId: 'v2-sales-accumulated-focus', action: 'Ver ventas' },
-    { label: 'Presupuesto anual', value: fmtMoneyCompact(totalBudget), detail: 'Presupuesto individual cargado en CRM', tone: totalBudget ? 'blue' : 'amber', targetId: 'v2-annual-budget-focus', action: 'Ver presupuesto' },
-    { label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue', targetId: 'v2-active-pipeline-focus', action: 'Ver pipeline' },
-    { label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Ajustado por probabilidad de etapa', tone: 'purple', targetId: 'v2-forecast-focus', action: 'Ver forecast' },
-    { label: 'Cumplimiento vs meta', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalBudget)} presupuesto cargado` : 'Meta pendiente de cargar', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red', targetId: 'v2-commercial-ranking', action: 'Ver ranking' },
-    { label: 'Unidad operativa', value: productOperationalUnitLabel, detail: service ? 'Según producto seleccionado' : 'Producto seleccionado: todos', tone: 'purple', targetId: 'v2-annual-budget-focus', action: 'Ver unidades' },
-  ];
-  const rankingRowsV2 = Array.from(performanceRows.reduce((map, o) => {
-    const key = ownerKey(o);
-    const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', regional: o.regional_nombre || 'Sin regional', count: 0, active: 0, approved: 0, pipeline: 0, weighted: 0 };
-    row.count++;
-    if (!isTerminalStage(o.stage_code)) { row.active++; row.pipeline += Number(o.offer_value || 0); row.weighted += Number(o.weighted_pipeline_value || 0); }
-    if (isApprovedSale(o)) row.approved += Number(o.offer_value || 0);
-    map.set(key, row);
-    return map;
-  }, new Map<string, { ownerId: string; owner: string; regional: string; count: number; active: number; approved: number; pipeline: number; weighted: number }>()).values()).map(row => {
-    const ownerBudget = serviceScopedBudgetRowsV2.find(b => b.ownerId === row.ownerId)?.budget || 0;
-    const pct = ownerCompliancePct(row.approved, ownerBudget);
-    const tone = pct === null ? 'slate' : pct >= 80 ? 'green' : pct >= 40 ? 'amber' : pct > 0 ? 'red' : 'slate';
-    return { ...row, regional: regionalOf(regionalByOwner, row.ownerId), pct, tone };
-  }).sort((a,b)=>b.approved-a.approved || b.weighted-a.weighted || b.pipeline-a.pipeline).slice(0, 6);
-  const pipelineRowsV2 = Array.from(activeRows.reduce((map, o) => {
-    const key = ownerKey(o);
-    const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', regional: o.regional_nombre || 'Sin regional', offers: 0, value: 0 };
-    row.offers++;
-    row.value += Number(o.offer_value || 0);
-    map.set(key, row);
-    return map;
-  }, new Map<string, { ownerId: string; owner: string; regional: string; offers: number; value: number }>()).values()).map(row => ({ ...row, regional: regionalOf(regionalByOwner, row.ownerId), avgOffer: row.offers ? row.value / row.offers : 0 })).sort((a,b)=>b.value-a.value).slice(0, 6);
-  const topCloseRowsV2 = [...activeRows].map(o => {
+  const negotiationRows = activeRows.map(o => {
     const probability = stageProbability.get(o.stage_code) || 0;
-    const expected = Number(o.weighted_pipeline_value || 0) || Number(o.offer_value || 0) * probability;
-    const share = totalPipeline ? Math.round((Number(o.offer_value || 0) / totalPipeline) * 100) : 0;
-    return { ...o, probability, expected, share };
-  }).sort((a,b)=>b.expected-a.expected || Number(b.offer_value || 0)-Number(a.offer_value || 0)).slice(0, 5);
-  const topCloseTotal = topCloseRowsV2.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
-  const stageRowsV2 = Array.from(activeRows.reduce((map, o) => {
-    const key = o.stage_code || 'sin_etapa';
-    const row = map.get(key) || { stageCode: key, stageName: o.stage_name || 'Sin etapa', count: 0, value: 0, weighted: 0 };
-    row.count++;
-    row.value += Number(o.offer_value || 0);
-    row.weighted += Number(o.weighted_pipeline_value || 0);
-    map.set(key, row);
-    return map;
-  }, new Map<string, { stageCode: string; stageName: string; count: number; value: number; weighted: number }>()).values()).sort((a,b)=>b.weighted-a.weighted || b.value-a.value);
-  const v2HeroTitle = compliancePct === null ? 'Meta pendiente de cargar' : compliancePct >= 100 ? 'Cumplimiento en meta' : compliancePct >= 80 ? 'Cumplimiento cerca de la meta' : 'Cumplimiento por debajo de meta';
-  const v2HeroSubtitle = 'Priorizar cierres de mayor valor esperado, comerciales rezagados y oportunidades sin seguimiento.';
-  const v2HeroMetrics: Array<{ key: V2HeroMetricKey; label: string; value: string; detail: string; tone: string }> = [
-    { key: 'cumplimiento', label: 'Cumplimiento', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalApproved)} / ${fmtMoneyCompact(totalBudget)}` : 'Meta pendiente', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
-    { key: 'pipeline', label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
-    { key: 'cierres', label: 'Cierres prioritarios', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} oportunidades top`, tone: 'green' },
-    { key: 'forecast', label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Según probabilidad de etapa', tone: 'purple' },
-  ];
-  const v2HeroMetricDetails: Record<V2HeroMetricKey, { title: string; summary: string; rows: Array<{ label: string; value: string; detail: string; href?: string }> }> = {
-    cumplimiento: {
-      title: 'Datos de cumplimiento vs meta',
-      summary: totalBudget ? `Ventas aprobadas por ${fmtMoneyCompact(totalApproved)} contra meta cargada de ${fmtMoneyCompact(totalBudget)}.` : 'Todavía no hay meta cargada para leer cumplimiento completo.',
-      rows: rankingRowsV2.slice(0, 5).map(row => ({ label: formatDisplayName(row.owner), value: row.pct === null ? 'Sin meta' : `${row.pct}%`, detail: `${fmtMoneyCompact(row.approved)} aprobado · ${row.count} oportunidades · ${formatRegionalLabel(row.regional)}`, href: ownerRoute(row.ownerId) })),
-    },
-    pipeline: {
-      title: 'Datos del pipeline activo',
-      summary: `${activeRows.length} ofertas activas suman ${fmtMoneyCompact(totalPipeline)} (${service ? data.services.find(s => s.code === service)?.name || 'producto seleccionado' : 'todos los productos comerciales'}).`,
-      rows: pipelineRowsV2.slice(0, 5).map(row => ({ label: formatDisplayName(row.owner), value: fmtMoneyCompact(row.value), detail: `${row.offers} ofertas · promedio ${fmtMoneyCompact(row.avgOffer)} · ${formatRegionalLabel(row.regional)}`, href: ownerRoute(row.ownerId) })),
-    },
-    cierres: {
-      title: 'Datos de cierres prioritarios',
-      summary: `Top ${topCloseRowsV2.length} oportunidades concentran ${fmtMoneyCompact(topCloseTotal)} para revisión gerencial inmediata.`,
-      rows: topCloseRowsV2.map(o => ({ label: formatDisplayName(o.company_name), value: fmtMoneyCompact(o.expected), detail: `${formatDisplayName(o.owner_name || 'Sin comercial')} · ${o.stage_name} · ${Math.round(o.probability * 100)}% prob.`, href: `#/detail/${o.id}` })),
-    },
-    forecast: {
-      title: 'Datos del forecast ponderado',
-      summary: `Forecast calculado por probabilidad de etapa: ${fmtMoneyCompact(weightedPipeline)} sobre ${fmtMoneyCompact(totalPipeline)} activo.`,
-      rows: stageRowsV2.slice(0, 5).map(row => ({ label: row.stageName, value: fmtMoneyCompact(row.weighted), detail: `${row.count} ofertas · ${fmtMoneyCompact(row.value)} valor total`, href: `#/opportunities?stage=${encodeURIComponent(row.stageCode)}` })),
-    },
-  };
-  const v2MetricDetailRows = v2HeroMetricDetails[activeV2Metric];
-  const v2ServiceName = service ? data.services.find(s => s.code === service)?.name || 'Seguridad Física' : 'Todos los productos';
-  const hasNonServiceFilters = Boolean(period || q || owner || regional || stage || customerSegmentFilter || onlyActive);
-  const v2HeroLabel = service && !hasNonServiceFilters ? `Servicio: ${v2ServiceName}` : 'Vista filtrada';
-  const v2ScopeSummary = `${sourceRows.length}/${commercialOpportunities.length} oportunidades comerciales`;
-  const lowComplianceRows = rankingRowsV2.filter(row => row.pct !== null && row.pct < 8 && row.count >= 10);
-  const lowComplianceNames = namesSummary(lowComplianceRows.map(row => formatDisplayName(row.owner)));
-  const dataQuality = dataQualitySummary(performanceActiveRows, normalizeRegion);
-  const v2ManagementPriorities = [
-    { label: 'Cerrar oportunidades top', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} negocios por valor esperado`, tone: 'green', targetId: 'v2-top-close-opportunities', action: 'Ver lista priorizada' },
-    { label: 'Recuperar bajo cumplimiento', value: String(lowComplianceRows.length), detail: lowComplianceRows.length ? `${lowComplianceNames} ${lowComplianceRows.length === 1 ? 'requiere' : 'requieren'} foco` : 'Sin alertas bajo 8%', tone: lowComplianceRows.length ? 'red' : 'green', targetId: 'v2-low-compliance-focus', action: 'Ver lectura de riesgo' },
-    { label: 'Completar datos', value: String(dataQuality.missingValue), detail: dataQuality.complete ? 'Datos completos' : `Oportunidades activas sin valor · ${dataQuality.summary}`, tone: dataQuality.complete ? 'green' : 'amber', targetId: 'v2-regional-normalization-focus', action: 'Ver calidad de datos' },
-    { label: 'Proteger forecast', value: fmtMoneyCompact(weightedPipeline), detail: `${fmtMoneyCompact(totalPipeline)} activos por etapa`, tone: 'purple', targetId: 'v2-forecast-focus', action: 'Ver concentración' },
-  ];
-  const v2ActionRows = activeRows.map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }));
-  const v2MissingAgendaRows = v2ActionRows.filter(r => r.action.code === 'missing');
-  const v2OverdueRows = v2ActionRows.filter(r => r.action.code === 'overdue');
-  const v2ManagedRows = v2ActionRows.filter(r => r.opportunity.next_action_at && !['overdue','missing'].includes(r.action.code));
-  const v2ManagedRatio = activeRows.length ? Math.round((v2ManagedRows.length / activeRows.length) * 100) : 100;
-  const v2StaleRows = v2ActionRows.filter(r => Number(r.inactiveDays || 0) >= 10 && !['overdue','missing'].includes(r.action.code));
-  const currentMonthKeyV2 = new Date().toISOString().slice(0, 7);
-  const v2GoalRowsFromV1 = buildGoalVsActualRows(commercialData, [currentMonthKeyV2]);
-  const v2GoalRowsWithTargets = v2GoalRowsFromV1.filter(row => row.pct !== null);
-  const v2GoalAveragePct = v2GoalRowsWithTargets.length ? Math.round(v2GoalRowsWithTargets.reduce((sum,row)=>sum+Number(row.pct||0),0)/v2GoalRowsWithTargets.length) : null;
-  const v2StageLeader = stageRowsV2[0];
-  const v2Concentration = v2StageLeader && totalPipeline ? Math.round((Number(v2StageLeader.value || 0) / totalPipeline) * 100) : 0;
-  const v2ServicePipelineRows = Array.from(activeRows.reduce((map, o) => {
-    const key = o.service_type_code || o.tipo_producto_original || '__sin_servicio__';
-    const label = o.service_type_name || o.tipo_producto_original || 'Sin servicio clasificado';
-    const row = map.get(key) || { key, label, count: 0, value: 0, weighted: 0 };
-    row.count++;
-    row.value += Number(o.offer_value || 0);
-    row.weighted += Number(o.weighted_pipeline_value || 0);
-    map.set(key, row);
-    return map;
-  }, new Map<string, { key: string; label: string; count: number; value: number; weighted: number }>()).values()).map(row => ({ ...row, share: Math.round((row.value / Math.max(totalPipeline, 1)) * 100) })).sort((a,b)=>b.value-a.value || b.count-a.count);
-  const v2ServiceLeader = v2ServicePipelineRows[0];
-  const v2CriticalOpportunityRows = v2ActionRows.map(r => {
-    const value = Number(r.opportunity.offer_value || 0);
-    const riskScore = value + (r.action.code === 'overdue' ? 600_000_000 : 0) + (r.action.code === 'missing' ? 450_000_000 : 0) + (Number(r.inactiveDays || 0) >= 10 ? 250_000_000 : 0);
-    const risk = r.action.code === 'overdue' ? 'Gestión vencida' : r.action.code === 'missing' ? 'Sin próxima acción' : Number(r.inactiveDays || 0) >= 10 ? 'Sin seguimiento reciente' : 'Revisar avance';
-    return { ...r, riskScore, risk };
-  }).filter(r => ['overdue','missing'].includes(r.action.code) || Number(r.inactiveDays || 0) >= 10).sort((a,b)=>b.riskScore-a.riskScore).slice(0, 10);
-  const v2CommercialAlertRows = Array.from(v2ActionRows.reduce((map, row) => {
-    const key = ownerKey(row.opportunity);
-    const existing = map.get(key) || {
-      ownerId: key,
-      owner: row.opportunity.owner_name || 'Sin comercial',
-      regional: row.opportunity.regional_nombre || 'Regional pendiente',
-      active: 0,
-      overdue: 0,
-      missing: 0,
-      stale: 0,
-      overdueValue: 0,
-      missingValue: 0,
-      staleValue: 0,
-      riskValue: 0,
-    };
-    const value = Number(row.opportunity.offer_value || 0);
-    const isStale = Number(row.inactiveDays || 0) >= 10 && !['overdue','missing'].includes(row.action.code);
-    existing.active++;
-    if (row.action.code === 'overdue') { existing.overdue++; existing.overdueValue += value; existing.riskValue += value; }
-    if (row.action.code === 'missing') { existing.missing++; existing.missingValue += value; existing.riskValue += value; }
-    if (isStale) { existing.stale++; existing.staleValue += value; existing.riskValue += value; }
-    map.set(key, existing);
-    return map;
-  }, new Map<string, { ownerId: string; owner: string; regional: string; active: number; overdue: number; missing: number; stale: number; overdueValue: number; missingValue: number; staleValue: number; riskValue: number }>()).values()).map(row => ({ ...row, regional: regionalOf(regionalByOwner, row.ownerId) })).filter(row => row.overdue || row.missing || row.stale).sort((a,b)=>b.riskValue-a.riskValue || (b.overdue+b.missing+b.stale)-(a.overdue+a.missing+a.stale)).slice(0, 8);
-  const priorityLinkFilters = { owner, regional, stage, service, segment: customerSegmentFilter };
-  const v2RiskSummaryCards = [
-    { label: 'Valor en riesgo', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.riskValue,0), detail: `${v2CommercialAlertRows.length} comerciales con alertas`, tone: v2CommercialAlertRows.length ? 'red' : 'green', priorityStatus: 'risk' },
-    { label: 'Vencidas', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.overdueValue,0), detail: `${v2OverdueRows.length} oportunidades vencidas`, tone: v2OverdueRows.length ? 'red' : 'green', priorityStatus: 'overdue' },
-    { label: 'Sin agenda', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.missingValue,0), detail: `${v2MissingAgendaRows.length} oportunidades sin próxima acción`, tone: v2MissingAgendaRows.length ? 'amber' : 'green', priorityStatus: 'missing' },
-    { label: 'Sin seguimiento', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.staleValue,0), detail: `${v2StaleRows.length} oportunidades sin seguimiento en 10+ días`, tone: v2CommercialAlertRows.some(row => row.stale) ? 'amber' : 'green', priorityStatus: 'risk' },
-  ];
-  const v2CommercialHealthCards = rankingRowsV2.map(row => {
-    const ownerActiveRows = v2ActionRows.filter(r => ownerKey(r.opportunity) === row.ownerId);
-    const missing = ownerActiveRows.filter(r => r.action.code === 'missing').length;
-    const overdue = ownerActiveRows.filter(r => r.action.code === 'overdue').length;
-    const managed = ownerActiveRows.filter(r => r.opportunity.next_action_at && !['overdue','missing'].includes(r.action.code)).length;
-    const score = commercialHealthScore({ active: ownerActiveRows.length, managed, compliance: row.pct });
-    const tone = score >= 70 ? 'green' : score >= 45 ? 'amber' : 'red';
-    return { ...row, score, tone, missing, overdue, managed };
-  }).sort((a,b)=>b.score-a.score || b.approved-a.approved).slice(0, 6);
-  const v2TrendRowsFromV1 = buildMonthlyTrendRows(commercialData);
-  const v2MaxTrendActivity = Math.max(...v2TrendRowsFromV1.map(o=>Math.max(o.prospectos, o.cotizaciones, o.ventas / 10_000_000)), 1);
-  const v2MaxTrendSales = Math.max(...v2TrendRowsFromV1.map(o=>o.ventas), 1);
-  const focusDashboardSection = (targetId: string) => {
-    setFocusedDashboardTarget(targetId);
-    window.setTimeout(() => setFocusedDashboardTarget(current => current === targetId ? null : current), 3600);
-    window.requestAnimationFrame(() => {
-      const element = document.getElementById(targetId);
-      if (!element) return;
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-  };
-  const focusClass = (targetId: string) => focusedDashboardTarget === targetId ? 'dashboard-focus-hit' : '';
+    return { ...o, probability, expected: Number(o.weighted_pipeline_value || 0) || Number(o.offer_value || 0) * probability };
+  }).sort((a, b) => b.expected - a.expected || Number(b.offer_value || 0) - Number(a.offer_value || 0)).slice(0, 5);
+  const salesQuarters = elapsedQuarters(now);
+  const salesRows = data.profiles.filter(isCommercialProfile).map(profile => {
+    const approved = allCommercialOpportunities.filter(o => ownerKey(o) === profile.id && isApprovedSale(o));
+    const quarters = salesQuarters.map(quarter => approved.filter(o => {
+      const day = String(o.approved_at || o.updated_at || '').slice(0, 10);
+      return day.slice(0, 4) === year && Math.floor((Number(day.slice(5, 7)) - 1) / 3) === quarter;
+    }).reduce((sum, o) => sum + Number(o.offer_value || 0), 0));
+    const budget = data.goals.filter(goal => goal.user_id === profile.id && String(goal.period_month).slice(0, 4) === year && goal.service_type_code !== AGT002_TENDER_SERVICE_TYPE).reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
+    const accumulated = quarters.reduce((sum, value) => sum + value, 0);
+    return { ownerId: profile.id, owner: profile.full_name, quarters, accumulated, budget, compliance: ownerCompliancePct(accumulated, budget) };
+  }).filter(row => row.accumulated || row.budget).sort((a, b) => b.accumulated - a.accumulated || b.budget - a.budget);
+  const dataQuality = dataQualitySummary(activeRows, normalizeRegion);
+  const complianceTone = (pct: number | null) => pct === null ? 'amber' : pct >= 80 ? 'green' : pct >= 40 ? 'amber' : 'red';
 
-  return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
-    {initialVigiaFilters.invalid && <div className="error">{`Enlace de ${VIGIA_VISIBLE_NAMES.commercial} inválido o manipulado. Se aplicó un alcance vacío.`}</div>}
-    <section className="v2-filter-strip panel" aria-label="Filtros gerenciales">
-      <div className="v2-filter-strip-title">Filtros gerenciales</div>
-      <div className="filters manager-dashboard-filters v2-dashboard-filters">
-        <input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} />
-        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
-        <Select value={service} onChange={setService} options={commercialServices.map(s=>[s.code,s.name])} empty="Productos"/>
-        <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/>
-        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Regiones"/>
-        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/>
-        <Select value={customerSegmentFilter} onChange={v=>setCustomerSegmentFilter(v as CustomerSegment | '')} options={customerSegmentOptions} empty="Clientes"/>
-        <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
-        <button className="secondary" onClick={()=>{ setPeriod(''); setCustomerSegmentFilter(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar</button>
+  // 3. ¿Qué negocios empujar esta semana?
+  const stalledLargeRows = activeRows
+    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }))
+    .filter(row => ['overdue', 'missing'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 10)
+    .sort((a, b) => Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
+    .slice(0, 5);
+  const todayDay = bogotaDay(now) || '';
+  const inFourteenDays = bogotaDay(new Date(now.getTime() + 14 * 86_400_000)) || '';
+  const returningFrozenRows = allCommercialOpportunities
+    .filter(o => isFrozen(o, now) && String(o.frozen_until || '').slice(0, 10) <= inFourteenDays)
+    .sort((a, b) => String(a.frozen_until).localeCompare(String(b.frozen_until)));
+  const lossSince = bogotaDay(new Date(now.getTime() - 90 * 86_400_000)) || '';
+  const lossReasonRows = Array.from(allCommercialOpportunities
+    .filter(o => (o.stage_code === 'perdido' || o.stage_code === 'descartado') && String(bogotaDay(o.lost_at || o.discarded_at || o.updated_at) || '') >= lossSince)
+    .reduce((map, o) => {
+      const key = o.loss_reason_code || 'sin_motivo';
+      const row = map.get(key) || { key, label: o.loss_reason_name || data.lossReasons.find(reason => reason.code === o.loss_reason_code)?.name || 'Sin motivo registrado', count: 0, value: 0 };
+      row.count++;
+      row.value += Number(o.offer_value || 0);
+      map.set(key, row);
+      return map;
+    }, new Map<string, { key: string; label: string; count: number; value: number }>()).values()).sort((a, b) => b.count - a.count || b.value - a.value);
+  const urgentRows = priorities.list.slice(0, 5);
+
+  return <section className="stack manager-dashboard dashboard-v2 dashboard-three-questions">
+    {canResolveDelete && <DeleteRequestsPanel requests={deleteRequestRows} onChanged={refresh} />}
+
+    <section id="dashboard-q1" className="v2-component-block dashboard-question" aria-label="¿Vamos a llegar a la meta?">
+      <div className="v2-section-heading"><span>Pregunta 1</span><h2>¿Vamos a llegar a la meta?</h2><p>Cumplimiento del mes y del año contra las metas cargadas, y lo que está en negociación para cerrar la brecha.</p></div>
+      <div className="v2-kpi-grid">
+        <div className={`v2-kpi-card ${complianceTone(monthCompliance.pct)}`}><small>Meta del mes</small><strong className="numeric-value">{monthCompliance.pct === null ? '—' : `${monthCompliance.pct}%`}</strong><span>{monthCompliance.budget ? `${fmtMoneyCompact(monthCompliance.approved)} de ${fmtMoneyCompact(monthCompliance.budget)}` : 'Meta del mes pendiente de cargar'}</span></div>
+        <div className={`v2-kpi-card ${complianceTone(yearPct)}`}><small>Meta del año (enero a hoy)</small><strong className="numeric-value">{yearPct === null ? '—' : `${yearPct}%`}</strong><span>{yearCompliance.budget ? `${fmtMoneyCompact(yearCompliance.approved)} de ${fmtMoneyCompact(yearCompliance.budget)}` : 'Metas del año pendientes de cargar'}</span></div>
+        <div className="v2-kpi-card blue"><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} oportunidades activas</span></div>
+        <div className="v2-kpi-card purple"><small>Valor esperado</small><strong className="numeric-value">{fmtMoneyCompact(weightedPipeline)}</strong><span>Valor × probabilidad de la etapa</span></div>
       </div>
-    </section>
-
-    <section className="v2-component-block resumen-ejecutivo" aria-label="1. Resumen ejecutivo">
-      <div className="v2-section-heading"><span>1. Resumen ejecutivo</span><h2>Cómo vamos hoy</h2><p>Lectura rápida de cumplimiento, pipeline, forecast y prioridades gerenciales.</p></div>
-      <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
-        <div className="gerencial-v2-hero-copy compact-service-context">
-          <div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span><span className="v2-hero-scope-summary">{v2ScopeSummary}</span></div>
-          <h2>{v2HeroTitle}</h2>
-          <p>{v2HeroSubtitle}</p>
-          <div className="v2-hero-actions" aria-label="Acciones rápidas">
-            <button type="button" onClick={() => focusDashboardSection('v2-top-close-opportunities')}>Cerrar oportunidades top</button>
-            <button type="button" onClick={() => focusDashboardSection('v2-commercial-compliance')}>Recuperar bajo cumplimiento</button>
-            <button type="button" onClick={() => focusDashboardSection('v2-pipeline-priorities')}>Proteger forecast</button>
-          </div>
-        </div>
-        <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
-          {v2HeroMetrics.map(metric => <button type="button" className={`v2-hero-metric v2-hero-metric-button ${metric.tone}${activeV2Metric === metric.key ? ' active' : ''}`} key={metric.key} aria-pressed={activeV2Metric === metric.key} onClick={() => setActiveV2Metric(metric.key)}>
-            <small>{metric.label}</small><strong className="numeric-value">{metric.value}</strong><span>{metric.detail}</span><em>{activeV2Metric === metric.key ? 'Detalle visible' : 'Ver detalle'}</em>
-          </button>)}
-        </div>
-      </section>
-
-      <section className="v2-hero-detail-panel" aria-label="Datos de la métrica seleccionada">
-        <div className="v2-hero-detail-copy">
-          <span className="eyebrow">Datos de la métrica seleccionada</span>
-          <h3>{v2MetricDetailRows.title}</h3>
-          <p>{v2MetricDetailRows.summary}</p>
-        </div>
-        <div className="v2-hero-detail-list">
-          {v2MetricDetailRows.rows.length ? v2MetricDetailRows.rows.map(row => <a className="v2-hero-detail-row" key={`${activeV2Metric}-${row.label}`} href={row.href || '#/dashboard2'}>
-            <div><strong>{row.label}</strong><small>{row.detail}</small></div>
-            <span className="numeric-value">{row.value}</span>
-          </a>) : <div className="v2-hero-detail-empty">Sin datos suficientes para esta métrica.</div>}
-        </div>
-      </section>
-
-      <Panel title="Prioridades gerenciales de hoy">
-        <div className="v2-priority-grid">{v2ManagementPriorities.map(priority => <button type="button" className={`v2-priority-card ${priority.tone}`} key={priority.label} aria-label={`${priority.label}: ${priority.value}. ${priority.detail}. ${priority.action}`} onClick={() => focusDashboardSection(priority.targetId)}>
-          <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span><em>{priority.action} →</em>
-        </button>)}</div>
-      </Panel>
-      {canResolveDelete && <DeleteRequestsPanel requests={deleteRequestRows} onChanged={refresh} />}
-      {(pendingByOwner.length > 0 || frozenRows.length > 0) && <section className="panel decision-summary" aria-label="Decisiones pendientes">
-        <h2>Oportunidades sin decisión</h2>
-        <p className="v2-panel-note">Gestión vencida o sin agenda. Quien tenga pendientes no puede crear oportunidades nuevas hasta decidirlas.{frozenRows.length ? ` Congeladas fuera de las cifras: ${frozenRows.length} por ${fmtMoneyCompact(frozenRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0))}.` : ''}</p>
-        <div className="decision-summary-list">{pendingByOwner.map(row => <a key={row.ownerId} href={ownerRoute(row.ownerId)}><strong>{formatDisplayName(row.owner)}</strong><span className="numeric-value">{row.count}</span></a>)}</div>
-      </section>}
-      {activeTenderRows.length > 0 && <a className="v2-tender-aside" href="#/tenders?view=oportunidades" aria-label="Licitaciones en curso">
-        <div><small>Licitaciones en curso · Vig-IA Licitaciones</small><strong>{activeTenderRows.length} {activeTenderRows.length === 1 ? 'licitación activa' : 'licitaciones activas'} por {fmtMoneyCompact(activeTenderValue)}</strong><span>Se trabajan en Licitaciones y no se suman a las cifras comerciales de este tablero.</span></div>
-        <em>Ver licitaciones →</em>
-      </a>}
-    </section>
-
-    <section className="v2-component-block presupuesto-ventas" aria-label="2. Presupuesto y ventas 2026">
-      <div className="v2-section-heading"><span>2. Presupuesto y ventas 2026</span><h2>Meta, presupuesto y avance real</h2><p>Bloque equivalente a las tablas compartidas, resumido para lectura gerencial.</p></div>
-      <Panel title="Desempeño comercial 2026 por producto">
-        <p className="v2-panel-note">Presupuesto, ventas y prospección 2026 para el producto seleccionado. La unidad operativa se adapta por producto; en Seguridad Física se lee como puestos 24H.</p>
-        <div className="v2-kpi-grid">{projectionCardsV2.map(card => <button type="button" className={`v2-kpi-card v2-kpi-button ${card.tone}`} key={card.label} onClick={() => focusDashboardSection(card.targetId)}>
-          <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span><em>{card.action} →</em>
-        </button>)}</div>
-      </Panel>
-      <Panel title="Proyección / presupuesto 2026" id="v2-annual-budget-focus" className={focusClass('v2-annual-budget-focus')}>
-        <div className="tablewrap crm-readable-table v2-projection-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
-          <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
-        </tr>)}</tbody></table></div>
-        {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : <p className="muted">Unidad meta tomada del campo de cantidad unidades / puestos 24H cuando esté cargado; si falta, se estima desde presupuesto mensual.</p>}
-      </Panel>
-      <Panel title="Ventas acumuladas por comercial" id="v2-sales-accumulated-focus" className={focusClass('v2-sales-accumulated-focus')}>
-        <div className="tablewrap crm-readable-table v2-sales-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Clientes</th>{salesQuarters.map(quarter => <th key={quarter}>{`T${quarter + 1}`}</th>)}<th>Ventas {salesYear}</th><th>Presupuesto</th><th>Cumplimiento individual</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
-          <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.quarters.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td><td><strong className="numeric-value">{row.compliance === null ? 'Sin meta' : `${row.compliance}%`}</strong></td>
-        </tr>)}</tbody></table></div>
-        {!monthlySalesRowsV2.length ? <EmptyState title="Sin ventas acumuladas" text="Cuando existan ventas aprobadas o presupuesto individual del producto seleccionado aparecerá el acumulado 2026." /> : null}
-      </Panel>
-    </section>
-
-    <section id="v2-commercial-compliance" className="v2-component-block cumplimiento-comercial" aria-label="3. Cumplimiento por comercial">
-      <div className="v2-section-heading"><span>3. Cumplimiento por comercial</span><h2>Quién cumple y quién requiere foco</h2><p>Ranking calculado contra presupuesto individual cuando está cargado.</p></div>
-      <div className="v2-executive-grid single-focus">
-        <Panel title="Cumplimiento comercial" id="v2-commercial-ranking" className={focusClass('v2-commercial-ranking')}>
-          <div className="v2-ranking-list">{rankingRowsV2.map((row, index) => <a className={`v2-ranking-row ${row.tone}`} key={row.ownerId} href={ownerRoute(row.ownerId)}>
-            <span className="owner-rank">#{index + 1}</span>
-            <div className="v2-ranking-main"><strong>{formatDisplayName(row.owner)}</strong><small>{formatRegionalLabel(row.regional)} · {row.count} oportunidades{formatRegionalLabel(row.regional) === 'Regional pendiente' ? ' · requiere normalizar regional' : ''}</small><div className="v2-progress-track"><span style={{ width: `${Math.max(3, Math.min(row.pct ?? 0, 100))}%` }} /></div></div>
-            <div className="v2-ranking-value"><strong>{row.pct === null ? 'Sin meta' : `${row.pct}%`}</strong><small>{fmtMoneyCompact(row.approved || row.weighted || row.pipeline)}</small></div>
-          </a>)}</div>
-          {!rankingRowsV2.length ? <EmptyState title="Sin ranking disponible" text="Cuando existan oportunidades de Seguridad Física aparecerá el ranking ejecutivo." /> : null}
-        </Panel>
-        <Panel title="Lectura gerencial">
-          <div className="v2-alert-list">
-            <div id="v2-low-compliance-focus" className={focusClass('v2-low-compliance-focus')}><small>Riesgo de conversión</small><strong>{lowComplianceRows.length ? `${lowComplianceRows.length} comerciales bajo 8%` : 'Sin alerta crítica'}</strong><span>{lowComplianceRows.length ? `Priorizar revisión de ${lowComplianceNames}.` : 'Ningún comercial con meta cargada está bajo 8%.'}</span></div>
-            <div id="v2-regional-normalization-focus" className={focusClass('v2-regional-normalization-focus')}><small>Calidad de datos</small><strong>{dataQuality.complete ? 'Datos completos' : `${dataQuality.missingValue} de ${dataQuality.total} activas sin valor`}</strong><span>{dataQuality.complete ? 'Las oportunidades activas tienen valor, tipo de cliente y regional.' : `${dataQuality.summary}. El pipeline y el forecast no incluyen lo que no tiene valor.`}</span></div>
-            <div><small>Criterio de ranking</small><strong>Meta individual</strong><span>Ordenado por aprobado. El porcentaje sólo aparece para quien tiene meta propia cargada.</span></div>
-          </div>
-        </Panel>
-      </div>
-    </section>
-
-    <section id="v2-pipeline-priorities" className="v2-component-block pipeline-prioridades" aria-label="4. Pipeline y oportunidades prioritarias">
-      <div className="v2-section-heading"><span>4. Pipeline y oportunidades prioritarias</span><h2>Dónde está el dinero futuro</h2><p>Pipeline activo, concentración por etapa y oportunidades con mayor valor esperado.</p></div>
-      <Panel title="Pipeline / prospección activa" id="v2-active-pipeline-focus" className={focusClass('v2-active-pipeline-focus')}>
-        <div className="v2-pipeline-summary"><strong>{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} ofertas activas · Valor promedio por oferta: {fmtMoneyCompact(activeRows.length ? totalPipeline / activeRows.length : 0)} · barras = participación real sobre el pipeline</span></div>
-        <div className="tablewrap v2-pipeline-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Ofertas</th><th>Valor</th><th>Promedio por oferta</th><th>Participación del pipeline</th></tr></thead><tbody>{pipelineRowsV2.map(row => {
-          const share = Math.round((row.value / Math.max(totalPipeline, 1)) * 100);
-          return <tr key={row.ownerId}><td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.offers}</td><td><strong className="numeric-value">{fmtMoneyCompact(row.value)}</strong></td><td>{fmtMoneyCompact(row.avgOffer)}</td><td><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, share)}%` }} /></div><small>{share}% del pipeline</small></td></tr>;
-        })}</tbody></table></div>
-      </Panel>
-      <Panel title="Top oportunidades de cierre" id="v2-top-close-opportunities" className={focusClass('v2-top-close-opportunities')}>
-        <p className="v2-panel-note">Ordenado por valor esperado: valor de la oportunidad × probabilidad de etapa.</p>
-        <div className="v2-deal-list">{topCloseRowsV2.map((o, index) => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
-          <span className="owner-rank">#{index + 1}</span>
+      <Panel title="Lo que está en negociación">
+        <p className="v2-panel-note">Las 5 oportunidades con mayor valor esperado (valor × probabilidad de la etapa).</p>
+        <div className="v2-deal-list">{negotiationRows.map(o => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
           <div><strong>{formatDisplayName(o.company_name)}</strong><small>{formatDisplayName(o.owner_name || 'Sin comercial')} · {o.stage_name}</small></div>
-          <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>{o.share}% del pipeline</small><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, o.share)}%` }} /></div></div>
-          <div className="v2-expected-value"><small>Valor esperado</small><strong>{fmtMoneyCompact(o.expected)}</strong></div>
+          <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>Valor esperado {fmtMoneyCompact(o.expected)}</small></div>
           <Badge tone={stageTone(o.stage_code)}>{Math.round(o.probability * 100)}%</Badge>
         </a>)}</div>
-        {!topCloseRowsV2.length ? <EmptyState title="Sin oportunidades priorizadas" text="No hay ofertas activas para priorizar con los filtros de Seguridad Física." /> : null}
+        {!negotiationRows.length && <EmptyState title="Sin oportunidades activas" text="No hay oportunidades comerciales activas para cerrar la brecha." />}
       </Panel>
-      <Panel title="Concentración y avance del pipeline" id="v2-forecast-focus" className={focusClass('v2-forecast-focus')}>
-        <div className="stage-action-summary"><div><small>Lectura ejecutiva</small><strong>{v2StageLeader ? `${v2Concentration}% del pipeline está en ${v2StageLeader.stageName}` : 'Sin etapa dominante'}</strong><span>{v2StageLeader && v2Concentration >= 55 ? 'Prioridad: destrabar esa etapa y revisar siguientes acciones.' : 'Distribución sin concentración crítica con los filtros actuales.'}</span></div><a className="button secondary" href={`#/opportunities?stage=${encodeURIComponent(v2StageLeader?.stageCode || '')}`}>Ver etapa dominante</a></div>
-        <div className="tablewrap stage-action-table"><table><thead><tr><th>Etapa</th><th>Valor total</th><th>Ops</th><th>% pipeline</th><th>Valor ponderado</th></tr></thead><tbody>{stageRowsV2.map(s => {
-          const pct = totalPipeline ? Math.round((s.value / totalPipeline) * 100) : 0;
-          return <tr key={s.stageCode}><td><strong>{s.stageName}</strong><br/><small>Pipeline activo</small></td><td><strong className="numeric-value">{fmtMoneyCompact(s.value)}</strong></td><td>{s.count}</td><td><strong>{pct}%</strong><div className="mini-progress stage-share-meter"><span style={{ width: `${Math.max(3, pct)}%` }} /></div></td><td><strong className="numeric-value">{fmtMoneyCompact(s.weighted)}</strong></td></tr>;
-        })}</tbody></table></div>
-      </Panel>
-    </section>
-
-    <section id="v2-management-alerts" className="v2-component-block diagnostico-alertas" aria-label="5. Gestión comercial que requiere atención">
-      <div className="v2-section-heading"><span>5. Gestión comercial que requiere atención</span><h2>Quién necesita apoyo hoy</h2><p>Alertas agrupadas por comercial: vencidas, sin agenda, sin seguimiento reciente y valor en riesgo.</p></div>
-      <Panel title="Valor en riesgo por gestión comercial">
-        <div className="commercial-risk-summary">{v2RiskSummaryCards.map(card => <a className={`commercial-risk-card ${card.tone}`} key={card.label} href={prioritiesHashFromDashboard(card.priorityStatus, priorityLinkFilters)}>
-          <small>{card.label}</small><strong className="numeric-value">{fmtMoneyCompact(card.value)}</strong><span>{card.detail}</span>
-        </a>)}</div>
-      </Panel>
-      <Panel title="Alertas por comercial">
-        <div className="tablewrap commercial-risk-table crm-readable-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Vencidas</th><th>Sin agenda</th><th>Sin seguimiento</th><th>Valor en riesgo</th><th>Acción</th></tr></thead><tbody>{v2CommercialAlertRows.map(row => <tr key={row.ownerId}>
-          <td><strong>{formatDisplayName(row.owner)}</strong><br/><small>{row.active} oportunidades activas</small></td><td>{formatRegionalLabel(row.regional)}</td><td><a href={ownerRoute(row.ownerId)}><strong>{row.overdue}</strong><small>{fmtMoneyCompact(row.overdueValue)}</small></a></td><td><a href={ownerRoute(row.ownerId)}><strong>{row.missing}</strong><small>{fmtMoneyCompact(row.missingValue)}</small></a></td><td><strong>{row.stale}</strong><small>{fmtMoneyCompact(row.staleValue)}</small></td><td className="money-cell"><strong>{fmtMoneyCompact(row.riskValue)}</strong></td><td><a className="button" href={ownerRoute(row.ownerId)}>Ver perfil</a></td>
+      <details className="panel dashboard-details">
+        <summary>Ventas por comercial y trimestre {year}</summary>
+        <div className="tablewrap crm-readable-table dashboard-sales-table"><table><thead><tr><th>Comercial</th>{salesQuarters.map(quarter => <th key={quarter}>{`T${quarter + 1}`}</th>)}<th>Ventas {year}</th><th>Meta {year}</th><th>Cumplimiento</th></tr></thead><tbody>{salesRows.map(row => <tr key={row.ownerId}>
+          <td><a href={ownerRoute(row.ownerId)}><strong>{formatDisplayName(row.owner)}</strong></a></td>{row.quarters.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoneyCompact(row.accumulated)}</strong></td><td className="money-cell">{row.budget ? fmtMoneyCompact(row.budget) : 'Sin meta'}</td><td className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</td>
         </tr>)}</tbody></table></div>
-        {!v2CommercialAlertRows.length ? <EmptyState title="Sin alertas por comercial" text="No hay oportunidades vencidas, sin agenda o sin seguimiento reciente con los filtros actuales." /> : <p className="muted">Valor en riesgo suma oportunidades vencidas, sin próxima acción o con 10+ días sin seguimiento reciente. Use Ver perfil para entrar al tablero individual.</p>}
-      </Panel>
-      <Panel title="Semáforos ejecutivos">
-        <div className="executive-signals">
-          <a className={v2Concentration >= 55 ? 'signal-card warn clickable-card' : 'signal-card ok clickable-card'} href={`#/opportunities?stage=${encodeURIComponent(v2StageLeader?.stageCode || '')}`}><small>Riesgo de concentración del pipeline</small><strong className="numeric-value">{v2Concentration}%</strong><span>{v2StageLeader?.stageName || 'Sin etapa dominante'}</span><em>{v2Concentration >= 55 ? 'Ver etapa dominante →' : 'Distribución saludable'}</em></a>
-          <a className={compliancePct === null ? 'signal-card warn clickable-card' : compliancePct >= 80 ? 'signal-card ok clickable-card' : 'signal-card danger clickable-card'} href="#/goals"><small>Cumplimiento vs presupuesto</small><strong className="numeric-value">{compliancePct === null ? '—' : `${compliancePct}%`}</strong><span>{fmtMoneyCompact(totalApproved)} aprobado</span><em>Ver metas →</em></a>
-          <a className={v2ManagedRatio >= 70 ? 'signal-card ok clickable-card' : v2ManagedRatio >= 45 ? 'signal-card warn clickable-card' : 'signal-card danger clickable-card'} href={prioritiesHashFromDashboard('missing', priorityLinkFilters)}><small>Disciplina de agenda</small><strong className="numeric-value">{v2ManagedRatio}%</strong><span>{v2MissingAgendaRows.length} sin agenda · {v2OverdueRows.length} vencidas</span><em>Ver prioridades sin agenda →</em></a>
-          <a className={v2GoalAveragePct === null ? 'signal-card warn clickable-card' : v2GoalAveragePct >= 100 ? 'signal-card ok clickable-card' : v2GoalAveragePct >= 80 ? 'signal-card warn clickable-card' : 'signal-card danger clickable-card'} href="#/goals"><small>Cumplimiento meta mes</small><strong className="numeric-value">{v2GoalAveragePct === null ? '—' : `${v2GoalAveragePct}%`}</strong><span>Ventas, prospectos y cotizaciones</span><em>{v2GoalAveragePct === null ? 'Cargar metas reales →' : 'Ver cumplimiento →'}</em></a>
-        </div>
-      </Panel>
-      <Panel title="Top oportunidades que requieren decisión">
-        <div className="tablewrap critical-opportunities-table crm-readable-table decision-readable-table"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Etapa</th><th>Próxima acción</th><th>Riesgo</th><th>Acción</th></tr></thead><tbody>{v2CriticalOpportunityRows.map(row => {
-          const o = row.opportunity;
-          return <tr key={o.id}><td className="client-cell"><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td className="owner-cell">{o.owner_name || 'Sin comercial'}</td><td className="money-cell numeric-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong></td><td className="stage-cell"><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td className="next-action-cell">{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}<br/><small>{row.action.detail}</small></td><td className="risk-cell"><Badge tone={row.action.tone}>{row.risk}</Badge></td><td className="table-actions-cell"><a className="button" href={`#/detail/${o.id}`}>Ver detalle</a></td></tr>;
-        })}</tbody></table></div>
-        {!v2CriticalOpportunityRows.length ? <EmptyState title="Sin oportunidades críticas" text="No hay vencidas, sin agenda o estancadas con los filtros actuales." /> : null}
-      </Panel>
+        {!salesRows.length && <p className="muted">Sin ventas aprobadas ni metas cargadas este año.</p>}
+      </details>
+      <p className="muted dashboard-footnote">Calidad de datos: {dataQuality.complete ? 'las oportunidades activas tienen valor, tipo de cliente y regional.' : `${dataQuality.summary}. El pipeline y el valor esperado no incluyen lo que no tiene valor.`} El total del equipo sólo cuenta a quien tiene meta cargada.</p>
     </section>
 
-    <section className="v2-component-block tendencia-salud" aria-label="6. Tendencia y salud comercial">
-      <div className="v2-section-heading"><span>6. Tendencia y salud comercial</span><h2>Cómo evoluciona el negocio</h2><p>Tendencia mensual, salud comercial y composición del pipeline por servicio.</p></div>
-      <Panel title="Avance contra meta comercial">
-        <GoalVsActualDashboard rows={v2GoalRowsFromV1} />
-      </Panel>
-      <Panel title="Ranking por salud comercial">
-        <p className="v2-panel-note">{HEALTH_SCORE_EXPLANATION}</p>
-        <div className="commercial-scorecards">{v2CommercialHealthCards.map((o, index) => <a className={`commercial-scorecard status-${o.tone}`} key={o.ownerId} href={ownerRoute(o.ownerId)}>
-          <div className="scorecard-top"><span className="owner-rank">#{index + 1}</span><span className={`status-pill ${o.tone}`}>Salud {o.score}/100</span></div>
-          <div className="scorecard-name"><strong>{formatDisplayName(o.owner)}</strong><small>{o.active} activas · {o.managed} al día · {o.missing} sin agenda · {o.overdue} vencidas</small></div>
-          <div className="health-score"><strong className="numeric-value">{o.score}</strong><span>score gestión + cierre</span></div>
-          <div className="scorecard-metrics"><span><small>Forecast</small><b>{fmtMoneyCompact(o.weighted)}</b></span><span><small>Aprobado</small><b>{fmtMoneyCompact(o.approved)}</b></span><span><small>Cumplimiento</small><b>{o.pct === null ? 'Sin meta' : `${o.pct}%`}</b></span></div>
-          <em>Ver detalle →</em>
-        </a>)}</div>
-      </Panel>
-      <Panel title={service ? "Pipeline por etapa / regional" : "Pipeline por tipo de servicio"}>
-        <ServicePipelineBreakdown rows={v2ServicePipelineRows} />
-        {!v2ServicePipelineRows.length ? <EmptyState title="Sin pipeline activo" text="No hay servicios activos con los filtros actuales." /> : <p className="muted">Servicio dominante: {v2ServiceLeader?.label || '—'} · {v2ServiceLeader?.share || 0}% del pipeline activo.</p>}
-      </Panel>
-      <Panel title="Tendencia comercial disponible">
-        <p className="trend-availability-note">{trendAvailabilityNote(v2TrendRowsFromV1)}</p>
-        <div className="pulse-header"><span>Mes</span><span>Ventas aprobadas</span><span>Prospectos</span><span>Cotizaciones</span></div>
-        <div className="monthly-bars">{v2TrendRowsFromV1.map(row => <div className="monthly-row" key={row.period}>
-          <div className="monthly-name"><strong>{row.period}</strong><span>{fmtMoneyCompact(row.comision)} comisión proyectada</span></div>
-          <div className="pulse-value"><strong className="numeric-value">{fmtMoneyCompact(row.ventas)}</strong><small>ventas aprobadas</small><div className="sales-meter"><span style={{ width: `${Math.max(3, row.ventas/v2MaxTrendSales*100)}%` }} /></div></div>
-          <div className="monthly-track"><small>Prospectos</small><div className="mini-progress"><span style={{ width: `${Math.max(3, row.prospectos/v2MaxTrendActivity*100)}%` }} /></div><b>{row.prospectos}</b></div>
-          <div className="monthly-track quote"><small>Cotizaciones</small><div className="mini-progress"><span style={{ width: `${Math.max(3, row.cotizaciones/v2MaxTrendActivity*100)}%` }} /></div><b>{row.cotizaciones}</b></div>
-        </div>)}</div>
-      </Panel>
+    <section id="dashboard-q2" className="v2-component-block dashboard-question" aria-label="¿Quién necesita ayuda?">
+      <div className="v2-section-heading"><span>Pregunta 2</span><h2>¿Quién necesita ayuda?</h2><p>Lo que hizo cada comercial (seguimientos y decisiones) y lo que le falta. Primero quienes están inactivos, luego los atrasados.</p></div>
+      <CommercialBehaviorTable />
     </section>
+
+    <section id="dashboard-q3" className="v2-component-block dashboard-question" aria-label="¿Qué negocios empujar esta semana?">
+      <div className="v2-section-heading"><span>Pregunta 3</span><h2>¿Qué negocios empujar esta semana?</h2><p>Negocios grandes detenidos, congeladas que vuelven pronto, por qué perdemos y lo más urgente según Vig-IA Comercial.</p></div>
+      <div className="grid two dashboard-panels">
+        <Panel title="Grandes y detenidos">
+          <div className="v2-deal-list">{stalledLargeRows.map(row => <a className="v2-deal-row" key={row.opportunity.id} href={`#/detail/${row.opportunity.id}`}>
+            <div><strong>{formatDisplayName(row.opportunity.company_name)}</strong><small>{formatDisplayName(row.opportunity.owner_name || 'Sin comercial')} · {row.opportunity.stage_name}</small></div>
+            <div className="v2-deal-value"><strong>{fmtMoneyCompact(row.opportunity.offer_value)}</strong><small>{row.action.code === 'overdue' ? 'Gestión vencida' : row.action.code === 'missing' ? 'Sin próxima gestión' : `${row.inactiveDays} días sin seguimiento`}</small></div>
+          </a>)}</div>
+          {!stalledLargeRows.length && <EmptyState title="Nada detenido" text="No hay oportunidades vencidas, sin agenda o con 10+ días sin seguimiento." />}
+        </Panel>
+        <Panel title="Lo más urgente (Vig-IA Comercial)">
+          {priorities.status === 'loading' || priorities.status === 'idle' ? <p className="muted">Cargando prioridades…</p> : priorities.status === 'error' ? <p className="muted">Las prioridades no están disponibles en este momento.</p> : <div className="v2-deal-list">{urgentRows.map(item => <a className="v2-deal-row" key={item.id} href={`#/detail/${item.id}`}>
+            <div><strong>{formatDisplayName(item.company_name)}</strong><small>{priorityReason(item)} · {item.recommendation}</small></div>
+            <div className="v2-deal-value"><strong>{fmtMoneyCompact(item.offer_value)}</strong><small>{formatDisplayName(item.owner_name || 'Sin comercial')}</small></div>
+          </a>)}{!urgentRows.length && <EmptyState title="Sin urgencias" text="Vig-IA Comercial no encontró oportunidades urgentes." />}</div>}
+        </Panel>
+        <Panel title="Congeladas que vuelven en 14 días">
+          {returningFrozenRows.length ? <ul className="dashboard-simple-list">{returningFrozenRows.map(o => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>vuelve el {fmtDateOnly(o.frozen_until)} · {formatDisplayName(o.owner_name || 'Sin comercial')} · {fmtMoneyCompact(o.offer_value)}</span></li>)}</ul> : <p className="muted">Ninguna congelada vuelve en los próximos 14 días.</p>}
+          <small className="muted">Hoy es {fmtDateOnly(todayDay)}.</small>
+        </Panel>
+        <Panel title="Por qué perdemos (últimos 90 días)">
+          {lossReasonRows.length ? <ul className="dashboard-simple-list">{lossReasonRows.map(row => <li key={row.key}><strong>{row.label}</strong> <span>{row.count} {row.count === 1 ? 'oportunidad' : 'oportunidades'} · {fmtMoneyCompact(row.value)}</span></li>)}</ul> : <p className="muted">Sin oportunidades perdidas o descartadas en los últimos 90 días.</p>}
+        </Panel>
+      </div>
+    </section>
+
+    {activeTenderRows.length > 0 && <a className="v2-tender-aside" href="#/tenders?view=oportunidades" aria-label="Licitaciones en curso">
+      <div><small>Licitaciones en curso · Vig-IA Licitaciones</small><strong>{activeTenderRows.length} {activeTenderRows.length === 1 ? 'licitación activa' : 'licitaciones activas'} por {fmtMoneyCompact(activeTenderValue)}</strong><span>Se trabajan en Licitaciones y no se suman a las cifras comerciales de este tablero.</span></div>
+      <em>Ver licitaciones →</em>
+    </a>}
   </section>;
 }
 
-function ConsultantDetail({ data, ownerId, personal = false, refresh }: { data: Bootstrap; ownerId: string; personal?: boolean; refresh?: () => Promise<void> }) {
+/**
+ * Mi día del comercial (y de la Vista Comercial): (a) la cola "Decida estas N oportunidades", (b) Hacer hoy / Preparar,
+ * (c) una línea con la meta del mes y (d) un solo "Ver más" con el detalle por etapa y los KPIs mensuales. La lista
+ * completa vive en Oportunidades; aquí no se repite.
+ */
+function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
+  const now = useMemo(() => new Date(), [data]);
+  const selfId = data.currentProfile.id;
+  const opportunities = useMemo(() => data.opportunities.filter(o => ownerKey(o) === selfId), [data.opportunities, selfId]);
+  const pendingDecisionRows = useMemo(() => pendingDecisions(opportunities, now), [opportunities, now]);
+  // Mi día trabaja el pipeline comercial vigente: sin licitaciones (AGT-002), congeladas ni eliminación pedida.
+  const myDay = useMemo(() => buildMyDayQueue(opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now)), now), [opportunities, now]);
+  const goal = monthlyGoalCompliance({ opportunities, goals: data.goals, month: bogotaMonth(now), ownerId: selfId });
+  const firstName = (data.currentProfile.full_name || '').split(' ')[0] || 'comercial';
+  const stageSummary = data.stages.map(stage => {
+    const rows = opportunities.filter(o => o.stage_code === stage.code);
+    return { stage_code: stage.code, stage_name: stage.name, stage_order: stage.stage_order, opportunities_count: rows.length, total_offer_value: rows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0), weighted_pipeline_value: rows.reduce((sum, o) => sum + Number(o.weighted_pipeline_value || 0), 0) };
+  }).filter(s => s.opportunities_count > 0);
+  const monthly = data.monthlyKpis.filter(k => k.owner_id === selfId).sort((a, b) => String(b.period_month).localeCompare(String(a.period_month))).slice(0, 12);
+  const canCreate = canAccessRoute(data.currentProfile, 'new');
+
+  return <section className="stack my-day-home" aria-label="Mi día">
+    <section className="executive-hero consultant-hero">
+      <div><span className="eyebrow">Mi día</span><h2>Hola, {formatDisplayName(firstName)}</h2><p>Primero decida lo pendiente; luego haga las gestiones de hoy y prepare las próximas.</p></div>
+    </section>
+    <DecisionQueue pending={pendingDecisionRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />
+    {!opportunities.length ? <section className="panel my-day-first">
+      <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
+      {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
+    </section> : <section className="commercial-followup-banner my-day-personal-banner" aria-label="Hacer hoy y preparar">
+      <div className="my-day">
+        <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty="Sin próximas gestiones vencidas o sin agendar." />
+        {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
+        {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
+          <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
+        </details>}
+      </div>
+    </section>}
+    <p className="my-day-goal-line">Meta del mes: {goal.budget ? <><strong>{fmtMoneyCompact(goal.approved)}</strong> de <strong>{fmtMoneyCompact(goal.budget)}</strong> ({goal.pct}%)</> : <>{fmtMoneyCompact(goal.approved)} aprobado · meta pendiente de cargar</>} · <a href="#/goals">Ver mi meta →</a></p>
+    {opportunities.length > 0 && <details className="panel my-day-more">
+      <summary>Ver más</summary>
+      <h3>Detalle por etapa</h3>
+      <StageBars summary={stageSummary} />
+      <h3>KPIs mensuales</h3>
+      {monthly.length ? <div className="tablewrap"><table><thead><tr><th>Mes</th><th>Prospectos</th><th>Cotizaciones</th><th>Ventas aprobadas</th><th>Comisión proyectada</th></tr></thead><tbody>{monthly.map((k, index) => <tr key={`${k.period_month}-${index}`}><td>{fmtDate(k.period_month)}</td><td>{k.prospectos}</td><td>{k.cotizaciones}</td><td>{fmtMoneyCompact(k.ventas_aprobadas)}</td><td>{fmtMoneyCompact(k.comision_proyectada)}</td></tr>)}</tbody></table></div> : <p className="muted">Sin KPIs mensuales todavía.</p>}
+    </details>}
+  </section>;
+}
+
+// Vista del directivo sobre un consultor. El comercial trabaja desde MyDayHome (Mi día), no desde aquí.
+function ConsultantDetail({ data, ownerId }: { data: Bootstrap; ownerId: string }) {
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
   const [service, setService] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [onlyActive, setOnlyActive] = useState(true);
-  const [personalCriticalSortConfig, setPersonalCriticalSortConfig] = useState<SortConfig<'client'|'stage'|'value'|'next'|'priority'>>({ key: 'value', direction: 'desc' });
   const [consultantMonthlySortConfig, setConsultantMonthlySortConfig] = useState<SortConfig<'month'|'prospects'|'quotes'|'sales'|'commission'>>({ key: 'month', direction: 'desc' });
   const [consultantOpportunitySortConfig, setConsultantOpportunitySortConfig] = useState<SortConfig<'client'|'regional'|'stage'|'product'|'value'|'next'|'inactive'|'priority'>>({ key: 'stage', direction: 'asc' });
   const opportunities = useMemo(() => data.opportunities
@@ -2529,55 +2353,20 @@ function ConsultantDetail({ data, ownerId, personal = false, refresh }: { data: 
       && (!actionFilter || action.code === actionFilter);
   });
 
-  const personalCriticalRows = opportunities
-    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }))
-    .filter(row => !isTerminalStage(row.opportunity.stage_code) && (['overdue','missing','today','soon'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 7))
-    .sort((a,b) => (a.action.code === 'overdue' ? -1 : b.action.code === 'overdue' ? 1 : 0) || Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
-    .slice(0, 8);
-  const followUpPriority = (row: { action: { code: string } }) => row.action.code === 'overdue' ? 1 : row.action.code === 'today' ? 2 : row.action.code === 'missing' ? 3 : 4;
-  const personalFollowUpRows = opportunities
-    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }))
-    .filter(row => !isTerminalStage(row.opportunity.stage_code) && (['overdue','missing','today'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 7))
-    .sort((a,b) => followUpPriority(a) - followUpPriority(b) || Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
-    .slice(0, 6);
-  const personalStaleRows = opportunities.filter(o => !isTerminalStage(o.stage_code) && Number(daysSince(o.last_interaction_at || o.updated_at || o.created_at) || 0) >= 7);
-  const personalRiskValue = personalFollowUpRows.reduce((sum, row) => sum + Number(row.opportunity.offer_value || 0), 0);
-  const personalFollowUpCards = [
-    { label: 'Vencidas', value: totals.overdue, detail: 'Próxima acción ya vencida', tone: totals.overdue ? 'red' : 'green', filter: 'overdue' },
-    { label: 'Para hoy', value: personalFollowUpRows.filter(row => row.action.code === 'today').length, detail: 'Gestiones agendadas hoy', tone: personalFollowUpRows.some(row => row.action.code === 'today') ? 'amber' : 'blue', filter: 'today' },
-    { label: 'Sin agenda', value: totals.missingAgenda, detail: 'Requieren próxima acción', tone: totals.missingAgenda ? 'amber' : 'green', filter: 'missing' },
-    { label: 'Valor en riesgo', value: fmtMoneyCompact(personalRiskValue), detail: `${personalStaleRows.length} sin seguimiento reciente`, tone: personalRiskValue ? 'purple' : 'green', filter: '' },
-  ];
-  const focusFollowUpFilter = (filter: string) => { setOnlyActive(true); setQ(''); setStage(''); setService(''); setActionFilter(filter); };
-  const sortedPersonalCriticalRows = [...personalCriticalRows].sort((a,b) => {
-    const value = (row: typeof personalCriticalRows[number]) => personalCriticalSortConfig.key === 'client' ? row.opportunity.company_name : personalCriticalSortConfig.key === 'stage' ? row.opportunity.stage_order : personalCriticalSortConfig.key === 'value' ? Number(row.opportunity.offer_value || 0) : personalCriticalSortConfig.key === 'next' ? (row.opportunity.next_action_at || '') : row.action.label;
-    return compareSortValues(value(a), value(b), personalCriticalSortConfig.direction);
-  });
-  const sortPersonalCriticalBy = (key: typeof personalCriticalSortConfig.key) => setPersonalCriticalSortConfig(current => nextSort(current, key));
   const sortedConsultantOpportunities = [...filteredOpportunities].sort((a,b) => {
     const value = (o: Opportunity) => consultantOpportunitySortConfig.key === 'client' ? o.company_name : consultantOpportunitySortConfig.key === 'regional' ? (o.regional_nombre || '') : consultantOpportunitySortConfig.key === 'stage' ? o.stage_order : consultantOpportunitySortConfig.key === 'product' ? (o.tipo_producto_original || o.service_type_name || '') : consultantOpportunitySortConfig.key === 'value' ? Number(o.offer_value || 0) : consultantOpportunitySortConfig.key === 'next' ? (o.next_action_at || '') : consultantOpportunitySortConfig.key === 'inactive' ? Number(daysSince(o.last_interaction_at || o.updated_at || o.created_at) || 0) : nextActionStatus(o).detail;
     return compareSortValues(value(a), value(b), consultantOpportunitySortConfig.direction);
   });
   const sortConsultantOpportunityBy = (key: typeof consultantOpportunitySortConfig.key) => setConsultantOpportunitySortConfig(current => nextSort(current, key));
-  const personalGoalRows = buildGoalVsActualRows(data, [new Date().toISOString().slice(0, 7)], ownerId);
-  const personalPriorityText = totals.overdue
-    ? `Resolver ${totals.overdue} gestiones vencidas antes de crear nuevo pipeline.`
-    : totals.missingAgenda
-      ? `Asignar próxima acción a ${totals.missingAgenda} oportunidades sin agenda.`
-      : personalCriticalRows.length
-        ? `Revisar ${personalCriticalRows.length} oportunidades críticas de hoy.`
-        : 'Mantener seguimiento vigente y avanzar cierres próximos.';
-
-  if (!opportunities.length) return <section className="stack"><div className="notice">No encontré oportunidades asociadas a este consultor.</div><button className="secondary" onClick={() => go('#/dashboard')}>Volver al dashboard gerencial</button></section>;
+  if (!opportunities.length) return <section className="stack"><div className="notice">No encontré oportunidades asociadas a este consultor.</div><button className="secondary" onClick={() => go('#/dashboard2')}>Volver al Dashboard comercial</button></section>;
 
   return <section className="stack consultant-dashboard">
-    {personal && refresh && <DecisionQueue pending={pendingDecisionRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />}
-    {!personal && pendingDecisionRows.length > 0 && <div className="notice decision-manager-note"><strong>{pendingDecisionRows.length} oportunidades sin decisión.</strong> {ownerName} no puede crear oportunidades nuevas hasta decidirlas en su Mi día.</div>}
+    {pendingDecisionRows.length > 0 && <div className="notice decision-manager-note"><strong>{pendingDecisionRows.length} oportunidades sin decisión.</strong> {ownerName} no puede crear oportunidades nuevas hasta decidirlas en su Mi día.</div>}
     <section className="executive-hero consultant-hero">
       <div>
-        <span className="eyebrow">{personal ? 'Mi tablero comercial' : 'Detalle por consultor'}</span>
-        <h2>{personal ? 'Mi gestión comercial' : ownerName}</h2>
-        <p>{personal ? `Hola ${ownerName}. Este tablero prioriza tus gestiones de hoy, tus oportunidades críticas, tu avance contra meta y tu pipeline activo.` : 'Vista consolidada de lo cotizado, prospectos, oportunidades activas, ventas aprobadas, forecast, próxima gestión e indicadores operativos del consultor.'}</p>
+        <span className="eyebrow">Detalle por consultor</span>
+        <h2>{ownerName}</h2>
+        <p>Vista consolidada de lo cotizado, prospectos, oportunidades activas, ventas aprobadas, forecast, próxima gestión e indicadores operativos del consultor.</p>
       </div>
       <div className="hero-facts">
         <div><small>Total pipeline</small><strong>{fmtMoneyCompact(totals.pipeline)}</strong></div>
@@ -2585,32 +2374,8 @@ function ConsultantDetail({ data, ownerId, personal = false, refresh }: { data: 
         <div><small>Conversión aprobada</small><strong>{conversion}%</strong></div>
       </div>
     </section>
-    <div className="actions-row">{!personal && <button className="secondary" onClick={() => go('#/dashboard')}>← Dashboard comercial</button>}<button onClick={() => go(`#/opportunities`)}>Ver mis oportunidades</button><button className="secondary" onClick={() => go('#/goals')}>Ver mis metas</button></div>
-    {personal && <div className="personal-dashboard">
-      <section className="commercial-followup-banner" aria-label="Mi día">
-        <div className="commercial-followup-copy">
-          <span className="eyebrow">Mi día</span>
-          <h3>{personalFollowUpRows.length ? `Tienes ${personalFollowUpRows.length} oportunidades que requieren atención` : 'Tu agenda comercial está al día'}</h3>
-          <p>{personalFollowUpRows.length ? 'Este es el mismo resumen que luego puede salir por correo: vencidas, gestiones de hoy, oportunidades sin agenda y casos sin seguimiento reciente.' : 'No hay vencidas, sin agenda ni alertas de seguimiento reciente en tus oportunidades activas.'}</p>
-        </div>
-        <div className="commercial-followup-cards">
-          {personalFollowUpCards.map(card => <button type="button" key={card.label} className={`commercial-followup-card ${card.tone}`} onClick={() => focusFollowUpFilter(card.filter)}>
-            <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
-          </button>)}
-        </div>
-        <div className="my-day">
-          <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty="Sin próximas gestiones vencidas o sin agendar." />
-          {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
-          {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
-            <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
-          </details>}
-        </div>
-      </section>
-      <Panel title="Mi prioridad de hoy"><div className="personal-priority-grid"><div><small>Acción recomendada</small><strong>{personalPriorityText}</strong></div><div><small>Gestión pendiente</small><strong>{totals.overdue} vencidas · {totals.missingAgenda} sin agenda</strong></div></div></Panel>
-      <Panel title="Mi avance contra meta"><GoalVsActualDashboard rows={personalGoalRows} /></Panel>
-      <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Valor" sortKey="value" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/></tr></thead><tbody>{sortedPersonalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(`#/detail/${row.opportunity.id}`)}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
-    </div>}
-    {!personal && <section className="commercial-followup-banner my-day-manager-banner" aria-label={`Prioridades de hoy de ${ownerName}`}>
+    <div className="actions-row"><button className="secondary" onClick={() => go('#/dashboard2')}>← Dashboard comercial</button><button onClick={() => go(`#/opportunities?owner=${encodeURIComponent(ownerId)}`)}>Ver sus oportunidades</button><button className="secondary" onClick={() => go('#/goals')}>Ver metas</button></div>
+    <section className="commercial-followup-banner my-day-manager-banner" aria-label={`Prioridades de hoy de ${ownerName}`}>
       <div className="commercial-followup-copy">
         <span className="eyebrow">Prioridades de hoy</span>
         <h3>Prioridades de hoy de {ownerName}</h3>
@@ -2623,7 +2388,7 @@ function ConsultantDetail({ data, ownerId, personal = false, refresh }: { data: 
           <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
         </details>}
       </div>
-    </section>}
+    </section>
 
     <div className="grid kpis manager-kpis consultant-kpis">
       <Kpi icon="Σ" tone="blue" label="Total oportunidades" value={String(opportunities.length)} hint={`${totals.active} activas`} meta="Asignadas al consultor" />
@@ -3132,7 +2897,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement | null>(null);
-  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, areas: [], permissions: [], can_edit_customer_segment: false };
+  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, areas: [], permissions: [], can_edit_customer_segment: false, can_own_opportunities: false };
   const [form, setForm] = useState<UserPayload>(emptyUserForm);
   const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'role'|'area'|'permission'|'segment'|'status'>>({ key: 'name', direction: 'asc' });
   const load = async () => {
@@ -3176,15 +2941,15 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   if (!canManageUsers(currentProfile)) return <div className="error">No tiene autorización para administrar usuarios.</div>;
   const setAreaScope = (areaCode: string, subareaCode: string | null, checked: boolean) =>
     setForm(current => ({ ...current, areas: setAreaScopeSelection(current.areas, areaCode, subareaCode, checked) }));
-  const changeRole = (role: string) => setForm(current => ({ ...current, role, permissions: current.permissions.filter(permission => !MODULE_PERMISSION_CODES.includes(permission) || isModulePermissionEligible(role, permission)) }));
-  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, areas: user.areas || [], permissions: user.permissions || [], can_edit_customer_segment: !!user.can_edit_customer_segment }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
+  const changeRole = (role: string) => setForm(current => ({ ...current, role, can_own_opportunities: canOwnOpportunitiesApplies(role) && !!current.can_own_opportunities, permissions: current.permissions.filter(permission => (!MODULE_PERMISSION_CODES.includes(permission) || isModulePermissionEligible(role, permission)) && (!isReadOnlyRole(role) || MODULE_PERMISSION_CODES.includes(permission))) }));
+  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, areas: user.areas || [], permissions: user.permissions || [], can_edit_customer_segment: !!user.can_edit_customer_segment, can_own_opportunities: !!user.can_own_opportunities }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
   const cancelEdit = () => { setEditingUserId(null); setForm(emptyUserForm); setStatus(''); };
   const submit = async (e: React.FormEvent) => { e.preventDefault(); if (catalogStatus !== 'ready') { setStatus('El catálogo de acceso no está disponible. Espera a que cargue o actualiza la página.'); return; } setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…'); try { const saved = await api<(Profile & { invited?: boolean; access_link?: string | null; auth_warning?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) }); const wasEditing = !!editingUserId; setForm(emptyUserForm); setEditingUserId(null); await load(); const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Correo de acceso enviado.' : ''); const warning = saved.auth_warning ? ` ${saved.auth_warning}` : ''; setStatus(wasEditing ? `Usuario actualizado.${mailStatus}${warning}` : `Usuario/perfil guardado.${mailStatus}${warning}`); } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); } };
   return <section className="stack">
     <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Usuarios y permisos</h2><p>Admin y Gerencia tienen alcance global. Las asignaciones se conservan como contexto administrativo y el servidor siempre valida el acceso efectivo.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
     <div ref={editFormRef} className="users-edit-anchor"><Panel title={editingUserId ? `Editar usuario · ${form.full_name || form.microsoft_email}` : 'Crear usuario'}><form className="form gridform" onSubmit={submit}>
       <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Email<input type="email" required disabled={Boolean(editingUserId)} title={editingUserId ? 'El email identifica de forma inmutable al usuario; cree un perfil nuevo para otra identidad.' : undefined} value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
-      <label>Rol<Select value={form.role} onChange={changeRole} options={[['comercial','Comercial'],['colaborador','Colaborador'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin'],['junta','Junta']]} empty="Rol"/></label>
+      <label>Rol<Select value={form.role} onChange={changeRole} options={[['comercial','Comercial'],['colaborador','Colaborador'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin'],['junta','Junta'],['consulta','Directivo de solo consulta']]} empty="Rol"/></label>{isReadOnlyRole(form.role) && <p className="muted wide">Solo consulta: ve Dashboard comercial, oportunidades, SIIO y Licitaciones, sin poder crear, editar, decidir ni administrar nada.</p>}
       <fieldset className="access-scope wide"><legend>Alcance por áreas y subáreas</legend><p>Selecciona toda un área o subáreas específicas. Puedes combinar varias áreas.</p><div className="access-scope-grid">{catalog.areas.map(area => { const whole = form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === null); const subareas = catalog.subareas.filter(subarea => subarea.area_code === area.code); return <fieldset className="access-area-card" key={area.code}><legend>{area.name}</legend><label className="checkline"><input type="checkbox" checked={whole} onChange={e => setAreaScope(area.code, null, e.target.checked)}/> Toda el área</label>{subareas.map(subarea => <label className="checkline access-subarea" key={subarea.code}><input type="checkbox" disabled={whole} checked={form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === subarea.code)} onChange={e => setAreaScope(area.code, subarea.code, e.target.checked)}/>{subarea.name}</label>)}</fieldset>; })}</div></fieldset>
       <fieldset className="access-permission wide">
         <legend>Módulos y pestañas</legend>
@@ -3203,7 +2968,8 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
       <fieldset className="access-permission wide">
         <legend>Capacidades operativas exclusivas</legend>
         <p>Asigna solo a la persona responsable. Estas capacidades no crean módulos ni navegación adicional.</p>
-        {catalogStatus === 'ready' && capabilityPermissions.map(permission => <label className="checkline" key={permission.code}>
+        {catalogStatus === 'ready' && isReadOnlyRole(form.role) && <p className="muted">El perfil de solo consulta no recibe capacidades operativas.</p>}
+        {catalogStatus === 'ready' && !isReadOnlyRole(form.role) && capabilityPermissions.map(permission => <label className="checkline" key={permission.code}>
           <input type="checkbox" checked={form.permissions.includes(permission.code)} onChange={e => setForm(current => ({
             ...current,
             permissions: e.target.checked ? [...new Set([...current.permissions, permission.code])] : current.permissions.filter(item => item !== permission.code),
@@ -3212,7 +2978,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         </label>)}
       </fieldset>
       <aside className="access-permission wide"><strong>Resumen antes de guardar</strong><small>Módulos seleccionados: {selectedModuleNames.length ? selectedModuleNames.join(', ') : 'Ninguno'}</small><small>Capacidades exclusivas: {selectedCapabilityNames.length ? selectedCapabilityNames.join(', ') : 'Ninguna'}</small><small>Áreas asignadas: {form.areas.length ? form.areas.map(scopeLabel).join(', ') : 'Sin alcance asignado'}</small></aside>
-      <label className="checkline"><input type="checkbox" checked={!!form.can_edit_customer_segment} onChange={e=>setForm({...form, can_edit_customer_segment:e.target.checked})}/> Habilitar edición posterior de Cliente Nuevo / Cliente Actual</label>{!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}<label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label><label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> {editingUserId ? 'Enviar correo seguro para definir o restablecer acceso' : 'Enviar correo de invitación para activar el acceso'}</label><div className="formactions"><button disabled={catalogStatus !== 'ready'}>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
+      <label className="checkline"><input type="checkbox" checked={!!form.can_edit_customer_segment} onChange={e=>setForm({...form, can_edit_customer_segment:e.target.checked})}/> Habilitar edición posterior de Cliente Nuevo / Cliente Actual</label>{canOwnOpportunitiesApplies(form.role) && <label className="checkline"><input type="checkbox" checked={!!form.can_own_opportunities} onChange={e=>setForm({...form, can_own_opportunities:e.target.checked})}/> Puede tener oportunidades propias (vista comercial)</label>}{!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}<label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label><label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> {editingUserId ? 'Enviar correo seguro para definir o restablecer acceso' : 'Enviar correo de invitación para activar el acceso'}</label><div className="formactions"><button disabled={catalogStatus !== 'ready'}>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
     </form></Panel></div>
     <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Áreas" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Permisos" sortKey="permission" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td><Badge>{roleLabel(p.role)}</Badge></td><td>{scopesLabel(p)}</td><td>{permissionsLabel(p)}</td><td>{p.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
