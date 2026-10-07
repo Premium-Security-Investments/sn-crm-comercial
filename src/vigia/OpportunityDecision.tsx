@@ -178,7 +178,7 @@ export function DecisionQueue({ pending, stages, lossReasons, onChanged }: {
       <strong className="decision-queue-count numeric-value">{pending.length}</strong>
     </header>
     {selected.size > 0 && <div className="decision-bulk" role="region" aria-label="Decidir varias">
-      <strong>{selected.size} seleccionadas:</strong>
+      <strong>{selected.size === 1 ? '1 seleccionada' : `${selected.size} seleccionadas`}:</strong>
       <select value={bulk.decision} onChange={e => setBulk({ ...bulk, decision: e.target.value as 'discard' | 'freeze' })}><option value="discard">Descartar</option><option value="freeze">Congelar</option></select>
       {bulk.decision === 'discard'
         ? <select value={bulk.reason} onChange={e => setBulk({ ...bulk, reason: e.target.value })}><option value="">Motivo</option>{lossReasons.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select>
