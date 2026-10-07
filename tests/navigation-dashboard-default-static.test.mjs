@@ -21,10 +21,9 @@ for (const group of expectedGroups) {
 const expectedItems = [
   ["#/siio", 'SIIO Gerencial', 'siio'],
   ["#/dashboard2", 'Dashboard comercial', 'dashboard2'],
-  ["#/alerts", 'Prioridades Comerciales', 'alerts'],
   ["#/opportunities", 'Oportunidades', 'opportunities'],
   ["#/tenders?view=radar", 'Radar', 'tenders'],
-  ["#/goals", 'Metas y cumplimiento', 'goals'],
+  ["#/goals", 'Cargar metas', 'goals'],
   ["#/users", 'Usuarios y permisos', 'users'],
 ];
 let lastItemIndex = -1;
@@ -35,6 +34,7 @@ for (const [href, label, page] of expectedItems) {
   lastItemIndex = idx;
 }
 
+assert.ok(!nav.includes("label: 'Prioridades Comerciales'"), 'Prioridades Comerciales sale de todos los menús; su motor alimenta el Dashboard comercial.');
 assert.ok(!nav.includes("['#/new','Crear oportunidad']"), 'Crear oportunidad no debe ser ítem permanente del sidebar; debe quedar como acción contextual.');
 assert.ok(!nav.includes("label: 'Vig-IA', page: 'centinel'"), 'Vig-IA comercial no debe permanecer como pestaña duplicada en Gerencia.');
 assert.ok(main.includes("if (page === 'centinel' || page === 'vig-ia') return { page: 'alerts' };"), 'Las rutas históricas de Vig-IA deben converger en Prioridades Comerciales.');

@@ -35,14 +35,16 @@ import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
 import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
 import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
+import { isReadOnlyRole } from '../access-control.js';
 import { hasPermission } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
-import { DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
+import { bogotaDay, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
+import { BEHAVIOR_FOLLOW_UP_TYPES, bogotaWeekStart, buildCommercialBehavior } from '../src/vigia/commercial-behavior.js';
 import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
 import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
 import { createAgt003PreflightApi } from '../agt003-preflight-api.js';
@@ -363,7 +365,10 @@ function requireDb() {
 }
 
 const managementRoles = ['director','gerencia','admin'];
+// Alcance global que además autoriza escrituras (segmento de cliente, PUT /api/goals). No incluye roles de solo consulta.
 const globalCrmScopeRoles = new Set(['gerencia', 'admin']);
+// Alcance global sólo para LEER (bootstrap, prioridades, comportamiento): gerencia, admin y el directivo de solo consulta.
+const globalCrmReadScopeRoles = new Set([...globalCrmScopeRoles, 'consulta']);
 const commercialAreas = ['seguridad_fisica','tecnologia','licitacion_publica'];
 const customerSegments = ['cliente_nuevo','cliente_actual'];
 function isManager(profile) { return managementRoles.includes(profile?.role); }
@@ -391,6 +396,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
+  'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
@@ -460,6 +466,7 @@ export function requireSiioEndpointAccess(profile, methodRoute) {
 function normalizeUserRole(value) {
   const raw = String(value || 'comercial').trim().toLowerCase();
   if (raw === 'directivo') return 'director';
+  if (raw === 'directivo de solo consulta' || raw === 'solo_consulta' || raw === 'solo consulta') return 'consulta';
   return raw;
 }
 function getBearerToken(req) {
@@ -504,7 +511,7 @@ function normalizeAccessPermissions(rows) {
   return permissions;
 }
 
-const PROFILE_ROLES = new Set(['admin','gerencia','director','comercial','colaborador','junta']);
+const PROFILE_ROLES = new Set(['admin','gerencia','director','comercial','colaborador','junta','consulta']);
 const MODULE_PERMISSION_CODE_SET = new Set(MODULE_PERMISSION_CODES);
 const MAX_PROFILE_ACCESS_ROWS = 100;
 function accessValidationError(message) { const error = new Error(message); error.status = 400; return error; }
@@ -566,8 +573,18 @@ export function normalizeProfileAccessRequest(body, catalog, role) {
     if (MODULE_PERMISSION_CODE_SET.has(permission) && !isModulePermissionEligible(role, permission)) {
       throw accessValidationError(`El módulo ${permission === 'licitaciones' ? 'Licitaciones' : 'seleccionado'} no aplica para este rol.`);
     }
+    // Solo consulta = sólo módulos de lectura; nunca custodia, eliminar oportunidades ni pilotos de IA.
+    if (isReadOnlyRole(role) && !MODULE_PERMISSION_CODE_SET.has(permission)) throw accessValidationError('El perfil de solo consulta no admite permisos de operación.');
   }
   return { areas, permissions };
+}
+// "Puede tener oportunidades propias (vista comercial)": sólo para roles humanos no comerciales y nunca para solo consulta.
+// Devuelve el fragmento para p_profile; si el cliente no lo envía, el RPC conserva el valor guardado.
+export function normalizeCanOwnOpportunities(body, role) {
+  if (!body || !Object.hasOwn(body, 'can_own_opportunities')) return {};
+  const value = body.can_own_opportunities === true;
+  if (value && isReadOnlyRole(role)) throw accessValidationError('El perfil de solo consulta no puede tener oportunidades propias.');
+  return { can_own_opportunities: value && role !== 'comercial' };
 }
 export function legacyCommercialAreaFromAssignments(areas) {
   if (!Array.isArray(areas) || areas.length !== 1 || areas[0]?.area_code !== 'comercial') return null;
@@ -712,6 +729,16 @@ function authContextUnavailable(cause) {
   error.code = 'AUTH_CONTEXT_UNAVAILABLE';
   return error;
 }
+const READ_ONLY_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+export function assertReadOnlyRoleMethod(profile, method) {
+  if (isReadOnlyRole(profile?.role) && !READ_ONLY_SAFE_METHODS.has(String(method || 'GET').toUpperCase())) {
+    const error = new Error('Su perfil es de solo consulta; no puede modificar información.');
+    error.status = 403;
+    error.code = 'READ_ONLY_PROFILE';
+    throw error;
+  }
+  return true;
+}
 export async function getAuthContext(req) {
   const database = requireDb();
   const token = getBearerToken(req);
@@ -728,7 +755,7 @@ export async function getAuthContext(req) {
   }
   let profile;
   try {
-    profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment').eq('auth_user_id', userData.user.id).maybeSingle());
+    profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities').eq('auth_user_id', userData.user.id).maybeSingle());
   } catch (error) {
     throw authContextUnavailable(error);
   }
@@ -737,6 +764,10 @@ export async function getAuthContext(req) {
     error.status = 403;
     throw error;
   }
+  // Barrera global del rol de solo consulta: cualquier método que no sea de lectura se rechaza aquí, antes de cualquier
+  // ruta (CRM, SIIO, Licitaciones/AGT-002, usuarios, IA). Las acciones de access-control.js ya lo excluyen; esto es el
+  // respaldo para rutas que autorizan por permiso de módulo.
+  assertReadOnlyRoleMethod(profile, req?.method);
   const { auth_user_id: _internalAuthUserId, ...authorizedProfile } = profile;
   // Access scope is server-derived from trusted profile assignment tables.
   try {
@@ -893,7 +924,17 @@ export function bootstrapCapabilities(profile) {
     vigia: can(profile, ACTIONS.MODULE_VIGIA_VIEW),
   });
 }
-const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active,can_own_opportunities';
+const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active,can_own_opportunities,identity_type';
+// Identidades técnicas (identity_type = 'agent', p. ej. la identidad de AGT-002) no son personas: no aparecen en listas
+// de comerciales, usuarios ni propietarios. Nunca se borran ni se modifican desde el CRM.
+function isAgentIdentity(profile) { return profile?.identity_type === 'agent'; }
+export function assertEditableHumanProfile(profile) {
+  if (!isAgentIdentity(profile)) return true;
+  const error = new Error('Identidad técnica no editable');
+  error.status = 403;
+  error.code = 'AGENT_IDENTITY_READ_ONLY';
+  throw error;
+}
 function crmResource(ownerId, assignment = {}) {
   return { area_code: assignment.area_code || 'comercial', subarea_code: assignment.subarea_code ?? null, owner_id: ownerId };
 }
@@ -926,9 +967,10 @@ function readableOwnerIds(profile, profiles, ownerAssignments, globalScope) {
 export function filterBootstrapForProfile(payload, currentProfile, environment = process.env) {
   const { profileAssignments = [], ...publicPayload } = payload;
   const capabilities = bootstrapCapabilities(currentProfile);
-  const globalScope = globalCrmScopeRoles.has(currentProfile?.role);
+  const globalScope = globalCrmReadScopeRoles.has(currentProfile?.role);
   const ownerAssignments = assignmentsByProfile(profileAssignments);
-  const visibleOwnerIds = readableOwnerIds(currentProfile, payload.profiles, ownerAssignments, globalScope);
+  const humanProfiles = (payload.profiles || []).filter(profileRow => !isAgentIdentity(profileRow));
+  const visibleOwnerIds = readableOwnerIds(currentProfile, humanProfiles, ownerAssignments, globalScope);
   const commercialData = capabilities.opportunities || capabilities.dashboard || capabilities.alerts || capabilities.vigia;
   const scopedOpportunities = globalScope ? payload.opportunities : payload.opportunities.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
   const scopedStalled = globalScope ? payload.stalled : payload.stalled.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
@@ -948,11 +990,11 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const monthlyKpis = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedMonthlyKpis : [];
   const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
   const profiles = (needsProfiles
-    ? (globalScope ? payload.profiles : payload.profiles.filter(p => visibleOwnerIds.has(p.id)))
-    : []).map(({ id, full_name, role, active, can_own_opportunities }) => ({
+    ? (globalScope ? humanProfiles : humanProfiles.filter(p => visibleOwnerIds.has(p.id)))
+    : []).map(({ id, full_name, role, active, can_own_opportunities, identity_type }) => ({
       id,
       full_name,
-      is_commercial: active !== false && (role === 'comercial' || can_own_opportunities === true),
+      is_commercial: identity_type !== 'agent' && active !== false && (role === 'comercial' || can_own_opportunities === true),
     }));
   const totals = opportunities.reduce((acc, o) => {
     acc.count += 1;
@@ -970,13 +1012,14 @@ function opportunityOwnerError(message, status) {
 }
 async function resolveActiveOpportunityOwner(database, ownerId) {
   if (!ownerId) throw opportunityOwnerError('El comercial responsable es obligatorio.', 400);
-  const { data: owner, error } = await database.from('psi_sales_profiles').select('id,active,role,can_own_opportunities').eq('id', ownerId).single();
+  const { data: owner, error } = await database.from('psi_sales_profiles').select('id,active,role,can_own_opportunities,identity_type').eq('id', ownerId).single();
   if (error) {
     if (error.code === 'PGRST116') throw opportunityOwnerError('El comercial responsable no existe.', 404);
     throw error;
   }
   if (!owner) throw opportunityOwnerError('El comercial responsable no existe.', 404);
   if (!owner.active) throw opportunityOwnerError('El comercial responsable debe estar activo.', 400);
+  if (isAgentIdentity(owner)) throw opportunityOwnerError('Una identidad técnica no puede ser responsable de oportunidades.', 400);
   if (owner.role !== 'comercial' && owner.can_own_opportunities !== true) {
     throw opportunityOwnerError('El comercial responsable debe estar habilitado para ser propietario de oportunidades.', 400);
   }
@@ -999,7 +1042,7 @@ async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.C
 }
 
 const opportunitySelect = '*';
-const VIGIA_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_code,stage_name,stage_order,service_type_code,service_type_name,regional_nombre,offer_value,weighted_pipeline_value,next_action_at,last_interaction_at,updated_at,created_atexpected_close_date';
+const VIGIA_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_code,stage_name,stage_order,service_type_code,service_type_name,regional_nombre,offer_value,weighted_pipeline_value,next_action_at,last_interaction_at,updated_at,created_at,expected_close_date';
 async function attachCommercialMetadata(database, rows) {
   const list = Array.isArray(rows) ? rows : [rows];
   if (!list.length) return rows;
@@ -2766,7 +2809,7 @@ function throwVigiaScopeForbidden() {
   throw error;
 }
 async function resolveVigiaOwnerScope(database, profile) {
-  if (globalCrmScopeRoles.has(profile?.role)) return null;
+  if (globalCrmReadScopeRoles.has(profile?.role)) return null;
   if (!profile?.areas?.some(area => area.area_code === 'comercial')) throwVigiaScopeForbidden();
   const rows = await must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code').eq('area_code', 'comercial'));
   const ownerAssignments = assignmentsByProfile(rows);
@@ -2774,14 +2817,14 @@ async function resolveVigiaOwnerScope(database, profile) {
   if (!ownerIds.length) throwVigiaScopeForbidden();
   return ownerIds.sort();
 }
-async function fetchVigiaRows(database, ownerIds) {
+async function fetchVigiaRows(database, ownerIds, select = VIGIA_OPPORTUNITY_SELECT) {
   const batches = ownerIds === null
     ? [null]
     : Array.from({ length: Math.ceil(ownerIds.length / VIGIA_OWNER_BATCH_SIZE) }, (_, index) => ownerIds.slice(index * VIGIA_OWNER_BATCH_SIZE, (index + 1) * VIGIA_OWNER_BATCH_SIZE));
   const rows = [];
   for (const ownerBatch of batches) {
     for (let offset = 0; ; offset += VIGIA_PAGE_SIZE) {
-      let query = database.from('v_psi_sales_opportunity_enriched').select(VIGIA_OPPORTUNITY_SELECT).order('updated_at', { ascending: false }).order('id', { ascending: true });
+      let query = database.from('v_psi_sales_opportunity_enriched').select(select).order('updated_at', { ascending: false }).order('id', { ascending: true });
       if (ownerBatch) query = query.in('owner_id', ownerBatch);
       const page = await must(query.range(offset, offset + VIGIA_PAGE_SIZE - 1));
       rows.push(...page);
@@ -2921,6 +2964,96 @@ app.get('/api/vigia/priorities', async (req, res) => {
 });
 app.all('/api/vigia/priorities', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
+// "¿Quién necesita ayuda?" del Dashboard comercial: comportamiento por comercial (regla pura en
+// src/vigia/commercial-behavior.js). Exige el módulo Dashboard comercial; el comercial no lo tiene y recibe 403.
+// El alcance es el mismo de lectura del CRM: global para gerencia/admin/solo consulta, asignaciones para el director.
+export function requireCommercialBehaviorAccess(profile) {
+  return requireAction(profile, ACTIONS.MODULE_DASHBOARD_VIEW, {});
+}
+const BEHAVIOR_OPPORTUNITY_SELECT = 'id,owner_id,service_type_code,stage_code,offer_value,next_action_at,approved_at,updated_at';
+const BEHAVIOR_PAGE_SIZE = 1000;
+const BEHAVIOR_LATEST_FOLLOW_UP_LOOKBACK = 25;
+function isMissingRelation(error) {
+  return error?.code === '42P01' || error?.code === 'PGRST205' || /does not exist|could not find the table/i.test(String(error?.message || ''));
+}
+async function fetchBehaviorPages(buildQuery) {
+  const rows = [];
+  for (let offset = 0; ; offset += BEHAVIOR_PAGE_SIZE) {
+    const page = await must(buildQuery().range(offset, offset + BEHAVIOR_PAGE_SIZE - 1));
+    rows.push(...page);
+    if (page.length < BEHAVIOR_PAGE_SIZE) break;
+  }
+  return rows;
+}
+// Sólo columnas de conteo y fecha: el texto de los seguimientos (notes) nunca se lee aquí.
+const BEHAVIOR_INTERACTION_SELECT = 'opportunity_id,created_by,interaction_type,created_at';
+export async function loadCommercialBehavior(database, profile, now = new Date()) {
+  const ownerIds = await resolveVigiaOwnerScope(database, profile);
+  const ownerScope = ownerIds === null ? null : new Set(ownerIds);
+  const profiles = await must(database.from('psi_sales_profiles').select(BOOTSTRAP_PROFILE_SELECT).eq('active', true).order('full_name'));
+  const salespeople = profiles
+    .filter(row => !isAgentIdentity(row) && (row.role === 'comercial' || row.can_own_opportunities === true))
+    .filter(row => !ownerScope || ownerScope.has(row.id))
+    .map(({ id, full_name, role }) => ({ id, full_name, role }));
+  const ids = salespeople.map(row => row.id);
+  if (!ids.length) return buildCommercialBehavior({ salespeople, now });
+  const [viewRows, segmentRows] = await Promise.all([
+    fetchVigiaRows(database, ids.slice().sort(), BEHAVIOR_OPPORTUNITY_SELECT),
+    fetchVigiaCustomerSegments(database, ids.slice().sort()),
+  ]);
+  const opportunities = attachVigiaCustomerSegments(viewRows, segmentRows);
+  const commercialIds = new Set(opportunities.filter(isAgt003CommercialOpportunity).map(row => row.id));
+  // Ventana amplia (31 días) para los conteos; la semana y los 30 días se recortan en la regla pura.
+  const windowStart = new Date(now.getTime() - 31 * 86_400_000).toISOString();
+  const weekStartIso = new Date(Date.parse(`${bogotaWeekStart(now)}T00:00:00-05:00`) - 86_400_000).toISOString();
+  const [windowInteractions, decisionLogs] = await Promise.all([
+    fetchBehaviorPages(() => database.from('psi_sales_interactions').select(BEHAVIOR_INTERACTION_SELECT)
+      .in('created_by', ids).in('interaction_type', BEHAVIOR_FOLLOW_UP_TYPES).gte('created_at', windowStart)
+      .order('created_at', { ascending: false }).order('id', { ascending: true })),
+    fetchBehaviorPages(() => database.from('psi_sales_opportunity_audit_logs').select('opportunity_id,changed_by,created_at,field_name')
+      .eq('field_name', 'decision').in('changed_by', ids).gte('created_at', weekStartIso)
+      .order('created_at', { ascending: false }).order('id', { ascending: true })),
+  ]);
+  // Último seguimiento de quien no tiene ninguno en la ventana: consulta acotada por comercial (índice created_by, created_at).
+  const withRecent = new Set(windowInteractions.filter(row => commercialIds.has(row.opportunity_id)).map(row => row.created_by));
+  const olderLatest = await Promise.all(ids.filter(id => !withRecent.has(id)).map(async id => {
+    const rows = await must(database.from('psi_sales_interactions').select(BEHAVIOR_INTERACTION_SELECT)
+      .eq('created_by', id).in('interaction_type', BEHAVIOR_FOLLOW_UP_TYPES).lt('created_at', windowStart)
+      .order('created_at', { ascending: false }).limit(BEHAVIOR_LATEST_FOLLOW_UP_LOOKBACK));
+    const latest = rows.find(row => commercialIds.has(row.opportunity_id));
+    return latest ? [latest] : [];
+  }));
+  let lastSeen = [];
+  let lastSeenAvailable = true;
+  try {
+    lastSeen = await must(database.from('psi_profile_last_seen').select('profile_id,last_seen_at').in('profile_id', ids));
+  } catch (error) {
+    // Sin la migración 111 el último ingreso queda desconocido (nunca "inactivo" por eso).
+    if (!isMissingRelation(error)) throw error;
+    lastSeenAvailable = false;
+  }
+  // El mes (Bogotá) se recorta en la regla pura; aquí sólo se traen las metas más recientes de estos comerciales.
+  const goals = await must(database.from('psi_sales_goals').select('user_id,period_month,sales_budget').in('user_id', ids).order('period_month', { ascending: false }).limit(1000));
+  const report = buildCommercialBehavior({
+    salespeople,
+    opportunities,
+    interactions: [...windowInteractions, ...olderLatest.flat()],
+    decisionLogs,
+    lastSeen,
+    goals,
+    now,
+  });
+  return { ...report, lastSeenAvailable };
+}
+app.get('/api/vigia/commercial-behavior', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireCommercialBehaviorAccess(currentProfile);
+    res.json(await loadCommercialBehavior(requireDb(), currentProfile));
+  } catch (error) { sendAuthError(res, error); }
+});
+app.all('/api/vigia/commercial-behavior', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
 app.post('/api/vigia/copilot/preflight', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
@@ -2949,10 +3082,27 @@ app.post('/api/vigia/copilot/feedback', async (req, res) => {
 });
 app.all('/api/vigia/copilot/feedback', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
+// Último ingreso al CRM: una marca por día de Bogotá vía psi_touch_profile_last_seen (migración 111). Se dispara sin
+// esperar y nunca rompe el bootstrap; el Map evita repetir la llamada en el mismo proceso durante el día. No se usa
+// auth.users.last_sign_in_at porque las sesiones persisten y ese dato queda viejo.
+const lastSeenTouchedDayByProfile = new Map();
+export function touchProfileLastSeen(database, profileId, now = new Date()) {
+  const day = bogotaDay(now);
+  if (!database || !profileId || !day || lastSeenTouchedDayByProfile.get(profileId) === day) return false;
+  lastSeenTouchedDayByProfile.set(profileId, day);
+  Promise.resolve()
+    .then(() => database.rpc('psi_touch_profile_last_seen', { p_profile_id: profileId }))
+    .then(result => { if (result?.error) console.warn('psi_touch_profile_last_seen falló', { code: result.error.code || null }); })
+    .catch(error => console.warn('psi_touch_profile_last_seen falló', { code: error?.code || null }));
+  return true;
+}
+export function __resetLastSeenTouchesForTests() { lastSeenTouchedDayByProfile.clear(); }
+
 app.get('/api/bootstrap', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
+    touchProfileLastSeen(database, currentProfile.id);
     const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
       must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
       must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
@@ -5556,8 +5706,10 @@ app.get('/api/users', async (req, res) => {
     const database = requireDb();
     let profiles;
     try {
-      profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').order('full_name'));
+      profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities,created_at,identity_type').order('full_name'));
       if (!Array.isArray(profiles)) throw new Error('Perfiles inválidos.');
+      // Las identidades técnicas (agentes) no se administran como usuarios.
+      profiles = profiles.filter(profile => !isAgentIdentity(profile)).map(({ identity_type: _identityType, ...profile }) => profile);
     } catch (error) { throw profileAccessReadFailure(error); }
     const ids = profiles.map(profile => profile?.id);
     if (ids.some(id => !isExactNonblankString(id)) || new Set(ids).size !== ids.length) throw profileAccessReadFailure(new Error('Perfiles inválidos.'));
@@ -5586,6 +5738,7 @@ app.post('/api/users', async (req, res) => {
     const active = req.body.active !== false;
     const send_invite = req.body.send_invite !== false;
     const can_edit_customer_segment = req.body.can_edit_customer_segment === true;
+    const can_own_opportunities = normalizeCanOwnOpportunities(req.body, role);
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
     if (!PROFILE_ROLES.has(role)) throw new Error('Rol no válido.');
@@ -5597,12 +5750,13 @@ app.post('/api/users', async (req, res) => {
     try {
       beforeProfile = await must(database.from('psi_sales_profiles').select(profileAdminSelect).eq('microsoft_email', microsoft_email).maybeSingle());
     } catch (error) { throw profileAdministrationFailure(error); }
+    if (beforeProfile?.id) assertEditableHumanProfile(await must(database.from('psi_sales_profiles').select('id,identity_type').eq('id', beforeProfile.id).single()));
     assertNoAdminSelfLockout(currentProfile, { profileId: beforeProfile?.id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
     const beforeAccess = beforeProfile ? await readProfileAccess(database, beforeProfile.id) : { areas: [], permissions: [], areaRows: [], permissionRows: [] };
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
     try {
-      row = await persistProfileAccessChange(database, { mode: 'post', targetId: beforeProfile?.id || null, beforeProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
+      row = await persistProfileAccessChange(database, { mode: 'post', targetId: beforeProfile?.id || null, beforeProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
@@ -5618,8 +5772,10 @@ app.patch('/api/users', async (req, res) => {
     requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
     const id = String(req.query.id || '').trim();
-    const existingProfile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').eq('id', id).single());
-    if (!existingProfile) { const error = new Error('Usuario no encontrado.'); error.status = 404; throw error; }
+    const existingRow = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,identity_type').eq('id', id).single());
+    if (!existingRow) { const error = new Error('Usuario no encontrado.'); error.status = 404; throw error; }
+    assertEditableHumanProfile(existingRow);
+    const { identity_type: _existingIdentityType, ...existingProfile } = existingRow;
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
     const role = normalizeUserRole(req.body.role);
@@ -5627,6 +5783,7 @@ app.patch('/api/users', async (req, res) => {
     const active = req.body.active !== false;
     const send_invite = req.body.send_invite === true;
     const can_edit_customer_segment = req.body.can_edit_customer_segment === true;
+    const can_own_opportunities = normalizeCanOwnOpportunities(req.body, role);
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
     if (microsoft_email !== String(existingProfile.microsoft_email || '').trim().toLowerCase()) {
@@ -5645,7 +5802,7 @@ app.patch('/api/users', async (req, res) => {
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
     try {
-      row = await persistProfileAccessChange(database, { mode: 'patch', targetId: id, beforeProfile: existingProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
+      row = await persistProfileAccessChange(database, { mode: 'patch', targetId: id, beforeProfile: existingProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }

@@ -1,4 +1,5 @@
 import { isModulePermissionEligible } from '../module-access.js';
+import { isReadOnlyRole } from '../access-control.js';
 
 export type NavRole = 'admin' | 'gerencia' | 'director' | 'comercial' | string;
 
@@ -8,7 +9,12 @@ export type NavProfile = {
   microsoft_email?: string | null;
   active?: boolean | null;
   permissions?: string[] | null;
+  identity_type?: string | null;
+  can_own_opportunities?: boolean | null;
 } | null | undefined;
+
+/** Modo de presentación del CRM: 'admin' (por defecto) o 'comercial' para perfiles no comerciales con oportunidades propias. */
+export type NavViewMode = 'admin' | 'comercial';
 
 export type NavRoutePage =
   | 'home'
@@ -35,6 +41,13 @@ type NavGroupDefinition = {
 };
 
 const managementRoles = new Set(['admin', 'gerencia', 'director']);
+// Quienes ven las vistas directivas (Dashboard comercial, SIIO completo). Incluye al Directivo de solo consulta, que NO es
+// un rol de gestión: no edita segmentos, metas ni oportunidades (por eso no entra en managementRoles).
+const directiveViewerRoles = new Set([...managementRoles, 'consulta']);
+// Sólo gerencia y admin cargan metas (PUT /api/goals); el ítem "Cargar metas" del menú sólo existe para ellos.
+const goalWriterRoles = new Set(['admin', 'gerencia']);
+// Rutas de escritura que un rol de solo consulta nunca abre, aunque tenga el módulo.
+const writeOnlyPages = new Set<NavRoutePage>(['new', 'edit', 'users', 'goals']);
 
 const navGroups: readonly NavGroupDefinition[] = [
   {
@@ -47,9 +60,10 @@ const navGroups: readonly NavGroupDefinition[] = [
     title: 'Comercial',
     items: [
       // El comercial empieza su día aquí (su lista de hoy y las oportunidades por decidir); sólo lo ve el rol comercial.
-      { href: '#/', label: 'Mi día', page: 'home' },
+      { href: '#/home', label: 'Mi día', page: 'home' },
       { href: '#/dashboard2', label: 'Dashboard comercial', page: 'dashboard2' },
-      { href: '#/alerts', label: 'Prioridades Comerciales', page: 'alerts' },
+      // Prioridades Comerciales (#/alerts) salió del menú: su motor alimenta el Dashboard comercial y el orden
+      // "por urgencia" de Oportunidades. La ruta sigue abierta para enlaces directos.
       { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },
     ],
   },
@@ -62,7 +76,8 @@ const navGroups: readonly NavGroupDefinition[] = [
   {
     title: 'Administración',
     items: [
-      { href: '#/goals', label: 'Metas y cumplimiento', page: 'goals' },
+      // Antes "Metas y cumplimiento": en el menú sólo lo ve quien carga metas; el comercial llega a su meta desde Mi día.
+      { href: '#/goals', label: 'Cargar metas', page: 'goals' },
       { href: '#/users', label: 'Usuarios y permisos', page: 'users' },
     ],
   },
@@ -88,6 +103,14 @@ export function isManagementRole(role?: string | null) {
   return managementRoles.has(role || '');
 }
 
+export function isDirectiveViewerRole(role?: string | null) {
+  return directiveViewerRoles.has(role || '');
+}
+
+export function isReadOnlyProfile(profile?: NavProfile) {
+  return profile?.active === true && isReadOnlyRole(profile.role ?? null);
+}
+
 export function moduleActionForPage(page: NavRoutePage) {
   return moduleActionByPage[page] ?? null;
 }
@@ -111,7 +134,36 @@ export function canAccessSiio(profile?: NavProfile) {
   return hasModuleAccess(profile, 'modulo_siio_gerencial');
 }
 
+/**
+ * Vista Comercial: un perfil no comercial (p. ej. admin) habilitado para tener oportunidades propias puede ver el CRM
+ * exactamente como un comercial. Nunca aplica a solo consulta ni a identidades técnicas.
+ */
+export function canUseCommercialView(profile?: NavProfile) {
+  return profile?.active === true
+    && profile.can_own_opportunities === true
+    && typeof profile.role === 'string'
+    && profile.role !== 'comercial'
+    && !isReadOnlyRole(profile.role)
+    && (profile.identity_type == null || profile.identity_type === 'human');
+}
+
+/**
+ * Perfil efectivo para la PRESENTACIÓN (menú, rutas, pantalla de llegada). En Vista Comercial se comporta como rol
+ * comercial con sólo Oportunidades: Mi día + Oportunidades. El servidor sigue autorizando con el perfil real; esto no
+ * concede ni retira ningún permiso del lado del servidor.
+ */
+export function effectiveNavProfile<T extends NonNullable<NavProfile>>(profile: T | null | undefined, viewMode: NavViewMode): T | null | undefined {
+  if (viewMode !== 'comercial' || !canUseCommercialView(profile)) return profile;
+  const permissions = (profile!.permissions || []).includes('modulo_oportunidades') ? ['modulo_oportunidades'] : [];
+  return { ...profile!, role: 'comercial', permissions };
+}
+
+export function canWriteGoals(profile?: NavProfile) {
+  return hasModuleAccess(profile, 'modulo_metas') && goalWriterRoles.has(profile?.role || '');
+}
+
 export function canAccessRoute(profile: NavProfile, page: NavRoutePage) {
+  if (isReadOnlyProfile(profile) && writeOnlyPages.has(page)) return false;
   if (page === 'alerts' || page === 'centinel') {
     return hasModuleAccess(profile, 'modulo_alertas_comerciales') || hasModuleAccess(profile, 'modulo_vig_ia');
   }
@@ -119,7 +171,8 @@ export function canAccessRoute(profile: NavProfile, page: NavRoutePage) {
   return moduleCode ? hasModuleAccess(profile, moduleCode) : profile?.active === true;
 }
 
-const LANDING_PRIORITY: NavRoutePage[] = ['siio', 'dashboard2', 'dashboard', 'opportunities', 'tenders', 'alerts', 'consultant', 'goals', 'users'];
+// Prioridades y metas ya no son pantallas de llegada: se consultan desde el Dashboard comercial y Mi día.
+const LANDING_PRIORITY: NavRoutePage[] = ['siio', 'dashboard2', 'dashboard', 'opportunities', 'tenders', 'consultant', 'users'];
 
 export function isInitialAppHash(hash: string) {
   return hash === '' || hash === '#' || hash === '#/';
@@ -131,8 +184,11 @@ export function preferredLandingRoute(profile: NavProfile): NavRoutePage {
 }
 
 // "Mi día" es la entrada del comercial; los directivos trabajan desde el Dashboard comercial.
+// "Cargar metas" sólo aparece para quien puede escribirlas; la ruta #/goals sigue abierta para enlaces (Ver mi meta).
 function isNavItemVisible(profile: NavProfile, page: NavRoutePage) {
-  return page !== 'home' || (profile?.active === true && profile.role === 'comercial');
+  if (page === 'home') return profile?.active === true && profile.role === 'comercial';
+  if (page === 'goals') return canWriteGoals(profile);
+  return true;
 }
 
 export function getVisibleNavGroups(profile?: NavProfile): NavGroup[] {
