@@ -26,6 +26,7 @@ assert.deepEqual(CAPABILITY_PERMISSION_CODES, ['licitaciones_custodia', 'crm_eli
 assert.equal(CAPABILITY_PERMISSIONS[0].name, 'Custodia de Licitaciones');
 assert.equal(MODULE_PERMISSION_CODES.includes('licitaciones_custodia'), false, 'La custodia no debe convertirse en módulo de navegación.');
 assert.deepEqual(eligibleModulePermissions('junta'), ['modulo_siio_gerencial']);
+assert.deepEqual(eligibleModulePermissions('consulta'), ['modulo_siio_gerencial', 'modulo_dashboard_comercial', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'licitaciones'], 'solo consulta: módulos de lectura, sin metas, usuarios ni Vig-IA');
 assert.equal(isModulePermissionEligible('admin', 'modulo_usuarios'), true);
 assert.equal(isModulePermissionEligible('gerencia', 'modulo_usuarios'), false);
 assert.equal(isModulePermissionEligible('comercial', 'modulo_siio_gerencial'), false);

@@ -11,7 +11,8 @@ for (const label of ['Resumen ejecutivo', 'Seguimiento gerencial', 'Fuentes e in
 assert.doesNotMatch(navigation, /F1-F6|Registro F2|Archivo F4|Razonamiento F5|Modo Junta/);
 assert.match(dashboard, /api<SiioBootstrapPayload>\('\/api\/siio\/bootstrap'\)/);
 assert.match(dashboard, /window\.addEventListener\('hashchange'/);
-assert.match(dashboard, /isManagementRole\(currentProfile\.role\)/);
+// Gestión y el directivo de solo consulta ven la vista gerencial completa; junta sólo su vista publicada.
+assert.match(dashboard, /isDirectiveViewerRole\(currentProfile\.role\)/);
 assert.match(main, /import \{ SiioDashboard \} from '\.\/siio\/SiioDashboard';/);
 assert.match(main, /if \(route\.page === 'siio'\) return <SiioDashboard currentProfile=\{data\.currentProfile\} \/>/);
 assert.doesNotMatch(main, /function SiioDashboard\(/);

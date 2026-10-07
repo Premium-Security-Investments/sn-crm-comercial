@@ -27,7 +27,8 @@ assert.doesNotMatch(main, /href="#\/(?:siio|dashboard2)"/, 'main no debe duplica
 assert.doesNotMatch(main, /function SiioDashboard/, 'SIIO dashboard must be extracted from main');
 assert.match(dashboard, /SIIO — Sistema Interno de Inteligencia Operativa/);
 assert.match(dashboard, /api<SiioBootstrapPayload>\('\/api\/siio\/bootstrap'\)/);
-assert.match(dashboard, /isManagementRole\(currentProfile\.role\)/);
+// Gestión y el directivo de solo consulta ven la vista gerencial completa; junta sólo su vista publicada.
+assert.match(dashboard, /isDirectiveViewerRole\(currentProfile\.role\)/);
 assert.match(navigation, /Resumen ejecutivo/);
 assert.match(navigation, /Seguimiento gerencial/);
 assert.match(navigation, /Fuentes e inteligencia/);

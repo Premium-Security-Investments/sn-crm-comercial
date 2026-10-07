@@ -69,7 +69,7 @@ assert.equal(
 );
 
 const source = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
-assert.match(source, /select\('id,active,role,can_own_opportunities'\)/, 'owner resolution must fetch the server-side eligibility fields');
+assert.match(source, /select\('id,active,role,can_own_opportunities,identity_type'\)/, 'owner resolution must fetch the server-side eligibility fields (incl. identidad técnica)');
 for (const route of ["app.post('/api/opportunities'", "app.put('/api/opportunities/:id'", "app.put('/api/opportunity'"]) {
   const start = source.indexOf(route);
   const end = source.indexOf('\n});', start);

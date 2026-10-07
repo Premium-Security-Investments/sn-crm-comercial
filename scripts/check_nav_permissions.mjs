@@ -45,14 +45,18 @@ assert.deepEqual(mod.getVisibleNavGroups(usersOnlyAdmin), [{
 const opportunitiesOnlyCommercial = profile('comercial', ['modulo_oportunidades']);
 assert.deepEqual(mod.getVisibleNavGroups(opportunitiesOnlyCommercial), [{
   title: 'Comercial',
-  items: [{ href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' }],
-}], 'comercial con solo oportunidades ve únicamente Oportunidades');
+  items: [{ href: '#/home', label: 'Mi día', page: 'home' }, { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' }],
+}], 'comercial con solo oportunidades ve Mi día y Oportunidades');
 assert.equal(mod.canAccessRoute(opportunitiesOnlyCommercial, 'detail'), true, 'detalle requiere y acepta modulo_oportunidades');
 assert.equal(mod.canAccessRoute(opportunitiesOnlyCommercial, 'new'), true, 'crear requiere y acepta modulo_oportunidades');
 assert.equal(mod.canAccessRoute(opportunitiesOnlyCommercial, 'edit'), true, 'editar requiere y acepta modulo_oportunidades');
 
+// Prioridades Comerciales salió de todos los menús y "Cargar metas" sólo lo ve quien escribe metas; las rutas siguen
+// abiertas para enlaces directos (Ver mi meta → #/goals).
 const alertsAndGoals = profile('comercial', ['modulo_alertas_comerciales', 'modulo_metas']);
-assert.deepEqual(labelsFor(alertsAndGoals), ['Prioridades Comerciales', 'Metas y cumplimiento']);
+assert.deepEqual(labelsFor(alertsAndGoals), ['Mi día'], 'el comercial no ve Prioridades ni Metas en el menú');
+assert.equal(mod.canAccessRoute(alertsAndGoals, 'alerts'), true, 'la ruta de prioridades sigue disponible por enlace');
+assert.equal(mod.canAccessRoute(alertsAndGoals, 'goals'), true, 'Ver mi meta sigue abriendo #/goals');
 assert.equal(mod.canAccessRoute(alertsAndGoals, 'opportunities'), false);
 assert.equal(mod.canAccessRoute(alertsAndGoals, 'detail'), false);
 assert.equal(mod.canAccessRoute(alertsAndGoals, 'new'), false);
@@ -75,5 +79,40 @@ assert.equal(mod.moduleActionForPage('opportunities'), 'modulo_oportunidades');
 assert.equal(mod.moduleActionForPage('detail'), 'modulo_oportunidades');
 assert.equal(mod.moduleActionForPage('new'), 'modulo_oportunidades');
 assert.equal(mod.moduleActionForPage('edit'), 'modulo_oportunidades');
+
+// Menú del comercial: sólo Mi día + Oportunidades (Radar sólo si tiene licitaciones).
+const fullCommercial = profile('comercial', ['modulo_vig_ia', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas']);
+assert.deepEqual(labelsFor(fullCommercial), ['Mi día', 'Oportunidades']);
+assert.deepEqual(labelsFor(profile('comercial', ['modulo_oportunidades', 'licitaciones'])), ['Mi día', 'Oportunidades', 'Radar']);
+
+// Menú directivo.
+const allModules = ['modulo_siio_gerencial', 'modulo_vig_ia', 'modulo_dashboard_comercial', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones', 'modulo_usuarios'];
+assert.deepEqual(mod.getVisibleNavGroups(profile('admin', allModules)).map(group => [group.title, group.items.map(item => item.label)]), [
+  ['Gerencia', ['SIIO Gerencial']],
+  ['Comercial', ['Dashboard comercial', 'Oportunidades']],
+  ['Licitaciones', ['Radar']],
+  ['Administración', ['Cargar metas', 'Usuarios y permisos']],
+]);
+assert.deepEqual(labelsFor(profile('director', allModules)), ['Dashboard comercial', 'Oportunidades', 'Radar'], 'director no carga metas');
+assert.deepEqual(labelsFor(profile('consulta', allModules)), ['SIIO Gerencial', 'Dashboard comercial', 'Oportunidades', 'Radar']);
+for (const page of ['new', 'edit', 'users', 'goals']) assert.equal(mod.canAccessRoute(profile('consulta', allModules), page), false, `consulta no abre ${page}`);
+assert.equal(mod.preferredLandingRoute(profile('gerencia', ['modulo_alertas_comerciales'])), 'home', 'prioridades ya no es pantalla de llegada');
+
+// Vista Comercial (presentación) para perfiles no comerciales con oportunidades propias.
+const juan = { ...profile('admin', allModules), can_own_opportunities: true };
+assert.equal(mod.canUseCommercialView(juan), true);
+assert.equal(mod.effectiveNavProfile(juan, 'admin'), juan, 'Vista Admin no cambia nada');
+const juanCommercial = mod.effectiveNavProfile(juan, 'comercial');
+assert.equal(juanCommercial.role, 'comercial');
+assert.deepEqual(juanCommercial.permissions, ['modulo_oportunidades']);
+assert.deepEqual(labelsFor(juanCommercial), ['Mi día', 'Oportunidades'], 'Vista Comercial: sólo Mi día + Oportunidades');
+assert.equal(mod.preferredLandingRoute(juanCommercial), 'home', 'Vista Comercial llega a Mi día');
+assert.equal(mod.canAccessRoute(juanCommercial, 'new'), true);
+assert.equal(mod.canAccessRoute(juanCommercial, 'users'), false);
+assert.equal(juan.role, 'admin', 'el perfil real no se muta');
+for (const subject of [profile('admin', allModules), { ...profile('consulta', allModules), can_own_opportunities: true }, { ...profile('comercial', allModules), can_own_opportunities: true }, { ...juan, identity_type: 'agent' }, { ...juan, active: false }]) {
+  assert.equal(mod.canUseCommercialView(subject), false, `${subject.role} sin vista comercial`);
+  assert.equal(mod.effectiveNavProfile(subject, 'comercial'), subject);
+}
 
 console.log('nav permission matrix OK');

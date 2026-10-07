@@ -7,7 +7,17 @@ const HUMAN_ROLES = new Set([
   'comercial',
   'colaborador',
   'junta',
+  'consulta',
 ]);
+
+// Roles que sólo leen. `consulta` es el Directivo de solo consulta (asesor externo de junta): ve lo mismo que gerencia
+// en lectura, pero ninguna acción de escritura lo incluye. El servidor además rechaza cualquier método que no sea de
+// lectura para estos roles antes de llegar a las rutas (getAuthContext).
+const READ_ONLY_ROLES = new Set(['consulta']);
+
+export function isReadOnlyRole(role) {
+  return typeof role === 'string' && READ_ONLY_ROLES.has(role);
+}
 
 export const ACTIONS = Object.freeze({
   USERS_MANAGE: 'users.manage',
@@ -70,6 +80,7 @@ const COLLABORATOR_ROLES = new Set(['colaborador']);
 const COMMERCIAL_OR_COLLABORATOR_ROLES = new Set(['comercial', 'colaborador']);
 const ADMIN_ROLE = new Set(['admin']);
 const BOARD_ROLE = new Set(['junta']);
+const PRIVILEGED_OR_READ_ONLY_ROLES = new Set([...PRIVILEGED_ROLES, ...READ_ONLY_ROLES]);
 
 const hasOwn = (value, key) => Object.hasOwn(value, key);
 const isRecord = (value) => {
@@ -203,14 +214,21 @@ function canHumanTenderAction(profile) {
   return hasHumanRole(profile, HUMAN_TENDER_ROLES) && hasPermission(profile, TENDER_PERMISSION);
 }
 
+// Licitaciones en lectura para el directivo de solo consulta: ve Radar y oportunidades, nunca opera.
+function canReadOnlyTenderView(profile) {
+  return hasHumanRole(profile, READ_ONLY_ROLES) && hasPermission(profile, TENDER_PERMISSION);
+}
+
 function canTenderCustodyAction(profile) {
   return isHuman(profile)
+    && !READ_ONLY_ROLES.has(profile.role)
     && hasPermission(profile, TENDER_PERMISSION)
     && hasPermission(profile, TENDER_CUSTODY_PERMISSION);
 }
 
 function canTenderCompanyProfileAction(profile) {
   return isHuman(profile)
+    && !READ_ONLY_ROLES.has(profile.role)
     && hasPermission(profile, TENDER_PERMISSION)
     && (hasPermission(profile, TENDER_COMPANY_PERMISSION) || hasPermission(profile, TENDER_CUSTODY_PERMISSION));
 }
@@ -290,14 +308,14 @@ export function can(profile, action, resource = {}) {
       return hasHumanRole(profile, ADMIN_ROLE);
 
     case ACTIONS.NAV_GERENCIAL_VIEW:
-      return hasHumanRole(profile, PRIVILEGED_ROLES)
+      return hasHumanRole(profile, PRIVILEGED_OR_READ_ONLY_ROLES)
         || (hasHumanRole(profile, DIRECTOR_ROLE) && hasAnyArea(profile));
     case ACTIONS.NAV_COMERCIAL_VIEW:
-      return hasHumanRole(profile, PRIVILEGED_ROLES)
+      return hasHumanRole(profile, PRIVILEGED_OR_READ_ONLY_ROLES)
         || isCommercialDirector(profile)
         || hasHumanRole(profile, COMMERCIAL_ROLES);
     case ACTIONS.NAV_LICITACIONES_VIEW:
-      return canHumanTenderAction(profile);
+      return canHumanTenderAction(profile) || canReadOnlyTenderView(profile);
 
     case ACTIONS.MODULE_SIIO_VIEW:
       return hasEligibleModule(profile, 'modulo_siio_gerencial');
@@ -317,10 +335,15 @@ export function can(profile, action, resource = {}) {
     // Pipeline summary is a collection-level action: privileged/commercial
     // roles may request `{}`; directors still need a scoped area resource.
     case ACTIONS.CRM_PIPELINE_SUMMARY_VIEW:
-      return hasHumanRole(profile, PRIVILEGED_ROLES)
+      return hasHumanRole(profile, PRIVILEGED_OR_READ_ONLY_ROLES)
         || (hasHumanRole(profile, DIRECTOR_ROLE) && canDirectorCommercialResource(profile, resource))
         || hasHumanRole(profile, COMMERCIAL_ROLES);
+    // Ver el detalle va aparte de crear/editar: el rol de solo consulta lee cualquier oportunidad, nunca la modifica.
     case ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW:
+      if (!validCrmResource(resource)) return false;
+      return hasHumanRole(profile, PRIVILEGED_OR_READ_ONLY_ROLES)
+        || canDirectorCommercialResource(profile, resource)
+        || (hasHumanRole(profile, COMMERCIAL_ROLES) && ownsResource(profile, resource, 'owner_id'));
     case ACTIONS.CRM_OPPORTUNITY_EDIT:
     case ACTIONS.CRM_OPPORTUNITY_CREATE:
       if (!validCrmResource(resource)) return false;
@@ -332,6 +355,7 @@ export function can(profile, action, resource = {}) {
         && (hasHumanRole(profile, PRIVILEGED_ROLES) || canDirectorCommercialResource(profile, resource));
 
     case ACTIONS.LICITACIONES_VIEW:
+      return canHumanTenderAction(profile) || canReadOnlyTenderView(profile);
     case ACTIONS.LICITACIONES_WORKBENCH_USE:
     case ACTIONS.LICITACIONES_SYNC:
     case ACTIONS.LICITACIONES_DISCARD_PROPOSE:
@@ -348,12 +372,17 @@ export function can(profile, action, resource = {}) {
       return canTenderCompanyProfileAction(profile);
 
     case ACTIONS.SIIO_AREA_VIEW:
+      return hasHumanRole(profile, PRIVILEGED_OR_READ_ONLY_ROLES)
+        ? hasAreaResource(resource)
+        : hasHumanRole(profile, DIRECTOR_ROLE) && canScopeResource(profile, resource);
     case ACTIONS.SIIO_SUBJECT_CREATE:
     case ACTIONS.SIIO_SUBJECT_EDIT:
       return hasHumanRole(profile, PRIVILEGED_ROLES)
         ? hasAreaResource(resource)
         : hasHumanRole(profile, DIRECTOR_ROLE) && canScopeResource(profile, resource);
     case ACTIONS.SIIO_ASSIGNMENT_VIEW:
+      return validSiioAssignmentResource(resource)
+        && (hasHumanRole(profile, READ_ONLY_ROLES) || canSiioAssignedAction(profile, resource));
     case ACTIONS.SIIO_ASSIGNMENT_UPDATE:
     case ACTIONS.SIIO_CLOSE_REQUEST:
       return validSiioAssignmentResource(resource) && canSiioAssignedAction(profile, resource);
@@ -361,7 +390,7 @@ export function can(profile, action, resource = {}) {
       return validSiioAssignmentResource(resource) && hasHumanRole(profile, PRIVILEGED_ROLES);
 
     case ACTIONS.BOARD_PUBLICATION_VIEW:
-      return hasHumanRole(profile, PRIVILEGED_ROLES)
+      return hasHumanRole(profile, PRIVILEGED_OR_READ_ONLY_ROLES)
         || (hasHumanRole(profile, BOARD_ROLE)
           && hasOwn(resource, 'status')
           && resource.status === 'presentado');

@@ -5,20 +5,12 @@ const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8'
 const priorities = fs.readFileSync(new URL('../src/vigia/VigiaCommercial.tsx', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-for (const mapping of [
-  /label: 'Valor en riesgo'[^\n]*priorityStatus: 'risk'/,
-  /label: 'Vencidas'[^\n]*priorityStatus: 'overdue'/,
-  /label: 'Sin agenda'[^\n]*priorityStatus: 'missing'/,
-  /label: 'Sin seguimiento'[^\n]*priorityStatus: 'risk'/,
-]) {
-  assert.match(main, mapping, `falta mapeo contextual ${mapping}`);
-}
-
-assert.match(main, /v2RiskSummaryCards\.map\(card => <a[\s\S]{0,220}href=\{prioritiesHashFromDashboard\(card\.priorityStatus, priorityLinkFilters\)\}/, 'cada tarjeta de riesgo debe conservar categoría y filtros mediante el helper gobernado');
-assert.match(main, /href=\{prioritiesHashFromDashboard\('missing', priorityLinkFilters\)\}[^\n]*<small>Disciplina de agenda<\/small>/, 'Disciplina de agenda debe abrir la intervención primaria Sin agenda');
-assert.ok(main.includes("import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';"), 'Dashboard debe usar el contrato compartido de URL');
-assert.ok(main.includes('const priorityLinkFilters = { owner, regional, stage, service, segment: customerSegmentFilter };'), 'el handoff sólo debe transportar los cinco filtros autorizados');
-assert.doesNotMatch(main, /priorityLinkFilters\s*=\s*\{[^}]*\b(?:q|period|active|onlyActive)\b/s, 'búsqueda, periodo y active no deben cruzar a Prioridades');
+// Decisión del dueño (2026-10-07): el Dashboard comercial ya no enlaza a Prioridades Comerciales (#/alerts); su motor
+// alimenta la pregunta 3 del tablero y el orden "por urgencia" de Oportunidades. La pantalla sigue abierta por enlace
+// directo y conserva el contexto que reciba.
+const dashboard = main.slice(main.indexOf('function ManagerDashboardV2('), main.indexOf('\nfunction MyDayHome('));
+assert.doesNotMatch(dashboard, /prioritiesHashFromDashboard|href="#\/alerts/, 'el Dashboard comercial no enlaza a Prioridades Comerciales');
+assert.match(main, /api<CommercialPrioritiesPayload>\('\/api\/vigia\/priorities'\)/, 'el motor de prioridades alimenta el tablero y Oportunidades');
 
 for (const marker of [
   'Contexto recibido del Dashboard',
@@ -31,10 +23,9 @@ for (const marker of [
 }
 
 const handoffFragments = [
-  ...main.matchAll(/prioritiesHashFromDashboard\([^\n]+/g),
   ...priorities.matchAll(/priority-context-summary[^\n]*/g),
 ].map(match => match[0]).join('\n');
 assert.doesNotMatch(handoffFragments, /api\(|fetch\(|POST|PUT|PATCH|DELETE/, 'seguir o limpiar el handoff no debe ejecutar escrituras');
 assert.match(styles, /@media\(max-width:640px\)\{[^}]*\.priority-context-summary\{[^}]*flex-direction:column[^}]*\}[^}]*\.priority-context-summary \.secondary-button\{[^}]*width:100%/s, 'el resumen contextual debe apilarse y mantener el botón táctil en móvil');
 
-console.log('Dashboard → Prioridades contextual handoff static contract passed');
+console.log('Prioridades contextual handoff static contract passed');

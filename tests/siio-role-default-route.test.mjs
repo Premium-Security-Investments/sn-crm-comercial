@@ -36,7 +36,7 @@ assert.equal(mod.preferredLandingRoute(comercial), 'home', 'comercial lands on M
 assert.equal(mod.preferredLandingRoute(directorWithDashboard), 'dashboard2', 'a profile authorized for dashboard but not SIIO lands on dashboard2');
 assert.notEqual(mod.preferredLandingRoute(directorWithDashboard), 'siio', 'director must never land on SIIO');
 assert.equal(mod.preferredLandingRoute(onlyUsersModule), 'users', 'a profile authorized only for user administration must land on its own real route, not an unauthorized module');
-assert.equal(mod.preferredLandingRoute(onlyGoalsModule), 'goals', 'a profile authorized only for goals must land on its own real route, not an unauthorized module');
+assert.equal(mod.preferredLandingRoute(onlyGoalsModule), 'home', 'metas ya no es pantalla de llegada (decisión del dueño): un perfil sólo con metas cae en el inicio, nunca en un módulo no autorizado');
 assert.equal(mod.preferredLandingRoute(unauthorized), 'home', 'a profile with no authorized landing route must never be routed into an unauthorized module');
 
 const main = readFileSync('src/main.tsx', 'utf8');

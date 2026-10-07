@@ -2,7 +2,8 @@ import { strict as assert } from 'node:assert';
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 
-const legacyProfileFields = 'id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment';
+// can_own_opportunities habilita la Vista Comercial (presentación) de perfiles no comerciales.
+const legacyProfileFields = 'id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities';
 const scenarios = {
   'director-token': {
     user: { id: 'director-user', email: 'director@example.test' },

@@ -40,7 +40,7 @@ assert.deepEqual(adminScoped.profiles, [
   { id: 'admin-owner', full_name: 'Admin owner', is_commercial: true },
 ], 'bootstrap expone sólo el indicador comercial derivado y conserva el DTO sin PII');
 
-assert.match(source, /const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active,can_own_opportunities';/, 'bootstrap consulta internamente sólo los campos necesarios para clasificar comerciales');
+assert.match(source, /const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active,can_own_opportunities,identity_type';/, 'bootstrap consulta internamente sólo los campos necesarios para clasificar comerciales y excluir identidades técnicas');
 assert.doesNotMatch(source.slice(source.indexOf("app.get('/api/bootstrap'"), source.indexOf("app.get('/api/opportunities/:id'")), /microsoft_email|can_edit_customer_segment/, 'bootstrap no consulta PII/configuración de perfiles');
 assert.match(source, /psi_profile_area_assignments'\)\.select\('profile_id,area_code,subarea_code'\)/, 'bootstrap deriva el scope de owners desde asignaciones canónicas del servidor');
 assert.match(source, /export const HTTP_ACTION_MATRIX = Object\.freeze\(/, 'HTTP method+route matrix canónica es auditable');

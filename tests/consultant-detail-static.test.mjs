@@ -10,7 +10,10 @@ assert.match(source, /Detalle por etapa/, 'La vista del consultor debe mostrar d
 assert.match(source, /Oportunidades del consultor/, 'La vista del consultor debe mostrar tabla de oportunidades');
 assert.match(source, /import \{ buildMyDayQueue, type MyDayAlert \} from '\.\/vigia\/my-day-presentation';/, 'ConsultantDetail debe importar buildMyDayQueue del módulo puro de Mi día');
 assert.match(source, /const myDay = useMemo\(\(\) => buildMyDayQueue\(opportunities\.filter\(o => isAgt003CommercialOpportunity\(o\) && !isOutOfActivePipeline\(o\)\), new Date\(\)\), \[opportunities\]\);/, 'ConsultantDetail debe derivar myDay de sus oportunidades comerciales vigentes con buildMyDayQueue');
-assert.match(source, /Mi día/, 'El perfil comercial debe mostrar el banner "Mi día"');
+assert.match(source, /buildMyDayQueue\(opportunities\.filter\(o => isAgt003CommercialOpportunity\(o\) && !isOutOfActivePipeline\(o, now\)\), now\)/, 'MyDayHome deriva la misma cola de Mi día');
+assert.match(source, /Mi día/, 'El comercial debe ver "Mi día"');
+assert.match(source, /function ConsultantDetail\(\{ data, ownerId \}: \{ data: Bootstrap; ownerId: string \}\)/, 'ConsultantDetail queda sólo como vista del directivo');
+assert.doesNotMatch(source, /<ConsultantDetail[^>]*personal/, 'el comercial ya no usa ConsultantDetail en modo personal');
 assert.ok(!source.includes('Gestión comercial de hoy'), 'el banner anterior "Gestión comercial de hoy" debe quedar retirado');
 assert.match(source, /function MyDayGroup\(/, 'Debe existir el componente MyDayGroup');
 assert.match(source, /Preparar seguimiento/, 'Cada tarjeta de Mi día debe llevar un único CTA "Preparar seguimiento"');
@@ -21,10 +24,8 @@ assert.match(
   'un gerente en el detalle de un consultor específico debe ver "Prioridades de hoy de {ownerName}"',
 );
 assert.match(source, /<h3>Prioridades de hoy de \{ownerName\}<\/h3>/, 'el título del banner gerencial debe nombrar al consultor');
-assert.match(source, /\{!personal && <section className="commercial-followup-banner my-day-manager-banner"/, 'el banner gerencial debe ser mutuamente excluyente con el tablero personal');
 assert.match(source, /className="my-day-hygiene"/, 'Depurar CRM debe vivir en un <details> colapsado y subordinado');
-assert.match(source, /personalFollowUpCards/, 'El banner debe resumir vencidas, hoy, sin agenda y valor en riesgo');
-assert.match(source, /focusFollowUpFilter/, 'El banner debe permitir enfocar la tabla por tipo de alerta');
+assert.ok(!source.includes('personalFollowUpCards'), 'las tarjetas de seguimiento duplicadas se retiraron de Mi día');
 assert.ok(!source.includes('commercial-followup-list'), 'la lista plana reemplazada por Mi día no debe sobrevivir');
 
 // Hallazgo IMPORTANTE: el párrafo resumen del banner gerencial debe decidirse con la
@@ -36,7 +37,7 @@ assert.ok(consultantDetailStart !== -1, 'debe existir la función ConsultantDeta
 const managerBannerMarker = 'aria-label={`Prioridades de hoy de ${ownerName}`}>';
 const managerBannerStart = source.indexOf(managerBannerMarker, consultantDetailStart);
 assert.ok(managerBannerStart !== -1, 'debe existir el banner gerencial "Prioridades de hoy de {ownerName}"');
-const managerBannerEnd = source.indexOf('</section>}', managerBannerStart);
+const managerBannerEnd = source.indexOf('</section>', source.indexOf('</div>\n    </section>', managerBannerStart));
 assert.ok(managerBannerEnd !== -1, 'debe poder delimitarse el cierre del banner gerencial');
 const managerBannerSection = source.slice(managerBannerStart, managerBannerEnd);
 const managerBannerScope = source.slice(consultantDetailStart, managerBannerEnd);

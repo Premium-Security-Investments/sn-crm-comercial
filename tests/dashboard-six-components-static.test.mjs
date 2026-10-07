@@ -1,38 +1,14 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
+// Las seis secciones del tablero gerencial se reemplazaron por tres preguntas (decisión del dueño, 2026-10-07).
 const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
-const sectionMarkers = [
-  'v2-component-block resumen-ejecutivo',
-  '1. Resumen ejecutivo',
-  'v2-component-block presupuesto-ventas',
-  '2. Presupuesto y ventas 2026',
-  'v2-component-block cumplimiento-comercial',
-  '3. Cumplimiento por comercial',
-  'v2-component-block pipeline-prioridades',
-  '4. Pipeline y oportunidades prioritarias',
-  'v2-component-block diagnostico-alertas',
-  '5. Gestión comercial que requiere atención',
-  'v2-component-block tendencia-salud',
-  '6. Tendencia y salud comercial',
-];
-
-for (const marker of sectionMarkers) {
-  assert.ok(main.includes(marker), `Dashboard gerencial missing six-component marker: ${marker}`);
+for (const retired of ['1. Resumen ejecutivo', '2. Presupuesto y ventas 2026', '3. Cumplimiento por comercial', '4. Pipeline y oportunidades prioritarias', '5. Gestión comercial que requiere atención', '6. Tendencia y salud comercial', 'dashboard-v2-six-components']) {
+  assert.ok(!main.includes(retired), `sección retirada: ${retired}`);
 }
+const blocks = main.match(/className="v2-component-block dashboard-question"/g) || [];
+assert.equal(blocks.length, 3, 'el Dashboard comercial tiene exactamente tres preguntas');
+assert.ok(!main.includes('Secciones traídas del Dashboard 1'), 'sin lenguaje interno de traspaso');
 
-assert.ok(main.indexOf('1. Resumen ejecutivo') < main.indexOf('2. Presupuesto y ventas 2026'), 'Resumen must appear before presupuesto');
-assert.ok(main.indexOf('2. Presupuesto y ventas 2026') < main.indexOf('3. Cumplimiento por comercial'), 'Presupuesto must appear before cumplimiento');
-assert.ok(main.indexOf('3. Cumplimiento por comercial') < main.indexOf('4. Pipeline y oportunidades prioritarias'), 'Cumplimiento must appear before pipeline');
-assert.ok(main.indexOf('4. Pipeline y oportunidades prioritarias') < main.indexOf('5. Gestión comercial que requiere atención'), 'Pipeline must appear before diagnostico');
-assert.ok(main.indexOf('5. Gestión comercial que requiere atención') < main.indexOf('6. Tendencia y salud comercial'), 'Diagnostico must appear before tendencia');
-
-assert.ok(!main.includes('Secciones traídas del Dashboard 1'), 'Final dashboard should not expose internal Dashboard 1 handoff language');
-assert.ok(!main.includes('Traído del Dashboard 1'), 'Final dashboard should not label sections as imported from Dashboard 1');
-
-assert.ok(main.includes('ownerBudget = serviceScopedBudgetRowsV2.find(b => b.ownerId === row.ownerId)?.budget'), 'Compliance ranking must use each commercial budget first');
-assert.ok(main.includes('monthReferenceDate(o)'), 'Monthly sales should use the normalized month reference date helper');
-assert.ok(main.includes('monthlyProjectedUnits'), 'Projected 24H units should be monthly, not annualized');
-
-console.log('dashboard six-component static checks passed');
+console.log('dashboard three-question static checks passed');

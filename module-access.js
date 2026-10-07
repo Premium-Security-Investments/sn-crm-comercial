@@ -30,6 +30,9 @@ const ROLE_MODULE_CEILINGS = new Map([
   ['comercial', new Set(['modulo_vig_ia', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones'])],
   ['colaborador', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas'])],
   ['junta', new Set(['modulo_siio_gerencial'])],
+  // Directivo de solo consulta (asesor externo de junta): ve todo lo directivo, nunca administra metas, usuarios ni Vig-IA.
+  // modulo_alertas_comerciales sólo habilita el motor de prioridades que alimenta el Dashboard comercial.
+  ['consulta', new Set(['modulo_siio_gerencial', 'modulo_dashboard_comercial', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'licitaciones'])],
 ]);
 
 export function eligibleModulePermissions(role) {
