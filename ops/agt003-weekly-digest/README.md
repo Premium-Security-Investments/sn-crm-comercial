@@ -58,12 +58,12 @@ Prueba local sin producción: `node ops/agt003-weekly-digest/render-fixture-samp
 
 Igual que las unidades del radar: el código corre desde una release inmutable
 `/opt/psi-comercial/releases/<sha>` y un drop-in `10-release.conf` fija la ruta. Primero se fusiona el PR y se
-prepara la release del commit de `main` con el mismo procedimiento usado para las releases actuales del radar
-(copia de solo lectura del commit con `node_modules` enlazado). En lo que sigue, `SHA` es ese commit y `REPO` un
-checkout de él.
+prepara la release del commit de `main` con `ops/release/build-release.sh` (copia de solo lectura del commit con
+sus dependencias ya enlazadas; no hay que enlazar `node_modules` a mano). En lo que sigue, `SHA` es ese commit.
 
 ```bash
-SHA=<commit de main ya desplegado en /opt/psi-comercial/releases/$SHA>
+SHA=<commit de main>
+sudo ops/release/build-release.sh $SHA      # desde un checkout del repo; termina en RELEASE_OK
 REPO=/opt/psi-comercial/releases/$SHA
 
 # 1. Unidades
