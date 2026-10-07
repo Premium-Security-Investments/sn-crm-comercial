@@ -1914,10 +1914,12 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
   const { data: existingConverted, error: convertedReadError } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').eq('internal_status', 'convertida_oportunidad');
   if (convertedReadError) throw convertedReadError;
   let existingFetched = [];
-  if (fetchedKeys.length) {
-    const { data, error } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').in('stable_key', fetchedKeys);
+  // In groups: the full daily import fetches 700+ keys, and a single `in (...)` that long exceeds the URL limit
+  // (Supabase answers "fetch failed" from ~700 keys; observed 6-oct-2026).
+  for (let index = 0; index < fetchedKeys.length; index += 200) {
+    const { data, error } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').in('stable_key', fetchedKeys.slice(index, index + 200));
     if (error) throw error;
-    existingFetched = data || [];
+    existingFetched.push(...(data || []));
   }
   const existingByKey = new Map();
   for (const row of [...(existingConverted || []), ...existingFetched]) {
@@ -1956,8 +1958,10 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
       last_seen_at: now
     });
   }
-  if (rows.length) {
-    const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows, { onConflict: 'stable_key', defaultToNull: false });
+  // In batches: the full daily import upserts ~500 rows with their raw SECOP payloads; one request that large
+  // was cut by the connection ("fetch failed") on 6-oct-2026.
+  for (let index = 0; index < rows.length; index += 100) {
+    const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows.slice(index, index + 100), { onConflict: 'stable_key', defaultToNull: false });
     if (upsertError) throw upsertError;
   }
   for (const key of plan.discardStableKeys || []) {

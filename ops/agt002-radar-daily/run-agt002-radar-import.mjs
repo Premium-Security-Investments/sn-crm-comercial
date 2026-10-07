@@ -77,7 +77,8 @@ async function runTop5() {
   const nowIso = new Date().toISOString();
   const items = (radar?.tenders || []).filter(t => t.internal_status !== 'convertida_oportunidad').map(t => ({
     ...t, stable_key: t.stable_key || t.id, decision: t.section, description: t.desc || t.description || '',
-    value_cop: Number(t.value || 0), deadline: t.deadline || t.deadline_at || null, deadline_at: t.deadline || t.deadline_at || null,
+    // The message shows a day, as Hermes did: the CRM stores timestamps ("2026-11-13T00:00:00+00:00").
+    value_cop: Number(t.value || 0), deadline: String(t.deadline || t.deadline_at || '').slice(0, 10) || null, deadline_at: t.deadline || t.deadline_at || null,
   }));
   const payload = { run_date: nowIso.slice(0, 10), count: items.length, items };
   const text = formatAgt002RadarDiscordTop5Summary(payload, { nowIso });
@@ -97,6 +98,7 @@ try {
   if (mode === '--top5') await runTop5();
   process.exit(0);
 } catch (error) {
-  log({ event: 'agt002_radar_import_failed', mode, message: String(error?.message || error).slice(0, 300) });
+  const cause = error?.cause ? { cause: String(error.cause?.code || error.cause?.name || ''), cause_message: String(error.cause?.message || error.cause).slice(0, 300) } : {};
+  log({ event: 'agt002_radar_import_failed', mode, message: String(error?.message || error).slice(0, 300), ...cause, stack: String(error?.stack || '').split('\n').slice(1, 6).join(' | ').slice(0, 600) });
   process.exit(1);
 }
