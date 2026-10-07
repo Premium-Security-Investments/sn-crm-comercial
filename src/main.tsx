@@ -43,6 +43,8 @@ import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
+import { DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
+import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can } from '../access-control.js';
 
@@ -64,6 +66,7 @@ type Opportunity = {
   legacy_excel_id: string | null; excel_hoja_origen: string | null; estado_pipeline_original: string | null; valor_servicio: number | null; valor_proyecto: number | null;
   loss_reason_code: string | null; loss_reason_name: string | null; loss_notes: string | null; commission_rate: number | null; created_at: string; updated_at: string; approved_at?: string | null;
   customer_segment?: CustomerSegment | null; owner_commercial_area?: CommercialArea | null; owner_can_edit_customer_segment?: boolean | null; source_url?: string | null; tender_offer_status?: TenderOfferStatus | null;
+  frozen_until?: string | null; frozen_reason?: string | null; delete_requested_at?: string | null; delete_request_reason?: string | null;
 };
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
@@ -488,7 +491,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
-  if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;
+  if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} refresh={refresh} />;
   if (route.page === 'siio') return <SiioDashboard currentProfile={data.currentProfile} />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
@@ -497,7 +500,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
     canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
   />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
-  if (data.currentProfile.role === 'comercial') return <CommercialPersonalDashboard data={data} />;
+  if (data.currentProfile.role === 'comercial') return <CommercialPersonalDashboard data={data} refresh={refresh} />;
   return <Home data={data} />;
 }
 function stageTone(stageCode?: string | null) {
@@ -788,6 +791,24 @@ function Pagination({ page, pageSize, total, onChange, label }: { page: number; 
   const totalPages = Math.max(1, Math.ceil(total / pageSize)); const current = Math.min(Math.max(1, page), totalPages);
   return <nav className="pagination" aria-label={label || 'Paginación'}><button type="button" className="secondary" onClick={() => onChange(current - 1)} disabled={current <= 1}>Anterior</button><span className="pagination-status">Página {current} de {totalPages}</span><button type="button" className="secondary" onClick={() => onChange(current + 1)} disabled={current >= totalPages}>Siguiente</button></nav>;
 }
+function OpportunityDecisionPanel({ opportunity, data, onChanged }: { opportunity: Opportunity; data: Bootstrap; onChanged: () => Promise<void> }) {
+  const canResolveDelete = Boolean(data.currentProfile.permissions?.includes(DELETE_PERMISSION));
+  if (isDeleteRequested(opportunity)) {
+    return <section className="panel decision-panel" aria-label="Decisión">
+      <h2>Eliminación pedida</h2>
+      <p className="v2-panel-note">Motivo: {opportunity.delete_request_reason || 'sin motivo'}. Está fuera de las cifras mientras el director comercial la revisa.</p>
+      {canResolveDelete && <DeleteRequestsPanel requests={[opportunity]} onChanged={onChanged} />}
+    </section>;
+  }
+  const pending = isPendingDecision(opportunity);
+  const frozen = isFrozen(opportunity);
+  return <details className="panel decision-panel" open={pending} aria-label="Decisión">
+    <summary><h2>{pending ? 'Esta oportunidad necesita una decisión' : frozen ? `Congelada hasta ${fmtDateOnly(opportunity.frozen_until)}` : 'Actualizar decisión'}</h2>
+      <span className="v2-panel-note">{pending ? 'Su gestión se venció o no tiene agenda.' : frozen ? `Motivo: ${opportunity.frozen_reason || '—'}. Puede reactivarla o decidir otra cosa.` : 'Registre qué pasó: sigue viva, avanza, congelar, descartar o pedir eliminar.'}</span></summary>
+    <OpportunityDecisionForm opportunity={opportunity} stages={data.stages} lossReasons={data.lossReasons} onDone={onChanged} />
+  </details>;
+}
+
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
   const [exitingTender, setExitingTender] = useState<'radar' | 'seguimiento' | null>(null);
@@ -917,6 +938,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       />
     </div>}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} readinessRevision={tenderDossierReadinessRevision} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} onChanged={() => { if (activeDetailIdRef.current === o.id) setTenderDossierReadinessRevision(revision => revision + 1); }} /></div>}
+    {o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code) && <OpportunityDecisionPanel opportunity={o} data={data} onChanged={async () => { await load(); await refresh(); }} />}
     <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
       <h2 className="followup-section-title">Seguimiento comercial</h2>
       <div className="followup-section-grid">
@@ -1502,6 +1524,12 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
       setStatus(err instanceof Error ? err.message : String(err));
     }
   };
+  const blockingDecisions = !id && data.currentProfile.role === 'comercial' ? pendingDecisions(data.opportunities.filter(o => o.owner_id === data.currentProfile.id)).length : 0;
+  if (blockingDecisions) return <Panel title="Nueva oportunidad">
+    <div className="decision-blocked"><strong>Primero decida {blockingDecisions === 1 ? 'la oportunidad pendiente' : `sus ${blockingDecisions} oportunidades pendientes`}.</strong>
+      <p>Toda oportunidad abierta debe tener una decisión vigente (sigue viva con fecha, avanza, congelada, descartada o eliminación pedida). Cuando no tenga pendientes podrá crear nuevas.</p>
+      <a className="button" href="#/">Ir a Mi día</a></div>
+  </Panel>;
   return <Panel title={id ? 'Editar oportunidad' : 'Nueva oportunidad'}>
     <form onSubmit={submit} className="form gridform">
       <label className="client-typeahead-field">Cliente / empresa
@@ -1618,7 +1646,7 @@ function businessUnitRuleRows(data: Bootstrap, periodMonth: string) {
   });
 }
 
-function CommercialPersonalDashboard({ data }: { data: Bootstrap }) { return <ConsultantDetail data={data} ownerId={data.currentProfile.id} personal />; }
+function CommercialPersonalDashboard({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) { return <ConsultantDetail data={data} ownerId={data.currentProfile.id} personal refresh={refresh} />; }
 
 function ManagerDashboard({ data }: { data: Bootstrap }) {
   const [period, setPeriod] = useState<DashboardPeriodFilter>('');
@@ -1960,7 +1988,7 @@ function goalMatchesV2Scope(goal: SalesGoal, service: string, regional: string) 
   return (!service || goalService === service) && (!regional || goalRegional === regional || goalRegional === 'todas');
 }
 
-function ManagerDashboardV2({ data }: { data: Bootstrap }) {
+function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   type V2HeroMetricKey = 'cumplimiento' | 'pipeline' | 'cierres' | 'forecast';
   const [activeV2Metric, setActiveV2Metric] = useState<V2HeroMetricKey>('cumplimiento');
   const [period, setPeriod] = useState<DashboardPeriodFilter>('');
@@ -1968,7 +1996,19 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const [focusedDashboardTarget, setFocusedDashboardTarget] = useState<string | null>(null);
   const [q, setQ] = useState('');
   // Dominio AGT-003: el tablero comercial cuenta sólo el pipeline privado. Las licitaciones (AGT-002) se resumen aparte.
-  const { commercial: commercialOpportunities, tenders: tenderOpportunities } = useMemo(() => splitByAgentDomain(data.opportunities), [data.opportunities]);
+  const { commercial: allCommercialOpportunities, tenders: tenderOpportunities } = useMemo(() => splitByAgentDomain(data.opportunities), [data.opportunities]);
+  // Congeladas vigentes y con eliminación pedida ya están decididas y no cuentan en pipeline, forecast ni alertas.
+  const commercialOpportunities = useMemo(() => allCommercialOpportunities.filter(o => !isOutOfActivePipeline(o)), [allCommercialOpportunities]);
+  const frozenRows = allCommercialOpportunities.filter(o => isFrozen(o));
+  const deleteRequestRows = allCommercialOpportunities.filter(o => isDeleteRequested(o));
+  const canResolveDelete = Boolean(data.currentProfile.permissions?.includes(DELETE_PERMISSION));
+  const pendingByOwner = Array.from(pendingDecisions(allCommercialOpportunities).reduce((map, o) => {
+    const key = ownerKey(o);
+    const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', count: 0 };
+    row.count++;
+    map.set(key, row);
+    return map;
+  }, new Map<string, { ownerId: string; owner: string; count: number }>()).values()).sort((a, b) => b.count - a.count);
   const commercialData = useMemo(() => ({ ...data, opportunities: commercialOpportunities }), [data, commercialOpportunities]);
   const commercialServices = data.services.filter(s => s.code !== AGT002_TENDER_SERVICE_TYPE);
   const activeTenderRows = tenderOpportunities.filter(o => !isTerminalStage(o.stage_code));
@@ -2278,6 +2318,12 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
           <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span><em>{priority.action} →</em>
         </button>)}</div>
       </Panel>
+      {canResolveDelete && <DeleteRequestsPanel requests={deleteRequestRows} onChanged={refresh} />}
+      {(pendingByOwner.length > 0 || frozenRows.length > 0) && <section className="panel decision-summary" aria-label="Decisiones pendientes">
+        <h2>Oportunidades sin decisión</h2>
+        <p className="v2-panel-note">Gestión vencida o sin agenda. Quien tenga pendientes no puede crear oportunidades nuevas hasta decidirlas.{frozenRows.length ? ` Congeladas fuera de las cifras: ${frozenRows.length} por ${fmtMoneyCompact(frozenRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0))}.` : ''}</p>
+        <div className="decision-summary-list">{pendingByOwner.map(row => <a key={row.ownerId} href={ownerRoute(row.ownerId)}><strong>{formatDisplayName(row.owner)}</strong><span className="numeric-value">{row.count}</span></a>)}</div>
+      </section>}
       {activeTenderRows.length > 0 && <a className="v2-tender-aside" href="#/tenders?view=oportunidades" aria-label="Licitaciones en curso">
         <div><small>Licitaciones en curso · Vig-IA Licitaciones</small><strong>{activeTenderRows.length} {activeTenderRows.length === 1 ? 'licitación activa' : 'licitaciones activas'} por {fmtMoneyCompact(activeTenderValue)}</strong><span>Se trabajan en Licitaciones y no se suman a las cifras comerciales de este tablero.</span></div>
         <em>Ver licitaciones →</em>
@@ -2419,7 +2465,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   </section>;
 }
 
-function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap; ownerId: string; personal?: boolean }) {
+function ConsultantDetail({ data, ownerId, personal = false, refresh }: { data: Bootstrap; ownerId: string; personal?: boolean; refresh?: () => Promise<void> }) {
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
   const [service, setService] = useState('');
@@ -2431,7 +2477,10 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
   const opportunities = useMemo(() => data.opportunities
     .filter(o => ownerKey(o) === ownerId)
     .sort((a,b) => a.stage_order - b.stage_order || Number(b.offer_value || 0) - Number(a.offer_value || 0)), [data.opportunities, ownerId]);
-  const myDay = useMemo(() => buildMyDayQueue(opportunities, new Date()), [opportunities]);
+  // Mi día y la cola de decisiones trabajan el pipeline comercial vigente: sin licitaciones (AGT-002), congeladas ni
+  // oportunidades con eliminación pedida.
+  const myDay = useMemo(() => buildMyDayQueue(opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o)), new Date()), [opportunities]);
+  const pendingDecisionRows = useMemo(() => pendingDecisions(opportunities), [opportunities]);
   const ownerName = opportunities[0]?.owner_name || data.profiles.find(p => p.id === ownerId)?.full_name || 'Sin comercial';
   const monthly = data.monthlyKpis.filter(k => (k.owner_name || 'Sin comercial') === ownerName);
   const sortedConsultantMonthlyRows = [...monthly].sort((a,b) => {
@@ -2522,6 +2571,8 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
   if (!opportunities.length) return <section className="stack"><div className="notice">No encontré oportunidades asociadas a este consultor.</div><button className="secondary" onClick={() => go('#/dashboard')}>Volver al dashboard gerencial</button></section>;
 
   return <section className="stack consultant-dashboard">
+    {personal && refresh && <DecisionQueue pending={pendingDecisionRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />}
+    {!personal && pendingDecisionRows.length > 0 && <div className="notice decision-manager-note"><strong>{pendingDecisionRows.length} oportunidades sin decisión.</strong> {ownerName} no puede crear oportunidades nuevas hasta decidirlas en su Mi día.</div>}
     <section className="executive-hero consultant-hero">
       <div>
         <span className="eyebrow">{personal ? 'Mi tablero comercial' : 'Detalle por consultor'}</span>

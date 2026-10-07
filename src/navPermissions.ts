@@ -46,6 +46,8 @@ const navGroups: readonly NavGroupDefinition[] = [
   {
     title: 'Comercial',
     items: [
+      // El comercial empieza su día aquí (su lista de hoy y las oportunidades por decidir); sólo lo ve el rol comercial.
+      { href: '#/', label: 'Mi día', page: 'home' },
       { href: '#/dashboard2', label: 'Dashboard comercial', page: 'dashboard2' },
       { href: '#/alerts', label: 'Prioridades Comerciales', page: 'alerts' },
       { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },
@@ -124,7 +126,13 @@ export function isInitialAppHash(hash: string) {
 }
 
 export function preferredLandingRoute(profile: NavProfile): NavRoutePage {
+  if (profile?.active === true && profile.role === 'comercial') return 'home';
   return LANDING_PRIORITY.find(route => canAccessRoute(profile, route)) || 'home';
+}
+
+// "Mi día" es la entrada del comercial; los directivos trabajan desde el Dashboard comercial.
+function isNavItemVisible(profile: NavProfile, page: NavRoutePage) {
+  return page !== 'home' || (profile?.active === true && profile.role === 'comercial');
 }
 
 export function getVisibleNavGroups(profile?: NavProfile): NavGroup[] {
@@ -133,6 +141,7 @@ export function getVisibleNavGroups(profile?: NavProfile): NavGroup[] {
       title: group.title,
       items: group.items
         .filter(item => canAccessRoute(profile, item.page))
+        .filter(item => isNavItemVisible(profile, item.page))
         .map(({ href, label, page }) => ({ href, label, page })),
     }))
     .filter((group): group is NavGroup => group.items.length > 0);

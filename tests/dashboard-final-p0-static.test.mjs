@@ -37,6 +37,6 @@ for (const marker of requiredCssMarkers) {
 }
 
 assert.ok(!main.includes('Score comercial configurable'), 'Score comercial configurable should remain paused and absent from UI copy');
-assert.ok(main.includes("return <CommercialPersonalDashboard data={data} />;"), 'Commercial users should land on their personal dashboard by default');
+assert.ok(main.includes("return <CommercialPersonalDashboard data={data} refresh={refresh} />;"), 'Commercial users should land on their personal dashboard by default');
 
 console.log('dashboard final P0 static checks passed');

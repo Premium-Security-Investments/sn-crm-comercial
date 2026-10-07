@@ -32,7 +32,7 @@ const onlyGoalsModule = { role: 'gerencia', active: true, permissions: ['modulo_
 assert.equal(mod.preferredLandingRoute(admin), 'siio', 'admin with SIIO access must land on SIIO');
 assert.equal(mod.preferredLandingRoute(gerencia), 'siio', 'gerencia with SIIO access must land on SIIO');
 assert.notEqual(mod.preferredLandingRoute(comercial), 'siio', 'comercial must never land on SIIO');
-assert.equal(mod.preferredLandingRoute(comercial), 'opportunities', 'comercial without dashboard access lands on its real authorized route');
+assert.equal(mod.preferredLandingRoute(comercial), 'home', 'comercial lands on Mi día (su lista de hoy y las oportunidades por decidir)');
 assert.equal(mod.preferredLandingRoute(directorWithDashboard), 'dashboard2', 'a profile authorized for dashboard but not SIIO lands on dashboard2');
 assert.notEqual(mod.preferredLandingRoute(directorWithDashboard), 'siio', 'director must never land on SIIO');
 assert.equal(mod.preferredLandingRoute(onlyUsersModule), 'users', 'a profile authorized only for user administration must land on its own real route, not an unauthorized module');

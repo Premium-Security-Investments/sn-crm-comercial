@@ -1,0 +1,21 @@
+export type DecisionCode = 'continue' | 'advance' | 'freeze' | 'discard' | 'lose' | 'request_delete';
+type DecidableOpportunity = {
+  service_type_code?: string | null;
+  stage_code?: string | null;
+  next_action_at?: string | null;
+  frozen_until?: string | null;
+  delete_requested_at?: string | null;
+};
+export const TERMINAL_STAGES: readonly string[];
+export const DECISIONS: readonly DecisionCode[];
+export const FREEZE_DAYS: readonly number[];
+export const FOLLOW_UP_TYPES: readonly string[];
+export const DELETE_PERMISSION: 'crm_eliminar_oportunidades';
+export function bogotaDay(value: Date | string): string | null;
+export function isTerminalStage(stageCode?: string | null): boolean;
+export function isFrozen(opportunity?: DecidableOpportunity | null, now?: Date): boolean;
+export function isDeleteRequested(opportunity?: DecidableOpportunity | null): boolean;
+export function isOutOfActivePipeline(opportunity?: DecidableOpportunity | null, now?: Date): boolean;
+export function isPendingDecision(opportunity?: DecidableOpportunity | null, now?: Date): boolean;
+export function pendingDecisions<T extends DecidableOpportunity>(opportunities?: T[], now?: Date): T[];
+export function normalizeDecisionRequest(body: unknown): Record<string, string | number | null>;
