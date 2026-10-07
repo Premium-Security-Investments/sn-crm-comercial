@@ -29,7 +29,7 @@ test('una sola regla decide el agente dueño de cada oportunidad', () => {
 test('la API de prioridades de AGT-003 excluye las licitaciones en ambos servidores', () => {
   for (const file of ['../server/index.js', '../api/[...path].js']) {
     const src = readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(src, /attachVigiaCustomerSegments\(viewRows, segmentRows\)\.filter\(isAgt003CommercialOpportunity\)/);
+    assert.match(src, /\.filter\(row => isAgt003CommercialOpportunity\(row\) && !isOutOfActivePipeline\(row, now\)\)/);
   }
 });
 

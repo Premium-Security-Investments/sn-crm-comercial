@@ -9,7 +9,7 @@ assert.match(source, /function ConsultantDetail/, 'Debe existir una vista Consul
 assert.match(source, /Detalle por etapa/, 'La vista del consultor debe mostrar detalle por etapa');
 assert.match(source, /Oportunidades del consultor/, 'La vista del consultor debe mostrar tabla de oportunidades');
 assert.match(source, /import \{ buildMyDayQueue, type MyDayAlert \} from '\.\/vigia\/my-day-presentation';/, 'ConsultantDetail debe importar buildMyDayQueue del módulo puro de Mi día');
-assert.match(source, /const myDay = useMemo\(\(\) => buildMyDayQueue\(opportunities, new Date\(\)\), \[opportunities\]\);/, 'ConsultantDetail debe derivar myDay de opportunities con buildMyDayQueue');
+assert.match(source, /const myDay = useMemo\(\(\) => buildMyDayQueue\(opportunities\.filter\(o => isAgt003CommercialOpportunity\(o\) && !isOutOfActivePipeline\(o\)\), new Date\(\)\), \[opportunities\]\);/, 'ConsultantDetail debe derivar myDay de sus oportunidades comerciales vigentes con buildMyDayQueue');
 assert.match(source, /Mi día/, 'El perfil comercial debe mostrar el banner "Mi día"');
 assert.ok(!source.includes('Gestión comercial de hoy'), 'el banner anterior "Gestión comercial de hoy" debe quedar retirado');
 assert.match(source, /function MyDayGroup\(/, 'Debe existir el componente MyDayGroup');

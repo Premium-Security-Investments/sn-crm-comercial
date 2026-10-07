@@ -35,9 +35,11 @@ import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
 import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
 import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
+import { hasPermission } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
+import { DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
@@ -990,13 +992,14 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,deleted_at').eq('id', id).single());
+  if (opportunity.deleted_at) { const error = new Error('Oportunidad no encontrada.'); error.status = 404; throw error; }
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
 }
 
 const opportunitySelect = '*';
-const VIGIA_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_code,stage_name,stage_order,service_type_code,service_type_name,regional_nombre,offer_value,weighted_pipeline_value,next_action_at,last_interaction_at,updated_at,created_at,expected_close_date';
+const VIGIA_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_code,stage_name,stage_order,service_type_code,service_type_name,regional_nombre,offer_value,weighted_pipeline_value,next_action_at,last_interaction_at,updated_at,created_atexpected_close_date';
 async function attachCommercialMetadata(database, rows) {
   const list = Array.isArray(rows) ? rows : [rows];
   if (!list.length) return rows;
@@ -2795,7 +2798,7 @@ async function fetchVigiaCustomerSegments(database, ownerIds) {
   const rows = [];
   for (const ownerBatch of batches) {
     for (let offset = 0; ; offset += VIGIA_PAGE_SIZE) {
-      let query = database.from('psi_sales_opportunities').select('id,customer_segment').order('id', { ascending: true });
+      let query = database.from('psi_sales_opportunities').select('id,customer_segment,frozen_until,delete_requested_at').order('id', { ascending: true });
       if (ownerBatch) query = query.in('owner_id', ownerBatch);
       const page = await must(query.range(offset, offset + VIGIA_PAGE_SIZE - 1));
       rows.push(...page);
@@ -2806,8 +2809,11 @@ async function fetchVigiaCustomerSegments(database, ownerIds) {
 }
 
 function attachVigiaCustomerSegments(rows, segmentRows) {
-  const segmentById = new Map(segmentRows.map(row => [row.id, row.customer_segment || null]));
-  return rows.map(row => ({ ...row, customer_segment: segmentById.get(row.id) ?? null }));
+  const baseById = new Map(segmentRows.map(row => [row.id, row]));
+  return rows.map(row => {
+    const base = baseById.get(row.id);
+    return { ...row, customer_segment: base?.customer_segment || null, frozen_until: base?.frozen_until || null, delete_requested_at: base?.delete_requested_at || null };
+  });
 }
 
 const VIGIA_COPILOT_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_name,service_type_name,offer_value,expected_close_date,next_action_at,updated_at';
@@ -2905,7 +2911,11 @@ app.get('/api/vigia/priorities', async (req, res) => {
       fetchVigiaCustomerSegments(database, ownerIds),
     ]);
     // AGT-003 prioriza sólo el pipeline comercial privado; las licitaciones públicas son dominio de AGT-002.
-    const scopedRows = attachVigiaCustomerSegments(viewRows, segmentRows).filter(isAgt003CommercialOpportunity);
+    // Congeladas vigentes y pendientes de eliminación ya tienen decisión: no generan alertas.
+    const now = new Date();
+    const scopedRows = attachVigiaCustomerSegments(viewRows, segmentRows)
+      .filter(row => isAgt003CommercialOpportunity(row) && !isOutOfActivePipeline(row, now))
+      .map(({ frozen_until: _frozenUntil, delete_requested_at: _deleteRequestedAt, ...row }) => row);
     res.json(buildAgt003PrioritiesData(scopedRows));
   } catch (error) { sendAuthError(res, error); }
 });
@@ -5201,6 +5211,7 @@ app.post('/api/opportunities', async (req, res) => {
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
     const isPublicTender = payload.service_type_code === 'licitacion_publica';
+    if (currentProfile.role === 'comercial' && !isPublicTender) await requireNoPendingDecisions(database, currentProfile.id);
     const requestedClientId = isPublicTender ? null : (req.body.client_id || null);
     const authorizedSiblingIds = isPublicTender ? null : await prepareClientForNewOpportunity(database, currentProfile, payload, requestedClientId);
     const data = await persistSalesOpportunity(database, {
@@ -5323,6 +5334,65 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+
+// Decisión obligatoria por oportunidad (2026-10-07): un comercial con oportunidades sin decisión vigente puede consultar
+// el CRM pero no crear oportunidades nuevas. Misma regla que src/vigia/opportunity-decision-rules.js.
+async function countPendingDecisions(database, ownerId) {
+  const rows = await must(database.from('psi_sales_opportunities')
+    .select('id,service_type_code,stage_code,next_action_at,frozen_until,delete_requested_at')
+    .eq('owner_id', ownerId)
+    .is('deleted_at', null)
+    .not('stage_code', 'in', '(aprobado,descartado,perdido)'));
+  return pendingDecisions(rows || [], new Date()).length;
+}
+
+async function requireNoPendingDecisions(database, ownerId) {
+  const pending = await countPendingDecisions(database, ownerId);
+  if (pending > 0) {
+    const error = new Error(`Tiene ${pending} ${pending === 1 ? 'oportunidad' : 'oportunidades'} sin decisión (gestión vencida o sin agenda). Decídalas en Mi día para poder crear nuevas: sigue viva, avanza, congelar, descartar o pedir eliminar.`);
+    error.status = 409;
+    error.code = 'CRM_PENDING_DECISIONS';
+    throw error;
+  }
+}
+
+function decisionDatabaseError(error) {
+  if (error?.code === '22023' || error?.code === 'P0002') {
+    const mapped = new Error(error.message || 'Decisión inválida.');
+    mapped.status = error.code === 'P0002' ? 404 : 400;
+    return mapped;
+  }
+  return error;
+}
+
+app.post('/api/opportunity-decision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const id = String(req.query.id || '');
+    if (!id) { const error = new Error('Falta la oportunidad.'); error.status = 400; throw error; }
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const params = normalizeDecisionRequest(req.body);
+    const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
+    if (error) throw decisionDatabaseError(error);
+    res.status(201).json(data);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/opportunity-delete-resolution', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!currentProfile?.active || !hasPermission(currentProfile, DELETE_PERMISSION)) { const error = new Error('Solo el director comercial puede confirmar eliminaciones.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const id = String(req.query.id || '');
+    if (!id || typeof req.body?.approve !== 'boolean') { const error = new Error('Solicitud inválida.'); error.status = 400; throw error; }
+    const notes = typeof req.body.notes === 'string' ? req.body.notes.trim().slice(0, 2000) : '';
+    const { data, error } = await database.rpc('psi_resolve_opportunity_delete_request', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, p_approve: req.body.approve, p_notes: notes || null });
+    if (error) throw decisionDatabaseError(error);
+    res.json(data);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 
 // Vercel-safe single-segment aliases. The catch-all function reliably serves /api/bootstrap,
 // but nested URLs like /api/opportunities/:id can resolve to Vercel 404 in production.

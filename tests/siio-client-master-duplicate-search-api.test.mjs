@@ -104,6 +104,8 @@ const fakeSupabase = http.createServer(async (req, res) => {
     const body = ['POST', 'PATCH'].includes(req.method) ? await readJson(req) : undefined;
     record(req, url, body);
     if (req.method === 'POST') return json(res, 500, { message: 'unexpected opportunity creation in this scenario' });
+    // Consulta de oportunidades sin decisión del comercial (2026-10-07): este escenario no tiene pendientes.
+    if (req.method === 'GET' && url.searchParams.get('owner_id')) return json(res, 200, []);
   }
 
   record(req, url);

@@ -112,6 +112,8 @@ const fakeSupabase = http.createServer(async (req, res) => {
           .map(o => ({ id: o.id, owner_id: o.owner_id }));
         return json(res, 200, siblings);
       }
+      // Consulta de oportunidades sin decisión del comercial (2026-10-07): este escenario no tiene pendientes.
+      if (url.searchParams.get('owner_id')) return json(res, 200, []);
       const id = idParam ? idParam.replace(/^eq\./, '') : null;
       const found = id ? opportunities[id] : null;
       return found ? json(res, 200, found) : json(res, 406, { code: 'PGRST116', message: 'The result contains 0 rows' });

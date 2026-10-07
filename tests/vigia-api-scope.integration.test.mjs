@@ -76,7 +76,8 @@ const fakeSupabase = http.createServer((req, res) => {
   if (url.pathname === '/rest/v1/psi_sales_opportunities') {
     crmReads += 1; crmQueries.push(url);
     const select = String(url.searchParams.get('select') || '').split(',');
-    assert.deepEqual(select, ['id', 'customer_segment'], 'consulta base minimizada');
+    // Mínimo necesario: segmento y estado de decisión (congelada / eliminación pedida salen de las prioridades).
+    assert.deepEqual(select, ['id', 'customer_segment', 'frozen_until', 'delete_requested_at'], 'consulta base minimizada');
     const ownerFilter = url.searchParams.get('owner_id');
     let rows = ownerFilter ? [row('allowed', 'owner-a')] : globalRows;
     const offset = Number(url.searchParams.get('offset') || 0);
