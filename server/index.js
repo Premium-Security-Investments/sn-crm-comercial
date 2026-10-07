@@ -2310,7 +2310,8 @@ app.get('/api/tenders', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
     const database = requireDb();
-    res.json(await buildTenderRadar(database, currentProfile, req.query.refresh === '1'));
+    // El directivo de solo consulta lee el radar persistido; nunca dispara una sincronización por GET.
+    res.json(await buildTenderRadar(database, currentProfile, req.query.refresh === '1' && !isReadOnlyRole(currentProfile.role)));
   } catch (error) { sendAuthError(res, error); }
 });
 
