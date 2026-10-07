@@ -50,7 +50,7 @@ const requiredMainMarkers = [
   'Seguridad Física',
   'service-context-pill',
   'Prioridades gerenciales de hoy',
-  'Normalizar regional',
+  'Completar datos',
   'Ordenado por valor esperado',
   'Valor esperado',
   'formatDisplayName',
@@ -68,7 +68,7 @@ const requiredMainMarkers = [
   'Limpiar',
   'v2ScopeSummary',
   'sourceRows = scopedOpportunities',
-  'performanceRows = useMemo(() => data.opportunities.filter(v2BaseScopeMatches)',
+  'performanceRows = useMemo(() => commercialOpportunities.filter(v2BaseScopeMatches)',
   'approvedRows = performanceRows.filter(isApprovedSale)',
   'PRODUCT_OPERATIONAL_UNITS',
   'productOperationalUnit',
@@ -149,14 +149,14 @@ assert.ok(v2FilterMarkup.indexOf('Pipeline activo') > v2FilterMarkup.indexOf('em
 assert.ok(css.includes('.v2-dashboard-filters{grid-template-columns:minmax(240px,1.35fr) repeat(4,minmax(130px,1fr));'), 'Dashboard v2 filters should intentionally use five columns / two rows so controls do not get squeezed or leave an orphan row');
 assert.ok(css.includes('@media(max-width:900px){.v2-filter-strip{grid-template-columns:1fr}.v2-dashboard-filters{grid-template-columns:repeat(2,minmax(0,1fr))}'), 'Dashboard v2 filters should gracefully wrap to two narrow columns on smaller screens');
 assert.ok(css.includes('overflow:visible'), 'Dashboard v2 filter strip should not clip the right-side controls');
-assert.ok(main.includes('v2ScopeSummary') && main.includes('${sourceRows.length}/${data.opportunities.length} oportunidades'), 'Opportunity counter should move into the hero scope summary without the extra visibles wording');
+assert.ok(main.includes('v2ScopeSummary') && main.includes('${sourceRows.length}/${commercialOpportunities.length} oportunidades comerciales'), 'Opportunity counter should move into the hero scope summary without the extra visibles wording');
 assert.ok(main.includes('<div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span><span className="v2-hero-scope-summary">{v2ScopeSummary}</span></div>'), 'Dashboard v2 hero scope summary should sit beside the service pill on desktop');
 assert.ok(!main.includes('Actualizado ${lastUpdatedLabel(sourceRows)}'), 'Dashboard v2 hero scope summary should not spend banner space on the update date');
 assert.ok(main.indexOf('v2HeroTitle') < main.indexOf('v2HeroSubtitle') && main.indexOf('v2HeroSubtitle') < main.indexOf('v2-hero-actions'), 'Dashboard v2 banner should read as diagnosis, submessage, then quick actions');
 assert.ok(!main.includes('<div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles'), 'Dashboard v2 filter bar should not carry the thick visible-opportunity footer');
 assert.ok(main.includes("targetId: 'v2-top-close-opportunities'"), 'Cerrar oportunidades top should scroll to the prioritized close opportunities section');
 assert.ok(main.includes("targetId: 'v2-low-compliance-focus'"), 'Recuperar bajo cumplimiento should scroll to the exact low-compliance explanation');
-assert.ok(main.includes("targetId: 'v2-regional-normalization-focus'"), 'Normalizar regional should scroll to the exact data-quality explanation');
+assert.ok(main.includes("targetId: 'v2-regional-normalization-focus'"), 'Completar datos should scroll to the exact data-quality explanation');
 assert.ok(main.includes("targetId: 'v2-forecast-focus'"), 'Proteger forecast should scroll to the exact forecast concentration panel');
 assert.ok(main.includes('dashboard-focus-hit'), 'Priority cards should visually highlight the destination after scroll');
 assert.ok(css.includes('.dashboard-v2 .v2-priority-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}'), 'Priority cards should use readable dashboard-specific columns');
@@ -166,8 +166,8 @@ assert.ok(main.includes("targetId: 'v2-annual-budget-focus'"), 'Presupuesto/unid
 assert.ok(main.includes("targetId: 'v2-active-pipeline-focus'"), 'Pipeline activo KPI should scroll to active pipeline table');
 assert.ok(css.includes('.v2-kpi-button:hover'), 'Clickable KPI cards should have visible hover/focus affordance');
 
-assert.ok(main.includes('const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>\n    v2BaseScopeMatches(o) &&\n    (!stage || o.stage_code === stage) &&\n    (!onlyActive || !isTerminalStage(o.stage_code))'), 'Stage and Pipeline activo should only narrow the visible opportunity/pipeline scope');
-assert.ok(main.includes('const performanceRows = useMemo(() => data.opportunities.filter(v2BaseScopeMatches), [data.opportunities, period, q, owner, regional, service, customerSegmentFilter]);'), 'Performance scope should keep approved sales when stage or Pipeline activo filters are used while honoring customer type');
+assert.ok(main.includes('const scopedOpportunities = useMemo(() => commercialOpportunities.filter(o =>\n    v2BaseScopeMatches(o) &&\n    (!stage || o.stage_code === stage) &&\n    (!onlyActive || !isTerminalStage(o.stage_code))'), 'Stage and Pipeline activo should only narrow the visible opportunity/pipeline scope');
+assert.ok(main.includes('const performanceRows = useMemo(() => commercialOpportunities.filter(v2BaseScopeMatches), [commercialOpportunities, period, q, owner, regional, service, customerSegmentFilter]);'), 'Performance scope should keep approved sales when stage or Pipeline activo filters are used while honoring customer type');
 assert.ok(main.includes('const approvedRows = performanceRows.filter(isApprovedSale);'), 'Compliance must be based on performanceRows, not active-only sourceRows');
 assert.ok(main.includes('const rankingRowsV2 = Array.from(performanceRows.reduce'), 'Commercial compliance ranking should ignore stage/active-only filters that would remove approved sales');
 assert.ok(main.includes('const pipelineRowsV2 = Array.from(activeRows.reduce'), 'Pipeline tables should continue to use active visible rows');

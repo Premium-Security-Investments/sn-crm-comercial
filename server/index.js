@@ -37,6 +37,7 @@ import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
+import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
 import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
@@ -2903,7 +2904,8 @@ app.get('/api/vigia/priorities', async (req, res) => {
       fetchVigiaRows(database, ownerIds),
       fetchVigiaCustomerSegments(database, ownerIds),
     ]);
-    const scopedRows = attachVigiaCustomerSegments(viewRows, segmentRows);
+    // AGT-003 prioriza sólo el pipeline comercial privado; las licitaciones públicas son dominio de AGT-002.
+    const scopedRows = attachVigiaCustomerSegments(viewRows, segmentRows).filter(isAgt003CommercialOpportunity);
     res.json(buildAgt003PrioritiesData(scopedRows));
   } catch (error) { sendAuthError(res, error); }
 });

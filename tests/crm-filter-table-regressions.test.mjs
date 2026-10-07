@@ -26,7 +26,7 @@ assert.match(dashboard, /options=\{customerSegmentOptions\} empty="Clientes"/, '
 assert.match(dashboard, /setCustomerSegmentFilter\(''\)/, 'Limpiar restablece tipo de cliente');
 assert.match(dashboard, /Boolean\(period \|\| q \|\| owner \|\| regional \|\| stage \|\| customerSegmentFilter \|\| onlyActive\)/, 'el resumen reconoce tipo de cliente como filtro activo');
 
-assert.match(main, /<th>Ventas acumuladas<\/th><th>Presupuesto<\/th><th>Cumplimiento individual<\/th>/, 'la tabla ordena acumulado, presupuesto y cumplimiento');
+assert.match(main, /<th>Ventas \{salesYear\}<\/th><th>Presupuesto<\/th><th>Cumplimiento individual<\/th>/, 'la tabla ordena acumulado del año, presupuesto y cumplimiento');
 assert.match(main, /fmtMoney\(row\.accumulated\)[\s\S]{0,180}fmtMoney\(row\.budget\)[\s\S]{0,180}row\.compliance/, 'las celdas siguen el orden de los encabezados');
 assert.match(styles, /\.crm-readable-table\.v2-sales-table table\{[^}]*min-width:15\d{2}px/, 'la tabla reserva ancho suficiente con especificidad que sobrevive al breakpoint móvil');
 assert.match(styles, /\.v2-sales-table th:nth-child\(10\)[^}]*width:1\d{2}px/, 'Ventas acumuladas tiene ancho explícito');
