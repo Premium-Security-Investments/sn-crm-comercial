@@ -130,7 +130,8 @@ test('la interfaz oculta las acciones de escritura al rol de solo consulta', () 
   assert.match(detail, /\{!readOnly && o\.service_type_code === 'licitacion_publica' && o\.stage_code !== 'descartado'/, 'sin botones de salida de licitación');
   assert.match(detail, /\{!readOnly && o\.service_type_code !== 'licitacion_publica' && !isTerminalStage\(o\.stage_code\) && <OpportunityDecisionPanel/);
   assert.match(detail, /\{!readOnly && <div id="opportunity-follow-up"[\s\S]{0,200}<FollowUpForm/);
-  assert.match(main, /\{!siioShell && canAccessRoute\(currentProfile, 'new'\) && <button onClick=\{\(\) => go\('#\/new'\)\}>Nueva oportunidad<\/button>\}/);
+  assert.match(main, /\{!siioShell && canAccessRoute\(currentProfile, 'new'\) && <NewOpportunityButton data=\{viewData\} \/>\}/);
+  assert.match(main, /if \(!blocking\) return <button onClick=\{\(\) => go\('#\/new'\)\}>Nueva oportunidad<\/button>;/);
   assert.match(main, /\['consulta','Directivo de solo consulta'\]/, 'el selector de rol de Usuarios incluye consulta');
   assert.match(main, /consulta: 'Directivo de solo consulta'/);
   const siio = readFileSync(new URL('../src/siio/SiioDashboard.tsx', import.meta.url), 'utf8');
