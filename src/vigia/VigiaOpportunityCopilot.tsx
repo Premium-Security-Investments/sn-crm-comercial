@@ -132,7 +132,7 @@ export function VigiaOpportunityCopilot({ opportunityId, request, preflight }: P
 
   return <section className="vigia-opportunity-copilot" aria-labelledby="vigia-copilot-title">
     <header><div><span className="eyebrow">{VIGIA_VISIBLE_NAMES.commercial}</span><h3 id="vigia-copilot-title">Próximo seguimiento</h3><p>Analiza el contexto y propone un siguiente paso de seguimiento</p></div></header>
-    <VigiaCommercialAlerts alerts={alerts} />
+    {alerts.length > 0 && <VigiaCommercialAlerts alerts={alerts} />}
     {showForm && <div className="vigia-copilot-generate">
       <fieldset className="vigia-copilot-channel">
         <legend>¿Cómo será el próximo contacto?</legend>

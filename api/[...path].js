@@ -405,6 +405,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/agt003/lead-analysis': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'GET /api/agt003/lead-analysis': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'POST /api/agt003/lead-analysis-message': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
@@ -3122,9 +3123,15 @@ async function leadAnalysisState(database, opportunityId, opportunity = null) {
   if (used.error) throw used.error;
   const { profile_hash: analysisHash, ...analysis } = latest.data?.[0] || {};
   const current = opportunity ? leadAnalysisProfileHash(opportunity) : null;
+  let messageEvent = null;
+  if (analysis.id) {
+    const event = await database.from('psi_agt003_lead_analysis_message_events').select('action,created_at').eq('analysis_id', analysis.id).maybeSingle();
+    if (event.error && event.error.code !== '42P01') throw event.error;
+    messageEvent = event.data || null;
+  }
   return {
     available: isAgt003CopilotConfigured(process.env),
-    analysis: analysis.id ? analysis : null,
+    analysis: analysis.id ? { ...analysis, message_event: messageEvent } : null,
     profile_changed: Boolean(analysis.id && current && current !== analysisHash),
     used: used.count || 0,
     max: monthlyMax,
@@ -3146,6 +3153,39 @@ app.get('/api/agt003/lead-analysis', async (req, res) => {
     const state = await leadAnalysisState(database, id, await loadLeadAnalysisOpportunity(database, id));
     res.set('Cache-Control', 'private, no-store');
     res.json(state);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+// "Ya lo usé" / "Descartar" del mensaje sugerido (Juan, 2026-10-08). "Ya lo usé" lo anota en el historial como
+// contacto por el canal del mensaje (cuenta como seguimiento); "Descartar" sólo lo oculta. Un evento por análisis.
+app.post('/api/agt003/lead-analysis-message', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const id = String(req.query.id || '');
+    const analysisId = String(req.body?.analysis_id || '');
+    const action = req.body?.action;
+    if (!id || !analysisId || !['used', 'dismissed'].includes(action)) { const error = new Error('Solicitud inválida.'); error.status = 400; throw error; }
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const analysis = await must(database.from('psi_agt003_lead_analyses').select('id,opportunity_id,status,output').eq('id', analysisId).maybeSingle());
+    if (!analysis || analysis.opportunity_id !== id || analysis.status !== 'completed') { const error = new Error('Análisis no encontrado.'); error.status = 404; throw error; }
+    const existing = await must(database.from('psi_agt003_lead_analysis_message_events').select('id').eq('analysis_id', analysisId).maybeSingle());
+    if (existing) return res.json(await leadAnalysisState(database, id, await loadLeadAnalysisOpportunity(database, id)));
+    let interactionId = null;
+    if (action === 'used') {
+      const message = analysis.output?.mensaje_sugerido || {};
+      const occurredAt = new Date().toISOString();
+      const interaction = await must(database.from('psi_sales_interactions').insert({
+        opportunity_id: id, created_by: currentProfile.id, interaction_type: message.canal === 'correo' ? 'correo' : 'whatsapp',
+        notes: `Envié el mensaje sugerido por Vig-IA (${message.canal === 'correo' ? 'correo' : 'WhatsApp'}):\n${String(message.texto || '').slice(0, 1500)}`,
+        occurred_at: occurredAt,
+      }).select('id').single());
+      interactionId = interaction.id;
+      await must(database.from('psi_sales_opportunities').update({ last_interaction_at: occurredAt }).eq('id', id).select('id').single());
+    }
+    const { error } = await database.from('psi_agt003_lead_analysis_message_events').insert({ analysis_id: analysisId, actor_id: currentProfile.id, action, interaction_id: interactionId });
+    if (error && error.code !== '23505') throw error;
+    res.json(await leadAnalysisState(database, id, await loadLeadAnalysisOpportunity(database, id)));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.post('/api/agt003/lead-analysis', async (req, res) => {

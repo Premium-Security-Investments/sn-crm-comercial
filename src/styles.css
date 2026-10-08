@@ -711,3 +711,17 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .lead-analysis-message{white-space:pre-wrap;padding:10px;border-radius:10px;background:#fff;border:1px solid #e2eaf5}
 .lead-analysis-review{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:#fff7ed;color:#7c2d12;font-size:13px}
 .lead-analysis-panel .eyebrow{background:#dbeafe;color:#1e40af}
+
+/* Ficha comercial en dos columnas (Juan, 2026-10-08) */
+.opportunity-work-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,1fr);gap:clamp(14px,1.4vw,22px);align-items:start;min-width:0}
+.opportunity-work-main,.opportunity-work-side{display:grid;gap:clamp(14px,1.2vw,20px);min-width:0;align-content:start}
+.opportunity-work-main .followup-section-grid{grid-template-columns:1fr}
+.opportunity-work-side .client-profile-fields{grid-template-columns:1fr 1fr}
+@media(max-width:1180px){.opportunity-work-grid{grid-template-columns:1fr}}
+@media(max-width:560px){.opportunity-work-side .client-profile-fields{grid-template-columns:1fr}}
+.decision-fields label{align-content:start}
+.vigia-copilot-generate>label{display:grid;gap:6px;width:100%;font-size:12px;font-weight:900;color:#334e72}
+.vigia-copilot-generate>label textarea{width:100%;font-size:15px;font-weight:400;color:#10213d}
+.lead-analysis-message-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.lead-analysis-message-done{margin:4px 0 0;color:#526173;font-size:13px}
+.link-button{padding:0;border:0;background:none;box-shadow:none;color:#1b4fd0;font-weight:700;text-decoration:underline;cursor:pointer}.link-button:hover{background:none;color:#123f8e}
