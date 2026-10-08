@@ -154,7 +154,11 @@ export function canUseCommercialView(profile?: NavProfile) {
  */
 export function effectiveNavProfile<T extends NonNullable<NavProfile>>(profile: T | null | undefined, viewMode: NavViewMode): T | null | undefined {
   if (viewMode !== 'comercial' || !canUseCommercialView(profile)) return profile;
-  const permissions = (profile!.permissions || []).includes('modulo_oportunidades') ? ['modulo_oportunidades'] : [];
+  // Conserva sólo lo que tiene un comercial: Oportunidades y, si la persona lo tiene, el permiso de la IA comercial en la
+  // ficha (copiloto y premio "análisis profundo"). Sin él, la Vista Comercial escondía la IA (Juan, 2026-10-08).
+  const COMMERCIAL_VIEW_PERMISSIONS = ['modulo_oportunidades', 'vigia_copilot_pilot'];
+  const owned = new Set(profile!.permissions || []);
+  const permissions = owned.has('modulo_oportunidades') ? COMMERCIAL_VIEW_PERMISSIONS.filter(code => owned.has(code)) : [];
   return { ...profile!, role: 'comercial', permissions };
 }
 
