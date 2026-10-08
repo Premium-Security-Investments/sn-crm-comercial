@@ -178,6 +178,44 @@ test('resumen del gerente: inactivos y atrasados primero, titular de 3 líneas y
   assert.doesNotMatch(manager.text, /Katalina|Cliente de Juan|Juan Dueño/);
 });
 
+test('sin cartera: "al día" sin oportunidades activas se muestra como Sin cartera, no como Al día', () => {
+  const fixture = weeklyDigestFixture();
+  const outbox = buildWeeklyDigest({ ...fixture, opportunities: fixture.opportunities.filter(o => o.owner_id !== 'p-beto'), mode: 'live' });
+  const [manager] = byKind(outbox, 'manager');
+  assert.match(manager.text, /Al día: 0\nAtrasados: 1 \(Ana María Pérez Gómez\)\nInactivos: 1 \(Carolina Díaz Ríos\)\nSin cartera: 1 \(Beto Ramírez\)/);
+  assert.match(manager.text, /Beto Ramírez\n  Motivo: No tiene oportunidades activas asignadas en el CRM\./);
+  assert.match(manager.html, /Sin cartera/);
+  assert.match(salespersonFor(outbox, 'p-beto').text, /Su estado hoy: Sin cartera\. No tiene oportunidades activas asignadas en el CRM\./);
+  // Con cartera, el titular sigue en 3 líneas (sin la línea "Sin cartera").
+  assert.doesNotMatch(byKind(live(), 'manager')[0].text, /Sin cartera/);
+});
+
+test('premio en el resumen del gerente: perfiles completos y análisis ganados en el mes', () => {
+  const fixture = weeklyDigestFixture();
+  const full = {
+    economic_sector: 'Industria', company_website: 'https://beta.example.co', decision_maker_name: 'Decisora Beta',
+    decision_maker_title: 'Gerente', decision_maker_email: 'decisora@beta.example.co', decision_maker_phone: '3000000000',
+    decision_maker_linkedin: 'https://www.linkedin.com/in/decisora', current_security_provider_none: true,
+  };
+  const opportunities = fixture.opportunities.map(o => (o.id === 'o-b1' ? { ...o, ...full } : o));
+  const leadAnalyses = [
+    { actor_id: 'p-beto', status: 'completed', created_at: '2026-10-02T15:00:00Z' },
+    { actor_id: 'p-beto', status: 'completed', created_at: '2026-10-09T15:00:00Z' },
+    { actor_id: 'p-beto', status: 'failed', created_at: '2026-10-09T16:00:00Z' },
+    { actor_id: 'p-beto', status: 'completed', created_at: '2026-09-30T23:00:00Z' }, // septiembre en Bogotá
+    { actor_id: 'p-ana', status: 'completed', created_at: '2026-10-05T15:00:00Z' },
+  ];
+  const [manager] = byKind(buildWeeklyDigest({ ...fixture, opportunities, leadAnalyses, mode: 'live' }), 'manager');
+  const beto = manager.text.slice(manager.text.indexOf('Beto Ramírez\n'));
+  assert.match(beto, /Perfiles de cliente completos: 1 de 1\n  Análisis profundos ganados este mes: 2\n/);
+  const ana = manager.text.slice(manager.text.indexOf('Ana María Pérez Gómez\n'));
+  assert.match(ana, /Perfiles de cliente completos: 0 de \d+\n  Análisis profundos ganados este mes: 1\n/);
+  // Los datos del decisor sólo se cuentan: nunca salen en el correo.
+  assert.doesNotMatch(manager.text + manager.html, /decisora|3000000000|linkedin/i);
+  // Sin análisis (o sin la tabla), el conteo queda en 0.
+  assert.match(byKind(live(), 'manager')[0].text, /Análisis profundos ganados este mes: 0/);
+});
+
 test('sólo oportunidades de AGT-003 y nunca notas', () => {
   for (const outbox of [live(), preview()]) {
     for (const m of outbox.messages) {
@@ -237,7 +275,7 @@ test('runner: argumentos, escritura atómica y punteros separados por modo', () 
 test('frontera: el módulo es puro, de AGT-003, sin AGT-002, red ni envío', () => {
   const src = readFileSync(new URL('../src/vigia/weekly-digest.js', import.meta.url), 'utf8');
   const imports = [...src.matchAll(/^import\s.*?from\s+'([^']+)';/gm)].map(m => m[1]);
-  assert.deepEqual(imports.sort(), ['./commercial-behavior.js', './commercial-scope.js', './opportunity-decision-rules.js', 'node:crypto']);
+  assert.deepEqual(imports.sort(), ['./client-profile.js', './commercial-behavior.js', './commercial-scope.js', './opportunity-decision-rules.js', 'node:crypto']);
   assert.ok(!imports.some(spec => /agt002|tender-|hermes/i.test(spec)), 'sin imports de AGT-002');
   assert.doesNotMatch(src, /import\(/, 'sin imports dinámicos');
   assert.doesNotMatch(src, /fetch\(|process\.env|Date\.now\(|new Date\(\)|readFileSync|writeFileSync|nodemailer|smtp/i);
