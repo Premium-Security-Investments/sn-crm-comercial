@@ -61,7 +61,37 @@ export function tenderProcessFamilyKey(tender) {
   if (!entity || entity === 'sin entidad') return null;
   const reference = normalizeTenderFamilyReference(tender.ref);
   if (!isDistinctiveTenderFamilyReference(reference)) return null;
-  return `${tender.source}|${entity}|${reference}`;
+  // La misma secuencia de grupos de dígitos: '4143.010.32.1.827-2026' y '4143.010.32.1827-2026'
+  // (ambas usadas por Cali) dan la misma cadena alfanumérica pero son procesos distintos.
+  return `${tender.source}|${entity}|${reference}|${tenderFamilyDigitGroups(tender.ref).join('.')}`;
+}
+
+/** 'SCJ-SIF-CD-347- 2026' → ['347', '2026']; ignora el sufijo de fase. */
+export function tenderFamilyDigitGroups(reference) {
+  return stripAccents(reference).replace(PHASE_SUFFIX_RE, '').match(/\d+/g) || [];
+}
+
+/** Referencia tal cual (minúsculas, sin tildes ni sufijo de fase), sin quitar puntuación final. */
+function referenceWithoutPhaseSuffix(reference) {
+  return stripAccents(reference).replace(PHASE_SUFFIX_RE, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Republicación por modificación: dos filas SECOP II de la misma familia cuyas referencias, aparte
+ * del sufijo de fase, difieren en puntuación o espacios ('CDPS-0312-2026' / 'CDPS-0312-2026.').
+ * El paso de borrador a "(Presentación de oferta)" deja la misma referencia y NO es republicación.
+ */
+export function isTenderRepublicationPair(a, b) {
+  const familyKey = tenderProcessFamilyKey(a);
+  if (!familyKey || familyKey !== tenderProcessFamilyKey(b)) return false;
+  return referenceWithoutPhaseSuffix(a.ref) !== referenceWithoutPhaseSuffix(b.ref);
+}
+
+// Estados oficiales terminales: un proceso en estos estados nunca pasa a ser la fuente vigente.
+const TERMINAL_STATUS_TERMS = ['adjudicado', 'seleccionado', 'celebrado', 'cancelado', 'desierto', 'revocado', 'terminado', 'liquidado', 'suspendido', 'cerrado'];
+export function isTerminalTenderStatus(status) {
+  const text = stripAccents(status).toLowerCase();
+  return TERMINAL_STATUS_TERMS.some(term => text.includes(term));
 }
 
 export function tenderFamilyPublishedMs(tender) {
@@ -129,15 +159,18 @@ export function groupTenderProcessFamilies(rows) {
   return families;
 }
 
-// Estado de revisión humana que una versión nueva hereda de la anterior cuando aún no existe en la
-// base: así una republicación no reaparece como "nueva" algo que ya se estaba revisando o se descartó.
-const INHERITABLE_REVIEW_STATUS_RANK = { en_revision: 2, descartada: 1 };
+// Una fila que una persona está revisando o siguiendo nunca se oculta: queda visible junto a la vigente.
+function isHumanManagedFamilyMember(row) {
+  return row?.internal_status === 'en_revision' || Boolean(row?.tracking_owner_id);
+}
 
 /**
  * Plan de persistencia para familias SIN miembro convertido (los convertidos los resuelve
  * planRadarPhaseIdentitySync). Para cada familia con versión vigente única:
- *   - `supersededMarks`: filas anteriores a marcar como reemplazadas (sin borrarlas).
- *   - `inheritedStatuses`: estado de revisión que hereda la versión vigente si es nueva en la base.
+ *   - `supersededMarks`: filas anteriores a marcar como reemplazadas (sin borrarlas), salvo las que
+ *     están en revisión o en seguimiento, que siguen visibles.
+ *   - `inheritedStatuses`: si la anterior estaba descartada, la vigente que aún no existía en la base
+ *     también queda descartada (no reaparece como "nueva" algo que ya se descartó).
  * Determinista e idempotente: las mismas entradas producen el mismo plan.
  */
 export function planTenderProcessFamilySupersession({ rows = [], existingStableKeys = new Set() } = {}) {
@@ -148,6 +181,7 @@ export function planTenderProcessFamilySupersession({ rows = [], existingStableK
     if (!family.current || family.converted.length) continue;
     const current = family.current;
     for (const member of family.superseded) {
+      if (isHumanManagedFamilyMember(member)) continue;
       supersededMarks.push({
         stable_key: member.stable_key,
         superseded_by: {
@@ -159,11 +193,9 @@ export function planTenderProcessFamilySupersession({ rows = [], existingStableK
       });
     }
     if (existingKeys.has(current.stable_key)) continue;
-    const inherited = family.superseded
-      .map(member => member.internal_status)
-      .filter(status => INHERITABLE_REVIEW_STATUS_RANK[status])
-      .sort((a, b) => INHERITABLE_REVIEW_STATUS_RANK[b] - INHERITABLE_REVIEW_STATUS_RANK[a])[0];
-    if (inherited) inheritedStatuses.push({ stable_key: current.stable_key, internal_status: inherited });
+    if (family.superseded.some(member => member.internal_status === 'descartada') && !family.superseded.some(isHumanManagedFamilyMember)) {
+      inheritedStatuses.push({ stable_key: current.stable_key, internal_status: 'descartada' });
+    }
   }
   return { supersededMarks, inheritedStatuses };
 }

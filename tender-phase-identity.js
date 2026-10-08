@@ -1,4 +1,4 @@
-import { compareTenderFamilyRecency, TENDER_REPUBLICATION_NOTICE_PREFIX, tenderProcessFamilyKey, tenderRepublicationNoticeLine } from './tender-process-family.js';
+import { compareTenderFamilyRecency, isTenderRepublicationPair, isTerminalTenderStatus, tenderProcessFamilyKey } from './tender-process-family.js';
 
 function normalizeTenderStatusText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -42,12 +42,17 @@ function officialPhaseRank(tender) {
 function preferOfficialIdentity(current, candidate) {
   if (!current) return candidate;
   if (!candidate) return current;
-  // Republicación: con ambas fechas de publicación, la versión más reciente es la vigente.
-  const recency = compareTenderFamilyRecency(candidate, current);
-  if (recency) return recency > 0 ? candidate : current;
+  // Nunca se mueve una oportunidad a una fila en estado oficial terminal (Adjudicado, Celebrado…).
+  if (candidate !== current && isTerminalTenderStatus(candidate.status) && !isTerminalTenderStatus(current.status)) return current;
   const currentRank = officialPhaseRank(current);
   const candidateRank = officialPhaseRank(candidate);
   if (candidateRank !== currentRank) return candidateRank > currentRank ? candidate : current;
+  // Sólo dentro de una republicación SECOP II (misma familia, referencia distinta por puntuación) y
+  // a igual fase: la publicación más reciente es la vigente. Nunca pesa más que la fase.
+  if (isTenderRepublicationPair(current, candidate)) {
+    const recency = compareTenderFamilyRecency(candidate, current);
+    if (recency) return recency > 0 ? candidate : current;
+  }
   return deadlineMs(candidate) > deadlineMs(current) ? candidate : current;
 }
 
@@ -60,8 +65,6 @@ function uniqueStrings(values) {
 // the wrong process into the converted opportunity, so this is surfaced as ambiguous instead.
 function hasAmbiguousSuccessors(successorCandidates) {
   if (successorCandidates.length < 2) return false;
-  // A strictly newest publication (date, then process number) is a deterministic winner.
-  if (successorCandidates.some(candidate => successorCandidates.every(other => other === candidate || compareTenderFamilyRecency(candidate, other) > 0))) return false;
   const maxRank = Math.max(...successorCandidates.map(officialPhaseRank));
   const topCandidates = successorCandidates.filter(row => officialPhaseRank(row) === maxRank);
   if (topCandidates.length < 2) return false;
@@ -77,7 +80,7 @@ function phaseHistoryLinePrefix(previousPhase, newPhase) {
   return `Fase detectada: ${previousPhase || 'sin fase registrada'} → ${newPhase}`;
 }
 
-export function applyOfficialSourceLink(observaciones, { officialUrl, historicalUrl, phaseChange, republication } = {}) {
+export function applyOfficialSourceLink(observaciones, { officialUrl, historicalUrl, phaseChange } = {}) {
   const text = String(observaciones || '');
   let next = text;
   if (officialUrl) {
@@ -102,14 +105,6 @@ export function applyOfficialSourceLink(observaciones, { officialUrl, historical
       next += `\n${prefix}${detectedAt}`;
     }
   }
-  // Aviso visible de republicación (SECOP publicó el proceso modificado como uno nuevo): una sola
-  // línea por URL nueva, aunque la importación corra todos los días.
-  if (republication?.url) {
-    const line = tenderRepublicationNoticeLine(republication);
-    if (!next.split('\n').some(existing => existing.startsWith(TENDER_REPUBLICATION_NOTICE_PREFIX) && existing.includes(republication.url))) {
-      next = next ? `${next}\n${line}` : line;
-    }
-  }
   return next;
 }
 
@@ -132,7 +127,8 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
     if (!fetchedSame.length) continue;
 
     const successorCandidates = fetchedSame.filter(row => row?.stable_key && row.stable_key !== convertedRow.stable_key);
-    if (hasAmbiguousSuccessors(successorCandidates)) {
+    // Una fila en estado terminal no es candidata a sucesora (no se fusiona ni se descarta por esto).
+    if (hasAmbiguousSuccessors(successorCandidates.filter(row => !isTerminalTenderStatus(row.status)))) {
       // Fail closed: do not merge, discard or patch anything for this process while two or more
       // successor candidates are tied. Route them outside the normal conversion flow instead.
       identityReviewStableKeys.push(...successorCandidates.map(row => row.stable_key));
@@ -149,7 +145,13 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
 
     const knownPhases = knownPhasesFor([convertedRow, ...fetchedSame]);
 
+    // Republicación vigente (referencia distinta por puntuación, no un paso de fase): se reporta en cada corrida para
+    // que el seguimiento automático la registre de forma idempotente aunque una corrida anterior haya fallado.
+    const currentRepublication = official !== convertedRow && isTenderRepublicationPair(convertedRow, official) && official.url
+      ? { converted_opportunity_id: convertedRow.converted_opportunity_id || null, ref: official.ref || null, url: official.url, processId: official.process_id || null }
+      : null;
     convertedOverrides.push({
+      republication: currentRepublication,
       stable_key: convertedRow.stable_key,
       url: official.url || convertedRow.url || null,
       process_id: official.process_id || convertedRow.process_id || null,
@@ -164,8 +166,10 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
     const phaseChanged = Boolean(officialStatus) && officialStatus !== convertedRow.status;
     // SECOP publicó un proceso nuevo (otro id_del_proceso) para la misma referencia: la oportunidad
     // queda avisada y apuntando a la versión nueva, y el seguimiento importa sus documentos.
+    // Sólo una republicación (referencia distinta por puntuación/espacios); el paso de fase de SECOP
+    // (otro id_del_proceso con la misma referencia) conserva el comportamiento de siempre.
     const republished = urlChanged && official !== convertedRow && Boolean(official.process_id)
-      && official.process_id !== convertedRow.process_id;
+      && official.process_id !== convertedRow.process_id && isTenderRepublicationPair(convertedRow, official);
     if (convertedRow.converted_opportunity_id && (urlChanged || phaseChanged)) {
       opportunityPatches.push({
         converted_opportunity_id: convertedRow.converted_opportunity_id,

@@ -8,7 +8,11 @@ import {
   groupTenderProcessFamilies,
   isDistinctiveTenderFamilyReference,
   isProcessFamilySupersededRow,
+  isTenderRepublicationPair,
+  isTerminalTenderStatus,
   normalizeTenderFamilyReference,
+  tenderFamilyDigitGroups,
+  tenderRepublicationNoticeLine,
   planTenderProcessFamilySupersession,
   tenderProcessFamilyKey,
   withProcessFamilySupersededRaw,
@@ -72,29 +76,54 @@ test('guardas contra falsos positivos', () => {
   assert.equal(tenderProcessFamilyKey(secop({ entity: 'E.S.E. Hospital  San Jorge', ref: '323-2026' })), tenderProcessFamilyKey(secop({ entity: 'ESE HOSPITAL SAN JORGE', ref: '323--2026' })));
 });
 
-test('sin convertida: las versiones anteriores quedan marcadas (no borradas) y la vigente hereda la revisión', () => {
+test('sin convertida: las anteriores quedan marcadas (no borradas); una en revisión o en seguimiento nunca se oculta', () => {
   const entity = 'ESE HOSPITAL SAN JORGE';
   const rows = [
-    secop({ stable_key: 'v1', entity, ref: '323-2026', process_id: 'CO1.REQ.1', url: 'u1', published: '2026-09-01T00:00:00Z', internal_status: 'en_revision' }),
+    secop({ stable_key: 'v1', entity, ref: '323-2026', process_id: 'CO1.REQ.1', url: 'u1', published: '2026-09-01T00:00:00Z', internal_status: 'en_revision', tracking_owner_id: 'juan' }),
     secop({ stable_key: 'v2', entity, ref: '323-2026.', process_id: 'CO1.REQ.2', url: 'u2', published: '2026-09-15T00:00:00Z', internal_status: 'nueva' }),
     secop({ stable_key: 'v3', entity, ref: '323--2026', process_id: 'CO1.REQ.3', url: 'u3', published: '2026-10-01T00:00:00Z', internal_status: null }),
   ];
   const plan = planTenderProcessFamilySupersession({ rows, existingStableKeys: new Set(['v1', 'v2']) });
-  assert.deepEqual(plan.supersededMarks.map(mark => mark.stable_key).sort(), ['v1', 'v2']);
-  assert.ok(plan.supersededMarks.every(mark => mark.superseded_by.stable_key === 'v3' && mark.superseded_by.url === 'u3'));
-  assert.deepEqual(plan.inheritedStatuses, [{ stable_key: 'v3', internal_status: 'en_revision' }]);
-  // Idempotente: la segunda corrida (v3 ya existe) vuelve a marcar lo mismo y no pisa estados.
+  assert.deepEqual(plan.supersededMarks.map(mark => mark.stable_key), ['v2'], 'la fila en revisión/seguimiento (v1) sigue visible');
+  assert.equal(plan.supersededMarks[0].superseded_by.stable_key, 'v3');
+  assert.deepEqual(plan.inheritedStatuses, [], 'nunca se fija en_revision por fuera del flujo de seguimiento');
+  // Sólo en seguimiento (sin en_revision) tampoco se oculta.
+  const tracked = planTenderProcessFamilySupersession({ rows: [{ ...rows[0], internal_status: 'nueva' }, rows[2]] });
+  assert.deepEqual(tracked.supersededMarks, []);
+  // Una anterior descartada: la vigente nueva hereda el descarte; idempotente en la segunda corrida.
+  const discarded = [{ ...rows[1], internal_status: 'descartada' }, rows[2]];
+  assert.deepEqual(planTenderProcessFamilySupersession({ rows: discarded, existingStableKeys: new Set(['v2']) }).inheritedStatuses, [{ stable_key: 'v3', internal_status: 'descartada' }]);
+  assert.deepEqual(planTenderProcessFamilySupersession({ rows: discarded, existingStableKeys: new Set(['v2', 'v3']) }).inheritedStatuses, []);
   const again = planTenderProcessFamilySupersession({ rows, existingStableKeys: new Set(['v1', 'v2', 'v3']) });
   assert.deepEqual(again.supersededMarks, plan.supersededMarks);
-  assert.deepEqual(again.inheritedStatuses, []);
   // Con una convertida en la familia este plan no toca nada (lo resuelve la continuidad de identidad).
-  const withConverted = planTenderProcessFamilySupersession({ rows: [...rows, { ...rows[0], stable_key: 'conv', internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp' }] });
+  const withConverted = planTenderProcessFamilySupersession({ rows: [...rows, { ...rows[1], stable_key: 'conv', internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp' }] });
   assert.deepEqual(withConverted, { supersededMarks: [], inheritedStatuses: [] });
   // La marca vive en raw y oculta sólo filas no convertidas.
   const raw = withProcessFamilySupersededRaw({ entidad: 'x' }, plan.supersededMarks[0].superseded_by);
   assert.equal(isProcessFamilySupersededRow({ raw }), true);
   assert.equal(isProcessFamilySupersededRow({ raw, internal_status: 'convertida_oportunidad' }), false);
   assert.deepEqual(withProcessFamilySupersededRaw(raw, null), { entidad: 'x' });
+});
+
+test('grupos de dígitos: referencias de Cali con la misma cadena alfanumérica pero otros grupos no se mezclan', () => {
+  const entity = 'DISTRITO ESPECIAL DE SANTIAGO DE CALI';
+  const a = tenderProcessFamilyKey(secop({ entity, ref: '4143.010.32.1.827-2026' }));
+  const b = tenderProcessFamilyKey(secop({ entity, ref: '4143.010.32.1827-2026' }));
+  assert.ok(a && b);
+  assert.notEqual(a, b);
+  assert.deepEqual(tenderFamilyDigitGroups('SCJ-SIF-CD-347- 2026'), ['347', '2026']);
+  assert.equal(tenderProcessFamilyKey(secop({ entity, ref: '4143.010.32.1.827-2026.' })), a, 'la puntuación final sí es la misma familia');
+});
+
+test('republicación vs paso de fase y estados terminales', () => {
+  const draft = secop({ entity: 'DIEPO', ref: 'SIP 085 2026' });
+  assert.equal(isTenderRepublicationPair(draft, { ...draft, ref: 'SIP 085 2026 (Presentación de oferta)' }), false, 'el paso de fase no es republicación');
+  assert.equal(isTenderRepublicationPair(draft, { ...draft, ref: 'SIP 085 2026.' }), true);
+  assert.equal(isTenderRepublicationPair(draft, { ...draft, ref: 'SIP 085 2026. (Presentación de oferta)' }), true);
+  assert.equal(isTenderRepublicationPair(draft, { ...draft, ref: 'SIP 085 2026' }), false);
+  for (const status of ['Adjudicado', 'Seleccionado', 'Celebrado', 'Cancelado', 'Proceso desierto', 'Revocado']) assert.equal(isTerminalTenderStatus(status), true, status);
+  for (const status of ['Presentación de oferta', 'Evaluación de ofertas', 'Borrador']) assert.equal(isTerminalTenderStatus(status), false, status);
 });
 
 const FTIC_ENTITY = 'FONDO UNICO DE TECNOLOGIAS DE LA INFORMACION Y LAS COMUNICACIONES';
@@ -126,8 +155,9 @@ test('FTIC: la versión republicada se enlaza a la oportunidad convertida en vez
   const notes = applyOfficialSourceLink(`Origen: SECOP II / Radar Licitaciones\nLink fuente: ${FTIC_OLD_URL}`, patch);
   assert.match(notes, new RegExp(`^Link fuente: ${FTIC_NEW_URL.replace(/[.?&]/g, '\\$&')}$`, 'm'));
   assert.ok(notes.includes(`Link fuente histórico: ${FTIC_OLD_URL}`), 'el aviso anterior queda como historial');
-  assert.ok(notes.includes(`SECOP publicó una versión nueva del proceso (FTIC-LP-003-2026.): ${FTIC_NEW_URL}`));
-  assert.equal(applyOfficialSourceLink(notes, patch), notes, 'el aviso no se duplica en corridas diarias');
+  assert.equal(applyOfficialSourceLink(notes, patch), notes, 'idempotente en corridas diarias');
+  // El aviso visible se agrega aparte, con append atómico (ver test de seguimiento) y este texto:
+  assert.equal(tenderRepublicationNoticeLine(plan.convertedOverrides[0].republication), `SECOP publicó una versión nueva del proceso (FTIC-LP-003-2026.): ${FTIC_NEW_URL}`);
 
   // Corrida siguiente (la convertida ya apunta al aviso nuevo): sin parche nuevo, sin duplicar, sin volver atrás.
   const persisted = { ...fticConverted(), url: override.url, process_id: override.process_id, deadline_at: override.deadline_at };
@@ -145,8 +175,48 @@ test('FTIC: referencias con asterisco o espacios también enlazan (antes sólo e
     now: '2026-10-08T11:00:00.000Z',
   });
   assert.equal(plan.convertedOverrides[0]?.url, FTIC_NEW_URL);
+  assert.equal(plan.convertedOverrides[0]?.republication?.url, FTIC_NEW_URL, 'el seguimiento recibe la republicación vigente');
   const other = planRadarPhaseIdentitySync({ fetched: [{ ...fticFetchedNew(), ref: 'FTIC-LP-004-2026' }], existing: [fticConverted()] });
   assert.deepEqual(other.convertedOverrides, [], 'otra referencia de la misma entidad no se enlaza');
+});
+
+// Forma real de los pasos de fase en producción (ICA, Aerocivil, Pereira, Procuraduría, Cali): el borrador y
+// "(Presentación de oferta)" tienen otro id_del_proceso y otra URL, con la misma referencia.
+const phaseCase = ({ entity, ref, refOffer = `${ref} (Presentación de oferta)` }) => {
+  const draftUrl = `https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.${entity.length}01`;
+  const offerUrl = `https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.${entity.length}02`;
+  const converted = { stable_key: `${entity}-draft`, source: 'SECOP II', entity, ref, process_id: 'CO1.REQ.100', title: 'Vigilancia', url: draftUrl, status: 'Presentación de observaciones', deadline_at: '2026-10-01T15:00:00.000Z', published_at: '2026-09-01T10:00:00.000Z', internal_status: 'convertida_oportunidad', converted_opportunity_id: `opp-${entity}` };
+  const offer = { stable_key: `${entity}-offer`, source: 'SECOP II', entity, ref: refOffer, process_id: 'CO1.REQ.200', title: 'Vigilancia', url: offerUrl, status: 'Presentación de oferta', deadline: '2026-10-20T15:00:00.000Z', published: '2026-09-20T10:00:00.000Z' };
+  return { converted, offer, offerUrl };
+};
+
+test('paso de fase (borrador → Presentación de oferta): comportamiento de siempre, sin aviso ni republicación', () => {
+  for (const [entity, ref] of [['GOBERNACION DEL CAUCA', 'GC-LP-056-2026'], ['AEROCIVIL', '26001276 H3'], ['ALCALDIA DE PEREIRA', 'SME-LP-163-2026'], ['PROCURADURIA GENERAL DE LA NACION', 'LP-004-2026'], ['DISTRITO DE CALI', '4135.010.32.1.250-2026']]) {
+    const { converted, offer, offerUrl } = phaseCase({ entity, ref });
+    const plan = planRadarPhaseIdentitySync({ fetched: [offer], existing: [converted], now: '2026-10-08T11:00:00.000Z' });
+    assert.equal(plan.convertedOverrides[0].url, offerUrl, `${entity}: la fase de oferta sigue siendo la fuente oficial, como antes`);
+    assert.equal(plan.opportunityPatches[0].republication, null, `${entity}: no es republicación`);
+    assert.ok(plan.opportunityPatches[0].phaseChange, `${entity}: se registra el cambio de fase de siempre`);
+    assert.equal(plan.convertedOverrides[0].republication, null, `${entity}: nada para el seguimiento automático`);
+    assert.doesNotMatch(applyOfficialSourceLink('', plan.opportunityPatches[0]), /SECOP publicó una versión nueva/);
+  }
+});
+
+test('la fecha nunca le gana a la fase, y una fila en estado terminal nunca pasa a ser la fuente', () => {
+  const { converted, offer } = phaseCase({ entity: 'ALCALDIA DE PEREIRA', ref: 'SME-LP-163-2026' });
+  const awarded = { ...offer, stable_key: 'pereira-awarded', process_id: 'CO1.REQ.300', status: 'Adjudicado', url: 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.999', deadline: '2026-12-01T15:00:00.000Z', published: '2026-10-05T10:00:00.000Z' };
+  const converted4 = { ...converted, status: 'Presentación de oferta', url: offer.url, process_id: offer.process_id };
+  const plan = planRadarPhaseIdentitySync({ fetched: [offer, awarded], existing: [converted4], now: '2026-10-08T11:00:00.000Z' });
+  assert.equal(plan.convertedOverrides[0].url, offer.url, 'nunca se mueve a la fila Adjudicado');
+  assert.deepEqual(plan.opportunityPatches, []);
+  // Republicación (punto final) en estado terminal: tampoco.
+  const republishedAwarded = { ...awarded, ref: 'SME-LP-163-2026.' };
+  const plan2 = planRadarPhaseIdentitySync({ fetched: [republishedAwarded], existing: [converted4] });
+  assert.equal(plan2.convertedOverrides[0].url, offer.url);
+  // Republicación más reciente pero en una fase anterior: gana la fase (la fecha sólo desempata dentro de la misma fase).
+  const republishedEarlierPhase = { ...offer, stable_key: 'pereira-rep', ref: 'SME-LP-163-2026.', process_id: 'CO1.REQ.400', status: 'Presentación de observaciones', url: 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.400', published: '2026-10-06T10:00:00.000Z' };
+  const plan3 = planRadarPhaseIdentitySync({ fetched: [offer, republishedEarlierPhase], existing: [converted4] });
+  assert.equal(plan3.convertedOverrides[0].url, offer.url);
 });
 
 test('backend: importación, lectura y jobs del host usan la familia de proceso', () => {
@@ -155,9 +225,14 @@ test('backend: importación, lectura y jobs del host usan la familia de proceso'
     assert.match(source, /from '\.\.\/tender-process-family\.js'/, path);
     assert.match(source, /planTenderProcessFamilySupersession\(/, `${path}: persistTenderRadar marca versiones reemplazadas`);
     assert.match(source, /!isProcessFamilySupersededRow\(row\)/, `${path}: el Radar no lista versiones reemplazadas`);
-    assert.match(source, /republication: patch\.republication/, `${path}: el aviso llega a la oportunidad`);
+    assert.match(source, /appendAgt002ObservationLine\(database, override\.republication\.converted_opportunity_id, tenderRepublicationNoticeLine/, `${path}: el aviso llega a la oportunidad con append atómico`);
     assert.match(source, /export async function importRepublishedTenderDocuments\(/, `${path}: importación documental del aviso nuevo`);
     assert.match(source, /psi_retire_tender_document_versions/, `${path}: los documentos anteriores quedan como historial`);
+    assert.match(source, /export async function probeRepublishedTenderDocumentSet\(/, `${path}: observa el conjunto antes de importar`);
+    const importBody = source.match(/async function importOfficialTenderDocuments\([\s\S]*?\n}\n/)[0];
+    assert.ok(importBody.indexOf('recordAgt002RepublicationDocumentsImported') > importBody.indexOf('registerTenderDocumentSnapshot(database'), `${path}: la marca de importación va después del snapshot`);
+    assert.ok(importBody.indexOf('retireSupersededOfficialTenderDocuments') < importBody.indexOf('psi_begin_tender_document_refresh'), `${path}: el retiro va antes de fijar el snapshot nuevo`);
+    assert.match(source, /recordAgt002RepublicationDetected\(/, `${path}: la importación registra el estado legible por máquina`);
   }
   for (const path of ['../tender-process-family.js', '../agt002-republication-followup.js']) {
     assert.doesNotMatch(readFileSync(new URL(path, import.meta.url), 'utf8'), /agt003/i, `${path} respeta el límite AGT-002`);

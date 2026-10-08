@@ -35,15 +35,40 @@ async function must(promise, label) {
   return data;
 }
 
-/**
- * AGT-002 analyses (INITIAL and REANALYSIS) admitted since the start of today (Bogotá), automatic or not: the
- * automatic reanalysis of a republished SECOP process (agt002-republication-followup.js) shares this same daily cap.
- */
+/** INITIAL analyses admitted since the start of today (Bogotá), automatic or not. */
 export async function countAgt002InitialAnalysesToday(database, now) {
   const rows = await must(database.from('psi_agt002_initial_analysis_jobs')
     .select('id')
+    .eq('analysis_kind', 'INITIAL')
     .gte('created_at', agt002BogotaDayStart(now).toISOString()), 'conteo diario');
   return (rows || []).length;
+}
+
+// State record kind written by agt002-republication-followup.js for each automatic republication analysis decision.
+export const AGT002_REPUBLICATION_ANALYSIS_KIND = 'tender_republication_analysis';
+
+/**
+ * Automatic REANALYSIS admissions of republished SECOP processes since the start of today (Bogotá). Manual
+ * reanalyses never appear here, so they never consume the automatic daily cap.
+ */
+export async function countAgt002AutomaticRepublicationReanalysesToday(database, now) {
+  const rows = await must(database.from('psi_sales_interactions')
+    .select('notes')
+    .eq('interaction_type', 'documento')
+    .gte('created_at', agt002BogotaDayStart(now).toISOString())
+    .like('notes', `%"kind":"${AGT002_REPUBLICATION_ANALYSIS_KIND}"%`), 'conteo diario de reanálisis automáticos');
+  return (rows || []).filter(row => {
+    try {
+      const notes = JSON.parse(String(row.notes || ''));
+      return notes?.kind === AGT002_REPUBLICATION_ANALYSIS_KIND && notes.outcome === 'launched'
+        && notes.admission_status === 'admitted' && notes.analysis_kind === 'REANALYSIS';
+    } catch { return false; }
+  }).length;
+}
+
+/** The shared automatic daily cap: INITIAL analyses (as before) plus automatic republication reanalyses. */
+export async function countAgt002AutomaticAnalysesToday(database, now) {
+  return (await countAgt002InitialAnalysesToday(database, now)) + (await countAgt002AutomaticRepublicationReanalysesToday(database, now));
 }
 
 /**
@@ -97,7 +122,7 @@ export async function runAgt002AutoInitialAdmissions(database, {
   }
   const candidates = await findAgt002AutoInitialCandidates(database, { since });
   const events = [];
-  let admittedToday = await countAgt002InitialAnalysesToday(database, now);
+  let admittedToday = await countAgt002AutomaticAnalysesToday(database, now);
   for (const job of candidates) {
     const base = { opportunityId: job.opportunity_id, processingJobId: job.id };
     if (admittedToday >= dailyCap) {

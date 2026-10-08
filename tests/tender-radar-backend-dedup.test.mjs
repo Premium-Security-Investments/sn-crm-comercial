@@ -35,6 +35,11 @@ for (const path of backendPaths) {
     { id: 'new', source: 'SECOP II', entity: 'GOBERNACION DE SUCRE', ref: 'CP-SDSD-440-2026*', process_id: 'CO1.REQ.200', published: '2026-10-01T00:00:00Z', internal_status: 'nueva', score: 150 },
   ]);
   assert.deepEqual(republished.map(row => row.id), ['new'], `${path}: a republished SECOP II process must show only its newest version`);
+  const reviewed = deduplicateTenderProcesses([
+    { id: 'old', source: 'SECOP II', entity: 'GOBERNACION DE SUCRE', ref: 'CP-SDSD-440-2026', process_id: 'CO1.REQ.100', published: '2026-09-20T00:00:00Z', internal_status: 'en_revision', score: 200 },
+    { id: 'new', source: 'SECOP II', entity: 'GOBERNACION DE SUCRE', ref: 'CP-SDSD-440-2026*', process_id: 'CO1.REQ.200', published: '2026-10-01T00:00:00Z', internal_status: 'nueva', score: 150 },
+  ]);
+  assert.deepEqual(reviewed.map(row => row.id).sort(), ['new', 'old'], `${path}: a row under review is never hidden behind a newer version`);
   assert.match(source, /function radarPayload[\s\S]*deduplicateTenderProcesses\(tenders\)/, `${path}: backend payload totals and rows must use the deduplicated process list`);
 }
 

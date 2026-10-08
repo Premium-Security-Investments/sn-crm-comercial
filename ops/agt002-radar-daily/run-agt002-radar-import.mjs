@@ -27,13 +27,14 @@ function summarize(result) {
   return { status: receipt.status || null, visible: result?.tenders?.length ?? null, sources: (result?.diagnostics || []).map(d => `${d.source}: ${d.status} (${d.records_read ?? d.count})`) };
 }
 
-// Procesos SECOP II republicados y ya convertidos: importa los documentos del aviso nuevo (sin modelo, sin costo).
-// Best-effort: un aviso que datos.gov.co aún no publica queda pendiente para la siguiente corrida y nunca hace
-// fallar la importación del Radar.
+// Procesos SECOP II republicados y ya convertidos: importa los documentos del aviso nuevo (sin modelo, sin costo) cuando
+// datos.gov.co publica el mismo conjunto en dos corridas seguidas. Best-effort: lo que aún no está listo queda pendiente
+// para la siguiente corrida y nunca hace fallar la importación del Radar.
 async function runRepublicationDocuments() {
   try {
     const { runAgt002RepublicationDocumentRefresh } = await import('../../agt002-republication-followup.js');
     const events = await runAgt002RepublicationDocumentRefresh(database, {
+      probeDocuments: (opportunityId, options) => api.probeRepublishedTenderDocumentSet(database, opportunityId, options),
       importDocuments: (opportunityId, options) => api.importRepublishedTenderDocuments(database, opportunityId, options),
     });
     for (const event of events) log(event);

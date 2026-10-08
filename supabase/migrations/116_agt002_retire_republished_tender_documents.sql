@@ -10,6 +10,10 @@
 -- las versiones vigentes de una fuente oficial cuya identidad lógica (nombre normalizado) no está en
 -- el conjunto nuevo. Rechaza un conjunto vacío para no dejar nunca el expediente sin documentos.
 -- Sólo service_role (job del host); el actor queda validado como perfil humano o agente activo.
+--
+-- psi_append_opportunity_observation_line agrega una línea visible a las observaciones de una
+-- oportunidad en una sola sentencia (sin leer y reescribir el campo completo desde la aplicación,
+-- para no pisar ediciones humanas) y sólo si esa línea exacta aún no está.
 begin;
 
 create or replace function public.psi_retire_tender_document_versions(
@@ -68,5 +72,37 @@ revoke all on function public.psi_retire_tender_document_versions(uuid, uuid, te
 revoke all on function public.psi_retire_tender_document_versions(uuid, uuid, text, text[], uuid) from authenticated;
 revoke all on function public.psi_retire_tender_document_versions(uuid, uuid, text, text[], uuid) from anon;
 grant execute on function public.psi_retire_tender_document_versions(uuid, uuid, text, text[], uuid) to service_role;
+
+create or replace function public.psi_append_opportunity_observation_line(
+  p_opportunity_id uuid,
+  p_line text
+) returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_line text := btrim(p_line);
+  v_count integer := 0;
+begin
+  if p_opportunity_id is null or nullif(v_line, '') is null or position(E'\n' in v_line) > 0 then
+    raise exception 'La oportunidad y una línea no vacía (sin saltos) son obligatorias.' using errcode = '22023';
+  end if;
+  update public.psi_sales_opportunities
+     set observaciones = case
+       when nullif(btrim(coalesce(observaciones, '')), '') is null then v_line
+       else observaciones || E'\n' || v_line
+     end
+   where id = p_opportunity_id
+     and not (v_line = any (string_to_array(coalesce(observaciones, ''), E'\n')));
+  get diagnostics v_count = row_count;
+  return v_count > 0;
+end;
+$$;
+
+revoke all on function public.psi_append_opportunity_observation_line(uuid, text) from public;
+revoke all on function public.psi_append_opportunity_observation_line(uuid, text) from authenticated;
+revoke all on function public.psi_append_opportunity_observation_line(uuid, text) from anon;
+grant execute on function public.psi_append_opportunity_observation_line(uuid, text) to service_role;
 
 commit;
