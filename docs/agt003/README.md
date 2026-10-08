@@ -42,9 +42,13 @@ AGT-003 no puede:
 | Capacidad | Contrato | Estado |
 | --- | --- | --- |
 | `agt003.priorities.read` | `contracts/agents/AGT-003/v1/` | V1 inmutable, read-only |
-| `agt003.opportunity-copilot.preview` | `contracts/agents/AGT-003/v2-draft/` | draft inactivo; revisión humana |
-| `agt003.opportunity-preflight.preview` | `contracts/agents/AGT-003/v2-draft/` | draft inactivo; no persiste resultado |
+| `agt003.opportunity-copilot.preview` | `contracts/agents/AGT-003/v2-draft/` | en uso por los comerciales desde 2026-10-08 (PR #323/#325, permiso `vigia_copilot_pilot`); tope `AGT003_COPILOT_DAILY_MAX_RUNS` (20/día); borrador editable, nunca envía; revisión humana; registro `psi_agt003_copilot_runs` (migración 043) |
+| `agt003.opportunity-preflight.preview` | `contracts/agents/AGT-003/v2-draft/` | en uso como paso previo del copiloto; no persiste resultado |
 | `agt003.lead-deep-analysis` | `src/vigia/lead-analysis.js` (contrato 1.0, `LEAD_ANALYSIS_OUTPUT_SCHEMA`) | premio por perfil completo; lee sólo la web pública del cliente (HTTPS, su dominio); revisión humana; registro inmutable `psi_agt003_lead_analyses` (migración 114); tope mensual `AGT003_LEAD_ANALYSIS_MONTHLY_MAX` (30) |
+| `agt003.weekly_digest` | `ops/agt003-weekly-digest/` (contrato `agt003-weekly-digest-v1`) | lunes 11:45 UTC; sin IA; el CRM deja un outbox auditable y nunca envía; Hermes entrega desde el buzón de Juan y deja recibo en `/var/lib/agt003-weekly-digest/receipts/` |
+
+Los contratos `v2-draft` siguen siendo borradores de contrato: estar en uso en el CRM no equivale a la activación
+institucional P3.3.
 
 Las rutas visibles actuales son:
 
