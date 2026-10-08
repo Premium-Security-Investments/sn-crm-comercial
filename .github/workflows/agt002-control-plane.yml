@@ -200,8 +200,9 @@ jobs:
       #   - host jobs (initial_analysis_worker, auto_initial, radar_daily_*, radar_requests): the
       #     bridge's read-only host-surface route, <bridge URL>/<surface>, which reads the systemd
       #     unit's pinned release. No per-surface variable is needed.
-      # A surface that cannot be observed is reported as an "unobserved" warning, never as drift
-      # and never as fine. A real mismatch fails the job.
+      # A surface that cannot be observed fails the job just like a real mismatch. The only
+      # warning is a host route the bridge answers 404 for while the bridge itself is outdated,
+      # until AGT002_HOST_ROUTE_GRACE_UNTIL_UTC (scripts/agt002-check-drift.mjs).
       - name: Derive desired version from desired sha
         if: github.event_name != 'pull_request'
         run: |
