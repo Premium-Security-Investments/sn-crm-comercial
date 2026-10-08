@@ -40,9 +40,15 @@ test('builds input only from changed evidence and mechanically carries unaffecte
     manifest,
     changedEvidence: [{ signal_id: 'signal-1', name: 'Adenda', text: changedText }],
     priorFindings: [{ finding_ref: 'finding-1', value: 'unchanged' }, { finding_ref: 'finding-2', value: 're-evaluate' }],
+    snapshotId: 'snapshot-2',
   });
   assert.equal(input.analysisDocuments.length, 1);
-  assert.equal(input.analysisDocuments[0].content, changedText);
+  assert.equal(input.analysisDocuments[0].extracted_text, changedText);
+  assert.equal(input.analysisDocuments[0].snapshot_id, 'snapshot-2');
+  assert.deepEqual(Object.keys(input.analysisDocuments[0]).sort(), [
+    'content_hash', 'current', 'document_id', 'document_type', 'document_version_id',
+    'extracted_text', 'name', 'opportunity_id', 'snapshot_id', 'version',
+  ].sort());
   assert.deepEqual(input.deepAnalysis.unaffected_finding_refs, ['finding-1']);
   assert.deepEqual(input.deepAnalysis.affected_findings, [{ finding_ref: 'finding-2', value: 're-evaluate' }]);
   assert.equal(JSON.stringify(input).includes('all_current_documents'), false);
@@ -54,5 +60,12 @@ test('rejects content that does not match the frozen changed member', () => {
     manifest,
     changedEvidence: [{ signal_id: 'signal-1', name: 'Adenda', text: 'other' }],
     priorFindings: [],
+    snapshotId: 'snapshot-2',
   }), /no coincide/);
+});
+
+test('accepts an INITIAL predecessor without a legacy context id', () => {
+  const manifest = buildAgt002IncrementalDeltaManifest({ ...base, priorContextVersionId: null });
+  assert.equal(manifest.prior_context_version_id, null);
+  assert.deepEqual(validateAgt002IncrementalDeltaManifest(manifest), manifest);
 });

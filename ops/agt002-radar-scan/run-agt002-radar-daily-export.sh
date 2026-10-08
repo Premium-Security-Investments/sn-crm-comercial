@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AGT-002 Radar daily wrapper: export -> scan -> reconciliation -> worker-kick, strictly serial,
+# AGT-002 Radar daily wrapper: export -> scan -> reconciliation -> one conditional R1 recovery wake,
 # fail-closed on the first three stages. No secrets are read, sourced, or exported here; every
 # unit's own systemd EnvironmentFile carries its credentials. See
 # docs/superpowers/specs/2026-08-28-agt002-daily-scan-queue-design.md §6.3.
@@ -28,12 +28,12 @@ if [ "$reconcile_exit" -ne 0 ]; then
   exit 30
 fi
 
-systemctl start agt002-radar-pipeline.service
+systemctl start agt002-incremental-recovery.service
 worker_exit=$?
 if [ "$worker_exit" -ne 0 ]; then
-  printf '{"event":"agt002_radar_daily_wrapper","stage":"worker_kick","level":"warning","exit_code":%d,"sources_persisted":true,"scan_completed":true,"reconciliation_completed":true,"timer_fallback":true}\n' "$worker_exit"
+  printf '{"event":"agt002_radar_daily_wrapper","stage":"incremental_recovery","level":"warning","exit_code":%d,"sources_persisted":true,"scan_completed":true,"reconciliation_completed":true}\n' "$worker_exit"
   exit 0
 fi
 
-printf '{"event":"agt002_radar_daily_wrapper","stage":"completed","exit_code":0,"sources_persisted":true,"scan_completed":true,"reconciliation_completed":true,"worker_kick_completed":true}\n'
+printf '{"event":"agt002_radar_daily_wrapper","stage":"completed","exit_code":0,"sources_persisted":true,"scan_completed":true,"reconciliation_completed":true,"incremental_recovery_completed":true}\n'
 exit 0

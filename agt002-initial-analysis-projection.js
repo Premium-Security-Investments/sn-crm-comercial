@@ -19,8 +19,8 @@ function failed(jobId, errorCode, message) {
 
 /**
  * Produces the only browser-facing INITIAL state. It trusts durable job/run columns, never an
- * arbitrary result JSON. A completed job is not success unless its exact current canonical
- * INITIAL run can also be read back.
+ * arbitrary result JSON. A completed INITIAL artifact remains readable after a proven canonical
+ * incremental successor; that successor does not rewrite the historical pre_go report.
  */
 export function projectAgt002InitialAnalysisState({ job, run } = {}) {
   if (!job && !run) {
@@ -58,8 +58,7 @@ export function projectAgt002InitialAnalysisState({ job, run } = {}) {
     const runMatches = typeof job.analysis_run_id === 'string'
       && run?.id === job.analysis_run_id
       && run.status === 'completed'
-      && run.canonical === true
-      && run.current === true
+      && ((run.canonical === true && run.current === true) || run.superseded_by_incremental === true)
       && ((run.analysis_kind === 'INITIAL' && run.analysis_version === 1)
         // Migration 108: a REANALYSIS successor is the opportunity's canonical analysis from version 2 on.
         || (run.analysis_kind === 'REANALYSIS' && Number.isInteger(run.analysis_version) && run.analysis_version >= 2));

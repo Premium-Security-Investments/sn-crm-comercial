@@ -210,7 +210,7 @@ assert.match(
 );
 assert.match(
   postBridge,
-  /const persistenceParams = \{[\s\S]*?semanticSourceDocuments: analysisContext\?\.documents \?\? null,\s*\n\s*evidenceIdentity,\s*\n\s*\};/,
+  /const persistenceParams = \{[\s\S]*?semanticSourceDocuments: analysisContext\?\.documents \?\? null,\s*\n\s*evidenceIdentity,\s*\n\s*incrementalManifestHash: context\.incrementalManifestHash \?\? null,\s*\n\s*\};/,
   'persistenceParams must be built once, carrying evidenceIdentity',
 );
 assert.equal(count(postBridge, 'const persistenceParams = {'), 1, 'persistenceParams must be built exactly once, never rebuilt per retry attempt');

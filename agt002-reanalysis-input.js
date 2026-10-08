@@ -4,6 +4,7 @@ import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsO
 import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 import { AGT002_WORKSET_SOURCE_CLASSIFICATIONS } from './agt002-governed-document-worksets.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
+import { validateAgt002IncrementalDeltaManifest } from './agt002-incremental-analysis-input.js';
 
 function object(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -151,6 +152,7 @@ export function buildAgt002FrozenEngineInput({
   manizalesManifestSource = null,
   idempotencyKey,
   governedWorksetExtension = null,
+  incrementalDeltaManifest = null,
 } = {}) {
   // AGT-002 root-cause fix: the reasoning effort a NEW job freezes always resolves to a real,
   // explicit, allowlisted value — absence defaults to the fastest operationally-validated level
@@ -191,6 +193,33 @@ export function buildAgt002FrozenEngineInput({
   const validatedGovernedWorksetExtension = governedWorksetExtension === null
     ? null
     : validateAgt002GovernedWorksetExtension(governedWorksetExtension);
+  if (validatedGovernedWorksetExtension && incrementalDeltaManifest !== null) {
+    throw new Error('AGT-002 reanalysis cannot combine a governed full workset with an incremental delta.');
+  }
+  const validatedIncrementalDeltaManifest = incrementalDeltaManifest === null
+    ? null
+    : validateAgt002IncrementalDeltaManifest(incrementalDeltaManifest);
+  if (validatedIncrementalDeltaManifest) {
+    if (validatedIncrementalDeltaManifest.opportunity_id !== analysisContext.opportunity?.id
+      || validatedIncrementalDeltaManifest.tender_id !== analysisContext.tenderId
+      || analysisContext.deepAnalysis?.mode !== 'incremental_delta'
+      || !Array.isArray(analysisContext.documents)
+      || analysisContext.documents.length !== validatedIncrementalDeltaManifest.members.length) {
+      throw new Error('AGT-002 incremental delta does not match the frozen analysis context.');
+    }
+    for (let index = 0; index < validatedIncrementalDeltaManifest.members.length; index += 1) {
+      const member = validatedIncrementalDeltaManifest.members[index];
+      const document = analysisContext.documents[index];
+      if (!object(document)
+        || document.document_id !== member.source_id
+        || document.document_version_id !== member.source_version
+        || document.content_hash !== member.content_hash
+        || document.opportunity_id !== validatedIncrementalDeltaManifest.opportunity_id
+        || document.snapshot_id !== analysisContext.snapshotId) {
+        throw new Error('AGT-002 incremental document does not match its frozen manifest member.');
+      }
+    }
+  }
 
   const flags = {};
   for (const name of ANALYSIS_FLAG_NAMES) flags[name] = analysisConfig[name] === true;
@@ -213,6 +242,9 @@ export function buildAgt002FrozenEngineInput({
     ...(validatedGovernedWorksetExtension ? {
       document_workset_identity: validatedGovernedWorksetExtension.document_workset_identity,
       governed_workset_members: validatedGovernedWorksetExtension.governed_workset_members,
+    } : {}),
+    ...(validatedIncrementalDeltaManifest ? {
+      incremental_delta_manifest: validatedIncrementalDeltaManifest,
     } : {}),
   }, 'input'));
 }

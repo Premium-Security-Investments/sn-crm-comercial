@@ -6,6 +6,7 @@ import {
 } from './agt002-reanalysis-jobs.js';
 import { AGT002_CHECKPOINT_ERROR_CODES } from './agt002-analysis-checkpoints.js';
 import { AGT002_V3_SAFE_VALIDATION_CODES } from './agt002-preview-engine.js';
+import { closeAgt002IncrementalChangeSet, startAgt002IncrementalChangeSet } from './agt002-incremental-reanalysis-triggers.js';
 
 export const AGT002_REANALYSIS_QUEUE_ERROR_CODES = Object.freeze([
   'timeout',
@@ -83,6 +84,9 @@ export function createAgt002ReanalysisWorker({
   claimJob = claimAgt002ReanalysisJob,
   completeJob = completeAgt002ReanalysisJob,
   failJob = failAgt002ReanalysisJob,
+  startIncrementalSet = startAgt002IncrementalChangeSet,
+  closeIncrementalSet = closeAgt002IncrementalChangeSet,
+  workerId = 'agt002-reanalysis-worker',
 } = {}) {
   if (!database || typeof executeJob !== 'function') {
     throw new Error('AGT-002 reanalysis worker requires database and executeJob.');
@@ -95,6 +99,13 @@ export function createAgt002ReanalysisWorker({
     async runOnce() {
       const job = await claimJob(database, { leaseSeconds });
       if (!job) return { status: 'empty' };
+      const isIncremental = Object.hasOwn(job.frozenEngineInput || {}, 'incremental_delta_manifest');
+      const closeIncremental = async ({ outcome, analysisRunId = null, safeError = null }) => {
+        if (!isIncremental) return { status: 'not_incremental' };
+        return closeIncrementalSet(database, {
+          jobId: job.jobId, outcome, analysisRunId, safeError, workerId,
+        });
+      };
 
       // Deterministic stage-boundary heartbeat: fenced by THIS job's own jobId+leaseId, renewing
       // for the worker's own configured lease window. The executor decides when (and whether) to
@@ -115,15 +126,18 @@ export function createAgt002ReanalysisWorker({
 
       let outcome;
       try {
+        if (isIncremental) await startIncrementalSet(database, { jobId: job.jobId, workerId });
         outcome = await executeJob(database, job, { beforeProviderCall });
       } catch (error) {
         const errorCode = leaseLost ? 'lease_lost' : classifyAgt002ReanalysisWorkerError(error);
         await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, errorCode });
+        await closeIncremental({ outcome: 'failed', safeError: errorCode });
         return { status: 'unavailable', jobId: job.jobId, errorCode };
       }
 
       if (leaseLost) {
         await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, errorCode: 'lease_lost' });
+        await closeIncremental({ outcome: 'failed', safeError: 'lease_lost' });
         return { status: 'unavailable', jobId: job.jobId, errorCode: 'lease_lost' };
       }
 
@@ -131,22 +145,26 @@ export function createAgt002ReanalysisWorker({
         ? outcome.analysis_run_id.trim()
         : null;
       if (outcome?.status === 'completed' && analysisRunId && outcome?.queue_finalized === true) {
+        await closeIncremental({ outcome: 'completed', analysisRunId });
         return { status: 'completed', jobId: job.jobId, analysisRunId };
       }
       if (analysisRunId) {
         try {
           await completeJob(database, { jobId: job.jobId, leaseId: job.leaseId, analysisRunId });
-          return { status: 'completed', jobId: job.jobId, analysisRunId };
         } catch {
           await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, errorCode: 'persistence_failure' });
+          await closeIncremental({ outcome: 'failed', safeError: 'persistence_failure' });
           return { status: 'unavailable', jobId: job.jobId, errorCode: 'persistence_failure' };
         }
+        await closeIncremental({ outcome: 'completed', analysisRunId });
+        return { status: 'completed', jobId: job.jobId, analysisRunId };
       }
 
       const errorCode = outcome?.status === 'unavailable'
         ? closedOutcomeCode(outcome.error_code)
         : 'invalid_output';
       await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, errorCode });
+      await closeIncremental({ outcome: 'failed', safeError: errorCode });
       return { status: 'unavailable', jobId: job.jobId, errorCode };
     },
   });

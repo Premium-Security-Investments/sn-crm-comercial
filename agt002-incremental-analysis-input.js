@@ -20,6 +20,10 @@ function text(value, label) {
   return value.trim();
 }
 
+function optionalText(value, label) {
+  return value == null ? null : text(value, label);
+}
+
 function exactKeys(value, allowed, label) {
   const extras = Object.keys(value).filter(key => !allowed.includes(key));
   if (extras.length) throw new Error(`${label} contiene campos no permitidos: ${extras.join(', ')}.`);
@@ -81,7 +85,10 @@ export function buildAgt002IncrementalDeltaManifest({
     change_set_id: text(changeSetId, 'El conjunto de cambios'),
     source_batch_ids: sourceBatchIds,
     prior_canonical_run_id: text(priorCanonicalRunId, 'La corrida canónica previa'),
-    prior_context_version_id: text(priorContextVersionId, 'La versión de contexto previa'),
+    // INITIAL v2 is the authoritative first-run path and intentionally has no legacy
+    // context_version_id. R1 binds that predecessor explicitly as null; the incremental
+    // job registers its own current snapshot context before it is queued.
+    prior_context_version_id: optionalText(priorContextVersionId, 'La versión de contexto previa'),
     policy_version: text(policyVersion, 'La versión de política'),
     members: normalizedMembers,
     affected_finding_refs: [...new Set(affectedFindingRefs.map(value => text(value, 'La referencia de hallazgo')))].sort(),
@@ -129,13 +136,21 @@ export function validateAgt002IncrementalDeltaManifest(value) {
   return rebuilt;
 }
 
-export function buildAgt002IncrementalAnalysisInput({ manifest, changedEvidence, priorFindings }) {
+export function buildAgt002IncrementalAnalysisInput({
+  manifest,
+  changedEvidence,
+  priorFindings,
+  opportunityId = manifest?.opportunity_id,
+  snapshotId,
+}) {
   const frozenManifest = validateAgt002IncrementalDeltaManifest(manifest);
   if (!Array.isArray(changedEvidence) || !Array.isArray(priorFindings)) {
     throw new Error('La evidencia cambiada y los hallazgos previos deben ser listas.');
   }
   const evidenceBySignal = new Map(changedEvidence.map(item => [item?.signal_id, item]));
-  const analysisDocuments = frozenManifest.members.map(member => {
+  const normalizedOpportunityId = text(opportunityId, 'La oportunidad del input incremental');
+  const normalizedSnapshotId = text(snapshotId, 'El snapshot del input incremental');
+  const analysisDocuments = frozenManifest.members.map((member, index) => {
     const evidence = evidenceBySignal.get(member.signal_id);
     if (!record(evidence) || typeof evidence.text !== 'string'
       || computeAgt002StableContentHash(evidence.text) !== member.content_hash) {
@@ -144,12 +159,14 @@ export function buildAgt002IncrementalAnalysisInput({ manifest, changedEvidence,
     return Object.freeze({
       document_id: member.source_id,
       document_version_id: member.source_version,
-      name: text(evidence.name, 'El nombre de la evidencia'),
+      opportunity_id: normalizedOpportunityId,
+      snapshot_id: normalizedSnapshotId,
       document_type: member.source_type,
-      content: evidence.text,
+      name: text(evidence.name, 'El nombre de la evidencia'),
       content_hash: member.content_hash,
-      trigger_kind: member.trigger_kind,
-      signal_id: member.signal_id,
+      version: Number.isInteger(evidence.version) && evidence.version > 0 ? evidence.version : index + 1,
+      current: true,
+      extracted_text: evidence.text,
     });
   });
   const affected = new Set(frozenManifest.affected_finding_refs);

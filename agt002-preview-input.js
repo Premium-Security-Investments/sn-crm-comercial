@@ -55,6 +55,26 @@ function sanitizeValue(value) {
   );
 }
 
+function buildIncrementalDeltaSection(deepAnalysis) {
+  if (deepAnalysis?.mode !== 'incremental_delta') return null;
+  if (typeof deepAnalysis.prior_canonical_run_id !== 'string' || !deepAnalysis.prior_canonical_run_id.trim()
+    || !Number.isInteger(deepAnalysis.changed_member_count) || deepAnalysis.changed_member_count < 1
+    || !Array.isArray(deepAnalysis.affected_findings)
+    || !Array.isArray(deepAnalysis.unaffected_finding_refs)
+    || !Array.isArray(deepAnalysis.comparison_excerpts)) {
+    throw new Error('AGT-002 R1 requiere un contexto incremental cerrado y atribuible.');
+  }
+  return sanitizeValue({
+    schema_version: 'agt002.incremental_model_context.v1',
+    prior_canonical_run_id: deepAnalysis.prior_canonical_run_id,
+    changed_member_count: deepAnalysis.changed_member_count,
+    affected_findings: deepAnalysis.affected_findings,
+    unaffected_finding_count: deepAnalysis.unaffected_finding_refs.length,
+    comparison_excerpts: deepAnalysis.comparison_excerpts,
+    instruction: 'Analice únicamente el impacto de la evidencia cambiada sobre los hallazgos afectados. No reinterprete los hallazgos no afectados y no emita una decisión comercial.',
+  });
+}
+
 function stableDocumentId(document) {
   const id = document?.id ?? document?.document_id;
   if (typeof id !== 'string' || !id.trim()) {
@@ -569,6 +589,8 @@ function buildContextV2Input({
       documentRetrieval ? { ...deepAnalysis, matrix: resolveAgt002DeepAnalysisMatrix(deepAnalysis) } : deepAnalysis,
     )),
   };
+  const incrementalDelta = buildIncrementalDeltaSection(deepAnalysis);
+  if (incrementalDelta) result.incremental_delta = incrementalDelta;
 
   if (documentRetrieval) {
     const retrieval = buildDocumentEvidencePackage({
@@ -644,5 +666,7 @@ export function buildAgt002PreviewInput({
   };
   if (canonicalOnly) input.objective_validations = sanitizeValue(buildAgt002ObjectiveValidations(deepAnalysis));
   else input.deep_analysis = sanitizeValue(deepAnalysis);
+  const incrementalDelta = buildIncrementalDeltaSection(deepAnalysis);
+  if (incrementalDelta) input.incremental_delta = incrementalDelta;
   return input;
 }

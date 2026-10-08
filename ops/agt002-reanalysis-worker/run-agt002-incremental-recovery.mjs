@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+import { createClient } from '@supabase/supabase-js';
+import { createAgt002ReanalysisExecutor } from '../../agt002-reanalysis-executor.js';
+import { createAgt002IncrementalHostDrain } from '../../agt002-incremental-host-drain.js';
+import { resolveAgt002GovernedDocumentForExecution } from '../../agt002-governed-document-rehydration.js';
+import { resolveAgt002GovernedContextVersionForExecution } from '../../agt002-governed-context-version-rehydration.js';
+
+const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+if (!supabaseUrl || !serviceRoleKey) {
+  console.error(JSON.stringify({ event: 'agt002_incremental_recovery_unavailable', code: 'CONFIG_MISSING' }));
+  process.exit(1);
+}
+const database = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+const executeJob = createAgt002ReanalysisExecutor({
+  environment: process.env,
+  governedDocumentResolver: args => resolveAgt002GovernedDocumentForExecution(database, args),
+  governedContextVersionResolver: resolveAgt002GovernedContextVersionForExecution,
+});
+try {
+  const result = await createAgt002IncrementalHostDrain({
+    database, executeJob, environment: process.env,
+  }).run();
+  console.log(JSON.stringify({ event: 'agt002_incremental_recovery_finished', ...result }));
+} catch {
+  console.error(JSON.stringify({ event: 'agt002_incremental_recovery_failed', code: 'WORKER_FAILURE' }));
+  process.exit(1);
+}

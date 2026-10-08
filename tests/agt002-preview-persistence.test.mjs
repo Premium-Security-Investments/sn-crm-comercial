@@ -168,6 +168,27 @@ function fakeDatabase({ onRpc } = {}) {
   assert.match(v3a, /^[0-9a-f]{64}$/);
 }
 
+// R1 binds the exact sealed delta manifest into the existing canonical run identity without
+// changing legacy keys when no incremental manifest exists.
+{
+  const base = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1' });
+  const manifestA = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', incrementalManifestHash: 'a'.repeat(64),
+  });
+  const manifestAReplay = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', incrementalManifestHash: 'a'.repeat(64),
+  });
+  const manifestB = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', incrementalManifestHash: 'b'.repeat(64),
+  });
+  assert.equal(manifestA, manifestAReplay);
+  assert.notEqual(manifestA, base);
+  assert.notEqual(manifestA, manifestB);
+  assert.throws(() => computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', incrementalManifestHash: 'invalid',
+  }), /manifest_hash SHA-256/);
+}
+
 // The optional company-evidence identity triple binds the run to WHICH evidence backed it:
 // absent entirely, the key must be byte-for-byte the same as before this triple existed
 // (exact backward compatibility); present, it must be all-or-nothing and change the key.
@@ -1222,6 +1243,28 @@ for (const bad of [
     envelope: envelope(), evidenceIdentity: bad,
   }), /evidencia empresarial/i);
   assert.equal(database.rpcCalls.length, 0, 'a malformed evidenceIdentity must never call the RPC');
+}
+
+// R1 persistence re-derives the same manifest-bound identity that admission reserved.
+// Omitting or changing the manifest hash must never consume that reservation.
+{
+  const manifestHash = 'd'.repeat(64);
+  const expectedKey = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'agt002-preview-policy-v1', model: 'synthetic-codex-model',
+    incrementalManifestHash: manifestHash,
+  });
+  const database = fakeDatabase();
+  await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), incrementalManifestHash: manifestHash, expectedIdempotencyKey: expectedKey,
+  });
+  assert.equal(database.rpcCalls[0].params.p_idempotency_key, expectedKey);
+  const rejected = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(rejected, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), incrementalManifestHash: 'e'.repeat(64), expectedIdempotencyKey: expectedKey,
+  }), /idempotencia|reserva|identidad/i);
+  assert.equal(rejected.rpcCalls.length, 0);
 }
 
 console.log('AGT-002 Preview persistence (audit, idempotency, no secrets) passed');

@@ -3,5 +3,10 @@
 # Si el DNS efectivo exige la forma con puntos, usar explícitamente
 # AGT002_BRIDGE_HOST=agt002.5.78.140.24.sslip.io y regenerar/revisar este vhost antes de aplicarlo.
 agt002.5-78-140-24.sslip.io {
-	reverse_proxy 127.0.0.1:8787
+	handle /v1/agt002/reanalysis/dispatch {
+		reverse_proxy 127.0.0.1:8788
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8787
+	}
 }

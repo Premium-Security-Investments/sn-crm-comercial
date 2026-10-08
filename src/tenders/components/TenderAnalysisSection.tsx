@@ -118,7 +118,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
       <TenderPreAnalysisPanel documentsCount={documents.length} processing={processingStatus} statusText={statusText} statusTone={statusTone} />
     </div>;
   }
-  if (initialFirst && initialAnalysis) {
+  if (initialFirst && initialAnalysis && !analysis?.incremental_reanalysis) {
     return <div className="tender-analysis-section tender-detail-anchor is-initial-first">
       {initialAnalysis.state !== 'ready' && <section className={`notice agt002-initial-state state-${initialAnalysis.state}`} role={initialAnalysis.state === 'failed' ? 'alert' : 'status'} aria-label="Estado del análisis inicial">
         <strong>Análisis inicial: {agt002InitialAnalysisStateLabel(initialAnalysis.state)}</strong>
@@ -140,6 +140,11 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
       {initialAnalysis.state === 'ready' && <small>El reporte está disponible. La decisión continúa siendo exclusivamente humana.</small>}
     </section>}
     {initialAnalysis?.state === 'ready' && initialReport && <TenderInitialReport report={initialReport} />}
+    {analysis?.incremental_reanalysis && <section className="notice agt002-incremental-summary" role="status" aria-label="Actualización incremental del análisis">
+      <strong>Análisis actualizado por nueva evidencia</strong>
+      <span>Se analizaron {analysis.incremental_reanalysis.changed_member_count} cambio(s) y {analysis.incremental_reanalysis.affected_finding_refs.length} hallazgo(s) relacionado(s). La revisión y cualquier decisión continúan siendo humanas.</span>
+      <small>Corrida anterior: {analysis.incremental_reanalysis.prior_run_id} · Corrida vigente: {analysis.incremental_reanalysis.run_id}</small>
+    </section>}
     {!hasIntegralV3Payload && <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con {VIGIA_VISIBLE_NAMES.tenders}</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong></div></header>}
     {!hasDocuments && <div className="document-empty-state"><strong>Sin documentos</strong><span>Actualice o cargue documentos antes de analizar con {VIGIA_VISIBLE_NAMES.tenders}.</span></div>}
     {hasDocuments && !analysis && !processingPresentation.visible && <div className="document-empty-state"><strong>Análisis pendiente</strong><span>Hay documentos vigentes, pero todavía no existe una conclusión preliminar para revisar.</span></div>}

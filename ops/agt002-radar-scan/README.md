@@ -15,8 +15,8 @@ Este artefacto **no convierte licitaciones en oportunidades**, no registra GO/NO
 Sin `.timer`: este directorio no instala ningún temporizador. Se invoca:
 
 - desde `ops/agt002-radar-scan/run-agt002-radar-daily-export.sh`, el wrapper diario versionado que
-  encadena `export → systemctl start agt002-radar-scan.service → systemctl start
-  agt002-radar-pipeline.service` tras cada exportación de fuente exitosa del cron de Hermes;
+  encadena `export → scan → reconciliation → agt002-incremental-recovery.service`; este último es
+  el único despertar diario condicional de R1 y sale sin proveedor cuando no hay estado pendiente;
 - a mano, durante QA controlada, con `systemctl start agt002-radar-scan.service` (unidad ya
   instalada) o ejecutando directamente `run-agt002-radar-scan.mjs` con las variables de entorno de
   `env.example` cargadas en el shell local.

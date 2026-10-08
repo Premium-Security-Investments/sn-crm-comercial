@@ -180,6 +180,7 @@ export function computeAgt002PreviewIdempotencyKey({
   snapshotId, policyVersion, model, contextVersionId = null, legalCorpusVersionId = null, contractVersion = null,
   inventoryVersion = null, inventoryHash = null, snapshotHash = null,
   evidenceSourceSnapshotHash = null, evidencePreviewArtifactHash = null, evidenceSourceManifestVersion = null,
+  incrementalManifestHash = null,
 }) {
   const base = createHash('sha256').update(`agt002-preview\0${snapshotId}\0${policyVersion}\0${model}`).digest('hex');
   const withContext = contextVersionId
@@ -209,11 +210,18 @@ export function computeAgt002PreviewIdempotencyKey({
       `${withContract}\0evidence_source_snapshot_hash\0${evidenceSourceSnapshotHash}\0evidence_preview_artifact_hash\0${evidencePreviewArtifactHash}\0evidence_source_manifest_version\0${evidenceSourceManifestVersion}`,
     ).digest('hex');
   }
-  if (inventoryVersion === null && inventoryHash === null && snapshotHash === null) return withEvidenceIdentity;
-  if (![inventoryVersion, inventoryHash, snapshotHash].every(value => typeof value === 'string' && value.trim())) {
-    throw new Error('La identidad de idempotencia del inventario requiere versión, inventory_hash y snapshot_hash juntos.');
+  let withInventory = withEvidenceIdentity;
+  if (inventoryVersion !== null || inventoryHash !== null || snapshotHash !== null) {
+    if (![inventoryVersion, inventoryHash, snapshotHash].every(value => typeof value === 'string' && value.trim())) {
+      throw new Error('La identidad de idempotencia del inventario requiere versión, inventory_hash y snapshot_hash juntos.');
+    }
+    withInventory = createHash('sha256').update(`${withEvidenceIdentity}\0inventory_version\0${inventoryVersion}\0inventory_hash\0${inventoryHash}\0snapshot_hash\0${snapshotHash}`).digest('hex');
   }
-  return createHash('sha256').update(`${withEvidenceIdentity}\0inventory_version\0${inventoryVersion}\0inventory_hash\0${inventoryHash}\0snapshot_hash\0${snapshotHash}`).digest('hex');
+  if (incrementalManifestHash === null) return withInventory;
+  if (typeof incrementalManifestHash !== 'string' || !/^[0-9a-f]{64}$/.test(incrementalManifestHash)) {
+    throw new Error('La identidad incremental requiere un manifest_hash SHA-256 válido.');
+  }
+  return createHash('sha256').update(`${withInventory}\0incremental_manifest_hash\0${incrementalManifestHash}`).digest('hex');
 }
 
 /** Atomically reserves one cross-request provider slot in PostgreSQL. */
@@ -476,6 +484,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     contractVersion: isIntegralV3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
     ...inventoryIdentity,
     ...evidenceIdentityParams,
+    incrementalManifestHash: context?.incrementalManifestHash ?? null,
   });
   if (context?.expectedIdempotencyKey != null) {
     const expectedIdempotencyKey = requireId(context.expectedIdempotencyKey, 'La clave de idempotencia reservada');

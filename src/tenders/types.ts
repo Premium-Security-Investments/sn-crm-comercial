@@ -663,6 +663,20 @@ export type TenderDocumentAnalysis = {
   company_evidence_identity?: TenderCompanyEvidenceIdentity | null;
   decision_review?: TenderDecisionReview | null;
   decision_axis_analysis?: TenderDecisionAxisAnalysis | null;
+  incremental_reanalysis?: {
+    schema_version: 'agt002.incremental_projection.v1';
+    change_set_id: string;
+    prior_run_id: string;
+    run_id: string;
+    changed_member_count: number;
+    trigger_kinds: string[];
+    events: Array<{ trigger_kind: string; source_type: string; observed_at: string; actor_profile_id: string | null }>;
+    affected_finding_refs: string[];
+    unaffected_finding_count: number;
+    comparison_excerpt_count: number;
+    closed_at: string | null;
+    human_review_required: true;
+  } | null;
   [key: string]: unknown;
 };
 // Refleja exactamente lo que publicTenderDocumentProjection deja salir hacia el

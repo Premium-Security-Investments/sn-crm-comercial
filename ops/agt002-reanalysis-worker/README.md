@@ -8,7 +8,10 @@ Estos archivos son artefactos locales de instalación manual. Este cambio **no i
 - Cada invocación reclama como máximo un solo job y termina. Un ciclo vacío no llama al modelo.
 - El worker no reintenta automáticamente y no produce fallback por reglas.
 - Un fallo cierra el job como `unavailable` y conserva el análisis canónico anterior.
-- El timer agenda el siguiente ciclo después de finalizar el anterior, por lo que no solapa instancias del mismo servicio.
+- R1 no usa sondeo continuo: `agt002-incremental-dispatch.service` recibe un despertar HMAC para
+  un job UUID exacto y el worker procesa la cadena sucesora de forma serial y acotada.
+- `agt002-incremental-recovery.service` es el único despertar de recuperación, invocado una vez por
+  el wrapper diario después de Radar; consulta estado durable y sale sin modelo cuando no hay trabajo.
 - Los logs sólo contienen eventos y códigos cerrados; nunca valores del `EnvironmentFile` ni mensajes crudos del proveedor.
 - `AGT002_REANALYSIS_TARGET_JOB_ID` queda vacío en el timer normal. Una recuperación de generación autorizada se ejecuta de forma transitoria con el UUID exacto devuelto por la función administrativa; nunca se usa para escoger libremente otro job.
 
@@ -31,14 +34,14 @@ Estos archivos son artefactos locales de instalación manual. Este cambio **no i
 2. Crear el usuario/grupo de sistema sin shell `psi-agt002`.
 3. Instalar el checkout validado en `/opt/psi-comercial/app`; el usuario sólo necesita lectura/ejecución.
 4. Crear `/etc/psi-agt002-reanalysis/env` desde `env.example`, propietario `root:psi-agt002`, modo `0640`, sin registrar sus valores.
-5. Copiar `.service` y `.timer` a `/etc/systemd/system/`.
-6. Ejecutar `systemd-analyze verify` sobre ambas unidades.
-7. Ejecutar un ciclo controlado con `systemctl start agt002-reanalysis-worker.service` y revisar sólo eventos seguros en `journalctl`.
-8. Con autorización separada, habilitar el timer con `systemctl enable --now agt002-reanalysis-worker.timer`.
+5. Copiar las unidades `.service` a `/etc/systemd/system/`; no existe timer de reanálisis.
+6. Ejecutar `systemd-analyze verify` sobre las unidades.
+7. Iniciar y habilitar el receptor dirigido por evento sólo después del gate de despliegue.
+8. Ejecutar un ciclo de recuperación controlado con `systemctl start agt002-incremental-recovery.service`.
 
 ## Kill switch
 
-1. `systemctl disable --now agt002-reanalysis-worker.timer`.
+1. Apagar `AGT002_INCREMENTAL_DISPATCH_ENABLED` y detener `agt002-incremental-dispatch.service`.
 2. Permitir que un `oneshot` activo termine o detenerlo de forma controlada. Si se interrumpe y vence el lease, el siguiente claim lo cierra como `lease_lost`; nunca lo reencola.
 3. No ejecutar el rollback SQL mientras exista cualquier historial de jobs; el rollback falla cerradamente.
 

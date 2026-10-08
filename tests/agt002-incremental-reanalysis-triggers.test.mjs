@@ -24,7 +24,7 @@ test('accepts a server-owned precomputed official content hash without retaining
 test('uncertain evidence remains pending and does not build a manifest', async () => {
   const database = { rpc: async () => ({ data: { status: 'pending_validation', signal_ids: ['signal-1'] }, error: null }) };
   const result = await recordAgt002IncrementalSignals(database, {
-    opportunityId: 'opportunity-1', tenderId: 'tender-1', sourceTransactionId: 'tx-1',
+    opportunityId: 'opportunity-1', tenderId: 'tender-1', sourceTransactionId: 'tx-1', requestedBy: 'profile-1',
     signals: [{ trust_class: 'pending_validation' }],
   });
   assert.deepEqual(result, { status: 'pending_validation', signal_ids: ['signal-1'] });
@@ -37,7 +37,7 @@ test('sealed server result must reproduce the exact manifest hash', async () => 
     members: [{ signal_id: 'signal-1', trigger_kind: 'human_interaction', source_table: 'answers', source_type: 'answer', source_id: 'answer-1', source_version: 'v1', content_hash: 'a'.repeat(64), observed_at: '2026-10-08T00:00:00.000Z', actor_profile_id: 'profile-1', source_batch_id: null }],
   }, error: null }) };
   await assert.rejects(() => recordAgt002IncrementalSignals(database, {
-    opportunityId: 'opportunity-1', tenderId: 'tender-1', sourceTransactionId: 'tx-1',
+    opportunityId: 'opportunity-1', tenderId: 'tender-1', sourceTransactionId: 'tx-1', requestedBy: 'profile-1',
     signals: [{ trust_class: 'trusted' }],
   }), /hash server-side/);
 });
@@ -56,7 +56,7 @@ test('ready_to_seal is sealed before ingestion returns', async () => {
     return { data: { status: 'sealed', change_set_id: 'set-1', manifest_hash: manifestHash }, error: null };
   } };
   const result = await ingestAndSealAgt002IncrementalSignals(database, {
-    opportunityId: 'opportunity-1', tenderId: 'tender-1', sourceTransactionId: 'tx-1', signals: [{ trust_class: 'trusted' }],
+    opportunityId: 'opportunity-1', tenderId: 'tender-1', sourceTransactionId: 'tx-1', requestedBy: 'profile-1', signals: [{ trust_class: 'trusted' }],
   });
   assert.deepEqual(calls, ['psi_record_agt002_incremental_signals', 'psi_seal_agt002_incremental_change_set']);
   assert.equal(result.status, 'sealed');

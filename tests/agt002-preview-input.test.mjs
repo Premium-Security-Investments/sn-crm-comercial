@@ -137,6 +137,18 @@ assert.deepEqual(v2Input.commercial_context, contextV2Sections.commercial_contex
 assert.deepEqual(v2Input.human_evidence, []);
 assert.ok(Object.hasOwn(v2Input, 'objective_validations'), 'context v2 always carries deterministic objective validations');
 assert.equal(Object.hasOwn(v2Input, 'deep_analysis'), false, 'context v2 never carries the legacy deep_analysis/recommendation blob');
+
+const incrementalInput = buildAgt002PreviewInput({
+  documents, deepAnalysis: {
+    mode: 'incremental_delta', prior_canonical_run_id: 'run-0', changed_member_count: 1,
+    affected_findings: [{ finding_ref: 'finding-1', title: 'Póliza' }],
+    unaffected_finding_refs: ['finding-2'], comparison_excerpts: [],
+  }, snapshotId: 'snapshot-r1', contextV2: true, contextV2Sections,
+});
+assert.equal(incrementalInput.incremental_delta.prior_canonical_run_id, 'run-0');
+assert.equal(incrementalInput.incremental_delta.affected_findings[0].finding_ref, 'finding-1');
+assert.equal(incrementalInput.incremental_delta.unaffected_finding_count, 1);
+assert.equal(Object.hasOwn(incrementalInput, 'deep_analysis'), false);
 assert.equal(Object.hasOwn(v2Input, 'company_profile'), false, 'context v2 replaces the legacy misaligned company_profile fields');
 assert.equal(v2Input.documents.length, documents.length > AGT002_MAX_DOCUMENTS ? AGT002_MAX_DOCUMENTS : documents.length);
 

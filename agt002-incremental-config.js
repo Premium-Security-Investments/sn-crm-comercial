@@ -11,5 +11,12 @@ export function getAgt002IncrementalConfig(environment = process.env) {
     error.code = 'AGT002_INCREMENTAL_CONFIG_INVALID';
     throw error;
   }
-  return Object.freeze({ ingressEnabled, dispatchEnabled });
+  const workerDispatchUrl = String(environment.AGT002_INCREMENTAL_WORKER_DISPATCH_URL || '').trim();
+  const workerDispatchHmacSecret = String(environment.AGT002_HETZNER_BRIDGE_HMAC_SECRET || '');
+  if (dispatchEnabled && (!workerDispatchUrl || workerDispatchHmacSecret.length < 32)) {
+    const error = new Error('AGT-002 R1 requiere URL y secreto HMAC para el despacho dirigido por evento.');
+    error.code = 'AGT002_INCREMENTAL_CONFIG_INVALID';
+    throw error;
+  }
+  return Object.freeze({ ingressEnabled, dispatchEnabled, workerDispatchUrl, workerDispatchHmacSecret });
 }

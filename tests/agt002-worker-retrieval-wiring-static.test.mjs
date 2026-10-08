@@ -3,12 +3,18 @@ import { readFileSync } from 'node:fs';
 
 for (const file of ['server/index.js', 'api/[...path].js']) {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-  const adaptedCalls = source.match(/adaptAgt002RetrievalDocuments\(currentDocs, \{ opportunityId, snapshotId \}\)/g) || [];
+  const durableWorkerCalls = source.match(/adaptAgt002RetrievalDocuments\(currentDocs, \{ opportunityId, snapshotId \}\)/g) || [];
+  const canonicalReanalysisCalls = source.match(/adaptAgt002RetrievalDocuments\(isIncremental \? incrementalInput\.analysisDocuments : currentDocs, \{ opportunityId, snapshotId \}\)/g) || [];
 
   assert.equal(
-    adaptedCalls.length,
-    2,
-    `${file}: el worker durable y el reanálisis humano deben adaptar documentos al contrato cerrado AGT-002`,
+    durableWorkerCalls.length,
+    1,
+    `${file}: el worker durable debe adaptar documentos al contrato cerrado AGT-002`,
+  );
+  assert.equal(
+    canonicalReanalysisCalls.length,
+    1,
+    `${file}: el reanálisis canónico debe adaptar el delta R1 o los documentos humanos al contrato cerrado AGT-002`,
   );
 }
 

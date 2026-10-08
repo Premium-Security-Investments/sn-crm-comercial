@@ -93,9 +93,12 @@ import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
 import { agt002CanonicalEnqueueBlockCode } from '../agt002-canonical-enqueue-gate.js';
 import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../agt002-reanalysis-jobs.js';
 import { getAgt002IncrementalConfig } from '../agt002-incremental-config.js';
-import { ingestAgt002HumanResponseSignal, ingestAgt002OfficialDocumentBatchSignals } from '../agt002-incremental-source-ingestion.js';
+import { buildAgt002ActionableReviewSignalContent, buildAgt002CompanyEvidenceLinkSignalContent, ingestAgt002AuthorizedHumanSignals, ingestAgt002HumanResponseSignal, ingestAgt002OfficialDocumentBatchSignals } from '../agt002-incremental-source-ingestion.js';
+import { createAgt002IncrementalWorkerDispatchClient } from '../agt002-incremental-worker-dispatch-client.js';
+import { prepareAndDispatchAgt002IncrementalJob } from '../agt002-incremental-job-service.js';
 import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
+import { loadAgt002IncrementalProjection } from '../agt002-incremental-projection.js';
 import { readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
 import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId } from '../esu-direct-crawl.js';
@@ -179,6 +182,12 @@ if (!supabaseUrl || !serviceKey) {
 const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 const agt002AnalysisConfig = buildAgt002AnalysisConfig(process.env);
 const agt002IncrementalConfig = getAgt002IncrementalConfig(process.env);
+const agt002IncrementalWorkerDispatchClient = agt002IncrementalConfig.dispatchEnabled
+  ? createAgt002IncrementalWorkerDispatchClient({
+    url: agt002IncrementalConfig.workerDispatchUrl,
+    hmacSecret: agt002IncrementalConfig.workerDispatchHmacSecret,
+  })
+  : null;
 const agt002AnalysisObservability = createAgt002AnalysisObservability();
 
 async function loadAgt002LegalCorpusContextIfEnabled(database) {
@@ -247,6 +256,7 @@ async function enqueueAgt002CanonicalReanalysis(database, {
   opportunityId, tenderId, snapshotId, actorId, opportunity, currentDocs,
   companyProfile, deepAnalysis, contextV2Sections, companyDossierV2,
   humanEvidence = [],
+  incrementalInput = null,
 }) {
   const config = getAgt002PreviewRuntimeConfig(process.env);
   // F3: governance (and the company evidence identity it carries) is loaded once, before the
@@ -271,10 +281,13 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     ? AGT002_INTEGRAL_V3_POLICY_VERSION
     : config.policyVersion;
   const documentRetrieval = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL === true;
+  const isIncremental = incrementalInput != null;
   const analysisDocuments = documentRetrieval
-    ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
-    : currentDocs;
-  const documentGaps = await loadAgt002TenderRequirementDocumentGaps(database, { snapshotId });
+    ? adaptAgt002RetrievalDocuments(isIncremental ? incrementalInput.analysisDocuments : currentDocs, { opportunityId, snapshotId })
+    : (isIncremental ? incrementalInput.analysisDocuments : currentDocs);
+  const documentGaps = isIncremental
+    ? []
+    : await loadAgt002TenderRequirementDocumentGaps(database, { snapshotId });
   // The tender inventory lives inside the retrieval evidence packet. With
   // AGT002_DOCUMENT_RETRIEVAL off the envelope carries no evidence_coverage at all, so binding
   // an inventory identity into the reservation here would guarantee a mismatch against the
@@ -296,6 +309,7 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
     ...agt002EvidenceIdentityKeyParams(integralV3Governance?.evidenceIdentity),
     ...inventoryIdentity,
+    incrementalManifestHash: isIncremental ? incrementalInput.manifest.manifest_hash : null,
   });
   const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly: true });
   if (existingRun?.run_id) {
@@ -305,13 +319,16 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     };
   }
 
-  const manizalesManifestSource = await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId });
+  const manizalesManifestSource = isIncremental
+    ? null
+    : await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId });
   const analysisContext = {
     opportunity,
+    ...(isIncremental ? { tenderId } : {}),
     documents: analysisDocuments,
     documentGaps,
     companyProfile,
-    deepAnalysis,
+    deepAnalysis: isIncremental ? incrementalInput.deepAnalysis : deepAnalysis,
     snapshotId,
     canonicalOnly: true,
     contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence },
@@ -321,6 +338,7 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     analysisConfig: agt002AnalysisConfig,
     analysisContext,
     legalCorpusContext,
+    incrementalDeltaManifest: isIncremental ? incrementalInput.manifest : null,
     integralV3Governance,
     manizalesManifestSource,
     idempotencyKey,
@@ -342,6 +360,55 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     analysis: null,
     reused: job.status === 'existing',
   };
+}
+
+async function currentAgt002IncrementalSnapshotId(database, opportunityId) {
+  const state = await must(database.from('psi_tender_document_state')
+    .select('current_snapshot_id,refresh_in_progress')
+    .eq('opportunity_id', opportunityId)
+    .maybeSingle());
+  if (!state?.current_snapshot_id || state.refresh_in_progress === true) {
+    throw new Error('R1 requiere un snapshot documental vigente y cerrado.');
+  }
+  return state.current_snapshot_id;
+}
+
+async function dispatchSealedAgt002Incremental(database, { manifest, snapshotId, actorProfileId }) {
+  return prepareAndDispatchAgt002IncrementalJob(database, {
+    manifest, snapshotId, actorProfileId, environment: process.env,
+    wakeWorker: agt002IncrementalWorkerDispatchClient
+      ? ({ jobId }) => agt002IncrementalWorkerDispatchClient.wake({ jobId })
+      : null,
+  });
+}
+
+async function ingestAgt002ActionableReviewEvent(database, { context, profile, event }) {
+  if (!agt002IncrementalConfig.ingressEnabled) return null;
+  if (!String(event?.note || '').trim()) return null;
+  const incremental = await ingestAgt002AuthorizedHumanSignals(database, {
+    opportunityId: context.item.opportunity_id,
+    tenderId: context.item.tender_id,
+    profile,
+    sourceTransactionId: `actionable-review:${event.id}`,
+    ensureOpportunityAccess,
+    signalInputs: [{
+      triggerKind: 'actionable_review',
+      sourceTable: 'psi_tender_actionable_review_events',
+      sourceType: String(event.event_type),
+      sourceId: String(event.id),
+      sourceVersion: `${event.id}:${event.sequence}`,
+      content: buildAgt002ActionableReviewSignalContent(event),
+      observedAt: String(event.created_at),
+    }],
+  });
+  if (agt002IncrementalConfig.dispatchEnabled && incremental.status === 'sealed') {
+    incremental.dispatch = await dispatchSealedAgt002Incremental(database, {
+      manifest: incremental.manifest,
+      snapshotId: await currentAgt002IncrementalSnapshotId(database, context.item.opportunity_id),
+      actorProfileId: profile.id,
+    });
+  }
+  return incremental;
 }
 
 function sendError(res, error, status = 500) {
@@ -3642,9 +3709,12 @@ async function getTenderDocumentRecords(database, opportunityId, { includeExtrac
   const latestAnalysisAttempt = canonicalOnly ? await getLatestAgt002AnalysisAttempt(database, opportunityId) : null;
   const questionResponses = currentAnalysis?.run_id ? await getTenderQuestionResponses(database, opportunityId, currentAnalysis.run_id) : [];
   const presentedAnalysis = presentCurrentTenderAnalysis(currentAnalysis, questionResponses);
+  const incrementalProjection = await loadAgt002IncrementalProjection(database, presentedAnalysis?.run_id || '');
   return {
     documents: includeExtractedText ? compatibleDocuments : compatibleDocuments.map(document => publicTenderDocumentProjection({ ...document, analysis_suggestion: suggestAgt002DocumentRelevance(document) }, { opportunityId })),
-    analysis: presentedAnalysis,
+    analysis: presentedAnalysis && incrementalProjection
+      ? { ...presentedAnalysis, incremental_reanalysis: incrementalProjection }
+      : presentedAnalysis,
     analyses,
     question_responses: questionResponses,
     // Literal server-owned del flag (§17/AC22): nunca llega del cliente ni de la base de datos.
@@ -4080,19 +4150,6 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
   }, { sourceBatchId });
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   let incrementalReanalysis = null;
-  if (agt002IncrementalConfig.ingressEnabled) {
-    try {
-      incrementalReanalysis = await ingestAgt002OfficialDocumentBatchSignals(database, {
-        opportunityId, tenderId, refreshResults,
-      });
-    } catch (error) {
-      if (error?.code === '55000' && /R1 nunca crea la primera corrida/i.test(String(error.message || ''))) {
-        incrementalReanalysis = { status: 'initial_required', change_set_id: null, signal_ids: [], dispatch_required: false };
-      } else {
-        throw error;
-      }
-    }
-  }
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
   const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
@@ -4111,6 +4168,26 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id, refresh_token: refreshToken,
     documents: currentDocs, company_profile: companyProfile, document_gaps: snapshotDocumentGaps,
   });
+  if (agt002IncrementalConfig.ingressEnabled) {
+    try {
+      incrementalReanalysis = await ingestAgt002OfficialDocumentBatchSignals(database, {
+        opportunityId, tenderId, refreshResults, actorProfileId: currentProfile.id,
+      });
+      if (incrementalReanalysis.status === 'sealed' && agt002IncrementalConfig.dispatchEnabled) {
+        incrementalReanalysis.dispatch = await dispatchSealedAgt002Incremental(database, {
+          manifest: incrementalReanalysis.manifest,
+          snapshotId: registeredSnapshot.id,
+          actorProfileId: currentProfile.id,
+        });
+      }
+    } catch (error) {
+      if (error?.code === '55000' && /R1 nunca crea la primera corrida/i.test(String(error.message || ''))) {
+        incrementalReanalysis = { status: 'initial_required', change_set_id: null, signal_ids: [], dispatch_required: false };
+      } else {
+        throw error;
+      }
+    }
+  }
   const analysisGenerated = await runOptionalTenderAnalysis({
     analyze,
     loadCurrentDocuments: async () => currentDocs,
@@ -5010,7 +5087,7 @@ app.post('/api/tender-question-responses', async (req, res) => {
     }
     const questionResponses = await getTenderQuestionResponses(database, opportunityId, analysisRunId);
     const recordedResponse = questionResponses.find(item => item.id === responseId) || null;
-    const reanalysis = agt002IncrementalConfig.ingressEnabled
+    let reanalysis = agt002IncrementalConfig.ingressEnabled
       ? await ingestAgt002HumanResponseSignal(database, {
         opportunityId,
         tenderId: await getTenderIdForOpportunity(database, opportunityId),
@@ -5020,6 +5097,16 @@ app.post('/api/tender-question-responses', async (req, res) => {
         ensureOpportunityAccess,
       })
       : await reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analysisRunId, currentProfile });
+    if (agt002IncrementalConfig.dispatchEnabled && reanalysis?.status === 'sealed') {
+      reanalysis = {
+        ...reanalysis,
+        dispatch: await dispatchSealedAgt002Incremental(database, {
+          manifest: reanalysis.manifest,
+          snapshotId: await currentAgt002IncrementalSnapshotId(database, opportunityId),
+          actorProfileId: currentProfile.id,
+        }),
+      };
+    }
     res.status(201).json({
       question_response: recordedResponse,
       question_responses: questionResponses,
@@ -5094,13 +5181,13 @@ app.post('/api/tender-documents-upload', async (req, res) => {
     for (const { file, name, buffer } of preparedFiles) {
       uploaded.push(await saveTenderDocumentBuffer(database, opportunityId, { name, buffer, mime_type: file.mime_type || '', document_type: file.document_type, current: file.current }, currentProfile));
     }
-    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
+    const uploadInteraction = await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
     const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
     if (beginRefresh.error) throw beginRefresh.error;
     const refreshToken = String(beginRefresh.data || '').trim();
     if (!refreshToken) throw new Error('No fue posible abrir la actualización documental manual.');
     const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
-    await registerTenderDocumentSnapshot(database, {
+    const registeredSnapshot = await registerTenderDocumentSnapshot(database, {
       opportunity_id: opportunityId,
       tender_id: tenderId,
       actor_id: currentProfile.id,
@@ -5108,8 +5195,73 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       company_profile: await getTenderCompanyProfile(database),
       refresh_token: refreshToken,
     });
-    res.status(201).json(await getTenderDocumentRecords(database, opportunityId));
+    let incrementalReanalysis = null;
+    if (agt002IncrementalConfig.ingressEnabled) {
+      incrementalReanalysis = await ingestAgt002AuthorizedHumanSignals(database, {
+        opportunityId, tenderId, profile: currentProfile,
+        sourceTransactionId: `human-document-upload:${uploadInteraction.id}`,
+        ensureOpportunityAccess,
+        signalInputs: uploaded.map(document => ({
+          triggerKind: 'human_document', sourceTable: 'psi_sales_interactions',
+          sourceType: document.document_type, sourceId: document.id, sourceVersion: `${uploadInteraction.id}:${document.id}`,
+          content: String(document.extracted_text || ''), observedAt: document.uploaded_at,
+        })),
+      });
+      if (agt002IncrementalConfig.dispatchEnabled && incrementalReanalysis.status === 'sealed') {
+        incrementalReanalysis.dispatch = await dispatchSealedAgt002Incremental(database, {
+          manifest: incrementalReanalysis.manifest, snapshotId: registeredSnapshot.id, actorProfileId: currentProfile.id,
+        });
+      }
+    }
+    res.status(201).json({ ...(await getTenderDocumentRecords(database, opportunityId)), incremental_reanalysis: incrementalReanalysis });
   } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/agt002-incremental-company-evidence-links', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    const database = requireDb();
+    if (!agt002IncrementalConfig.ingressEnabled) {
+      return res.status(409).json({ error: 'El ingreso incremental R1 está deshabilitado.', code: 'AGT002_INCREMENTAL_INGRESS_DISABLED' });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const extras = Object.keys(body).filter(key => !['opportunity_id', 'entry_id', 'version'].includes(key));
+    const opportunityId = String(body.opportunity_id || '').trim();
+    const entryId = String(body.entry_id || '').trim();
+    const version = Number(body.version);
+    if (extras.length || !isValidUuid(opportunityId) || !/^[a-z][a-z0-9_]*$/.test(entryId)
+      || !Number.isInteger(version) || version < 1) {
+      return res.status(400).json({ error: 'El vínculo de evidencia empresarial no tiene la forma cerrada requerida.' });
+    }
+    await ensureTenderOpportunity(database, opportunityId, profile);
+    const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+    const entry = await must(database.from('psi_agt002_company_evidence_registry')
+      .select('entry_id,version,document_class,classification,existence_status,human_review_status,applicability_status,vigencia_text,expiry,utilidad_decisional,control_de_uso,allowed_use,metadata_only,vigente_para_habilitacion')
+      .eq('entry_id', entryId).eq('version', version).maybeSingle());
+    if (!entry) return res.status(404).json({ error: 'La versión de evidencia empresarial no está disponible.' });
+    const observedAt = new Date().toISOString();
+    const incremental = await ingestAgt002AuthorizedHumanSignals(database, {
+      opportunityId, tenderId, profile, ensureOpportunityAccess,
+      sourceTransactionId: `company-evidence-link:${randomUUID()}`,
+      signalInputs: [{
+        triggerKind: 'company_evidence_link', sourceTable: 'psi_agt002_company_evidence_registry',
+        sourceType: entry.document_class, sourceId: entry.entry_id, sourceVersion: `${entry.entry_id}:${entry.version}`,
+        content: buildAgt002CompanyEvidenceLinkSignalContent(entry), observedAt,
+      }],
+    });
+    if (agt002IncrementalConfig.dispatchEnabled && incremental.status === 'sealed') {
+      incremental.dispatch = await dispatchSealedAgt002Incremental(database, {
+        manifest: incremental.manifest,
+        snapshotId: await currentAgt002IncrementalSnapshotId(database, opportunityId),
+        actorProfileId: profile.id,
+      });
+    }
+    return res.status(201).json({
+      status: incremental.status, change_set_id: incremental.change_set_id,
+      signal_ids: incremental.signal_ids, dispatch_required: incremental.dispatch_required,
+      dispatch: incremental.dispatch || null,
+    });
+  } catch (error) { return sendError(res, error, error?.status || 400); }
 });
 
 app.post('/api/tender-documents-analyze', async (req, res) => {
@@ -6179,7 +6331,8 @@ app.post('/api/tender-actionable-reviews/:itemId/comments', async (req, res) => 
       p_request_hash: requestHash,
     });
     if (error) throw mapActionableReviewRpcError(error);
-    res.status(201).json(data);
+    const incrementalReanalysis = await ingestAgt002ActionableReviewEvent(database, { context, profile, event: data });
+    res.status(201).json({ ...data, incremental_reanalysis: incrementalReanalysis });
   } catch (error) { sendActionableReviewError(res, error); }
 });
 
@@ -6203,7 +6356,8 @@ app.post('/api/tender-actionable-reviews/:itemId/outcomes', async (req, res) => 
       p_request_hash: requestHash,
     });
     if (error) throw mapActionableReviewRpcError(error);
-    res.status(200).json(data);
+    const incrementalReanalysis = await ingestAgt002ActionableReviewEvent(database, { context, profile, event: data });
+    res.status(200).json({ ...data, incremental_reanalysis: incrementalReanalysis });
   } catch (error) { sendActionableReviewError(res, error); }
 });
 

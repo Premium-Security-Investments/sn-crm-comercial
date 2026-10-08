@@ -18,9 +18,12 @@ end $$;
 
 drop function if exists public.psi_has_pending_agt002_incremental_change_sets();
 drop function if exists public.psi_close_agt002_incremental_change_set(uuid, text, uuid, text, text);
+drop function if exists public.psi_start_agt002_incremental_change_set(uuid, text);
 drop function if exists public.psi_dispatch_agt002_incremental_change_set(uuid, uuid, text);
 drop function if exists public.psi_seal_agt002_incremental_change_set(uuid, jsonb, text);
-drop function if exists public.psi_record_agt002_incremental_signals(uuid, uuid, uuid, text, jsonb);
+drop function if exists public.psi_record_agt002_incremental_signals(uuid, uuid, uuid, text, uuid, jsonb);
+drop function if exists public.psi_agt002_incremental_affected_finding_refs(uuid);
+drop function if exists public.psi_agt002_incremental_stable_json_text(jsonb);
 drop table public.psi_agt002_incremental_change_set_transitions;
 drop table public.psi_agt002_incremental_signals;
 drop table public.psi_agt002_incremental_change_sets;

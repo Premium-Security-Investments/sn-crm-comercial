@@ -58,6 +58,7 @@ export async function recordAgt002IncrementalSignals(database, {
   tenderId,
   sourceBatchId = null,
   sourceTransactionId,
+  requestedBy,
   signals,
 }) {
   if (!Array.isArray(signals) || signals.length === 0) throw new Error('Se requiere al menos una señal incremental.');
@@ -66,6 +67,7 @@ export async function recordAgt002IncrementalSignals(database, {
     p_tender_id: required(tenderId, 'La licitación'),
     p_source_batch_id: sourceBatchId,
     p_source_transaction_id: required(sourceTransactionId, 'La transacción fuente'),
+    p_requested_by: required(requestedBy, 'El solicitante incremental'),
     p_signals: signals,
   });
   if (!result || !['pending_validation', 'accumulating', 'ready_to_seal', 'sealed', 'existing'].includes(result.status)) {
@@ -109,6 +111,17 @@ export async function dispatchAgt002IncrementalChangeSet(database, { changeSetId
   });
   if (!result || !['dispatched', 'existing'].includes(result.status)) {
     throw new Error('El despacho incremental no devolvió un estado válido.');
+  }
+  return result;
+}
+
+export async function startAgt002IncrementalChangeSet(database, { jobId, workerId }) {
+  const result = await rpc(database, 'psi_start_agt002_incremental_change_set', {
+    p_job_id: required(jobId, 'El job incremental'),
+    p_worker_id: required(workerId, 'El worker incremental'),
+  });
+  if (!result || !['not_incremental', 'running', 'existing'].includes(result.status)) {
+    throw new Error('El inicio incremental no devolvió un estado válido.');
   }
   return result;
 }

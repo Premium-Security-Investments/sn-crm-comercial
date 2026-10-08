@@ -29,6 +29,7 @@ import { TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION } from './tender-semant
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
 import { AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION } from './agt002-integral-analysis-batches.js';
 import { computeAgt002StableContentHash } from './tender-analysis-foundation.js';
+import { validateAgt002IncrementalDeltaManifest } from './agt002-incremental-analysis-input.js';
 
 function isObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -137,6 +138,29 @@ function validFrozenInput(job) {
     || context.snapshotId !== job.snapshotId
     || context.canonicalOnly !== true
     || flags.AGT002_CANONICAL_ONLY !== true) return null;
+  if (Object.hasOwn(input, 'incremental_delta_manifest')) {
+    let manifest;
+    try { manifest = validateAgt002IncrementalDeltaManifest(input.incremental_delta_manifest); }
+    catch { return null; }
+    if (Object.hasOwn(input, 'document_workset_identity')
+      || Object.hasOwn(input, 'governed_workset_members')
+      || manifest.opportunity_id !== job.opportunityId
+      || manifest.tender_id !== job.tenderId
+      || context.tenderId !== job.tenderId
+      || context.deepAnalysis?.mode !== 'incremental_delta'
+      || !Array.isArray(context.documents)
+      || context.documents.length !== manifest.members.length) return null;
+    for (let index = 0; index < manifest.members.length; index += 1) {
+      const member = manifest.members[index];
+      const document = context.documents[index];
+      if (!isObject(document)
+        || document.document_id !== member.source_id
+        || document.document_version_id !== member.source_version
+        || document.content_hash !== member.content_hash
+        || document.opportunity_id !== job.opportunityId
+        || document.snapshot_id !== job.snapshotId) return null;
+    }
+  }
   if (flags.AGT002_INTEGRAL_CONTRACT_V3 === true && !validAgt002FrozenGovernance(input.integral_v3_governance)) return null;
   if (flags.AGT002_LEGAL_CORPUS === true && !isObject(input.legal_corpus_context)) return null;
   // Governed document worksets are a schema_version 2-only extension: a frozen input carrying
@@ -632,6 +656,7 @@ export function createAgt002ReanalysisExecutor({
         claimId: previewClaimId,
         idempotencyKey: job.idempotencyKey,
         expectedIdempotencyKey: job.idempotencyKey,
+        incrementalManifestHash: input.incremental_delta_manifest?.manifest_hash ?? null,
         // Persistence is its own stage boundary (agt002-post-bridge-observability.js): the SAME
         // preview claim renews once more, fenced, immediately before the canonical persistence RPC.
         leaseSeconds,

@@ -28,7 +28,7 @@ function makeFakeExport(dir) {
 
 // Fake systemctl: prepended to PATH so the wrapper's literal, un-overridden
 // `systemctl start agt002-radar-scan.service` / `systemctl start
-// agt002-radar-reconciliation.service` / `systemctl start agt002-radar-pipeline.service` calls
+// agt002-radar-reconciliation.service` / `systemctl start agt002-incremental-recovery.service` calls
 // resolve to this double instead of touching the real systemd. Records every invocation (verb +
 // unit) to LOG_FILE in call order, and exits per-unit according to env-configured codes.
 function makeFakeSystemctl(dir) {
@@ -37,7 +37,7 @@ function makeFakeSystemctl(dir) {
     'echo "$1 $2" >> "$LOG_FILE"',
     'if [ "$2" = "agt002-radar-scan.service" ]; then exit "${SYSTEMCTL_SCAN_EXIT:-0}"; fi',
     'if [ "$2" = "agt002-radar-reconciliation.service" ]; then exit "${SYSTEMCTL_RECONCILE_EXIT:-0}"; fi',
-    'if [ "$2" = "agt002-radar-pipeline.service" ]; then exit "${SYSTEMCTL_WORKER_EXIT:-0}"; fi',
+    'if [ "$2" = "agt002-incremental-recovery.service" ]; then exit "${SYSTEMCTL_WORKER_EXIT:-0}"; fi',
     'exit 0',
     '',
   ].join('\n'));
@@ -108,19 +108,17 @@ function run({ exportExit = 0, scanExit = 0, reconcileExit = 0, workerExit = 0 }
   assert.equal(statusJson.exit_code, 9);
 }
 
-// 4. Export+scan+reconciliation ok, worker kick fails -> stage=worker_kick, explicit warning,
-//    sources_persisted, scan_completed and reconciliation_completed all true, timer_fallback:true,
-//    but the wrapper still exits 0 (the 15-min .timer is the durable safety net for a missed kick).
+// 4. Export+scan+reconciliation ok, the single conditional recovery wake fails -> warning,
+//    but the already-completed daily Radar stages remain successful.
 {
   const { status, invoked, statusJson } = run({ workerExit: 7 });
   assert.equal(status, 0);
-  assert.deepEqual(invoked, ['start agt002-radar-scan.service', 'start agt002-radar-reconciliation.service', 'start agt002-radar-pipeline.service']);
-  assert.equal(statusJson.stage, 'worker_kick');
+  assert.deepEqual(invoked, ['start agt002-radar-scan.service', 'start agt002-radar-reconciliation.service', 'start agt002-incremental-recovery.service']);
+  assert.equal(statusJson.stage, 'incremental_recovery');
   assert.equal(statusJson.level, 'warning');
   assert.equal(statusJson.sources_persisted, true);
   assert.equal(statusJson.scan_completed, true);
   assert.equal(statusJson.reconciliation_completed, true);
-  assert.equal(statusJson.timer_fallback, true);
   assert.equal(statusJson.exit_code, 7);
 }
 
@@ -128,12 +126,12 @@ function run({ exportExit = 0, scanExit = 0, reconcileExit = 0, workerExit = 0 }
 {
   const { status, invoked, statusJson } = run({});
   assert.equal(status, 0);
-  assert.deepEqual(invoked, ['start agt002-radar-scan.service', 'start agt002-radar-reconciliation.service', 'start agt002-radar-pipeline.service']);
+  assert.deepEqual(invoked, ['start agt002-radar-scan.service', 'start agt002-radar-reconciliation.service', 'start agt002-incremental-recovery.service']);
   assert.equal(statusJson.stage, 'completed');
   assert.equal(statusJson.sources_persisted, true);
   assert.equal(statusJson.scan_completed, true);
   assert.equal(statusJson.reconciliation_completed, true);
-  assert.equal(statusJson.worker_kick_completed, true);
+  assert.equal(statusJson.incremental_recovery_completed, true);
   assert.equal(statusJson.exit_code, 0);
 }
 
@@ -153,7 +151,7 @@ assert.doesNotMatch(source, /systemctl\s+(enable|disable|daemon-reload|link|mask
 assert.doesNotMatch(source, /\/etc\/systemd\//);
 assert.match(source, /systemctl start agt002-radar-scan\.service/, 'unit name is a fixed literal, not interpolated');
 assert.match(source, /systemctl start agt002-radar-reconciliation\.service/, 'unit name is a fixed literal, not interpolated');
-assert.match(source, /systemctl start agt002-radar-pipeline\.service/, 'unit name is a fixed literal, not interpolated');
+assert.match(source, /systemctl start agt002-incremental-recovery\.service/, 'recovery unit name is a fixed literal, not interpolated');
 assert.doesNotMatch(source, /AGT002_RADAR_SCAN_CMD|AGT002_RADAR_RECONCILE_CMD|AGT002_RADAR_WORKER_KICK_CMD/, 'only the export step is overridable; scan/reconciliation/worker are fixed systemctl invocations');
 assert.doesNotMatch(source, /\bnode\b/, 'the wrapper never invokes node directly');
 assert.doesNotMatch(source, /\bsource\s+\/|^\s*\.\s+\//m, 'the wrapper never sources an env file');
@@ -163,4 +161,4 @@ assert.doesNotMatch(source, /--apply/);
 assert.doesNotMatch(source, /\brm\s+-rf\b/);
 assert.doesNotMatch(source, /\beval\b|\bsystemctl.*\$\(/, 'no eval, no command substitution building the systemctl invocation');
 
-console.log('AGT-002 Radar daily export -> scan -> reconciliation -> worker-kick wrapper: all five outcome paths and forbidden-operation invariants passed');
+console.log('AGT-002 Radar daily export -> scan -> reconciliation -> conditional R1 recovery wrapper passed');

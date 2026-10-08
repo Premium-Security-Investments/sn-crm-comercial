@@ -65,6 +65,23 @@ test('a demoted (non-canonical) run is not reported as the current initial analy
   assert.equal(result.reportAvailable, false);
 });
 
+test('a demoted INITIAL report remains readable when the current canonical run proves successor lineage', async () => {
+  let runReads = 0;
+  const initial = { ...REAL_RUN, canonical: false, supersedes_run_id: null };
+  const current = { id: 'run-r1', status: 'completed', canonical: true, supersedes_run_id: 'run-1' };
+  const database = {
+    from(table) {
+      if (table === 'psi_agt002_initial_analysis_jobs') return query({ data: COMPLETED_JOB, error: null });
+      runReads += 1;
+      return query({ data: runReads === 1 ? initial : current, error: null });
+    },
+  };
+  const result = await readAgt002InitialAnalysisStatus(database, 'opp-1');
+  assert.equal(result.state, 'ready');
+  assert.equal(result.runId, 'run-1');
+  assert.equal(result.reportAvailable, true);
+});
+
 // --- Migration 108: a running or failed REANALYSIS never hides the analysis it would succeed ---
 function databaseWithJobs({ latest, completed, run }) {
   const jobQueries = [];

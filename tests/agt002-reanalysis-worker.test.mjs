@@ -141,6 +141,32 @@ test('legacy single-turn outcome (no queue_finalized field) still completes exac
   assert.equal(calls.fail.length, 0);
 });
 
+test('an incremental job closes its change set after the queue terminal transition', async () => {
+  const calls = [];
+  const incrementalJob = {
+    ...JOB,
+    frozenEngineInput: { schema_version: 2, incremental_delta_manifest: { manifest_hash: 'a'.repeat(64) } },
+  };
+  const worker = createAgt002ReanalysisWorker({
+    database: { kind: 'db' },
+    claimJob: async () => incrementalJob,
+    startIncrementalSet: async (_database, args) => { calls.push(['set-running', args]); return { status: 'running' }; },
+    executeJob: async () => ({ status: 'completed', analysis_run_id: 'run-2' }),
+    completeJob: async () => { calls.push('queue-completed'); return { status: 'completed' }; },
+    failJob: async () => { throw new Error('unexpected failure'); },
+    closeIncrementalSet: async (_database, args) => { calls.push(['set-closed', args]); return { status: 'completed' }; },
+  });
+  assert.deepEqual(await worker.runOnce(), { status: 'completed', jobId: 'job-1', analysisRunId: 'run-2' });
+  assert.deepEqual(calls, [
+    ['set-running', { jobId: 'job-1', workerId: 'agt002-reanalysis-worker' }],
+    'queue-completed',
+    ['set-closed', {
+      jobId: 'job-1', outcome: 'completed', analysisRunId: 'run-2', safeError: null,
+      workerId: 'agt002-reanalysis-worker',
+    }],
+  ]);
+});
+
 test('fails closed instead of legacy-completing when queue_finalized:true accompanies a non-completed status', async () => {
   const { worker, calls } = harness({
     outcome: { status: 'unavailable', error_code: 'timeout', queue_finalized: true },

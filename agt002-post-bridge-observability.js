@@ -460,6 +460,7 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
       // refuses the run without it; the text itself is never persisted.
       semanticSourceDocuments: analysisContext?.documents ?? null,
       evidenceIdentity,
+      incrementalManifestHash: context.incrementalManifestHash ?? null,
     };
     const retryPolicy = resolveAgt002PersistenceRetryPolicy(persistenceRetry);
     // Retry window is measured from the FIRST failure, never from the first attempt's start: a
