@@ -22,10 +22,16 @@
 //     decidir ordenadas por valor.
 //   Meta del mes: monthlyGoalCompliance() de commercial-behavior.js (el helper puro equivalente del Dashboard vive en
 //     commercial-dashboard-model.ts, que es TypeScript y no se puede importar desde Node sin compilar).
+//   Sin cartera (Juan, 2026-10-08): quien queda "al día" sólo porque no tiene oportunidades activas se muestra como
+//     "Sin cartera" (no como "Al día"), para no confundir al gerente.
+//   Premio (Juan, 2026-10-08): la ficha de cada comercial en el resumen del gerente muestra perfiles completos (8/8,
+//     profileCompleteness de client-profile.js) sobre sus oportunidades activas y análisis profundos ganados en el mes
+//     (psi_agt003_lead_analyses completados por el comercial desde el inicio del mes de Bogotá).
 //   Sólo oportunidades comerciales privadas de AGT-003 (commercial-scope.js). Nunca se lee ni se muestra el texto de
 //   los seguimientos (notas), ni observaciones, ni ids internos en el contenido.
 
 import { createHash } from 'node:crypto';
+import { profileCompleteness } from './client-profile.js';
 import { isAgt003CommercialOpportunity } from './commercial-scope.js';
 import { bogotaDay, isOutOfActivePipeline, isTerminalStage, pendingDecisions } from './opportunity-decision-rules.js';
 import { BEHAVIOR_RULES, bogotaDaysSince, bogotaMonth, bogotaWeekStart, buildCommercialBehavior, monthlyGoalCompliance } from './commercial-behavior.js';
@@ -51,9 +57,10 @@ const DAY_MS = 86_400_000;
 const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-const STATUS_LABEL = { inactivo: 'Inactivo', atrasado: 'Atrasado', al_dia: 'Al día' };
-const STATUS_COLOR = { inactivo: '#b42318', atrasado: '#b54708', al_dia: '#067647' };
-const STATUS_BG = { inactivo: '#fef3f2', atrasado: '#fffaeb', al_dia: '#ecfdf3' };
+const STATUS_LABEL = { inactivo: 'Inactivo', atrasado: 'Atrasado', al_dia: 'Al día', sin_cartera: 'Sin cartera' };
+const STATUS_COLOR = { inactivo: '#b42318', atrasado: '#b54708', al_dia: '#067647', sin_cartera: '#475467' };
+const STATUS_BG = { inactivo: '#fef3f2', atrasado: '#fffaeb', al_dia: '#ecfdf3', sin_cartera: '#f2f4f7' };
+const NO_PORTFOLIO_REASON = 'No tiene oportunidades activas asignadas en el CRM.';
 const list = value => (Array.isArray(value) ? value : []);
 
 export class WeeklyDigestValidationError extends Error {
@@ -127,6 +134,24 @@ export function formatCop(value) {
   const n = Math.round(Number(value || 0));
   if (!Number.isFinite(n) || n <= 0) return 'sin valor';
   return `$${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+}
+
+/** "Al día" sin oportunidades activas no es estar al día: es no tener cartera. */
+export function withPortfolioStatus(row) {
+  if (row?.status === 'al_dia' && Number(row.activeOpportunities || 0) === 0) {
+    return { ...row, status: 'sin_cartera', reason: NO_PORTFOLIO_REASON };
+  }
+  return row;
+}
+
+/** Perfiles completos (8/8) sobre las oportunidades activas de un comercial y análisis ganados en el mes. */
+export function premiumStats({ ownerId, opportunities = [], leadAnalyses = [], now }) {
+  const active = list(opportunities).filter(o => o.owner_id === ownerId && !isTerminalStage(o.stage_code) && !isOutOfActivePipeline(o, now));
+  const complete = active.filter(o => profileCompleteness(o).complete).length;
+  const monthStart = `${bogotaMonth(now)}-01`;
+  const won = list(leadAnalyses).filter(a => a?.actor_id === ownerId && a.status === 'completed'
+    && bogotaDay(a.created_at) >= monthStart && Date.parse(a.created_at) <= now.getTime()).length;
+  return { active: active.length, complete, won };
 }
 
 // ---------- texto ----------
@@ -351,21 +376,24 @@ function salespersonContent({ person, row, lastWeekRow, week, now, opportunities
   return { subject, text, html };
 }
 
-function managerContent({ manager, team, week, now, opportunities, ownerNames, config }) {
+function managerContent({ manager, team, week, now, opportunities, leadAnalyses, ownerNames, config }) {
   const name = config.managerGreeting || greetingName(manager.full_name) || clean(manager.full_name);
   const lastRange = formatDayRange(week.last_week_start, week.last_week_end);
   const subject = `Resumen comercial de la semana (${lastRange})`;
-  const groups = { al_dia: [], atrasado: [], inactivo: [] };
+  const groups = { al_dia: [], atrasado: [], inactivo: [], sin_cartera: [] };
   for (const t of team) groups[t.row.status].push(clean(t.row.name));
   const headline = [
-    ['al_dia', 'Al día'], ['atrasado', 'Atrasados'], ['inactivo', 'Inactivos'],
-  ].map(([status, label]) => `${label}: ${groups[status].length}${groups[status].length ? ` (${groups[status].join(', ')})` : ''}`);
+    ['al_dia', 'Al día'], ['atrasado', 'Atrasados'], ['inactivo', 'Inactivos'], ['sin_cartera', 'Sin cartera'],
+  ].filter(([status]) => status !== 'sin_cartera' || groups[status].length)
+    .map(([status, label]) => `${label}: ${groups[status].length}${groups[status].length ? ` (${groups[status].join(', ')})` : ''}`);
   const stalled = pendingDecisions(opportunities, now)
     .slice()
     .sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0) || String(a.last_interaction_at || '').localeCompare(String(b.last_interaction_at || '')) || String(a.id).localeCompare(String(b.id)))
     .slice(0, LIST_LIMIT)
     .map(o => [opportunityLabel(o), ownerNames.get(o.owner_id) || 'Sin responsable', formatCop(o.offer_value), formatDaysWithoutFollowUp(o, now)]);
-  const cards = team.map(({ row, lastWeekRow }) => ({
+  const cards = team.map(({ row, lastWeekRow }) => {
+    const premium = premiumStats({ ownerId: row.profileId, opportunities, leadAnalyses, now });
+    return {
     title: clean(row.name),
     status: row.status,
     pairs: [
@@ -376,8 +404,11 @@ function managerContent({ manager, team, week, now, opportunities, ownerNames, c
       ['Pendientes de decidir', String(row.pendingDecisions)],
       ['Agenda al día', row.agendaPct === null ? 'sin oportunidades activas' : `${row.agendaPct}%`],
       ['Último ingreso al CRM', formatSince(row.lastSeenAt, now)],
+      ['Perfiles de cliente completos', premium.active ? `${premium.complete} de ${premium.active}` : 'sin oportunidades activas'],
+      ['Análisis profundos ganados este mes', String(premium.won)],
     ],
-  }));
+    };
+  });
   const dashboard = `${config.appUrl}/#/dashboard2`;
   const intro = `Así le fue al equipo comercial la semana del ${lastRange}. Primero van quienes necesitan ayuda.`;
   const stalledIntro = `Las oportunidades más grandes del equipo que están por decidir (hasta ${LIST_LIMIT}), es decir, sin próxima gestión o con la gestión vencida:`;
@@ -453,6 +484,7 @@ export function buildWeeklyDigest({
   decisions = [],
   lastSeen = [],
   goals = [],
+  leadAnalyses = [],
   now,
   config = {},
   mode = 'preview',
@@ -491,7 +523,8 @@ export function buildWeeklyDigest({
     goals,
     now: new Date(`${week.last_week_end}T17:00:00.000Z`),
   });
-  const rowById = new Map(current.rows.map(r => [r.profileId, r]));
+  const currentRows = current.rows.map(withPortfolioStatus);
+  const rowById = new Map(currentRows.map(r => [r.profileId, r]));
   const lastById = new Map(lastWeek.rows.map(r => [r.profileId, r]));
   const ownerNames = new Map(salespeople.map(p => [p.id, clean(p.full_name)]));
 
@@ -508,8 +541,8 @@ export function buildWeeklyDigest({
     const content = salespersonContent({ person, row: rowById.get(person.id), lastWeekRow: lastById.get(person.id), week, now, opportunities: commercial, goals, config: cfg });
     return finalizeMessage({ kind: 'salesperson', mode, week, profile: person, realTo, realCc, content, config: cfg });
   });
-  const team = current.rows.map(row => ({ row, lastWeekRow: lastById.get(row.profileId) }));
-  const managerMsg = managerContent({ manager, team, week, now, opportunities: commercial, ownerNames, config: cfg });
+  const team = currentRows.map(row => ({ row, lastWeekRow: lastById.get(row.profileId) }));
+  const managerMsg = managerContent({ manager, team, week, now, opportunities: commercial, leadAnalyses, ownerNames, config: cfg });
   messages.push(finalizeMessage({ kind: 'manager', mode, week, profile: manager, realTo: [managerEmail], realCc: [], content: managerMsg, config: cfg }));
 
   for (const m of messages) {

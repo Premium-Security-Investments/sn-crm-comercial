@@ -95,8 +95,16 @@ export function buildWeeklyDigest(input: {
   decisions?: Array<{ opportunity_id: string; changed_by: string | null; created_at: string; field_name?: string }>;
   lastSeen?: Array<{ profile_id: string; last_seen_at: string | null }>;
   goals?: Array<{ user_id?: string | null; period_month?: string | null; sales_budget?: number | string | null; service_type_code?: string | null }>;
+  leadAnalyses?: Array<{ actor_id: string; status: string; created_at: string }>;
   now: Date;
   config?: DigestConfig;
   mode?: WeeklyDigestMode;
   sample?: number | null;
 }): WeeklyDigestOutbox;
+export function withPortfolioStatus<T extends { status: string; reason: string; activeOpportunities?: number }>(row: T): T;
+export function premiumStats(input: {
+  ownerId: string;
+  opportunities?: DigestOpportunity[];
+  leadAnalyses?: Array<{ actor_id: string; status: string; created_at: string }>;
+  now: Date;
+}): { active: number; complete: number; won: number };

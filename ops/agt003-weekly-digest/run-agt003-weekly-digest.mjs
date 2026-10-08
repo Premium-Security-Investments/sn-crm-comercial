@@ -24,6 +24,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildWeeklyDigest, digestWeeks, selectDigestRecipients, WeeklyDigestValidationError, WEEKLY_DIGEST_CONTRACT } from '../../src/vigia/weekly-digest.js';
 import { BEHAVIOR_FOLLOW_UP_TYPES } from '../../src/vigia/commercial-behavior.js';
+import { bogotaMonthStartIso } from '../../src/vigia/lead-analysis.js';
 
 const PAGE = 1000;
 const OWNER_BATCH = 100;
@@ -83,6 +84,7 @@ function isMissingRelation(error) {
 
 // Sólo columnas de conteo, fecha e identificación del cliente. Nunca notes, observaciones ni loss_notes.
 const OPPORTUNITY_SELECT = 'id,owner_id,company_name,quote_city,regional_nombre,service_type_code,stage_code,offer_value,next_action_at,last_interaction_at,approved_at,updated_at,frozen_until,delete_requested_at';
+const PROFILE_SELECT = 'id,economic_sector,company_website,decision_maker_name,decision_maker_title,decision_maker_email,decision_maker_phone,decision_maker_linkedin,current_security_provider,current_security_provider_none';
 const INTERACTION_SELECT = 'opportunity_id,created_by,interaction_type,created_at';
 
 /** Lee de Supabase (sólo lectura) lo que necesita buildWeeklyDigest. Mismo patrón que /api/vigia/commercial-behavior. */
@@ -96,6 +98,14 @@ export async function loadDigestInputs(database, now) {
   for (const batch of batches(ids)) {
     opportunities.push(...await pages(() => database.from('v_psi_sales_opportunity_enriched').select(OPPORTUNITY_SELECT).in('owner_id', batch).order('id', { ascending: true })));
   }
+  // Campos del perfil del cliente (migración 113, no están en la vista) sólo para contar perfiles completos; nunca se
+  // muestran en el correo.
+  const profileById = new Map();
+  for (const batch of batches(opportunities.map(o => o.id))) {
+    const rows = await must(database.from('psi_sales_opportunities').select(PROFILE_SELECT).in('id', batch));
+    for (const row of rows) profileById.set(row.id, row);
+  }
+  for (const o of opportunities) Object.assign(o, profileById.get(o.id) || {}, { id: o.id });
   const opportunityIds = new Set(opportunities.map(o => o.id));
   const week = digestWeeks(now);
   const windowStart = new Date(Date.parse(`${week.last_week_start}T05:00:00Z`) - 31 * 86_400_000).toISOString();
@@ -124,7 +134,15 @@ export async function loadDigestInputs(database, now) {
     if (!isMissingRelation(error)) throw error; // Sin la migración 111 el ingreso queda desconocido (nunca "inactivo").
   }
   const goals = await must(database.from('psi_sales_goals').select('user_id,period_month,sales_budget,service_type_code').in('user_id', ids).order('period_month', { ascending: false }).limit(1000));
-  return { profiles, areaAssignments, opportunities, interactions: [...windowInteractions, ...older.flat()], decisions, lastSeen, goals };
+  // Análisis profundos ganados en el mes (premio, migración 114). Sin la tabla, el conteo queda en 0.
+  let leadAnalyses = [];
+  try {
+    leadAnalyses = await must(database.from('psi_agt003_lead_analyses').select('actor_id,status,created_at')
+      .in('actor_id', ids).eq('status', 'completed').gte('created_at', bogotaMonthStartIso(now)).limit(1000));
+  } catch (error) {
+    if (!isMissingRelation(error)) throw error;
+  }
+  return { profiles, areaAssignments, opportunities, interactions: [...windowInteractions, ...older.flat()], decisions, lastSeen, goals, leadAnalyses };
 }
 
 export function digestConfigFromEnv(env = process.env) {
