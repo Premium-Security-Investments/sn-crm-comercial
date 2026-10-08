@@ -36,6 +36,7 @@ import {
   selectAgt002AutoInitialMembers,
 } from './agt002-auto-initial.js';
 import { tenderSourceChangeFollowUpBlocker } from './tender-phase-identity.js';
+import { classifyTenderOpportunityStage, latestTenderGoNoGoDecision } from './tender-opportunity-stage.js';
 
 /** Identidad técnica Vig-IA (migración 047): actor de la importación documental y de los registros de estado. */
 export const AGT002_VIGIA_AGENT_PROFILE_ID = 'a0020000-0000-4000-8000-000000000002';
@@ -52,7 +53,7 @@ const ACTIVE_ANALYSIS_STATUSES = new Set(['QUEUED', 'CLAIMED', 'RUNNING', 'NEEDS
 const LAUNCHED_ADMISSION_STATUSES = new Set(['admitted', 'existing']);
 // Resultados que cierran el análisis de un conjunto importado: nunca se vuelven a intentar para ese conjunto.
 const FINAL_ANALYSIS_OUTCOMES = new Set(['launched', 'window_elapsed', 'process_closed']);
-// Etapas de oportunidad cerradas (migración 110): ni se bajan documentos ni se reanaliza.
+// Etapas comerciales cerradas (migración 110): además de la etapa de la bandeja, nunca se sigue una oportunidad así.
 export const AGT002_PHASE_CHANGE_CLOSED_STAGES = new Set(['aprobado', 'descartado', 'perdido']);
 /** Un conjunto nuevo es estable cuando datos.gov.co lo sigue mostrando igual al menos este tiempo. */
 export const AGT002_PHASE_CHANGE_STABLE_MS = 12 * HOUR_MS;
@@ -205,11 +206,22 @@ function changeOf(detected, noticeUid) {
   return { change: detected?.change || 'phase', newPhase: detected?.new_phase || null, ref: detected?.ref || null, noticeUid };
 }
 
-async function opportunityStageBlocker(database, opportunityId) {
+/**
+ * Sólo oportunidades ACTIVAS (decisión del dueño): etapa derivada "Por decidir" o "En curso" de la bandeja
+ * (tender-opportunity-stage.js = classifyOpportunityStage del frontend). "Cerradas" (NO GO, adjudicada, no
+ * adjudicada, cerrada) y las etapas comerciales perdida/descartada/aprobada nunca disparan descarga ni reanálisis.
+ */
+export async function agt002PhaseChangeOpportunityBlocker(database, opportunityId, tenderId) {
   const opportunity = await must(database.from('psi_sales_opportunities')
-    .select('id,stage_code').eq('id', opportunityId).maybeSingle(), 'oportunidad');
+    .select('id,stage_code,tender_offer_status').eq('id', opportunityId).maybeSingle(), 'oportunidad');
   if (!opportunity) return 'opportunity_missing';
-  return AGT002_PHASE_CHANGE_CLOSED_STAGES.has(opportunity.stage_code) ? 'opportunity_closed' : null;
+  if (AGT002_PHASE_CHANGE_CLOSED_STAGES.has(opportunity.stage_code)) return 'opportunity_closed';
+  let decisions = database.from('psi_tender_go_no_go_decisions')
+    .select('id,decision,decided_at,supersedes_decision_id').eq('opportunity_id', opportunityId);
+  if (tenderId) decisions = decisions.eq('tender_id', tenderId);
+  const latest = latestTenderGoNoGoDecision((await must(decisions, 'decisión GO/NO GO')) || []);
+  const stage = classifyTenderOpportunityStage({ decision: latest?.decision || null, tender_offer_status: opportunity.tender_offer_status });
+  return stage === 'cerradas' ? 'opportunity_closed' : null;
 }
 
 /**
@@ -238,7 +250,7 @@ export async function findAgt002PhaseChangeOpportunities(database, { now = new D
     const notice = notices.find(item => item.notice_uid === noticeUid);
     if (!notice) continue; // Sólo el aviso que sigue siendo la fuente vigente.
     const blocker = tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now)
-      || await opportunityStageBlocker(database, opportunityId);
+      || await agt002PhaseChangeOpportunityBlocker(database, opportunityId, tender.id);
     candidates.push({ tender, opportunityId, noticeUid, detected: notice, baselineAt: notice.recorded_at || notice.detected_at, change: changeOf(notice, noticeUid), blocker });
   }
   return candidates;
@@ -269,7 +281,7 @@ export async function reconcileAgt002PendingPhaseChanges(database, { now = new D
     const lastOrigin = origins.at(-1)?.payload.notice_uid;
     if (!lastOrigin || lastOrigin === noticeUid) continue;
     const blocker = tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now)
-      || await opportunityStageBlocker(database, opportunityId);
+      || await agt002PhaseChangeOpportunityBlocker(database, opportunityId, tender.id);
     if (blocker) { events.push({ event: 'agt002_phase_change_reconcile_skipped', opportunityId, noticeUid, reason: blocker }); continue; }
     await recordAgt002PhaseChangeDetected(database, opportunityId, {
       change: 'phase', url: tender.url, ref: tender.ref, newPhase: tender.status, deadline: tender.deadline_at,
