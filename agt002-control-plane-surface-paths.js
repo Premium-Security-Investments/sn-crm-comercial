@@ -9,12 +9,21 @@ const REPO_ROOT = fileURLToPath(new URL('.', import.meta.url));
 // The CRM API monolith. The Radar import runner loads it, but nearly every CRM change (AGT-003,
 // UI, etc.) touches it, so following it would make the Radar import look stale on every merge.
 // It is never followed; instead the Radar modules it imports are listed explicitly below.
-// Known blind spot: Radar code written inline in the monolith (persistTenderRadar,
-// fetchPublicTenderRadar) is not watched.
+//
+// ACCEPTED RISK (known blind spot): ~75 Radar functions live inline in the monolith
+// (persistTenderRadar, fetchPublicTenderRadar, readPersistedTenderRadar, fetchSecopSourceDeep,
+// dbTenderToPublic, ...). A change that only touches them is NOT detected for radar_daily_import /
+// radar_daily_top5 / radar_requests. Concrete examples that would have gone unnoticed:
+//   dff664b fix(tenders): fetch SECOP II proveedor so special-regime hide can fire
+//   9a6a791 fix(tenders): hide officially awarded processes from radar
+// Closing it needs the Radar code moved out of the monolith into its own modules (not done here).
 const MONOLITH_PATHS = Object.freeze(['api/[...path].js', 'server/index.js']);
 
-// Radar modules the monolith imports for the daily import / requests / Top 5 paths.
-const RADAR_MONOLITH_MODULES = Object.freeze([
+// Modules the monolith's Radar functions (persistTenderRadar / fetchPublicTenderRadar /
+// readPersistedTenderRadar and the inline functions they call) import. Guarded by a test that
+// re-derives this set from the monolith (best effort) and fails when a module is missing.
+export const RADAR_MONOLITH_MODULES = Object.freeze([
+  'access-control.js',
   'tender-phase-identity.js',
   'tender-competibility-policy.js',
   'tender-radar-source-fetch.js',
@@ -29,8 +38,16 @@ const RADAR_MONOLITH_MODULES = Object.freeze([
 ]);
 
 // Paths every pinned surface depends on regardless of its import graph: the lockfile pins the
-// third-party code it loads.
-const SHARED_PATHS = Object.freeze(['pnpm-lock.yaml']);
+// third-party code it loads and package.json declares it ("type", dependency ranges). Note: this
+// makes any dependency bump count as a change for every pinned surface, on purpose.
+const SHARED_PATHS = Object.freeze(['package.json', 'pnpm-lock.yaml']);
+
+// Files read at runtime (readFileSync, not import) by a module: whenever the module is in a
+// surface's closure, these paths are part of what that surface runs.
+const RUNTIME_DATA_PATHS = Object.freeze({
+  'agt002-pre-go-analysis-v1.js': Object.freeze(['schemas/agt002']),
+  'agt002-pre-go-analysis-v2.js': Object.freeze(['schemas/agt002']),
+});
 
 function hostRunnerEntries(surface) {
   return [AGT002_HOST_SURFACE_RUNNERS[surface].relativePath];
@@ -70,7 +87,8 @@ function resolveRelativeImport(fromPath, specifier, exists) {
 
 // Repo-relative files a surface runs: the transitive closure of static and literal dynamic
 // relative imports from its entries (bare package imports are covered by the lockfile), minus the
-// monolith, plus the shared paths. Sorted, deterministic, read from the checkout only.
+// monolith, plus runtime-read data files of the modules reached, plus the shared paths. Sorted,
+// deterministic, read from the checkout only.
 export function collectAgt002SurfaceCodePaths(surface, { root = REPO_ROOT, readFile, exists } = {}) {
   const entries = AGT002_PINNED_SURFACE_ENTRIES[surface];
   if (!entries) throw new Error(`Not a pinned AGT-002 surface: ${surface}`);
@@ -90,7 +108,8 @@ export function collectAgt002SurfaceCodePaths(surface, { root = REPO_ROOT, readF
       if (resolved) pending.push(resolved);
     }
   }
-  return [...seen, ...SHARED_PATHS].sort();
+  const dataPaths = [...seen].flatMap((path) => RUNTIME_DATA_PATHS[path] ?? []);
+  return [...new Set([...seen, ...dataPaths, ...SHARED_PATHS])].sort();
 }
 
 function defaultLastChange({ ref, paths, root }) {

@@ -1,6 +1,8 @@
 import { execFile as defaultExecFile } from 'node:child_process';
 import { buildAgt002ControlPlaneIdentity } from './agt002-control-plane-identity.js';
 
+// This allowlist runs inside the bridge process: adding or renaming a host surface only takes
+// effect after the bridge is redeployed and restarted (until then the route answers 404).
 export const AGT002_HOST_SURFACE_UNITS = Object.freeze({
   initial_analysis_worker: 'agt002-initial-analysis-worker.service',
   auto_initial: 'agt002-auto-initial.service',
@@ -125,7 +127,9 @@ function expectedExecStartCommand(surface, sha) {
 
 // The release directory the ExecStart points at is itself named by the full commit sha, so it is
 // the sha of the code the unit actually runs. Only a full 40-hex directory name is accepted; the
-// byte-exact runner comparison below is still what makes it trusted.
+// byte-exact runner comparison below is still what makes it trusted. Accepted trust assumption:
+// the directory name is not verified against its contents; whoever can write under
+// /opt/psi-comercial/releases (root) could mislabel a release.
 function releaseShaFromExecStart(argv) {
   const prefix = `${AGT002_RELEASES_ROOT}/`;
   const start = argv.indexOf(prefix);
@@ -182,12 +186,20 @@ function observeUnitFields(execFile, unitName) {
   });
 }
 
-export function createAgt002HostSurfaceObserver({ execFile = defaultExecFile } = {}) {
-  return async function observeAgt002HostSurface({ surface, now = () => new Date() } = {}) {
-    if (!Object.prototype.hasOwnProperty.call(AGT002_HOST_SURFACE_UNITS, surface)) {
-      throw new Error(`Unknown AGT-002 host surface: ${surface}`);
-    }
+// How long one unit's observation is reused. GET /v1/agt002/control-plane/<unit> is public and
+// unauthenticated, and each fresh observation spawns `systemctl show` inside the bridge process
+// that also serves the AI calls: with this cache, at most one spawn per unit per window happens no
+// matter how many requests arrive (concurrent requests share the same in-flight spawn).
+export const AGT002_HOST_SURFACE_CACHE_TTL_MS = 30_000;
 
+export function createAgt002HostSurfaceObserver({
+  execFile = defaultExecFile,
+  cacheTtlMs = AGT002_HOST_SURFACE_CACHE_TTL_MS,
+  clockMs = () => Date.now(),
+} = {}) {
+  const cache = new Map();
+
+  async function observeFresh(surface, now) {
     const fields = await observeUnitFields(execFile, AGT002_HOST_SURFACE_UNITS[surface]);
     const unit_status = fields === null ? unavailableUnitStatus() : toUnitStatus(fields);
     const observed = fields === null ? null : deriveObservedIdentity(surface, fields);
@@ -201,5 +213,21 @@ export function createAgt002HostSurfaceObserver({ execFile = defaultExecFile } =
     });
 
     return Object.freeze({ ...identity, unit_status });
+  }
+
+  return async function observeAgt002HostSurface({ surface, now = () => new Date() } = {}) {
+    if (!Object.prototype.hasOwnProperty.call(AGT002_HOST_SURFACE_UNITS, surface)) {
+      throw new Error(`Unknown AGT-002 host surface: ${surface}`);
+    }
+
+    const nowMs = clockMs();
+    const cached = cache.get(surface);
+    if (cached && cached.expiresAtMs > nowMs) return cached.result;
+
+    // observeFresh never rejects (adapter failures collapse to an unavailable status), so the
+    // cached promise is always a usable observation.
+    const result = observeFresh(surface, now);
+    cache.set(surface, { expiresAtMs: nowMs + cacheTtlMs, result });
+    return result;
   };
 }

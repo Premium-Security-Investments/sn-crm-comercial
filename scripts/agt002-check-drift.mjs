@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { SURFACE_NAMES } from '../agt002-control-plane-identity.js';
 import { AGT002_PINNED_SURFACE_NAMES } from '../agt002-control-plane-surface-paths.js';
+import { AGT002_HOST_SURFACE_UNITS } from '../agt002-host-surface-observer.js';
 
 const DEFAULT_RECEIPT_PATH = 'agt002-release-receipt.json';
 const DEFAULT_OBSERVED_PATH = 'agt002-observed-surfaces.json';
@@ -67,10 +68,32 @@ function checkPinnedSurface({ surface, observedSha, observedVersion, desiredSha,
   }
 }
 
-// Failures (`issues`) are real problems: a bad receipt, or an observed surface running the wrong
-// code. A surface nobody could observe (no URL configured, endpoint down, unit not readable) is a
-// `warnings` entry instead: it says nothing about drift, so it must not turn the watchdog red.
-export function checkAgt002Drift({ receipt, observed, isAncestor = gitIsAncestor } = {}) {
+// The only tolerated way for a surface to be unobserved: a host-surface route that the deployed
+// bridge does not know yet (HTTP 404), while that bridge itself is still behind the code that
+// added the route. This is a transition window for the bridge redeploy, not a permanent state:
+// after this date a 404 fails like any other unobserved surface. (PR #329; ~14 days.)
+export const AGT002_HOST_ROUTE_GRACE_UNTIL_UTC = '2026-10-22T00:00:00.000Z';
+
+const HOST_SURFACE_SET = new Set(Object.keys(AGT002_HOST_SURFACE_UNITS));
+
+function unobservedEntry(surface, entry) {
+  const status = entry && typeof entry === 'object' && typeof entry.observation_status === 'string'
+    ? entry.observation_status
+    : 'not_configured';
+  return {
+    type: 'unobserved',
+    surface,
+    observation_status: status === 'observed' ? 'not_configured' : status,
+    ...(entry && Number.isInteger(entry.http_status) ? { http_status: entry.http_status } : {}),
+  };
+}
+
+// Failures (`issues`) are real problems: a bad receipt, an observed surface running the wrong
+// code, or a surface that could not be observed (bridge or Vercel unreachable, a URL that fails or
+// answers non-2xx, a host unit whose release can no longer be identified, nothing configured).
+// The single exception, reported in `warnings`, is a host-surface route the bridge does not know
+// yet (404) while the bridge is itself behind and before AGT002_HOST_ROUTE_GRACE_UNTIL_UTC.
+export function checkAgt002Drift({ receipt, observed, isAncestor = gitIsAncestor, now = () => new Date() } = {}) {
   const issues = [];
   const warnings = [];
 
@@ -85,12 +108,13 @@ export function checkAgt002Drift({ receipt, observed, isAncestor = gitIsAncestor
   const pinnedDesired = receipt?.desired?.pinned_surfaces ?? {};
 
   const observedSurfaces = observed?.surfaces ?? {};
+  const unobserved = [];
 
   for (const surface of SURFACE_NAMES) {
     const entry = observedSurfaces[surface];
     const observedSha = entry && typeof entry === 'object' ? nonEmptyString(entry.sha) : null;
     if (!observedSha) {
-      warnings.push({ type: 'unobserved', surface });
+      unobserved.push(unobservedEntry(surface, entry));
       continue;
     }
 
@@ -110,6 +134,22 @@ export function checkAgt002Drift({ receipt, observed, isAncestor = gitIsAncestor
       });
     } else {
       checkExactSurface({ surface, observedSha, observedVersion, desiredSha, desiredVersion, issues });
+    }
+  }
+
+  const bridgeObservedUpToDate =
+    nonEmptyString(observedSurfaces.bridge?.sha) !== null && !issues.some((issue) => issue.surface === 'bridge');
+  const withinGrace = now().getTime() < Date.parse(AGT002_HOST_ROUTE_GRACE_UNTIL_UTC);
+  for (const entry of unobserved) {
+    const tolerated =
+      HOST_SURFACE_SET.has(entry.surface) &&
+      entry.observation_status === 'route_unknown' &&
+      !bridgeObservedUpToDate &&
+      withinGrace;
+    if (tolerated) {
+      warnings.push({ ...entry, reason: 'host_route_unknown_on_outdated_bridge', grace_until_utc: AGT002_HOST_ROUTE_GRACE_UNTIL_UTC });
+    } else {
+      issues.push(entry);
     }
   }
 
@@ -142,10 +182,12 @@ if (isCliEntrypoint) {
   } else {
     console.log(json);
   }
-  // Unobserved surfaces show up as annotations on the run without failing it.
+  // Tolerated (grace-period) host routes show up as annotations on the run without failing it.
   if (process.env.GITHUB_ACTIONS === 'true') {
     for (const warning of result.warnings) {
-      console.log(`::warning title=AGT-002 surface unobserved::${warning.surface} could not be observed; drift was not checked for it.`);
+      console.log(
+        `::warning title=AGT-002 host route not deployed::${warning.surface} returned 404 from an outdated bridge; tolerated until ${warning.grace_until_utc}.`,
+      );
     }
   }
   process.exit(result.ok ? 0 : 1);

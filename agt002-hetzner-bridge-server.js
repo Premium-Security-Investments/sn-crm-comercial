@@ -105,6 +105,9 @@ export function createAgt002BridgeServer({
         source: controlPlaneIdentity.source ?? 'unobserved',
       }));
     }
+    // Public, unauthenticated, read-only. Load is bounded by the observer's per-unit cache
+    // (AGT002_HOST_SURFACE_CACHE_TTL_MS). Follow-up: require auth here once a read credential for
+    // the drift watchdog exists (not added now: it would need a new secret).
     if (url.pathname.startsWith(HOST_SURFACE_PATH_PREFIX)) {
       const surface = url.pathname.slice(HOST_SURFACE_PATH_PREFIX.length);
       if (!HOST_SURFACE_NAMES.has(surface)) return sendError(res, 404, 'AGT002_BRIDGE_BAD_REQUEST');

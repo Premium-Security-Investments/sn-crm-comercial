@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import {
   SURFACE_NAMES,
   buildAgt002ControlPlaneIdentity,
@@ -12,10 +13,11 @@ import {
   buildReanalysisWorkerIdentity,
 } from '../agt002-control-plane-surface-builders.js';
 import { generateAgt002ReleaseReceipt } from '../scripts/agt002-generate-release-receipt.mjs';
-import { checkAgt002Drift } from '../scripts/agt002-check-drift.mjs';
+import { AGT002_HOST_ROUTE_GRACE_UNTIL_UTC, checkAgt002Drift } from '../scripts/agt002-check-drift.mjs';
 import { collectAgt002SurfaceObservations, buildAgt002ObserveSurfacesResult } from '../scripts/agt002-observe-surfaces.mjs';
 import {
   AGT002_PINNED_SURFACE_NAMES,
+  RADAR_MONOLITH_MODULES,
   collectAgt002SurfaceCodePaths,
   computeAgt002PinnedSurfaceMinShas,
 } from '../agt002-control-plane-surface-paths.js';
@@ -216,7 +218,7 @@ test('collectAgt002SurfaceObservations: explicit env sha/version/source per surf
   assert.equal(fetchCalled, false);
   for (const surface of SURFACE_NAMES) {
     if (surface === 'bridge') continue;
-    assert.deepEqual(observations[surface], {}, `${surface} must stay unobserved with no configured input`);
+    assert.deepEqual(observations[surface], { observation_status: 'not_configured' }, `${surface} must stay unobserved with no configured input`);
   }
 });
 
@@ -273,7 +275,7 @@ test('collectAgt002SurfaceObservations: host surfaces default to the bridge URL 
     ...hostSurfaces.map((surface) => `https://bridge.invalid/v1/agt002/control-plane/${surface}`),
   ]);
   for (const surface of hostSurfaces) assert.equal(observations[surface].sha, `${surface}-sha`);
-  assert.deepEqual(observations.vercel_production, {}, 'vercel never rides on the bridge URL');
+  assert.deepEqual(observations.vercel_production, { observation_status: 'not_configured' }, 'vercel never rides on the bridge URL');
 });
 
 test('collectAgt002SurfaceObservations: a failed fetch collapses to unobserved instead of throwing', async () => {
@@ -283,7 +285,7 @@ test('collectAgt002SurfaceObservations: a failed fetch collapses to unobserved i
       throw new Error('network unreachable');
     },
   });
-  assert.deepEqual(observations.bridge, {});
+  assert.deepEqual(observations.bridge, { observation_status: 'fetch_failed' });
 });
 
 test('collectAgt002SurfaceObservations: a non-2xx response collapses to unobserved', async () => {
@@ -291,7 +293,7 @@ test('collectAgt002SurfaceObservations: a non-2xx response collapses to unobserv
     env: { AGT002_OBSERVE_BRIDGE_URL: 'https://example.invalid/control-plane' },
     fetchImpl: async () => ({ ok: false }),
   });
-  assert.deepEqual(observations.bridge, {});
+  assert.deepEqual(observations.bridge, { observation_status: 'http_error', http_status: null });
 });
 
 // --- trust-boundary fix: a URL response's `surface` must exactly match the surface it was fetched for ---
@@ -316,7 +318,7 @@ test('collectAgt002SurfaceObservations: a bridge response served from a radar_da
       json: async () => ({ surface: 'bridge', sha: 'bridge-sha', version: '1.2.3', source: 'bridge_url_fetch' }),
     }),
   });
-  assert.deepEqual(observations.radar_daily_scan, {}, 'a mismatched surface label must collapse to unobserved, never relabeled');
+  assert.deepEqual(observations.radar_daily_scan, { observation_status: 'surface_mismatch' }, 'a mismatched surface label must collapse to unobserved, never relabeled');
 });
 
 test('collectAgt002SurfaceObservations: a response missing the surface field entirely collapses to unobserved', async () => {
@@ -327,7 +329,7 @@ test('collectAgt002SurfaceObservations: a response missing the surface field ent
       json: async () => ({ sha: 'top5-sha', version: '1.2.3', source: 'radar_daily_top5_url_fetch' }),
     }),
   });
-  assert.deepEqual(observations.radar_daily_top5, {}, 'a missing surface field must never be trusted as a match');
+  assert.deepEqual(observations.radar_daily_top5, { observation_status: 'surface_mismatch' }, 'a missing surface field must never be trusted as a match');
 });
 
 test('collectAgt002SurfaceObservations: explicit env sha takes precedence over a configured URL', async () => {
@@ -525,10 +527,14 @@ function fakeIsAncestor(ancestor, descendant) {
   return a >= 0 && d >= 0 && a <= d;
 }
 
+// Every watched surface observed at the tip (c4) unless overridden: a sha string observes the
+// surface at that sha; an object is used verbatim (e.g. an unobserved collector result).
 function observedAt(overrides) {
-  const surfaces = { origin_main: { sha: 'c4', version: 'f0-c4', source: 'github_sha' } };
-  for (const [surface, sha] of Object.entries(overrides)) {
-    surfaces[surface] = { sha, version: `f0-${sha.slice(0, 7)}`, source: 'test' };
+  const surfaces = {};
+  for (const surface of SURFACE_NAMES) surfaces[surface] = { sha: 'c4', version: 'f0-c4', source: 'test' };
+  for (const [surface, value] of Object.entries(overrides)) {
+    surfaces[surface] =
+      typeof value === 'string' ? { sha: value, version: `f0-${value.slice(0, 7)}`, source: 'test' } : value;
   }
   return { surfaces };
 }
@@ -652,20 +658,206 @@ test('checkAgt002Drift: vercel_production still has to sit exactly on the tip of
   assert.ok(result.issues.some((issue) => issue.type === 'sha_mismatch' && issue.surface === 'vercel_production'));
 });
 
-test('checkAgt002Drift: unobserved surfaces are warnings, never failures, and never hide real drift elsewhere', () => {
-  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'c4', version: 'f0-c4', surface_last_change: () => 'c3' });
+// --- unobserved surfaces: failures, except a 404 host route from an outdated bridge in the grace window ---
 
-  const onlyOrigin = checkAgt002Drift({ receipt, observed: observedAt({}), isAncestor: fakeIsAncestor });
-  assert.equal(onlyOrigin.ok, true);
-  assert.deepEqual(onlyOrigin.issues, []);
+const BEFORE_GRACE_END = () => new Date(Date.parse(AGT002_HOST_ROUTE_GRACE_UNTIL_UTC) - 60_000);
+const AFTER_GRACE_END = () => new Date(Date.parse(AGT002_HOST_ROUTE_GRACE_UNTIL_UTC) + 60_000);
+const ROUTE_UNKNOWN = { observation_status: 'route_unknown', http_status: 404 };
+const HOST_SURFACES = SURFACE_NAMES.filter((surface) => !['origin_main', 'vercel_production', 'bridge'].includes(surface));
+
+function graceReceipt() {
+  // bridge's last code change is c4: a bridge on c3 is an outdated (pre-PR) bridge.
+  return generateAgt002ReleaseReceipt({
+    git_sha: 'c4',
+    version: 'f0-c4',
+    surface_last_change: ({ paths }) => (paths.includes('ops/agt002-hetzner-bridge/run-server.mjs') ? 'c4' : 'c1'),
+  });
+}
+
+test('checkAgt002Drift: origin_main observed and everything else unobserved fails (bridge down never turns CI green)', () => {
+  const receipt = graceReceipt();
+  const observed = { surfaces: { origin_main: { sha: 'c4', version: 'f0-c4', source: 'github_sha' } } };
+  const result = checkAgt002Drift({ receipt, observed, isAncestor: fakeIsAncestor, now: BEFORE_GRACE_END });
+  assert.equal(result.ok, false);
   assert.deepEqual(
-    onlyOrigin.warnings.map((warning) => warning.surface),
+    result.issues.filter((issue) => issue.type === 'unobserved').map((issue) => issue.surface),
     SURFACE_NAMES.filter((surface) => surface !== 'origin_main'),
   );
-  assert.ok(onlyOrigin.warnings.every((warning) => warning.type === 'unobserved'));
+  assert.deepEqual(result.warnings, []);
+});
 
-  const withDrift = checkAgt002Drift({ receipt, observed: observedAt({ radar_daily_scan: 'c1' }), isAncestor: fakeIsAncestor });
-  assert.equal(withDrift.ok, false);
-  assert.ok(withDrift.issues.some((issue) => issue.surface === 'radar_daily_scan'));
-  assert.equal(withDrift.warnings.some((warning) => warning.surface === 'radar_daily_scan'), false);
+for (const surface of ['bridge', 'vercel_production']) {
+  for (const unreachable of [
+    { observation_status: 'not_configured' },
+    { observation_status: 'fetch_failed' },
+    { observation_status: 'http_error', http_status: 503 },
+    { observation_status: 'route_unknown', http_status: 404 },
+    { observation_status: 'identity_underivable' },
+  ]) {
+    test(`checkAgt002Drift: ${surface} ${unreachable.observation_status} is a failure, never a warning`, () => {
+      const result = checkAgt002Drift({
+        receipt: graceReceipt(),
+        observed: observedAt({ [surface]: unreachable }),
+        isAncestor: fakeIsAncestor,
+        now: BEFORE_GRACE_END,
+      });
+      assert.equal(result.ok, false);
+      assert.ok(
+        result.issues.some(
+          (issue) => issue.type === 'unobserved' && issue.surface === surface && issue.observation_status === unreachable.observation_status,
+        ),
+      );
+      assert.equal(result.warnings.some((warning) => warning.surface === surface), false);
+    });
+  }
+}
+
+for (const unreachable of [
+  { observation_status: 'fetch_failed' },
+  { observation_status: 'http_error', http_status: 503 },
+  { observation_status: 'unit_unavailable', unit_status: { available: false } },
+  // e.g. 10-release.conf removed: the unit exists and runs from /opt/psi-comercial/app, so no release sha.
+  { observation_status: 'identity_underivable', unit_status: { available: true } },
+  { observation_status: 'surface_mismatch' },
+  { observation_status: 'not_configured' },
+]) {
+  test(`checkAgt002Drift: a host surface ${unreachable.observation_status} is a failure even inside the grace window`, () => {
+    const result = checkAgt002Drift({
+      receipt: graceReceipt(),
+      observed: observedAt({ bridge: 'c3', auto_initial: unreachable }),
+      isAncestor: fakeIsAncestor,
+      now: BEFORE_GRACE_END,
+    });
+    assert.ok(
+      result.issues.some(
+        (issue) => issue.type === 'unobserved' && issue.surface === 'auto_initial' && issue.observation_status === unreachable.observation_status,
+      ),
+    );
+    assert.equal(result.warnings.length, 0);
+  });
+}
+
+test('checkAgt002Drift: a host route 404 from an outdated bridge is only a warning before the grace date', () => {
+  const overrides = { bridge: 'c3' };
+  for (const surface of HOST_SURFACES) overrides[surface] = ROUTE_UNKNOWN;
+  const result = checkAgt002Drift({
+    receipt: graceReceipt(),
+    observed: observedAt(overrides),
+    isAncestor: fakeIsAncestor,
+    now: BEFORE_GRACE_END,
+  });
+  assert.deepEqual(result.warnings.map((warning) => warning.surface), HOST_SURFACES);
+  assert.ok(result.warnings.every((warning) => warning.grace_until_utc === AGT002_HOST_ROUTE_GRACE_UNTIL_UTC));
+  // The outdated bridge itself is still a failure.
+  assert.deepEqual(result.issues.map((issue) => issue.surface), ['bridge']);
+  assert.equal(result.ok, false);
+});
+
+test('checkAgt002Drift: a host route 404 fails after the grace date', () => {
+  const result = checkAgt002Drift({
+    receipt: graceReceipt(),
+    observed: observedAt({ bridge: 'c3', radar_requests: ROUTE_UNKNOWN }),
+    isAncestor: fakeIsAncestor,
+    now: AFTER_GRACE_END,
+  });
+  assert.ok(result.issues.some((issue) => issue.surface === 'radar_requests' && issue.observation_status === 'route_unknown'));
+  assert.deepEqual(result.warnings, []);
+});
+
+test('checkAgt002Drift: a host route 404 from an up-to-date bridge fails (the new bridge must know every route)', () => {
+  const result = checkAgt002Drift({
+    receipt: graceReceipt(),
+    observed: observedAt({ radar_requests: ROUTE_UNKNOWN }),
+    isAncestor: fakeIsAncestor,
+    now: BEFORE_GRACE_END,
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.issues, [{ type: 'unobserved', surface: 'radar_requests', observation_status: 'route_unknown', http_status: 404 }]);
+});
+
+test('collectAgt002SurfaceObservations + observe: every unreachable shape keeps its reason through to the observed file', async () => {
+  const responses = {
+    'https://bridge.invalid/cp': { ok: true, status: 200, json: async () => ({ surface: 'bridge', sha: 'b'.repeat(40), version: 'f0-bbbbbbb' }) },
+    'https://bridge.invalid/cp/initial_analysis_worker': { ok: false, status: 404 },
+    'https://bridge.invalid/cp/auto_initial': { ok: false, status: 503 },
+    'https://bridge.invalid/cp/radar_daily_import': {
+      ok: true,
+      status: 200,
+      json: async () => ({ surface: 'radar_daily_import', sha: null, unit_status: { available: true } }),
+    },
+    'https://bridge.invalid/cp/radar_daily_scan': {
+      ok: true,
+      status: 200,
+      json: async () => ({ surface: 'radar_daily_scan', sha: null, unit_status: { available: false } }),
+    },
+  };
+  const result = await buildAgt002ObserveSurfacesResult({
+    gitSha: 'c4',
+    env: { AGT002_OBSERVE_BRIDGE_URL: 'https://bridge.invalid/cp' },
+    fetchImpl: async (url) => {
+      if (responses[url]) return responses[url];
+      throw new Error('unreachable');
+    },
+  });
+  assert.equal(result.surfaces.origin_main.observation_status, 'observed');
+  assert.equal(result.surfaces.bridge.observation_status, 'observed');
+  assert.equal(result.surfaces.vercel_production.observation_status, 'not_configured');
+  assert.equal(result.surfaces.initial_analysis_worker.observation_status, 'route_unknown');
+  assert.equal(result.surfaces.initial_analysis_worker.http_status, 404);
+  assert.equal(result.surfaces.auto_initial.observation_status, 'http_error');
+  assert.equal(result.surfaces.auto_initial.http_status, 503);
+  assert.equal(result.surfaces.radar_daily_import.observation_status, 'identity_underivable');
+  assert.equal(result.surfaces.radar_daily_scan.observation_status, 'unit_unavailable');
+  assert.equal(result.surfaces.radar_requests.observation_status, 'fetch_failed');
+});
+
+// --- code paths: runtime-read files and the monolith's Radar module imports ---
+
+test('collectAgt002SurfaceCodePaths: includes runtime-read schemas and package.json, not only imports', () => {
+  const initial = collectAgt002SurfaceCodePaths('initial_analysis_worker');
+  assert.ok(initial.includes('schemas/agt002'), 'agt002-pre-go-analysis-v2.js reads schemas/agt002/*.json at runtime');
+  for (const surface of AGT002_PINNED_SURFACE_NAMES) {
+    const paths = collectAgt002SurfaceCodePaths(surface);
+    assert.ok(paths.includes('package.json'), surface);
+    assert.ok(paths.includes('pnpm-lock.yaml'), surface);
+  }
+});
+
+// Best effort: re-derive, from the monolith source, which repo modules the Radar functions
+// (persistTenderRadar / fetchPublicTenderRadar / readPersistedTenderRadar and the top-level
+// functions they call, transitively) use, and require every one of them in RADAR_MONOLITH_MODULES.
+// Only top-level `function` declarations closed by a column-0 `}` and named `import { ... } from
+// '../x.js'` imports are recognized.
+test('RADAR_MONOLITH_MODULES covers every module the monolith Radar functions import (best effort)', () => {
+  const source = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  const importedFrom = new Map();
+  for (const match of source.matchAll(/^import\s+\{([^}]*)\}\s+from\s+'\.\.\/([^']+)'/gm)) {
+    for (const part of match[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/).pop().trim();
+      if (name) importedFrom.set(name, match[2]);
+    }
+  }
+  const bodies = new Map();
+  const starts = [...source.matchAll(/^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/gm)];
+  for (const start of starts) {
+    const end = source.indexOf('\n}\n', start.index);
+    bodies.set(start[1], source.slice(start.index, end < 0 ? undefined : end));
+  }
+  const roots = ['persistTenderRadar', 'fetchPublicTenderRadar', 'readPersistedTenderRadar'];
+  for (const root of roots) assert.ok(bodies.has(root), `expected ${root} in the monolith`);
+
+  const seen = new Set();
+  const modules = new Set();
+  const pending = [...roots];
+  while (pending.length > 0) {
+    const name = pending.pop();
+    if (seen.has(name) || !bodies.has(name)) continue;
+    seen.add(name);
+    for (const identifier of new Set(bodies.get(name).match(/[A-Za-z_$][A-Za-z0-9_$]*/g))) {
+      if (importedFrom.has(identifier)) modules.add(importedFrom.get(identifier));
+      if (bodies.has(identifier)) pending.push(identifier);
+    }
+  }
+  const missing = [...modules].filter((module) => !RADAR_MONOLITH_MODULES.includes(module));
+  assert.deepEqual(missing, [], `add these to RADAR_MONOLITH_MODULES: ${missing.join(', ')}`);
 });

@@ -142,16 +142,16 @@ test('checkAgt002Drift reports ok:true when every watched surface has a non-empt
   assert.deepEqual(result, { ok: true, issues: [], warnings: [] });
 });
 
-test('checkAgt002Drift reports a surface entirely missing from observed as an unobserved warning, not drift', async () => {
+test('checkAgt002Drift fails closed when a surface is entirely missing from observed', async () => {
   const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
   const receipt = { desired: { sha: 'abc123', version: '1.2.3' } };
   const observed = fullyObservedSurfaces('abc123', '1.2.3');
   delete observed.surfaces.bridge;
 
   const result = checkAgt002Drift({ receipt, observed });
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.issues, []);
-  assert.deepEqual(result.warnings, [{ type: 'unobserved', surface: 'bridge' }]);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.issues, [{ type: 'unobserved', surface: 'bridge', observation_status: 'not_configured' }]);
+  assert.deepEqual(result.warnings, []);
 });
 
 test('checkAgt002Drift distinguishes missing sha, missing version, sha mismatch, and version mismatch', async () => {
@@ -165,8 +165,7 @@ test('checkAgt002Drift distinguishes missing sha, missing version, sha mismatch,
 
   const result = checkAgt002Drift({ receipt, observed });
   assert.equal(result.ok, false);
-  assert.ok(result.warnings.some((warning) => warning.type === 'unobserved' && warning.surface === 'radar_daily_scan'));
-  assert.ok(!result.issues.some((issue) => issue.surface === 'radar_daily_scan'), 'an unobserved surface is never drift');
+  assert.ok(result.issues.some((issue) => issue.type === 'unobserved' && issue.surface === 'radar_daily_scan'));
   assert.ok(
     result.issues.some((issue) => issue.type === 'missing_observed_version' && issue.surface === 'initial_analysis_worker'),
   );
@@ -212,7 +211,11 @@ test('checkAgt002Drift fails closed with no receipt/observed at all, and reports
   const result = checkAgt002Drift({});
   assert.equal(result.ok, false);
   assert.ok(result.issues.some((issue) => issue.type === 'missing_desired_sha'));
-  assert.deepEqual(result.warnings.map((warning) => warning.surface), WATCHED_SURFACES);
+  assert.deepEqual(
+    result.issues.filter((issue) => issue.type === 'unobserved').map((issue) => issue.surface),
+    WATCHED_SURFACES,
+  );
+  assert.deepEqual(result.warnings, []);
 });
 
 test('drift_alert job writes observed surfaces and runs check:agt002-drift with --receipt and --observed', () => {

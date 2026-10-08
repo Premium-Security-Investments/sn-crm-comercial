@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AGT002_HOST_SURFACE_CACHE_TTL_MS,
   AGT002_HOST_SURFACE_UNITS,
   createAgt002HostSurfaceObserver,
 } from '../agt002-host-surface-observer.js';
@@ -715,4 +716,70 @@ test('observeAgt002HostSurface: the result never contains raw ExecStart/Environm
   assert.equal(JSON.stringify(result).includes('SUPER_SECRET_TOKEN'), false);
   assert.equal(JSON.stringify(result).includes('do-not-leak-me'), false);
   assert.equal(JSON.stringify(result).includes('argv[]'), false);
+});
+
+// --- per-unit cache: repeated public GETs never spawn systemctl more than once per window ---
+
+test('observeAgt002HostSurface: repeated observations of a unit inside the cache window spawn systemctl once', async () => {
+  const calls = [];
+  let clock = 1_000_000;
+  const observe = createAgt002HostSurfaceObserver({
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_daily_scan') }),
+    clockMs: () => clock,
+  });
+
+  const first = await observe({ surface: 'radar_daily_scan' });
+  clock += AGT002_HOST_SURFACE_CACHE_TTL_MS - 1;
+  const second = await observe({ surface: 'radar_daily_scan' });
+
+  assert.equal(calls.length, 1);
+  assert.equal(second, first);
+});
+
+test('observeAgt002HostSurface: the cache expires after the window and is per unit', async () => {
+  const calls = [];
+  let clock = 1_000_000;
+  const observe = createAgt002HostSurfaceObserver({
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_daily_scan') }),
+    clockMs: () => clock,
+  });
+
+  await observe({ surface: 'radar_daily_scan' });
+  await observe({ surface: 'initial_analysis_worker' });
+  assert.equal(calls.length, 2, 'another unit is never served from this unit cache');
+
+  clock += AGT002_HOST_SURFACE_CACHE_TTL_MS;
+  await observe({ surface: 'radar_daily_scan' });
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map((call) => call.args[1]), [
+    'agt002-radar-scan.service',
+    'agt002-initial-analysis-worker.service',
+    'agt002-radar-scan.service',
+  ]);
+});
+
+test('observeAgt002HostSurface: concurrent observations of one unit share a single systemctl spawn', async () => {
+  const calls = [];
+  const pending = [];
+  const observe = createAgt002HostSurfaceObserver({
+    execFile: (command, args, options, callback) => {
+      calls.push({ command, args, options });
+      pending.push(() => callback(null, validStdoutFor('radar_daily_top5')));
+    },
+    clockMs: () => 5,
+  });
+
+  const burst = Array.from({ length: 50 }, () => observe({ surface: 'radar_daily_top5' }));
+  pending.forEach((release) => release());
+  const results = await Promise.all(burst);
+
+  assert.equal(calls.length, 1);
+  assert.ok(results.every((result) => result.sha === SHA_A));
+});
+
+test('observeAgt002HostSurface: an unknown surface is rejected before touching the cache', async () => {
+  const calls = [];
+  const observe = createAgt002HostSurfaceObserver({ execFile: fakeExecFile(calls, {}), clockMs: () => 0 });
+  await assert.rejects(() => observe({ surface: 'radar_pipeline' }), /Unknown AGT-002 host surface/);
+  assert.equal(calls.length, 0);
 });
