@@ -4025,6 +4025,19 @@ export async function importRepublishedTenderDocuments(database, opportunityId, 
   if (noticeUidFromSecopUrl(secopOfficialUrl(getTenderSourceUrlFromOpportunity(opportunity))) !== noticeUid) throw new Error('La fuente oficial de la oportunidad aún no apunta al aviso nuevo.');
   return importOfficialTenderDocuments(database, opportunityId, opportunity, { id: actorProfileId }, { analyze: false, republicationNoticeUid: noticeUid });
 }
+// Versión nueva de un proceso republicado: exige el conjunto completo (si falta un documento, reintento en la
+// siguiente corrida). Los del mismo nombre ya quedaron versionados (identidad lógica, migración 057); los que sólo
+// existían en el aviso anterior se retiran como historial (migración 116), antes de fijar el snapshot nuevo.
+async function retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, toDownload, refreshResults, actorId, noticeUid }) {
+  const { failed_count: failedCount } = summarizeTenderDocumentRefresh(refreshResults);
+  if (failedCount > 0) throw new Error(`Versión nueva: ${failedCount} documento(s) oficiales aún no se pudieron descargar; se reintenta en la siguiente corrida.`);
+  const retired = await database.rpc('psi_retire_tender_document_versions', {
+    p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: sourceLabel,
+    p_keep_names: toDownload.map(doc => cleanFileName(doc.name)), p_actor_id: actorId,
+  });
+  if (retired.error) throw retired.error;
+  return { republication_notice_uid: noticeUid, retired_count: Number(retired.data || 0) };
+}
 async function importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze = true, republicationNoticeUid = null } = {}) {
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
@@ -4110,20 +4123,9 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
       }),
     });
   });
+  const republicationContext = republicationNoticeUid ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, toDownload, refreshResults, actorId: currentProfile.id, noticeUid: republicationNoticeUid }) : {};
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
-  let republicationContext = {};
-  if (republicationNoticeUid) {
-    if (refreshSummary.failed_count > 0) throw new Error(`Versión nueva: ${refreshSummary.failed_count} documento(s) oficiales aún no se pudieron descargar; se reintenta en la siguiente corrida.`);
-    // Los documentos con el mismo nombre ya quedaron versionados (identidad lógica, migración 057); los que sólo
-    // existían en el aviso anterior se retiran como historial (migración 116), antes de fijar el snapshot nuevo.
-    const retired = await database.rpc('psi_retire_tender_document_versions', {
-      p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: sourceLabel,
-      p_keep_names: toDownload.map(doc => cleanFileName(doc.name)), p_actor_id: currentProfile.id,
-    });
-    if (retired.error) throw retired.error;
-    republicationContext = { republication_notice_uid: republicationNoticeUid, retired_count: Number(retired.data || 0) };
-  }
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, ...republicationContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
   const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
   if (beginRefresh.error) throw beginRefresh.error;
