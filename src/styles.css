@@ -640,6 +640,8 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .upcoming-list small{color:#526173}
 .my-day-prospect{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
 .my-day-prospect p{margin:0}
+.decision-queue-header .decision-quota{margin-top:8px;padding:8px 12px;border-radius:10px;background:#fff1dc;color:#7c2d12;font-weight:700}
+.decision-queue-header .decision-quota.is-done{background:#dcfce7;color:#14532d}
 .decision-full-link{display:inline-block;margin:0 14px 14px;color:#1b4fd0;font-size:13px;font-weight:700}
 .decision-row-main strong{color:#10213d;font-size:15px;overflow-wrap:anywhere}
 .decision-row-main span{color:#526173;font-size:13px}

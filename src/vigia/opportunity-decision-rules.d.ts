@@ -19,3 +19,7 @@ export function isOutOfActivePipeline(opportunity?: DecidableOpportunity | null,
 export function isPendingDecision(opportunity?: DecidableOpportunity | null, now?: Date): boolean;
 export function pendingDecisions<T extends DecidableOpportunity>(opportunities?: T[], now?: Date): T[];
 export function normalizeDecisionRequest(body: unknown): Record<string, string | number | null>;
+export const DAILY_DECISION_QUOTA: number;
+export type DecisionQuota = { pending: number; required: number; done: number; remaining: number; blocked: boolean };
+export function decisionQuota(pendingCount: number, decidedToday: number): DecisionQuota;
+export function bogotaDayStartIso(now?: Date): string;

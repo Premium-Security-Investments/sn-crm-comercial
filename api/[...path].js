@@ -40,7 +40,7 @@ import { hasPermission } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
-import { bogotaDay, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
+import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
@@ -3127,7 +3127,8 @@ app.get('/api/bootstrap', async (req, res) => {
       if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
       return acc;
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-    res.json(filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile));
+    const decisionsToday = currentProfile.role === 'comercial' ? await countDecisionsToday(database, currentProfile.id) : 0;
+    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday });
   } catch (error) { sendAuthError(res, error); }
 });
 app.all('/api/bootstrap', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
@@ -5497,10 +5498,23 @@ async function countPendingDecisions(database, ownerId) {
   return pendingDecisions(rows || [], new Date()).length;
 }
 
+// Oportunidades distintas que el comercial decidió hoy (Bogotá), según el registro de auditoría de decisiones.
+async function countDecisionsToday(database, ownerId) {
+  const rows = await must(database.from('psi_sales_opportunity_audit_logs')
+    .select('opportunity_id')
+    .eq('changed_by', ownerId)
+    .eq('field_name', 'decision')
+    .gte('created_at', bogotaDayStartIso(new Date())));
+  return new Set((rows || []).map(row => row.opportunity_id)).size;
+}
+
 async function requireNoPendingDecisions(database, ownerId) {
   const pending = await countPendingDecisions(database, ownerId);
-  if (pending > 0) {
-    const error = new Error(`Tiene ${pending} ${pending === 1 ? 'oportunidad' : 'oportunidades'} sin decisión (gestión vencida o sin agenda). Decídalas en Mi día para poder crear nuevas: sigue viva, avanza, congelar, descartar o pedir eliminar.`);
+  if (!pending) return;
+  const decidedToday = await countDecisionsToday(database, ownerId);
+  const quota = decisionQuota(pending, decidedToday);
+  if (quota.blocked) {
+    const error = new Error(`Tiene ${pending} ${pending === 1 ? 'oportunidad' : 'oportunidades'} sin decisión. Hoy lleva ${quota.done} de ${quota.required}: decida ${quota.remaining} más en Mi día para poder crear nuevas.`);
     error.status = 409;
     error.code = 'CRM_PENDING_DECISIONS';
     throw error;
