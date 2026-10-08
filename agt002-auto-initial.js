@@ -44,6 +44,40 @@ export async function countAgt002InitialAnalysesToday(database, now) {
   return (rows || []).length;
 }
 
+// State record kind written by agt002-phase-change-followup.js for each automatic phase-change analysis decision.
+export const AGT002_PHASE_CHANGE_ANALYSIS_KIND = 'tender_phase_change_analysis';
+
+/**
+ * Automatic admissions (intents written BEFORE admitting) of the phase-change follow-up since the start of today
+ * (Bogotá), one row per admission with its opportunity and kind. Owner decision 2026-10-08: these reanalyses do NOT
+ * consume nor wait for the daily cap of automatic first analyses; this list only feeds the follow-up's own technical
+ * safety net and lets the cap below exclude a phase-change INITIAL.
+ */
+export async function listAgt002PhaseChangeAdmissionsToday(database, now) {
+  const rows = await must(database.from('psi_sales_interactions')
+    .select('opportunity_id,notes')
+    .eq('interaction_type', 'documento')
+    .gte('created_at', agt002BogotaDayStart(now).toISOString())
+    .like('notes', `%"kind":"${AGT002_PHASE_CHANGE_ANALYSIS_KIND}"%`), 'conteo diario de reanálisis por fase nueva');
+  return (rows || []).flatMap(row => {
+    try {
+      const notes = JSON.parse(String(row.notes || ''));
+      return notes?.kind === AGT002_PHASE_CHANGE_ANALYSIS_KIND && notes.outcome === 'admitting'
+        ? [{ opportunityId: row.opportunity_id, analysisKind: notes.analysis_kind }] : [];
+    } catch { return []; }
+  });
+}
+
+/**
+ * The daily cap of automatic FIRST analyses (analysis at conversion). INITIAL jobs admitted today, minus the INITIAL
+ * ones admitted by the phase-change follow-up (an opportunity converted without analysis that then changed phase):
+ * those, like its reanalyses, are outside this cap.
+ */
+export async function countAgt002AutomaticAnalysesToday(database, now) {
+  const phaseChangeInitials = (await listAgt002PhaseChangeAdmissionsToday(database, now)).filter(row => row.analysisKind === 'INITIAL').length;
+  return Math.max(0, (await countAgt002InitialAnalysesToday(database, now)) - phaseChangeInitials);
+}
+
 /**
  * Conversions whose documents are ready and that still have no INITIAL analysis, oldest first. Each candidate carries
  * the converting person (`requested_by`) as the authorizing actor.
@@ -95,7 +129,7 @@ export async function runAgt002AutoInitialAdmissions(database, {
   }
   const candidates = await findAgt002AutoInitialCandidates(database, { since });
   const events = [];
-  let admittedToday = await countAgt002InitialAnalysesToday(database, now);
+  let admittedToday = await countAgt002AutomaticAnalysesToday(database, now);
   for (const job of candidates) {
     const base = { opportunityId: job.opportunity_id, processingJobId: job.id };
     if (admittedToday >= dailyCap) {

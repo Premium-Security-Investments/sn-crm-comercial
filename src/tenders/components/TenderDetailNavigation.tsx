@@ -64,6 +64,15 @@ export function resolveTenderSourceUrl(sourceUrl?: string | null, observations?:
   return safePublicTenderSourceUrl(historical);
 }
 
+/**
+ * Avisos que el seguimiento automático de Vig-IA deja en las observaciones cuando SECOP publica una fase nueva o una
+ * versión nueva del proceso (enlace actualizado, documentos bajados, reanálisis lanzado o pendiente), en orden.
+ */
+export function resolveTenderPhaseChangeNotices(observations?: string | null): string[] {
+  return String(observations || '').split('\n').map(line => line.trim())
+    .filter(line => line.startsWith('SECOP publicó '));
+}
+
 export function resolveTenderValidity(expectedCloseDate?: string | null): TenderDetailValidity {
   const [year, month, day] = String(expectedCloseDate || '').slice(0, 10).split('-').map(Number);
   if (!year || !month || !day) return { label: 'Vigente', tone: 'success' };

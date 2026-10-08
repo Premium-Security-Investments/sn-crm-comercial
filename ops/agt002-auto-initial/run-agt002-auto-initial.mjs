@@ -6,6 +6,7 @@
 //      cost) and is never admitted to an analysis, because step 2 only admits conversions since the activation.
 //   2. Analysis: admits the INITIAL analysis for every conversion whose documents are ready (agt002-auto-initial.js),
 //      within the daily cap; the initial-analysis worker timer then runs it.
+//   (New SECOP phases of converted tenders have their own review service: agt002-phase-change-review.)
 import { createClient } from '@supabase/supabase-js';
 import { runAgt002AutoInitialAdmissions } from '../../agt002-auto-initial.js';
 

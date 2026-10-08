@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // AGT-002 Radar import on the host (owner decision 2026-10-06: the daily import lives in the CRM, not in Hermes).
-//   --daily     the full daily import (deep SECOP search + TVEC + ESU), persisted as a `cron` run.
+//   --daily     the full daily import (deep SECOP search + TVEC + ESU), persisted as a `cron` run. It also leaves the
+//               "detected" mark of a new SECOP phase (or republication) of a converted process.
+//   --phase-change-review  its own unit (agt002-phase-change-review.timer: Mon–Fri 9:00, 14:00, 19:00; Sat–Sun 14:00
+//               Bogotá): new SECOP phase of ACTIVE converted tenders — link, new documents, archive of obsolete ones,
+//               full reanalysis, mail outbox for Hermes (agt002-phase-change-review.js). Never part of the daily chain.
 //   --requests  runs the full import for a pending "Sincronizar fuentes oficiales" request, if any.
 //   --compare   reads the sources with the full import and compares against the Radar, writing nothing.
 //   --top5      writes the Discord "5 de mayor encaje" text and the Radar export built from the CRM's own Radar
@@ -12,8 +16,8 @@ process.env.CRM_SKIP_LISTEN = '1';
 process.env.NEXT_PUBLIC_SUPABASE_URL ||= process.env.SUPABASE_URL;
 const log = event => console.log(JSON.stringify(event));
 const mode = process.argv[2];
-if (!['--daily', '--requests', '--compare', '--top5'].includes(mode)) {
-  log({ event: 'agt002_radar_import_usage', usage: 'run-agt002-radar-import.mjs --daily|--requests|--compare|--top5' });
+if (!['--daily', '--requests', '--compare', '--top5', '--phase-change-review'].includes(mode)) {
+  log({ event: 'agt002_radar_import_usage', usage: 'run-agt002-radar-import.mjs --daily|--requests|--compare|--top5|--phase-change-review' });
   process.exit(2);
 }
 
@@ -24,6 +28,18 @@ const database = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 function summarize(result) {
   const receipt = result?.run_receipt || {};
   return { status: receipt.status || null, visible: result?.tenders?.length ?? null, sources: (result?.diagnostics || []).map(d => `${d.source}: ${d.status} (${d.records_read ?? d.count})`) };
+}
+
+// Revisión programada de fases nuevas de SECOP (agt002-phase-change-review.js): lun–vie 9:00, 14:00, 19:00 y sáb–dom
+// 14:00 (Bogotá), en su propio servicio. Enlace nuevo, documentos nuevos, archivado de obsoletos, reanálisis y outbox de
+// correo para Hermes. Cada paso falla por separado sin cortar los demás.
+async function runPhaseChangeReview() {
+  const { runAgt002PhaseChangeReview } = await import('../../agt002-phase-change-review.js');
+  const budgetMs = Number(process.env.AGT002_PHASE_CHANGE_DOCUMENTS_BUDGET_MS || 15 * 60 * 1000);
+  await runAgt002PhaseChangeReview(database, {
+    api, budgetMs, environment: process.env, log,
+    stateDir: process.env.AGT002_LICITACIONES_ALERTS_DIR || '/var/lib/agt002-licitaciones-alerts',
+  });
 }
 
 async function runDaily() {
@@ -96,6 +112,7 @@ try {
   if (mode === '--requests') await runRequests();
   if (mode === '--compare') await runCompare();
   if (mode === '--top5') await runTop5();
+  if (mode === '--phase-change-review') await runPhaseChangeReview();
   process.exit(0);
 } catch (error) {
   const cause = error?.cause ? { cause: String(error.cause?.code || error.cause?.name || ''), cause_message: String(error.cause?.message || error.cause).slice(0, 300) } : {};

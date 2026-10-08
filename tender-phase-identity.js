@@ -1,14 +1,65 @@
+import { compareTenderFamilyRecency, isTenderRepublicationPair, isTerminalTenderStatus, splitTrailingPhaseSuffixes, tenderProcessFamilyKey } from './tender-process-family.js';
+
 function normalizeTenderStatusText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
+// Referencia sin sufijos de fase, con mayúsculas y acentos originales: sirve para pedir a datos.gov.co todas
+// las fases de un mismo proceso (`referencia_del_proceso like '<base>%'`).
+export function tenderProcessBaseReference(ref) {
+  return splitTrailingPhaseSuffixes(ref).base.replace(/[.\s]+$/g, '').trim();
+}
+
+// datos.gov.co publica la fecha de cierre sin zona ("2026-10-19T00:00:00.000") y el CRM la guarda como medianoche UTC
+// ("2026-10-19T00:00:00+00:00"): las dos son una fecha de Colombia. Se leen en hora Bogotá (UTC-5); una fecha con hora
+// y zona explícitas se respeta.
+export function tenderDeadlineBogotaMs(deadline) {
+  const text = String(deadline || '').trim();
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?(Z|[+-]00:?00|[+-]\d{2}:?\d{2})?$/);
+  if (!match) return Date.parse(text);
+  const [, day, time = '00:00:00', zone] = match;
+  const isUtcMidnight = (!zone || /^(Z|[+-]00:?00)$/.test(zone)) && /^00:00(:00(\.0+)?)?$/.test(time);
+  if (!zone || isUtcMidnight) return Date.parse(`${day}T${time.length === 5 ? `${time}:00` : time}-05:00`);
+  return Date.parse(text);
+}
+
+/**
+ * Por qué un cambio de fuente (fase nueva o republicación) NO debe disparar el seguimiento automático de documentos y
+ * reanálisis, o `null` si puede. Fail-closed: proceso terminal (Adjudicado, Seleccionado, Celebrado, Cancelado…), sin
+ * fecha de cierre o con el cierre ya pasado.
+ */
+export function tenderSourceChangeFollowUpBlocker({ status, deadline } = {}, now = new Date()) {
+  if (isTerminalTenderStatus(status)) return 'terminal_status';
+  const deadlineAt = tenderDeadlineBogotaMs(deadline);
+  if (!Number.isFinite(deadlineAt)) return 'no_deadline';
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(now);
+  if (deadlineAt <= nowMs) return 'deadline_passed';
+  return null;
+}
+
 function canonicalTenderProcessReference(tender) {
   const reference = normalizeTenderStatusText(tender?.ref || tender?.process_id || tender?.id || '');
-  return reference.replace(/\s*\((?:presentacion de oferta|manifestacion de interes|presentacion de observaciones|evaluacion de ofertas|apertura de ofertas)\)\s*$/i, '').replace(/[.\s]+$/g, '').trim();
+  return splitTrailingPhaseSuffixes(reference).base.replace(/[.\s]+$/g, '').trim();
+}
+
+// SECOP escribe algunas entidades con caracteres de control ("Rama Judicial \u0096 Dirección…") que en el CRM
+// quedan como espacios: se quitan esos caracteres y se juntan los espacios. La puntuación se conserva porque
+// SECOP distingue entidades homónimas con ella ("HOSPITAL SAN RAFAEL +" y "HOSPITAL SAN RAFAEL.*").
+function canonicalTenderEntity(entity) {
+  return normalizeTenderStatusText(entity).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function canonicalTenderProcessKey(tender) {
-  return [tender?.source, tender?.entity, canonicalTenderProcessReference(tender)].map(normalizeTenderStatusText).join('|');
+  return [normalizeTenderStatusText(tender?.source), canonicalTenderEntity(tender?.entity), canonicalTenderProcessReference(tender)].join('|');
+}
+
+// Mismo proceso: la clave canónica de siempre o, para SECOP II, la misma familia de proceso
+// (referencia que sólo difiere en puntuación/espacios: una republicación por modificación).
+function isSameTenderProcess(reference, candidate) {
+  const canonicalKey = canonicalTenderProcessKey(reference);
+  if (canonicalKey && !canonicalKey.endsWith('|') && canonicalTenderProcessKey(candidate) === canonicalKey) return true;
+  const familyKey = tenderProcessFamilyKey(reference);
+  return Boolean(familyKey) && tenderProcessFamilyKey(candidate) === familyKey;
 }
 
 function deadlineValue(tender) {
@@ -20,20 +71,38 @@ function deadlineMs(tender) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function officialPhaseRank(tender) {
-  const status = normalizeTenderStatusText(tender?.status || '');
-  if (status.includes('presentacion de oferta') || status.includes('evaluacion de ofertas') || status.includes('apertura de ofertas')) return 4;
-  if (status.includes('presentacion de observaciones')) return 2;
-  if (status.includes('manifestacion de interes')) return 1;
+function statusPhaseRank(status) {
+  const text = normalizeTenderStatusText(status || '');
+  if (text.includes('presentacion de oferta') || text.includes('evaluacion de ofertas') || text.includes('apertura de ofertas')) return 4;
+  if (text.includes('presentacion de observaciones')) return 2;
+  if (text.includes('manifestacion de interes')) return 1;
   return 0;
 }
 
-function preferOfficialIdentity(current, candidate) {
+// El estado de un proceso adjudicado o cerrado ya no dice en qué fase está, pero su referencia sí:
+// "… (Presentación de oferta)" con estado "Adjudicado" sigue siendo la fase de oferta.
+function officialPhaseRank(tender) {
+  const referenceRank = splitTrailingPhaseSuffixes(tender?.ref || '').suffixes
+    .some(suffix => suffix.includes('presentacion de oferta')) ? 4 : 0;
+  return Math.max(statusPhaseRank(tender?.status), referenceRank);
+}
+
+function preferOfficialIdentity(current, candidate, rankOf = officialPhaseRank) {
   if (!current) return candidate;
   if (!candidate) return current;
-  const currentRank = officialPhaseRank(current);
-  const candidateRank = officialPhaseRank(candidate);
+  // Una republicación en estado terminal (Adjudicado, Cancelado…) nunca pasa a ser la fuente. Los
+  // sucesores de fase conservan la regla de siempre (así la oportunidad se entera de la adjudicación).
+  if (candidate !== current && isTerminalTenderStatus(candidate.status) && !isTerminalTenderStatus(current.status)
+    && isTenderRepublicationPair(current, candidate)) return current;
+  const currentRank = rankOf(current);
+  const candidateRank = rankOf(candidate);
   if (candidateRank !== currentRank) return candidateRank > currentRank ? candidate : current;
+  // Sólo dentro de una republicación SECOP II (misma familia, referencia distinta por puntuación) y
+  // a igual fase: la publicación más reciente es la vigente. Nunca pesa más que la fase.
+  if (isTenderRepublicationPair(current, candidate)) {
+    const recency = compareTenderFamilyRecency(candidate, current);
+    if (recency) return recency > 0 ? candidate : current;
+  }
   return deadlineMs(candidate) > deadlineMs(current) ? candidate : current;
 }
 
@@ -54,7 +123,7 @@ function hasAmbiguousSuccessors(successorCandidates) {
 
 function knownPhasesFor(rows) {
   return uniqueStrings(rows.map(row => String(row?.status || '').trim()))
-    .sort((a, b) => officialPhaseRank({ status: a }) - officialPhaseRank({ status: b }));
+    .sort((a, b) => statusPhaseRank(a) - statusPhaseRank(b));
 }
 
 function phaseHistoryLinePrefix(previousPhase, newPhase) {
@@ -103,8 +172,8 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
 
   for (const convertedRow of converted) {
     const canonicalKey = canonicalTenderProcessKey(convertedRow);
-    if (!canonicalKey || canonicalKey.endsWith('|')) continue;
-    const fetchedSame = fetchedRows.filter(row => canonicalTenderProcessKey(row) === canonicalKey);
+    if ((!canonicalKey || canonicalKey.endsWith('|')) && !tenderProcessFamilyKey(convertedRow)) continue;
+    const fetchedSame = fetchedRows.filter(row => isSameTenderProcess(convertedRow, row));
     if (!fetchedSame.length) continue;
 
     const successorCandidates = fetchedSame.filter(row => row?.stable_key && row.stable_key !== convertedRow.stable_key);
@@ -115,7 +184,16 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
       continue;
     }
 
-    const official = fetchedSame.reduce(preferOfficialIdentity, convertedRow);
+    // La convertida puede apuntar ya a una fase posterior (su estado puede decir sólo "Adjudicado"): su fase
+    // real es la de la fila oficial con su mismo enlace, para no devolverla nunca a una fase anterior.
+    const currentRank = Math.max(officialPhaseRank(convertedRow),
+      ...fetchedSame.filter(row => row?.url && row.url === convertedRow.url).map(officialPhaseRank));
+    const rankOf = row => (row === convertedRow ? currentRank : officialPhaseRank(row));
+    // Si la oportunidad ya adoptó una republicación (su proceso vigente es el de la versión nueva), la
+    // versión anterior —aunque esté en una fase más avanzada— ya no puede devolverle el enlace.
+    const adoptedRepublication = fetchedSame.some(row => row?.process_id && row.process_id === convertedRow.process_id && isTenderRepublicationPair(convertedRow, row));
+    const officialPool = adoptedRepublication ? fetchedSame.filter(row => isTenderRepublicationPair(convertedRow, row)) : fetchedSame;
+    const official = officialPool.reduce((current, candidate) => preferOfficialIdentity(current, candidate, rankOf), convertedRow);
     const successorKeys = uniqueStrings(successorCandidates.map(row => row.stable_key));
     omitStableKeys.push(...successorKeys);
     discardStableKeys.push(...successorKeys.filter(key => {
@@ -138,6 +216,25 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
     const officialStatus = official.status || convertedRow.status || null;
     const urlChanged = Boolean(officialUrl) && officialUrl !== convertedRow.url;
     const phaseChanged = Boolean(officialStatus) && officialStatus !== convertedRow.status;
+    // Cambio de fuente que pide seguimiento automático (documentos + reanálisis, agt002-phase-change-followup.js):
+    // SÓLO en la corrida que cambia el enlace, y sólo hacia una fase posterior o una republicación (referencia distinta
+    // por puntuación) de la misma fase; nunca porque el enlace "vuelva" a una fase anterior. `blocker` dice por qué el
+    // proceso nuevo no se sigue (terminal, sin cierre o cierre pasado). Un cambio ya aplicado antes de instalar no
+    // vuelve a pasar por aquí: su enlace ya no cambia.
+    const liveRepublication = official !== convertedRow && isTenderRepublicationPair(convertedRow, official) && rankOf(official) >= currentRank;
+    const advancesPhase = official !== convertedRow && rankOf(official) > currentRank;
+    const sourceChange = urlChanged && (advancesPhase || liveRepublication) ? {
+      change: liveRepublication ? 'republication' : 'phase',
+      ref: official.ref || convertedRow.ref || null,
+      url: officialUrl,
+      processId: official.process_id || null,
+      previousUrl: convertedRow.url || null,
+      previousPhase: convertedRow.status || null,
+      newPhase: officialStatus,
+      deadline: deadlineValue(official) || null,
+      detectedAt: nowIso,
+      blocker: tenderSourceChangeFollowUpBlocker({ status: official.status, deadline: deadlineValue(official) }, nowIso),
+    } : null;
     if (convertedRow.converted_opportunity_id && (urlChanged || phaseChanged)) {
       opportunityPatches.push({
         converted_opportunity_id: convertedRow.converted_opportunity_id,
@@ -146,6 +243,7 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
         processId: official.process_id || convertedRow.process_id || null,
         deadline: deadlineValue(official) || deadlineValue(convertedRow) || null,
         phaseChange: phaseChanged ? { previousPhase: convertedRow.status || null, newPhase: officialStatus, detectedAt: nowIso } : null,
+        sourceChange,
       });
     }
   }

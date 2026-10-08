@@ -20,6 +20,7 @@ function fakeDb(tables) {
         select() { return chain; },
         eq(column, value) { filters.push(row => row[column] === value); return chain; },
         gte(column, value) { filters.push(row => String(row[column]) >= String(value)); return chain; },
+        like(column, pattern) { const needle = String(pattern).replace(/^%|%$/g, ''); filters.push(row => String(row[column] ?? '').includes(needle)); return chain; },
         order() { return chain; },
         limit(n) { limit = n; return chain; },
         maybeSingle: async () => ({ data: run()[0] ?? null, error: null }),
