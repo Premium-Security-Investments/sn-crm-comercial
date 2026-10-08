@@ -1,3 +1,5 @@
+import { compareTenderFamilyRecency, TENDER_REPUBLICATION_NOTICE_PREFIX, tenderProcessFamilyKey, tenderRepublicationNoticeLine } from './tender-process-family.js';
+
 function normalizeTenderStatusText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
@@ -9,6 +11,15 @@ function canonicalTenderProcessReference(tender) {
 
 function canonicalTenderProcessKey(tender) {
   return [tender?.source, tender?.entity, canonicalTenderProcessReference(tender)].map(normalizeTenderStatusText).join('|');
+}
+
+// Mismo proceso: la clave canónica de siempre o, para SECOP II, la misma familia de proceso
+// (referencia que sólo difiere en puntuación/espacios: una republicación por modificación).
+function isSameTenderProcess(reference, candidate) {
+  const canonicalKey = canonicalTenderProcessKey(reference);
+  if (canonicalKey && !canonicalKey.endsWith('|') && canonicalTenderProcessKey(candidate) === canonicalKey) return true;
+  const familyKey = tenderProcessFamilyKey(reference);
+  return Boolean(familyKey) && tenderProcessFamilyKey(candidate) === familyKey;
 }
 
 function deadlineValue(tender) {
@@ -31,6 +42,9 @@ function officialPhaseRank(tender) {
 function preferOfficialIdentity(current, candidate) {
   if (!current) return candidate;
   if (!candidate) return current;
+  // Republicación: con ambas fechas de publicación, la versión más reciente es la vigente.
+  const recency = compareTenderFamilyRecency(candidate, current);
+  if (recency) return recency > 0 ? candidate : current;
   const currentRank = officialPhaseRank(current);
   const candidateRank = officialPhaseRank(candidate);
   if (candidateRank !== currentRank) return candidateRank > currentRank ? candidate : current;
@@ -46,6 +60,8 @@ function uniqueStrings(values) {
 // the wrong process into the converted opportunity, so this is surfaced as ambiguous instead.
 function hasAmbiguousSuccessors(successorCandidates) {
   if (successorCandidates.length < 2) return false;
+  // A strictly newest publication (date, then process number) is a deterministic winner.
+  if (successorCandidates.some(candidate => successorCandidates.every(other => other === candidate || compareTenderFamilyRecency(candidate, other) > 0))) return false;
   const maxRank = Math.max(...successorCandidates.map(officialPhaseRank));
   const topCandidates = successorCandidates.filter(row => officialPhaseRank(row) === maxRank);
   if (topCandidates.length < 2) return false;
@@ -61,7 +77,7 @@ function phaseHistoryLinePrefix(previousPhase, newPhase) {
   return `Fase detectada: ${previousPhase || 'sin fase registrada'} → ${newPhase}`;
 }
 
-export function applyOfficialSourceLink(observaciones, { officialUrl, historicalUrl, phaseChange } = {}) {
+export function applyOfficialSourceLink(observaciones, { officialUrl, historicalUrl, phaseChange, republication } = {}) {
   const text = String(observaciones || '');
   let next = text;
   if (officialUrl) {
@@ -86,6 +102,14 @@ export function applyOfficialSourceLink(observaciones, { officialUrl, historical
       next += `\n${prefix}${detectedAt}`;
     }
   }
+  // Aviso visible de republicación (SECOP publicó el proceso modificado como uno nuevo): una sola
+  // línea por URL nueva, aunque la importación corra todos los días.
+  if (republication?.url) {
+    const line = tenderRepublicationNoticeLine(republication);
+    if (!next.split('\n').some(existing => existing.startsWith(TENDER_REPUBLICATION_NOTICE_PREFIX) && existing.includes(republication.url))) {
+      next = next ? `${next}\n${line}` : line;
+    }
+  }
   return next;
 }
 
@@ -103,8 +127,8 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
 
   for (const convertedRow of converted) {
     const canonicalKey = canonicalTenderProcessKey(convertedRow);
-    if (!canonicalKey || canonicalKey.endsWith('|')) continue;
-    const fetchedSame = fetchedRows.filter(row => canonicalTenderProcessKey(row) === canonicalKey);
+    if ((!canonicalKey || canonicalKey.endsWith('|')) && !tenderProcessFamilyKey(convertedRow)) continue;
+    const fetchedSame = fetchedRows.filter(row => isSameTenderProcess(convertedRow, row));
     if (!fetchedSame.length) continue;
 
     const successorCandidates = fetchedSame.filter(row => row?.stable_key && row.stable_key !== convertedRow.stable_key);
@@ -138,6 +162,10 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
     const officialStatus = official.status || convertedRow.status || null;
     const urlChanged = Boolean(officialUrl) && officialUrl !== convertedRow.url;
     const phaseChanged = Boolean(officialStatus) && officialStatus !== convertedRow.status;
+    // SECOP publicó un proceso nuevo (otro id_del_proceso) para la misma referencia: la oportunidad
+    // queda avisada y apuntando a la versión nueva, y el seguimiento importa sus documentos.
+    const republished = urlChanged && official !== convertedRow && Boolean(official.process_id)
+      && official.process_id !== convertedRow.process_id;
     if (convertedRow.converted_opportunity_id && (urlChanged || phaseChanged)) {
       opportunityPatches.push({
         converted_opportunity_id: convertedRow.converted_opportunity_id,
@@ -146,6 +174,7 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
         processId: official.process_id || convertedRow.process_id || null,
         deadline: deadlineValue(official) || deadlineValue(convertedRow) || null,
         phaseChange: phaseChanged ? { previousPhase: convertedRow.status || null, newPhase: officialStatus, detectedAt: nowIso } : null,
+        republication: republished ? { ref: official.ref || convertedRow.ref || null, url: officialUrl, processId: official.process_id, detectedAt: nowIso } : null,
       });
     }
   }

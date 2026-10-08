@@ -35,11 +35,13 @@ async function must(promise, label) {
   return data;
 }
 
-/** INITIAL analyses admitted since the start of today (Bogotá), automatic or not. */
+/**
+ * AGT-002 analyses (INITIAL and REANALYSIS) admitted since the start of today (Bogotá), automatic or not: the
+ * automatic reanalysis of a republished SECOP process (agt002-republication-followup.js) shares this same daily cap.
+ */
 export async function countAgt002InitialAnalysesToday(database, now) {
   const rows = await must(database.from('psi_agt002_initial_analysis_jobs')
     .select('id')
-    .eq('analysis_kind', 'INITIAL')
     .gte('created_at', agt002BogotaDayStart(now).toISOString()), 'conteo diario');
   return (rows || []).length;
 }

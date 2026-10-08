@@ -8,6 +8,7 @@ import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionG
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink } from '../tender-phase-identity.js';
+import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../tender-process-family.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
 import { fetchTenderRadarSourceRows } from '../tender-radar-source-fetch.js';
@@ -1399,13 +1400,17 @@ function canonicalTenderProcessKey(tender) {
 function tenderProcessStatusRank(tender) {
   return tender?.internal_status === 'convertida_oportunidad' || tender?.converted_opportunity_id ? 4 : tender?.internal_status === 'en_revision' ? 3 : tender?.internal_status === 'nueva' ? 2 : tender?.internal_status === 'descartada' ? 1 : 0;
 }
+// SECOP II republica un proceso modificado como uno nuevo con la misma referencia salvo puntuación:
+// la familia de proceso (tender-process-family.js) los agrupa y, a igual estado, gana la versión más reciente.
 function deduplicateTenderProcesses(tenders) {
   const byKey = new Map(); const order = [];
   for (const tender of Array.isArray(tenders) ? tenders : []) {
-    const key = canonicalTenderProcessKey(tender);
+    const key = tenderProcessFamilyKey(tender) || canonicalTenderProcessKey(tender);
     if (!byKey.has(key)) { byKey.set(key, tender); order.push(key); continue; }
     const current = byKey.get(key);
     const currentRank = tenderProcessStatusRank(current); const nextRank = tenderProcessStatusRank(tender);
+    const recency = nextRank === currentRank ? compareTenderFamilyRecency(tender, current) : 0;
+    if (recency) { if (recency > 0) byKey.set(key, tender); continue; }
     const currentDate = String(current?.last_seen_at || current?.detected_at || current?.published || '');
     const nextDate = String(tender?.last_seen_at || tender?.detected_at || tender?.published || '');
     if (nextRank > currentRank || (nextRank === currentRank && (nextDate > currentDate || (nextDate === currentDate && Number(tender?.score || 0) > Number(current?.score || 0))))) byKey.set(key, tender);
@@ -1869,7 +1874,8 @@ export async function readPersistedTenderRadar(database) {
   const mergedRows = Array.from(new Map([...(data || []), ...convertedRows].map((row, index) => [row.stable_key || row.id || `radar-row-${index}`, row])).values());
   // El vencimiento se aplica antes que cualquier otra regla de visibilidad: una convertida vencida
   // sale del Radar igual que una no convertida, sin tocar su oportunidad ni su expediente.
-  const trackableRows = mergedRows.filter(row => !isExpiredRadarProcess(row) && (isConvertedTenderRecord(row) || isTenderTrackable(row)));
+  // Una versión anterior de un proceso republicado (marcada al importar) no se lista: sólo la vigente.
+  const trackableRows = mergedRows.filter(row => !isProcessFamilySupersededRow(row) && !isExpiredRadarProcess(row) && (isConvertedTenderRecord(row) || isTenderTrackable(row)));
   // AGT-002's preanalysis ledger may annotate/inform candidates, but it must never govern which
   // trackable candidates the main Radar shows: visibleRows is always every trackable row.
   const visibleRows = trackableRows;
@@ -2003,6 +2009,16 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
   const omit = new Set(plan.omitStableKeys || []);
   const overrides = new Map((plan.convertedOverrides || []).map(row => [row.stable_key, row]));
   const identityReview = new Set(plan.identityReviewStableKeys || []);
+  // Familias de proceso sin convertida: la versión vigente es la más reciente; las anteriores quedan
+  // marcadas como reemplazadas (no se borran) y la vigente nueva hereda la revisión humana previa.
+  const familyPlan = planTenderProcessFamilySupersession({
+    rows: [
+      ...tagged.filter(t => !omit.has(t.stable_key)).map(t => ({ ...t, internal_status: existingByKey.get(t.stable_key)?.internal_status || null, converted_opportunity_id: existingByKey.get(t.stable_key)?.converted_opportunity_id || null })),
+      ...(existingConverted || []),
+    ],
+    existingStableKeys: new Set(existingByKey.keys()),
+  });
+  const supersededBy = new Map(familyPlan.supersededMarks.map(mark => [mark.stable_key, mark.superseded_by]));
   const rows = tagged.map(t => {
     if (omit.has(t.stable_key)) return null;
     const override = overrides.get(t.stable_key);
@@ -2013,7 +2029,7 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
       ...((override?.status || t.status) ? { status: override?.status || t.status } : {}), ...((override?.deadline_at || t.deadline) ? { deadline_at: override?.deadline_at || t.deadline } : {}),
       score: Number(t.score || 0), reasons: t.reasons || [], risks: t.risks || [],
       url: override?.url || t.url || null,
-      raw: withPhaseIdentityRaw(t.raw || null, { identityReview: identityReview.has(t.stable_key), knownPhases: override?.known_phases || [] }),
+      raw: withProcessFamilySupersededRaw(withPhaseIdentityRaw(t.raw || null, { identityReview: identityReview.has(t.stable_key), knownPhases: override?.known_phases || [] }), supersededBy.get(t.stable_key) || null),
       last_seen_at: now
     };
   }).filter(Boolean);
@@ -2038,6 +2054,11 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
     const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows.slice(index, index + 100), { onConflict: 'stable_key', defaultToNull: false });
     if (upsertError) throw upsertError;
   }
+  // Sólo filas que no existían antes de esta corrida (y siguen en 'nueva'): nunca pisa una decisión humana.
+  for (const { stable_key: key, internal_status: inheritedStatus } of familyPlan.inheritedStatuses) {
+    const { error: inheritError } = await database.from('psi_public_tenders').update({ internal_status: inheritedStatus }).eq('stable_key', key).eq('internal_status', 'nueva');
+    if (inheritError) throw inheritError;
+  }
   for (const key of plan.discardStableKeys || []) {
     const { error: discardError } = await database.from('psi_public_tenders').update({ internal_status: 'descartada' }).eq('stable_key', key).neq('internal_status', 'convertida_oportunidad');
     if (discardError) throw discardError;
@@ -2050,7 +2071,7 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
     for (const patch of plan.opportunityPatches) {
       const opportunity = byId.get(patch.converted_opportunity_id);
       if (!opportunity) continue;
-      const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl, phaseChange: patch.phaseChange });
+      const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl, phaseChange: patch.phaseChange, republication: patch.republication });
       const expected_close_date = patch.deadline ? String(patch.deadline).slice(0, 10) : opportunity.expected_close_date;
       const { error: opportunityWriteError } = await database.from('psi_sales_opportunities').update({ observaciones, expected_close_date }).eq('id', opportunity.id);
       if (opportunityWriteError) throw opportunityWriteError;
@@ -3990,6 +4011,21 @@ async function getCurrentTenderDocumentVersion(database, opportunityId, source, 
 async function refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze = true } = {}) {
   await requireTenderAnalysisFoundation(database);
   const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+  return importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze });
+}
+// Seguimiento automático de un proceso SECOP II republicado (agt002-republication-followup.js): corre sólo desde el
+// job del host, con la identidad técnica Vig-IA como actor documental y sin análisis (analyze: false). Exige que la
+// fuente oficial de la oportunidad ya apunte al aviso nuevo, que todos sus documentos se descarguen (si no, queda
+// pendiente para la siguiente corrida) y retira como historial —nunca borra— los del aviso anterior.
+export async function importRepublishedTenderDocuments(database, opportunityId, { noticeUid, actorProfileId } = {}) {
+  if (!noticeUid || !actorProfileId) throw new Error('El aviso nuevo y el actor son obligatorios.');
+  await requireTenderAnalysisFoundation(database);
+  const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single());
+  if (opportunity.service_type_code !== 'licitacion_publica') throw new Error('La oportunidad no es una licitación pública.');
+  if (noticeUidFromSecopUrl(secopOfficialUrl(getTenderSourceUrlFromOpportunity(opportunity))) !== noticeUid) throw new Error('La fuente oficial de la oportunidad aún no apunta al aviso nuevo.');
+  return importOfficialTenderDocuments(database, opportunityId, opportunity, { id: actorProfileId }, { analyze: false, republicationNoticeUid: noticeUid });
+}
+async function importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze = true, republicationNoticeUid = null } = {}) {
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
   let sourceLabel = '';
@@ -4076,7 +4112,19 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
   });
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
-  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
+  let republicationContext = {};
+  if (republicationNoticeUid) {
+    if (refreshSummary.failed_count > 0) throw new Error(`Versión nueva: ${refreshSummary.failed_count} documento(s) oficiales aún no se pudieron descargar; se reintenta en la siguiente corrida.`);
+    // Los documentos con el mismo nombre ya quedaron versionados (identidad lógica, migración 057); los que sólo
+    // existían en el aviso anterior se retiran como historial (migración 116), antes de fijar el snapshot nuevo.
+    const retired = await database.rpc('psi_retire_tender_document_versions', {
+      p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: sourceLabel,
+      p_keep_names: toDownload.map(doc => cleanFileName(doc.name)), p_actor_id: currentProfile.id,
+    });
+    if (retired.error) throw retired.error;
+    republicationContext = { republication_notice_uid: republicationNoticeUid, retired_count: Number(retired.data || 0) };
+  }
+  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, ...republicationContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
   const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
   if (beginRefresh.error) throw beginRefresh.error;
   const refreshToken = String(beginRefresh.data || '').trim();
@@ -4112,6 +4160,7 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     ...refreshSummary,
     imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     official_document_coverage: officialCoverage,
+    ...(republicationNoticeUid ? { retired_count: republicationContext.retired_count } : {}),
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }

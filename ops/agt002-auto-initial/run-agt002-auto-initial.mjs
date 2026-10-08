@@ -6,8 +6,12 @@
 //      cost) and is never admitted to an analysis, because step 2 only admits conversions since the activation.
 //   2. Analysis: admits the INITIAL analysis for every conversion whose documents are ready (agt002-auto-initial.js),
 //      within the daily cap; the initial-analysis worker timer then runs it.
+//   3. Republications (owner decision 2026-10-08): once the new official documents of a republished SECOP process are
+//      imported (Radar daily job), admits its REANALYSIS (or INITIAL) within the SAME daily cap, at most once per new
+//      notice (agt002-republication-followup.js).
 import { createClient } from '@supabase/supabase-js';
 import { runAgt002AutoInitialAdmissions } from '../../agt002-auto-initial.js';
+import { runAgt002RepublicationAnalysisAdmissions } from '../../agt002-republication-followup.js';
 
 const CLAIMABLE = ['queued', 'discovering_documents', 'importing_documents', 'retry_wait', 'ready_for_snapshot', 'snapshot_ready'];
 const log = event => console.log(JSON.stringify(event));
@@ -58,5 +62,12 @@ try {
   for (const event of await runAgt002AutoInitialAdmissions(database, { since, dailyCap, environment: env })) log(event);
 } catch (error) {
   log({ event: 'agt002_auto_initial_admission_pass_failed', message: String(error?.message || error).slice(0, 200) });
+  process.exitCode = 1;
+}
+try {
+  const dailyCap = Number(env.AGT002_AUTO_INITIAL_DAILY_CAP || 5);
+  for (const event of await runAgt002RepublicationAnalysisAdmissions(database, { dailyCap, environment: env })) log(event);
+} catch (error) {
+  log({ event: 'agt002_republication_analysis_pass_failed', message: String(error?.message || error).slice(0, 200) });
   process.exitCode = 1;
 }

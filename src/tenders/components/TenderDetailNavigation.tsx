@@ -64,6 +64,15 @@ export function resolveTenderSourceUrl(sourceUrl?: string | null, observations?:
   return safePublicTenderSourceUrl(historical);
 }
 
+/**
+ * Avisos de republicación SECOP que el seguimiento automático deja en las observaciones de la oportunidad
+ * (versión nueva enlazada, documentos nuevos importados, reanálisis lanzado o pendiente), en orden.
+ */
+export function resolveTenderRepublicationNotices(observations?: string | null): string[] {
+  return String(observations || '').split('\n').map(line => line.trim())
+    .filter(line => line.startsWith('SECOP publicó una versión nueva') || line.startsWith('Documentos oficiales de la versión nueva de SECOP'));
+}
+
 export function resolveTenderValidity(expectedCloseDate?: string | null): TenderDetailValidity {
   const [year, month, day] = String(expectedCloseDate || '').slice(0, 10).split('-').map(Number);
   if (!year || !month || !day) return { label: 'Vigente', tone: 'success' };
