@@ -202,7 +202,7 @@ test('paso de fase (borrador → Presentación de oferta): comportamiento de sie
   }
 });
 
-test('la fecha nunca le gana a la fase, y una fila en estado terminal nunca pasa a ser la fuente', () => {
+test('la fecha nunca le gana a la fase, y una republicación en estado terminal nunca pasa a ser la fuente', () => {
   const { converted, offer } = phaseCase({ entity: 'ALCALDIA DE PEREIRA', ref: 'SME-LP-163-2026' });
   const awarded = { ...offer, stable_key: 'pereira-awarded', process_id: 'CO1.REQ.300', status: 'Adjudicado', url: 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.999', deadline: '2026-12-01T15:00:00.000Z', published: '2026-10-05T10:00:00.000Z' };
   const converted4 = { ...converted, status: 'Presentación de oferta', url: offer.url, process_id: offer.process_id };
@@ -217,6 +217,38 @@ test('la fecha nunca le gana a la fase, y una fila en estado terminal nunca pasa
   const republishedEarlierPhase = { ...offer, stable_key: 'pereira-rep', ref: 'SME-LP-163-2026.', process_id: 'CO1.REQ.400', status: 'Presentación de observaciones', url: 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.400', published: '2026-10-06T10:00:00.000Z' };
   const plan3 = planRadarPhaseIdentitySync({ fetched: [offer, republishedEarlierPhase], existing: [converted4] });
   assert.equal(plan3.convertedOverrides[0].url, offer.url);
+});
+
+test('ICA GC-LP-056-2026: la oportunidad se entera de la adjudicación (comportamiento de main), sin seguimiento automático', () => {
+  const entity = 'GOBERNACION DEL CAUCA';
+  const converted = { stable_key: 'ica-conv', source: 'SECOP II', entity, ref: 'GC-LP-056-2026', process_id: 'CO1.REQ.100', title: 'Vigilancia', url: 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.100', status: 'Publicado', deadline_at: '2026-09-20T15:00:00.000Z', published_at: '2026-08-20T10:00:00.000Z', internal_status: 'convertida_oportunidad', converted_opportunity_id: '261387fa' };
+  const awarded = { stable_key: 'ica-awarded', source: 'SECOP II', entity, ref: 'GC-LP-056-2026', process_id: 'CO1.REQ.200', title: 'Vigilancia', url: 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.200', status: 'Adjudicado', deadline: '2026-10-05T15:00:00.000Z', published: '2026-09-01T10:00:00.000Z' };
+  const plan = planRadarPhaseIdentitySync({ fetched: [awarded], existing: [converted], now: '2026-10-08T11:00:00.000Z' });
+  assert.equal(plan.convertedOverrides[0].url, awarded.url, 'como en main: el enlace pasa al sucesor de fase');
+  assert.deepEqual(plan.opportunityPatches[0].phaseChange, { previousPhase: 'Publicado', newPhase: 'Adjudicado', detectedAt: '2026-10-08T11:00:00.000Z' });
+  assert.match(applyOfficialSourceLink('', plan.opportunityPatches[0]), /Fase detectada: Publicado → Adjudicado/);
+  assert.equal(plan.opportunityPatches[0].republication, null, 'nunca dispara el flujo de republicación');
+  assert.equal(plan.convertedOverrides[0].republication, null, 'ni documentos ni reanálisis automáticos');
+  // Una REPUBLICACIÓN en estado terminal, en cambio, nunca pasa a ser la fuente ni dispara seguimiento.
+  const awardedRepublication = { ...awarded, stable_key: 'ica-rep', ref: 'GC-LP-056-2026.' };
+  const plan2 = planRadarPhaseIdentitySync({ fetched: [awardedRepublication], existing: [converted] });
+  assert.equal(plan2.convertedOverrides[0].url, converted.url);
+  assert.equal(plan2.convertedOverrides[0].republication, null);
+  assert.deepEqual(plan2.opportunityPatches, []);
+});
+
+test('una republicación ya adoptada no pierde el enlace frente a la versión anterior en fase más avanzada', () => {
+  const entity = 'DIEPO';
+  const oldUrl = 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.1';
+  const newUrl = 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.2';
+  const oldVersion = { stable_key: 'diepo-old', source: 'SECOP II', entity, ref: 'SIP 085 2026', process_id: 'CO1.REQ.1', title: 'Vigilancia', url: oldUrl, status: 'Presentación de oferta', deadline: '2026-10-20T15:00:00.000Z', published: '2026-09-01T10:00:00.000Z' };
+  const republication = { stable_key: 'diepo-new', source: 'SECOP II', entity, ref: 'SIP 085 2026.', process_id: 'CO1.REQ.2', title: 'Vigilancia', url: newUrl, status: 'Presentación de observaciones', deadline: '2026-10-25T15:00:00.000Z', published: '2026-10-05T10:00:00.000Z' };
+  // La convertida ya apunta a la republicación (adoptada en una corrida anterior; sus documentos ya se importaron).
+  const adopted = { stable_key: 'diepo-old', source: 'SECOP II', entity, ref: 'SIP 085 2026', process_id: 'CO1.REQ.2', title: 'Vigilancia', url: newUrl, status: 'Presentación de observaciones', deadline_at: '2026-10-25T15:00:00.000Z', published_at: '2026-09-01T10:00:00.000Z', internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp-diepo' };
+  const plan = planRadarPhaseIdentitySync({ fetched: [oldVersion, republication], existing: [adopted], now: '2026-10-09T11:00:00.000Z' });
+  assert.equal(plan.convertedOverrides[0].url, newUrl, 'la fase más avanzada de la versión anterior no devuelve el enlace');
+  assert.deepEqual(plan.opportunityPatches, []);
+  assert.equal(plan.convertedOverrides[0].republication.url, newUrl);
 });
 
 test('backend: importación, lectura y jobs del host usan la familia de proceso', () => {

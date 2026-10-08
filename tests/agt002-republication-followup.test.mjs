@@ -136,6 +136,35 @@ test('documentos: espera datos.gov.co, exige el mismo conjunto en dos corridas y
   assert.equal(isRepublicationDocumentSetTooSmall({ documentCount: 2, currentOfficialCount: 6 }), true);
 });
 
+test('documentos: un conjunto estable pero incompleto avisa para revisión humana tras ~3 corridas, una vez', async () => {
+  const partial = { document_set_hash: 'p', document_count: 1, current_official_count: 6 };
+  const tables = world({ psi_sales_interactions: [DETECTED, state('tender_republication_documents_observed', partial, '2026-10-06T12:00:00.000Z')] });
+  const db = fakeDb(tables);
+  const importDocuments = async () => { throw new Error('no debe importar'); };
+  await runAgt002RepublicationDocumentRefresh(db, { probeDocuments: async () => partial, importDocuments, now: new Date('2026-10-07T12:00:00.000Z') });
+  assert.deepEqual(db.appended, [], 'el primer día de espera no avisa');
+  const events = await runAgt002RepublicationDocumentRefresh(db, { probeDocuments: async () => partial, importDocuments, now: new Date('2026-10-09T12:00:00.000Z') });
+  assert.deepEqual(events.map(e => e.event), ['agt002_republication_documents_waiting_smaller_set']);
+  assert.deepEqual(db.appended, ['Hay una versión nueva en SECOP (CO1.NTC.11032172) pero sus documentos están incompletos; revisar e importar a mano.']);
+  await runAgt002RepublicationDocumentRefresh(db, { probeDocuments: async () => partial, importDocuments, now: new Date('2026-10-10T12:00:00.000Z') });
+  assert.equal(db.appended.length, 1, 'el aviso no se repite');
+});
+
+test('cupo: la intención se registra antes de admitir, así el cupo cuenta aunque falle el registro del resultado', async () => {
+  const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED] });
+  const db = fakeDb(tables);
+  const { admit, freezeProfile } = admitSpy();
+  const order = [];
+  const tracingAdmit = async (...args) => { order.push(kinds(tables).at(-1)); return admit(...args); };
+  await runAgt002RepublicationAnalysisAdmissions(db, { now: NOW, environment: ON, admit: tracingAdmit, freezeProfile });
+  assert.deepEqual(order, ['tender_republication_analysis'], 'el último registro antes de admitir es la intención');
+  const intents = tables.psi_sales_interactions.map(row => JSON.parse(row.notes)).filter(notes => notes.outcome === 'admitting');
+  assert.equal(intents.length, 1);
+  // Aunque se perdiera el registro "launched", la intención sigue contando.
+  tables.psi_sales_interactions = tables.psi_sales_interactions.filter(row => JSON.parse(row.notes).outcome !== 'launched');
+  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 1);
+});
+
 test('documentos: si la importación falla (p. ej. antes del snapshot) no queda marca y se reintenta', async () => {
   const stable = { document_set_hash: 'h', document_count: 4, current_official_count: 4 };
   const tables = world({ psi_sales_interactions: [DETECTED, state('tender_republication_documents_observed', stable, '2026-10-08T12:00:00.000Z')] });
@@ -206,7 +235,7 @@ test('análisis: un resultado no admitido no dice "se lanzó" y no se reintenta 
   const sameDay = await runAgt002RepublicationAnalysisAdmissions(db, { now: new Date(NOW.getTime() + 600_000), environment: ON, admit, freezeProfile });
   assert.deepEqual(sameDay.map(e => e.reason), ['retry_tomorrow']);
   assert.equal(calls.length, 1, 'sin repetir la admisión en cada tick');
-  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 0, 'una admisión fallida no consume cupo');
+  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 1, 'la intención registrada antes de admitir cuenta (conservador: nunca se subcuenta el cupo)');
 });
 
 test('cupo: sólo cuentan las admisiones automáticas; un reanálisis manual no lo consume', async () => {

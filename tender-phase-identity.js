@@ -42,8 +42,10 @@ function officialPhaseRank(tender) {
 function preferOfficialIdentity(current, candidate) {
   if (!current) return candidate;
   if (!candidate) return current;
-  // Nunca se mueve una oportunidad a una fila en estado oficial terminal (Adjudicado, Celebrado…).
-  if (candidate !== current && isTerminalTenderStatus(candidate.status) && !isTerminalTenderStatus(current.status)) return current;
+  // Una republicación en estado terminal (Adjudicado, Cancelado…) nunca pasa a ser la fuente. Los
+  // sucesores de fase conservan la regla de siempre (así la oportunidad se entera de la adjudicación).
+  if (candidate !== current && isTerminalTenderStatus(candidate.status) && !isTerminalTenderStatus(current.status)
+    && isTenderRepublicationPair(current, candidate)) return current;
   const currentRank = officialPhaseRank(current);
   const candidateRank = officialPhaseRank(candidate);
   if (candidateRank !== currentRank) return candidateRank > currentRank ? candidate : current;
@@ -127,15 +129,20 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
     if (!fetchedSame.length) continue;
 
     const successorCandidates = fetchedSame.filter(row => row?.stable_key && row.stable_key !== convertedRow.stable_key);
-    // Una fila en estado terminal no es candidata a sucesora (no se fusiona ni se descarta por esto).
-    if (hasAmbiguousSuccessors(successorCandidates.filter(row => !isTerminalTenderStatus(row.status)))) {
+    if (hasAmbiguousSuccessors(successorCandidates)) {
       // Fail closed: do not merge, discard or patch anything for this process while two or more
       // successor candidates are tied. Route them outside the normal conversion flow instead.
       identityReviewStableKeys.push(...successorCandidates.map(row => row.stable_key));
       continue;
     }
 
-    const official = fetchedSame.reduce(preferOfficialIdentity, convertedRow);
+    // Si la oportunidad ya adoptó una republicación (su proceso vigente es el de la versión nueva), la
+    // versión anterior —aunque esté en una fase más avanzada— ya no puede devolverle el enlace.
+    const adoptedRepublication = fetchedSame.some(row => row?.process_id && row.process_id === convertedRow.process_id && isTenderRepublicationPair(convertedRow, row));
+    const officialPool = adoptedRepublication ? fetchedSame.filter(row => isTenderRepublicationPair(convertedRow, row)) : fetchedSame;
+    const official = officialPool.reduce(preferOfficialIdentity, convertedRow);
+    // Nunca dispara el seguimiento automático (documentos, reanálisis) hacia una fila terminal.
+    const officialIsLiveRepublication = official !== convertedRow && isTenderRepublicationPair(convertedRow, official) && !isTerminalTenderStatus(official.status);
     const successorKeys = uniqueStrings(successorCandidates.map(row => row.stable_key));
     omitStableKeys.push(...successorKeys);
     discardStableKeys.push(...successorKeys.filter(key => {
@@ -147,7 +154,7 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
 
     // Republicación vigente (referencia distinta por puntuación, no un paso de fase): se reporta en cada corrida para
     // que el seguimiento automático la registre de forma idempotente aunque una corrida anterior haya fallado.
-    const currentRepublication = official !== convertedRow && isTenderRepublicationPair(convertedRow, official) && official.url
+    const currentRepublication = officialIsLiveRepublication && official.url
       ? { converted_opportunity_id: convertedRow.converted_opportunity_id || null, ref: official.ref || null, url: official.url, processId: official.process_id || null }
       : null;
     convertedOverrides.push({
@@ -169,7 +176,7 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
     // Sólo una republicación (referencia distinta por puntuación/espacios); el paso de fase de SECOP
     // (otro id_del_proceso con la misma referencia) conserva el comportamiento de siempre.
     const republished = urlChanged && official !== convertedRow && Boolean(official.process_id)
-      && official.process_id !== convertedRow.process_id && isTenderRepublicationPair(convertedRow, official);
+      && official.process_id !== convertedRow.process_id && officialIsLiveRepublication;
     if (convertedRow.converted_opportunity_id && (urlChanged || phaseChanged)) {
       opportunityPatches.push({
         converted_opportunity_id: convertedRow.converted_opportunity_id,

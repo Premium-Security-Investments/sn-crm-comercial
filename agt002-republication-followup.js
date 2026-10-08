@@ -58,6 +58,12 @@ export function isRepublicationDocumentSetTooSmall({ documentCount, currentOffic
   return Number(documentCount || 0) < Math.ceil(Number(currentOfficialCount || 0) / 2);
 }
 
+// Tras ~3 corridas diarias con un conjunto estable pero mucho menor que el vigente, se avisa para revisión humana.
+const SMALL_SET_NOTICE_AFTER_MS = 3 * 24 * 60 * 60 * 1000 - 6 * 60 * 60 * 1000;
+export function republicationIncompleteDocumentsLine(noticeUid) {
+  return `Hay una versión nueva en SECOP (${noticeUid}) pero sus documentos están incompletos; revisar e importar a mano.`;
+}
+
 export function republicationDocumentsLine(noticeUid, { documentCount = 0, retiredCount = 0 } = {}) {
   return `Documentos oficiales de la versión nueva de SECOP importados (${noticeUid}): ${documentCount} vigentes; ${retiredCount} del aviso anterior quedan como historial.`;
 }
@@ -187,6 +193,10 @@ export async function runAgt002RepublicationDocumentRefresh(database, {
         continue;
       }
       if (isRepublicationDocumentSetTooSmall({ documentCount: probe.document_count, currentOfficialCount: probe.current_official_count })) {
+        // No queda esperando en silencio: tras ~3 corridas con el mismo conjunto incompleto, aviso visible (una vez).
+        if (now.getTime() - Date.parse(lastObserved.created_at) >= SMALL_SET_NOTICE_AFTER_MS) {
+          await appendAgt002ObservationLine(database, opportunityId, republicationIncompleteDocumentsLine(noticeUid));
+        }
         events.push({ event: 'agt002_republication_documents_waiting_smaller_set', documents: probe.document_count, current: probe.current_official_count, ...base });
         continue;
       }
@@ -288,6 +298,10 @@ export async function runAgt002RepublicationAnalysisAdmissions(database, {
       const { requestedMembers, includedCount } = await selectAgt002AutoInitialMembers(database, opportunityId);
       if (includedCount === 0) { await record('not_admitted', { admission_status: 'sin_documentos_legibles' }); events.push({ event: 'agt002_republication_analysis_skipped', reason: 'no_readable_documents', ...base }); continue; }
       const profile = await freezeProfile(database, { actorProfileId });
+      // Intención registrada ANTES de admitir: el cupo cuenta esta admisión aunque luego falle el registro del
+      // resultado (nunca se subcuenta); si este registro falla, no se admite nada.
+      await recordState(database, opportunityId, { kind: AGT002_REPUBLICATION_KINDS.analysis, notice_uid: noticeUid, outcome: 'admitting', analysis_kind: plan.analysisKind }, { now });
+      admittedToday += 1;
       const admitted = await admit(database, {
         opportunityId,
         tenderId: tender.id,
@@ -305,7 +319,6 @@ export async function runAgt002RepublicationAnalysisAdmissions(database, {
         environment,
       });
       const launched = LAUNCHED_ADMISSION_STATUSES.has(admitted.admissionStatus) && Boolean(admitted.jobId);
-      if (launched && admitted.admissionStatus === 'admitted') admittedToday += 1;
       await record(launched ? 'launched' : 'not_admitted', { analysis_kind: plan.analysisKind, job_id: admitted.jobId || null, admission_status: admitted.admissionStatus || null });
       events.push({ event: launched ? 'agt002_republication_analysis_admitted' : 'agt002_republication_analysis_not_admitted', analysisKind: plan.analysisKind, jobId: admitted.jobId || null, admissionStatus: admitted.admissionStatus || null, documents: includedCount, ...base });
     } catch (error) {

@@ -48,8 +48,9 @@ export async function countAgt002InitialAnalysesToday(database, now) {
 export const AGT002_REPUBLICATION_ANALYSIS_KIND = 'tender_republication_analysis';
 
 /**
- * Automatic REANALYSIS admissions of republished SECOP processes since the start of today (Bogotá). Manual
- * reanalyses never appear here, so they never consume the automatic daily cap.
+ * Automatic REANALYSIS admissions of republished SECOP processes since the start of today (Bogotá). Each one writes an
+ * 'admitting' intent before calling the admission, so the count holds even if recording the result fails afterwards.
+ * Manual reanalyses never appear here, so they never consume the automatic daily cap.
  */
 export async function countAgt002AutomaticRepublicationReanalysesToday(database, now) {
   const rows = await must(database.from('psi_sales_interactions')
@@ -60,8 +61,7 @@ export async function countAgt002AutomaticRepublicationReanalysesToday(database,
   return (rows || []).filter(row => {
     try {
       const notes = JSON.parse(String(row.notes || ''));
-      return notes?.kind === AGT002_REPUBLICATION_ANALYSIS_KIND && notes.outcome === 'launched'
-        && notes.admission_status === 'admitted' && notes.analysis_kind === 'REANALYSIS';
+      return notes?.kind === AGT002_REPUBLICATION_ANALYSIS_KIND && notes.outcome === 'admitting' && notes.analysis_kind === 'REANALYSIS';
     } catch { return false; }
   }).length;
 }
