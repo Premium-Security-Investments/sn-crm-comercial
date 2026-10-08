@@ -103,6 +103,20 @@ await (async function partialFailureDoesNotStopTheBatch() {
   assert.match(results[0].error, /SECOP: descarga fallida/);
 })();
 
+await (async function oneSourceBatchIdentityCoversSuccessesAndFailures() {
+  const sourceBatchId = '10000000-0000-4000-8000-000000000007';
+  const results = await refreshTenderDocumentBatch([
+    { source_document_id: 'ok' },
+    { source_document_id: 'failed', errorPrefix: 'SECOP' },
+  ], async document => {
+    if (document.source_document_id === 'failed') throw new Error('unavailable');
+    return { status: 'new', source_document_id: document.source_document_id };
+  }, { sourceBatchId });
+  assert.equal(results.length, 2);
+  assert.equal(results.every(item => item.source_batch_id === sourceBatchId), true);
+  assert.deepEqual(results.map(item => item.status), ['new', 'failed']);
+})();
+
 await (async function secopMaintenanceHtmlIsRetryableNotEmptyText() {
   const maintenance = Buffer.from('<!DOCTYPE html><html><head><title>Maintenance</title></head><body>¡La plataforma no está disponible!</body></html>');
   await assert.rejects(

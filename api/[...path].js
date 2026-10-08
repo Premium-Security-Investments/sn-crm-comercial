@@ -4042,6 +4042,7 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     throw new Error('La importación automática solo está disponible para enlaces oficiales SECOP II o ESU Contratación. Use carga manual para otras fuentes.');
   }
   const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+  const sourceBatchId = randomUUID();
   const refreshResults = await refreshTenderDocumentBatch(toDownload, async doc => {
     const sourceDocumentId = normalizeTenderSourceDocumentId(doc.source_document_id);
     const currentVersion = await getCurrentTenderDocumentVersion(database, opportunityId, sourceLabel, sourceDocumentId);
@@ -4073,7 +4074,7 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
         opportunityId, tenderId, documentVersionId: version.id, actorId: currentProfile.id,
       }),
     });
-  });
+  }, { sourceBatchId });
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());

@@ -159,15 +159,17 @@ export async function refreshOfficialTenderDocument({
   return { status, source_document_id: sourceDocumentId, version: recorded, extraction_status: typedExtraction?.status || 'legacy' };
 }
 
-export async function refreshTenderDocumentBatch(documents, refreshOne) {
+export async function refreshTenderDocumentBatch(documents, refreshOne, { sourceBatchId = null } = {}) {
   const results = [];
   for (const document of documents || []) {
     try {
-      results.push(await refreshOne(document));
+      const result = await refreshOne(document);
+      results.push(sourceBatchId == null ? result : { ...result, source_batch_id: sourceBatchId });
     } catch (error) {
       results.push({
         status: 'failed',
         source_document_id: String(document?.source_document_id || '').trim(),
+        ...(sourceBatchId == null ? {} : { source_batch_id: sourceBatchId }),
         error: `${document?.errorPrefix || 'Documento'}: ${error?.message || error}`,
       });
     }
