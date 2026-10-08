@@ -266,8 +266,12 @@ test('backend: importación, lectura y jobs del host usan la familia de proceso 
     assert.ok(importBody.indexOf('recordAgt002PhaseChangeDocumentsImported') > importBody.indexOf('registerTenderDocumentSnapshot(database'), `${path}: la marca de importación va después del snapshot`);
     assert.ok(importBody.indexOf('retireSupersededOfficialTenderDocuments') < importBody.indexOf('psi_begin_tender_document_refresh'), `${path}: el retiro va antes de fijar el snapshot nuevo`);
     const persistBody = source.match(/export async function persistTenderRadar\([\s\S]*?\n}\n/)[0];
-    assert.ok(persistBody.indexOf('recordAgt002RadarPhaseChanges(') > -1, `${path}: la importación registra la marca "detectado"`);
-    assert.ok(persistBody.indexOf('recordAgt002RadarPhaseChanges(') < persistBody.indexOf(".from('psi_public_tenders').upsert("), `${path}: la marca va antes de guardar el enlace nuevo`);
+    // Decisión del dueño (8-oct-2026): el Radar diario nunca escribe en licitaciones convertidas ni en sus oportunidades.
+    assert.equal(persistBody.indexOf('recordAgt002RadarPhaseChanges('), -1, `${path}: el Radar diario no deja marcas en convertidas`);
+    assert.match(persistBody, /const convertedOverrides = \[\];\n\s*const opportunityPatches = \[\];/, `${path}: el Radar diario no cambia enlaces ni escribe en oportunidades`);
+    assert.match(persistBody, /omit\.has\(t\.stable_key\) \|\| convertedKeys\.has\(t\.stable_key\)/, `${path}: el Radar diario no reescribe filas convertidas`);
+    const syncBody = source.match(/export async function syncConvertedTenderPhaseLinks\([\s\S]*?\n}\n/)[0];
+    assert.ok(syncBody.indexOf('recordAgt002RadarPhaseChanges(') > -1 && syncBody.indexOf('recordAgt002RadarPhaseChanges(') < syncBody.indexOf(".update(update)"), `${path}: la revisión programada deja la marca antes de cambiar el enlace`);
   }
   for (const path of ['../tender-process-family.js', '../agt002-phase-change-followup.js', '../agt002-phase-change-review.js', '../agt002-licitaciones-alerts.js', '../tender-document-obsolescence.js']) {
     assert.doesNotMatch(readFileSync(new URL(path, import.meta.url), 'utf8'), /agt003/i, `${path} respeta el límite AGT-002`);
