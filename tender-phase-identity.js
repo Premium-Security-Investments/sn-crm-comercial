@@ -37,10 +37,11 @@ function canonicalTenderProcessReference(tender) {
   return splitTrailingPhaseSuffixes(reference).base.replace(/[.\s]+$/g, '').trim();
 }
 
-// SECOP escribe algunas entidades con caracteres invisibles o guiones raros ("Rama Judicial \u0096 Dirección…") que
-// en el CRM quedan como espacios: el nombre se compara sólo por letras y números.
+// SECOP escribe algunas entidades con caracteres de control ("Rama Judicial \u0096 Dirección…") que en el CRM
+// quedan como espacios: se quitan esos caracteres y se juntan los espacios. La puntuación se conserva porque
+// SECOP distingue entidades homónimas con ella ("HOSPITAL SAN RAFAEL +" y "HOSPITAL SAN RAFAEL.*").
 function canonicalTenderEntity(entity) {
-  return normalizeTenderStatusText(entity).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  return normalizeTenderStatusText(entity).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function canonicalTenderProcessKey(tender) {

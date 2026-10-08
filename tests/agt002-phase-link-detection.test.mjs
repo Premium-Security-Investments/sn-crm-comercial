@@ -99,6 +99,15 @@ test('Rama Judicial Barranquilla: la entidad con un carácter invisible en SECOP
   assert.equal(plan.opportunityPatches[0]?.officialUrl, url('2'));
 });
 
+test('entidades homónimas que SECOP distingue con signos no se unen', () => {
+  const plan = planRadarPhaseIdentitySync({
+    existing: [converted({ entity: 'EMPRESA SOCIAL DEL ESTADO HOSPITAL SAN RAFAEL +', ref: '137-2026', url: url('1') })],
+    fetched: [fetched({ stable_key: 'other', entity: 'EMPRESA SOCIAL DEL ESTADO HOSPITAL SAN RAFAEL.*', ref: '137-2026 (Presentación de oferta)', url: url('2'), status: 'Presentación de oferta' })],
+  });
+  assert.deepEqual(plan.opportunityPatches, []);
+  assert.deepEqual(plan.omitStableKeys, []);
+});
+
 test('otra referencia de la misma entidad no se une', () => {
   const entity = 'FONDO UNICO DE TECNOLOGÍAS DE LA INFORMACIÓN Y LAS COMUNICACIONES';
   const plan = planRadarPhaseIdentitySync({
