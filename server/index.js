@@ -2130,12 +2130,14 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
     if (row?.stable_key) existingByKey.set(row.stable_key, row);
   }
   const plan = planRadarPhaseIdentitySync({ fetched: [...tagged, ...familyRows], existing: [...existingByKey.values()], now });
-  // Cambio de fase o republicación de una convertida (agt002-phase-change-followup.js): la marca "detectado" se escribe
-  // ANTES de guardar el enlace nuevo. Si no se puede escribir, esta corrida deja el enlace como estaba y la siguiente lo
-  // reintenta: un cambio nunca queda aplicado sin su seguimiento. Uno bloqueado (terminal, cierre pasado) sólo se anota.
-  const deferredOpportunities = await recordAgt002RadarPhaseChanges(database, plan.opportunityPatches || []);
-  const convertedOverrides = (plan.convertedOverrides || []).filter(row => !deferredOpportunities.has(existingByKey.get(row.stable_key)?.converted_opportunity_id));
-  const opportunityPatches = (plan.opportunityPatches || []).filter(patch => !deferredOpportunities.has(patch.converted_opportunity_id));
+  // Decisión del dueño (8-oct-2026): el Radar diario sólo DESCUBRE licitaciones nuevas y nunca escribe en una licitación
+  // convertida ni en su oportunidad (enlace, proceso, estado, cierre, observaciones, marcas). Las convertidas ACTIVAS
+  // las sigue sólo la revisión programada (agt002-phase-change-review → syncConvertedTenderPhaseLinks); las demás no se
+  // tocan. Del plan de continuidad el Radar sólo usa lo que evita que una versión de un proceso ya convertido reaparezca
+  // como licitación nueva (omitir / descartar / revisión de identidad).
+  const convertedKeys = new Set((existingConverted || []).map(row => row?.stable_key).filter(Boolean));
+  const convertedOverrides = [];
+  const opportunityPatches = [];
   const omit = new Set(plan.omitStableKeys || []);
   const overrides = new Map(convertedOverrides.map(row => [row.stable_key, row]));
   const identityReview = new Set(plan.identityReviewStableKeys || []);
@@ -2150,7 +2152,7 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
   });
   const supersededBy = new Map(familyPlan.supersededMarks.map(mark => [mark.stable_key, mark.superseded_by]));
   const rows = tagged.map(t => {
-    if (omit.has(t.stable_key)) return null;
+    if (omit.has(t.stable_key) || convertedKeys.has(t.stable_key)) return null;
     const override = overrides.get(t.stable_key);
     return {
       stable_key: t.stable_key || stableTenderKey(t), source: t.source, section: normalizeTenderPersistenceSection(t.section), entity: t.entity, dept: t.dept || null, city: t.city || null,
