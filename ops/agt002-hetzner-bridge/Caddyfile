@@ -4,7 +4,7 @@
 # AGT002_BRIDGE_HOST=agt002.5.78.140.24.sslip.io y regenerar/revisar este vhost antes de aplicarlo.
 agt002.5-78-140-24.sslip.io {
 	handle /v1/agt002/reanalysis/dispatch {
-		reverse_proxy 127.0.0.1:8788
+		reverse_proxy 127.0.0.1:8789
 	}
 	handle {
 		reverse_proxy 127.0.0.1:8787
