@@ -2092,6 +2092,32 @@ export async function syncConvertedTenderPhaseLinks(database, { isActive, now = 
   await applyConvertedOpportunityPatches(database, (plan.opportunityPatches || []).filter(patch => !deferred.has(patch.converted_opportunity_id)));
   return { active: active.length, changed, patches: (plan.opportunityPatches || []).length, deferred: deferred.size };
 }
+export async function withoutInactiveConvertedChanges(database, plan, existingByKey, { blocker = agt002PhaseChangeOpportunityBlocker } = {}) {
+  const opportunityOf = new Map();
+  for (const override of plan.convertedOverrides || []) {
+    const row = existingByKey.get(override.stable_key);
+    if (row?.converted_opportunity_id) opportunityOf.set(override.stable_key, { id: row.converted_opportunity_id, tenderId: row.id || null });
+  }
+  for (const patch of plan.opportunityPatches || []) if (patch.converted_opportunity_id && ![...opportunityOf.values()].some(o => o.id === patch.converted_opportunity_id)) opportunityOf.set(`opp:${patch.converted_opportunity_id}`, { id: patch.converted_opportunity_id, tenderId: null });
+  const inactive = new Set();
+  const checked = new Map();
+  for (const { id, tenderId } of opportunityOf.values()) {
+    if (checked.has(id)) continue;
+    let reason;
+    try { reason = await blocker(database, id, tenderId); } catch (error) { reason = 'opportunity_stage_unknown'; console.warn(JSON.stringify({ event: 'agt002_radar_stage_read_failed', opportunityId: id, message: error?.message })); }
+    checked.set(id, reason || null);
+    if (reason) {
+      inactive.add(id);
+      console.log(JSON.stringify({ event: 'agt002_radar_converted_untouched', opportunityId: id, reason }));
+    }
+  }
+  if (!inactive.size) return plan;
+  return {
+    ...plan,
+    convertedOverrides: (plan.convertedOverrides || []).filter(row => !inactive.has(opportunityOf.get(row.stable_key)?.id)),
+    opportunityPatches: (plan.opportunityPatches || []).filter(patch => !inactive.has(patch.converted_opportunity_id)),
+  };
+}
 export async function persistTenderRadar(database, actorProfile, mode = 'manual', { deep = false } = {}) {
   // run_id se genera antes de tocar el pipeline real para que, incluso si la corrida resulta
   // fatal, el recibo fallido pueda referenciarla de forma estable e idempotente (Corte 2).
@@ -2129,7 +2155,11 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
   for (const row of [...(existingConverted || []), ...existingFetched]) {
     if (row?.stable_key) existingByKey.set(row.stable_key, row);
   }
-  const plan = planRadarPhaseIdentitySync({ fetched: [...tagged, ...familyRows], existing: [...existingByKey.values()], now });
+  const fullPlan = planRadarPhaseIdentitySync({ fetched: [...tagged, ...familyRows], existing: [...existingByKey.values()], now });
+  // Decisión del dueño (8-oct-2026): a una oportunidad que no está ACTIVA (Por decidir / En curso) no se le toca nada,
+  // ni enlace, ni proceso, ni observaciones. Sus versiones nuevas siguen omitidas del Radar (no reaparecen como
+  // licitación nueva). Si no se puede leer la etapa, no se toca (lado seguro).
+  const plan = await withoutInactiveConvertedChanges(database, fullPlan, existingByKey);
   // Cambio de fase o republicación de una convertida (agt002-phase-change-followup.js): la marca "detectado" se escribe
   // ANTES de guardar el enlace nuevo. Si no se puede escribir, esta corrida deja el enlace como estaba y la siguiente lo
   // reintenta: un cambio nunca queda aplicado sin su seguimiento. Uno bloqueado (terminal, cierre pasado) sólo se anota.
