@@ -68,7 +68,9 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, onDo
   const today = todayDay();
   const [decision, setDecision] = useState<DecisionCode>(initial);
   const [notes, setNotes] = useState('');
-  const [nextDay, setNextDay] = useState(addDays(today, 7));
+  // Si ya hay una próxima gestión futura (dentro del máximo de 90 días), se propone esa en vez de "en una semana".
+  const scheduledDay = opportunity.next_action_at ? bogotaDay(opportunity.next_action_at) : null;
+  const [nextDay, setNextDay] = useState(scheduledDay && scheduledDay > today && scheduledDay <= addDays(today, 90) ? scheduledDay : addDays(today, 7));
   const [followUpType, setFollowUpType] = useState('llamada');
   const [stageCode, setStageCode] = useState('');
   const [value, setValue] = useState('');

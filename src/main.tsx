@@ -1021,6 +1021,9 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       />
     </div>}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} readinessRevision={tenderDossierReadinessRevision} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} onChanged={() => { if (activeDetailIdRef.current === o.id) setTenderDossierReadinessRevision(revision => revision + 1); }} /></div>}
+    {/* Ficha comercial en dos columnas (Juan, 2026-10-08): a la izquierda lo que el comercial hace; a la derecha lo que lo ayuda. */}
+    <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-grid' : undefined}>
+    <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-main' : undefined}>
     {!readOnly && o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code) && <OpportunityDecisionPanel opportunity={o} data={data} onChanged={async () => { await load(); await refresh(); }} />}
     <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
       <h2 className="followup-section-title">Seguimiento comercial</h2>
@@ -1040,13 +1043,17 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         </Panel>
       </div>
     </>}</div>
+    </div>
+    <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-side' : undefined}>
+    {o.service_type_code !== 'licitacion_publica' && <ClientProfilePanel o={o} canEdit={canAccessRoute(data.currentProfile, 'edit')} />}
     {canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && <VigiaOpportunityCopilot
       opportunityId={o.id}
       request={api}
       preflight={{ nextAction: priorityNextAction, expectedClose: priorityClose, decisionMaker: priorityDecisionMaker }}
     />}
-    {o.service_type_code !== 'licitacion_publica' && <ClientProfilePanel o={o} canEdit={canAccessRoute(data.currentProfile, 'edit')} />}
-    {o.service_type_code !== 'licitacion_publica' && <LeadAnalysisPanel opportunityId={o.id} profile={profileCompleteness(o as unknown as Record<string, unknown>)} canRun={canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && !readOnly} showCost={data.currentProfile.role === 'admin'} />}
+    {o.service_type_code !== 'licitacion_publica' && <LeadAnalysisPanel opportunityId={o.id} profile={profileCompleteness(o as unknown as Record<string, unknown>)} canRun={canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && !readOnly} showCost={data.currentProfile.role === 'admin'} onMessageUsed={() => { void load(); void refresh(); }} />}
+    </div>
+    </div>
     {o.service_type_code !== 'licitacion_publica' && <details className="opportunity-more-info">
       <summary>Más información</summary>
       <div className="opportunity-more-info-group">
