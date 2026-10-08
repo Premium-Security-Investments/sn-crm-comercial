@@ -127,7 +127,12 @@ jobs:
         )
       )
     steps:
+      # Full history: the receipt computes, per pinned surface (bridge, host jobs), the newest
+      # commit that changed the code it runs. A shallow clone would report the shallow boundary
+      # commit for every path and make every pinned surface look behind.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -165,20 +170,19 @@ jobs:
     # semantics; this pins it fail-closed regardless.
     if: always() && needs.release_receipt.result == 'success'
     steps:
+      # Full history: the drift check verifies that each pinned surface's observed release is a
+      # main commit at or after its last code change (git merge-base --is-ancestor).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: corepack pnpm install --frozen-lockfile
-      # On pull_request there are no repository variables/live URLs configured yet for main to
-      # compare against (this repo predates that configuration) -- observing "production" here
-      # would just report all six surfaces unobserved and fail drift_alert closed on every single
-      # PR forever, permanently deadlocking the required check before anyone could ever configure
-      # it. So on pull_request, drift_alert runs an explicit offline detector-contract test
-      # instead: it proves checkAgt002Drift's own pass/fail-closed logic is correct, with no
-      # network call and no claim about what is actually running in production. The steps below
-      # this one -- the real six-surface live observation -- only ever run on push main, schedule,
-      # and workflow_dispatch, where a real desired-target sha/version exists to compare against.
+      # On pull_request drift_alert runs an explicit offline detector-contract test instead of
+      # observing production: it proves checkAgt002Drift's own pass/fail logic is correct, with no
+      # network call and no claim about what is actually running. The live observation below only
+      # runs on push main, schedule, and workflow_dispatch.
       - name: PR offline drift-detector contract test
         if: github.event_name == 'pull_request'
         run: node --test tests/agt002-f0-drift-detection.test.mjs
@@ -188,16 +192,16 @@ jobs:
           name: agt002-release-receipt
           path: .
       # Every input below is an explicit, non-secret configuration value (a repository variable
-      # or the run's own desired-target sha) -- never a git/disk inference, never a secret, never
-      # an invented production URL. The desired *version* is derived directly from the
-      # desired-target sha (f0-<first 7 chars>), never trusted from a manually maintained
-      # repository variable that could drift out of sync with what is actually on main, so
-      # radar_pipeline/reanalysis_worker/workbench_scheduler are observed only through a read-only
-      # URL each surface serves at runtime, exactly like vercel/bridge. A surface whose URL is
-      # unset or unreachable simply stays unobserved and fails drift_alert closed instead of being
-      # skipped or assumed fine. origin_main is the one exception: GitHub itself is the
-      # authoritative live source for what SHA is on main, so it is bound directly to the same
-      # desired-target sha/version used above rather than a URL fetch.
+      # or the run's own desired-target sha) -- never a git/disk inference, never a secret. The
+      # desired *version* is derived directly from the desired-target sha (f0-<first 7 chars>).
+      # Surfaces observed:
+      #   - origin_main: bound to the desired-target sha (GitHub is the authoritative source).
+      #   - vercel_production / bridge: their own read-only control-plane URL.
+      #   - host jobs (initial_analysis_worker, auto_initial, radar_daily_*, radar_requests): the
+      #     bridge's read-only host-surface route, <bridge URL>/<surface>, which reads the systemd
+      #     unit's pinned release. No per-surface variable is needed.
+      # A surface that cannot be observed is reported as an "unobserved" warning, never as drift
+      # and never as fine. A real mismatch fails the job.
       - name: Derive desired version from desired sha
         if: github.event_name != 'pull_request'
         run: |
@@ -213,9 +217,6 @@ jobs:
         env:
           AGT002_OBSERVE_VERCEL_PRODUCTION_URL: ${{ vars.AGT002_VERCEL_PRODUCTION_CONTROL_PLANE_URL }}
           AGT002_OBSERVE_BRIDGE_URL: ${{ vars.AGT002_BRIDGE_CONTROL_PLANE_URL }}
-          AGT002_OBSERVE_RADAR_PIPELINE_URL: ${{ vars.AGT002_RADAR_PIPELINE_CONTROL_PLANE_URL }}
-          AGT002_OBSERVE_REANALYSIS_WORKER_URL: ${{ vars.AGT002_REANALYSIS_WORKER_CONTROL_PLANE_URL }}
-          AGT002_OBSERVE_WORKBENCH_SCHEDULER_URL: ${{ vars.AGT002_WORKBENCH_SCHEDULER_CONTROL_PLANE_URL }}
         run: corepack pnpm run agt002:observe-surfaces -- --desired-sha "${{ env.AGT002_DESIRED_SHA }}" --git-sha "${{ env.AGT002_DESIRED_SHA }}" --desired-version "$AGT002_DESIRED_VERSION" --out agt002-observed-surfaces.json
       - name: Check drift
         if: github.event_name != 'pull_request'

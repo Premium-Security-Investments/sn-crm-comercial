@@ -525,7 +525,15 @@ async function testClientDisconnectStillCancelsRun() {
 }
 
 const HOST_SURFACE_BASE = '/v1/agt002/control-plane';
-const HOST_SURFACES = ['radar_pipeline', 'reanalysis_worker', 'workbench_scheduler'];
+const HOST_SURFACES = [
+  'initial_analysis_worker',
+  'auto_initial',
+  'radar_daily_import',
+  'radar_daily_scan',
+  'radar_daily_reconciliation',
+  'radar_daily_top5',
+  'radar_requests',
+];
 
 function fakeHostSurfaceObserver(result = { ok: true }) {
   const calls = [];
@@ -551,11 +559,11 @@ async function testHostSurfaceObserverCalledWithExactArgsForEachAllowlistedSurfa
 async function testHostSurfaceObserverNeverReceivesBridgeIdentityEvenWhenConfigured() {
   const { calls, observer } = fakeHostSurfaceObserver();
   await withServer(fakeSuccessClient, async (base) => {
-    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method: 'GET' });
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_daily_scan`, { method: 'GET' });
     assert.equal(response.status, 200);
   }, { hostSurfaceObserver: observer, controlPlaneIdentity: { sha: 'deployed-sha', version: '1.2.3', source: 'bridge_deployed_git_sha' } });
 
-  assert.deepEqual(calls[0], { surface: 'radar_pipeline' });
+  assert.deepEqual(calls[0], { surface: 'radar_daily_scan' });
   assert.equal(Object.hasOwn(calls[0], 'sha'), false);
   assert.equal(Object.hasOwn(calls[0], 'version'), false);
 }
@@ -563,18 +571,18 @@ async function testHostSurfaceObserverNeverReceivesBridgeIdentityEvenWhenConfigu
 async function testHostSurfaceObserverCalledWithExactArgsWhenIdentityUnobserved() {
   const { calls, observer } = fakeHostSurfaceObserver();
   await withServer(fakeSuccessClient, async (base) => {
-    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method: 'GET' });
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_daily_scan`, { method: 'GET' });
     assert.equal(response.status, 200);
   }, { hostSurfaceObserver: observer });
 
-  assert.deepEqual(calls[0], { surface: 'radar_pipeline' });
+  assert.deepEqual(calls[0], { surface: 'radar_daily_scan' });
 }
 
 async function testNonGetToKnownHostSurfaceReturnsFixed405NoObserverCall() {
   for (const method of ['POST', 'PUT', 'DELETE']) {
     const { calls, observer } = fakeHostSurfaceObserver();
     await withServer(fakeSuccessClient, async (base) => {
-      const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method });
+      const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_daily_scan`, { method });
       assert.equal(response.status, 405, method);
       const payload = await response.json();
       assert.equal(payload.error.code, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
@@ -590,6 +598,10 @@ async function testUnknownControlPlaneSurfaceReturnsFixed404NoObserverCall() {
     assert.equal(response.status, 404, 'bridge no es una superficie de host observable bajo este prefijo');
     const other = await fetch(`${base}${HOST_SURFACE_BASE}/not-a-real-surface`, { method: 'GET' });
     assert.equal(other.status, 404);
+    for (const retired of ['radar_pipeline', 'reanalysis_worker', 'workbench_scheduler']) {
+      const retiredResponse = await fetch(`${base}${HOST_SURFACE_BASE}/${retired}`, { method: 'GET' });
+      assert.equal(retiredResponse.status, 404, `${retired} está retirada y ya no se observa`);
+    }
   }, { hostSurfaceObserver: observer });
   assert.equal(calls.length, 0, 'una superficie desconocida nunca debe invocar al observer');
 }
@@ -597,7 +609,7 @@ async function testUnknownControlPlaneSurfaceReturnsFixed404NoObserverCall() {
 async function testHostSurfaceObserverRejectionReturnsFixedFailClosed503() {
   const observer = async () => { throw new Error('leaky systemd internals /run/systemd/private and env AGT002_BRIDGE_HMAC_SECRET'); };
   await withServer(fakeSuccessClient, async (base) => {
-    const response = await fetch(`${base}${HOST_SURFACE_BASE}/reanalysis_worker`, { method: 'GET' });
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/initial_analysis_worker`, { method: 'GET' });
     assert.equal(response.status, 503);
     const payload = await response.json();
     assert.deepEqual(payload, {
@@ -612,7 +624,7 @@ async function testHostSurfaceObserverRejectionReturnsFixedFailClosed503() {
 async function testHostSurfaceObserverSynchronousThrowReturnsFixedFailClosed503() {
   const observer = () => { throw new Error('sync boom, must never leak to the caller'); };
   await withServer(fakeSuccessClient, async (base) => {
-    const response = await fetch(`${base}${HOST_SURFACE_BASE}/workbench_scheduler`, { method: 'GET' });
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_daily_top5`, { method: 'GET' });
     assert.equal(response.status, 503);
     const payload = await response.json();
     assert.equal(payload.error.code, 'AGT002_BRIDGE_HOST_SURFACE_UNAVAILABLE');
@@ -622,7 +634,7 @@ async function testHostSurfaceObserverSynchronousThrowReturnsFixedFailClosed503(
 
 async function testUnconfiguredHostSurfaceObserverFailsClosedWithFixed503() {
   await withServer(fakeSuccessClient, async (base) => {
-    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_pipeline`, { method: 'GET' });
+    const response = await fetch(`${base}${HOST_SURFACE_BASE}/radar_daily_scan`, { method: 'GET' });
     assert.equal(response.status, 503, 'un deployment que nunca inyectó un observer debe fallar cerrado, nunca crashear ni servir datos vacíos');
     const payload = await response.json();
     assert.equal(payload.error.code, 'AGT002_BRIDGE_HOST_SURFACE_UNAVAILABLE');

@@ -7,6 +7,19 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const WORKFLOW_PATH = new URL('../.github/workflows/agt002-control-plane.yml', import.meta.url);
 
+const WATCHED_SURFACES = [
+  'origin_main',
+  'vercel_production',
+  'bridge',
+  'initial_analysis_worker',
+  'auto_initial',
+  'radar_daily_import',
+  'radar_daily_scan',
+  'radar_daily_reconciliation',
+  'radar_daily_top5',
+  'radar_requests',
+];
+
 const RELEASE_RECEIPT_MODULE_SPECIFIER = '../scripts/agt002-generate-release-receipt.mjs';
 const DRIFT_MODULE_SPECIFIER = '../scripts/agt002-check-drift.mjs';
 
@@ -89,13 +102,7 @@ test('generateAgt002ReleaseReceipt sets origin_main from an explicit git_sha', a
   assert.equal(receipt.surfaces.origin_main.source, 'github_sha');
   assert.equal(receipt.control_plane_reconciled, false);
 
-  for (const surface of [
-    'vercel_production',
-    'bridge',
-    'radar_pipeline',
-    'reanalysis_worker',
-    'workbench_scheduler',
-  ]) {
+  for (const surface of WATCHED_SURFACES.filter((name) => name !== 'origin_main')) {
     assert.equal(receipt.surfaces[surface].sha, null);
     assert.equal(receipt.surfaces[surface].source, 'unobserved');
   }
@@ -118,57 +125,50 @@ test('generateAgt002ReleaseReceipt keeps origin_main unobserved with no git_sha 
   }
 });
 
-const SIX_SURFACES = [
-  'origin_main',
-  'vercel_production',
-  'bridge',
-  'radar_pipeline',
-  'reanalysis_worker',
-  'workbench_scheduler',
-];
-
 function fullyObservedSurfaces(sha, version) {
   const surfaces = {};
-  for (const surface of SIX_SURFACES) {
+  for (const surface of WATCHED_SURFACES) {
     surfaces[surface] = { sha, version, source: `${surface}_test_source` };
   }
   return { surfaces };
 }
 
-test('checkAgt002Drift reports ok:true only when all six surfaces have non-empty sha+version matching receipt.desired', async () => {
+test('checkAgt002Drift reports ok:true when every watched surface has a non-empty sha+version matching receipt.desired', async () => {
   const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
   const receipt = { desired: { sha: 'abc123', version: '1.2.3' } };
   const observed = fullyObservedSurfaces('abc123', '1.2.3');
 
   const result = checkAgt002Drift({ receipt, observed });
-  assert.deepEqual(result, { ok: true, issues: [] });
+  assert.deepEqual(result, { ok: true, issues: [], warnings: [] });
 });
 
-test('checkAgt002Drift fails closed when a surface is entirely missing from observed', async () => {
+test('checkAgt002Drift reports a surface entirely missing from observed as an unobserved warning, not drift', async () => {
   const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
   const receipt = { desired: { sha: 'abc123', version: '1.2.3' } };
   const observed = fullyObservedSurfaces('abc123', '1.2.3');
   delete observed.surfaces.bridge;
 
   const result = checkAgt002Drift({ receipt, observed });
-  assert.equal(result.ok, false);
-  assert.ok(result.issues.some((issue) => issue.type === 'missing_surface' && issue.surface === 'bridge'));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.warnings, [{ type: 'unobserved', surface: 'bridge' }]);
 });
 
 test('checkAgt002Drift distinguishes missing sha, missing version, sha mismatch, and version mismatch', async () => {
   const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
   const receipt = { desired: { sha: 'abc123', version: '1.2.3' } };
   const observed = fullyObservedSurfaces('abc123', '1.2.3');
-  observed.surfaces.radar_pipeline = { sha: null, version: '1.2.3', source: 'radar_pipeline_git_head' };
-  observed.surfaces.reanalysis_worker = { sha: 'abc123', version: null, source: 'reanalysis_worker_release_sha' };
+  observed.surfaces.radar_daily_scan = { sha: null, version: '1.2.3', source: 'unobserved' };
+  observed.surfaces.initial_analysis_worker = { sha: 'abc123', version: null, source: 'agt002_host_surface_systemd_unit_observed' };
   observed.surfaces.vercel_production = { sha: 'def456', version: '1.2.3', source: 'vercel_git_commit_sha' };
-  observed.surfaces.workbench_scheduler = { sha: 'abc123', version: '9.9.9', source: 'workbench_scheduler_deployed_git_sha' };
+  observed.surfaces.radar_daily_top5 = { sha: 'abc123', version: '9.9.9', source: 'agt002_host_surface_systemd_unit_observed' };
 
   const result = checkAgt002Drift({ receipt, observed });
   assert.equal(result.ok, false);
-  assert.ok(result.issues.some((issue) => issue.type === 'missing_observed_sha' && issue.surface === 'radar_pipeline'));
+  assert.ok(result.warnings.some((warning) => warning.type === 'unobserved' && warning.surface === 'radar_daily_scan'));
+  assert.ok(!result.issues.some((issue) => issue.surface === 'radar_daily_scan'), 'an unobserved surface is never drift');
   assert.ok(
-    result.issues.some((issue) => issue.type === 'missing_observed_version' && issue.surface === 'reanalysis_worker'),
+    result.issues.some((issue) => issue.type === 'missing_observed_version' && issue.surface === 'initial_analysis_worker'),
   );
   assert.ok(
     result.issues.some(
@@ -178,7 +178,7 @@ test('checkAgt002Drift distinguishes missing sha, missing version, sha mismatch,
   assert.ok(
     result.issues.some(
       (issue) =>
-        issue.type === 'version_mismatch' && issue.surface === 'workbench_scheduler' && issue.observed_version === '9.9.9',
+        issue.type === 'version_mismatch' && issue.surface === 'radar_daily_top5' && issue.observed_version === '9.9.9',
     ),
   );
 });
@@ -207,11 +207,12 @@ test('checkAgt002Drift fails when receipt.control_plane_reconciled is true, even
   assert.ok(result.issues.some((issue) => issue.type === 'control_plane_reconciled_true'));
 });
 
-test('checkAgt002Drift fails closed with no receipt/observed at all', async () => {
+test('checkAgt002Drift fails closed with no receipt/observed at all, and reports every surface unobserved', async () => {
   const { checkAgt002Drift } = await import(DRIFT_MODULE_SPECIFIER);
   const result = checkAgt002Drift({});
   assert.equal(result.ok, false);
-  assert.equal(result.issues.filter((issue) => issue.type === 'missing_surface').length, 6);
+  assert.ok(result.issues.some((issue) => issue.type === 'missing_desired_sha'));
+  assert.deepEqual(result.warnings.map((warning) => warning.surface), WATCHED_SURFACES);
 });
 
 test('drift_alert job writes observed surfaces and runs check:agt002-drift with --receipt and --observed', () => {
@@ -238,19 +239,37 @@ test('drift_alert job never uses a heredoc to fabricate observed surfaces', () =
   assert.match(driftAlertSection, /agt002:observe-surfaces/);
 });
 
-test('drift_alert job collects all six surfaces through explicit configured env inputs', () => {
+test('drift_alert job collects origin_main, vercel_production and bridge through explicit configured env inputs (host jobs ride on the bridge URL)', () => {
   const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
   const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
-  for (const prefix of [
-    'AGT002_OBSERVE_ORIGIN_MAIN',
-    'AGT002_OBSERVE_VERCEL_PRODUCTION',
-    'AGT002_OBSERVE_BRIDGE',
+  for (const prefix of ['AGT002_OBSERVE_ORIGIN_MAIN', 'AGT002_OBSERVE_VERCEL_PRODUCTION', 'AGT002_OBSERVE_BRIDGE']) {
+    assert.match(driftAlertSection, new RegExp(prefix), `expected drift_alert to configure ${prefix}`);
+  }
+});
+
+test('workflow no longer observes the retired radar_pipeline, reanalysis_worker, or workbench_scheduler surfaces', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  for (const retiredVar of [
     'AGT002_OBSERVE_RADAR_PIPELINE',
     'AGT002_OBSERVE_REANALYSIS_WORKER',
     'AGT002_OBSERVE_WORKBENCH_SCHEDULER',
+    'AGT002_RADAR_PIPELINE_CONTROL_PLANE_URL',
+    'AGT002_REANALYSIS_WORKER_CONTROL_PLANE_URL',
+    'AGT002_WORKBENCH_SCHEDULER_CONTROL_PLANE_URL',
   ]) {
-    assert.match(driftAlertSection, new RegExp(prefix), `expected drift_alert to configure ${prefix}`);
+    assert.doesNotMatch(workflowText, new RegExp(retiredVar), `expected workflow to no longer reference ${retiredVar}`);
   }
+});
+
+test('release_receipt and drift_alert check out the full git history for per-surface last-change and ancestry checks', () => {
+  const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
+  const releaseReceiptSection = workflowText.slice(
+    workflowText.indexOf('release_receipt:'),
+    workflowText.indexOf('drift_alert:'),
+  );
+  const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
+  assert.match(releaseReceiptSection, /actions\/checkout@v4\s*\n\s*with:\s*\n\s*fetch-depth:\s*0/);
+  assert.match(driftAlertSection, /actions\/checkout@v4\s*\n\s*with:\s*\n\s*fetch-depth:\s*0/);
 });
 
 test('drift_alert job always uploads the structured drift result artifact, even when drift is detected', () => {
@@ -324,16 +343,10 @@ test('workflow no longer configures static deployed sha/version vars for radar_p
   }
 });
 
-test('drift_alert job configures a read-only URL contract for every non-origin surface', () => {
+test('drift_alert job configures a read-only URL contract for vercel_production and the bridge', () => {
   const workflowText = readFileSync(WORKFLOW_PATH, 'utf8');
   const driftAlertSection = workflowText.slice(workflowText.indexOf('drift_alert:'));
-  for (const urlEnvVar of [
-    'AGT002_OBSERVE_VERCEL_PRODUCTION_URL',
-    'AGT002_OBSERVE_BRIDGE_URL',
-    'AGT002_OBSERVE_RADAR_PIPELINE_URL',
-    'AGT002_OBSERVE_REANALYSIS_WORKER_URL',
-    'AGT002_OBSERVE_WORKBENCH_SCHEDULER_URL',
-  ]) {
+  for (const urlEnvVar of ['AGT002_OBSERVE_VERCEL_PRODUCTION_URL', 'AGT002_OBSERVE_BRIDGE_URL']) {
     assert.match(driftAlertSection, new RegExp(urlEnvVar), `expected drift_alert to configure ${urlEnvVar}`);
   }
 });

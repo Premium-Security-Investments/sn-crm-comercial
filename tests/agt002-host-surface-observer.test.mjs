@@ -10,17 +10,20 @@ const SHA_B = 'b'.repeat(40);
 const VERSION = '1.4.2';
 
 const RUNNERS = Object.freeze({
-  radar_pipeline: Object.freeze({
+  radar_daily_scan: Object.freeze({
     interpreter: '/usr/bin/node',
-    relativePath: 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs',
+    relativePath: 'ops/agt002-radar-scan/run-agt002-radar-scan.mjs',
+    args: '',
   }),
-  reanalysis_worker: Object.freeze({
+  initial_analysis_worker: Object.freeze({
     interpreter: '/usr/bin/node',
-    relativePath: 'ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs',
+    relativePath: 'ops/agt002-initial-analysis-worker/run-agt002-initial-analysis-worker.mjs',
+    args: '',
   }),
-  workbench_scheduler: Object.freeze({
-    interpreter: null,
-    relativePath: 'ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh',
+  radar_daily_top5: Object.freeze({
+    interpreter: '/usr/bin/node',
+    relativePath: 'ops/agt002-radar-daily/run-agt002-radar-import.mjs',
+    args: '--top5',
   }),
 });
 
@@ -33,9 +36,10 @@ function execStartBlock({ path, argv }) {
 }
 
 function validExecStartFor(surface, sha) {
-  const { interpreter } = RUNNERS[surface];
+  const { interpreter, args } = RUNNERS[surface];
   const scriptPath = scriptPathFor(surface, sha);
-  const argv = interpreter ? `${interpreter} ${scriptPath}` : scriptPath;
+  const command = interpreter ? `${interpreter} ${scriptPath}` : scriptPath;
+  const argv = args ? `${command} ${args}` : command;
   const path = interpreter || scriptPath;
   return execStartBlock({ path, argv });
 }
@@ -85,12 +89,22 @@ function fakeExecFileByUnit(calls, stdoutByUnit) {
 
 // --- allowlist mapping ---
 
-test('AGT002_HOST_SURFACE_UNITS: fixed allowlist maps exactly the three host surfaces to their unit names', () => {
+test('AGT002_HOST_SURFACE_UNITS: fixed allowlist maps exactly the live host surfaces to their unit names', () => {
   assert.deepEqual(AGT002_HOST_SURFACE_UNITS, {
-    radar_pipeline: 'agt002-radar-pipeline.service',
-    reanalysis_worker: 'agt002-reanalysis-worker.service',
-    workbench_scheduler: 'agt002-workbench-scheduler.service',
+    initial_analysis_worker: 'agt002-initial-analysis-worker.service',
+    auto_initial: 'agt002-auto-initial.service',
+    radar_daily_import: 'agt002-radar-import-daily.service',
+    radar_daily_scan: 'agt002-radar-scan.service',
+    radar_daily_reconciliation: 'agt002-radar-reconciliation.service',
+    radar_daily_top5: 'agt002-radar-top5.service',
+    radar_requests: 'agt002-radar-requests.service',
   });
+});
+
+test('AGT002_HOST_SURFACE_UNITS: retired host surfaces are no longer observable', () => {
+  for (const retired of ['radar_pipeline', 'reanalysis_worker', 'workbench_scheduler']) {
+    assert.equal(Object.prototype.hasOwnProperty.call(AGT002_HOST_SURFACE_UNITS, retired), false, retired);
+  }
 });
 
 // --- exact systemctl invocation ---
@@ -98,15 +112,15 @@ test('AGT002_HOST_SURFACE_UNITS: fixed allowlist maps exactly the three host sur
 test('observeAgt002HostSurface: invokes /usr/bin/systemctl with fixed argv, shell:false, and no caller-controlled unit/property/path', async () => {
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
-    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_pipeline') }),
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_daily_scan') }),
   });
 
-  await observe({ surface: 'radar_pipeline' });
+  await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], {
     command: '/usr/bin/systemctl',
-    args: ['show', 'agt002-radar-pipeline.service', '--property=ActiveState,SubState,Result,ExecStart,Environment'],
+    args: ['show', 'agt002-radar-scan.service', '--property=ActiveState,SubState,Result,ExecStart,Environment'],
     options: { shell: false },
   });
 });
@@ -114,30 +128,30 @@ test('observeAgt002HostSurface: invokes /usr/bin/systemctl with fixed argv, shel
 test('observeAgt002HostSurface: extra call args (e.g. an attempted sha/version/unit override) never change the systemctl invocation', async () => {
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
-    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_pipeline') }),
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_daily_scan') }),
   });
 
   await observe({
-    surface: 'radar_pipeline',
+    surface: 'radar_daily_scan',
     sha: 'attacker-controlled-sha',
     unit: 'evil.service',
     property: 'MemoryHigh',
   });
 
-  assert.deepEqual(calls[0].args, ['show', 'agt002-radar-pipeline.service', '--property=ActiveState,SubState,Result,ExecStart,Environment']);
+  assert.deepEqual(calls[0].args, ['show', 'agt002-radar-scan.service', '--property=ActiveState,SubState,Result,ExecStart,Environment']);
 });
 
 test('observeAgt002HostSurface: resolves the unit name for each allowlisted surface', async () => {
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
-    execFile: fakeExecFile(calls, { stdout: validStdoutFor('reanalysis_worker') }),
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('initial_analysis_worker') }),
   });
 
-  await observe({ surface: 'reanalysis_worker' });
-  await observe({ surface: 'workbench_scheduler' });
+  await observe({ surface: 'initial_analysis_worker' });
+  await observe({ surface: 'radar_daily_top5' });
 
-  assert.equal(calls[0].args[1], 'agt002-reanalysis-worker.service');
-  assert.equal(calls[1].args[1], 'agt002-workbench-scheduler.service');
+  assert.equal(calls[0].args[1], 'agt002-initial-analysis-worker.service');
+  assert.equal(calls[1].args[1], 'agt002-radar-top5.service');
 });
 
 // --- unknown surface fails before any exec ---
@@ -145,7 +159,7 @@ test('observeAgt002HostSurface: resolves the unit name for each allowlisted surf
 test('observeAgt002HostSurface: an unknown surface rejects and never invokes execFile', async () => {
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
-    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_pipeline') }),
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_daily_scan') }),
   });
 
   await assert.rejects(
@@ -158,7 +172,7 @@ test('observeAgt002HostSurface: an unknown surface rejects and never invokes exe
 test('observeAgt002HostSurface: an undefined surface rejects and never invokes execFile', async () => {
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
-    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_pipeline') }),
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_daily_scan') }),
   });
 
   await assert.rejects(() => observe({ surface: undefined }));
@@ -175,7 +189,7 @@ test('observeAgt002HostSurface: reports available unit_status parsed from Active
     }),
   });
 
-  const result = await observe({ surface: 'reanalysis_worker' });
+  const result = await observe({ surface: 'initial_analysis_worker' });
 
   assert.deepEqual(result.unit_status, {
     available: true,
@@ -190,10 +204,10 @@ test('observeAgt002HostSurface: reports available unit_status parsed from Active
 test('observeAgt002HostSurface: reports available unit_status for an active/running/success unit', async () => {
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
-    execFile: fakeExecFile(calls, { stdout: validStdoutFor('workbench_scheduler') }),
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_daily_top5') }),
   });
 
-  const result = await observe({ surface: 'workbench_scheduler' });
+  const result = await observe({ surface: 'radar_daily_top5' });
 
   assert.deepEqual(result.unit_status, {
     available: true,
@@ -209,7 +223,7 @@ test('observeAgt002HostSurface: an execFile error yields a deterministic unavail
     execFile: fakeExecFile(calls, { error: new Error('secret-path /run/systemd/private leaked here') }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.deepEqual(result.unit_status, {
     available: false,
@@ -229,7 +243,7 @@ test('observeAgt002HostSurface: malformed/incomplete stdout yields the same dete
     execFile: fakeExecFile(calls, { stdout: 'not-a-systemctl-show-line' }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.deepEqual(result.unit_status, {
     available: false,
@@ -245,7 +259,7 @@ test('observeAgt002HostSurface: stdout missing one of the three required status 
     execFile: fakeExecFile(calls, { stdout: 'ActiveState=active\nSubState=running\n' }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.deepEqual(result.unit_status, {
     available: false,
@@ -255,9 +269,9 @@ test('observeAgt002HostSurface: stdout missing one of the three required status 
   });
 });
 
-// --- identity: the three exact allowlisted paths succeed ---
+// --- identity: each exact allowlisted path succeeds ---
 
-for (const surface of ['radar_pipeline', 'reanalysis_worker', 'workbench_scheduler']) {
+for (const surface of ['radar_daily_scan', 'initial_analysis_worker', 'radar_daily_top5']) {
   test(`observeAgt002HostSurface: derives sha/version for ${surface} from its own unique env + exact allowlisted ExecStart`, async () => {
     const calls = [];
     const observe = createAgt002HostSurfaceObserver({
@@ -280,10 +294,10 @@ for (const surface of ['radar_pipeline', 'reanalysis_worker', 'workbench_schedul
 test('observeAgt002HostSurface: the surface\'s own unit config always wins even when the caller tries to pass a different sha/version (bridge identity)', async () => {
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
-    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_pipeline', { sha: SHA_A, version: VERSION }) }),
+    execFile: fakeExecFile(calls, { stdout: validStdoutFor('radar_daily_scan', { sha: SHA_A, version: VERSION }) }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline', sha: 'bridge-own-sha', version: 'bridge-own-version' });
+  const result = await observe({ surface: 'radar_daily_scan', sha: 'bridge-own-sha', version: 'bridge-own-version' });
 
   assert.equal(result.sha, SHA_A);
   assert.equal(result.version, VERSION);
@@ -295,18 +309,18 @@ test('observeAgt002HostSurface: each surface derives an independent identity eve
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFileByUnit(calls, {
-      'agt002-radar-pipeline.service': validStdoutFor('radar_pipeline', { sha: SHA_A, version: '1.0.0' }),
-      'agt002-reanalysis-worker.service': validStdoutFor('reanalysis_worker', { sha: SHA_B, version: '2.0.0' }),
+      'agt002-radar-scan.service': validStdoutFor('radar_daily_scan', { sha: SHA_A, version: '1.0.0' }),
+      'agt002-initial-analysis-worker.service': validStdoutFor('initial_analysis_worker', { sha: SHA_B, version: '2.0.0' }),
     }),
   });
 
-  const radar = await observe({ surface: 'radar_pipeline' });
-  const reanalysis = await observe({ surface: 'reanalysis_worker' });
+  const scan = await observe({ surface: 'radar_daily_scan' });
+  const initial = await observe({ surface: 'initial_analysis_worker' });
 
-  assert.equal(radar.sha, SHA_A);
-  assert.equal(radar.version, '1.0.0');
-  assert.equal(reanalysis.sha, SHA_B);
-  assert.equal(reanalysis.version, '2.0.0');
+  assert.equal(scan.sha, SHA_A);
+  assert.equal(scan.version, '1.0.0');
+  assert.equal(initial.sha, SHA_B);
+  assert.equal(initial.version, '2.0.0');
 });
 
 // --- missing / malformed env ---
@@ -316,13 +330,13 @@ test('observeAgt002HostSurface: missing AGT002_DEPLOYED_GIT_SHA yields a null id
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: environmentField([['AGT002_DEPLOYED_VERSION', VERSION]]),
       }),
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
   assert.equal(result.version, null);
@@ -334,31 +348,77 @@ test('observeAgt002HostSurface: missing AGT002_DEPLOYED_VERSION nulls the whole 
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: environmentField([['AGT002_DEPLOYED_GIT_SHA', SHA_A]]),
       }),
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
   assert.equal(result.version, null);
   assert.equal(result.source, 'unobserved');
 });
 
-test('observeAgt002HostSurface: missing Environment property entirely yields a null identity', async () => {
+test('observeAgt002HostSurface: a unit with no deployed sha/version env is identified by its exact release ExecStart path', async () => {
   const calls = [];
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
-      stdout: buildStdout({ execStart: validExecStartFor('radar_pipeline', SHA_A) }),
+      stdout: buildStdout({
+        execStart: validExecStartFor('radar_daily_top5', SHA_A),
+        environment: environmentField([['AGT002_RADAR_STATE_DIR', '/var/lib/agt002-radar']]),
+      }),
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_top5' });
+
+  assert.equal(result.sha, SHA_A);
+  assert.equal(result.version, `f0-${SHA_A.slice(0, 7)}`);
+  assert.equal(result.source, 'agt002_host_surface_systemd_release_path');
+});
+
+test('observeAgt002HostSurface: missing Environment property entirely still requires the exact allowlisted release ExecStart', async () => {
+  const calls = [];
+  const observe = createAgt002HostSurfaceObserver({
+    execFile: fakeExecFile(calls, {
+      stdout: buildStdout({ execStart: validExecStartFor('radar_daily_scan', SHA_A) }),
+    }),
+  });
+  assert.equal((await observe({ surface: 'radar_daily_scan' })).sha, SHA_A);
+
+  const shortDirObserve = createAgt002HostSurfaceObserver({
+    execFile: fakeExecFile(calls, {
+      stdout: buildStdout({
+        execStart: execStartBlock({
+          path: '/usr/bin/node',
+          argv: '/usr/bin/node /opt/psi-comercial/releases/aaaaaaa/ops/agt002-radar-scan/run-agt002-radar-scan.mjs',
+        }),
+      }),
+    }),
+  });
+  const shortDir = await shortDirObserve({ surface: 'radar_daily_scan' });
+  assert.equal(shortDir.sha, null, 'a release directory that is not a full 40-hex sha is never trusted');
+  assert.equal(shortDir.version, null);
+});
+
+test('observeAgt002HostSurface: the same runner with another mode argument is a different surface and nulls the identity', async () => {
+  const calls = [];
+  const observe = createAgt002HostSurfaceObserver({
+    execFile: fakeExecFile(calls, {
+      stdout: buildStdout({
+        execStart: execStartBlock({
+          path: '/usr/bin/node',
+          argv: `/usr/bin/node ${scriptPathFor('radar_daily_top5', SHA_A)} --daily`,
+        }),
+      }),
+    }),
+  });
+
+  const result = await observe({ surface: 'radar_daily_top5' });
 
   assert.equal(result.sha, null);
-  assert.equal(result.version, null);
 });
 
 test('observeAgt002HostSurface: an uppercase sha is rejected (must be lowercase 40-hex)', async () => {
@@ -366,7 +426,7 @@ test('observeAgt002HostSurface: an uppercase sha is rejected (must be lowercase 
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', SHA_A.toUpperCase()],
           ['AGT002_DEPLOYED_VERSION', VERSION],
@@ -375,7 +435,7 @@ test('observeAgt002HostSurface: an uppercase sha is rejected (must be lowercase 
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
 });
@@ -385,7 +445,7 @@ test('observeAgt002HostSurface: a short/non-hex sha is rejected', async () => {
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', 'not-a-real-sha'],
           ['AGT002_DEPLOYED_VERSION', VERSION],
@@ -394,7 +454,7 @@ test('observeAgt002HostSurface: a short/non-hex sha is rejected', async () => {
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
 });
@@ -404,13 +464,13 @@ test('observeAgt002HostSurface: an empty version value is rejected', async () =>
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: `AGT002_DEPLOYED_GIT_SHA=${SHA_A} AGT002_DEPLOYED_VERSION=`,
       }),
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
   assert.equal(result.version, null);
@@ -423,7 +483,7 @@ test('observeAgt002HostSurface: a duplicate AGT002_DEPLOYED_GIT_SHA is ambiguous
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', SHA_A],
           ['AGT002_DEPLOYED_GIT_SHA', SHA_B],
@@ -433,7 +493,7 @@ test('observeAgt002HostSurface: a duplicate AGT002_DEPLOYED_GIT_SHA is ambiguous
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
 });
@@ -443,7 +503,7 @@ test('observeAgt002HostSurface: a duplicate AGT002_DEPLOYED_VERSION is ambiguous
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', SHA_A],
           ['AGT002_DEPLOYED_VERSION', VERSION],
@@ -453,7 +513,7 @@ test('observeAgt002HostSurface: a duplicate AGT002_DEPLOYED_VERSION is ambiguous
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
   assert.equal(result.version, null);
@@ -466,7 +526,7 @@ test('observeAgt002HostSurface: ExecStart naming another surface\'s allowlisted 
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('reanalysis_worker', SHA_A),
+        execStart: validExecStartFor('initial_analysis_worker', SHA_A),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', SHA_A],
           ['AGT002_DEPLOYED_VERSION', VERSION],
@@ -475,7 +535,7 @@ test('observeAgt002HostSurface: ExecStart naming another surface\'s allowlisted 
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
   assert.equal(result.version, null);
@@ -498,7 +558,7 @@ test('observeAgt002HostSurface: ExecStart pointing at an arbitrary script outsid
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
 });
@@ -513,7 +573,7 @@ test('observeAgt002HostSurface: a path-traversal ExecStart nulls the identity in
           argv:
             '/usr/bin/node /opt/psi-comercial/releases/' +
             SHA_A +
-            '/ops/agt002-radar-pipeline/../../../../etc/passwd',
+            '/ops/agt002-radar-scan/../../../../etc/passwd',
         }),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', SHA_A],
@@ -523,7 +583,7 @@ test('observeAgt002HostSurface: a path-traversal ExecStart nulls the identity in
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
 });
@@ -533,7 +593,7 @@ test('observeAgt002HostSurface: an ExecStart sha that mismatches the Environment
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_B),
+        execStart: validExecStartFor('radar_daily_scan', SHA_B),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', SHA_A],
           ['AGT002_DEPLOYED_VERSION', VERSION],
@@ -542,7 +602,7 @@ test('observeAgt002HostSurface: an ExecStart sha that mismatches the Environment
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
   assert.equal(result.version, null);
@@ -554,8 +614,8 @@ test('observeAgt002HostSurface: a missing interpreter prefix for a node-based su
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
         execStart: execStartBlock({
-          path: scriptPathFor('radar_pipeline', SHA_A),
-          argv: scriptPathFor('radar_pipeline', SHA_A),
+          path: scriptPathFor('radar_daily_scan', SHA_A),
+          argv: scriptPathFor('radar_daily_scan', SHA_A),
         }),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', SHA_A],
@@ -565,7 +625,7 @@ test('observeAgt002HostSurface: a missing interpreter prefix for a node-based su
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
 });
@@ -583,14 +643,14 @@ test('observeAgt002HostSurface: a missing/malformed ExecStart property nulls the
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
 });
 
 test('observeAgt002HostSurface: multiple ExecStart directives (ambiguous) null the identity', async () => {
   const calls = [];
-  const single = validExecStartFor('radar_pipeline', SHA_A);
+  const single = validExecStartFor('radar_daily_scan', SHA_A);
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
@@ -603,7 +663,7 @@ test('observeAgt002HostSurface: multiple ExecStart directives (ambiguous) null t
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.equal(result.sha, null);
 });
@@ -615,13 +675,13 @@ test('observeAgt002HostSurface: unit_status stays available even when identity n
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: environmentField([['AGT002_DEPLOYED_GIT_SHA', 'nope']]),
       }),
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.deepEqual(result.unit_status, {
     available: true,
@@ -639,7 +699,7 @@ test('observeAgt002HostSurface: the result never contains raw ExecStart/Environm
   const observe = createAgt002HostSurfaceObserver({
     execFile: fakeExecFile(calls, {
       stdout: buildStdout({
-        execStart: validExecStartFor('radar_pipeline', SHA_A),
+        execStart: validExecStartFor('radar_daily_scan', SHA_A),
         environment: environmentField([
           ['AGT002_DEPLOYED_GIT_SHA', SHA_A],
           ['AGT002_DEPLOYED_VERSION', VERSION],
@@ -649,7 +709,7 @@ test('observeAgt002HostSurface: the result never contains raw ExecStart/Environm
     }),
   });
 
-  const result = await observe({ surface: 'radar_pipeline' });
+  const result = await observe({ surface: 'radar_daily_scan' });
 
   assert.deepEqual(Object.keys(result).sort(), ['observed_at_utc', 'sha', 'source', 'surface', 'unit_status', 'version']);
   assert.equal(JSON.stringify(result).includes('SUPER_SECRET_TOKEN'), false);

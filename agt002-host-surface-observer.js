@@ -2,28 +2,44 @@ import { execFile as defaultExecFile } from 'node:child_process';
 import { buildAgt002ControlPlaneIdentity } from './agt002-control-plane-identity.js';
 
 export const AGT002_HOST_SURFACE_UNITS = Object.freeze({
-  radar_pipeline: 'agt002-radar-pipeline.service',
-  reanalysis_worker: 'agt002-reanalysis-worker.service',
-  workbench_scheduler: 'agt002-workbench-scheduler.service',
+  initial_analysis_worker: 'agt002-initial-analysis-worker.service',
+  auto_initial: 'agt002-auto-initial.service',
+  radar_daily_import: 'agt002-radar-import-daily.service',
+  radar_daily_scan: 'agt002-radar-scan.service',
+  radar_daily_reconciliation: 'agt002-radar-reconciliation.service',
+  radar_daily_top5: 'agt002-radar-top5.service',
+  radar_requests: 'agt002-radar-requests.service',
 });
 
 // Each allowlisted surface's own immutable runner identity: the exact interpreter (or none, for
-// a directly-executed script) and the exact path -- relative to a release checkout -- that unit's
-// ExecStart must invoke. Never derived from a request, an environment variable, or another
-// surface's identity.
-const AGT002_HOST_SURFACE_RUNNERS = Object.freeze({
-  radar_pipeline: Object.freeze({
+// a directly-executed script), the exact path -- relative to a release checkout -- and the exact
+// arguments that unit's ExecStart must invoke. Never derived from a request, an environment
+// variable, or another surface's identity.
+const RADAR_IMPORT_RUNNER = 'ops/agt002-radar-daily/run-agt002-radar-import.mjs';
+export const AGT002_HOST_SURFACE_RUNNERS = Object.freeze({
+  initial_analysis_worker: Object.freeze({
     interpreter: '/usr/bin/node',
-    relativePath: 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs',
+    relativePath: 'ops/agt002-initial-analysis-worker/run-agt002-initial-analysis-worker.mjs',
+    args: '',
   }),
-  reanalysis_worker: Object.freeze({
+  auto_initial: Object.freeze({
     interpreter: '/usr/bin/node',
-    relativePath: 'ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs',
+    relativePath: 'ops/agt002-auto-initial/run-agt002-auto-initial.mjs',
+    args: '',
   }),
-  workbench_scheduler: Object.freeze({
-    interpreter: null,
-    relativePath: 'ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh',
+  radar_daily_import: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--daily' }),
+  radar_daily_scan: Object.freeze({
+    interpreter: '/usr/bin/node',
+    relativePath: 'ops/agt002-radar-scan/run-agt002-radar-scan.mjs',
+    args: '',
   }),
+  radar_daily_reconciliation: Object.freeze({
+    interpreter: '/usr/bin/node',
+    relativePath: 'ops/agt002-radar-reconciliation/run-agt002-radar-reconciliation.mjs',
+    args: '',
+  }),
+  radar_daily_top5: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--top5' }),
+  radar_requests: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--requests' }),
 });
 
 const AGT002_RELEASES_ROOT = '/opt/psi-comercial/releases';
@@ -103,26 +119,48 @@ function uniqueEnvironmentValue(values, key) {
 function expectedExecStartCommand(surface, sha) {
   const runner = AGT002_HOST_SURFACE_RUNNERS[surface];
   const scriptPath = `${AGT002_RELEASES_ROOT}/${sha}/${runner.relativePath}`;
-  return runner.interpreter ? `${runner.interpreter} ${scriptPath}` : scriptPath;
+  const command = runner.interpreter ? `${runner.interpreter} ${scriptPath}` : scriptPath;
+  return runner.args ? `${command} ${runner.args}` : command;
 }
 
-// The only path from raw systemd unit fields to a trusted sha/version: a unique, well-formed sha
-// and version in Environment, AND an ExecStart that names -- with byte-exact equality, never a
-// prefix/substring/normalized match -- that same surface's allowlisted runner under the release
-// directory for that exact sha. Any missing, malformed, duplicate, or mismatched piece nulls out
-// the whole identity; nothing here is ever reported partially.
-function deriveObservedIdentity(surface, fields) {
-  const environment = collectEnvironmentValues(fields.Environment);
-  const sha = uniqueEnvironmentValue(environment, ENV_SHA_KEY);
-  if (typeof sha !== 'string' || !SHA_PATTERN.test(sha)) return null;
+// The release directory the ExecStart points at is itself named by the full commit sha, so it is
+// the sha of the code the unit actually runs. Only a full 40-hex directory name is accepted; the
+// byte-exact runner comparison below is still what makes it trusted.
+function releaseShaFromExecStart(argv) {
+  const prefix = `${AGT002_RELEASES_ROOT}/`;
+  const start = argv.indexOf(prefix);
+  if (start === -1) return null;
+  const candidate = argv.slice(start + prefix.length, start + prefix.length + 40);
+  return SHA_PATTERN.test(candidate) ? candidate : null;
+}
 
-  const version = uniqueEnvironmentValue(environment, ENV_VERSION_KEY);
+// The only path from raw systemd unit fields to a trusted sha/version: an ExecStart that names --
+// with byte-exact equality, never a prefix/substring/normalized match -- that same surface's
+// allowlisted runner under the release directory for that exact sha. When the unit declares
+// AGT002_DEPLOYED_GIT_SHA or AGT002_DEPLOYED_VERSION, both must be present, unique, well-formed and
+// the sha must be that same release. When it declares neither (several live units only pin
+// ExecStart in their 10-release.conf), the sha is the release directory and the version is its
+// f0-<first 7> tag. Any missing, malformed, duplicate, or mismatched piece nulls out the whole
+// identity; nothing is ever reported partially.
+function deriveObservedIdentity(surface, fields) {
+  const argv = extractExecStartArgv(fields.ExecStart);
+  if (argv === null) return null;
+
+  const environment = collectEnvironmentValues(fields.Environment);
+  const envDeclaresIdentity = environment.has(ENV_SHA_KEY) || environment.has(ENV_VERSION_KEY);
+
+  const sha = envDeclaresIdentity ? uniqueEnvironmentValue(environment, ENV_SHA_KEY) : releaseShaFromExecStart(argv);
+  if (typeof sha !== 'string' || !SHA_PATTERN.test(sha)) return null;
+  if (argv !== expectedExecStartCommand(surface, sha)) return null;
+
+  const version = envDeclaresIdentity ? uniqueEnvironmentValue(environment, ENV_VERSION_KEY) : `f0-${sha.slice(0, 7)}`;
   if (typeof version !== 'string' || !VERSION_PATTERN.test(version)) return null;
 
-  const argv = extractExecStartArgv(fields.ExecStart);
-  if (argv === null || argv !== expectedExecStartCommand(surface, sha)) return null;
-
-  return { sha, version };
+  return {
+    sha,
+    version,
+    source: envDeclaresIdentity ? 'agt002_host_surface_systemd_unit_observed' : 'agt002_host_surface_systemd_release_path',
+  };
 }
 
 function observeUnitFields(execFile, unitName) {
@@ -158,7 +196,7 @@ export function createAgt002HostSurfaceObserver({ execFile = defaultExecFile } =
       surface,
       sha: observed?.sha ?? null,
       version: observed?.version ?? null,
-      source: observed ? 'agt002_host_surface_systemd_unit_observed' : 'unobserved',
+      source: observed?.source ?? 'unobserved',
       now,
     });
 

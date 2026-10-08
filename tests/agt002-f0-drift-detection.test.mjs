@@ -14,6 +14,11 @@ import {
 import { generateAgt002ReleaseReceipt } from '../scripts/agt002-generate-release-receipt.mjs';
 import { checkAgt002Drift } from '../scripts/agt002-check-drift.mjs';
 import { collectAgt002SurfaceObservations, buildAgt002ObserveSurfacesResult } from '../scripts/agt002-observe-surfaces.mjs';
+import {
+  AGT002_PINNED_SURFACE_NAMES,
+  collectAgt002SurfaceCodePaths,
+  computeAgt002PinnedSurfaceMinShas,
+} from '../agt002-control-plane-surface-paths.js';
 
 // --- identity builders: version is only ever an explicit immutable input, never inferred ---
 
@@ -136,7 +141,8 @@ test('reanalysis worker runner: --control-plane ignores AGT002_DEPLOYED_GIT_SHA/
 
 test('generateAgt002ReleaseReceipt: desired.sha/version come from explicit inputs, never from disk', () => {
   const receipt = generateAgt002ReleaseReceipt({ git_sha: 'abc123', version: '1.2.3' });
-  assert.deepEqual(receipt.desired, { sha: 'abc123', version: '1.2.3' });
+  assert.equal(receipt.desired.sha, 'abc123');
+  assert.equal(receipt.desired.version, '1.2.3');
   assert.equal(receipt.control_plane_reconciled, false);
 });
 
@@ -151,17 +157,32 @@ test('generateAgt002ReleaseReceipt: an empty-string version is treated as missin
   assert.equal(receipt.desired.version, null);
 });
 
-// --- checkAgt002Drift: fail closed unless all six surfaces show a non-empty sha+version match ---
+// --- checkAgt002Drift: the watched surfaces are the live ones; retired ones are gone ---
 
-test('checkAgt002Drift: SURFACE_NAMES is the exact six-surface contract checked', () => {
+test('checkAgt002Drift: SURFACE_NAMES is exactly the live watched surfaces', () => {
   assert.deepEqual(SURFACE_NAMES, [
     'origin_main',
     'vercel_production',
     'bridge',
-    'radar_pipeline',
-    'reanalysis_worker',
-    'workbench_scheduler',
+    'initial_analysis_worker',
+    'auto_initial',
+    'radar_daily_import',
+    'radar_daily_scan',
+    'radar_daily_reconciliation',
+    'radar_daily_top5',
+    'radar_requests',
   ]);
+});
+
+test('checkAgt002Drift: retired surfaces are neither watched, receipted, nor reported', () => {
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'abc123', version: 'f0-abc123', surface_last_change: () => null });
+  const result = checkAgt002Drift({ receipt, observed: { surfaces: {} }, isAncestor: () => false });
+  for (const retired of ['radar_pipeline', 'reanalysis_worker', 'workbench_scheduler']) {
+    assert.equal(SURFACE_NAMES.includes(retired), false, retired);
+    assert.equal(Object.hasOwn(receipt.surfaces, retired), false, retired);
+    assert.equal(Object.hasOwn(receipt.desired.pinned_surfaces, retired), false, retired);
+    assert.equal([...result.issues, ...result.warnings].some((entry) => entry.surface === retired), false, retired);
+  }
 });
 
 test('checkAgt002Drift: a receipt produced by generateAgt002ReleaseReceipt with no version never passes drift', () => {
@@ -216,8 +237,8 @@ test('collectAgt002SurfaceObservations: a configured URL is fetched with the inj
   assert.equal(observations.vercel_production.version, '1.2.3');
 });
 
-test('collectAgt002SurfaceObservations: radar_pipeline, reanalysis_worker, and workbench_scheduler are observed through a URL fetch, not a static configured sha/version', async () => {
-  for (const surface of ['radar_pipeline', 'reanalysis_worker', 'workbench_scheduler']) {
+test('collectAgt002SurfaceObservations: host surfaces are observed through a URL fetch, not a static configured sha/version', async () => {
+  for (const surface of ['initial_analysis_worker', 'auto_initial', 'radar_daily_scan', 'radar_requests']) {
     const prefix = `AGT002_OBSERVE_${surface.toUpperCase()}`;
     const calls = [];
     const observations = await collectAgt002SurfaceObservations({
@@ -234,6 +255,25 @@ test('collectAgt002SurfaceObservations: radar_pipeline, reanalysis_worker, and w
     assert.equal(observations[surface].sha, `${surface}-sha`);
     assert.equal(observations[surface].version, '1.2.3');
   }
+});
+
+test('collectAgt002SurfaceObservations: host surfaces default to the bridge URL plus /<surface>, with no variable of their own', async () => {
+  const calls = [];
+  const observations = await collectAgt002SurfaceObservations({
+    env: { AGT002_OBSERVE_BRIDGE_URL: 'https://bridge.invalid/v1/agt002/control-plane/' },
+    fetchImpl: async (url) => {
+      calls.push(url);
+      const surface = url.endsWith('/control-plane/') ? 'bridge' : url.split('/').pop();
+      return { ok: true, json: async () => ({ surface, sha: `${surface}-sha`, version: 'f0-x', source: 'test' }) };
+    },
+  });
+  const hostSurfaces = SURFACE_NAMES.filter((name) => !['origin_main', 'vercel_production', 'bridge'].includes(name));
+  assert.deepEqual(calls, [
+    'https://bridge.invalid/v1/agt002/control-plane/',
+    ...hostSurfaces.map((surface) => `https://bridge.invalid/v1/agt002/control-plane/${surface}`),
+  ]);
+  for (const surface of hostSurfaces) assert.equal(observations[surface].sha, `${surface}-sha`);
+  assert.deepEqual(observations.vercel_production, {}, 'vercel never rides on the bridge URL');
 });
 
 test('collectAgt002SurfaceObservations: a failed fetch collapses to unobserved instead of throwing', async () => {
@@ -258,52 +298,53 @@ test('collectAgt002SurfaceObservations: a non-2xx response collapses to unobserv
 
 test('collectAgt002SurfaceObservations: a response whose surface exactly matches the requested surface is trusted', async () => {
   const observations = await collectAgt002SurfaceObservations({
-    env: { AGT002_OBSERVE_RADAR_PIPELINE_URL: 'https://example.invalid/control-plane' },
+    env: { AGT002_OBSERVE_RADAR_DAILY_SCAN_URL: 'https://example.invalid/control-plane' },
     fetchImpl: async () => ({
       ok: true,
-      json: async () => ({ surface: 'radar_pipeline', sha: 'radar-sha', version: '1.2.3', source: 'radar_pipeline_url_fetch' }),
+      json: async () => ({ surface: 'radar_daily_scan', sha: 'radar-sha', version: '1.2.3', source: 'radar_daily_scan_url_fetch' }),
     }),
   });
-  assert.equal(observations.radar_pipeline.sha, 'radar-sha');
-  assert.equal(observations.radar_pipeline.version, '1.2.3');
+  assert.equal(observations.radar_daily_scan.sha, 'radar-sha');
+  assert.equal(observations.radar_daily_scan.version, '1.2.3');
 });
 
-test('collectAgt002SurfaceObservations: a bridge response served from a radar_pipeline-configured URL must not be relabeled as radar_pipeline', async () => {
+test('collectAgt002SurfaceObservations: a bridge response served from a radar_daily_scan-configured URL must not be relabeled as radar_daily_scan', async () => {
   const observations = await collectAgt002SurfaceObservations({
-    env: { AGT002_OBSERVE_RADAR_PIPELINE_URL: 'https://example.invalid/control-plane' },
+    env: { AGT002_OBSERVE_RADAR_DAILY_SCAN_URL: 'https://example.invalid/control-plane' },
     fetchImpl: async () => ({
       ok: true,
       json: async () => ({ surface: 'bridge', sha: 'bridge-sha', version: '1.2.3', source: 'bridge_url_fetch' }),
     }),
   });
-  assert.deepEqual(observations.radar_pipeline, {}, 'a mismatched surface label must collapse to unobserved, never relabeled');
+  assert.deepEqual(observations.radar_daily_scan, {}, 'a mismatched surface label must collapse to unobserved, never relabeled');
 });
 
 test('collectAgt002SurfaceObservations: a response missing the surface field entirely collapses to unobserved', async () => {
   const observations = await collectAgt002SurfaceObservations({
-    env: { AGT002_OBSERVE_WORKBENCH_SCHEDULER_URL: 'https://example.invalid/control-plane' },
+    env: { AGT002_OBSERVE_RADAR_DAILY_TOP5_URL: 'https://example.invalid/control-plane' },
     fetchImpl: async () => ({
       ok: true,
-      json: async () => ({ sha: 'workbench-sha', version: '1.2.3', source: 'workbench_scheduler_url_fetch' }),
+      json: async () => ({ sha: 'top5-sha', version: '1.2.3', source: 'radar_daily_top5_url_fetch' }),
     }),
   });
-  assert.deepEqual(observations.workbench_scheduler, {}, 'a missing surface field must never be trusted as a match');
+  assert.deepEqual(observations.radar_daily_top5, {}, 'a missing surface field must never be trusted as a match');
 });
 
 test('collectAgt002SurfaceObservations: explicit env sha takes precedence over a configured URL', async () => {
-  let fetchCalled = false;
+  const fetchedUrls = [];
   const observations = await collectAgt002SurfaceObservations({
     env: {
       AGT002_OBSERVE_BRIDGE_SHA: 'from-env',
       AGT002_OBSERVE_BRIDGE_URL: 'https://example.invalid/control-plane',
     },
-    fetchImpl: async () => {
-      fetchCalled = true;
+    fetchImpl: async (url) => {
+      fetchedUrls.push(url);
       return { ok: true, json: async () => ({ surface: 'bridge', sha: 'from-url', version: null, source: 'bridge_url_fetch' }) };
     },
   });
   assert.equal(observations.bridge.sha, 'from-env');
-  assert.equal(fetchCalled, false);
+  // Only the host-surface routes under the bridge URL are fetched, never the bridge's own route.
+  assert.equal(fetchedUrls.includes('https://example.invalid/control-plane'), false);
 });
 
 test('buildAgt002ObserveSurfacesResult: an explicit input file/JSON observation wins over env collection', async () => {
@@ -350,8 +391,12 @@ test('buildAgt002ObserveSurfacesResult: never invents an observation for a surfa
   }
 });
 
-test('buildAgt002ObserveSurfacesResult feeding checkAgt002Drift end to end: fully matching six surfaces pass, one drifted surface fails closed with a structured issue', async () => {
-  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'release-sha', version: '2.0.0' });
+test('buildAgt002ObserveSurfacesResult feeding checkAgt002Drift end to end: every surface on the release passes, one drifted surface fails closed with a structured issue', async () => {
+  const receipt = generateAgt002ReleaseReceipt({
+    git_sha: 'release-sha',
+    version: '2.0.0',
+    surface_last_change: () => 'min-sha',
+  });
   const env = {};
   for (const surface of SURFACE_NAMES) {
     const prefix = `AGT002_OBSERVE_${surface.toUpperCase()}`;
@@ -359,12 +404,13 @@ test('buildAgt002ObserveSurfacesResult feeding checkAgt002Drift end to end: full
     env[`${prefix}_VERSION`] = '2.0.0';
   }
   const matching = await buildAgt002ObserveSurfacesResult({ env });
-  const matchingResult = checkAgt002Drift({ receipt, observed: matching });
-  assert.deepEqual(matchingResult, { ok: true, issues: [] });
+  const matchingResult = checkAgt002Drift({ receipt, observed: matching, isAncestor: () => false });
+  assert.deepEqual(matchingResult, { ok: true, issues: [], warnings: [] });
 
   env.AGT002_OBSERVE_BRIDGE_SHA = 'stale-sha';
+  env.AGT002_OBSERVE_BRIDGE_VERSION = 'f0-stale-s';
   const drifted = await buildAgt002ObserveSurfacesResult({ env });
-  const driftedResult = checkAgt002Drift({ receipt, observed: drifted });
+  const driftedResult = checkAgt002Drift({ receipt, observed: drifted, isAncestor: () => false });
   assert.equal(driftedResult.ok, false);
   assert.ok(
     driftedResult.issues.some(
@@ -432,7 +478,7 @@ test('PR scenario end to end: receipt and observer bound to the same base sha pa
       origin_main: { sha: 'pr-base-sha', version: '2.0.0', source: 'github_sha' },
     },
   });
-  assert.deepEqual(checkAgt002Drift({ receipt, observed: observedAtBaseSha }), { ok: true, issues: [] });
+  assert.deepEqual(checkAgt002Drift({ receipt, observed: observedAtBaseSha }), { ok: true, issues: [], warnings: [] });
 
   const observedAtMergeSha = observeAgt002Surfaces({
     desiredSha: 'pr-base-sha',
@@ -458,12 +504,168 @@ test('observeAgt002Surfaces: match_desired_version is true/false/null exactly as
     desiredVersion: '1.2.3',
     observations: {
       bridge: { sha: 'c0ffee', version: '1.2.3', source: 'bridge_observed' },
-      radar_pipeline: { sha: 'c0ffee', version: '9.9.9', source: 'radar_observed' },
+      radar_daily_scan: { sha: 'c0ffee', version: '9.9.9', source: 'radar_observed' },
       origin_main: {},
     },
   });
   assert.equal(result.surfaces.bridge.match_desired_version, true);
-  assert.equal(result.surfaces.radar_pipeline.match_desired_version, false);
+  assert.equal(result.surfaces.radar_daily_scan.match_desired_version, false);
   assert.equal(result.surfaces.origin_main.match_desired_version, null);
   assert.equal(result.control_plane_reconciled, false);
+});
+
+// --- pinned surfaces (bridge + host jobs): compared against the newest commit that changed the
+// code they run, not against the tip of main ---
+
+// A tiny fake history on main: c1 <- c2 <- c3 <- c4 (tip). `hotfix` is not on main.
+const MAIN_HISTORY = ['c1', 'c2', 'c3', 'c4'];
+function fakeIsAncestor(ancestor, descendant) {
+  const a = MAIN_HISTORY.indexOf(ancestor);
+  const d = MAIN_HISTORY.indexOf(descendant);
+  return a >= 0 && d >= 0 && a <= d;
+}
+
+function observedAt(overrides) {
+  const surfaces = { origin_main: { sha: 'c4', version: 'f0-c4', source: 'github_sha' } };
+  for (const [surface, sha] of Object.entries(overrides)) {
+    surfaces[surface] = { sha, version: `f0-${sha.slice(0, 7)}`, source: 'test' };
+  }
+  return { surfaces };
+}
+
+test('generateAgt002ReleaseReceipt: desired.pinned_surfaces holds a min_sha per pinned surface from its own code paths', () => {
+  const seen = [];
+  const receipt = generateAgt002ReleaseReceipt({
+    git_sha: 'c4',
+    version: 'f0-c4',
+    surface_last_change: ({ ref, paths }) => {
+      seen.push(ref);
+      return paths.includes('ops/agt002-radar-scan/run-agt002-radar-scan.mjs') ? 'c3' : 'c2';
+    },
+  });
+  assert.deepEqual(Object.keys(receipt.desired.pinned_surfaces), [...AGT002_PINNED_SURFACE_NAMES]);
+  assert.equal(receipt.desired.pinned_surfaces.radar_daily_scan.min_sha, 'c3');
+  assert.equal(receipt.desired.pinned_surfaces.bridge.min_sha, 'c2');
+  assert.ok(seen.every((ref) => ref === 'c4'), 'the last change is always searched from the desired sha');
+});
+
+test('computeAgt002PinnedSurfaceMinShas: a lookup failure yields null, never a guess', () => {
+  const result = computeAgt002PinnedSurfaceMinShas({
+    ref: 'c4',
+    lastChange: () => {
+      throw new Error('history unavailable');
+    },
+  });
+  for (const surface of AGT002_PINNED_SURFACE_NAMES) assert.equal(result[surface].min_sha, null);
+});
+
+test('collectAgt002SurfaceCodePaths: follows the runner import closure, adds the lockfile, never follows the API monolith', () => {
+  const initial = collectAgt002SurfaceCodePaths('initial_analysis_worker');
+  assert.ok(initial.includes('ops/agt002-initial-analysis-worker/run-agt002-initial-analysis-worker.mjs'));
+  assert.ok(initial.includes('pnpm-lock.yaml'));
+  assert.ok(initial.length > 2, 'the runner imports repo modules, so the closure is larger than the runner itself');
+
+  const radarImport = collectAgt002SurfaceCodePaths('radar_daily_import');
+  assert.ok(radarImport.includes('ops/agt002-radar-daily/run-agt002-radar-import.mjs'));
+  assert.ok(radarImport.includes('tender-radar-deep-search.js'));
+  assert.equal(radarImport.includes('api/[...path].js'), false);
+  assert.equal(radarImport.includes('server/index.js'), false);
+  assert.deepEqual(collectAgt002SurfaceCodePaths('radar_requests'), radarImport);
+
+  assert.throws(() => collectAgt002SurfaceCodePaths('origin_main'), /Not a pinned AGT-002 surface/);
+});
+
+test('checkAgt002Drift: a host surface lagging main but at or after its last code change passes', () => {
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'c4', version: 'f0-c4', surface_last_change: () => 'c2' });
+  const exactlyAtLastChange = checkAgt002Drift({
+    receipt,
+    observed: observedAt({ radar_daily_scan: 'c2' }),
+    isAncestor: fakeIsAncestor,
+  });
+  assert.equal(exactlyAtLastChange.ok, true, JSON.stringify(exactlyAtLastChange.issues));
+
+  const afterLastChange = checkAgt002Drift({
+    receipt,
+    observed: observedAt({ radar_daily_scan: 'c3', bridge: 'c2', auto_initial: 'c4' }),
+    isAncestor: fakeIsAncestor,
+  });
+  assert.equal(afterLastChange.ok, true, JSON.stringify(afterLastChange.issues));
+  assert.deepEqual(afterLastChange.issues, []);
+});
+
+test('checkAgt002Drift: a host surface older than the last change to its code is real drift and fails', () => {
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'c4', version: 'f0-c4', surface_last_change: () => 'c3' });
+  const result = checkAgt002Drift({
+    receipt,
+    observed: observedAt({ radar_daily_reconciliation: 'c2' }),
+    isAncestor: fakeIsAncestor,
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.issues, [
+    {
+      type: 'sha_mismatch',
+      surface: 'radar_daily_reconciliation',
+      reason: 'behind_last_change',
+      desired_min_sha: 'c3',
+      observed_sha: 'c2',
+    },
+  ]);
+});
+
+test('checkAgt002Drift: a pinned surface running a commit that is not on main fails even if it looks newer', () => {
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'c4', version: 'f0-c4', surface_last_change: () => 'c2' });
+  const result = checkAgt002Drift({
+    receipt,
+    observed: observedAt({ bridge: 'hotfix' }),
+    isAncestor: fakeIsAncestor,
+  });
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.issues.some((issue) => issue.type === 'sha_mismatch' && issue.surface === 'bridge' && issue.reason === 'not_on_main'),
+  );
+});
+
+test('checkAgt002Drift: a pinned surface must report its own release tag as version', () => {
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'c4', version: 'f0-c4', surface_last_change: () => 'c2' });
+  const observed = observedAt({ auto_initial: 'c3' });
+  observed.surfaces.auto_initial.version = 'f0-c4';
+  const result = checkAgt002Drift({ receipt, observed, isAncestor: fakeIsAncestor });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.issues, [
+    { type: 'version_mismatch', surface: 'auto_initial', desired_version: 'f0-c3', observed_version: 'f0-c4' },
+  ]);
+});
+
+test('checkAgt002Drift: a pinned surface behind the tip with no computable min_sha fails closed', () => {
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'c4', version: 'f0-c4', surface_last_change: () => null });
+  const result = checkAgt002Drift({ receipt, observed: observedAt({ bridge: 'c3' }), isAncestor: fakeIsAncestor });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.type === 'missing_desired_surface_sha' && issue.surface === 'bridge'));
+});
+
+test('checkAgt002Drift: vercel_production still has to sit exactly on the tip of main', () => {
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'c4', version: 'f0-c4', surface_last_change: () => 'c1' });
+  const observed = observedAt({});
+  observed.surfaces.vercel_production = { sha: 'c3', version: 'f0-c3', source: 'vercel_git_commit_sha' };
+  const result = checkAgt002Drift({ receipt, observed, isAncestor: fakeIsAncestor });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.type === 'sha_mismatch' && issue.surface === 'vercel_production'));
+});
+
+test('checkAgt002Drift: unobserved surfaces are warnings, never failures, and never hide real drift elsewhere', () => {
+  const receipt = generateAgt002ReleaseReceipt({ git_sha: 'c4', version: 'f0-c4', surface_last_change: () => 'c3' });
+
+  const onlyOrigin = checkAgt002Drift({ receipt, observed: observedAt({}), isAncestor: fakeIsAncestor });
+  assert.equal(onlyOrigin.ok, true);
+  assert.deepEqual(onlyOrigin.issues, []);
+  assert.deepEqual(
+    onlyOrigin.warnings.map((warning) => warning.surface),
+    SURFACE_NAMES.filter((surface) => surface !== 'origin_main'),
+  );
+  assert.ok(onlyOrigin.warnings.every((warning) => warning.type === 'unobserved'));
+
+  const withDrift = checkAgt002Drift({ receipt, observed: observedAt({ radar_daily_scan: 'c1' }), isAncestor: fakeIsAncestor });
+  assert.equal(withDrift.ok, false);
+  assert.ok(withDrift.issues.some((issue) => issue.surface === 'radar_daily_scan'));
+  assert.equal(withDrift.warnings.some((warning) => warning.surface === 'radar_daily_scan'), false);
 });

@@ -1,17 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { SURFACE_NAMES } from '../agt002-control-plane-identity.js';
+import { computeAgt002PinnedSurfaceMinShas } from '../agt002-control-plane-surface-paths.js';
 
 const FREEZE_CANONICAL_SHA256 = 'd7123520c4016a4963dfda7c36bdc5d5507f7ac0d5bb2b26c96193b1f95ef4b3';
-
-const SURFACE_NAMES = [
-  'origin_main',
-  'vercel_production',
-  'bridge',
-  'radar_pipeline',
-  'reanalysis_worker',
-  'workbench_scheduler',
-];
 
 const MIGRATION_092_PATH = fileURLToPath(
   new URL('../supabase/migrations/092_agt002_f0b_chat_query_revoke.sql', import.meta.url),
@@ -71,8 +64,8 @@ export function generateAgt002ReleaseReceipt(input = {}) {
   const migration094Sha256 = sha256OfFile(MIGRATION_094_PATH);
   const migration095Sha256 = sha256OfFile(MIGRATION_095_PATH);
   const gitSha = input.git_sha ?? process.env.GITHUB_SHA ?? null;
-  // The single canonical release identity every one of the six surfaces is expected to be
-  // running. Both fields are explicit immutable inputs (an env var GitHub Actions/the deployer
+  // The single canonical release identity origin_main and vercel_production are expected to be
+  // running (pinned surfaces are bounded by desired.pinned_surfaces instead). Both fields are explicit immutable inputs (an env var GitHub Actions/the deployer
   // set for this run, or an explicit generator argument) -- never inferred from mutable git/disk
   // state. A missing version stays null here, which is exactly what keeps drift detection from
   // ever declaring PASS on an unversioned release.
@@ -88,6 +81,13 @@ export function generateAgt002ReleaseReceipt(input = {}) {
     desired: {
       sha: nonEmptyString(gitSha),
       version: desiredVersion,
+      // Surfaces that run a pinned release (bridge, host jobs) are not expected to sit on the
+      // desired sha itself, only on a main commit at or after the newest commit that changed the
+      // code they run. Computed from the checkout's own git history at the desired sha.
+      pinned_surfaces: computeAgt002PinnedSurfaceMinShas({
+        ref: nonEmptyString(gitSha),
+        ...(input.surface_last_change ? { lastChange: input.surface_last_change } : {}),
+      }),
     },
     surfaces: buildSurfaces(input.surfaces, gitSha),
   };

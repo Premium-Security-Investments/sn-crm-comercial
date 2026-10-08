@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { SURFACE_NAMES } from '../agt002-control-plane-identity.js';
+import { AGT002_HOST_SURFACE_UNITS } from '../agt002-host-surface-observer.js';
 import { observeAgt002Surfaces } from '../agt002-control-plane-observe.js';
 
 function readArgValue(args, flag) {
@@ -43,9 +44,20 @@ function explicitEnvObservation(surface, env) {
 // surface's response be relabeled and trusted as a different surface's observation. A missing
 // URL, a non-2xx response, a missing/mismatched `surface`, or a fetch failure all collapse to null
 // (honestly unobserved) rather than throwing, so one unreachable/misconfigured surface can't take
-// down collection of the other five.
+// down collection of the others.
+//
+// Host surfaces (the systemd jobs the bridge observes for us) need no URL of their own: unless an
+// explicit AGT002_OBSERVE_<SURFACE>_URL overrides it, their URL is the bridge control-plane URL
+// plus `/<surface>`, which is exactly the bridge's read-only host-surface route.
+function surfaceObservationUrl(surface, env) {
+  const explicit = nonEmptyString(env[`${surfaceEnvPrefix(surface)}_URL`]);
+  if (explicit || !Object.prototype.hasOwnProperty.call(AGT002_HOST_SURFACE_UNITS, surface)) return explicit;
+  const bridgeUrl = nonEmptyString(env[`${surfaceEnvPrefix('bridge')}_URL`]);
+  return bridgeUrl ? `${bridgeUrl.replace(/\/+$/, '')}/${surface}` : null;
+}
+
 async function fetchedSurfaceObservation(surface, env, fetchImpl) {
-  const url = nonEmptyString(env[`${surfaceEnvPrefix(surface)}_URL`]);
+  const url = surfaceObservationUrl(surface, env);
   if (!url || typeof fetchImpl !== 'function') return null;
   try {
     const response = await fetchImpl(url);
@@ -62,7 +74,7 @@ async function fetchedSurfaceObservation(surface, env, fetchImpl) {
   }
 }
 
-// Reusable collector: gathers an observation for all six surfaces from explicit env inputs
+// Reusable collector: gathers an observation for every watched surface from explicit env inputs
 // first, falling back to an explicit per-surface URL fetch only when configured. No surface is
 // ever invented -- a surface with neither an env sha nor a URL configured comes back as {}.
 export async function collectAgt002SurfaceObservations({ env = {}, fetchImpl = undefined } = {}) {
