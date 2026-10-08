@@ -54,14 +54,18 @@ function signedHeaders(body, path, { timestamp = String(Math.floor(Date.now() / 
 
 const fakeCodexClient = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null }) };
 
-test('SURFACE_NAMES matches the exact six required surfaces', () => {
+test('SURFACE_NAMES matches the exact live watched surfaces', () => {
   assert.deepEqual(SURFACE_NAMES, [
     'origin_main',
     'vercel_production',
     'bridge',
-    'radar_pipeline',
-    'reanalysis_worker',
-    'workbench_scheduler',
+    'initial_analysis_worker',
+    'auto_initial',
+    'radar_daily_import',
+    'radar_daily_scan',
+    'radar_daily_reconciliation',
+    'radar_daily_top5',
+    'radar_requests',
   ]);
   assert.equal(Object.isFrozen(SURFACE_NAMES), true);
 });
@@ -145,12 +149,12 @@ test('observeAgt002Surfaces: match_desired is true, false, or null as specified'
     desiredSha: 'c0ffee',
     observations: {
       bridge: { sha: 'c0ffee', source: 'bridge_observed' },
-      radar_pipeline: { sha: 'other-sha', source: 'radar_observed' },
+      radar_daily_scan: { sha: 'other-sha', source: 'radar_observed' },
       origin_main: {},
     },
   });
   assert.equal(result.surfaces.bridge.match_desired, true);
-  assert.equal(result.surfaces.radar_pipeline.match_desired, false);
+  assert.equal(result.surfaces.radar_daily_scan.match_desired, false);
   assert.equal(result.surfaces.origin_main.match_desired, null, 'a null sha must produce a null match_desired');
 });
 

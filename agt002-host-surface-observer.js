@@ -1,29 +1,47 @@
 import { execFile as defaultExecFile } from 'node:child_process';
 import { buildAgt002ControlPlaneIdentity } from './agt002-control-plane-identity.js';
 
+// This allowlist runs inside the bridge process: adding or renaming a host surface only takes
+// effect after the bridge is redeployed and restarted (until then the route answers 404).
 export const AGT002_HOST_SURFACE_UNITS = Object.freeze({
-  radar_pipeline: 'agt002-radar-pipeline.service',
-  reanalysis_worker: 'agt002-reanalysis-worker.service',
-  workbench_scheduler: 'agt002-workbench-scheduler.service',
+  initial_analysis_worker: 'agt002-initial-analysis-worker.service',
+  auto_initial: 'agt002-auto-initial.service',
+  radar_daily_import: 'agt002-radar-import-daily.service',
+  radar_daily_scan: 'agt002-radar-scan.service',
+  radar_daily_reconciliation: 'agt002-radar-reconciliation.service',
+  radar_daily_top5: 'agt002-radar-top5.service',
+  radar_requests: 'agt002-radar-requests.service',
 });
 
 // Each allowlisted surface's own immutable runner identity: the exact interpreter (or none, for
-// a directly-executed script) and the exact path -- relative to a release checkout -- that unit's
-// ExecStart must invoke. Never derived from a request, an environment variable, or another
-// surface's identity.
-const AGT002_HOST_SURFACE_RUNNERS = Object.freeze({
-  radar_pipeline: Object.freeze({
+// a directly-executed script), the exact path -- relative to a release checkout -- and the exact
+// arguments that unit's ExecStart must invoke. Never derived from a request, an environment
+// variable, or another surface's identity.
+const RADAR_IMPORT_RUNNER = 'ops/agt002-radar-daily/run-agt002-radar-import.mjs';
+export const AGT002_HOST_SURFACE_RUNNERS = Object.freeze({
+  initial_analysis_worker: Object.freeze({
     interpreter: '/usr/bin/node',
-    relativePath: 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs',
+    relativePath: 'ops/agt002-initial-analysis-worker/run-agt002-initial-analysis-worker.mjs',
+    args: '',
   }),
-  reanalysis_worker: Object.freeze({
+  auto_initial: Object.freeze({
     interpreter: '/usr/bin/node',
-    relativePath: 'ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs',
+    relativePath: 'ops/agt002-auto-initial/run-agt002-auto-initial.mjs',
+    args: '',
   }),
-  workbench_scheduler: Object.freeze({
-    interpreter: null,
-    relativePath: 'ops/agt002-workbench-scheduler/run-agt002-workbench-worker.sh',
+  radar_daily_import: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--daily' }),
+  radar_daily_scan: Object.freeze({
+    interpreter: '/usr/bin/node',
+    relativePath: 'ops/agt002-radar-scan/run-agt002-radar-scan.mjs',
+    args: '',
   }),
+  radar_daily_reconciliation: Object.freeze({
+    interpreter: '/usr/bin/node',
+    relativePath: 'ops/agt002-radar-reconciliation/run-agt002-radar-reconciliation.mjs',
+    args: '',
+  }),
+  radar_daily_top5: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--top5' }),
+  radar_requests: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--requests' }),
 });
 
 const AGT002_RELEASES_ROOT = '/opt/psi-comercial/releases';
@@ -35,6 +53,8 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const SYSTEMCTL_PATH = '/usr/bin/systemctl';
+// A hung systemctl must never pin a bridge request: it is killed and reported as unavailable.
+const SYSTEMCTL_TIMEOUT_MS = 5000;
 const SHOW_PROPERTY_NAMES = Object.freeze(['ActiveState', 'SubState', 'Result', 'ExecStart', 'Environment']);
 const UNIT_STATUS_PROPERTIES = Object.freeze(['ActiveState', 'SubState', 'Result']);
 
@@ -103,26 +123,50 @@ function uniqueEnvironmentValue(values, key) {
 function expectedExecStartCommand(surface, sha) {
   const runner = AGT002_HOST_SURFACE_RUNNERS[surface];
   const scriptPath = `${AGT002_RELEASES_ROOT}/${sha}/${runner.relativePath}`;
-  return runner.interpreter ? `${runner.interpreter} ${scriptPath}` : scriptPath;
+  const command = runner.interpreter ? `${runner.interpreter} ${scriptPath}` : scriptPath;
+  return runner.args ? `${command} ${runner.args}` : command;
 }
 
-// The only path from raw systemd unit fields to a trusted sha/version: a unique, well-formed sha
-// and version in Environment, AND an ExecStart that names -- with byte-exact equality, never a
-// prefix/substring/normalized match -- that same surface's allowlisted runner under the release
-// directory for that exact sha. Any missing, malformed, duplicate, or mismatched piece nulls out
-// the whole identity; nothing here is ever reported partially.
-function deriveObservedIdentity(surface, fields) {
-  const environment = collectEnvironmentValues(fields.Environment);
-  const sha = uniqueEnvironmentValue(environment, ENV_SHA_KEY);
-  if (typeof sha !== 'string' || !SHA_PATTERN.test(sha)) return null;
+// The release directory the ExecStart points at is itself named by the full commit sha, so it is
+// the sha of the code the unit actually runs. Only a full 40-hex directory name is accepted; the
+// byte-exact runner comparison below is still what makes it trusted. Accepted trust assumption:
+// the directory name is not verified against its contents; whoever can write under
+// /opt/psi-comercial/releases (root) could mislabel a release.
+function releaseShaFromExecStart(argv) {
+  const prefix = `${AGT002_RELEASES_ROOT}/`;
+  const start = argv.indexOf(prefix);
+  if (start === -1) return null;
+  const candidate = argv.slice(start + prefix.length, start + prefix.length + 40);
+  return SHA_PATTERN.test(candidate) ? candidate : null;
+}
 
-  const version = uniqueEnvironmentValue(environment, ENV_VERSION_KEY);
+// The only path from raw systemd unit fields to a trusted sha/version: an ExecStart that names --
+// with byte-exact equality, never a prefix/substring/normalized match -- that same surface's
+// allowlisted runner under the release directory for that exact sha. When the unit declares
+// AGT002_DEPLOYED_GIT_SHA or AGT002_DEPLOYED_VERSION, both must be present, unique, well-formed and
+// the sha must be that same release. When it declares neither (several live units only pin
+// ExecStart in their 10-release.conf), the sha is the release directory and the version is its
+// f0-<first 7> tag. Any missing, malformed, duplicate, or mismatched piece nulls out the whole
+// identity; nothing is ever reported partially.
+function deriveObservedIdentity(surface, fields) {
+  const argv = extractExecStartArgv(fields.ExecStart);
+  if (argv === null) return null;
+
+  const environment = collectEnvironmentValues(fields.Environment);
+  const envDeclaresIdentity = environment.has(ENV_SHA_KEY) || environment.has(ENV_VERSION_KEY);
+
+  const sha = envDeclaresIdentity ? uniqueEnvironmentValue(environment, ENV_SHA_KEY) : releaseShaFromExecStart(argv);
+  if (typeof sha !== 'string' || !SHA_PATTERN.test(sha)) return null;
+  if (argv !== expectedExecStartCommand(surface, sha)) return null;
+
+  const version = envDeclaresIdentity ? uniqueEnvironmentValue(environment, ENV_VERSION_KEY) : `f0-${sha.slice(0, 7)}`;
   if (typeof version !== 'string' || !VERSION_PATTERN.test(version)) return null;
 
-  const argv = extractExecStartArgv(fields.ExecStart);
-  if (argv === null || argv !== expectedExecStartCommand(surface, sha)) return null;
-
-  return { sha, version };
+  return {
+    sha,
+    version,
+    source: envDeclaresIdentity ? 'agt002_host_surface_systemd_unit_observed' : 'agt002_host_surface_systemd_release_path',
+  };
 }
 
 function observeUnitFields(execFile, unitName) {
@@ -130,7 +174,7 @@ function observeUnitFields(execFile, unitName) {
     execFile(
       SYSTEMCTL_PATH,
       ['show', unitName, `--property=${SHOW_PROPERTY_NAMES.join(',')}`],
-      { shell: false },
+      { shell: false, timeout: SYSTEMCTL_TIMEOUT_MS },
       (error, stdout) => {
         // Any adapter failure (nonzero exit, spawn error) collapses to a single null: no error
         // message/stderr is ever surfaced downstream.
@@ -144,12 +188,20 @@ function observeUnitFields(execFile, unitName) {
   });
 }
 
-export function createAgt002HostSurfaceObserver({ execFile = defaultExecFile } = {}) {
-  return async function observeAgt002HostSurface({ surface, now = () => new Date() } = {}) {
-    if (!Object.prototype.hasOwnProperty.call(AGT002_HOST_SURFACE_UNITS, surface)) {
-      throw new Error(`Unknown AGT-002 host surface: ${surface}`);
-    }
+// How long one unit's observation is reused. GET /v1/agt002/control-plane/<unit> is public and
+// unauthenticated, and each fresh observation spawns `systemctl show` inside the bridge process
+// that also serves the AI calls: with this cache, at most one spawn per unit per window happens no
+// matter how many requests arrive (concurrent requests share the same in-flight spawn).
+export const AGT002_HOST_SURFACE_CACHE_TTL_MS = 30_000;
 
+export function createAgt002HostSurfaceObserver({
+  execFile = defaultExecFile,
+  cacheTtlMs = AGT002_HOST_SURFACE_CACHE_TTL_MS,
+  clockMs = () => Date.now(),
+} = {}) {
+  const cache = new Map();
+
+  async function observeFresh(surface, now) {
     const fields = await observeUnitFields(execFile, AGT002_HOST_SURFACE_UNITS[surface]);
     const unit_status = fields === null ? unavailableUnitStatus() : toUnitStatus(fields);
     const observed = fields === null ? null : deriveObservedIdentity(surface, fields);
@@ -158,10 +210,26 @@ export function createAgt002HostSurfaceObserver({ execFile = defaultExecFile } =
       surface,
       sha: observed?.sha ?? null,
       version: observed?.version ?? null,
-      source: observed ? 'agt002_host_surface_systemd_unit_observed' : 'unobserved',
+      source: observed?.source ?? 'unobserved',
       now,
     });
 
     return Object.freeze({ ...identity, unit_status });
+  }
+
+  return async function observeAgt002HostSurface({ surface, now = () => new Date() } = {}) {
+    if (!Object.prototype.hasOwnProperty.call(AGT002_HOST_SURFACE_UNITS, surface)) {
+      throw new Error(`Unknown AGT-002 host surface: ${surface}`);
+    }
+
+    const nowMs = clockMs();
+    const cached = cache.get(surface);
+    if (cached && cached.expiresAtMs > nowMs) return cached.result;
+
+    // observeFresh never rejects (adapter failures collapse to an unavailable status), so the
+    // cached promise is always a usable observation.
+    const result = observeFresh(surface, now);
+    cache.set(surface, { expiresAtMs: nowMs + cacheTtlMs, result });
+    return result;
   };
 }
