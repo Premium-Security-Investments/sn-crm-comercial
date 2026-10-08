@@ -10,6 +10,19 @@ export function tenderProcessBaseReference(ref) {
   return splitTrailingPhaseSuffixes(ref).base.replace(/[.\s]+$/g, '').trim();
 }
 
+// datos.gov.co publica la fecha de cierre sin zona ("2026-10-19T00:00:00.000") y el CRM la guarda como medianoche UTC
+// ("2026-10-19T00:00:00+00:00"): las dos son una fecha de Colombia. Se leen en hora Bogotá (UTC-5); una fecha con hora
+// y zona explícitas se respeta.
+export function tenderDeadlineBogotaMs(deadline) {
+  const text = String(deadline || '').trim();
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?(Z|[+-]00:?00|[+-]\d{2}:?\d{2})?$/);
+  if (!match) return Date.parse(text);
+  const [, day, time = '00:00:00', zone] = match;
+  const isUtcMidnight = (!zone || /^(Z|[+-]00:?00)$/.test(zone)) && /^00:00(:00(\.0+)?)?$/.test(time);
+  if (!zone || isUtcMidnight) return Date.parse(`${day}T${time.length === 5 ? `${time}:00` : time}-05:00`);
+  return Date.parse(text);
+}
+
 /**
  * Por qué un cambio de fuente (fase nueva o republicación) NO debe disparar el seguimiento automático de documentos y
  * reanálisis, o `null` si puede. Fail-closed: proceso terminal (Adjudicado, Seleccionado, Celebrado, Cancelado…), sin
@@ -17,7 +30,7 @@ export function tenderProcessBaseReference(ref) {
  */
 export function tenderSourceChangeFollowUpBlocker({ status, deadline } = {}, now = new Date()) {
   if (isTerminalTenderStatus(status)) return 'terminal_status';
-  const deadlineAt = Date.parse(deadline || '');
+  const deadlineAt = tenderDeadlineBogotaMs(deadline);
   if (!Number.isFinite(deadlineAt)) return 'no_deadline';
   const nowMs = now instanceof Date ? now.getTime() : Date.parse(now);
   if (deadlineAt <= nowMs) return 'deadline_passed';

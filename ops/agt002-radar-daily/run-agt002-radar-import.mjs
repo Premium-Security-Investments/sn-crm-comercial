@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // AGT-002 Radar import on the host (owner decision 2026-10-06: the daily import lives in the CRM, not in Hermes).
-//   --daily     the full daily import (deep SECOP search + TVEC + ESU), persisted as a `cron` run; then the official
-//               documents of the new SECOP phase (or republication) of processes already converted
-//               (agt002-phase-change-followup.js).
+//   --daily     the full daily import (deep SECOP search + TVEC + ESU), persisted as a `cron` run. It also leaves the
+//               "detected" mark of a new SECOP phase (or republication) of a converted process.
+//   --phase-change-documents  hourly, its own unit (agt002-phase-change-documents.timer): official documents of those
+//               new phases (agt002-phase-change-followup.js), within a time budget; never part of the daily chain.
 //   --requests  runs the full import for a pending "Sincronizar fuentes oficiales" request, if any.
 //   --compare   reads the sources with the full import and compares against the Radar, writing nothing.
 //   --top5      writes the Discord "5 de mayor encaje" text and the Radar export built from the CRM's own Radar
@@ -14,8 +15,8 @@ process.env.CRM_SKIP_LISTEN = '1';
 process.env.NEXT_PUBLIC_SUPABASE_URL ||= process.env.SUPABASE_URL;
 const log = event => console.log(JSON.stringify(event));
 const mode = process.argv[2];
-if (!['--daily', '--requests', '--compare', '--top5'].includes(mode)) {
-  log({ event: 'agt002_radar_import_usage', usage: 'run-agt002-radar-import.mjs --daily|--requests|--compare|--top5' });
+if (!['--daily', '--requests', '--compare', '--top5', '--phase-change-documents'].includes(mode)) {
+  log({ event: 'agt002_radar_import_usage', usage: 'run-agt002-radar-import.mjs --daily|--requests|--compare|--top5|--phase-change-documents' });
   process.exit(2);
 }
 
@@ -28,27 +29,29 @@ function summarize(result) {
   return { status: receipt.status || null, visible: result?.tenders?.length ?? null, sources: (result?.diagnostics || []).map(d => `${d.source}: ${d.status} (${d.records_read ?? d.count})`) };
 }
 
-// Procesos SECOP II ya convertidos cuya fase nueva (o republicación) se detectó: importa los documentos del aviso nuevo
-// (sin modelo, sin costo) cuando datos.gov.co trae documentos nuevos y publica el mismo conjunto en dos corridas seguidas.
-// Best-effort: lo que aún no está listo queda pendiente para la siguiente corrida y nunca hace fallar la importación.
+// Procesos SECOP II ya convertidos cuya fase nueva (o republicación) se detectó: concilia cambios sin marca e importa los
+// documentos nuevos del aviso (sin modelo, sin costo) cuando datos.gov.co los publica y se mantienen estables. Corre en su
+// propio servicio con presupuesto de tiempo: lo que no alcance o no esté listo queda para la siguiente hora.
 async function runPhaseChangeDocuments() {
+  const { reconcileAgt002PendingPhaseChanges, runAgt002PhaseChangeDocumentRefresh } = await import('../../agt002-phase-change-followup.js');
   try {
-    const { runAgt002PhaseChangeDocumentRefresh } = await import('../../agt002-phase-change-followup.js');
-    const events = await runAgt002PhaseChangeDocumentRefresh(database, {
-      probeDocuments: (opportunityId, options) => api.probePhaseChangeTenderDocumentSet(database, opportunityId, options),
-      importDocuments: (opportunityId, options) => api.importPhaseChangeTenderDocuments(database, opportunityId, options),
-    });
-    for (const event of events) log(event);
+    for (const event of await reconcileAgt002PendingPhaseChanges(database)) log(event);
   } catch (error) {
-    log({ event: 'agt002_phase_change_documents_pass_failed', message: String(error?.message || error).slice(0, 200) });
+    log({ event: 'agt002_phase_change_reconcile_failed', message: String(error?.message || error).slice(0, 200) });
   }
+  const budgetMs = Number(process.env.AGT002_PHASE_CHANGE_DOCUMENTS_BUDGET_MS || 10 * 60 * 1000);
+  const events = await runAgt002PhaseChangeDocumentRefresh(database, {
+    budgetMs,
+    probeDocuments: (opportunityId, options) => api.probePhaseChangeTenderDocumentSet(database, opportunityId, options),
+    importDocuments: (opportunityId, options) => api.importPhaseChangeTenderDocuments(database, opportunityId, options),
+  });
+  for (const event of events) log(event);
 }
 
 async function runDaily() {
   const started = Date.now();
   const result = await api.persistTenderRadar(database, null, 'cron', { deep: true });
   log({ event: 'agt002_radar_import_daily', seconds: Math.round((Date.now() - started) / 1000), ...summarize(result) });
-  await runPhaseChangeDocuments();
 }
 
 async function runRequests() {
@@ -115,6 +118,7 @@ try {
   if (mode === '--requests') await runRequests();
   if (mode === '--compare') await runCompare();
   if (mode === '--top5') await runTop5();
+  if (mode === '--phase-change-documents') await runPhaseChangeDocuments();
   process.exit(0);
 } catch (error) {
   const cause = error?.cause ? { cause: String(error.cause?.code || error.cause?.name || ''), cause_message: String(error.cause?.message || error.cause).slice(0, 300) } : {};

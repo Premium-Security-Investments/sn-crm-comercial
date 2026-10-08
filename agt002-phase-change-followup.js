@@ -3,19 +3,22 @@
 // autorización").
 //
 // Caso típico: el borrador "Presentación de observaciones" pasa al pliego definitivo "<ref> (Presentación de oferta)",
-// otro proceso en SECOP (otro id_del_proceso, otro enlace). La importación diaria del Radar cambia el enlace de la
-// oportunidad (tender-phase-identity.js) y, EN ESA MISMA CORRIDA, registra la marca "detectado" de este módulo. Nunca hay
-// marca para cambios anteriores a la instalación: sólo la deja la corrida que cambia el enlace, y sólo cuando el
-// proceso nuevo está vivo (no terminal, cierre futuro) y es una fase posterior o una republicación de la misma fase.
+// otro proceso en SECOP (otro id_del_proceso, otro enlace) que COMPARTE el portafolio de documentos con el borrador. La
+// importación del Radar cambia el enlace de la oportunidad (tender-phase-identity.js) y, en esa misma corrida, deja la
+// marca "detectado" de este módulo. Nunca hay marca para un cambio ya aplicado antes de instalar, salvo la conciliación
+// (`reconcileAgt002PendingPhaseChanges`): una convertida abierta cuyo enlace vigente no es el aviso del que vienen sus
+// documentos oficiales. En ambos casos sólo si el proceso nuevo está vivo (no terminal, cierre futuro en hora Bogotá) y
+// la oportunidad sigue abierta.
 //
-// Desde ahí, sin intervención humana y sólo desde los jobs del host (nunca en una petición web):
-//   1. Documentos (job diario del Radar, sin costo de modelo): observa el conjunto que datos.gov.co publica para el
-//      proceso nuevo; importa cuando trae documentos que la oportunidad aún no tiene, es el MISMO en dos corridas
-//      seguidas y no es mucho menor que el vigente. Los anteriores quedan como historial. Si datos.gov.co aún no los
-//      tiene, reintenta en cada corrida y, pasados ~3 días, deja aviso visible para revisión humana.
-//   2. Análisis (timer de auto-initial): con la marca de importación y un snapshot vigente posterior, admite UN
-//      reanálisis sucesor del análisis canónico (o el INITIAL si no hay análisis), autorizado por quien convirtió,
-//      dentro del cupo diario de admisiones AUTOMÁTICAS (compartido con el análisis al convertir). Sin cupo: mañana.
+// Desde ahí, sin intervención humana y sólo desde jobs del host (nunca en una petición web):
+//   1. Documentos (servicio propio, cada hora, con presupuesto de tiempo; sin costo de modelo). "Nuevo" se mide contra
+//      la LÍNEA BASE: las versiones que la oportunidad tenía antes de la marca. Cada conjunto nuevo que se mantiene igual
+//      al menos 12 h se importa una vez (sólo se bajan los nuevos); si después aparecen más (pliego definitivo,
+//      adendas), se vuelve a importar mientras el proceso siga abierto. Datos.gov.co va 1–2 días atrás: se reintenta y,
+//      pasados ~3 días sin documentos o sin estabilizarse, se deja aviso visible para revisión humana.
+//   2. Análisis (timer de auto-initial): por cada importación, UN reanálisis sucesor del análisis canónico (o el
+//      INITIAL si no hay análisis), autorizado por quien convirtió, dentro del cupo diario de admisiones AUTOMÁTICAS
+//      (compartido con el análisis al convertir). El mismo conjunto nunca se reanaliza dos veces. Sin cupo: mañana.
 //
 // El estado vive en interacciones 'documento' con notas JSON (sólo se agregan, nunca se editan); las líneas visibles de
 // las observaciones se agregan con un UPDATE atómico del lado SQL (migración 116), sin reescribir el campo completo.
@@ -39,16 +42,26 @@ export const AGT002_VIGIA_AGENT_PROFILE_ID = 'a0020000-0000-4000-8000-0000000000
 export const AGT002_PHASE_CHANGE_KINDS = Object.freeze({
   detected: 'tender_phase_change_detected',
   observed: 'tender_phase_change_documents_observed',
+  importFailed: 'tender_phase_change_documents_import_failed',
   imported: 'tender_phase_change_documents_imported',
   analysis: AGT002_PHASE_CHANGE_ANALYSIS_KIND,
 });
-const AUTHORIZATION_WINDOW_MS = 48 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const AUTHORIZATION_WINDOW_MS = 48 * HOUR_MS;
 const ACTIVE_ANALYSIS_STATUSES = new Set(['QUEUED', 'CLAIMED', 'RUNNING', 'NEEDS_ATTENTION']);
 const LAUNCHED_ADMISSION_STATUSES = new Set(['admitted', 'existing']);
-// Resultados que cierran el seguimiento del análisis de un aviso: nunca se vuelven a intentar.
+// Resultados que cierran el análisis de un conjunto importado: nunca se vuelven a intentar para ese conjunto.
 const FINAL_ANALYSIS_OUTCOMES = new Set(['launched', 'window_elapsed', 'process_closed']);
-// ~3 corridas diarias (con margen para la hora del timer) antes de pedir revisión humana.
-export const AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS = 3 * 24 * 60 * 60 * 1000 - 6 * 60 * 60 * 1000;
+// Etapas de oportunidad cerradas (migración 110): ni se bajan documentos ni se reanaliza.
+export const AGT002_PHASE_CHANGE_CLOSED_STAGES = new Set(['aprobado', 'descartado', 'perdido']);
+/** Un conjunto nuevo es estable cuando datos.gov.co lo sigue mostrando igual al menos este tiempo. */
+export const AGT002_PHASE_CHANGE_STABLE_MS = 12 * HOUR_MS;
+/** Tras una importación fallida (descarga, migración 116 sin aplicar) no se reintenta el mismo conjunto antes de esto. */
+export const AGT002_PHASE_CHANGE_IMPORT_RETRY_MS = 3 * HOUR_MS;
+/** ~3 días antes de pedir revisión humana (sin documentos nuevos, o un conjunto que no se estabiliza). */
+export const AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS = 3 * 24 * HOUR_MS - 6 * HOUR_MS;
+/** Presupuesto de tiempo por pasada del servicio de documentos; lo que no alcance sigue en la siguiente. */
+export const AGT002_PHASE_CHANGE_DOCUMENTS_DEFAULT_BUDGET_MS = 10 * 60 * 1000;
 
 export function noticeUidFromTenderUrl(url) {
   const match = String(url || '').match(/[?&]noticeUID=([^&\s]+)/i);
@@ -76,6 +89,15 @@ function phaseChangeHead({ change, newPhase, ref, noticeUid } = {}) {
   return `SECOP publicó ${what} (${noticeUid})`;
 }
 
+const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+/** '2026-10-12T15:00:00Z' → '12-oct' (día Bogotá). Distingue los avisos de cada importación. */
+export function bogotaDayLabel(iso) {
+  const ms = Date.parse(iso || '');
+  if (!Number.isFinite(ms)) return '';
+  const local = new Date(ms - 5 * HOUR_MS);
+  return `${local.getUTCDate()}-${MONTHS[local.getUTCMonth()]}`;
+}
+
 export function phaseChangeDetectedLine(change) {
   return `${phaseChangeHead(change)}; el enlace de la oportunidad se actualizó y Vig-IA bajará sus documentos y lanzará el reanálisis.`;
 }
@@ -88,17 +110,21 @@ export function phaseChangeDocumentsIncompleteLine(change) {
   return `${phaseChangeHead(change)}, pero sus documentos en datos.gov.co están incompletos; revisar e importar a mano.`;
 }
 
-export function phaseChangeDocumentsLine(change, { changedCount = 0, retiredCount = 0 } = {}) {
-  const retired = retiredCount ? `; ${retiredCount} que ya no publica quedan como historial` : '; los anteriores quedan como historial';
-  return `${phaseChangeHead(change)}; se bajaron ${changedCount} documento(s) nuevo(s) o actualizado(s)${retired}.`;
+export function phaseChangeDocumentsUnstableLine(change) {
+  return `${phaseChangeHead(change)}, pero sus documentos en datos.gov.co siguen cambiando desde hace 3 días; revisar e importar a mano.`;
 }
 
-export function phaseChangeAnalysisLine(change, { outcome, analysisKind, admissionStatus } = {}) {
-  const prefix = `${phaseChangeHead(change)}; `;
+export function phaseChangeDocumentsLine(change, { newCount = 0, retiredCount = 0, importedAt } = {}) {
+  const retired = retiredCount ? `; ${retiredCount} que SECOP ya no publica quedan como historial` : '; los anteriores quedan como historial';
+  return `${phaseChangeHead(change)}; el ${bogotaDayLabel(importedAt)} se bajaron ${newCount} documento(s) nuevo(s)${retired}.`;
+}
+
+export function phaseChangeAnalysisLine(change, { outcome, analysisKind, admissionStatus, importedAt } = {}) {
+  const prefix = `${phaseChangeHead(change)}; documentos del ${bogotaDayLabel(importedAt)}: `;
   if (outcome === 'launched') return `${prefix}se lanzó ${analysisKind === 'INITIAL' ? 'el análisis inicial' : 'el reanálisis'} automático.`;
   if (outcome === 'daily_cap') return `${prefix}reanálisis automático pendiente por cupo diario; se intenta mañana.`;
   if (outcome === 'window_elapsed') return `${prefix}el reanálisis automático no se lanzó en 48 horas; requiere lanzarse manualmente.`;
-  if (outcome === 'process_closed') return `${prefix}el proceso ya cerró o terminó en SECOP; no se reanaliza.`;
+  if (outcome === 'process_closed') return `${prefix}el proceso ya cerró o terminó en SECOP, o la oportunidad se cerró; no se reanaliza.`;
   return `${prefix}el reanálisis automático no se pudo lanzar (${admissionStatus || outcome}); se reintenta mañana.`;
 }
 
@@ -138,9 +164,7 @@ export async function readAgt002PhaseChangeState(database, opportunityId) {
 }
 
 const ofKind = (state, kind, noticeUid) => state.filter(row => row.payload.kind === kind && row.payload.notice_uid === noticeUid);
-// Una importación que no trajo nada nuevo ni actualizado no cuenta como "documentos de la fase nueva": se sigue esperando.
-const importBroughtChanges = row => row.payload.changed_count === undefined || Number(row.payload.changed_count) > 0;
-const importsOf = (state, noticeUid) => ofKind(state, AGT002_PHASE_CHANGE_KINDS.imported, noticeUid);
+const ageMs = (since, now) => now.getTime() - Date.parse(since || '');
 
 /** Línea visible en observaciones: UPDATE atómico del lado SQL, sólo si no está (migración 116). */
 export async function appendAgt002ObservationLine(database, opportunityId, line) {
@@ -149,9 +173,9 @@ export async function appendAgt002ObservationLine(database, opportunityId, line)
 }
 
 /**
- * Marca "detectado". La llama SÓLO la importación del Radar en la corrida que cambia el enlace de la oportunidad
- * (`sourceChange` del plan, sin bloqueo), ANTES de guardar el enlace nuevo: si esta marca no se puede escribir, la
- * importación deja el enlace como estaba y la siguiente corrida lo vuelve a intentar. Idempotente por aviso.
+ * Marca "detectado". La llama la importación del Radar en la corrida que cambia el enlace de la oportunidad
+ * (`sourceChange` del plan, sin bloqueo), ANTES de guardar el enlace nuevo, o la conciliación. Idempotente por aviso.
+ * Su fecha es la línea base de "documentos nuevos".
  */
 export async function recordAgt002PhaseChangeDetected(database, opportunityId, sourceChange = {}, { now = new Date() } = {}) {
   const noticeUid = noticeUidFromTenderUrl(sourceChange.url);
@@ -164,16 +188,16 @@ export async function recordAgt002PhaseChangeDetected(database, opportunityId, s
     url: sourceChange.url, ref: sourceChange.ref || null, process_id: sourceChange.processId || null,
     previous_url: sourceChange.previousUrl || null, previous_phase: sourceChange.previousPhase || null,
     new_phase: sourceChange.newPhase || null, deadline: sourceChange.deadline || null,
-    detected_at: sourceChange.detectedAt || now.toISOString(),
+    detected_at: sourceChange.detectedAt || now.toISOString(), origin: sourceChange.origin || 'radar',
   }, { now });
   return true;
 }
 
 /** La llama la importación oficial (api) sólo después de publicar el snapshot documental del proceso nuevo. */
-export async function recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId, noticeUid, documentSetHash, snapshotId, startedAt, documentCount, changedCount, retiredCount }) {
+export async function recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId, noticeUid, newSetHash, snapshotId, startedAt, documentCount, newDocumentCount, retiredCount }) {
   await recordState(database, opportunityId, {
-    kind: AGT002_PHASE_CHANGE_KINDS.imported, notice_uid: noticeUid, document_set_hash: documentSetHash, snapshot_id: snapshotId,
-    started_at: startedAt, document_count: documentCount, changed_count: changedCount, retired_count: retiredCount,
+    kind: AGT002_PHASE_CHANGE_KINDS.imported, notice_uid: noticeUid, new_set_hash: newSetHash, snapshot_id: snapshotId,
+    started_at: startedAt, document_count: documentCount, new_document_count: newDocumentCount, retired_count: retiredCount,
   }, { actorId: actorId || AGT002_VIGIA_AGENT_PROFILE_ID });
 }
 
@@ -181,9 +205,16 @@ function changeOf(detected, noticeUid) {
   return { change: detected?.change || 'phase', newPhase: detected?.new_phase || null, ref: detected?.ref || null, noticeUid };
 }
 
+async function opportunityStageBlocker(database, opportunityId) {
+  const opportunity = await must(database.from('psi_sales_opportunities')
+    .select('id,stage_code').eq('id', opportunityId).maybeSingle(), 'oportunidad');
+  if (!opportunity) return 'opportunity_missing';
+  return AGT002_PHASE_CHANGE_CLOSED_STAGES.has(opportunity.stage_code) ? 'opportunity_closed' : null;
+}
+
 /**
  * Oportunidades convertidas cuya fuente oficial ACTUAL es un aviso con marca "detectado". Cada candidata trae el
- * bloqueo vigente (proceso terminal o cierre pasado): el estado de SECOP se vuelve a mirar en cada paso.
+ * bloqueo vigente (proceso terminal, cierre pasado u oportunidad cerrada): se vuelve a mirar en cada paso.
  */
 export async function findAgt002PhaseChangeOpportunities(database, { now = new Date() } = {}) {
   const detected = await must(database.from('psi_sales_interactions')
@@ -206,80 +237,132 @@ export async function findAgt002PhaseChangeOpportunities(database, { now = new D
     const noticeUid = noticeUidFromTenderUrl(tender.url);
     const notice = notices.find(item => item.notice_uid === noticeUid);
     if (!notice) continue; // Sólo el aviso que sigue siendo la fuente vigente.
-    const blocker = tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now);
-    candidates.push({ tender, opportunityId, noticeUid, detected: notice, change: changeOf(notice, noticeUid), blocker });
+    const blocker = tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now)
+      || await opportunityStageBlocker(database, opportunityId);
+    candidates.push({ tender, opportunityId, noticeUid, detected: notice, baselineAt: notice.recorded_at || notice.detected_at, change: changeOf(notice, noticeUid), blocker });
   }
   return candidates;
 }
 
-const ageMs = (since, now) => now.getTime() - Date.parse(since || '');
+/**
+ * Salvaguarda (instalación y fallas): una convertida abierta cuyo enlace vigente es un aviso SECOP sin marca, pero cuyos
+ * documentos oficiales se importaron desde OTRO aviso (la importación oficial registra el `notice_uid` de origen), es un
+ * cambio de fuente pendiente: se marca ahora, con línea base = lo que ya tiene. Nunca para un proceso cerrado.
+ */
+export async function reconcileAgt002PendingPhaseChanges(database, { now = new Date() } = {}) {
+  const tenders = await must(database.from('psi_public_tenders')
+    .select('id,ref,url,status,deadline_at,converted_opportunity_id,internal_status,source')
+    .eq('internal_status', 'convertida_oportunidad'), 'convertidas');
+  const events = [];
+  for (const tender of tenders || []) {
+    const opportunityId = tender.converted_opportunity_id;
+    const noticeUid = noticeUidFromTenderUrl(tender.url);
+    if (!opportunityId || !noticeUid || (tender.source && tender.source !== 'SECOP II')) continue;
+    const state = await readAgt002PhaseChangeState(database, opportunityId);
+    if (ofKind(state, AGT002_PHASE_CHANGE_KINDS.detected, noticeUid).length) continue;
+    const refreshes = await must(database.from('psi_sales_interactions')
+      .select('notes,created_at').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento')
+      .like('notes', '%"kind":"tender_document_refresh"%'), 'importaciones oficiales');
+    const origins = (refreshes || []).map(row => ({ ...row, payload: parseNotes(row.notes) }))
+      .filter(row => row.payload?.notice_uid)
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    const lastOrigin = origins.at(-1)?.payload.notice_uid;
+    if (!lastOrigin || lastOrigin === noticeUid) continue;
+    const blocker = tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now)
+      || await opportunityStageBlocker(database, opportunityId);
+    if (blocker) { events.push({ event: 'agt002_phase_change_reconcile_skipped', opportunityId, noticeUid, reason: blocker }); continue; }
+    await recordAgt002PhaseChangeDetected(database, opportunityId, {
+      change: 'phase', url: tender.url, ref: tender.ref, newPhase: tender.status, deadline: tender.deadline_at,
+      detectedAt: now.toISOString(), origin: 'reconciliation', previousUrl: null,
+    }, { now });
+    events.push({ event: 'agt002_phase_change_reconciled', opportunityId, noticeUid, previousNotice: lastOrigin });
+  }
+  return events;
+}
 
 /**
  * Paso 1 (documentos, sin costo de modelo). `probeDocuments` e `importDocuments` son la lectura e importación oficial
- * del CRM (api: probePhaseChangeTenderDocumentSet / importPhaseChangeTenderDocuments). Nunca lanza por una candidata.
+ * del CRM (api: probePhaseChangeTenderDocumentSet / importPhaseChangeTenderDocuments). Nunca lanza por una candidata;
+ * respeta `budgetMs` (lo que no alcance queda para la siguiente pasada).
  */
 export async function runAgt002PhaseChangeDocumentRefresh(database, {
   probeDocuments, importDocuments, actorProfileId = AGT002_VIGIA_AGENT_PROFILE_ID, now = new Date(),
+  budgetMs = AGT002_PHASE_CHANGE_DOCUMENTS_DEFAULT_BUDGET_MS, clock = () => Date.now(),
 } = {}) {
   if (typeof probeDocuments !== 'function' || typeof importDocuments !== 'function') throw new Error('probeDocuments e importDocuments son obligatorios.');
+  const startedMs = clock();
   const events = [];
-  for (const { opportunityId, noticeUid, detected, change, blocker } of await findAgt002PhaseChangeOpportunities(database, { now })) {
+  for (const { opportunityId, noticeUid, detected, baselineAt, change, blocker } of await findAgt002PhaseChangeOpportunities(database, { now })) {
     const base = { opportunityId, noticeUid };
+    if (clock() - startedMs >= budgetMs) { events.push({ event: 'agt002_phase_change_documents_deferred', reason: 'time_budget', ...base }); continue; }
     try {
-      const state = await readAgt002PhaseChangeState(database, opportunityId);
-      const imported = importsOf(state, noticeUid).filter(importBroughtChanges).at(-1);
-      if (imported) {
-        await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsLine(change, { changedCount: imported.payload.changed_count, retiredCount: imported.payload.retired_count }));
-        events.push({ event: 'agt002_phase_change_documents_already_imported', ...base });
-        continue;
-      }
       if (blocker) { events.push({ event: 'agt002_phase_change_documents_skipped', reason: blocker, ...base }); continue; }
-      const waitedLongEnough = ageMs(detected.detected_at || detected.recorded_at, now) >= AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS;
+      const state = await readAgt002PhaseChangeState(database, opportunityId);
+      const lastImport = ofKind(state, AGT002_PHASE_CHANGE_KINDS.imported, noticeUid).at(-1) || null;
+      const waitedLongEnough = !lastImport && ageMs(detected.detected_at || detected.recorded_at, now) >= AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS;
       let probe;
       try {
-        probe = await probeDocuments(opportunityId, { noticeUid });
+        probe = await probeDocuments(opportunityId, { noticeUid, baselineAt });
       } catch (error) {
-        // datos.gov.co va 1–2 días atrás: el proceso nuevo o sus documentos aún no están. Se reintenta mañana.
+        // datos.gov.co va 1–2 días atrás: el proceso nuevo o sus documentos aún no están. Se reintenta.
         if (waitedLongEnough) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsMissingLine(change));
         events.push({ event: 'agt002_phase_change_documents_pending', message: String(error?.message || error).slice(0, 200), ...base });
         continue;
       }
       if (!Number(probe.new_document_count || 0)) {
-        // El proceso nuevo ya está, pero sus documentos aún no (comparte portafolio con el borrador): se espera.
         if (waitedLongEnough) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsMissingLine(change));
         events.push({ event: 'agt002_phase_change_documents_waiting_new_documents', documents: probe.document_count, ...base });
         continue;
       }
-      const lastUnchanged = importsOf(state, noticeUid).filter(row => !importBroughtChanges(row)).at(-1);
-      if (lastUnchanged && lastUnchanged.payload.document_set_hash === probe.document_set_hash) {
-        // Ya se importó este mismo conjunto y no trajo nada: no se repite la descarga hasta que SECOP publique otro.
-        if (waitedLongEnough) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsMissingLine(change));
-        events.push({ event: 'agt002_phase_change_documents_waiting_new_documents', reason: 'same_set_already_imported_without_changes', ...base });
+      if (lastImport && lastImport.payload.new_set_hash === probe.new_set_hash) {
+        await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsLine(change, { newCount: lastImport.payload.new_document_count, retiredCount: lastImport.payload.retired_count, importedAt: lastImport.created_at }));
+        events.push({ event: 'agt002_phase_change_documents_already_imported', ...base });
         continue;
       }
-      const lastObserved = ofKind(state, AGT002_PHASE_CHANGE_KINDS.observed, noticeUid).at(-1);
-      if (!lastObserved || lastObserved.payload.document_set_hash !== probe.document_set_hash) {
+      // Observaciones desde la última importación: el conjunto nuevo debe mantenerse igual al menos 12 h.
+      const observations = ofKind(state, AGT002_PHASE_CHANGE_KINDS.observed, noticeUid)
+        .filter(row => !lastImport || String(row.created_at) > String(lastImport.created_at));
+      const lastObserved = observations.at(-1);
+      const unstableTooLong = observations.length > 0 && ageMs(observations[0].created_at, now) >= AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS;
+      if (!lastObserved || lastObserved.payload.new_set_hash !== probe.new_set_hash) {
         await recordState(database, opportunityId, {
-          kind: AGT002_PHASE_CHANGE_KINDS.observed, notice_uid: noticeUid, document_set_hash: probe.document_set_hash,
+          kind: AGT002_PHASE_CHANGE_KINDS.observed, notice_uid: noticeUid, new_set_hash: probe.new_set_hash,
           document_count: probe.document_count, new_document_count: probe.new_document_count, current_official_count: probe.current_official_count,
         }, { now });
+        if (unstableTooLong) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsUnstableLine(change));
+        events.push({ event: 'agt002_phase_change_documents_waiting_stability', documents: probe.document_count, newDocuments: probe.new_document_count, ...base });
+        continue;
+      }
+      if (ageMs(lastObserved.created_at, now) < AGT002_PHASE_CHANGE_STABLE_MS) {
         events.push({ event: 'agt002_phase_change_documents_waiting_stability', documents: probe.document_count, newDocuments: probe.new_document_count, ...base });
         continue;
       }
       if (isPhaseChangeDocumentSetTooSmall({ documentCount: probe.document_count, currentOfficialCount: probe.current_official_count })) {
-        // No queda esperando en silencio: tras ~3 corridas con el mismo conjunto incompleto, aviso visible (una vez).
+        // No queda esperando en silencio: tras ~3 días con el mismo conjunto incompleto, aviso visible (una vez).
         if (ageMs(lastObserved.created_at, now) >= AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS) {
           await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsIncompleteLine(change));
         }
         events.push({ event: 'agt002_phase_change_documents_waiting_smaller_set', documents: probe.document_count, current: probe.current_official_count, ...base });
         continue;
       }
-      const result = await importDocuments(opportunityId, { noticeUid, actorProfileId, expectedDocumentSetHash: probe.document_set_hash });
-      const changedCount = Number(result?.new_count || 0) + Number(result?.updated_count || 0);
+      const lastFailure = ofKind(state, AGT002_PHASE_CHANGE_KINDS.importFailed, noticeUid)
+        .filter(row => row.payload.new_set_hash === probe.new_set_hash).at(-1);
+      if (lastFailure && ageMs(lastFailure.created_at, now) < AGT002_PHASE_CHANGE_IMPORT_RETRY_MS) {
+        events.push({ event: 'agt002_phase_change_documents_deferred', reason: 'retry_after_failure', ...base });
+        continue;
+      }
+      let result;
+      try {
+        result = await importDocuments(opportunityId, { noticeUid, actorProfileId, expectedNewSetHash: probe.new_set_hash, baselineAt });
+      } catch (error) {
+        const message = String(error?.message || error).slice(0, 200);
+        await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.importFailed, notice_uid: noticeUid, new_set_hash: probe.new_set_hash, code: error?.code || null, message }, { now });
+        events.push({ event: 'agt002_phase_change_documents_pending', reason: 'import_failed', message, ...base });
+        continue;
+      }
       const retiredCount = Number(result?.retired_count || 0);
-      if (!changedCount) { events.push({ event: 'agt002_phase_change_documents_without_changes', documents: probe.document_count, ...base }); continue; }
-      await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsLine(change, { changedCount, retiredCount }));
-      events.push({ event: 'agt002_phase_change_documents_imported', documents: probe.document_count, changed: changedCount, retired: retiredCount, ...base });
+      await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsLine(change, { newCount: probe.new_document_count, retiredCount, importedAt: now.toISOString() }));
+      events.push({ event: 'agt002_phase_change_documents_imported', documents: probe.document_count, newDocuments: probe.new_document_count, retired: retiredCount, ...base });
     } catch (error) {
       events.push({ event: 'agt002_phase_change_documents_pending', message: String(error?.message || error).slice(0, 200), ...base });
     }
@@ -288,9 +371,9 @@ export async function runAgt002PhaseChangeDocumentRefresh(database, {
 }
 
 /**
- * Decide, sin efectos, qué hacer con una oportunidad cuyos documentos nuevos ya están importados. El orden importa: lo
- * ya resuelto, luego el proceso cerrado, la espera del día, la ventana de 48 h (antes que la espera por
- * un análisis en curso, para que un job atascado en NEEDS_ATTENTION no deje el cambio esperando para siempre).
+ * Decide, sin efectos, qué hacer con la última importación de un aviso. El orden importa: lo ya resuelto para ese
+ * conjunto, luego el proceso cerrado, la espera del día, la ventana de 48 h (antes que la espera por un análisis en
+ * curso, para que un job atascado en NEEDS_ATTENTION no deje el cambio esperando para siempre).
  */
 export function planAgt002PhaseChangeAnalysis({ imported, analysisRecords = [], jobs = [], canonical = null, blocker = null, now }) {
   const importedMs = Date.parse(imported.created_at);
@@ -301,7 +384,8 @@ export function planAgt002PhaseChangeAnalysis({ imported, analysisRecords = [], 
   if (analysisRecords.some(row => Date.parse(row.created_at) >= todayStart)) return { action: 'backoff' };
   if (importedMs + AUTHORIZATION_WINDOW_MS <= now.getTime()) return { action: 'window_elapsed' };
   if (jobs.some(job => ACTIVE_ANALYSIS_STATUSES.has(job.status))) return { action: 'wait', reason: 'analysis_in_progress' };
-  if (canonical?.id && canonical.analysis_kind) return { action: 'admit', analysisKind: 'REANALYSIS', sourceAnalysisRunId: canonical.id };
+  // Hay un análisis completado (aunque sea de un motor anterior, sin tipo): se reanaliza sobre él.
+  if (canonical?.id) return { action: 'admit', analysisKind: 'REANALYSIS', sourceAnalysisRunId: canonical.id };
   return { action: 'admit', analysisKind: 'INITIAL', sourceAnalysisRunId: null };
 }
 
@@ -324,7 +408,7 @@ async function resolveAuthorizingActor(database, opportunityId, tender) {
 /**
  * Paso 2 (análisis). Mismas reglas que auto-initial: interruptores encendidos, cupo diario de admisiones automáticas
  * (auto-initial + estos reanálisis), actor = quien convirtió, ventana G1 determinista desde la importación, un
- * reanálisis por aviso nuevo (misma instancia de flujo en cada reintento).
+ * reanálisis por conjunto importado (misma instancia de flujo en cada reintento).
  */
 export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
   dailyCap = AGT002_AUTO_INITIAL_DEFAULT_DAILY_CAP,
@@ -340,20 +424,23 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
   let admittedToday = null;
   for (const { tender, opportunityId, noticeUid, change, blocker } of await findAgt002PhaseChangeOpportunities(database, { now })) {
     const base = { opportunityId, noticeUid };
+    let imported = null;
     const record = async (outcome, extra = {}) => {
-      await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.analysis, notice_uid: noticeUid, outcome, ...extra }, { now });
-      await appendAgt002ObservationLine(database, opportunityId, phaseChangeAnalysisLine(change, { outcome, analysisKind: extra.analysis_kind, admissionStatus: extra.admission_status }));
+      await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.analysis, notice_uid: noticeUid, new_set_hash: imported.payload.new_set_hash, outcome, ...extra }, { now });
+      await appendAgt002ObservationLine(database, opportunityId, phaseChangeAnalysisLine(change, { outcome, analysisKind: extra.analysis_kind, admissionStatus: extra.admission_status, importedAt: imported.created_at }));
     };
     try {
       const state = await readAgt002PhaseChangeState(database, opportunityId);
-      const imported = importsOf(state, noticeUid).filter(importBroughtChanges).at(-1);
+      imported = ofKind(state, AGT002_PHASE_CHANGE_KINDS.imported, noticeUid).at(-1) || null;
       if (!imported) { events.push({ event: 'agt002_phase_change_analysis_waiting_documents', ...(blocker ? { reason: blocker } : {}), ...base }); continue; }
+      const setHash = imported.payload.new_set_hash;
+      const analysisRecords = ofKind(state, AGT002_PHASE_CHANGE_KINDS.analysis, noticeUid).filter(row => row.payload.new_set_hash === setHash);
       const jobs = await must(database.from('psi_agt002_initial_analysis_jobs')
         .select('id,status,analysis_kind,created_at').eq('opportunity_id', opportunityId), 'análisis de la oportunidad');
       const canonical = await must(database.from('psi_tender_analysis_runs')
         .select('id,analysis_kind,status,canonical').eq('opportunity_id', opportunityId).eq('canonical', true).eq('status', 'completed')
         .maybeSingle(), 'análisis canónico');
-      const plan = planAgt002PhaseChangeAnalysis({ imported, analysisRecords: ofKind(state, AGT002_PHASE_CHANGE_KINDS.analysis, noticeUid), jobs: jobs || [], canonical, blocker, now });
+      const plan = planAgt002PhaseChangeAnalysis({ imported, analysisRecords, jobs: jobs || [], canonical, blocker, now });
       if (plan.action === 'done') { events.push({ event: 'agt002_phase_change_analysis_already_resolved', reason: plan.reason || null, ...base }); continue; }
       if (plan.action === 'process_closed') {
         await record('process_closed', { admission_status: plan.reason });
@@ -384,7 +471,7 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
       const profile = await freezeProfile(database, { actorProfileId });
       // Intención registrada ANTES de admitir: el cupo cuenta esta admisión aunque luego falle el registro del
       // resultado (nunca se subcuenta); si este registro falla, no se admite nada.
-      await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.analysis, notice_uid: noticeUid, outcome: 'admitting', analysis_kind: plan.analysisKind }, { now });
+      await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.analysis, notice_uid: noticeUid, new_set_hash: setHash, outcome: 'admitting', analysis_kind: plan.analysisKind }, { now });
       admittedToday += 1;
       const admitted = await admit(database, {
         opportunityId,
@@ -396,8 +483,8 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
         profileSnapshotHash: profile.profileSnapshotHash,
         expiresAt: new Date(Date.parse(imported.created_at) + AUTHORIZATION_WINDOW_MS).toISOString(),
         policyVersion: AGT002_AUTO_INITIAL_POLICY_VERSION,
-        // Una instancia de flujo propia por aviso nuevo: un reintento repite exactamente la misma admisión.
-        attempt: `secop-phase-change:${noticeUid}`,
+        // Una instancia de flujo propia por conjunto importado: un reintento repite exactamente la misma admisión.
+        attempt: `secop-phase-change:${noticeUid}:${String(setHash || '').slice(0, 16)}`,
         analysisKind: plan.analysisKind,
         sourceAnalysisRunId: plan.sourceAnalysisRunId,
         environment,
@@ -406,7 +493,7 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
       await record(launched ? 'launched' : 'not_admitted', { analysis_kind: plan.analysisKind, job_id: admitted.jobId || null, admission_status: admitted.admissionStatus || null });
       events.push({ event: launched ? 'agt002_phase_change_analysis_admitted' : 'agt002_phase_change_analysis_not_admitted', analysisKind: plan.analysisKind, jobId: admitted.jobId || null, admissionStatus: admitted.admissionStatus || null, documents: includedCount, ...base });
     } catch (error) {
-      try { await record('failed', { admission_status: String(error?.code || error?.diagnostic?.reason || 'ADMISSION_FAILED') }); } catch { /* el evento ya reporta la falla */ }
+      try { if (imported) await record('failed', { admission_status: String(error?.code || error?.diagnostic?.reason || 'ADMISSION_FAILED') }); } catch { /* el evento ya reporta la falla */ }
       events.push({ event: 'agt002_phase_change_analysis_failed', code: error?.code || error?.diagnostic?.reason || 'ADMISSION_FAILED', ...base });
     }
   }

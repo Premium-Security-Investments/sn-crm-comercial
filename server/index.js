@@ -4098,38 +4098,51 @@ function secopOfficialDocumentSelection(docs) {
 }
 const secopDocumentId = doc => String(doc.id_documento || deterministicDocumentFallbackId({ name: doc.nombre_archivo, url: doc.url_descarga_documento.url }).slice(0, 24));
 const secopDocumentNameKey = name => cleanFileName(name).toLowerCase().replace(/\s+/g, ' ').trim();
-// Huella de lo que datos.gov.co lista hoy para el portafolio (todas las filas, con su id): dos corridas seguidas con la
-// misma huella = conjunto estable.
-function secopPhaseChangeDocumentSetHash(docs) {
-  return phaseChangeDocumentSetHash((docs || []).map(doc => `${secopDocumentId(doc)}:${doc.nombre_archivo}`));
-}
 // SECOP II comparte el portafolio entre fases: la fase de oferta lista los documentos del borrador más los nuevos
-// (pliego definitivo, resolución de apertura, adendas), y datos.gov.co repite cada documento del borrador (mismo
-// nombre y tamaño, otro id) por fase. Se deja uno por nombre+tamaño (el ya importado, si lo hay) y los que la
-// oportunidad aún no tiene van primero, del más reciente al más antiguo, para que el tope de selección nunca los deje
-// fuera. "Ya importado" = mismo id, o mismo nombre y tamaño que una versión SECOP II de la oportunidad.
-export function orderSecopPhaseChangeDocuments(docs, existingVersions = []) {
-  const knownIds = new Set(existingVersions.map(version => String(version.source_document_id || '')));
-  const knownNameSizes = new Set(existingVersions.map(version => `${secopDocumentNameKey(version.name)}\u0000${Number(version.size_bytes || 0)}`));
+// (pliego definitivo, resolución de apertura, adendas), datos.gov.co repite cada documento del borrador por fase (mismo
+// nombre, otro id) y a veces publica un archivo nuevo con el MISMO nombre que uno del borrador y otro contenido (Cali,
+// "4. Matriz de Riesgos Vigilancia II.pdf"). La identidad documental es el nombre (migración 057), así que queda UNA
+// entrada por nombre normalizado: la de carga más reciente (empate: la ya conocida, luego el id mayor). Así una versión
+// vieja nunca reemplaza a una nueva. "Nuevo" = ni su id ni su nombre+tamaño estaban en `knownVersions` (las versiones
+// SECOP II de la oportunidad ANTERIORES a la marca "detectado"); los nuevos van primero para que el tope de selección
+// nunca los deje fuera.
+export function orderSecopPhaseChangeDocuments(docs, knownVersions = []) {
+  const knownIds = new Set(knownVersions.map(version => String(version.source_document_id || '')));
+  const knownNameSizes = new Set(knownVersions.map(version => `${secopDocumentNameKey(version.name)}\u0000${Number(version.size_bytes || 0)}`));
   const groups = new Map();
   for (const doc of docs || []) {
-    const key = `${secopDocumentNameKey(doc.nombre_archivo)}\u0000${Number(doc.tamanno_archivo || 0)}`;
+    const key = secopDocumentNameKey(doc.nombre_archivo);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(doc);
   }
   const entries = [...groups.entries()].map(([key, list]) => {
-    const imported = list.find(doc => knownIds.has(secopDocumentId(doc)));
-    const chosen = imported || [...list].sort((left, right) => secopDocumentId(right).localeCompare(secopDocumentId(left), undefined, { numeric: true }))[0];
-    return { doc: chosen, isNew: !imported && !knownNameSizes.has(key), loadedAt: String(chosen.fecha_carga || '') };
+    const chosen = [...list].sort((left, right) => String(right.fecha_carga || '').localeCompare(String(left.fecha_carga || ''))
+      || Number(knownIds.has(secopDocumentId(right))) - Number(knownIds.has(secopDocumentId(left)))
+      || secopDocumentId(right).localeCompare(secopDocumentId(left), undefined, { numeric: true }))[0];
+    const isNew = !knownIds.has(secopDocumentId(chosen)) && !knownNameSizes.has(`${key}\u0000${Number(chosen.tamanno_archivo || 0)}`);
+    return { doc: chosen, isNew, loadedAt: String(chosen.fecha_carga || '') };
   });
   entries.sort((left, right) => {
     if (left.isNew !== right.isNew) return left.isNew ? -1 : 1;
     return right.loadedAt.localeCompare(left.loadedAt);
   });
-  return { documents: entries.map(entry => entry.doc), newCount: entries.filter(entry => entry.isNew).length };
+  const newDocuments = entries.filter(entry => entry.isNew).map(entry => entry.doc);
+  return {
+    documents: entries.map(entry => entry.doc),
+    newCount: newDocuments.length,
+    newIds: newDocuments.map(secopDocumentId),
+    // Huella del conjunto NUEVO (frente a la línea base): cada conjunto nuevo estable se importa y reanaliza una vez.
+    newSetHash: phaseChangeDocumentSetHash(newDocuments.map(doc => `${secopDocumentId(doc)}:${doc.nombre_archivo}`)),
+  };
 }
-async function readSecopDocumentVersions(database, opportunityId) {
-  return (await must(database.from('psi_tender_document_versions').select('source_document_id,name,size_bytes,current').eq('opportunity_id', opportunityId).eq('source', 'secop ii'))) || [];
+// Línea base: versiones SECOP II que la oportunidad tenía ANTES de la marca "detectado". Lo que se bajó después (una
+// importación que falló a medias, o "Actualizar documentos" a mano) sigue contando como nuevo hasta que el seguimiento
+// complete su importación: nunca queda trabado "esperando documentos nuevos".
+async function readSecopBaselineVersions(database, opportunityId, baselineAt) {
+  const rows = (await must(database.from('psi_tender_document_versions').select('source_document_id,name,size_bytes,current,created_at').eq('opportunity_id', opportunityId).eq('source', 'secop ii'))) || [];
+  const cutoff = Date.parse(baselineAt || '');
+  const baseline = Number.isFinite(cutoff) ? rows.filter(row => Date.parse(row.created_at) < cutoff) : rows;
+  return { baseline, currentCount: rows.filter(row => row.current !== false).length };
 }
 async function loadPhaseChangeTenderOpportunity(database, opportunityId, noticeUid) {
   await requireTenderAnalysisFoundation(database);
@@ -4138,41 +4151,48 @@ async function loadPhaseChangeTenderOpportunity(database, opportunityId, noticeU
   if (noticeUidFromSecopUrl(secopOfficialUrl(getTenderSourceUrlFromOpportunity(opportunity))) !== noticeUid) throw new Error('La fuente oficial de la oportunidad aún no apunta al aviso nuevo.');
   return opportunity;
 }
-// Sólo lectura: lo que datos.gov.co publica hoy para el aviso nuevo frente a lo que la oportunidad ya tiene. El
-// seguimiento sólo importa cuando hay documentos nuevos y el mismo conjunto en dos corridas seguidas.
-export async function probePhaseChangeTenderDocumentSet(database, opportunityId, { noticeUid } = {}) {
+async function readPhaseChangeOfficialDocuments(database, opportunityId, noticeUid, baselineAt) {
   const opportunity = await loadPhaseChangeTenderOpportunity(database, opportunityId, noticeUid);
   const officialUrl = secopOfficialUrl(getTenderSourceUrlFromOpportunity(opportunity));
   const process = await resolveSecopProcessByExactUrl(officialUrl);
   const docs = await listSecopDocumentsByPortfolio(process.id_del_portafolio);
   if (!docs.length) throw new Error('SECOP aún no lista documentos para el portafolio del aviso nuevo.');
-  const versions = await readSecopDocumentVersions(database, opportunityId);
-  const ordered = orderSecopPhaseChangeDocuments(docs, versions);
+  const { baseline, currentCount } = await readSecopBaselineVersions(database, opportunityId, baselineAt);
+  return { opportunity, docs, ordered: orderSecopPhaseChangeDocuments(docs, baseline), currentCount };
+}
+// Sólo lectura: lo que datos.gov.co publica hoy para el aviso nuevo frente a la línea base de la oportunidad.
+export async function probePhaseChangeTenderDocumentSet(database, opportunityId, { noticeUid, baselineAt } = {}) {
+  const { ordered, currentCount } = await readPhaseChangeOfficialDocuments(database, opportunityId, noticeUid, baselineAt);
   return {
-    document_set_hash: secopPhaseChangeDocumentSetHash(docs),
+    new_set_hash: ordered.newSetHash,
     document_count: ordered.documents.length,
     new_document_count: ordered.newCount,
-    current_official_count: versions.filter(version => version.current !== false).length,
+    current_official_count: currentCount,
   };
 }
-// Importa los documentos del aviso nuevo sólo si el conjunto sigue siendo el observado (`expectedDocumentSetHash`),
-// exige que todos se descarguen (si no, reintento en la siguiente corrida), retira como historial —nunca borra— lo que
-// SECOP ya no publica y deja la marca de importación sólo después de publicar el snapshot documental.
-export async function importPhaseChangeTenderDocuments(database, opportunityId, { noticeUid, actorProfileId, expectedDocumentSetHash } = {}) {
-  if (!noticeUid || !actorProfileId || !expectedDocumentSetHash) throw new Error('El aviso nuevo, el actor y el conjunto documental observado son obligatorios.');
-  const opportunity = await loadPhaseChangeTenderOpportunity(database, opportunityId, noticeUid);
-  return importOfficialTenderDocuments(database, opportunityId, opportunity, { id: actorProfileId }, { analyze: false, phaseChange: { noticeUid, expectedDocumentSetHash, startedAt: new Date().toISOString() } });
+// Importa los documentos NUEVOS del aviso (frente a la línea base) sólo si siguen siendo el conjunto observado
+// (`expectedNewSetHash`). Antes de descargar retira como historial —nunca borra— lo que SECOP ya no publica (migración
+// 116; sin ella falla rápido, sin descargar nada, y se retoma cuando se aplique). Sólo una descarga fallida de un
+// documento nuevo deja la importación pendiente; la marca de importación va después de publicar el snapshot.
+export async function importPhaseChangeTenderDocuments(database, opportunityId, { noticeUid, actorProfileId, expectedNewSetHash, baselineAt } = {}) {
+  if (!noticeUid || !actorProfileId || !expectedNewSetHash) throw new Error('El aviso nuevo, el actor y el conjunto documental observado son obligatorios.');
+  const official = await readPhaseChangeOfficialDocuments(database, opportunityId, noticeUid, baselineAt);
+  if (official.ordered.newSetHash !== expectedNewSetHash) {
+    throw Object.assign(new Error('El conjunto de documentos nuevos cambió desde la observación; se espera a que se estabilice.'), { code: 'AGT002_PHASE_CHANGE_DOCUMENT_SET_CHANGED' });
+  }
+  return importOfficialTenderDocuments(database, opportunityId, official.opportunity, { id: actorProfileId }, {
+    analyze: false,
+    phaseChange: { noticeUid, newSetHash: expectedNewSetHash, startedAt: new Date().toISOString(), ordered: official.ordered, docs: official.docs },
+  });
 }
-// Los del mismo nombre ya quedaron versionados (identidad lógica, migración 057); los que SECOP ya no publica para el
-// aviso vigente se retiran como historial (migración 116), antes de fijar el snapshot nuevo.
-async function retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames, refreshResults, actorId }) {
-  const { failed_count: failedCount } = summarizeTenderDocumentRefresh(refreshResults);
-  if (failedCount > 0) throw new Error(`Versión nueva: ${failedCount} documento(s) oficiales aún no se pudieron descargar; se reintenta en la siguiente corrida.`);
+// Los del mismo nombre quedan versionados por identidad lógica (migración 057); lo que SECOP ya no publica para el aviso
+// vigente se retira como historial (migración 116).
+async function retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames, actorId }) {
   const retired = await database.rpc('psi_retire_tender_document_versions', {
     p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: sourceLabel,
     p_keep_names: keepNames, p_actor_id: actorId,
   });
-  if (retired.error) throw retired.error;
+  if (retired.error) throw Object.assign(new Error(`retiro de documentos anteriores: ${retired.error.message || 'falló'} (¿migración 116 aplicada?)`), { code: 'AGT002_PHASE_CHANGE_RETIRE_FAILED' });
   return Number(retired.data || 0);
 }
 async function importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze = true, phaseChange = null } = {}) {
@@ -4187,21 +4207,16 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
   let officialCoverage = null;
   if (/community\.secop\.gov\.co/i.test(officialUrl)) {
     const process = await resolveSecopProcessByExactUrl(officialUrl);
-    const docs = await listSecopDocumentsByPortfolio(process.id_del_portafolio);
+    const docs = phaseChange ? phaseChange.docs : await listSecopDocumentsByPortfolio(process.id_del_portafolio);
     if (!docs.length) throw new Error('SECOP no retornó documentos para este portafolio.');
     sourceLabel = 'SECOP II';
     sourceContext = { source: 'SECOP II', process_id: process.id_del_proceso, portfolio_id: process.id_del_portafolio, notice_uid: noticeUidFromSecopUrl(officialUrl) };
-    let officialDocs = docs;
-    if (phaseChange) {
-      if (secopPhaseChangeDocumentSetHash(docs) !== phaseChange.expectedDocumentSetHash) {
-        throw Object.assign(new Error('El conjunto de documentos del aviso nuevo cambió desde la corrida anterior; se espera a que se estabilice.'), { code: 'AGT002_PHASE_CHANGE_DOCUMENT_SET_CHANGED' });
-      }
-      officialDocs = orderSecopPhaseChangeDocuments(docs, await readSecopDocumentVersions(database, opportunityId)).documents;
-      phaseChange.keepNames = officialDocs.map(doc => cleanFileName(doc.nombre_archivo));
-    }
+    const officialDocs = phaseChange ? phaseChange.ordered.documents : docs;
     const secopSelection = secopOfficialDocumentSelection(officialDocs);
     officialCoverage = secopSelection.coverage;
-    toDownload = secopSelection.selected.map(doc => ({
+    // Fase nueva: sólo se bajan los documentos nuevos; los demás ya están vigentes en la oportunidad.
+    const newIds = phaseChange ? new Set(phaseChange.ordered.newIds) : null;
+    toDownload = secopSelection.selected.filter(doc => !newIds || newIds.has(secopDocumentId(doc))).map(doc => ({
       name: doc.nombre_archivo,
       mime_type: doc.extensi_n === 'pdf' ? 'application/pdf' : 'application/octet-stream',
       document_type: normalizeDocumentType('', doc.nombre_archivo),
@@ -4233,6 +4248,7 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     throw new Error('La importación automática solo está disponible para enlaces oficiales SECOP II o ESU Contratación. Use carga manual para otras fuentes.');
   }
   const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+  const retiredCount = phaseChange ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: phaseChange.ordered.documents.map(doc => cleanFileName(doc.nombre_archivo)), actorId: currentProfile.id }) : 0;
   const refreshResults = await refreshTenderDocumentBatch(toDownload, async doc => {
     const sourceDocumentId = normalizeTenderSourceDocumentId(doc.source_document_id);
     const currentVersion = await getCurrentTenderDocumentVersion(database, opportunityId, sourceLabel, sourceDocumentId);
@@ -4265,7 +4281,10 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
       }),
     });
   });
-  const retiredCount = phaseChange ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: phaseChange.keepNames || toDownload.map(doc => cleanFileName(doc.name)), refreshResults, actorId: currentProfile.id }) : 0;
+  if (phaseChange) {
+    const failedNew = refreshResults.filter(result => result?.status === 'failed').length;
+    if (failedNew > 0) throw Object.assign(new Error(`Fase nueva: ${failedNew} documento(s) nuevo(s) aún no se pudieron descargar; se reintenta en la siguiente corrida.`), { code: 'AGT002_PHASE_CHANGE_DOWNLOAD_FAILED' });
+  }
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
@@ -4299,7 +4318,7 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     },
   });
   // La marca de "documentos del aviso nuevo importados" va sólo después del snapshot publicado.
-  if (phaseChange) await recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId: currentProfile.id, noticeUid: phaseChange.noticeUid, documentSetHash: phaseChange.expectedDocumentSetHash, snapshotId: registeredSnapshot.id, startedAt: phaseChange.startedAt, documentCount: toDownload.length, changedCount: refreshSummary.new_count + refreshSummary.updated_count, retiredCount });
+  if (phaseChange) await recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId: currentProfile.id, noticeUid: phaseChange.noticeUid, newSetHash: phaseChange.newSetHash, snapshotId: registeredSnapshot.id, startedAt: phaseChange.startedAt, documentCount: phaseChange.ordered.documents.length, newDocumentCount: phaseChange.ordered.newCount, retiredCount });
   const records = await getTenderDocumentRecords(database, opportunityId);
   return {
     ...records,

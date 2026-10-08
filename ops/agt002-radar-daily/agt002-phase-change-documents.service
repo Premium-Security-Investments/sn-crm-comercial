@@ -1,0 +1,31 @@
+[Unit]
+Description=AGT-002 official documents of a new SECOP phase of converted processes (hourly, own time budget)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=psi-comercial
+Group=psi-comercial
+EnvironmentFile=/etc/psi-comercial/agt002-radar-scan.env
+Environment=AGT002_RADAR_STATE_DIR=/var/lib/agt002-radar
+# Release path is set by the deploy drop-in (10-release.conf).
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-radar-daily/run-agt002-radar-import.mjs --phase-change-documents
+Environment=AGT002_PHASE_CHANGE_DOCUMENTS_BUDGET_MS=600000
+TimeoutStartSec=20min
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
