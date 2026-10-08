@@ -40,6 +40,7 @@ import { hasPermission } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
+import { CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientProfile } from '../src/vigia/client-profile.js';
 import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
@@ -1048,9 +1049,10 @@ async function attachCommercialMetadata(database, rows) {
   if (!list.length) return rows;
   const ids = list.map(o => o?.id).filter(Boolean);
   const ownerIds = Array.from(new Set(list.map(o => o?.owner_id).filter(Boolean)));
-  const [baseResult, profileResult] = await Promise.all([
+  const [baseResult, profileResult, clientProfileById] = await Promise.all([
     ids.length ? database.from('psi_sales_opportunities').select('id,customer_segment').in('id', ids) : Promise.resolve({ data: [] }),
-    ownerIds.length ? database.from('psi_sales_profiles').select('id,commercial_area,can_edit_customer_segment').in('id', ownerIds) : Promise.resolve({ data: [] })
+    ownerIds.length ? database.from('psi_sales_profiles').select('id,commercial_area,can_edit_customer_segment').in('id', ownerIds) : Promise.resolve({ data: [] }),
+    readClientProfiles(database, ids)
   ]);
   if (baseResult.error) throw baseResult.error;
   if (profileResult.error) throw profileResult.error;
@@ -1058,9 +1060,29 @@ async function attachCommercialMetadata(database, rows) {
   const profileById = new Map((profileResult.data || []).map(p => [p.id, p]));
   const enriched = list.map(o => {
     const owner = profileById.get(o.owner_id);
-    return { ...o, customer_segment: segmentById.get(o.id) ?? o.customer_segment ?? null, owner_commercial_area: owner?.commercial_area || null, owner_can_edit_customer_segment: !!owner?.can_edit_customer_segment };
+    return { ...o, ...(clientProfileById.get(o.id) || {}), customer_segment: segmentById.get(o.id) ?? o.customer_segment ?? null, owner_commercial_area: owner?.commercial_area || null, owner_can_edit_customer_segment: !!owner?.can_edit_customer_segment };
   });
   return Array.isArray(rows) ? enriched : enriched[0];
+}
+// AGT-003 — perfil del cliente (migración 113). Se lee y escribe aparte de la vista y del RPC de guardado: son datos
+// opcionales de enriquecimiento. Si la migración aún no está aplicada (columna inexistente, 42703) se ignoran.
+async function readClientProfiles(database, ids) {
+  if (!ids.length) return new Map();
+  const { data, error } = await database.from('psi_sales_opportunities').select(['id', ...CLIENT_PROFILE_FIELDS].join(',')).in('id', ids);
+  if (error) { if (error.code === '42703') return new Map(); throw error; }
+  return new Map((data || []).map(({ id, ...profile }) => [id, profile]));
+}
+async function saveClientProfile(database, opportunityId, body) {
+  if (!opportunityId || !hasClientProfileFields(body)) return;
+  await must(database.from('psi_sales_opportunities').update(normalizeClientProfile(body)).eq('id', opportunityId).select('id').single());
+}
+// Sede y Comisión % salieron del formulario (Juan, 2026-10-08): si la edición no los envía, se conserva lo guardado.
+async function keepHiddenOpportunityFields(database, opportunityId, body, payload, existing) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'sede')) payload.sede = existing.sede ?? null;
+  if (!Object.prototype.hasOwnProperty.call(body, 'commission_rate')) {
+    const stored = await must(database.from('psi_sales_opportunities').select('commission_rate').eq('id', opportunityId).single());
+    payload.commission_rate = Number(stored?.commission_rate || 0);
+  }
 }
 async function logCustomerSegmentChange(database, opportunityId, actorId, oldValue, newValue) {
   if ((oldValue || null) === (newValue || null)) return;
@@ -5360,6 +5382,7 @@ app.post('/api/opportunities', async (req, res) => {
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const payload = cleanOpportunity(req.body);
+    if (hasClientProfileFields(req.body)) normalizeClientProfile(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
     const isPublicTender = payload.service_type_code === 'licitacion_publica';
@@ -5375,6 +5398,7 @@ app.post('/api/opportunities', async (req, res) => {
       client: isPublicTender ? null : pickClientMasterFields(payload),
       authorizedSiblingIds,
     });
+    if (!isPublicTender) await saveClientProfile(database, data.id, req.body);
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -5386,6 +5410,8 @@ app.put('/api/opportunities/:id', async (req, res) => {
     const database = requireDb();
     const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const payload = cleanOpportunity(req.body, existing.regional_nombre);
+    if (hasClientProfileFields(req.body)) normalizeClientProfile(req.body);
+    await keepHiddenOpportunityFields(database, existing.id, req.body, payload, existing);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
@@ -5406,6 +5432,7 @@ app.put('/api/opportunities/:id', async (req, res) => {
       authorizedSiblingIds,
     });
     await logCustomerSegmentChange(database, req.params.id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+    if (!isPublicTender) await saveClientProfile(database, req.params.id, req.body);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -5588,6 +5615,8 @@ app.put('/api/opportunity', async (req, res) => {
     if (!id) throw new Error('Debe indicar la oportunidad.');
     const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const payload = cleanOpportunity(req.body, existing.regional_nombre);
+    if (hasClientProfileFields(req.body)) normalizeClientProfile(req.body);
+    await keepHiddenOpportunityFields(database, existing.id, req.body, payload, existing);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
@@ -5608,6 +5637,7 @@ app.put('/api/opportunity', async (req, res) => {
       authorizedSiblingIds,
     });
     await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+    if (!isPublicTender) await saveClientProfile(database, id, req.body);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });

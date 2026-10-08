@@ -31,7 +31,7 @@ for (const removed of ['label="Área comercial"', 'label="Próxima acción"', 'l
 }
 
 // 4) valores derivados
-assert.match(main, /const locationChip = \[o\.quote_city, o\.sede\]/);
+assert.match(main, /const locationChip = \(o\.quote_city \|\| ''\)\.trim\(\)/, 'Ubicación: sólo la ciudad (Sede salió del formulario, Juan 2026-10-08)');
 assert.match(main, /const decisionMakerSummary = \[o\.decision_maker_name, o\.decision_maker_email, o\.decision_maker_phone\][\s\S]{0,120}'Por completar'/);
 
 // 5) Datos comerciales y Línea de seguimientos desaparecen
