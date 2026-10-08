@@ -43,6 +43,7 @@ import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
+import { profileCompleteness } from './vigia/client-profile.js';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm, TodayQueue, UpcomingList } from './vigia/OpportunityDecision';
@@ -65,7 +66,7 @@ type Opportunity = {
   last_interaction_at: string | null; next_action_at: string | null; prioritization_date: string | null; observaciones: string | null;
   economic_sector: string | null; decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null;
   legacy_excel_id: string | null; excel_hoja_origen: string | null; estado_pipeline_original: string | null; valor_servicio: number | null; valor_proyecto: number | null;
-  loss_reason_code: string | null; loss_reason_name: string | null; loss_notes: string | null; commission_rate: number | null; created_at: string; updated_at: string; approved_at?: string | null;
+  loss_reason_code: string | null; loss_reason_name: string | null; loss_notes: string | null; commission_rate: number | null; company_website?: string | null; company_nit?: string | null; decision_maker_title?: string | null; decision_maker_linkedin?: string | null; current_security_provider?: string | null; current_security_provider_none?: boolean | null; current_contract_end_date?: string | null; created_at: string; updated_at: string; approved_at?: string | null;
   customer_segment?: CustomerSegment | null; owner_commercial_area?: CommercialArea | null; owner_can_edit_customer_segment?: boolean | null; source_url?: string | null; tender_offer_status?: TenderOfferStatus | null;
   frozen_until?: string | null; frozen_reason?: string | null; delete_requested_at?: string | null; delete_request_reason?: string | null;
   lost_at?: string | null; discarded_at?: string | null;
@@ -945,11 +946,11 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     followUp: action,
     initialAnalysisReady: Boolean(tenderInitialReport),
   };
-  const locationChip = [o.quote_city, o.sede].map(v => (v || '').trim()).filter((v, i, all) => v && all.findIndex(x => x.toLowerCase() === v.toLowerCase()) === i).join(' · ');
+  const locationChip = (o.quote_city || '').trim() || ((o.sede || '').trim().toLowerCase() === 'principal' ? '' : (o.sede || '').trim());
   const decisionMakerSummary = [o.decision_maker_name, o.decision_maker_email, o.decision_maker_phone].map(v => (v || '').trim()).filter(Boolean).join(' · ') || 'Por completar';
   // Un solo formulario: si la oportunidad muestra el panel de decisión, éste reemplaza a "Registrar seguimiento".
   const decisionPending = o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code);
-  const decisionMakerParts = [o.decision_maker_name, o.decision_maker_email, o.decision_maker_phone].map(v => (v || '').trim()).filter(Boolean);
+  const decisionMakerParts = [o.decision_maker_name, o.decision_maker_title, o.decision_maker_email, o.decision_maker_phone].map(v => (v || '').trim()).filter(Boolean);
   const decisionMakerLines = decisionMakerParts.length ? <span className="decision-maker-lines">{decisionMakerParts.map(part => <span key={part} className={part.includes('@') ? 'decision-maker-email' : undefined}>{part}</span>)}</span> : decisionMakerSummary;
   const priorityNextAction = nextActionCardState(o);
   const priorityClose = expectedCloseCardState(o.expected_close_date);
@@ -1043,6 +1044,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       request={api}
       preflight={{ nextAction: priorityNextAction, expectedClose: priorityClose, decisionMaker: priorityDecisionMaker }}
     />}
+    {o.service_type_code !== 'licitacion_publica' && <ClientProfilePanel o={o} canEdit={canAccessRoute(data.currentProfile, 'edit')} />}
     {o.service_type_code !== 'licitacion_publica' && <details className="opportunity-more-info">
       <summary>Más información</summary>
       <div className="opportunity-more-info-group">
@@ -1423,6 +1425,25 @@ function inferTenderDocumentType(name: string) {
   return 'otro';
 }
 function Info({ label, value }: { label: string; value?: string | null }) { return <div className="card info"><small>{label}</small><strong>{value || '—'}</strong></div>; }
+// AGT-003 — perfil del cliente (Juan, 2026-10-08): qué se sabe del cliente y cuánto falta para "perfil completo".
+function ClientProfilePanel({ o, canEdit }: { o: Opportunity; canEdit: boolean }) {
+  const profile = profileCompleteness(o as unknown as Record<string, unknown>);
+  const link = (url?: string | null) => url ? <a href={url} target="_blank" rel="noopener noreferrer">{url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</a> : '—';
+  const provider = o.current_security_provider_none ? 'No tiene (seguridad propia o ninguna)' : (o.current_security_provider || '—');
+  return <section className="panel client-profile-panel" aria-label="Perfil del cliente">
+    <header><h2>Perfil del cliente</h2><span className={profile.complete ? 'client-profile-score is-complete' : 'client-profile-score'}>{profile.complete ? 'Perfil completo' : `${profile.done} de ${profile.total}`}</span></header>
+    <div className="client-profile-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profile.pct}><span style={{ width: `${profile.pct}%` }} /></div>
+    {!profile.complete && <p className="client-profile-missing">Falta: {profile.missing.join(', ')}.{canEdit && <> <a href={`#/edit/${o.id}`}>Completar perfil</a></>}</p>}
+    <dl className="client-profile-fields">
+      <div><dt>Página web</dt><dd>{link(o.company_website)}</dd></div>
+      <div><dt>Cargo del decisor</dt><dd>{o.decision_maker_title || '—'}</dd></div>
+      <div><dt>LinkedIn del decisor</dt><dd>{link(o.decision_maker_linkedin)}</dd></div>
+      <div><dt>Proveedor actual</dt><dd>{provider}</dd></div>
+      {!o.current_security_provider_none && <div><dt>Vence su contrato</dt><dd>{o.current_contract_end_date ? fmtDateOnly(o.current_contract_end_date) : '—'}</dd></div>}
+      <div><dt>NIT</dt><dd>{o.company_nit || '—'}</dd></div>
+    </dl>
+  </section>;
+}
 function FichaField({ label, value }: { label: string; value?: string | null }) { return <div className="opportunity-more-info-field"><small>{label}</small><strong>{value || '—'}</strong></div>; }
 function Dt({ label, value }: { label: string; value?: string | null }) { return <><dt>{label}</dt><dd>{value || '—'}</dd></>; }
 const FOLLOW_UP_NOTES_PLACEHOLDER = 'Resultado de la gestión\nAcuerdos o compromisos\nSiguiente paso';
@@ -1532,6 +1553,13 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
     observaciones: existing?.observaciones || '',
     commission_rate: existing?.commission_rate || 0,
     customer_segment: existing?.customer_segment || '',
+    company_website: existing?.company_website || '',
+    company_nit: existing?.company_nit || '',
+    decision_maker_title: existing?.decision_maker_title || '',
+    decision_maker_linkedin: existing?.decision_maker_linkedin || '',
+    current_security_provider: existing?.current_security_provider || '',
+    current_security_provider_none: Boolean(existing?.current_security_provider_none),
+    current_contract_end_date: existing?.current_contract_end_date || '',
   });
   const [status, setStatus] = useState('');
   const canEditSegment = canEditOpportunitySegment(data.currentProfile, existing);
@@ -1659,15 +1687,23 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
       <label>Cierre estimado<input type="date" value={String(form.expected_close_date || '')} onChange={e=>set('expected_close_date', e.target.value)}/></label>
       <label>Próxima acción<input type="datetime-local" value={String(form.next_action_at || '').slice(0,16)} onChange={e=>set('next_action_at', e.target.value)}/></label>
       <label>Regional<Select value={String(form.regional_nombre || '')} onChange={v=>set('regional_nombre', v)} options={regionalOptions} empty="Seleccione una regional" required/></label>
-      <label>Sede<input value={String(form.sede || '')} onChange={e=>set('sede', e.target.value)}/></label>
       <label>Ciudad<input value={String(form.quote_city || '')} onChange={e=>set('quote_city', e.target.value)}/></label>
       <label>Sector<input value={String(form.economic_sector || '')} onChange={e=>set('economic_sector', e.target.value)}/></label>
       <label>Decisor<input value={String(form.decision_maker_name || '')} onChange={e=>set('decision_maker_name', e.target.value)}/></label>
       <label>Email decisor<input type="email" value={String(form.decision_maker_email || '')} onChange={e=>set('decision_maker_email', e.target.value)}/></label>
       <label>Teléfono decisor<input value={String(form.decision_maker_phone || '')} onChange={e=>set('decision_maker_phone', e.target.value)}/></label>
+      {form.service_type_code !== 'licitacion_publica' && <>
+        <div className="wide client-profile-intro"><h3>Perfil del cliente</h3><p>Entre más complete, mejores recomendaciones le dará la IA. NIT y vencimiento del contrato son opcionales.</p></div>
+        <label>Cargo del decisor<input value={String(form.decision_maker_title || '')} placeholder="Ej. Gerente administrativo" onChange={e=>set('decision_maker_title', e.target.value)}/></label>
+        <label>LinkedIn del decisor<input value={String(form.decision_maker_linkedin || '')} placeholder="linkedin.com/in/..." onChange={e=>set('decision_maker_linkedin', e.target.value)}/></label>
+        <label>Página web de la empresa<input value={String(form.company_website || '')} placeholder="www.empresa.com" onChange={e=>set('company_website', e.target.value)}/></label>
+        <label>NIT (opcional)<input value={String(form.company_nit || '')} onChange={e=>set('company_nit', e.target.value)}/></label>
+        <label>Proveedor actual de seguridad<input value={form.current_security_provider_none ? '' : String(form.current_security_provider || '')} disabled={Boolean(form.current_security_provider_none)} placeholder={form.current_security_provider_none ? 'No tiene' : 'Ej. nombre de la empresa de vigilancia'} onChange={e=>set('current_security_provider', e.target.value)}/>
+          <span className="checkline-inline"><input type="checkbox" checked={Boolean(form.current_security_provider_none)} onChange={e=>setForm(prev => ({ ...prev, current_security_provider_none: e.target.checked }))}/> No tiene (seguridad propia o ninguna)</span></label>
+        {!form.current_security_provider_none && <label>Vence su contrato actual (opcional)<input type="date" value={String(form.current_contract_end_date || '')} onChange={e=>set('current_contract_end_date', e.target.value)}/></label>}
+      </>}
       {form.stage_code === 'perdido' && <label>Motivo pérdida<Select value={String(form.loss_reason_code || '')} onChange={v=>set('loss_reason_code', v)} options={data.lossReasons.map(r=>[r.code,r.name])} empty="Seleccionar"/></label>}
       {form.stage_code === 'perdido' && <label>Notas pérdida<input value={String(form.loss_notes || '')} onChange={e=>set('loss_notes', e.target.value)}/></label>}
-      <label>Comisión %<input type="number" min="0" max="100" step="0.1" value={String(form.commission_rate || 0)} onChange={e=>set('commission_rate', e.target.value)}/></label>
       <label className="wide">Observaciones<textarea value={String(form.observaciones || '')} onChange={e=>set('observaciones', e.target.value)}/></label>
       <div className="formactions"><button>{id ? 'Guardar cambios' : 'Crear oportunidad'}</button>{status && <span>{status}</span>}</div>
     </form>
