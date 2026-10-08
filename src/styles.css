@@ -710,3 +710,4 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .lead-analysis-section{margin-top:12px;padding:12px 14px;border-radius:12px;background:#f8fbff}.lead-analysis-section h3{margin:0 0 6px;color:#10213d;font-size:15px}.lead-analysis-section p{margin:4px 0}.lead-analysis-section ul{margin:4px 0;padding-left:20px}
 .lead-analysis-message{white-space:pre-wrap;padding:10px;border-radius:10px;background:#fff;border:1px solid #e2eaf5}
 .lead-analysis-review{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:#fff7ed;color:#7c2d12;font-size:13px}
+.lead-analysis-panel .eyebrow{background:#dbeafe;color:#1e40af}
