@@ -57,3 +57,5 @@ assert.equal(state.phase, 'error');
 assert.equal(state.message, 'No disponible');
 
 console.log('Vig-IA opportunity copilot state machine passed');
+
+assert.equal(canRenderOpportunityCopilot({ ...profile, permissions: ['modulo_oportunidades', 'vigia_copilot_pilot'] }, 'seguridad_fisica'), true, 'comercial con Oportunidades y piloto ve el copiloto sin módulo Vig-IA');
