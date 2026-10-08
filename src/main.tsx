@@ -872,9 +872,9 @@ function OpportunityDecisionPanel({ opportunity, data, onChanged }: { opportunit
   }
   const pending = isPendingDecision(opportunity);
   const frozen = isFrozen(opportunity);
-  return <details className="panel decision-panel" open={pending} aria-label="Decisión">
-    <summary><h2>{pending ? 'Esta oportunidad necesita una decisión' : frozen ? `Congelada hasta ${fmtDateOnly(opportunity.frozen_until)}` : 'Actualizar decisión'}</h2>
-      <span className="v2-panel-note">{pending ? 'Su gestión se venció o no tiene agenda.' : frozen ? `Motivo: ${opportunity.frozen_reason || '—'}. Puede reactivarla o decidir otra cosa.` : 'Registre qué pasó: sigue viva, avanza, congelar, descartar o pedir eliminar.'}</span></summary>
+  return <details className="panel decision-panel" open aria-label="Decisión">
+    <summary><h2>{pending ? 'Esta oportunidad necesita una decisión' : frozen ? `Congelada hasta ${fmtDateOnly(opportunity.frozen_until)}` : 'Actualizar oportunidad'}</h2>
+      <span className="v2-panel-note">{pending ? 'Su gestión se venció o no tiene agenda.' : frozen ? `Motivo: ${opportunity.frozen_reason || '—'}. Puede reactivarla o decidir otra cosa.` : 'Registre qué pasó y qué sigue: sigue viva, avanza, congelar, descartar o pedir eliminar.'}</span></summary>
     <OpportunityDecisionForm opportunity={opportunity} stages={data.stages} lossReasons={data.lossReasons} onDone={onChanged} />
   </details>;
 }
@@ -940,8 +940,12 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     followUp: action,
     initialAnalysisReady: Boolean(tenderInitialReport),
   };
-  const locationChip = [o.quote_city, o.sede].map(v => (v || '').trim()).filter(Boolean).join(' · ');
+  const locationChip = [o.quote_city, o.sede].map(v => (v || '').trim()).filter((v, i, all) => v && all.findIndex(x => x.toLowerCase() === v.toLowerCase()) === i).join(' · ');
   const decisionMakerSummary = [o.decision_maker_name, o.decision_maker_email, o.decision_maker_phone].map(v => (v || '').trim()).filter(Boolean).join(' · ') || 'Por completar';
+  // Un solo formulario: si la oportunidad muestra el panel de decisión, éste reemplaza a "Registrar seguimiento".
+  const decisionPending = o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code);
+  const decisionMakerParts = [o.decision_maker_name, o.decision_maker_email, o.decision_maker_phone].map(v => (v || '').trim()).filter(Boolean);
+  const decisionMakerLines = decisionMakerParts.length ? <span className="decision-maker-lines">{decisionMakerParts.map(part => <span key={part} className={part.includes('@') ? 'decision-maker-email' : undefined}>{part}</span>)}</span> : decisionMakerSummary;
   const priorityNextAction = nextActionCardState(o);
   const priorityClose = expectedCloseCardState(o.expected_close_date);
   const priorityDecisionMaker = decisionMakerCardState({ name: o.decision_maker_name, email: o.decision_maker_email, phone: o.decision_maker_phone });
@@ -972,7 +976,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   };
   return <section className={o.service_type_code === 'licitacion_publica' ? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'}>
     <div id="tender-summary" className="tender-summary-anchor tender-detail-anchor" tabIndex={-1}>
-      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
+      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
@@ -985,7 +989,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           <p className="tender-summary-facts">{[o.service_type_name || o.tipo_producto_original, o.economic_sector, o.quote_city || 'Ciudad por confirmar'].filter(Boolean).join(' · ')}</p>
         </div>
       </Panel>
-    </> : <section className="opportunity-insight-grid opportunity-priority-grid" aria-label="Resumen prioritario de la oportunidad"><div className={`opportunity-insight-card ${priorityNextAction.className}`}><small>Próxima gestión</small><strong>{fmtDate(o.next_action_at)}</strong><span>{priorityNextAction.detail}</span></div><div className="opportunity-insight-card"><small>Último seguimiento</small><strong>{fmtDate(o.last_interaction_at)}</strong><span>{followUpAgeLabel(o.last_interaction_at)}</span></div><div className={`opportunity-insight-card ${priorityClose.className}`}><small>Cierre estimado</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{priorityClose.detail}</span></div><div className={`opportunity-insight-card ${priorityDecisionMaker.className}`}><small>Contacto decisor</small><strong>{decisionMakerSummary}</strong><span>{priorityDecisionMaker.detail}</span></div></section>}
+    </> : <section className="opportunity-insight-grid opportunity-priority-grid" aria-label="Resumen prioritario de la oportunidad"><div className={`opportunity-insight-card ${priorityNextAction.className}`}><small>Próxima gestión</small><strong>{fmtDate(o.next_action_at)}</strong><span>{priorityNextAction.detail}</span></div><div className="opportunity-insight-card"><small>Último seguimiento</small><strong>{fmtDate(o.last_interaction_at)}</strong><span>{followUpAgeLabel(o.last_interaction_at)}</span></div><div className={`opportunity-insight-card ${priorityClose.className}`}><small>Cierre estimado</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{priorityClose.detail}</span></div><div className={`opportunity-insight-card ${priorityDecisionMaker.className}`}><small>Contacto decisor</small><strong>{decisionMakerLines}</strong><span>{priorityDecisionMaker.detail}</span></div></section>}
     {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
       <TenderDecisionExperience
@@ -1014,7 +1018,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
       <h2 className="followup-section-title">Seguimiento comercial</h2>
       <div className="followup-section-grid">
-        {!readOnly && <div id="opportunity-follow-up" className="opportunity-follow-up-anchor followup-form-slot" tabIndex={-1} ref={followUpRef}>
+        {!readOnly && !decisionPending && <div id="opportunity-follow-up" className="opportunity-follow-up-anchor followup-form-slot" tabIndex={-1} ref={followUpRef}>
           <FollowUpForm opportunityId={id} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} />
         </div>}
         <Panel title="Historial de seguimiento" className="followup-history">
@@ -1023,7 +1027,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
                 <strong>{entry.typeLabel}</strong>
                 <span>{fmtDate(entry.occurredAt)}{!entry.migrated && ` · ${entry.authorLabel}`}</span>
                 {entry.migrated && <span className="badge followup-migrated-badge">{entry.authorLabel}</span>}
-                <p>{entry.content}</p>
+                <FollowUpContent content={entry.content} />
               </div>; })
             : <p className="muted">Sin seguimientos registrados.</p>}</div>
         </Panel>
@@ -1040,7 +1044,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         <h3>Información comercial secundaria</h3>
         <div className="opportunity-more-info-fields">
           <FichaField label="Fecha creación" value={fmtDate(o.created_at)}/>
-          <FichaField label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/>
+          <FichaField label="Área comercial" value={o.owner_commercial_area ? commercialAreaLabel(o.owner_commercial_area) : 'Sin área asignada (se define en Usuarios y permisos)'}/>
           <FichaField label="Sector" value={o.economic_sector}/>
         </div>
       </div>
@@ -1417,6 +1421,17 @@ function Info({ label, value }: { label: string; value?: string | null }) { retu
 function FichaField({ label, value }: { label: string; value?: string | null }) { return <div className="opportunity-more-info-field"><small>{label}</small><strong>{value || '—'}</strong></div>; }
 function Dt({ label, value }: { label: string; value?: string | null }) { return <><dt>{label}</dt><dd>{value || '—'}</dd></>; }
 const FOLLOW_UP_NOTES_PLACEHOLDER = 'Resultado de la gestión\nAcuerdos o compromisos\nSiguiente paso';
+const FOLLOW_UP_PREVIEW_CHARS = 420;
+function FollowUpContent({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const text = String(content || '');
+  if (text.length <= FOLLOW_UP_PREVIEW_CHARS) return <p>{text}</p>;
+  return <>
+    <p>{expanded ? text : `${text.slice(0, FOLLOW_UP_PREVIEW_CHARS).trimEnd()}…`}</p>
+    <button type="button" className="secondary followup-expand" onClick={() => setExpanded(!expanded)}>{expanded ? 'Ver menos' : 'Ver nota completa'}</button>
+  </>;
+}
+
 function FollowUpForm({ opportunityId, currentProfile, onSaved }: { opportunityId: string; currentProfile: Profile; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: bogotaToday(), next_action_at: '' }); const [status, setStatus] = useState('');
   const interactionTypeLabels: Record<string, string> = { llamada:'Llamada', correo:'Correo', reunion:'Reunión', whatsapp:'WhatsApp', nota:'Nota', cambio_estado:'Cambio de estado', documento:'Documento' };
@@ -2294,7 +2309,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
         </details>}
       </div>
     </section>}
-    <p className="my-day-goal-line">Meta del mes: {goal.budget ? <><strong>{fmtMoneyCompact(goal.approved)}</strong> de <strong>{fmtMoneyCompact(goal.budget)}</strong> ({goal.pct}%)</> : <>{fmtMoneyCompact(goal.approved)} aprobado · meta pendiente de cargar</>} · <a href="#/goals">Ver mi meta →</a></p>
+    <p className="my-day-goal-line">Meta del mes: {goal.budget ? <><strong>{fmtMoneyCompact(goal.approved)}</strong> de <strong>{fmtMoneyCompact(goal.budget)}</strong> ({goal.pct}%)</> : <>todavía no tiene meta cargada para este mes (la carga su gerente) · {fmtMoneyCompact(goal.approved)} aprobado</>} · <a href="#/goals">Ver mi meta →</a></p>
     {opportunities.length > 0 && <details className="panel my-day-more">
       <summary>Ver más</summary>
       <h3>Detalle por etapa</h3>

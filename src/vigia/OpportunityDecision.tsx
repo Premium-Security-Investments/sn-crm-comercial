@@ -197,9 +197,12 @@ export function DecisionQueue({ pending, stages, lossReasons, onChanged }: {
           <span>{opportunity.stage_name} · {Number(opportunity.offer_value || 0) > 0 ? money.format(Number(opportunity.offer_value)) : 'Sin valor'} · {lastActivity(opportunity)}</span>
           <em>{pendingReason(opportunity)}</em>
         </button>
-        <a className="button secondary" href={`#/detail/${opportunity.id}`}>Ver</a>
+        <button type="button" className={openId === opportunity.id ? 'secondary decision-open' : 'decision-open'} onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>{openId === opportunity.id ? 'Cerrar' : 'Decidir'}</button>
       </div>
-      {openId === opportunity.id && <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} onDone={async () => { setOpenId(null); await onChanged(); }} />}
+      {openId === opportunity.id && <>
+        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} onDone={async () => { setOpenId(null); await onChanged(); }} />
+        <a className="decision-full-link" href={`#/detail/${opportunity.id}`}>Ver ficha completa (historial y contacto)</a>
+      </>}
     </li>)}</ul>
     {ordered.length > visible && <button type="button" className="secondary decision-more" onClick={() => setVisible(visible + 20)}>Ver {Math.min(20, ordered.length - visible)} más (quedan {ordered.length - visible})</button>}
     <p className="decision-tip">Para decidir varias de una vez, márquelas y use Descartar o Congelar arriba.</p>
