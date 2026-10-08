@@ -703,3 +703,10 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .client-profile-missing{margin:0 0 10px;color:#526173;font-size:13px}.client-profile-missing a{font-weight:800}
 .client-profile-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:0}.client-profile-fields div{padding:8px 10px;border-radius:10px;background:#f8fbff}
 .client-profile-fields dt{color:#526173;font-size:12px;font-weight:800}.client-profile-fields dd{margin:2px 0 0;color:#10213d;overflow-wrap:anywhere}
+.lead-analysis-panel header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.lead-analysis-panel h2{margin:4px 0 8px}
+.lead-analysis-quota{color:#526173;font-weight:700;white-space:nowrap}
+.lead-analysis-teaser{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:#f1f5fb;color:#334155}.lead-analysis-teaser.is-won{background:#ecfdf5;color:#14532d}
+.lead-analysis-meta{margin:10px 0;color:#526173;font-size:13px}
+.lead-analysis-section{margin-top:12px;padding:12px 14px;border-radius:12px;background:#f8fbff}.lead-analysis-section h3{margin:0 0 6px;color:#10213d;font-size:15px}.lead-analysis-section p{margin:4px 0}.lead-analysis-section ul{margin:4px 0;padding-left:20px}
+.lead-analysis-message{white-space:pre-wrap;padding:10px;border-radius:10px;background:#fff;border:1px solid #e2eaf5}
+.lead-analysis-review{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:#fff7ed;color:#7c2d12;font-size:13px}

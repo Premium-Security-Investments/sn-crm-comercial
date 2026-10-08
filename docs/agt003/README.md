@@ -44,6 +44,7 @@ AGT-003 no puede:
 | `agt003.priorities.read` | `contracts/agents/AGT-003/v1/` | V1 inmutable, read-only |
 | `agt003.opportunity-copilot.preview` | `contracts/agents/AGT-003/v2-draft/` | draft inactivo; revisión humana |
 | `agt003.opportunity-preflight.preview` | `contracts/agents/AGT-003/v2-draft/` | draft inactivo; no persiste resultado |
+| `agt003.lead-deep-analysis` | `src/vigia/lead-analysis.js` (contrato 1.0, `LEAD_ANALYSIS_OUTPUT_SCHEMA`) | premio por perfil completo; lee sólo la web pública del cliente (HTTPS, su dominio); revisión humana; registro inmutable `psi_agt003_lead_analyses` (migración 114); tope mensual `AGT003_LEAD_ANALYSIS_MONTHLY_MAX` (30) |
 
 Las rutas visibles actuales son:
 

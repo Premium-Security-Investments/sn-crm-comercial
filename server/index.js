@@ -40,7 +40,9 @@ import { hasPermission } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
-import { CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientProfile } from '../src/vigia/client-profile.js';
+import { CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
+import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
+import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../agt003-lead-analysis.js';
 import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
@@ -401,6 +403,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/lead-analysis': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'GET /api/agt003/lead-analysis': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
@@ -3105,6 +3109,105 @@ app.post('/api/vigia/copilot/feedback', async (req, res) => {
 });
 app.all('/api/vigia/copilot/feedback', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
+// AGT-003 — premio "análisis profundo" (agt003.lead-deep-analysis, Juan 2026-10-08). Se gana con perfil completo;
+// tope mensual del equipo aparte del tope diario de Vig-IA; cada ejecución queda en psi_agt003_lead_analyses.
+const LEAD_ANALYSIS_PUBLIC_FIELDS = 'id,opportunity_id,actor_id,status,model,website_url,website_status,output,usage,created_at,finished_at';
+async function leadAnalysisState(database, opportunityId, opportunity = null) {
+  const monthlyMax = monthlyMaxFrom(process.env);
+  const [latest, used] = await Promise.all([
+    database.from('psi_agt003_lead_analyses').select(`${LEAD_ANALYSIS_PUBLIC_FIELDS},profile_hash`).eq('opportunity_id', opportunityId).eq('status', 'completed').order('created_at', { ascending: false }).limit(1),
+    database.from('psi_agt003_lead_analyses').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', bogotaMonthStartIso(new Date())),
+  ]);
+  if (latest.error) { if (latest.error.code === '42P01') return { available: false }; throw latest.error; }
+  if (used.error) throw used.error;
+  const { profile_hash: analysisHash, ...analysis } = latest.data?.[0] || {};
+  const current = opportunity ? leadAnalysisProfileHash(opportunity) : null;
+  return {
+    available: isAgt003CopilotConfigured(process.env),
+    analysis: analysis.id ? analysis : null,
+    profile_changed: Boolean(analysis.id && current && current !== analysisHash),
+    used: used.count || 0,
+    max: monthlyMax,
+  };
+}
+async function loadLeadAnalysisOpportunity(database, opportunityId) {
+  const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single()));
+  const observaciones = await must(database.from('psi_sales_opportunities').select('observaciones').eq('id', opportunityId).single());
+  return { ...opportunity, observaciones: observaciones?.observaciones ?? opportunity.observaciones ?? null };
+}
+app.get('/api/agt003/lead-analysis', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const id = String(req.query.id || '');
+    if (!id) { const error = new Error('Debe indicar la oportunidad.'); error.status = 400; throw error; }
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    const state = await leadAnalysisState(database, id, await loadLeadAnalysisOpportunity(database, id));
+    res.set('Cache-Control', 'private, no-store');
+    res.json(state);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/agt003/lead-analysis', async (req, res) => {
+  let claimedId = null;
+  let database = null;
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    database = requireDb();
+    const id = String(req.query.id || '');
+    if (!id) { const error = new Error('Debe indicar la oportunidad.'); error.status = 400; throw error; }
+    const resource = await resolveAgt003OpportunityResource(database, id, currentProfile);
+    requireAction(currentProfile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, resource);
+    if (!isAgt003CopilotConfigured(process.env)) { const error = new Error('Vig-IA no está disponible en este momento.'); error.status = 503; throw error; }
+    const opportunity = await loadLeadAnalysisOpportunity(database, id);
+    if (opportunity.service_type_code === 'licitacion_publica') { const error = new Error('El análisis profundo es sólo para oportunidades comerciales.'); error.status = 400; throw error; }
+    const completeness = profileCompleteness(opportunity);
+    if (!completeness.complete) { const error = new Error(`Complete el perfil del cliente para ganar el análisis. Falta: ${completeness.missing.join(', ')}.`); error.status = 409; error.code = 'AGT003_LEAD_ANALYSIS_PROFILE_INCOMPLETE'; throw error; }
+    const hash = leadAnalysisProfileHash(opportunity);
+    const monthlyMax = monthlyMaxFrom(process.env);
+    const { data: claim, error: claimError } = await database.rpc('psi_claim_agt003_lead_analysis', {
+      p_opportunity_id: id, p_actor_id: currentProfile.id, p_profile_hash: hash, p_contract_version: LEAD_ANALYSIS_CONTRACT_VERSION,
+      p_monthly_max: monthlyMax, p_month_start: bogotaMonthStartIso(new Date()),
+    });
+    if (claimError) throw claimError;
+    if (claim?.status === 'existing') return res.status(200).json(await leadAnalysisState(database, id, opportunity));
+    if (claim?.status === 'in_progress') { const error = new Error('El análisis de esta oportunidad ya se está preparando. Espere un momento.'); error.status = 409; throw error; }
+    if (claim?.status === 'quota') { const error = new Error(`Se acabó el cupo de análisis profundos de este mes (${claim.used} de ${claim.max}). Vuelve el próximo mes.`); error.status = 429; error.code = 'AGT003_LEAD_ANALYSIS_QUOTA'; throw error; }
+    if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el análisis.');
+    claimedId = claim.id;
+    const [website, interactions, services, owner] = await Promise.all([
+      fetchCompanyWebsite(opportunity.company_website),
+      must(database.from('psi_sales_interactions').select('occurred_at,notes').eq('opportunity_id', id).order('occurred_at', { ascending: false }).limit(3)),
+      must(database.from('psi_sales_service_types').select('name').eq('active', true).order('name')),
+      must(database.from('psi_sales_profiles').select('full_name').eq('id', opportunity.owner_id).maybeSingle()),
+    ]);
+    const input = buildLeadAnalysisInput({ opportunity, ownerName: owner?.full_name, services, interactions, website, today: bogotaDay(new Date()) });
+    let result;
+    try {
+      result = await runLeadAnalysis({ input, idempotencyKey: claimedId, environment: process.env });
+    } catch (runError) {
+      await database.rpc('psi_finish_agt003_lead_analysis', { p_id: claimedId, p_status: 'failed', p_model: null, p_website_url: website.url || null, p_website_status: website.status, p_output: null, p_usage: null, p_failure_code: String(runError?.code || 'AGT003_LEAD_ANALYSIS_FAILED').slice(0, 64) });
+      claimedId = null;
+      const error = new Error('No se pudo preparar el análisis. No se descontó del cupo; intente de nuevo en unos minutos.');
+      error.status = 502;
+      throw error;
+    }
+    const { error: finishError } = await database.rpc('psi_finish_agt003_lead_analysis', {
+      p_id: claimedId, p_status: 'completed', p_model: result.model, p_website_url: website.url || null, p_website_status: website.status,
+      p_output: result.output, p_usage: { ...result.usage, cost_usd_estimate: result.costUsd, website_status: website.status }, p_failure_code: null,
+    });
+    if (finishError) throw finishError;
+    claimedId = null;
+    res.status(201).json(await leadAnalysisState(database, id, opportunity));
+  } catch (error) {
+    if (claimedId && database) {
+      try { await database.rpc('psi_finish_agt003_lead_analysis', { p_id: claimedId, p_status: 'failed', p_model: null, p_website_url: null, p_website_status: null, p_output: null, p_usage: null, p_failure_code: 'AGT003_LEAD_ANALYSIS_INTERNAL' }); } catch { /* best effort */ }
+    }
+    sendError(res, error, error?.status || 400);
+  }
+});
+
 // Último ingreso al CRM: una marca por día de Bogotá vía psi_touch_profile_last_seen (migración 111). Se dispara sin
 // esperar y nunca rompe el bootstrap; el Map evita repetir la llamada en el mismo proceso durante el día. No se usa
 // auth.users.last_sign_in_at porque las sesiones persisten y ese dato queda viejo.
@@ -3150,7 +3253,8 @@ app.get('/api/bootstrap', async (req, res) => {
       return acc;
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
     const decisionsToday = currentProfile.role === 'comercial' ? await countDecisionsToday(database, currentProfile.id) : 0;
-    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday });
+    const leadAnalysesToday = await listLeadAnalysesToday(database, currentProfile.id);
+    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
   } catch (error) { sendAuthError(res, error); }
 });
 app.all('/api/bootstrap', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
@@ -5523,6 +5627,14 @@ async function countPendingDecisions(database, ownerId) {
     .is('deleted_at', null)
     .not('stage_code', 'in', '(aprobado,descartado,perdido)'));
   return pendingDecisions(rows || [], new Date()).length;
+}
+
+// Análisis profundos que el usuario ganó hoy (aviso en Mi día). Tolera que la migración 114 aún no esté.
+async function listLeadAnalysesToday(database, actorId) {
+  const { data, error } = await database.from('psi_agt003_lead_analyses').select('opportunity_id')
+    .eq('actor_id', actorId).eq('status', 'completed').gte('created_at', bogotaDayStartIso(new Date()));
+  if (error) { if (error.code === '42P01') return []; throw error; }
+  return [...new Set((data || []).map(row => row.opportunity_id))];
 }
 
 // Oportunidades distintas que el comercial decidió hoy (Bogotá), según el registro de auditoría de decisiones.

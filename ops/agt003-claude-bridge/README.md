@@ -150,3 +150,16 @@ desconexión del cliente.
   un átomo seguro, `provider_error_code`. Ni la política, ni la entrada del
   CRM, ni la respuesta del modelo, ni el `stderr` del proveedor, ni el secreto
   HMAC llegan nunca a los registros ni al cuerpo de error devuelto al llamador.
+
+## Configuración de la CLI (2026-10-08)
+
+El `HOME` del servicio (`/opt/agt003-bridge`) es de root, así que la CLI de Claude no puede guardar `~/.claude.json`
+y en algún momento lo pierde (fallas `AGT003_CLAUDE_PROVIDER_ERROR`). En producción se agregó a
+`/etc/agt003-bridge/agt003-bridge.env`:
+
+```
+CLAUDE_CONFIG_DIR=/opt/agt003-bridge/.claude
+```
+
+(carpeta del usuario `agt003-bridge`, donde ya viven sus credenciales). El cliente del puente sólo quita variables
+`ANTHROPIC_*`/de proveedor, así que esta variable llega al subproceso.
