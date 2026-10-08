@@ -7,7 +7,7 @@ import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
-import { planRadarPhaseIdentitySync, applyOfficialSourceLink } from '../tender-phase-identity.js';
+import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../tender-phase-identity.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
 import { fetchTenderRadarSourceRows } from '../tender-radar-source-fetch.js';
@@ -1541,6 +1541,40 @@ async function fetchSecopPaged(source, cfg, where, maxRows) {
   }
   return rows;
 }
+// Todas las fases publicadas de cada proceso SECOP II ya convertido, pedidas por entidad y referencia. La lectura
+// diaria sólo trae procesos con cierre futuro que pasan el filtro de servicio; una fase nueva cuyo cierre ya pasó,
+// o que llega antes de la conversión, nunca se emparejaba y la oportunidad seguía con el enlace del borrador
+// (Procuraduría LP-004-2026, Cali 250-2026, Rama Judicial Bogotá; detectado 8-oct-2026). Sólo alimenta la
+// continuidad de fases: estas filas no se guardan como licitaciones nuevas. Una consulta fallida se omite.
+const CONVERTED_FAMILY_LOOKBACK_DAYS = 120;
+export async function fetchConvertedTenderFamilies(convertedRows, { fetchPage = fetchSecopPage, now = Date.now() } = {}) {
+  const cfg = tenderSources['SECOP II'];
+  const minDeadline = now - CONVERTED_FAMILY_LOOKBACK_DAYS * 86400000;
+  const families = new Map();
+  for (const row of convertedRows || []) {
+    if (row?.source !== 'SECOP II' || !row.entity) continue;
+    const deadline = Date.parse(row.deadline_at || '');
+    if (Number.isFinite(deadline) && deadline < minDeadline) continue;
+    const base = tenderProcessBaseReference(row.ref);
+    if (base.length < 4) continue;
+    families.set(`${row.entity}\u0000${base}`, { entity: row.entity, base });
+  }
+  const quote = value => `'${String(value).replace(/'/g, "''")}'`;
+  const tenders = [];
+  const errors = [];
+  for (const { entity, base } of families.values()) {
+    try {
+      const entityPattern = String(entity).split(/[^\p{L}\p{N}]+/u).filter(Boolean).join('%');
+      const where = `entidad like ${quote(`%${entityPattern}%`)} AND referencia_del_proceso like ${quote(`${base}%`)}`;
+      const rows = await fetchPage('SECOP II', cfg, where, 0, 50);
+      for (const row of rows || []) tenders.push(normalizeTender(row, 'SECOP II', scoreTender(row, cfg.nameFields)));
+    } catch (error) {
+      errors.push({ entity, ref: base, message: error?.message || String(error) });
+    }
+  }
+  if (errors.length) console.warn(JSON.stringify({ event: 'agt002_converted_family_lookup_partial', failed: errors.length, families: families.size, errors: errors.slice(0, 5) }));
+  return tenders;
+}
 async function fetchSecopSourceDeep(source, cfg, today = new Date()) {
   const categoryField = RADAR_DEEP_CATEGORY_FIELD[source] || null;
   const windows = radarDeepWindows(today, { chunkDays: RADAR_DEEP_CHUNK_DAYS[source] || 0 });
@@ -1984,9 +2018,11 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
   }
   const now = new Date().toISOString();
   const tagged = persistenceTenders.map(t => ({ ...t, stable_key: t.stable_key || stableTenderKey(t) }));
-  const fetchedKeys = [...new Set(tagged.map(t => t.stable_key).filter(Boolean))];
   const { data: existingConverted, error: convertedReadError } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').eq('internal_status', 'convertida_oportunidad');
   if (convertedReadError) throw convertedReadError;
+  const taggedKeys = new Set(tagged.map(t => t.stable_key));
+  const familyRows = (await fetchConvertedTenderFamilies(existingConverted || [])).filter(t => t.stable_key && !taggedKeys.has(t.stable_key));
+  const fetchedKeys = [...new Set([...tagged, ...familyRows].map(t => t.stable_key).filter(Boolean))];
   let existingFetched = [];
   // In groups: the full daily import fetches 700+ keys, and a single `in (...)` that long exceeds the URL limit
   // (Supabase answers "fetch failed" from ~700 keys; observed 6-oct-2026).
@@ -1999,7 +2035,7 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
   for (const row of [...(existingConverted || []), ...existingFetched]) {
     if (row?.stable_key) existingByKey.set(row.stable_key, row);
   }
-  const plan = planRadarPhaseIdentitySync({ fetched: tagged, existing: [...existingByKey.values()], now });
+  const plan = planRadarPhaseIdentitySync({ fetched: [...tagged, ...familyRows], existing: [...existingByKey.values()], now });
   const omit = new Set(plan.omitStableKeys || []);
   const overrides = new Map((plan.convertedOverrides || []).map(row => [row.stable_key, row]));
   const identityReview = new Set(plan.identityReviewStableKeys || []);

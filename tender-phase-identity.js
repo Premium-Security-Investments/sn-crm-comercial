@@ -2,13 +2,49 @@ function normalizeTenderStatusText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
+// SECOP II publica cada fase como otro proceso con la referencia original más uno o varios sufijos de fase,
+// a veces anidados: "LP-004-2026 (Presentación de oferta)", "SA-006-2026 (Manifestación de interés (Menor
+// Cuantía)) (Presentación de oferta)", "CAS-LP-001-2026 (Fase de Selección (Presentación de ofertas))".
+const PHASE_SUFFIX_RE = /^(?:fase de |presentacion de |manifestacion de interes|evaluacion de |apertura de |seleccion)/;
+
+function splitTrailingPhaseSuffixes(text) {
+  let base = String(text || '').trim();
+  const suffixes = [];
+  while (base.endsWith(')')) {
+    let depth = 0;
+    let open = -1;
+    for (let index = base.length - 1; index >= 0; index -= 1) {
+      if (base[index] === ')') depth += 1;
+      else if (base[index] === '(' && --depth === 0) { open = index; break; }
+    }
+    if (open < 0) break;
+    const inner = normalizeTenderStatusText(base.slice(open + 1, -1));
+    if (!PHASE_SUFFIX_RE.test(inner)) break;
+    suffixes.unshift(inner);
+    base = base.slice(0, open).trim();
+  }
+  return { base, suffixes };
+}
+
+// Referencia sin sufijos de fase, con mayúsculas y acentos originales: sirve para pedir a datos.gov.co todas
+// las fases de un mismo proceso (`referencia_del_proceso like '<base>%'`).
+export function tenderProcessBaseReference(ref) {
+  return splitTrailingPhaseSuffixes(ref).base.replace(/[.\s]+$/g, '').trim();
+}
+
 function canonicalTenderProcessReference(tender) {
   const reference = normalizeTenderStatusText(tender?.ref || tender?.process_id || tender?.id || '');
-  return reference.replace(/\s*\((?:presentacion de oferta|manifestacion de interes|presentacion de observaciones|evaluacion de ofertas|apertura de ofertas)\)\s*$/i, '').replace(/[.\s]+$/g, '').trim();
+  return splitTrailingPhaseSuffixes(reference).base.replace(/[.\s]+$/g, '').trim();
+}
+
+// SECOP escribe algunas entidades con caracteres invisibles o guiones raros ("Rama Judicial \u0096 Dirección…") que
+// en el CRM quedan como espacios: el nombre se compara sólo por letras y números.
+function canonicalTenderEntity(entity) {
+  return normalizeTenderStatusText(entity).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
 function canonicalTenderProcessKey(tender) {
-  return [tender?.source, tender?.entity, canonicalTenderProcessReference(tender)].map(normalizeTenderStatusText).join('|');
+  return [normalizeTenderStatusText(tender?.source), canonicalTenderEntity(tender?.entity), canonicalTenderProcessReference(tender)].join('|');
 }
 
 function deadlineValue(tender) {
@@ -20,19 +56,27 @@ function deadlineMs(tender) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function officialPhaseRank(tender) {
-  const status = normalizeTenderStatusText(tender?.status || '');
-  if (status.includes('presentacion de oferta') || status.includes('evaluacion de ofertas') || status.includes('apertura de ofertas')) return 4;
-  if (status.includes('presentacion de observaciones')) return 2;
-  if (status.includes('manifestacion de interes')) return 1;
+function statusPhaseRank(status) {
+  const text = normalizeTenderStatusText(status || '');
+  if (text.includes('presentacion de oferta') || text.includes('evaluacion de ofertas') || text.includes('apertura de ofertas')) return 4;
+  if (text.includes('presentacion de observaciones')) return 2;
+  if (text.includes('manifestacion de interes')) return 1;
   return 0;
 }
 
-function preferOfficialIdentity(current, candidate) {
+// El estado de un proceso adjudicado o cerrado ya no dice en qué fase está, pero su referencia sí:
+// "… (Presentación de oferta)" con estado "Adjudicado" sigue siendo la fase de oferta.
+function officialPhaseRank(tender) {
+  const referenceRank = splitTrailingPhaseSuffixes(tender?.ref || '').suffixes
+    .some(suffix => suffix.includes('presentacion de oferta')) ? 4 : 0;
+  return Math.max(statusPhaseRank(tender?.status), referenceRank);
+}
+
+function preferOfficialIdentity(current, candidate, rankOf = officialPhaseRank) {
   if (!current) return candidate;
   if (!candidate) return current;
-  const currentRank = officialPhaseRank(current);
-  const candidateRank = officialPhaseRank(candidate);
+  const currentRank = rankOf(current);
+  const candidateRank = rankOf(candidate);
   if (candidateRank !== currentRank) return candidateRank > currentRank ? candidate : current;
   return deadlineMs(candidate) > deadlineMs(current) ? candidate : current;
 }
@@ -54,7 +98,7 @@ function hasAmbiguousSuccessors(successorCandidates) {
 
 function knownPhasesFor(rows) {
   return uniqueStrings(rows.map(row => String(row?.status || '').trim()))
-    .sort((a, b) => officialPhaseRank({ status: a }) - officialPhaseRank({ status: b }));
+    .sort((a, b) => statusPhaseRank(a) - statusPhaseRank(b));
 }
 
 function phaseHistoryLinePrefix(previousPhase, newPhase) {
@@ -115,7 +159,12 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
       continue;
     }
 
-    const official = fetchedSame.reduce(preferOfficialIdentity, convertedRow);
+    // La convertida puede apuntar ya a una fase posterior (su estado puede decir sólo "Adjudicado"): su fase
+    // real es la de la fila oficial con su mismo enlace, para no devolverla nunca a una fase anterior.
+    const currentRank = Math.max(officialPhaseRank(convertedRow),
+      ...fetchedSame.filter(row => row?.url && row.url === convertedRow.url).map(officialPhaseRank));
+    const rankOf = row => (row === convertedRow ? currentRank : officialPhaseRank(row));
+    const official = fetchedSame.reduce((current, candidate) => preferOfficialIdentity(current, candidate, rankOf), convertedRow);
     const successorKeys = uniqueStrings(successorCandidates.map(row => row.stable_key));
     omitStableKeys.push(...successorKeys);
     discardStableKeys.push(...successorKeys.filter(key => {
