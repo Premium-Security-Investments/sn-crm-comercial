@@ -68,7 +68,7 @@ export function agt002AlertItems({ detections = [], documents = [], analyses = [
     const daily = ['safety_limit', 'not_admitted', 'failed'].includes(a.outcome) ? `:${day}` : '';
     items.push({ key: `analysis:${a.opportunityId}:${a.setHash}:${a.outcome}${daily}`, opportunityId: a.opportunityId, type: 'analysis', fact: a });
   }
-  for (const r of results) items.push({ key: `result:${r.jobId}`, opportunityId: r.opportunityId, type: 'result', fact: r });
+  for (const r of results) items.push({ key: `result:${r.jobId}:${r.status}`, opportunityId: r.opportunityId, type: 'result', fact: r });
   for (const r of reviews) items.push({ key: `review:${r.opportunityId}:${r.noticeUid}:${r.review}`, opportunityId: r.opportunityId, type: 'review', fact: r });
   for (const f of failures) items.push({ key: `failure:${f.opportunityId}:${f.setHash}:${day}`, opportunityId: f.opportunityId, type: 'failure', fact: f });
   return items;
@@ -88,9 +88,9 @@ function itemLines(item) {
     case 'analysis':
       return [ANALYSIS_TEXT[fact.outcome] || ANALYSIS_TEXT.not_admitted];
     case 'result':
-      return [fact.status === 'COMPLETED'
-        ? `Terminó el reanálisis${fact.verdict ? `: ${fact.verdict}` : ' (sin veredicto legible; ver el informe en el CRM)'}.`
-        : 'El reanálisis no terminó bien. Requiere revisión humana en el CRM.'];
+      if (fact.status === 'COMPLETED') return [`Terminó el reanálisis${fact.verdict ? `: ${fact.verdict}` : ' (sin veredicto legible; ver el informe en el CRM)'}.`];
+      if (fact.status === 'NEEDS_ATTENTION') return ['El reanálisis quedó en espera de atención. Si termina, el resultado final llega en otro aviso.'];
+      return ['El reanálisis no terminó bien. Requiere revisión humana en el CRM.'];
     case 'review':
       return [REVIEW_TEXT[fact.review] || 'Requiere revisión humana.'];
     case 'failure':

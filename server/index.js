@@ -8,7 +8,7 @@ import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionG
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../tender-phase-identity.js';
-import { appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../agt002-phase-change-followup.js';
+import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../agt002-phase-change-followup.js';
 import { planObsoleteTenderDocuments } from '../tender-document-obsolescence.js';
 import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../tender-process-family.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
@@ -2015,6 +2015,12 @@ export async function recordAgt002RadarPhaseChanges(database, opportunityPatches
   for (const patch of opportunityPatches) {
     const change = patch.sourceChange;
     if (!change || !patch.converted_opportunity_id) continue;
+    // Sólo oportunidades ACTIVAS (Por decidir / En curso): una NO GO, perdida o descartada nunca recibe marca, aviso
+    // ni correo. El bloqueo queda en el cambio para que tampoco se agregue el aviso visible.
+    if (!change.blocker) {
+      try { change.blocker = await agt002PhaseChangeOpportunityBlocker(database, patch.converted_opportunity_id, null); }
+      catch (error) { change.blocker = 'opportunity_stage_unknown'; console.warn(JSON.stringify({ event: 'agt002_phase_change_stage_read_failed', opportunityId: patch.converted_opportunity_id, message: error?.message })); }
+    }
     if (change.blocker) {
       console.log(JSON.stringify({ event: 'agt002_phase_change_not_followed', opportunityId: patch.converted_opportunity_id, reason: change.blocker, url: change.url }));
       continue;
@@ -2049,7 +2055,7 @@ async function applyConvertedOpportunityPatches(database, opportunityPatches) {
   for (const patch of opportunityPatches) {
     const change = patch.sourceChange;
     if (!change || change.blocker) continue;
-    try { await appendAgt002ObservationLine(database, patch.converted_opportunity_id, phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, noticeUid: noticeUidFromSecopUrl(change.url) })); }
+    try { await appendAgt002ObservationLine(database, patch.converted_opportunity_id, phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, url: change.url, detectedAt: change.detectedAt, noticeUid: noticeUidFromSecopUrl(change.url) })); }
     catch (noticeError) { console.warn(JSON.stringify({ event: 'agt002_phase_change_notice_failed', opportunityId: patch.converted_opportunity_id, message: noticeError?.message })); }
   }
 }
@@ -4169,7 +4175,8 @@ export function orderSecopPhaseChangeDocuments(docs, knownVersions = []) {
     newCount: newDocuments.length,
     newIds: newDocuments.map(secopDocumentId),
     // Huella del conjunto NUEVO (frente a la línea base): cada conjunto nuevo estable se importa y reanaliza una vez.
-    newSetHash: phaseChangeDocumentSetHash(newDocuments.map(doc => `${secopDocumentId(doc)}:${doc.nombre_archivo}`)),
+    // Por nombre y tamaño, no por id: SECOP repite el mismo archivo con otro id al crear una fase.
+    newSetHash: phaseChangeDocumentSetHash(newDocuments.map(doc => `${secopDocumentNameKey(doc.nombre_archivo)}:${Number(doc.tamanno_archivo || 0)}`)),
   };
 }
 // Línea base: versiones SECOP II que la oportunidad tenía ANTES de la marca "detectado". Lo que se bajó después (una
@@ -4376,14 +4383,14 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     },
   });
   // La marca de "documentos del aviso nuevo importados" va sólo después del snapshot publicado.
-  if (phaseChange) await recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId: currentProfile.id, noticeUid: phaseChange.noticeUid, newSetHash: phaseChange.newSetHash, snapshotId: registeredSnapshot.id, startedAt: phaseChange.startedAt, documentCount: phaseChange.ordered.documents.length, newDocumentCount: phaseChange.ordered.newCount, retiredCount, incomingNames: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, doubts: phaseChange.obsolete.doubts });
+  if (phaseChange) await recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId: currentProfile.id, noticeUid: phaseChange.noticeUid, newSetHash: phaseChange.newSetHash, snapshotId: registeredSnapshot.id, startedAt: phaseChange.startedAt, documentCount: phaseChange.ordered.documents.length, newDocumentCount: phaseChange.ordered.newCount, changedCount: refreshSummary.new_count + refreshSummary.updated_count, retiredCount, incomingNames: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, doubts: phaseChange.obsolete.doubts });
   const records = await getTenderDocumentRecords(database, opportunityId);
   return {
     ...records,
     ...refreshSummary,
     imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     official_document_coverage: officialCoverage,
-    ...(phaseChange ? { retired_count: retiredCount, incoming_names: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, archive_doubts: phaseChange.obsolete.doubts } : {}),
+    ...(phaseChange ? { changed_count: refreshSummary.new_count + refreshSummary.updated_count, retired_count: retiredCount, incoming_names: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, archive_doubts: phaseChange.obsolete.doubts } : {}),
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }

@@ -76,7 +76,7 @@ const state = (kind, payload, createdAt) => ({
 });
 const DETECTED = state('tender_phase_change_detected', { change: 'phase', url: NEW_URL, ref: 'FTIC-LP-003-2026 (Presentación de oferta)', new_phase: 'Publicado', detected_at: '2026-10-08T11:00:00.000Z' }, '2026-10-08T11:00:00.000Z');
 const IMPORTED = state('tender_phase_change_documents_imported', { new_set_hash: 'set-1', snapshot_id: 'snap-new', started_at: '2026-10-09T09:59:00.000Z', document_count: 24, new_document_count: 4, retired_count: 0 }, '2026-10-09T10:00:00.000Z');
-const HEAD = 'SECOP publicó el pliego definitivo (fase de oferta) (CO1.NTC.11032172)';
+const HEAD = 'SECOP publicó el pliego definitivo (fase de oferta) (visto el 8-oct)';
 
 function world(overrides = {}) {
   return {
@@ -126,8 +126,9 @@ test('disparador: Fondo Único pasa al pliego definitivo → un cambio de fase s
   assert.equal(change.url, NEW_URL);
   assert.equal(change.previousUrl, OLD_URL);
   assert.equal(change.blocker, null, 'proceso vivo y cierre futuro: se sigue');
-  assert.equal(phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, noticeUid: NOTICE }),
-    `${HEAD}; el enlace de la oportunidad se actualizó y Vig-IA bajará sus documentos y lanzará el reanálisis.`);
+  const line = phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, url: change.url, detectedAt: change.detectedAt, noticeUid: NOTICE });
+  assert.equal(line, `SECOP publicó el pliego definitivo (fase de oferta) (visto el 10-oct); el enlace de la oportunidad se actualizó (${NEW_URL}) y Vig-IA bajará sus documentos y lanzará el reanálisis.`);
+  assert.doesNotMatch(line.replace(NEW_URL, ''), /CO1\./, 'el aviso no muestra códigos internos; sólo el enlace');
   // Corrida siguiente: el enlace ya cambió (histórico) → nada que seguir, aunque la fila siga llegando.
   const next = planRadarPhaseIdentitySync({ fetched: [draftRow(), offerRow()], existing: [draftConverted({ url: NEW_URL, status: 'Publicado', process_id: 'CO1.REQ.11160001' })], now: '2026-10-11T11:00:00.000Z' });
   assert.ok(next.opportunityPatches.every(patch => !patch.sourceChange), 'un cambio ya aplicado nunca vuelve a disparar');
@@ -729,6 +730,7 @@ test('revisión completa: detecta, confirma, baja, archiva, reanaliza, informa e
   tables.psi_public_tenders[0] = { ...tables.psi_public_tenders[0], entity: 'FONDO UNICO DE TECNOLOGÍAS DE LA INFORMACIÓN Y LAS COMUNICACIONES', value: 4250000000, title: 'Vigilancia' };
   const db = fakeDb(tables);
   const fs = memoryFs();
+  fs.files.set('/alerts/reported-keys.json', JSON.stringify({ keys: {} }));
   const api = {
     syncConvertedTenderPhaseLinks: async () => ({ active: 1, changed: 0 }),
     probePhaseChangeTenderDocumentSet: async () => ({ new_set_hash: 'set-a', new_document_count: 2, document_count: 21, current_official_count: 19 }),
@@ -758,4 +760,110 @@ test('revisión completa: detecta, confirma, baja, archiva, reanaliza, informa e
   assert.ok(fs.files.has('/alerts/outbox-latest.json'));
   assert.equal([...fs.files.keys()].filter(path => /\/outbox-2026.*\.json$/.test(path)).length, 3);
   assert.equal(calls.length, 1, 'un solo reanálisis por tanda');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Correcciones de la revisión independiente de 3aecfa2.
+// ---------------------------------------------------------------------------------------------------------------
+
+test('I-A: una importación sin documentos nuevos o actualizados por contenido no reanaliza ni avisa, aunque cambie la huella', async () => {
+  const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED, state('tender_phase_change_analysis', { new_set_hash: 'set-1', outcome: 'launched', job_id: 'j1' }, '2026-10-09T10:05:00.000Z'),
+    state('tender_phase_change_documents_observed', { new_set_hash: 'set-2' }, '2026-10-09T11:00:00.000Z')] });
+  const db = fakeDb(tables);
+  const importDocuments = async (_id, options) => {
+    tables.psi_sales_interactions.push(state('tender_phase_change_documents_imported', { new_set_hash: options.expectedNewSetHash, snapshot_id: 'snap-2', new_document_count: 4, changed_count: 0 }, '2026-10-09T15:00:01.000Z'));
+    return { changed_count: 0, retired_count: 0, incoming_names: ['pliego vigilancia RH1.pdf'], archived: [], archive_doubts: [] };
+  };
+  const events = await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probeOf('set-2', 4), importDocuments, now: NOW });
+  assert.deepEqual(events.map(e => e.event), ['agt002_phase_change_documents_imported_without_changes']);
+  assert.deepEqual(db.appended, [], 'sin aviso de documentos');
+  const { calls, admit, freezeProfile } = admitSpy();
+  const analysis = await runAgt002PhaseChangeAnalysisAdmissions(db, { now: new Date(NOW.getTime() + 60_000), environment: ON, admit, freezeProfile });
+  assert.deepEqual(analysis.map(e => e.event), ['agt002_phase_change_analysis_already_resolved'], 'se queda con la importación anterior, ya reanalizada');
+  assert.equal(calls.length, 0);
+  assert.deepEqual((await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probeOf('set-2', 4), importDocuments: async () => { throw new Error('no debe reimportar'); }, now: new Date(NOW.getTime() + 3600_000) })).map(e => e.event), ['agt002_phase_change_documents_already_imported']);
+  assert.deepEqual(db.appended, []);
+});
+
+for (const [label, server] of servers) {
+  test(`I-A (${label}): una fila repetida del mismo archivo con otro id no cambia la huella del conjunto nuevo (dup.mjs)`, () => {
+    const base = [{ id_documento: '800', nombre_archivo: 'ESTUDIOS PREVIOS.pdf', tamanno_archivo: '10', fecha_carga: '2026-09-13T00:00:00.000', url_descarga_documento: { url: 'https://x' } }];
+    const versions = [{ source_document_id: '800', name: 'ESTUDIOS PREVIOS.pdf', size_bytes: 10 }];
+    const pliego = { id_documento: '870211922', nombre_archivo: 'pliego vigilancia RH1.pdf', tamanno_archivo: '1365278', fecha_carga: '2026-10-07T00:00:00.000', url_descarga_documento: { url: 'https://x' } };
+    const a = server.orderSecopPhaseChangeDocuments([...base, pliego], versions);
+    const b = server.orderSecopPhaseChangeDocuments([...base, pliego, { ...pliego, id_documento: '871000000' }], versions);
+    assert.equal(b.newSetHash, a.newSetHash);
+    assert.equal(b.newCount, 1);
+  });
+
+  test(`I-B (${label}): la detección diaria no marca ni avisa a una oportunidad NO GO`, async () => {
+    const tables = world({ psi_sales_interactions: [], psi_tender_go_no_go_decisions: [{ id: 'g', opportunity_id: 'opp-ftic', tender_id: 't-ftic', decision: 'no_go', decided_at: '2026-10-01T00:00:00Z' }] });
+    tables.psi_sales_opportunities.push({ id: 'opp-active', stage_code: 'prospecto', observaciones: '' });
+    const patches = [
+      { converted_opportunity_id: 'opp-ftic', sourceChange: { change: 'phase', url: NEW_URL, blocker: null } },
+      { converted_opportunity_id: 'opp-active', sourceChange: { change: 'phase', url: secopUrl('5'), blocker: null } },
+    ];
+    const db = fakeDb(tables);
+    await server.recordAgt002RadarPhaseChanges(db, patches);
+    assert.deepEqual(tables.psi_sales_interactions.map(row => row.opportunity_id), ['opp-active'], 'sólo la activa');
+    assert.equal(patches[0].sourceChange.blocker, 'opportunity_closed', 'tampoco recibe el aviso visible');
+  });
+}
+
+test('I-B: el correo nunca informa una marca de una oportunidad que ya no está activa', async () => {
+  const { listRecentAgt002PhaseChangeDetections } = await import('../agt002-phase-change-review.js');
+  const tables = world({ psi_sales_interactions: [{ ...DETECTED, created_at: '2026-10-09T10:00:00.000Z' }] });
+  assert.equal((await listRecentAgt002PhaseChangeDetections(fakeDb(tables), { now: NOW })).length, 1);
+  tables.psi_sales_opportunities[0].tender_offer_status = 'cerrada_no_go';
+  assert.deepEqual(await listRecentAgt002PhaseChangeDetections(fakeDb(tables), { now: NOW }), []);
+});
+
+test('menor 1: los protegidos se evalúan primero (respuestas, avisos y estudios previos que mencionan el proyecto de pliego)', () => {
+  const current = ['PROYECTO PLIEGO DE CONDICIONES.pdf', 'Respuesta a observaciones al proyecto de pliego.pdf', 'Aviso de convocatoria y proyecto de pliego.pdf', 'Estudio previo y proyecto de pliego.pdf', 'Informe de respuestas observaciones proyecto de pliego de condiciones.pdf'];
+  const plan = planObsoleteTenderDocuments({ currentNames: current, incomingNames: ['PLIEGO DE CONDICIONES DEFINITIVO.pdf'] });
+  assert.deepEqual(plan.archive.map(item => item.name), ['PROYECTO PLIEGO DE CONDICIONES.pdf']);
+  const fromProtected = planObsoleteTenderDocuments({ currentNames: ['PROYECTO PLIEGO DE CONDICIONES.pdf'], incomingNames: ['Respuesta a observaciones al proyecto de pliego.pdf'] });
+  assert.deepEqual(fromProtected.archive, [], 'una respuesta a observaciones no es un pliego definitivo');
+});
+
+test('menor 2: sin reported-keys.json no se reinforman marcas viejas; se reconstruye desde los outbox; una falla del outbox no deja la novedad perdida', async () => {
+  const tables = world({ psi_sales_interactions: [DETECTED] });
+  const api = { syncConvertedTenderPhaseLinks: async () => ({}), probePhaseChangeTenderDocumentSet: async () => { throw new Error('aún no'); }, importPhaseChangeTenderDocuments: async () => { throw new Error('no'); } };
+  const fs1 = memoryFs();
+  const stale = await runAgt002PhaseChangeReview(fakeDb(tables), { api, environment: {}, now: at('2026-10-10T14:00:00Z'), stateDir: '/a', fsImpl: fs1 });
+  assert.equal(stale.outbox, null, 'una marca de hace días no se reinforma si el estado se perdió');
+  const fresh = await runAgt002PhaseChangeReview(fakeDb(tables), { api, environment: {}, now: at('2026-10-08T14:00:00Z'), stateDir: '/a', fsImpl: memoryFs() });
+  assert.deepEqual(fresh.items.map(item => item.type), ['link'], 'una marca de las últimas horas sí');
+  // Reconstrucción desde un outbox existente.
+  const fs2 = memoryFs();
+  fs2.readdirSync = () => ['outbox-x.json', 'outbox-latest.json'];
+  fs2.files.set('/b/outbox-x.json', JSON.stringify({ run_id: 'x', generated_at: '2026-10-08T14:00:00Z', item_keys: [`link:opp-ftic:${NOTICE}`] }));
+  assert.equal((await runAgt002PhaseChangeReview(fakeDb(tables), { api, environment: {}, now: at('2026-10-08T15:00:00Z'), stateDir: '/b', fsImpl: fs2 })).outbox, null);
+  // Falla al escribir el outbox: se restaura lo informado y la novedad sale en la revisión siguiente, con el mismo id.
+  const fs3 = memoryFs();
+  fs3.files.set('/c/reported-keys.json', JSON.stringify({ keys: {} }));
+  const write = fs3.writeFileSync;
+  let failOutbox = true;
+  fs3.writeFileSync = (path, content) => { if (failOutbox && /outbox/.test(path)) throw new Error('disco lleno'); return write(path, content); };
+  await assert.rejects(runAgt002PhaseChangeReview(fakeDb(tables), { api, environment: {}, now: at('2026-10-08T14:00:00Z'), stateDir: '/c', fsImpl: fs3 }), /disco lleno/);
+  assert.deepEqual(JSON.parse(fs3.files.get('/c/reported-keys.json')).keys, {});
+  failOutbox = false;
+  const retry = await runAgt002PhaseChangeReview(fakeDb(tables), { api, environment: {}, now: at('2026-10-08T19:00:00Z'), stateDir: '/c', fsImpl: fs3 });
+  assert.deepEqual(retry.items.map(item => item.type), ['link']);
+});
+
+test('menor 4: un reanálisis en NEEDS_ATTENTION se informa una vez y su resultado final, otra vez', async () => {
+  const { collectAgt002PhaseChangeAnalysisResults } = await import('../agt002-phase-change-followup.js');
+  const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED, state('tender_phase_change_analysis', { new_set_hash: 'set-1', outcome: 'launched', job_id: 'job-9', analysis_kind: 'REANALYSIS' }, '2026-10-09T10:05:00.000Z')],
+    psi_agt002_initial_analysis_jobs: [{ id: 'job-9', opportunity_id: 'opp-ftic', status: 'NEEDS_ATTENTION', analysis_kind: 'REANALYSIS', created_at: '2026-10-09T10:05:00.000Z' }] });
+  const db = fakeDb(tables);
+  assert.deepEqual((await collectAgt002PhaseChangeAnalysisResults(db, { now: NOW })).map(r => r.status), ['NEEDS_ATTENTION']);
+  assert.deepEqual(await collectAgt002PhaseChangeAnalysisResults(db, { now: NOW }), [], 'no se repite mientras siga igual');
+  Object.assign(tables.psi_agt002_initial_analysis_jobs[0], { status: 'COMPLETED', analysis_run_id: 'run-9' });
+  tables.psi_tender_analysis_runs.push({ id: 'run-9', result: { recommendation: { label: 'No conviene presentarse', confidence: 'ALTA' } } });
+  const final = await collectAgt002PhaseChangeAnalysisResults(db, { now: NOW });
+  assert.deepEqual(final.map(r => [r.status, r.verdict]), [['COMPLETED', 'No conviene presentarse (confianza alta)']]);
+  assert.deepEqual(await collectAgt002PhaseChangeAnalysisResults(db, { now: NOW }), []);
+  const keys = alerts.agt002AlertItems({ results: [{ opportunityId: 'opp-ftic', jobId: 'job-9', status: 'NEEDS_ATTENTION' }, { opportunityId: 'opp-ftic', jobId: 'job-9', status: 'COMPLETED' }] }, { day: '2026-10-09' }).map(item => item.key);
+  assert.equal(new Set(keys).size, 2, 'dos novedades distintas para el correo');
 });

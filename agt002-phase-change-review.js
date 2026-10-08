@@ -10,10 +10,11 @@
 //   5. resultado de los reanálisis lanzados antes;
 //   6. si hubo novedad, outbox de correo para Hermes (agt002-licitaciones-alerts.js). El CRM nunca envía correo.
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  agt002PhaseChangeOpportunityBlocker,
   collectAgt002PhaseChangeAnalysisResults,
   isAgt002PhaseChangeActiveOpportunity,
   reconcileAgt002PendingPhaseChanges,
@@ -52,14 +53,21 @@ export function agt002ReviewFacts({ documentEvents = [], analysisEvents = [], re
   };
 }
 
-/** Marcas "detectado" recientes (de esta revisión o de la cadena diaria). */
+/** Marcas "detectado" recientes (de esta revisión o de la cadena diaria), sólo de oportunidades ACTIVAS. */
 export async function listRecentAgt002PhaseChangeDetections(database, { now = new Date() } = {}) {
   const { data, error } = await database.from('psi_sales_interactions').select('opportunity_id,notes,created_at')
     .eq('interaction_type', 'documento').gte('created_at', new Date(now.getTime() - DETECTION_LOOKBACK_MS).toISOString())
     .like('notes', '%"kind":"tender_phase_change_detected"%');
   if (error) throw new Error(`marcas recientes: ${error.message}`);
-  return (data || []).map(row => ({ row, payload: parseNotes(row.notes) })).filter(item => item.payload?.notice_uid)
-    .map(({ row, payload }) => ({ opportunityId: row.opportunity_id, noticeUid: payload.notice_uid, url: payload.url, change: { change: payload.change, newPhase: payload.new_phase, ref: payload.ref } }));
+  const detections = (data || []).map(row => ({ row, payload: parseNotes(row.notes) })).filter(item => item.payload?.notice_uid)
+    .map(({ row, payload }) => ({ opportunityId: row.opportunity_id, noticeUid: payload.notice_uid, url: payload.url, recordedAt: row.created_at, change: { change: payload.change, newPhase: payload.new_phase, ref: payload.ref } }));
+  const active = new Map();
+  const result = [];
+  for (const detection of detections) {
+    if (!active.has(detection.opportunityId)) active.set(detection.opportunityId, !(await agt002PhaseChangeOpportunityBlocker(database, detection.opportunityId, null)));
+    if (active.get(detection.opportunityId)) result.push(detection);
+  }
+  return result;
 }
 
 async function opportunityInfo(database, opportunityIds) {
@@ -71,9 +79,25 @@ async function opportunityInfo(database, opportunityIds) {
   return info;
 }
 
+// Lo ya informado. Si reported-keys.json falta o está dañado, se reconstruye desde los outbox existentes; si tampoco
+// hay outbox, `rebuilt: 'none'` y la revisión sólo informa marcas de las últimas horas (nunca reinforma lo antiguo).
 function readReported(dir, fsImpl) {
-  try { return JSON.parse(fsImpl.readFileSync(join(dir, 'reported-keys.json'), 'utf8')).keys || {}; } catch { return {}; }
+  try {
+    const keys = JSON.parse(fsImpl.readFileSync(join(dir, 'reported-keys.json'), 'utf8')).keys;
+    if (keys && typeof keys === 'object') return { keys, rebuilt: false };
+  } catch { /* se reconstruye abajo */ }
+  const keys = {};
+  let files = [];
+  try { files = (fsImpl.readdirSync ? fsImpl.readdirSync(dir) : []).filter(name => /^outbox-.+\.json$/.test(name) && name !== 'outbox-latest.json'); } catch { files = []; }
+  for (const name of files) {
+    try {
+      const outbox = JSON.parse(fsImpl.readFileSync(join(dir, name), 'utf8'));
+      for (const key of outbox.item_keys || []) keys[key] = { run_id: outbox.run_id, at: outbox.generated_at };
+    } catch { /* un outbox dañado no se usa */ }
+  }
+  return { keys, rebuilt: files.length ? 'outbox' : 'none' };
 }
+const FRESH_DETECTION_MS = 6 * 60 * 60 * 1000;
 
 function writeAtomic(dir, name, content, fsImpl) {
   const tmp = join(dir, `.${name}.${process.pid}.tmp`);
@@ -94,7 +118,7 @@ export function writeAgt002AlertsOutbox(dir, outbox, fsImpl = { mkdirSync, readF
 /** Una revisión completa. `api`: syncConvertedTenderPhaseLinks / probe / import del CRM (server o api). */
 export async function runAgt002PhaseChangeReview(database, {
   api, environment = process.env, now = new Date(), budgetMs, stateDir = AGT002_ALERTS_STATE_DIR,
-  fsImpl = { mkdirSync, readFileSync, renameSync, writeFileSync }, admit, freezeProfile, log = () => {},
+  fsImpl = { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync }, admit, freezeProfile, log = () => {},
 } = {}) {
   const runId = `${bogotaDay(now.toISOString())}-${bogotaTime(now.toISOString()).replace(':', '')}-${now.toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`;
   const step = async (name, fn, fallback) => { try { return await fn(); } catch (error) { log({ event: `agt002_phase_change_review_${name}_failed`, message: String(error?.message || error).slice(0, 200) }); return fallback; } };
@@ -113,18 +137,27 @@ export async function runAgt002PhaseChangeReview(database, {
   for (const event of [...documentEvents, ...analysisEvents, ...results]) log({ ...event, change: undefined });
 
   const day = bogotaDay(now.toISOString());
-  const reported = readReported(stateDir, fsImpl);
-  const items = agt002AlertItems(agt002ReviewFacts({ documentEvents, analysisEvents, results, detections }), { day })
+  const { keys: reported, rebuilt } = readReported(stateDir, fsImpl);
+  if (rebuilt) log({ event: 'agt002_licitaciones_alerts_reported_keys_rebuilt', from: rebuilt, keys: Object.keys(reported).length });
+  const freshDetections = rebuilt === 'none' ? detections.filter(item => now.getTime() - Date.parse(item.recordedAt || 0) <= FRESH_DETECTION_MS) : detections;
+  const items = agt002AlertItems(agt002ReviewFacts({ documentEvents, analysisEvents, results, detections: freshDetections }), { day })
     .filter((item, index, list) => !reported[item.key] && list.findIndex(other => other.key === item.key) === index);
   if (!items.length) { log({ event: 'agt002_licitaciones_alerts_nothing_new', run_id: runId }); return { runId, outbox: null, items: [] }; }
   const opportunities = await opportunityInfo(database, [...new Set(items.map(item => item.opportunityId))]);
   const outbox = buildAgt002AlertsOutbox({ runId, generatedAt: now.toISOString(), slot: bogotaTime(now.toISOString()), items, opportunities });
-  writeAgt002AlertsOutbox(stateDir, outbox, fsImpl);
-  // Sólo después de escribir el outbox: lo informado no se repite en la revisión siguiente.
+  // Lo informado se guarda ANTES del outbox (atómico): una falla nunca produce un correo repetido con otro id. Si el
+  // outbox no se puede escribir, se restaura lo anterior y la novedad sale en la revisión siguiente.
   const cutoff = now.getTime() - REPORTED_RETENTION_MS;
   const kept = Object.fromEntries(Object.entries(reported).filter(([, value]) => Date.parse(value?.at || 0) >= cutoff));
   for (const item of items) kept[item.key] = { run_id: runId, at: now.toISOString() };
+  fsImpl.mkdirSync(stateDir, { recursive: true });
   writeAtomic(stateDir, 'reported-keys.json', `${JSON.stringify({ keys: kept }, null, 2)}\n`, fsImpl);
+  try {
+    writeAgt002AlertsOutbox(stateDir, outbox, fsImpl);
+  } catch (error) {
+    try { writeAtomic(stateDir, 'reported-keys.json', `${JSON.stringify({ keys: reported }, null, 2)}\n`, fsImpl); } catch { /* el evento reporta la falla */ }
+    throw error;
+  }
   log({ event: 'agt002_licitaciones_alerts_outbox_written', run_id: runId, message_id: outbox.messages[0].id, items: items.length });
   return { runId, outbox, items };
 }

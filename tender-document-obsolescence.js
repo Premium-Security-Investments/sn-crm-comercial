@@ -39,8 +39,10 @@ const VERSION_WORDS = new Set(['definitivo', 'definitiva', 'definitivos', 'defin
 export function tenderDocumentObsolescenceKind(name, { incoming = false } = {}) {
   let text = normalize(name);
   if (incoming) text = text.replace(/\badendas?(?: (?:no|n|nro))?(?: \d+)?\b/g, ' ').replace(/\bconsolidad[oa]\b/g, ' ').replace(/\s+/g, ' ').trim();
-  if (DRAFT_PLIEGO.test(text)) return 'draft_pliego';
+  // Primero los protegidos: "Respuesta a observaciones al proyecto de pliego", "Aviso de convocatoria y proyecto de
+  // pliego" o "Estudio previo y proyecto de pliego" nunca se archivan.
   if (NEVER_ARCHIVE.test(text)) return 'protected';
+  if (DRAFT_PLIEGO.test(text)) return 'draft_pliego';
   if (PLIEGO.test(text)) return 'pliego';
   if (TECHNICAL_ANNEX.test(text)) return 'technical_annex';
   if (FORMAT.test(text) || (/\banexos?\b/.test(text) && EDITABLE.has(extensionOf(name)))) return 'format';
