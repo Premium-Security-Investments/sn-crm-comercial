@@ -92,6 +92,8 @@ import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifes
 import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
 import { agt002CanonicalEnqueueBlockCode } from '../agt002-canonical-enqueue-gate.js';
 import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../agt002-reanalysis-jobs.js';
+import { getAgt002IncrementalConfig } from '../agt002-incremental-config.js';
+import { ingestAgt002HumanResponseSignal, ingestAgt002OfficialDocumentBatchSignals } from '../agt002-incremental-source-ingestion.js';
 import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
 import { readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
@@ -176,6 +178,7 @@ if (!supabaseUrl || !serviceKey) {
 
 const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 const agt002AnalysisConfig = buildAgt002AnalysisConfig(process.env);
+const agt002IncrementalConfig = getAgt002IncrementalConfig(process.env);
 const agt002AnalysisObservability = createAgt002AnalysisObservability();
 
 async function loadAgt002LegalCorpusContextIfEnabled(database) {
@@ -4076,6 +4079,20 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     });
   }, { sourceBatchId });
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
+  let incrementalReanalysis = null;
+  if (agt002IncrementalConfig.ingressEnabled) {
+    try {
+      incrementalReanalysis = await ingestAgt002OfficialDocumentBatchSignals(database, {
+        opportunityId, tenderId, refreshResults,
+      });
+    } catch (error) {
+      if (error?.code === '55000' && /R1 nunca crea la primera corrida/i.test(String(error.message || ''))) {
+        incrementalReanalysis = { status: 'initial_required', change_set_id: null, signal_ids: [], dispatch_required: false };
+      } else {
+        throw error;
+      }
+    }
+  }
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
   const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
@@ -4113,7 +4130,8 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     ...refreshSummary,
     imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     official_document_coverage: officialCoverage,
-    analysis_generated: analysisGenerated && Boolean(records.analysis)
+    analysis_generated: analysisGenerated && Boolean(records.analysis),
+    incremental_reanalysis: incrementalReanalysis,
   };
 }
 async function convertTenderToOpportunity(database, tender, currentProfile) {
@@ -4990,10 +5008,20 @@ app.post('/api/tender-question-responses', async (req, res) => {
       if (!rpcError?.status) rpcError.status = uniqueConflict ? 409 : 500;
       throw rpcError;
     }
-    const reanalysis = await reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analysisRunId, currentProfile });
     const questionResponses = await getTenderQuestionResponses(database, opportunityId, analysisRunId);
+    const recordedResponse = questionResponses.find(item => item.id === responseId) || null;
+    const reanalysis = agt002IncrementalConfig.ingressEnabled
+      ? await ingestAgt002HumanResponseSignal(database, {
+        opportunityId,
+        tenderId: await getTenderIdForOpportunity(database, opportunityId),
+        profile: currentProfile,
+        response: recordedResponse,
+        attachmentEvidence: verifiedAttachments,
+        ensureOpportunityAccess,
+      })
+      : await reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analysisRunId, currentProfile });
     res.status(201).json({
-      question_response: questionResponses.find(item => item.id === responseId) || null,
+      question_response: recordedResponse,
       question_responses: questionResponses,
       reanalysis,
     });

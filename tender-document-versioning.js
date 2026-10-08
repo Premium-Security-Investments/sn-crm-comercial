@@ -156,7 +156,17 @@ export async function refreshOfficialTenderDocument({
     await recordExtraction({ extraction: typedExtraction, version: recorded });
   }
   const status = recorded?.status === 'unchanged' ? 'unchanged' : (currentVersion ? 'updated' : 'new');
-  return { status, source_document_id: sourceDocumentId, version: recorded, extraction_status: typedExtraction?.status || 'legacy' };
+  const analysisContentHash = extractedText === null
+    ? null
+    : createHash('sha256').update(JSON.stringify(String(extractedText))).digest('hex');
+  return {
+    status,
+    source_document_id: sourceDocumentId,
+    version: recorded,
+    document_type: String(document.document_type || 'official_document'),
+    analysis_content_hash: analysisContentHash,
+    extraction_status: typedExtraction?.status || 'legacy',
+  };
 }
 
 export async function refreshTenderDocumentBatch(documents, refreshOne, { sourceBatchId = null } = {}) {

@@ -32,9 +32,13 @@ export function buildAgt002IncrementalSignal({
   validatesSignalId = null,
 }) {
   if (!TRUST_CLASSES.has(trustClass)) throw new Error('La clase de confianza incremental no es válida.');
-  const normalizedContent = String(content ?? '');
-  const derivedHash = computeAgt002StableContentHash(normalizedContent);
-  if (contentHash != null && contentHash !== derivedHash) throw new Error('La señal no coincide con su hash de contenido.');
+  const derivedHash = content === undefined
+    ? required(contentHash, 'El hash de contenido server-side')
+    : computeAgt002StableContentHash(String(content));
+  if (!/^[0-9a-f]{64}$/.test(derivedHash)
+    || (content !== undefined && contentHash != null && contentHash !== derivedHash)) {
+    throw new Error('La señal no coincide con su hash de contenido.');
+  }
   return Object.freeze({
     trigger_kind: required(triggerKind, 'El tipo de disparador'),
     trust_class: trustClass,
@@ -121,4 +125,11 @@ export async function closeAgt002IncrementalChangeSet(database, { jobId, outcome
     throw new Error('El cierre incremental no devolvió un estado válido.');
   }
   return result;
+}
+
+export async function ingestAndSealAgt002IncrementalSignals(database, input) {
+  const recorded = await recordAgt002IncrementalSignals(database, input);
+  if (recorded.status !== 'ready_to_seal') return recorded;
+  const sealed = await sealAgt002IncrementalChangeSet(database, recorded.manifest);
+  return { ...recorded, ...sealed, status: sealed.status, manifest: recorded.manifest };
 }
