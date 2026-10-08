@@ -46,6 +46,7 @@ import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgent
 import { profileCompleteness } from './vigia/client-profile.js';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
+import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
 import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm, TodayQueue, UpcomingList } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
@@ -74,7 +75,7 @@ type Opportunity = {
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
-type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number };
+type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number; leadAnalysesToday?: string[] };
 type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; areas: AccessAssignment[]; permissions: string[]; can_edit_customer_segment?: boolean; can_own_opportunities?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'prioridad_baja';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
@@ -1045,6 +1046,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       preflight={{ nextAction: priorityNextAction, expectedClose: priorityClose, decisionMaker: priorityDecisionMaker }}
     />}
     {o.service_type_code !== 'licitacion_publica' && <ClientProfilePanel o={o} canEdit={canAccessRoute(data.currentProfile, 'edit')} />}
+    {o.service_type_code !== 'licitacion_publica' && <LeadAnalysisPanel opportunityId={o.id} profile={profileCompleteness(o as unknown as Record<string, unknown>)} canRun={canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && !readOnly} showCost={data.currentProfile.role === 'admin'} />}
     {o.service_type_code !== 'licitacion_publica' && <details className="opportunity-more-info">
       <summary>Más información</summary>
       <div className="opportunity-more-info-group">
@@ -2346,6 +2348,9 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
           ? `No tiene nada atrasado. Hoy tiene ${todayRows.length === 1 ? '1 gestión' : `${todayRows.length} gestiones`}.`
           : 'Está al día: no tiene oportunidades pendientes ni gestiones para hoy.'}</p></div>
     </section>
+    {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
+      {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
+    </section>}
     <DecisionQueue pending={pendingDecisionRows} quota={commercialDecisionQuota(data)} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />
     {opportunities.length > 0 && <TodayQueue today={todayRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />}
     {opportunities.length > 0 && !hasPending && <UpcomingList upcoming={upcomingRows} />}
