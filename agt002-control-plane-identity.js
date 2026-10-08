@@ -1,13 +1,26 @@
+// The surfaces the drift watchdog compares against main. Only what is actually live today:
+// GitHub main, Vercel production, the Hetzner bridge, and the host jobs that run from a pinned
+// release under /opt/psi-comercial/releases/<sha> (one surface per systemd unit, because the units
+// of the Radar daily chain are pinned to different releases and a single sha cannot describe them).
 export const SURFACE_NAMES = Object.freeze([
   'origin_main',
   'vercel_production',
   'bridge',
-  'radar_pipeline',
-  'reanalysis_worker',
-  'workbench_scheduler',
+  'initial_analysis_worker',
+  'auto_initial',
+  'radar_daily_import',
+  'radar_daily_scan',
+  'radar_daily_reconciliation',
+  'radar_daily_top5',
+  'radar_requests',
 ]);
 
-const SURFACE_NAME_SET = new Set(SURFACE_NAMES);
+// Surfaces the host retired (timer disabled / replaced by the CRM daily Radar). They are no longer
+// watched for drift, but their legacy --control-plane reporters still build an identity, so the
+// name stays valid here.
+export const RETIRED_SURFACE_NAMES = Object.freeze(['radar_pipeline', 'reanalysis_worker', 'workbench_scheduler']);
+
+const SURFACE_NAME_SET = new Set([...SURFACE_NAMES, ...RETIRED_SURFACE_NAMES]);
 
 export function buildAgt002ControlPlaneIdentity({
   surface,
