@@ -209,6 +209,51 @@ export function DecisionQueue({ pending, stages, lossReasons, onChanged }: {
   </section>;
 }
 
+// Mi día cuando no hay nada atrasado: lo agendado para hoy (con "Actualizar", el mismo panel de decisión)
+// y las próximas gestiones de la semana. Decisión de Juan, 2026-10-08.
+export function TodayQueue({ today, stages, lossReasons, onChanged }: {
+  today: DecisionOpportunity[]; stages: StageOption[]; lossReasons: ReasonOption[]; onChanged: () => Promise<void>;
+}) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  if (!today.length) return null;
+  return <section className="decision-queue today-queue" aria-label="Hacer hoy">
+    <header className="decision-queue-header">
+      <div><span className="eyebrow">Agendado para hoy</span>
+        <h3>Hacer hoy</h3>
+        <p>Cuando haga cada gestión, dele Actualizar: cuente qué pasó y deje la próxima fecha. Lo que no actualice hoy pasa mañana a "Decida esta oportunidad".</p></div>
+      <strong className="decision-queue-count numeric-value">{today.length}</strong>
+    </header>
+    <ul className="decision-list">{today.map(opportunity => <li key={opportunity.id} className={openId === opportunity.id ? 'is-open' : ''}>
+      <div className="decision-row">
+        <button type="button" className="decision-row-main" onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>
+          <strong>{opportunity.company_name}</strong>
+          <span>{opportunity.stage_name} · {Number(opportunity.offer_value || 0) > 0 ? money.format(Number(opportunity.offer_value)) : 'Sin valor'} · {lastActivity(opportunity)}</span>
+        </button>
+        <button type="button" className={openId === opportunity.id ? 'secondary decision-open' : 'decision-open'} onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>{openId === opportunity.id ? 'Cerrar' : 'Actualizar'}</button>
+      </div>
+      {openId === opportunity.id && <>
+        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} onDone={async () => { setOpenId(null); await onChanged(); }} />
+        <a className="decision-full-link" href={`#/detail/${opportunity.id}`}>Ver ficha completa (historial y contacto)</a>
+      </>}
+    </li>)}</ul>
+  </section>;
+}
+
+const UPCOMING_DAY = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'America/Bogota' });
+
+export function UpcomingList({ upcoming }: { upcoming: DecisionOpportunity[] }) {
+  return <section className="panel upcoming-list" aria-label="Próximas gestiones">
+    <h3>Próximas gestiones (7 días)</h3>
+    {upcoming.length
+      ? <ul>{upcoming.map(opportunity => <li key={opportunity.id}>
+          <span className="upcoming-day">{opportunity.next_action_at ? UPCOMING_DAY.format(new Date(opportunity.next_action_at)) : ''}</span>
+          <a href={`#/detail/${opportunity.id}`}><strong>{opportunity.company_name}</strong></a>
+          <small>{opportunity.stage_name}</small>
+        </li>)}</ul>
+      : <p className="muted">No tiene gestiones agendadas en los próximos 7 días.</p>}
+  </section>;
+}
+
 export function DeleteRequestsPanel({ requests, onChanged }: { requests: DecisionOpportunity[]; onChanged: () => Promise<void> }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<Record<string, string>>({});

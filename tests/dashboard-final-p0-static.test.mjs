@@ -19,13 +19,11 @@ assert.ok(main.includes('function CommercialPersonalDashboard({ data, refresh }:
 assert.ok(main.includes('return <CommercialPersonalDashboard data={data} refresh={refresh} />;'), 'el comercial llega a su Mi día');
 
 const queue = myDay.indexOf('<DecisionQueue');
-const groups = myDay.indexOf('<MyDayGroup title="Hacer hoy"');
+const today = myDay.indexOf('<TodayQueue');
 const goal = myDay.indexOf('Meta del mes:');
-const more = myDay.indexOf('<summary>Ver más</summary>');
-assert.ok(queue > 0 && queue < groups && groups < goal && goal < more, 'orden: decidir, hacer hoy, meta, ver más');
+assert.ok(queue > 0 && queue < today && today < goal, 'orden: decidir, hacer hoy, meta');
 assert.match(myDay, /<a href="#\/goals">Ver mi meta →<\/a>/);
-assert.match(myDay, /Detalle por etapa/);
-assert.match(myDay, /KPIs mensuales/);
+assert.doesNotMatch(myDay, /<summary>Ver más<\/summary>|KPIs mensuales|Detalle por etapa/, 'Mi día corto: sin "Ver más" (Juan, 2026-10-08)');
 assert.match(myDay, /Crea tu primera oportunidad/, 'sin oportunidades: invitación a crear la primera');
 assert.doesNotMatch(myDay, /dashboard/i, 'el comercial no tiene Dashboard: Mi día no lo enlaza');
 for (const removed of ['Mi prioridad de hoy', 'Mis oportunidades críticas', 'personalFollowUpCards', 'Mi avance contra meta']) {
