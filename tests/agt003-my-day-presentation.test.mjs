@@ -41,6 +41,16 @@ assert.deepEqual(buildMyDayQueue([overdueRow], now).hacerHoy.map(a => a.id), ['o
 const missingRow = { ...base, id: 'missing-1', next_action_at: null };
 assert.deepEqual(buildMyDayQueue([missingRow], now).hacerHoy.map(a => a.id), ['missing-1'], 'próxima acción ausente cae en hacer_hoy');
 
+const todayRow = { ...base, id: 'today-1', next_action_at: '2026-09-02T15:00:00.000Z' };
+assert.deepEqual(buildMyDayQueue([todayRow], now).hacerHoy.map(a => a.id), ['today-1'], 'gestión agendada para hoy cae en hacer_hoy');
+const todayAlertResult = buildMyDayQueue([todayRow], now).hacerHoy[0];
+assert.equal(todayAlertResult.fact, `Gestión agendada para hoy (${new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' }).format(new Date('2026-09-02T15:00:00.000Z'))}).`);
+assert.equal(todayAlertResult.goal, 'Hacer la gestión, registrar el resultado y agendar la siguiente.');
+assert.deepEqual(buildMyDayQueue([
+  { ...todayRow, id: 'today-big', offer_value: 90_000_000 },
+  { ...base, id: 'missing-small', next_action_at: null, offer_value: 1_000_000 },
+], now).hacerHoy.map(a => a.id), ['missing-small', 'today-big'], 'vencida y sin agenda van antes que lo agendado para hoy');
+
 const futureRow = { ...base, id: 'future-1', next_action_at: '2026-09-10T12:00:00.000Z' };
 const qFuture = buildMyDayQueue([futureRow], now);
 assert.equal(qFuture.hacerHoy.length, 0);
@@ -140,7 +150,7 @@ const overdueContentRow = { ...base, id: 'content-overdue', next_action_at: '202
 const overdueAlertResult = buildMyDayQueue([overdueContentRow], now).hacerHoy[0];
 assert.equal(
   overdueAlertResult.fact,
-  `Próxima gestión vencida vencida hace 32 días (programada para ${bogotaDateLabel.format(new Date('2026-08-01T12:00:00.000Z'))}).`,
+  `Próxima gestión vencida hace 32 días (programada para ${bogotaDateLabel.format(new Date('2026-08-01T12:00:00.000Z'))}).`,
 );
 assert.equal(overdueAlertResult.gap, 'La fecha pasó y no hay una próxima acción vigente.');
 assert.equal(overdueAlertResult.goal, 'Registrar el resultado pendiente, si aplica, y agendar la próxima gestión.');

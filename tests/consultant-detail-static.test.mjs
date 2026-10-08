@@ -10,7 +10,8 @@ assert.match(source, /Detalle por etapa/, 'La vista del consultor debe mostrar d
 assert.match(source, /Oportunidades del consultor/, 'La vista del consultor debe mostrar tabla de oportunidades');
 assert.match(source, /import \{ buildMyDayQueue, type MyDayAlert \} from '\.\/vigia\/my-day-presentation';/, 'ConsultantDetail debe importar buildMyDayQueue del módulo puro de Mi día');
 assert.match(source, /const myDay = useMemo\(\(\) => buildMyDayQueue\(opportunities\.filter\(o => isAgt003CommercialOpportunity\(o\) && !isOutOfActivePipeline\(o\)\), new Date\(\)\), \[opportunities\]\);/, 'ConsultantDetail debe derivar myDay de sus oportunidades comerciales vigentes con buildMyDayQueue');
-assert.match(source, /buildMyDayQueue\(opportunities\.filter\(o => isAgt003CommercialOpportunity\(o\) && !isOutOfActivePipeline\(o, now\)\), now\)/, 'MyDayHome deriva la misma cola de Mi día');
+assert.match(source, /buildMyDayQueue\(opportunities\.filter\(o => isAgt003CommercialOpportunity\(o\) && !isOutOfActivePipeline\(o, now\) && !pendingIds\.has\(o\.id\)\), now\)/, 'MyDayHome deriva la misma cola de Mi día, sin repetir lo pendiente de decisión');
+assert.match(source, /const pendingIds = new Set\(pendingDecisionRows\.map\(o => o\.id\)\);/, 'MyDayHome excluye de Hacer hoy lo que ya está en "Decida esta oportunidad"');
 assert.match(source, /Mi día/, 'El comercial debe ver "Mi día"');
 assert.match(source, /function ConsultantDetail\(\{ data, ownerId \}: \{ data: Bootstrap; ownerId: string \}\)/, 'ConsultantDetail queda sólo como vista del directivo');
 assert.doesNotMatch(source, /<ConsultantDetail[^>]*personal/, 'el comercial ya no usa ConsultantDetail en modo personal');

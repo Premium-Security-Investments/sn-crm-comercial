@@ -71,7 +71,7 @@ function overdueAlert(o: MyDayOpportunity, next: FichaCardState): MyDayAlert {
     id: o.id,
     bucket: 'hacer_hoy',
     companyName: o.company_name,
-    fact: `Próxima gestión vencida ${next.detail.toLowerCase()} (programada para ${fmtDate(o.next_action_at)}).`,
+    fact: `Próxima gestión ${next.detail.toLowerCase()} (programada para ${fmtDate(o.next_action_at)}).`,
     gap: 'La fecha pasó y no hay una próxima acción vigente.',
     goal: 'Registrar el resultado pendiente, si aplica, y agendar la próxima gestión.',
     ctaHref: ctaHref(o.id),
@@ -86,6 +86,18 @@ function missingAlert(o: MyDayOpportunity): MyDayAlert {
     fact: 'Sin próxima gestión agendada.',
     gap: 'No hay fecha ni acción definida para el siguiente contacto.',
     goal: 'Agendar la próxima gestión con fecha concreta.',
+    ctaHref: ctaHref(o.id),
+  };
+}
+
+function todayAlert(o: MyDayOpportunity): MyDayAlert {
+  return {
+    id: o.id,
+    bucket: 'hacer_hoy',
+    companyName: o.company_name,
+    fact: `Gestión agendada para hoy (${fmtDate(o.next_action_at)}).`,
+    gap: 'Falta hacer el contacto y registrar qué pasó.',
+    goal: 'Hacer la gestión, registrar el resultado y agendar la siguiente.',
     ctaHref: ctaHref(o.id),
   };
 }
@@ -126,7 +138,7 @@ export function buildMyDayQueue(opportunities: MyDayOpportunity[], now: Date = n
 
   for (const o of eligible) {
     const next = nextActionCardState({ stage_code: o.stage_code, next_action_at: o.next_action_at }, now);
-    if (next.code === 'overdue' || next.code === 'missing') {
+    if (next.code === 'overdue' || next.code === 'missing' || next.code === 'today') {
       hacerHoyEntries.push({ opportunity: o, next });
       continue;
     }
@@ -143,13 +155,13 @@ export function buildMyDayQueue(opportunities: MyDayOpportunity[], now: Date = n
   }
 
   hacerHoyEntries.sort((a, b) => {
-    const rank = (code: string) => (code === 'overdue' ? 0 : 1);
+    const rank = (code: string) => (code === 'overdue' ? 0 : code === 'missing' ? 1 : 2);
     return rank(a.next.code) - rank(b.next.code) || compareByValueStageNameId(a.opportunity, b.opportunity);
   });
   prepararEntries.sort((a, b) => compareByValueStageNameId(a.opportunity, b.opportunity));
   depurarEntries.sort(compareByValueStageNameId);
 
-  const hacerHoyAlerts = hacerHoyEntries.map(({ opportunity, next }) => (next.code === 'overdue' ? overdueAlert(opportunity, next) : missingAlert(opportunity)));
+  const hacerHoyAlerts = hacerHoyEntries.map(({ opportunity, next }) => (next.code === 'overdue' ? overdueAlert(opportunity, next) : next.code === 'missing' ? missingAlert(opportunity) : todayAlert(opportunity)));
   const prepararAlerts = prepararEntries.map(({ opportunity, decision }) => prepararAlert(opportunity, decision));
   const depurarAlerts = depurarEntries.map(depurarAlert);
 

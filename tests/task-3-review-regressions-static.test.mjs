@@ -11,7 +11,7 @@ const check = (name, assertion) => {
 
 check('Nueva oportunidad comparte capacidad', () => assert.match(
   main,
-  /canAccessRoute\(currentProfile,\s*'new'\)[\s\S]{0,180}Nueva oportunidad/,
+  /canAccessRoute\(currentProfile,\s*'new'\)\s*&&\s*<NewOpportunityButton\b/,
   'La acción Nueva oportunidad debe usar la misma capacidad que la ruta new.',
 ));
 

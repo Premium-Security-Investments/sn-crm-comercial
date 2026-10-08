@@ -611,6 +611,8 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 @media(max-width:760px){.v2-tender-aside{flex-direction:column;align-items:flex-start}}
 /* CRM comercial — decisión obligatoria por oportunidad (Mi día, detalle y tablero). */
 .decision-queue{padding:18px;border:1px solid #fcd9a8;border-radius:20px;background:linear-gradient(180deg,#fffaf2,#fff);box-shadow:0 14px 32px rgba(21,38,69,.07)}
+.decision-queue .eyebrow{background:#fef3c7;color:#92400e}
+.topbar-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}.topbar-blocked-note{color:#92400e;font-size:12px;font-weight:700}.topbar-blocked-note a{color:inherit}
 .decision-queue-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
 .decision-queue-header h3{margin:4px 0 6px;color:#10213d;font-size:clamp(20px,2vw,26px)}
 .decision-queue-header p{margin:0;color:#526173;font-size:14px;line-height:1.4;max-width:70ch}

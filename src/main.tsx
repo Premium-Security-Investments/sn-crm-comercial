@@ -441,7 +441,7 @@ function App() {
       <header className="topbar">
         <button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}>☰</button>
         <div><h1>{titleFor(route)}</h1><p>{siioShell ? 'Plataforma PSI · Control gerencial' : 'CRM comercial · Seguridad Nacional'}</p></div>
-        {!siioShell && canAccessRoute(currentProfile, 'new') && <button onClick={() => go('#/new')}>Nueva oportunidad</button>}
+        {!siioShell && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
       </header>
       {loading && <div className="notice">{siioShell ? 'Cargando SIIO Gerencial…' : 'Cargando información comercial…'}</div>}
       {error && <div className="error">{error}</div>}
@@ -831,6 +831,18 @@ function Select({ id, value, onChange, options, empty, disabled = false, require
   return <select id={id} value={value} disabled={disabled} required={required} onChange={event => onChange(event.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
 }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
+// Mismo criterio que el servidor (409 CRM_PENDING_DECISIONS): un comercial con oportunidades sin decisión no crea nuevas.
+function blockingDecisionCount(data: Bootstrap): number {
+  return data.currentProfile.role === 'comercial' ? pendingDecisions(data.opportunities.filter(o => o.owner_id === data.currentProfile.id)).length : 0;
+}
+function NewOpportunityButton({ data }: { data: Bootstrap | null }) {
+  const blocking = data ? blockingDecisionCount(data) : 0;
+  if (!blocking) return <button onClick={() => go('#/new')}>Nueva oportunidad</button>;
+  return <div className="topbar-actions">
+    <button type="button" disabled aria-describedby="new-opportunity-blocked">Nueva oportunidad</button>
+    <small id="new-opportunity-blocked" className="topbar-blocked-note">Primero decida {blocking === 1 ? 'su oportunidad pendiente' : `sus ${blocking} oportunidades pendientes`} en <a href="#/home">Mi día</a></small>
+  </div>;
+}
 function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; alerts: MyDayAlert[]; total: number; tone: string; empty: string }) {
   return <div className={`my-day-group my-day-${tone}`}>
     {title && <h4>{title}{total > alerts.length ? ` · mostrando ${alerts.length} de ${total}` : ''}</h4>}
@@ -1584,7 +1596,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
       setStatus(err instanceof Error ? err.message : String(err));
     }
   };
-  const blockingDecisions = !id && data.currentProfile.role === 'comercial' ? pendingDecisions(data.opportunities.filter(o => o.owner_id === data.currentProfile.id)).length : 0;
+  const blockingDecisions = id ? 0 : blockingDecisionCount(data);
   if (blockingDecisions) return <Panel title="Nueva oportunidad">
     <div className="decision-blocked"><strong>Primero decida {blockingDecisions === 1 ? 'la oportunidad pendiente' : `sus ${blockingDecisions} oportunidades pendientes`}.</strong>
       <p>Toda oportunidad abierta debe tener una decisión vigente (sigue viva con fecha, avanza, congelada, descartada o eliminación pedida). Cuando no tenga pendientes podrá crear nuevas.</p>
@@ -2251,7 +2263,11 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   const opportunities = useMemo(() => data.opportunities.filter(o => ownerKey(o) === selfId), [data.opportunities, selfId]);
   const pendingDecisionRows = useMemo(() => pendingDecisions(opportunities, now), [opportunities, now]);
   // Mi día trabaja el pipeline comercial vigente: sin licitaciones (AGT-002), congeladas ni eliminación pedida.
-  const myDay = useMemo(() => buildMyDayQueue(opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now)), now), [opportunities, now]);
+  // Lo pendiente de decisión vive sólo en "Decida esta oportunidad"; Hacer hoy no lo repite (decisión de Juan, 2026-10-07).
+  const myDay = useMemo(() => {
+    const pendingIds = new Set(pendingDecisionRows.map(o => o.id));
+    return buildMyDayQueue(opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !pendingIds.has(o.id)), now);
+  }, [opportunities, pendingDecisionRows, now]);
   const goal = monthlyGoalCompliance({ opportunities, goals: data.goals, month: bogotaMonth(now), ownerId: selfId });
   const firstName = (data.currentProfile.full_name || '').split(' ')[0] || 'comercial';
   const stageSummary = data.stages.map(stage => {
@@ -2271,7 +2287,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
       {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
     </section> : <section className="commercial-followup-banner my-day-personal-banner" aria-label="Hacer hoy y preparar">
       <div className="my-day">
-        <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty="Sin próximas gestiones vencidas o sin agendar." />
+        <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty="No tiene gestiones agendadas para hoy." />
         {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
         {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
           <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
