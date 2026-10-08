@@ -44,6 +44,33 @@ export async function countAgt002InitialAnalysesToday(database, now) {
   return (rows || []).length;
 }
 
+// State record kind written by agt002-phase-change-followup.js for each automatic phase-change analysis decision.
+export const AGT002_PHASE_CHANGE_ANALYSIS_KIND = 'tender_phase_change_analysis';
+
+/**
+ * Automatic REANALYSIS admissions after a new SECOP phase (or republication) of a converted process since the start of today (Bogotá). Each one writes an
+ * 'admitting' intent before calling the admission, so the count holds even if recording the result fails afterwards.
+ * Manual reanalyses never appear here, so they never consume the automatic daily cap.
+ */
+export async function countAgt002AutomaticPhaseChangeReanalysesToday(database, now) {
+  const rows = await must(database.from('psi_sales_interactions')
+    .select('notes')
+    .eq('interaction_type', 'documento')
+    .gte('created_at', agt002BogotaDayStart(now).toISOString())
+    .like('notes', `%"kind":"${AGT002_PHASE_CHANGE_ANALYSIS_KIND}"%`), 'conteo diario de reanálisis automáticos');
+  return (rows || []).filter(row => {
+    try {
+      const notes = JSON.parse(String(row.notes || ''));
+      return notes?.kind === AGT002_PHASE_CHANGE_ANALYSIS_KIND && notes.outcome === 'admitting' && notes.analysis_kind === 'REANALYSIS';
+    } catch { return false; }
+  }).length;
+}
+
+/** The shared automatic daily cap: INITIAL analyses (as before) plus automatic phase-change reanalyses. */
+export async function countAgt002AutomaticAnalysesToday(database, now) {
+  return (await countAgt002InitialAnalysesToday(database, now)) + (await countAgt002AutomaticPhaseChangeReanalysesToday(database, now));
+}
+
 /**
  * Conversions whose documents are ready and that still have no INITIAL analysis, oldest first. Each candidate carries
  * the converting person (`requested_by`) as the authorizing actor.
@@ -95,7 +122,7 @@ export async function runAgt002AutoInitialAdmissions(database, {
   }
   const candidates = await findAgt002AutoInitialCandidates(database, { since });
   const events = [];
-  let admittedToday = await countAgt002InitialAnalysesToday(database, now);
+  let admittedToday = await countAgt002AutomaticAnalysesToday(database, now);
   for (const job of candidates) {
     const base = { opportunityId: job.opportunity_id, processingJobId: job.id };
     if (admittedToday >= dailyCap) {

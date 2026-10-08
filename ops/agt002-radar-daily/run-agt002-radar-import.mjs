@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // AGT-002 Radar import on the host (owner decision 2026-10-06: the daily import lives in the CRM, not in Hermes).
-//   --daily     the full daily import (deep SECOP search + TVEC + ESU), persisted as a `cron` run.
+//   --daily     the full daily import (deep SECOP search + TVEC + ESU), persisted as a `cron` run; then the official
+//               documents of the new SECOP phase (or republication) of processes already converted
+//               (agt002-phase-change-followup.js).
 //   --requests  runs the full import for a pending "Sincronizar fuentes oficiales" request, if any.
 //   --compare   reads the sources with the full import and compares against the Radar, writing nothing.
 //   --top5      writes the Discord "5 de mayor encaje" text and the Radar export built from the CRM's own Radar
@@ -26,10 +28,27 @@ function summarize(result) {
   return { status: receipt.status || null, visible: result?.tenders?.length ?? null, sources: (result?.diagnostics || []).map(d => `${d.source}: ${d.status} (${d.records_read ?? d.count})`) };
 }
 
+// Procesos SECOP II ya convertidos cuya fase nueva (o republicación) se detectó: importa los documentos del aviso nuevo
+// (sin modelo, sin costo) cuando datos.gov.co trae documentos nuevos y publica el mismo conjunto en dos corridas seguidas.
+// Best-effort: lo que aún no está listo queda pendiente para la siguiente corrida y nunca hace fallar la importación.
+async function runPhaseChangeDocuments() {
+  try {
+    const { runAgt002PhaseChangeDocumentRefresh } = await import('../../agt002-phase-change-followup.js');
+    const events = await runAgt002PhaseChangeDocumentRefresh(database, {
+      probeDocuments: (opportunityId, options) => api.probePhaseChangeTenderDocumentSet(database, opportunityId, options),
+      importDocuments: (opportunityId, options) => api.importPhaseChangeTenderDocuments(database, opportunityId, options),
+    });
+    for (const event of events) log(event);
+  } catch (error) {
+    log({ event: 'agt002_phase_change_documents_pass_failed', message: String(error?.message || error).slice(0, 200) });
+  }
+}
+
 async function runDaily() {
   const started = Date.now();
   const result = await api.persistTenderRadar(database, null, 'cron', { deep: true });
   log({ event: 'agt002_radar_import_daily', seconds: Math.round((Date.now() - started) / 1000), ...summarize(result) });
+  await runPhaseChangeDocuments();
 }
 
 async function runRequests() {

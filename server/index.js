@@ -8,6 +8,8 @@ import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionG
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../tender-phase-identity.js';
+import { appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../agt002-phase-change-followup.js';
+import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../tender-process-family.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
 import { fetchTenderRadarSourceRows } from '../tender-radar-source-fetch.js';
@@ -1399,13 +1401,18 @@ function canonicalTenderProcessKey(tender) {
 function tenderProcessStatusRank(tender) {
   return tender?.internal_status === 'convertida_oportunidad' || tender?.converted_opportunity_id ? 4 : tender?.internal_status === 'en_revision' ? 3 : tender?.internal_status === 'nueva' ? 2 : tender?.internal_status === 'descartada' ? 1 : 0;
 }
+// SECOP II republica un proceso modificado como uno nuevo con la misma referencia salvo puntuación:
+// la familia de proceso (tender-process-family.js) los agrupa y, a igual estado, gana la versión más reciente.
 function deduplicateTenderProcesses(tenders) {
   const byKey = new Map(); const order = [];
   for (const tender of Array.isArray(tenders) ? tenders : []) {
-    const key = canonicalTenderProcessKey(tender);
+    // Una fila en revisión nunca se funde con otra versión de su familia: sigue visible.
+    const key = (tender?.internal_status !== 'en_revision' && tenderProcessFamilyKey(tender)) || canonicalTenderProcessKey(tender);
     if (!byKey.has(key)) { byKey.set(key, tender); order.push(key); continue; }
     const current = byKey.get(key);
     const currentRank = tenderProcessStatusRank(current); const nextRank = tenderProcessStatusRank(tender);
+    const recency = nextRank === currentRank ? compareTenderFamilyRecency(tender, current) : 0;
+    if (recency) { if (recency > 0) byKey.set(key, tender); continue; }
     const currentDate = String(current?.last_seen_at || current?.detected_at || current?.published || '');
     const nextDate = String(tender?.last_seen_at || tender?.detected_at || tender?.published || '');
     if (nextRank > currentRank || (nextRank === currentRank && (nextDate > currentDate || (nextDate === currentDate && Number(tender?.score || 0) > Number(current?.score || 0))))) byKey.set(key, tender);
@@ -1903,7 +1910,9 @@ export async function readPersistedTenderRadar(database) {
   const mergedRows = Array.from(new Map([...(data || []), ...convertedRows].map((row, index) => [row.stable_key || row.id || `radar-row-${index}`, row])).values());
   // El vencimiento se aplica antes que cualquier otra regla de visibilidad: una convertida vencida
   // sale del Radar igual que una no convertida, sin tocar su oportunidad ni su expediente.
-  const trackableRows = mergedRows.filter(row => !isExpiredRadarProcess(row) && (isConvertedTenderRecord(row) || isTenderTrackable(row)));
+  const trackableRows = mergedRows.filter(row => !isExpiredRadarProcess(row) && (isConvertedTenderRecord(row) || isTenderTrackable(row)))
+    // Una versión anterior de un proceso republicado (marcada al importar) no se lista: sólo la vigente.
+    .filter(row => !isProcessFamilySupersededRow(row));
   // AGT-002's preanalysis ledger may annotate/inform candidates, but it must never govern which
   // trackable candidates the main Radar shows: visibleRows is always every trackable row.
   const visibleRows = trackableRows;
@@ -1998,6 +2007,27 @@ function buildAgt002RadarRunSnapshotReceiptFromRun({ runId, finishedAt, diagnost
     }),
   };
 }
+// Marca "detectado" de cada cambio de fuente seguible del plan; devuelve las oportunidades cuya marca no se pudo
+// escribir (su enlace no se cambia en esta corrida).
+export async function recordAgt002RadarPhaseChanges(database, opportunityPatches) {
+  const deferred = new Set();
+  for (const patch of opportunityPatches) {
+    const change = patch.sourceChange;
+    if (!change || !patch.converted_opportunity_id) continue;
+    if (change.blocker) {
+      console.log(JSON.stringify({ event: 'agt002_phase_change_not_followed', opportunityId: patch.converted_opportunity_id, reason: change.blocker, url: change.url }));
+      continue;
+    }
+    try {
+      await recordAgt002PhaseChangeDetected(database, patch.converted_opportunity_id, change);
+      console.log(JSON.stringify({ event: 'agt002_phase_change_detected', opportunityId: patch.converted_opportunity_id, change: change.change, url: change.url }));
+    } catch (error) {
+      deferred.add(patch.converted_opportunity_id);
+      console.warn(JSON.stringify({ event: 'agt002_phase_change_detect_failed', opportunityId: patch.converted_opportunity_id, message: error?.message }));
+    }
+  }
+  return deferred;
+}
 export async function persistTenderRadar(database, actorProfile, mode = 'manual', { deep = false } = {}) {
   // run_id se genera antes de tocar el pipeline real para que, incluso si la corrida resulta
   // fatal, el recibo fallido pueda referenciarla de forma estable e idempotente (Corte 2).
@@ -2018,7 +2048,7 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
   }
   const now = new Date().toISOString();
   const tagged = persistenceTenders.map(t => ({ ...t, stable_key: t.stable_key || stableTenderKey(t) }));
-  const { data: existingConverted, error: convertedReadError } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').eq('internal_status', 'convertida_oportunidad');
+  const { data: existingConverted, error: convertedReadError } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,tracking_owner_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').eq('internal_status', 'convertida_oportunidad');
   if (convertedReadError) throw convertedReadError;
   const taggedKeys = new Set(tagged.map(t => t.stable_key));
   const familyRows = (await fetchConvertedTenderFamilies(existingConverted || [])).filter(t => t.stable_key && !taggedKeys.has(t.stable_key));
@@ -2027,7 +2057,7 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
   // In groups: the full daily import fetches 700+ keys, and a single `in (...)` that long exceeds the URL limit
   // (Supabase answers "fetch failed" from ~700 keys; observed 6-oct-2026).
   for (let index = 0; index < fetchedKeys.length; index += 200) {
-    const { data, error } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').in('stable_key', fetchedKeys.slice(index, index + 200));
+    const { data, error } = await database.from('psi_public_tenders').select('id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,tracking_owner_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw').in('stable_key', fetchedKeys.slice(index, index + 200));
     if (error) throw error;
     existingFetched.push(...(data || []));
   }
@@ -2036,9 +2066,25 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
     if (row?.stable_key) existingByKey.set(row.stable_key, row);
   }
   const plan = planRadarPhaseIdentitySync({ fetched: [...tagged, ...familyRows], existing: [...existingByKey.values()], now });
+  // Cambio de fase o republicación de una convertida (agt002-phase-change-followup.js): la marca "detectado" se escribe
+  // ANTES de guardar el enlace nuevo. Si no se puede escribir, esta corrida deja el enlace como estaba y la siguiente lo
+  // reintenta: un cambio nunca queda aplicado sin su seguimiento. Uno bloqueado (terminal, cierre pasado) sólo se anota.
+  const deferredOpportunities = await recordAgt002RadarPhaseChanges(database, plan.opportunityPatches || []);
+  const convertedOverrides = (plan.convertedOverrides || []).filter(row => !deferredOpportunities.has(existingByKey.get(row.stable_key)?.converted_opportunity_id));
+  const opportunityPatches = (plan.opportunityPatches || []).filter(patch => !deferredOpportunities.has(patch.converted_opportunity_id));
   const omit = new Set(plan.omitStableKeys || []);
-  const overrides = new Map((plan.convertedOverrides || []).map(row => [row.stable_key, row]));
+  const overrides = new Map(convertedOverrides.map(row => [row.stable_key, row]));
   const identityReview = new Set(plan.identityReviewStableKeys || []);
+  // Familias de proceso sin convertida: la versión vigente es la más reciente; las anteriores quedan
+  // marcadas como reemplazadas (no se borran) y la vigente nueva hereda la revisión humana previa.
+  const familyPlan = planTenderProcessFamilySupersession({
+    rows: [
+      ...tagged.filter(t => !omit.has(t.stable_key)).map(t => ({ ...t, internal_status: existingByKey.get(t.stable_key)?.internal_status || null, converted_opportunity_id: existingByKey.get(t.stable_key)?.converted_opportunity_id || null })),
+      ...(existingConverted || []),
+    ],
+    existingStableKeys: new Set(existingByKey.keys()),
+  });
+  const supersededBy = new Map(familyPlan.supersededMarks.map(mark => [mark.stable_key, mark.superseded_by]));
   const rows = tagged.map(t => {
     if (omit.has(t.stable_key)) return null;
     const override = overrides.get(t.stable_key);
@@ -2049,11 +2095,11 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
       ...((override?.status || t.status) ? { status: override?.status || t.status } : {}), ...((override?.deadline_at || t.deadline) ? { deadline_at: override?.deadline_at || t.deadline } : {}),
       score: Number(t.score || 0), reasons: t.reasons || [], risks: t.risks || [],
       url: override?.url || t.url || null,
-      raw: withPhaseIdentityRaw(t.raw || null, { identityReview: identityReview.has(t.stable_key), knownPhases: override?.known_phases || [] }),
+      raw: withProcessFamilySupersededRaw(withPhaseIdentityRaw(t.raw || null, { identityReview: identityReview.has(t.stable_key), knownPhases: override?.known_phases || [] }), supersededBy.get(t.stable_key) || null),
       last_seen_at: now
     };
   }).filter(Boolean);
-  for (const override of plan.convertedOverrides || []) {
+  for (const override of convertedOverrides) {
     if (rows.some(row => row.stable_key === override.stable_key)) continue;
     const converted = existingByKey.get(override.stable_key);
     if (!converted) continue;
@@ -2074,16 +2120,21 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
     const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows.slice(index, index + 100), { onConflict: 'stable_key', defaultToNull: false });
     if (upsertError) throw upsertError;
   }
+  // Sólo filas que no existían antes de esta corrida (y siguen en 'nueva'): nunca pisa una decisión humana.
+  for (const { stable_key: key, internal_status: inheritedStatus } of familyPlan.inheritedStatuses) {
+    const { error: inheritError } = await database.from('psi_public_tenders').update({ internal_status: inheritedStatus }).eq('stable_key', key).eq('internal_status', 'nueva');
+    if (inheritError) throw inheritError;
+  }
   for (const key of plan.discardStableKeys || []) {
     const { error: discardError } = await database.from('psi_public_tenders').update({ internal_status: 'descartada' }).eq('stable_key', key).neq('internal_status', 'convertida_oportunidad');
     if (discardError) throw discardError;
   }
-  if ((plan.opportunityPatches || []).length) {
-    const ids = plan.opportunityPatches.map(patch => patch.converted_opportunity_id).filter(Boolean);
+  if (opportunityPatches.length) {
+    const ids = opportunityPatches.map(patch => patch.converted_opportunity_id).filter(Boolean);
     const { data: opportunities, error: opportunityReadError } = await database.from('psi_sales_opportunities').select('id,observaciones,expected_close_date').in('id', ids);
     if (opportunityReadError) throw opportunityReadError;
     const byId = new Map((opportunities || []).map(row => [row.id, row]));
-    for (const patch of plan.opportunityPatches) {
+    for (const patch of opportunityPatches) {
       const opportunity = byId.get(patch.converted_opportunity_id);
       if (!opportunity) continue;
       const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl, phaseChange: patch.phaseChange });
@@ -2091,6 +2142,14 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
       const { error: opportunityWriteError } = await database.from('psi_sales_opportunities').update({ observaciones, expected_close_date }).eq('id', opportunity.id);
       if (opportunityWriteError) throw opportunityWriteError;
     }
+  }
+  // Aviso visible del cambio seguido, DESPUÉS de reescribir el enlace (append atómico del lado SQL, migración 116: nunca
+  // pisa texto escrito por personas). Best-effort: el seguimiento vuelve a dejar avisos en cada paso.
+  for (const patch of opportunityPatches) {
+    const change = patch.sourceChange;
+    if (!change || change.blocker) continue;
+    try { await appendAgt002ObservationLine(database, patch.converted_opportunity_id, phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, noticeUid: noticeUidFromSecopUrl(change.url) })); }
+    catch (noticeError) { console.warn(JSON.stringify({ event: 'agt002_phase_change_notice_failed', opportunityId: patch.converted_opportunity_id, message: noticeError?.message })); }
   }
   const radarRunReceipt = buildAgt002RadarRunReceipt({
     runId: radarRunId, startedAt: radarRunStartedAt, finishedAt: new Date().toISOString(),
@@ -4026,6 +4085,97 @@ async function getCurrentTenderDocumentVersion(database, opportunityId, source, 
 async function refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze = true } = {}) {
   await requireTenderAnalysisFoundation(database);
   const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+  return importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze });
+}
+// Seguimiento automático de una fase nueva (o republicación) SECOP II de un proceso convertido
+// (agt002-phase-change-followup.js): corre sólo desde el job del host, con la identidad técnica Vig-IA como actor
+// documental y sin análisis (analyze: false).
+function secopOfficialDocumentSelection(docs) {
+  return selectTenderOfficialDocuments(docs, {
+    nameGetter: doc => doc.nombre_archivo,
+    idGetter: doc => String(doc.id_documento || deterministicDocumentFallbackId({ name: doc.nombre_archivo, url: doc.url_descarga_documento.url }).slice(0, 24)),
+  });
+}
+const secopDocumentId = doc => String(doc.id_documento || deterministicDocumentFallbackId({ name: doc.nombre_archivo, url: doc.url_descarga_documento.url }).slice(0, 24));
+const secopDocumentNameKey = name => cleanFileName(name).toLowerCase().replace(/\s+/g, ' ').trim();
+// Huella de lo que datos.gov.co lista hoy para el portafolio (todas las filas, con su id): dos corridas seguidas con la
+// misma huella = conjunto estable.
+function secopPhaseChangeDocumentSetHash(docs) {
+  return phaseChangeDocumentSetHash((docs || []).map(doc => `${secopDocumentId(doc)}:${doc.nombre_archivo}`));
+}
+// SECOP II comparte el portafolio entre fases: la fase de oferta lista los documentos del borrador más los nuevos
+// (pliego definitivo, resolución de apertura, adendas), y datos.gov.co repite cada documento del borrador (mismo
+// nombre y tamaño, otro id) por fase. Se deja uno por nombre+tamaño (el ya importado, si lo hay) y los que la
+// oportunidad aún no tiene van primero, del más reciente al más antiguo, para que el tope de selección nunca los deje
+// fuera. "Ya importado" = mismo id, o mismo nombre y tamaño que una versión SECOP II de la oportunidad.
+export function orderSecopPhaseChangeDocuments(docs, existingVersions = []) {
+  const knownIds = new Set(existingVersions.map(version => String(version.source_document_id || '')));
+  const knownNameSizes = new Set(existingVersions.map(version => `${secopDocumentNameKey(version.name)}\u0000${Number(version.size_bytes || 0)}`));
+  const groups = new Map();
+  for (const doc of docs || []) {
+    const key = `${secopDocumentNameKey(doc.nombre_archivo)}\u0000${Number(doc.tamanno_archivo || 0)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(doc);
+  }
+  const entries = [...groups.entries()].map(([key, list]) => {
+    const imported = list.find(doc => knownIds.has(secopDocumentId(doc)));
+    const chosen = imported || [...list].sort((left, right) => secopDocumentId(right).localeCompare(secopDocumentId(left), undefined, { numeric: true }))[0];
+    return { doc: chosen, isNew: !imported && !knownNameSizes.has(key), loadedAt: String(chosen.fecha_carga || '') };
+  });
+  entries.sort((left, right) => {
+    if (left.isNew !== right.isNew) return left.isNew ? -1 : 1;
+    return right.loadedAt.localeCompare(left.loadedAt);
+  });
+  return { documents: entries.map(entry => entry.doc), newCount: entries.filter(entry => entry.isNew).length };
+}
+async function readSecopDocumentVersions(database, opportunityId) {
+  return (await must(database.from('psi_tender_document_versions').select('source_document_id,name,size_bytes,current').eq('opportunity_id', opportunityId).eq('source', 'secop ii'))) || [];
+}
+async function loadPhaseChangeTenderOpportunity(database, opportunityId, noticeUid) {
+  await requireTenderAnalysisFoundation(database);
+  const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single());
+  if (opportunity.service_type_code !== 'licitacion_publica') throw new Error('La oportunidad no es una licitación pública.');
+  if (noticeUidFromSecopUrl(secopOfficialUrl(getTenderSourceUrlFromOpportunity(opportunity))) !== noticeUid) throw new Error('La fuente oficial de la oportunidad aún no apunta al aviso nuevo.');
+  return opportunity;
+}
+// Sólo lectura: lo que datos.gov.co publica hoy para el aviso nuevo frente a lo que la oportunidad ya tiene. El
+// seguimiento sólo importa cuando hay documentos nuevos y el mismo conjunto en dos corridas seguidas.
+export async function probePhaseChangeTenderDocumentSet(database, opportunityId, { noticeUid } = {}) {
+  const opportunity = await loadPhaseChangeTenderOpportunity(database, opportunityId, noticeUid);
+  const officialUrl = secopOfficialUrl(getTenderSourceUrlFromOpportunity(opportunity));
+  const process = await resolveSecopProcessByExactUrl(officialUrl);
+  const docs = await listSecopDocumentsByPortfolio(process.id_del_portafolio);
+  if (!docs.length) throw new Error('SECOP aún no lista documentos para el portafolio del aviso nuevo.');
+  const versions = await readSecopDocumentVersions(database, opportunityId);
+  const ordered = orderSecopPhaseChangeDocuments(docs, versions);
+  return {
+    document_set_hash: secopPhaseChangeDocumentSetHash(docs),
+    document_count: ordered.documents.length,
+    new_document_count: ordered.newCount,
+    current_official_count: versions.filter(version => version.current !== false).length,
+  };
+}
+// Importa los documentos del aviso nuevo sólo si el conjunto sigue siendo el observado (`expectedDocumentSetHash`),
+// exige que todos se descarguen (si no, reintento en la siguiente corrida), retira como historial —nunca borra— lo que
+// SECOP ya no publica y deja la marca de importación sólo después de publicar el snapshot documental.
+export async function importPhaseChangeTenderDocuments(database, opportunityId, { noticeUid, actorProfileId, expectedDocumentSetHash } = {}) {
+  if (!noticeUid || !actorProfileId || !expectedDocumentSetHash) throw new Error('El aviso nuevo, el actor y el conjunto documental observado son obligatorios.');
+  const opportunity = await loadPhaseChangeTenderOpportunity(database, opportunityId, noticeUid);
+  return importOfficialTenderDocuments(database, opportunityId, opportunity, { id: actorProfileId }, { analyze: false, phaseChange: { noticeUid, expectedDocumentSetHash, startedAt: new Date().toISOString() } });
+}
+// Los del mismo nombre ya quedaron versionados (identidad lógica, migración 057); los que SECOP ya no publica para el
+// aviso vigente se retiran como historial (migración 116), antes de fijar el snapshot nuevo.
+async function retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames, refreshResults, actorId }) {
+  const { failed_count: failedCount } = summarizeTenderDocumentRefresh(refreshResults);
+  if (failedCount > 0) throw new Error(`Versión nueva: ${failedCount} documento(s) oficiales aún no se pudieron descargar; se reintenta en la siguiente corrida.`);
+  const retired = await database.rpc('psi_retire_tender_document_versions', {
+    p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: sourceLabel,
+    p_keep_names: keepNames, p_actor_id: actorId,
+  });
+  if (retired.error) throw retired.error;
+  return Number(retired.data || 0);
+}
+async function importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze = true, phaseChange = null } = {}) {
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
   let sourceLabel = '';
@@ -4041,10 +4191,15 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     if (!docs.length) throw new Error('SECOP no retornó documentos para este portafolio.');
     sourceLabel = 'SECOP II';
     sourceContext = { source: 'SECOP II', process_id: process.id_del_proceso, portfolio_id: process.id_del_portafolio, notice_uid: noticeUidFromSecopUrl(officialUrl) };
-    const secopSelection = selectTenderOfficialDocuments(docs, {
-      nameGetter: doc => doc.nombre_archivo,
-      idGetter: doc => String(doc.id_documento || deterministicDocumentFallbackId({ name: doc.nombre_archivo, url: doc.url_descarga_documento.url }).slice(0, 24)),
-    });
+    let officialDocs = docs;
+    if (phaseChange) {
+      if (secopPhaseChangeDocumentSetHash(docs) !== phaseChange.expectedDocumentSetHash) {
+        throw Object.assign(new Error('El conjunto de documentos del aviso nuevo cambió desde la corrida anterior; se espera a que se estabilice.'), { code: 'AGT002_PHASE_CHANGE_DOCUMENT_SET_CHANGED' });
+      }
+      officialDocs = orderSecopPhaseChangeDocuments(docs, await readSecopDocumentVersions(database, opportunityId)).documents;
+      phaseChange.keepNames = officialDocs.map(doc => cleanFileName(doc.nombre_archivo));
+    }
+    const secopSelection = secopOfficialDocumentSelection(officialDocs);
     officialCoverage = secopSelection.coverage;
     toDownload = secopSelection.selected.map(doc => ({
       name: doc.nombre_archivo,
@@ -4110,6 +4265,7 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
       }),
     });
   });
+  const retiredCount = phaseChange ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: phaseChange.keepNames || toDownload.map(doc => cleanFileName(doc.name)), refreshResults, actorId: currentProfile.id }) : 0;
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
@@ -4142,12 +4298,15 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
       await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO', auto_import: true, source: sourceLabel }) }).select('id').single());
     },
   });
+  // La marca de "documentos del aviso nuevo importados" va sólo después del snapshot publicado.
+  if (phaseChange) await recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId: currentProfile.id, noticeUid: phaseChange.noticeUid, documentSetHash: phaseChange.expectedDocumentSetHash, snapshotId: registeredSnapshot.id, startedAt: phaseChange.startedAt, documentCount: toDownload.length, changedCount: refreshSummary.new_count + refreshSummary.updated_count, retiredCount });
   const records = await getTenderDocumentRecords(database, opportunityId);
   return {
     ...records,
     ...refreshSummary,
     imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     official_document_coverage: officialCoverage,
+    ...(phaseChange ? { retired_count: retiredCount } : {}),
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }
