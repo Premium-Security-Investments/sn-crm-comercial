@@ -400,8 +400,9 @@ export function can(profile, action, resource = {}) {
       return hasHumanRole(profile, PRIVILEGED_ROLES);
 
     case ACTIONS.AI_COMMERCIAL_DRAFT_RUN:
+      // El borrador comercial vive en la ficha de la oportunidad: basta Oportunidades + permiso piloto. No exige el
+      // módulo Vig-IA (que abre otras pantallas que el comercial no tiene en su menú). Juan, 2026-10-08.
       if (!validCrmResource(resource)
-        || !hasEligibleModule(profile, 'modulo_vig_ia')
         || !hasEligibleModule(profile, 'modulo_oportunidades')
         || !hasPermission(profile, 'vigia_copilot_pilot')) return false;
       return hasHumanRole(profile, PRIVILEGED_ROLES)

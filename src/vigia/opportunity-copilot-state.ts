@@ -38,8 +38,8 @@ export type OpportunityCopilotState =
 export function canRenderOpportunityCopilot(profile: CopilotProfile | null | undefined, serviceTypeCode: string | null | undefined) {
   if (!profile?.active || profile.identity_type === 'agent' || serviceTypeCode === 'licitacion_publica') return false;
   const permissions = new Set(profile.permissions || []);
-  return permissions.has('modulo_vig_ia')
-    && permissions.has('modulo_oportunidades')
+  // Mismo criterio que ACTIONS.AI_COMMERCIAL_DRAFT_RUN en access-control.js: Oportunidades + permiso piloto.
+  return permissions.has('modulo_oportunidades')
     && permissions.has('vigia_copilot_pilot');
 }
 
