@@ -1,0 +1,36 @@
+[Unit]
+Description=AGT-002 review of new SECOP phases of ACTIVE converted tenders: link, new documents, archive, reanalysis, mail outbox
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Same identity and environment as the automatic analysis (agt002-auto-initial): Supabase + analysis kill switches.
+User=psi-agt002
+Group=psi-agt002
+EnvironmentFile=/etc/psi-agt002-initial-analysis/env
+# Mail outbox for Hermes (ops/agt002-licitaciones-alerts/HERMES-DELIVERY-CONTRACT.md); the CRM never sends mail.
+StateDirectory=agt002-licitaciones-alerts
+StateDirectoryMode=0755
+UMask=0022
+Environment=AGT002_LICITACIONES_ALERTS_DIR=/var/lib/agt002-licitaciones-alerts
+Environment=AGT002_PHASE_CHANGE_DOCUMENTS_BUDGET_MS=900000
+# Release path is set by the deploy drop-in (10-release.conf).
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-radar-daily/run-agt002-radar-import.mjs --phase-change-review
+TimeoutStartSec=25min
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native

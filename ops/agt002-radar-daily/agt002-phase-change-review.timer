@@ -1,0 +1,11 @@
+[Unit]
+Description=AGT-002 SECOP phase review: Mon-Fri 9:00, 14:00, 19:00 and Sat-Sun 14:00 (Bogotá); Hermes mails at :30
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 09,14,19:00:00 America/Bogota
+OnCalendar=Sat,Sun *-*-* 14:00:00 America/Bogota
+Persistent=true
+RandomizedDelaySec=60s
+
+[Install]
+WantedBy=timers.target

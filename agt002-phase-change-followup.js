@@ -11,14 +11,15 @@
 // la oportunidad sigue abierta.
 //
 // Desde ahí, sin intervención humana y sólo desde jobs del host (nunca en una petición web):
-//   1. Documentos (servicio propio, cada hora, con presupuesto de tiempo; sin costo de modelo). "Nuevo" se mide contra
+//   1. Documentos (revisión programada lun–vie 9/14/19 h y sáb–dom 14 h, con presupuesto de tiempo). "Nuevo" se mide contra
 //      la LÍNEA BASE: las versiones que la oportunidad tenía antes de la marca. Cada conjunto nuevo que se mantiene igual
-//      al menos 12 h se importa una vez (sólo se bajan los nuevos); si después aparecen más (pliego definitivo,
+//      en la revisión siguiente se importa una vez (sólo se bajan los nuevos); si después aparecen más (pliego definitivo,
 //      adendas), se vuelve a importar mientras el proceso siga abierto. Datos.gov.co va 1–2 días atrás: se reintenta y,
 //      pasados ~3 días sin documentos o sin estabilizarse, se deja aviso visible para revisión humana.
-//   2. Análisis (timer de auto-initial): por cada importación, UN reanálisis sucesor del análisis canónico (o el
-//      INITIAL si no hay análisis), autorizado por quien convirtió, dentro del cupo diario de admisiones AUTOMÁTICAS
-//      (compartido con el análisis al convertir). El mismo conjunto nunca se reanaliza dos veces. Sin cupo: mañana.
+//   2. Análisis (timer de auto-initial): por cada importación, UN reanálisis completo sucesor del análisis canónico (o
+//      el INITIAL si no hay análisis), autorizado por quien convirtió. Fuera del cupo de 5 del análisis al convertir
+//      (decisión del dueño); sólo una red de seguridad técnica (3 por proceso y 20 en total por día). El mismo conjunto
+//      nunca se reanaliza dos veces.
 //
 // El estado vive en interacciones 'documento' con notas JSON (sólo se agregan, nunca se editan); las líneas visibles de
 // las observaciones se agregan con un UPDATE atómico del lado SQL (migración 116), sin reescribir el campo completo.
@@ -28,11 +29,10 @@ import { createHash } from 'node:crypto';
 import { admitAgt002InitialAnalysis } from './agt002-initial-analysis-admission.js';
 import { freezeAgt002CompanyProfileSnapshot } from './agt002-company-profile-snapshot.js';
 import {
-  AGT002_AUTO_INITIAL_DEFAULT_DAILY_CAP,
   AGT002_AUTO_INITIAL_POLICY_VERSION,
   AGT002_PHASE_CHANGE_ANALYSIS_KIND,
   agt002BogotaDayStart,
-  countAgt002AutomaticAnalysesToday,
+  listAgt002PhaseChangeAdmissionsToday,
   selectAgt002AutoInitialMembers,
 } from './agt002-auto-initial.js';
 import { tenderSourceChangeFollowUpBlocker } from './tender-phase-identity.js';
@@ -46,6 +46,7 @@ export const AGT002_PHASE_CHANGE_KINDS = Object.freeze({
   importFailed: 'tender_phase_change_documents_import_failed',
   imported: 'tender_phase_change_documents_imported',
   analysis: AGT002_PHASE_CHANGE_ANALYSIS_KIND,
+  result: 'tender_phase_change_analysis_result',
 });
 const HOUR_MS = 60 * 60 * 1000;
 const AUTHORIZATION_WINDOW_MS = 48 * HOUR_MS;
@@ -55,8 +56,14 @@ const LAUNCHED_ADMISSION_STATUSES = new Set(['admitted', 'existing']);
 const FINAL_ANALYSIS_OUTCOMES = new Set(['launched', 'window_elapsed', 'process_closed']);
 // Etapas comerciales cerradas (migración 110): además de la etapa de la bandeja, nunca se sigue una oportunidad así.
 export const AGT002_PHASE_CHANGE_CLOSED_STAGES = new Set(['aprobado', 'descartado', 'perdido']);
-/** Un conjunto nuevo es estable cuando datos.gov.co lo sigue mostrando igual al menos este tiempo. */
-export const AGT002_PHASE_CHANGE_STABLE_MS = 12 * HOUR_MS;
+/** Estable = la revisión SIGUIENTE (9:00, 14:00, 19:00; fines de semana 14:00) encuentra la misma lista de documentos nuevos. */
+export const AGT002_PHASE_CHANGE_STABLE_MS = 30 * 60 * 1000;
+/**
+ * Red de seguridad TÉCNICA contra errores, no límite de negocio (decisión del dueño 2026-10-08: cada tanda nueva de
+ * documentos dispara un reanálisis completo, sin límite por proceso y fuera del cupo de 5 del análisis al convertir;
+ * el tope de USD 10 por análisis sigue en el runtime). Si se alcanza, aviso visible y se intenta al día siguiente.
+ */
+export const AGT002_PHASE_CHANGE_SAFETY_LIMITS = Object.freeze({ perProcessPerDay: 3, totalPerDay: 20 });
 /** Tras una importación fallida (descarga, migración 116 sin aplicar) no se reintenta el mismo conjunto antes de esto. */
 export const AGT002_PHASE_CHANGE_IMPORT_RETRY_MS = 3 * HOUR_MS;
 /** ~3 días antes de pedir revisión humana (sin documentos nuevos, o un conjunto que no se estabiliza). */
@@ -115,15 +122,28 @@ export function phaseChangeDocumentsUnstableLine(change) {
   return `${phaseChangeHead(change)}, pero sus documentos en datos.gov.co siguen cambiando desde hace 3 días; revisar e importar a mano.`;
 }
 
-export function phaseChangeDocumentsLine(change, { newCount = 0, retiredCount = 0, importedAt } = {}) {
-  const retired = retiredCount ? `; ${retiredCount} que SECOP ya no publica quedan como historial` : '; los anteriores quedan como historial';
-  return `${phaseChangeHead(change)}; el ${bogotaDayLabel(importedAt)} se bajaron ${newCount} documento(s) nuevo(s)${retired}.`;
+const listNames = (names, max = 6) => {
+  const list = (names || []).filter(Boolean);
+  return list.length <= max ? list.join(', ') : `${list.slice(0, max).join(', ')} y ${list.length - max} más`;
+};
+
+export function phaseChangeDocumentsLine(change, { newCount = 0, importedAt, incomingNames = [], archived = [], doubts = [] } = {}) {
+  const parts = [`${phaseChangeHead(change)}; el ${bogotaDayLabel(importedAt)} se bajaron ${newCount} documento(s) nuevo(s)${incomingNames.length ? `: ${listNames(incomingNames)}` : ''}`];
+  if (archived.length) parts.push(`pasaron a historial (no entran al análisis): ${listNames(archived.map(item => item.name))}`);
+  if (doubts.length) parts.push(`por duda NO se archivó: ${listNames(doubts.map(item => item.name))} (revisar)`);
+  return `${parts.join('; ')}.`;
+}
+
+export function phaseChangeAnalysisResultLine(change, { importedAt, status, verdict } = {}) {
+  const prefix = `${phaseChangeHead(change)}; documentos del ${bogotaDayLabel(importedAt)}: `;
+  if (status === 'COMPLETED') return `${prefix}el reanálisis terminó${verdict ? ` — ${verdict}` : ''}.`;
+  return `${prefix}el reanálisis no terminó (${String(status || 'falló').toLowerCase()}); requiere revisión humana.`;
 }
 
 export function phaseChangeAnalysisLine(change, { outcome, analysisKind, admissionStatus, importedAt } = {}) {
   const prefix = `${phaseChangeHead(change)}; documentos del ${bogotaDayLabel(importedAt)}: `;
   if (outcome === 'launched') return `${prefix}se lanzó ${analysisKind === 'INITIAL' ? 'el análisis inicial' : 'el reanálisis'} automático.`;
-  if (outcome === 'daily_cap') return `${prefix}reanálisis automático pendiente por cupo diario; se intenta mañana.`;
+  if (outcome === 'safety_limit') return `${prefix}reanálisis automático pendiente: se alcanzó el límite técnico de seguridad del día; se intenta mañana (revisar si hay un error).`;
   if (outcome === 'window_elapsed') return `${prefix}el reanálisis automático no se lanzó en 48 horas; requiere lanzarse manualmente.`;
   if (outcome === 'process_closed') return `${prefix}el proceso ya cerró o terminó en SECOP, o la oportunidad se cerró; no se reanaliza.`;
   return `${prefix}el reanálisis automático no se pudo lanzar (${admissionStatus || outcome}); se reintenta mañana.`;
@@ -195,10 +215,11 @@ export async function recordAgt002PhaseChangeDetected(database, opportunityId, s
 }
 
 /** La llama la importación oficial (api) sólo después de publicar el snapshot documental del proceso nuevo. */
-export async function recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId, noticeUid, newSetHash, snapshotId, startedAt, documentCount, newDocumentCount, retiredCount }) {
+export async function recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId, noticeUid, newSetHash, snapshotId, startedAt, documentCount, newDocumentCount, retiredCount, incomingNames = [], archived = [], doubts = [] }) {
   await recordState(database, opportunityId, {
     kind: AGT002_PHASE_CHANGE_KINDS.imported, notice_uid: noticeUid, new_set_hash: newSetHash, snapshot_id: snapshotId,
     started_at: startedAt, document_count: documentCount, new_document_count: newDocumentCount, retired_count: retiredCount,
+    incoming_names: incomingNames, archived, doubts,
   }, { actorId: actorId || AGT002_VIGIA_AGENT_PROFILE_ID });
 }
 
@@ -222,6 +243,11 @@ export async function agt002PhaseChangeOpportunityBlocker(database, opportunityI
   const latest = latestTenderGoNoGoDecision((await must(decisions, 'decisión GO/NO GO')) || []);
   const stage = classifyTenderOpportunityStage({ decision: latest?.decision || null, tender_offer_status: opportunity.tender_offer_status });
   return stage === 'cerradas' ? 'opportunity_closed' : null;
+}
+
+/** Convertida ACTIVA (Por decidir / En curso y etapa comercial abierta): la revisión programada sólo mira éstas. */
+export async function isAgt002PhaseChangeActiveOpportunity(database, tender) {
+  return !(await agt002PhaseChangeOpportunityBlocker(database, tender.converted_opportunity_id, tender.id));
 }
 
 /**
@@ -305,7 +331,7 @@ export async function runAgt002PhaseChangeDocumentRefresh(database, {
   const startedMs = clock();
   const events = [];
   for (const { opportunityId, noticeUid, detected, baselineAt, change, blocker } of await findAgt002PhaseChangeOpportunities(database, { now })) {
-    const base = { opportunityId, noticeUid };
+    const base = { opportunityId, noticeUid, change };
     if (clock() - startedMs >= budgetMs) { events.push({ event: 'agt002_phase_change_documents_deferred', reason: 'time_budget', ...base }); continue; }
     try {
       if (blocker) { events.push({ event: 'agt002_phase_change_documents_skipped', reason: blocker, ...base }); continue; }
@@ -318,20 +344,20 @@ export async function runAgt002PhaseChangeDocumentRefresh(database, {
       } catch (error) {
         // datos.gov.co va 1–2 días atrás: el proceso nuevo o sus documentos aún no están. Se reintenta.
         if (waitedLongEnough) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsMissingLine(change));
-        events.push({ event: 'agt002_phase_change_documents_pending', message: String(error?.message || error).slice(0, 200), ...base });
+        events.push({ event: 'agt002_phase_change_documents_pending', message: String(error?.message || error).slice(0, 200), ...(waitedLongEnough ? { review: 'documents_missing' } : {}), ...base });
         continue;
       }
       if (!Number(probe.new_document_count || 0)) {
         if (waitedLongEnough) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsMissingLine(change));
-        events.push({ event: 'agt002_phase_change_documents_waiting_new_documents', documents: probe.document_count, ...base });
+        events.push({ event: 'agt002_phase_change_documents_waiting_new_documents', documents: probe.document_count, ...(waitedLongEnough ? { review: 'documents_missing' } : {}), ...base });
         continue;
       }
       if (lastImport && lastImport.payload.new_set_hash === probe.new_set_hash) {
-        await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsLine(change, { newCount: lastImport.payload.new_document_count, retiredCount: lastImport.payload.retired_count, importedAt: lastImport.created_at }));
+        await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsLine(change, { newCount: lastImport.payload.new_document_count, importedAt: lastImport.created_at, incomingNames: lastImport.payload.incoming_names, archived: lastImport.payload.archived || [], doubts: lastImport.payload.doubts || [] }));
         events.push({ event: 'agt002_phase_change_documents_already_imported', ...base });
         continue;
       }
-      // Observaciones desde la última importación: el conjunto nuevo debe mantenerse igual al menos 12 h.
+      // Observaciones desde la última importación: la revisión siguiente debe encontrar la misma lista de documentos nuevos.
       const observations = ofKind(state, AGT002_PHASE_CHANGE_KINDS.observed, noticeUid)
         .filter(row => !lastImport || String(row.created_at) > String(lastImport.created_at));
       const lastObserved = observations.at(-1);
@@ -342,7 +368,7 @@ export async function runAgt002PhaseChangeDocumentRefresh(database, {
           document_count: probe.document_count, new_document_count: probe.new_document_count, current_official_count: probe.current_official_count,
         }, { now });
         if (unstableTooLong) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsUnstableLine(change));
-        events.push({ event: 'agt002_phase_change_documents_waiting_stability', documents: probe.document_count, newDocuments: probe.new_document_count, ...base });
+        events.push({ event: 'agt002_phase_change_documents_waiting_stability', documents: probe.document_count, newDocuments: probe.new_document_count, ...(unstableTooLong ? { review: 'documents_unstable' } : {}), ...base });
         continue;
       }
       if (ageMs(lastObserved.created_at, now) < AGT002_PHASE_CHANGE_STABLE_MS) {
@@ -351,10 +377,9 @@ export async function runAgt002PhaseChangeDocumentRefresh(database, {
       }
       if (isPhaseChangeDocumentSetTooSmall({ documentCount: probe.document_count, currentOfficialCount: probe.current_official_count })) {
         // No queda esperando en silencio: tras ~3 días con el mismo conjunto incompleto, aviso visible (una vez).
-        if (ageMs(lastObserved.created_at, now) >= AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS) {
-          await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsIncompleteLine(change));
-        }
-        events.push({ event: 'agt002_phase_change_documents_waiting_smaller_set', documents: probe.document_count, current: probe.current_official_count, ...base });
+        const incompleteTooLong = ageMs(lastObserved.created_at, now) >= AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS;
+        if (incompleteTooLong) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsIncompleteLine(change));
+        events.push({ event: 'agt002_phase_change_documents_waiting_smaller_set', documents: probe.document_count, current: probe.current_official_count, ...(incompleteTooLong ? { review: 'documents_incomplete' } : {}), ...base });
         continue;
       }
       const lastFailure = ofKind(state, AGT002_PHASE_CHANGE_KINDS.importFailed, noticeUid)
@@ -369,12 +394,13 @@ export async function runAgt002PhaseChangeDocumentRefresh(database, {
       } catch (error) {
         const message = String(error?.message || error).slice(0, 200);
         await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.importFailed, notice_uid: noticeUid, new_set_hash: probe.new_set_hash, code: error?.code || null, message }, { now });
-        events.push({ event: 'agt002_phase_change_documents_pending', reason: 'import_failed', message, ...base });
+        events.push({ event: 'agt002_phase_change_documents_pending', reason: 'import_failed', failure: 'import_failed', setHash: probe.new_set_hash, message, ...base });
         continue;
       }
       const retiredCount = Number(result?.retired_count || 0);
-      await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsLine(change, { newCount: probe.new_document_count, retiredCount, importedAt: now.toISOString() }));
-      events.push({ event: 'agt002_phase_change_documents_imported', documents: probe.document_count, newDocuments: probe.new_document_count, retired: retiredCount, ...base });
+      const detail = { incomingNames: result?.incoming_names || [], archived: result?.archived || [], doubts: result?.archive_doubts || [] };
+      await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsLine(change, { newCount: probe.new_document_count, importedAt: now.toISOString(), ...detail }));
+      events.push({ event: 'agt002_phase_change_documents_imported', documents: probe.document_count, newDocuments: probe.new_document_count, retired: retiredCount, setHash: probe.new_set_hash, ...detail, ...base });
     } catch (error) {
       events.push({ event: 'agt002_phase_change_documents_pending', message: String(error?.message || error).slice(0, 200), ...base });
     }
@@ -418,12 +444,12 @@ async function resolveAuthorizingActor(database, opportunityId, tender) {
 }
 
 /**
- * Paso 2 (análisis). Mismas reglas que auto-initial: interruptores encendidos, cupo diario de admisiones automáticas
- * (auto-initial + estos reanálisis), actor = quien convirtió, ventana G1 determinista desde la importación, un
- * reanálisis por conjunto importado (misma instancia de flujo en cada reintento).
+ * Paso 2 (análisis). Interruptores encendidos, actor = quien convirtió, ventana G1 determinista desde la importación,
+ * un reanálisis COMPLETO por conjunto importado (misma instancia de flujo en cada reintento; nunca dos del mismo
+ * conjunto). No consume ni espera el cupo de 5 del análisis al convertir; sólo la red de seguridad técnica.
  */
 export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
-  dailyCap = AGT002_AUTO_INITIAL_DEFAULT_DAILY_CAP,
+  safetyLimits = AGT002_PHASE_CHANGE_SAFETY_LIMITS,
   now = new Date(),
   environment = process.env,
   admit = admitAgt002InitialAnalysis,
@@ -435,7 +461,7 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
   const events = [];
   let admittedToday = null;
   for (const { tender, opportunityId, noticeUid, change, blocker } of await findAgt002PhaseChangeOpportunities(database, { now })) {
-    const base = { opportunityId, noticeUid };
+    const base = { opportunityId, noticeUid, change };
     let imported = null;
     const record = async (outcome, extra = {}) => {
       await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.analysis, notice_uid: noticeUid, new_set_hash: imported.payload.new_set_hash, outcome, ...extra }, { now });
@@ -446,6 +472,7 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
       imported = ofKind(state, AGT002_PHASE_CHANGE_KINDS.imported, noticeUid).at(-1) || null;
       if (!imported) { events.push({ event: 'agt002_phase_change_analysis_waiting_documents', ...(blocker ? { reason: blocker } : {}), ...base }); continue; }
       const setHash = imported.payload.new_set_hash;
+      Object.assign(base, { setHash, importedAt: imported.created_at });
       const analysisRecords = ofKind(state, AGT002_PHASE_CHANGE_KINDS.analysis, noticeUid).filter(row => row.payload.new_set_hash === setHash);
       const jobs = await must(database.from('psi_agt002_initial_analysis_jobs')
         .select('id,status,analysis_kind,created_at').eq('opportunity_id', opportunityId), 'análisis de la oportunidad');
@@ -470,10 +497,12 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
         events.push({ event: 'agt002_phase_change_analysis_deferred', reason: 'snapshot_not_current', ...base });
         continue;
       }
-      if (admittedToday === null) admittedToday = await countAgt002AutomaticAnalysesToday(database, now);
-      if (admittedToday >= dailyCap) {
-        await record('daily_cap', { analysis_kind: plan.analysisKind });
-        events.push({ event: 'agt002_phase_change_analysis_deferred', reason: 'daily_cap', dailyCap, ...base });
+      // Fuera del cupo de 5 del análisis al convertir; sólo la red de seguridad técnica.
+      if (admittedToday === null) admittedToday = await listAgt002PhaseChangeAdmissionsToday(database, now);
+      const processToday = admittedToday.filter(row => row.opportunityId === opportunityId).length;
+      if (processToday >= safetyLimits.perProcessPerDay || admittedToday.length >= safetyLimits.totalPerDay) {
+        await record('safety_limit', { analysis_kind: plan.analysisKind, admission_status: processToday >= safetyLimits.perProcessPerDay ? 'limite_por_proceso' : 'limite_total' });
+        events.push({ event: 'agt002_phase_change_analysis_deferred', reason: 'safety_limit', processToday, totalToday: admittedToday.length, ...base });
         continue;
       }
       const actorProfileId = await resolveAuthorizingActor(database, opportunityId, tender);
@@ -484,7 +513,7 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
       // Intención registrada ANTES de admitir: el cupo cuenta esta admisión aunque luego falle el registro del
       // resultado (nunca se subcuenta); si este registro falla, no se admite nada.
       await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.analysis, notice_uid: noticeUid, new_set_hash: setHash, outcome: 'admitting', analysis_kind: plan.analysisKind }, { now });
-      admittedToday += 1;
+      admittedToday.push({ opportunityId, analysisKind: plan.analysisKind });
       const admitted = await admit(database, {
         opportunityId,
         tenderId: tender.id,
@@ -510,4 +539,44 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
     }
   }
   return events;
+}
+
+/** Veredicto legible del análisis (pre_go_analysis.v2: `recommendation.label`, con su confianza). */
+export function agt002AnalysisVerdictText(result) {
+  const recommendation = result?.recommendation || result?.output?.recommendation || result?.aggregate?.recommendation || null;
+  const label = typeof recommendation?.label === 'string' ? recommendation.label.trim() : '';
+  const confidence = typeof recommendation?.confidence === 'string' ? recommendation.confidence.trim() : '';
+  return label ? `${label}${confidence ? ` (confianza ${confidence.toLowerCase()})` : ''}` : '';
+}
+
+/**
+ * Resultado de los reanálisis lanzados por este seguimiento: un reanálisis tarda ~10 min, así que la revisión siguiente
+ * informa cómo terminó (veredicto o falla). Se registra una vez por job y deja aviso visible.
+ */
+export async function collectAgt002PhaseChangeAnalysisResults(database, { now = new Date() } = {}) {
+  const rows = await must(database.from('psi_sales_interactions')
+    .select('opportunity_id,notes,created_at').eq('interaction_type', 'documento')
+    .like('notes', '%"kind":"tender_phase_change_analysis%'), 'reanálisis lanzados');
+  const parsed = (rows || []).map(row => ({ ...row, payload: parseNotes(row.notes) })).filter(row => row.payload);
+  const reported = new Set(parsed.filter(row => row.payload.kind === AGT002_PHASE_CHANGE_KINDS.result).map(row => row.payload.job_id));
+  const launched = parsed.filter(row => row.payload.kind === AGT002_PHASE_CHANGE_KINDS.analysis && row.payload.outcome === 'launched' && row.payload.job_id && !reported.has(row.payload.job_id));
+  const items = [];
+  for (const row of launched) {
+    const job = await must(database.from('psi_agt002_initial_analysis_jobs')
+      .select('id,status,analysis_run_id,error_code').eq('id', row.payload.job_id).maybeSingle(), 'estado del reanálisis');
+    if (!job || !['COMPLETED', 'FAILED', 'NEEDS_ATTENTION'].includes(job.status)) continue;
+    let verdict = '';
+    if (job.status === 'COMPLETED' && job.analysis_run_id) {
+      const run = await must(database.from('psi_tender_analysis_runs').select('id,result').eq('id', job.analysis_run_id).maybeSingle(), 'resultado del reanálisis');
+      verdict = agt002AnalysisVerdictText(run?.result);
+    }
+    const state = await readAgt002PhaseChangeState(database, row.opportunity_id);
+    const detected = ofKind(state, AGT002_PHASE_CHANGE_KINDS.detected, row.payload.notice_uid).at(-1)?.payload;
+    const imported = ofKind(state, AGT002_PHASE_CHANGE_KINDS.imported, row.payload.notice_uid).filter(item => item.payload.new_set_hash === row.payload.new_set_hash).at(-1);
+    const change = changeOf(detected, row.payload.notice_uid);
+    await recordState(database, row.opportunity_id, { kind: AGT002_PHASE_CHANGE_KINDS.result, notice_uid: row.payload.notice_uid, new_set_hash: row.payload.new_set_hash, job_id: job.id, status: job.status, analysis_run_id: job.analysis_run_id || null, verdict }, { now });
+    await appendAgt002ObservationLine(database, row.opportunity_id, phaseChangeAnalysisResultLine(change, { importedAt: imported?.created_at || row.created_at, status: job.status, verdict }));
+    items.push({ event: 'agt002_phase_change_analysis_result', opportunityId: row.opportunity_id, noticeUid: row.payload.notice_uid, change, jobId: job.id, status: job.status, verdict, setHash: row.payload.new_set_hash, importedAt: imported?.created_at || null, analysisKind: row.payload.analysis_kind });
+  }
+  return items;
 }

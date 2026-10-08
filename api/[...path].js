@@ -9,6 +9,7 @@ import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-sug
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../tender-phase-identity.js';
 import { appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../agt002-phase-change-followup.js';
+import { planObsoleteTenderDocuments } from '../tender-document-obsolescence.js';
 import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../tender-process-family.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
@@ -2009,7 +2010,7 @@ function buildAgt002RadarRunSnapshotReceiptFromRun({ runId, finishedAt, diagnost
 }
 // Marca "detectado" de cada cambio de fuente seguible del plan; devuelve las oportunidades cuya marca no se pudo
 // escribir (su enlace no se cambia en esta corrida).
-export async function recordAgt002RadarPhaseChanges(database, opportunityPatches) {
+export async function recordAgt002RadarPhaseChanges(database, opportunityPatches, { now } = {}) {
   const deferred = new Set();
   for (const patch of opportunityPatches) {
     const change = patch.sourceChange;
@@ -2019,7 +2020,7 @@ export async function recordAgt002RadarPhaseChanges(database, opportunityPatches
       continue;
     }
     try {
-      await recordAgt002PhaseChangeDetected(database, patch.converted_opportunity_id, change);
+      await recordAgt002PhaseChangeDetected(database, patch.converted_opportunity_id, change, now ? { now: new Date(now) } : {});
       console.log(JSON.stringify({ event: 'agt002_phase_change_detected', opportunityId: patch.converted_opportunity_id, change: change.change, url: change.url }));
     } catch (error) {
       deferred.add(patch.converted_opportunity_id);
@@ -2027,6 +2028,63 @@ export async function recordAgt002RadarPhaseChanges(database, opportunityPatches
     }
   }
   return deferred;
+}
+// Enlace y fecha de cierre de la oportunidad convertida (comportamiento de siempre) y, después, el aviso visible del
+// cambio seguido (append atómico del lado SQL, migración 116: nunca pisa texto escrito por personas; best-effort).
+async function applyConvertedOpportunityPatches(database, opportunityPatches) {
+  if (opportunityPatches.length) {
+    const ids = opportunityPatches.map(patch => patch.converted_opportunity_id).filter(Boolean);
+    const { data: opportunities, error: opportunityReadError } = await database.from('psi_sales_opportunities').select('id,observaciones,expected_close_date').in('id', ids);
+    if (opportunityReadError) throw opportunityReadError;
+    const byId = new Map((opportunities || []).map(row => [row.id, row]));
+    for (const patch of opportunityPatches) {
+      const opportunity = byId.get(patch.converted_opportunity_id);
+      if (!opportunity) continue;
+      const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl, phaseChange: patch.phaseChange });
+      const expected_close_date = patch.deadline ? String(patch.deadline).slice(0, 10) : opportunity.expected_close_date;
+      const { error: opportunityWriteError } = await database.from('psi_sales_opportunities').update({ observaciones, expected_close_date }).eq('id', opportunity.id);
+      if (opportunityWriteError) throw opportunityWriteError;
+    }
+  }
+  for (const patch of opportunityPatches) {
+    const change = patch.sourceChange;
+    if (!change || change.blocker) continue;
+    try { await appendAgt002ObservationLine(database, patch.converted_opportunity_id, phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, noticeUid: noticeUidFromSecopUrl(change.url) })); }
+    catch (noticeError) { console.warn(JSON.stringify({ event: 'agt002_phase_change_notice_failed', opportunityId: patch.converted_opportunity_id, message: noticeError?.message })); }
+  }
+}
+const CONVERTED_TENDER_COLUMNS = 'id,stable_key,source,entity,ref,process_id,title,url,status,deadline_at,internal_status,converted_opportunity_id,tracking_owner_id,section,dept,city,description,value,category,published_at,score,reasons,risks,raw';
+// Detección en la revisión programada (agt002-phase-change-review, todos los días): sólo la continuidad de fase de las
+// convertidas ACTIVAS (Por decidir / En curso). Idempotente con la cadena diaria (misma marca, mismo plan; un enlace ya
+// cambiado no vuelve a cambiar) y nunca escribe licitaciones nuevas: sólo actualiza la fila convertida (enlace,
+// proceso, estado, cierre) y su oportunidad. `isActive(row)` decide la etapa (agt002-phase-change-followup.js).
+export async function syncConvertedTenderPhaseLinks(database, { isActive, now = new Date().toISOString(), fetchFamilies = fetchConvertedTenderFamilies } = {}) {
+  if (typeof isActive !== 'function') throw new Error('isActive es obligatorio.');
+  const { data: converted, error } = await database.from('psi_public_tenders').select(CONVERTED_TENDER_COLUMNS).eq('internal_status', 'convertida_oportunidad');
+  if (error) throw error;
+  const active = [];
+  for (const row of converted || []) if (row?.source === 'SECOP II' && row.converted_opportunity_id && await isActive(row)) active.push(row);
+  if (!active.length) return { active: 0, changed: 0 };
+  const familyRows = await fetchFamilies(active);
+  const plan = planRadarPhaseIdentitySync({ fetched: familyRows, existing: active, now });
+  const deferred = await recordAgt002RadarPhaseChanges(database, plan.opportunityPatches || [], { now });
+  const byKey = new Map(active.map(row => [row.stable_key, row]));
+  let changed = 0;
+  for (const override of plan.convertedOverrides || []) {
+    const row = byKey.get(override.stable_key);
+    if (!row || deferred.has(row.converted_opportunity_id)) continue;
+    const update = {};
+    if (override.url && override.url !== row.url) update.url = override.url;
+    if (override.process_id && override.process_id !== row.process_id) update.process_id = override.process_id;
+    if (override.status && override.status !== row.status) update.status = override.status;
+    if (override.deadline_at && Date.parse(override.deadline_at) !== Date.parse(row.deadline_at)) update.deadline_at = override.deadline_at;
+    if (!Object.keys(update).length) continue;
+    const { error: updateError } = await database.from('psi_public_tenders').update(update).eq('stable_key', row.stable_key).eq('internal_status', 'convertida_oportunidad');
+    if (updateError) throw updateError;
+    changed += 1;
+  }
+  await applyConvertedOpportunityPatches(database, (plan.opportunityPatches || []).filter(patch => !deferred.has(patch.converted_opportunity_id)));
+  return { active: active.length, changed, patches: (plan.opportunityPatches || []).length, deferred: deferred.size };
 }
 export async function persistTenderRadar(database, actorProfile, mode = 'manual', { deep = false } = {}) {
   // run_id se genera antes de tocar el pipeline real para que, incluso si la corrida resulta
@@ -2129,28 +2187,7 @@ export async function persistTenderRadar(database, actorProfile, mode = 'manual'
     const { error: discardError } = await database.from('psi_public_tenders').update({ internal_status: 'descartada' }).eq('stable_key', key).neq('internal_status', 'convertida_oportunidad');
     if (discardError) throw discardError;
   }
-  if (opportunityPatches.length) {
-    const ids = opportunityPatches.map(patch => patch.converted_opportunity_id).filter(Boolean);
-    const { data: opportunities, error: opportunityReadError } = await database.from('psi_sales_opportunities').select('id,observaciones,expected_close_date').in('id', ids);
-    if (opportunityReadError) throw opportunityReadError;
-    const byId = new Map((opportunities || []).map(row => [row.id, row]));
-    for (const patch of opportunityPatches) {
-      const opportunity = byId.get(patch.converted_opportunity_id);
-      if (!opportunity) continue;
-      const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl, phaseChange: patch.phaseChange });
-      const expected_close_date = patch.deadline ? String(patch.deadline).slice(0, 10) : opportunity.expected_close_date;
-      const { error: opportunityWriteError } = await database.from('psi_sales_opportunities').update({ observaciones, expected_close_date }).eq('id', opportunity.id);
-      if (opportunityWriteError) throw opportunityWriteError;
-    }
-  }
-  // Aviso visible del cambio seguido, DESPUÉS de reescribir el enlace (append atómico del lado SQL, migración 116: nunca
-  // pisa texto escrito por personas). Best-effort: el seguimiento vuelve a dejar avisos en cada paso.
-  for (const patch of opportunityPatches) {
-    const change = patch.sourceChange;
-    if (!change || change.blocker) continue;
-    try { await appendAgt002ObservationLine(database, patch.converted_opportunity_id, phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, noticeUid: noticeUidFromSecopUrl(change.url) })); }
-    catch (noticeError) { console.warn(JSON.stringify({ event: 'agt002_phase_change_notice_failed', opportunityId: patch.converted_opportunity_id, message: noticeError?.message })); }
-  }
+  await applyConvertedOpportunityPatches(database, opportunityPatches);
   const radarRunReceipt = buildAgt002RadarRunReceipt({
     runId: radarRunId, startedAt: radarRunStartedAt, finishedAt: new Date().toISOString(),
     sources: radarRunReceiptSourcesFromDiagnostics(diagnostics),
@@ -4185,6 +4222,14 @@ export async function importPhaseChangeTenderDocuments(database, opportunityId, 
     phaseChange: { noticeUid, newSetHash: expectedNewSetHash, startedAt: new Date().toISOString(), ordered: official.ordered, docs: official.docs },
   });
 }
+// Comprobación sin efectos de que la migración 116 está aplicada: con un conjunto vacío la función rechaza (22023)
+// antes de tocar nada; si no existe, PostgREST responde que no encuentra la función.
+async function requireTenderDocumentRetirement(database) {
+  const probe = await database.rpc('psi_retire_tender_document_versions', { p_opportunity_id: null, p_tender_id: null, p_source: '', p_keep_names: [], p_actor_id: null });
+  const message = String(probe.error?.message || '');
+  if (probe.error && (probe.error.code === '22023' || /obligatori|vac[ií]o/i.test(message))) return;
+  throw Object.assign(new Error(`retiro de documentos anteriores no disponible (¿migración 116 aplicada?): ${message || 'respuesta inesperada'}`), { code: 'AGT002_PHASE_CHANGE_RETIRE_UNAVAILABLE' });
+}
 // Los del mismo nombre quedan versionados por identidad lógica (migración 057); lo que SECOP ya no publica para el aviso
 // vigente se retira como historial (migración 116).
 async function retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames, actorId }) {
@@ -4248,7 +4293,16 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     throw new Error('La importación automática solo está disponible para enlaces oficiales SECOP II o ESU Contratación. Use carga manual para otras fuentes.');
   }
   const tenderId = await getTenderIdForOpportunity(database, opportunityId);
-  const retiredCount = phaseChange ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: phaseChange.ordered.documents.map(doc => cleanFileName(doc.nombre_archivo)), actorId: currentProfile.id }) : 0;
+  // Sin la migración 116 no se descarga nada: falla rápido y se retoma cuando se aplique.
+  if (phaseChange) {
+    await requireTenderDocumentRetirement(database);
+    // Qué documentos vigentes deja obsoletos la tanda nueva (tender-document-obsolescence.js): pasan a historial
+    // después de la descarga; si hay duda no se archivan y se dice en el aviso.
+    const currentSecop = await must(database.from('psi_tender_document_versions').select('name').eq('opportunity_id', opportunityId).eq('source', 'secop ii').eq('current', true));
+    const newIds = new Set(phaseChange.ordered.newIds);
+    phaseChange.incomingNames = phaseChange.ordered.documents.filter(doc => newIds.has(secopDocumentId(doc))).map(doc => cleanFileName(doc.nombre_archivo));
+    phaseChange.obsolete = planObsoleteTenderDocuments({ currentNames: [...new Set((currentSecop || []).map(row => row.name))], incomingNames: phaseChange.incomingNames });
+  }
   const refreshResults = await refreshTenderDocumentBatch(toDownload, async doc => {
     const sourceDocumentId = normalizeTenderSourceDocumentId(doc.source_document_id);
     const currentVersion = await getCurrentTenderDocumentVersion(database, opportunityId, sourceLabel, sourceDocumentId);
@@ -4285,6 +4339,10 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     const failedNew = refreshResults.filter(result => result?.status === 'failed').length;
     if (failedNew > 0) throw Object.assign(new Error(`Fase nueva: ${failedNew} documento(s) nuevo(s) aún no se pudieron descargar; se reintenta en la siguiente corrida.`), { code: 'AGT002_PHASE_CHANGE_DOWNLOAD_FAILED' });
   }
+  // Lo que SECOP ya no publica pasa a historial SÓLO después de que el conjunto nuevo se bajó completo: una descarga
+  // fallida (republicación con portafolio nuevo) nunca deja el expediente sin sus documentos vigentes.
+  const archivedNames = new Set((phaseChange?.obsolete?.archive || []).map(item => secopDocumentNameKey(item.name)));
+  const retiredCount = phaseChange ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: phaseChange.ordered.documents.map(doc => cleanFileName(doc.nombre_archivo)).filter(name => !archivedNames.has(secopDocumentNameKey(name))), actorId: currentProfile.id }) : 0;
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
@@ -4318,14 +4376,14 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     },
   });
   // La marca de "documentos del aviso nuevo importados" va sólo después del snapshot publicado.
-  if (phaseChange) await recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId: currentProfile.id, noticeUid: phaseChange.noticeUid, newSetHash: phaseChange.newSetHash, snapshotId: registeredSnapshot.id, startedAt: phaseChange.startedAt, documentCount: phaseChange.ordered.documents.length, newDocumentCount: phaseChange.ordered.newCount, retiredCount });
+  if (phaseChange) await recordAgt002PhaseChangeDocumentsImported(database, opportunityId, { actorId: currentProfile.id, noticeUid: phaseChange.noticeUid, newSetHash: phaseChange.newSetHash, snapshotId: registeredSnapshot.id, startedAt: phaseChange.startedAt, documentCount: phaseChange.ordered.documents.length, newDocumentCount: phaseChange.ordered.newCount, retiredCount, incomingNames: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, doubts: phaseChange.obsolete.doubts });
   const records = await getTenderDocumentRecords(database, opportunityId);
   return {
     ...records,
     ...refreshSummary,
     imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     official_document_coverage: officialCoverage,
-    ...(phaseChange ? { retired_count: retiredCount } : {}),
+    ...(phaseChange ? { retired_count: retiredCount, incoming_names: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, archive_doubts: phaseChange.obsolete.doubts } : {}),
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }

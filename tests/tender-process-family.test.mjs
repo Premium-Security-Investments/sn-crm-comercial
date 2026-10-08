@@ -269,13 +269,14 @@ test('backend: importación, lectura y jobs del host usan la familia de proceso 
     assert.ok(persistBody.indexOf('recordAgt002RadarPhaseChanges(') > -1, `${path}: la importación registra la marca "detectado"`);
     assert.ok(persistBody.indexOf('recordAgt002RadarPhaseChanges(') < persistBody.indexOf(".from('psi_public_tenders').upsert("), `${path}: la marca va antes de guardar el enlace nuevo`);
   }
-  for (const path of ['../tender-process-family.js', '../agt002-phase-change-followup.js']) {
+  for (const path of ['../tender-process-family.js', '../agt002-phase-change-followup.js', '../agt002-phase-change-review.js', '../agt002-licitaciones-alerts.js', '../tender-document-obsolescence.js']) {
     assert.doesNotMatch(readFileSync(new URL(path, import.meta.url), 'utf8'), /agt003/i, `${path} respeta el límite AGT-002`);
   }
   const radarRunner = readFileSync(new URL('../ops/agt002-radar-daily/run-agt002-radar-import.mjs', import.meta.url), 'utf8');
-  assert.match(radarRunner, /runAgt002PhaseChangeDocumentRefresh/);
-  const autoInitialRunner = readFileSync(new URL('../ops/agt002-auto-initial/run-agt002-auto-initial.mjs', import.meta.url), 'utf8');
-  assert.match(autoInitialRunner, /runAgt002PhaseChangeAnalysisAdmissions/);
+  assert.match(radarRunner, /runAgt002PhaseChangeReview/);
+  const review = readFileSync(new URL('../agt002-phase-change-review.js', import.meta.url), 'utf8');
+  assert.match(review, /runAgt002PhaseChangeDocumentRefresh/);
+  assert.match(review, /runAgt002PhaseChangeAnalysisAdmissions/);
   assert.ok(existsSync(new URL('../supabase/migrations/116_agt002_retire_republished_tender_documents.sql', import.meta.url)));
   assert.ok(existsSync(new URL('../supabase/rollbacks/116_agt002_retire_republished_tender_documents_rollback.sql', import.meta.url)));
 });

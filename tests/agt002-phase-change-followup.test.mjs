@@ -14,7 +14,7 @@ import {
   runAgt002PhaseChangeAnalysisAdmissions,
   runAgt002PhaseChangeDocumentRefresh,
 } from '../agt002-phase-change-followup.js';
-import { countAgt002AutomaticAnalysesToday } from '../agt002-auto-initial.js';
+import { countAgt002AutomaticAnalysesToday, listAgt002PhaseChangeAdmissionsToday } from '../agt002-auto-initial.js';
 import { planRadarPhaseIdentitySync, tenderSourceChangeFollowUpBlocker } from '../tender-phase-identity.js';
 
 process.env.NEXT_PUBLIC_SUPABASE_URL ||= 'http://127.0.0.1:9';
@@ -221,7 +221,7 @@ for (const [label, server] of servers) {
 const probeOf = (newSetHash, newCount, { documents = 24, current = 20 } = {}) => async () => ({ new_set_hash: newSetHash, new_document_count: newCount, document_count: documents, current_official_count: current });
 const at = iso => new Date(iso);
 
-test('documentos: espera a datos.gov.co y a documentos nuevos, exige el mismo conjunto ≥12 h, importa una vez', async () => {
+test('documentos: espera a datos.gov.co y a documentos nuevos, la revisión siguiente confirma la misma lista e importa una vez', async () => {
   const tables = world();
   const db = fakeDb(tables);
   const imports = [];
@@ -234,12 +234,12 @@ test('documentos: espera a datos.gov.co y a documentos nuevos, exige el mismo co
   assert.deepEqual((await run(async () => { throw new Error('No se encontró proceso SECOP por urlproceso exacto'); }, '2026-10-08T14:00:00Z')).map(e => e.event), ['agt002_phase_change_documents_pending'], 'sólo la oportunidad con cambio detectado entra');
   assert.deepEqual((await run(probeOf('none', 0), '2026-10-08T15:00:00Z')).map(e => e.event), ['agt002_phase_change_documents_waiting_new_documents']);
   assert.deepEqual((await run(probeOf('full', 4), '2026-10-08T20:00:00Z')).map(e => e.event), ['agt002_phase_change_documents_waiting_stability']);
-  assert.deepEqual((await run(probeOf('full', 4), '2026-10-09T02:00:00Z')).map(e => e.event), ['agt002_phase_change_documents_waiting_stability'], 'menos de 12 h: aún no');
+  assert.deepEqual((await run(probeOf('full', 4), '2026-10-08T20:10:00Z')).map(e => e.event), ['agt002_phase_change_documents_waiting_stability'], 'una repetición inmediata (minutos) no cuenta como la revisión siguiente');
   assert.equal(imports.length, 0);
-  assert.deepEqual((await run(probeOf('full', 4), '2026-10-09T09:00:00Z')).map(e => e.event), ['agt002_phase_change_documents_imported']);
+  assert.deepEqual((await run(probeOf('full', 4), '2026-10-08T21:00:00Z')).map(e => e.event), ['agt002_phase_change_documents_imported'], 'la revisión siguiente con la misma lista importa');
   assert.deepEqual(imports, [{ opportunityId: 'opp-ftic', noticeUid: NOTICE, actorProfileId: AGT002_VIGIA_AGENT_PROFILE_ID, expectedNewSetHash: 'full', baselineAt: '2026-10-08T11:00:00.000Z' }]);
   assert.match(tables.psi_sales_opportunities[0].observaciones, /^Nota escrita por Juan\n/, 'el texto escrito por personas no se toca');
-  assert.ok(tables.psi_sales_opportunities[0].observaciones.endsWith(`${HEAD}; el 9-oct se bajaron 4 documento(s) nuevo(s); los anteriores quedan como historial.`));
+  assert.ok(tables.psi_sales_opportunities[0].observaciones.endsWith(`${HEAD}; el 8-oct se bajaron 4 documento(s) nuevo(s).`));
   assert.deepEqual((await run(probeOf('full', 4), '2026-10-09T10:00:00Z')).map(e => e.event), ['agt002_phase_change_documents_already_imported']);
   assert.equal(imports.length, 1);
   assert.equal(isPhaseChangeDocumentSetTooSmall({ documentCount: 3, currentOfficialCount: 6 }), false);
@@ -430,7 +430,8 @@ test('cupo: la intención se registra antes de admitir, así el cupo cuenta aunq
   await runAgt002PhaseChangeAnalysisAdmissions(db, { now: NOW, environment: ON, admit: tracingAdmit, freezeProfile });
   assert.deepEqual(order, ['admitting'], 'el último registro antes de admitir es la intención');
   tables.psi_sales_interactions = tables.psi_sales_interactions.filter(row => JSON.parse(row.notes).outcome !== 'launched');
-  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 1);
+  assert.equal((await listAgt002PhaseChangeAdmissionsToday(db, NOW)).length, 1, 'la intención cuenta para la red de seguridad');
+  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 0, 'no consume el cupo del análisis al convertir');
 });
 
 test('análisis: espera la marca de importación y un snapshot vigente posterior', async () => {
@@ -457,7 +458,7 @@ test('análisis: admite UN reanálisis sucesor del canónico, autorizado por qui
   assert.equal(calls[0].attempt, `secop-phase-change:${NOTICE}:set-1`, 'una instancia por conjunto importado');
   assert.equal(calls[0].expiresAt, '2026-10-11T10:00:00.000Z', 'ventana G1 determinista desde la importación');
   assert.ok(tables.psi_sales_opportunities[0].observaciones.endsWith(`${ANALYSIS_HEAD}se lanzó el reanálisis automático.`));
-  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 1, 'cuenta contra el cupo automático');
+  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 0, 'fuera del cupo de 5 del análisis al convertir (decisión del dueño)');
   const again = await runAgt002PhaseChangeAnalysisAdmissions(db, { now: at('2026-10-10T16:00:00.000Z'), environment: ON, admit, freezeProfile });
   assert.deepEqual(again.map(e => e.event), ['agt002_phase_change_analysis_already_resolved']);
   assert.equal(calls.length, 1, 'nunca en bucle');
@@ -501,10 +502,10 @@ test('análisis: un resultado no admitido no dice "se lanzó" y no se reintenta 
   const sameDay = await runAgt002PhaseChangeAnalysisAdmissions(db, { now: new Date(NOW.getTime() + 600_000), environment: ON, admit, freezeProfile });
   assert.deepEqual(sameDay.map(e => e.reason), ['retry_tomorrow']);
   assert.equal(calls.length, 1, 'sin repetir la admisión en cada tick');
-  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 1, 'la intención registrada antes de admitir cuenta (nunca se subcuenta el cupo)');
+  assert.equal((await listAgt002PhaseChangeAdmissionsToday(db, NOW)).length, 1, 'la intención registrada antes de admitir cuenta para la red de seguridad');
 });
 
-test('cupo: sólo cuentan las admisiones automáticas; un reanálisis manual no lo consume', async () => {
+test('un reanálisis manual no cuenta para la red de seguridad', async () => {
   const manualReanalyses = Array.from({ length: 5 }, (_, index) => ({ id: `m${index}`, opportunity_id: `other-${index}`, status: 'COMPLETED', analysis_kind: 'REANALYSIS', created_at: '2026-10-09T13:00:00.000Z' }));
   const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED] });
   tables.psi_agt002_initial_analysis_jobs.push(...manualReanalyses);
@@ -513,21 +514,36 @@ test('cupo: sólo cuentan las admisiones automáticas; un reanálisis manual no 
   assert.equal(calls.length, 1, 'cinco reanálisis manuales hoy no bloquean el automático');
 });
 
-test('cupo: compartido con el análisis al convertir; lleno → pendiente con aviso, una vez, y al día siguiente se lanza', async () => {
+test('decisión del dueño: con el cupo de 5 del análisis al convertir lleno, el reanálisis por fase nueva igual se lanza', async () => {
   const autoInitials = Array.from({ length: 5 }, (_, index) => ({ id: `j${index}`, opportunity_id: `other-${index}`, status: 'COMPLETED', analysis_kind: 'INITIAL', created_at: '2026-10-09T13:00:00.000Z' }));
   const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED] });
   tables.psi_agt002_initial_analysis_jobs.push(...autoInitials);
-  const db = fakeDb(tables);
   const { calls, admit, freezeProfile } = admitSpy();
-  const events = await runAgt002PhaseChangeAnalysisAdmissions(db, { now: NOW, dailyCap: 5, environment: ON, admit, freezeProfile });
-  assert.deepEqual(events.map(e => [e.event, e.reason]), [['agt002_phase_change_analysis_deferred', 'daily_cap']]);
-  assert.equal(calls.length, 0);
-  assert.ok(db.appended.includes(`${ANALYSIS_HEAD}reanálisis automático pendiente por cupo diario; se intenta mañana.`));
-  const again = await runAgt002PhaseChangeAnalysisAdmissions(db, { now: new Date(NOW.getTime() + 600_000), dailyCap: 5, environment: ON, admit, freezeProfile });
-  assert.deepEqual(again.map(e => e.reason), ['retry_tomorrow']);
-  assert.equal(db.appended.filter(line => /cupo diario/.test(line)).length, 1);
-  const tomorrow = await runAgt002PhaseChangeAnalysisAdmissions(db, { now: at('2026-10-10T14:00:00.000Z'), dailyCap: 5, environment: ON, admit, freezeProfile });
-  assert.deepEqual(tomorrow.map(e => e.event), ['agt002_phase_change_analysis_admitted']);
+  const events = await runAgt002PhaseChangeAnalysisAdmissions(fakeDb(tables), { now: NOW, environment: ON, admit, freezeProfile });
+  assert.deepEqual(events.map(e => e.event), ['agt002_phase_change_analysis_admitted']);
+  assert.equal(calls.length, 1);
+});
+
+test('una fase nueva que lanza el INITIAL (sin análisis previo) no le quita cupo al análisis al convertir', async () => {
+  const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED], psi_agt002_initial_analysis_jobs: [], psi_tender_analysis_runs: [] });
+  const db = fakeDb(tables);
+  const { admit, freezeProfile } = admitSpy();
+  await runAgt002PhaseChangeAnalysisAdmissions(db, { now: NOW, environment: ON, admit: async (...args) => { tables.psi_agt002_initial_analysis_jobs.push({ id: 'pc', opportunity_id: 'opp-ftic', status: 'QUEUED', analysis_kind: 'INITIAL', created_at: NOW.toISOString() }); return admit(...args); }, freezeProfile });
+  assert.equal(await countAgt002AutomaticAnalysesToday(db, NOW), 0);
+});
+
+test('red de seguridad técnica: 3 por proceso y 20 en total por día; si se alcanza, aviso visible y se intenta mañana', async () => {
+  const intents = (opportunityId, n) => Array.from({ length: n }, (_, index) => ({ id: `i-${opportunityId}-${index}`, opportunity_id: opportunityId, interaction_type: 'documento', created_at: '2026-10-09T13:00:00.000Z', notes: JSON.stringify({ kind: 'tender_phase_change_analysis', notice_uid: 'x', new_set_hash: `old-${index}`, outcome: 'admitting', analysis_kind: 'REANALYSIS' }) }));
+  const perProcess = world({ psi_sales_interactions: [DETECTED, IMPORTED, ...intents('opp-ftic', 3)] });
+  const db = fakeDb(perProcess);
+  const { calls, admit, freezeProfile } = admitSpy();
+  const events = await runAgt002PhaseChangeAnalysisAdmissions(db, { now: NOW, environment: ON, admit, freezeProfile });
+  assert.deepEqual(events.map(e => [e.event, e.reason]), [['agt002_phase_change_analysis_deferred', 'safety_limit']]);
+  assert.ok(db.appended.includes(`${ANALYSIS_HEAD}reanálisis automático pendiente: se alcanzó el límite técnico de seguridad del día; se intenta mañana (revisar si hay un error).`));
+  assert.deepEqual((await runAgt002PhaseChangeAnalysisAdmissions(db, { now: new Date(NOW.getTime() + 600_000), environment: ON, admit, freezeProfile })).map(e => e.reason), ['retry_tomorrow']);
+  assert.deepEqual((await runAgt002PhaseChangeAnalysisAdmissions(db, { now: at('2026-10-10T14:00:00.000Z'), environment: ON, admit, freezeProfile })).map(e => e.event), ['agt002_phase_change_analysis_admitted'], 'al día siguiente se lanza');
+  const total = world({ psi_sales_interactions: [DETECTED, IMPORTED, ...Array.from({ length: 20 }, (_, i) => intents(`otra-${i}`, 1)[0])] });
+  assert.deepEqual((await runAgt002PhaseChangeAnalysisAdmissions(fakeDb(total), { now: NOW, environment: ON, admit, freezeProfile })).map(e => e.reason), ['safety_limit']);
   assert.equal(calls.length, 1);
 });
 
@@ -556,17 +572,190 @@ test('plan puro de análisis', () => {
   assert.deepEqual(planAgt002PhaseChangeAnalysis({ imported, now: NOW, canonical: { id: 'legacy', analysis_kind: null } }), { action: 'admit', analysisKind: 'REANALYSIS', sourceAnalysisRunId: 'legacy' });
 });
 
-test('I4: los documentos tienen servicio propio cada hora, con presupuesto; la cadena diaria sólo marca', async () => {
+test('horario: un servicio propio lun–vie 9/14/19 h y sáb–dom 14 h (Bogotá); la cadena diaria y auto-initial no lo ejecutan', async () => {
   const { readFileSync } = await import('node:fs');
   const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
   const runner = read('../ops/agt002-radar-daily/run-agt002-radar-import.mjs');
   const daily = runner.match(/async function runDaily\(\) \{[\s\S]*?\n\}/)[0];
   assert.doesNotMatch(daily, /PhaseChange/, 'la cadena diaria (escaneo, conciliación, Top 5) no espera descargas');
-  assert.match(runner, /if \(mode === '--phase-change-documents'\) await runPhaseChangeDocuments\(\);/);
-  assert.match(runner, /reconcileAgt002PendingPhaseChanges/);
-  const service = read('../ops/agt002-radar-daily/agt002-phase-change-documents.service');
-  assert.match(service, /--phase-change-documents/);
-  assert.match(service, /AGT002_PHASE_CHANGE_DOCUMENTS_BUDGET_MS=600000/);
-  assert.match(service, /TimeoutStartSec=20min/);
-  assert.match(read('../ops/agt002-radar-daily/agt002-phase-change-documents.timer'), /OnUnitInactiveSec=1h/);
+  assert.match(runner, /if \(mode === '--phase-change-review'\) await runPhaseChangeReview\(\);/);
+  assert.doesNotMatch(read('../ops/agt002-auto-initial/run-agt002-auto-initial.mjs'), /PhaseChange/, 'el reanálisis por fase nueva lo lanza la revisión, no auto-initial');
+  const service = read('../ops/agt002-radar-daily/agt002-phase-change-review.service');
+  assert.match(service, /--phase-change-review/);
+  assert.match(service, /StateDirectory=agt002-licitaciones-alerts/);
+  assert.match(service, /EnvironmentFile=\/etc\/psi-agt002-initial-analysis\/env/);
+  const timer = read('../ops/agt002-radar-daily/agt002-phase-change-review.timer');
+  assert.match(timer, /^OnCalendar=Mon\.\.Fri \*-\*-\* 09,14,19:00:00 America\/Bogota$/m);
+  assert.match(timer, /^OnCalendar=Sat,Sun \*-\*-\* 14:00:00 America\/Bogota$/m);
+});
+
+function writableDb(tables) {
+  const db = fakeDb(tables);
+  const base = db.from.bind(db);
+  db.updates = [];
+  db.from = name => {
+    const chain = base(name);
+    chain.update = values => {
+      const filters = [];
+      const exec = () => { for (const row of (tables[name] || []).filter(r => filters.every(f => f(r)))) { Object.assign(row, values); db.updates.push({ table: name, id: row.id, values }); } return { data: null, error: null }; };
+      const upd = { eq(c, v) { filters.push(r => r[c] === v); return upd; }, then(resolve) { resolve(exec()); } };
+      return upd;
+    };
+    chain.in = (column, values) => chain.then ? Object.assign(chain, { then(resolve) { resolve({ data: (tables[name] || []).filter(r => values.includes(r[column])), error: null }); } }) : chain;
+    return chain;
+  };
+  return db;
+}
+
+for (const [label, server] of servers) {
+  test(`detección horaria (${label}): sólo convertidas activas, idempotente, sin licitaciones nuevas`, async () => {
+    const tables = world({ psi_sales_interactions: [] });
+    tables.psi_public_tenders = [
+      { ...draftConverted(), id: 't-ftic', stable_key: 'ftic-conv' },
+      { ...draftConverted({ stable_key: 'nogo', converted_opportunity_id: 'opp-nogo', entity: 'OTRA', ref: 'LP-9-2026' }), id: 't-nogo' },
+    ];
+    tables.psi_sales_opportunities.push({ id: 'opp-nogo', stage_code: 'prospecto', tender_offer_status: 'cerrada_no_go', observaciones: '' });
+    const db = writableDb(tables);
+    const seen = [];
+    const fetchFamilies = async rows => { seen.push(...rows.map(r => r.stable_key)); return [draftRow(), offerRow()]; };
+    const isActive = row => row.converted_opportunity_id !== 'opp-nogo';
+    const first = await server.syncConvertedTenderPhaseLinks(db, { isActive, fetchFamilies, now: '2026-10-10T16:00:00.000Z' });
+    assert.deepEqual(seen, ['ftic-conv'], 'sólo se consulta la familia de las activas');
+    assert.equal(first.changed, 1);
+    assert.equal(tables.psi_public_tenders[0].url, NEW_URL);
+    assert.equal(tables.psi_public_tenders.length, 2, 'nunca escribe licitaciones nuevas');
+    assert.deepEqual(kinds(tables), ['tender_phase_change_detected']);
+    assert.match(tables.psi_sales_opportunities[0].observaciones, /Link fuente: .*11032172/);
+    const second = await server.syncConvertedTenderPhaseLinks(db, { isActive, fetchFamilies, now: '2026-10-10T17:00:00.000Z' });
+    assert.equal(second.changed, 0, 'idempotente: la hora siguiente (o la cadena diaria) no vuelve a cambiar nada');
+    assert.deepEqual(kinds(tables), ['tender_phase_change_detected']);
+  });
+}
+
+test('(e) fase nueva: sin 116 no se descarga nada; lo anterior pasa a historial sólo después de bajar bien el conjunto nuevo', async () => {
+  const { readFileSync } = await import('node:fs');
+  for (const path of ['../server/index.js', '../api/[...path].js']) {
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+    const body = source.match(/async function importOfficialTenderDocuments\([\s\S]*?\n}\n/)[0];
+    const preflight = body.indexOf('requireTenderDocumentRetirement(database)');
+    const downloads = body.indexOf('refreshTenderDocumentBatch(');
+    const failedCheck = body.indexOf('AGT002_PHASE_CHANGE_DOWNLOAD_FAILED');
+    const retire = body.indexOf('retireSupersededOfficialTenderDocuments(');
+    assert.ok(preflight > -1 && preflight < downloads, `${path}: comprobación de la 116 antes de descargar`);
+    assert.ok(downloads < failedCheck && failedCheck < retire, `${path}: el retiro va después de una descarga completa`);
+    assert.ok(retire < body.indexOf('psi_begin_tender_document_refresh'), `${path}: y antes de fijar el snapshot`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Archivado de obsoletos, correo (outbox para Hermes) y revisión completa.
+// ---------------------------------------------------------------------------------------------------------------
+
+const { planObsoleteTenderDocuments } = await import('../tender-document-obsolescence.js');
+const alerts = await import('../agt002-licitaciones-alerts.js');
+const { runAgt002PhaseChangeReview } = await import('../agt002-phase-change-review.js');
+
+test('archivado (Fondo Único, nombres reales del borrador): proyecto de pliego, anexo técnico y anexos editables; nada protegido', () => {
+  const draft = ['CAPACIDAD FINANCIERA SEG. PRIVADA.pdf', 'COTIZACIONES.zip', 'OFERTA ECONOMICA VIGILANCIA.xlsx', '1. Estudios_Previos_Vigilancia 2026 (1).pdf',
+    'Concepto - Proceso Vigilancia 2026 ajustado VF.pdf', 'Registro_2-2026-064809 aprobacion Hacienda (2).pdf', '2. ANALISIS DEL SECTOR VIGILANCIA 2026 VF (1).pdf',
+    'Aviso del articulo 30 de la Ley 80 de 1993 .pdf', '4. MEMORIA DE CALCULO VGILANCIA VF.xlsx', '3. ANEXO TECNICO VIGILANCIA 2026 (1).pdf',
+    'Solicitud Vigencia futura.pdf', 'CDP-188326-ADICION VIGILANCIA-SUB ADMTVA-FUTIC.pdf', 'ANEXOS EDITABLES FTIC-LP-003-2026.docx', 'PROYECTO PLIEGO DE CONDICIONES.pdf'];
+  const plan = planObsoleteTenderDocuments({ currentNames: draft, incomingNames: ['PLIEGO DE CONDICIONES DEFINITIVO FTIC-LP-003-2026.pdf', '3. ANEXO TECNICO DEFINITIVO VIGILANCIA 2026.pdf', 'ANEXOS EDITABLES DEFINITIVOS FTIC-LP-003-2026.docx', 'RESOLUCION DE APERTURA FTIC-LP-003-2026.pdf'] });
+  assert.deepEqual(plan.archive.map(item => [item.name, item.reason]).sort(), [
+    ['3. ANEXO TECNICO VIGILANCIA 2026 (1).pdf', 'anexo_tecnico_del_borrador'],
+    ['ANEXOS EDITABLES FTIC-LP-003-2026.docx', 'formato_con_version_nueva'],
+    ['PROYECTO PLIEGO DE CONDICIONES.pdf', 'proyecto_de_pliego'],
+  ]);
+  assert.deepEqual(plan.doubts, []);
+  const onlyResolution = planObsoleteTenderDocuments({ currentNames: draft, incomingNames: ['RESOLUCION DE APERTURA FTIC-LP-003-2026.pdf'] });
+  assert.deepEqual(onlyResolution.archive, [], 'sin pliego definitivo, el proyecto sigue vigente');
+});
+
+test('archivado (DANE LP-001-2026, nombres reales): por tanda; adendas, estudios previos y CDP nunca; dudas avisadas', () => {
+  const base = ['Aviso Convocatoria LP-001-2026 (Rev).pdf', 'Anexo N°. 1 Especificaciones Tecnicas.pdf', 'Anexo N°. 3 Matriz de Riesgos.xlsx', 'Anexo N° 4. Oferta Económica.xlsx',
+    'Formatos LP-001-2026 Vigilancia VF.zip', 'Proyecto Pliego Condiciones LP-001-2026  Vigilancia V25-08-2026.pdf', 'Anexo N° 6. CDP 96426.pdf',
+    'Estudios Previos Vigilancia 2026_VF En limpio (Firmado).pdf', 'Anexo N°. 2 Análisis del Sector Vigilancia 2026.pdf', 'Anexo N° 5. Consolidado_Costos_Vigilancia 2026-2029.xlsx'];
+  const sep20 = ['Resolución Apertura LP-001-2026 (Suscrita).pdf', 'Pliego de Condiciones Definitivo LP-001-2026 Vigilancia (21-09-2026).pdf', 'Estudios Previos Vigilancia 2026_VF  Definitivo.pdf', 'Formatos Definitivos LP-001-2026.zip', 'Anexos al Estudio Previo LP-001-2026 Definitivos.zip'];
+  const first = planObsoleteTenderDocuments({ currentNames: base, incomingNames: sep20 });
+  assert.deepEqual(first.archive.map(item => item.name).sort(), ['Formatos LP-001-2026 Vigilancia VF.zip', 'Proyecto Pliego Condiciones LP-001-2026  Vigilancia V25-08-2026.pdf']);
+  const current = [...base.filter(name => !first.archive.some(item => item.name === name)), ...sep20];
+  const sep29 = ['Anexo N°. 1 Especificaciones Tecnicas Consolidado Adenda 03.pdf', 'Solicitud Adenda N° 03 Componente Tecnico.pdf', 'Anexo N°. 5 Consolidado_Costos_Vigilancia 2026-2029 Adenda 03.xlsx',
+    'Anexo N°. 4 Oferta Economica Consolidado Adenda 03.xlsx', 'Adenda N° 03 LP-001-2026.pdf', 'Formato N° 4 Apoyo a la Industria Nacional Discapacidad Mujeres Consolidado Adenda 03.docx',
+    'Estudios Previos Vigilancia 2026 Consolidado Adenda 03.pdf', 'Anexo N°. 3 Matriz de Riesgos Consolidado Adenda 03.xlsx', 'Solicitud Adenda N° 03 Componente Juridico.pdf',
+    'Pliego de Condiciones Definitivo LP-001-2026 Consolidado Adenda 03.pdf'];
+  const third = planObsoleteTenderDocuments({ currentNames: [...current, 'Adenda N° 01 LP-001-2026 (Suscrita).pdf'], incomingNames: sep29 });
+  assert.deepEqual(third.archive.map(item => item.name).sort(), ['Anexo N° 4. Oferta Económica.xlsx', 'Anexo N° 5. Consolidado_Costos_Vigilancia 2026-2029.xlsx', 'Anexo N°. 1 Especificaciones Tecnicas.pdf', 'Anexo N°. 3 Matriz de Riesgos.xlsx']);
+  assert.ok(third.doubts.some(item => item.name.startsWith('Pliego de Condiciones Definitivo LP-001-2026 Vigilancia')), 'un pliego definitivo reemplazado por el consolidado es duda: no se archiva');
+  const protectedNames = [...third.archive, ...first.archive].map(item => item.name).filter(name => /estudio|cdp|adenda n° 01|aviso|an[aá]lisis del sector/i.test(name));
+  assert.deepEqual(protectedNames, []);
+});
+
+test('correo: un outbox por revisión, destinatarios fijos, licitación por entidad y valor, id estable', () => {
+  const items = alerts.agt002AlertItems({
+    detections: [{ opportunityId: 'opp-ftic', noticeUid: NOTICE, url: NEW_URL, change: { change: 'phase', ref: 'FTIC-LP-003-2026 (Presentación de oferta)' } }],
+    documents: [{ opportunityId: 'opp-ftic', setHash: 'set-1', newDocuments: 2, incomingNames: ['PLIEGO DEFINITIVO.pdf', 'RESOLUCION.pdf'], archived: [{ name: 'PROYECTO PLIEGO DE CONDICIONES.pdf', replacedBy: 'PLIEGO DEFINITIVO.pdf' }], doubts: [] }],
+    analyses: [{ opportunityId: 'opp-ftic', setHash: 'set-1', outcome: 'launched' }],
+  }, { day: '2026-10-13' });
+  const opportunities = new Map([['opp-ftic', { entity: 'FONDO UNICO DE TECNOLOGÍAS DE LA INFORMACIÓN Y LAS COMUNICACIONES', value: 4250000000, title: 'Vigilancia' }]]);
+  const outbox = alerts.buildAgt002AlertsOutbox({ runId: 'r1', generatedAt: '2026-10-13T14:00:03.000Z', slot: '09:00', items, opportunities });
+  const [message] = outbox.messages;
+  assert.equal(outbox.contract, 'agt002-licitaciones-alerts-v1');
+  assert.deepEqual(message.to, ['juanbotero@premiumsecurity.ai', 'directora.licitaciones@seguridadnacional.co']);
+  assert.deepEqual(message.cc, []);
+  assert.match(message.subject, /^Vig-IA Licitaciones: novedades en SECOP — FONDO UNICO .* — \$4\.250\.000\.000$/);
+  assert.match(message.text, /SECOP publicó el pliego definitivo/);
+  assert.match(message.text, /Pasaron a historial \(ya no entran al análisis\): PROYECTO PLIEGO DE CONDICIONES\.pdf \(lo reemplaza PLIEGO DEFINITIVO\.pdf\)/);
+  assert.match(message.text, /Se lanzó el reanálisis automático/);
+  assert.match(message.text, /Ver en el CRM: https:\/\/seguridad-nacional-crm\.vercel\.app\/#\/detail\/opp-ftic/);
+  assert.doesNotMatch(message.subject, /CO1\.|LP-003|opp-/, 'el asunto no usa códigos internos');
+  assert.match(message.id, /^[0-9a-f]{64}$/);
+  assert.equal(alerts.buildAgt002AlertsOutbox({ runId: 'r2', generatedAt: '2026-10-13T15:00:00.000Z', slot: '10:00', items, opportunities }).messages[0].id, message.id, 'mismas novedades → mismo id');
+  assert.equal(alerts.buildAgt002AlertsOutbox({ runId: 'r3', generatedAt: '2026-10-13T15:00:00.000Z', items: [] }), null);
+});
+
+function memoryFs() {
+  const files = new Map();
+  return {
+    files,
+    mkdirSync() {},
+    readFileSync(path) { if (!files.has(path)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return files.get(path); },
+    writeFileSync(path, content) { files.set(path, String(content)); },
+    renameSync(from, to) { files.set(to, files.get(from)); files.delete(from); },
+  };
+}
+
+test('revisión completa: detecta, confirma, baja, archiva, reanaliza, informa el resultado después y no repite correos', async () => {
+  const tables = world({ psi_sales_interactions: [DETECTED], psi_agt002_initial_analysis_jobs: [], psi_tender_analysis_runs: [{ id: 'run-1', opportunity_id: 'opp-ftic', canonical: true, status: 'completed', analysis_kind: 'INITIAL', result: {} }] });
+  tables.psi_public_tenders[0] = { ...tables.psi_public_tenders[0], entity: 'FONDO UNICO DE TECNOLOGÍAS DE LA INFORMACIÓN Y LAS COMUNICACIONES', value: 4250000000, title: 'Vigilancia' };
+  const db = fakeDb(tables);
+  const fs = memoryFs();
+  const api = {
+    syncConvertedTenderPhaseLinks: async () => ({ active: 1, changed: 0 }),
+    probePhaseChangeTenderDocumentSet: async () => ({ new_set_hash: 'set-a', new_document_count: 2, document_count: 21, current_official_count: 19 }),
+    importPhaseChangeTenderDocuments: async (_database, opportunityId, options) => {
+      tables.psi_sales_interactions.push(state('tender_phase_change_documents_imported', { new_set_hash: options.expectedNewSetHash, snapshot_id: 'snap-a', new_document_count: 2, incoming_names: ['PLIEGO DE CONDICIONES DEFINITIVO.pdf', 'RESOLUCION DE APERTURA.pdf'], archived: [{ name: 'PROYECTO PLIEGO DE CONDICIONES.pdf', replacedBy: 'PLIEGO DE CONDICIONES DEFINITIVO.pdf' }] }, new Date(Date.parse(options.now || '2026-10-13T19:00:01Z')).toISOString()));
+      tables.psi_tender_document_state[0].current_snapshot_id = 'snap-a';
+      return { retired_count: 1, incoming_names: ['PLIEGO DE CONDICIONES DEFINITIVO.pdf', 'RESOLUCION DE APERTURA.pdf'], archived: [{ name: 'PROYECTO PLIEGO DE CONDICIONES.pdf', replacedBy: 'PLIEGO DE CONDICIONES DEFINITIVO.pdf' }], archive_doubts: [] };
+    },
+  };
+  const { admit, freezeProfile, calls } = admitSpy();
+  const logs = [];
+  const review = when => runAgt002PhaseChangeReview(db, { api, environment: ON, now: at(when), stateDir: '/alerts', fsImpl: fs, admit, freezeProfile, log: event => logs.push(event) });
+  const r1 = await review('2026-10-13T14:00:00Z'); // 9:00: detectado (cadena diaria) + documentos observados
+  assert.deepEqual(r1.items.map(item => item.type), ['link']);
+  const r2 = await review('2026-10-13T19:00:00Z'); // 14:00: la misma lista → baja, archiva y lanza
+  assert.deepEqual(r2.items.map(item => item.type).sort(), ['analysis', 'documents'], JSON.stringify(logs.filter(e => /analysis/.test(e.event))));
+  assert.equal(calls.length, 1);
+  assert.match(r2.outbox.messages[0].text, /PROYECTO PLIEGO DE CONDICIONES\.pdf/);
+  tables.psi_agt002_initial_analysis_jobs.push({ id: 'job-1', opportunity_id: 'opp-ftic', status: 'COMPLETED', analysis_kind: 'REANALYSIS', analysis_run_id: 'run-2', created_at: '2026-10-13T19:00:30.000Z' });
+  tables.psi_tender_analysis_runs.push({ id: 'run-2', opportunity_id: 'opp-ftic', canonical: false, status: 'completed', result: { recommendation: { label: 'Conviene presentarse', confidence: 'MEDIA' } } });
+  const r3 = await review('2026-10-14T00:00:00Z'); // 19:00: resultado del reanálisis
+  assert.deepEqual(r3.items.map(item => item.type), ['result']);
+  assert.match(r3.outbox.messages[0].text, /Terminó el reanálisis: Conviene presentarse \(confianza media\)/);
+  assert.ok(tables.psi_sales_opportunities[0].observaciones.includes('el reanálisis terminó — Conviene presentarse (confianza media)'));
+  const r4 = await review('2026-10-14T14:00:00Z');
+  assert.equal(r4.outbox, null, 'sin novedad no hay correo');
+  assert.ok(fs.files.has('/alerts/outbox-latest.json'));
+  assert.equal([...fs.files.keys()].filter(path => /\/outbox-2026.*\.json$/.test(path)).length, 3);
+  assert.equal(calls.length, 1, 'un solo reanálisis por tanda');
 });

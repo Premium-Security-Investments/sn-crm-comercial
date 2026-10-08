@@ -55,6 +55,10 @@ test('psi_retire_tender_document_versions: sólo retira (current=false) la fuent
   await assert.rejects(retire(db, ['', '  ']), /no puede estar vacío/);
   await assert.rejects(retire(db, ['Pliego.pdf'], INACTIVE), /actor/);
   await assert.rejects(retire(db, ['Pliego.pdf'], VIGIA, '00000000-0000-4000-8000-0000000000ff'), /no corresponde/);
+  // Comprobación sin efectos que usa la importación de fase nueva antes de descargar (requireTenderDocumentRetirement).
+  const before = (await db.query('select count(*)::int as n from public.psi_tender_document_versions where current')).rows[0].n;
+  await assert.rejects(db.query('select public.psi_retire_tender_document_versions(null, null, $1, $2, null)', ['', []]), error => error.code === '22023' && /obligatorias/.test(error.message));
+  assert.equal((await db.query('select count(*)::int as n from public.psi_tender_document_versions where current')).rows[0].n, before);
 });
 
 test('psi_append_opportunity_observation_line: agrega una sola vez, sin reescribir lo existente', async () => {
