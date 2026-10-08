@@ -414,6 +414,10 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .followup-section-grid>.followup-history{order:1;min-width:0}
 .followup-section-grid>.followup-form-slot{order:2;min-width:0}
 .followup-timeline .event strong{text-transform:none}
+.followup-expand{margin-top:8px;padding:6px 12px;font-size:13px}
+.followup-form input[readonly]{background:#f1f5fb;border-color:transparent;color:#40516b;cursor:default}
+.decision-maker-lines{display:grid;gap:2px}
+.decision-maker-email{font-size:15px;overflow-wrap:break-word;word-break:normal}
 .followup-form-hint{margin:-6px 0 14px;color:#526173;font-size:13px;line-height:1.45}
 .followup-migrated-badge{margin:2px 0}
 .followup-form-compact{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
@@ -622,7 +626,10 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .decision-list>li.is-open{border-color:#93c5fd;box-shadow:0 8px 20px rgba(29,78,216,.08)}
 .decision-row{display:flex;align-items:center;gap:10px;padding:10px 12px}
 .decision-row input[type=checkbox]{width:20px;height:20px;flex:none}
-.decision-row-main{flex:1;display:grid;gap:2px;min-width:0;padding:0;border:0;background:none;text-align:left;cursor:pointer;color:inherit}
+.decision-row-main{flex:1;display:grid;gap:2px;min-width:0;padding:6px 10px;border:0;border-radius:10px;background:none;box-shadow:none;text-align:left;cursor:pointer;color:inherit;white-space:normal}
+.decision-row-main:hover{background:#f1f5fb}
+.decision-open{flex:none;padding:9px 18px}
+.decision-full-link{display:inline-block;margin:0 14px 14px;color:#1b4fd0;font-size:13px;font-weight:700}
 .decision-row-main strong{color:#10213d;font-size:15px;overflow-wrap:anywhere}
 .decision-row-main span{color:#526173;font-size:13px}
 .decision-row-main em{color:#b45309;font-style:normal;font-size:13px;font-weight:800}
@@ -637,7 +644,8 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .decision-fields label{display:grid;gap:4px;color:#334155;font-size:13px;font-weight:800}
 .decision-fields .decision-notes{grid-column:1 / -1}
 .decision-quick-dates{display:flex;flex-wrap:wrap;gap:4px}
-.decision-quick-dates button{padding:3px 8px;border:1px solid #cbd5e1;border-radius:999px;background:#f8fafc;font-size:12px;cursor:pointer}
+.decision-quick-dates button{padding:4px 10px;border:1px solid #93a8c6;border-radius:999px;background:#fff;color:#1b355f;box-shadow:none;font-size:12px;font-weight:700;cursor:pointer}
+.decision-quick-dates button:hover{background:#e9eef7;color:#10213d}
 .decision-actions{display:flex;align-items:center;gap:10px;margin-top:10px}
 .decision-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;padding:10px 12px;border-radius:14px;background:#eef4ff}
 .decision-bulk input{flex:1;min-width:180px}
@@ -661,7 +669,7 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
   .decision-queue{padding:14px}
   .decision-queue-header{flex-direction:column}
   .decision-row{flex-wrap:wrap}
-  .decision-row .button{margin-left:30px}
+  .decision-row .decision-open{margin-left:30px}
   .decision-choice{flex:1 1 calc(50% - 6px);text-align:center}
   .decision-actions button{width:100%}
 }

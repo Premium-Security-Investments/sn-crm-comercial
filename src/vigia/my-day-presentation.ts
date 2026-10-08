@@ -35,7 +35,7 @@ export type MyDayOpportunity = {
   decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null;
 };
 
-const HACER_HOY_LIMIT = 3;
+const HACER_HOY_LIMIT = 20;
 const PREPARAR_LIMIT = 3;
 const DEPURAR_LIMIT = 5;
 const TERMINAL_STAGES = ['aprobado', 'perdido', 'descartado'];

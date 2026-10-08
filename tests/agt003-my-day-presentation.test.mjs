@@ -97,7 +97,7 @@ assert.equal(overdueNoData.depurarCrm.length, 0, 'no se recategoriza a depurar_c
 // --- tope de hacer_hoy -----------------------------------------------------------------------
 const fiveOverdue = Array.from({ length: 5 }, (_, i) => ({ ...base, id: `overdue-${i}`, next_action_at: '2026-08-01T12:00:00.000Z', offer_value: 1_000_000 * (i + 1) }));
 const qFive = buildMyDayQueue(fiveOverdue, now);
-assert.equal(qFive.hacerHoy.length, 3, 'hacer_hoy trunca a 3 tarjetas');
+assert.equal(qFive.hacerHoy.length, 5, 'hacer_hoy muestra todas las gestiones de hoy (hasta 20)');
 assert.equal(qFive.hacerHoyTotal, 5, 'hacerHoyTotal reporta el total elegible sin truncar');
 
 // --- balde preparar: elegibilidad y exclusión mutua ------------------------------------------
