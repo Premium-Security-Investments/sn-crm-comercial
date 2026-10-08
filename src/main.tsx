@@ -43,7 +43,7 @@ import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
-import { bogotaDay, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
+import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm, TodayQueue, UpcomingList } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
@@ -73,7 +73,7 @@ type Opportunity = {
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
-type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
+type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number };
 type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; areas: AccessAssignment[]; permissions: string[]; can_edit_customer_segment?: boolean; can_own_opportunities?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'prioridad_baja';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
@@ -831,16 +831,21 @@ function Select({ id, value, onChange, options, empty, disabled = false, require
   return <select id={id} value={value} disabled={disabled} required={required} onChange={event => onChange(event.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
 }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
-// Mismo criterio que el servidor (409 CRM_PENDING_DECISIONS): un comercial con oportunidades sin decisión no crea nuevas.
+// Mismo criterio que el servidor (409 CRM_PENDING_DECISIONS): un comercial atrasado crea nuevas cuando cumple la cuota
+// diaria de decisiones (decisionQuota). Devuelve cuántas le faltan decidir hoy (0 = libre).
+function commercialDecisionQuota(data: Bootstrap): DecisionQuota | null {
+  if (data.currentProfile.role !== 'comercial') return null;
+  return decisionQuota(pendingDecisions(data.opportunities.filter(o => o.owner_id === data.currentProfile.id)).length, data.decisionsToday || 0);
+}
 function blockingDecisionCount(data: Bootstrap): number {
-  return data.currentProfile.role === 'comercial' ? pendingDecisions(data.opportunities.filter(o => o.owner_id === data.currentProfile.id)).length : 0;
+  return commercialDecisionQuota(data)?.remaining || 0;
 }
 function NewOpportunityButton({ data }: { data: Bootstrap | null }) {
   const blocking = data ? blockingDecisionCount(data) : 0;
   if (!blocking) return <button onClick={() => go('#/new')}>Nueva oportunidad</button>;
   return <div className="topbar-actions">
     <button type="button" disabled aria-describedby="new-opportunity-blocked">Nueva oportunidad</button>
-    <small id="new-opportunity-blocked" className="topbar-blocked-note">Primero decida {blocking === 1 ? 'su oportunidad pendiente' : `sus ${blocking} oportunidades pendientes`} en <a href="#/home">Mi día</a></small>
+    <small id="new-opportunity-blocked" className="topbar-blocked-note">Decida {blocking === 1 ? '1 oportunidad más' : `${blocking} oportunidades más`} hoy en <a href="#/home">Mi día</a></small>
   </div>;
 }
 function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; alerts: MyDayAlert[]; total: number; tone: string; empty: string }) {
@@ -1613,8 +1618,8 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   };
   const blockingDecisions = id ? 0 : blockingDecisionCount(data);
   if (blockingDecisions) return <Panel title="Nueva oportunidad">
-    <div className="decision-blocked"><strong>Primero decida {blockingDecisions === 1 ? 'la oportunidad pendiente' : `sus ${blockingDecisions} oportunidades pendientes`}.</strong>
-      <p>Toda oportunidad abierta debe tener una decisión vigente (sigue viva con fecha, avanza, congelada, descartada o eliminación pedida). Cuando no tenga pendientes podrá crear nuevas.</p>
+    <div className="decision-blocked"><strong>Decida {blockingDecisions === 1 ? '1 oportunidad más' : `${blockingDecisions} oportunidades más`} hoy para crear nuevas.</strong>
+      <p>Toda oportunidad abierta debe tener una decisión vigente (sigue viva con fecha, avanza, congelada, descartada o eliminación pedida). Si está atrasado, con decidir 10 en el día puede seguir creando; mañana tendrá otras 10.</p>
       <a className="button" href="#/home">Ir a Mi día</a></div>
   </Panel>;
   return <Panel title={id ? 'Editar oportunidad' : 'Nueva oportunidad'}>
@@ -2305,7 +2310,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
           ? `No tiene nada atrasado. Hoy tiene ${todayRows.length === 1 ? '1 gestión' : `${todayRows.length} gestiones`}.`
           : 'Está al día: no tiene oportunidades pendientes ni gestiones para hoy.'}</p></div>
     </section>
-    <DecisionQueue pending={pendingDecisionRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />
+    <DecisionQueue pending={pendingDecisionRows} quota={commercialDecisionQuota(data)} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />
     {opportunities.length > 0 && <TodayQueue today={todayRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />}
     {opportunities.length > 0 && !hasPending && <UpcomingList upcoming={upcomingRows} />}
     {opportunities.length > 0 && !hasPending && !todayRows.length && canCreate && <section className="panel my-day-prospect">

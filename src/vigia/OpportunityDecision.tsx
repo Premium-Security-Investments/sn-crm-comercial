@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { api } from '../apiClient';
-import { bogotaDay, FREEZE_DAYS, type DecisionCode } from './opportunity-decision-rules.js';
+import { bogotaDay, FREEZE_DAYS, type DecisionCode, type DecisionQuota } from './opportunity-decision-rules.js';
 
 // CRM comercial — decisión obligatoria por oportunidad (2026-10-07). Toda oportunidad abierta debe quedar con una
 // decisión vigente: sigue viva (con fecha), avanza, congelada, descartada, perdida o con eliminación pedida.
@@ -136,8 +136,8 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, onDo
   </form>;
 }
 
-export function DecisionQueue({ pending, stages, lossReasons, onChanged }: {
-  pending: DecisionOpportunity[]; stages: StageOption[]; lossReasons: ReasonOption[]; onChanged: () => Promise<void>;
+export function DecisionQueue({ pending, quota, stages, lossReasons, onChanged }: {
+  pending: DecisionOpportunity[]; quota?: DecisionQuota | null; stages: StageOption[]; lossReasons: ReasonOption[]; onChanged: () => Promise<void>;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [visible, setVisible] = useState(10);
@@ -174,7 +174,10 @@ export function DecisionQueue({ pending, stages, lossReasons, onChanged }: {
     <header className="decision-queue-header">
       <div><span className="eyebrow">Antes de seguir</span>
         <h3>Decida {pending.length === 1 ? 'esta oportunidad' : `estas ${pending.length} oportunidades`}</h3>
-        <p>Toda oportunidad abierta debe tener una decisión: que siga viva con fecha, que avance, congelarla, descartarla o pedir eliminarla. Mientras haya pendientes puede consultar el CRM, pero no crear oportunidades nuevas.</p></div>
+        <p>Toda oportunidad abierta debe tener una decisión: que siga viva con fecha, que avance, congelarla, descartarla o pedir eliminarla. Mientras esté atrasado, decida al menos 10 al día para poder crear oportunidades nuevas.</p>
+        {quota && quota.required > 0 && <p className={quota.blocked ? 'decision-quota' : 'decision-quota is-done'}>{quota.blocked
+          ? <>Hoy lleva <strong>{quota.done} de {quota.required}</strong>. Le {quota.remaining === 1 ? 'falta 1' : `faltan ${quota.remaining}`} para poder crear oportunidades nuevas hoy.</>
+          : <>Cumplió las {quota.required} de hoy: ya puede crear oportunidades nuevas. Mañana siga con las que quedan.</>}</p>}</div>
       <strong className="decision-queue-count numeric-value">{pending.length}</strong>
     </header>
     {selected.size > 0 && <div className="decision-bulk" role="region" aria-label="Decidir varias">

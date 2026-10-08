@@ -39,6 +39,27 @@ export function isOutOfActivePipeline(opportunity, now = new Date()) {
   return isFrozen(opportunity, now) || isDeleteRequested(opportunity);
 }
 
+/**
+ * Cuota diaria (Juan, 2026-10-08): un comercial atrasado no tiene que ponerse al día de un golpe. Le basta con decidir
+ * DAILY_DECISION_QUOTA oportunidades en el día (Bogotá) para poder crear nuevas; al día siguiente, si sigue atrasado,
+ * la cuota vuelve a empezar. Con menos pendientes que la cuota, debe decidirlas todas.
+ * `decidedToday` = oportunidades distintas que el comercial decidió hoy.
+ */
+export const DAILY_DECISION_QUOTA = 10;
+export function decisionQuota(pendingCount, decidedToday) {
+  const pending = Math.max(0, Number(pendingCount) || 0);
+  const decided = Math.max(0, Number(decidedToday) || 0);
+  const required = Math.min(DAILY_DECISION_QUOTA, pending + decided);
+  const done = Math.min(decided, required);
+  const blocked = pending > 0 && done < required;
+  return { pending, required, done, remaining: blocked ? required - done : 0, blocked };
+}
+
+/** Inicio del día de Bogotá (UTC-5, sin horario de verano) como instante ISO. */
+export function bogotaDayStartIso(now = new Date()) {
+  return new Date(`${bogotaDay(now)}T00:00:00-05:00`).toISOString();
+}
+
 /** Oportunidad comercial abierta, sin decisión vigente: gestión vencida (antes de hoy, Bogotá) o sin gestión. */
 export function isPendingDecision(opportunity, now = new Date()) {
   if (!isAgt003CommercialOpportunity(opportunity) || isTerminalStage(opportunity.stage_code)) return false;
