@@ -12,6 +12,9 @@ function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
+// A hung control-plane endpoint must not hang the CI job: it aborts and counts as fetch_failed.
+const FETCH_TIMEOUT_MS = 15000;
+
 function surfaceEnvPrefix(surface) {
   return `AGT002_OBSERVE_${surface.toUpperCase()}`;
 }
@@ -73,7 +76,7 @@ async function fetchedSurfaceObservation(surface, env, fetchImpl) {
   const url = surfaceObservationUrl(surface, env);
   if (!url || typeof fetchImpl !== 'function') return { observation_status: 'not_configured' };
   try {
-    const response = await fetchImpl(url);
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!response.ok) {
       if (response.status === 404) return { observation_status: 'route_unknown', http_status: 404 };
       return { observation_status: 'http_error', http_status: Number.isInteger(response.status) ? response.status : null };

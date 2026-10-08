@@ -23,7 +23,6 @@ const MONOLITH_PATHS = Object.freeze(['api/[...path].js', 'server/index.js']);
 // readPersistedTenderRadar and the inline functions they call) import. Guarded by a test that
 // re-derives this set from the monolith (best effort) and fails when a module is missing.
 export const RADAR_MONOLITH_MODULES = Object.freeze([
-  'access-control.js',
   'tender-phase-identity.js',
   'tender-competibility-policy.js',
   'tender-radar-source-fetch.js',
@@ -38,9 +37,11 @@ export const RADAR_MONOLITH_MODULES = Object.freeze([
 ]);
 
 // Paths every pinned surface depends on regardless of its import graph: the lockfile pins the
-// third-party code it loads and package.json declares it ("type", dependency ranges). Note: this
-// makes any dependency bump count as a change for every pinned surface, on purpose.
-const SHARED_PATHS = Object.freeze(['package.json', 'pnpm-lock.yaml']);
+// third-party code it loads, so any dependency bump counts as a change for every pinned surface,
+// on purpose. package.json is deliberately not counted: it changes for scripts all the time, and a
+// real dependency change always shows up in the lockfile too (accepted gap: a change to only
+// "type" or "engines" is not detected).
+const SHARED_PATHS = Object.freeze(['pnpm-lock.yaml']);
 
 // Files read at runtime (readFileSync, not import) by a module: whenever the module is in a
 // surface's closure, these paths are part of what that surface runs.

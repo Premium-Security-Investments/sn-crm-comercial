@@ -122,7 +122,7 @@ test('observeAgt002HostSurface: invokes /usr/bin/systemctl with fixed argv, shel
   assert.deepEqual(calls[0], {
     command: '/usr/bin/systemctl',
     args: ['show', 'agt002-radar-scan.service', '--property=ActiveState,SubState,Result,ExecStart,Environment'],
-    options: { shell: false },
+    options: { shell: false, timeout: 5000 },
   });
 });
 

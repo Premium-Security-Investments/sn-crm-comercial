@@ -53,6 +53,8 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 const SYSTEMCTL_PATH = '/usr/bin/systemctl';
+// A hung systemctl must never pin a bridge request: it is killed and reported as unavailable.
+const SYSTEMCTL_TIMEOUT_MS = 5000;
 const SHOW_PROPERTY_NAMES = Object.freeze(['ActiveState', 'SubState', 'Result', 'ExecStart', 'Environment']);
 const UNIT_STATUS_PROPERTIES = Object.freeze(['ActiveState', 'SubState', 'Result']);
 
@@ -172,7 +174,7 @@ function observeUnitFields(execFile, unitName) {
     execFile(
       SYSTEMCTL_PATH,
       ['show', unitName, `--property=${SHOW_PROPERTY_NAMES.join(',')}`],
-      { shell: false },
+      { shell: false, timeout: SYSTEMCTL_TIMEOUT_MS },
       (error, stdout) => {
         // Any adapter failure (nonzero exit, spawn error) collapses to a single null: no error
         // message/stderr is ever surfaced downstream.

@@ -813,12 +813,12 @@ test('collectAgt002SurfaceObservations + observe: every unreachable shape keeps 
 
 // --- code paths: runtime-read files and the monolith's Radar module imports ---
 
-test('collectAgt002SurfaceCodePaths: includes runtime-read schemas and package.json, not only imports', () => {
+test('collectAgt002SurfaceCodePaths: includes runtime-read schemas and the lockfile, not package.json', () => {
   const initial = collectAgt002SurfaceCodePaths('initial_analysis_worker');
   assert.ok(initial.includes('schemas/agt002'), 'agt002-pre-go-analysis-v2.js reads schemas/agt002/*.json at runtime');
   for (const surface of AGT002_PINNED_SURFACE_NAMES) {
     const paths = collectAgt002SurfaceCodePaths(surface);
-    assert.ok(paths.includes('package.json'), surface);
+    assert.equal(paths.includes('package.json'), false, `${surface}: script-only package.json edits are not code changes`);
     assert.ok(paths.includes('pnpm-lock.yaml'), surface);
   }
 });
@@ -829,7 +829,10 @@ test('collectAgt002SurfaceCodePaths: includes runtime-read schemas and package.j
 // Only top-level `function` declarations closed by a column-0 `}` and named `import { ... } from
 // '../x.js'` imports are recognized.
 test('RADAR_MONOLITH_MODULES covers every module the monolith Radar functions import (best effort)', () => {
-  const source = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  // Comments are stripped first so a word in prose (e.g. "can") is never mistaken for a call.
+  const source = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
   const importedFrom = new Map();
   for (const match of source.matchAll(/^import\s+\{([^}]*)\}\s+from\s+'\.\.\/([^']+)'/gm)) {
     for (const part of match[1].split(',')) {
@@ -860,4 +863,17 @@ test('RADAR_MONOLITH_MODULES covers every module the monolith Radar functions im
   }
   const missing = [...modules].filter((module) => !RADAR_MONOLITH_MODULES.includes(module));
   assert.deepEqual(missing, [], `add these to RADAR_MONOLITH_MODULES: ${missing.join(', ')}`);
+});
+
+test('collectAgt002SurfaceObservations: every fetch carries an abort signal so a hung endpoint cannot hang CI', async () => {
+  const options = [];
+  await collectAgt002SurfaceObservations({
+    env: { AGT002_OBSERVE_BRIDGE_URL: 'https://bridge.invalid/cp' },
+    fetchImpl: async (url, init) => {
+      options.push(init);
+      throw new Error('unreachable');
+    },
+  });
+  assert.ok(options.length > 0);
+  assert.ok(options.every((init) => init?.signal instanceof AbortSignal));
 });
