@@ -30,10 +30,11 @@ export type NavRoutePage =
   | 'alerts'
   | 'centinel'
   | 'users'
-  | 'siio';
+  | 'siio'
+  | 'agents';
 
 export type NavItem = { href: string; label: string; page: NavRoutePage };
-export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Administración'; items: NavItem[] };
+export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Administración' | 'IT'; items: NavItem[] };
 
 type NavGroupDefinition = {
   title: NavGroup['title'];
@@ -47,7 +48,8 @@ const directiveViewerRoles = new Set([...managementRoles, 'consulta']);
 // Sólo gerencia y admin cargan metas (PUT /api/goals); el ítem "Cargar metas" del menú sólo existe para ellos.
 const goalWriterRoles = new Set(['admin', 'gerencia']);
 // Rutas de escritura que un rol de solo consulta nunca abre, aunque tenga el módulo.
-const writeOnlyPages = new Set<NavRoutePage>(['new', 'edit', 'users', 'goals']);
+// IT → Agentes administra la Plataforma de Agentes: nunca se abre en solo consulta, aunque hoy la vista sea de lectura.
+const writeOnlyPages = new Set<NavRoutePage>(['new', 'edit', 'users', 'goals', 'agents']);
 
 const navGroups: readonly NavGroupDefinition[] = [
   {
@@ -81,6 +83,13 @@ const navGroups: readonly NavGroupDefinition[] = [
       { href: '#/users', label: 'Usuarios y permisos', page: 'users' },
     ],
   },
+  {
+    title: 'IT',
+    items: [
+      // Vista visual de la Plataforma de Agentes y casa de Vig-IA IT; sólo para quien administra usuarios.
+      { href: '#/agents', label: 'Agentes', page: 'agents' },
+    ],
+  },
 ];
 
 const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
@@ -97,6 +106,7 @@ const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   goals: 'modulo_metas',
   tenders: 'licitaciones',
   users: 'modulo_usuarios',
+  agents: 'modulo_usuarios',
 };
 
 export function isManagementRole(role?: string | null) {
