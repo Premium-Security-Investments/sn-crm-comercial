@@ -13,6 +13,7 @@ export const SURFACE_NAMES = Object.freeze([
   'radar_daily_reconciliation',
   'radar_daily_top5',
   'radar_requests',
+  'phase_change_review',
 ]);
 
 // Surfaces the host retired (timer disabled / replaced by the CRM daily Radar). They are no longer

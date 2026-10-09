@@ -121,8 +121,10 @@ function hasAmbiguousSuccessors(successorCandidates) {
   return new Set(topCandidates.map(deadlineMs)).size === 1;
 }
 
-function knownPhasesFor(rows) {
-  return uniqueStrings(rows.map(row => String(row?.status || '').trim()))
+// Fases conocidas: las ya registradas en la fila convertida (raw.phase_continuity) más las de sus versiones vistas; nunca
+// se pierde una fase porque la convertida ya haya pasado a la siguiente (idempotente entre revisiones).
+function knownPhasesFor(rows, previous = []) {
+  return uniqueStrings([...(Array.isArray(previous) ? previous : []), ...rows.map(row => String(row?.status || '').trim())].map(value => String(value || '').trim()))
     .sort((a, b) => statusPhaseRank(a) - statusPhaseRank(b));
 }
 
@@ -201,7 +203,7 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
       return persisted && persisted.internal_status !== 'convertida_oportunidad';
     }));
 
-    const knownPhases = knownPhasesFor([convertedRow, ...fetchedSame]);
+    const knownPhases = knownPhasesFor([convertedRow, ...fetchedSame], convertedRow.raw?.phase_continuity?.known_phases);
 
     convertedOverrides.push({
       stable_key: convertedRow.stable_key,
@@ -238,6 +240,7 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
     if (convertedRow.converted_opportunity_id && (urlChanged || phaseChanged)) {
       opportunityPatches.push({
         converted_opportunity_id: convertedRow.converted_opportunity_id,
+        tender_id: convertedRow.id || null,
         officialUrl: officialUrl || convertedRow.url || null,
         historicalUrl: convertedRow.url || null,
         processId: official.process_id || convertedRow.process_id || null,

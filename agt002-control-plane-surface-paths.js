@@ -73,6 +73,9 @@ export const AGT002_PINNED_SURFACE_ENTRIES = Object.freeze({
   radar_daily_reconciliation: Object.freeze(hostRunnerEntries('radar_daily_reconciliation')),
   radar_daily_top5: RADAR_IMPORT_ENTRIES,
   radar_requests: RADAR_IMPORT_ENTRIES,
+  // Revisión programada de fases nuevas (mismo runner, --phase-change-review): su closure incluye
+  // agt002-phase-change-review.js por el import dinámico literal del runner.
+  phase_change_review: RADAR_IMPORT_ENTRIES,
 });
 
 export const AGT002_PINNED_SURFACE_NAMES = Object.freeze(Object.keys(AGT002_PINNED_SURFACE_ENTRIES));

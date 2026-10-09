@@ -6,7 +6,15 @@
 //
 // Hard invariant: this is a technical refresh only. It may ever patch `deadline_at`, `status`,
 // `raw` and `last_seen_at` -- never identity, never human/business fields, never conversion
-// fields. A converted tender still gets its deadline/status kept fresh.
+// fields.
+//
+// Decisión del dueño (2026-10-09): una licitación convertida cuya oportunidad NO está activa (NO GO, cerrada,
+// descartada, perdida) no se consulta ni se escribe aquí. Las convertidas ACTIVAS sí se siguen conciliando: la revisión
+// programada de fases sólo las ve si encuentra su familia en datos.gov.co (entidad + referencia, cierre de los últimos
+// 120 días), así que sin este refresco una activa podía quedar sin estado ni cierre al día. Esta conciliación nunca toca
+// enlace ni proceso, así que no deshace lo que deja la revisión.
+
+import { isInactiveConvertedTender } from './tender-opportunity-stage.js';
 
 const SECOP_II_RESOURCE = 'https://www.datos.gov.co/resource/p6dx-8zbt.json';
 const SECOP_II_SELECT = 'id_del_proceso,entidad,fase,estado_del_procedimiento,estado_resumen,fecha_de_recepcion_de,fecha_de_ultima_publicaci,modalidad_de_contratacion,nombre_del_proveedor,adjudicado';
@@ -202,9 +210,8 @@ export function createTenderSourceReconciliation({
     // consume the whole $limit and starve the other ids requested in the same chunk.
     : where => fetchFromSocrata(where, typeof fetchImpl === 'function' ? fetchImpl : defaultHttpFetch, chunkSize * 20);
 
-  // Keyset pagination over every durable SECOP II row with a non-null process_id. Converted rows
-  // are deliberately not filtered out: conversion freezes business/scoring/conversion fields, not
-  // the technical deadline/status facts this reconciliation keeps fresh.
+  // Keyset pagination over every durable SECOP II row with a non-null process_id. Converted rows of a
+  // NON-active opportunity are counted and dropped by runOnce (never patched, never looked up).
   async function fetchDurableRows() {
     const rows = [];
     let cursor = null;
@@ -247,9 +254,13 @@ export function createTenderSourceReconciliation({
     const nowValue = typeof now === 'function' ? now() : now;
 
     const durableRows = await fetchDurableRows();
+    // Convertidas de una oportunidad NO activa: como si no existieran (sin consulta ni escritura).
+    const inactiveConverted = new Set();
+    for (const row of durableRows) if (await isInactiveConvertedTender(database, row)) inactiveConverted.add(row);
+    const skippedInactiveConverted = inactiveConverted.size;
     // Defensive: the durable read is already scoped to a non-null process_id, but a blank string
     // would pass that filter and must never reach a SoQL IN clause.
-    const strippedRows = durableRows.filter(row => !isBlank(row?.process_id));
+    const strippedRows = durableRows.filter(row => !inactiveConverted.has(row) && !isBlank(row?.process_id));
     const scanned = strippedRows.length;
 
     const uniqueIds = [...new Set(strippedRows.map(row => row.process_id))];
@@ -325,6 +336,7 @@ export function createTenderSourceReconciliation({
       missing,
       errors,
       failed,
+      skipped_inactive_converted: skippedInactiveConverted,
     };
   }
 

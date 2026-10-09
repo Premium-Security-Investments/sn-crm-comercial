@@ -173,6 +173,7 @@ test('checkAgt002Drift: SURFACE_NAMES is exactly the live watched surfaces', () 
     'radar_daily_reconciliation',
     'radar_daily_top5',
     'radar_requests',
+    'phase_change_review',
   ]);
 });
 
@@ -577,6 +578,8 @@ test('collectAgt002SurfaceCodePaths: follows the runner import closure, adds the
   assert.equal(radarImport.includes('api/[...path].js'), false);
   assert.equal(radarImport.includes('server/index.js'), false);
   assert.deepEqual(collectAgt002SurfaceCodePaths('radar_requests'), radarImport);
+  assert.deepEqual(collectAgt002SurfaceCodePaths('phase_change_review'), radarImport, 'la revisión programada corre el mismo runner');
+  assert.ok(radarImport.includes('agt002-phase-change-review.js'));
 
   assert.throws(() => collectAgt002SurfaceCodePaths('origin_main'), /Not a pinned AGT-002 surface/);
 });

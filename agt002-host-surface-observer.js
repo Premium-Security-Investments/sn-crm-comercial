@@ -11,6 +11,7 @@ export const AGT002_HOST_SURFACE_UNITS = Object.freeze({
   radar_daily_reconciliation: 'agt002-radar-reconciliation.service',
   radar_daily_top5: 'agt002-radar-top5.service',
   radar_requests: 'agt002-radar-requests.service',
+  phase_change_review: 'agt002-phase-change-review.service',
 });
 
 // Each allowlisted surface's own immutable runner identity: the exact interpreter (or none, for
@@ -42,6 +43,7 @@ export const AGT002_HOST_SURFACE_RUNNERS = Object.freeze({
   }),
   radar_daily_top5: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--top5' }),
   radar_requests: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--requests' }),
+  phase_change_review: Object.freeze({ interpreter: '/usr/bin/node', relativePath: RADAR_IMPORT_RUNNER, args: '--phase-change-review' }),
 });
 
 const AGT002_RELEASES_ROOT = '/opt/psi-comercial/releases';

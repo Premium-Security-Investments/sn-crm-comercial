@@ -8,9 +8,17 @@ identidad (`id`, `process_id`, `source`, `stable_key`), nunca toca campos humano
 (`title`, `entity`, `section`, `reviewed_by`, `reviewed_at`), y nunca toca campos de conversión.
 
 Este artefacto **no convierte licitaciones en oportunidades, no registra GO/NO-GO, y no modifica
-`internal_status` ni `converted_opportunity_id`** -- ni siquiera para una licitación ya convertida
-(`internal_status: 'convertida_oportunidad'`): la conversión congela los campos de negocio, no los
-hechos técnicos de plazo/estado que este proceso mantiene al día.
+`internal_status` ni `converted_opportunity_id`**.
+
+**Convertidas (decisión del dueño, 2026-10-09):** una licitación convertida en oportunidad
+(`internal_status: 'convertida_oportunidad'`) cuya oportunidad NO está activa (NO GO, estado de
+oferta terminal, descartada o perdida) no se consulta ni se escribe aquí: ningún proceso automático
+la toca. El resultado informa cuántas se omitieron (`skipped_inactive_converted`). Las convertidas
+ACTIVAS ("Por decidir" / "En curso" de la bandeja) sí se siguen conciliando (estado, cierre, datos
+crudos): la revisión programada de fases sólo las ve si encuentra su familia en datos.gov.co
+(entidad + referencia y cierre de los últimos 120 días), y esta conciliación nunca toca enlace ni
+proceso, así que no deshace lo que deja la revisión. Una licitación sacada de la oportunidad y
+devuelta al Radar (`nueva`) vuelve a ser una fila normal y sí se concilia.
 
 ## Cuándo corre
 

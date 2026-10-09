@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // AGT-002 Radar import on the host (owner decision 2026-10-06: the daily import lives in the CRM, not in Hermes).
-//   --daily     the full daily import (deep SECOP search + TVEC + ESU), persisted as a `cron` run. It also leaves the
-//               "detected" mark of a new SECOP phase (or republication) of a converted process.
+//   --daily     the full daily import (deep SECOP search + TVEC + ESU), persisted as a `cron` run. It only discovers new
+//               tenders: it never writes to a converted tender or its opportunity, active or not (owner decisions
+//               2026-10-08 and 2026-10-09; tests/agt002-radar-daily-converted-untouched.test.mjs).
 //   --phase-change-review  its own unit (agt002-phase-change-review.timer: Mon–Fri 9:00, 14:00, 19:00; Sat–Sun 14:00
 //               Bogotá): new SECOP phase of ACTIVE converted tenders — link, new documents, archive of obsolete ones,
 //               full reanalysis, mail outbox for Hermes (agt002-phase-change-review.js). Never part of the daily chain.

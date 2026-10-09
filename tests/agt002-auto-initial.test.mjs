@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  agt002BogotaDayStart, runAgt002AutoInitialAdmissions, AGT002_AUTO_INITIAL_POLICY_VERSION,
+  agt002BogotaDayStart, filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions, AGT002_AUTO_INITIAL_POLICY_VERSION,
 } from '../agt002-auto-initial.js';
 
 const SINCE = '2026-10-06T17:00:00.000Z';
@@ -124,6 +124,30 @@ test('no readable document or an elapsed window is skipped; an admission error i
     admit: async () => { const error = new Error('x'); error.code = '55000'; throw error; },
   });
   assert.deepEqual(failing[0], { event: 'agt002_auto_initial_failed', code: '55000', opportunityId: 'opp-new', processingJobId: 'pj-new' });
+});
+
+test('decisión del dueño 2026-10-09: una oportunidad no activa (NO GO vigente, estado de oferta terminal) nunca se analiza', async () => {
+  const calls = [];
+  const admit = async (_db, input) => { calls.push(input.opportunityId); return { admissionStatus: 'admitted', jobId: 'ij' }; };
+  const noGo = world({ psi_tender_go_no_go_decisions: [{ id: 'd1', opportunity_id: 'opp-new', tender_id: 't-new', decision: 'no_go', decided_at: '2026-10-06T19:00:00Z' }] });
+  assert.deepEqual(await runAgt002AutoInitialAdmissions(fakeDb(noGo), { since: SINCE, now: NOW, environment: ON, admit, freezeProfile }), []);
+  const closed = world();
+  closed.psi_sales_opportunities[0].tender_offer_status = 'cerrada_no_go';
+  assert.deepEqual(await runAgt002AutoInitialAdmissions(fakeDb(closed), { since: SINCE, now: NOW, environment: ON, admit, freezeProfile }), []);
+  assert.deepEqual(calls, []);
+  const go = world({ psi_tender_go_no_go_decisions: [{ id: 'd1', opportunity_id: 'opp-new', tender_id: 't-new', decision: 'go', decided_at: '2026-10-06T19:00:00Z' }] });
+  await runAgt002AutoInitialAdmissions(fakeDb(go), { since: SINCE, now: NOW, environment: ON, admit, freezeProfile });
+  assert.deepEqual(calls, ['opp-new'], 'En curso (GO) sí se analiza');
+});
+
+test('decisión del dueño 2026-10-09: el host sólo impulsa la descarga de documentos de oportunidades activas', async () => {
+  const tables = world({ psi_tender_go_no_go_decisions: [{ id: 'd1', opportunity_id: 'opp-dl', tender_id: 't-dl', decision: 'no_go', decided_at: '2026-10-06T19:00:00Z' }] });
+  tables.psi_sales_opportunities[1].stage_code = 'perdido';
+  const jobs = tables.psi_tender_processing_jobs;
+  assert.deepEqual((await filterAgt002ActiveProcessingJobs(fakeDb(tables), jobs)).map(job => job.id), ['pj-new']);
+  const { readFileSync } = await import('node:fs');
+  const runner = readFileSync(new URL('../ops/agt002-auto-initial/run-agt002-auto-initial.mjs', import.meta.url), 'utf8');
+  assert.match(runner.match(/async function claimableJobs[\s\S]*?\n\}/)[0], /filterAgt002ActiveProcessingJobs\(database, data \|\| \[\]\)/);
 });
 
 test('an activation date is required', async () => {

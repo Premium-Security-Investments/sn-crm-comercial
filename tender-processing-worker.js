@@ -46,6 +46,9 @@ export const WORKER_YIELD_STATUSES = Object.freeze([
 
 const WORKER_YIELD_SET = new Set(WORKER_YIELD_STATUSES);
 
+// Cada cuánto se vuelve a mirar el trabajo de una oportunidad no activa (por si vuelve a estar activa).
+export const INACTIVE_OPPORTUNITY_RECHECK_MS = 60 * 60 * 1000;
+
 export function isWorkerYieldStatus(status) {
   return WORKER_YIELD_SET.has(status);
 }
@@ -58,6 +61,7 @@ export function createTenderProcessingWorker(deps) {
     claimJob, updateJob, recordImportItem, appendEvent,
     revalidateOfficialStatus, discoverDocuments, importOneDocument,
     chunkDocuments, publishSnapshot, requestAgt002, now,
+    readOpportunityInactiveReason = null,
     analysisConfig = Object.freeze({}),
     observability = createAgt002AnalysisObservability(),
   } = deps;
@@ -107,6 +111,22 @@ export function createTenderProcessingWorker(deps) {
     function finishStage(stage, outcome, result) {
       observability.record('stage_duration', { job_id: jobId, tender_id: tenderId, stage, outcome, duration_ms: now() - startedAt });
       return result;
+    }
+
+    // Decisión del dueño (2026-10-09): una oportunidad NO activa (NO GO, cerrada, descartada, perdida) es como si no
+    // existiera para los procesos automáticos: ni descarga, ni revalidación, ni evento en la licitación. El trabajo NO
+    // se cancela (un NO GO luego reemplazado por un GO debe recuperar su descarga): sólo se suelta, igual que estaba, y
+    // se aplaza con next_attempt_at para que no bloquee la cola. Si la oportunidad vuelve a estar activa, sigue sola.
+    const inactive = typeof readOpportunityInactiveReason === 'function'
+      ? await readOpportunityInactiveReason({ opportunityId, tenderId })
+      : null;
+    if (inactive) {
+      await updateJob(jobId, leaseId, {
+        next_attempt_at: new Date(now() + INACTIVE_OPPORTUNITY_RECHECK_MS).toISOString(),
+        release_lease: true,
+      });
+      observability.record('outcome_recorded', { job_id: jobId, tender_id: tenderId, stage: 'opportunity_stage', outcome: 'deferred_inactive_opportunity' });
+      return finishStage('opportunity_stage', 'deferred', { status: 'noop', reason: 'opportunity_inactive', job_id: jobId });
     }
 
     // Spec §7.1: revalidate the official status before importing and before

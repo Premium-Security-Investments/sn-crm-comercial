@@ -8,7 +8,7 @@
 //      within the daily cap; the initial-analysis worker timer then runs it.
 //   (New SECOP phases of converted tenders have their own review service: agt002-phase-change-review.)
 import { createClient } from '@supabase/supabase-js';
-import { runAgt002AutoInitialAdmissions } from '../../agt002-auto-initial.js';
+import { filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions } from '../../agt002-auto-initial.js';
 
 const CLAIMABLE = ['queued', 'discovering_documents', 'importing_documents', 'retry_wait', 'ready_for_snapshot', 'snapshot_ready'];
 const log = event => console.log(JSON.stringify(event));
@@ -22,10 +22,12 @@ if (!supabaseUrl || !serviceKey || !since) {
 }
 const database = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
+// Sólo trabajos de oportunidades ACTIVAS (decisión del dueño, 2026-10-09): una NO GO o cerrada nunca hace que el host
+// llame al trabajador de documentos.
 async function claimableJobs(filter) {
-  const { data, error } = await filter(database.from('psi_tender_processing_jobs').select('id,opportunity_id,status,created_at').in('status', CLAIMABLE));
+  const { data, error } = await filter(database.from('psi_tender_processing_jobs').select('id,opportunity_id,tender_id,status,created_at').in('status', CLAIMABLE));
   if (error) throw new Error(`lectura de trabajos: ${error.message}`);
-  return data || [];
+  return filterAgt002ActiveProcessingJobs(database, data || []);
 }
 
 async function driveDocuments() {
