@@ -150,9 +150,11 @@ test('la vista muestra textos, estados en español, conteos y próximas vistas n
   for (const [code, label] of [['declared', 'Declarado'], ['controlled_pilot', 'Piloto controlado'], ['partial_operation', 'Operación parcial'], ['full_operation', 'Operación completa'], ['retired', 'Retirado']]) {
     assert.ok(presentation.includes(`${code}: '${label}'`), code);
   }
-  for (const label of ['Configuraciones', 'Actividad', 'Permisos', 'Configuración y modelos', 'Uso de IA', 'Actividad y portería', 'Salud de los procesos', 'Efectos externos', 'Propuestas por aprobar', 'Avisos']) {
+  for (const label of ['Configuraciones', 'Actividad', 'Permisos', 'Configuración y modelos', 'Actividad y portería', 'Salud de los procesos', 'Efectos externos', 'Propuestas por aprobar', 'Avisos']) {
     assert.ok(presentation.includes(`'${label}'`), label);
   }
+  const upcomingList = presentation.slice(presentation.indexOf('export const UPCOMING_PLATFORM_VIEWS'), presentation.indexOf(']);', presentation.indexOf('export const UPCOMING_PLATFORM_VIEWS')));
+  assert.ok(!upcomingList.includes("'Uso de IA'"), '"Uso de IA" ya no es una próxima vista: tiene su sección');
   assert.match(view, /state\.status === 'loading'/);
   assert.match(view, /state\.status === 'error' && <div className="error" role="alert">\{state\.message\}<\/div>/, 'el error del 503 se muestra tal cual');
   assert.match(view, /state\.agents\.length === 0/, 'estado vacío');

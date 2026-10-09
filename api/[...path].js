@@ -53,8 +53,6 @@ import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { BEHAVIOR_FOLLOW_UP_TYPES, bogotaWeekStart, buildCommercialBehavior } from '../src/vigia/commercial-behavior.js';
 import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
 import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
-import { createAgt003PreflightApi } from '../agt003-preflight-api.js';
-import { createAgt003PreflightRuntime, getAgt003PreflightRuntimeConfig, isAgt003PreflightConfigured } from '../agt003-preflight-runtime.js';
 import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
 import { agt003PreparationDate } from '../agt003-copilot-input.js';
 import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
@@ -79,6 +77,8 @@ import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
+import { listPlatformModelUsage } from '../platform-model-usage.js';
+import { AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, recordModelRejection } from '../platform-model-gateway.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
 import { loadAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
 import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
@@ -421,6 +421,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
   // IT → Agentes: vista de sólo lectura de la Plataforma de Agentes, con la misma protección que Usuarios y permisos.
   'GET /api/platform/agents': ['users', ACTIONS.USERS_MANAGE],
+  'GET /api/platform/model-usage': ['users', ACTIONS.USERS_MANAGE],
 
   'GET /api/siio/bootstrap': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/fronts': ['siio', ACTIONS.SIIO_AREA_VIEW],
@@ -3113,16 +3114,8 @@ function createBackendAgt003CopilotApi(database) {
     recordFailure: options => recordAgt003CopilotFailure(database, options),
     releaseClaim: options => releaseAgt003CopilotClaim(database, options),
     recordFeedback: options => recordAgt003CopilotFeedback(database, options),
-  });
-}
-
-function createBackendAgt003PreflightApi(database) {
-  return createAgt003PreflightApi({
-    isConfigured: () => isAgt003PreflightConfigured(process.env),
-    getConfig: () => getAgt003PreflightRuntimeConfig(process.env),
-    resolveOpportunityResource: (opportunityId, profile) => resolveAgt003OpportunityResource(database, opportunityId, profile),
-    loadOpportunityContext: opportunityId => loadAgt003OpportunityContext(database, opportunityId),
-    createRuntime: () => createAgt003PreflightRuntime({ environment: process.env }),
+    // Puerta única de modelos: tope diario o saturación → evento `rejected` (mejor esfuerzo, sin contenido).
+    recordRejection: ({ failureCode, model, correlationId }) => recordModelRejection({ capability: AGT003_COPILOT_CAPABILITY, model, failureCode, correlationId }),
   });
 }
 
@@ -3237,11 +3230,13 @@ app.get('/api/vigia/commercial-behavior', async (req, res) => {
 });
 app.all('/api/vigia/commercial-behavior', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
+// Revisión previa de Vig-IA retirada (puerta única de modelos, 2026-10-09): la interfaz nunca la llamaba. Responde 410
+// sin llamar al puente ni consumir cupo; el motor (agt003-preflight-*.js) se conserva con sus pruebas.
+const AGT003_PREFLIGHT_RETIRED_MESSAGE = 'La revisión previa de Vig-IA está retirada.';
 app.post('/api/vigia/copilot/preflight', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req);
-    const result = await createBackendAgt003PreflightApi(requireDb()).preflight({ profile, body: req.body });
-    res.status(200).json(result);
+    await getAuthContext(req);
+    res.status(410).json({ error: AGT003_PREFLIGHT_RETIRED_MESSAGE });
   } catch (error) {
     sendAuthError(res, error);
   }
@@ -3368,7 +3363,11 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     if (claimError) throw claimError;
     if (claim?.status === 'existing') return res.status(200).json(await leadAnalysisState(database, id, opportunity));
     if (claim?.status === 'in_progress') { const error = new Error('El análisis de esta oportunidad ya se está preparando. Espere un momento.'); error.status = 409; throw error; }
-    if (claim?.status === 'quota') { const error = new Error(`Se acabó el cupo de análisis profundos de este mes (${claim.used} de ${claim.max}). Vuelve el próximo mes.`); error.status = 429; error.code = 'AGT003_LEAD_ANALYSIS_QUOTA'; throw error; }
+    if (claim?.status === 'quota') {
+      // Puerta única de modelos: el tope mensual queda como `rejected` sin llamar al modelo (mejor esfuerzo).
+      await recordModelRejection({ capability: AGT003_LEAD_ANALYSIS_CAPABILITY, model: (() => { try { return getAgt003CopilotRuntimeConfig(process.env).model; } catch { return null; } })(), failureCode: 'AGT003_LEAD_ANALYSIS_QUOTA', correlationId: randomUUID() });
+      const error = new Error(`Se acabó el cupo de análisis profundos de este mes (${claim.used} de ${claim.max}). Vuelve el próximo mes.`); error.status = 429; error.code = 'AGT003_LEAD_ANALYSIS_QUOTA'; throw error;
+    }
     if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el análisis.');
     claimedId = claim.id;
     const [website, interactions, services, owner] = await Promise.all([
@@ -6235,6 +6234,22 @@ app.get('/api/platform/agents', async (req, res) => {
   }
 });
 app.all('/api/platform/agents', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+// IT → Agentes → Uso de IA: libro de uso de modelos de la plataforma. Misma protección que /api/platform/agents,
+// sólo lectura (PLATFORM_DATABASE_URL) y falla cerrada con 503.
+app.get('/api/platform/model-usage', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+    res.set('Cache-Control', 'no-store');
+    res.json(await listPlatformModelUsage());
+  } catch (error) {
+    if (isPlatformAgentsUnavailable(error)) return res.status(503).json({ error: PLATFORM_AGENTS_UNAVAILABLE_MESSAGE });
+    sendAuthError(res, error);
+  }
+});
+app.all('/api/platform/model-usage', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 app.post('/api/users', async (req, res) => {
   try {
