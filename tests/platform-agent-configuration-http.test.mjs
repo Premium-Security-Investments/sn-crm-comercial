@@ -208,15 +208,40 @@ for (const [index, module] of modules.entries()) {
       assert.equal((await request(port, '/api/platform/ai-usage-profiles/comercial/archive', 'admin-token', 'POST', {})).status, 200);
       assert.deepEqual(admin.calls.at(-1).params, ['comercial', 'Juan Botero']);
 
+      // Reactivar: sólo un perfil archivado; firma el perfil autenticado, nunca el cuerpo.
+      const callsBeforeReactivate = admin.calls.length;
+      assert.equal((await request(port, '/api/platform/ai-usage-profiles/viejo/reactivate', 'sales-token', 'POST', {})).status, 403);
+      const reactivated = await request(port, '/api/platform/ai-usage-profiles/viejo/reactivate', 'admin-token', 'POST', { reactivated_by: 'Falso' });
+      assert.equal(reactivated.status, 200);
+      assert.deepEqual(reactivated.body, { ok: true, profile_id: 'viejo' });
+      assert.match(admin.calls.at(-1).sql, /^select platform\.reactivate_ai_usage_profile\(\$1::text, \$2::text\)$/);
+      assert.deepEqual(admin.calls.at(-1).params, ['viejo', 'Juan Botero']);
+      const alreadyActive = await request(port, '/api/platform/ai-usage-profiles/comercial/reactivate', 'admin-token', 'POST', {});
+      assert.equal(alreadyActive.status, 409);
+      assert.equal(alreadyActive.body.error, 'El perfil "Comercial" ya está activo.');
+      const missing = await request(port, '/api/platform/ai-usage-profiles/no_existe/reactivate', 'admin-token', 'POST', {});
+      assert.equal(missing.status, 404);
+      assert.equal(missing.body.error, 'El perfil no existe.');
+      assert.equal((await request(port, '/api/platform/ai-usage-profiles/Mal%20Id/reactivate', 'admin-token', 'POST', {})).status, 400);
+      assert.equal((await request(port, '/api/platform/ai-usage-profiles/viejo/reactivate', 'admin-token', 'GET')).status, 405);
+      assert.equal(admin.calls.length, callsBeforeReactivate + 1, 'sólo la reactivación válida llega a la plataforma');
+
       // Errores de la base → mensaje neutro; sin conexión de administración → 503.
       __setPlatformConfigurationPoolsForTests({ reader: fakeReader(state), admin: fakeAdmin({ failOn: 'create_ai_usage_profile' }) });
       const duplicate = await request(port, '/api/platform/ai-usage-profiles', 'admin-token', 'POST', { profile_id: 'comercial', display_name: 'Comercial' });
       assert.equal(duplicate.status, 409);
       assert.doesNotMatch(duplicate.body.error, /duplicate|db\.internal|constraint/);
+      __setPlatformConfigurationPoolsForTests({ reader: fakeReader(state), admin: fakeAdmin({ failOn: 'reactivate_ai_usage_profile' }) });
+      const raced = await request(port, '/api/platform/ai-usage-profiles/viejo/reactivate', 'admin-token', 'POST', {});
+      assert.equal(raced.status, 409);
+      assert.doesNotMatch(raced.body.error, /duplicate|db\.internal|constraint/);
       __setPlatformConfigurationPoolsForTests({ reader: fakeReader(state), admin: null });
       const offline = await request(port, '/api/platform/agent-configuration/versions/2/approve', 'admin-token', 'POST', {});
       assert.equal(offline.status, 503);
       assert.equal(offline.body.error, 'La administración de la plataforma no está conectada.');
+      const offlineReactivate = await request(port, '/api/platform/ai-usage-profiles/viejo/reactivate', 'admin-token', 'POST', {});
+      assert.equal(offlineReactivate.status, 503);
+      assert.equal(offlineReactivate.body.error, 'La administración de la plataforma no está conectada.');
       assert.equal((await request(port, '/api/platform/agent-configuration', 'admin-token')).body.admin_connected, false);
 
       // Lectura caída → 503 neutro.

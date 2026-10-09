@@ -563,6 +563,14 @@ export async function readActiveAiUsageProfiles({ env = process.env } = {}) {
   });
 }
 
+/** Un perfil de uso de IA (archivado o no) por su identificador, o null si no existe (sólo lectura). */
+export async function readAiUsageProfile(profileId, { env = process.env } = {}) {
+  return readOnly(readerPool(env), 'platform_ai_usage_profiles_unavailable', async client => {
+    const result = await client.query(PLATFORM_AI_USAGE_PROFILES_SQL);
+    return (result.rows || []).map(presentAiUsageProfile).find(profile => profile.profile_id === profileId) || null;
+  });
+}
+
 /** Lee versiones y perfiles de uso (sólo lectura). */
 export async function readAgentConfigurationRows({ env = process.env, environment = gatewayEnvironment(env) } = {}) {
   return readOnly(readerPool(env), 'platform_agent_configuration_unavailable', async client => {
@@ -582,6 +590,7 @@ export const PLATFORM_ADMIN_SQL = Object.freeze({
   reactivate: 'select platform.reactivate_configuration($1::bigint, $2::text)::text as result',
   createProfile: 'select platform.create_ai_usage_profile($1::text, $2::text, $3::text, $4::text)::text as result',
   archiveProfile: 'select platform.archive_ai_usage_profile($1::text, $2::text)',
+  reactivateProfile: 'select platform.reactivate_ai_usage_profile($1::text, $2::text)',
 });
 
 async function adminCall(sql, params, env) {
@@ -629,6 +638,15 @@ export function createAiUsageProfile({ profile, actor, env = process.env }) {
 }
 export function archiveAiUsageProfile({ profileId, actor, env = process.env }) {
   return adminCall(PLATFORM_ADMIN_SQL.archiveProfile, [profileId, actor], env);
+}
+export function reactivateAiUsageProfile({ profileId, actor, env = process.env }) {
+  return adminCall(PLATFORM_ADMIN_SQL.reactivateProfile, [profileId, actor], env);
+}
+
+/** Sólo se reactiva un perfil que existe y está archivado (mensajes claros antes de escribir). */
+export function assertProfileReactivation(profile) {
+  if (!profile) throw configurationInvalidError('El perfil no existe.', 404);
+  if (!profile.archived_at) throw configurationInvalidError(`El perfil "${profile.display_name}" ya está activo.`, 409);
 }
 
 /** Comprueba que una acción sobre una versión es posible según su estado actual (mensajes claros antes de escribir). */

@@ -254,7 +254,7 @@ test('lectura: transacción read only con las consultas de versiones y perfiles;
 test('escritura: sólo funciones platform.*, sin variable → 503, error de la base → 409 neutro', async t => {
   t.after(() => __setPlatformConfigurationPoolsForTests(null));
   for (const sql of Object.values(PLATFORM_ADMIN_SQL)) {
-    assert.match(sql, /^select platform\.(propose_configuration|approve_configuration|reject_configuration|reactivate_configuration|create_ai_usage_profile|archive_ai_usage_profile)\(/);
+    assert.match(sql, /^select platform\.(propose_configuration|approve_configuration|reject_configuration|reactivate_configuration|create_ai_usage_profile|archive_ai_usage_profile|reactivate_ai_usage_profile)\(/);
     assert.doesNotMatch(sql, /\b(insert|update|delete)\b/i);
   }
   await assert.rejects(approveConfiguration({ versionId: '1', actor: 'Juan', env: {} }), error => error.status === 503 && error.message === PLATFORM_ADMIN_UNAVAILABLE_MESSAGE);

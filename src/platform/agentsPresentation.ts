@@ -67,6 +67,8 @@ export type AgentDetailTab = typeof AGENT_DETAIL_TABS[number]['id'];
 
 export const AGENT_OWNER_PENDING = 'Por definir';
 export const PROFILE_ASSIGNMENT_NOTICE = 'Los perfiles se crean aquí; en Usuarios y permisos se elige uno por persona.';
+/** IT → Agentes → Perfiles de uso: los perfiles no son "del Comercial"; son generales para todos los agentes. */
+export const PROFILES_ACROSS_AGENTS_NOTE = 'Los perfiles son generales para todos los agentes. Hoy sólo Vig-IA Comercial usa IA a través de la plataforma; los demás agentes aparecerán aquí cuando se conecten. "Sólo cupo del equipo" significa que el perfil aún no tiene un cupo propio: se le da proponiendo una nueva versión del agente.';
 
 // "Uso de IA": libro de uso de modelos (GET /api/platform/model-usage). El costo es equivalente: se usa la suscripción.
 export type ModelUsagePoint = { day: string; uses: number; rejected: number };
