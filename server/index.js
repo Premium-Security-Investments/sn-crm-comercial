@@ -78,6 +78,7 @@ import { createAgt002AnalysisObservability } from '../agt002-analysis-observabil
 import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
 import { loadAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
 import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
@@ -418,6 +419,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
+  // IT → Agentes: vista de sólo lectura de la Plataforma de Agentes, con la misma protección que Usuarios y permisos.
+  'GET /api/platform/agents': ['users', ACTIONS.USERS_MANAGE],
 
   'GET /api/siio/bootstrap': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/fronts': ['siio', ACTIONS.SIIO_AREA_VIEW],
@@ -6217,6 +6220,21 @@ app.get('/api/users', async (req, res) => {
     } catch (error) { throw profileAccessReadFailure(error); }
   } catch (error) { sendAuthError(res, error); }
 });
+
+// IT → Agentes: registro de la Plataforma de Agentes (otra base de datos). Sólo lectura y falla cerrada con 503.
+app.get('/api/platform/agents', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+    res.set('Cache-Control', 'no-store');
+    res.json(await listPlatformAgents());
+  } catch (error) {
+    if (isPlatformAgentsUnavailable(error)) return res.status(503).json({ error: PLATFORM_AGENTS_UNAVAILABLE_MESSAGE });
+    sendAuthError(res, error);
+  }
+});
+app.all('/api/platform/agents', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 app.post('/api/users', async (req, res) => {
   try {

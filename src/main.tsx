@@ -11,6 +11,7 @@ import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_
 import { agt002UnavailableMessage } from '../agt002-reanalysis-error-message.js';
 import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
+import { AgentsView } from './platform/AgentsView';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
 import { TenderDetailNavigation, focusTenderDetailSection, resolveTenderPhaseChangeNotices, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
@@ -95,7 +96,7 @@ type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string;
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'invalid'; id?: string };
+type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'invalid'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
@@ -270,6 +271,7 @@ function parseRoute(): Route {
   if (page === 'alerts') return { page: 'alerts' };
   if (page === 'centinel' || page === 'vig-ia') return { page: 'alerts' };
   if (page === 'users') return { page: 'users' };
+  if (page === 'agents') return { page: 'agents' };
   return { page: 'invalid' };
 }
 function go(hash: string) { window.location.hash = hash; }
@@ -515,6 +517,7 @@ function areaFor(route: Route) {
   if (route.page === 'siio') return 'Gerencia';
   if (route.page === 'tenders') return 'Licitaciones';
   if (route.page === 'goals' || route.page === 'users') return 'Administración';
+  if (route.page === 'agents') return 'IT';
   return 'Comercial';
 }
 function titleFor(route: Route, profile?: Profile | null) {
@@ -531,6 +534,7 @@ function titleFor(route: Route, profile?: Profile | null) {
   if (route.page === 'alerts') return 'Prioridades Comerciales';
   if (route.page === 'centinel') return 'Prioridades Comerciales';
   if (route.page === 'users') return 'Usuarios y permisos';
+  if (route.page === 'agents') return 'Agentes';
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
@@ -557,6 +561,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
     canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
   />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
+  if (route.page === 'agents') return <AgentsView />;
   if (data.currentProfile.role === 'comercial') return <CommercialPersonalDashboard data={data} refresh={refresh} />;
   return <Home data={data} />;
 }

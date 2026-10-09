@@ -1,0 +1,16 @@
+.platform-agents-hero .hero-facts{align-content:start}
+.platform-agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.platform-agent-card{margin-top:0;display:flex;flex-direction:column;gap:12px}
+.platform-agent-card header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.platform-agent-card h3{margin:0;font-size:18px;color:#0f1b2d}
+.platform-agent-card header small{display:block;margin-top:4px;color:#64748b;font-size:12px;overflow-wrap:anywhere}
+.platform-agent-card .badge{cursor:default}
+.platform-agent-active{margin:0;color:#334155}
+.platform-agent-counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}
+.platform-agent-counts div{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px}
+.platform-agent-counts dt{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.platform-agent-counts dd{margin:4px 0 0;font-size:20px;font-weight:800;color:#0f1b2d}
+.platform-agent-dates{margin:0;font-size:12px;color:#64748b}
+.platform-upcoming{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.platform-chip{display:inline-flex;padding:6px 12px;border-radius:999px;background:#f1f5f9;color:#475569;border:1px dashed #cbd5e1;font-size:13px;font-weight:700;cursor:default;user-select:none}
+@media(max-width:640px){.platform-agent-counts{grid-template-columns:1fr}}
