@@ -18,6 +18,7 @@ const apiSource = read('../api/[...path].js');
 const view = read('../src/platform/AgentsView.tsx');
 const section = read('../src/platform/ModelUsageSection.tsx');
 const presentation = read('../src/platform/agentsPresentation.ts');
+const loader = read('../src/platform/usePlatformData.ts');
 
 test('GET /api/platform/model-usage tiene la misma protección que /api/platform/agents y espejo idéntico', () => {
   assert.equal(serverSource, apiSource);
@@ -35,7 +36,8 @@ test('consultas: sólo select sobre platform.model_usage_event, en hora de Bogot
     assert.ok(sql.includes("at time zone 'America/Bogota'"));
     assert.doesNotMatch(sql, /\b(insert|update|delete|truncate|alter|drop|grant|record_model_usage)\b/i);
   }
-  for (const column of ['uses_today', 'uses_month', 'completed_7d', 'failed_7d', 'rejected_7d', 'avg_latency_ms_7d', 'last_used_at', 'input_tokens_month', 'output_tokens_month', 'cost_usd_month']) {
+  assert.ok(PLATFORM_MODEL_USAGE_SUMMARY_SQL.includes("e.failure_code like '%SESSION_LIMIT'"), 'límite de la suscripción = códigos *_SESSION_LIMIT');
+  for (const column of ['uses_today', 'uses_month', 'completed_7d', 'failed_7d', 'rejected_7d', 'quota_rejected_7d', 'session_limit_7d', 'avg_latency_ms_7d', 'last_used_at', 'input_tokens_month', 'output_tokens_month', 'cost_usd_month']) {
     assert.ok(PLATFORM_MODEL_USAGE_SUMMARY_SQL.includes(`as ${column}`), column);
   }
   assert.ok(PLATFORM_MODEL_USAGE_DAILY_SQL.includes("interval '13 days'"), 'serie de 14 días');
@@ -83,7 +85,7 @@ function fakePool({ connectError, failOn } = {}) {
           if (sql === PLATFORM_MODEL_USAGE_SUMMARY_SQL) {
             return { rows: [{
               agent_id: 'AGT-003', capability: 'agt003.opportunity-copilot.preview', uses_today: 3, uses_month: '41',
-              completed_7d: 10, failed_7d: 1, rejected_7d: 2, avg_latency_ms_7d: 18250, last_used_at: new Date('2026-10-09T14:00:00Z'),
+              completed_7d: 10, failed_7d: 1, rejected_7d: 2, quota_rejected_7d: 1, session_limit_7d: 3, avg_latency_ms_7d: 18250, last_used_at: new Date('2026-10-09T14:00:00Z'),
               input_tokens_month: '120000', output_tokens_month: '30000', cost_usd_month: '0.540000',
             }] };
           }
@@ -109,7 +111,8 @@ test('lee en transacción read only y arma uso por agente+capacidad', async () =
   const copilot = payload.capabilities.find(item => item.capability === 'agt003.opportunity-copilot.preview');
   assert.equal(copilot.today, 3);
   assert.equal(copilot.month, 41);
-  assert.deepEqual(copilot.last_7_days, { completed: 10, failed: 1, rejected: 2 });
+  assert.deepEqual(copilot.last_7_days, { completed: 10, failed: 1, rejected: 2, quota_rejected: 1, session_limit: 3 });
+  assert.equal(payload.session_limit_7d, 3, 'veces que se tocó el límite de la suscripción en 7 días');
   assert.equal(copilot.avg_latency_ms, 18250);
   assert.equal(copilot.last_used_at, '2026-10-09T14:00:00.000Z');
   assert.deepEqual(copilot.month_tokens, { input: 120000, output: 30000 });
@@ -134,17 +137,19 @@ test('sin PLATFORM_DATABASE_URL o con error → 503 neutro, rollback y cliente d
   } finally { console.warn = warn; }
 });
 
-test('la vista muestra "Uso de IA" bajo las tarjetas, con nombres humanos, barras y costo equivalente', () => {
+test('"Uso de IA" tiene su pestaña: destaca usos, fallas y límite de la suscripción; costo equivalente secundario', () => {
   assert.ok(view.includes("import { ModelUsageSection } from './ModelUsageSection';"));
-  const cardsEnd = view.indexOf('</section>}', view.indexOf('platform-agent-grid'));
-  const usageAt = view.indexOf('<ModelUsageSection />');
-  assert.ok(cardsEnd > -1 && usageAt > cardsEnd, 'la sección va bajo las tarjetas');
-  assert.ok(usageAt < view.indexOf('<Panel title="Próximas vistas">'), 'y antes de Próximas vistas');
-  for (const text of ['<Panel title="Uso de IA">', '/api/platform/model-usage', 'role="meter"', 'Usos hoy', 'Usos este mes', 'Completados (7 días)', 'Fallidos (7 días)', 'Rechazados (7 días)', 'Tiempo medio de respuesta', 'Costo equivalente del mes', 'Último uso', 'MODEL_USAGE_COST_NOTE', 'MODEL_USAGE_EMPTY_TEXT']) {
+  assert.ok(view.includes("{tab === 'usage' && <ModelUsageSection usage={usage} agentNames={agentNames} />}"), 'la sección vive en la pestaña Uso de IA');
+  assert.ok(loader.includes("api<ModelUsagePayload>('/api/platform/model-usage')"));
+  for (const text of ['<Panel title="Uso de IA">', 'role="meter"', 'Usos hoy', 'Usos este mes', 'Fallidos (7 días)', 'Límite de la suscripción (7 días)', 'Completados (7 días)', 'Rechazados (7 días)', 'Tiempo medio de respuesta', 'Costo equivalente del mes', 'Último uso', 'MODEL_USAGE_COST_NOTE', 'MODEL_USAGE_EMPTY_TEXT']) {
     assert.ok(section.includes(text), text);
   }
-  assert.match(section, /state\.status === 'error' && <div className="error" role="alert">\{state\.message\}<\/div>/, 'el 503 "no está conectada" se muestra tal cual');
-  assert.match(section, /!state\.payload\.has_data && <EmptyState/, 'mensaje claro sin datos');
+  const highlights = section.slice(section.indexOf('platform-usage-highlights'), section.indexOf('</dl>'));
+  assert.ok(!highlights.includes('Costo equivalente'), 'el costo no está entre los datos destacados');
+  assert.ok(section.indexOf('Costo equivalente del mes') > section.indexOf('platform-usage-secondary'), 'el costo va en la línea secundaria');
+  assert.doesNotMatch(section, /\{item\.capability\}<\/small>|item\.agent_id\} · \{item\.capability/, 'no muestra IDs técnicos de capacidades');
+  assert.match(section, /usage\.status === 'error' && <div className="error" role="alert">\{usage\.message\}<\/div>/, 'el 503 "no está conectada" se muestra tal cual');
+  assert.match(section, /!usage\.data\.has_data && <EmptyState/, 'mensaje claro sin datos');
   assert.ok(presentation.includes("'agt003.opportunity-copilot.preview': 'Siguiente paso (copiloto)'"));
   assert.ok(presentation.includes("'agt003.lead-deep-analysis': 'Análisis profundo'"));
   assert.ok(presentation.includes('suscripción'), 'aclara que el costo es equivalente por la suscripción');

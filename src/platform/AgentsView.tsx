@@ -1,76 +1,126 @@
-// IT → Agentes: vista visual (sólo lectura) de la Plataforma de Agentes y casa de Vig-IA IT.
+// IT → Agentes: casa de Vig-IA IT y de la Plataforma de Agentes. Pestañas Resumen | Uso de IA | Perfiles de uso |
+// Propuestas | Historial; el detalle de un agente vive en #/agents/<ID>. Sólo para quien administra usuarios.
 // No confundir con la pestaña "Agentes" de la Torre de Control (src/siio/SiioAgentsView.tsx), que es otro catálogo.
-import { useEffect, useState } from 'react';
-import { api } from '../apiClient';
+import { useMemo, useState, type ReactElement } from 'react';
 import { Badge, EmptyState, Panel } from '../siio/SiioUi';
-import { AGENT_COUNT_LABELS, UPCOMING_PLATFORM_VIEWS, agentStateLabel, agentStateTone, type PlatformAgent, type PlatformAgentsPayload } from './agentsPresentation';
+import {
+  AGENTS_TABS,
+  AGENT_OWNER_PENDING,
+  UPCOMING_PLATFORM_VIEWS,
+  agentStateLabel,
+  agentStateTone,
+  agentUsageTotals,
+  versionLabel,
+  type AgentConfigurationPayload,
+  type AgentsTab,
+  type ModelUsagePayload,
+  type PlatformAgent,
+} from './agentsPresentation';
+import { AgentDetail } from './AgentDetail';
+import { HistoryView, ProfilesView, ProposalsView } from './ConfigurationViews';
 import { ModelUsageSection } from './ModelUsageSection';
+import { usePlatformData, type Loadable } from './usePlatformData';
 import './platform.css';
 
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; agents: PlatformAgent[] };
+function go(hash: string) { window.location.hash = hash; }
 
-const dates = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
-function fmtDate(value: string | null) { return value ? dates.format(new Date(value)) : '—'; }
+/** Avisos del Resumen, todos derivados de datos reales. */
+export function platformWarnings(agents: PlatformAgent[], usage: ModelUsagePayload | null, config: AgentConfigurationPayload | null): string[] {
+  const warnings: string[] = [];
+  const sessionLimit = usage?.session_limit_7d ?? 0;
+  if (sessionLimit > 0) warnings.push(`El límite de la suscripción se tocó ${sessionLimit} ${sessionLimit === 1 ? 'vez' : 'veces'} en los últimos 7 días.`);
+  if (config) {
+    if (!config.admin_connected) warnings.push('La administración de la plataforma no está conectada: no se pueden proponer ni aprobar cambios.');
+    for (const agentId of Object.keys(config.catalog)) {
+      if (!config.current[agentId]) warnings.push(`${agents.find(agent => agent.id === agentId)?.name || agentId} usa los valores del código: aún no tiene configuración aprobada.`);
+    }
+    for (const item of config.expiring_exceptions) warnings.push(`La excepción de ${item.person} en "${item.function}" vence el ${item.expires}.`);
+  }
+  return warnings;
+}
 
-export function AgentsView() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
-  useEffect(() => {
-    let cancelled = false;
-    api<PlatformAgentsPayload>('/api/platform/agents')
-      .then(payload => { if (!cancelled) setState({ status: 'ready', agents: Array.isArray(payload?.agents) ? payload.agents : [] }); })
-      .catch((error: unknown) => { if (!cancelled) setState({ status: 'error', message: error instanceof Error ? error.message : String(error) }); });
-    return () => { cancelled = true; };
-  }, []);
+function Summary({ agents, usage, config, onTab }: { agents: PlatformAgent[]; usage: Loadable<ModelUsagePayload>; config: Loadable<AgentConfigurationPayload>; onTab: (tab: AgentsTab) => void }) {
+  const usageData = usage.status === 'ready' ? usage.data : null;
+  const configData = config.status === 'ready' ? config.data : null;
+  const usesToday = usageData ? usageData.capabilities.reduce((sum, item) => sum + item.today, 0) : null;
+  const sessionLimit = usageData ? usageData.session_limit_7d ?? 0 : null;
+  const warnings = platformWarnings(agents, usageData, configData);
+  const partial = agents.filter(agent => agent.state === 'partial_operation').length;
+  return <div className="stack">
+    <section className="platform-kpis" aria-label="Indicadores generales">
+      <article className="panel platform-kpi"><small>Agentes registrados</small><strong>{agents.length}</strong><span>{partial} en operación parcial</span></article>
+      <article className="panel platform-kpi"><small>Usos de IA hoy</small><strong>{usesToday ?? '—'}</strong><span>todos los agentes</span></article>
+      <article className="panel platform-kpi" data-tone={sessionLimit ? 'danger' : 'green'}><small>Límite de la suscripción</small><strong>{sessionLimit == null ? '—' : sessionLimit ? `${sessionLimit} veces` : 'Sin topes'}</strong><span>veces tocado en 7 días: {sessionLimit ?? '—'}</span></article>
+      <article className="panel platform-kpi" data-tone={configData?.pending_count ? 'amber' : undefined}><small>Propuestas por aprobar</small><strong>{configData ? configData.pending_count : '—'}</strong>
+        <button type="button" className="link-button" onClick={() => onTab('proposals')}>Revisar →</button></article>
+      <article className="panel platform-kpi"><small>Avisos</small><strong>{warnings.length}</strong><span>{warnings[0] || 'Sin avisos'}</span></article>
+    </section>
+    {usage.status === 'error' && <div className="notice">Uso de IA: {usage.message}</div>}
+    {config.status === 'error' && <div className="notice">Configuración: {config.message}</div>}
+    {warnings.length > 1 && <Panel title="Avisos"><ul className="platform-warnings">{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></Panel>}
+    <section className="panel" aria-label="Lista de agentes">
+      <div className="platform-section-head"><h2>Agentes</h2><small>Clic en un agente para ver su ficha, funciones, modelos y cupos</small></div>
+      {agents.length === 0 && <EmptyState title="Sin agentes registrados" text="La plataforma todavía no tiene agentes en su registro." />}
+      {agents.length > 0 && <div className="tablewrap platform-table">
+        <table>
+          <thead><tr><th>Agente</th><th>Estado</th><th>Dueño</th><th>Funciones con IA</th><th>Uso hoy / mes</th><th>Versión vigente</th></tr></thead>
+          <tbody>
+            {agents.map(agent => {
+              const functions = configData?.catalog[agent.id] || [];
+              const totals = agentUsageTotals(usageData, agent.id);
+              const current = configData?.versions.find(version => version.id === configData.current[agent.id]);
+              return <tr key={agent.id} className="clickable" onClick={() => go(`#/agents/${encodeURIComponent(agent.id)}`)}>
+                <td><a href={`#/agents/${encodeURIComponent(agent.id)}`} onClick={event => event.stopPropagation()}><strong>{agent.name}</strong></a><small className="platform-sub">{agent.id}</small></td>
+                <td><Badge tone={agentStateTone(agent.state)}>{agentStateLabel(agent.state)}</Badge></td>
+                <td className="platform-muted">{AGENT_OWNER_PENDING}</td>
+                <td title={functions.length ? functions.map(item => item.label).join(' · ') : configData?.no_functions_text}>{functions.length || '—'}</td>
+                <td>{totals.tracked ? `${totals.today} / ${totals.month}` : '—'}</td>
+                <td>{current ? <>{versionLabel(current)} · <span className="platform-ok">vigente</span></> : <span className="platform-muted">{functions.length ? 'Sin configurar (valores del código)' : 'Sin configurar'}</span>}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>}
+    </section>
+  </div>;
+}
+
+export function AgentsView({ agentId }: { agentId?: string }) {
+  const { agents, usage, config, reload } = usePlatformData();
+  const [tab, setTab] = useState<AgentsTab>('summary');
+  const [message, setMessage] = useState('');
+  const agentNames = useMemo(() => (agents.status === 'ready' ? Object.fromEntries(agents.data.map(agent => [agent.id, agent.name])) : {}), [agents]);
+  const onDone = (text: string) => { setMessage(text); reload(); };
+
+  if (agentId) return <AgentDetail agentId={agentId} agents={agents} usage={usage} config={config} agentNames={agentNames} onDone={onDone} message={message} />;
+
+  const pending = config.status === 'ready' ? config.data.pending_count : 0;
+  const configBlock = (render: (data: AgentConfigurationPayload) => ReactElement) => (config.status === 'ready'
+    ? render(config.data)
+    : config.status === 'error' ? <div className="error" role="alert">{config.message}</div> : <div className="notice">Cargando configuración…</div>);
 
   return <div className="stack platform-agents">
     <section className="executive-hero platform-agents-hero">
       <div>
-        <span className="eyebrow">Plataforma de agentes</span>
-        <h2>Agentes del SIIO</h2>
-        <p>Registro oficial de los agentes Vig-IA: quién es cada uno, en qué estado está y qué controla la plataforma.</p>
+        <span className="eyebrow">SIIO · IT</span>
+        <h2>Agentes</h2>
+        <p>Registro oficial de los agentes Vig-IA: estado, funciones con IA, modelos, cupos y quién aprueba cada cambio.</p>
       </div>
-      {state.status === 'ready' && <div className="hero-facts">
-        <div><small>Agentes registrados</small><strong>{state.agents.length}</strong></div>
-        <div><small>Activos en la plataforma</small><strong>{state.agents.filter(agent => agent.active).length}</strong></div>
-      </div>}
     </section>
+    <nav className="module-segmented-nav platform-tabs" aria-label="Vistas de Agentes">
+      {AGENTS_TABS.map(item => <button key={item.id} type="button" className={tab === item.id ? 'active' : ''} aria-current={tab === item.id ? 'page' : undefined} onClick={() => { setTab(item.id); setMessage(''); }}>
+        {item.label}{item.id === 'proposals' && pending > 0 && <span className="platform-count" aria-label={`${pending} pendientes`}>{pending}</span>}
+      </button>)}
+    </nav>
+    <p className="platform-upcoming-text">{UPCOMING_PLATFORM_VIEWS.join(' · ')} (próximamente)</p>
+    {message && <div className="notice" role="status">{message}</div>}
 
-    {state.status === 'loading' && <div className="notice">Cargando agentes de la plataforma…</div>}
-    {state.status === 'error' && <div className="error" role="alert">{state.message}</div>}
-    {state.status === 'ready' && state.agents.length === 0 && <Panel title="Agentes">
-      <EmptyState title="Sin agentes registrados" text="La plataforma todavía no tiene agentes en su registro." />
-    </Panel>}
-    {state.status === 'ready' && state.agents.length > 0 && <section className="platform-agent-grid" aria-label="Agentes registrados">
-      {state.agents.map(agent => <article className="panel platform-agent-card" key={agent.id}>
-        <header>
-          <div>
-            <h3>{agent.name}</h3>
-            <small>{agent.id}</small>
-          </div>
-          <Badge tone={agentStateTone(agent.state)}>{agentStateLabel(agent.state)}</Badge>
-        </header>
-        <p className="platform-agent-active">Activo en la plataforma: <strong>{agent.active ? 'Sí' : 'No'}</strong></p>
-        <dl className="platform-agent-counts">
-          <div><dt>{AGENT_COUNT_LABELS.policy_versions}</dt><dd>{agent.counts.policy_versions}</dd></div>
-          <div><dt>{AGENT_COUNT_LABELS.configuration_versions}</dt><dd>{agent.counts.configuration_versions}</dd></div>
-          <div><dt>{AGENT_COUNT_LABELS.open_runs}</dt><dd>{agent.counts.open_runs}</dd></div>
-        </dl>
-        <p className="platform-agent-dates">
-          Registrado: {fmtDate(agent.created_at)} · Actualizado: {fmtDate(agent.updated_at)}
-          {agent.retired_at ? ` · Retirado: ${fmtDate(agent.retired_at)}` : ''}
-        </p>
-      </article>)}
-    </section>}
-
-    <ModelUsageSection />
-
-    <Panel title="Próximas vistas">
-      <ul className="platform-upcoming" aria-label="Próximas vistas de la plataforma">
-        {UPCOMING_PLATFORM_VIEWS.map(view => <li key={view}><span className="platform-chip" aria-disabled="true">{view}</span></li>)}
-      </ul>
-    </Panel>
+    {agents.status === 'loading' && tab === 'summary' && <div className="notice">Cargando agentes de la plataforma…</div>}
+    {agents.status === 'error' && tab === 'summary' && <div className="error" role="alert">{agents.message}</div>}
+    {agents.status === 'ready' && tab === 'summary' && <Summary agents={agents.data} usage={usage} config={config} onTab={setTab} />}
+    {tab === 'usage' && <ModelUsageSection usage={usage} agentNames={agentNames} />}
+    {tab === 'profiles' && configBlock(data => <ProfilesView config={data} agentNames={agentNames} onDone={onDone} />)}
+    {tab === 'proposals' && configBlock(data => <ProposalsView config={data} usage={usage} agentNames={agentNames} onDone={onDone} />)}
+    {tab === 'history' && configBlock(data => <HistoryView config={data} agentNames={agentNames} onDone={onDone} />)}
   </div>;
 }
