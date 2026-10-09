@@ -7,6 +7,7 @@
 .platform-usage-card header small{display:block;margin-top:4px;color:#64748b;font-size:12px;overflow-wrap:anywhere}
 .platform-usage-limit{display:flex;flex-direction:column;gap:6px}
 .platform-usage-limit-text{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:#334155}
+.platform-usage-limit-source{display:block;margin-top:2px;font-size:12px;color:#64748b}
 .platform-usage-bar{height:10px;border-radius:999px;background:#e2e8f0;overflow:hidden}
 .platform-usage-bar-fill{display:block;height:100%;border-radius:999px;background:#16a34a}
 .platform-usage-bar-fill.tone-amber{background:#d97706}

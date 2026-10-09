@@ -77,8 +77,10 @@ import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
-import { knownModelLimits, listPlatformModelUsage } from '../platform-model-usage.js';
-import { AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
+import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
+import { AGT003_AGENT_ID, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
+import { codeDefaultEffectiveConfiguration, getEffectiveAgentConfiguration } from '../platform-agent-effective-configuration.js';
+import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, capabilityPolicy, claimLeadAnalysis, leadAnalysisQuotaMessage, readActorAiUsageProfile } from '../agt003-ai-quota.js';
 import {
   actorNameFromProfile,
   agentAiFunctions,
@@ -98,6 +100,7 @@ import {
   presentAgentConfiguration,
   proposeConfiguration,
   reactivateConfiguration,
+  readActiveAiUsageProfiles,
   readAgentConfigurationRows,
   rejectConfiguration,
 } from '../platform-agent-configuration.js';
@@ -450,6 +453,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/platform/agent-configuration/versions/:id/approve': ['users', ACTIONS.USERS_MANAGE],
   'POST /api/platform/agent-configuration/versions/:id/reject': ['users', ACTIONS.USERS_MANAGE],
   'POST /api/platform/agent-configuration/versions/:id/reactivate': ['users', ACTIONS.USERS_MANAGE],
+  'GET /api/platform/ai-usage-profiles': ['users', ACTIONS.USERS_MANAGE],
   'POST /api/platform/ai-usage-profiles': ['users', ACTIONS.USERS_MANAGE],
   'POST /api/platform/ai-usage-profiles/:id/archive': ['users', ACTIONS.USERS_MANAGE],
 
@@ -3125,10 +3129,31 @@ function createVigiaKnowledgeAssetsDbAdapter(database) {
   };
 }
 
+// Puerta única de modelos (Paso 2, parte 3): política vigente de una función de Vig-IA Comercial para quien pide —
+// encendida/apagada, modelo y cupos del equipo y de la persona (perfil de uso de IA + excepciones), en hora de Bogotá.
+// Falla abierta: sin plataforma usa la última configuración conocida o los valores del código.
+async function resolveAgt003CapabilityPolicy(database, capability, profile) {
+  const [effective, aiUsageProfile] = await Promise.all([
+    getEffectiveAgentConfiguration(AGT003_AGENT_ID),
+    readActorAiUsageProfile(database, profile.id),
+  ]);
+  let environmentModel = null;
+  try { environmentModel = getAgt003CopilotRuntimeConfig(process.env).model; } catch { environmentModel = null; }
+  return capabilityPolicy({
+    effective,
+    fallbackEffective: codeDefaultEffectiveConfiguration(AGT003_AGENT_ID),
+    capability,
+    aiUsageProfile,
+    personId: profile.id,
+    environmentModel,
+  });
+}
+
 function createBackendAgt003CopilotApi(database) {
   return createAgt003CopilotApi({
     isConfigured: () => isAgt003CopilotConfigured(process.env),
     getConfig: () => getAgt003CopilotRuntimeConfig(process.env),
+    resolvePolicy: ({ profile }) => resolveAgt003CapabilityPolicy(database, AGT003_COPILOT_CAPABILITY, profile),
     resolveOpportunityResource: (opportunityId, profile) => resolveAgt003OpportunityResource(database, opportunityId, profile),
     loadOpportunityContext: opportunityId => loadAgt003OpportunityContext(database, opportunityId),
     loadApprovedAssets: () => selectVigiaApprovedAssets({
@@ -3139,12 +3164,12 @@ function createBackendAgt003CopilotApi(database) {
     claimRun: options => claimAgt003CopilotRun(database, options),
     findRunByKey: idempotencyKey => findAgt003CopilotRunByKey(database, idempotencyKey),
     findRunById: runId => findAgt003CopilotRunById(database, runId),
-    createRuntime: () => createAgt003CopilotRuntime({ environment: process.env }),
+    createRuntime: ({ model } = {}) => createAgt003CopilotRuntime({ environment: process.env, model }),
     recordRun: options => recordAgt003CopilotRun(database, options),
     recordFailure: options => recordAgt003CopilotFailure(database, options),
     releaseClaim: options => releaseAgt003CopilotClaim(database, options),
     recordFeedback: options => recordAgt003CopilotFeedback(database, options),
-    // Puerta única de modelos: tope diario o saturación → evento `rejected` (mejor esfuerzo, sin contenido).
+    // Puerta única de modelos: cupo (equipo o persona), función apagada o saturación → evento `rejected` (mejor esfuerzo, sin contenido).
     recordRejection: ({ failureCode, model, correlationId }) => recordModelRejection({ capability: AGT003_COPILOT_CAPABILITY, model, failureCode, correlationId }),
   });
 }
@@ -3293,11 +3318,20 @@ app.all('/api/vigia/copilot/feedback', (_req, res) => res.status(405).json({ err
 // AGT-003 — premio "análisis profundo" (agt003.lead-deep-analysis, Juan 2026-10-08). Se gana con perfil completo;
 // tope mensual del equipo aparte del tope diario de Vig-IA; cada ejecución queda en psi_agt003_lead_analyses.
 const LEAD_ANALYSIS_PUBLIC_FIELDS = 'id,opportunity_id,actor_id,status,model,website_url,website_status,output,usage,created_at,finished_at';
+// Cupo del equipo que se muestra en la ficha: el de la configuración vigente (o los valores del código), en hora de Bogotá.
+async function leadAnalysisTeamQuota() {
+  const policy = capabilityPolicy({
+    effective: await getEffectiveAgentConfiguration(AGT003_AGENT_ID),
+    fallbackEffective: codeDefaultEffectiveConfiguration(AGT003_AGENT_ID),
+    capability: AGT003_LEAD_ANALYSIS_CAPABILITY,
+  });
+  return policy?.quota?.team || { per: 'month', max: monthlyMaxFrom(process.env), period_start: bogotaMonthStartIso(new Date()) };
+}
 async function leadAnalysisState(database, opportunityId, opportunity = null) {
-  const monthlyMax = monthlyMaxFrom(process.env);
+  const teamQuota = await leadAnalysisTeamQuota();
   const [latest, used] = await Promise.all([
     database.from('psi_agt003_lead_analyses').select(`${LEAD_ANALYSIS_PUBLIC_FIELDS},profile_hash`).eq('opportunity_id', opportunityId).eq('status', 'completed').order('created_at', { ascending: false }).limit(1),
-    database.from('psi_agt003_lead_analyses').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', bogotaMonthStartIso(new Date())),
+    database.from('psi_agt003_lead_analyses').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', teamQuota.period_start),
   ]);
   if (latest.error) { if (latest.error.code === '42P01') return { available: false }; throw latest.error; }
   if (used.error) throw used.error;
@@ -3314,7 +3348,8 @@ async function leadAnalysisState(database, opportunityId, opportunity = null) {
     analysis: analysis.id ? { ...analysis, message_event: messageEvent } : null,
     profile_changed: Boolean(analysis.id && current && current !== analysisHash),
     used: used.count || 0,
-    max: monthlyMax,
+    max: teamQuota.max,
+    period: teamQuota.per,
   };
 }
 async function loadLeadAnalysisOpportunity(database, opportunityId) {
@@ -3380,23 +3415,30 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     const resource = await resolveAgt003OpportunityResource(database, id, currentProfile);
     requireAction(currentProfile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, resource);
     if (!isAgt003CopilotConfigured(process.env)) { const error = new Error('Vig-IA no está disponible en este momento.'); error.status = 503; throw error; }
+    // Configuración vigente de la plataforma: apagada → rechazo sin llamar al modelo; modelo y cupos aprobados.
+    const policy = await resolveAgt003CapabilityPolicy(database, AGT003_LEAD_ANALYSIS_CAPABILITY, currentProfile);
+    if (!policy) throw new Error('No se pudo leer la configuración de Vig-IA.');
+    if (!policy.enabled) {
+      await recordModelRejection({ capability: AGT003_LEAD_ANALYSIS_CAPABILITY, model: policy.model, failureCode: AGT003_CAPABILITY_DISABLED_CODE, correlationId: randomUUID() });
+      const error = new Error(AGT003_CAPABILITY_DISABLED_MESSAGE); error.status = 503; error.code = AGT003_CAPABILITY_DISABLED_CODE; throw error;
+    }
     const opportunity = await loadLeadAnalysisOpportunity(database, id);
     if (opportunity.service_type_code === 'licitacion_publica') { const error = new Error('El análisis profundo es sólo para oportunidades comerciales.'); error.status = 400; throw error; }
     const completeness = profileCompleteness(opportunity);
     if (!completeness.complete) { const error = new Error(`Complete el perfil del cliente para ganar el análisis. Falta: ${completeness.missing.join(', ')}.`); error.status = 409; error.code = 'AGT003_LEAD_ANALYSIS_PROFILE_INCOMPLETE'; throw error; }
     const hash = leadAnalysisProfileHash(opportunity);
-    const monthlyMax = monthlyMaxFrom(process.env);
-    const { data: claim, error: claimError } = await database.rpc('psi_claim_agt003_lead_analysis', {
-      p_opportunity_id: id, p_actor_id: currentProfile.id, p_profile_hash: hash, p_contract_version: LEAD_ANALYSIS_CONTRACT_VERSION,
-      p_monthly_max: monthlyMax, p_month_start: bogotaMonthStartIso(new Date()),
+    const claim = await claimLeadAnalysis(database, {
+      opportunityId: id, actorId: currentProfile.id, profileHash: hash, contractVersion: LEAD_ANALYSIS_CONTRACT_VERSION, quota: policy.quota,
     });
-    if (claimError) throw claimError;
     if (claim?.status === 'existing') return res.status(200).json(await leadAnalysisState(database, id, opportunity));
     if (claim?.status === 'in_progress') { const error = new Error('El análisis de esta oportunidad ya se está preparando. Espere un momento.'); error.status = 409; throw error; }
     if (claim?.status === 'quota') {
-      // Puerta única de modelos: el tope mensual queda como `rejected` sin llamar al modelo (mejor esfuerzo).
-      await recordModelRejection({ capability: AGT003_LEAD_ANALYSIS_CAPABILITY, model: (() => { try { return getAgt003CopilotRuntimeConfig(process.env).model; } catch { return null; } })(), failureCode: 'AGT003_LEAD_ANALYSIS_QUOTA', correlationId: randomUUID() });
-      const error = new Error(`Se acabó el cupo de análisis profundos de este mes (${claim.used} de ${claim.max}). Vuelve el próximo mes.`); error.status = 429; error.code = 'AGT003_LEAD_ANALYSIS_QUOTA'; throw error;
+      // Puerta única de modelos: el cupo agotado (equipo o persona) queda como `rejected` sin llamar al modelo (mejor esfuerzo).
+      const personal = claim.scope === 'actor';
+      const code = personal ? 'AGT003_LEAD_ANALYSIS_PERSONAL_QUOTA' : 'AGT003_LEAD_ANALYSIS_QUOTA';
+      await recordModelRejection({ capability: AGT003_LEAD_ANALYSIS_CAPABILITY, model: policy.model, failureCode: code, correlationId: randomUUID() });
+      const per = personal ? policy.quota.actor?.per : policy.quota.team.per;
+      const error = new Error(leadAnalysisQuotaMessage(personal ? 'actor' : 'team', per || 'month', claim.used, claim.max)); error.status = 429; error.code = code; throw error;
     }
     if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el análisis.');
     claimedId = claim.id;
@@ -3409,7 +3451,7 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     const input = buildLeadAnalysisInput({ opportunity, ownerName: owner?.full_name, services, interactions, website, today: bogotaDay(new Date()) });
     let result;
     try {
-      result = await runLeadAnalysis({ input, idempotencyKey: claimedId, environment: process.env });
+      result = await runLeadAnalysis({ input, idempotencyKey: claimedId, environment: process.env, model: policy.model });
     } catch (runError) {
       await database.rpc('psi_finish_agt003_lead_analysis', { p_id: claimedId, p_status: 'failed', p_model: null, p_website_url: website.url || null, p_website_status: website.status, p_output: null, p_usage: null, p_failure_code: String(runError?.code || 'AGT003_LEAD_ANALYSIS_FAILED').slice(0, 64) });
       claimedId = null;
@@ -6231,7 +6273,12 @@ app.get('/api/users', async (req, res) => {
     const database = requireDb();
     let profiles;
     try {
-      profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities,created_at,identity_type').order('full_name'));
+      // "Perfil de uso de IA" (migración 119). Si la columna aún no existe, se lee sin ella y el valor queda en null.
+      const userColumns = 'id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities,created_at,identity_type';
+      const withAiProfile = await database.from('psi_sales_profiles').select(`${userColumns},ai_usage_profile`).order('full_name');
+      profiles = withAiProfile.error && withAiProfile.error.code === '42703'
+        ? (await must(database.from('psi_sales_profiles').select(userColumns).order('full_name'))).map(profile => ({ ...profile, ai_usage_profile: null }))
+        : await must(withAiProfile);
       if (!Array.isArray(profiles)) throw new Error('Perfiles inválidos.');
       // Las identidades técnicas (agentes) no se administran como usuarios.
       profiles = profiles.filter(profile => !isAgentIdentity(profile)).map(({ identity_type: _identityType, ...profile }) => profile);
@@ -6273,7 +6320,8 @@ app.get('/api/platform/model-usage', async (req, res) => {
     requireModuleAction(currentProfile, 'users');
     requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     res.set('Cache-Control', 'no-store');
-    res.json(await listPlatformModelUsage());
+    // "Tope actual": el de la configuración vigente (o los valores del código si no hay versión aprobada).
+    res.json(await listPlatformModelUsage({ limits: limitsFromEffectiveConfiguration(await getEffectiveAgentConfiguration(AGT003_AGENT_ID)) }));
   } catch (error) {
     if (isPlatformAgentsUnavailable(error)) return res.status(503).json({ error: PLATFORM_AGENTS_UNAVAILABLE_MESSAGE });
     sendAuthError(res, error);
@@ -6376,6 +6424,15 @@ app.post('/api/platform/ai-usage-profiles', async (req, res) => {
     res.status(201).json({ ok: true, profile_id: profileId == null ? profile.profile_id : String(profileId) });
   } catch (error) { sendPlatformConfigurationError(res, error); }
 });
+// Usuarios y permisos → "Perfil de uso de IA": perfiles NO archivados de la plataforma (sólo lectura). Si la plataforma
+// no responde → 503 neutro y la pantalla deshabilita el campo sin perder el valor guardado.
+app.get('/api/platform/ai-usage-profiles', async (req, res) => {
+  try {
+    await requirePlatformConfigurationAdmin(req);
+    res.set('Cache-Control', 'no-store');
+    res.json({ profiles: await readActiveAiUsageProfiles() });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
 app.all('/api/platform/ai-usage-profiles', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 app.post('/api/platform/ai-usage-profiles/:id/archive', async (req, res) => {
@@ -6388,6 +6445,47 @@ app.post('/api/platform/ai-usage-profiles/:id/archive', async (req, res) => {
   } catch (error) { sendPlatformConfigurationError(res, error); }
 });
 app.all('/api/platform/ai-usage-profiles/:id/archive', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+// "Perfil de uso de IA" de cada persona (migración 119). Sólo se toca si el cuerpo trae `ai_usage_profile` (la pantalla
+// no lo envía cuando la plataforma no responde: así no se pierde el valor guardado). Un valor nuevo debe existir en la
+// plataforma y no estar archivado; si es el mismo ya guardado no se vuelve a validar.
+const AI_USAGE_PROFILE_SLUG = /^[a-z][a-z0-9_]{1,40}$/;
+function aiUsageProfileFromBody(body) {
+  if (!body || !Object.hasOwn(body, 'ai_usage_profile')) return { present: false, value: null };
+  const raw = body.ai_usage_profile;
+  if (raw === null || raw === '') return { present: true, value: null };
+  if (typeof raw !== 'string' || !AI_USAGE_PROFILE_SLUG.test(raw)) {
+    const error = new Error('El perfil de uso de IA no es válido.'); error.status = 400; error.code = 'AI_USAGE_PROFILE_INVALID'; throw error;
+  }
+  return { present: true, value: raw };
+}
+async function assertAiUsageProfileSelectable(value, currentValue) {
+  if (value === null || value === currentValue) return;
+  let profiles;
+  try { profiles = await readActiveAiUsageProfiles(); } catch {
+    const error = new Error('No se pudo validar el perfil de uso de IA: la plataforma de agentes no responde. Guarde sin cambiar ese campo o intente más tarde.');
+    error.status = 503; error.code = 'AI_USAGE_PROFILE_UNVERIFIED'; throw error;
+  }
+  if (!profiles.some(profile => profile.profile_id === value)) {
+    const error = new Error('Ese perfil de uso de IA no existe o está archivado.'); error.status = 400; error.code = 'AI_USAGE_PROFILE_INVALID'; throw error;
+  }
+}
+async function readStoredAiUsageProfile(database, profileId) {
+  if (!profileId) return null;
+  const { data, error } = await database.from('psi_sales_profiles').select('ai_usage_profile').eq('id', profileId).maybeSingle();
+  if (error) return null;
+  return typeof data?.ai_usage_profile === 'string' ? data.ai_usage_profile : null;
+}
+// Devuelve un aviso (texto) si no se pudo guardar; nunca deshace el resto del guardado del usuario.
+async function persistAiUsageProfile(database, { profileId, value, currentValue, actorProfileId }) {
+  if (value === currentValue) return null;
+  const { error } = await database.rpc('psi_admin_set_profile_ai_usage_profile', { p_profile_id: profileId, p_ai_usage_profile: value, p_actor_profile_id: actorProfileId });
+  if (!error) return null;
+  console.warn('profile_ai_usage_profile_not_saved', { code: error.code || null });
+  return error.code === 'PGRST202' || error.code === '42883'
+    ? 'El perfil de uso de IA todavía no se puede guardar (falta habilitarlo en la base de datos).'
+    : 'No se pudo guardar el perfil de uso de IA; el resto del usuario sí quedó guardado.';
+}
 
 app.post('/api/users', async (req, res) => {
   try {
@@ -6408,6 +6506,7 @@ app.post('/api/users', async (req, res) => {
     if (!PROFILE_ROLES.has(role)) throw new Error('Rol no válido.');
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
     const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
+    const aiUsageProfile = aiUsageProfileFromBody(req.body);
     const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
     const userMetadata = { full_name, role };
     let beforeProfile;
@@ -6417,6 +6516,8 @@ app.post('/api/users', async (req, res) => {
     if (beforeProfile?.id) assertEditableHumanProfile(await must(database.from('psi_sales_profiles').select('id,identity_type').eq('id', beforeProfile.id).single()));
     assertNoAdminSelfLockout(currentProfile, { profileId: beforeProfile?.id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
     const beforeAccess = beforeProfile ? await readProfileAccess(database, beforeProfile.id) : { areas: [], permissions: [], areaRows: [], permissionRows: [] };
+    const storedAiUsageProfile = aiUsageProfile.present ? await readStoredAiUsageProfile(database, beforeProfile?.id) : null;
+    if (aiUsageProfile.present) await assertAiUsageProfileSelectable(aiUsageProfile.value, storedAiUsageProfile);
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
     try {
@@ -6424,8 +6525,9 @@ app.post('/api/users', async (req, res) => {
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
+    const aiUsageProfileWarning = aiUsageProfile.present ? await persistAiUsageProfile(database, { profileId: row.id, value: aiUsageProfile.value, currentValue: storedAiUsageProfile, actorProfileId: currentProfile.id }) : null;
     const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
-    res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
+    res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning, ai_usage_profile_warning: aiUsageProfileWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -6460,6 +6562,9 @@ app.patch('/api/users', async (req, res) => {
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
     const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
     assertNoAdminSelfLockout(currentProfile, { profileId: id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
+    const aiUsageProfile = aiUsageProfileFromBody(req.body);
+    const storedAiUsageProfile = aiUsageProfile.present ? await readStoredAiUsageProfile(database, id) : null;
+    if (aiUsageProfile.present) await assertAiUsageProfileSelectable(aiUsageProfile.value, storedAiUsageProfile);
     const beforeAccess = await readProfileAccess(database, id);
     const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
     const userMetadata = { full_name, role };
@@ -6470,8 +6575,9 @@ app.patch('/api/users', async (req, res) => {
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
+    const aiUsageProfileWarning = aiUsageProfile.present ? await persistAiUsageProfile(database, { profileId: row.id, value: aiUsageProfile.value, currentValue: storedAiUsageProfile, actorProfileId: currentProfile.id }) : null;
     const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
-    res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
+    res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning, ai_usage_profile_warning: aiUsageProfileWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 

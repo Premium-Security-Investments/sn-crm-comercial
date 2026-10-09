@@ -7,10 +7,12 @@ import {
   PLATFORM_MODEL_USAGE_SUMMARY_SQL,
   bogotaSeriesDays,
   knownModelLimits,
+  limitsFromEffectiveConfiguration,
   listPlatformModelUsage,
   presentModelUsage,
 } from '../platform-model-usage.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable } from '../platform-agents.js';
+import { defaultAgentConfiguration } from '../platform-agent-configuration.js';
 
 const read = relative => readFileSync(new URL(relative, import.meta.url), 'utf8');
 const serverSource = read('../server/index.js');
@@ -23,7 +25,7 @@ const loader = read('../src/platform/usePlatformData.ts');
 test('GET /api/platform/model-usage tiene la misma protección que /api/platform/agents y espejo idéntico', () => {
   assert.equal(serverSource, apiSource);
   assert.match(serverSource, /'GET \/api\/platform\/model-usage': \['users', ACTIONS\.USERS_MANAGE\]/);
-  assert.match(serverSource, /app\.get\('\/api\/platform\/model-usage', async \(req, res\) => \{\n  try \{\n    const \{ profile: currentProfile \} = await getAuthContext\(req\);\n    requireModuleAction\(currentProfile, 'users'\);\n    requireAction\(currentProfile, ACTIONS\.USERS_MANAGE, \{\}\);\n    res\.set\('Cache-Control', 'no-store'\);\n    res\.json\(await listPlatformModelUsage\(\)\);/);
+  assert.match(serverSource, /app\.get\('\/api\/platform\/model-usage', async \(req, res\) => \{\n  try \{\n    const \{ profile: currentProfile \} = await getAuthContext\(req\);\n    requireModuleAction\(currentProfile, 'users'\);\n    requireAction\(currentProfile, ACTIONS\.USERS_MANAGE, \{\}\);\n    res\.set\('Cache-Control', 'no-store'\);\n    \/\/ "Tope actual": [^\n]+\n    res\.json\(await listPlatformModelUsage\(\{ limits: limitsFromEffectiveConfiguration\(await getEffectiveAgentConfiguration\(AGT003_AGENT_ID\)\) \}\)\);/);
   const route = serverSource.slice(serverSource.indexOf("app.get('/api/platform/model-usage'"), serverSource.indexOf("app.all('/api/platform/model-usage'"));
   assert.match(route, /if \(isPlatformAgentsUnavailable\(error\)\) return res\.status\(503\)\.json\(\{ error: PLATFORM_AGENTS_UNAVAILABLE_MESSAGE \}\);/);
   assert.match(serverSource, /app\.all\('\/api\/platform\/model-usage', \(_req, res\) => res\.status\(405\)/);
@@ -117,11 +119,25 @@ test('lee en transacción read only y arma uso por agente+capacidad', async () =
   assert.equal(copilot.last_used_at, '2026-10-09T14:00:00.000Z');
   assert.deepEqual(copilot.month_tokens, { input: 120000, output: 30000 });
   assert.equal(copilot.month_cost_usd_equivalent, 0.54);
-  assert.deepEqual(copilot.limit, { period: 'day', max: 20 });
+  assert.deepEqual(copilot.limit, { period: 'day', max: 20, source: 'code', version_number: null });
+  assert.equal(payload.today, '2026-10-09', 'día de referencia en hora de Bogotá');
   assert.deepEqual(copilot.daily.at(-1), { day: '2026-10-09', uses: 3, rejected: 1 });
   const lead = payload.capabilities.find(item => item.capability === 'agt003.lead-deep-analysis');
   assert.equal(lead.month, 0);
-  assert.deepEqual(lead.limit, { period: 'month', max: 30 });
+  assert.deepEqual(lead.limit, { period: 'month', max: 30, source: 'code', version_number: null });
+});
+
+test('"Tope actual": topes de la configuración vigente aprobada o valores del código', async () => {
+  const configuration = defaultAgentConfiguration('AGT-003');
+  configuration.capabilities['agt003.opportunity-copilot.preview'].team_cap = { per: 'month', max: 300 };
+  configuration.capabilities['agt003.lead-deep-analysis'].enabled = false;
+  const limits = limitsFromEffectiveConfiguration({ source: 'platform', version_number: 4, configuration }, {});
+  assert.deepEqual(limits['agt003.opportunity-copilot.preview'], { period: 'month', max: 300, source: 'configuration', version_number: 4, enabled: true });
+  assert.deepEqual(limits['agt003.lead-deep-analysis'], { period: 'month', max: 30, source: 'configuration', version_number: 4, enabled: false });
+  assert.deepEqual(limitsFromEffectiveConfiguration(null, {})['agt003.opportunity-copilot.preview'], { period: 'day', max: 20, source: 'code', version_number: null, enabled: true });
+  const payload = await listPlatformModelUsage({ pool: fakePool(), now: new Date('2026-10-10T04:30:00Z'), env: {}, limits });
+  assert.equal(payload.today, '2026-10-09', '23:30 en Bogotá sigue siendo el 9');
+  assert.equal(payload.capabilities.find(item => item.capability === 'agt003.opportunity-copilot.preview').limit.max, 300);
 });
 
 test('sin PLATFORM_DATABASE_URL o con error → 503 neutro, rollback y cliente descartado', async () => {

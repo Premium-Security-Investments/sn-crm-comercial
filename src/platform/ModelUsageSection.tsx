@@ -9,6 +9,8 @@ import {
   formatUsdEquivalent,
   modelCapabilityLabel,
   usageAgainstLimit,
+  bogotaDayText,
+  limitSourceText,
   type ModelUsageCapability,
   type ModelUsagePayload,
 } from './agentsPresentation';
@@ -17,7 +19,7 @@ import type { Loadable } from './usePlatformData';
 const dateTime = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' });
 const numbers = new Intl.NumberFormat('es-CO');
 
-function UsageCard({ item, agentName }: { item: ModelUsageCapability; agentName: string }) {
+function UsageCard({ item, agentName, today }: { item: ModelUsageCapability; agentName: string; today?: string }) {
   const limit = usageAgainstLimit(item);
   const peak = Math.max(1, ...item.daily.map(point => point.uses));
   const sessionLimit = item.last_7_days.session_limit ?? 0;
@@ -36,9 +38,12 @@ function UsageCard({ item, agentName }: { item: ModelUsageCapability; agentName:
     </dl>
     {limit && <div className="platform-usage-limit">
       <div className="platform-usage-limit-text">
-        <span>Tope actual {limit.periodLabel}</span>
+        <span>Tope actual del equipo {limit.periodLabel}</span>
         <strong>{limit.used} de {limit.max}</strong>
       </div>
+      <small className="platform-usage-limit-source">
+        {limitSourceText(item.limit)}{item.limit?.period === 'day' && today ? ` · día ${bogotaDayText(today)}` : ''}{item.limit?.period === 'month' ? ' · mes en hora Bogotá' : ''}{item.limit?.enabled === false ? ' · función apagada' : ''}
+      </small>
       <div className="platform-usage-bar" role="meter" aria-valuemin={0} aria-valuemax={limit.max} aria-valuenow={limit.used} aria-label={`Uso ${limit.periodLabel}: ${limit.used} de ${limit.max}`}>
         <span className={`platform-usage-bar-fill tone-${limit.tone}`} style={{ width: `${limit.percent}%` }} />
       </div>
@@ -64,7 +69,7 @@ export function ModelUsageSection({ usage, agentId, agentNames = {} }: { usage: 
       {!usage.data.has_data && <EmptyState title="Sin usos registrados" text={MODEL_USAGE_EMPTY_TEXT} />}
       {items.length === 0 && usage.data.has_data && <EmptyState title="Sin funciones con IA" text="Este agente todavía no usa la IA por la puerta de modelos." />}
       {items.length > 0 && <section className="platform-agent-grid" aria-label="Uso de IA por función">
-        {items.map(item => <UsageCard key={`${item.agent_id}:${item.capability}`} item={item} agentName={agentNames[item.agent_id] || item.agent_id} />)}
+        {items.map(item => <UsageCard key={`${item.agent_id}:${item.capability}`} item={item} agentName={agentNames[item.agent_id] || item.agent_id} today={usage.data.today} />)}
       </section>}
       <p className="platform-usage-note">{MODEL_USAGE_COST_NOTE}</p>
     </>}

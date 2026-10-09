@@ -96,8 +96,10 @@ function isoOrNull(value) {
 }
 
 /** Arma la respuesta pública: siempre incluye las capacidades conocidas de AGT-003 (en cero si no hay eventos). */
-export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(), env = process.env } = {}) {
-  const limits = knownModelLimits(env);
+// `limits` (opcional): topes vigentes por capacidad `{ period, max, source: 'configuration'|'code', version_number }`
+// (configuración aprobada en la plataforma). Sin ellos, los topes conocidos del código/entorno.
+export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(), env = process.env, limits: currentLimits } = {}) {
+  const limits = currentLimits || Object.fromEntries(Object.entries(knownModelLimits(env)).map(([capability, limit]) => [capability, { ...limit, source: 'code', version_number: null }]));
   const days = bogotaSeriesDays(now);
   const key = (agentId, capability) => `${agentId}\u0000${capability}`;
   const summaries = new Map();
@@ -146,6 +148,8 @@ export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(),
   }
   return {
     generated_at: now.toISOString(),
+    // Día de referencia de los conteos "hoy" (hora de Bogotá).
+    today: bogotaDay.format(now),
     has_data: rows.length > 0 || dailyRows.length > 0,
     cost_note: 'Costo equivalente: se usa la suscripción de Claude; es lo que costaría por tokens, no un cobro.',
     // Veces que se tocó el límite de la suscripción (código de falla *_SESSION_LIMIT) en 7 días, todos los agentes.
@@ -154,7 +158,7 @@ export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(),
   };
 }
 
-export async function readPlatformModelUsage(pool, { now = new Date(), env = process.env } = {}) {
+export async function readPlatformModelUsage(pool, { now = new Date(), env = process.env, limits } = {}) {
   let client;
   try {
     client = await pool.connect();
@@ -170,7 +174,7 @@ export async function readPlatformModelUsage(pool, { now = new Date(), env = pro
     const summary = await client.query(PLATFORM_MODEL_USAGE_SUMMARY_SQL, [reference]);
     const daily = await client.query(PLATFORM_MODEL_USAGE_DAILY_SQL, [reference]);
     await client.query('commit');
-    return presentModelUsage({ rows: summary.rows || [], dailyRows: daily.rows || [], now, env });
+    return presentModelUsage({ rows: summary.rows || [], dailyRows: daily.rows || [], now, env, limits });
   } catch (error) {
     failed = error;
     await client.query('rollback').catch(() => {});
@@ -181,6 +185,20 @@ export async function readPlatformModelUsage(pool, { now = new Date(), env = pro
   }
 }
 
-export async function listPlatformModelUsage({ env = process.env, pool, now = new Date() } = {}) {
-  return readPlatformModelUsage(pool || getPlatformPool(env), { now, env });
+export async function listPlatformModelUsage({ env = process.env, pool, now = new Date(), limits } = {}) {
+  return readPlatformModelUsage(pool || getPlatformPool(env), { now, env, limits });
+}
+
+/** Topes vigentes por capacidad a partir de la configuración efectiva (plataforma o valores del código). */
+export function limitsFromEffectiveConfiguration(effective, env = process.env) {
+  const fallback = knownModelLimits(env);
+  const out = {};
+  for (const [capability, limit] of Object.entries(fallback)) {
+    const team = effective?.configuration?.capabilities?.[capability]?.team_cap;
+    const fromPlatform = effective?.source === 'platform' && team && (team.per === 'day' || team.per === 'month') && Number.isInteger(team.max);
+    out[capability] = fromPlatform
+      ? { period: team.per, max: team.max, source: 'configuration', version_number: effective.version_number ?? null, enabled: effective.configuration.capabilities[capability].enabled !== false }
+      : { ...limit, source: 'code', version_number: null, enabled: true };
+  }
+  return out;
 }
