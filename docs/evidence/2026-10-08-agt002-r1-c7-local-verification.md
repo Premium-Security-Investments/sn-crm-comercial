@@ -2,11 +2,18 @@
 
 **Fecha:** 2026-10-08  
 **Baseline:** `origin/main@1fe2c334de92028aacda17af634e5e51a0968891`  
-**Candidato C4-C6:** `97784384bb09ae56ce3fd0a3582198d12a32d89f`  
+**Candidato C4-C6:** núcleo `97784384bb09ae56ce3fd0a3582198d12a32d89f`; HEAD final observado `42407c4b1a924adfc187aeaf935c2e463be72f22`
 **Rama aislada:** `feat/agt002-r1-implementation-20261008`  
-**Estado:** `C7_LOCAL_VERIFIED_REMOTE_AND_STAGING_PENDING`  
-**Autoriza:** publicar la rama y ejecutar CI/preview con flags R1 apagados  
+**Estado actual:** `SUPERSEDED_BY_OWNER_DECISION_2026-10-09`
+**Estado histórico al emitirlo:** `C7_LOCAL_VERIFIED_REMOTE_AND_STAGING_PENDING`
+**Autoriza actualmente:** nada; ver el handoff de supersesión del 2026-10-09
 **No autoriza:** migración o despliegue de producción, encender flags, ejecutar un canario, emitir `AGT002_INCREMENTAL_E2E_ACCEPTED` ni abrir Plataforma Agentes Fase 2
+
+> **Supersesión posterior:** el PR #333 fue cerrado sin merge por decisión explícita del dueño. El
+> análisis incremental queda descartado por ahora y fue reemplazado por el reanálisis completo de
+> nuevos lotes implementado mediante PR #332. Este recibo conserva evidencia histórica de la
+> verificación local, pero ya no abre C7/C8. Véase
+> `docs/evidence/2026-10-09-agt002-r1-incremental-superseded-handoff.md`.
 
 ## Alcance verificado
 
@@ -50,7 +57,7 @@ La restricción local de sockets no se convierte en excepción de aceptación. E
 repetir la suite completa y el build en un entorno que permita los fixtures HTTP. Cualquier fallo
 remoto mantiene C7 abierto.
 
-## Disposición C7/C8
+## Disposición C7/C8 al 2026-10-08 (histórica, ya supersedida)
 
 El siguiente paso permitido es publicar el candidato, abrir PR y exigir:
 
