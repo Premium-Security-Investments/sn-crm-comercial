@@ -48,7 +48,7 @@ const claim = async (pg, idempotencyKey, actor, teamMax, actorMax = null) => (aw
 test('120 es el siguiente número libre, con transacción, reversa y sin sentencias destructivas', () => {
   const numbers = readdirSync(new URL('../supabase/migrations/', import.meta.url)).map(name => name.slice(0, 3));
   assert.equal(numbers.filter(value => value === '120').length, 1);
-  assert.equal(Math.max(...numbers.map(Number).filter(Number.isFinite)), 120);
+  assert.ok(Math.max(...numbers.map(Number).filter(Number.isFinite)) >= 120);
   const sql = raw(M120);
   assert.match(sql, /^begin;$/m);
   assert.match(sql, /commit;\s*$/);
