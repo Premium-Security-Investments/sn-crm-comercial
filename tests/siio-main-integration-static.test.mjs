@@ -19,8 +19,9 @@ for (const marker of [
   "event.key === 'Escape'",
 ]) assert.ok(main.includes(marker), `missing main marker: ${marker}`);
 
-assert.match(navPermissions, /title: 'Gerencia'[\s\S]{0,360}href: '#\/siio', label: 'SIIO Gerencial', page: 'siio'/, 'SIIO Gerencial debe vivir en el catálogo central de navegación.');
-assert.match(navPermissions, /title: 'Comercial'[\s\S]{0,360}href: '#\/dashboard2', label: 'Dashboard comercial', page: 'dashboard2'/, 'Dashboard comercial debe vivir en el catálogo central de navegación.');
+assert.match(navPermissions, /title: 'Gerencia'[\s\S]{0,360}href: '#\/siio', label: 'Torre de Control', page: 'siio'/, 'Torre de Control debe vivir en el catálogo central de navegación.');
+assert.match(navPermissions, /title: 'Comercial'[\s\S]{0,360}href: '#\/dashboard2', label: 'Dashboard', page: 'dashboard2'/, 'Dashboard debe vivir en el catálogo central de navegación.');
+assert.match(main, /<div className="brand"><small>Seguridad Nacional<\/small><em>Sistema Interno de Inteligencia Operativa<\/em><\/div>/, 'la marca superior debe ser fija y usar el nombre corto de la empresa.');
 assert.match(main, /getVisibleNavGroups\(currentProfile\)[\s\S]{0,420}group\.items\.map\(item/, 'main debe renderizar las rutas visibles desde capacidades y no enlaces hardcoded.');
 assert.doesNotMatch(main, /href="#\/(?:siio|dashboard2)"/, 'main no debe duplicar enlaces SIIO/Dashboard fuera del catálogo.');
 

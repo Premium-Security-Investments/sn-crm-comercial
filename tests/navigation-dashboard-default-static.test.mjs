@@ -19,8 +19,8 @@ for (const group of expectedGroups) {
 }
 
 const expectedItems = [
-  ["#/siio", 'SIIO Gerencial', 'siio'],
-  ["#/dashboard2", 'Dashboard comercial', 'dashboard2'],
+  ["#/siio", 'Torre de Control', 'siio'],
+  ["#/dashboard2", 'Dashboard', 'dashboard2'],
   ["#/opportunities", 'Oportunidades', 'opportunities'],
   ["#/tenders?view=radar", 'Radar', 'tenders'],
   ["#/goals", 'Cargar metas', 'goals'],

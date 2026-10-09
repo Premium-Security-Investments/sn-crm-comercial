@@ -13,7 +13,7 @@ const dashboard = main.slice(start, end);
 
 for (const marker of [
   "if (page === 'dashboard2') return { page: 'dashboard2' };",
-  "if (route.page === 'dashboard2') return 'Dashboard comercial';",
+  "if (route.page === 'dashboard2') return 'Dashboard';",
   "if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} refresh={refresh} />;",
   'function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> })',
 ]) assert.ok(main.includes(marker), `main.tsx missing: ${marker}`);
@@ -55,8 +55,8 @@ for (const removed of ['gerencial-v2-hero', 'v2HeroMetrics', 'projectionCardsV2'
   assert.ok(!dashboard.includes(removed), `el tablero ya no incluye ${removed}`);
 }
 
-assert.match(nav, /title: 'Comercial'[\s\S]{0,700}href: '#\/dashboard2', label: 'Dashboard comercial', page: 'dashboard2'/, 'Dashboard comercial pertenece al grupo Comercial del catálogo.');
-assert.doesNotMatch(main, /href="#\/dashboard2">Dashboard comercial/, 'main.tsx no duplica el enlace del catálogo.');
+assert.match(nav, /title: 'Comercial'[\s\S]{0,700}href: '#\/dashboard2', label: 'Dashboard', page: 'dashboard2'/, 'Dashboard pertenece al grupo Comercial del catálogo.');
+assert.doesNotMatch(main, /href="#\/dashboard2">Dashboard/, 'main.tsx no duplica el enlace del catálogo.');
 for (const marker of ['.dashboard-v2', '.v2-kpi-grid', '.v2-kpi-card', '.v2-deal-list', '.v2-deal-row', '.behavior-table', '.dashboard-three-questions']) assert.ok(css.includes(marker), `styles.css missing ${marker}`);
 
 console.log('manager-dashboard-v2 static checks passed');

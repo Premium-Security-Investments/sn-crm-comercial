@@ -415,7 +415,7 @@ function App() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [sidebarOpen]);
   useEffect(() => {
-    document.title = route.page === 'siio' ? 'SIIO Gerencial | Plataforma PSI' : 'Seguridad Nacional | Seguimiento Comercial';
+    document.title = route.page === 'siio' ? 'Torre de Control | Plataforma PSI' : 'Seguridad Nacional | Seguimiento Comercial';
   }, [route.page]);
   const siioShell = route.page === 'siio';
   if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
@@ -427,7 +427,7 @@ function App() {
   return <div className={`app ${sidebarOpen ? 'sidebar-visible' : ''}`}>
     {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
     <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="Navegación principal">
-      <div className="brand"><small>Seguridad Nacional Ltda</small><em>{siioShell ? 'SIIO Gerencial' : 'Dashboard Comercial'}</em></div>
+      <div className="brand"><small>Seguridad Nacional</small><em>Sistema Interno de Inteligencia Operativa</em></div>
       <div className="sidebar-nav-scroll"><Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} /></div>
       <div className="sidebar-footer-compact">
         <div className="session-card"><small>Sesión activa</small><strong>{realProfile?.full_name || session.user.email}</strong><span>{realProfile ? roleLabel(realProfile.role) : 'perfil'}</span>
@@ -445,7 +445,7 @@ function App() {
         <div><h1>{titleFor(route)}</h1><p>{siioShell ? 'Plataforma PSI · Control gerencial' : 'CRM comercial · Seguridad Nacional'}</p></div>
         {!siioShell && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
       </header>
-      {loading && <div className="notice">{siioShell ? 'Cargando SIIO Gerencial…' : 'Cargando información comercial…'}</div>}
+      {loading && <div className="notice">{siioShell ? 'Cargando Torre de Control…' : 'Cargando información comercial…'}</div>}
       {error && <div className="error">{error}</div>}
       {!loading && viewData && <RouterView route={route} data={viewData} refresh={refresh} />}
     </main>
@@ -500,7 +500,7 @@ function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
   return <div className="login-shell">
     <form className="login-card" onSubmit={submit}>
       <span className="eyebrow">{siioMode ? 'Plataforma PSI' : 'Seguridad Nacional Ltda'}</span>
-      <h1>{siioMode ? 'Ingreso a SIIO Gerencial' : 'Ingreso al CRM Comercial'}</h1>
+      <h1>{siioMode ? 'Ingreso a Torre de Control' : 'Ingreso al CRM Comercial'}</h1>
       <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes y decisiones.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
       <label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
       <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
@@ -516,9 +516,9 @@ function titleFor(route: Route) {
   if (route.page === 'detail') return 'Detalle de oportunidad';
   if (route.page === 'new') return 'Crear oportunidad';
   if (route.page === 'edit') return 'Editar oportunidad';
-  if (route.page === 'dashboard') return 'Dashboard comercial';
-  if (route.page === 'dashboard2') return 'Dashboard comercial';
-  if (route.page === 'siio') return 'SIIO Gerencial';
+  if (route.page === 'dashboard') return 'Dashboard';
+  if (route.page === 'dashboard2') return 'Dashboard';
+  if (route.page === 'siio') return 'Torre de Control';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Prioridades Comerciales';

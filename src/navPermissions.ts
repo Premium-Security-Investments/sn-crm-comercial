@@ -53,7 +53,7 @@ const navGroups: readonly NavGroupDefinition[] = [
   {
     title: 'Gerencia',
     items: [
-      { href: '#/siio', label: 'SIIO Gerencial', page: 'siio' },
+      { href: '#/siio', label: 'Torre de Control', page: 'siio' },
     ],
   },
   {
@@ -61,7 +61,7 @@ const navGroups: readonly NavGroupDefinition[] = [
     items: [
       // El comercial empieza su día aquí (su lista de hoy y las oportunidades por decidir); sólo lo ve el rol comercial.
       { href: '#/home', label: 'Mi día', page: 'home' },
-      { href: '#/dashboard2', label: 'Dashboard comercial', page: 'dashboard2' },
+      { href: '#/dashboard2', label: 'Dashboard', page: 'dashboard2' },
       // Prioridades Comerciales (#/alerts) salió del menú: su motor alimenta el Dashboard comercial y el orden
       // "por urgencia" de Oportunidades. La ruta sigue abierta para enlaces directos.
       { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },

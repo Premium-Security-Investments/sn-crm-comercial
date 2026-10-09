@@ -106,11 +106,11 @@ test('las identidades técnicas no se editan como usuarios', () => {
   assert.equal(server.assertEditableHumanProfile({ id: 'h', identity_type: null }), true);
 });
 
-test('navegación de consulta: SIIO, Dashboard comercial, Oportunidades y Radar; nunca rutas de escritura', () => {
+test('navegación de consulta: Torre de Control, Dashboard, Oportunidades y Radar; nunca rutas de escritura', () => {
   const profile = consulta();
   assert.deepEqual(getVisibleNavGroups(profile), [
-    { title: 'Gerencia', items: [{ href: '#/siio', label: 'SIIO Gerencial', page: 'siio' }] },
-    { title: 'Comercial', items: [{ href: '#/dashboard2', label: 'Dashboard comercial', page: 'dashboard2' }, { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' }] },
+    { title: 'Gerencia', items: [{ href: '#/siio', label: 'Torre de Control', page: 'siio' }] },
+    { title: 'Comercial', items: [{ href: '#/dashboard2', label: 'Dashboard', page: 'dashboard2' }, { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' }] },
     { title: 'Licitaciones', items: [{ href: '#/tenders?view=radar', label: 'Radar', page: 'tenders' }] },
   ]);
   for (const page of ['new', 'edit', 'users', 'goals']) assert.equal(canAccessRoute(profile, page), false, page);
