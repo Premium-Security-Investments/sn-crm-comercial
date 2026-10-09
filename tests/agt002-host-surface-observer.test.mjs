@@ -99,6 +99,7 @@ test('AGT002_HOST_SURFACE_UNITS: fixed allowlist maps exactly the live host surf
     radar_daily_reconciliation: 'agt002-radar-reconciliation.service',
     radar_daily_top5: 'agt002-radar-top5.service',
     radar_requests: 'agt002-radar-requests.service',
+    phase_change_review: 'agt002-phase-change-review.service',
   });
 });
 

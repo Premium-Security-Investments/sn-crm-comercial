@@ -8,9 +8,16 @@ identidad (`id`, `process_id`, `source`, `stable_key`), nunca toca campos humano
 (`title`, `entity`, `section`, `reviewed_by`, `reviewed_at`), y nunca toca campos de conversión.
 
 Este artefacto **no convierte licitaciones en oportunidades, no registra GO/NO-GO, y no modifica
-`internal_status` ni `converted_opportunity_id`** -- ni siquiera para una licitación ya convertida
-(`internal_status: 'convertida_oportunidad'`): la conversión congela los campos de negocio, no los
-hechos técnicos de plazo/estado que este proceso mantiene al día.
+`internal_status` ni `converted_opportunity_id`**.
+
+**Convertidas (decisión del dueño, 2026-10-09):** una licitación convertida en oportunidad
+(`internal_status: 'convertida_oportunidad'`) no se consulta ni se escribe aquí, esté activa o no.
+Las no activas (NO GO, cerradas, perdidas, descartadas, aprobadas) no las toca ningún proceso
+automático; las activas (Por decidir / En curso) las mantiene al día sólo la revisión programada
+(`agt002-phase-change-review`: enlace, proceso, estado, cierre y fases conocidas), igual que el
+resto de la cadena diaria del Radar desde #334. El resultado informa cuántas se omitieron
+(`skipped_converted`). Una licitación sacada de la oportunidad y devuelta al Radar (`nueva`) vuelve a
+ser una fila normal y sí se concilia.
 
 ## Cuándo corre
 

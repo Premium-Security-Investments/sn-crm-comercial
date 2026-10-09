@@ -48,6 +48,28 @@ async function run() {
     assert.equal(calls.requestAgt002.length, 0);
   }
 
+  // 1b) decisión del dueño 2026-10-09: oportunidad NO activa -> el trabajo sale de la cola sin descargar, sin revalidar,
+  //     sin evento en la licitación ni análisis; una activa sigue igual.
+  {
+    let revalidated = 0;
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-1b', lease_id: 'lease-1b', tender_id: 'tender-1b', opportunity_id: 'opp-no-go',
+        status: 'queued', current_step: 'documents',
+      }),
+      readOpportunityInactiveReason: async ({ opportunityId }) => (opportunityId === 'opp-no-go' ? 'opportunity_closed' : null),
+      revalidateOfficialStatus: async () => { revalidated += 1; return { terminal: false }; },
+    });
+    const result = await createTenderProcessingWorker(deps).runOnce({});
+    assert.deepEqual([result.status, result.reason], ['cancelled', 'opportunity_closed']);
+    assert.deepEqual(calls.updateJob.map(call => call.patch), [{ status: 'cancelled', current_step: 'opportunity_inactive' }]);
+    assert.equal(calls.appendEvent.length, 0, 'ningún evento en la licitación');
+    assert.equal(calls.discoverDocuments.length, 0);
+    assert.equal(calls.requestAgt002.length, 0);
+    assert.equal(revalidated, 0);
+    assert.ok(isWorkerYieldStatus(result.status), 'el drenaje no vuelve a reclamarlo en bucle');
+  }
+
   // 2) job importing_documents con 5 docs y batchSize:2 -> procesa 2, deja el resto pending, incrementa documents_processed.
   {
     const pending = Array.from({ length: 5 }, (_, i) => ({ source: 'SECOP II', sourceDocumentId: `d${i}`, name: `Doc ${i}`, critical: false }));

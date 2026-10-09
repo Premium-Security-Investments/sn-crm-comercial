@@ -533,6 +533,7 @@ const HOST_SURFACES = [
   'radar_daily_reconciliation',
   'radar_daily_top5',
   'radar_requests',
+  'phase_change_review',
 ];
 
 function fakeHostSurfaceObserver(result = { ok: true }) {

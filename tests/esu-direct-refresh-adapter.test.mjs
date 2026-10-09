@@ -107,6 +107,22 @@ test('Supabase ESU adapter targets an existing exact stable_key match by id, pat
   assert.equal(calls.some(call => call.table === 'psi_sales_interactions'), false, 'must not mutate business interactions');
 });
 
+test('decisión del dueño 2026-10-09: el refresco ESU nunca escribe en una licitación convertida (activa o no)', async () => {
+  const existing = [
+    { id: 'db-conv', stable_key: 'esu-conv', ref: 'P-9', source: 'ESU Contratación', deadline_at: '2026-09-30T23:59:00.000Z', status: 'Convocado', internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp-9' },
+    { id: 'db-plain', stable_key: 'esu-plain', ref: 'P-8', source: 'ESU Contratación', deadline_at: '2026-09-30T23:59:00.000Z', status: 'Convocado', internal_status: 'nueva' },
+  ];
+  const { database, calls } = fakeDatabase({ existing });
+  const direct = (stableKey, ref) => ({ stable_key: stableKey, source: 'ESU Contratación', ref, process_id: ref, title: 'Vigilancia', status: 'Cerrado', deadline: '2026-10-15T23:59:00.000Z', url: 'https://esucontratacion.com/procesos/view/9' });
+  const refresher = createSupabaseEsuDirectRefresher({
+    database, now: () => '2026-10-09T18:00:00.000Z',
+    fetchDirectProcesses: async () => [direct('esu-conv', 'P-9'), direct('esu-plain', 'P-8')],
+  });
+  await refresher.runOnce();
+  const updates = calls.filter(call => call.table === 'psi_public_tenders' && call.method === 'update');
+  assert.deepEqual(updates.map(call => call.value), ['db-plain'], 'sólo la fila normal del Radar');
+});
+
 test('unavailable checkpoint still imposes the 6h retry floor 15 minutes later', async () => {
   const checkpoint = {
     run_at: '2026-08-27T17:45:00.000Z',

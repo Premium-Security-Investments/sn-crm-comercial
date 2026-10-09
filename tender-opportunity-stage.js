@@ -28,3 +28,40 @@ export function latestTenderGoNoGoDecision(decisions = []) {
   return [...decisions].filter(row => row && !superseded.has(row.id))
     .sort((a, b) => String(b.decided_at || '').localeCompare(String(a.decided_at || '')) || String(b.id).localeCompare(String(a.id)))[0] || null;
 }
+
+// Etapas comerciales cerradas (migración 110): además de la etapa de la bandeja, una oportunidad así nunca es activa.
+export const TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES = new Set(['aprobado', 'descartado', 'perdido']);
+
+/** Licitación convertida: la misma regla que el Radar (`internal_status`); una devuelta al Radar vuelve a ser fila normal. */
+export function isConvertedTenderRow(row) {
+  return row?.internal_status === 'convertida_oportunidad';
+}
+
+async function readOrThrow(promise, label) {
+  const { data, error } = await promise;
+  if (error) {
+    const wrapped = new Error(`${label}: ${error.message || 'error de lectura'}`);
+    wrapped.code = 'AGT002_PHASE_CHANGE_READ_FAILED';
+    throw wrapped;
+  }
+  return data;
+}
+
+/**
+ * Por qué una oportunidad de licitación NO es activa, o `null` si es activa (decisión del dueño, 2026-10-09: todo
+ * proceso automático trata las no activas como si no existieran). Activa = etapa derivada "Por decidir" o "En curso" de
+ * la bandeja (classifyTenderOpportunityStage con la decisión GO/NO GO vigente) y etapa comercial abierta. Sólo lee.
+ */
+export async function readTenderOpportunityInactiveReason(database, opportunityId, tenderId = null) {
+  if (!opportunityId) return 'opportunity_missing';
+  const opportunity = await readOrThrow(database.from('psi_sales_opportunities')
+    .select('id,stage_code,tender_offer_status').eq('id', opportunityId).maybeSingle(), 'oportunidad');
+  if (!opportunity) return 'opportunity_missing';
+  if (TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES.has(opportunity.stage_code)) return 'opportunity_closed';
+  let decisions = database.from('psi_tender_go_no_go_decisions')
+    .select('id,decision,decided_at,supersedes_decision_id').eq('opportunity_id', opportunityId);
+  if (tenderId) decisions = decisions.eq('tender_id', tenderId);
+  const latest = latestTenderGoNoGoDecision((await readOrThrow(decisions, 'decisión GO/NO GO')) || []);
+  const stage = classifyTenderOpportunityStage({ decision: latest?.decision || null, tender_offer_status: opportunity.tender_offer_status });
+  return stage === 'cerradas' ? 'opportunity_closed' : null;
+}

@@ -18,6 +18,7 @@ const WATCHED_SURFACES = [
   'radar_daily_reconciliation',
   'radar_daily_top5',
   'radar_requests',
+  'phase_change_review',
 ];
 
 const RELEASE_RECEIPT_MODULE_SPECIFIER = '../scripts/agt002-generate-release-receipt.mjs';

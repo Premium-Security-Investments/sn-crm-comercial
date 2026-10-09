@@ -252,4 +252,24 @@ assert.deepEqual(AGT002_RADAR_SCAN_STAGES, ['esu_refresh', 'fetch', 'gate', 'led
   assert.equal(rpcErrorResult.error_code, 'persistence_failure');
 }
 
+// Decisión del dueño (2026-10-09): el filtro del Radar diario nunca evalúa ni registra en el ledger una licitación
+// convertida en oportunidad (activa o no); una devuelta al Radar ('nueva') sí.
+{
+  const converted = { ...TENDER, id: '44444444-4444-4444-8444-444444444444', stable_key: 'k-conv', internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp-1' };
+  const returned = { ...TENDER2, internal_status: 'nueva', converted_opportunity_id: 'opp-2' };
+  const evaluatedIds = [];
+  const recordedIds = [];
+  const scan = createAgt002RadarScan({
+    database: {}, now: () => NOW,
+    fetchTenderPage: async () => [converted, returned],
+    evaluateGate: row => { evaluatedIds.push(row.id); return { verdict: 'sobreviviente', source_row_hash: 'a'.repeat(64), policy_version: 'p', context_version: 'c' }; },
+    recordGateEvaluation: async (_db, value) => { recordedIds.push(value.tenderId); return { id: 'g' }; },
+  });
+  const result = await scan.runOnce();
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(evaluatedIds, [returned.id]);
+  assert.deepEqual(recordedIds, [returned.id], 'ninguna escritura en el ledger para una convertida');
+  assert.equal(result.evaluated, 1);
+}
+
 console.log('AGT-002 Radar daily scan (deterministic, always-on, no preanalysis/enqueue/model/bridge) passed');

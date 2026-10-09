@@ -197,7 +197,8 @@ jobs:
       # Surfaces observed:
       #   - origin_main: bound to the desired-target sha (GitHub is the authoritative source).
       #   - vercel_production / bridge: their own read-only control-plane URL.
-      #   - host jobs (initial_analysis_worker, auto_initial, radar_daily_*, radar_requests): the
+      #   - host jobs (initial_analysis_worker, auto_initial, radar_daily_*, radar_requests,
+      #     phase_change_review): the
       #     bridge's read-only host-surface route, <bridge URL>/<surface>, which reads the systemd
       #     unit's pinned release. No per-surface variable is needed.
       # A surface that cannot be observed fails the job just like a real mismatch. The only

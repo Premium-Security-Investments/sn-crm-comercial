@@ -2063,14 +2063,21 @@ const CONVERTED_TENDER_COLUMNS = 'id,stable_key,source,entity,ref,process_id,tit
 // Detección en la revisión programada (agt002-phase-change-review, todos los días): sólo la continuidad de fase de las
 // convertidas ACTIVAS (Por decidir / En curso). Idempotente con la cadena diaria (misma marca, mismo plan; un enlace ya
 // cambiado no vuelve a cambiar) y nunca escribe licitaciones nuevas: sólo actualiza la fila convertida (enlace,
-// proceso, estado, cierre) y su oportunidad. `isActive(row)` decide la etapa (agt002-phase-change-followup.js).
+// proceso, estado, cierre, fases conocidas) y su oportunidad. `isActive(row)` decide la etapa
+// (agt002-phase-change-followup.js). Las activas de otra fuente (no SECOP II) no tienen seguimiento automático
+// (limitación conocida): se devuelven en `other_sources` para que la revisión lo deje en el log, sin tocarlas.
 export async function syncConvertedTenderPhaseLinks(database, { isActive, now = new Date().toISOString(), fetchFamilies = fetchConvertedTenderFamilies } = {}) {
   if (typeof isActive !== 'function') throw new Error('isActive es obligatorio.');
   const { data: converted, error } = await database.from('psi_public_tenders').select(CONVERTED_TENDER_COLUMNS).eq('internal_status', 'convertida_oportunidad');
   if (error) throw error;
   const active = [];
-  for (const row of converted || []) if (row?.source === 'SECOP II' && row.converted_opportunity_id && await isActive(row)) active.push(row);
-  if (!active.length) return { active: 0, changed: 0 };
+  const otherSources = [];
+  for (const row of converted || []) {
+    if (!row?.converted_opportunity_id || !(await isActive(row))) continue;
+    if (row.source === 'SECOP II') active.push(row);
+    else otherSources.push({ opportunity_id: row.converted_opportunity_id, source: row.source || null });
+  }
+  if (!active.length) return { active: 0, changed: 0, other_sources: otherSources };
   const familyRows = await fetchFamilies(active);
   const plan = planRadarPhaseIdentitySync({ fetched: familyRows, existing: active, now });
   const deferred = await recordAgt002RadarPhaseChanges(database, plan.opportunityPatches || [], { now });
@@ -2084,13 +2091,18 @@ export async function syncConvertedTenderPhaseLinks(database, { isActive, now = 
     if (override.process_id && override.process_id !== row.process_id) update.process_id = override.process_id;
     if (override.status && override.status !== row.status) update.status = override.status;
     if (override.deadline_at && Date.parse(override.deadline_at) !== Date.parse(row.deadline_at)) update.deadline_at = override.deadline_at;
+    // Fases conocidas del proceso (insignia del Radar): la revisión las mantiene al día, ya que el Radar diario no toca convertidas.
+    const knownPhases = override.known_phases || [];
+    if (knownPhases.length > 1 && JSON.stringify(knownPhases) !== JSON.stringify(row.raw?.phase_continuity?.known_phases || [])) {
+      update.raw = withPhaseIdentityRaw(row.raw || null, { knownPhases });
+    }
     if (!Object.keys(update).length) continue;
     const { error: updateError } = await database.from('psi_public_tenders').update(update).eq('stable_key', row.stable_key).eq('internal_status', 'convertida_oportunidad');
     if (updateError) throw updateError;
     changed += 1;
   }
   await applyConvertedOpportunityPatches(database, (plan.opportunityPatches || []).filter(patch => !deferred.has(patch.converted_opportunity_id)));
-  return { active: active.length, changed, patches: (plan.opportunityPatches || []).length, deferred: deferred.size };
+  return { active: active.length, changed, patches: (plan.opportunityPatches || []).length, deferred: deferred.size, other_sources: otherSources };
 }
 export async function persistTenderRadar(database, actorProfile, mode = 'manual', { deep = false } = {}) {
   // run_id se genera antes de tocar el pipeline real para que, incluso si la corrida resulta
@@ -4532,6 +4544,9 @@ function buildTenderProcessingWorkerDeps(database) {
     }),
     recordImportItem: item => recordTenderImportItem(database, item),
     appendEvent: event => appendTenderProcessingEvent(database, event),
+
+    // Misma regla de oportunidad activa que el resto de AGT-002 (tender-opportunity-stage.js).
+    readOpportunityInactiveReason: ({ opportunityId, tenderId }) => agt002PhaseChangeOpportunityBlocker(database, opportunityId, tenderId),
 
     revalidateOfficialStatus: async ({ tenderId }) => {
       const tenderRow = await must(database.from('psi_public_tenders').select('*').eq('id', tenderId).single());

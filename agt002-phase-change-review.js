@@ -125,6 +125,8 @@ export async function runAgt002PhaseChangeReview(database, {
   const isActive = row => isAgt002PhaseChangeActiveOpportunity(database, row);
   const sync = await step('link_sync', () => api.syncConvertedTenderPhaseLinks(database, { isActive, now: now.toISOString() }), null);
   log({ event: 'agt002_phase_change_link_sync', ...(sync || {}) });
+  // Limitación conocida: sólo SECOP II tiene seguimiento de fases. Una activa de otra fuente se deja explícita en el log.
+  for (const item of sync?.other_sources || []) log({ event: 'agt002_phase_change_review_source_not_followed', opportunityId: item.opportunity_id, source: item.source });
   for (const event of await step('reconcile', () => reconcileAgt002PendingPhaseChanges(database, { now }), [])) log(event);
   const documentEvents = await step('documents', () => runAgt002PhaseChangeDocumentRefresh(database, {
     now, ...(budgetMs ? { budgetMs } : {}),

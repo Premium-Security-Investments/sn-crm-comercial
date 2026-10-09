@@ -9,8 +9,11 @@
 // `deadline_at`, `status`, `raw` and `last_seen_at` -- never identity (`id`, `process_id`,
 // `source`, `stable_key`), never human/business fields (`title`, `entity`, `section`,
 // `reviewed_by`, `reviewed_at`), and never conversion fields (`internal_status`,
-// `converted_opportunity_id`). A converted tender (`internal_status: 'convertida_oportunidad'`)
-// still gets its deadline/status kept fresh -- conversion does not freeze the technical facts.
+// `converted_opportunity_id`). The pure `reconcileTenderSource` still computes a technical patch for
+// any row, but the nightly runner (`runOnce`) never patches nor looks up a converted tender
+// (`internal_status: 'convertida_oportunidad'`, active or not): decisión del dueño 2026-10-09, as
+// the rest of the Radar daily chain (#334). Active converted rows are kept fresh only by the
+// scheduled phase-change review.
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import {
@@ -353,7 +356,7 @@ function durableRow(id, processId, overrides = {}) {
   };
 }
 
-test('a realistic fake database/fetch runner proves pagination, chunked source lookups, converted-row inclusion, and a narrow PATCH', async () => {
+test('a realistic fake database/fetch runner proves pagination, chunked source lookups, converted-row exclusion, and a narrow PATCH', async () => {
   const rows = [
     durableRow('id-1', 'P-1'),
     durableRow('id-2', 'P-2', { internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp-2' }),
@@ -365,7 +368,7 @@ test('a realistic fake database/fetch runner proves pagination, chunked source l
 
   const sourceById = {
     'P-1': sourceRow({ id_del_proceso: 'P-1', fecha_de_recepcion_de: '2026-11-20T00:00:00.000' }), // later -> patched
-    'P-2': sourceRow({ id_del_proceso: 'P-2', fecha_de_recepcion_de: '2026-11-25T00:00:00.000' }), // converted, later -> still patched
+    'P-2': sourceRow({ id_del_proceso: 'P-2', fecha_de_recepcion_de: '2026-11-25T00:00:00.000' }), // converted -> never looked up nor patched
     'P-3': sourceRow({ id_del_proceso: 'P-3', fecha_de_recepcion_de: '2026-11-01T00:00:00.000' }), // equal -> no deadline change
     'P-4': sourceRow({ id_del_proceso: 'P-4', fecha_de_recepcion_de: '2026-12-01T00:00:00.000' }), // missing -> set
     'P-5': sourceRow({ id_del_proceso: 'P-5', fecha_de_recepcion_de: '2026-10-01T00:00:00.000' }), // earlier -> conflict only
@@ -384,8 +387,8 @@ test('a realistic fake database/fetch runner proves pagination, chunked source l
   assert.ok(calls.some(call => call.op === 'eq' && call.column === 'source' && call.value === 'SECOP II'), 'durable read must be scoped to source SECOP II');
   assert.ok(calls.some(call => call.op === 'not' && call.column === 'process_id'), 'durable read must require a non-null process_id');
 
-  // Chunking: chunkSize 2 over 5 ids must take 3 SoQL lookups, none larger than the chunk size.
-  assert.equal(fetch.calls.length, 3, 'process_id lookups must be chunked at the configured chunk size');
+  // Chunking: chunkSize 2 over the 4 non-converted ids must take 2 SoQL lookups, none larger than the chunk size.
+  assert.equal(fetch.calls.length, 2, 'process_id lookups must be chunked at the configured chunk size');
   let idsRequested = 0;
   for (const where of fetch.calls) {
     assert.match(where, /^id_del_proceso in \(/);
@@ -393,13 +396,14 @@ test('a realistic fake database/fetch runner proves pagination, chunked source l
     assert.ok(idCount <= 2, `each SoQL chunk must respect the configured chunk size, saw ${idCount}`);
     idsRequested += idCount;
   }
-  assert.equal(idsRequested, 5, 'every durable process_id must be looked up exactly once across the chunks');
+  assert.equal(idsRequested, 4, 'every non-converted durable process_id must be looked up exactly once across the chunks');
+  assert.ok(fetch.calls.every(where => !where.includes("'P-2'")), 'a converted tender is never even looked up in Socrata');
 
   const updateCalls = calls.filter(call => call.op === 'update');
   const patchById = Object.fromEntries(updateCalls.map(call => [call.value, call.patch]));
 
-  assert.ok(patchById['id-2'], 'a converted tender must still receive technical reconciliation');
-  assert.equal(patchById['id-2'].deadline_at, '2026-11-25T00:00:00+00:00');
+  assert.equal(patchById['id-2'], undefined, 'a converted tender is never patched by the nightly reconciliation');
+  assert.deepEqual(Object.keys(patchById).sort(), ['id-1', 'id-3', 'id-4', 'id-5']);
 
   for (const [id, patch] of Object.entries(patchById)) {
     for (const key of Object.keys(patch)) {
@@ -407,8 +411,30 @@ test('a realistic fake database/fetch runner proves pagination, chunked source l
     }
   }
 
-  assert.equal(result.scanned, 5);
-  assert.equal(result.matched, 5);
+  assert.equal(result.scanned, 4);
+  assert.equal(result.matched, 4);
+  assert.equal(result.skipped_converted, 1);
+  assert.equal(result.status, 'success', 'skipping converted rows is not a missing lookup');
+});
+
+test('decisión del dueño 2026-10-09: ninguna convertida (activa o no activa) recibe escritura; una devuelta al Radar sí', async () => {
+  const rows = [
+    durableRow('id-a', 'P-A', { internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp-activa' }),
+    durableRow('id-b', 'P-B', { internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp-no-go' }),
+    // Sacada de oportunidad y devuelta al Radar: vuelve a ser una fila normal del Radar.
+    durableRow('id-c', 'P-C', { internal_status: 'nueva', converted_opportunity_id: 'opp-descartada' }),
+  ];
+  const { database, calls } = fakeDatabase({ rows });
+  const fetch = fakeFetchSource({
+    'P-A': sourceRow({ id_del_proceso: 'P-A', fecha_de_recepcion_de: '2026-12-01T00:00:00.000' }),
+    'P-B': sourceRow({ id_del_proceso: 'P-B', fecha_de_recepcion_de: '2026-12-01T00:00:00.000' }),
+    'P-C': sourceRow({ id_del_proceso: 'P-C', fecha_de_recepcion_de: '2026-12-01T00:00:00.000' }),
+  });
+  const result = await createTenderSourceReconciliation({ database, fetchSource: fetch.run, now: () => '2026-10-09T12:00:00.000Z' }).runOnce();
+  assert.deepEqual(calls.filter(call => call.op === 'update').map(call => call.value), ['id-c']);
+  assert.deepEqual(fetch.calls, ["id_del_proceso in ('P-C')"]);
+  assert.equal(result.skipped_converted, 2);
+  assert.equal(result.status, 'success');
 });
 
 test('an individual PATCH failure is counted but reconciliation continues with later rows', async () => {

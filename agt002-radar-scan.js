@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { agt002RadarEvaluationDate, evaluateAgt002RadarGate } from './agt002-radar-gate.js';
 import { ESU_DIRECT_REFRESH_SOURCE } from './esu-direct-refresh.js';
+import { isConvertedTenderRow } from './tender-opportunity-stage.js';
 
 // Deterministic, always-on when invoked: this scan filters the fetched page through the gate and
 // appends the result to the ledger.
@@ -66,6 +67,9 @@ export function createAgt002RadarScan({
         stages.push('fetch');
         rows = await fetchTenderPage(database, { limit: maxTendersPerRun });
         if (!Array.isArray(rows)) throw new Error('fetch did not return rows');
+        // Decisión del dueño (2026-10-09): el filtro del Radar diario nunca evalúa ni registra una licitación convertida
+        // en oportunidad (activa o no); las activas las sigue sólo la revisión programada.
+        rows = rows.filter(row => !isConvertedTenderRow(row));
       } catch {
         return { status: 'unavailable', stages, esu_refresh: esuRefresh, error_code: 'provider_error' };
       }

@@ -2,6 +2,8 @@
 // deadline/status data into the already-persisted psi_public_tenders rows for that source,
 // independent of the manual/auto-empty full-radar sync in server/index.js and api/[...path].js.
 
+import { isConvertedTenderRow } from './tender-opportunity-stage.js';
+
 export const ESU_DIRECT_REFRESH_SOURCE = 'ESU Contratación directo';
 export const ESU_DIRECT_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
@@ -150,7 +152,7 @@ function findSafeExistingEsuMatch(process, existingByStableKey, existingByCanoni
 async function reconcileExistingEsuTenders(database, processes) {
   const response = await database
     .from('psi_public_tenders')
-    .select('id,stable_key,ref,title,deadline_at,status')
+    .select('id,stable_key,ref,title,deadline_at,status,internal_status')
     .eq('source', 'ESU Contratación');
   if (response?.error) throw response.error;
   const existingRows = response?.data || [];
@@ -163,6 +165,9 @@ async function reconcileExistingEsuTenders(database, processes) {
   for (const process of processes) {
     const existingRow = findSafeExistingEsuMatch(process, existingByStableKey, existingByCanonicalRef, directByCanonicalRef);
     if (!existingRow) continue;
+    // Decisión del dueño (2026-10-09): el Radar diario nunca escribe en una licitación convertida en oportunidad
+    // (activa o no). La fila sigue contando para el emparejamiento, así nunca se elige otra en su lugar.
+    if (isConvertedTenderRow(existingRow)) continue;
     // Narrow, technical-only patch: only the authoritative deadline/status travel from the direct
     // crawl, with mergeAuthoritativeEsuTender preserving the persisted value when the direct read
     // came back blank. Title/ref/entity/stable_key and every human/business field are untouched.

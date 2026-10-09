@@ -66,6 +66,7 @@ test('SURFACE_NAMES matches the exact live watched surfaces', () => {
     'radar_daily_reconciliation',
     'radar_daily_top5',
     'radar_requests',
+    'phase_change_review',
   ]);
   assert.equal(Object.isFrozen(SURFACE_NAMES), true);
 });

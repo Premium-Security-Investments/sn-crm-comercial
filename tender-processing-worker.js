@@ -58,6 +58,7 @@ export function createTenderProcessingWorker(deps) {
     claimJob, updateJob, recordImportItem, appendEvent,
     revalidateOfficialStatus, discoverDocuments, importOneDocument,
     chunkDocuments, publishSnapshot, requestAgt002, now,
+    readOpportunityInactiveReason = null,
     analysisConfig = Object.freeze({}),
     observability = createAgt002AnalysisObservability(),
   } = deps;
@@ -107,6 +108,18 @@ export function createTenderProcessingWorker(deps) {
     function finishStage(stage, outcome, result) {
       observability.record('stage_duration', { job_id: jobId, tender_id: tenderId, stage, outcome, duration_ms: now() - startedAt });
       return result;
+    }
+
+    // Decisión del dueño (2026-10-09): una oportunidad NO activa (NO GO, cerrada, perdida…) es como si no existiera
+    // para los procesos automáticos. Su trabajo sale de la cola (sólo el registro del propio trabajo; ningún evento en
+    // la licitación, ninguna descarga) para que nunca vuelva a reclamarse ni bloquee a las activas.
+    const inactive = typeof readOpportunityInactiveReason === 'function'
+      ? await readOpportunityInactiveReason({ opportunityId, tenderId })
+      : null;
+    if (inactive) {
+      await updateJobObserved({ status: 'cancelled', current_step: 'opportunity_inactive' });
+      observability.record('outcome_recorded', { job_id: jobId, tender_id: tenderId, stage: 'opportunity_stage', outcome: 'cancelled' });
+      return finishStage('opportunity_stage', 'cancelled', { status: 'cancelled', job_id: jobId, reason: inactive });
     }
 
     // Spec §7.1: revalidate the official status before importing and before

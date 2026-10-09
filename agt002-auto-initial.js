@@ -3,7 +3,8 @@
 // documents (processing job in `awaiting_analysis_authorization`), this admits the INITIAL analysis on behalf of the
 // person who converted, with the company profile and the document selection rule.
 //
-// Guards, all fail-closed: only conversions at or after `since`; only opportunities still `prospecto`; never a second
+// Guards, all fail-closed: only conversions at or after `since`; only opportunities still `prospecto` and ACTIVE (owner
+// decision 2026-10-09: a NO GO or closed opportunity is treated as if it did not exist); never a second
 // INITIAL for an opportunity; at most `dailyCap` INITIAL analyses per Bogotá calendar day (the per-analysis USD cap is
 // the runtime's AGT002_INITIAL_ANALYSIS_MAX_COST_USD); admission itself still requires both kill switches on.
 // It never touches the retired legacy engine: the processing job is left as is and never authorized (migration 087).
@@ -11,6 +12,7 @@
 import { admitAgt002InitialAnalysis } from './agt002-initial-analysis-admission.js';
 import { freezeAgt002CompanyProfileSnapshot } from './agt002-company-profile-snapshot.js';
 import { agt002InitialRequestedMembers, selectAgt002InitialDocuments } from './agt002-initial-document-rule.js';
+import { readTenderOpportunityInactiveReason } from './tender-opportunity-stage.js';
 
 export const AGT002_AUTO_INITIAL_POLICY_VERSION = 'agt002-initial-analysis-policy-v1';
 export const AGT002_AUTO_INITIAL_DEFAULT_DAILY_CAP = 5;
@@ -93,6 +95,8 @@ export async function findAgt002AutoInitialCandidates(database, { since }) {
     const opportunity = await must(database.from('psi_sales_opportunities')
       .select('id,stage_code,service_type_code').eq('id', job.opportunity_id).maybeSingle(), 'oportunidad');
     if (!opportunity || opportunity.stage_code !== 'prospecto' || opportunity.service_type_code !== 'licitacion_publica') continue;
+    // Etapa de la bandeja (decisión GO/NO GO vigente y estado de oferta): una no activa nunca se analiza.
+    if (await readTenderOpportunityInactiveReason(database, job.opportunity_id, job.tender_id)) continue;
     const initial = await must(database.from('psi_agt002_initial_analysis_jobs')
       .select('id').eq('opportunity_id', job.opportunity_id).limit(1), 'análisis previos');
     if ((initial || []).length > 0) continue;
@@ -167,4 +171,18 @@ export async function runAgt002AutoInitialAdmissions(database, {
     }
   }
   return events;
+}
+
+/**
+ * Document jobs the automatic pass may drive: claimable, created at or after `since`, and of an ACTIVE opportunity
+ * (owner decision 2026-10-09). A job of a NO GO / closed opportunity never makes the host call the document worker.
+ */
+export async function filterAgt002ActiveProcessingJobs(database, jobs) {
+  const active = [];
+  const reasons = new Map();
+  for (const job of jobs || []) {
+    if (!reasons.has(job.opportunity_id)) reasons.set(job.opportunity_id, await readTenderOpportunityInactiveReason(database, job.opportunity_id, null));
+    if (!reasons.get(job.opportunity_id)) active.push(job);
+  }
+  return active;
 }

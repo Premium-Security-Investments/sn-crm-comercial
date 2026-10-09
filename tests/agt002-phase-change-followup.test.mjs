@@ -867,3 +867,103 @@ test('menor 4: un reanálisis en NEEDS_ATTENTION se informa una vez y su resulta
   const keys = alerts.agt002AlertItems({ results: [{ opportunityId: 'opp-ftic', jobId: 'job-9', status: 'NEEDS_ATTENTION' }, { opportunityId: 'opp-ftic', jobId: 'job-9', status: 'COMPLETED' }] }, { day: '2026-10-09' }).map(item => item.key);
   assert.equal(new Set(keys).size, 2, 'dos novedades distintas para el correo');
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Decisión del dueño (2026-10-09): una oportunidad convertida NO activa es, para todo proceso automático, como si no
+// existiera: ninguna escritura (marcas, avisos, análisis, resultados, correo) y ningún seguimiento.
+// ---------------------------------------------------------------------------------------------------------------
+
+const NO_GO = [{ id: 'ng', opportunity_id: 'opp-ftic', tender_id: 't-ftic', decision: 'no_go', decided_at: '2026-10-09T08:00:00Z' }];
+const LAUNCHED = state('tender_phase_change_analysis', { new_set_hash: 'set-1', outcome: 'launched', job_id: 'job-9', analysis_kind: 'REANALYSIS' }, '2026-10-09T10:05:00.000Z');
+
+test('no activa: el paso de análisis no registra, no avisa ni deja correo (ni siquiera "no se reanaliza")', async () => {
+  const { agt002ReviewFacts } = await import('../agt002-phase-change-review.js');
+  for (const close of [
+    tables => { tables.psi_tender_go_no_go_decisions = NO_GO; },
+    tables => { tables.psi_sales_opportunities[0].tender_offer_status = 'no_adjudicada'; },
+    tables => { tables.psi_sales_opportunities[0].stage_code = 'perdido'; },
+  ]) {
+    const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED] });
+    close(tables);
+    const before = tables.psi_sales_interactions.length;
+    const db = fakeDb(tables);
+    const { calls, admit, freezeProfile } = admitSpy();
+    const events = await runAgt002PhaseChangeAnalysisAdmissions(db, { now: NOW, environment: ON, admit, freezeProfile });
+    assert.deepEqual(events.map(e => [e.event, e.reason]), [['agt002_phase_change_analysis_ignored_inactive_opportunity', 'opportunity_closed']]);
+    assert.equal(tables.psi_sales_interactions.length, before, 'ningún registro de estado');
+    assert.deepEqual(db.appended, [], 'ningún aviso en la oportunidad');
+    assert.equal(calls.length, 0);
+    assert.deepEqual(agt002ReviewFacts({ analysisEvents: events }).analyses, [], 'nada para el correo');
+  }
+});
+
+test('no activa: el resultado de un reanálisis lanzado antes de cerrarla no se registra ni se avisa', async () => {
+  const { collectAgt002PhaseChangeAnalysisResults } = await import('../agt002-phase-change-followup.js');
+  const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED, LAUNCHED], psi_tender_go_no_go_decisions: NO_GO,
+    psi_agt002_initial_analysis_jobs: [{ id: 'job-9', opportunity_id: 'opp-ftic', status: 'COMPLETED', analysis_kind: 'REANALYSIS', created_at: '2026-10-09T10:05:00.000Z' }] });
+  const db = fakeDb(tables);
+  assert.deepEqual(await collectAgt002PhaseChangeAnalysisResults(db, { now: NOW }), []);
+  assert.equal(tables.psi_sales_interactions.length, 3);
+  assert.deepEqual(db.appended, []);
+});
+
+test('no activa: la conciliación de cambios sin marca ni siquiera la mira', async () => {
+  const refresh = { id: 'r', opportunity_id: 'opp-ftic', interaction_type: 'documento', created_at: '2026-09-26T12:00:00.000Z', notes: JSON.stringify({ kind: 'tender_document_refresh', source: 'SECOP II', notice_uid: 'CO1.NTC.10911657' }) };
+  const tables = world({ psi_sales_interactions: [refresh], psi_tender_go_no_go_decisions: NO_GO });
+  tables.psi_public_tenders = [tables.psi_public_tenders[0]];
+  assert.deepEqual(await reconcileAgt002PendingPhaseChanges(fakeDb(tables), { now: NOW }), [], 'ni marca ni evento');
+  assert.equal(tables.psi_sales_interactions.length, 1);
+});
+
+test('no activa: la revisión programada completa no escribe nada ni deja correo', async () => {
+  const tables = world({ psi_sales_interactions: [{ ...DETECTED, created_at: '2026-10-09T13:00:00.000Z' }, IMPORTED, LAUNCHED], psi_tender_go_no_go_decisions: NO_GO,
+    psi_agt002_initial_analysis_jobs: [{ id: 'job-9', opportunity_id: 'opp-ftic', status: 'COMPLETED', analysis_kind: 'REANALYSIS', created_at: '2026-10-09T10:05:00.000Z' }] });
+  tables.psi_public_tenders = [tables.psi_public_tenders[0]];
+  const before = JSON.stringify(tables);
+  const db = fakeDb(tables);
+  const fs = memoryFs();
+  fs.files.set('/z/reported-keys.json', JSON.stringify({ keys: {} }));
+  const api = {
+    syncConvertedTenderPhaseLinks: async (_db, { isActive }) => { assert.equal(await isActive(tables.psi_public_tenders[0]), false); return { active: 0, changed: 0 }; },
+    probePhaseChangeTenderDocumentSet: async () => { throw new Error('no debe mirar documentos de una no activa'); },
+    importPhaseChangeTenderDocuments: async () => { throw new Error('no debe importar'); },
+  };
+  const { calls, admit, freezeProfile } = admitSpy();
+  const result = await runAgt002PhaseChangeReview(db, { api, environment: ON, now: NOW, stateDir: '/z', fsImpl: fs, admit, freezeProfile });
+  assert.equal(result.outbox, null);
+  assert.equal(JSON.stringify(tables), before, 'ninguna escritura en la base');
+  assert.deepEqual(db.appended, []);
+  assert.equal(calls.length, 0);
+  assert.equal(fs.files.has('/z/outbox-latest.json'), false);
+});
+
+for (const [label, server] of servers) {
+  test(`revisión (${label}): mantiene al día las fases conocidas de la activa (idempotente) y deja explícitas las activas fuera de SECOP II`, async () => {
+    const tables = world({ psi_sales_interactions: [] });
+    tables.psi_public_tenders = [
+      { ...draftConverted(), id: 't-ftic', stable_key: 'ftic-conv', raw: { keep: 1 } },
+      { ...draftConverted({ stable_key: 'esu-conv', source: 'ESU Contratación', converted_opportunity_id: 'opp-esu', ref: 'ESU-1' }), id: 't-esu' },
+    ];
+    tables.psi_sales_opportunities.push({ id: 'opp-esu', stage_code: 'prospecto', observaciones: '' });
+    const db = writableDb(tables);
+    const seen = [];
+    const fetchFamilies = async rows => { seen.push(...rows.map(r => r.stable_key)); return [draftRow(), offerRow()]; };
+    const first = await server.syncConvertedTenderPhaseLinks(db, { isActive: () => true, fetchFamilies, now: '2026-10-10T16:00:00.000Z' });
+    assert.deepEqual(seen, ['ftic-conv'], 'sólo SECOP II tiene seguimiento');
+    assert.deepEqual(first.other_sources, [{ opportunity_id: 'opp-esu', source: 'ESU Contratación' }]);
+    const phases = tables.psi_public_tenders[0].raw.phase_continuity.known_phases;
+    assert.deepEqual([...phases].sort(), ['Evaluación', 'Presentación de observaciones', 'Publicado'].sort());
+    assert.equal(tables.psi_public_tenders[0].raw.keep, 1, 'el resto de raw se conserva');
+    assert.equal(tables.psi_public_tenders[1].raw, undefined, 'la de otra fuente no se toca');
+    const second = await server.syncConvertedTenderPhaseLinks(db, { isActive: () => true, fetchFamilies, now: '2026-10-10T17:00:00.000Z' });
+    assert.equal(second.changed, 0, 'las fases ya registradas no se reescriben');
+    assert.deepEqual(tables.psi_public_tenders[0].raw.phase_continuity.known_phases, phases);
+  });
+}
+
+test('revisión: una activa fuera de SECOP II queda en el log como no seguida (limitación conocida)', async () => {
+  const logs = [];
+  const api = { syncConvertedTenderPhaseLinks: async () => ({ active: 0, changed: 0, other_sources: [{ opportunity_id: 'opp-esu', source: 'ESU Contratación' }] }), probePhaseChangeTenderDocumentSet: async () => { throw new Error('no'); }, importPhaseChangeTenderDocuments: async () => { throw new Error('no'); } };
+  await runAgt002PhaseChangeReview(fakeDb(world({ psi_sales_interactions: [] })), { api, environment: {}, now: NOW, stateDir: '/y', fsImpl: memoryFs(), log: event => logs.push(event) });
+  assert.deepEqual(logs.filter(e => e.event === 'agt002_phase_change_review_source_not_followed'), [{ event: 'agt002_phase_change_review_source_not_followed', opportunityId: 'opp-esu', source: 'ESU Contratación' }]);
+});

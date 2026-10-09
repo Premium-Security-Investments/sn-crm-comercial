@@ -36,7 +36,7 @@ import {
   selectAgt002AutoInitialMembers,
 } from './agt002-auto-initial.js';
 import { tenderSourceChangeFollowUpBlocker } from './tender-phase-identity.js';
-import { classifyTenderOpportunityStage, latestTenderGoNoGoDecision } from './tender-opportunity-stage.js';
+import { readTenderOpportunityInactiveReason, TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES } from './tender-opportunity-stage.js';
 
 /** Identidad técnica Vig-IA (migración 047): actor de la importación documental y de los registros de estado. */
 export const AGT002_VIGIA_AGENT_PROFILE_ID = 'a0020000-0000-4000-8000-000000000002';
@@ -55,7 +55,7 @@ const LAUNCHED_ADMISSION_STATUSES = new Set(['admitted', 'existing']);
 // Resultados que cierran el análisis de un conjunto importado: nunca se vuelven a intentar para ese conjunto.
 const FINAL_ANALYSIS_OUTCOMES = new Set(['launched', 'window_elapsed', 'process_closed']);
 // Etapas comerciales cerradas (migración 110): además de la etapa de la bandeja, nunca se sigue una oportunidad así.
-export const AGT002_PHASE_CHANGE_CLOSED_STAGES = new Set(['aprobado', 'descartado', 'perdido']);
+export const AGT002_PHASE_CHANGE_CLOSED_STAGES = TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES;
 /** Estable = la revisión SIGUIENTE (9:00, 14:00, 19:00; fines de semana 14:00) encuentra la misma lista de documentos nuevos. */
 export const AGT002_PHASE_CHANGE_STABLE_MS = 30 * 60 * 1000;
 /**
@@ -239,16 +239,7 @@ function changeOf(detected, noticeUid) {
  * adjudicada, cerrada) y las etapas comerciales perdida/descartada/aprobada nunca disparan descarga ni reanálisis.
  */
 export async function agt002PhaseChangeOpportunityBlocker(database, opportunityId, tenderId) {
-  const opportunity = await must(database.from('psi_sales_opportunities')
-    .select('id,stage_code,tender_offer_status').eq('id', opportunityId).maybeSingle(), 'oportunidad');
-  if (!opportunity) return 'opportunity_missing';
-  if (AGT002_PHASE_CHANGE_CLOSED_STAGES.has(opportunity.stage_code)) return 'opportunity_closed';
-  let decisions = database.from('psi_tender_go_no_go_decisions')
-    .select('id,decision,decided_at,supersedes_decision_id').eq('opportunity_id', opportunityId);
-  if (tenderId) decisions = decisions.eq('tender_id', tenderId);
-  const latest = latestTenderGoNoGoDecision((await must(decisions, 'decisión GO/NO GO')) || []);
-  const stage = classifyTenderOpportunityStage({ decision: latest?.decision || null, tender_offer_status: opportunity.tender_offer_status });
-  return stage === 'cerradas' ? 'opportunity_closed' : null;
+  return readTenderOpportunityInactiveReason(database, opportunityId, tenderId);
 }
 
 /** Convertida ACTIVA (Por decidir / En curso y etapa comercial abierta): la revisión programada sólo mira éstas. */
@@ -258,7 +249,8 @@ export async function isAgt002PhaseChangeActiveOpportunity(database, tender) {
 
 /**
  * Oportunidades convertidas cuya fuente oficial ACTUAL es un aviso con marca "detectado". Cada candidata trae el
- * bloqueo vigente (proceso terminal, cierre pasado u oportunidad cerrada): se vuelve a mirar en cada paso.
+ * bloqueo vigente (proceso terminal, cierre pasado u oportunidad cerrada): se vuelve a mirar en cada paso. `inactive`
+ * dice si la oportunidad dejó de ser activa (decisión del dueño, 2026-10-09): entonces ningún paso escribe nada.
  */
 export async function findAgt002PhaseChangeOpportunities(database, { now = new Date() } = {}) {
   const detected = await must(database.from('psi_sales_interactions')
@@ -281,9 +273,10 @@ export async function findAgt002PhaseChangeOpportunities(database, { now = new D
     const noticeUid = noticeUidFromTenderUrl(tender.url);
     const notice = notices.find(item => item.notice_uid === noticeUid);
     if (!notice) continue; // Sólo el aviso que sigue siendo la fuente vigente.
-    const blocker = tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now)
-      || await agt002PhaseChangeOpportunityBlocker(database, opportunityId, tender.id);
-    candidates.push({ tender, opportunityId, noticeUid, detected: notice, baselineAt: notice.recorded_at || notice.detected_at, change: changeOf(notice, noticeUid), blocker });
+    // La etapa de la oportunidad va primero: una no activa se ignora en todos los pasos, sin escribir nada.
+    const inactive = await agt002PhaseChangeOpportunityBlocker(database, opportunityId, tender.id);
+    const blocker = inactive || tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now);
+    candidates.push({ tender, opportunityId, noticeUid, detected: notice, baselineAt: notice.recorded_at || notice.detected_at, change: changeOf(notice, noticeUid), blocker, inactive });
   }
   return candidates;
 }
@@ -302,6 +295,8 @@ export async function reconcileAgt002PendingPhaseChanges(database, { now = new D
     const opportunityId = tender.converted_opportunity_id;
     const noticeUid = noticeUidFromTenderUrl(tender.url);
     if (!opportunityId || !noticeUid || (tender.source && tender.source !== 'SECOP II')) continue;
+    // No activa: como si no existiera (ni siquiera se mira su historial).
+    if (await agt002PhaseChangeOpportunityBlocker(database, opportunityId, tender.id)) continue;
     const state = await readAgt002PhaseChangeState(database, opportunityId);
     if (ofKind(state, AGT002_PHASE_CHANGE_KINDS.detected, noticeUid).length) continue;
     const refreshes = await must(database.from('psi_sales_interactions')
@@ -312,8 +307,7 @@ export async function reconcileAgt002PendingPhaseChanges(database, { now = new D
       .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     const lastOrigin = origins.at(-1)?.payload.notice_uid;
     if (!lastOrigin || lastOrigin === noticeUid) continue;
-    const blocker = tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now)
-      || await agt002PhaseChangeOpportunityBlocker(database, opportunityId, tender.id);
+    const blocker = tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now);
     if (blocker) { events.push({ event: 'agt002_phase_change_reconcile_skipped', opportunityId, noticeUid, reason: blocker }); continue; }
     await recordAgt002PhaseChangeDetected(database, opportunityId, {
       change: 'phase', url: tender.url, ref: tender.ref, newPhase: tender.status, deadline: tender.deadline_at,
@@ -471,8 +465,10 @@ export async function runAgt002PhaseChangeAnalysisAdmissions(database, {
   }
   const events = [];
   let admittedToday = null;
-  for (const { tender, opportunityId, noticeUid, change, blocker } of await findAgt002PhaseChangeOpportunities(database, { now })) {
+  for (const { tender, opportunityId, noticeUid, change, blocker, inactive } of await findAgt002PhaseChangeOpportunities(database, { now })) {
     const base = { opportunityId, noticeUid, change };
+    // Oportunidad no activa (NO GO, cerrada, perdida…): ni registro, ni aviso, ni correo (decisión del dueño, 2026-10-09).
+    if (inactive) { events.push({ event: 'agt002_phase_change_analysis_ignored_inactive_opportunity', reason: inactive, ...base }); continue; }
     let imported = null;
     const record = async (outcome, extra = {}) => {
       await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.analysis, notice_uid: noticeUid, new_set_hash: imported.payload.new_set_hash, outcome, ...extra }, { now });
@@ -580,7 +576,11 @@ export async function collectAgt002PhaseChangeAnalysisResults(database, { now = 
   const launched = parsed.filter(row => row.payload.kind === AGT002_PHASE_CHANGE_KINDS.analysis && row.payload.outcome === 'launched' && row.payload.job_id
     && ![...(reported.get(row.payload.job_id) || [])].some(isFinal));
   const items = [];
+  const inactiveByOpportunity = new Map();
   for (const row of launched) {
+    // Si la oportunidad dejó de estar activa después de lanzar el reanálisis, su resultado no se registra ni se avisa.
+    if (!inactiveByOpportunity.has(row.opportunity_id)) inactiveByOpportunity.set(row.opportunity_id, await agt002PhaseChangeOpportunityBlocker(database, row.opportunity_id, null));
+    if (inactiveByOpportunity.get(row.opportunity_id)) continue;
     const job = await must(database.from('psi_agt002_initial_analysis_jobs')
       .select('id,status,analysis_run_id,error_code').eq('id', row.payload.job_id).maybeSingle(), 'estado del reanálisis');
     if (!job || !['COMPLETED', 'FAILED', 'NEEDS_ATTENTION'].includes(job.status)) continue;
