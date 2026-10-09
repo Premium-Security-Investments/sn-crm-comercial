@@ -14,6 +14,9 @@ import { SiioNavigation } from './SiioNavigation';
 import { SiioSourcesIntelligenceView } from './SiioSourcesIntelligenceView';
 import type { SiioBootstrapPayload, SiioCurrentProfile, SiioRouteState, SiioView } from './types';
 
+// Etiqueta legible del perfil en el encabezado de la Torre de Control (antes salía el código interno, p. ej. "admin").
+const SIIO_ROLE_LABELS: Record<string, string> = { admin: 'Administrador', gerencia: 'Gerencia', director: 'Directivo', consulta: 'Directivo de solo consulta', junta: 'Junta' };
+
 export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentProfile }) {
   const [payload, setPayload] = useState<SiioBootstrapPayload | null>(null);
   const [status, setStatus] = useState('');
@@ -70,8 +73,8 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
 
   return <section className="stack siio-dashboard">
     <section className="executive-hero">
-      <div><span className="eyebrow">SIIO — Sistema Interno de Inteligencia Operativa</span><h2>Centro de Control Gerencial</h2><p>Información permanente para dirección: resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad.</p></div>
-      <div className="hero-facts"><div><small>Perfil</small><strong>{currentProfile.role}</strong></div>{!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}</div>
+      <div><span className="eyebrow">SIIO — Sistema Interno de Inteligencia Operativa</span><h2>Información para la dirección</h2><p>Resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad en un solo lugar.</p></div>
+      <div className="hero-facts"><div><small>Perfil</small><strong>{SIIO_ROLE_LABELS[currentProfile.role] || currentProfile.role}</strong></div>{!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}</div>
     </section>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     <SiioNavigation activeView={routeState.view} onSelect={selectView} />

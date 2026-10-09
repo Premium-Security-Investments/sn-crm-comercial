@@ -39,7 +39,7 @@ const requiredMainMarkers = [
   "managerAlertRoute('closing_soon')",
   "managerAlertRoute('high_value_stalled')",
   'Disciplina de agenda',
-  'Forecast ponderado',
+  'Valor esperado',
   'Cumplimiento meta mes',
   'Pipeline total',
   'Ver oportunidades →',

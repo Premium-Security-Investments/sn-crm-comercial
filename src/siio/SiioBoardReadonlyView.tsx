@@ -29,7 +29,7 @@ export function SiioBoardReadonlyView({ payload, loading, status, onRetry }: Pro
     </section>
     {reports.length === 0 ? <div className="notice">No hay informes publicados para consultar.</div> : <section className="stack">
       {reports.map(report => <article className="siio-board-report" key={report.id}>
-        <div><small>Período</small><strong>{report.period_month}</strong></div>
+        <div><small>Periodo</small><strong>{report.period_month}</strong></div>
         <div><small>Estado</small><strong>{report.status}</strong></div>
         <p>{report.summary || 'Sin resumen disponible.'}</p>
       </article>)}
