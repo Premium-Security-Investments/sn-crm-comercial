@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { safeOfficialFetch } from './safe-official-fetch.js';
 import { createAgt003CopilotBridgeClient } from './agt003-copilot-bridge-client.js';
 import { getAgt003CopilotRuntimeConfig, resolveAgt003BridgeConnection } from './agt003-copilot-runtime.js';
+import { AGT003_LEAD_ANALYSIS_CAPABILITY, createModelGatewayClient } from './platform-model-gateway.js';
 import {
   LEAD_ANALYSIS_OUTPUT_SCHEMA, leadAnalysisProfileFingerprint, validateLeadAnalysisOutput, estimateLeadAnalysisCostUsd,
 } from './src/vigia/lead-analysis.js';
@@ -123,12 +124,16 @@ export function buildLeadAnalysisInput({ opportunity, ownerName, services, inter
 }
 
 /** Ejecuta el análisis por el puente de Vig-IA. Devuelve { output, usage, model, costUsd }. */
-export async function runLeadAnalysis({ input, idempotencyKey, environment = process.env, client: injectedClient } = {}) {
+export async function runLeadAnalysis({ input, idempotencyKey, environment = process.env, client: injectedClient, recordUsage } = {}) {
   const config = getAgt003CopilotRuntimeConfig(environment);
-  const client = injectedClient || (() => {
+  const bridge = injectedClient || (() => {
     const resolved = resolveAgt003BridgeConnection(environment);
     return createAgt003CopilotBridgeClient({ url: resolved.bridgeUrl, hmacSecret: resolved.hmacSecret, wireProtocol: config.wireProtocol });
   })();
+  // Puerta única de modelos: registra el uso (sólo metadatos) sin cambiar el resultado ni los errores del puente.
+  const client = createModelGatewayClient({
+    client: bridge, capability: AGT003_LEAD_ANALYSIS_CAPABILITY, env: environment, ...(recordUsage ? { recordUsage } : {}),
+  });
   const result = await client.run({
     model: config.model, policy: LEAD_ANALYSIS_POLICY, input, outputSchema: LEAD_ANALYSIS_OUTPUT_SCHEMA,
     timeoutMs: ANALYSIS_TIMEOUT_MS, idempotencyKey,

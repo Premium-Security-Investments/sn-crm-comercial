@@ -1,5 +1,6 @@
 import { createAgt003CopilotBridgeClient } from './agt003-copilot-bridge-client.js';
 import { AGT003_COPILOT_POLICY, createAgt003CopilotEngine } from './agt003-copilot-engine.js';
+import { AGT003_COPILOT_CAPABILITY, createModelGatewayClient } from './platform-model-gateway.js';
 
 export const AGT003_COPILOT_ENGINE_ID = 'agt003_bridge_preview';
 export const AGT003_COPILOT_DEFAULT_POLICY_VERSION = '2026-09-01.v3';
@@ -77,13 +78,19 @@ export function getAgt003CopilotRuntimeConfig(environment = process.env) {
   };
 }
 
-export function createAgt003CopilotRuntime({ environment = process.env, countDailyRuns } = {}) {
+export function createAgt003CopilotRuntime({ environment = process.env, countDailyRuns, recordUsage } = {}) {
   const config = getAgt003CopilotRuntimeConfig(environment);
   const resolved = resolveAgt003BridgeConnection(environment);
-  const client = createAgt003CopilotBridgeClient({
-    url: resolved.bridgeUrl,
-    hmacSecret: resolved.hmacSecret,
-    wireProtocol: config.wireProtocol,
+  // Puerta única de modelos: cada llamada al puente deja un evento de uso (sólo metadatos) en la plataforma.
+  const client = createModelGatewayClient({
+    client: createAgt003CopilotBridgeClient({
+      url: resolved.bridgeUrl,
+      hmacSecret: resolved.hmacSecret,
+      wireProtocol: config.wireProtocol,
+    }),
+    capability: AGT003_COPILOT_CAPABILITY,
+    env: environment,
+    ...(recordUsage ? { recordUsage } : {}),
   });
   return createAgt003CopilotEngine({
     client,

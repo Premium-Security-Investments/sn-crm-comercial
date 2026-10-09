@@ -243,7 +243,15 @@ export function createAgt003CopilotApi(dependencies) {
         }
         idempotencyKey = computeAgt003CopilotRetryKey({ previousKey: idempotencyKey, failedRunId: existing.run_id });
       }
-      if (claim?.status !== 'claimed') throw claimError(claim?.status);
+      if (claim?.status !== 'claimed') {
+        const rejection = claimError(claim?.status);
+        // Puerta única de modelos: el tope diario y la saturación quedan como `rejected`, sin llamar al modelo.
+        if (typeof dependencies.recordRejection === 'function'
+          && (rejection.code === 'VIGIA_COPILOT_QUOTA' || rejection.code === 'VIGIA_COPILOT_SATURATED')) {
+          try { await dependencies.recordRejection({ failureCode: rejection.code, model: config.model, correlationId: idempotencyKey }); } catch { /* mejor esfuerzo */ }
+        }
+        throw rejection;
+      }
 
       let terminalRecorded = false;
       try {

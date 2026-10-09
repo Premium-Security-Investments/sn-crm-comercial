@@ -10,7 +10,8 @@ const read = (rel) => readFileSync(resolve(root, rel), 'utf8');
 const sha = (rel) => createHash('sha256').update(readFileSync(resolve(root, rel))).digest('hex');
 
 const FROZEN = {
-  'agt003-copilot-runtime.js': '5239702fa83820069aa83a5785cb5564c3f24686b628843d7a4d2847737fbf83',
+  // Actualizado a propósito (2026-10-09): el runtime del copiloto envuelve el cliente del puente con la puerta única de modelos.
+  'agt003-copilot-runtime.js': 'a7caa26f874c4ffd72cca4033fa4b51294b761a2ccc3264f7d29b8c8dc1dec88',
   'agt003-preflight-runtime.js': '48e761d6badba31ae8f15bf563df0be05d5180410c3c48a806bda955ccdc34af',
   'agt002-workbench-runtime.js': 'ee1a0815f0954617370ee909e2ce33c679426e85e82f4a1bcea1bb9c59742d39',
   'agt002-preview-runtime.js': 'd2834ae9df2e8146553e0a056949d0ded9c8a27094541976d7075c2c179072cb',

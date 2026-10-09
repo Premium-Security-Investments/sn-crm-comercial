@@ -50,7 +50,7 @@ export function platformSslConfig(env = process.env) {
 let cachedPool = null;
 let cachedPoolKey = null;
 
-function getPlatformPool(env = process.env) {
+export function getPlatformPool(env = process.env) {
   const connectionString = platformConnectionString(env.PLATFORM_DATABASE_URL);
   if (!connectionString) throw platformUnavailableError();
   if (cachedPool && cachedPoolKey === connectionString) return cachedPool;

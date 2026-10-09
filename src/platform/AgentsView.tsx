@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../apiClient';
 import { Badge, EmptyState, Panel } from '../siio/SiioUi';
 import { AGENT_COUNT_LABELS, UPCOMING_PLATFORM_VIEWS, agentStateLabel, agentStateTone, type PlatformAgent, type PlatformAgentsPayload } from './agentsPresentation';
+import { ModelUsageSection } from './ModelUsageSection';
 import './platform.css';
 
 type LoadState =
@@ -63,6 +64,8 @@ export function AgentsView() {
         </p>
       </article>)}
     </section>}
+
+    <ModelUsageSection />
 
     <Panel title="Próximas vistas">
       <ul className="platform-upcoming" aria-label="Próximas vistas de la plataforma">
