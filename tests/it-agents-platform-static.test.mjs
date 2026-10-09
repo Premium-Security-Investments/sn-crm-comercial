@@ -150,7 +150,7 @@ test('la vista muestra textos, estados en español, conteos y próximas vistas n
   for (const [code, label] of [['declared', 'Declarado'], ['controlled_pilot', 'Piloto controlado'], ['partial_operation', 'Operación parcial'], ['full_operation', 'Operación completa'], ['retired', 'Retirado']]) {
     assert.ok(presentation.includes(`${code}: '${label}'`), code);
   }
-  for (const label of ['Reglas de permisos', 'Versiones de configuración', 'Actividad registrada', 'Permisos', 'Configuración y modelos', 'Uso de IA', 'Actividad y portería', 'Salud de los procesos', 'Efectos externos', 'Propuestas por aprobar', 'Avisos']) {
+  for (const label of ['Configuraciones', 'Actividad', 'Permisos', 'Configuración y modelos', 'Uso de IA', 'Actividad y portería', 'Salud de los procesos', 'Efectos externos', 'Propuestas por aprobar', 'Avisos']) {
     assert.ok(presentation.includes(`'${label}'`), label);
   }
   assert.match(view, /state\.status === 'loading'/);

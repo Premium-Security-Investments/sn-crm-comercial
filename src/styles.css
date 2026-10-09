@@ -20,9 +20,9 @@ body{margin:0;background:radial-gradient(circle at top right,#dceaff 0,#f3f6fb 3
 .sidebar-footer-compact .session-card{padding:10px 11px;border-radius:12px;gap:2px}.sidebar-footer-compact .session-card small{font-size:9px}.sidebar-footer-compact .session-card strong{font-size:12px;line-height:1.2}.sidebar-footer-compact .session-card span{font-size:11px}
 .sidebar-footer-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.sidebar-footer-actions button{padding:8px 7px;font-size:11px;border-radius:9px}
 nav{display:flex;flex-direction:column;gap:8px}
-nav a{color:#c7d5e9;text-decoration:none;padding:12px 14px;border-radius:12px;transition:.18s ease}
+nav a{color:#c7d5e9;text-decoration:none;padding:7px 12px;border-radius:10px;line-height:1.25;transition:.18s ease}
 nav a.active,nav a:hover{background:rgba(255,255,255,.1);color:#fff;box-shadow:inset 3px 0 0 #4db6ff}
-.nav-domain-groups{gap:14px}.nav-section{display:grid;gap:5px;padding-top:4px}.nav-section+.nav-section{border-top:1px solid rgba(255,255,255,.08);padding-top:13px}.nav-section-title{padding:0 10px 3px;color:#6f8bad;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.12em}.nav-section .nav-section-title+ a{margin-top:0}
+.nav-domain-groups{gap:8px}.nav-section{display:grid;gap:2px;padding-top:2px}.nav-section+.nav-section{border-top:1px solid rgba(255,255,255,.08);padding-top:8px}.nav-section-title{padding:0 10px 3px;color:#6f8bad;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.12em}.nav-section .nav-section-title+ a{margin-top:0}
 .nav-group{display:grid;gap:6px}.nav-parent{display:flex;align-items:center;justify-content:space-between}.nav-subitems{display:grid;gap:4px;margin-left:10px;padding-left:10px;border-left:1px solid rgba(255,255,255,.12)}.nav-subitems a{font-size:13px;padding:8px 10px;border-radius:10px;color:#aebfda}.nav-subitems a.active,.nav-subitems a:hover{background:rgba(77,182,255,.14);color:#fff;box-shadow:inset 3px 0 0 #4db6ff}
 main{min-width:0;padding:28px 34px}
 .topbar{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:24px}
