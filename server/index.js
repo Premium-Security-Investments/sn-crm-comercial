@@ -87,6 +87,7 @@ import {
   agentAiFunctions,
   approveConfiguration,
   archiveAiUsageProfile,
+  assertProfileReactivation,
   assertVersionAction,
   configurationInvalidError,
   createAiUsageProfile,
@@ -98,11 +99,14 @@ import {
   normalizeProposedConfiguration,
   normalizeReason,
   parseVersionId,
+  platformAdminUnavailableError,
   presentAgentConfiguration,
   proposeConfiguration,
+  reactivateAiUsageProfile,
   reactivateConfiguration,
   readActiveAiUsageProfiles,
   readAgentConfigurationRows,
+  readAiUsageProfile,
   rejectConfiguration,
 } from '../platform-agent-configuration.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
@@ -457,6 +461,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/platform/ai-usage-profiles': ['users', ACTIONS.USERS_MANAGE],
   'POST /api/platform/ai-usage-profiles': ['users', ACTIONS.USERS_MANAGE],
   'POST /api/platform/ai-usage-profiles/:id/archive': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/ai-usage-profiles/:id/reactivate': ['users', ACTIONS.USERS_MANAGE],
 
   'GET /api/siio/bootstrap': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/fronts': ['siio', ACTIONS.SIIO_AREA_VIEW],
@@ -6454,6 +6459,21 @@ app.post('/api/platform/ai-usage-profiles/:id/archive', async (req, res) => {
   } catch (error) { sendPlatformConfigurationError(res, error); }
 });
 app.all('/api/platform/ai-usage-profiles/:id/archive', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+// Reactivar un perfil archivado: vuelve a estar disponible para nuevas configuraciones. Exige administración
+// conectada y que el perfil exista y esté archivado; firma la persona con sesión iniciada.
+app.post('/api/platform/ai-usage-profiles/:id/reactivate', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const profileId = req.params.id;
+    if (!isValidProfileId(profileId)) throw configurationInvalidError('El perfil no es válido.');
+    if (!hasPlatformAdminConnection()) throw platformAdminUnavailableError();
+    assertProfileReactivation(await readAiUsageProfile(profileId));
+    await reactivateAiUsageProfile({ profileId, actor: actorNameFromProfile(currentProfile) });
+    res.json({ ok: true, profile_id: profileId });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/ai-usage-profiles/:id/reactivate', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 // "Perfil de uso de IA" de cada persona (migración 119). Sólo se toca si el cuerpo trae `ai_usage_profile` (la pantalla
 // no lo envía cuando la plataforma no responde: así no se pierde el valor guardado). Un valor nuevo debe existir en la

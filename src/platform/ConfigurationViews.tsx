@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Badge, EmptyState, Panel } from '../siio/SiioUi';
 import {
   PROFILE_ASSIGNMENT_NOTICE,
+  PROFILES_ACROSS_AGENTS_NOTE,
   VERSION_STATUS_LABELS,
   versionLabel,
   versionStatusTone,
@@ -212,8 +213,16 @@ export function ProfilesView({ config, agentNames, onDone }: { config: AgentConf
     setError('');
     setBusy(true);
     try {
-      const done = await runPlatformAction(`/api/platform/ai-usage-profiles/${encodeURIComponent(profileId)}/archive`, {}, `¿Archivar el perfil "${displayName}"? Ya no se podrá usar en nuevas configuraciones.`);
+      const done = await runPlatformAction(`/api/platform/ai-usage-profiles/${encodeURIComponent(profileId)}/archive`, {}, `¿Archivar el perfil "${displayName}"? Ya no se podrá usar en nuevas configuraciones mientras esté archivado; puede reactivarlo después.`);
       if (done) onDone(`Perfil "${displayName}" archivado.`);
+    } catch (failure) { setError(messageOf(failure)); } finally { setBusy(false); }
+  }
+  async function reactivateProfile(profileId: string, displayName: string) {
+    setError('');
+    setBusy(true);
+    try {
+      const done = await runPlatformAction(`/api/platform/ai-usage-profiles/${encodeURIComponent(profileId)}/reactivate`, {}, `¿Reactivar el perfil "${displayName}"? Volverá a estar disponible para nuevas configuraciones.`);
+      if (done) onDone(`Perfil "${displayName}" reactivado.`);
     } catch (failure) { setError(messageOf(failure)); } finally { setBusy(false); }
   }
 
@@ -231,7 +240,10 @@ export function ProfilesView({ config, agentNames, onDone }: { config: AgentConf
           </li>)}
         </ul>}
         {archived.length > 0 && <details className="platform-details"><summary>Archivados ({archived.length})</summary>
-          <ul className="platform-profile-list">{archived.map(profile => <li key={profile.profile_id}><div>{profile.display_name}<small className="platform-sub">Archivado por {profile.archived_by || '—'} · {fmtDateTime(profile.archived_at)}</small></div></li>)}</ul>
+          <ul className="platform-profile-list">{archived.map(profile => <li key={profile.profile_id}>
+            <div>{profile.display_name}<small className="platform-sub">Archivado por {profile.archived_by || '—'} · {fmtDateTime(profile.archived_at)}</small></div>
+            <button type="button" className="secondary" disabled={busy || !config.admin_connected} onClick={() => reactivateProfile(profile.profile_id, profile.display_name)}>Reactivar</button>
+          </li>)}</ul>
         </details>}
         <form className="platform-profile-form" onSubmit={event => { event.preventDefault(); void create(); }}>
           <h3>Crear perfil</h3>
@@ -242,6 +254,7 @@ export function ProfilesView({ config, agentNames, onDone }: { config: AgentConf
         </form>
       </Panel>
       <Panel title="Qué recibe cada perfil en cada agente">
+        <p className="platform-usage-note">{PROFILES_ACROSS_AGENTS_NOTE}</p>
         {matrix.rows.length === 0 && <EmptyState title="Sin perfiles activos" text="La matriz aparece cuando exista al menos un perfil de uso." />}
         {matrix.rows.length > 0 && <div className="tablewrap platform-table">
           <table>
