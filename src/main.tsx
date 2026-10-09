@@ -271,7 +271,7 @@ function parseRoute(): Route {
   if (page === 'alerts') return { page: 'alerts' };
   if (page === 'centinel' || page === 'vig-ia') return { page: 'alerts' };
   if (page === 'users') return { page: 'users' };
-  if (page === 'agents') return { page: 'agents' };
+  if (page === 'agents') return id ? { page: 'agents', id: decodeURIComponent(id) } : { page: 'agents' };
   return { page: 'invalid' };
 }
 function go(hash: string) { window.location.hash = hash; }
@@ -561,7 +561,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
     canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
   />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
-  if (route.page === 'agents') return <AgentsView />;
+  if (route.page === 'agents') return <AgentsView key={route.id || 'agents'} agentId={route.id} />;
   if (data.currentProfile.role === 'comercial') return <CommercialPersonalDashboard data={data} refresh={refresh} />;
   return <Home data={data} />;
 }

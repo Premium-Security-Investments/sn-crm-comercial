@@ -77,8 +77,30 @@ import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
-import { listPlatformModelUsage } from '../platform-model-usage.js';
-import { AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, recordModelRejection } from '../platform-model-gateway.js';
+import { knownModelLimits, listPlatformModelUsage } from '../platform-model-usage.js';
+import { AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
+import {
+  actorNameFromProfile,
+  agentAiFunctions,
+  approveConfiguration,
+  archiveAiUsageProfile,
+  assertVersionAction,
+  configurationInvalidError,
+  createAiUsageProfile,
+  hasPlatformAdminConnection,
+  isPlatformConfigurationPublicError,
+  isValidAgentId,
+  isValidProfileId,
+  normalizeProfileInput,
+  normalizeProposedConfiguration,
+  normalizeReason,
+  parseVersionId,
+  presentAgentConfiguration,
+  proposeConfiguration,
+  reactivateConfiguration,
+  readAgentConfigurationRows,
+  rejectConfiguration,
+} from '../platform-agent-configuration.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
 import { loadAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
 import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
@@ -422,6 +444,14 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   // IT → Agentes: vista de sólo lectura de la Plataforma de Agentes, con la misma protección que Usuarios y permisos.
   'GET /api/platform/agents': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/platform/model-usage': ['users', ACTIONS.USERS_MANAGE],
+  // IT → Agentes → funciones, modelos y cupos: lectura y propuestas/aprobaciones (sólo funciones platform.*).
+  'GET /api/platform/agent-configuration': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/agent-configuration/proposals': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/agent-configuration/versions/:id/approve': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/agent-configuration/versions/:id/reject': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/agent-configuration/versions/:id/reactivate': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/ai-usage-profiles': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/ai-usage-profiles/:id/archive': ['users', ACTIONS.USERS_MANAGE],
 
   'GET /api/siio/bootstrap': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/fronts': ['siio', ACTIONS.SIIO_AREA_VIEW],
@@ -6250,6 +6280,114 @@ app.get('/api/platform/model-usage', async (req, res) => {
   }
 });
 app.all('/api/platform/model-usage', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+// IT → Agentes → funciones, modelos y cupos (puerta única de modelos, Paso 2). Misma protección que
+// /api/platform/agents. Lectura con PLATFORM_DATABASE_URL; escritura SÓLO por funciones platform.* con
+// PLATFORM_ADMIN_DATABASE_URL. Quien firma (propone, aprueba, rechaza, reactiva, crea o archiva) es siempre el
+// nombre completo del perfil autenticado, nunca un dato del cuerpo de la petición. Errores → mensajes neutros.
+async function requirePlatformConfigurationAdmin(req) {
+  const { profile: currentProfile } = await getAuthContext(req);
+  requireModuleAction(currentProfile, 'users');
+  requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+  return currentProfile;
+}
+async function readSiioPeopleForAgentConfiguration() {
+  try {
+    const rows = await must(requireDb().from('psi_sales_profiles').select('id,full_name,active,identity_type').eq('active', true).order('full_name'));
+    if (!Array.isArray(rows)) throw new Error('Perfiles inválidos.');
+    return rows.filter(row => row.active === true && !isAgentIdentity(row)).map(row => ({ id: String(row.id), full_name: String(row.full_name || 'Sin nombre') }));
+  } catch (error) {
+    console.warn('platform_agent_configuration_people_unavailable', { code: error?.code || null });
+    const failure = new Error('No se pudo leer la lista de personas del SIIO.');
+    failure.status = 503;
+    failure.code = 'PLATFORM_CONFIGURATION_INVALID';
+    throw failure;
+  }
+}
+async function loadPlatformAgentConfiguration() {
+  const environment = gatewayEnvironment();
+  const [rows, people] = await Promise.all([readAgentConfigurationRows({ environment }), readSiioPeopleForAgentConfiguration()]);
+  return presentAgentConfiguration({ ...rows, people, environment, limits: knownModelLimits(), adminConnected: hasPlatformAdminConnection() });
+}
+function sendPlatformConfigurationError(res, error) {
+  if (isPlatformAgentsUnavailable(error)) return res.status(503).json({ error: PLATFORM_AGENTS_UNAVAILABLE_MESSAGE });
+  if (isPlatformConfigurationPublicError(error)) return res.status(error.status || 400).json({ error: error.message, code: error.code, ...(error.problems ? { problems: error.problems } : {}) });
+  if (error?.status === 401 || error?.status === 403) return sendAuthError(res, error);
+  console.warn('platform_agent_configuration_failed', { code: error?.code || null });
+  return res.status(500).json({ error: 'No se pudo completar la operación.' });
+}
+async function platformConfigurationVersionFor(versionId) {
+  const configuration = await loadPlatformAgentConfiguration();
+  return { configuration, version: configuration.versions.find(item => item.id === versionId) || null };
+}
+
+app.get('/api/platform/agent-configuration', async (req, res) => {
+  try {
+    await requirePlatformConfigurationAdmin(req);
+    res.set('Cache-Control', 'no-store');
+    res.json(await loadPlatformAgentConfiguration());
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/agent-configuration', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/platform/agent-configuration/proposals', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const agentId = req.body?.agent_id;
+    if (!isValidAgentId(agentId) || !agentAiFunctions(agentId).length) throw configurationInvalidError('Ese agente no tiene funciones con IA configurables.');
+    const reason = normalizeReason(req.body?.reason);
+    const current = await loadPlatformAgentConfiguration();
+    const configuration = normalizeProposedConfiguration(req.body?.configuration, {
+      agentId,
+      profileIds: new Set(current.profiles.filter(profile => !profile.archived_at).map(profile => profile.profile_id)),
+      personIds: new Set(current.people.map(person => person.id)),
+      today: current.today,
+    });
+    const versionId = await proposeConfiguration({ agentId, environment: current.environment, configuration, actor: actorNameFromProfile(currentProfile), reason });
+    res.status(201).json({ ok: true, version_id: versionId == null ? null : String(versionId) });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/agent-configuration/proposals', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/platform/agent-configuration/versions/:id/:action', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const action = req.params.action;
+    if (!['approve', 'reject', 'reactivate'].includes(action)) return res.status(404).json({ error: 'Acción no encontrada.' });
+    const versionId = parseVersionId(req.params.id);
+    if (!versionId) throw configurationInvalidError('La versión no es válida.');
+    const reason = action === 'reject' ? normalizeReason(req.body?.reason) : null;
+    const { version } = await platformConfigurationVersionFor(versionId);
+    assertVersionAction(version, action);
+    const actor = actorNameFromProfile(currentProfile);
+    if (action === 'approve') await approveConfiguration({ versionId, actor });
+    else if (action === 'reject') await rejectConfiguration({ versionId, actor, reason });
+    else await reactivateConfiguration({ versionId, actor });
+    res.json({ ok: true, version_id: versionId });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/agent-configuration/versions/:id/:action', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/platform/ai-usage-profiles', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const profile = normalizeProfileInput(req.body);
+    const profileId = await createAiUsageProfile({ profile, actor: actorNameFromProfile(currentProfile) });
+    res.status(201).json({ ok: true, profile_id: profileId == null ? profile.profile_id : String(profileId) });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/ai-usage-profiles', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/platform/ai-usage-profiles/:id/archive', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const profileId = req.params.id;
+    if (!isValidProfileId(profileId)) throw configurationInvalidError('El perfil no es válido.');
+    await archiveAiUsageProfile({ profileId, actor: actorNameFromProfile(currentProfile) });
+    res.json({ ok: true, profile_id: profileId });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/ai-usage-profiles/:id/archive', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 app.post('/api/users', async (req, res) => {
   try {

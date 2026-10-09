@@ -55,13 +55,13 @@ test('sólo quien administra usuarios ve y abre Agentes; solo consulta nunca', (
 });
 
 test('main.tsx enruta #/agents con área IT, título Agentes y sin "Nueva oportunidad"', () => {
-  assert.ok(main.includes("if (page === 'agents') return { page: 'agents' };"));
+  assert.ok(main.includes("if (page === 'agents') return id ? { page: 'agents', id: decodeURIComponent(id) } : { page: 'agents' };"), '#/agents y #/agents/<ID>');
   assert.ok(main.includes("if (route.page === 'agents') return 'IT';"));
   assert.ok(main.includes("if (route.page === 'agents') return 'Agentes';"));
-  assert.ok(main.includes("if (route.page === 'agents') return <AgentsView />;"));
+  assert.ok(main.includes("if (route.page === 'agents') return <AgentsView key={route.id || 'agents'} agentId={route.id} />;"));
   assert.ok(main.includes("import { AgentsView } from './platform/AgentsView';"));
   assert.match(main, /\{areaFor\(route\) === 'Comercial' && canAccessRoute\(currentProfile, 'new'\) && <NewOpportunityButton/, 'el botón sólo aparece en el área Comercial');
-  const router = main.slice(main.indexOf('function RouterView'), main.indexOf("if (route.page === 'agents') return <AgentsView />;"));
+  const router = main.slice(main.indexOf('function RouterView'), main.indexOf("if (route.page === 'agents') return <AgentsView key="));
   assert.match(router, /if \(!canAccessRoute\(data\.currentProfile, route\.page\)\) return/, 'la ruta pasa por canAccessRoute antes de renderizar');
   const navRenderer = main.slice(main.indexOf('function Nav('), main.indexOf('function RouterView'));
   assert.doesNotMatch(navRenderer, /#\/agents/, 'sin enlaces hardcoded en el sidebar');
@@ -143,22 +143,26 @@ test('conexión o consulta fallida → 503 neutro, rollback y cliente descartado
   assert.deepEqual(pool.released, [true]);
 });
 
-test('la vista muestra textos, estados en español, conteos y próximas vistas no clicables', () => {
-  for (const text of ['Plataforma de agentes', 'Agentes del SIIO', 'Registro oficial de los agentes Vig-IA: quién es cada uno, en qué estado está y qué controla la plataforma.', 'Activo en la plataforma:', "'Sí' : 'No'", 'Próximas vistas', 'executive-hero', '/api/platform/agents']) {
+test('la vista: pestañas, resumen compacto con tabla de agentes y vistas futuras como texto "próximamente"', () => {
+  for (const text of ['SIIO · IT', 'executive-hero', 'Vistas de Agentes', 'Indicadores generales', 'Agentes registrados', 'Usos de IA hoy', 'Límite de la suscripción', 'veces tocado en 7 días', 'Propuestas por aprobar', 'Revisar →', 'Avisos', 'Clic en un agente para ver su ficha, funciones, modelos y cupos', '<th>Agente</th><th>Estado</th><th>Dueño</th><th>Funciones con IA</th><th>Uso hoy / mes</th><th>Versión vigente</th>', '(próximamente)', 'AGENT_OWNER_PENDING']) {
     assert.ok(view.includes(text), text);
+  }
+  for (const [id, label] of [['summary', 'Resumen'], ['usage', 'Uso de IA'], ['profiles', 'Perfiles de uso'], ['proposals', 'Propuestas'], ['history', 'Historial']]) {
+    assert.ok(presentation.includes(`{ id: '${id}', label: '${label}' }`), label);
   }
   for (const [code, label] of [['declared', 'Declarado'], ['controlled_pilot', 'Piloto controlado'], ['partial_operation', 'Operación parcial'], ['full_operation', 'Operación completa'], ['retired', 'Retirado']]) {
     assert.ok(presentation.includes(`${code}: '${label}'`), code);
   }
-  for (const label of ['Configuraciones', 'Actividad', 'Permisos', 'Configuración y modelos', 'Actividad y portería', 'Salud de los procesos', 'Efectos externos', 'Propuestas por aprobar', 'Avisos']) {
-    assert.ok(presentation.includes(`'${label}'`), label);
-  }
   const upcomingList = presentation.slice(presentation.indexOf('export const UPCOMING_PLATFORM_VIEWS'), presentation.indexOf(']);', presentation.indexOf('export const UPCOMING_PLATFORM_VIEWS')));
-  assert.ok(!upcomingList.includes("'Uso de IA'"), '"Uso de IA" ya no es una próxima vista: tiene su sección');
-  assert.match(view, /state\.status === 'loading'/);
-  assert.match(view, /state\.status === 'error' && <div className="error" role="alert">\{state\.message\}<\/div>/, 'el error del 503 se muestra tal cual');
-  assert.match(view, /state\.agents\.length === 0/, 'estado vacío');
-  const upcoming = view.slice(view.indexOf('<Panel title="Próximas vistas">'));
-  assert.doesNotMatch(upcoming, /<a |<button|onClick|href=/, 'los chips de próximas vistas no son clicables');
+  for (const label of ['Permisos', 'Actividad', 'Salud']) assert.ok(upcomingList.includes(`'${label}'`), label);
+  assert.ok(!upcomingList.includes("'Uso de IA'") && !upcomingList.includes("'Propuestas por aprobar'"), 'lo construido ya no es "próximamente"');
+  assert.ok(presentation.includes("AGENT_OWNER_PENDING = 'Por definir'"));
+  assert.match(view, /<span className="platform-count" aria-label=\{`\$\{pending\} pendientes`\}>\{pending\}<\/span>/, 'contador de propuestas pendientes en la pestaña');
+  assert.match(view, /agents\.status === 'error' && tab === 'summary' && <div className="error" role="alert">\{agents\.message\}<\/div>/, 'el 503 se muestra tal cual');
+  assert.match(view, /agents\.length === 0 && <EmptyState/, 'estado vacío');
+  assert.match(view, /go\(`#\/agents\/\$\{encodeURIComponent\(agent\.id\)\}`\)/, 'clic en la fila abre el detalle');
+  const upcoming = view.slice(view.indexOf('platform-upcoming-text'), view.indexOf('(próximamente)'));
+  assert.doesNotMatch(upcoming, /<a |<button|onClick|href=/, 'las vistas futuras no son clicables');
+  assert.doesNotMatch(view, /platform-agent-card|AGENT_COUNT_LABELS|Configuraciones/, 'sin las tarjetas grandes ni la etiqueta que se cortaba');
   assert.doesNotMatch(view, /import[^\n]*SiioAgentsView/, 'no reutiliza ni toca la pestaña Agentes de la Torre de Control');
 });

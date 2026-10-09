@@ -27,6 +27,8 @@ select e.agent_id, e.capability,
        count(*) filter (where e.status = 'completed' and e.occurred_at >= b.week_start)::int as completed_7d,
        count(*) filter (where e.status = 'failed' and e.occurred_at >= b.week_start)::int as failed_7d,
        count(*) filter (where e.status = 'rejected' and e.occurred_at >= b.week_start)::int as rejected_7d,
+       count(*) filter (where e.status = 'rejected' and e.failure_code like '%QUOTA' and e.occurred_at >= b.week_start)::int as quota_rejected_7d,
+       count(*) filter (where e.failure_code like '%SESSION_LIMIT' and e.occurred_at >= b.week_start)::int as session_limit_7d,
        round(avg(e.latency_ms) filter (where e.status <> 'rejected' and e.occurred_at >= b.week_start))::int as avg_latency_ms_7d,
        max(e.occurred_at) filter (where e.status <> 'rejected') as last_used_at,
        coalesce(sum(e.input_tokens) filter (where e.occurred_at >= b.month_start), 0)::bigint as input_tokens_month,
@@ -109,7 +111,7 @@ export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(),
         limit: limits[capability] || null,
         today: 0,
         month: 0,
-        last_7_days: { completed: 0, failed: 0, rejected: 0 },
+        last_7_days: { completed: 0, failed: 0, rejected: 0, quota_rejected: 0, session_limit: 0 },
         avg_latency_ms: null,
         last_used_at: null,
         month_tokens: { input: 0, output: 0 },
@@ -125,7 +127,13 @@ export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(),
     const item = ensure(String(row.agent_id), String(row.capability));
     item.today = count(row.uses_today);
     item.month = count(row.uses_month);
-    item.last_7_days = { completed: count(row.completed_7d), failed: count(row.failed_7d), rejected: count(row.rejected_7d) };
+    item.last_7_days = {
+      completed: count(row.completed_7d),
+      failed: count(row.failed_7d),
+      rejected: count(row.rejected_7d),
+      quota_rejected: count(row.quota_rejected_7d),
+      session_limit: count(row.session_limit_7d),
+    };
     item.avg_latency_ms = row.avg_latency_ms_7d == null ? null : count(row.avg_latency_ms_7d);
     item.last_used_at = isoOrNull(row.last_used_at);
     item.month_tokens = { input: count(row.input_tokens_month), output: count(row.output_tokens_month) };
@@ -140,6 +148,8 @@ export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(),
     generated_at: now.toISOString(),
     has_data: rows.length > 0 || dailyRows.length > 0,
     cost_note: 'Costo equivalente: se usa la suscripción de Claude; es lo que costaría por tokens, no un cobro.',
+    // Veces que se tocó el límite de la suscripción (código de falla *_SESSION_LIMIT) en 7 días, todos los agentes.
+    session_limit_7d: [...summaries.values()].reduce((total, item) => total + item.last_7_days.session_limit, 0),
     capabilities: [...summaries.values()].map(item => ({ ...item, daily: [...item.daily.values()] })),
   };
 }
