@@ -181,8 +181,10 @@ export async function filterAgt002ActiveProcessingJobs(database, jobs) {
   const active = [];
   const reasons = new Map();
   for (const job of jobs || []) {
-    if (!reasons.has(job.opportunity_id)) reasons.set(job.opportunity_id, await readTenderOpportunityInactiveReason(database, job.opportunity_id, null));
-    if (!reasons.get(job.opportunity_id)) active.push(job);
+    // Misma licitación que la bandeja (088): la decisión GO/NO GO vigente de ESA licitación.
+    const key = `${job.opportunity_id}\u0000${job.tender_id || ''}`;
+    if (!reasons.has(key)) reasons.set(key, await readTenderOpportunityInactiveReason(database, job.opportunity_id, job.tender_id || null));
+    if (!reasons.get(key)) active.push(job);
   }
   return active;
 }

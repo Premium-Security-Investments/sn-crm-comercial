@@ -2018,7 +2018,7 @@ export async function recordAgt002RadarPhaseChanges(database, opportunityPatches
     // Sólo oportunidades ACTIVAS (Por decidir / En curso): una NO GO, perdida o descartada nunca recibe marca, aviso
     // ni correo. El bloqueo queda en el cambio para que tampoco se agregue el aviso visible.
     if (!change.blocker) {
-      try { change.blocker = await agt002PhaseChangeOpportunityBlocker(database, patch.converted_opportunity_id, null); }
+      try { change.blocker = await agt002PhaseChangeOpportunityBlocker(database, patch.converted_opportunity_id, patch.tender_id || null); }
       catch (error) { change.blocker = 'opportunity_stage_unknown'; console.warn(JSON.stringify({ event: 'agt002_phase_change_stage_read_failed', opportunityId: patch.converted_opportunity_id, message: error?.message })); }
     }
     if (change.blocker) {

@@ -240,6 +240,7 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
     if (convertedRow.converted_opportunity_id && (urlChanged || phaseChanged)) {
       opportunityPatches.push({
         converted_opportunity_id: convertedRow.converted_opportunity_id,
+        tender_id: convertedRow.id || null,
         officialUrl: officialUrl || convertedRow.url || null,
         historicalUrl: convertedRow.url || null,
         processId: official.process_id || convertedRow.process_id || null,

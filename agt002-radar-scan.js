@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { agt002RadarEvaluationDate, evaluateAgt002RadarGate } from './agt002-radar-gate.js';
 import { ESU_DIRECT_REFRESH_SOURCE } from './esu-direct-refresh.js';
-import { isConvertedTenderRow } from './tender-opportunity-stage.js';
+import { isConvertedTenderRow, isInactiveConvertedTender } from './tender-opportunity-stage.js';
 
 // Deterministic, always-on when invoked: this scan filters the fetched page through the gate and
 // appends the result to the ledger.
@@ -37,6 +37,7 @@ async function defaultRecordGateEvaluation(database, value) {
 export function createAgt002RadarScan({
   database, now, fetchTenderPage = defaultFetch, evaluateGate = evaluateAgt002RadarGate,
   recordGateEvaluation = defaultRecordGateEvaluation, refreshEsuDirect = defaultRefreshEsuDirect,
+  isInactiveConverted = isInactiveConvertedTender,
   maxTendersPerRun = 250,
 } = {}) {
   if (!Number.isInteger(maxTendersPerRun) || maxTendersPerRun < 1 || maxTendersPerRun > 1000) throw new Error('AGT002_RADAR_SCAN_CONFIG_INVALID');
@@ -67,9 +68,11 @@ export function createAgt002RadarScan({
         stages.push('fetch');
         rows = await fetchTenderPage(database, { limit: maxTendersPerRun });
         if (!Array.isArray(rows)) throw new Error('fetch did not return rows');
-        // Decisión del dueño (2026-10-09): el filtro del Radar diario nunca evalúa ni registra una licitación convertida
-        // en oportunidad (activa o no); las activas las sigue sólo la revisión programada.
-        rows = rows.filter(row => !isConvertedTenderRow(row));
+        // Decisión del dueño (2026-10-09): una convertida de una oportunidad NO activa nunca se evalúa ni se registra.
+        // Sólo se consulta la etapa de las filas convertidas (una fila normal del Radar no toca la base aquí).
+        const kept = [];
+        for (const row of rows) if (!isConvertedTenderRow(row) || !(await isInactiveConverted(database, row))) kept.push(row);
+        rows = kept;
       } catch {
         return { status: 'unavailable', stages, esu_refresh: esuRefresh, error_code: 'provider_error' };
       }

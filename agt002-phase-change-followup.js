@@ -242,6 +242,13 @@ export async function agt002PhaseChangeOpportunityBlocker(database, opportunityI
   return readTenderOpportunityInactiveReason(database, opportunityId, tenderId);
 }
 
+/** Licitación convertida de una oportunidad (para clasificarla con la decisión de ESA licitación, como la bandeja). */
+export async function agt002ConvertedTenderIdOf(database, opportunityId) {
+  const rows = await must(database.from('psi_public_tenders').select('id,converted_opportunity_id')
+    .eq('converted_opportunity_id', opportunityId).limit(1), 'licitación convertida');
+  return rows?.[0]?.id || null;
+}
+
 /** Convertida ACTIVA (Por decidir / En curso y etapa comercial abierta): la revisión programada sólo mira éstas. */
 export async function isAgt002PhaseChangeActiveOpportunity(database, tender) {
   return !(await agt002PhaseChangeOpportunityBlocker(database, tender.converted_opportunity_id, tender.id));
@@ -579,7 +586,7 @@ export async function collectAgt002PhaseChangeAnalysisResults(database, { now = 
   const inactiveByOpportunity = new Map();
   for (const row of launched) {
     // Si la oportunidad dejó de estar activa después de lanzar el reanálisis, su resultado no se registra ni se avisa.
-    if (!inactiveByOpportunity.has(row.opportunity_id)) inactiveByOpportunity.set(row.opportunity_id, await agt002PhaseChangeOpportunityBlocker(database, row.opportunity_id, null));
+    if (!inactiveByOpportunity.has(row.opportunity_id)) inactiveByOpportunity.set(row.opportunity_id, await agt002PhaseChangeOpportunityBlocker(database, row.opportunity_id, await agt002ConvertedTenderIdOf(database, row.opportunity_id)));
     if (inactiveByOpportunity.get(row.opportunity_id)) continue;
     const job = await must(database.from('psi_agt002_initial_analysis_jobs')
       .select('id,status,analysis_run_id,error_code').eq('id', row.payload.job_id).maybeSingle(), 'estado del reanálisis');

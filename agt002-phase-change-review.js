@@ -14,6 +14,7 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 
 import { join } from 'node:path';
 
 import {
+  agt002ConvertedTenderIdOf,
   agt002PhaseChangeOpportunityBlocker,
   collectAgt002PhaseChangeAnalysisResults,
   isAgt002PhaseChangeActiveOpportunity,
@@ -64,7 +65,7 @@ export async function listRecentAgt002PhaseChangeDetections(database, { now = ne
   const active = new Map();
   const result = [];
   for (const detection of detections) {
-    if (!active.has(detection.opportunityId)) active.set(detection.opportunityId, !(await agt002PhaseChangeOpportunityBlocker(database, detection.opportunityId, null)));
+    if (!active.has(detection.opportunityId)) active.set(detection.opportunityId, !(await agt002PhaseChangeOpportunityBlocker(database, detection.opportunityId, await agt002ConvertedTenderIdOf(database, detection.opportunityId))));
     if (active.get(detection.opportunityId)) result.push(detection);
   }
   return result;

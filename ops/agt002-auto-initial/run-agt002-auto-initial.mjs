@@ -25,7 +25,7 @@ const database = createClient(supabaseUrl, serviceKey, { auth: { persistSession:
 // Sólo trabajos de oportunidades ACTIVAS (decisión del dueño, 2026-10-09): una NO GO o cerrada nunca hace que el host
 // llame al trabajador de documentos.
 async function claimableJobs(filter) {
-  const { data, error } = await filter(database.from('psi_tender_processing_jobs').select('id,opportunity_id,status,created_at').in('status', CLAIMABLE));
+  const { data, error } = await filter(database.from('psi_tender_processing_jobs').select('id,opportunity_id,tender_id,status,created_at').in('status', CLAIMABLE));
   if (error) throw new Error(`lectura de trabajos: ${error.message}`);
   return filterAgt002ActiveProcessingJobs(database, data || []);
 }

@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { createTenderProcessingWorker, isWorkerYieldStatus, WORKER_YIELD_STATUSES } from '../tender-processing-worker.js';
+import { createTenderProcessingWorker, INACTIVE_OPPORTUNITY_RECHECK_MS, isWorkerYieldStatus, WORKER_YIELD_STATUSES } from '../tender-processing-worker.js';
 import { MAX_ATTEMPTS } from '../tender-pipeline-backoff.js';
 
 function makeDeps(overrides = {}) {
@@ -48,26 +48,51 @@ async function run() {
     assert.equal(calls.requestAgt002.length, 0);
   }
 
-  // 1b) decisión del dueño 2026-10-09: oportunidad NO activa -> el trabajo sale de la cola sin descargar, sin revalidar,
-  //     sin evento en la licitación ni análisis; una activa sigue igual.
+  // 1b) decisión del dueño 2026-10-09: oportunidad NO activa -> el trabajo NO se cancela: se suelta y se aplaza (sin
+  //     descargar, sin revalidar, sin evento en la licitación ni análisis). Si vuelve a estar activa, sigue normal.
   {
+    let active = false;
     let revalidated = 0;
-    const { deps, calls } = makeDeps({
+    const { deps, calls, advanceClock } = makeDeps({
       claimJob: async () => ({
-        job_id: 'job-1b', lease_id: 'lease-1b', tender_id: 'tender-1b', opportunity_id: 'opp-no-go',
+        job_id: 'job-1b', lease_id: 'lease-1b', tender_id: 'tender-1b', opportunity_id: 'opp-1b',
         status: 'queued', current_step: 'documents',
       }),
-      readOpportunityInactiveReason: async ({ opportunityId }) => (opportunityId === 'opp-no-go' ? 'opportunity_closed' : null),
+      readOpportunityInactiveReason: async ({ opportunityId, tenderId }) => {
+        assert.deepEqual([opportunityId, tenderId], ['opp-1b', 'tender-1b'], 'clasifica con la licitación del trabajo');
+        return active ? null : 'opportunity_closed';
+      },
       revalidateOfficialStatus: async () => { revalidated += 1; return { terminal: false }; },
     });
-    const result = await createTenderProcessingWorker(deps).runOnce({});
-    assert.deepEqual([result.status, result.reason], ['cancelled', 'opportunity_closed']);
-    assert.deepEqual(calls.updateJob.map(call => call.patch), [{ status: 'cancelled', current_step: 'opportunity_inactive' }]);
+    advanceClock(1_000);
+    const worker = createTenderProcessingWorker(deps);
+    const skipped = await worker.runOnce({});
+    assert.deepEqual([skipped.status, skipped.reason], ['noop', 'opportunity_inactive']);
+    assert.ok(isWorkerYieldStatus(skipped.status), 'el drenaje no vuelve a reclamarlo en bucle');
+    assert.deepEqual(calls.updateJob.map(call => call.patch), [{ next_attempt_at: new Date(1_000 + INACTIVE_OPPORTUNITY_RECHECK_MS).toISOString(), release_lease: true }],
+      'sin estado terminal: mismo estado, aplazado y soltado');
+    assert.equal(Object.hasOwn(calls.updateJob[0].patch, 'status'), false);
     assert.equal(calls.appendEvent.length, 0, 'ningún evento en la licitación');
     assert.equal(calls.discoverDocuments.length, 0);
     assert.equal(calls.requestAgt002.length, 0);
     assert.equal(revalidated, 0);
-    assert.ok(isWorkerYieldStatus(result.status), 'el drenaje no vuelve a reclamarlo en bucle');
+    // Un GO reemplaza al NO GO: el mismo trabajo se procesa normalmente en el reclamo siguiente.
+    active = true;
+    const resumed = await worker.runOnce({});
+    assert.notEqual(resumed.status, 'noop');
+    assert.equal(revalidated, 1);
+    assert.equal(calls.discoverDocuments.length, 1, 'vuelve a descubrir documentos');
+  }
+
+  // 1c) oportunidad activa con la dependencia inyectada: el camino normal no cambia.
+  {
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({ job_id: 'job-1c', lease_id: 'lease-1c', tender_id: 'tender-1c', opportunity_id: 'opp-1c', status: 'queued', current_step: 'documents' }),
+      readOpportunityInactiveReason: async () => null,
+    });
+    const result = await createTenderProcessingWorker(deps).runOnce({});
+    assert.notEqual(result.status, 'noop');
+    assert.equal(calls.discoverDocuments.length, 1);
   }
 
   // 2) job importing_documents con 5 docs y batchSize:2 -> procesa 2, deja el resto pending, incrementa documents_processed.

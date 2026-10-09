@@ -141,7 +141,7 @@ test('decisión del dueño 2026-10-09: una oportunidad no activa (NO GO vigente,
 });
 
 test('decisión del dueño 2026-10-09: el host sólo impulsa la descarga de documentos de oportunidades activas', async () => {
-  const tables = world({ psi_tender_go_no_go_decisions: [{ id: 'd1', opportunity_id: 'opp-dl', decision: 'no_go', decided_at: '2026-10-06T19:00:00Z' }] });
+  const tables = world({ psi_tender_go_no_go_decisions: [{ id: 'd1', opportunity_id: 'opp-dl', tender_id: 't-dl', decision: 'no_go', decided_at: '2026-10-06T19:00:00Z' }] });
   tables.psi_sales_opportunities[1].stage_code = 'perdido';
   const jobs = tables.psi_tender_processing_jobs;
   assert.deepEqual((await filterAgt002ActiveProcessingJobs(fakeDb(tables), jobs)).map(job => job.id), ['pj-new']);

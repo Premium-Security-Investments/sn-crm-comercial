@@ -967,3 +967,39 @@ test('revisión: una activa fuera de SECOP II queda en el log como no seguida (l
   await runAgt002PhaseChangeReview(fakeDb(world({ psi_sales_interactions: [] })), { api, environment: {}, now: NOW, stateDir: '/y', fsImpl: memoryFs(), log: event => logs.push(event) });
   assert.deepEqual(logs.filter(e => e.event === 'agt002_phase_change_review_source_not_followed'), [{ event: 'agt002_phase_change_review_source_not_followed', opportunityId: 'opp-esu', source: 'ESU Contratación' }]);
 });
+
+test('reactivada: el resultado de un reanálisis guardado mientras estaba NO GO se registra y avisa normalmente cuando un GO la reactiva', async () => {
+  const { collectAgt002PhaseChangeAnalysisResults } = await import('../agt002-phase-change-followup.js');
+  const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED, LAUNCHED], psi_tender_go_no_go_decisions: [...NO_GO],
+    psi_agt002_initial_analysis_jobs: [{ id: 'job-9', opportunity_id: 'opp-ftic', status: 'COMPLETED', analysis_kind: 'REANALYSIS', created_at: '2026-10-09T10:05:00.000Z' }] });
+  const db = fakeDb(tables);
+  assert.deepEqual(await collectAgt002PhaseChangeAnalysisResults(db, { now: NOW }), [], 'mientras está NO GO, nada');
+  tables.psi_tender_go_no_go_decisions.push({ id: 'go', opportunity_id: 'opp-ftic', tender_id: 't-ftic', decision: 'go', decided_at: '2026-10-09T12:00:00Z', supersedes_decision_id: 'ng' });
+  const results = await collectAgt002PhaseChangeAnalysisResults(db, { now: NOW });
+  assert.deepEqual(results.map(r => [r.jobId, r.status]), [['job-9', 'COMPLETED']], 'con el GO vigente se informa como siempre');
+  assert.equal(db.appended.length, 1);
+});
+
+test('activa = bandeja: "aprobado" con GO y oferta en preparación se sigue; la decisión de OTRA licitación no cuenta', async () => {
+  const approved = world({ psi_tender_go_no_go_decisions: [{ id: 'g1', opportunity_id: 'opp-ftic', tender_id: 't-ftic', decision: 'go', decided_at: '2026-10-01T00:00:00Z' }] });
+  approved.psi_sales_opportunities[0].stage_code = 'aprobado';
+  approved.psi_sales_opportunities[0].tender_offer_status = 'en_preparacion';
+  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(approved), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); } });
+  assert.deepEqual(events.map(e => e.event), ['agt002_phase_change_documents_waiting_new_documents']);
+  const otherTender = world({ psi_tender_go_no_go_decisions: [{ id: 'x', opportunity_id: 'opp-ftic', tender_id: 't-otra', decision: 'no_go', decided_at: '2026-10-05T00:00:00Z' }] });
+  const { agt002PhaseChangeOpportunityBlocker } = await import('../agt002-phase-change-followup.js');
+  assert.equal(await agt002PhaseChangeOpportunityBlocker(fakeDb(otherTender), 'opp-ftic', 't-ftic'), null, 'como la bandeja (088): decisión de esa licitación');
+  assert.equal(await agt002PhaseChangeOpportunityBlocker(fakeDb(otherTender), 'opp-ftic', null), null, 'sin licitación se usa la convertida de la oportunidad');
+});
+
+for (const [label, server] of servers) {
+  test(`marca diaria (${label}): clasifica con la licitación del plan (tender_id), no con decisiones de otra licitación`, async () => {
+    const tables = world({ psi_sales_interactions: [], psi_tender_go_no_go_decisions: [{ id: 'x', opportunity_id: 'opp-ftic', tender_id: 't-otra', decision: 'no_go', decided_at: '2026-10-05T00:00:00Z' }] });
+    const patches = [{ converted_opportunity_id: 'opp-ftic', tender_id: 't-ftic', sourceChange: { change: 'phase', url: NEW_URL, blocker: null } }];
+    await server.recordAgt002RadarPhaseChanges(fakeDb(tables), patches);
+    assert.equal(patches[0].sourceChange.blocker, null);
+    assert.deepEqual(kinds(tables), ['tender_phase_change_detected']);
+    const plan = planRadarPhaseIdentitySync({ fetched: [draftRow(), offerRow()], existing: [{ ...draftConverted(), id: 't-ftic' }], now: '2026-10-10T16:00:00.000Z' });
+    assert.equal(plan.opportunityPatches[0].tender_id, 't-ftic', 'el plan lleva la licitación convertida');
+  });
+}
