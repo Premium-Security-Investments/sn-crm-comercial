@@ -8,7 +8,7 @@
 .platform-agent-active{margin:0;color:#334155}
 .platform-agent-counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}
 .platform-agent-counts div{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px}
-.platform-agent-counts dt{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.platform-agent-counts dt{font-size:12px;font-weight:700;color:#64748b;overflow-wrap:anywhere}
 .platform-agent-counts dd{margin:4px 0 0;font-size:20px;font-weight:800;color:#0f1b2d}
 .platform-agent-dates{margin:0;font-size:12px;color:#64748b}
 .platform-upcoming{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
