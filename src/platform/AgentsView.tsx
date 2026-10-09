@@ -8,8 +8,10 @@ import {
   AGENT_OWNER_PENDING,
   UPCOMING_PLATFORM_VIEWS,
   agentStateLabel,
+  agentModelAlerts,
   agentStateTone,
   agentUsageTotals,
+  alertCountText,
   versionLabel,
   type AgentConfigurationPayload,
   type AgentsTab,
@@ -17,7 +19,8 @@ import {
   type PlatformAgent,
 } from './agentsPresentation';
 import { AgentDetail } from './AgentDetail';
-import { HistoryView, ProfilesView, ProposalsView } from './ConfigurationViews';
+import { HistoryView, ProfilesView, ProposalsView, fmtDateTime } from './ConfigurationViews';
+import { ModelAlertsPanel } from './ModelAlerts';
 import { ModelUsageSection } from './ModelUsageSection';
 import { usePlatformData, type Loadable } from './usePlatformData';
 import './platform.css';
@@ -27,6 +30,11 @@ function go(hash: string) { window.location.hash = hash; }
 /** Avisos del Resumen, todos derivados de datos reales. */
 export function platformWarnings(agents: PlatformAgent[], usage: ModelUsagePayload | null, config: AgentConfigurationPayload | null): string[] {
   const warnings: string[] = [];
+  // Paso 3: cada falla activa de la IA (sin uso exitoso posterior) es un aviso, en lenguaje común.
+  for (const alert of agentModelAlerts(usage).filter(item => item.active)) {
+    const name = agents.find(agent => agent.id === alert.agent_id)?.name || alert.agent_id;
+    warnings.push(`${name}: ${alert.title}. Última vez: ${fmtDateTime(alert.last_at)} (${alertCountText(alert.count_24h)}).`);
+  }
   const sessionLimit = usage?.session_limit_7d ?? 0;
   if (sessionLimit > 0) warnings.push(`El límite de la suscripción se tocó ${sessionLimit} ${sessionLimit === 1 ? 'vez' : 'veces'} en los últimos 7 días.`);
   if (config) {
@@ -53,11 +61,12 @@ function Summary({ agents, usage, config, onTab }: { agents: PlatformAgent[]; us
       <article className="panel platform-kpi" data-tone={sessionLimit ? 'danger' : 'green'}><small>Límite de la suscripción</small><strong>{sessionLimit == null ? '—' : sessionLimit ? `${sessionLimit} veces` : 'Sin topes'}</strong><span>veces tocado en 7 días: {sessionLimit ?? '—'}</span></article>
       <article className="panel platform-kpi" data-tone={configData?.pending_count ? 'amber' : undefined}><small>Propuestas por aprobar</small><strong>{configData ? configData.pending_count : '—'}</strong>
         <button type="button" className="link-button" onClick={() => onTab('proposals')}>Revisar →</button></article>
-      <article className="panel platform-kpi"><small>Avisos</small><strong>{warnings.length}</strong><span>{warnings[0] || 'Sin avisos'}</span></article>
+      <article className="panel platform-kpi" data-tone={agentModelAlerts(usageData).some(alert => alert.active) ? 'danger' : undefined}><small>Avisos</small><strong>{warnings.length}</strong><span>{warnings[0] || 'Sin avisos'}</span></article>
     </section>
     {usage.status === 'error' && <div className="notice">Uso de IA: {usage.message}</div>}
     {config.status === 'error' && <div className="notice">Configuración: {config.message}</div>}
     {warnings.length > 1 && <Panel title="Avisos"><ul className="platform-warnings">{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></Panel>}
+    <ModelAlertsPanel alerts={agentModelAlerts(usageData)} agentNames={Object.fromEntries(agents.map(agent => [agent.id, agent.name]))} />
     <section className="panel" aria-label="Lista de agentes">
       <div className="platform-section-head"><h2>Agentes</h2><small>Clic en un agente para ver su ficha, funciones, modelos y cupos</small></div>
       {agents.length === 0 && <EmptyState title="Sin agentes registrados" text="La plataforma todavía no tiene agentes en su registro." />}

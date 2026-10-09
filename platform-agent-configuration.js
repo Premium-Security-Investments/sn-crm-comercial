@@ -41,7 +41,7 @@ export const AGENT_AI_FUNCTIONS = Object.freeze({
   [AGT003_AGENT_ID]: Object.freeze([
     Object.freeze({
       capability: AGT003_COPILOT_CAPABILITY,
-      label: 'Siguiente paso (copiloto)',
+      label: 'Próximo seguimiento',
       description: 'Sugiere el siguiente paso con el cliente en la ficha de la oportunidad.',
       default_cap: Object.freeze({ per: 'day', max: 20 }),
     }),

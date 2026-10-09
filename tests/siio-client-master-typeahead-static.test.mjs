@@ -11,8 +11,9 @@ const sha = (rel) => createHash('sha256').update(readFileSync(resolve(root, rel)
 
 const FROZEN = {
   // Actualizado a propósito (2026-10-09): el runtime del copiloto envuelve el cliente del puente con la puerta única de modelos
-  // y, desde el Paso 2 (parte 3), acepta el modelo aprobado en la Plataforma de Agentes (opción `model`).
-  'agt003-copilot-runtime.js': '389ad040781ea07cf4146cb6a0f22db776a5c3c1c82561ff27c3103efb0b2f70',
+  // y, desde el Paso 2 (parte 3), acepta el modelo aprobado en la Plataforma de Agentes (opción `model`). Paso 3: pasa
+  // el clasificador de fallas (`classifyFailure`) a la puerta; cupos, engine y puente no cambian.
+  'agt003-copilot-runtime.js': 'f96f41512f1d11067722588548f9e5b9cdb3d68a39e0b6767e251dd62ae3b706',
   'agt003-preflight-runtime.js': '48e761d6badba31ae8f15bf563df0be05d5180410c3c48a806bda955ccdc34af',
   'agt002-workbench-runtime.js': 'ee1a0815f0954617370ee909e2ce33c679426e85e82f4a1bcea1bb9c59742d39',
   'agt002-preview-runtime.js': 'd2834ae9df2e8146553e0a056949d0ded9c8a27094541976d7075c2c179072cb',

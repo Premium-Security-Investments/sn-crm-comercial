@@ -1,6 +1,7 @@
 import { createAgt003CopilotBridgeClient } from './agt003-copilot-bridge-client.js';
 import { AGT003_COPILOT_POLICY, createAgt003CopilotEngine } from './agt003-copilot-engine.js';
 import { AGT003_COPILOT_CAPABILITY, createModelGatewayClient } from './platform-model-gateway.js';
+import { classifyAgt003ModelFailure } from './src/vigia/model-failures.js';
 
 export const AGT003_COPILOT_ENGINE_ID = 'agt003_bridge_preview';
 export const AGT003_COPILOT_DEFAULT_POLICY_VERSION = '2026-09-01.v3';
@@ -93,6 +94,8 @@ export function createAgt003CopilotRuntime({ environment = process.env, countDai
     }),
     capability: AGT003_COPILOT_CAPABILITY,
     env: environment,
+    // Paso 3: cada falla queda en el libro con su categoría estable (sesión vencida, puente caído, límite, otro error).
+    classifyFailure: classifyAgt003ModelFailure,
     ...(recordUsage ? { recordUsage } : {}),
   });
   return createAgt003CopilotEngine({

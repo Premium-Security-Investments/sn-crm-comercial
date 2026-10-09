@@ -45,6 +45,7 @@ import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
 import { CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
+import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
 import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../agt003-lead-analysis.js';
 import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
@@ -3455,8 +3456,11 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     } catch (runError) {
       await database.rpc('psi_finish_agt003_lead_analysis', { p_id: claimedId, p_status: 'failed', p_model: null, p_website_url: website.url || null, p_website_status: website.status, p_output: null, p_usage: null, p_failure_code: String(runError?.code || 'AGT003_LEAD_ANALYSIS_FAILED').slice(0, 64) });
       claimedId = null;
-      const error = new Error('No se pudo preparar el análisis. No se descontó del cupo; intente de nuevo en unos minutos.');
-      error.status = 502;
+      // Plan B "avisar" (Paso 3): mensaje en lenguaje común según la categoría de la falla; no cambia de modelo ni de
+      // proveedor. La falla ya quedó en el libro central con su categoría (puerta de modelos) y el fallido no consume cupo.
+      const category = classifyAgt003ModelFailure(runError) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+      const error = new Error(`${agt003ModelFailureMessage(category, 'lead_analysis')} No se descontó de tu cupo.`);
+      error.status = category === AGT003_MODEL_FAILURE.MODEL_ERROR ? 502 : 503;
       throw error;
     }
     const { error: finishError } = await database.rpc('psi_finish_agt003_lead_analysis', {
@@ -3470,7 +3474,12 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     if (claimedId && database) {
       try { await database.rpc('psi_finish_agt003_lead_analysis', { p_id: claimedId, p_status: 'failed', p_model: null, p_website_url: null, p_website_status: null, p_output: null, p_usage: null, p_failure_code: 'AGT003_LEAD_ANALYSIS_INTERNAL' }); } catch { /* best effort */ }
     }
-    sendError(res, error, error?.status || 400);
+    // Un error interno sin estado (base de datos, configuración) nunca se muestra como error técnico.
+    if (!error?.status) {
+      console.error(error);
+      return res.status(503).json({ error: 'Vig-IA no pudo preparar el análisis por ahora. Intenta de nuevo en unos minutos.' });
+    }
+    sendError(res, error, error.status);
   }
 });
 

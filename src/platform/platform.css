@@ -91,3 +91,10 @@
 .platform-usage-secondary{margin:0;font-size:12px;line-height:1.5;color:#64748b}
 @media(max-width:1100px){.platform-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.platform-two-columns,.platform-function-grid,.platform-steps,.platform-facts-row{grid-template-columns:1fr}}
 @media(max-width:640px){.platform-kpis{grid-template-columns:1fr}.platform-tabs.module-segmented-nav,.platform-tabs.platform-tabs-4.module-segmented-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.platform-proposal-bar{flex-direction:column;align-items:stretch}}
+
+/* Paso 3: avisos de fallas de la IA. */
+.platform-alerts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.platform-alert{border:1px solid #e2e8f0;border-left:4px solid #16a34a;border-radius:12px;padding:10px 12px;background:#f8fafc}
+.platform-alert[data-active="true"]{border-left-color:#dc2626;background:#fef2f2}
+.platform-alert p{margin:4px 0 0;overflow-wrap:anywhere}
+.platform-alert-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}

@@ -10,6 +10,7 @@ import {
   limitsFromEffectiveConfiguration,
   listPlatformModelUsage,
   presentModelUsage,
+  PLATFORM_MODEL_ALERTS_SQL,
 } from '../platform-model-usage.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable } from '../platform-agents.js';
 import { defaultAgentConfiguration } from '../platform-agent-configuration.js';
@@ -67,7 +68,7 @@ test('serie de 14 días termina hoy en Bogotá', () => {
 test('presentación: sin datos devuelve las dos capacidades en cero y has_data=false', () => {
   const payload = presentModelUsage({ now: new Date('2026-10-09T15:00:00Z'), env: {} });
   assert.equal(payload.has_data, false);
-  assert.deepEqual(payload.capabilities.map(item => item.label), ['Siguiente paso (copiloto)', 'Análisis profundo']);
+  assert.deepEqual(payload.capabilities.map(item => item.label), ['Próximo seguimiento', 'Análisis profundo']);
   assert.equal(payload.capabilities[0].daily.length, 14);
   assert.ok(payload.cost_note.includes('equivalente'));
 });
@@ -106,7 +107,7 @@ test('lee en transacción read only y arma uso por agente+capacidad', async () =
   const pool = fakePool();
   const now = new Date('2026-10-09T15:00:00Z');
   const payload = await listPlatformModelUsage({ pool, now, env: {} });
-  assert.deepEqual(pool.queries.map(query => query.sql), ['begin read only', 'set local statement_timeout = 5000', PLATFORM_MODEL_USAGE_SUMMARY_SQL, PLATFORM_MODEL_USAGE_DAILY_SQL, 'commit']);
+  assert.deepEqual(pool.queries.map(query => query.sql), ['begin read only', 'set local statement_timeout = 5000', PLATFORM_MODEL_USAGE_SUMMARY_SQL, PLATFORM_MODEL_USAGE_DAILY_SQL, PLATFORM_MODEL_ALERTS_SQL, 'commit']);
   assert.deepEqual(pool.queries[2].params, [now.toISOString()]);
   assert.deepEqual(pool.released, [undefined]);
   assert.equal(payload.has_data, true);
@@ -166,7 +167,7 @@ test('"Uso de IA" tiene su pestaña: destaca usos, fallas y límite de la suscri
   assert.doesNotMatch(section, /\{item\.capability\}<\/small>|item\.agent_id\} · \{item\.capability/, 'no muestra IDs técnicos de capacidades');
   assert.match(section, /usage\.status === 'error' && <div className="error" role="alert">\{usage\.message\}<\/div>/, 'el 503 "no está conectada" se muestra tal cual');
   assert.match(section, /!usage\.data\.has_data && <EmptyState/, 'mensaje claro sin datos');
-  assert.ok(presentation.includes("'agt003.opportunity-copilot.preview': 'Siguiente paso (copiloto)'"));
+  assert.ok(presentation.includes("'agt003.opportunity-copilot.preview': 'Próximo seguimiento'"));
   assert.ok(presentation.includes("'agt003.lead-deep-analysis': 'Análisis profundo'"));
   assert.ok(presentation.includes('suscripción'), 'aclara que el costo es equivalente por la suscripción');
 });

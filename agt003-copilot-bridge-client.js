@@ -83,13 +83,21 @@ export function createAgt003CopilotBridgeClient({ url, hmacSecret, wireProtocol 
         signal?.removeEventListener('abort', callerAbort);
       }
 
+      // Paso 3: una respuesta 5xx sin el cuerpo JSON del puente (p. ej. la página de error de un proxy cuando el puente
+      // está caído) es "puente no disponible", no una respuesta inválida del modelo.
+      const bridgeDown = !response.ok && Number(response.status) >= 500;
       let payload;
       try { payload = await readBoundedJson(response); }
       catch (error) {
+        if (bridgeDown) throw transportError('El servicio de Vig-IA no está disponible.', 'AGT003_COPILOT_TRANSPORT_ERROR');
         if (error?.code === 'AGT003_COPILOT_INVALID_RESPONSE') throw error;
         throw transportError('La respuesta de Vig-IA no tiene una estructura segura.', 'AGT003_COPILOT_INVALID_RESPONSE');
       }
-      if (!response.ok) throw transportError('El servicio de Vig-IA devolvió un error.', payload?.error?.code || 'AGT003_COPILOT_INTERNAL');
+      if (!response.ok) {
+        const upstreamCode = typeof payload?.error?.code === 'string' && payload.error.code.trim() ? payload.error.code : null;
+        if (!upstreamCode && bridgeDown) throw transportError('El servicio de Vig-IA no está disponible.', 'AGT003_COPILOT_TRANSPORT_ERROR');
+        throw transportError('El servicio de Vig-IA devolvió un error.', upstreamCode || 'AGT003_COPILOT_INTERNAL');
+      }
       if (typeof payload.content !== 'string'
         || !Number.isInteger(payload.usage?.input_tokens) || payload.usage.input_tokens < 0
         || !Number.isInteger(payload.usage?.output_tokens) || payload.usage.output_tokens < 0) {

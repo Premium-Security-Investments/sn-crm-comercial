@@ -21,6 +21,7 @@ import {
   type CommercialPreflightInput,
 } from './opportunity-preflight-presentation';
 import { presentCopilotBrief, presentCompactCopilotSummary, type CopilotPresentationBrief } from './copilot-presentation';
+import { isAgt003ModelFailureMessage } from './model-failures.js';
 
 type Request = <T>(url: string, options?: RequestInit) => Promise<T>;
 type Props = {
@@ -146,6 +147,7 @@ export function VigiaOpportunityCopilot({ opportunityId, request, preflight }: P
     {state.phase === 'loading' && <div className="notice" role="status">{VIGIA_VISIBLE_NAMES.commercial} está preparando un borrador acotado…</div>}
     {state.phase === 'error' && <div className="vigia-copilot-error" role="alert">
       <span>No se pudo preparar el seguimiento. Puede continuar registrándolo manualmente.</span>
+      {isAgt003ModelFailureMessage(state.message) && <span className="vigia-copilot-error-reason">{state.message}</span>}
       <button type="button" className="secondary" onClick={generate}>Reintentar</button>
     </div>}
     {ready && brief && <VigiaCopilotProposal

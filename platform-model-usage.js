@@ -10,6 +10,12 @@ import {
   platformUnavailableError,
 } from './platform-agents.js';
 import { AGT003_AGENT_ID, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY } from './platform-model-gateway.js';
+import {
+  AGT003_MODEL_FAILURE_CODES,
+  AGT003_MODEL_FAILURE_IT_TEXT,
+  AGT003_SHARED_FAILURE_CATEGORIES,
+  classifyAgt003ModelFailure,
+} from './src/vigia/model-failures.js';
 
 export const MODEL_USAGE_SERIES_DAYS = 14;
 const DEFAULT_COPILOT_DAILY_MAX = 20;
@@ -52,8 +58,88 @@ select e.agent_id, e.capability,
  group by 1, 2, 3
  order by 1, 2, 3`;
 
+// Paso 3 — avisos de fallas del puente o del modelo. Una fila por agente + capacidad + estado + código en los últimos 7
+// días: fallidos (con su código) y completados (para saber si hubo un uso exitoso después de la falla). Los rechazos
+// (cupo, función apagada, puente ocupado) no son fallas y no entran.
+export const MODEL_ALERTS_WINDOW_DAYS = 7;
+export const PLATFORM_MODEL_ALERTS_SQL = `select e.agent_id, e.capability, e.status, e.failure_code,
+       count(*) filter (where e.occurred_at >= $1::timestamptz - interval '24 hours')::int as count_24h,
+       count(*)::int as count_7d,
+       max(e.occurred_at) as last_at
+  from platform.model_usage_event e
+ where e.status in ('failed', 'completed')
+   and e.occurred_at >= $1::timestamptz - interval '7 days'
+ group by e.agent_id, e.capability, e.status, e.failure_code
+ order by e.agent_id, e.capability, e.status, e.failure_code`;
+
+function timeOf(value) {
+  const iso = isoOrNull(value);
+  return iso ? Date.parse(iso) : null;
+}
+
+/**
+ * Avisos de IT → Agentes a partir de las filas de PLATFORM_MODEL_ALERTS_SQL, agrupados por agente y categoría.
+ * - Categoría: la de src/vigia/model-failures.js (también reclasifica los códigos crudos que el Paso 1 guardó antes).
+ * - Activo: no hubo un uso exitoso posterior a la última falla. Sesión vencida, puente caído y límite de la suscripción
+ *   se resuelven con un uso exitoso de cualquier función del agente; "otro error" sólo con uno de la misma función.
+ * - Se listan los activos y los que pasaron en las últimas 24 h (aunque ya se hayan resuelto).
+ */
+export function presentModelAlerts(rows = []) {
+  const lastSuccessByCapability = new Map();
+  const lastSuccessByAgent = new Map();
+  const groups = new Map();
+  for (const row of rows) {
+    const agentId = String(row.agent_id);
+    const capability = String(row.capability);
+    const lastAt = timeOf(row.last_at);
+    if (lastAt === null) continue;
+    if (row.status === 'completed') {
+      const key = `${agentId}\u0000${capability}`;
+      lastSuccessByCapability.set(key, Math.max(lastSuccessByCapability.get(key) ?? 0, lastAt));
+      lastSuccessByAgent.set(agentId, Math.max(lastSuccessByAgent.get(agentId) ?? 0, lastAt));
+      continue;
+    }
+    if (row.status !== 'failed') continue;
+    const category = classifyAgt003ModelFailure(row.failure_code);
+    if (!category) continue;
+    const id = `${agentId}\u0000${category}`;
+    if (!groups.has(id)) groups.set(id, { agentId, category, count24h: 0, count7d: 0, lastAt: 0, byCapability: new Map() });
+    const group = groups.get(id);
+    group.count24h += count(row.count_24h);
+    group.count7d += count(row.count_7d);
+    group.lastAt = Math.max(group.lastAt, lastAt);
+    group.byCapability.set(capability, Math.max(group.byCapability.get(capability) ?? 0, lastAt));
+  }
+  const alerts = [];
+  for (const group of groups.values()) {
+    const shared = AGT003_SHARED_FAILURE_CATEGORIES.includes(group.category);
+    const lastSuccessAt = shared
+      ? lastSuccessByAgent.get(group.agentId) ?? null
+      : Math.max(0, ...[...group.byCapability.keys()].map(capability => lastSuccessByCapability.get(`${group.agentId}\u0000${capability}`) ?? 0)) || null;
+    const active = shared
+      ? !(lastSuccessAt && lastSuccessAt > group.lastAt)
+      : [...group.byCapability.entries()].some(([capability, failedAt]) => !((lastSuccessByCapability.get(`${group.agentId}\u0000${capability}`) ?? 0) > failedAt));
+    if (!active && group.count24h === 0) continue;
+    const text = AGT003_MODEL_FAILURE_IT_TEXT[group.category];
+    alerts.push({
+      agent_id: group.agentId,
+      category: group.category,
+      title: text.title,
+      help: text.help,
+      functions: [...group.byCapability.keys()].sort().map(capability => MODEL_CAPABILITY_LABELS[capability] || 'Otra función'),
+      count_24h: group.count24h,
+      count_7d: group.count7d,
+      last_at: new Date(group.lastAt).toISOString(),
+      last_success_at: lastSuccessAt ? new Date(lastSuccessAt).toISOString() : null,
+      active,
+    });
+  }
+  const order = category => AGT003_MODEL_FAILURE_CODES.indexOf(category);
+  return alerts.sort((a, b) => Number(b.active) - Number(a.active) || Date.parse(b.last_at) - Date.parse(a.last_at) || order(a.category) - order(b.category));
+}
+
 export const MODEL_CAPABILITY_LABELS = Object.freeze({
-  [AGT003_COPILOT_CAPABILITY]: 'Siguiente paso (copiloto)',
+  [AGT003_COPILOT_CAPABILITY]: 'Próximo seguimiento',
   [AGT003_LEAD_ANALYSIS_CAPABILITY]: 'Análisis profundo',
 });
 
@@ -98,7 +184,7 @@ function isoOrNull(value) {
 /** Arma la respuesta pública: siempre incluye las capacidades conocidas de AGT-003 (en cero si no hay eventos). */
 // `limits` (opcional): topes vigentes por capacidad `{ period, max, source: 'configuration'|'code', version_number }`
 // (configuración aprobada en la plataforma). Sin ellos, los topes conocidos del código/entorno.
-export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(), env = process.env, limits: currentLimits } = {}) {
+export function presentModelUsage({ rows = [], dailyRows = [], alertRows = [], now = new Date(), env = process.env, limits: currentLimits } = {}) {
   const limits = currentLimits || Object.fromEntries(Object.entries(knownModelLimits(env)).map(([capability, limit]) => [capability, { ...limit, source: 'code', version_number: null }]));
   const days = bogotaSeriesDays(now);
   const key = (agentId, capability) => `${agentId}\u0000${capability}`;
@@ -155,6 +241,8 @@ export function presentModelUsage({ rows = [], dailyRows = [], now = new Date(),
     // Veces que se tocó el límite de la suscripción (código de falla *_SESSION_LIMIT) en 7 días, todos los agentes.
     session_limit_7d: [...summaries.values()].reduce((total, item) => total + item.last_7_days.session_limit, 0),
     capabilities: [...summaries.values()].map(item => ({ ...item, daily: [...item.daily.values()] })),
+    // Paso 3: fallas recientes del puente o del modelo por categoría (activas = sin uso exitoso posterior).
+    alerts: presentModelAlerts(alertRows),
   };
 }
 
@@ -173,8 +261,9 @@ export async function readPlatformModelUsage(pool, { now = new Date(), env = pro
     const reference = now.toISOString();
     const summary = await client.query(PLATFORM_MODEL_USAGE_SUMMARY_SQL, [reference]);
     const daily = await client.query(PLATFORM_MODEL_USAGE_DAILY_SQL, [reference]);
+    const alerts = await client.query(PLATFORM_MODEL_ALERTS_SQL, [reference]);
     await client.query('commit');
-    return presentModelUsage({ rows: summary.rows || [], dailyRows: daily.rows || [], now, env, limits });
+    return presentModelUsage({ rows: summary.rows || [], dailyRows: daily.rows || [], alertRows: alerts.rows || [], now, env, limits });
   } catch (error) {
     failed = error;
     await client.query('rollback').catch(() => {});

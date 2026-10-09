@@ -248,7 +248,7 @@ for (const [claimStatus, expectedStatus] of [['in_progress', 409], ['quota', 429
     error => {
       assert.equal(error?.status, 503);
       assert.equal(error?.code, 'VIGIA_COPILOT_SESSION_LIMIT');
-      assert.equal(error?.message, 'Vig-IA alcanzó temporalmente el límite de sesión. Intente de nuevo más tarde.');
+      assert.equal(error?.message, 'Vig-IA alcanzó por ahora el límite de uso del servicio de IA. Ya quedó registrado para el equipo de IT. Intenta de nuevo en un rato.', 'Paso 3: mensaje en lenguaje común de la categoría "límite de la suscripción"');
       assert.equal(error.message.includes('detalle libre'), false);
       return true;
     },
@@ -263,7 +263,8 @@ for (const [claimStatus, expectedStatus] of [['in_progress', 409], ['quota', 429
 // claim reservado y el siguiente click puede reclamar la misma clave.
 for (const [providerCode, expectedCode, expectedMessage] of [
   ['AGT003_BRIDGE_BUSY', 'VIGIA_COPILOT_SATURATED', 'Vig-IA no tiene capacidad disponible.'],
-  ['AGT003_BRIDGE_AUTH_INVALID', 'VIGIA_COPILOT_NOT_CONFIGURED', 'Vig-IA no está configurado.'],
+  // Paso 3: el puente rechaza la conexión del CRM → "sin conexión con el servicio de IA" en lenguaje común.
+  ['AGT003_BRIDGE_AUTH_INVALID', 'VIGIA_COPILOT_NOT_CONFIGURED', 'Vig-IA no está disponible por ahora: no logró comunicarse con el servicio de IA. Ya quedó registrado para el equipo de IT. Intenta de nuevo en unos minutos.'],
 ]) {
   let claimedKey;
   let released;
