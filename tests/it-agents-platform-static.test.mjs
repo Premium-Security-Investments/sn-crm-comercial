@@ -24,12 +24,12 @@ const presentation = read('../src/platform/agentsPresentation.ts');
 
 const profile = (role, permissions) => ({ id: `${role}-1`, role, active: true, permissions });
 
-test('el menú tiene el grupo IT después de Administración con el ítem Agentes', () => {
+test('el menú tiene el grupo IT antes de Administración (que va al final) con el ítem Agentes', () => {
   const adminIdx = nav.indexOf("title: 'Administración'");
   const itIdx = nav.indexOf("title: 'IT'");
-  assert.ok(adminIdx > -1 && itIdx > adminIdx, 'IT va después de Administración');
+  assert.ok(itIdx > -1 && adminIdx > itIdx, 'IT va antes de Administración');
   assert.ok(nav.indexOf("{ href: '#/agents', label: 'Agentes', page: 'agents' }") > itIdx);
-  assert.match(nav, /title: 'Gerencia' \| 'Comercial' \| 'Licitaciones' \| 'Administración' \| 'IT';/);
+  assert.match(nav, /title: 'Gerencia' \| 'Comercial' \| 'Licitaciones' \| 'IT' \| 'Administración';/);
   assert.match(nav, /\| 'agents';/, 'agents es una página de NavRoutePage');
   assert.equal(moduleActionForPage('agents'), 'modulo_usuarios');
 });
@@ -38,7 +38,7 @@ test('sólo quien administra usuarios ve y abre Agentes; solo consulta nunca', (
   const admin = profile('admin', ['modulo_usuarios']);
   assert.equal(canAccessRoute(admin, 'agents'), true);
   const groups = getVisibleNavGroups(admin);
-  assert.deepEqual(groups.map(group => group.title).slice(-2), ['Administración', 'IT']);
+  assert.deepEqual(groups.map(group => group.title).slice(-2), ['IT', 'Administración']);
   assert.deepEqual(groups.find(group => group.title === 'IT').items, [{ href: '#/agents', label: 'Agentes', page: 'agents' }]);
 
   const adminWithoutUsers = profile('admin', ['modulo_siio_gerencial', 'modulo_oportunidades']);

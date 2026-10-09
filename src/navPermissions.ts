@@ -34,7 +34,7 @@ export type NavRoutePage =
   | 'agents';
 
 export type NavItem = { href: string; label: string; page: NavRoutePage };
-export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Administración' | 'IT'; items: NavItem[] };
+export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'IT' | 'Administración'; items: NavItem[] };
 
 type NavGroupDefinition = {
   title: NavGroup['title'];
@@ -67,6 +67,9 @@ const navGroups: readonly NavGroupDefinition[] = [
       // Prioridades Comerciales (#/alerts) salió del menú: su motor alimenta el Dashboard comercial y el orden
       // "por urgencia" de Oportunidades. La ruta sigue abierta para enlaces directos.
       { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },
+      // Metas comerciales (decisión de Juan, 2026-10-09: va en Comercial, no en Administración). En el menú sólo la ve
+      // quien carga metas; el comercial llega a su meta desde Mi día.
+      { href: '#/goals', label: 'Cargar metas', page: 'goals' },
     ],
   },
   {
@@ -76,18 +79,17 @@ const navGroups: readonly NavGroupDefinition[] = [
     ],
   },
   {
-    title: 'Administración',
-    items: [
-      // Antes "Metas y cumplimiento": en el menú sólo lo ve quien carga metas; el comercial llega a su meta desde Mi día.
-      { href: '#/goals', label: 'Cargar metas', page: 'goals' },
-      { href: '#/users', label: 'Usuarios y permisos', page: 'users' },
-    ],
-  },
-  {
     title: 'IT',
     items: [
       // Vista visual de la Plataforma de Agentes y casa de Vig-IA IT; sólo para quien administra usuarios.
       { href: '#/agents', label: 'Agentes', page: 'agents' },
+    ],
+  },
+  {
+    // Administración va al final del menú (decisión de Juan, 2026-10-09).
+    title: 'Administración',
+    items: [
+      { href: '#/users', label: 'Usuarios y permisos', page: 'users' },
     ],
   },
 ];

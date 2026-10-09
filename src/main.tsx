@@ -516,7 +516,7 @@ function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
 function areaFor(route: Route) {
   if (route.page === 'siio') return 'Gerencia';
   if (route.page === 'tenders') return 'Licitaciones';
-  if (route.page === 'goals' || route.page === 'users') return 'Administración';
+  if (route.page === 'users') return 'Administración';
   if (route.page === 'agents') return 'IT';
   return 'Comercial';
 }
