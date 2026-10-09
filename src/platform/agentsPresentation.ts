@@ -42,9 +42,9 @@ export function agentStateTone(state: string | null | undefined): AgentStateTone
 }
 
 export const AGENT_COUNT_LABELS = Object.freeze({
-  policy_versions: 'Reglas de permisos',
-  configuration_versions: 'Versiones de configuración',
-  open_runs: 'Actividad registrada',
+  policy_versions: 'Permisos',
+  configuration_versions: 'Configuraciones',
+  open_runs: 'Actividad',
 });
 
 export const UPCOMING_PLATFORM_VIEWS: readonly string[] = Object.freeze([

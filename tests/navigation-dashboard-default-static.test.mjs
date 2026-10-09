@@ -10,7 +10,7 @@ assert.match(main, /getVisibleNavGroups\(currentProfile\)[\s\S]{0,420}group\.ite
 const navRenderer = main.slice(main.indexOf('function Nav('), main.indexOf('function RouterView'));
 assert.doesNotMatch(navRenderer, /href="#\/(?:dashboard2|alerts|opportunities|goals|users|tenders|agents)/, 'El renderer del sidebar no debe tener enlaces de producto hardcoded.');
 
-const expectedGroups = ['Gerencia', 'Comercial', 'Licitaciones', 'Administración', 'IT'];
+const expectedGroups = ['Gerencia', 'Comercial', 'Licitaciones', 'IT', 'Administración'];
 let lastGroupIndex = -1;
 for (const group of expectedGroups) {
   const idx = nav.indexOf(`title: '${group}'`);
@@ -22,10 +22,10 @@ const expectedItems = [
   ["#/siio", 'Torre de Control', 'siio'],
   ["#/dashboard2", 'Dashboard', 'dashboard2'],
   ["#/opportunities", 'Oportunidades', 'opportunities'],
-  ["#/tenders?view=radar", 'Radar', 'tenders'],
   ["#/goals", 'Cargar metas', 'goals'],
-  ["#/users", 'Usuarios y permisos', 'users'],
+  ["#/tenders?view=radar", 'Radar', 'tenders'],
   ["#/agents", 'Agentes', 'agents'],
+  ["#/users", 'Usuarios y permisos', 'users'],
 ];
 let lastItemIndex = -1;
 for (const [href, label, page] of expectedItems) {

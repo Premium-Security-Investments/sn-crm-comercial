@@ -47,7 +47,7 @@ export function AgentsView() {
         <header>
           <div>
             <h3>{agent.name}</h3>
-            <small>{agent.id}{agent.namespace ? ` · ${agent.namespace}` : ''}</small>
+            <small>{agent.id}</small>
           </div>
           <Badge tone={agentStateTone(agent.state)}>{agentStateLabel(agent.state)}</Badge>
         </header>
