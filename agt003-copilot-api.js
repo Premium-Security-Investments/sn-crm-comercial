@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ACTIONS, requireAction } from './access-control.js';
 import { buildAgt003CopilotRequest } from './agt003-copilot-input.js';
+import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, copilotQuotaMessage } from './agt003-ai-quota.js';
 import {
   computeAgt003CopilotIdempotencyKey,
   computeAgt003CopilotRetryKey,
@@ -117,9 +118,12 @@ function resultPayload(run, reused) {
   };
 }
 
-function claimError(status) {
+function claimError(status, scope = 'team', quota = null) {
   if (status === 'in_progress') return publicError('Vig-IA ya está procesando este snapshot.', 409, 'VIGIA_COPILOT_IN_PROGRESS');
-  if (status === 'quota') return publicError('La cuota diaria de Vig-IA está agotada.', 429, 'VIGIA_COPILOT_QUOTA');
+  if (status === 'quota' && scope === 'actor') {
+    return publicError(copilotQuotaMessage('actor', quota?.actor?.per || 'day'), 429, 'VIGIA_COPILOT_PERSONAL_QUOTA');
+  }
+  if (status === 'quota') return publicError(copilotQuotaMessage('team', quota?.team?.per || 'day'), 429, 'VIGIA_COPILOT_QUOTA');
   if (status === 'saturated') return publicError('Vig-IA no tiene capacidad disponible.', 503, 'VIGIA_COPILOT_SATURATED');
   return publicError('No fue posible reservar la ejecución Vig-IA.', 503, 'VIGIA_COPILOT_UNAVAILABLE');
 }
@@ -196,7 +200,17 @@ export function createAgt003CopilotApi(dependencies) {
         throw publicError('Vig-IA no está configurado.', 503, 'VIGIA_COPILOT_NOT_CONFIGURED');
       }
 
-      const config = dependencies.getConfig();
+      // Configuración vigente de la plataforma (modelo, encendida/apagada, cupos del equipo y de la persona). Sin
+      // `resolvePolicy` (o si devuelve null) se conserva el comportamiento anterior: modelo y tope diario del entorno.
+      const policy = typeof dependencies.resolvePolicy === 'function' ? await dependencies.resolvePolicy({ profile }) : null;
+      const baseConfig = dependencies.getConfig();
+      const config = policy?.model ? { ...baseConfig, model: policy.model } : baseConfig;
+      if (policy && policy.enabled === false) {
+        if (typeof dependencies.recordRejection === 'function') {
+          try { await dependencies.recordRejection({ failureCode: AGT003_CAPABILITY_DISABLED_CODE, model: config.model, correlationId: correlationId() }); } catch { /* mejor esfuerzo */ }
+        }
+        throw publicError(AGT003_CAPABILITY_DISABLED_MESSAGE, 503, AGT003_CAPABILITY_DISABLED_CODE);
+      }
       const [context, approvedAssets] = await Promise.all([
         dependencies.loadOpportunityContext(opportunityId),
         dependencies.loadApprovedAssets(),
@@ -230,6 +244,7 @@ export function createAgt003CopilotApi(dependencies) {
           dailyMaxRuns: config.dailyMaxRuns,
           maxConcurrent: config.maxConcurrent,
           leaseSeconds: config.leaseSeconds,
+          ...(policy?.quota ? { actorId: profile.id, quota: policy.quota } : {}),
         });
         if (claim.status !== 'existing') break;
 
@@ -244,10 +259,10 @@ export function createAgt003CopilotApi(dependencies) {
         idempotencyKey = computeAgt003CopilotRetryKey({ previousKey: idempotencyKey, failedRunId: existing.run_id });
       }
       if (claim?.status !== 'claimed') {
-        const rejection = claimError(claim?.status);
-        // Puerta única de modelos: el tope diario y la saturación quedan como `rejected`, sin llamar al modelo.
+        const rejection = claimError(claim?.status, claim?.scope, policy?.quota);
+        // Puerta única de modelos: los cupos (equipo o persona) y la saturación quedan como `rejected`, sin llamar al modelo.
         if (typeof dependencies.recordRejection === 'function'
-          && (rejection.code === 'VIGIA_COPILOT_QUOTA' || rejection.code === 'VIGIA_COPILOT_SATURATED')) {
+          && ['VIGIA_COPILOT_QUOTA', 'VIGIA_COPILOT_PERSONAL_QUOTA', 'VIGIA_COPILOT_SATURATED'].includes(rejection.code)) {
           try { await dependencies.recordRejection({ failureCode: rejection.code, model: config.model, correlationId: idempotencyKey }); } catch { /* mejor esfuerzo */ }
         }
         throw rejection;
@@ -255,7 +270,7 @@ export function createAgt003CopilotApi(dependencies) {
 
       let terminalRecorded = false;
       try {
-        const generated = await dependencies.createRuntime().draft(request, { idempotencyKey });
+        const generated = await dependencies.createRuntime({ model: config.model }).draft(request, { idempotencyKey });
         const run = await dependencies.recordRun({
           opportunityId,
           actorId: profile.id,

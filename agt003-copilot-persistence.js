@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { validateAgt003CopilotRequest, validateAgt003CopilotResponse } from './agt003-copilot-contract.js';
+import { claimCopilotRunWithQuota } from './agt003-ai-quota.js';
 
 const IDEMPOTENCY_KEY = /^[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -56,20 +57,31 @@ export function computeAgt003CopilotRetryKey({ previousKey, failedRunId }) {
   return createHash('sha256').update(`agt003-copilot-retry\0${key}\0${runId}`).digest('hex');
 }
 
-export async function claimAgt003CopilotRun(database, { idempotencyKey, dailyMaxRuns, maxConcurrent, leaseSeconds }) {
+// Con `quota` (configuración vigente de la plataforma: cupo del equipo y por persona en hora de Bogotá) usa la reserva
+// v2 (migración 117) y, si no está aplicada, la original con el tope del equipo (ver agt003-ai-quota.js). Sin `quota`
+// conserva la reserva original con `dailyMaxRuns`.
+export async function claimAgt003CopilotRun(database, { idempotencyKey, dailyMaxRuns, maxConcurrent, leaseSeconds, actorId, quota }) {
   const key = requireIdempotencyKey(idempotencyKey);
-  requirePositiveLimits([dailyMaxRuns, maxConcurrent, leaseSeconds]);
-  const result = unwrapRpc(await database.rpc('psi_claim_agt003_copilot_run', {
-    p_idempotency_key: key,
-    p_daily_max_runs: dailyMaxRuns,
-    p_max_concurrent: maxConcurrent,
-    p_lease_seconds: leaseSeconds,
-  }), 'La reserva Vig-IA');
+  let result;
+  if (quota) {
+    requirePositiveLimits([maxConcurrent, leaseSeconds]);
+    result = await claimCopilotRunWithQuota(database, { idempotencyKey: key, actorId, quota, maxConcurrent, leaseSeconds });
+    if (result == null) throw new Error('La reserva Vig-IA no devolvió un resultado.');
+  } else {
+    requirePositiveLimits([dailyMaxRuns, maxConcurrent, leaseSeconds]);
+    result = unwrapRpc(await database.rpc('psi_claim_agt003_copilot_run', {
+      p_idempotency_key: key,
+      p_daily_max_runs: dailyMaxRuns,
+      p_max_concurrent: maxConcurrent,
+      p_lease_seconds: leaseSeconds,
+    }), 'La reserva Vig-IA');
+  }
   if (!['claimed', 'existing', 'in_progress', 'quota', 'saturated'].includes(result?.status)) throw new Error('La reserva Vig-IA devolvió un estado inválido.');
   if (result.status === 'claimed') {
     if (typeof result.claim_id !== 'string' || !result.claim_id) throw new Error('La reserva Vig-IA no devolvió su identificador.');
     return { status: result.status, claim_id: result.claim_id };
   }
+  if (result.status === 'quota' && quota) return { status: 'quota', scope: result.scope === 'actor' ? 'actor' : 'team' };
   return { status: result.status };
 }
 

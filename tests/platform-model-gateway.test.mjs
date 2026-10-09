@@ -285,8 +285,11 @@ test('cableado: copiloto y análisis profundo envuelven el cliente del puente co
   assert.ok(lead.includes('client: bridge, capability: AGT003_LEAD_ANALYSIS_CAPABILITY'));
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
   assert.ok(server.includes("recordRejection: ({ failureCode, model, correlationId }) => recordModelRejection({ capability: AGT003_COPILOT_CAPABILITY, model, failureCode, correlationId })"));
-  const quota = server.slice(server.indexOf("if (claim?.status === 'quota') {"), server.indexOf("error.code = 'AGT003_LEAD_ANALYSIS_QUOTA'"));
-  assert.ok(quota.includes("await recordModelRejection({ capability: AGT003_LEAD_ANALYSIS_CAPABILITY"), 'el tope mensual se registra como rechazo');
+  const quotaStart = server.indexOf("if (claim?.status === 'quota') {");
+  const quota = server.slice(quotaStart, server.indexOf('error.code = code; throw error;', quotaStart));
+  assert.ok(quotaStart > 0 && quota.length > 0);
+  assert.ok(quota.includes("await recordModelRejection({ capability: AGT003_LEAD_ANALYSIS_CAPABILITY"), 'el cupo agotado (equipo o persona) se registra como rechazo');
+  assert.ok(quota.includes("'AGT003_LEAD_ANALYSIS_PERSONAL_QUOTA' : 'AGT003_LEAD_ANALYSIS_QUOTA'"), 'códigos distintos para persona y equipo');
   const gateway = readFileSync(new URL('../platform-model-gateway.js', import.meta.url), 'utf8');
   assert.ok(gateway.includes('env.PLATFORM_GATEWAY_DATABASE_URL'));
   assert.ok(gateway.includes('ssl: platformSslConfig(env)'), 'SSL obligatorio');

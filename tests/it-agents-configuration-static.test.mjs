@@ -15,6 +15,7 @@ const presentation = read('../src/platform/agentsPresentation.ts');
 
 const NEW_ROUTES = [
   'GET /api/platform/agent-configuration',
+  'GET /api/platform/ai-usage-profiles',
   'POST /api/platform/agent-configuration/proposals',
   'POST /api/platform/agent-configuration/versions/:id/approve',
   'POST /api/platform/agent-configuration/versions/:id/reject',
@@ -31,7 +32,7 @@ test('rutas nuevas en HTTP_ACTION_MATRIX con la protección de Usuarios y permis
   assert.match(serverSource, /async function requirePlatformConfigurationAdmin\(req\) \{\n  const \{ profile: currentProfile \} = await getAuthContext\(req\);\n  requireModuleAction\(currentProfile, 'users'\);\n  requireAction\(currentProfile, ACTIONS\.USERS_MANAGE, \{\}\);\n  return currentProfile;\n\}/);
   const block = serverSource.slice(serverSource.indexOf("app.get('/api/platform/agent-configuration'"), serverSource.indexOf("app.all('/api/platform/ai-usage-profiles/:id/archive'"));
   const handlers = block.match(/app\.(get|post)\('[^']+', async \(req, res\) => \{\n  try \{\n    (const currentProfile = )?await requirePlatformConfigurationAdmin\(req\);/g) || [];
-  assert.equal(handlers.length, 5, 'cada ruta empieza por la protección');
+  assert.equal(handlers.length, 6, 'cada ruta empieza por la protección (incluida la lectura de perfiles de uso para Usuarios y permisos)');
   assert.doesNotMatch(block, /req\.body\??\.(proposed_by|approved_by|rejected_by|activated_by|created_by|archived_by)/, 'quien firma nunca sale del cuerpo');
   assert.equal((block.match(/actorNameFromProfile\(currentProfile\)/g) || []).length, 4, 'propuesta, acciones de versión, crear y archivar firman con el perfil autenticado');
   assert.doesNotMatch(block, /error\.message \|\| String\(error\)/, 'sin mensajes crudos de la base');

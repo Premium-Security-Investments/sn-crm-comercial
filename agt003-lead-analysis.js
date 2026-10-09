@@ -124,8 +124,10 @@ export function buildLeadAnalysisInput({ opportunity, ownerName, services, inter
 }
 
 /** Ejecuta el análisis por el puente de Vig-IA. Devuelve { output, usage, model, costUsd }. */
-export async function runLeadAnalysis({ input, idempotencyKey, environment = process.env, client: injectedClient, recordUsage } = {}) {
-  const config = getAgt003CopilotRuntimeConfig(environment);
+// `model` (opcional): el modelo aprobado en la Plataforma de Agentes; sin él, el del entorno.
+export async function runLeadAnalysis({ input, idempotencyKey, environment = process.env, client: injectedClient, recordUsage, model } = {}) {
+  const baseConfig = getAgt003CopilotRuntimeConfig(environment);
+  const config = typeof model === 'string' && model.trim() ? { ...baseConfig, model: model.trim() } : baseConfig;
   const bridge = injectedClient || (() => {
     const resolved = resolveAgt003BridgeConnection(environment);
     return createAgt003CopilotBridgeClient({ url: resolved.bridgeUrl, hmacSecret: resolved.hmacSecret, wireProtocol: config.wireProtocol });

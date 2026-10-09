@@ -494,6 +494,11 @@ function readerPool(env) {
   return testPools?.reader || getPlatformPool(env);
 }
 
+/** Pool de lectura de la plataforma (o el doble de pruebas). Lo usan otros lectores de sólo lectura. */
+export function platformConfigurationReaderPool(env = process.env) {
+  return readerPool(env);
+}
+
 export function hasPlatformAdminConnection(env = process.env) {
   return Boolean(testPools?.admin) || Boolean(platformConnectionString(env.PLATFORM_ADMIN_DATABASE_URL));
 }
@@ -524,7 +529,7 @@ export function getPlatformAdminPool(env = process.env) {
   return pool;
 }
 
-async function readOnly(pool, label, work) {
+export async function readOnly(pool, label, work) {
   let client;
   try {
     client = await pool.connect();
@@ -547,6 +552,15 @@ async function readOnly(pool, label, work) {
   } finally {
     client.release(failed ? true : undefined);
   }
+}
+
+/** Perfiles de uso de IA no archivados (sólo lectura), para el campo "Perfil de uso de IA" de Usuarios y permisos. */
+export async function readActiveAiUsageProfiles({ env = process.env } = {}) {
+  return readOnly(readerPool(env), 'platform_ai_usage_profiles_unavailable', async client => {
+    const result = await client.query(PLATFORM_AI_USAGE_PROFILES_SQL);
+    return (result.rows || []).map(presentAiUsageProfile).filter(profile => !profile.archived_at && isValidProfileId(profile.profile_id))
+      .map(profile => ({ profile_id: profile.profile_id, display_name: profile.display_name }));
+  });
 }
 
 /** Lee versiones y perfiles de uso (sólo lectura). */

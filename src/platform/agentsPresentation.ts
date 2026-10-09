@@ -75,7 +75,7 @@ export type ModelUsageCapability = {
   agent_id: string;
   capability: string;
   label: string;
-  limit: { period: 'day' | 'month'; max: number } | null;
+  limit: { period: 'day' | 'month'; max: number; source?: 'configuration' | 'code'; version_number?: number | null; enabled?: boolean } | null;
   today: number;
   month: number;
   last_7_days: { completed: number; failed: number; rejected: number; quota_rejected?: number; session_limit?: number };
@@ -88,6 +88,8 @@ export type ModelUsageCapability = {
 
 export type ModelUsagePayload = {
   generated_at: string;
+  /** Día de referencia de "hoy" (YYYY-MM-DD, hora de Bogotá). */
+  today?: string;
   has_data: boolean;
   cost_note: string;
   session_limit_7d?: number;
@@ -110,6 +112,20 @@ export function usageAgainstLimit(item: ModelUsageCapability) {
   const percent = Math.min(100, Math.round((used / item.limit.max) * 100));
   const tone: 'green' | 'amber' | 'danger' = percent >= 100 ? 'danger' : percent >= 80 ? 'amber' : 'green';
   return { used, max: item.limit.max, percent, tone, periodLabel: item.limit.period === 'day' ? 'hoy' : 'este mes' };
+}
+
+/** De dónde sale el tope: la versión vigente aprobada en la plataforma o los valores del código. */
+export function limitSourceText(limit: ModelUsageCapability['limit']) {
+  if (!limit) return '';
+  if (limit.source === 'configuration') return limit.version_number ? `configuración vigente (versión ${limit.version_number})` : 'configuración vigente';
+  return 'valores del código (sin versión aprobada)';
+}
+
+/** "9 oct 2026, hora Bogotá" a partir de YYYY-MM-DD. */
+export function bogotaDayText(day?: string) {
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+  const date = new Date(`${day}T12:00:00Z`);
+  return `${new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date)}, hora Bogotá`;
 }
 
 export function formatLatency(ms: number | null) {

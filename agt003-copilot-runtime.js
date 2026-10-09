@@ -78,8 +78,11 @@ export function getAgt003CopilotRuntimeConfig(environment = process.env) {
   };
 }
 
-export function createAgt003CopilotRuntime({ environment = process.env, countDailyRuns, recordUsage } = {}) {
-  const config = getAgt003CopilotRuntimeConfig(environment);
+// `model` (opcional): el modelo aprobado en la Plataforma de Agentes (lista cerrada, ver agt003-ai-quota.js). Sin él,
+// el del entorno.
+export function createAgt003CopilotRuntime({ environment = process.env, countDailyRuns, recordUsage, model } = {}) {
+  const baseConfig = getAgt003CopilotRuntimeConfig(environment);
+  const config = typeof model === 'string' && model.trim() ? { ...baseConfig, model: model.trim() } : baseConfig;
   const resolved = resolveAgt003BridgeConnection(environment);
   // Puerta única de modelos: cada llamada al puente deja un evento de uso (sólo metadatos) en la plataforma.
   const client = createModelGatewayClient({
