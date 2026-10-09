@@ -5,6 +5,7 @@ import { Badge, EmptyState, Panel } from '../siio/SiioUi';
 import {
   AGENT_DETAIL_TABS,
   AGENT_OWNER_PENDING,
+  agentModelAlerts,
   agentStateLabel,
   agentStateTone,
   versionLabel,
@@ -17,6 +18,7 @@ import {
 import { DEFAULT_SAFETY_MAX, buildConfiguration, formFromConfiguration, newExceptionKey, validateForms, type CapabilityForm } from './agentConfigForm';
 import { AdminNotConnected, HistoryView, fmtDateTime } from './ConfigurationViews';
 import { ModelUsageSection } from './ModelUsageSection';
+import { ModelAlertsPanel } from './ModelAlerts';
 import { runPlatformAction, type Loadable } from './usePlatformData';
 
 function messageOf(error: unknown) { return error instanceof Error ? error.message : String(error); }
@@ -229,6 +231,7 @@ export function AgentDetail({ agentId, agents, usage, config, agentNames, onDone
         {AGENT_DETAIL_TABS.map(item => <button key={item.id} type="button" className={tab === item.id ? 'active' : ''} aria-current={tab === item.id ? 'page' : undefined} onClick={() => setTab(item.id)}>{item.label}</button>)}
       </nav>
       {message && <div className="notice" role="status">{message}</div>}
+      <ModelAlertsPanel alerts={agentModelAlerts(usage.status === 'ready' ? usage.data : null, agent.id)} title="Avisos: fallas recientes de la IA" />
       {tab === 'profile' && <Panel title="Ficha">
         <p><Badge tone={agentStateTone(agent.state)}>{agentStateLabel(agent.state)}</Badge></p>
         <EmptyState title="Ficha en construcción (Fase 1)" text="Aquí irán el propósito, el dueño y los límites del agente." />

@@ -8,6 +8,7 @@ import { safeOfficialFetch } from './safe-official-fetch.js';
 import { createAgt003CopilotBridgeClient } from './agt003-copilot-bridge-client.js';
 import { getAgt003CopilotRuntimeConfig, resolveAgt003BridgeConnection } from './agt003-copilot-runtime.js';
 import { AGT003_LEAD_ANALYSIS_CAPABILITY, createModelGatewayClient } from './platform-model-gateway.js';
+import { classifyAgt003ModelFailure } from './src/vigia/model-failures.js';
 import {
   LEAD_ANALYSIS_OUTPUT_SCHEMA, leadAnalysisProfileFingerprint, validateLeadAnalysisOutput, estimateLeadAnalysisCostUsd,
 } from './src/vigia/lead-analysis.js';
@@ -134,7 +135,8 @@ export async function runLeadAnalysis({ input, idempotencyKey, environment = pro
   })();
   // Puerta única de modelos: registra el uso (sólo metadatos) sin cambiar el resultado ni los errores del puente.
   const client = createModelGatewayClient({
-    client: bridge, capability: AGT003_LEAD_ANALYSIS_CAPABILITY, env: environment, ...(recordUsage ? { recordUsage } : {}),
+    client: bridge, capability: AGT003_LEAD_ANALYSIS_CAPABILITY, env: environment, classifyFailure: classifyAgt003ModelFailure,
+    ...(recordUsage ? { recordUsage } : {}),
   });
   const result = await client.run({
     model: config.model, policy: LEAD_ANALYSIS_POLICY, input, outputSchema: LEAD_ANALYSIS_OUTPUT_SCHEMA,

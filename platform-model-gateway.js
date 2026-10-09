@@ -158,9 +158,38 @@ export async function recordModelUsage(event, { env = process.env, pool, timeout
   }
 }
 
+// Idempotencia de fallas (Paso 3): una misma falla (capacidad + código + correlación) reportada dos veces dentro de 60 s
+// se registra una sola vez por proceso. Cada reintento real del CRM usa en general una correlación nueva (clave de retry
+// del copiloto, reserva nueva del análisis profundo); la ventana corta evita perder fallas reales repetidas con la misma
+// correlación (p. ej. un nuevo clic tras un rechazo recuperable del puente). La idempotencia fuerte en la base requiere
+// un índice único en la Plataforma de Agentes (pendiente, ver docs/evidence). Los rechazos y los usos completados no se
+// deduplican: su conteo no cambia respecto del Paso 2.
+export const MODEL_GATEWAY_FAILURE_DEDUP_MS = 60 * 1000;
+const MODEL_GATEWAY_FAILURE_DEDUP_MAX = 500;
+const recentFailures = new Map();
+
+/** true si esta falla ya se registró hace poco (y la marca si no). Sólo eventos `failed` con correlación. */
+export function isDuplicateFailureEvent(event, nowMs = Date.now()) {
+  if (event?.status !== 'failed' || !event.correlation_id) return false;
+  for (const [key, at] of recentFailures) {
+    if (nowMs - at <= MODEL_GATEWAY_FAILURE_DEDUP_MS && recentFailures.size <= MODEL_GATEWAY_FAILURE_DEDUP_MAX) break;
+    recentFailures.delete(key);
+  }
+  const key = `${event.agent_id}|${event.capability}|${event.failure_code}|${event.correlation_id}`;
+  const seen = recentFailures.get(key);
+  if (seen !== undefined && nowMs - seen <= MODEL_GATEWAY_FAILURE_DEDUP_MS) return true;
+  recentFailures.delete(key);
+  recentFailures.set(key, nowMs);
+  return false;
+}
+
+export function __resetModelGatewayFailureDedupForTests() { recentFailures.clear(); }
+
 async function safeRecord(recordUsage, fields) {
   try {
-    await recordUsage(buildModelUsageEvent(fields));
+    const event = buildModelUsageEvent(fields);
+    if (isDuplicateFailureEvent(event)) return;
+    await recordUsage(event);
   } catch {
     console.warn('platform_model_usage_not_recorded', { capability: fields?.capability || null, status: fields?.status || null, code: 'build' });
   }
@@ -175,8 +204,11 @@ export async function recordModelRejection({ capability, model, failureCode, cor
 /**
  * Envuelve un cliente del puente (`{ run }`). El resultado y los errores del puente se devuelven tal cual.
  * `recordUsage(event)` permite inyectar un doble en pruebas.
+ * `classifyFailure(error)` (Paso 3, opcional): devuelve el código estable de la categoría de falla (p. ej. los
+ * `AGT003_*` de src/vigia/model-failures.js) o null; con null, o sin clasificador, se registra el código del puente
+ * normalizado, como en el Paso 1. Los rechazos (puente ocupado) nunca se reclasifican.
  */
-export function createModelGatewayClient({ client, capability, agentId = AGT003_AGENT_ID, env = process.env, recordUsage, now = () => Date.now() } = {}) {
+export function createModelGatewayClient({ client, capability, agentId = AGT003_AGENT_ID, env = process.env, recordUsage, classifyFailure, now = () => Date.now() } = {}) {
   if (!client || typeof client.run !== 'function') throw new Error('La puerta de modelos requiere un cliente con run().');
   if (typeof capability !== 'string' || !CAPABILITY.test(capability)) throw new Error('Capacidad de modelo no válida.');
   const record = recordUsage || (event => recordModelUsage(event, { env }));
@@ -190,10 +222,19 @@ export function createModelGatewayClient({ client, capability, agentId = AGT003_
         result = await client.run(options);
       } catch (error) {
         const code = normalizeFailureCode(error?.code);
+        const rejected = MODEL_GATEWAY_REJECTION_CODES.has(code);
+        let category = null;
+        if (!rejected && typeof classifyFailure === 'function') {
+          try { category = classifyFailure(error); } catch { category = null; }
+          // El libro guarda la categoría; el código original queda sólo en el registro del servidor (sin contenido).
+          if (category && normalizeFailureCode(category) !== code) {
+            console.warn('platform_model_failure_classified', { capability, category: normalizeFailureCode(category), code, correlation_id: safeCorrelationId(options?.idempotencyKey) });
+          }
+        }
         await safeRecord(record, {
           ...base,
-          status: MODEL_GATEWAY_REJECTION_CODES.has(code) ? 'rejected' : 'failed',
-          failureCode: code,
+          status: rejected ? 'rejected' : 'failed',
+          failureCode: category ? normalizeFailureCode(category) : code,
           latencyMs: now() - startedAt,
         });
         throw error;

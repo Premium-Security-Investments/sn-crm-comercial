@@ -86,8 +86,25 @@ export type ModelUsageCapability = {
   daily: ModelUsagePoint[];
 };
 
+/** Paso 3: falla reciente del puente o del modelo, agrupada por categoría (textos en lenguaje común). */
+export type ModelAlert = {
+  agent_id: string;
+  category: string;
+  title: string;
+  help: string;
+  functions: string[];
+  count_24h: number;
+  count_7d: number;
+  last_at: string;
+  last_success_at: string | null;
+  /** Activo mientras no haya un uso exitoso posterior a la última falla. */
+  active: boolean;
+};
+
 export type ModelUsagePayload = {
   generated_at: string;
+  /** Fallas recientes (7 días) por categoría; activas primero. Ausente en respuestas anteriores al Paso 3. */
+  alerts?: ModelAlert[];
   /** Día de referencia de "hoy" (YYYY-MM-DD, hora de Bogotá). */
   today?: string;
   has_data: boolean;
@@ -231,4 +248,20 @@ export function versionLabel(version: Pick<ConfigurationVersion, 'version_number
 export function agentUsageTotals(usage: ModelUsagePayload | null, agentId: string) {
   const items = (usage?.capabilities || []).filter(item => item.agent_id === agentId);
   return { today: items.reduce((sum, item) => sum + item.today, 0), month: items.reduce((sum, item) => sum + item.month, 0), tracked: items.length > 0 };
+}
+
+/** Avisos de fallas de un agente (o de todos), activos primero. */
+export function agentModelAlerts(usage: ModelUsagePayload | null, agentId?: string): ModelAlert[] {
+  const alerts = Array.isArray(usage?.alerts) ? usage.alerts : [];
+  return agentId ? alerts.filter(alert => alert.agent_id === agentId) : alerts;
+}
+
+/** "3 veces en las últimas 24 h" / "ninguna vez en las últimas 24 h". */
+export function alertCountText(count: number) {
+  if (count <= 0) return 'ninguna vez en las últimas 24 h';
+  return `${count} ${count === 1 ? 'vez' : 'veces'} en las últimas 24 h`;
+}
+
+export function alertStateText(alert: ModelAlert) {
+  return alert.active ? 'Activo: todavía no hay un uso exitoso después de la falla' : 'Resuelto: ya hubo un uso exitoso después';
 }

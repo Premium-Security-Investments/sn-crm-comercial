@@ -10,6 +10,7 @@ import {
   limitsFromEffectiveConfiguration,
   listPlatformModelUsage,
   presentModelUsage,
+  PLATFORM_MODEL_ALERTS_SQL,
 } from '../platform-model-usage.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable } from '../platform-agents.js';
 import { defaultAgentConfiguration } from '../platform-agent-configuration.js';
@@ -106,7 +107,7 @@ test('lee en transacción read only y arma uso por agente+capacidad', async () =
   const pool = fakePool();
   const now = new Date('2026-10-09T15:00:00Z');
   const payload = await listPlatformModelUsage({ pool, now, env: {} });
-  assert.deepEqual(pool.queries.map(query => query.sql), ['begin read only', 'set local statement_timeout = 5000', PLATFORM_MODEL_USAGE_SUMMARY_SQL, PLATFORM_MODEL_USAGE_DAILY_SQL, 'commit']);
+  assert.deepEqual(pool.queries.map(query => query.sql), ['begin read only', 'set local statement_timeout = 5000', PLATFORM_MODEL_USAGE_SUMMARY_SQL, PLATFORM_MODEL_USAGE_DAILY_SQL, PLATFORM_MODEL_ALERTS_SQL, 'commit']);
   assert.deepEqual(pool.queries[2].params, [now.toISOString()]);
   assert.deepEqual(pool.released, [undefined]);
   assert.equal(payload.has_data, true);

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ACTIONS, requireAction } from './access-control.js';
 import { buildAgt003CopilotRequest } from './agt003-copilot-input.js';
 import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, copilotQuotaMessage } from './agt003-ai-quota.js';
+import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from './src/vigia/model-failures.js';
 import {
   computeAgt003CopilotIdempotencyKey,
   computeAgt003CopilotRetryKey,
@@ -139,20 +140,23 @@ function recoverableCode(error) {
 }
 
 // Ninguna de las dos ramas revela el detalle del puente: `BUSY` se presenta como
-// saturación transitoria y `AUTH_INVALID` como problema de configuración local,
-// sin secreto, cabecera firmada ni mensaje upstream.
+// saturación transitoria y `AUTH_INVALID` (el puente no acepta la conexión del
+// CRM) como "sin conexión con el servicio de IA", sin secreto, cabecera firmada
+// ni mensaje upstream.
 function recoverablePublicError(code) {
   if (code === 'AGT003_BRIDGE_BUSY') {
     return publicError('Vig-IA no tiene capacidad disponible.', 503, 'VIGIA_COPILOT_SATURATED');
   }
-  return publicError('Vig-IA no está configurado.', 503, 'VIGIA_COPILOT_NOT_CONFIGURED');
+  return publicError(agt003ModelFailureMessage(AGT003_MODEL_FAILURE.BRIDGE_UNAVAILABLE, 'copilot'), 503, 'VIGIA_COPILOT_NOT_CONFIGURED');
 }
 
-function providerPublicError(code) {
-  if (code === 'AGT003_CLAUDE_SESSION_LIMIT') {
-    return publicError('Vig-IA alcanzó temporalmente el límite de sesión. Intente de nuevo más tarde.', 503, 'VIGIA_COPILOT_SESSION_LIMIT');
-  }
-  return publicError('Vig-IA no pudo generar el borrador.', 502, 'VIGIA_COPILOT_UNAVAILABLE');
+// Plan B "avisar" (Paso 3): mensaje en lenguaje común y distinto por categoría de falla; nunca cambia de modelo ni de
+// proveedor. Los códigos públicos (`VIGIA_COPILOT_SESSION_LIMIT`, `VIGIA_COPILOT_UNAVAILABLE`) no cambian.
+function providerPublicError(code, failureCategory) {
+  const category = classifyAgt003ModelFailure(failureCategory || code) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+  const message = agt003ModelFailureMessage(category, 'copilot');
+  if (category === AGT003_MODEL_FAILURE.SESSION_LIMIT) return publicError(message, 503, 'VIGIA_COPILOT_SESSION_LIMIT');
+  return publicError(message, 502, 'VIGIA_COPILOT_UNAVAILABLE');
 }
 
 function failureUsage(error, model) {
@@ -304,7 +308,7 @@ export function createAgt003CopilotApi(dependencies) {
         } catch {
           // The finally block releases a claim when no terminal row could be recorded.
         }
-        throw providerPublicError(code);
+        throw providerPublicError(code, error?.failureCategory);
       } finally {
         if (!terminalRecorded) {
           try { await dependencies.releaseClaim({ idempotencyKey, claimId: claim.claim_id }); } catch { /* lease expiry is the final fallback */ }
