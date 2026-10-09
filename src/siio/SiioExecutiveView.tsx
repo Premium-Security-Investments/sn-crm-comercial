@@ -5,7 +5,9 @@ import { Badge, EmptyState, Panel, fmtSiioMoney } from './SiioUi';
 import type { SiioBootstrapPayload, SiioRouteState, SiioTrackingKind } from './types';
 
 function formatPeriod(period: string | null | undefined) {
-  return period ? new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${period}T12:00:00Z`)) : 'Sin datos publicados';
+  if (!period) return 'Sin datos publicados';
+  const label = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${period}T12:00:00Z`));
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function formatMetric(value: number | null | undefined, percent = false) {
@@ -54,7 +56,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     </section>
 
     <div className="siio-executive-status">
-      <div><span className="siio-eyebrow">Resumen ejecutivo</span><strong>Información disponible para gestión</strong></div>
+      <div><span className="siio-eyebrow">Resumen ejecutivo</span><strong>Cifras financieras del periodo</strong></div>
       <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
     </div>
 

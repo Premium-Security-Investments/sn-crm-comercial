@@ -137,7 +137,7 @@ const PRODUCT_OPERATIONAL_UNITS_BY_NAME: Record<string, string> = {
 };
 const OPPORTUNITIES_PAGE_SIZE = 25;
 const TENDERS_PAGE_SIZE = 24;
-const ROLE_LABELS: Record<string, string> = { director: 'Directivo', gerencia: 'Gerencia', admin: 'Admin', comercial: 'Comercial', colaborador: 'Colaborador', junta: 'Junta', consulta: 'Directivo de solo consulta' };
+const ROLE_LABELS: Record<string, string> = { director: 'Directivo', gerencia: 'Gerencia', admin: 'Administrador', comercial: 'Comercial', colaborador: 'Colaborador', junta: 'Junta', consulta: 'Directivo de solo consulta' };
 const REGION_ALIAS_CANONICAL: Record<string, string> = {
   'bogota': 'Bogotá', 'bogotá': 'Bogotá', 'distrito capital de bogota': 'Bogotá', 'distrito capital de bogotá': 'Bogotá',
   'medellin': 'Medellín', 'medellín': 'Medellín',
@@ -415,8 +415,8 @@ function App() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [sidebarOpen]);
   useEffect(() => {
-    document.title = route.page === 'siio' ? 'Torre de Control | Plataforma PSI' : 'Seguridad Nacional | Seguimiento Comercial';
-  }, [route.page]);
+    document.title = `${titleFor(route, viewData?.currentProfile || null)} | SIIO · Seguridad Nacional`;
+  }, [route.page, viewData?.currentProfile]);
   const siioShell = route.page === 'siio';
   if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
   if (!session) return <LoginScreen siioMode={siioShell} />;
@@ -442,8 +442,8 @@ function App() {
     <main>
       <header className="topbar">
         <button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}>☰</button>
-        <div><h1>{titleFor(route)}</h1><p>{siioShell ? 'Plataforma PSI · Control gerencial' : 'CRM comercial · Seguridad Nacional'}</p></div>
-        {!siioShell && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
+        <div><h1>{titleFor(route, currentProfile)}</h1><p>SIIO · {areaFor(route)}</p></div>
+        {areaFor(route) === 'Comercial' && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
       </header>
       {loading && <div className="notice">{siioShell ? 'Cargando Torre de Control…' : 'Cargando información comercial…'}</div>}
       {error && <div className="error">{error}</div>}
@@ -492,17 +492,17 @@ function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
     setStatus(error ? error.message : 'Sesión iniciada.');
   };
   const resetPassword = async () => {
-    if (!normalizedEmail) { setStatus('Escribe tu email para enviarte el enlace de recuperación.'); return; }
+    if (!normalizedEmail) { setStatus('Escribe tu correo electrónico para enviarte el enlace de recuperación.'); return; }
     setStatus('Enviando recuperación…');
     const { error } = await supabaseBrowser.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
     setStatus(error ? error.message : 'Te enviamos un enlace para restablecer la clave. Revisa tu correo.');
   };
   return <div className="login-shell">
     <form className="login-card" onSubmit={submit}>
-      <span className="eyebrow">{siioMode ? 'Plataforma PSI' : 'Seguridad Nacional Ltda'}</span>
-      <h1>{siioMode ? 'Ingreso a Torre de Control' : 'Ingreso al CRM Comercial'}</h1>
+      <span className="eyebrow">SIIO · Seguridad Nacional</span>
+      <h1>{siioMode ? 'Ingreso a Torre de Control' : 'Ingreso al SIIO'}</h1>
       <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes y decisiones.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
-      <label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
+      <label>Correo electrónico<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
       <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
       <button>Ingresar</button>
       <button type="button" className="secondary" onClick={resetPassword}>Olvidé mi clave</button>
@@ -510,7 +510,14 @@ function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
     </form>
   </div>;
 }
-function titleFor(route: Route) {
+// Subtítulo de cada pantalla: el área del menú a la que pertenece (decisión de Juan, 2026-10-09).
+function areaFor(route: Route) {
+  if (route.page === 'siio') return 'Gerencia';
+  if (route.page === 'tenders') return 'Licitaciones';
+  if (route.page === 'goals' || route.page === 'users') return 'Administración';
+  return 'Comercial';
+}
+function titleFor(route: Route, profile?: Profile | null) {
   if (route.page === 'opportunities') return 'Oportunidades';
   if (route.page === 'tenders') return 'Licitaciones';
   if (route.page === 'detail') return 'Detalle de oportunidad';
@@ -520,7 +527,7 @@ function titleFor(route: Route) {
   if (route.page === 'dashboard2') return 'Dashboard';
   if (route.page === 'siio') return 'Torre de Control';
   if (route.page === 'consultant') return 'Detalle de consultor';
-  if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
+  if (route.page === 'goals') return canWriteGoals(profile) ? 'Cargar metas' : 'Mis metas';
   if (route.page === 'alerts') return 'Prioridades Comerciales';
   if (route.page === 'centinel') return 'Prioridades Comerciales';
   if (route.page === 'users') return 'Usuarios y permisos';
@@ -699,12 +706,12 @@ function OpportunityList({ data }: { data: Bootstrap }) {
     return map;
   }, new Map<string, { label: string; count: number; value: number }>()).values()).sort((a,b) => b.value - a.value)[0];
   const opportunityInsightCards = [
-    { label: 'Pipeline filtrado', value: fmtMoneyCompact(filteredTotals.pipeline), detail: `${filtered.length} oportunidades · ${filteredTotals.active} activas`, tone: 'blue' },
-    { label: 'Forecast ponderado', value: fmtMoneyCompact(filteredTotals.weighted), detail: filteredTotals.pipeline ? `${Math.round((filteredTotals.weighted / filteredTotals.pipeline) * 100)}% del valor filtrado` : 'Sin valor filtrado', tone: 'green' },
-    { label: 'Ticket promedio', value: fmtMoneyCompact(averageFilteredValue), detail: topFilteredOpportunity ? `Mayor: ${topFilteredOpportunity.company_name}` : 'Sin oportunidades visibles', tone: 'purple' },
+    { label: 'Pipeline filtrado', value: fmtMoneyCompact(filteredTotals.pipeline), detail: filteredTotals.active === filtered.length ? `${filtered.length} oportunidades` : `${filtered.length} oportunidades · ${filteredTotals.active} activas`, tone: 'blue' },
+    { label: 'Valor esperado', value: fmtMoneyCompact(filteredTotals.weighted), detail: filteredTotals.pipeline ? `${Math.round((filteredTotals.weighted / filteredTotals.pipeline) * 100)}% del valor filtrado` : 'Sin valor filtrado', tone: 'green' },
+    { label: 'Ticket promedio', value: fmtMoneyCompact(averageFilteredValue), detail: topFilteredOpportunity ? 'Valor medio por oportunidad' : 'Sin oportunidades visibles', tone: 'purple' },
     { label: 'Clientes nuevos', value: String(filteredTotals.newClients), detail: 'Oportunidades de primera relación', tone: 'blue' },
     { label: 'Clientes actuales', value: String(filteredTotals.currentClients), detail: 'Cuentas existentes o antiguas', tone: 'green' },
-    { label: 'Pendientes clasificar', value: String(filteredTotals.pendingSegment), detail: 'Sin tipo de cliente diligenciado', tone: filteredTotals.pendingSegment ? 'amber' : 'green' },
+    { label: 'Pendientes por clasificar', value: String(filteredTotals.pendingSegment), detail: 'Sin tipo de cliente diligenciado', tone: filteredTotals.pendingSegment ? 'amber' : 'green' },
     { label: 'Etapa dominante', value: stageLeader?.label || 'Sin etapa', detail: stageLeader ? `${stageLeader.count} oportunidades · ${fmtMoneyCompact(stageLeader.value)}` : 'No hay datos con estos filtros', tone: 'purple' },
   ];
   const sortedOpportunities = [...filtered].sort((a,b) => {
@@ -719,11 +726,11 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   const showUrgency = urgencySort && priorities.status === 'ready';
   const pagedOpportunities = sortedOpportunities.slice((opportunitiesPage - 1) * OPPORTUNITIES_PAGE_SIZE, opportunitiesPage * OPPORTUNITIES_PAGE_SIZE);
   return <section className="stack">
-    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button type="button" className={urgencySort ? '' : 'secondary'} aria-pressed={urgencySort} onClick={() => setUrgencySort(current => !current)}>Ordenar por urgencia</button><button className="secondary" onClick={()=>{ setQ(''); setPeriod(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
+    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Periodo"/> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button type="button" className={urgencySort ? '' : 'secondary'} aria-pressed={urgencySort} onClick={() => setUrgencySort(current => !current)}>Ordenar por urgencia</button><button className="secondary" onClick={()=>{ setQ(''); setPeriod(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
     {urgencySort && priorities.status === 'loading' && <p className="muted">Calculando urgencia…</p>}
     {urgencySort && priorities.status === 'error' && <p className="muted">La urgencia no está disponible en este momento; se mantiene el orden actual.</p>}
     <p className="muted filter-summary"><strong>{filtered.length}</strong> de {listBase.length} oportunidades {showTenders ? 'de licitación' : 'comerciales'} visibles.{hiddenTenderCount ? <> Las {hiddenTenderCount} licitaciones públicas se trabajan en <a href="#/tenders?view=oportunidades">Licitaciones</a>.</> : null}</p>
-    <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>Oportunidad líder: {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
+    <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>La mayor: {topFilteredOpportunity.company_name} · {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
     <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/>{showUrgency && <th>Urgencia</th>}</tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDateOnly(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td>{showUrgency && <td>{(() => { const priority = priorities.byId.get(o.id); return priority ? <><Badge tone={priority.level === 'alto' ? 'danger' : priority.level === 'medio' ? 'amber' : 'blue'}>{priorityReason(priority)}</Badge><br/><small>{priority.recommendation}</small></> : <small className="muted">Sin alerta</small>; })()}</td>}</tr>)}</tbody></table></div>
     <Pagination page={opportunitiesPage} pageSize={OPPORTUNITIES_PAGE_SIZE} total={filtered.length} onChange={setOpportunitiesPage} label="Paginación de oportunidades" />
   </section>;
@@ -1996,14 +2003,14 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
       <div className="command-metrics compact-command-kpis pipeline-discipline-grid">
         <a className="clickable-card manager-kpi-card manager-kpi-total" href="#/opportunities?active=all"><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades</span><em>Ver oportunidades →</em></a>
         <a className="clickable-card manager-kpi-card manager-kpi-active" href="#/opportunities"><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} en gestión</span><em>Ver activas →</em></a>
-        <a className="clickable-card manager-kpi-card manager-kpi-forecast" href={managerAlertRoute('managed')}><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{pipelineManagedRows.length} con acción vigente</span><em>Ver gestión vigente →</em></a>
+        <a className="clickable-card manager-kpi-card manager-kpi-forecast" href={managerAlertRoute('managed')}><small>Valor esperado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{pipelineManagedRows.length} con acción vigente</span><em>Ver gestión vigente →</em></a>
         <a className="clickable-card manager-kpi-card manager-kpi-risk" href={managerAlertRoute('risk')}><small>Pipeline en riesgo</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineRiskRows))}</strong><span>{pipelineRiskRows.length} sin control</span><em>Ver riesgo →</em></a>
       </div>
     </section>
 
     <Panel title="Filtros gerenciales">
       <div className="filters manager-dashboard-filters compact-dashboard-filters">
-        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
+        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Periodo"/>
         <input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} />
         <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/>
         <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Regiones"/>
@@ -2884,13 +2891,13 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   return <section className="stack goals-dashboard">
     <section className="executive-hero goals-hero">
       <div>
-        <span className="eyebrow">Metas Comerciales y Cumplimiento</span>
+        <span className="eyebrow">Metas comerciales</span>
         <h2>Presupuesto, gestión y avance acumulado por asesor</h2>
-        <p>{canEditGoals ? 'Consulta gerencial separada de la carga administrativa de metas.' : 'Consulta de tus metas y cumplimiento comercial.'}</p>
+        <p>{canEditGoals ? 'Cargue las metas de cada asesor y revise su avance en el mismo lugar.' : 'Consulta de tus metas y cumplimiento comercial.'}</p>
       </div>
       <div className="hero-facts">
         <div><small>Vista seleccionada</small><strong>{viewOwnerName}</strong></div>
-        <div><small>Período de consulta</small><strong>{monthName(viewMonth)} {viewYear}</strong></div>
+        <div><small>Periodo de consulta</small><strong>{monthName(viewMonth)} {viewYear}</strong></div>
         <div><small>Metas cargadas</small><strong>{data.goals.length}</strong></div>
       </div>
     </section>
@@ -3038,9 +3045,9 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const cancelEdit = () => { setEditingUserId(null); setForm(emptyUserForm); setStatus(''); };
   const submit = async (e: React.FormEvent) => { e.preventDefault(); if (catalogStatus !== 'ready') { setStatus('El catálogo de acceso no está disponible. Espera a que cargue o actualiza la página.'); return; } setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…'); try { const saved = await api<(Profile & { invited?: boolean; access_link?: string | null; auth_warning?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) }); const wasEditing = !!editingUserId; setForm(emptyUserForm); setEditingUserId(null); await load(); const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Correo de acceso enviado.' : ''); const warning = saved.auth_warning ? ` ${saved.auth_warning}` : ''; setStatus(wasEditing ? `Usuario actualizado.${mailStatus}${warning}` : `Usuario/perfil guardado.${mailStatus}${warning}`); } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); } };
   return <section className="stack">
-    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Usuarios y permisos</h2><p>Admin y Gerencia tienen alcance global. Las asignaciones se conservan como contexto administrativo y el servidor siempre valida el acceso efectivo.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
+    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Quién entra y qué puede ver</h2><p>Admin y Gerencia tienen alcance global. Las asignaciones se conservan como contexto administrativo y el servidor siempre valida el acceso efectivo.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
     <div ref={editFormRef} className="users-edit-anchor"><Panel title={editingUserId ? `Editar usuario · ${form.full_name || form.microsoft_email}` : 'Crear usuario'}><form className="form gridform" onSubmit={submit}>
-      <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Email<input type="email" required disabled={Boolean(editingUserId)} title={editingUserId ? 'El email identifica de forma inmutable al usuario; cree un perfil nuevo para otra identidad.' : undefined} value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
+      <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Correo electrónico<input type="email" required disabled={Boolean(editingUserId)} title={editingUserId ? 'El email identifica de forma inmutable al usuario; cree un perfil nuevo para otra identidad.' : undefined} value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
       <label>Rol<Select value={form.role} onChange={changeRole} options={[['comercial','Comercial'],['colaborador','Colaborador'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin'],['junta','Junta'],['consulta','Directivo de solo consulta']]} empty="Rol"/></label>{isReadOnlyRole(form.role) && <p className="muted wide">Solo consulta: ve Dashboard comercial, oportunidades, SIIO y Licitaciones, sin poder crear, editar, decidir ni administrar nada.</p>}
       <fieldset className="access-scope wide"><legend>Alcance por áreas y subáreas</legend><p>Selecciona toda un área o subáreas específicas. Puedes combinar varias áreas.</p><div className="access-scope-grid">{catalog.areas.map(area => { const whole = form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === null); const subareas = catalog.subareas.filter(subarea => subarea.area_code === area.code); return <fieldset className="access-area-card" key={area.code}><legend>{area.name}</legend><label className="checkline"><input type="checkbox" checked={whole} onChange={e => setAreaScope(area.code, null, e.target.checked)}/> Toda el área</label>{subareas.map(subarea => <label className="checkline access-subarea" key={subarea.code}><input type="checkbox" disabled={whole} checked={form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === subarea.code)} onChange={e => setAreaScope(area.code, subarea.code, e.target.checked)}/>{subarea.name}</label>)}</fieldset>; })}</div></fieldset>
       <fieldset className="access-permission wide">

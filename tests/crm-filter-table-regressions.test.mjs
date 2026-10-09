@@ -10,7 +10,7 @@ const opportunity = main.slice(opportunityStart, opportunityEnd);
 assert.match(opportunity, /const \[period, setPeriod\] = useState<DashboardPeriodFilter>\(hashQueryParam\('period'\)/, 'Oportunidades conserva el periodo desde la URL');
 assert.match(opportunity, /matchesDashboardPeriod\(o, period\)/, 'Oportunidades aplica el periodo a filas y métricas');
 assert.match(opportunity, /\[q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, sortConfig\.key, sortConfig\.direction, urgencySort\]/, 'cambiar periodo (o el orden por urgencia) reinicia la paginación');
-assert.match(opportunity, /empty="Período"/, 'Oportunidades renderiza el selector de periodo');
+assert.match(opportunity, /empty="Periodo"/, 'Oportunidades renderiza el selector de periodo');
 assert.match(opportunity, /setPeriod\(''\)/, 'Limpiar restablece el periodo');
 assert.match(styles, /\.filters\.opportunity-filters\.compact-dashboard-filters\{grid-template-columns:minmax\(210px,1\.45fr\) repeat\(5,minmax\(120px,1fr\)\)\}/, 'Oportunidades usa seis columnas explícitas y dos filas con especificidad efectiva');
 assert.match(styles, /@media\(max-width:1240px\)\{\.filters\.opportunity-filters\.compact-dashboard-filters\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}\}/, 'Oportunidades conserva tres columnas en tablet con la misma especificidad');
