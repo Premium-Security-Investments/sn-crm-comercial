@@ -114,7 +114,7 @@ export type ModelUsagePayload = {
 };
 
 export const MODEL_CAPABILITY_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  'agt003.opportunity-copilot.preview': 'Siguiente paso (copiloto)',
+  'agt003.opportunity-copilot.preview': 'Próximo seguimiento',
   'agt003.lead-deep-analysis': 'Análisis profundo',
 });
 

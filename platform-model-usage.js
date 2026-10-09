@@ -139,7 +139,7 @@ export function presentModelAlerts(rows = []) {
 }
 
 export const MODEL_CAPABILITY_LABELS = Object.freeze({
-  [AGT003_COPILOT_CAPABILITY]: 'Siguiente paso (copiloto)',
+  [AGT003_COPILOT_CAPABILITY]: 'Próximo seguimiento',
   [AGT003_LEAD_ANALYSIS_CAPABILITY]: 'Análisis profundo',
 });
 

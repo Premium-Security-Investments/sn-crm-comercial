@@ -1,5 +1,5 @@
 // Migración 120 (escrita, NO aplicada) sobre PostgreSQL aislado (PGlite): una falla del proveedor no consume cupo del
-// "Siguiente paso (copiloto)". La reserva v2 cuenta sólo ejecuciones completadas + reservas vivas; todo lo demás
+// "Próximo seguimiento". La reserva v2 cuenta sólo ejecuciones completadas + reservas vivas; todo lo demás
 // (idempotencia, "en curso", saturación, permisos) queda igual. La reversa vuelve a contar las fallidas.
 import test from 'node:test';
 import assert from 'node:assert/strict';

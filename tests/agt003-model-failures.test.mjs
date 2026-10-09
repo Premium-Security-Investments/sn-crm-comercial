@@ -337,7 +337,7 @@ test('avisos: agrupados por categoría (también códigos crudos del Paso 1), ú
   assert.equal(login.count_24h, 3);
   assert.equal(login.count_7d, 4);
   assert.equal(login.last_at, '2026-10-09T14:30:00.000Z');
-  assert.deepEqual(login.functions, ['Análisis profundo', 'Siguiente paso (copiloto)']);
+  assert.deepEqual(login.functions, ['Análisis profundo', 'Próximo seguimiento']);
   assert.equal(login.title, AGT003_MODEL_FAILURE_IT_TEXT[LOGIN_REQUIRED].title);
   assert.equal(login.active, true);
   assert.equal(login.last_success_at, null);
