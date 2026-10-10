@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": "finanzas-drive",
+      "provider": "google_drive",
+      "enabled": false,
+      "fileId": "",
+      "fileUrl": "",
+      "auth": {
+        "type": "google_refresh",
+        "clientIdEnv": "SIIO_DRIVE_CLIENT_ID",
+        "clientSecretEnv": "SIIO_DRIVE_CLIENT_SECRET",
+        "refreshTokenEnv": "SIIO_DRIVE_REFRESH_TOKEN"
+      }
+    },
+    {
+      "id": "finanzas-sharepoint",
+      "provider": "sharepoint",
+      "enabled": false,
+      "driveId": "",
+      "itemId": "",
+      "shareUrl": "",
+      "auth": {
+        "type": "microsoft_client_credentials",
+        "tenantIdEnv": "SIIO_GRAPH_TENANT_ID",
+        "clientIdEnv": "SIIO_GRAPH_CLIENT_ID",
+        "clientSecretEnv": "SIIO_GRAPH_CLIENT_SECRET"
+      }
+    },
+    {
+      "id": "finanzas-avancys",
+      "provider": "odoo",
+      "enabled": false,
+      "protocol": "jsonrpc",
+      "url": "",
+      "database": "",
+      "username": "",
+      "companyId": null,
+      "apiKeyEnv": "SIIO_AVANCYS_API_KEY"
+    }
+  ]
+}
