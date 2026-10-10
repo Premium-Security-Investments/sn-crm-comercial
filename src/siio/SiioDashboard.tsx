@@ -6,6 +6,7 @@ import { isDirectiveViewerRole } from '../navPermissions';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, deriveTrackingItems, navigateSiioView, parseSiioRouteState, toSiioHash } from './selectors';
 import { SiioExecutiveView } from './SiioExecutiveView';
+import { SiioFinancialImportPanel } from './SiioFinancialImportPanel';
 import { SiioAgentsView } from './SiioAgentsView';
 import { SiioBoardDraftAction } from './SiioBoardDraftAction';
 import { SiioBoardReadonlyView } from './SiioBoardReadonlyView';
@@ -79,7 +80,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     <SiioNavigation activeView={routeState.view} onSelect={selectView} />
     {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'resumen'
-      ? <SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} />
+      ? <><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /><SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} /></>
       : routeState.view === 'seguimiento'
         ? <SiioManagementTrackingView payload={payload} routeState={routeState} onNavigate={onNavigate} />
         : routeState.view === 'inteligencia'

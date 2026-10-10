@@ -7,6 +7,119 @@
   margin:0;
 }
 
+.siio-financial-import-panel{
+  display:grid;
+  gap:14px;
+  padding:18px;
+  border:1px solid #cbdcf2;
+  border-radius:18px;
+  background:linear-gradient(180deg,#fff,#f8fbff);
+}
+
+.siio-financial-import-panel > header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+}
+
+.siio-financial-import-panel h3{
+  margin:5px 0;
+  color:#10213d;
+  font-size:21px;
+}
+
+.siio-financial-import-panel p{
+  margin:0;
+  color:#526173;
+  line-height:1.42;
+}
+
+.siio-financial-import-form{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(160px,1fr));
+  gap:12px;
+  align-items:end;
+}
+
+.siio-financial-import-form label{
+  display:grid;
+  gap:6px;
+  color:#40516b;
+  font-size:12px;
+  font-weight:900;
+}
+
+.siio-financial-import-form input,
+.siio-financial-import-form select{
+  box-sizing:border-box;
+  width:100%;
+  min-height:42px;
+  padding:8px 10px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  background:#fff;
+  color:#10213d;
+  font:inherit;
+}
+
+.siio-financial-import-form .siio-financial-file{
+  grid-column:1 / span 2;
+}
+
+.siio-financial-import-form small{
+  color:#64748b;
+  font-weight:700;
+}
+
+.siio-financial-latest{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  padding-top:14px;
+  border-top:1px solid #dbe6f4;
+}
+
+.siio-financial-latest > div{
+  display:grid;
+  gap:4px;
+  min-width:0;
+  padding:10px;
+  border-radius:12px;
+  background:#fff;
+}
+
+.siio-financial-latest small{
+  color:#64748b;
+  font-size:10px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.siio-financial-latest strong{
+  color:#10213d;
+  overflow-wrap:anywhere;
+}
+
+.siio-financial-latest ul,
+.siio-financial-latest > button{
+  grid-column:1 / -1;
+}
+
+.siio-financial-latest ul{
+  margin:0;
+  padding:12px 12px 12px 32px;
+  border-radius:12px;
+  background:#fff7ed;
+  color:#854d0e;
+}
+
+.siio-financial-status.status-publicado{background:#dcfce7;color:#166534}
+.siio-financial-status.status-validado{background:#dbeafe;color:#174174}
+.siio-financial-status.status-con_errores{background:#fee2e2;color:#991b1b}
+.siio-financial-status.status-reemplazado{background:#f1f5f9;color:#475569}
+
 .siio-dashboard .siio-navigation button:hover{
   background:#dceaff;
   color:#123f8e;
@@ -144,6 +257,21 @@
 }
 
 @media(max-width:760px){
+  .siio-financial-import-panel > header{
+    flex-direction:column;
+  }
+
+  .siio-financial-import-form,
+  .siio-financial-latest{
+    grid-template-columns:1fr;
+  }
+
+  .siio-financial-import-form .siio-financial-file,
+  .siio-financial-latest ul,
+  .siio-financial-latest > button{
+    grid-column:auto;
+  }
+
   .siio-dashboard .siio-view-filters{
     display:grid;
     grid-template-columns:1fr;

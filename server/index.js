@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { cleanFinancialImportRequest, financialImportStoragePath, listFinancialImports, processFinancialWorkbookImport, publishFinancialImport, SIIO_FINANCIAL_IMPORT_BUCKET } from '../siio-financial-import-service.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
@@ -474,6 +475,10 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/siio/decisions': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'PATCH /api/siio/decisions/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
   'GET /api/siio/board-reports': ['siio', ACTIONS.BOARD_PUBLICATION_VIEW],
+  'GET /api/siio/financial-imports': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/financial-imports/upload-url': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'POST /api/siio/financial-imports/process-upload': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'POST /api/siio/financial-imports/:id/publish': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
 });
 const SIIO_MANAGEMENT_RESOURCE = Object.freeze({ area_code: 'gerencia' });
 const SIIO_PUBLISHED_BOARD_RESOURCE = Object.freeze({ status: 'presentado' });
@@ -489,6 +494,10 @@ export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
   'POST /api/siio/decisions': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'PATCH /api/siio/decisions/:id': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'GET /api/siio/board-reports': Object.freeze({ action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: SIIO_PUBLISHED_BOARD_RESOURCE, policy: 'board-published' }),
+  'GET /api/siio/financial-imports': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/financial-imports/upload-url': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/financial-imports/process-upload': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/financial-imports/:id/publish': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
 });
 export function requireModuleAction(profile, endpointModule) {
   return requireAction(profile, MODULE_ENDPOINT_ACTIONS[endpointModule], {});
@@ -2832,7 +2841,7 @@ const siioTables = {
   decisions: 'siio_decisions_commitments',
   boardReports: 'siio_monthly_board_reports',
   boardSections: 'siio_board_sections',
-  financialMetrics: 'siio_financial_metrics',
+  financialMetrics: 'siio_financial_metrics_current',
   commercialSignals: 'siio_commercial_signals',
   payrollAggregates: 'siio_payroll_aggregates',
   strategicOpportunities: 'siio_strategic_opportunities'
@@ -3021,6 +3030,44 @@ app.get('/api/siio/board-reports', async (req, res) => {
     const { profile } = await getAuthContext(req);
     requireSiioEndpointAccess(profile, 'GET /api/siio/board-reports');
     res.json(filterBoardReportsForProfile(profile, await requiredSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/siio/financial-imports', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/financial-imports');
+    res.json(await listFinancialImports(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/siio/financial-imports/upload-url', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/financial-imports/upload-url');
+    const metadata = cleanFinancialImportRequest(req.body);
+    const storagePath = financialImportStoragePath(profile, metadata);
+    const { data, error } = await requireDb().storage.from(SIIO_FINANCIAL_IMPORT_BUCKET).createSignedUploadUrl(storagePath);
+    if (error) throw error;
+    res.json({ path: storagePath, token: data.token });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/siio/financial-imports/process-upload', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/financial-imports/process-upload');
+    const metadata = cleanFinancialImportRequest(req.body);
+    const result = await processFinancialWorkbookImport(requireDb(), profile, req.body?.storage_path, metadata);
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/siio/financial-imports/:id/publish', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/financial-imports/:id/publish');
+    res.json(await publishFinancialImport(requireDb(), profile, req.params.id));
   } catch (error) { sendAuthError(res, error); }
 });
 
