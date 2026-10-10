@@ -32,12 +32,13 @@ export type SiioFinancialImport = {
   period_month: string;
   cutoff_date: string;
   import_type: 'cierre_mensual' | 'parcial_diario' | 'reproceso';
-  status: 'recibido' | 'con_errores' | 'validado' | 'publicado' | 'reemplazado';
+  status: 'recibido' | 'con_errores' | 'listo_revision' | 'validado' | 'publicado' | 'reemplazado';
   parser_version: string;
   structure_signature: string;
   structure_diff?: { baseline?: boolean; changed?: boolean; changes?: unknown[] };
   import_summary?: { balance_sheets?: number; balance_lines?: number; metrics?: number; blocking_failures?: number; warnings?: number; private_sheets_excluded?: number };
   uploaded_at: string;
+  validated_at?: string | null;
   published_at?: string | null;
   validations: SiioFinancialValidation[];
 };

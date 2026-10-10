@@ -18,7 +18,7 @@ function formatDate(value?: string | null) {
 }
 
 function statusLabel(value: SiioFinancialImport['status']) {
-  return ({ recibido: 'Recibido', con_errores: 'Con errores', validado: 'Validado, pendiente de publicar', publicado: 'Publicado', reemplazado: 'Versión anterior' } as const)[value];
+  return ({ recibido: 'Recibido', con_errores: 'Con errores', listo_revision: 'Listo para tu revisión', validado: 'Validado por una persona', publicado: 'Publicado', reemplazado: 'Versión anterior' } as const)[value];
 }
 
 type UploadTicket = { path: string; token: string };
@@ -80,13 +80,30 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
       const warningCount = result.validations.filter(item => item.severity === 'advertencia' && !item.ok).length;
       setMessage(result.duplicate
         ? 'Este mismo archivo ya estaba cargado; se conservó la versión existente.'
-        : result.status === 'validado'
-          ? `Carga validada: ${result.summary.balance_lines || 0} líneas contables y ${result.summary.metrics || 0} indicadores. ${warningCount ? `${warningCount} advertencia(s) para revisar.` : 'Sin advertencias.'}`
+        : result.status === 'listo_revision'
+          ? `Controles automáticos aprobados: ${result.summary.balance_lines || 0} líneas contables y ${result.summary.metrics || 0} indicadores. ${warningCount ? `${warningCount} advertencia(s) para revisar.` : 'Sin advertencias.'} Falta tu validación.`
           : 'La carga se guardó con errores bloqueantes y no puede publicarse.');
       setFile(null);
       await loadImports();
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
+      setMessage('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const validate = async (item: SiioFinancialImport) => {
+    if (!window.confirm(`¿Confirmas que revisaste el corte de ${formatDate(item.period_month)} y que sus cifras pueden avanzar? Tu usuario y la fecha quedarán registrados.`)) return;
+    setBusy(true);
+    setError('');
+    setMessage('Registrando tu validación…');
+    try {
+      await api(`/api/siio/financial-imports/${item.id}/validate`, { method: 'POST', body: '{}' });
+      await loadImports();
+      setMessage(item.import_type === 'parcial_diario' ? 'Validación registrada. El avance diario ya puede alimentar la Torre.' : 'Validación registrada. El cierre quedó listo para publicación.');
+    } catch (validationError) {
+      setError(validationError instanceof Error ? validationError.message : String(validationError));
       setMessage('');
     } finally {
       setBusy(false);
@@ -130,6 +147,7 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
       <div><small>Contenido cargado</small><strong>{latest.import_summary?.balance_lines || 0} líneas · {latest.import_summary?.metrics || 0} indicadores</strong></div>
       <div><small>Validaciones</small><strong>{latest.validations.filter(item => item.ok).length} aprobadas · {failedChecks.length} por revisar</strong></div>
       {failedChecks.length ? <ul>{failedChecks.map(item => <li key={`${item.rule}-${item.detail}`}><strong>{item.severity === 'advertencia' ? 'Advertencia' : 'Bloqueo'}:</strong> {item.detail} ({item.obtained || 'sin valor'})</li>)}</ul> : null}
+      {canImport && latest.status === 'listo_revision' ? <button type="button" onClick={() => void validate(latest)} disabled={busy}>Validar este corte</button> : null}
       {canImport && latest.status === 'validado' && latest.import_type !== 'parcial_diario' ? <button type="button" onClick={() => void publish(latest)} disabled={busy}>Publicar en la Torre de Control</button> : null}
     </div> : <p className="siio-secondary">Aún no hay cargas versionadas. Los indicadores históricos existentes siguen visibles.</p>}
   </section>;

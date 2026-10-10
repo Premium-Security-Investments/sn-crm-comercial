@@ -119,4 +119,9 @@ export async function publishFinancialImport(database, profile, importId) {
   return requireResult(await database.rpc('siio_publish_financial_import', { p_import_id: importId, p_actor: profile.id }));
 }
 
+export async function validateFinancialImport(database, profile, importId) {
+  if (!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(importId || ''))) throw inputError('La carga financiera indicada no es válida.');
+  return requireResult(await database.rpc('siio_validate_financial_import', { p_import_id: importId, p_actor: profile.id }));
+}
+
 export { SIIO_FINANCIAL_IMPORT_BUCKET, SIIO_FINANCIAL_IMPORT_MAX_BYTES, XLSM_MIME };

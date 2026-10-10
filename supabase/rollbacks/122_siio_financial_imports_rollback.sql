@@ -14,6 +14,7 @@ $$;
 
 drop view if exists public.siio_financial_metrics_current;
 drop function if exists public.siio_publish_financial_import(uuid, uuid);
+drop function if exists public.siio_validate_financial_import(uuid, uuid);
 drop function if exists public.siio_import_financial_workbook(jsonb, uuid);
 
 drop index if exists public.uq_siio_financial_metric_import_concept;

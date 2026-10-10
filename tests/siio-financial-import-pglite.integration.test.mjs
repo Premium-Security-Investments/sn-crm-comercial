@@ -67,7 +67,7 @@ const payload = {
   period_month: '2026-04-01',
   cutoff_date: '2026-04-30',
   import_type: 'cierre_mensual',
-  status: 'validado',
+  status: 'listo_revision',
   parser_version: 'test@1',
   structure_signature: 'b'.repeat(64),
   structure: { sheets: [{ name: 'Comparat' }] },
@@ -78,10 +78,10 @@ const payload = {
   validations: [{ rule: 'V1_BALANCE_CUADRA', severity: 'bloqueante', ok: true, expected: '0', obtained: '0', difference: 0, detail: 'ok' }],
 };
 
-test('la migración registra una sola versión atómica y sólo la publica con un segundo paso', async () => {
+test('la migración registra una sola versión atómica y exige validación humana antes de publicar', async () => {
   const db = await database();
   const first = await db.query('select public.siio_import_financial_workbook($1::jsonb,$2::uuid) as result', [JSON.stringify(payload), ACTOR]);
-  assert.equal(first.rows[0].result.status, 'validado');
+  assert.equal(first.rows[0].result.status, 'listo_revision');
   assert.equal(first.rows[0].result.duplicate, false);
   const repeated = await db.query('select public.siio_import_financial_workbook($1::jsonb,$2::uuid) as result', [JSON.stringify(payload), ACTOR]);
   assert.equal(repeated.rows[0].result.duplicate, true);
@@ -90,6 +90,12 @@ test('la migración registra una sola versión atómica y sólo la publica con u
   assert.equal(Number((await db.query("select value_current from public.siio_financial_metrics_current where concept='INGRESOS'" )).rows[0].value_current), 90);
 
   const id = first.rows[0].result.id;
+  await assert.rejects(() => db.query('select public.siio_publish_financial_import($1::uuid,$2::uuid)', [id, ACTOR]), /financial_import_not_publishable/);
+  const validated = await db.query('select public.siio_validate_financial_import($1::uuid,$2::uuid) as result', [id, ACTOR]);
+  assert.equal(validated.rows[0].result.status, 'validado');
+  assert.equal((await db.query('select validated_by from public.siio_financial_imports where id=$1', [id])).rows[0].validated_by, ACTOR);
+  assert.equal((await db.query('select validated_by from public.siio_financial_metrics where import_id=$1', [id])).rows[0].validated_by, ACTOR);
+  assert.equal(Number((await db.query("select value_current from public.siio_financial_metrics_current where concept='INGRESOS'" )).rows[0].value_current), 90);
   const published = await db.query('select public.siio_publish_financial_import($1::uuid,$2::uuid) as result', [id, ACTOR]);
   assert.equal(published.rows[0].result.status, 'publicado');
   assert.equal(Number((await db.query("select value_current from public.siio_financial_metrics_current where concept='INGRESOS'" )).rows[0].value_current), 100);
@@ -101,6 +107,26 @@ test('la publicación falla cerrada cuando existe una validación bloqueante', a
   const blockedPayload = { ...payload, file_sha256: 'c'.repeat(64), structure_signature: 'd'.repeat(64), validations: [{ ...payload.validations[0], ok: false }] };
   const inserted = await db.query('select public.siio_import_financial_workbook($1::jsonb,$2::uuid) as result', [JSON.stringify(blockedPayload), ACTOR]);
   await assert.rejects(() => db.query('select public.siio_publish_financial_import($1::uuid,$2::uuid)', [inserted.rows[0].result.id, ACTOR]), /financial_import_has_blockers/);
+  await db.close();
+});
+
+test('un avance diario entra a la vista sólo después de validación humana y nunca se publica como cierre', async () => {
+  const db = await database();
+  const dailyPayload = {
+    ...payload,
+    file_sha256: 'e'.repeat(64),
+    structure_signature: 'f'.repeat(64),
+    storage_path: 'financial-imports/actor/2026-04-01/daily.xlsm',
+    cutoff_date: '2026-04-15',
+    import_type: 'parcial_diario',
+  };
+  const inserted = await db.query('select public.siio_import_financial_workbook($1::jsonb,$2::uuid) as result', [JSON.stringify(dailyPayload), ACTOR]);
+  const id = inserted.rows[0].result.id;
+  assert.equal(Number((await db.query("select value_current from public.siio_financial_metrics_current where concept='INGRESOS'")).rows[0].value_current), 90);
+  await db.query('select public.siio_validate_financial_import($1::uuid,$2::uuid)', [id, ACTOR]);
+  assert.equal(Number((await db.query("select value_current from public.siio_financial_metrics_current where concept='INGRESOS'")).rows[0].value_current), 100);
+  assert.equal((await db.query("select trust_level from public.siio_sources where id=(select source_id from public.siio_financial_imports where id=$1)", [id])).rows[0].trust_level, 'oficial');
+  await assert.rejects(() => db.query('select public.siio_publish_financial_import($1::uuid,$2::uuid)', [id, ACTOR]), /financial_import_not_publishable/);
   await db.close();
 });
 

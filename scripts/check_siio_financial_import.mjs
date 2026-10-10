@@ -11,7 +11,7 @@ const cutoffDate = process.argv[4] || '2026-04-30';
 const result = parseSiioFinancialWorkbook(readFileSync(filePath), {
   fileName: path.basename(filePath), periodMonth, cutoffDate, importType: 'cierre_mensual',
 });
-assert.equal(result.status, 'validado', 'el libro debe superar todas las validaciones bloqueantes');
+assert.equal(result.status, 'listo_revision', 'el libro debe superar los controles automáticos y quedar pendiente de validación humana');
 assert.equal(result.metrics.length, 9, 'debe extraer los nueve indicadores ejecutivos');
 assert.ok(result.balance_lines.length > 0, 'debe extraer líneas del balance de prueba');
 assert.ok(result.validations.filter(item => item.severity === 'bloqueante').every(item => item.ok), 'toda validación bloqueante debe aprobarse');

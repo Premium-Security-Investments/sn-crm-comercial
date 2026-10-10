@@ -54,7 +54,7 @@ const metadata = { fileName: 'PYG_ABRIL_2026_V6.xlsm', periodMonth: '2026-04-01'
 
 test('extrae un corte contable inmutable sin abrir la hoja privada', () => {
   const result = parseSiioFinancialWorkbook(workbookBuffer(), metadata);
-  assert.equal(result.status, 'validado');
+  assert.equal(result.status, 'listo_revision');
   assert.equal(result.metrics.length, 9);
   assert.equal(result.balance_lines.length, 16);
   assert.equal(result.summary.private_sheets_excluded, 1);

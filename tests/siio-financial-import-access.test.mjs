@@ -18,9 +18,11 @@ test('el historial financiero es legible por gerencia y consulta', () => {
 test('sólo admin y gerencia pueden cargar y publicar cortes', () => {
   for (const role of ['admin', 'gerencia']) {
     assert.equal(requireSiioEndpointAccess(profile(role), 'POST /api/siio/financial-imports/process-upload'), true);
+    assert.equal(requireSiioEndpointAccess(profile(role), 'POST /api/siio/financial-imports/:id/validate'), true);
     assert.equal(requireSiioEndpointAccess(profile(role), 'POST /api/siio/financial-imports/:id/publish'), true);
   }
   for (const role of ['consulta', 'junta', 'director', 'comercial']) {
     assert.throws(() => requireSiioEndpointAccess(profile(role), 'POST /api/siio/financial-imports/process-upload'), error => error?.status === 403);
+    assert.throws(() => requireSiioEndpointAccess(profile(role), 'POST /api/siio/financial-imports/:id/validate'), error => error?.status === 403);
   }
 });

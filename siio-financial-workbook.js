@@ -406,7 +406,7 @@ export function parseSiioFinancialWorkbook(buffer, input = {}) {
     period_month: input.periodMonth,
     cutoff_date: cutoffDate,
     import_type: importType,
-    status: blockingFailures.length ? 'con_errores' : 'validado',
+    status: blockingFailures.length ? 'con_errores' : 'listo_revision',
     structure_signature: createHash('sha256').update(JSON.stringify(structure)).digest('hex'),
     structure,
     balance_lines: parsedBalances.flatMap(item => item.rows),

@@ -12,7 +12,7 @@ create table if not exists public.siio_financial_imports (
   period_month date not null check (period_month = date_trunc('month', period_month)::date),
   cutoff_date date not null,
   import_type text not null check (import_type in ('cierre_mensual','parcial_diario','reproceso')),
-  status text not null check (status in ('recibido','con_errores','validado','publicado','reemplazado')),
+  status text not null check (status in ('recibido','con_errores','listo_revision','validado','publicado','reemplazado')),
   parser_version text not null,
   structure_signature text not null check (structure_signature ~ '^[0-9a-f]{64}$'),
   structure_summary jsonb not null default '{}'::jsonb,
@@ -174,14 +174,19 @@ begin
     (p_payload->>'period_month')::date,
     (p_payload->>'cutoff_date')::date,
     p_payload->>'import_type',
-    p_payload->>'status',
+    case when exists (
+      select 1
+      from jsonb_array_elements(coalesce(p_payload->'validations', '[]'::jsonb)) validation_row
+      where validation_row->>'severity' = 'bloqueante'
+        and coalesce((validation_row->>'ok')::boolean, false) is false
+    ) then 'con_errores' else 'listo_revision' end,
     p_payload->>'parser_version',
     p_payload->>'structure_signature',
     coalesce(p_payload->'structure', '{}'::jsonb),
     coalesce(p_payload->'structure_diff', '{}'::jsonb),
     coalesce(p_payload->'summary', '{}'::jsonb),
     p_actor,
-    case when p_payload->>'status' = 'validado' then now() else null end
+    null
   ) returning * into v_import;
 
   insert into public.siio_financial_balance_lines (
@@ -226,6 +231,50 @@ begin
 end;
 $$;
 
+create or replace function public.siio_validate_financial_import(p_import_id uuid, p_actor uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_import public.siio_financial_imports%rowtype;
+begin
+  if p_actor is null or not exists (
+    select 1 from public.psi_sales_profiles where id = p_actor and active is true and role in ('admin','gerencia')
+  ) then
+    raise exception 'actor_not_authorized' using errcode = '42501';
+  end if;
+
+  select * into v_import from public.siio_financial_imports where id = p_import_id for update;
+  if not found then raise exception 'financial_import_not_found' using errcode = 'P0002'; end if;
+  if exists (
+    select 1 from public.siio_financial_validations
+    where import_id = p_import_id and severity = 'bloqueante' and ok is false
+  ) then
+    raise exception 'financial_import_has_blockers' using errcode = '23514';
+  end if;
+  if v_import.status not in ('listo_revision','validado') then
+    raise exception 'financial_import_not_validatable' using errcode = '55000';
+  end if;
+
+  update public.siio_financial_imports
+  set status = 'validado', validated_by = p_actor, validated_at = now()
+  where id = p_import_id
+  returning * into v_import;
+
+  update public.siio_financial_metrics
+  set validated_by = p_actor::text, updated_at = now()
+  where import_id = p_import_id;
+
+  update public.siio_sources
+  set trust_level = 'oficial', last_reviewed_at = current_date, updated_at = now()
+  where id = v_import.source_id;
+
+  return jsonb_build_object('id', v_import.id, 'status', v_import.status, 'validated_at', v_import.validated_at);
+end;
+$$;
+
 create or replace function public.siio_publish_financial_import(p_import_id uuid, p_actor uuid)
 returns jsonb
 language plpgsql
@@ -242,11 +291,11 @@ begin
   end if;
   select * into v_import from public.siio_financial_imports where id = p_import_id for update;
   if not found then raise exception 'financial_import_not_found' using errcode = 'P0002'; end if;
-  if v_import.status <> 'validado' or v_import.import_type = 'parcial_diario' then
-    raise exception 'financial_import_not_publishable' using errcode = '55000';
-  end if;
   if exists (select 1 from public.siio_financial_validations where import_id = p_import_id and severity = 'bloqueante' and ok is false) then
     raise exception 'financial_import_has_blockers' using errcode = '23514';
+  end if;
+  if v_import.status <> 'validado' or v_import.validated_by is null or v_import.validated_at is null or v_import.import_type = 'parcial_diario' then
+    raise exception 'financial_import_not_publishable' using errcode = '55000';
   end if;
 
   update public.siio_financial_imports
@@ -254,20 +303,19 @@ begin
   where period_month = v_import.period_month and status = 'publicado' and id <> p_import_id;
 
   update public.siio_financial_imports
-  set status = 'publicado', published_by = p_actor, published_at = now(),
-      validated_by = coalesce(validated_by, p_actor), validated_at = coalesce(validated_at, now())
+  set status = 'publicado', published_by = p_actor, published_at = now()
   where id = p_import_id
   returning * into v_import;
 
-  update public.siio_sources set trust_level = 'oficial', last_reviewed_at = current_date, updated_at = now()
-  where id = v_import.source_id;
   return jsonb_build_object('id', v_import.id, 'status', v_import.status, 'period_month', v_import.period_month);
 end;
 $$;
 
 revoke all on function public.siio_import_financial_workbook(jsonb, uuid) from public, anon, authenticated;
+revoke all on function public.siio_validate_financial_import(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.siio_publish_financial_import(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.siio_import_financial_workbook(jsonb, uuid) to service_role;
+grant execute on function public.siio_validate_financial_import(uuid, uuid) to service_role;
 grant execute on function public.siio_publish_financial_import(uuid, uuid) to service_role;
 
 create or replace view public.siio_financial_metrics_current
