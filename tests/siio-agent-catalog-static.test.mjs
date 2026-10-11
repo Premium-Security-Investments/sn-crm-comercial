@@ -143,7 +143,9 @@ assert.match(siioCss, /\.siio-dashboard \.siio-agent-field,\s*\n\.siio-dashboard
 
 const mobileBlock = siioCss.match(/@media\(max-width:760px\)\{[\s\S]*?\n\}/)?.[0] || '';
 assert.ok(mobileBlock, 'the <=760px media query must exist');
-assert.equal((siioCss.match(/grid-template-columns:1fr;/g) || []).length, 2, 'the mobile overflow fix must not add a second grid-template-columns:1fr rule for .siio-agent-grid — the existing single-column rule already covers it');
+// Scoped to the agent grid: other SIIO blocks legitimately collapse to one column on mobile.
+const agentGridSingleColumnRules = [...siioCss.matchAll(/([^{}]*)\{[^}]*grid-template-columns:1fr;[^}]*\}/g)].filter(match => /\.siio-agent-grid/.test(match[1]));
+assert.ok(agentGridSingleColumnRules.length <= 1, 'the mobile overflow fix must not add a second grid-template-columns:1fr rule for .siio-agent-grid — the existing single-column rule already covers it');
 assert.match(mobileBlock, /\.siio-dashboard \.siio-agent-heading\{\s*flex-wrap:wrap;\s*\}/, 'the agent heading must wrap safely at <=760px instead of overflowing so the status badge is never clipped');
 assert.match(mobileBlock, /\.siio-dashboard \.siio-agent-heading > div\{\s*min-width:0;\s*\}/, 'the agent heading title block must be allowed to shrink at <=760px so it does not push the status badge off-card');
 assert.match(mobileBlock, /\.siio-dashboard \.siio-agent-heading \.badge\{\s*white-space:normal;\s*max-width:100%;\s*\}/, 'the status badge must wrap instead of clipping at <=760px');
