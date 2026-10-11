@@ -62,19 +62,28 @@ function FinancialFigures({ pulse, state, financialRows }: { pulse: FinancialPul
   </div>;
 }
 
-function CommercialFigures({ summary, state }: { summary: CommercialSummary | null; state: LoadState }) {
+function PrivateFigures({ summary, state }: { summary: CommercialSummary | null; state: LoadState }) {
   if (state === 'loading') return <p className="siio-secondary">Cargando datos del CRM…</p>;
-  if (state === 'error' || !summary) return <p className="siio-secondary">No se pudo cargar Comercial y Licitaciones.</p>;
-  const { sales, pipeline, tenders } = summary;
+  if (state === 'error' || !summary) return <p className="siio-secondary">No se pudieron cargar las ventas a privados.</p>;
+  const { sales, pipeline } = summary;
   const attainment = sales.ytd_attainment;
-  const pending = tenders.requires_decision + tenders.overdue_status;
   const lastClosed = sales.closed_months ? shortMonth(sales.closed_months) : '';
-  return <div className="siio-key-grid siio-key-grid-3">
-    <Figure label={`Ventas nuevas ${lastClosed ? `ene–${lastClosed}` : sales.year}`} value={millions(sales.ytd_monthly_value)} comparison={`Meta: ${millions(sales.ytd_goal)} · ${attainment === null ? '—' : `${Math.round(attainment * 100)}%`}`}>
+  return <div className="siio-key-grid siio-key-grid-2">
+    <Figure label={`Ventas nuevas ${lastClosed ? `ene–${lastClosed}` : sales.year}`} value={millions(sales.ytd_monthly_value)} comparison={`Meta: ${millions(sales.ytd_goal)} · ${attainment === null ? '—' : `${Math.round(attainment * 100)}%`}`} detail="Valor mensual del servicio">
       {attainment !== null ? <div className="siio-goal-bar" role="img" aria-label={`${Math.round(attainment * 100)}% de la meta`}><i style={{ width: `${Math.min(100, attainment * 100)}%` }} className={attainment < 0.9 ? 'below' : undefined} /></div> : null}
     </Figure>
     <Figure label="Pipeline ponderado" value={millions(pipeline.weighted_monthly_value)} comparison={pipeline.coverage_of_remaining_goal === null ? null : `Cubre ${pipeline.coverage_of_remaining_goal.toLocaleString('es-CO', { maximumFractionDigits: 1 })}× lo que falta (${millions(pipeline.remaining_goal)})`} detail={`${pipeline.open_count} oportunidades abiertas · ${millions(pipeline.monthly_value)} sin ponderar`} />
-    <Figure label="Licitaciones por decidir" value={String(pending)} alert={pending > 0} comparison={`${tenders.requires_decision} sin decisión a ${tenders.decision_window_days} días · ${tenders.overdue_status} con cierre vencido`} detail={`${tenders.open_count} abiertas · ${millions(tenders.total_value)} en juego`} />
+  </div>;
+}
+
+function TenderFigures({ summary, state }: { summary: CommercialSummary | null; state: LoadState }) {
+  if (state === 'loading') return <p className="siio-secondary">Cargando licitaciones…</p>;
+  if (state === 'error' || !summary) return <p className="siio-secondary">No se pudieron cargar las licitaciones.</p>;
+  const { tenders } = summary;
+  const pending = tenders.requires_decision + tenders.overdue_status;
+  return <div className="siio-key-grid siio-key-grid-2">
+    <Figure label="Por decidir" value={String(pending)} alert={pending > 0} comparison={`${tenders.requires_decision} sin decisión a ${tenders.decision_window_days} días · ${tenders.overdue_status} con cierre vencido`} />
+    <Figure label="En juego" value={millions(tenders.total_value)} comparison={`${tenders.open_count} licitaciones activas`} detail="Valor total de los procesos" />
   </div>;
 }
 
@@ -85,9 +94,15 @@ export function SiioKeyFigures({ pulse, pulseState, summary, summaryState, finan
       <h3>Finanzas · {pulse ? `${longMonth(pulse.month)} ${pulse.year}` : 'último corte'}</h3>
       <FinancialFigures pulse={pulse} state={pulseState} financialRows={financialRows} />
     </div>
-    <div className="siio-key-group">
-      <h3>Comercial y Licitaciones · al {summary ? `${closingDateLabel(`${summary.as_of}T12:00:00Z`)} ${summary.as_of.slice(0, 4)}` : 'día'}</h3>
-      <CommercialFigures summary={summary} state={summaryState} />
+    <div className="siio-key-row">
+      <div className="siio-key-group">
+        <h3>Comercial privado · al {summary ? `${closingDateLabel(`${summary.as_of}T12:00:00Z`)} ${summary.as_of.slice(0, 4)}` : 'día'}</h3>
+        <PrivateFigures summary={summary} state={summaryState} />
+      </div>
+      <div className="siio-key-group">
+        <h3>Licitaciones públicas · al {summary ? `${closingDateLabel(`${summary.as_of}T12:00:00Z`)} ${summary.as_of.slice(0, 4)}` : 'día'}</h3>
+        <TenderFigures summary={summary} state={summaryState} />
+      </div>
     </div>
   </section>;
 }
@@ -113,7 +128,7 @@ export function SiioTrendCharts({ pulse, summary }: { pulse: FinancialPulse | nu
       {pulse ? <SiioColumnChart title="Ingresos por mes" note="Millones de pesos" categories={months} series={yearSeries('ingresos')} format={millions} axisFormat={axisMillions} /> : null}
       {pulse ? <SiioColumnChart title="Utilidad operacional por mes" note="Millones de pesos · enero sin provisión de ingresos" categories={months} series={yearSeries('utilidad_operacional')} format={millions} axisFormat={axisMillions} /> : null}
       {pulse ? <SiioLineChart title="Margen operacional por mes" note="Utilidad operacional sobre ingresos" categories={months} series={yearSeries('margen_operacional')} format={percentText} axisFormat={axisPercent} /> : null}
-      {closed.length ? <SiioColumnChart title="Ventas nuevas aprobadas por mes" note="Valor mensual del servicio, por mes de cotización · millones" categories={closed.map((_, index) => MONTHS_SHORT[index])} series={[{ name: `Ventas ${summary?.sales.year}`, values: closed.map(item => item.approved_monthly_value), tone: 'accent' }]} goal={flatGoal} goalLabel={flatGoal ? `Meta mensual ${millions(flatGoal)}` : undefined} format={millions} axisFormat={axisMillions} labelAll={false} /> : null}
+      {closed.length ? <SiioColumnChart title="Ventas nuevas a privados por mes" note="Valor mensual del servicio, por mes de cotización · millones · sin licitaciones" categories={closed.map((_, index) => MONTHS_SHORT[index])} series={[{ name: `Ventas ${summary?.sales.year}`, values: closed.map(item => item.approved_monthly_value), tone: 'accent' }]} goal={flatGoal} goalLabel={flatGoal ? `Meta mensual ${millions(flatGoal)}` : undefined} format={millions} axisFormat={axisMillions} labelAll={false} /> : null}
     </div>
   </section>;
 }

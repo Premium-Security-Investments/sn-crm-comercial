@@ -1051,3 +1051,38 @@
 @media(max-width:600px){
   .siio-detail > summary{flex-wrap:wrap}
 }
+
+/* Private sales and public tenders sit side by side as separate groups. */
+.siio-key-row{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px 20px;
+}
+
+.siio-key-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+.siio-attention-section{display:grid;gap:8px}
+.siio-attention-section + .siio-attention-section{margin-top:20px;padding-top:16px;border-top:1px solid #e7edf5}
+.siio-attention-section h3{margin:0;color:#10213d;font-size:16px}
+.siio-attention-section .siio-pulse-readings{margin-top:0}
+
+.siio-alert-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.siio-alert-list li{display:grid;gap:2px;padding:10px 12px;border:1px solid #e7edf5;border-radius:12px;background:#fff}
+.siio-alert-list strong{color:#10213d}
+.siio-alert-list span{color:#40516b;font-size:14px}
+.siio-alert-list small{color:#526173;font-size:12px}
+.siio-alert-list button{justify-self:start;margin-top:4px}
+
+.siio-more-links{display:flex;flex-wrap:wrap;gap:10px}
+
+.siio-detail > summary:focus-visible{outline:2px solid #9dbbe8;outline-offset:-2px}
+
+@media(max-width:900px){
+  .siio-key-row{grid-template-columns:1fr}
+}
+
+@media(max-width:600px){
+  .siio-key-grid-2{grid-template-columns:1fr}
+}
+
+.siio-alerts-title{margin:8px 0 0;color:#10213d;font-size:14px}

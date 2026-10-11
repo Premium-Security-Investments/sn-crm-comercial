@@ -21,9 +21,15 @@ function daysBetween(from, to) {
   return Math.floor((to.getTime() - from.getTime()) / DAY_MS);
 }
 
-// SECOP names sometimes carry markup leftovers such as trailing asterisks.
+// SECOP names sometimes carry markup leftovers (trailing asterisks) and Windows-1252
+// dashes decoded as C1 control characters (U+0096 / U+0097).
 export function cleanEntityName(value) {
-  return String(value || '').replace(/\*+/g, '').replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .replace(/\*+/g, '')
+    .replace(/\s*[\u0096\u0097]\s*/g, ' – ')
+    .replace(/[\u0080-\u009f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function buildCommercialSummary({ opportunities = [], stages = [], goals = [], tenders = [], decisions = [], profiles = [] }, { now = new Date() } = {}) {

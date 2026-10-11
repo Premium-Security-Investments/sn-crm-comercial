@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../apiClient';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, deriveTrackingItems, navigateSiioView, uniqueOptions } from './selectors';
-import { Badge, EmptyState, Panel, fmtSiioMoney } from './SiioUi';
+import { Badge, EmptyState, Panel } from './SiioUi';
 import { SiioFinancialPulse } from './SiioFinancialPulse';
-import { CommercialAttentionRows, SiioCommercialDetail, millions } from './SiioCommercialPanel';
+import { PrivateAttentionTable, SiioPrivateDetail, SiioTenderDetail, TenderAttentionTable, millions } from './SiioCommercialPanel';
 import { SiioKeyFigures, SiioTrendCharts } from './SiioKeyFigures';
-import { commercialReadings, type CommercialSummary } from './commercialSummary';
+import { privateReadings, tenderReadings, type CommercialSummary } from './commercialSummary';
 import { pulseReadings, type FinancialPulse } from './financialPulse';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState, SiioTrackingKind } from './types';
@@ -16,6 +16,8 @@ function formatPeriod(period: string | null | undefined) {
   const label = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${period}T12:00:00Z`));
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
+
+const payrollMillions = (value: number | null | undefined) => `$${(Number(value || 0) / 1e6).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M`;
 
 function formatMetric(value: number | null | undefined, percent = false) {
   if (value === null || value === undefined) return 'Sin datos';
@@ -107,13 +109,14 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const intelligenceLink = () => onNavigate(navigateSiioView('inteligencia', { period: selectedPeriod }));
   const [pulse, pulseState] = useSiioData<FinancialPulse | null>(`/api/siio/financial-pulse${selectedPeriod ? `?period=${encodeURIComponent(selectedPeriod)}` : ''}`);
   const [commercial, commercialState] = useSiioData<CommercialSummary>('/api/siio/commercial-summary');
-  const attentionRows = commercial ? commercial.tenders.calendar.filter(item => item.attention).length + commercial.pipeline.stale_large.length : 0;
   const signals = (['decisiones', 'bloqueos', 'riesgos', 'compromisos'] as SiioTrackingKind[]).map(kind => ({ kind, total: count(kind) })).filter(item => item.total > 0);
-  // Reading at the top: the month's business facts plus commercial items that need action; caveats stay in the detail.
-  const readings = [
-    ...(pulse ? pulseReadings(pulse).filter(text => !/provisión|^Enero cerró/.test(text)).slice(0, 2) : []),
-    ...(commercial ? commercialReadings(commercial).filter(text => !/^(Ventas nuevas|El pipeline ponderado)/.test(text)) : []),
-  ];
+  // Each business reads apart: tenders (total contract value), private sales (monthly value), finance.
+  const tenderNotes = commercial ? tenderReadings(commercial) : [];
+  const privateNotes = commercial ? privateReadings(commercial).filter(text => !/^(Ventas nuevas|El pipeline ponderado)/.test(text)) : [];
+  const financeNotes = pulse ? pulseReadings(pulse).filter(text => !/provisión|^Enero cerró/.test(text)).slice(0, 2) : [];
+  const alertBasis = (recommendation: { id: string; period?: string | null }) => recommendation.id === 'payroll-source-alert'
+    ? `Nómina de ${formatPeriod(recommendation.period || snapshot.payrollPeriod).toLowerCase()}`
+    : financialRows[0] ? `Estado de resultados, ${metricBasis(financialRows[0], selectedPeriod).current.toLowerCase()}` : 'Periodo financiero seleccionado';
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
@@ -135,21 +138,34 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     <SiioTrendCharts pulse={pulse} summary={commercial} />
 
     <Panel title="Requiere atención">
-      {readings.length ? <div className="siio-pulse-readings siio-attention-readings"><ul>{readings.map(reading => <li key={reading}>{reading}</li>)}</ul></div> : null}
-      {attentionRows ? <div className="siio-table-wrap"><table className="siio-pulse-table siio-commercial-table">
-        <thead><tr><th>Asunto</th><th>Valor</th><th>Fecha / días</th><th>Situación</th></tr></thead>
-        <tbody>{commercial ? <CommercialAttentionRows summary={commercial} /> : null}</tbody>
-      </table></div> : commercialState === 'ready' ? <p className="siio-secondary">Nada comercial pendiente de decisión.</p> : null}
-      <div className="siio-attention-signals">
-        {signals.length
+      <section className="siio-attention-section" aria-label="Licitaciones públicas">
+        <h3>Licitaciones públicas</h3>
+        {tenderNotes.length ? <div className="siio-pulse-readings"><ul>{tenderNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
+        {commercial ? <TenderAttentionTable summary={commercial} /> : null}
+      </section>
+      <section className="siio-attention-section" aria-label="Comercial privado">
+        <h3>Comercial privado</h3>
+        {privateNotes.length ? <div className="siio-pulse-readings"><ul>{privateNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
+        {commercial ? <PrivateAttentionTable summary={commercial} /> : null}
+      </section>
+      <section className="siio-attention-section" aria-label="Finanzas">
+        <h3>Finanzas y nómina</h3>
+        {financeNotes.length ? <div className="siio-pulse-readings"><ul>{financeNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
+        {recommendations.length ? <>
+          <h4 className="siio-alerts-title">Alertas automáticas</h4>
+          <p className="siio-pulse-footnote">Reglas fijas del SIIO que se encienden cuando se cumple una condición; no son recomendaciones de una persona ni de la IA.</p>
+          <ul className="siio-alert-list">{recommendations.map(recommendation => <li key={recommendation.id}>
+            <strong>{recommendation.title}</strong>
+            <span>{recommendation.finding}</span>
+            <small>{alertBasis(recommendation)}</small>
+            <button type="button" className="secondary" onClick={intelligenceLink}>Ver evidencia</button>
+          </li>)}</ul>
+        </> : null}
+        <p className="siio-secondary">{signals.length
           ? signals.map(item => <button type="button" key={item.kind} className="secondary" onClick={() => trackingLink(item.kind)}>{item.total} {item.kind} en seguimiento</button>)
-          : <span className="siio-secondary">Sin decisiones, bloqueos, riesgos ni compromisos abiertos en el seguimiento gerencial.</span>}
-      </div>
+          : 'Sin decisiones, bloqueos, riesgos ni compromisos abiertos en el seguimiento gerencial.'}</p>
+      </section>
     </Panel>
-
-    {recommendations.length ? <Panel title="Recomendaciones principales">
-      <div className="siio-insight-list">{recommendations.slice(0, 3).map(recommendation => <article key={recommendation.id} className={`siio-insight siio-insight-${recommendation.tone}`}><strong>{recommendation.title}</strong><p>{recommendation.finding}</p><button type="button" className="secondary" onClick={intelligenceLink}>Ver fuentes e inteligencia</button></article>)}</div>
-    </Panel> : null}
 
     <DetailSection title={`Finanzas · detalle de ${pulse ? formatPeriod(selectedPeriod).toLowerCase() : 'periodo'}`} hint="Lectura del mes, tendencia, desglose por rubro y acumulado del año">
       {financialRows.length ? <SiioFinancialPulse pulse={pulse} state={pulseState} financialRows={financialRows} /> : <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." />}
@@ -166,10 +182,20 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           </div>)}
         </div>
       </div> : null}
+      <div className="siio-pulse-block">
+        <h4>En construcción</h4>
+        <div className="siio-commercial-pending-grid">
+          <div className="siio-commercial-pending"><strong>Comparación con presupuesto</strong><span>Pendiente: presupuesto mensual del año por rubro.</span></div>
+        </div>
+      </div>
     </DetailSection>
 
-    <DetailSection title="Comercial y Licitaciones · detalle" hint="Otras licitaciones, pipeline por etapa, indicadores en construcción y calidad del dato">
-      <SiioCommercialDetail summary={commercial} state={commercialState} />
+    <DetailSection title="Comercial privado · detalle" hint="Pipeline por etapa, indicadores en construcción y calidad del dato del CRM">
+      <SiioPrivateDetail summary={commercial} state={commercialState} />
+    </DetailSection>
+
+    <DetailSection title="Licitaciones públicas · detalle" hint="Otras licitaciones activas e indicadores en construcción">
+      <SiioTenderDetail summary={commercial} state={commercialState} />
     </DetailSection>
 
     <DetailSection title="Seguimiento gerencial y nómina agregada" hint="Riesgos, decisiones, bloqueos, compromisos y nómina por área">
@@ -185,6 +211,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     <Panel title="Nómina agregada">
       <div className="siio-period-line"><span>Periodo de nómina</span><strong>{formatPeriod(snapshot.payrollPeriod)}</strong></div>
+      {snapshot.payrollPeriod && selectedPeriod && snapshot.payrollPeriod !== selectedPeriod ? <p className="siio-pulse-footnote">La nómina va a {formatPeriod(snapshot.payrollPeriod).toLowerCase()}; las cifras financieras, a {formatPeriod(selectedPeriod).toLowerCase()}. Valores en millones de pesos.</p> : <p className="siio-pulse-footnote">Valores en millones de pesos.</p>}
       <section className="siio-view-filters" aria-label="Filtro de nómina agregada">
         <label>Área de nómina
           <select value={routeState.filters.area} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, area: event.target.value }))}>
@@ -194,21 +221,21 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
         </label>
       </section>
       {!payrollRows.length ? <p className="siio-secondary siio-quiet-empty"><strong>Sin agregados de nómina publicados.</strong> No se muestran datos individuales.</p> : <>
-        <div className="siio-table-wrap siio-payroll-table"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>
+        <div className="siio-table-wrap siio-payroll-table"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{payrollMillions(row.total_accrued)}</td><td>{payrollMillions(row.total_deductions)}</td><td>{payrollMillions(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{payrollMillions(payrollTotals.accrued)}</th><th>{payrollMillions(payrollTotals.deductions)}</th><th>{payrollMillions(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>
         <div className="siio-payroll-cards">{payrollRows.map(row => <article className="siio-payroll-card" key={`${row.period_month}:${row.area || 'sin-area'}:card`}>
           <div><span className="siio-secondary">Área</span><strong>{row.area || 'Área pendiente'}</strong></div>
           <div><span className="siio-secondary">Personas</span><strong>{row.total_people || 0}</strong></div>
-          <div><span className="siio-secondary">Devengado</span><strong>{fmtSiioMoney(row.total_accrued)}</strong></div>
-          <div><span className="siio-secondary">Deducciones</span><strong>{fmtSiioMoney(row.total_deductions)}</strong></div>
-          <div><span className="siio-secondary">Neto</span><strong>{fmtSiioMoney(row.net_total)}</strong></div>
+          <div><span className="siio-secondary">Devengado</span><strong>{payrollMillions(row.total_accrued)}</strong></div>
+          <div><span className="siio-secondary">Deducciones</span><strong>{payrollMillions(row.total_deductions)}</strong></div>
+          <div><span className="siio-secondary">Neto</span><strong>{payrollMillions(row.net_total)}</strong></div>
           <div><span className="siio-secondary">Control</span>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</div>
         </article>)}
         <article className="siio-payroll-card siio-payroll-total-card">
           <div><span className="siio-secondary">Área</span><strong>Total</strong></div>
           <div><span className="siio-secondary">Personas</span><strong>{payrollTotals.people}</strong></div>
-          <div><span className="siio-secondary">Devengado</span><strong>{fmtSiioMoney(payrollTotals.accrued)}</strong></div>
-          <div><span className="siio-secondary">Deducciones</span><strong>{fmtSiioMoney(payrollTotals.deductions)}</strong></div>
-          <div><span className="siio-secondary">Neto</span><strong>{fmtSiioMoney(payrollTotals.net)}</strong></div>
+          <div><span className="siio-secondary">Devengado</span><strong>{payrollMillions(payrollTotals.accrued)}</strong></div>
+          <div><span className="siio-secondary">Deducciones</span><strong>{payrollMillions(payrollTotals.deductions)}</strong></div>
+          <div><span className="siio-secondary">Neto</span><strong>{payrollMillions(payrollTotals.net)}</strong></div>
           <div><span className="siio-secondary">Control</span><strong>Control agregado</strong></div>
         </article>
         </div>
@@ -216,8 +243,13 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     </Panel>
     </DetailSection>
 
-    <Panel title="Vigencia de fuentes">
-      <button type="button" className="secondary" onClick={intelligenceLink}>Consultar fuentes y vigencia</button>
-    </Panel>
+    <section className="panel siio-more" aria-label="Más información">
+      <h2>Más información</h2>
+      <div className="siio-more-links">
+        <button type="button" className="secondary" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Seguimiento gerencial</button>
+        <button type="button" className="secondary" onClick={intelligenceLink}>Vigencia de fuentes y evidencia</button>
+        <button type="button" className="secondary" onClick={() => onNavigate(navigateSiioView('agentes'))}>Agentes Vig-IA</button>
+      </div>
+    </section>
   </div>;
 }

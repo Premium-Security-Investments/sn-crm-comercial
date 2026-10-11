@@ -12,7 +12,7 @@ assert.match(executive, /Resumen ejecutivo/, 'Dashboard must expose a permanent 
 assert.match(executive, /Periodo financiero/, 'Dashboard must label the financial period');
 assert.match(executive, /Nómina agregada/, 'Dashboard must show aggregate payroll only');
 assert.match(executive, /Vigencia de fuentes/, 'Dashboard must expose source freshness');
-assert.match(executive, /Recomendaciones principales/, 'Dashboard must show derived management recommendations');
+assert.match(executive, /Alertas automáticas/, 'Dashboard must show derived management alerts, labelled as fixed rules');
 assert.match(executive, /navigateSiioView\('seguimiento'/, 'Actionable executive controls must drill into tracking');
 assert.match(executive, /navigateSiioView\('inteligencia'/, 'Source controls must drill into intelligence');
 assert.equal((executive.match(/financialRows\.map/g) || []).length, 1, 'Each financial KPI must have one presentation, not cards plus a duplicate detail panel');
