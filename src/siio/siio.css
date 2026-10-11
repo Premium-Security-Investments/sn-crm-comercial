@@ -581,3 +581,14 @@
   gap:12px;
   flex-wrap:wrap;
 }
+
+.siio-pulse-table th[scope="row"]{
+  width:1%;
+  white-space:nowrap;
+  padding-right:24px;
+  vertical-align:middle;
+}
+
+.siio-pulse-table td{
+  vertical-align:middle;
+}
