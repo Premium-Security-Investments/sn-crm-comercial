@@ -1,9 +1,13 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { api } from '../apiClient';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, deriveTrackingItems, navigateSiioView, uniqueOptions } from './selectors';
 import { Badge, EmptyState, Panel, fmtSiioMoney } from './SiioUi';
 import { SiioFinancialPulse } from './SiioFinancialPulse';
-import { SiioCommercialPanel } from './SiioCommercialPanel';
+import { CommercialAttentionRows, SiioCommercialDetail, millions } from './SiioCommercialPanel';
+import { SiioKeyFigures } from './SiioKeyFigures';
+import { commercialReadings, type CommercialSummary } from './commercialSummary';
+import { pulseReadings, type FinancialPulse } from './financialPulse';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState, SiioTrackingKind } from './types';
 
@@ -17,7 +21,31 @@ function formatMetric(value: number | null | undefined, percent = false) {
   if (value === null || value === undefined) return 'Sin datos';
   return percent
     ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(value)
-    : fmtSiioMoney(value);
+    : millions(Number(value));
+}
+
+type LoadState = 'loading' | 'ready' | 'error';
+
+function useSiioData<T>(path: string) {
+  const [data, setData] = useState<T | null>(null);
+  const [state, setState] = useState<LoadState>('loading');
+  useEffect(() => {
+    let active = true;
+    setState('loading');
+    api<T>(path)
+      .then(result => { if (active) { setData(result); setState('ready'); } })
+      .catch(() => { if (active) setState('error'); });
+    return () => { active = false; };
+  }, [path]);
+  return [data, state] as const;
+}
+
+// Detail on demand: the first screen monitors, the folded sections hold the tables.
+function DetailSection({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return <details className="panel siio-detail">
+    <summary><span className="siio-detail-title">{title}</span><span className="siio-detail-hint">{hint}</span></summary>
+    {children}
+  </details>;
 }
 
 function monthName(month: number) {
@@ -43,7 +71,7 @@ function metricChange(metric: SiioFinancialMetric) {
   const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
   if (metric.category === 'margen') return `${sign}${new Intl.NumberFormat('es-CO', { maximumFractionDigits: 1 }).format(Math.abs(difference) * 100)} puntos`;
   // A percentage over a negative base reads backwards, so negative results show the change in pesos.
-  if (Number(current) < 0 || Number(comparison) < 0) return `${difference < 0 ? 'Empeoró' : 'Mejoró'} ${fmtSiioMoney(Math.abs(difference))}`;
+  if (Number(current) < 0 || Number(comparison) < 0) return `${difference < 0 ? 'Empeoró' : 'Mejoró'} ${millions(Math.abs(difference))}`;
   if (!Number(comparison)) return null;
   return `${sign}${new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(Math.abs(difference / Number(comparison)))}`;
 }
@@ -74,6 +102,15 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind && item.activityState === 'active').length;
   const trackingLink = (kind: SiioTrackingKind) => onNavigate(navigateSiioView('seguimiento', { kind }));
   const intelligenceLink = () => onNavigate(navigateSiioView('inteligencia', { period: selectedPeriod }));
+  const [pulse, pulseState] = useSiioData<FinancialPulse | null>(`/api/siio/financial-pulse${selectedPeriod ? `?period=${encodeURIComponent(selectedPeriod)}` : ''}`);
+  const [commercial, commercialState] = useSiioData<CommercialSummary>('/api/siio/commercial-summary');
+  const attentionRows = commercial ? commercial.tenders.calendar.filter(item => item.attention).length + commercial.pipeline.stale_large.length : 0;
+  const signals = (['decisiones', 'bloqueos', 'riesgos', 'compromisos'] as SiioTrackingKind[]).map(kind => ({ kind, total: count(kind) })).filter(item => item.total > 0);
+  // Reading at the top: the month's business facts plus commercial items that need action; caveats stay in the detail.
+  const readings = [
+    ...(pulse ? pulseReadings(pulse).filter(text => !/provisión|^Enero cerró/.test(text)).slice(0, 2) : []),
+    ...(commercial ? commercialReadings(commercial).filter(text => !/^(Ventas nuevas|El pipeline ponderado)/.test(text)) : []),
+  ];
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
@@ -90,21 +127,47 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
 
-    <div className="siio-executive-grid">
-      {financialRows.map(metric => <div className="card kpi blue" key={metric.concept}>
-        <div className="kpi-head"><small>{metric.concept}</small></div>
-        <strong>{formatMetric(metric.value_current, metric.category === 'margen')}</strong>
-        <span>{metricBasis(metric, selectedPeriod).current}</span>
-        <em>{metric.value_comparison === null || metric.value_comparison === undefined
-          ? 'Comparativo pendiente'
-          : `${metricBasis(metric, selectedPeriod).comparison}: ${formatMetric(metric.value_comparison, metric.category === 'margen')}${metricChange(metric) ? ` · ${metricChange(metric)}` : ''}`}</em>
-      </div>)}
-    </div>
+    <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} />
 
-    <SiioCommercialPanel financialPeriodLabel={formatPeriod(selectedPeriod).toLowerCase()} />
+    <Panel title="Requiere atención">
+      {readings.length ? <div className="siio-pulse-readings siio-attention-readings"><ul>{readings.map(reading => <li key={reading}>{reading}</li>)}</ul></div> : null}
+      {attentionRows ? <div className="siio-table-wrap"><table className="siio-pulse-table siio-commercial-table">
+        <thead><tr><th>Asunto</th><th>Valor</th><th>Fecha / días</th><th>Situación</th></tr></thead>
+        <tbody>{commercial ? <CommercialAttentionRows summary={commercial} /> : null}</tbody>
+      </table></div> : commercialState === 'ready' ? <p className="siio-secondary">Nada comercial pendiente de decisión.</p> : null}
+      <div className="siio-attention-signals">
+        {signals.length
+          ? signals.map(item => <button type="button" key={item.kind} className="secondary" onClick={() => trackingLink(item.kind)}>{item.total} {item.kind} en seguimiento</button>)
+          : <span className="siio-secondary">Sin decisiones, bloqueos, riesgos ni compromisos abiertos en el seguimiento gerencial.</span>}
+      </div>
+    </Panel>
 
-    {financialRows.length ? <SiioFinancialPulse period={selectedPeriod} financialRows={financialRows} /> : null}
+    {recommendations.length ? <Panel title="Recomendaciones principales">
+      <div className="siio-insight-list">{recommendations.slice(0, 3).map(recommendation => <article key={recommendation.id} className={`siio-insight siio-insight-${recommendation.tone}`}><strong>{recommendation.title}</strong><p>{recommendation.finding}</p><button type="button" className="secondary" onClick={intelligenceLink}>Ver fuentes e inteligencia</button></article>)}</div>
+    </Panel> : null}
 
+    <DetailSection title={`Finanzas · detalle de ${pulse ? formatPeriod(selectedPeriod).toLowerCase() : 'periodo'}`} hint="Lectura del mes, tendencia, desglose por rubro y acumulado del año">
+      {financialRows.length ? <SiioFinancialPulse pulse={pulse} state={pulseState} financialRows={financialRows} /> : <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." />}
+      {financialRows.length ? <div className="siio-pulse-block">
+        <h4>Acumulado del año según el estado de resultados reportado</h4>
+        <div className="siio-executive-grid">
+          {financialRows.map(metric => <div className="card kpi blue" key={metric.concept}>
+            <div className="kpi-head"><small>{metric.concept}</small></div>
+            <strong>{formatMetric(metric.value_current, metric.category === 'margen')}</strong>
+            <span>{metricBasis(metric, selectedPeriod).current}</span>
+            <em>{metric.value_comparison === null || metric.value_comparison === undefined
+              ? 'Comparativo pendiente'
+              : `${metricBasis(metric, selectedPeriod).comparison}: ${formatMetric(metric.value_comparison, metric.category === 'margen')}${metricChange(metric) ? ` · ${metricChange(metric)}` : ''}`}</em>
+          </div>)}
+        </div>
+      </div> : null}
+    </DetailSection>
+
+    <DetailSection title="Comercial y Licitaciones · detalle" hint="Otras licitaciones, pipeline por etapa, indicadores en construcción y calidad del dato">
+      <SiioCommercialDetail summary={commercial} state={commercialState} />
+    </DetailSection>
+
+    <DetailSection title="Seguimiento gerencial y nómina agregada" hint="Riesgos, decisiones, bloqueos, compromisos y nómina por área">
     <Panel title="Gestión que requiere atención">
       <div className="siio-management-signals">
         <button type="button" onClick={() => trackingLink('riesgos')}><span>Riesgos registrados</span><strong>{count('riesgos')}</strong></button>
@@ -113,12 +176,6 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
         <button type="button" onClick={() => trackingLink('compromisos')}><span>Compromisos</span><strong>{count('compromisos')}</strong></button>
         <div className="siio-management-signal-static"><span>Alertas de nómina agregadas</span><strong>{payrollTotals.alerts}</strong></div>
       </div>
-    </Panel>
-
-    {!financialRows.length ? <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." /> : null}
-
-    <Panel title="Recomendaciones principales">
-      {recommendations.length ? <div className="siio-insight-list">{recommendations.slice(0, 3).map(recommendation => <article key={recommendation.id} className={`siio-insight siio-insight-${recommendation.tone}`}><strong>{recommendation.title}</strong><p>{recommendation.finding}</p><button type="button" className="secondary" onClick={intelligenceLink}>Ver fuentes e inteligencia</button></article>)}</div> : <EmptyState title="Sin recomendaciones" text="F5 no emitirá recomendaciones hasta contar con evidencia suficiente." />}
     </Panel>
 
     <Panel title="Nómina agregada">
@@ -152,6 +209,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
         </div>
       </>}
     </Panel>
+    </DetailSection>
 
     <Panel title="Vigencia de fuentes">
       <button type="button" className="secondary" onClick={intelligenceLink}>Consultar fuentes y vigencia</button>
