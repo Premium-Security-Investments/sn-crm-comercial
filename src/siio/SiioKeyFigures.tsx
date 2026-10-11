@@ -119,8 +119,6 @@ export function SiioTrendCharts({ pulse, summary }: { pulse: FinancialPulse | nu
     { name: String(pulse.year - 1), values: monthSeries(pulse, pulse.year - 1, key), tone: 'reference' },
   ] : [];
   const closed = summary ? summary.sales.by_month.slice(0, summary.sales.closed_months) : [];
-  const goals = closed.map(item => item.goal).filter(value => value > 0);
-  const flatGoal = goals.length && goals.every(value => value === goals[0]) ? goals[0] : null;
   if (!pulse && !closed.length) return null;
   return <section className="panel siio-trends" aria-label="Tendencia">
     <h2>Tendencia</h2>
@@ -128,7 +126,7 @@ export function SiioTrendCharts({ pulse, summary }: { pulse: FinancialPulse | nu
       {pulse ? <SiioColumnChart title="Ingresos por mes" note="Millones de pesos" categories={months} series={yearSeries('ingresos')} format={millions} axisFormat={axisMillions} /> : null}
       {pulse ? <SiioColumnChart title="Utilidad operacional por mes" note="Millones de pesos · enero sin provisión de ingresos" categories={months} series={yearSeries('utilidad_operacional')} format={millions} axisFormat={axisMillions} /> : null}
       {pulse ? <SiioLineChart title="Margen operacional por mes" note="Utilidad operacional sobre ingresos" categories={months} series={yearSeries('margen_operacional')} format={percentText} axisFormat={axisPercent} /> : null}
-      {closed.length ? <SiioColumnChart title="Ventas nuevas a privados por mes" note="Valor mensual del servicio, por mes de cotización · millones · sin licitaciones" categories={closed.map((_, index) => MONTHS_SHORT[index])} series={[{ name: `Ventas ${summary?.sales.year}`, values: closed.map(item => item.approved_monthly_value), tone: 'accent' }]} goal={flatGoal} goalLabel={flatGoal ? `Meta mensual ${millions(flatGoal)}` : undefined} format={millions} axisFormat={axisMillions} labelAll={false} /> : null}
+      {closed.length ? <SiioColumnChart title="Ventas nuevas a privados por mes" note="Valor mensual del servicio, por mes de cotización · millones · sin licitaciones" categories={closed.map((_, index) => MONTHS_SHORT[index])} series={[{ name: `Ventas ${summary?.sales.year}`, values: closed.map(item => item.approved_monthly_value), tone: 'accent' }, { name: 'Meta del mes', values: closed.map(item => item.goal || null), tone: 'reference' }]} format={millions} axisFormat={axisMillions} labelAll={false} /> : null}
     </div>
   </section>;
 }

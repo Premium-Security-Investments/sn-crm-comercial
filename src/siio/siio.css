@@ -989,9 +989,10 @@
 
 .siio-chart-tooltip{
   position:absolute;
-  top:0;
-  transform:translateX(-50%);
-  max-width:260px;
+  top:-6px;
+  transform:translate(-50%,-100%);
+  width:max-content;
+  max-width:280px;
   padding:6px 9px;
   border-radius:8px;
   background:#10213d;
@@ -1086,3 +1087,25 @@
 }
 
 .siio-alerts-title{margin:8px 0 0;color:#10213d;font-size:14px}
+
+/* The app shell's .panel rules load after this sheet in production; scope overrides to the Torre. */
+.siio-dashboard details.siio-detail{
+  padding:0;
+  border:1px solid #dbe6f4;
+  border-radius:14px;
+  box-shadow:none;
+}
+
+.siio-dashboard .siio-detail > summary{padding:14px 20px}
+
+.siio-dashboard .siio-alert-list button{
+  padding:4px 0;
+  border:0;
+  background:none;
+  box-shadow:none;
+  color:#174ea6;
+  font-size:13px;
+  font-weight:700;
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
