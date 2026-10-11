@@ -80,7 +80,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     <SiioNavigation activeView={routeState.view} onSelect={selectView} />
     {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'resumen'
-      ? <><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /><SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} /></>
+      ? <><SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} /><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /></>
       : routeState.view === 'seguimiento'
         ? <SiioManagementTrackingView payload={payload} routeState={routeState} onNavigate={onNavigate} />
         : routeState.view === 'inteligencia'
