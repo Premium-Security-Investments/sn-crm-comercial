@@ -126,3 +126,10 @@ test('mide cada mes contra el cierre anterior aunque la hoja abra sin la provisi
   assert.ok(!readings.some(text => /los ingresos (subieron|bajaron)/.test(text)), 'no presenta como cambio de negocio un salto causado por la falta de provisión, ni la caída del mes siguiente');
   assert.ok(readings.some(text => /pérdida operativa.*falta de provisión/.test(text)), readings.join('\n'));
 });
+
+test('la vista muestra pérdidas con el signo antes del peso', async () => {
+  const { readFileSync } = await import('node:fs');
+  const view = readFileSync(new URL('../src/siio/SiioFinancialPulse.tsx', import.meta.url), 'utf8');
+  assert.match(view, /rounded < 0 \? '−' : ''\}\$\$\{Math\.abs\(rounded\)/);
+  assert.match(view, /corte \{cutoffLabel\(pulse\.source\.cutoff_date\)\}/);
+});

@@ -5,7 +5,12 @@ import { EmptyState, Panel, fmtSiioMoney } from './SiioUi';
 import { longMonth, pulseBreakdown, pulseMonth, pulseReadings, relativeChange, shortMonth, type FinancialPulse, type FinancialPulseMonth, type FinancialPulseTotals } from './financialPulse';
 
 const percentFormat = new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 });
-const millions = (value: number | null | undefined) => value === null || value === undefined ? '—' : `$${Math.round(value / 1e6).toLocaleString('es-CO')} M`;
+const millions = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return '—';
+  const rounded = Math.round(value / 1e6);
+  return `${rounded < 0 ? '−' : ''}$${Math.abs(rounded).toLocaleString('es-CO')} M`;
+};
+const cutoffLabel = (value: string) => new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T12:00:00Z`));
 
 function signedPercent(value: number | null) {
   if (value === null) return null;
@@ -82,7 +87,7 @@ export function SiioFinancialPulse({ period, financialRows }: { period: string; 
   const reconciliationGap = reportedOperating === null || reportedOperating === undefined ? null : Number(reportedOperating) - balanceOperating;
 
   return <Panel title={`Pulso de ${monthTitle}`}>
-    <p className="siio-pulse-source">Movimiento del mes según el balance de cuentas · Fuente: {pulse.source.file_name} · corte {pulse.source.cutoff_date}</p>
+    <p className="siio-pulse-source">Movimiento del mes según el balance de cuentas · Fuente: {pulse.source.file_name} · corte {cutoffLabel(pulse.source.cutoff_date)}</p>
 
     <div className="siio-pulse-cards">
       {CARDS.map(card => {

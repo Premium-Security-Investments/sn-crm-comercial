@@ -77,22 +77,18 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
   return <div className="stack">
     <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">
+      <span className="siio-eyebrow">Resumen ejecutivo</span>
       <label>Periodo financiero
         <select value={routeState.filters.period} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, period: event.target.value }))}>
-          <option value="">Último periodo publicado</option>
+          <option value="">Último periodo publicado ({formatPeriod(selectedPeriod)})</option>
           {periodOptions.map(period => <option key={period} value={period}>{formatPeriod(period)}</option>)}
         </select>
       </label>
-    </section>
-
-    <div className="siio-executive-status">
-      <div><span className="siio-eyebrow">Resumen ejecutivo</span><strong>Cifras financieras del periodo</strong></div>
       <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
-    </div>
+    </section>
 
     {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
 
-    <div className="siio-period-line"><span>Periodo financiero</span><strong>{formatPeriod(selectedPeriod)}</strong></div>
     <div className="siio-executive-grid">
       {financialRows.map(metric => <div className="card kpi blue" key={metric.concept}>
         <div className="kpi-head"><small>{metric.concept}</small></div>
