@@ -22,6 +22,9 @@ test('la Torre muestra el cargue sólo como acción de admin o gerencia', () => 
   assert.match(dashboard, /\['admin', 'gerencia'\]\.includes\(currentProfile\.role\)/);
   assert.match(panel, /uploadToSignedUrl/);
   assert.match(panel, /Validar este corte/);
+  assert.match(panel, /Cargar y comprobar/);
+  assert.match(panel, /La misma persona cargó y validó este corte/);
+  assert.doesNotMatch(panel, /imports\[0\]/, 'las acciones deben estar disponibles en cada corte, no sólo en el último cargado');
   assert.match(panel, /Publicar en la Torre de Control/);
   assert.match(panel, /Las hojas privadas se excluyen/);
 });

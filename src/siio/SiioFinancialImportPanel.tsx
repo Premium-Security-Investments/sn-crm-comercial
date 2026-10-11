@@ -17,6 +17,16 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value));
 }
 
+function formatMonth(value?: string | null) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T12:00:00Z`));
+}
+
+function formatMoment(value?: string | null) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date(value));
+}
+
 function statusLabel(value: SiioFinancialImport['status']) {
   return ({ recibido: 'Recibido', con_errores: 'Con errores', listo_revision: 'Listo para tu revisión', validado: 'Validado por una persona', publicado: 'Publicado', reemplazado: 'Versión anterior' } as const)[value];
 }
@@ -34,8 +44,7 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const latest = imports[0] || null;
-  const failedChecks = useMemo(() => latest?.validations.filter(item => !item.ok) || [], [latest]);
+  const visibleImports = useMemo(() => imports.slice(0, 6), [imports]);
 
   const loadImports = async () => {
     try {
@@ -63,7 +72,7 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
     if (file.size > MAX_BYTES) return setError('El archivo supera el límite de 10 MB.');
     setBusy(true);
     setError('');
-    setMessage('Subiendo y validando el libro contable…');
+    setMessage('Subiendo el libro y haciendo las comprobaciones automáticas…');
     const metadata = {
       name: file.name,
       size: file.size,
@@ -81,7 +90,7 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
       setMessage(result.duplicate
         ? 'Este mismo archivo ya estaba cargado; se conservó la versión existente.'
         : result.status === 'listo_revision'
-          ? `Controles automáticos aprobados: ${result.summary.balance_lines || 0} líneas contables y ${result.summary.metrics || 0} indicadores. ${warningCount ? `${warningCount} advertencia(s) para revisar.` : 'Sin advertencias.'} Falta tu validación.`
+          ? `Controles automáticos aprobados: ${result.summary.balance_lines || 0} líneas contables y ${result.summary.metrics || 0} indicadores. ${warningCount ? `${warningCount} advertencia(s) para revisar.` : 'Sin advertencias.'} Falta la validación de una persona.`
           : 'La carga se guardó con errores bloqueantes y no puede publicarse.');
       setFile(null);
       await loadImports();
@@ -94,7 +103,7 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
   };
 
   const validate = async (item: SiioFinancialImport) => {
-    if (!window.confirm(`¿Confirmas que revisaste el corte de ${formatDate(item.period_month)} y que sus cifras pueden avanzar? Tu usuario y la fecha quedarán registrados.`)) return;
+    if (!window.confirm(`¿Confirmas que revisaste el corte de ${formatMonth(item.period_month)} y que sus cifras pueden avanzar? Tu usuario y la fecha quedarán registrados.`)) return;
     setBusy(true);
     setError('');
     setMessage('Registrando tu validación…');
@@ -111,7 +120,7 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
   };
 
   const publish = async (item: SiioFinancialImport) => {
-    if (!window.confirm(`¿Publicar el corte de ${formatDate(item.period_month)} en la Torre de Control? La versión publicada anterior de ese periodo quedará conservada como histórica.`)) return;
+    if (!window.confirm(`¿Publicar el corte de ${formatMonth(item.period_month)} en la Torre de Control? La versión publicada anterior de ese periodo quedará conservada como histórica.`)) return;
     setBusy(true);
     setError('');
     setMessage('Publicando el corte validado…');
@@ -129,26 +138,40 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
 
   return <section className="card siio-financial-import-panel" aria-labelledby="siio-financial-import-title">
     <header>
-      <div><span className="eyebrow">Finanzas · fuente contable</span><h3 id="siio-financial-import-title">Cargue del Excel contable</h3><p>Cada archivo queda como un corte independiente. El sistema valida el balance y los indicadores antes de permitir su publicación.</p></div>
-      {latest ? <span className={`badge siio-financial-status status-${latest.status}`}>{statusLabel(latest.status)}</span> : null}
+      <div><span className="eyebrow">Finanzas · fuente contable</span><h3 id="siio-financial-import-title">Cargue del Excel contable</h3><p>Cada archivo queda como un corte independiente. El sistema hace comprobaciones automáticas; después una persona autorizada valida el corte y lo publica en la Torre.</p></div>
     </header>
-    {canImport ? <div className="siio-financial-import-form">
-      <label>Periodo<input type="month" value={month} onChange={event => selectMonth(event.target.value)} disabled={busy}/></label>
-      <label>Tipo de corte<select value={importType} onChange={event => selectType(event.target.value as typeof importType)} disabled={busy}><option value="cierre_mensual">Cierre mensual</option><option value="parcial_diario">Avance diario del mes</option><option value="reproceso">Corrección de un cierre</option></select></label>
-      <label>Fecha de corte<input type="date" value={cutoffDate} onChange={event => setCutoffDate(event.target.value)} disabled={busy || importType === 'cierre_mensual'}/></label>
-      <label className="siio-financial-file">Excel contable<input type="file" accept=".xlsm,application/vnd.ms-excel.sheet.macroenabled.12" onChange={event => setFile(event.target.files?.[0] || null)} disabled={busy}/><small>Libro .xlsm, máximo 10 MB. Las hojas privadas se excluyen.</small></label>
-      <button type="button" onClick={() => void upload()} disabled={busy || !file}>{busy ? 'Procesando…' : 'Cargar y validar'}</button>
+    {canImport ? <div className="siio-financial-section">
+      <h4>Nuevo cargue</h4>
+      <div className="siio-financial-import-form">
+        <label>Periodo del archivo<input type="month" value={month} onChange={event => selectMonth(event.target.value)} disabled={busy}/></label>
+        <label>Tipo de corte<select value={importType} onChange={event => selectType(event.target.value as typeof importType)} disabled={busy}><option value="cierre_mensual">Cierre mensual</option><option value="parcial_diario">Avance diario del mes</option><option value="reproceso">Corrección de un cierre</option></select></label>
+        <label>Fecha de corte<input type="date" value={cutoffDate} onChange={event => setCutoffDate(event.target.value)} disabled={busy || importType === 'cierre_mensual'}/></label>
+        <label className="siio-financial-file">Excel contable<input type="file" accept=".xlsm,application/vnd.ms-excel.sheet.macroenabled.12" onChange={event => setFile(event.target.files?.[0] || null)} disabled={busy}/><small>Libro .xlsm, máximo 10 MB. Las hojas privadas se excluyen.</small></label>
+        <button type="button" onClick={() => void upload()} disabled={busy || !file}>{busy ? 'Procesando…' : 'Cargar y comprobar'}</button>
+      </div>
     </div> : <p className="siio-secondary">Tu perfil puede revisar los cortes financieros, pero no cargar ni publicar archivos.</p>}
     {message ? <div className="notice" role="status">{message}</div> : null}
     {error ? <div className="error" role="alert">{error}</div> : null}
-    {latest ? <div className="siio-financial-latest">
-      <div><small>Archivo</small><strong>{latest.file_name}</strong></div>
-      <div><small>Periodo y corte</small><strong>{formatDate(latest.period_month)} · {formatDate(latest.cutoff_date)}</strong></div>
-      <div><small>Contenido cargado</small><strong>{latest.import_summary?.balance_lines || 0} líneas · {latest.import_summary?.metrics || 0} indicadores</strong></div>
-      <div><small>Validaciones</small><strong>{latest.validations.filter(item => item.ok).length} aprobadas · {failedChecks.length} por revisar</strong></div>
-      {failedChecks.length ? <ul>{failedChecks.map(item => <li key={`${item.rule}-${item.detail}`}><strong>{item.severity === 'advertencia' ? 'Advertencia' : 'Bloqueo'}:</strong> {item.detail} ({item.obtained || 'sin valor'})</li>)}</ul> : null}
-      {canImport && latest.status === 'listo_revision' ? <button type="button" onClick={() => void validate(latest)} disabled={busy}>Validar este corte</button> : null}
-      {canImport && latest.status === 'validado' && latest.import_type !== 'parcial_diario' ? <button type="button" onClick={() => void publish(latest)} disabled={busy}>Publicar en la Torre de Control</button> : null}
-    </div> : <p className="siio-secondary">Aún no hay cargas versionadas. Los indicadores históricos existentes siguen visibles.</p>}
+    <div className="siio-financial-section">
+      <h4>Cortes cargados</h4>
+      {visibleImports.length ? visibleImports.map(item => {
+        const failedChecks = item.validations.filter(check => !check.ok);
+        return <article className="siio-financial-latest" key={item.id}>
+          <div><small>Archivo</small><strong>{item.file_name}</strong><span className={`badge siio-financial-status status-${item.status}`}>{statusLabel(item.status)}</span></div>
+          <div><small>Periodo y corte</small><strong>{formatMonth(item.period_month)} · corte {formatDate(item.cutoff_date)}</strong></div>
+          <div><small>Contenido cargado</small><strong>{item.import_summary?.balance_lines || 0} líneas · {item.import_summary?.metrics || 0} indicadores</strong></div>
+          <div><small>Comprobaciones automáticas</small><strong>{item.validations.filter(check => check.ok).length} aprobadas · {failedChecks.length} por revisar</strong></div>
+          {failedChecks.length ? <ul>{failedChecks.map(check => <li key={`${check.rule}-${check.detail}`}><strong>{check.severity === 'bloqueante' ? 'Bloqueo' : check.severity === 'advertencia' ? 'Advertencia' : 'Nota'}:</strong> {check.detail} ({check.obtained || 'sin valor'})</li>)}</ul> : null}
+          <p className="siio-financial-trail">
+            Cargado por {item.uploaded_by_name || 'persona registrada'} el {formatMoment(item.uploaded_at)}.
+            {item.validated_at ? ` Validado por ${item.validated_by_name || 'persona registrada'} el ${formatMoment(item.validated_at)}.` : ''}
+            {item.validated_by_uploader ? ' La misma persona cargó y validó este corte.' : ''}
+            {item.published_at ? ` Publicado por ${item.published_by_name || 'persona registrada'} el ${formatMoment(item.published_at)}.` : ''}
+          </p>
+          {canImport && item.status === 'listo_revision' ? <button type="button" onClick={() => void validate(item)} disabled={busy}>Validar este corte</button> : null}
+          {canImport && item.status === 'validado' && item.import_type !== 'parcial_diario' ? <button type="button" onClick={() => void publish(item)} disabled={busy}>Publicar en la Torre de Control</button> : null}
+        </article>;
+      }) : <p className="siio-secondary">Aún no hay cargas versionadas. Los indicadores históricos existentes siguen visibles.</p>}
+    </div>
   </section>;
 }

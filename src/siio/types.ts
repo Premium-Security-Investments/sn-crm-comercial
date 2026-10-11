@@ -40,6 +40,10 @@ export type SiioFinancialImport = {
   uploaded_at: string;
   validated_at?: string | null;
   published_at?: string | null;
+  uploaded_by_name?: string | null;
+  validated_by_name?: string | null;
+  published_by_name?: string | null;
+  validated_by_uploader?: boolean;
   validations: SiioFinancialValidation[];
 };
 export type SiioBootstrapPayload = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: SiioBoardSection[]; financialMetrics: SiioFinancialMetric[]; commercialSignals: unknown[]; payrollAggregates: SiioPayrollAggregate[]; strategicOpportunities: unknown[]; currentProfile: SiioCurrentProfile };

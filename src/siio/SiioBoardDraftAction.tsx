@@ -25,7 +25,7 @@ function formatPeriod(period: string | null | undefined) {
 }
 
 function validationLabel(status: ExecutiveSnapshot['financialValidationStatus']) {
-  if (status === 'validado') return 'Validado por Finanzas';
+  if (status === 'validado') return 'Validación humana registrada';
   if (status === 'sin_datos') return 'Sin datos publicados';
   return 'Pendiente de validación financiera';
 }

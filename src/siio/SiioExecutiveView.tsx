@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, deriveTrackingItems, navigateSiioView, uniqueOptions } from './selectors';
 import { Badge, EmptyState, Panel, fmtSiioMoney } from './SiioUi';
+import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState, SiioTrackingKind } from './types';
 
 function formatPeriod(period: string | null | undefined) {
@@ -15,6 +16,34 @@ function formatMetric(value: number | null | undefined, percent = false) {
   return percent
     ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(value)
     : fmtSiioMoney(value);
+}
+
+function monthName(month: number) {
+  return new Intl.DateTimeFormat('es-CO', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2000, month - 1, 15))).replace('.', '');
+}
+
+// Accumulated figures cover January through the cut month; the comparison is the same range one year earlier.
+function metricBasis(metric: SiioFinancialMetric, period: string) {
+  if (!period) return { current: '', comparison: 'comparativo' };
+  const [year, month] = period.split('-').map(Number);
+  if (metric.base_value !== 'acumulado') return { current: formatPeriod(period), comparison: `${monthName(month)} ${year - 1}` };
+  const range = month === 1 ? monthName(1) : `${monthName(1)}–${monthName(month)}`;
+  return { current: `Acumulado ${range} ${year}`, comparison: `${range} ${year - 1}` };
+}
+
+function metricChange(metric: SiioFinancialMetric) {
+  const current = metric.value_current;
+  const comparison = metric.value_comparison;
+  if (current === null || current === undefined || comparison === null || comparison === undefined) {
+    return metric.variation_pct === null || metric.variation_pct === undefined ? null : `${formatMetric(metric.variation_pct, true)}`;
+  }
+  const difference = Number(current) - Number(comparison);
+  const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
+  if (metric.category === 'margen') return `${sign}${new Intl.NumberFormat('es-CO', { maximumFractionDigits: 1 }).format(Math.abs(difference) * 100)} puntos`;
+  // A percentage over a negative base reads backwards, so negative results show the change in pesos.
+  if (Number(current) < 0 || Number(comparison) < 0) return `${difference < 0 ? 'Empeoró' : 'Mejoró'} ${fmtSiioMoney(Math.abs(difference))}`;
+  if (!Number(comparison)) return null;
+  return `${sign}${new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(Math.abs(difference / Number(comparison)))}`;
 }
 
 export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload: SiioBootstrapPayload; routeState: Extract<SiioRouteState, { view: 'resumen' }>; onNavigate: (state: SiioRouteState) => void }) {
@@ -43,7 +72,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind && item.activityState === 'active').length;
   const trackingLink = (kind: SiioTrackingKind) => onNavigate(navigateSiioView('seguimiento', { kind }));
   const intelligenceLink = () => onNavigate(navigateSiioView('inteligencia', { period: selectedPeriod }));
-  const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validado por Finanzas' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
+  const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
     <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">
@@ -67,14 +96,16 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       {financialRows.map(metric => <div className="card kpi blue" key={metric.concept}>
         <div className="kpi-head"><small>{metric.concept}</small></div>
         <strong>{formatMetric(metric.value_current, metric.category === 'margen')}</strong>
-        <span>{formatPeriod(selectedPeriod)}</span>
-        <em>{metric.variation_pct === null || metric.variation_pct === undefined ? 'Comparativo pendiente' : `${formatMetric(metric.variation_pct, true)} vs. comparativo`}</em>
+        <span>{metricBasis(metric, selectedPeriod).current}</span>
+        <em>{metric.value_comparison === null || metric.value_comparison === undefined
+          ? 'Comparativo pendiente'
+          : `${metricBasis(metric, selectedPeriod).comparison}: ${formatMetric(metric.value_comparison, metric.category === 'margen')}${metricChange(metric) ? ` · ${metricChange(metric)}` : ''}`}</em>
       </div>)}
     </div>
 
     <Panel title="Gestión que requiere atención">
       <div className="siio-management-signals">
-        <button type="button" onClick={() => trackingLink('riesgos')}><span>Alertas y riesgos</span><strong>{count('riesgos')}</strong></button>
+        <button type="button" onClick={() => trackingLink('riesgos')}><span>Riesgos registrados</span><strong>{count('riesgos')}</strong></button>
         <button type="button" onClick={() => trackingLink('decisiones')}><span>Decisiones pendientes</span><strong>{count('decisiones')}</strong></button>
         <button type="button" onClick={() => trackingLink('bloqueos')}><span>Bloqueos</span><strong>{count('bloqueos')}</strong></button>
         <button type="button" onClick={() => trackingLink('compromisos')}><span>Compromisos</span><strong>{count('compromisos')}</strong></button>

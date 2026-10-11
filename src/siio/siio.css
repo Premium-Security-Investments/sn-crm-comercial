@@ -23,6 +23,36 @@
   gap:16px;
 }
 
+.siio-financial-import-panel .eyebrow{
+  background:#eaf2ff;
+  color:#174ea6;
+}
+
+.siio-financial-section{
+  display:grid;
+  gap:10px;
+}
+
+.siio-financial-section + .siio-financial-section{
+  padding-top:14px;
+  border-top:1px solid #dbe6f4;
+}
+
+.siio-financial-section h4{
+  margin:0;
+  color:#10213d;
+  font-size:16px;
+}
+
+.siio-financial-latest .siio-financial-status{
+  justify-self:start;
+}
+
+.siio-financial-import-panel .siio-financial-trail{
+  grid-column:1 / -1;
+  font-size:13px;
+}
+
 .siio-financial-import-panel h3{
   margin:5px 0;
   color:#10213d;
@@ -76,8 +106,9 @@
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
   gap:10px;
-  padding-top:14px;
-  border-top:1px solid #dbe6f4;
+  padding:12px;
+  border:1px solid #dbe6f4;
+  border-radius:14px;
 }
 
 .siio-financial-latest > div{
