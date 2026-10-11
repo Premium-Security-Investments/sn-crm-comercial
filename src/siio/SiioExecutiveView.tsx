@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, deriveTrackingItems, navigateSiioView, uniqueOptions } from './selectors';
 import { Badge, EmptyState, Panel, fmtSiioMoney } from './SiioUi';
+import { SiioFinancialPulse } from './SiioFinancialPulse';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState, SiioTrackingKind } from './types';
 
@@ -102,6 +103,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           : `${metricBasis(metric, selectedPeriod).comparison}: ${formatMetric(metric.value_comparison, metric.category === 'margen')}${metricChange(metric) ? ` · ${metricChange(metric)}` : ''}`}</em>
       </div>)}
     </div>
+
+    {financialRows.length ? <SiioFinancialPulse period={selectedPeriod} financialRows={financialRows} /> : null}
 
     <Panel title="Gestión que requiere atención">
       <div className="siio-management-signals">
