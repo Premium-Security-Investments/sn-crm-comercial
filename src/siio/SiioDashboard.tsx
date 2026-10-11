@@ -73,10 +73,10 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   }
 
   return <section className="stack siio-dashboard">
-    <section className="executive-hero">
-      <div><span className="eyebrow">SIIO — Sistema Interno de Inteligencia Operativa</span><h2>Información para la dirección</h2><p>Resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad en un solo lugar.</p></div>
-      <div className="hero-facts"><div><small>Perfil</small><strong>{SIIO_ROLE_LABELS[currentProfile.role] || currentProfile.role}</strong></div>{!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}</div>
-    </section>
+    <div className="siio-header-bar">
+      <span className="siio-header-profile">SIIO — Sistema Interno de Inteligencia Operativa · Perfil: <strong>{SIIO_ROLE_LABELS[currentProfile.role] || currentProfile.role}</strong></span>
+      {!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}
+    </div>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     <SiioNavigation activeView={routeState.view} onSelect={selectView} />
     {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'resumen'

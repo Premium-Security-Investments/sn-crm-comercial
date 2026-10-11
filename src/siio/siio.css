@@ -552,3 +552,32 @@
   color:#526173;
   font-size:12px;
 }
+
+.siio-header-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.siio-header-profile{
+  color:#526173;
+  font-size:13px;
+}
+
+.siio-header-profile strong{
+  color:#10213d;
+}
+
+.siio-dashboard .siio-view-filters[aria-label="Filtros del resumen ejecutivo"] .siio-eyebrow{
+  align-self:center;
+}
+
+.siio-dashboard .siio-view-filters[aria-label="Filtros del resumen ejecutivo"]{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+}
