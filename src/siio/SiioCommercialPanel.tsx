@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react';
-import { api } from '../apiClient';
-import { EmptyState, Panel } from './SiioUi';
-import { closingDateLabel, commercialReadings, type CommercialSummary } from './commercialSummary';
+import { EmptyState } from './SiioUi';
+import { closingDateLabel, type CommercialSummary } from './commercialSummary';
 
-const millions = (value: number) => `${value < 0 ? '−' : ''}$${Math.abs(Math.round(value / 1e6)).toLocaleString('es-CO')} M`;
+export const millions = (value: number) => `${value < 0 ? '−' : ''}$${Math.abs(Math.round(value / 1e6)).toLocaleString('es-CO')} M`;
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
 
 const OFFER_STATUS: Record<string, string> = {
@@ -17,93 +15,49 @@ function Pending({ title, need }: { title: string; need: string }) {
   return <div className="siio-commercial-pending"><strong>{title}</strong><span>Pendiente: {need}</span></div>;
 }
 
-export function SiioCommercialPanel({ financialPeriodLabel }: { financialPeriodLabel: string }) {
-  const [summary, setSummary] = useState<CommercialSummary | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+// Rows for the "Requiere atención" table: tenders that need a decision or an update, then large stalled opportunities.
+export function CommercialAttentionRows({ summary }: { summary: CommercialSummary }) {
+  const attention = summary.tenders.calendar.filter(item => item.attention);
+  return <>
+    {attention.map(item => <tr key={item.id} className="siio-pulse-highlight">
+      <th scope="row">Licitación · {item.entity}</th>
+      <td>{millions(item.total_value)} total</td>
+      <td>Cierra {closingDateLabel(item.deadline_at)}{item.days_to_deadline !== null ? ` (${item.days_to_deadline < 0 ? `hace ${-item.days_to_deadline}` : `en ${item.days_to_deadline}`} días)` : ''}</td>
+      <td>{item.attention === 'requiere_decision' ? 'Sin decisión de presentarse' : 'Cierre vencido, estado sin actualizar'}</td>
+    </tr>)}
+    {summary.pipeline.stale_large.map(item => <tr key={item.id}>
+      <th scope="row">Oportunidad · {item.company_name}</th>
+      <td>{millions(item.monthly_value)} / mes</td>
+      <td>{item.days_without_activity} días sin actividad</td>
+      <td>{item.stage}{item.owner_name ? ` · ${item.owner_name}` : ''}</td>
+    </tr>)}
+  </>;
+}
 
-  useEffect(() => {
-    let active = true;
-    api<CommercialSummary>('/api/siio/commercial-summary')
-      .then(result => { if (active) { setSummary(result); setState('ready'); } })
-      .catch(() => { if (active) setState('error'); });
-    return () => { active = false; };
-  }, []);
+// Detail of the commercial block; the headline figures and the attention rows live at the top of the Torre.
+export function SiioCommercialDetail({ summary, state }: { summary: CommercialSummary | null; state: 'loading' | 'ready' | 'error' }) {
+  if (state === 'loading') return <p className="siio-secondary">Cargando datos del CRM…</p>;
+  if (state === 'error' || !summary) return <EmptyState title="No se pudo cargar Comercial y Licitaciones" text="El resto de la Torre sigue disponible." />;
 
-  if (state === 'loading') return <Panel title="Comercial y Licitaciones"><p className="siio-secondary">Cargando datos del CRM…</p></Panel>;
-  if (state === 'error' || !summary) return <Panel title="Comercial y Licitaciones"><EmptyState title="No se pudo cargar Comercial y Licitaciones" text="El resto de la Torre sigue disponible." /></Panel>;
+  const { pipeline, tenders, data_quality: quality } = summary;
+  const rest = tenders.calendar.filter(item => !item.attention);
 
-  const { sales, pipeline, tenders, data_quality: quality } = summary;
-  const readings = commercialReadings(summary);
-  const attention = tenders.calendar.filter(item => item.attention);
-  const attainment = sales.ytd_attainment;
-
-  return <Panel title="Comercial y Licitaciones">
-    <p className="siio-pulse-source">CRM al {closingDateLabel(`${summary.as_of}T12:00:00Z`)} {summary.as_of.slice(0, 4)} · valores comerciales mensuales; licitaciones por valor total del proceso. Las cifras financieras de arriba van a {financialPeriodLabel}.</p>
-
-    <div className="siio-pulse-cards">
-      <div className="siio-pulse-card">
-        <small>Ventas nuevas {sales.closed_months ? `ene–${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][sales.closed_months - 1]}` : sales.year}</small>
-        <strong>{millions(sales.ytd_monthly_value)}</strong>
-        <span>Meta: {millions(sales.ytd_goal)} · {percent(attainment)}</span>
-        {attainment !== null ? <div className="siio-goal-bar" role="img" aria-label={`${percent(attainment)} de la meta`}><i style={{ width: `${Math.min(100, attainment * 100)}%` }} className={attainment < 0.9 ? 'below' : undefined} /></div> : null}
-      </div>
-      <div className="siio-pulse-card">
-        <small>Pipeline ponderado</small>
-        <strong>{millions(pipeline.weighted_monthly_value)}</strong>
-        <span>de {millions(pipeline.monthly_value)} abiertos en {pipeline.open_count} oportunidades</span>
-      </div>
-      <div className="siio-pulse-card">
-        <small>Cobertura de la meta restante</small>
-        <strong>{pipeline.coverage_of_remaining_goal === null ? '—' : `${pipeline.coverage_of_remaining_goal.toLocaleString('es-CO', { maximumFractionDigits: 1 })}×`}</strong>
-        <span>Falta {millions(pipeline.remaining_goal)} para la meta del año</span>
-      </div>
-      <div className="siio-pulse-card">
-        <small>Licitaciones abiertas</small>
-        <strong>{tenders.open_count}</strong>
-        <span>{millions(tenders.total_value)} en juego (valor total)</span>
-      </div>
-      <div className={`siio-pulse-card${tenders.requires_decision + tenders.overdue_status ? ' siio-card-alert' : ''}`}>
-        <small>Requieren decisión</small>
-        <strong>{tenders.requires_decision + tenders.overdue_status}</strong>
-        <span>{tenders.requires_decision} sin decisión a {tenders.decision_window_days} días · {tenders.overdue_status} con cierre vencido</span>
-      </div>
-    </div>
-
-    {readings.length ? <div className="siio-pulse-readings"><h4>Lectura</h4><ul>{readings.map(reading => <li key={reading}>{reading}</li>)}</ul></div> : null}
+  return <div className="siio-detail-body">
+    <p className="siio-pulse-source">CRM al {closingDateLabel(`${summary.as_of}T12:00:00Z`)} {summary.as_of.slice(0, 4)} · valores comerciales mensuales; licitaciones por valor total del proceso.</p>
 
     <div className="siio-pulse-block">
-      <h4>Requiere decisión</h4>
-      {attention.length || pipeline.stale_large.length ? <div className="siio-table-wrap"><table className="siio-pulse-table siio-commercial-table">
-        <thead><tr><th>Asunto</th><th>Valor</th><th>Fecha / días</th><th>Situación</th></tr></thead>
-        <tbody>
-          {attention.map(item => <tr key={item.id} className="siio-pulse-highlight">
-            <th scope="row">Licitación · {item.entity}</th>
-            <td>{millions(item.total_value)} total</td>
-            <td>Cierra {closingDateLabel(item.deadline_at)}{item.days_to_deadline !== null ? ` (${item.days_to_deadline < 0 ? `hace ${-item.days_to_deadline}` : `en ${item.days_to_deadline}`} días)` : ''}</td>
-            <td>{item.attention === 'requiere_decision' ? 'Sin decisión de presentarse' : 'Cierre vencido, estado sin actualizar'}</td>
-          </tr>)}
-          {pipeline.stale_large.map(item => <tr key={item.id}>
-            <th scope="row">Oportunidad · {item.company_name}</th>
-            <td>{millions(item.monthly_value)} / mes</td>
-            <td>{item.days_without_activity} días sin actividad</td>
-            <td>{item.stage}{item.owner_name ? ` · ${item.owner_name}` : ''}</td>
-          </tr>)}
-        </tbody>
-      </table></div> : <p className="siio-secondary">Nada pendiente de decisión.</p>}
-    </div>
-
-    <div className="siio-pulse-block">
-      <h4>Calendario de licitaciones</h4>
-      {tenders.calendar.length ? <div className="siio-table-wrap"><table className="siio-pulse-table siio-commercial-table">
+      <h4>Otras licitaciones activas</h4>
+      <p className="siio-pulse-footnote">Las que requieren decisión o actualización están arriba, en "Requiere atención".</p>
+      {rest.length ? <div className="siio-table-wrap"><table className="siio-pulse-table siio-commercial-table">
         <thead><tr><th>Entidad</th><th>Valor total</th><th>Cierre</th><th>Decisión</th><th>Estado</th></tr></thead>
-        <tbody>{tenders.calendar.map(item => <tr key={item.id}>
+        <tbody>{rest.map(item => <tr key={item.id}>
           <th scope="row">{item.entity}</th>
           <td>{millions(item.total_value)}</td>
           <td>{closingDateLabel(item.deadline_at)}</td>
           <td>{item.decision === 'go' ? 'Presentarse' : 'Pendiente'}</td>
           <td>{OFFER_STATUS[item.offer_status || ''] || '—'}</td>
         </tr>)}</tbody>
-      </table></div> : <p className="siio-secondary">No hay licitaciones activas.</p>}
+      </table></div> : <p className="siio-secondary">No hay otras licitaciones activas.</p>}
     </div>
 
     <div className="siio-pulse-block">
@@ -128,9 +82,11 @@ export function SiioCommercialPanel({ financialPeriodLabel }: { financialPeriodL
         <Pending title="Tasa de adjudicación" need={tenders.awarded + tenders.not_awarded ? `${percent(tenders.award_rate)} (${tenders.awarded} de ${tenders.awarded + tenders.not_awarded})` : 'registrar en el CRM las licitaciones adjudicadas y no adjudicadas.'} />
         <Pending title="Concentración de clientes" need="ingresos por cliente desde Avancys." />
         <Pending title="Cierres que se corren" need="guardar el historial de fechas de cierre estimadas en el CRM." />
+        <Pending title="Comparación con presupuesto" need="presupuesto mensual del año por rubro." />
+        <Pending title="Cobertura necesaria" need="tasa de cierre histórica (ofertas ganadas sobre enviadas) para fijar cuántas veces debe cubrir el pipeline la meta." />
       </div>
     </div>
 
     <p className="siio-pulse-note">Calidad del dato: {quality.open_without_value} de {quality.open_total} oportunidades abiertas sin valor; {quality.open_stale} sin actividad en más de {pipeline.stale_days} días; {quality.approved_without_date} ventas aprobadas sin fecha de aprobación (por eso las ventas se cuentan por mes de cotización).</p>
-  </Panel>;
+  </div>;
 }

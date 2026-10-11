@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { buildCommercialSummary, loadCommercialSummary } from '../siio-commercial-summary.js';
+import { buildCommercialSummary, cleanEntityName, loadCommercialSummary } from '../siio-commercial-summary.js';
 
 process.env.NEXT_PUBLIC_SUPABASE_URL ||= 'http://127.0.0.1:1';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-service-key';
@@ -115,4 +115,30 @@ test('mismos permisos de lectura que el resto de la Torre gerencial', async () =
   for (const role of ['admin', 'gerencia', 'consulta']) assert.equal(requireSiioEndpointAccess(profile(role), 'GET /api/siio/commercial-summary'), true);
   assert.throws(() => requireSiioEndpointAccess(profile('junta'), 'GET /api/siio/commercial-summary'), error => error?.status === 403);
   assert.throws(() => requireSiioEndpointAccess(profile('comercial'), 'GET /api/siio/commercial-summary'), error => error?.status === 403);
+});
+
+test('los nombres de entidad llegan sin asteriscos de SECOP', () => {
+  assert.equal(cleanEntityName('GOBERNACIÓN DE RISARALDA**'), 'GOBERNACIÓN DE RISARALDA');
+  assert.equal(cleanEntityName('  MUNICIPIO  DE PEREIRA '), 'MUNICIPIO DE PEREIRA');
+  assert.equal(cleanEntityName(null), '');
+});
+
+test('la Torre pone primero las cifras clave y la atención, y pliega el detalle', async () => {
+  const { readFileSync } = await import('node:fs');
+  const view = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
+  const keyFigures = view.indexOf('<SiioKeyFigures');
+  const attention = view.indexOf('<Panel title="Requiere atención">');
+  const firstDetail = view.indexOf('<DetailSection');
+  assert.ok(keyFigures > 0 && keyFigures < attention && attention < firstDetail, 'orden: cifras clave, requiere atención, detalle');
+  assert.match(view, /<details className="panel siio-detail">/);
+  assert.equal((view.match(/api<T>\(path\)/g) || []).length, 1, 'la vista carga cada fuente una sola vez y la comparte');
+  const figures = readFileSync(new URL('../src/siio/SiioKeyFigures.tsx', import.meta.url), 'utf8');
+  assert.equal((figures.match(/<Figure /g) || []).length, 7, 'siete cifras clave en la primera pantalla');
+  assert.match(figures, /siio-sparkline-reference/, 'la referencia (año anterior o meta) va en gris');
+});
+
+test('las cifras acumuladas se muestran en millones, no en pesos completos', async () => {
+  const { readFileSync } = await import('node:fs');
+  const view = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
+  assert.match(view, /: millions\(Number\(value\)\)/);
 });

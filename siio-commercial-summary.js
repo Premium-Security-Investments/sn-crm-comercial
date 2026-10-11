@@ -21,6 +21,11 @@ function daysBetween(from, to) {
   return Math.floor((to.getTime() - from.getTime()) / DAY_MS);
 }
 
+// SECOP names sometimes carry markup leftovers such as trailing asterisks.
+export function cleanEntityName(value) {
+  return String(value || '').replace(/\*+/g, '').replace(/\s+/g, ' ').trim();
+}
+
 export function buildCommercialSummary({ opportunities = [], stages = [], goals = [], tenders = [], decisions = [], profiles = [] }, { now = new Date() } = {}) {
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const year = today.getUTCFullYear();
@@ -105,7 +110,7 @@ export function buildCommercialSummary({ opportunities = [], stages = [], goals 
       else if (!decision && daysToDeadline !== null && daysToDeadline <= DECISION_WINDOW_DAYS) attention = 'requiere_decision';
       return {
         id: item.id,
-        entity: tender?.entity || item.company_name,
+        entity: cleanEntityName(tender?.entity || item.company_name),
         total_value: amount(tender?.value ?? item.offer_value),
         deadline_at: tender?.deadline_at || null,
         days_to_deadline: daysToDeadline,
