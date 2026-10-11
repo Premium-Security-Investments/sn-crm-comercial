@@ -728,7 +728,8 @@
 .siio-sparkline{
   display:block;
   width:100%;
-  height:28px;
+  max-width:160px;
+  height:auto;
   overflow:visible;
 }
 
@@ -755,7 +756,12 @@
   font-size:13px;
 }
 
-.siio-detail{padding:0}
+.siio-detail{
+  padding:0;
+  border:1px solid #dbe6f4;
+  border-radius:14px;
+  box-shadow:none;
+}
 
 .siio-detail > summary{
   display:flex;
@@ -771,8 +777,11 @@
 
 .siio-detail > summary::before{
   content:'▸';
-  color:#526173;
+  color:#10213d;
+  font-size:14px;
 }
+
+.siio-detail > summary:hover{background:#f8fafc;border-radius:14px}
 
 .siio-detail[open] > summary::before{content:'▾'}
 
@@ -828,3 +837,133 @@
 .siio-detail .panel + .panel{margin-top:20px}
 
 .siio-detail .panel h2{font-size:16px}
+
+/* Design pass (Impeccable critique): tables read as text, color only for alerts, figures align. */
+.siio-key-figure strong,
+.siio-pulse-table td,
+.siio-pulse-table td strong{
+  font-variant-numeric:tabular-nums lining-nums;
+}
+
+.siio-key-figure .siio-key-comparison{
+  color:#40516b;
+  font-size:13px;
+}
+
+.siio-key-group h3{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:4px 14px;
+}
+
+.siio-spark-legend{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  color:#526173;
+  font-size:12px;
+  font-weight:600;
+}
+
+.siio-spark-legend i{
+  display:inline-block;
+  width:16px;
+  height:0;
+  margin-left:6px;
+}
+
+.siio-spark-key-current{border-top:2px solid #10213d}
+.siio-spark-key-reference{border-top:1.5px dashed #94a3b8}
+
+.siio-pulse-table th[scope="row"]{
+  text-transform:none;
+  letter-spacing:0;
+  font-size:14px;
+  font-weight:600;
+  color:#10213d;
+  background:transparent;
+}
+
+.siio-pulse-table th[scope="row"] small{
+  display:block;
+  margin-bottom:2px;
+  color:#526173;
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.siio-commercial-table th:nth-child(n+3),
+.siio-commercial-table td:nth-child(n+3){
+  text-align:left;
+  white-space:normal;
+}
+
+.siio-row-alert,
+.siio-row-alert th[scope="row"]{
+  background:#fffbeb;
+}
+
+.siio-alert-text{
+  color:#92400e;
+  font-weight:600;
+}
+
+.siio-pulse-table em{color:#526173}
+
+.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static){
+  background:#fff;
+  border:1px solid #dbe6f4;
+  box-shadow:none;
+  color:#10213d;
+}
+
+.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static) span{color:#526173}
+.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static) strong{color:#10213d}
+.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static):hover{background:#f8fafc}
+
+.siio-quiet-empty{margin:8px 0 0}
+.siio-quiet-empty strong{color:#10213d}
+
+.siio-dashboard .siio-view-filters[aria-label="Filtros del resumen ejecutivo"]{align-items:center}
+
+.siio-key-figures,
+.siio-key-group,
+.siio-key-grid > *{min-width:0}
+
+
+.siio-dashboard .stack > *{min-width:0}
+
+.siio-commercial-table th[scope="row"]{
+  width:34%;
+  min-width:240px;
+}
+
+.siio-commercial-table th[scope="row"],
+.siio-commercial-table td{vertical-align:top}
+
+/* Narrow screens: each row becomes a stacked entry instead of a squeezed table. */
+@media(max-width:600px){
+  .siio-dashboard .siio-table-wrap table.siio-commercial-table{min-width:0}
+  .siio-commercial-table thead{display:none}
+  .siio-commercial-table tr{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:4px;
+    padding:12px;
+    border-bottom:1px solid #e7edf5;
+  }
+  .siio-commercial-table th[scope="row"],
+  .siio-commercial-table td{
+    display:block;
+    width:auto;
+    min-width:0;
+    padding:0;
+    border:0;
+    text-align:left;
+    white-space:normal;
+  }
+  .siio-commercial-table td:last-child{text-align:left}
+}

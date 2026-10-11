@@ -19,14 +19,14 @@ function Pending({ title, need }: { title: string; need: string }) {
 export function CommercialAttentionRows({ summary }: { summary: CommercialSummary }) {
   const attention = summary.tenders.calendar.filter(item => item.attention);
   return <>
-    {attention.map(item => <tr key={item.id} className="siio-pulse-highlight">
-      <th scope="row">Licitación · {item.entity}</th>
+    {attention.map(item => <tr key={item.id} className={item.attention === 'cierre_vencido_sin_actualizar' ? 'siio-row-alert' : undefined}>
+      <th scope="row"><small>Licitación</small>{item.entity}</th>
       <td>{millions(item.total_value)} total</td>
       <td>Cierra {closingDateLabel(item.deadline_at)}{item.days_to_deadline !== null ? ` (${item.days_to_deadline < 0 ? `hace ${-item.days_to_deadline}` : `en ${item.days_to_deadline}`} días)` : ''}</td>
-      <td>{item.attention === 'requiere_decision' ? 'Sin decisión de presentarse' : 'Cierre vencido, estado sin actualizar'}</td>
+      <td><span className="siio-alert-text">{item.attention === 'requiere_decision' ? 'Sin decisión de presentarse' : 'Cierre vencido, estado sin actualizar'}</span></td>
     </tr>)}
     {summary.pipeline.stale_large.map(item => <tr key={item.id}>
-      <th scope="row">Oportunidad · {item.company_name}</th>
+      <th scope="row"><small>Oportunidad</small>{item.company_name}</th>
       <td>{millions(item.monthly_value)} / mes</td>
       <td>{item.days_without_activity} días sin actividad</td>
       <td>{item.stage}{item.owner_name ? ` · ${item.owner_name}` : ''}</td>

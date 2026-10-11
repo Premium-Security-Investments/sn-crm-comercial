@@ -22,7 +22,7 @@ const TREND_ROWS: Array<{ key: keyof FinancialPulseTotals; label: string }> = [
 function trendValue(month: FinancialPulseMonth | null, key: keyof FinancialPulseTotals) {
   if (!month) return '—';
   const value = month.totals[key];
-  if (key === 'margen_operacional') return value === null ? '—' : percentFormat.format(value);
+  if (key === 'margen_operacional') return value === null ? '—' : percentFormat.format(value).replace('-', '−');
   return millions(value);
 }
 
@@ -76,7 +76,7 @@ export function SiioFinancialPulse({ pulse, state, financialRows }: { pulse: Fin
       <h4>Desglose de {monthTitle}</h4>
       <div className="siio-table-wrap"><table className="siio-pulse-table">
         <thead><tr><th>Rubro</th><th>{shortMonth(pulse.month)} {pulse.year}</th><th>{shortMonth(pulse.month)} {pulse.year - 1}</th><th>Cambio</th><th>% de ingresos</th><th>Acumulado {pulse.year}</th></tr></thead>
-        <tbody>{breakdown.map(row => <tr key={row.key} className={row.key === topGrowth ? 'siio-pulse-highlight' : undefined}>
+        <tbody>{breakdown.map(row => <tr key={row.key}>
           <th scope="row">{row.label}{row.key === topGrowth ? <em> · el que más creció</em> : null}</th>
           <td>{millions(row.current)}</td>
           <td>{millions(row.sameMonthLastYear)}</td>
