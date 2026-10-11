@@ -5,6 +5,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 import { createClient } from '@supabase/supabase-js';
 import { cleanFinancialImportRequest, financialImportStoragePath, listFinancialImports, processFinancialWorkbookImport, publishFinancialImport, validateFinancialImport, SIIO_FINANCIAL_IMPORT_BUCKET } from '../siio-financial-import-service.js';
 import { loadFinancialPulse } from '../siio-financial-pulse.js';
+import { loadCommercialSummary } from '../siio-commercial-summary.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
@@ -478,6 +479,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/siio/board-reports': ['siio', ACTIONS.BOARD_PUBLICATION_VIEW],
   'GET /api/siio/financial-imports': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/financial-pulse': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/commercial-summary': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/financial-imports/upload-url': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'POST /api/siio/financial-imports/process-upload': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'POST /api/siio/financial-imports/:id/validate': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
@@ -499,6 +501,7 @@ export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
   'GET /api/siio/board-reports': Object.freeze({ action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: SIIO_PUBLISHED_BOARD_RESOURCE, policy: 'board-published' }),
   'GET /api/siio/financial-imports': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'GET /api/siio/financial-pulse': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/commercial-summary': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/upload-url': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/process-upload': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/:id/validate': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
@@ -3051,6 +3054,14 @@ app.get('/api/siio/financial-pulse', async (req, res) => {
     const { profile } = await getAuthContext(req);
     requireSiioEndpointAccess(profile, 'GET /api/siio/financial-pulse');
     res.json(await loadFinancialPulse(requireDb(), req.query.period ? String(req.query.period) : null));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/siio/commercial-summary', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/commercial-summary');
+    res.json(await loadCommercialSummary(requireDb()));
   } catch (error) { sendAuthError(res, error); }
 });
 
