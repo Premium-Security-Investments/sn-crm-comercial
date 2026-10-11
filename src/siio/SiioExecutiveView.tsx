@@ -106,7 +106,6 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
   const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind && item.activityState === 'active').length;
   const trackingLink = (kind: SiioTrackingKind) => onNavigate(navigateSiioView('seguimiento', { kind }));
-  const intelligenceLink = () => onNavigate(navigateSiioView('inteligencia', { period: selectedPeriod }));
   const [pulse, pulseState] = useSiioData<FinancialPulse | null>(`/api/siio/financial-pulse${selectedPeriod ? `?period=${encodeURIComponent(selectedPeriod)}` : ''}`);
   const [commercial, commercialState] = useSiioData<CommercialSummary>('/api/siio/commercial-summary');
   const signals = (['decisiones', 'bloqueos', 'riesgos', 'compromisos'] as SiioTrackingKind[]).map(kind => ({ kind, total: count(kind) })).filter(item => item.total > 0);
@@ -158,7 +157,6 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
             <strong>{recommendation.title}</strong>
             <span>{recommendation.finding}</span>
             <small>{alertBasis(recommendation)}</small>
-            <button type="button" className="secondary" onClick={intelligenceLink}>Ver evidencia</button>
           </li>)}</ul>
         </> : null}
         <p className="siio-secondary">{signals.length
@@ -243,13 +241,5 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     </Panel>
     </DetailSection>
 
-    <section className="panel siio-more" aria-label="Más información">
-      <h2>Más información</h2>
-      <div className="siio-more-links">
-        <button type="button" className="secondary" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Seguimiento gerencial</button>
-        <button type="button" className="secondary" onClick={intelligenceLink}>Vigencia de fuentes y evidencia</button>
-        <button type="button" className="secondary" onClick={() => onNavigate(navigateSiioView('agentes'))}>Agentes Vig-IA</button>
-      </div>
-    </section>
   </div>;
 }

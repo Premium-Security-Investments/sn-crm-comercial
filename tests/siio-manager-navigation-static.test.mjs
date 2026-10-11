@@ -5,7 +5,7 @@ const main = readFileSync('src/main.tsx', 'utf8');
 const dashboard = readFileSync('src/siio/SiioDashboard.tsx', 'utf8');
 const navigation = readFileSync('src/siio/SiioNavigation.tsx', 'utf8');
 
-for (const label of ['Resumen ejecutivo', 'Seguimiento gerencial', 'Fuentes e inteligencia', 'Agentes']) {
+for (const label of ['Torre de control', 'Seguimiento gerencial']) {
   assert.match(navigation, new RegExp(label));
 }
 assert.doesNotMatch(navigation, /F1-F6|Registro F2|Archivo F4|Razonamiento F5|Modo Junta/);
@@ -26,7 +26,7 @@ assert.match(tracking, /semaphore/);
 assert.match(tracking, /owner/);
 assert.match(tracking, /Todos.*Decisiones.*Bloqueos.*Riesgos.*Compromisos/s);
 assert.match(executive, /navigateSiioView\('seguimiento'/);
-assert.match(executive, /navigateSiioView\('inteligencia'/);
+assert.doesNotMatch(navigation, /Fuentes e inteligencia|'agentes'/, 'Fuentes y Agentes salen de la Torre (Juan 2026-10-11)');
 assert.doesNotMatch(dashboard, /global.*filter/i);
 
 const intelligence = readFileSync('src/siio/SiioSourcesIntelligenceView.tsx', 'utf8');
@@ -58,8 +58,7 @@ assert.equal((agents.match(/<select/g) || []).length, 2, 'agents must expose onl
 assert.match(agents, /routeState\.filters\.status/);
 assert.match(agents, /routeState\.filters\.owner/);
 assert.doesNotMatch(agents, /AGT-004|Asistente de Junta|\bonClick\b|\bapi\b/);
-assert.match(dashboard, /SiioSourcesIntelligenceView/);
-assert.match(dashboard, /SiioAgentsView/);
+assert.doesNotMatch(dashboard, /SiioSourcesIntelligenceView|SiioAgentsView/, 'la Torre ya no monta Fuentes ni Agentes');
 
 const css = readFileSync('src/siio/siio.css', 'utf8');
 for (const selector of ['.siio-dashboard .siio-navigation', '.siio-dashboard .siio-navigation button:focus-visible', '.siio-dashboard .siio-view-filters', '.siio-dashboard .siio-table-wrap', '.siio-board-dialog', '.siio-board-backdrop', '@media(max-width:760px)']) {

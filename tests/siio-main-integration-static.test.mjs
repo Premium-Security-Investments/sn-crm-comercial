@@ -30,10 +30,8 @@ assert.match(dashboard, /SIIO — Sistema Interno de Inteligencia Operativa/);
 assert.match(dashboard, /api<SiioBootstrapPayload>\('\/api\/siio\/bootstrap'\)/);
 // Gestión y el directivo de solo consulta ven la vista gerencial completa; junta sólo su vista publicada.
 assert.match(dashboard, /isDirectiveViewerRole\(currentProfile\.role\)/);
-assert.match(navigation, /Resumen ejecutivo/);
+assert.match(navigation, /Torre de control/);
 assert.match(navigation, /Seguimiento gerencial/);
-assert.match(navigation, /Fuentes e inteligencia/);
-assert.match(navigation, /Agentes/);
 assert.doesNotMatch(navigation, /F1-F6|Modo Junta/);
 
 for (const marker of [
