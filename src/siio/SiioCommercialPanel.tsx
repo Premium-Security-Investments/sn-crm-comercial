@@ -1,5 +1,19 @@
 import { EmptyState } from './SiioUi';
-import { closingDateLabel, isUrgentTender, type CommercialSummary } from './commercialSummary';
+import { closingDateLabel, isUrgentTender, type CommercialSummary, type CommercialTender } from './commercialSummary';
+import { FollowupCell } from './SiioFollowups';
+import { addDays, openFollowupFor, type FollowupDraft, type FollowupList } from './followups';
+
+// Follow-up hooks for the attention rows; absent when the viewer has no follow-up access.
+export type AttentionFollowups = { list: FollowupList | null; onCreate: (draft: FollowupDraft) => void };
+
+export function tenderFollowupDraft(item: CommercialTender, today: string): FollowupDraft {
+  if (item.attention === 'cierre_vencido_sin_actualizar') {
+    return { title: `Actualizar en el CRM el estado de la licitación ${item.entity}`, owner_label: 'Licitaciones', due_date: addDays(today, 2), origin_type: 'licitacion', origin_ref: item.id, origin_label: item.entity, auto_rule: 'tender_status' };
+  }
+  const deadline = item.deadline_at ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(item.deadline_at)) : null;
+  const due = deadline && addDays(deadline, -1) > today ? addDays(deadline, -1) : today;
+  return { title: `Decidir si nos presentamos a ${item.entity}`, owner_label: 'Licitaciones', due_date: due, origin_type: 'licitacion', origin_ref: item.id, origin_label: item.entity, auto_rule: 'tender_decision' };
+}
 
 export const millions = (value: number) => `${value < 0 ? '−' : ''}$${Math.abs(Math.round(value / 1e6)).toLocaleString('es-CO')} M`;
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
@@ -22,11 +36,11 @@ function LoadState({ state, summary }: { state: 'loading' | 'ready' | 'error'; s
 }
 
 // Public tenders that need a go/no-go decision or a status update; total contract value.
-export function TenderAttentionTable({ summary }: { summary: CommercialSummary }) {
+export function TenderAttentionTable({ summary, followups, today }: { summary: CommercialSummary; followups?: AttentionFollowups; today: string }) {
   const attention = summary.tenders.calendar.filter(item => item.attention);
   if (!attention.length) return <p className="siio-secondary">Ninguna licitación pendiente de decisión.</p>;
   return <div className="siio-table-wrap"><table className="siio-pulse-table siio-commercial-table">
-    <thead><tr><th>Entidad</th><th>Valor total</th><th>Cierre</th><th>Situación</th></tr></thead>
+    <thead><tr><th>Entidad</th><th>Valor total</th><th>Cierre</th><th>Situación</th>{followups ? <th>Seguimiento</th> : null}</tr></thead>
     <tbody>{attention.map(item => {
       const urgent = isUrgentTender(item);
       return <tr key={item.id} className={item.attention === 'cierre_vencido_sin_actualizar' ? 'siio-row-alert' : undefined}>
@@ -34,22 +48,24 @@ export function TenderAttentionTable({ summary }: { summary: CommercialSummary }
         <td>{millions(item.total_value)}</td>
         <td>{closingDateLabel(item.deadline_at)}{item.days_to_deadline !== null ? ` (${item.days_to_deadline < 0 ? `hace ${-item.days_to_deadline}` : `en ${item.days_to_deadline}`} días)` : ''}</td>
         <td><span className={urgent ? 'siio-alert-text' : undefined}>{item.attention === 'requiere_decision' ? 'Sin decisión de presentarse' : 'Cierre vencido, estado sin actualizar'}</span></td>
+        {followups ? <td><FollowupCell existing={openFollowupFor(followups.list, item.id)} today={today} canCreate={Boolean(followups.list?.permissions.create)} onCreate={() => followups.onCreate(tenderFollowupDraft(item, today))} /></td> : null}
       </tr>;
     })}</tbody>
   </table></div>;
 }
 
 // Large private opportunities without recent activity; monthly service value.
-export function PrivateAttentionTable({ summary }: { summary: CommercialSummary }) {
+export function PrivateAttentionTable({ summary, followups, today }: { summary: CommercialSummary; followups?: AttentionFollowups; today: string }) {
   const stale = summary.pipeline.stale_large;
   if (!stale.length) return <p className="siio-secondary">Ninguna oportunidad grande quieta.</p>;
   return <div className="siio-table-wrap"><table className="siio-pulse-table siio-commercial-table">
-    <thead><tr><th>Cliente</th><th>Valor mensual</th><th>Sin actividad</th><th>Etapa · comercial</th></tr></thead>
+    <thead><tr><th>Cliente</th><th>Valor mensual</th><th>Sin actividad</th><th>Etapa · comercial</th>{followups ? <th>Seguimiento</th> : null}</tr></thead>
     <tbody>{stale.map(item => <tr key={item.id}>
       <th scope="row">{item.company_name}</th>
       <td>{millions(item.monthly_value)} / mes</td>
       <td>{item.days_without_activity} días</td>
       <td>{item.stage}{item.owner_name ? ` · ${item.owner_name}` : ''}</td>
+      {followups ? <td><FollowupCell existing={openFollowupFor(followups.list, item.id)} today={today} canCreate={Boolean(followups.list?.permissions.create)} onCreate={() => followups.onCreate({ title: `Retomar contacto con ${item.company_name}`, owner_label: item.owner_name || 'Comercial', due_date: addDays(today, 7), origin_type: 'oportunidad', origin_ref: item.id, origin_label: item.company_name, auto_rule: 'opportunity_activity' })} /></td> : null}
     </tr>)}</tbody>
   </table></div>;
 }

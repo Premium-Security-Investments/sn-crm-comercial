@@ -1109,3 +1109,67 @@
   text-decoration:underline;
   text-underline-offset:3px;
 }
+
+/* Seguimiento gerencial */
+.siio-link-button,
+.siio-dashboard .siio-link-button{
+  padding:0;
+  border:0;
+  background:none;
+  box-shadow:none;
+  color:#174ea6;
+  font-size:13px;
+  font-weight:700;
+  text-decoration:underline;
+  text-underline-offset:3px;
+  cursor:pointer;
+}
+
+.siio-followup-chip{color:#40516b;font-size:13px}
+.siio-followup-chip-late{color:#92400e;font-weight:700}
+
+.siio-followup-composer{
+  display:grid;
+  gap:10px;
+  margin:0 0 16px;
+  padding:14px 16px;
+  border:1px solid #9dbbe8;
+  border-radius:14px;
+  background:#f6f9ff;
+}
+
+.siio-followup-composer-head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+.siio-followup-composer-head strong{color:#10213d}
+.siio-followup-composer-head span{color:#526173;font-size:13px}
+.siio-followup-composer label{display:grid;gap:4px;color:#40516b;font-size:12px;font-weight:700}
+.siio-followup-composer input,
+.siio-followup-composer select{font-size:14px;font-weight:400}
+.siio-followup-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
+.siio-followup-actions{display:flex;flex-wrap:wrap;gap:8px}
+.siio-followup-error{margin:0;color:#a20f2c;font-size:13px}
+
+.siio-followups-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.siio-followups-head h2{margin:0 0 4px}
+.siio-followup-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.siio-followup-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 14px;border:1px solid #e2eaf5;border-radius:14px;background:#fff}
+.siio-followup-late{border-color:#f5c27a;background:#fffbeb}
+.siio-followup-main{display:grid;gap:3px;min-width:0}
+.siio-followup-main strong{color:#10213d}
+.siio-followup-main span{color:#40516b;font-size:14px}
+.siio-followup-main small{color:#526173;font-size:12px}
+.siio-followup-notes{margin:4px 0 0;padding-left:16px;color:#40516b;font-size:13px}
+.siio-followup-notes time{color:#526173;font-variant-numeric:tabular-nums}
+.siio-followup-controls{display:flex;flex-wrap:wrap;align-content:flex-start;justify-content:flex-end;gap:6px;max-width:420px}
+.siio-followup-note{display:flex;gap:6px;width:100%}
+.siio-followup-note input{flex:1;min-width:0}
+.siio-followup-closed .siio-followup-item{opacity:.85}
+
+.siio-payroll-signal{margin-bottom:16px}
+
+@media(max-width:760px){
+  .siio-followup-row{grid-template-columns:1fr}
+  .siio-followup-item{grid-template-columns:1fr}
+  .siio-followup-controls{justify-content:flex-start;max-width:none}
+}
+
+.siio-followup-main .siio-alert-text{color:#92400e}

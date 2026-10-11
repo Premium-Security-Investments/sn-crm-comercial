@@ -9,7 +9,8 @@ import { SiioExecutiveView } from './SiioExecutiveView';
 import { SiioFinancialImportPanel } from './SiioFinancialImportPanel';
 import { SiioBoardDraftAction } from './SiioBoardDraftAction';
 import { SiioBoardReadonlyView } from './SiioBoardReadonlyView';
-import { SiioManagementTrackingView } from './SiioManagementTrackingView';
+import { SiioFollowupsView } from './SiioFollowups';
+import { useFollowups } from './followups';
 import { SiioNavigation } from './SiioNavigation';
 import type { SiioBootstrapPayload, SiioCurrentProfile, SiioRouteState, SiioView } from './types';
 
@@ -79,8 +80,13 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
     <SiioNavigation activeView={routeState.view === 'seguimiento' ? 'seguimiento' : 'resumen'} onSelect={selectView} />
     {/* Only the Torre and Seguimiento are offered; old links to Fuentes or Agentes fall back to the Torre. */}
     {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'seguimiento'
-      ? <SiioManagementTrackingView payload={payload} routeState={routeState} onNavigate={onNavigate} />
+      ? <SiioFollowupsTab />
       : <><SiioExecutiveView payload={payload} routeState={routeState.view === 'resumen' ? routeState : navigateSiioView('resumen') as Extract<SiioRouteState, { view: 'resumen' }>} onNavigate={onNavigate} /><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /></>}
     {payload && snapshot && !readOnly ? <SiioBoardDraftAction open={boardDraftOpen} onClose={() => setBoardDraftOpen(false)} payload={payload} snapshot={snapshot} trackingItems={trackingItems} recommendations={recommendations} /> : null}
   </section>;
+}
+
+function SiioFollowupsTab() {
+  const followups = useFollowups();
+  return <SiioFollowupsView list={followups.data} state={followups.state} reload={() => void followups.reload()} />;
 }
