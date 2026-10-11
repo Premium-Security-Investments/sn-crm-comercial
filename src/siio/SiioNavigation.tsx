@@ -1,7 +1,7 @@
 import type { SiioView } from './types';
 
 const items: ReadonlyArray<{ view: SiioView; label: string }> = [
-  { view: 'resumen', label: 'Torre de control' },
+  { view: 'resumen', label: 'Resumen ejecutivo' },
   { view: 'seguimiento', label: 'Seguimiento gerencial' },
 ];
 

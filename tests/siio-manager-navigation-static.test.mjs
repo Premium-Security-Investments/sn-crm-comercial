@@ -5,7 +5,7 @@ const main = readFileSync('src/main.tsx', 'utf8');
 const dashboard = readFileSync('src/siio/SiioDashboard.tsx', 'utf8');
 const navigation = readFileSync('src/siio/SiioNavigation.tsx', 'utf8');
 
-for (const label of ['Torre de control', 'Seguimiento gerencial']) {
+for (const label of ['Resumen ejecutivo', 'Seguimiento gerencial']) {
   assert.match(navigation, new RegExp(label));
 }
 assert.doesNotMatch(navigation, /F1-F6|Registro F2|Archivo F4|Razonamiento F5|Modo Junta/);

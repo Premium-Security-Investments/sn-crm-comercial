@@ -19,7 +19,7 @@ const tenderViews = [
 
 assert.match(siioNavigation, /className="siio-navigation module-segmented-nav"/, 'SIIO debe usar el control segmentado compartido');
 assert.match(tenderTabs, /className="tender-module-tabs module-segmented-nav"/, 'Licitaciones debe usar el control segmentado compartido');
-assert.equal((siioNavigation.match(/view:\s*'/g) || []).length, 2, 'SIIO ofrece dos vistas: Torre de control y Seguimiento gerencial (decisión de Juan 2026-10-11)');
+assert.equal((siioNavigation.match(/view:\s*'/g) || []).length, 2, 'SIIO ofrece dos vistas: Resumen ejecutivo y Seguimiento gerencial (decisión de Juan 2026-10-11)');
 assert.equal((tenderTabs.match(/view:\s*'/g) || []).length, 3, 'Licitaciones conserva tres vistas primarias');
 assert.match(siioNavigation, /aria-current=/, 'SIIO conserva aria-current');
 assert.match(tenderTabs, /aria-current=/, 'Licitaciones conserva aria-current');
