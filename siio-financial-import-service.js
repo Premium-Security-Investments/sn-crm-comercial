@@ -75,6 +75,7 @@ export async function processFinancialWorkbookImport(database, profile, storageP
   const parsed = parseSiioFinancialWorkbook(buffer, metadata);
   const previous = requireResult(await database.from('siio_financial_imports')
     .select('structure_summary,structure_signature')
+    .neq('status', 'con_errores')
     .order('uploaded_at', { ascending: false })
     .limit(1)
     .maybeSingle());
@@ -98,7 +99,7 @@ export async function processFinancialWorkbookImport(database, profile, storageP
 
 export async function listFinancialImports(database, limit = 12) {
   const imports = requireResult(await database.from('siio_financial_imports')
-    .select('id,file_name,file_sha256,file_size_bytes,version_label,period_month,cutoff_date,import_type,status,parser_version,structure_signature,structure_diff,import_summary,uploaded_at,validated_at,published_at,source_id')
+    .select('id,file_name,file_sha256,file_size_bytes,version_label,period_month,cutoff_date,import_type,status,parser_version,structure_signature,structure_diff,import_summary,uploaded_by,uploaded_at,validated_by,validated_at,published_by,published_at,source_id')
     .order('uploaded_at', { ascending: false })
     .limit(limit)) || [];
   if (!imports.length) return [];
@@ -111,7 +112,19 @@ export async function listFinancialImports(database, limit = 12) {
     if (!byImport.has(item.import_id)) byImport.set(item.import_id, []);
     byImport.get(item.import_id).push(item);
   }
-  return imports.map(item => ({ ...item, validations: byImport.get(item.id) || [] }));
+  const actorIds = [...new Set(imports.flatMap(item => [item.uploaded_by, item.validated_by, item.published_by]).filter(Boolean))];
+  const actors = actorIds.length
+    ? requireResult(await database.from('psi_sales_profiles').select('id,full_name').in('id', actorIds)) || []
+    : [];
+  const actorName = new Map(actors.map(actor => [actor.id, actor.full_name]));
+  return imports.map(({ uploaded_by, validated_by, published_by, ...item }) => ({
+    ...item,
+    uploaded_by_name: actorName.get(uploaded_by) || null,
+    validated_by_name: actorName.get(validated_by) || null,
+    published_by_name: actorName.get(published_by) || null,
+    validated_by_uploader: Boolean(validated_by && validated_by === uploaded_by),
+    validations: byImport.get(item.id) || [],
+  }));
 }
 
 export async function publishFinancialImport(database, profile, importId) {

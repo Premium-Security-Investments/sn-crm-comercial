@@ -22,6 +22,7 @@ const KNOWN_NON_MONTHLY_SHEETS = new Set([
   'Analis', 'Dr Mauricio', 'Amortiz', 'ENERGIA',
 ]);
 const MONTHLY_SHEET_PATTERN = /^(1[0-2]|[1-9]) (\d{2})$/;
+const REQUIRED_BALANCE_CLASSES = [1, 2, 3, 4];
 const APPROVED_CONCEPTS = new Set([
   'INGRESOS', 'COSTOS', 'GASTOS', 'UTILIDAD OPERACIONAL', 'MARGEN OPERACIONAL',
   'NO OPERACIONAL', 'IMPUESTOS', 'UTILIDAD NETA', 'MARGEN NETO',
@@ -305,8 +306,13 @@ function validation(rule, severity, ok, expected, obtained, detail) {
 function calculateValidations({ parsedBalances, metrics, pygSheet, resumSheet, period, privateSheetCount }) {
   const validations = [];
   for (const balance of parsedBalances) {
-    const topLevelTotal = balance.rows.filter(row => row.level === 1 && row.account_class >= 1 && row.account_class <= 7).reduce((sum, row) => sum + (row.final_balance || 0), 0);
-    validations.push(validation('V1_BALANCE_CUADRA', 'bloqueante', Math.abs(topLevelTotal) <= 1, 0, topLevelTotal, `${balance.sheetName}: suma de clases 1 a 7.`));
+    const topLevelRows = balance.rows.filter(row => row.level === 1 && row.account_class >= 1 && row.account_class <= 7);
+    const topLevelTotal = topLevelRows.reduce((sum, row) => sum + (row.final_balance || 0), 0);
+    // Without the class totals the sum is trivially 0, so the balance must declare at least classes 1 to 4.
+    const missingClasses = REQUIRED_BALANCE_CLASSES.filter(accountClass => !topLevelRows.some(row => row.account_class === accountClass));
+    validations.push(missingClasses.length
+      ? validation('V1_BALANCE_CUADRA', 'bloqueante', false, `clases ${REQUIRED_BALANCE_CLASSES.join(', ')}`, `faltan clases ${missingClasses.join(', ')}`, `${balance.sheetName}: el balance no trae las cuentas de primer nivel necesarias para comprobar el cuadre.`)
+      : validation('V1_BALANCE_CUADRA', 'bloqueante', Math.abs(topLevelTotal) <= 1, 0, topLevelTotal, `${balance.sheetName}: suma de clases 1 a 7.`));
   }
   const byConcept = new Map(metrics.map(item => [item.concept, item]));
   const comparatSheet = metrics[0]._sheet;
@@ -423,16 +429,26 @@ export function parseSiioFinancialWorkbook(buffer, input = {}) {
   };
 }
 
+// Monthly balance sheets change state and size every month by design, so only changes that alter
+// what the parser reads are reported: added or removed sheets, balance headers and report labels.
 export function compareFinancialStructures(previous, current) {
   if (!previous) return { baseline: false, changed: false, changes: [] };
   const changes = [];
-  const priorSheets = new Map((previous.sheets || []).map(item => [item.name, item]));
-  const currentSheets = new Map((current.sheets || []).map(item => [item.name, item]));
-  for (const name of currentSheets.keys()) if (!priorSheets.has(name)) changes.push({ type: 'sheet_added', sheet: name });
-  for (const name of priorSheets.keys()) if (!currentSheets.has(name)) changes.push({ type: 'sheet_removed', sheet: name });
-  for (const [name, item] of currentSheets) {
-    const prior = priorSheets.get(name);
-    if (prior && (prior.state !== item.state || prior.dimension !== item.dimension)) changes.push({ type: 'sheet_shape_changed', sheet: name, previous: { state: prior.state, dimension: prior.dimension }, current: { state: item.state, dimension: item.dimension } });
+  const priorSheets = new Set((previous.sheets || []).map(item => item.name));
+  const currentSheets = new Set((current.sheets || []).map(item => item.name));
+  for (const name of currentSheets) if (!priorSheets.has(name)) changes.push({ type: 'sheet_added', sheet: name });
+  for (const name of priorSheets) if (!currentSheets.has(name)) changes.push({ type: 'sheet_removed', sheet: name });
+  const priorHeaders = new Map((previous.balance_headers || []).map(item => [item.sheet, JSON.stringify(item.headers)]));
+  for (const item of current.balance_headers || []) {
+    const prior = priorHeaders.get(item.sheet);
+    if (prior !== undefined && prior !== JSON.stringify(item.headers)) changes.push({ type: 'balance_headers_changed', sheet: item.sheet });
+  }
+  for (const [sheet, labels] of Object.entries(current.report_labels || {})) {
+    const prior = previous.report_labels?.[sheet];
+    if (!prior) continue;
+    const added = labels.filter(label => !prior.includes(label));
+    const removed = prior.filter(label => !labels.includes(label));
+    if (added.length || removed.length) changes.push({ type: 'report_labels_changed', sheet, added, removed });
   }
   return { baseline: true, changed: changes.length > 0, changes };
 }
