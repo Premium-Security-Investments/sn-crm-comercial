@@ -7,6 +7,7 @@ import { longMonth, pulseMonth, relativeChange, shortMonth, type FinancialPulse,
 type LoadState = 'loading' | 'ready' | 'error';
 
 const percentFormat = new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 });
+const percentText = (value: number) => percentFormat.format(value).replace('-', '−');
 const signedPercent = (value: number | null) => value === null ? null : `${value > 0 ? '+' : value < 0 ? '−' : ''}${percentFormat.format(Math.abs(value))}`;
 const points = (current: number, previous: number) => {
   const difference = (current - previous) * 100;
@@ -16,7 +17,7 @@ const points = (current: number, previous: number) => {
 // Change against a reference, phrased so a loss never reads as a percentage over a negative base.
 function versus(label: string, current: number | null | undefined, previous: number | null | undefined, kind: 'monto' | 'margen') {
   if (current === null || current === undefined || previous === null || previous === undefined) return null;
-  if (kind === 'margen') return `${label}: ${percentFormat.format(previous)} · ${points(current, previous)}`;
+  if (kind === 'margen') return `${label}: ${percentText(previous)} · ${points(current, previous)}`;
   if (current < 0 || previous < 0) return `${label}: ${millions(previous)} · ${current >= previous ? 'mejoró' : 'empeoró'} ${millions(Math.abs(current - previous))}`;
   return `${label}: ${millions(previous)} · ${signedPercent(relativeChange(current, previous))}`;
 }
@@ -25,8 +26,8 @@ function versus(label: string, current: number | null | undefined, previous: num
 export function Sparkline({ current, reference, label }: { current: Array<number | null>; reference?: Array<number | null>; label: string }) {
   const values = [...current, ...(reference || [])].filter((value): value is number => value !== null && Number.isFinite(value));
   if (current.filter(value => value !== null).length < 2 || !values.length) return null;
-  const width = 120;
-  const height = 28;
+  const width = 160;
+  const height = 24;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
@@ -37,7 +38,7 @@ export function Sparkline({ current, reference, label }: { current: Array<number
     .join(' ');
   const last = current.length - 1;
   const lastValue = current[last];
-  return <svg className="siio-sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={label}>
+  return <svg className="siio-sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label}>
     {min < 0 && max > 0 ? <line x1="0" x2={width} y1={height - 2 - ((0 - min) / span) * (height - 4)} y2={height - 2 - ((0 - min) / span) * (height - 4)} className="siio-sparkline-zero" /> : null}
     {reference ? <polyline points={path(reference)} className="siio-sparkline-reference" /> : null}
     <polyline points={path(current)} className="siio-sparkline-current" />
@@ -45,12 +46,17 @@ export function Sparkline({ current, reference, label }: { current: Array<number
   </svg>;
 }
 
+// One key per group instead of a legend inside every card.
+function SparkLegend({ current, reference }: { current: string; reference: string }) {
+  return <span className="siio-spark-legend" aria-hidden="true"><i className="siio-spark-key-current" />{current}<i className="siio-spark-key-reference" />{reference}</span>;
+}
+
 function Figure({ label, value, detail, comparison, alert, children }: { label: string; value: string; detail?: string | null; comparison?: string | null; alert?: boolean; children?: ReactNode }) {
   return <div className={`siio-key-figure${alert ? ' siio-card-alert' : ''}`}>
     <small>{label}</small>
     <strong>{value}</strong>
+    {comparison ? <span className="siio-key-comparison">{comparison}</span> : null}
     {children}
-    {comparison ? <span>{comparison}</span> : null}
     {detail ? <span>{detail}</span> : null}
   </div>;
 }
@@ -81,7 +87,7 @@ function FinancialFigures({ pulse, state, financialRows }: { pulse: FinancialPul
     <Figure label={`Utilidad operacional ${month}`} value={millions(current.totals.utilidad_operacional)} comparison={versus(reference, current.totals.utilidad_operacional, lastYear?.totals.utilidad_operacional, 'monto')}>
       <Sparkline current={monthSeries(pulse, pulse.year, 'utilidad_operacional')} reference={monthSeries(pulse, pulse.year - 1, 'utilidad_operacional')} label={trendLabel('la utilidad operacional')} />
     </Figure>
-    <Figure label={`Margen operacional ${month}`} value={current.totals.margen_operacional === null ? '—' : percentFormat.format(current.totals.margen_operacional)} comparison={versus(reference, current.totals.margen_operacional, lastYear?.totals.margen_operacional, 'margen')}>
+    <Figure label={`Margen operacional ${month}`} value={current.totals.margen_operacional === null ? '—' : percentText(current.totals.margen_operacional)} comparison={versus(reference, current.totals.margen_operacional, lastYear?.totals.margen_operacional, 'margen')}>
       <Sparkline current={monthSeries(pulse, pulse.year, 'margen_operacional')} reference={monthSeries(pulse, pulse.year - 1, 'margen_operacional')} label={trendLabel('el margen operacional')} />
     </Figure>
     <Figure label={`Utilidad neta ${range}`} value={netCurrent === null ? '—' : millions(netCurrent)} comparison={versus(`${range} ${pulse.year - 1}`, netCurrent, netPrevious, 'monto')} detail="Acumulado del estado de resultados reportado" />
@@ -110,11 +116,11 @@ function CommercialFigures({ summary, state }: { summary: CommercialSummary | nu
 export function SiioKeyFigures({ pulse, pulseState, summary, summaryState, financialRows }: { pulse: FinancialPulse | null; pulseState: LoadState; summary: CommercialSummary | null; summaryState: LoadState; financialRows: SiioFinancialMetric[] }) {
   return <section className="siio-key-figures" aria-label="Cifras clave">
     <div className="siio-key-group">
-      <h3>Finanzas · {pulse ? `${longMonth(pulse.month)} ${pulse.year}` : 'último corte'}</h3>
+      <h3>Finanzas · {pulse ? `${longMonth(pulse.month)} ${pulse.year}` : 'último corte'}{pulse ? <SparkLegend current={String(pulse.year)} reference={String(pulse.year - 1)} /> : null}</h3>
       <FinancialFigures pulse={pulse} state={pulseState} financialRows={financialRows} />
     </div>
     <div className="siio-key-group">
-      <h3>Comercial y Licitaciones · al {summary ? `${closingDateLabel(`${summary.as_of}T12:00:00Z`)} ${summary.as_of.slice(0, 4)}` : 'día'}</h3>
+      <h3>Comercial y Licitaciones · al {summary ? `${closingDateLabel(`${summary.as_of}T12:00:00Z`)} ${summary.as_of.slice(0, 4)}` : 'día'}{summary ? <SparkLegend current="Ventas" reference="Meta" /> : null}</h3>
       <CommercialFigures summary={summary} state={summaryState} />
     </div>
   </section>;

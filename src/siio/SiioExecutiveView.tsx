@@ -20,7 +20,7 @@ function formatPeriod(period: string | null | undefined) {
 function formatMetric(value: number | null | undefined, percent = false) {
   if (value === null || value === undefined) return 'Sin datos';
   return percent
-    ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(value)
+    ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(value).replace('-', '−')
     : millions(Number(value));
 }
 
@@ -150,14 +150,14 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       {financialRows.length ? <SiioFinancialPulse pulse={pulse} state={pulseState} financialRows={financialRows} /> : <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." />}
       {financialRows.length ? <div className="siio-pulse-block">
         <h4>Acumulado del año según el estado de resultados reportado</h4>
-        <div className="siio-executive-grid">
-          {financialRows.map(metric => <div className="card kpi blue" key={metric.concept}>
-            <div className="kpi-head"><small>{metric.concept}</small></div>
+        <div className="siio-executive-grid siio-key-grid">
+          {financialRows.map(metric => <div className="siio-key-figure" key={metric.concept}>
+            <small>{metric.concept}</small>
             <strong>{formatMetric(metric.value_current, metric.category === 'margen')}</strong>
-            <span>{metricBasis(metric, selectedPeriod).current}</span>
-            <em>{metric.value_comparison === null || metric.value_comparison === undefined
+            <span className="siio-key-comparison">{metric.value_comparison === null || metric.value_comparison === undefined
               ? 'Comparativo pendiente'
-              : `${metricBasis(metric, selectedPeriod).comparison}: ${formatMetric(metric.value_comparison, metric.category === 'margen')}${metricChange(metric) ? ` · ${metricChange(metric)}` : ''}`}</em>
+              : `${metricBasis(metric, selectedPeriod).comparison}: ${formatMetric(metric.value_comparison, metric.category === 'margen')}${metricChange(metric) ? ` · ${metricChange(metric)}` : ''}`}</span>
+            <span>{metricBasis(metric, selectedPeriod).current}</span>
           </div>)}
         </div>
       </div> : null}
@@ -188,7 +188,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           </select>
         </label>
       </section>
-      {!payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales." /> : <>
+      {!payrollRows.length ? <p className="siio-secondary siio-quiet-empty"><strong>Sin agregados de nómina publicados.</strong> No se muestran datos individuales.</p> : <>
         <div className="siio-table-wrap siio-payroll-table"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>
         <div className="siio-payroll-cards">{payrollRows.map(row => <article className="siio-payroll-card" key={`${row.period_month}:${row.area || 'sin-area'}:card`}>
           <div><span className="siio-secondary">Área</span><strong>{row.area || 'Área pendiente'}</strong></div>
