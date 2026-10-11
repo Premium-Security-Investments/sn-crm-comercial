@@ -134,7 +134,8 @@ test('la Torre pone primero las cifras clave y la atención, y pliega el detalle
   assert.equal((view.match(/api<T>\(path\)/g) || []).length, 1, 'la vista carga cada fuente una sola vez y la comparte');
   const figures = readFileSync(new URL('../src/siio/SiioKeyFigures.tsx', import.meta.url), 'utf8');
   assert.equal((figures.match(/<Figure /g) || []).length, 7, 'siete cifras clave en la primera pantalla');
-  assert.match(figures, /siio-sparkline-reference/, 'la referencia (año anterior o meta) va en gris');
+  assert.match(figures, /tone: 'reference'/, 'la referencia (año anterior) va en gris en las gráficas de tendencia');
+  assert.match(view, /<SiioTrendCharts/, 'la tendencia va como gráficas con escala, no como minigráficas');
 });
 
 test('las cifras acumuladas se muestran en millones, no en pesos completos', async () => {

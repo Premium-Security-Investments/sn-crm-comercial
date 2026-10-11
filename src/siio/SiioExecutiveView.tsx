@@ -5,7 +5,7 @@ import { deriveRecommendations, deriveTrackingItems, navigateSiioView, uniqueOpt
 import { Badge, EmptyState, Panel, fmtSiioMoney } from './SiioUi';
 import { SiioFinancialPulse } from './SiioFinancialPulse';
 import { CommercialAttentionRows, SiioCommercialDetail, millions } from './SiioCommercialPanel';
-import { SiioKeyFigures } from './SiioKeyFigures';
+import { SiioKeyFigures, SiioTrendCharts } from './SiioKeyFigures';
 import { commercialReadings, type CommercialSummary } from './commercialSummary';
 import { pulseReadings, type FinancialPulse } from './financialPulse';
 import type { SiioFinancialMetric } from '../siioExecutive';
@@ -128,6 +128,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
 
     <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} />
+
+    <SiioTrendCharts pulse={pulse} summary={commercial} />
 
     <Panel title="Requiere atención">
       {readings.length ? <div className="siio-pulse-readings siio-attention-readings"><ul>{readings.map(reading => <li key={reading}>{reading}</li>)}</ul></div> : null}
