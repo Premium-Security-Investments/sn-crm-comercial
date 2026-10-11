@@ -1011,3 +1011,43 @@
   .siio-chart-axis,
   .siio-chart-value{font-size:14px}
 }
+
+/* Collapsible sections: an explicit button instead of a tiny disclosure triangle. */
+.siio-detail > summary{
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:nowrap;
+  gap:16px;
+}
+
+.siio-detail > summary::before{content:none}
+.siio-detail[open] > summary::before{content:none}
+
+.siio-detail-text{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:2px 12px;
+  min-width:0;
+}
+
+.siio-detail-action{
+  flex:none;
+  padding:8px 14px;
+  border:1px solid #cbdcf2;
+  border-radius:999px;
+  background:#fff;
+  color:#174ea6;
+  font-size:14px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.siio-detail > summary:hover .siio-detail-action{background:#eef4ff;border-color:#9dbbe8}
+.siio-detail-close{display:none}
+.siio-detail[open] .siio-detail-open{display:none}
+.siio-detail[open] .siio-detail-close{display:inline}
+
+@media(max-width:600px){
+  .siio-detail > summary{flex-wrap:wrap}
+}

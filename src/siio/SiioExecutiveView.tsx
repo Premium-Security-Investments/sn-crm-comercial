@@ -43,7 +43,10 @@ function useSiioData<T>(path: string) {
 // Detail on demand: the first screen monitors, the folded sections hold the tables.
 function DetailSection({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
   return <details className="panel siio-detail">
-    <summary><span className="siio-detail-title">{title}</span><span className="siio-detail-hint">{hint}</span></summary>
+    <summary>
+      <span className="siio-detail-text"><span className="siio-detail-title">{title}</span><span className="siio-detail-hint">{hint}</span></span>
+      <span className="siio-detail-action" aria-hidden="true"><span className="siio-detail-open">Ver detalle ▾</span><span className="siio-detail-close">Ocultar ▴</span></span>
+    </summary>
     {children}
   </details>;
 }
