@@ -67,7 +67,7 @@ function numeric(value: number | null | undefined): number {
 }
 
 function percent(value: number | null | undefined): string {
-  return `${(numeric(value) * 100).toFixed(1)}%`;
+  return `${(numeric(value) * 100).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
 function qualifiedTitle(title: string, validated: boolean): string {

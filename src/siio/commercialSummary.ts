@@ -55,3 +55,19 @@ export function commercialReadings(summary: CommercialSummary): string[] {
   if (advancedStale) readings.push(`${advancedStale} de ${advancedTotal} oportunidades con oferta enviada o más avanzadas llevan más de ${pipeline.stale_days} días sin actividad.`);
   return readings;
 }
+
+// Public tenders and private sales are different businesses (total contract value vs monthly
+// service value), so their readings are shown apart.
+export function tenderReadings(summary: CommercialSummary): string[] {
+  return commercialReadings(summary).filter(text => /licitaci|fecha de cierre/i.test(text));
+}
+
+export function privateReadings(summary: CommercialSummary): string[] {
+  return commercialReadings(summary).filter(text => !/licitaci|fecha de cierre/i.test(text));
+}
+
+// Orange marks only what is truly urgent: overdue status or a close within a week.
+export const URGENT_DAYS = 7;
+export function isUrgentTender(item: CommercialTender) {
+  return item.attention === 'cierre_vencido_sin_actualizar' || (item.attention === 'requiere_decision' && item.days_to_deadline !== null && item.days_to_deadline <= URGENT_DAYS);
+}

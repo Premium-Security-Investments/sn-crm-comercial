@@ -78,7 +78,8 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
       {!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}
     </div>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
-    <SiioNavigation activeView={routeState.view} onSelect={selectView} />
+    {/* The Torre is the main view; the other views open from "Más información" and keep the bar to come back. */}
+    {routeState.view !== 'resumen' ? <SiioNavigation activeView={routeState.view} onSelect={selectView} /> : null}
     {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'resumen'
       ? <><SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} /><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /></>
       : routeState.view === 'seguimiento'

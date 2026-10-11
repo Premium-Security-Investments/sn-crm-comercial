@@ -121,6 +121,7 @@ test('los nombres de entidad llegan sin asteriscos de SECOP', () => {
   assert.equal(cleanEntityName('GOBERNACIÓN DE RISARALDA**'), 'GOBERNACIÓN DE RISARALDA');
   assert.equal(cleanEntityName('  MUNICIPIO  DE PEREIRA '), 'MUNICIPIO DE PEREIRA');
   assert.equal(cleanEntityName(null), '');
+  assert.equal(cleanEntityName('Rama Judicial \u0096 Dirección Seccional de Barranquilla'), 'Rama Judicial – Dirección Seccional de Barranquilla');
 });
 
 test('la Torre pone primero las cifras clave y la atención, y pliega el detalle', async () => {
@@ -133,8 +134,11 @@ test('la Torre pone primero las cifras clave y la atención, y pliega el detalle
   assert.match(view, /<details className="panel siio-detail">/);
   assert.equal((view.match(/api<T>\(path\)/g) || []).length, 1, 'la vista carga cada fuente una sola vez y la comparte');
   const figures = readFileSync(new URL('../src/siio/SiioKeyFigures.tsx', import.meta.url), 'utf8');
-  assert.equal((figures.match(/<Figure /g) || []).length, 7, 'siete cifras clave en la primera pantalla');
-  assert.match(figures, /siio-sparkline-reference/, 'la referencia (año anterior o meta) va en gris');
+  assert.equal((figures.match(/<Figure /g) || []).length, 8, 'ocho cifras clave: 4 de finanzas, 2 de privados y 2 de licitaciones');
+  assert.match(figures, /Comercial privado/);
+  assert.match(figures, /Licitaciones públicas/);
+  assert.match(figures, /tone: 'reference'/, 'la referencia (año anterior) va en gris en las gráficas de tendencia');
+  assert.match(view, /<SiioTrendCharts/, 'la tendencia va como gráficas con escala, no como minigráficas');
 });
 
 test('las cifras acumuladas se muestran en millones, no en pesos completos', async () => {

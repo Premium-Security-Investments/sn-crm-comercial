@@ -725,25 +725,6 @@
   background:#fffbeb;
 }
 
-.siio-sparkline{
-  display:block;
-  width:100%;
-  max-width:160px;
-  height:auto;
-  overflow:visible;
-}
-
-.siio-sparkline polyline{
-  fill:none;
-  stroke-linejoin:round;
-  stroke-linecap:round;
-  vector-effect:non-scaling-stroke;
-}
-
-.siio-sparkline-current{stroke:#10213d;stroke-width:2}
-.siio-sparkline-reference{stroke:#94a3b8;stroke-width:1.5;stroke-dasharray:3 3}
-.siio-sparkline-zero{stroke:#e2e8f0;stroke-width:1;vector-effect:non-scaling-stroke}
-.siio-sparkline-dot{fill:#10213d}
 
 .siio-attention-readings{margin-top:0}
 
@@ -857,24 +838,6 @@
   gap:4px 14px;
 }
 
-.siio-spark-legend{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  color:#526173;
-  font-size:12px;
-  font-weight:600;
-}
-
-.siio-spark-legend i{
-  display:inline-block;
-  width:16px;
-  height:0;
-  margin-left:6px;
-}
-
-.siio-spark-key-current{border-top:2px solid #10213d}
-.siio-spark-key-reference{border-top:1.5px dashed #94a3b8}
 
 .siio-pulse-table th[scope="row"]{
   text-transform:none;
@@ -967,3 +930,159 @@
   }
   .siio-commercial-table td:last-child{text-align:left}
 }
+
+/* Trend charts: accent blue for the current period, grey for the reference, hairline grid. */
+.siio-chart-grid-layout{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:20px 28px;
+}
+
+.siio-chart{margin:0;min-width:0}
+
+.siio-chart figcaption{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:2px 10px;
+}
+
+.siio-chart figcaption strong{color:#10213d;font-size:15px}
+.siio-chart figcaption span{color:#526173;font-size:12px}
+
+.siio-chart-legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px 14px;
+  margin:6px 0 2px;
+  color:#40516b;
+  font-size:12px;
+}
+
+.siio-chart-legend span{display:inline-flex;align-items:center;gap:6px}
+.siio-chart-key{display:inline-block;width:12px;height:12px;border-radius:3px}
+.siio-chart-key-accent{background:#1b64f2}
+.siio-chart-key-reference{background:#94a3b8}
+.siio-chart-key-goal{height:0;width:16px;border-radius:0;border-top:2px dashed #475569}
+
+.siio-chart-frame{position:relative}
+.siio-chart-frame svg{display:block;width:100%;height:auto;overflow:visible}
+
+.siio-chart-grid{stroke:#e8eef6;stroke-width:1}
+.siio-chart-baseline{stroke:#94a3b8;stroke-width:1}
+.siio-chart-goal{stroke:#475569;stroke-width:1.5;stroke-dasharray:5 4}
+.siio-chart-crosshair{stroke:#cbd5e1;stroke-width:1}
+.siio-chart-axis{fill:#526173;font-size:12px;font-variant-numeric:tabular-nums}
+.siio-chart-value{fill:#10213d;font-size:12px;font-weight:700}
+.siio-chart-bar.siio-chart-accent{fill:#1b64f2}
+.siio-chart-bar.siio-chart-reference{fill:#94a3b8}
+.siio-chart-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.siio-chart-line.siio-chart-accent{stroke:#1b64f2}
+.siio-chart-line.siio-chart-reference{stroke:#94a3b8}
+.siio-chart-dot{stroke:#fff;stroke-width:2}
+.siio-chart-dot.siio-chart-accent{fill:#1b64f2}
+.siio-chart-dot.siio-chart-reference{fill:#94a3b8}
+.siio-chart-hit{fill:transparent}
+.siio-chart-active .siio-chart-hit{fill:#f1f5fb}
+.siio-chart-frame g[tabindex]:focus{outline:none}
+.siio-chart-frame g[tabindex]:focus-visible .siio-chart-hit{fill:#e8effc}
+
+.siio-chart-tooltip{
+  position:absolute;
+  top:0;
+  transform:translateX(-50%);
+  max-width:260px;
+  padding:6px 9px;
+  border-radius:8px;
+  background:#10213d;
+  color:#fff;
+  font-size:12px;
+  line-height:1.35;
+  pointer-events:none;
+  white-space:normal;
+  box-shadow:0 4px 12px rgba(16,33,61,.18);
+}
+
+@media(max-width:900px){
+  .siio-chart-grid-layout{grid-template-columns:1fr}
+}
+
+@media(max-width:600px){
+  .siio-chart-axis,
+  .siio-chart-value{font-size:14px}
+}
+
+/* Collapsible sections: an explicit button instead of a tiny disclosure triangle. */
+.siio-detail > summary{
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:nowrap;
+  gap:16px;
+}
+
+.siio-detail > summary::before{content:none}
+.siio-detail[open] > summary::before{content:none}
+
+.siio-detail-text{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:2px 12px;
+  min-width:0;
+}
+
+.siio-detail-action{
+  flex:none;
+  padding:8px 14px;
+  border:1px solid #cbdcf2;
+  border-radius:999px;
+  background:#fff;
+  color:#174ea6;
+  font-size:14px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.siio-detail > summary:hover .siio-detail-action{background:#eef4ff;border-color:#9dbbe8}
+.siio-detail-close{display:none}
+.siio-detail[open] .siio-detail-open{display:none}
+.siio-detail[open] .siio-detail-close{display:inline}
+
+@media(max-width:600px){
+  .siio-detail > summary{flex-wrap:wrap}
+}
+
+/* Private sales and public tenders sit side by side as separate groups. */
+.siio-key-row{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px 20px;
+}
+
+.siio-key-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+.siio-attention-section{display:grid;gap:8px}
+.siio-attention-section + .siio-attention-section{margin-top:20px;padding-top:16px;border-top:1px solid #e7edf5}
+.siio-attention-section h3{margin:0;color:#10213d;font-size:16px}
+.siio-attention-section .siio-pulse-readings{margin-top:0}
+
+.siio-alert-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.siio-alert-list li{display:grid;gap:2px;padding:10px 12px;border:1px solid #e7edf5;border-radius:12px;background:#fff}
+.siio-alert-list strong{color:#10213d}
+.siio-alert-list span{color:#40516b;font-size:14px}
+.siio-alert-list small{color:#526173;font-size:12px}
+.siio-alert-list button{justify-self:start;margin-top:4px}
+
+.siio-more-links{display:flex;flex-wrap:wrap;gap:10px}
+
+.siio-detail > summary:focus-visible{outline:2px solid #9dbbe8;outline-offset:-2px}
+
+@media(max-width:900px){
+  .siio-key-row{grid-template-columns:1fr}
+}
+
+@media(max-width:600px){
+  .siio-key-grid-2{grid-template-columns:1fr}
+}
+
+.siio-alerts-title{margin:8px 0 0;color:#10213d;font-size:14px}
