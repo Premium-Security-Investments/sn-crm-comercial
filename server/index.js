@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cleanFinancialImportRequest, financialImportStoragePath, listFinancialImports, processFinancialWorkbookImport, publishFinancialImport, validateFinancialImport, SIIO_FINANCIAL_IMPORT_BUCKET } from '../siio-financial-import-service.js';
 import { loadFinancialPulse } from '../siio-financial-pulse.js';
 import { loadCommercialSummary } from '../siio-commercial-summary.js';
+import { createFollowup, listFollowups, updateFollowup } from '../siio-followups.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
@@ -3063,6 +3064,29 @@ app.get('/api/siio/commercial-summary', async (req, res) => {
     requireSiioEndpointAccess(profile, 'GET /api/siio/commercial-summary');
     res.json(await loadCommercialSummary(requireDb()));
   } catch (error) { sendAuthError(res, error); }
+});
+
+// Seguimiento gerencial: dueños y Junta crean; sólo dueños cierran; el directivo de consulta sólo lee.
+app.get('/api/siio/followups', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'siio');
+    res.json(await listFollowups(requireDb(), profile));
+  } catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/followups', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'siio');
+    res.json(await createFollowup(requireDb(), req.body || {}, profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.patch('/api/siio/followups/:id', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'siio');
+    res.json(await updateFollowup(requireDb(), req.params.id, req.body || {}, profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 app.post('/api/siio/financial-imports/upload-url', async (req, res) => {

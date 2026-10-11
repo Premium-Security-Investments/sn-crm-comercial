@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../apiClient';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
-import { deriveRecommendations, deriveTrackingItems, navigateSiioView, uniqueOptions } from './selectors';
+import { deriveRecommendations, navigateSiioView, uniqueOptions } from './selectors';
 import { Badge, EmptyState, Panel } from './SiioUi';
 import { SiioFinancialPulse } from './SiioFinancialPulse';
 import { PrivateAttentionTable, SiioPrivateDetail, SiioTenderDetail, TenderAttentionTable, millions } from './SiioCommercialPanel';
 import { SiioKeyFigures, SiioTrendCharts } from './SiioKeyFigures';
+import { FollowupCell, FollowupComposer } from './SiioFollowups';
+import { addDays, isOverdue, openFollowupFor, todayIso, useFollowups, type FollowupDraft } from './followups';
 import { privateReadings, tenderReadings, type CommercialSummary } from './commercialSummary';
 import { pulseReadings, type FinancialPulse } from './financialPulse';
 import type { SiioFinancialMetric } from '../siioExecutive';
-import type { SiioBootstrapPayload, SiioRouteState, SiioTrackingKind } from './types';
+import type { SiioBootstrapPayload, SiioRouteState } from './types';
 
 function formatPeriod(period: string | null | undefined) {
   if (!period) return 'Sin datos publicados';
@@ -87,7 +89,6 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     payrollAggregates: payload.payrollAggregates,
     sources: payload.sources,
   }, routeState.filters.period), [payload.financialMetrics, payload.payrollAggregates, payload.sources, routeState.filters.period]);
-  const trackingItems = useMemo(() => deriveTrackingItems(payload.records, payload.decisions), [payload.records, payload.decisions]);
   const periodOptions = useMemo(() => uniqueOptions(payload.financialMetrics.map(metric => metric.period_month)), [payload.financialMetrics]);
   const areaOptions = useMemo(() => uniqueOptions(payload.payrollAggregates.map(row => row.area)), [payload.payrollAggregates]);
   const selectedPeriod = snapshot.financialPeriod || '';
@@ -104,11 +105,14 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     alerts: total.alerts + (row.alert ? 1 : 0),
   }), { people: 0, accrued: 0, deductions: 0, net: 0, alerts: 0 }), [payrollRows]);
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
-  const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind && item.activityState === 'active').length;
-  const trackingLink = (kind: SiioTrackingKind) => onNavigate(navigateSiioView('seguimiento', { kind }));
+  const followups = useFollowups();
+  const [followupDraft, setFollowupDraft] = useState<FollowupDraft | null>(null);
+  const today = followups.data?.today || todayIso();
+  const attentionFollowups = followups.data?.permissions.view ? { list: followups.data, onCreate: setFollowupDraft } : undefined;
+  const openFollowups = followups.data?.followups.filter(item => item.status === 'abierto') || [];
+  const lateFollowups = openFollowups.filter(item => isOverdue(item, today));
   const [pulse, pulseState] = useSiioData<FinancialPulse | null>(`/api/siio/financial-pulse${selectedPeriod ? `?period=${encodeURIComponent(selectedPeriod)}` : ''}`);
   const [commercial, commercialState] = useSiioData<CommercialSummary>('/api/siio/commercial-summary');
-  const signals = (['decisiones', 'bloqueos', 'riesgos', 'compromisos'] as SiioTrackingKind[]).map(kind => ({ kind, total: count(kind) })).filter(item => item.total > 0);
   // Each business reads apart: tenders (total contract value), private sales (monthly value), finance.
   const tenderNotes = commercial ? tenderReadings(commercial) : [];
   const privateNotes = commercial ? privateReadings(commercial).filter(text => !/^(Ventas nuevas|El pipeline ponderado)/.test(text)) : [];
@@ -137,15 +141,16 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     <SiioTrendCharts pulse={pulse} summary={commercial} />
 
     <Panel title="Requiere atención">
+      {followupDraft ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
       <section className="siio-attention-section" aria-label="Licitaciones públicas">
         <h3>Licitaciones públicas</h3>
         {tenderNotes.length ? <div className="siio-pulse-readings"><ul>{tenderNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
-        {commercial ? <TenderAttentionTable summary={commercial} /> : null}
+        {commercial ? <TenderAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
       </section>
       <section className="siio-attention-section" aria-label="Comercial privado">
         <h3>Comercial privado</h3>
         {privateNotes.length ? <div className="siio-pulse-readings"><ul>{privateNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
-        {commercial ? <PrivateAttentionTable summary={commercial} /> : null}
+        {commercial ? <PrivateAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
       </section>
       <section className="siio-attention-section" aria-label="Finanzas">
         <h3>Finanzas y nómina</h3>
@@ -157,12 +162,17 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
             <strong>{recommendation.title}</strong>
             <span>{recommendation.finding}</span>
             <small>{alertBasis(recommendation)}</small>
+            {attentionFollowups ? <FollowupCell existing={openFollowupFor(followups.data, `alerta:${recommendation.id}:${recommendation.period || ''}`)} today={today} canCreate={Boolean(followups.data?.permissions.create)} onCreate={() => setFollowupDraft({ title: `Revisar: ${recommendation.title.replace(/^Lectura preliminar: /, '')}`, owner_label: recommendation.id === 'payroll-source-alert' ? 'Gestión Humana' : 'Finanzas', due_date: addDays(today, 14), origin_type: 'finanzas', origin_ref: `alerta:${recommendation.id}:${recommendation.period || ''}`, origin_label: alertBasis(recommendation) })} /> : null}
           </li>)}</ul>
         </> : null}
-        <p className="siio-secondary">{signals.length
-          ? signals.map(item => <button type="button" key={item.kind} className="secondary" onClick={() => trackingLink(item.kind)}>{item.total} {item.kind} en seguimiento</button>)
-          : 'Sin decisiones, bloqueos, riesgos ni compromisos abiertos en el seguimiento gerencial.'}</p>
       </section>
+      {followups.data?.permissions.view ? <section className="siio-attention-section" aria-label="Seguimiento gerencial">
+        <h3>Seguimiento gerencial</h3>
+        <p className="siio-secondary">
+          {openFollowups.length ? `${openFollowups.length} seguimientos abiertos` : 'Sin seguimientos abiertos'}{lateFollowups.length ? <> · <span className="siio-alert-text">{lateFollowups.length} vencidos</span></> : null}{' '}
+          <button type="button" className="siio-link-button" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Ver seguimiento</button>
+        </p>
+      </section> : null}
     </Panel>
 
     <DetailSection title={`Finanzas · detalle de ${pulse ? formatPeriod(selectedPeriod).toLowerCase() : 'periodo'}`} hint="Lectura del mes, tendencia, desglose por rubro y acumulado del año">
@@ -196,16 +206,10 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       <SiioTenderDetail summary={commercial} state={commercialState} />
     </DetailSection>
 
-    <DetailSection title="Seguimiento gerencial y nómina agregada" hint="Riesgos, decisiones, bloqueos, compromisos y nómina por área">
-    <Panel title="Gestión que requiere atención">
-      <div className="siio-management-signals">
-        <button type="button" onClick={() => trackingLink('riesgos')}><span>Riesgos registrados</span><strong>{count('riesgos')}</strong></button>
-        <button type="button" onClick={() => trackingLink('decisiones')}><span>Decisiones pendientes</span><strong>{count('decisiones')}</strong></button>
-        <button type="button" onClick={() => trackingLink('bloqueos')}><span>Bloqueos</span><strong>{count('bloqueos')}</strong></button>
-        <button type="button" onClick={() => trackingLink('compromisos')}><span>Compromisos</span><strong>{count('compromisos')}</strong></button>
-        <div className="siio-management-signal-static"><span>Alertas de nómina agregadas</span><strong>{payrollTotals.alerts}</strong></div>
-      </div>
-    </Panel>
+    <DetailSection title="Nómina agregada" hint="Personas, devengado y neto por área, sin datos individuales">
+    <div className="siio-management-signals siio-payroll-signal">
+      <div className="siio-management-signal-static"><span>Alertas de nómina agregadas</span><strong>{payrollTotals.alerts}</strong></div>
+    </div>
 
     <Panel title="Nómina agregada">
       <div className="siio-period-line"><span>Periodo de nómina</span><strong>{formatPeriod(snapshot.payrollPeriod)}</strong></div>

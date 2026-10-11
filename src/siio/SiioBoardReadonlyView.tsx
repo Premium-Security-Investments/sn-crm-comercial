@@ -1,4 +1,6 @@
 import type { SiioBoardReport } from './types';
+import { SiioFollowupsView } from './SiioFollowups';
+import { useFollowups } from './followups';
 
 type Props = {
   payload: { boardReports: SiioBoardReport[] } | null;
@@ -8,6 +10,8 @@ type Props = {
 };
 
 export function SiioBoardReadonlyView({ payload, loading, status, onRetry }: Props) {
+  // Juan (2026-10-11): the Junta also sees and creates management follow-ups; owners close them.
+  const followups = useFollowups();
   if (!payload) {
     if (!loading) {
       return <section className="stack" aria-live="polite">
@@ -34,5 +38,6 @@ export function SiioBoardReadonlyView({ payload, loading, status, onRetry }: Pro
         <p>{report.summary || 'Sin resumen disponible.'}</p>
       </article>)}
     </section>}
+    <SiioFollowupsView list={followups.data} state={followups.state} reload={() => void followups.reload()} />
   </section>;
 }
