@@ -7,12 +7,10 @@ import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, deriveTrackingItems, navigateSiioView, parseSiioRouteState, toSiioHash } from './selectors';
 import { SiioExecutiveView } from './SiioExecutiveView';
 import { SiioFinancialImportPanel } from './SiioFinancialImportPanel';
-import { SiioAgentsView } from './SiioAgentsView';
 import { SiioBoardDraftAction } from './SiioBoardDraftAction';
 import { SiioBoardReadonlyView } from './SiioBoardReadonlyView';
 import { SiioManagementTrackingView } from './SiioManagementTrackingView';
 import { SiioNavigation } from './SiioNavigation';
-import { SiioSourcesIntelligenceView } from './SiioSourcesIntelligenceView';
 import type { SiioBootstrapPayload, SiioCurrentProfile, SiioRouteState, SiioView } from './types';
 
 // Etiqueta legible del perfil en el encabezado de la Torre de Control (antes salía el código interno, p. ej. "admin").
@@ -78,15 +76,11 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
       {!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}
     </div>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
-    {/* The Torre is the main view; the other views open from "Más información" and keep the bar to come back. */}
-    {routeState.view !== 'resumen' ? <SiioNavigation activeView={routeState.view} onSelect={selectView} /> : null}
-    {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'resumen'
-      ? <><SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} /><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /></>
-      : routeState.view === 'seguimiento'
-        ? <SiioManagementTrackingView payload={payload} routeState={routeState} onNavigate={onNavigate} />
-        : routeState.view === 'inteligencia'
-          ? <SiioSourcesIntelligenceView payload={payload} routeState={routeState} onNavigate={onNavigate} />
-          : <SiioAgentsView payload={payload} routeState={routeState} onNavigate={onNavigate} />}
+    <SiioNavigation activeView={routeState.view === 'seguimiento' ? 'seguimiento' : 'resumen'} onSelect={selectView} />
+    {/* Only the Torre and Seguimiento are offered; old links to Fuentes or Agentes fall back to the Torre. */}
+    {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'seguimiento'
+      ? <SiioManagementTrackingView payload={payload} routeState={routeState} onNavigate={onNavigate} />
+      : <><SiioExecutiveView payload={payload} routeState={routeState.view === 'resumen' ? routeState : navigateSiioView('resumen') as Extract<SiioRouteState, { view: 'resumen' }>} onNavigate={onNavigate} /><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /></>}
     {payload && snapshot && !readOnly ? <SiioBoardDraftAction open={boardDraftOpen} onClose={() => setBoardDraftOpen(false)} payload={payload} snapshot={snapshot} trackingItems={trackingItems} recommendations={recommendations} /> : null}
   </section>;
 }
