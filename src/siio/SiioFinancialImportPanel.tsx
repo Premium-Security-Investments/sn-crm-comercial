@@ -45,6 +45,12 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const visibleImports = useMemo(() => imports.slice(0, 6), [imports]);
+  const published = useMemo(() => imports.find(item => item.status === 'publicado') || null, [imports]);
+  const pendingCount = useMemo(() => imports.filter(item => item.status === 'listo_revision' || (item.status === 'validado' && item.import_type !== 'parcial_diario')).length, [imports]);
+  const publishedWarnings = published?.validations.filter(check => !check.ok).length || 0;
+  // Collapsed by default: the panel only matters while loading or when a cut is waiting for a person.
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => { if (pendingCount) setExpanded(true); }, [pendingCount]);
 
   const loadImports = async () => {
     try {
@@ -137,9 +143,20 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
   };
 
   return <section className="card siio-financial-import-panel" aria-labelledby="siio-financial-import-title">
-    <header>
-      <div><span className="eyebrow">Finanzas · fuente contable</span><h3 id="siio-financial-import-title">Cargue del Excel contable</h3><p>Cada archivo queda como un corte independiente. El sistema hace comprobaciones automáticas; después una persona autorizada valida el corte y lo publica en la Torre.</p></div>
-    </header>
+    <button type="button" className="siio-financial-summary" aria-expanded={expanded} aria-controls="siio-financial-import-body" onClick={() => setExpanded(value => !value)}>
+      <span className="siio-financial-summary-text">
+        <span className="eyebrow">Fuente contable</span>
+        <strong id="siio-financial-import-title">{published ? `Último corte publicado: ${formatMonth(published.period_month)}` : 'Sin cortes publicados'}</strong>
+        <small>
+          {published ? `${published.file_name} · corte ${formatDate(published.cutoff_date)}` : 'Cargue manual del Excel contable'}
+          {publishedWarnings ? ` · ${publishedWarnings} ${publishedWarnings === 1 ? 'advertencia' : 'advertencias'}` : ''}
+          {pendingCount ? ` · ${pendingCount} ${pendingCount === 1 ? 'corte espera' : 'cortes esperan'} validación o publicación` : ''}
+        </small>
+      </span>
+      <span className="siio-financial-summary-action">{expanded ? 'Ocultar' : 'Ver cargues'}</span>
+    </button>
+    {expanded ? <div id="siio-financial-import-body" className="siio-financial-body">
+    <p>Cada archivo queda como un corte independiente. El sistema hace comprobaciones automáticas; después una persona autorizada valida el corte y lo publica en la Torre.</p>
     {canImport ? <div className="siio-financial-section">
       <h4>Nuevo cargue</h4>
       <div className="siio-financial-import-form">
@@ -162,16 +179,16 @@ export function SiioFinancialImportPanel({ canImport, onPublished }: { canImport
           <div><small>Contenido cargado</small><strong>{item.import_summary?.balance_lines || 0} líneas · {item.import_summary?.metrics || 0} indicadores</strong></div>
           <div><small>Comprobaciones automáticas</small><strong>{item.validations.filter(check => check.ok).length} aprobadas · {failedChecks.length} por revisar</strong></div>
           {failedChecks.length ? <ul>{failedChecks.map(check => <li key={`${check.rule}-${check.detail}`}><strong>{check.severity === 'bloqueante' ? 'Bloqueo' : check.severity === 'advertencia' ? 'Advertencia' : 'Nota'}:</strong> {check.detail} ({check.obtained || 'sin valor'})</li>)}</ul> : null}
-          <p className="siio-financial-trail">
-            Cargado por {item.uploaded_by_name || 'persona registrada'} el {formatMoment(item.uploaded_at)}.
-            {item.validated_at ? ` Validado por ${item.validated_by_name || 'persona registrada'} el ${formatMoment(item.validated_at)}.` : ''}
-            {item.validated_by_uploader ? ' La misma persona cargó y validó este corte.' : ''}
-            {item.published_at ? ` Publicado por ${item.published_by_name || 'persona registrada'} el ${formatMoment(item.published_at)}.` : ''}
-          </p>
+          <p className="siio-financial-trail">{[
+            `Cargado por ${item.uploaded_by_name || 'persona registrada'} el ${formatMoment(item.uploaded_at)}`,
+            item.validated_at ? `Validado por ${item.validated_by_name || 'persona registrada'} el ${formatMoment(item.validated_at)}` : null,
+            item.published_at ? `Publicado por ${item.published_by_name || 'persona registrada'} el ${formatMoment(item.published_at)}` : null,
+          ].filter(Boolean).join(' · ')}{item.validated_by_uploader ? <strong> · La misma persona cargó y validó este corte.</strong> : null}</p>
           {canImport && item.status === 'listo_revision' ? <button type="button" onClick={() => void validate(item)} disabled={busy}>Validar este corte</button> : null}
           {canImport && item.status === 'validado' && item.import_type !== 'parcial_diario' ? <button type="button" onClick={() => void publish(item)} disabled={busy}>Publicar en la Torre de Control</button> : null}
         </article>;
       }) : <p className="siio-secondary">Aún no hay cargas versionadas. Los indicadores históricos existentes siguen visibles.</p>}
     </div>
+    </div> : null}
   </section>;
 }

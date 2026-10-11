@@ -23,6 +23,9 @@ test('la Torre muestra el cargue sólo como acción de admin o gerencia', () => 
   assert.match(panel, /uploadToSignedUrl/);
   assert.match(panel, /Validar este corte/);
   assert.match(panel, /Cargar y comprobar/);
+  assert.match(panel, /aria-expanded=\{expanded\}/, 'el cargue queda plegado y se abre a pedido');
+  assert.match(panel, /useState\(false\)/);
+  assert.match(panel, /if \(pendingCount\) setExpanded\(true\)/, 'se abre solo cuando un corte espera a una persona');
   assert.match(panel, /La misma persona cargó y validó este corte/);
   assert.doesNotMatch(panel, /imports\[0\]/, 'las acciones deben estar disponibles en cada corte, no sólo en el último cargado');
   assert.match(panel, /Publicar en la Torre de Control/);
