@@ -1,7 +1,7 @@
 import { isOpportunityPrimaryFilter, matchesOpportunityPrimaryFilter, type TenderOpportunityPrimaryFilter } from './opportunityStage';
 import type { TenderModuleView, TenderOpportunityFilter, TenderOpportunitySummary } from './types';
 
-const tenderOpportunityFilters: readonly TenderOpportunityFilter[] = ['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed'];
+const tenderOpportunityFilters: readonly TenderOpportunityFilter[] = ['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed', 'archivadas'];
 
 /**
  * Acepta el vocabulario primario (`all` / `por_decidir` / `en_curso` / `cerradas`), que es una
@@ -46,4 +46,12 @@ export function focusDocumentReviewArea(target: { scrollIntoView: (options: Scro
 
 export async function reloadCurrentDossierPage<T>(page: number, limit: number, loadPage: (query: { limit: number; offset: number }) => Promise<T>) {
   return loadPage(dossierPageQuery(page, limit));
+}
+
+export function sortTenderOpportunitySummaries<T extends { expected_close_date?: string | null; last_updated_at?: string | null; opportunity_id: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const aDate = a.expected_close_date || '9999-12-31';
+    const bDate = b.expected_close_date || '9999-12-31';
+    return aDate.localeCompare(bDate) || String(b.last_updated_at || '').localeCompare(String(a.last_updated_at || '')) || a.opportunity_id.localeCompare(b.opportunity_id);
+  });
 }

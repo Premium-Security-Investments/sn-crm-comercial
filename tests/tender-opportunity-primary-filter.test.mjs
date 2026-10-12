@@ -44,14 +44,14 @@ const {
 const { filterOpportunitySummaries } = await loadModule('../src/tenders/viewUtils.ts');
 
 const opportunitiesView = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
-const listingSql = readFileSync(new URL('../supabase/migrations/088_tender_opportunity_primary_stage_filters.sql', import.meta.url), 'utf8');
+const listingSql = readFileSync(new URL('../supabase/migrations/124_tender_opportunity_archive.sql', import.meta.url), 'utf8');
 const serverBackend = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const apiBackend = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const opportunityTypes = readFileSync(new URL('../src/tenders/types.ts', import.meta.url), 'utf8');
 
 test('los filtros primarios seleccionables son exactamente Todas / Por decidir / En curso', () => {
-  assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => option.value), ['all', 'por_decidir', 'en_curso']);
-  assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => option.label), ['Todas', 'Por decidir', 'En curso']);
+  assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => option.value), ['all', 'por_decidir', 'en_curso', 'archivadas']);
+  assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map(option => option.label), ['Todas', 'Por decidir', 'En curso', 'Archivadas']);
 });
 
 test('Cerradas gana sobre cualquier campo contradictorio rancio', () => {
@@ -201,7 +201,7 @@ test('el vocabulario primario seleccionable llega intacto al RPC y a la validaci
   }
 });
 
-test('la vista de oportunidades ofrece exactamente tres filtros primarios seleccionables y ningún botón de Cerradas', () => {
+test('la vista de oportunidades ofrece filtros activos y Archivadas, sin botón de Cerradas', () => {
   // Los tres filtros seleccionables son botones explícitos con aria-pressed y rótulo visible, no una
   // lista derivada de OPPORTUNITY_PRIMARY_FILTER_OPTIONS.map: el estado interno "cerradas" sigue
   // existiendo en el clasificador, pero ya no tiene un control visible en la bandeja.
@@ -210,7 +210,8 @@ test('la vista de oportunidades ofrece exactamente tres filtros primarios selecc
     ['all', 'all', 'Todas'],
     ['por_decidir', 'por_decidir', 'Por decidir'],
     ['en_curso', 'en_curso', 'En curso'],
-  ], 'debe haber exactamente tres botones, cada uno con aria-pressed y reinicio de página al hacer clic');
+    ['archivadas', 'archivadas', 'Archivadas'],
+  ], 'debe haber cuatro botones, cada uno con aria-pressed y reinicio de página al hacer clic');
   assert.ok(!/aria-pressed=\{filter === 'cerradas'\}/.test(opportunitiesView), 'no debe existir un control con aria-pressed para cerradas');
   assert.ok(!opportunitiesView.includes('>Cerradas<'), 'no debe existir un botón visible de Cerradas');
   assert.ok(!/<option value="/.test(opportunitiesView), 'el selector no debe volver a un <select> con opciones literales');
