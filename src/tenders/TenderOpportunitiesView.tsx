@@ -7,7 +7,7 @@ import { tenderDossierQueueState } from './dossierUtils';
 import { classifyOpportunityStage, opportunityQueryFilter, type TenderOpportunityPrimaryFilter, type TenderOpportunityStage } from './opportunityStage';
 import { tenderDecisionLabel, tenderDocumentStatusLabel, tenderOfferStatusLabel, tenderOpportunityPriorityLabel, tenderOpportunityStageLabel, tenderOpportunityStageTone, tenderStatusTone } from './statusLabels';
 import { beginTenderRefresh, finishTenderRefresh, safePublicTenderSourceUrl } from './tenderUiState';
-import { dossierPageQuery, reloadCurrentDossierPage as reloadDossierPage } from './viewUtils';
+import { dossierPageQuery, reloadCurrentDossierPage as reloadDossierPage, sortTenderOpportunitySummaries } from './viewUtils';
 import type { TenderDocumentRefreshResult, TenderOpportunitySummary, TendersModuleProps } from './types';
 
 const PAGE_SIZE = 25;
@@ -48,8 +48,6 @@ function opportunityNextActionText(dossier: TenderOpportunitySummary, queueNextA
   return `${action}${responsible}${due}`;
 }
 
-const opportunityStageRank: Record<TenderOpportunityStage, number> = { por_decidir: 0, en_curso: 1, cerradas: 2 };
-
 type TenderOpportunitiesViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
 
 export function TenderOpportunitiesView({ request, navigate, moduleNavigation }: TenderOpportunitiesViewProps) {
@@ -58,6 +56,7 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
   const [filter, setFilter] = useState<TenderOpportunityPrimaryFilter>('por_decidir');
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState<Set<string>>(() => new Set());
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const retryingRef = useRef<Set<string>>(new Set());
   const [refreshResults, setRefreshResults] = useState<Record<string, TenderDocumentRefreshResult>>({});
   const [error, setError] = useState<string | null>(null);
@@ -80,12 +79,21 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
   };
   useEffect(() => { void reloadCurrentDossierPage(); }, [query.filter, query.limit, query.offset]);
 
-  // "Todas" no descarta ninguna fila: agrupa por_decidir, luego en_curso, luego cerradas, preservando
-  // el orden relativo dentro de cada grupo (Array#sort es estable desde ES2019).
-  const displayRows = useMemo(() => {
-    if (filter !== 'all') return rows;
-    return [...rows].sort((a, b) => opportunityStageRank[classifyOpportunityStage(a)] - opportunityStageRank[classifyOpportunityStage(b)]);
-  }, [rows, filter]);
+  // La bandeja de convertidas debe priorizar el cierre más próximo en Todas y en cada estado.
+  const displayRows = useMemo(() => sortTenderOpportunitySummaries(rows), [rows]);
+
+  const archiveOpportunity = async (dossier: TenderOpportunitySummary) => {
+    if (dossier.archived_at || classifyOpportunityStage(dossier) !== 'en_curso' || !['en_preparacion', 'lista_para_presentar'].includes(dossier.tender_offer_status)) return;
+    if (!window.confirm('Esta oportunidad se archivará porque definitivamente no nos presentaremos. ¿Desea continuar?')) return;
+    const reason = window.prompt('Indique el motivo por el que no nos presentaremos:')?.trim();
+    if (!reason) return;
+    setArchivingId(dossier.opportunity_id); setError(null);
+    try {
+      await request('/api/tender-offer-archive', { method: 'POST', body: JSON.stringify({ opportunity_id: dossier.opportunity_id, expected_tender_offer_status: dossier.tender_offer_status, note: reason }) });
+      await reloadCurrentDossierPage();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setArchivingId(null); }
+  };
 
   const refreshDocuments = async (dossier: TenderOpportunitySummary) => {
     const id = dossier.opportunity_id;
@@ -108,6 +116,7 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
       <button type="button" className="secondary" aria-pressed={filter === 'all'} disabled={loading} onClick={() => { setFilter('all'); setPage(1); }}>Todas</button>
       <button type="button" className="secondary" aria-pressed={filter === 'por_decidir'} disabled={loading} onClick={() => { setFilter('por_decidir'); setPage(1); }}>Por decidir</button>
       <button type="button" className="secondary" aria-pressed={filter === 'en_curso'} disabled={loading} onClick={() => { setFilter('en_curso'); setPage(1); }}>En curso</button>
+      <button type="button" className="secondary" aria-pressed={filter === 'archivadas'} disabled={loading} onClick={() => { setFilter('archivadas'); setPage(1); }}>Archivadas</button>
     </div>
     {!displayRows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{displayRows.map(dossier => {
       const stage = classifyOpportunityStage(dossier);
@@ -135,7 +144,7 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
       {!!dossier.risks?.length && <p className="muted">Riesgos: {dossier.risks.join(', ')}</p>}
       {scoreTraceLabel && <p className="muted">{scoreTraceLabel}</p>}
       {refreshResults[dossier.opportunity_id] && <p className="muted" role="status">Actualización: {refreshResults[dossier.opportunity_id].new_count} nuevos · {refreshResults[dossier.opportunity_id].updated_count} actualizados · {refreshResults[dossier.opportunity_id].unchanged_count} sin cambios · {refreshResults[dossier.opportunity_id].failed_count} fallidos.</p>}
-      <div className="row-actions">{safePublicTenderSourceUrl(dossier.url) && <a className="button secondary" href={safePublicTenderSourceUrl(dossier.url) || undefined} target="_blank" rel="noreferrer">Abrir fuente oficial</a>}<button onClick={() => navigate(tenderDetailSectionHref(dossier.opportunity_id, 'tender-document-review'))}>Abrir expediente</button><button className="secondary" onClick={() => void refreshDocuments(dossier)} disabled={retrying.has(dossier.opportunity_id)}>{retrying.has(dossier.opportunity_id) ? 'Actualizando…' : dossier.document_import_status === 'fallo_importacion' ? 'Reintentar actualización' : 'Actualizar documentos'}</button></div>
+      <div className="row-actions">{safePublicTenderSourceUrl(dossier.url) && <a className="button secondary" href={safePublicTenderSourceUrl(dossier.url) || undefined} target="_blank" rel="noreferrer">Abrir fuente oficial</a>}<button onClick={() => navigate(tenderDetailSectionHref(dossier.opportunity_id, 'tender-document-review'))}>Abrir expediente</button><button className="secondary" onClick={() => void refreshDocuments(dossier)} disabled={retrying.has(dossier.opportunity_id)}>{retrying.has(dossier.opportunity_id) ? 'Actualizando…' : dossier.document_import_status === 'fallo_importacion' ? 'Reintentar actualización' : 'Actualizar documentos'}</button>{classifyOpportunityStage(dossier) === 'en_curso' && ['en_preparacion', 'lista_para_presentar'].includes(dossier.tender_offer_status) && <button className="secondary danger" onClick={() => void archiveOpportunity(dossier)} disabled={archivingId === dossier.opportunity_id}>{archivingId === dossier.opportunity_id ? 'Archivando…' : 'Archivar: no nos presentamos'}</button>}</div>
     </article>; })}</div>}
     <nav className="pagination" aria-label="Paginación de expedientes"><button className="secondary" disabled={page <= 1 || loading} onClick={() => setPage(current => current - 1)}>Anterior</button><span className="pagination-status">Página {page} · hasta {PAGE_SIZE} expedientes</span><button className="secondary" disabled={rows.length < PAGE_SIZE || loading} onClick={() => setPage(current => current + 1)}>Siguiente</button></nav>
   </section>;

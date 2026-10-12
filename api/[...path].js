@@ -23,6 +23,7 @@ import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
 import { runInConcurrentChunks } from '../tender-concurrency.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
+import { callTenderOpportunityArchive } from '../tender-offer-archive-rpc.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -4896,6 +4897,9 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     tracking_blocker: tender.tracking_blocker || null,
     tracking_next_action: tender.tracking_next_action || null,
     tracking_due_at: tender.tracking_due_at || null,
+    archived_at: opportunity?.archived_at || null,
+    archived_by: opportunity?.archived_by || null,
+    archive_note: opportunity?.archive_note || null,
   };
   try {
     const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id);
@@ -4922,7 +4926,7 @@ export const buildTenderDossierSummary = buildTenderOpportunitySummary;
 const tenderDossierDefaultLimit = 50;
 const tenderDossierMaxLimit = 50;
 const tenderDossierMaxOffset = 10000;
-const tenderOpportunityFilters = new Set(['all', 'por_decidir', 'en_curso', 'cerradas', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']);
+const tenderOpportunityFilters = new Set(['all', 'por_decidir', 'en_curso', 'cerradas', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed', 'archivadas']);
 
 function parseTenderDossierPage(query = {}) {
   const parse = (value, fallback, maximum, label) => {
@@ -5026,6 +5030,13 @@ app.post('/api/tender-offer-status', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
     res.status(201).json(await callTenderOfferStatusTransition(requireDb(), req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-offer-archive', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    res.status(201).json(await callTenderOpportunityArchive(requireDb(), req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

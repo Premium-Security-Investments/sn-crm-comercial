@@ -54,7 +54,8 @@ assert.deepEqual(OPPORTUNITY_PRIMARY_FILTER_OPTIONS, [
   { value: 'all', label: 'Todas' },
   { value: 'por_decidir', label: 'Por decidir' },
   { value: 'en_curso', label: 'En curso' },
-], 'La bandeja debe exponer exactamente tres filtros primarios: Todas, Por decidir, En curso.');
+  { value: 'archivadas', label: 'Archivadas' },
+], 'La bandeja debe exponer los filtros primarios activos y Archivadas: Todas, Por decidir, En curso.');
 assert.equal(isOpportunityPrimaryFilter('cerradas'), false, 'Cerradas no debe ser un filtro seleccionable por el usuario.');
 assert.equal(isOpportunityPrimaryFilter('por_decidir'), true, 'Por decidir sigue siendo vocabulario primario válido (existe en la migración 088 y el backend).');
 assert.equal(isOpportunityPrimaryFilter('en_curso'), true, 'En curso sigue siendo vocabulario primario válido (existe en la migración 088 y el backend).');
@@ -82,7 +83,7 @@ assert.match(opportunitiesView, /aria-pressed=\{filter === 'all'\}/, 'El botón 
 assert.match(opportunitiesView, /aria-pressed=\{filter === 'por_decidir'\}/, 'El botón Por decidir debe declarar su estado activo con aria-pressed.');
 assert.match(opportunitiesView, /aria-pressed=\{filter === 'en_curso'\}/, 'El botón En curso debe declarar su estado activo con aria-pressed.');
 const ariaPressedButtons = opportunitiesView.match(/aria-pressed=\{filter ===/g) || [];
-assert.equal(ariaPressedButtons.length, 3, 'Deben existir exactamente tres botones de filtro compactos (ninguno para Cerradas).');
+assert.equal(ariaPressedButtons.length, 4, 'Deben existir cuatro botones de filtro compactos (ninguno para Cerradas).');
 // Contrato de producto 2026-09-29: la vista inicial de la bandeja es "Por decidir", no "Todas"
 // (ver tests/tender-opportunities-compact-redesign.test.mjs para el resto del rediseño).
 assert.match(opportunitiesView, /useState<TenderOpportunityPrimaryFilter>\('por_decidir'\)/, 'El filtro por defecto debe ser Por decidir.');
