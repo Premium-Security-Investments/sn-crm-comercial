@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
 
-const migration = fs.readFileSync(new URL('../supabase/migrations/117_tender_opportunity_archive.sql', import.meta.url), 'utf8');
+const migration = fs.readFileSync(new URL('../supabase/migrations/124_tender_opportunity_archive.sql', import.meta.url), 'utf8');
 const view = fs.readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
 const rpc = fs.readFileSync(new URL('../tender-offer-archive-rpc.js', import.meta.url), 'utf8');
 const stage = fs.readFileSync(new URL('../tender-opportunity-stage.js', import.meta.url), 'utf8');

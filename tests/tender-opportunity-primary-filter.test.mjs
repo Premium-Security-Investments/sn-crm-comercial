@@ -44,7 +44,7 @@ const {
 const { filterOpportunitySummaries } = await loadModule('../src/tenders/viewUtils.ts');
 
 const opportunitiesView = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
-const listingSql = readFileSync(new URL('../supabase/migrations/117_tender_opportunity_archive.sql', import.meta.url), 'utf8');
+const listingSql = readFileSync(new URL('../supabase/migrations/124_tender_opportunity_archive.sql', import.meta.url), 'utf8');
 const serverBackend = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const apiBackend = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const opportunityTypes = readFileSync(new URL('../src/tenders/types.ts', import.meta.url), 'utf8');
