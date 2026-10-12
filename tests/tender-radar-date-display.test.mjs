@@ -31,8 +31,10 @@ function mountRadar(payload) {
   return view;
 }
 
+// Desde el rediseño del 2026-10-12 el cierre vive en la fila de datos de la tarjeta (dt/dd); se lee como "Cierre: …".
 function badgeTexts(article) {
-  return [...article.querySelectorAll('.badge')].map(node => node.textContent.trim());
+  const facts = [...article.querySelectorAll('.tender-card-facts > div')].map(node => `${node.querySelector('dt').textContent.trim()}: ${node.querySelector('dd').textContent.trim()}`);
+  return [...[...article.querySelectorAll('.badge')].map(node => node.textContent.trim()), ...facts];
 }
 
 const TENDER_ROW = {

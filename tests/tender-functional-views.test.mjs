@@ -40,15 +40,16 @@ assert.match(main, /documentFocusRequested = focusTarget === 'documents'/, 'Oppo
 assert.match(main, /id="tender-document-review"/, 'TenderDocumentReviewPanel needs a stable document-focus anchor.');
 assert.match(main, /tabIndex=\{-1\}/, 'The document-focus anchor must be programmatically focusable.');
 
-for (const label of ['Abrir expediente', 'Etapa', 'Monto', 'Cierre', 'Encaje', 'Prioridad', 'Siguiente acción', 'Decisión humana', 'Estado de oferta']) {
+// Rediseño 2026-10-12 (Juan): etapa y encaje van como etiquetas; un solo "Siguiente paso" y el bloque "Lo que dice Vig-IA".
+for (const label of ['Abrir expediente', 'tenderOpportunityStageLabel(stage)', 'Monto', 'Cierre', 'tenderFitBadgeLabel(dossier.fit)', 'Lo que dice Vig-IA', 'Siguiente paso', 'Decisión:', 'tenderOfferStatusLabel(dossier.tender_offer_status)']) {
   assert.ok(opportunities.includes(label), `Oportunidades debe mostrar ${label}`);
 }
 for (const retiredDetail of ['Recomendación del sistema', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
   assert.doesNotMatch(opportunities, new RegExp(`<dt>${retiredDetail}</dt>`), `Oportunidades ya no debe mostrar ${retiredDetail} como fila de la lista; ese detalle vive en el expediente.`);
 }
-assert.match(opportunities, /Bandeja de oportunidades/);
 assert.match(opportunities, /<h2 id="tender-dossiers-heading">Oportunidades<\/h2>/);
-assert.match(opportunities, /Gestione oportunidades convertidas, su expediente, decisión y preparación\./);
+assert.match(opportunities, /Licitaciones convertidas: expediente, decisión y preparación/);
+assert.doesNotMatch(opportunities, /Score histórico/, 'El score histórico ya no se muestra: se habla de tipo de encaje.');
 assert.match(opportunities, /\/api\/tender-documents-import/);
 assert.match(opportunities, /loadTenderOpportunities/);
 assert.doesNotMatch(opportunities, /\/api\/tender-opportunities/, 'La vista debe depender del loader y no duplicar el contrato HTTP.');
@@ -77,10 +78,11 @@ assert.ok(!configuration.includes("request('/api/tenders"), 'Configuración no d
 assert.doesNotMatch(configuration, /renderLegacy/);
 assert.match(radar, /profile/, 'Radar debe reconocer el perfil de la URL.');
 
-for (const label of ['Responsable', 'Última revisión', 'Próxima acción', 'Fecha compromiso', 'Días sin gestión', 'Bloqueo', 'Nota', 'Historial']) {
+for (const label of ['Responsable', 'Última revisión', 'Próxima acción', 'tracking_due_at', 'Días sin gestión', 'Bloqueo', 'Nota', 'Historial', 'Sacar de seguimiento']) {
   assert.ok(tracking.includes(label), `Seguimiento debe mostrar ${label}`);
 }
-for (const label of ['Referencia', 'Inicio de seguimiento', 'Cierre del proceso', 'Prioridad / score', 'Riesgos']) {
+assert.doesNotMatch(tracking, /Prioridad \/ score/, 'El score legado no se muestra en Seguimiento; se muestra el encaje.');
+for (const label of ['Referencia', 'En seguimiento desde', 'Cierre', 'tenderFitBadgeLabel(tender.fit)']) {
   assert.ok(tracking.includes(label), `Seguimiento debe mostrar ${label} para que la fila sea operable sin volver a Radar.`);
 }
 assert.match(apiSource, /\/api\/tender-tracking/);

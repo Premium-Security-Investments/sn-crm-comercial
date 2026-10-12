@@ -2451,7 +2451,13 @@ app.get('/api/tender-tracking', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireTenderTrackingAccess(currentProfile);
     const tenders = await must(requireDb().from('psi_public_tenders').select('*').eq('internal_status', 'en_revision').order('tracking_due_at', { ascending: true, nullsFirst: false }).order('tracking_updated_at', { ascending: false }));
-    res.json(tenders || []);
+    // La fila conserva su id (las transiciones lo usan); se agregan el cierre canónico y el encaje como en el Radar,
+    // y el payload crudo del proveedor nunca sale al cliente.
+    const nowIso = new Date().toISOString();
+    res.json((tenders || []).map(({ raw: _raw, ...row }) => {
+      const deadline = resolveCanonicalTenderDeadline({ ...row, raw: _raw });
+      return { ...row, deadline, fit: evaluateTenderFit({ ...row, raw: _raw, deadline_at: deadline }, { nowIso }) };
+    }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -5088,6 +5094,7 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     archived_at: opportunity?.archived_at || null,
     archived_by: opportunity?.archived_by || null,
     archive_note: opportunity?.archive_note || null,
+    vigia_analysis: await readTenderOpportunityVigiaAnalysis(database, tender.converted_opportunity_id),
   };
   try {
     const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id);
@@ -5110,6 +5117,31 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
   } catch (_error) { return fallback; }
 }
 export const buildTenderDossierSummary = buildTenderOpportunitySummary;
+// Último análisis oficial de Vig-IA (AGT-002, corrida canónica) y si hay uno en cola o corriendo. La tarjeta de la
+// bandeja lo muestra en vez del estado del preanálisis antiguo; si la lectura falla, la tarjeta sigue sin él.
+const TENDER_VIGIA_ACTIVE_JOB_STATUSES = ['QUEUED', 'CLAIMED', 'RUNNING', 'NEEDS_ATTENTION'];
+async function readTenderOpportunityVigiaAnalysis(database, opportunityId) {
+  if (!opportunityId) return null;
+  try {
+    const [runs, jobs] = await Promise.all([
+      must(database.from('psi_tender_analysis_runs').select('id,analysis_kind,completed_at,recommendation:result->recommendation')
+        .eq('opportunity_id', opportunityId).eq('canonical', true).eq('status', 'completed').order('completed_at', { ascending: false }).limit(1)),
+      must(database.from('psi_agt002_initial_analysis_jobs').select('status').eq('opportunity_id', opportunityId)
+        .in('status', TENDER_VIGIA_ACTIVE_JOB_STATUSES).limit(1)),
+    ]);
+    const run = runs?.[0] || null;
+    const recommendation = run?.recommendation && typeof run.recommendation === 'object' ? run.recommendation : null;
+    return {
+      run_id: run?.id || null,
+      analysis_kind: run?.analysis_kind || null,
+      completed_at: run?.completed_at || null,
+      recommendation_kind: typeof recommendation?.kind === 'string' ? recommendation.kind : null,
+      recommendation_label: typeof recommendation?.label === 'string' ? recommendation.label : null,
+      confidence: typeof recommendation?.confidence === 'string' ? recommendation.confidence : null,
+      in_progress: Boolean(jobs?.length),
+    };
+  } catch (_error) { return null; }
+}
 
 const tenderDossierDefaultLimit = 50;
 const tenderDossierMaxLimit = 50;

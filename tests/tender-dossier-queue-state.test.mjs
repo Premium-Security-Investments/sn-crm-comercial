@@ -24,8 +24,9 @@ assert.deepEqual(mod.tenderDossierQueueState({ document_count: 1, missing_docume
 
 const view = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
 assert.match(view, /tenderDossierQueueState\(dossier\)/, 'La cola debe usar un único resumen derivado');
-assert.match(view, /Proceso actual/);
-assert.match(view, /Siguiente acción/);
+// La tarjeta muestra un solo "Siguiente paso"; el análisis oficial de Vig-IA manda sobre el estado del preanálisis.
+assert.match(view, /Siguiente paso/);
+assert.match(view, /opportunityProcessState\(dossier, queueState\)/);
 assert.match(view, /queueState\.error/);
 assert.doesNotMatch(view, /JSON\.stringify\(dossier/, 'La cola no debe volcar el expediente completo');
 

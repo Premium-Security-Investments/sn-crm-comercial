@@ -120,6 +120,11 @@ export type TenderOpportunitySummary = TenderDossier & {
   archived_at?: string | null;
   archived_by?: string | null;
   archive_note?: string | null;
+  vigia_analysis?: TenderOpportunityVigiaAnalysis | null;
+};
+export type TenderOpportunityVigiaAnalysis = {
+  run_id: string | null; analysis_kind: string | null; completed_at: string | null;
+  recommendation_kind: string | null; recommendation_label: string | null; confidence: string | null; in_progress: boolean;
 };
 export type TenderDossierAssignee = { id: string; full_name: string; role: string; active?: boolean; identity_type?: 'human' | 'agent' | null };
 export type TenderDossierItemStatus = 'pendiente' | 'en_progreso' | 'listo' | 'bloqueado';

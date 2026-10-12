@@ -111,7 +111,7 @@ test('navegación de consulta: Torre de Control, Dashboard, Oportunidades y Rada
   assert.deepEqual(getVisibleNavGroups(profile), [
     { title: 'Gerencia', items: [{ href: '#/siio', label: 'Torre de Control', page: 'siio' }] },
     { title: 'Comercial', items: [{ href: '#/dashboard2', label: 'Dashboard', page: 'dashboard2' }, { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' }] },
-    { title: 'Licitaciones', items: [{ href: '#/tenders?view=radar', label: 'Radar', page: 'tenders' }] },
+    { title: 'Licitaciones', items: [{ href: '#/tenders?view=radar', label: 'Radar', page: 'tenders' }, { href: '#/tenders?view=seguimiento', label: 'Seguimiento', page: 'tenders' }, { href: '#/tenders?view=oportunidades', label: 'Oportunidades', page: 'tenders' }] },
   ]);
   for (const page of ['new', 'edit', 'users', 'goals']) assert.equal(canAccessRoute(profile, page), false, page);
   for (const page of ['detail', 'opportunities', 'dashboard2', 'siio', 'tenders', 'consultant']) assert.equal(canAccessRoute(profile, page), true, page);

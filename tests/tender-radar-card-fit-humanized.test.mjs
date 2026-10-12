@@ -69,6 +69,9 @@ const NO_FIT_FALLBACK_DETAIL = 'Sin datos de encaje: no fue posible calcular el 
 
 const CAP_REASON_FIRST_DETAIL = 'Razón de mayor prioridad de impacto: plazo insuficiente';
 const CAP_REASON_SECOND_DETAIL = 'Razón de segunda prioridad de impacto: servicio ambiguo';
+// Desde 2026-10-12 los códigos conocidos de la política se muestran en lenguaje de negocio (radarUtils.FIT_PLAIN_BY_CODE).
+const CAP_REASON_FIRST_PLAIN = 'Poco tiempo para preparar la oferta';
+const CAP_REASON_SECOND_PLAIN = 'Servicio poco claro: confirmar si es vigilancia';
 const CAP_REASON_LEGACY_DETAIL = 'Razón legada sin impact_priority, con el mayor puntaje del arreglo: no debe verse en la tarjeta';
 
 const CAP_GAP_FIRST_DETAIL = 'Brecha de mayor prioridad de impacto: plazo';
@@ -249,11 +252,11 @@ test('se muestran como máximo dos razones, ordenadas por impact_priority ascend
     await settle(view);
     const card = findCardByEntity(view, 'Entidad Zeta');
     const details = fitDetailsText(card);
-    assert.match(details, new RegExp(CAP_REASON_FIRST_DETAIL), 'debe mostrarse la razón de mayor prioridad de impacto');
-    assert.match(details, new RegExp(CAP_REASON_SECOND_DETAIL), 'debe mostrarse la razón de segunda prioridad de impacto');
+    assert.match(details, new RegExp(CAP_REASON_FIRST_PLAIN), 'debe mostrarse la razón de mayor prioridad de impacto');
+    assert.match(details, new RegExp(CAP_REASON_SECOND_PLAIN), 'debe mostrarse la razón de segunda prioridad de impacto');
     assert.doesNotMatch(card.textContent, new RegExp(CAP_REASON_LEGACY_DETAIL), 'la razón legada sin impact_priority no debe aparecer en la tarjeta, pese a tener el mayor puntaje');
     assert.ok(
-      details.indexOf(CAP_REASON_FIRST_DETAIL) < details.indexOf(CAP_REASON_SECOND_DETAIL),
+      details.indexOf(CAP_REASON_FIRST_PLAIN) < details.indexOf(CAP_REASON_SECOND_PLAIN),
       'la razón de mayor prioridad de impacto (impact_priority menor) debe mostrarse antes que la de segunda prioridad',
     );
     assert.doesNotMatch(details, /impact_priority/i, 'no debe exponerse el nombre crudo del campo impact_priority en el texto visible');

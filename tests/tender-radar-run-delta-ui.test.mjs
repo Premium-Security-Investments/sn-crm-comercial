@@ -102,7 +102,8 @@ test('"Cambios desde la corrida anterior" aparece después del estado de corrida
   try {
     await settle(view);
     const html = view.container.innerHTML;
-    const receiptIdx = html.indexOf('Estado de la última corrida');
+    // Desde 2026-10-12 el estado de la corrida es una línea compacta en la cabecera (aria-label).
+    const receiptIdx = html.indexOf('Resumen de la última corrida del Radar');
     const deltaIdx = html.indexOf('Cambios desde la corrida anterior');
     const listIdx = html.indexOf('tender-cards');
     assert.notEqual(receiptIdx, -1, 'debe existir el bloque de estado de la última corrida');
