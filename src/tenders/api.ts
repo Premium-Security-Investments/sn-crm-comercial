@@ -48,6 +48,16 @@ export async function enterTrackingFromRadar<T = Record<string, unknown>>(reques
   });
 }
 
+/** Sacar de Seguimiento: vuelve al Radar como "nueva" (RPC 058: en_revision → nueva, evento returned_to_radar). */
+export async function returnTrackingToRadar<T = Record<string, unknown>>(request: TenderRequest, tenderId: string, expectedTrackingUpdatedAt: string | null, note: string | null = null): Promise<T> {
+  const id = String(tenderId || '').trim();
+  if (!id) throw new Error('Debe indicar la licitación.');
+  return request<T>('/api/tender-tracking-transition', {
+    method: 'POST',
+    body: JSON.stringify({ id, internal_status: 'nueva', note, expected_tracking_updated_at: expectedTrackingUpdatedAt }),
+  });
+}
+
 export type TenderDossierPage = { limit?: number; offset?: number; filter?: import('./types').TenderOpportunityFilter };
 export async function loadDossiers<T>(request: TenderRequest, page: TenderDossierPage = {}): Promise<T> {
   return loadTenderOpportunities(request, page);

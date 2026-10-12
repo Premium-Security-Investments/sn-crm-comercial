@@ -90,14 +90,16 @@ assert.match(opportunitiesView, /useState<TenderOpportunityPrimaryFilter>\('por_
 
 // --- Approved contract: every card is truthful about amount, closing date, responsible, reference,
 // location, priority, blocker and last update, degrading to exact fallback copy when data is missing. ---
+// Rediseño 2026-10-12: la casilla ya dice qué dato es ("Monto", "Responsable"…), así que el texto de respaldo es corto;
+// el bloqueo sólo aparece cuando existe.
 for (const [field, fallback] of [
-  ['offer_value', 'Monto por definir'],
-  ['expected_close_date', 'Cierre por definir'],
-  ['owner_name', 'Responsable por asignar'],
-  ['ref', 'Referencia por definir'],
-  ['city', 'Ubicación por definir'],
-  ['tracking_blocker', 'Sin bloqueadores'],
-  ['last_updated_at', 'Actualización por definir'],
+  ['offer_value', 'Por definir'],
+  ['expected_close_date', 'Por definir'],
+  ['owner_name', 'Por asignar'],
+  ['ref', 'Por definir'],
+  ['city', 'Por definir'],
+  ['tracking_blocker', 'Bloqueo:'],
+  ['last_updated_at', '—'],
 ]) {
   const escapedFallback = fallback.replace(/\s/g, '\\s');
   const proximity = new RegExp(`dossier\\.${field}[\\s\\S]{0,140}${escapedFallback}|${escapedFallback}[\\s\\S]{0,140}dossier\\.${field}`);
@@ -107,8 +109,9 @@ assert.match(opportunitiesView, /Intl\.NumberFormat\('es-CO',\s*\{\s*style:\s*'c
 assert.match(opportunitiesView, /formatDateOnly\(dossier\.expected_close_date/, 'El cierre debe usar el formateador de fecha-only existente (zona horaria segura).');
 assert.match(opportunitiesView, /dateStyle:\s*'medium',\s*timeStyle:\s*'short'/, 'La última actualización debe usar la convención de fecha y hora ya establecida en el módulo de licitaciones.');
 
-// --- Approved contract: priority uses the section mapping only (hacer/revisar/prioridad_baja). ---
-assert.match(opportunitiesView, /tenderOpportunityPriorityLabel\(dossier\.section\)/, 'La prioridad de la tarjeta debe derivarse de dossier.section mediante el mapeo gobernado.');
+// --- Rediseño 2026-10-12 (Juan): la tarjeta ya no muestra la prioridad antigua (section); se habla de encaje.
+// El mapeo se conserva para otras vistas. ---
+assert.doesNotMatch(opportunitiesView, /tenderOpportunityPriorityLabel\(dossier\.section\)/, 'La tarjeta ya no muestra la prioridad antigua.');
 
 const statusLabelsBundle = buildSync({
   entryPoints: [new URL('../src/tenders/statusLabels.ts', import.meta.url).pathname],
