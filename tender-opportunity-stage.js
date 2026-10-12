@@ -59,8 +59,9 @@ async function readOrThrow(promise, label) {
 export async function readTenderOpportunityInactiveReason(database, opportunityId, tenderId = null) {
   if (!opportunityId) return 'opportunity_missing';
   const opportunity = await readOrThrow(database.from('psi_sales_opportunities')
-    .select('id,stage_code,tender_offer_status').eq('id', opportunityId).maybeSingle(), 'oportunidad');
+    .select('id,stage_code,tender_offer_status,archived_at').eq('id', opportunityId).maybeSingle(), 'oportunidad');
   if (!opportunity) return 'opportunity_missing';
+  if (opportunity.archived_at) return 'opportunity_archived';
   if (TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES.has(opportunity.stage_code)) return 'opportunity_closed';
   let scopedTenderId = tenderId;
   if (!scopedTenderId) {

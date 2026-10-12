@@ -109,12 +109,14 @@ const opportunityStageLabels: Record<TenderOpportunityStage, string> = {
   por_decidir: 'Por decidir',
   en_curso: 'En curso',
   cerradas: 'Cerrada',
+  archivadas: 'Archivada',
 };
 
 const opportunityStageTones: Record<TenderOpportunityStage, TenderStatusTone> = {
   por_decidir: 'warning',
   en_curso: 'success',
   cerradas: 'neutral',
+  archivadas: 'neutral',
 };
 
 export function tenderOpportunityStageLabel(stage: TenderOpportunityStage): string {

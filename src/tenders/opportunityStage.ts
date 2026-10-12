@@ -8,7 +8,7 @@ import type { TenderOpportunityFilter, TenderOpportunitySummary } from './types'
  * adjudicada, no adjudicada) NO desaparece: sigue viviendo íntegro en la tarjeta. Esto es sólo la
  * agrupación primaria con la que se navega la bandeja.
  */
-export type TenderOpportunityStage = 'por_decidir' | 'en_curso' | 'cerradas';
+export type TenderOpportunityStage = 'por_decidir' | 'en_curso' | 'cerradas' | 'archivadas';
 export type TenderOpportunityPrimaryFilter = 'all' | TenderOpportunityStage;
 
 /** Única fuente de verdad de los filtros primarios y sus rótulos. */
@@ -16,12 +16,13 @@ export const OPPORTUNITY_PRIMARY_FILTER_OPTIONS: readonly { value: TenderOpportu
   { value: 'all', label: 'Todas' },
   { value: 'por_decidir', label: 'Por decidir' },
   { value: 'en_curso', label: 'En curso' },
+  { value: 'archivadas', label: 'Archivadas' },
 ];
 
 /** Estados de oferta terminales: el proceso ya cerró y no admite más trabajo. */
 const terminalOfferStatuses: readonly string[] = ['cerrada_no_go', 'adjudicada', 'no_adjudicada'];
 
-type ClassifiableOpportunity = Partial<Pick<TenderOpportunitySummary, 'decision' | 'tender_offer_status'>> | null | undefined;
+type ClassifiableOpportunity = Partial<Pick<TenderOpportunitySummary, 'decision' | 'tender_offer_status' | 'archived_at'>> | null | undefined;
 
 /**
  * Clasificador puro y total. El orden de las reglas es la regla:
@@ -37,6 +38,7 @@ type ClassifiableOpportunity = Partial<Pick<TenderOpportunitySummary, 'decision'
  * Nunca lanza: una fila nula, sin campos o con valores desconocidos degrada de forma determinista.
  */
 export function classifyOpportunityStage(row: ClassifiableOpportunity): TenderOpportunityStage {
+  if (row?.archived_at) return 'archivadas';
   const status = String(row?.tender_offer_status || 'pendiente_decision');
   const rawDecision = row?.decision;
   const decision = rawDecision === 'go' || rawDecision === 'no_go' ? rawDecision : null;
