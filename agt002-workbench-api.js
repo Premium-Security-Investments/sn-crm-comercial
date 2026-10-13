@@ -109,7 +109,7 @@ async function mapped(operation) {
  * filters by it) so no reference can ever carry another dossier's provenance. The mapped
  * error carries no identifiers.
  */
-async function resolveCanonicalReference(database, opportunityId) {
+async function resolveCanonicalReference(database, opportunityId, { dossierContext = false } = {}) {
   const run = await getLatestCanonicalAgt002AnalysisRun(database, { opportunityId });
   if (!run) {
     throw apiError(
@@ -123,14 +123,59 @@ async function resolveCanonicalReference(database, opportunityId) {
       409, 'AGT002_WORKBENCH_NO_CANONICAL_ANALYSIS',
     );
   }
+  let reference;
   try {
-    return buildAgt002WorkbenchInitialReference(run);
+    reference = buildAgt002WorkbenchInitialReference(run);
   } catch {
     throw apiError(
       'El análisis canónico Vig-IA de esta oportunidad no ofrece una referencia inicial válida para la Mesa.',
       409, 'AGT002_WORKBENCH_NO_CANONICAL_ANALYSIS',
     );
   }
+  if (!dossierContext) return reference;
+  return { ...reference, context_links: [...reference.context_links, ...await dossierTaskLinks(database, opportunityId, MAX_CONTEXT_LINKS - reference.context_links.length)] };
+}
+
+// El contrato admite hasta 20 referencias por trabajo; las de origen (paquete, análisis) van primero.
+const MAX_CONTEXT_LINKS = 20;
+const REJECTION_MARK = /\s*[—-]\s*CAUSA RECHAZO\s*$/i;
+const TASK_STATUS = { pendiente: 'pendiente', en_progreso: 'en progreso', bloqueado: 'bloqueada', listo: 'lista' };
+const compact = (value, max) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+
+/**
+ * Sin contexto Vig-IA respondía a ciegas: solo veía el mensaje y dos identificadores. Las tareas
+ * abiertas del expediente (lo que causa rechazo primero, luego por fecha) viajan como referencias
+ * `requirement`, derivadas en el servidor en cada lectura y cada mensaje, igual que el resto de la
+ * referencia: el cliente no puede agregarlas ni cambiarlas. Si el expediente no se puede leer, la
+ * Mesa sigue con la referencia mínima.
+ */
+export async function dossierTaskLinks(database, opportunityId, room) {
+  if (room <= 0 || typeof database?.rpc !== 'function') return [];
+  let workspace;
+  try {
+    const { data, error } = await database.rpc('psi_get_tender_dossier_workspace', { p_opportunity_id: opportunityId });
+    if (error) return [];
+    workspace = data;
+  } catch {
+    return [];
+  }
+  const items = (Array.isArray(workspace?.checklist) ? workspace.checklist : [])
+    .filter(item => item && item.applicability !== 'no_aplica' && item.status !== 'listo' && !(item.item_type === 'documento' && item.origin === 'seed_go'))
+    .filter(item => typeof item.id === 'string' && /^[0-9a-f-]{36}$/i.test(item.id) && typeof item.title === 'string' && item.title.trim());
+  items.sort((a, b) => Number(REJECTION_MARK.test(b.title)) - Number(REJECTION_MARK.test(a.title))
+    || String(a.target_date || '9999-12-31').localeCompare(String(b.target_date || '9999-12-31')));
+  return items.slice(0, room).map(item => ({
+    kind: 'requirement',
+    id: item.id.toLowerCase(),
+    label: compact(item.title, 300),
+    source_ref: compact([
+      `Tarea del expediente · estado ${TASK_STATUS[item.status] || item.status}`,
+      `responsable ${item.assignee_name || 'sin asignar'}`,
+      `fecha ${item.target_date || 'sin fecha'}`,
+      item.latest_evidence ? `soporte: ${item.latest_evidence.kind === 'url' ? item.latest_evidence.url : item.latest_evidence.text}` : 'sin soporte',
+      item.instruction ? `detalle: ${item.instruction.replace(/Cargado por Vig-IA[^\n]*/g, '')}` : '',
+    ].filter(Boolean).join(' · '), 1000),
+  }));
 }
 
 /**
@@ -193,7 +238,7 @@ export async function getAgt002WorkbenchApi(database, opportunityId, currentProf
     const thread = await getOrCreateAgt002WorkbenchThread(database, { opportunityId: id, actorId });
     const threadId = uuid(thread?.id, 'thread_id');
     const workbench = await getAgt002Workbench(database, { opportunityId: id, actorId });
-    const reference = await resolveCanonicalReference(database, id);
+    const reference = await resolveCanonicalReference(database, id, { dossierContext: options.dossierContext === true });
     // Server-owned fields are assigned after the spread on purpose: neither the stored
     // workbench payload nor anything a client could influence may override the gate, the
     // bootstrapped thread, the projected job status or the canonical reference.
@@ -235,7 +280,7 @@ export async function postAgt002MessageApi(database, body, currentProfile, optio
     throw apiError('content o context_links no es válido.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
   }
   return mapped(async () => {
-    const reference = await resolveCanonicalReference(database, opportunityId);
+    const reference = await resolveCanonicalReference(database, opportunityId, { dossierContext: options.dossierContext === true });
     const idempotencyKey = computeAgt002WorkbenchIdempotencyKey({
       threadId,
       originMessageId: messageId,

@@ -5339,7 +5339,7 @@ app.get('/api/tender-dossier-workbench', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    res.json(await getAgt002WorkbenchApi(database, String(req.query.id || ''), currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
+    res.json(await getAgt002WorkbenchApi(database, String(req.query.id || ''), currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env), dossierContext: true }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.all('/api/tender-dossier-workbench', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
@@ -5348,9 +5348,28 @@ app.post('/api/tender-dossier-workbench/messages', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    res.status(201).json(await postAgt002MessageApi(database, req.body || {}, currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
+    const queued = await postAgt002MessageApi(database, req.body || {}, currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env), dossierContext: true });
+    // Canal directo (Juan, 2026-10-13): Vig-IA responde en el momento. El programador del host está
+    // apagado, así que el mismo pedido drena un trabajo con los topes de siempre (diario, concurrencia,
+    // interruptor). Si el drain no está habilitado o falla, el mensaje queda en cola como antes.
+    await drainAgt002WorkbenchAfterMessage(database);
+    res.status(201).json(queued);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
+async function drainAgt002WorkbenchAfterMessage(database) {
+  if (!isAgt002WorkbenchDrainEnabled(process.env)) return null;
+  try {
+    const drain = createAgt002WorkbenchDrain({
+      database,
+      environment: process.env,
+      ...(agt002WorkbenchWorkerTestBridgeClient ? { bridgeClient: agt002WorkbenchWorkerTestBridgeClient } : {}),
+    });
+    return await drain.runOnce();
+  } catch {
+    console.warn('agt002_workbench_inline_drain_failed', { event: 'agt002_workbench_inline_drain_failed' });
+    return null;
+  }
+}
 app.all('/api/tender-dossier-workbench/messages', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
 
 app.post('/api/tender-dossier-workbench/jobs/retry', async (req, res) => {

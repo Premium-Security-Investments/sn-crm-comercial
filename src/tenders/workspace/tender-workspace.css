@@ -123,3 +123,14 @@
 /* Una sola columna que nunca crece más que la pantalla (evita el desborde horizontal en celular). */
 .tw-workspace,.tw-decide,.tw-prepare,.tw-card,.tw-req-detail-body,.tw-browser-list,.tw-browser-group{grid-template-columns:minmax(0,1fr)}
 .tw-header h2{overflow-wrap:anywhere}
+
+/* Canal con Vig-IA */
+.tw-channel-thread{display:grid;gap:8px;max-height:420px;overflow:auto;padding:4px}
+.tw-msg{display:grid;gap:2px;max-width:85%;padding:9px 12px;border-radius:12px;background:#f1f5f9}
+.tw-msg.is-human{justify-self:end;background:#e0e7ff}
+.tw-msg.is-agent{justify-self:start;background:#f8fafc;border:1px solid #e2e8f0}
+.tw-msg p{margin:0;white-space:pre-wrap;font-size:14px;line-height:1.5;color:#10213d}
+.tw-msg-meta{font-size:12px;color:#64748b}
+.tw-channel-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.tw-channel-composer textarea{min-height:64px;resize:vertical}
+.tw-typing{font-style:italic}

@@ -86,6 +86,8 @@ const CANONICAL_RUN_COLUMNS = [
   'id', 'opportunity_id', 'tender_id', 'snapshot_id', 'producer', 'method', 'status',
   'canonical', 'context_version_id', 'legal_corpus_version_id', 'result', 'created_at',
 ].join(',');
+// Ancla de los análisis iniciales v2 (102). Se pide aparte para que una base sin 102 siga leyendo.
+const CANONICAL_RUN_COLUMNS_WITH_PACKAGE = `${CANONICAL_RUN_COLUMNS},package_version_id`;
 
 /**
  * Latest completed canonical AGT-002 analysis run of an opportunity — the only admissible
@@ -97,8 +99,8 @@ const CANONICAL_RUN_COLUMNS = [
 export async function getLatestCanonicalAgt002AnalysisRun(database, input) {
   assertExactKeys(input, ['opportunityId'], 'análisis canónico');
   if (!database || typeof database.from !== 'function') throw new TypeError('database.from es obligatorio.');
-  const response = await database.from('psi_tender_analysis_runs')
-    .select(CANONICAL_RUN_COLUMNS)
+  const query = columns => database.from('psi_tender_analysis_runs')
+    .select(columns)
     .eq('opportunity_id', input.opportunityId)
     .eq('producer', 'AGT-002')
     .eq('method', 'agent_ai')
@@ -107,6 +109,10 @@ export async function getLatestCanonicalAgt002AnalysisRun(database, input) {
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(1);
+  let response = await query(CANONICAL_RUN_COLUMNS_WITH_PACKAGE);
+  if (response?.error && (response.error.code === '42703' || /package_version_id/.test(String(response.error.message || '')))) {
+    response = await query(CANONICAL_RUN_COLUMNS);
+  }
   if (response?.error) {
     const failure = new Error(response.error.message || 'No fue posible leer el análisis canónico Vig-IA.');
     for (const key of ['code', 'details', 'hint']) {
