@@ -1,6 +1,7 @@
 import {
   initialReportAxes, initialReportCompanyFit, initialReportLabels as labels, initialReportRecommendationText, initialReportVerdict, type Agt002InitialReport,
 } from '../agt002InitialReportProjection';
+import { requestTenderDetailSection } from './TenderDetailNavigation';
 
 const LIGHT_LABEL = { cumple: 'Cumple', por_confirmar: 'Por confirmar', no_cumple: 'No cumple', sin_datos: 'Sin datos' } as const;
 
@@ -18,6 +19,6 @@ export function TenderInitialDecisionSummary({ report }: { report: Agt002Initial
       <h4>Lo que hoy impide avanzar</h4>
       <ul>{blockers.map(finding => <li key={finding.id}>{finding.title}</li>)}</ul>
     </div>}
-    <small className="initial-report-meta"><a href="#tender-analysis">Ver el análisis completo</a></small>
+    <small className="initial-report-meta"><a href="#tender-analysis" onClick={event => { event.preventDefault(); requestTenderDetailSection('tender-analysis'); }}>Ver el análisis completo</a></small>
   </section>;
 }

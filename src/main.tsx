@@ -14,7 +14,7 @@ import { SiioDashboard } from './siio/SiioDashboard';
 import { AgentsView } from './platform/AgentsView';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
-import { TenderDetailNavigation, focusTenderDetailSection, resolveTenderPhaseChangeNotices, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
+import { TenderDetailNavigation, requestTenderDetailSection, resolveInitialTenderDetailSection, resolveTenderPhaseChangeNotices, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
 import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
 import { TenderDecisionExperience } from './tenders/components/TenderDecisionExperience';
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
@@ -23,7 +23,7 @@ import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPa
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
-import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
+import type { TenderDetailSectionId, TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { isTenderProcessingActive, shouldReloadTenderArtifacts, tenderAnalysisCompletionMessage } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
 import { parseAgt002InitialAnalysisProjection, type Agt002InitialAnalysisProjection } from './tenders/agt002InitialAnalysisProjection';
@@ -907,6 +907,13 @@ function OpportunityDecisionPanel({ opportunity, data, onChanged }: { opportunit
   </details>;
 }
 
+const TENDER_POST_GO_HERO_LABELS: Record<string, string> = {
+  en_preparacion: 'GO · Preparando oferta',
+  lista_para_presentar: 'GO · Lista para presentar',
+  presentada: 'Oferta presentada',
+  adjudicada: 'Adjudicada',
+  no_adjudicada: 'No adjudicada',
+};
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
   const [exitingTender, setExitingTender] = useState<'radar' | 'seguimiento' | null>(null);
@@ -919,6 +926,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const [tenderDecisionNavigationState, setTenderDecisionNavigationState] = useState<TenderPanelState<TenderGoNoGoDecision | null>>({ phase: 'loading' });
   const [tenderPreparationNavigationState, setTenderPreparationNavigationState] = useState<TenderPanelState<TenderPreparationNavigationValue>>({ phase: 'loading' });
   const [tenderRevision, setTenderRevision] = useState(0);
+  // Pestaña visible del detalle de licitación: cada pestaña muestra solo su sección (Juan, 2026-10-12).
+  const [tenderTab, setTenderTab] = useState<TenderDetailSectionId>(() => typeof window === 'undefined' ? 'tender-summary' : resolveInitialTenderDetailSection(window.location.hash));
   // Canal de refresco de disponibilidad SIN remontaje: una mutación confirmada del expediente sólo
   // debe hacer que el gate canónico de "Marcar lista para presentar" se relea. Va aparte de
   // `tenderRevision` (que sí remonta) para no destruir borradores locales — nota interna de
@@ -945,6 +954,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   useEffect(() => {
     activeDetailIdRef.current = id; detailRequestRef.current += 1;
     setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderQuestionResponses([]); setTenderDecisionAxisSurfaceEnabled(false); setTenderRevision(0); setTenderDossierReadinessRevision(0);
+    setTenderTab(resolveInitialTenderDetailSection(window.location.hash));
     tenderQuestionResponseSaveRef.current = null;
     setTenderDocumentNavigationState({ phase: 'loading' });
     setTenderAnalysisNavigationState({ phase: 'loading' });
@@ -1002,13 +1012,16 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     window.alert(destination === 'radar' ? 'La licitación salió de oportunidades y volvió al Radar.' : 'La licitación pasó a Seguimiento.');
     go(destination === 'seguimiento' ? '#/tenders?view=seguimiento' : '#/tenders?view=radar');
   };
-  return <section className={o.service_type_code === 'licitacion_publica' ? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'}>
+  // Después del GO la etiqueta comercial ("Prospecto") no dice nada: manda el estado de la oferta, y salir
+  // de la oportunidad ya no es "pasar a seguimiento" sino cambiar la decisión a NO GO.
+  const tenderPostGoLabel = o.service_type_code === 'licitacion_publica' ? TENDER_POST_GO_HERO_LABELS[o.tender_offer_status || ''] : undefined;
+  return <section className={o.service_type_code === 'licitacion_publica' ? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'} data-tender-tab={o.service_type_code === 'licitacion_publica' ? tenderTab : undefined}>
     <div id="tender-summary" className="tender-summary-anchor tender-detail-anchor" tabIndex={-1}>
-      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
+      <div className="hero"><div><Badge>{tenderPostGoLabel || o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && !tenderPostGoLabel && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
-    {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} expectedCloseDate={o.expected_close_date} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} expectedCloseDate={o.expected_close_date} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} tabbed onActiveSectionChange={setTenderTab} />}
     {o.service_type_code === 'licitacion_publica' ? <>
       <Panel title="Resumen de la oportunidad" className="tender-opportunity-summary-panel">
         {/* Entity, amount and owner already head the page: the summary only adds the closing date and the process facts. */}
@@ -1016,7 +1029,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           <div className="tender-summary-close"><small>Cierre oficial</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{tenderCloseCountdown(o.expected_close_date)}</span></div>
           <p className="tender-summary-facts">{[o.service_type_name || o.tipo_producto_original, o.economic_sector, o.quote_city || 'Ciudad por confirmar'].filter(Boolean).join(' · ')}</p>
         </div>
-        {resolveTenderPhaseChangeNotices(o.observaciones).length > 0 && <div className="notice tender-phase-change-notice" role="status">{resolveTenderPhaseChangeNotices(o.observaciones).map(line => <p key={line}>{line}</p>)}</div>}
+        {/* Solo el aviso más reciente de SECOP; los anteriores quedan plegados para no repetir lo mismo varias veces. */}
+        {resolveTenderPhaseChangeNotices(o.observaciones).length > 0 && <div className="notice tender-phase-change-notice" role="status"><p>{resolveTenderPhaseChangeNotices(o.observaciones).slice(-1)[0]}</p>{resolveTenderPhaseChangeNotices(o.observaciones).length > 1 && <details><summary>Avisos anteriores ({resolveTenderPhaseChangeNotices(o.observaciones).length - 1})</summary>{resolveTenderPhaseChangeNotices(o.observaciones).slice(0, -1).map(line => <p key={line}>{line}</p>)}</details>}</div>}
       </Panel>
     </> : <section className="opportunity-insight-grid opportunity-priority-grid" aria-label="Resumen prioritario de la oportunidad"><div className={`opportunity-insight-card ${priorityNextAction.className}`}><small>Próxima gestión</small><strong>{fmtDate(o.next_action_at)}</strong><span>{priorityNextAction.detail}</span></div><div className="opportunity-insight-card"><small>Último seguimiento</small><strong>{fmtDate(o.last_interaction_at)}</strong><span>{followUpAgeLabel(o.last_interaction_at)}</span></div><div className={`opportunity-insight-card ${priorityClose.className}`}><small>Cierre estimado</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{priorityClose.detail}</span></div><div className={`opportunity-insight-card ${priorityDecisionMaker.className}`}><small>Contacto decisor</small><strong>{decisionMakerLines}</strong><span>{priorityDecisionMaker.detail}</span></div></section>}
     {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async()=>{await load(); await refresh();}} />}
@@ -1038,7 +1052,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         decisionState={tenderDecisionNavigationState}
         onDecisionNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }}
         onDecisionChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }}
-        onOpenHelpDesk={() => focusTenderDetailSection(document.getElementById('tender-preparation'))}
+        onOpenHelpDesk={() => requestTenderDetailSection('tender-preparation')}
         commercialContext={{ amountLabel: fmtMoney(o.offer_value), closeLabel: fmtDateOnly(o.expected_close_date), city: o.quote_city, sector: o.economic_sector, commercialFitPositives: tenderAnalysis?.commercial_fit?.positives || [] }}
       />
     </div>}

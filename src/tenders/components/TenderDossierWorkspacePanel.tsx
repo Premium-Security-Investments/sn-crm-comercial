@@ -117,10 +117,15 @@ export function TenderDossierWorkspacePanel({ opportunityId, request, profiles, 
     ...(readiness?.active_blockers || []).map(item => `Bloqueante activo: ${item.title}`),
     ...(readiness?.unapproved_artifacts || []).map(item => `Documento sin aprobar: ${item.title}`),
   ];
+  const missingSummary = [
+    readiness?.pending_required_items?.length ? `${readiness.pending_required_items.length} tareas obligatorias por terminar` : '',
+    readiness?.active_blockers?.length ? `${readiness.active_blockers.length} bloqueos` : '',
+    readiness?.unapproved_artifacts?.length ? `${readiness.unapproved_artifacts.length} documentos sin aprobar` : '',
+  ].filter(Boolean).join(' · ');
 
   return <section className="panel tender-dossier-panel" id="tender-dossier">
     <div className="tender-dossier-header">
-      <div><small>Preparación post-GO</small><h2>Expediente de oferta</h2><p>Trabajo humano trazable antes de presentar la oferta.</p></div>
+      <div><small>Después del GO</small><h2>Preparación de la oferta</h2><p>Lo que hay que reunir y aprobar antes de presentar.</p></div>
       {workspace && <span className={`badge ${readiness?.ready ? 'badge-success' : 'badge-warning'}`}>{readiness?.ready ? 'Listo para presentar' : 'Faltan requisitos'}</span>}
     </div>
     {error && <div className="notice" role="alert">{error}</div>}
@@ -128,11 +133,11 @@ export function TenderDossierWorkspacePanel({ opportunityId, request, profiles, 
 
     {workspace && <>
       <div className={`document-status-card tender-dossier-readiness ${readiness?.ready ? 'is-ready' : ''}`}>
-        <small>Gate de presentación</small>
-        <strong>{readiness?.ready ? 'Listo para presentar' : 'Faltan requisitos'}</strong>
+        <small>Para poder presentar</small>
+        <strong>{readiness?.ready ? 'Listo para presentar' : missingSummary || 'Faltan requisitos'}</strong>
         {readiness?.ready
-          ? <p>Todos los requisitos obligatorios están listos, no hay bloqueantes y las versiones vigentes están aprobadas.</p>
-          : missing.length > 0 && <ul>{missing.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>}
+          ? <p>Todas las tareas obligatorias están listas, no hay bloqueos y los documentos están aprobados.</p>
+          : missing.length > 0 && <details className="tender-dossier-missing"><summary>Ver el detalle ({missing.length})</summary><ul>{missing.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></details>}
         {readiness?.ready && !workspace.can_mark_ready && <p className="muted">La transición final requiere aprobación de dirección.</p>}
       </div>
 
