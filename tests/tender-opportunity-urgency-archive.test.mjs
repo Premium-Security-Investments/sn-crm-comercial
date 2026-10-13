@@ -13,7 +13,7 @@ test('las oportunidades convertidas se ordenan por cierre y las archivadas salen
   assert.match(migration, /o\.archived_at is null/i);
   assert.match(migration, /o\.archived_at is not null/i);
   assert.match(view, /sortTenderOpportunitySummaries/);
-  assert.match(view, />Archivadas</);
+  assert.match(view, /'Ver archivadas'/);
 });
 
 test('archivar conserva trazabilidad y exige estado previo a presentar', () => {

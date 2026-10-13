@@ -210,8 +210,11 @@ test('la vista de oportunidades ofrece filtros activos y Archivadas, sin botón 
     ['all', 'all', 'Todas'],
     ['por_decidir', 'por_decidir', 'Por decidir'],
     ['en_curso', 'en_curso', 'En curso'],
-    ['archivadas', 'archivadas', 'Archivadas'],
-  ], 'debe haber cuatro botones, cada uno con aria-pressed y reinicio de página al hacer clic');
+  ], 'debe haber tres botones del proceso, cada uno con aria-pressed y reinicio de página al hacer clic');
+  // Archivadas es de consulta (Juan, 2026-10-13): enlace aparte, a la derecha, que entra y sale del filtro.
+  for (const fragment of ["className={`opportunity-archived-link", "aria-pressed={filter === 'archivadas'}", "setFilter(filter === 'archivadas' ? 'all' : 'archivadas'); setPage(1);", "'Viendo archivadas · volver' : 'Ver archivadas'"]) {
+    assert.ok(opportunitiesView.includes(fragment), `Archivadas como enlace aparte: falta ${fragment}`);
+  }
   assert.ok(!/aria-pressed=\{filter === 'cerradas'\}/.test(opportunitiesView), 'no debe existir un control con aria-pressed para cerradas');
   assert.ok(!opportunitiesView.includes('>Cerradas<'), 'no debe existir un botón visible de Cerradas');
   assert.ok(!/<option value="/.test(opportunitiesView), 'el selector no debe volver a un <select> con opciones literales');
