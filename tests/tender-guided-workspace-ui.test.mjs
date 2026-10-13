@@ -33,9 +33,11 @@ assert.match(main, /<TenderDocumentSection/);
 assert.match(main, /<TenderAnalysisSection/);
 const documentsIndex = coordinator.indexOf('<TenderDocumentSection');
 const analysisIndex = coordinator.indexOf('<TenderAnalysisSection');
+// Desde 2026-10-13 Documentos es su propia pestaña y la decisión GO/NO GO vive en la pestaña principal
+// (Decidir); dentro del coordinador documental se conserva Documentos → Análisis.
 const reviewIndex = detail.indexOf('<TenderDocumentReviewPanel');
 const decisionIndex = detail.indexOf('id="tender-decision"');
-assert.ok(documentsIndex >= 0 && analysisIndex > documentsIndex && reviewIndex >= 0 && decisionIndex > reviewIndex, 'El orden debe ser Documentos → Análisis → GO/NO GO.');
+assert.ok(documentsIndex >= 0 && analysisIndex > documentsIndex && reviewIndex >= 0 && decisionIndex >= 0, 'Documentos → Análisis dentro del coordinador, y la decisión GO/NO GO presente.');
 assert.match(main, /onAnalysisChanged\?\.\(data\.analysis \|\| null\)/);
 assert.match(coordinator, /analysisStatus/, 'El coordinador debe mantener feedback propio para la acción Vig-IA.');
 assert.match(coordinator, /<TenderAnalysisSection[\s\S]*?statusText=\{analysisStatus\.message\}/, 'El feedback de Vig-IA debe llegar al bloque de análisis, no quedar oculto en Documentos.');

@@ -23,9 +23,9 @@ export function tenderOfferFolderStructure(opportunity) {
   };
 }
 
-export function buildTenderOfferPreparation(opportunity, documents = [], analysis = null, currentProfile = {}) {
+export function buildTenderOfferPreparation(opportunity, documents = [], analysis = null, currentProfile = {}, { withHumanTemplate = true } = {}) {
   const planned_documents = genericTenderOfferDocuments(opportunity, analysis);
-  const human_required_items = [
+  const human_required_items = !withHumanTemplate ? [] : [
     { key: 'validar_experiencia', title: 'Seleccionar experiencia específica aplicable', owner: 'Licitaciones / Comercial', priority: 'alta', status: 'requiere_intervencion_humana', reason: 'El sistema puede sugerir contratos, pero la experiencia final debe aprobarse humanamente.' },
     { key: 'validar_financiero', title: 'Confirmar indicadores financieros y capital de trabajo', owner: 'Contabilidad', priority: 'alta', status: 'requiere_intervencion_humana', reason: 'Debe cruzarse contra estados financieros/RUP vigente.' },
     { key: 'poliza_seriedad', title: 'Solicitar y validar póliza de seriedad', owner: 'Jurídico / Aseguradora', priority: 'alta', status: 'requiere_tercero', reason: 'Depende de aseguradora y requiere valor/vigencia correctos.' },

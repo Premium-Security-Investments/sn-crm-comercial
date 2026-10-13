@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ACTIONS, requireAction } from './access-control.js';
+import { readAgt002InitialAnalysisReport } from './agt002-initial-analysis-report.js';
+import { buildRequirementRows, requirementSeedItems } from './agt002-requirements-model.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ITEM_TYPES = new Set(['documento', 'pendiente_humano', 'general']);
@@ -242,4 +244,29 @@ export async function callSeedTenderDossier(database, input, currentProfile) {
     p_opportunity_id: opportunityId,
     p_actor_id: actor,
   });
+}
+
+/**
+ * Siembra en el expediente un ítem por requisito del análisis inicial canónico (125). Se llama al
+ * registrar el GO y desde el botón "Cargar los requisitos del análisis" del expediente. Idempotente.
+ * Sin reporte inicial listo no hace nada: el expediente queda como esté.
+ */
+export async function seedTenderDossierRequirements(database, opportunityId, actor, { readReport = readAgt002InitialAnalysisReport, today } = {}) {
+  const response = await readReport(database, opportunityId);
+  if (!response?.available || !response.report) return { inserted: 0, available: false };
+  const { data: opportunity } = await database.from('psi_sales_opportunities').select('expected_close_date').eq('id', opportunityId).maybeSingle();
+  const items = requirementSeedItems(buildRequirementRows(response.report), opportunity?.expected_close_date || null, today);
+  if (!items.length) return { inserted: 0, available: true };
+  const result = await rpc(database, 'psi_seed_tender_dossier_requirements', {
+    p_opportunity_id: opportunityId,
+    p_actor_id: actor,
+    p_items: items,
+  });
+  return { inserted: Number(result?.inserted || 0), available: true };
+}
+
+export async function callSeedTenderDossierRequirements(database, input, currentProfile, options) {
+  const opportunityId = requireUuid(input?.opportunity_id, 'una oportunidad válida');
+  const actor = requireOperationalAccess(currentProfile);
+  return seedTenderDossierRequirements(database, opportunityId, actor, options);
 }

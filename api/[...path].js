@@ -36,6 +36,7 @@ import {
   callAddTenderDossierArtifactVersion,
   callRecordTenderDossierArtifactReview,
   callSeedTenderDossier,
+  callSeedTenderDossierRequirements,
 } from '../tender-dossier-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../tender-analysis-foundation.js';
@@ -5322,6 +5323,15 @@ app.post('/api/tender-dossier-seed', async (req, res) => {
     const database = requireDb();
     await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
     res.status(201).json(await callSeedTenderDossier(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-dossier-requirements-seed', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callSeedTenderDossierRequirements(database, req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
