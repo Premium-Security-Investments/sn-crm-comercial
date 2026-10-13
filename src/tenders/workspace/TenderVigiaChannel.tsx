@@ -22,6 +22,9 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const pollsRef = useRef(0);
+  // Solo la conversación de esta sesión (Juan, 2026-10-13): lo anterior queda guardado, pero no ocupa la pantalla.
+  const sessionStartRef = useRef(Date.now() - 60_000);
+  const [showPrevious, setShowPrevious] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const reload = useCallback(async () => {
@@ -68,7 +71,9 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
     finally { setSending(false); }
   };
 
-  const messages = data?.messages || [];
+  const allMessages = data?.messages || [];
+  const previousCount = allMessages.filter(message => new Date(message.created_at).getTime() < sessionStartRef.current).length;
+  const messages = showPrevious ? allMessages : allMessages.filter(message => new Date(message.created_at).getTime() >= sessionStartRef.current);
   // Las sugerencias de la última respuesta (cada respuesta trae las suyas).
   const lastJobId = [...messages].reverse().find(message => message.author_kind === 'agent')?.origin_job_id || null;
   const actions = (data?.required_actions || []).filter(action => !lastJobId || action.job_id === lastJobId).slice(0, 6);
@@ -77,6 +82,7 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
       <small>Preguntarle a Vig-IA</small>
       <p className="tw-muted">Vig-IA conoce los requisitos y las tareas abiertas de esta licitación. Responde y sugiere; no aprueba, no firma ni presenta nada.</p>
     </div>
+    {previousCount > 0 && <button type="button" className="tw-link" onClick={() => setShowPrevious(value => !value)}>{showPrevious ? 'Ocultar las conversaciones anteriores' : `Ver conversaciones anteriores (${previousCount} mensajes)`}</button>}
     <div className="tw-channel-thread" role="log" aria-live="polite">
       {messages.length === 0 && <p className="tw-muted">Todavía no hay mensajes. Ejemplos: «¿Qué nos falta para la garantía de seriedad?», «¿Qué documentos vencen antes del cierre?».</p>}
       {messages.map(message => <div key={message.id} className={`tw-msg ${message.author_kind === 'agent' ? 'is-agent' : 'is-human'}`}>
