@@ -1,0 +1,125 @@
+/* Licitación por momentos (Juan, 2026-10-13): una sola lista de requisitos; antes del GO "¿nos presentamos?",
+   después "¿llegamos a tiempo?". Letra liviana, lista a la izquierda y detalle a la derecha. */
+.tw-workspace{display:grid;gap:14px;min-width:0}
+.tw-workspace small{display:block;color:#64748b;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.tw-muted{color:#64748b;font-size:13px}
+.tw-footnote{color:#64748b;font-size:12px;margin:4px 0 0}
+
+.tw-header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 20px;align-items:start;padding:18px 20px;border-radius:16px;background:#10213d;color:#fff}
+.tw-header h2{margin:6px 0 4px;font-size:22px;line-height:1.25;font-weight:700;color:#fff}
+.tw-header p{margin:0;color:#cbd5e1;font-size:14px}
+.tw-header .tw-verdict{margin-top:8px;color:#e2e8f0}
+.tw-state{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#e0e7ff;color:#1e3a8a}
+.tw-state-preparar{background:#dcfce7;color:#14532d}
+.tw-close{display:grid;gap:2px;text-align:right;padding:10px 14px;border-radius:12px;background:rgba(255,255,255,.08);min-width:150px}
+.tw-close small{color:#cbd5e1}
+.tw-close strong{font-size:18px;color:#fff}
+.tw-close span{font-size:13px;color:#cbd5e1}
+.tw-close.is-urgent{background:#7f1d1d}
+.tw-header-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+.tw-header-actions button,.tw-header-actions a{font-size:13px}
+
+.tw-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 12px;border-radius:14px;background:#fff;border:1px solid #e2e8f0;position:sticky;top:0;z-index:5}
+.tw-back{background:none;border:0;color:#1d4ed8;font-weight:600;padding:6px 4px;cursor:pointer}
+.tw-tab-list{display:flex;gap:6px;flex-wrap:wrap}
+.tw-tab-list button{border:1px solid #cbd5e1;background:#fff;color:#10213d;border-radius:999px;padding:7px 16px;font-weight:600;cursor:pointer}
+.tw-tab-list button.is-active{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.tw-source{margin-left:auto;font-size:13px;font-weight:600}
+
+.tw-workspace[data-tab]:not([data-tab="principal"]) .tw-panel-principal,
+.tw-workspace[data-tab]:not([data-tab="documentos"]) .tw-panel-documentos,
+.tw-workspace[data-tab]:not([data-tab="historial"]) .tw-panel-historial{display:none}
+/* Con reporte inicial, el análisis completo vive en la lista de requisitos; el bloque viejo queda montado pero oculto. */
+.tw-workspace[data-has-report="true"] .tw-panel-documentos #tender-analysis{display:none}
+
+.tw-card{display:grid;gap:10px;padding:16px 18px;border-radius:14px;background:#fff;border:1px solid #e2e8f0;min-width:0}
+.tw-card h3{margin:0;font-size:18px;font-weight:700;color:#10213d}
+.tw-card p{margin:0;font-size:14px;line-height:1.5;color:#334155}
+.tw-verdict-card{border-left:4px solid #64748b}
+.tw-verdict-card.tone-go{border-left-color:#16a34a}
+.tw-verdict-card.tone-conditional{border-left-color:#d97706}
+.tw-verdict-card.tone-nogo{border-left-color:#dc2626}
+.tw-decide,.tw-prepare{display:grid;gap:14px;min-width:0}
+.tw-empty{margin:0}
+
+.tw-decisive{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.tw-decisive button{width:100%;text-align:left;display:grid;gap:4px;padding:10px 12px;border-radius:10px;border:1px solid #fde2e2;background:#fff7f7;cursor:pointer;font:inherit;color:inherit}
+.tw-decisive-action{font-size:13px;color:#475569}
+
+.tw-browser{display:grid;grid-template-columns:minmax(260px,360px) minmax(0,1fr);gap:14px;align-items:start;min-width:0}
+.tw-browser-list{display:grid;gap:4px;max-height:70vh;overflow:auto;padding-right:4px}
+.tw-browser-group{display:grid;gap:4px;margin-bottom:8px}
+.tw-browser-group>small{margin:6px 0 2px}
+.tw-browser-item,.tw-task{display:grid;gap:4px;width:100%;text-align:left;padding:9px 11px;border-radius:10px;border:1px solid #e2e8f0;border-left:3px solid #cbd5e1;background:#fff;cursor:pointer;font:inherit;color:#10213d}
+.tw-browser-item:hover,.tw-task:hover{background:#f8fafc}
+.tw-browser-item.is-selected,.tw-task.is-selected{border-color:#1d4ed8;border-left-color:#1d4ed8;background:#eff6ff}
+.tw-browser-item.is-rejection,.tw-task.is-rejection{border-left-color:#dc2626}
+.tw-browser-item-title,.tw-task-title{font-size:14px;font-weight:600;line-height:1.35}
+.tw-browser-item-meta,.tw-task-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:#64748b}
+.tw-task.is-overdue .tw-task-date{color:#b91c1c;font-weight:700}
+.tw-task.is-today .tw-task-date{color:#b45309;font-weight:700}
+.tw-browser-detail{position:sticky;top:64px;min-width:0;padding:14px 16px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0}
+.tw-browser-detail h3{margin:4px 0 8px;font-size:18px}
+.tw-browser-detail-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.tw-req-detail-body{display:grid;gap:10px}
+.tw-req-detail-body section{display:grid;gap:4px}
+.tw-req-detail-body h4,.tw-evidence h4{margin:0;font-size:13px;font-weight:700;color:#10213d}
+.tw-req-detail-body p{margin:0;font-size:14px;line-height:1.5;color:#334155}
+.tw-req-detail-body ul{margin:0;padding-left:18px;font-size:14px;color:#334155}
+.tw-source-line{font-size:12px!important;color:#64748b!important}
+.tw-note{display:grid;gap:2px;padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e2e8f0}
+.tw-note strong{font-size:13px;font-weight:600}
+.tw-note p{font-size:13px}
+
+.tw-chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#f1f5f9;color:#334155}
+.tw-chip-falta,.tw-chip-item-bloqueado{background:#fee2e2;color:#991b1b}
+.tw-chip-por_confirmar,.tw-chip-item-pendiente{background:#fef3c7;color:#92400e}
+.tw-chip-cumple,.tw-chip-item-listo{background:#dcfce7;color:#166534}
+.tw-chip-item-en_progreso{background:#dbeafe;color:#1e40af}
+.tw-reject{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#dc2626;color:#fff}
+
+.tw-progress-figures{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tw-progress-figures>div{display:grid;gap:2px;padding:10px 12px;border-radius:10px;background:#f8fafc}
+.tw-progress-figures strong{font-size:20px;color:#10213d}
+.tw-progress-figures span{font-size:13px;color:#475569}
+.tw-progress-figures .is-alert{background:#fef2f2}
+.tw-progress-figures .is-alert strong{color:#b91c1c}
+.tw-progress-next{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tw-progress-next input{flex:1 1 220px}
+.tw-seed{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+
+.tw-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0}
+.tw-controls label,.tw-inline-form label{display:grid;gap:4px;font-size:12px;color:#475569}
+.tw-evidence{display:grid;gap:6px;margin-top:10px}
+.tw-evidence-form{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:6px}
+.tw-inline-form{display:grid;gap:6px;margin-top:6px}
+.tw-fold{margin-top:6px}
+.tw-fold>summary{cursor:pointer;font-size:13px;font-weight:600;color:#1d4ed8;padding:6px 0}
+.tw-secondary details>summary{cursor:pointer;font-weight:600;color:#1d4ed8}
+.tw-deadlines{margin:4px 0 0;padding-left:18px;font-size:14px;color:#334155}
+
+@media(max-width:900px){
+  .tw-header{grid-template-columns:1fr}
+  .tw-close{text-align:left}
+  .tw-browser{grid-template-columns:1fr}
+  .tw-browser-list{max-height:none}
+  .tw-browser-detail{position:static}
+  .tw-progress-figures{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tw-controls,.tw-evidence-form{grid-template-columns:1fr}
+  .tw-source{margin-left:0}
+}
+
+/* Los estilos globales de button (nowrap, degradado, sombra) y nav (columna) no aplican aquí. */
+.tw-workspace nav.tw-tabs{flex-direction:row;justify-content:flex-start}
+.tw-workspace .tw-browser-item,.tw-workspace .tw-task,.tw-workspace .tw-decisive button{white-space:normal;box-shadow:none;background:#fff;color:#10213d;font-weight:400;box-sizing:border-box;min-width:0;overflow-wrap:anywhere;padding:9px 11px;border-radius:10px}
+.tw-workspace .tw-decisive button{background:#fff7f7;border:1px solid #fde2e2}
+.tw-workspace .tw-browser-item.is-selected,.tw-workspace .tw-task.is-selected{background:#eff6ff}
+.tw-workspace .tw-browser-item:hover,.tw-workspace .tw-task:hover{background:#f8fafc}
+.tw-workspace .tw-tab-list button{box-shadow:none;background:#fff;color:#10213d;padding:7px 16px;font-weight:600}
+.tw-workspace .tw-tab-list button.is-active{background:#1d4ed8;color:#fff}
+.tw-workspace .tw-back{background:none;box-shadow:none;color:#1d4ed8;padding:6px 4px;font-weight:600}
+.tw-workspace .tw-source{color:#1d4ed8}
+.tw-browser-list{min-width:0}
+/* Una sola columna que nunca crece más que la pantalla (evita el desborde horizontal en celular). */
+.tw-workspace,.tw-decide,.tw-prepare,.tw-card,.tw-req-detail-body,.tw-browser-list,.tw-browser-group{grid-template-columns:minmax(0,1fr)}
+.tw-header h2{overflow-wrap:anywhere}

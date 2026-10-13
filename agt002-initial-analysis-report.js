@@ -89,6 +89,7 @@ export function projectAgt002InitialReport(envelope, documentNames = new Map()) 
       status: text(item.status),
       ownerRole: typeof item.owner_role === 'string' ? item.owner_role : null,
       dueAt: typeof item.due_at === 'string' ? item.due_at : null,
+      claimIds: arr(item.claim_ids).map(text),
     })),
     contradictions: arr(envelope?.contradictions).map(item => ({
       id: text(item.contradiction_id),

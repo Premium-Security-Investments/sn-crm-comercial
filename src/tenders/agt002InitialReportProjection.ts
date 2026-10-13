@@ -15,7 +15,7 @@ export type Agt002InitialReport = {
   coverage: { block: string; status: string; critical: boolean; gapReason: string | null }[];
   findings: { id: string; severity: string; category: string; title: string; impact: string; blocker: boolean; claimIds: string[] }[];
   requirements: { id: string; category: string; textClaimId: string; applicability: string; companyEvaluation: string; blocker: boolean; requiredAction: string | null; evidenceClaimIds?: string[] }[];
-  openItems: { id: string; kind: string; description: string; critical: boolean; status: string; ownerRole?: string | null; dueAt?: string | null }[];
+  openItems: { id: string; kind: string; description: string; critical: boolean; status: string; ownerRole?: string | null; dueAt?: string | null; claimIds?: string[] }[];
   contradictions: { id: string; topic: string; impact: string; status: string; requiredAction: string | null; claimIds: string[] }[];
   claims: Agt002InitialReportClaim[];
 };

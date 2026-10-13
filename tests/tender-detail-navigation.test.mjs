@@ -124,23 +124,20 @@ for (const id of ['tender-summary', 'tender-document-review', 'tender-analysis',
 // Decisión; por eso el orden de render se prueba combinando la posición de invocación en
 // OpportunityDetail con el orden interno dentro de TenderDocumentReviewPanel.
 // ---------------------------------------------------------------------------------------------
+// Desde 2026-10-13 la licitación se muestra por momentos (Juan): cabecera, tres pestañas
+// (Decidir/Preparar · Documentos · Historial) y un panel por pestaña. Ya no es una página larga con
+// secciones que se desplazan, así que se prueba el orden de los paneles del bloque de licitaciones.
 const opportunityDetailStart = main.indexOf('function OpportunityDetail(');
-const opportunityDetailEnd = main.indexOf('\nfunction TenderDocumentReviewPanel', opportunityDetailStart);
-assert.ok(opportunityDetailStart >= 0 && opportunityDetailEnd > opportunityDetailStart, 'debe existir OpportunityDetail seguida de TenderDocumentReviewPanel.');
-const opportunityDetailBlock = main.slice(opportunityDetailStart, opportunityDetailEnd);
-const summaryPos = opportunityDetailBlock.indexOf('id="tender-summary"');
-const reviewPanelInvocationPos = opportunityDetailBlock.indexOf('<TenderDocumentReviewPanel');
-const decisionPos = opportunityDetailBlock.indexOf('id="tender-decision"');
-const preparationPos = opportunityDetailBlock.indexOf('id="tender-preparation"');
-const followUpPos = opportunityDetailBlock.indexOf('id="tender-follow-up"');
-assert.ok(
-  [summaryPos, reviewPanelInvocationPos, decisionPos, preparationPos, followUpPos].every(position => position >= 0),
-  'Resumen, la invocación de Documentos/Análisis, Decisión, Preparación y Seguimiento deben existir en OpportunityDetail.',
-);
-assert.ok(summaryPos < reviewPanelInvocationPos, 'Resumen debe preceder a Documentos/Análisis.');
-assert.ok(reviewPanelInvocationPos < decisionPos, 'Documentos/Análisis deben preceder a Decisión.');
-assert.ok(decisionPos < preparationPos, 'Decisión debe preceder a Preparación.');
-assert.ok(preparationPos < followUpPos, 'Preparación debe preceder a Seguimiento.');
+const tenderBlockStart = main.indexOf("if (o.service_type_code === 'licitacion_publica') {", opportunityDetailStart);
+const tenderBlockEnd = main.indexOf('</section>;\n  }', tenderBlockStart);
+assert.ok(opportunityDetailStart >= 0 && tenderBlockStart > opportunityDetailStart && tenderBlockEnd > tenderBlockStart, 'OpportunityDetail debe resolver las licitaciones en su propio bloque.');
+const tenderBlock = main.slice(tenderBlockStart, tenderBlockEnd);
+const order = ['<TenderWorkspaceHeader', '<TenderWorkspaceTabs', 'tw-panel-principal', 'tw-panel-documentos', '<TenderDocumentReviewPanel', 'tw-panel-historial', 'id="tender-follow-up"'].map(marker => tenderBlock.indexOf(marker));
+assert.ok(order.every(position => position >= 0), 'Cabecera, pestañas y los tres paneles deben existir en el bloque de licitaciones.');
+assert.ok(order.every((position, index) => index === 0 || position > order[index - 1]), 'El orden debe ser cabecera → pestañas → principal → documentos → historial.');
+assert.match(tenderBlock, /moment === 'preparar'\s*\?\s*<TenderPrepareView/, 'Después del GO la pestaña principal es Preparar.');
+assert.match(tenderBlock, /<TenderDecideView report=\{tenderInitialReport\} decisionPanel=\{decisionPanel\}/, 'Antes del GO la pestaña principal es Decidir, con el registro GO/NO GO.');
+assert.match(tenderBlock, /\{moment === 'preparar' && decisionPanel\}/, 'Después del GO la decisión vigente (y el cambio a NO GO) vive en Historial.');
 
 const reviewPanelStart = main.indexOf('function TenderDocumentReviewPanel(');
 const reviewPanelEnd = main.indexOf('\nfunction TenderOfferPreparationPanel', reviewPanelStart);
@@ -153,15 +150,16 @@ assert.ok(documentReviewPos >= 0 && analysisPos > documentReviewPos, 'Documentos
 // ---------------------------------------------------------------------------------------------
 // Task 6 · jerarquía de acciones de oportunidad: Editar/Seguimiento ordinarias, Sacar riesgosa.
 // ---------------------------------------------------------------------------------------------
-const summaryAnchorStart = main.indexOf('<div id="tender-summary"');
-const summaryAnchorEnd = main.indexOf('<TenderModuleNavigation', summaryAnchorStart);
-assert.ok(summaryAnchorStart >= 0 && summaryAnchorEnd > summaryAnchorStart, 'debe existir el ancla tender-summary seguida del módulo de navegación.');
-const summaryAnchorBlock = main.slice(summaryAnchorStart, summaryAnchorEnd);
-const editIndex = summaryAnchorBlock.indexOf('>Editar<');
-const followUpIndex = summaryAnchorBlock.indexOf('>Pasar a Seguimiento<');
-const exitIndex = summaryAnchorBlock.indexOf('>Sacar de oportunidad<');
+// Acciones de la cabecera: Editar y Seguimiento ordinarias, Sacar de oportunidad riesgosa, y las dos de
+// salida solo antes del GO (después, el camino es cambiar la decisión a NO GO).
+const headerStart = tenderBlock.indexOf('<TenderWorkspaceHeader');
+const headerBlock = tenderBlock.slice(headerStart, tenderBlock.indexOf('<TenderModuleNavigation', headerStart));
+const editIndex = headerBlock.indexOf('>Editar<');
+const followUpIndex = headerBlock.indexOf('>Pasar a Seguimiento<');
+const exitIndex = headerBlock.indexOf('>Sacar de oportunidad<');
 assert.ok(editIndex >= 0 && followUpIndex > editIndex && exitIndex > followUpIndex, 'Editar y Seguimiento deben preceder a la acción riesgosa Sacar de oportunidad.');
-assert.match(summaryAnchorBlock, /className="danger"[^>]*onClick=\{\(\) => void exitTender\('radar'\)\}[^>]*>Sacar de oportunidad</, 'Sacar de oportunidad debe ser la única acción con tono de riesgo.');
+assert.match(headerBlock, /className="danger"[^>]*onClick=\{\(\) => void exitTender\('radar'\)\}[^>]*>Sacar de oportunidad</, 'Sacar de oportunidad debe ser la única acción con tono de riesgo.');
+assert.match(headerBlock, /tenderOfferStatus === 'pendiente_decision' && o\.stage_code !== 'descartado'/, 'Las salidas solo se ofrecen antes del GO.');
 assert.match(main, /window\.confirm\(destination === 'radar' \?/, 'Sacar de oportunidad debe seguir exigiendo confirmación antes de ejecutar la salida.');
 
 console.log('tender detail navigation shell passed');

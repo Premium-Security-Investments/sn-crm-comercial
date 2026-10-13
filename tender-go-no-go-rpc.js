@@ -1,6 +1,8 @@
 import { ACTIONS, requireAction } from './access-control.js';
 import { buildTenderSnapshotInput, getCurrentTenderAnalysis } from './tender-analysis-foundation.js';
 import { buildTenderOfferPreparation } from './tender-offer-preparation.js';
+import { readAgt002InitialAnalysisReport } from './agt002-initial-analysis-report.js';
+import { seedTenderDossierRequirements } from './tender-dossier-rpc.js';
 import { mergeTenderDocumentRecords } from './tender-document-versioning.js';
 import { deriveAgt002DossierHandoff, evidenceCoverageStrictlyAbsent } from './server/agt002-dossier-handoff.js';
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
@@ -196,8 +198,14 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
     ? { ...(availableAnalysis.result || {}), ...availableAnalysis }
     : null;
   const effectiveAnalysisRunId = effectiveAnalysis ? analysisRunId : null;
+  // Con análisis inicial listo, el expediente se arma con sus requisitos (125): la plantilla fija de
+  // pendientes humanos los repetiría con otras palabras, así que solo se conservan los documentos.
+  const initialReport = decision === 'go'
+    ? await readAgt002InitialAnalysisReport(database, opportunityId).catch(() => null)
+    : null;
+  const requirementsAvailable = Boolean(initialReport?.available && initialReport.report);
   const preparation = decision === 'go'
-    ? buildTenderOfferPreparation(opportunity, records.documents, effectiveAnalysis, currentProfile)
+    ? buildTenderOfferPreparation(opportunity, records.documents, effectiveAnalysis, currentProfile, { withHumanTemplate: !requirementsAvailable })
     : null;
   // La preparación y el anclaje de la decisión siguen leyendo `availableAnalysis` exactamente como
   // antes (esa lectura no filtra por canonical y no cambia de comportamiento). El traspaso al
@@ -223,6 +231,11 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
     p_document_hash: documentHash,
     p_agt002_items: agt002Items,
   });
+  // La siembra de requisitos va después de la decisión y nunca la revierte: si falla, el expediente
+  // ofrece el botón "Cargar los requisitos del análisis" (misma función, idempotente).
+  if (decision === 'go' && requirementsAvailable) {
+    await seedTenderDossierRequirements(database, opportunityId, actorId, { readReport: async () => initialReport }).catch(() => null);
+  }
   const persistedPreparation = result.preparation_created
     ? preparation
     : (records.preparations || []).find(candidate => candidate.interaction_id === result.preparation_id) || null;

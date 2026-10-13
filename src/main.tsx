@@ -19,6 +19,8 @@ import { TenderDocumentSection } from './tenders/components/TenderDocumentSectio
 import { TenderDecisionExperience } from './tenders/components/TenderDecisionExperience';
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
+import { TenderDecideView, TenderPrepareView, TenderWorkspaceHeader, TenderWorkspaceTabs, tenderWorkspaceMoment, useTenderOfferStatus, type TenderWorkspaceTab } from './tenders/workspace/TenderWorkspace';
+import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
@@ -914,6 +916,14 @@ const TENDER_POST_GO_HERO_LABELS: Record<string, string> = {
   adjudicada: 'Adjudicada',
   no_adjudicada: 'No adjudicada',
 };
+function initialWorkspaceTab(): TenderWorkspaceTab {
+  if (typeof window === 'undefined') return 'principal';
+  const query = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const section = query.get('section') || '';
+  if (query.get('focus') === 'documents' || section === 'tender-document-review') return 'documentos';
+  if (section === 'tender-follow-up' || query.get('focus') === 'interaction') return 'historial';
+  return 'principal';
+}
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
   const [exitingTender, setExitingTender] = useState<'radar' | 'seguimiento' | null>(null);
@@ -926,6 +936,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const [tenderDecisionNavigationState, setTenderDecisionNavigationState] = useState<TenderPanelState<TenderGoNoGoDecision | null>>({ phase: 'loading' });
   const [tenderPreparationNavigationState, setTenderPreparationNavigationState] = useState<TenderPanelState<TenderPreparationNavigationValue>>({ phase: 'loading' });
   const [tenderRevision, setTenderRevision] = useState(0);
+  // Licitación por momentos (Juan, 2026-10-13): tres pestañas; la principal es Decidir o Preparar según el GO.
+  const [workspaceTab, setWorkspaceTab] = useState<TenderWorkspaceTab>(() => initialWorkspaceTab());
   // Pestaña visible del detalle de licitación: cada pestaña muestra solo su sección (Juan, 2026-10-12).
   const [tenderTab, setTenderTab] = useState<TenderDetailSectionId>(() => typeof window === 'undefined' ? 'tender-summary' : resolveInitialTenderDetailSection(window.location.hash));
   // Canal de refresco de disponibilidad SIN remontaje: una mutación confirmada del expediente sólo
@@ -955,6 +967,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     activeDetailIdRef.current = id; detailRequestRef.current += 1;
     setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderQuestionResponses([]); setTenderDecisionAxisSurfaceEnabled(false); setTenderRevision(0); setTenderDossierReadinessRevision(0);
     setTenderTab(resolveInitialTenderDetailSection(window.location.hash));
+    setWorkspaceTab(initialWorkspaceTab());
     tenderQuestionResponseSaveRef.current = null;
     setTenderDocumentNavigationState({ phase: 'loading' });
     setTenderAnalysisNavigationState({ phase: 'loading' });
@@ -966,6 +979,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
   const tenderInitialReport = useAgt002InitialReport(id, api, detail?.opportunity.service_type_code === 'licitacion_publica');
+  const tenderOfferStatus = useTenderOfferStatus(id, api, tenderRevision, detail?.opportunity.service_type_code === 'licitacion_publica');
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
   const followUpHistory = buildFollowUpHistory(o, detail.interactions);
@@ -1012,6 +1026,42 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     window.alert(destination === 'radar' ? 'La licitación salió de oportunidades y volvió al Radar.' : 'La licitación pasó a Seguimiento.');
     go(destination === 'seguimiento' ? '#/tenders?view=seguimiento' : '#/tenders?view=radar');
   };
+  // Licitaciones (Juan, 2026-10-13): una sola lista de requisitos y la pantalla según el momento. Antes del GO
+  // la pregunta es "¿nos presentamos?"; después, "¿llegamos a tiempo?". El resto de esta función es la ficha comercial.
+  if (o.service_type_code === 'licitacion_publica') {
+    const moment = tenderWorkspaceMoment(tenderOfferStatus);
+    const canDecide = can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const reloadAll = async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); };
+    const phaseNotices = resolveTenderPhaseChangeNotices(o.observaciones);
+    const decisionPanel = <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
+      <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}-${tenderRevision}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} questionResponses={tenderQuestionResponses} onChanged={reloadAll} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} />
+    </div>;
+    return <section className="stack tender-opportunity-detail tw-workspace" data-tab={workspaceTab} data-has-report={tenderInitialReport ? 'true' : 'false'}>
+      <TenderWorkspaceHeader entity={o.company_name} owner={o.owner_name || 'Sin comercial'} city={o.quote_city || o.regional_nombre || ''} amountLabel={Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus} report={tenderInitialReport} actions={<>
+        {canAccessRoute(data.currentProfile, 'edit') && <button type="button" className="secondary" onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}
+        {/* Salir de la oportunidad solo tiene sentido antes del GO; después, se cambia la decisión a NO GO en Historial. */}
+        {!readOnly && tenderOfferStatus === 'pendiente_decision' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}
+      </>} />
+      {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
+      <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />
+      <TenderWorkspaceTabs tab={workspaceTab} moment={moment} onChange={setWorkspaceTab} onBack={() => go('#/tenders?view=oportunidades')} sourceUrl={resolveTenderSourceUrl(o.source_url, o.observaciones)} />
+      <div className="tw-panel tw-panel-principal">
+        {moment === 'preparar'
+          ? <TenderPrepareView key={`tender-prepare-${o.id}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={canDecide} report={tenderInitialReport} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus}
+              onOfferStatusChanged={reloadAll}
+              onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })} />
+          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} />}
+      </div>
+      <div className="tw-panel tw-panel-documentos">
+        <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async () => { await load(); await refresh(); }} />
+      </div>
+      <div className="tw-panel tw-panel-historial">
+        {moment === 'preparar' && decisionPanel}
+        {phaseNotices.length > 0 && <section className="tw-card"><small>Avisos de SECOP</small>{[...phaseNotices].reverse().map(line => <p key={line}>{line}</p>)}</section>}
+        <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}><PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /></div>
+      </div>
+    </section>;
+  }
   // Después del GO la etiqueta comercial ("Prospecto") no dice nada: manda el estado de la oferta, y salir
   // de la oportunidad ya no es "pasar a seguimiento" sino cambiar la decisión a NO GO.
   const tenderPostGoLabel = o.service_type_code === 'licitacion_publica' ? TENDER_POST_GO_HERO_LABELS[o.tender_offer_status || ''] : undefined;
