@@ -21,6 +21,7 @@ import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierW
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderDecideView, TenderPrepareView, TenderWorkspaceHeader, TenderWorkspaceTabs, tenderWorkspaceMoment, useTenderOfferStatus, type TenderWorkspaceTab } from './tenders/workspace/TenderWorkspace';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
+import { NavIcon, UserMenu } from './shell/UserMenu';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
@@ -434,21 +435,18 @@ function App() {
     <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="Navegación principal">
       <div className="brand"><small>Seguridad Nacional</small><em>Sistema Interno de Inteligencia Operativa</em></div>
       <div className="sidebar-nav-scroll"><Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} /></div>
-      <div className="sidebar-footer-compact">
-        <div className="session-card"><small>Sesión activa</small><strong>{realProfile?.full_name || session.user.email}</strong><span>{realProfile ? roleLabel(realProfile.role) : 'perfil'}</span>
-          {realProfile && canUseCommercialView(realProfile) && <div className="view-mode-toggle" role="group" aria-label="Modo de vista">
-            <button type="button" className={viewMode === 'admin' ? 'active' : 'secondary'} aria-pressed={viewMode === 'admin'} onClick={() => changeViewMode('admin')}>Vista Admin</button>
-            <button type="button" className={viewMode === 'comercial' ? 'active' : 'secondary'} aria-pressed={viewMode === 'comercial'} onClick={() => changeViewMode('comercial')}>Vista Comercial</button>
-          </div>}
-        </div>
-        <div className="sidebar-footer-actions"><button className="secondary full" onClick={refresh}>Actualizar</button><button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Salir</button></div>
-      </div>
+      {/* Sesión, cambio de vista, Actualizar y Salir viven en el menú de perfil de arriba a la derecha (Juan, 2026-10-13). */}
     </aside>
     <main>
       <header className="topbar">
         <button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}>☰</button>
         <div><h1>{titleFor(route, currentProfile)}</h1><p>SIIO · {areaFor(route)}</p></div>
-        {areaFor(route) === 'Comercial' && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
+        <div className="topbar-right">
+          {areaFor(route) === 'Comercial' && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
+          <UserMenu name={realProfile?.full_name || ''} email={session.user.email || ''} role={realProfile ? roleLabel(realProfile.role) : 'perfil'}
+            viewMode={realProfile && canUseCommercialView(realProfile) ? viewMode : undefined} onChangeViewMode={changeViewMode}
+            onRefresh={() => void refresh()} onSignOut={() => void supabaseBrowser.auth.signOut()} />
+        </div>
       </header>
       {loading && <div className="notice">{siioShell ? 'Cargando Torre de Control…' : 'Cargando información comercial…'}</div>}
       {error && <div className="error">{error}</div>}
@@ -552,7 +550,7 @@ function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfi
   };
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
-    {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}>{item.label}</a>)}</div>)}
+    {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}><NavIcon href={item.href} /><span>{item.label}</span></a>)}</div>)}
   </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {

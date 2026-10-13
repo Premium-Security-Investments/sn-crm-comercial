@@ -147,7 +147,10 @@ test('Vista Admin / Vista Comercial: selector en Sesión activa, guardado por pe
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
   assert.match(main, /try \{ return window\.localStorage\.getItem\(`\$\{VIEW_MODE_STORAGE_PREFIX\}\$\{profileId\}`\) === 'comercial' \? 'comercial' : 'admin'; \} catch \{ return 'admin'; \}/);
   assert.match(main, /try \{ window\.localStorage\.setItem\(/);
-  assert.match(main, /<div className="session-card">[\s\S]{0,400}canUseCommercialView\(realProfile\)[\s\S]{0,300}Vista Admin[\s\S]{0,300}Vista Comercial/);
+  // Desde 2026-10-13 el cambio de vista vive en el menú de perfil de arriba a la derecha.
+  assert.match(main, /<UserMenu[\s\S]{0,300}viewMode=\{realProfile && canUseCommercialView\(realProfile\) \? viewMode : undefined\}/);
+  const userMenu = readFileSync(new URL('../src/shell/UserMenu.tsx', import.meta.url), 'utf8');
+  assert.match(userMenu, /Vista Admin[\s\S]{0,300}Vista Comercial/);
   assert.match(main, /opportunities: data\.opportunities\.filter\(own\)/, 'en Vista Comercial sólo sus oportunidades');
   assert.match(main, /<RouterView route=\{route\} data=\{viewData\} refresh=\{refresh\} \/>/);
   assert.doesNotMatch(main, /viewMode[^\n]*api\(/, 'el modo nunca viaja al servidor');
