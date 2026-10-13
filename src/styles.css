@@ -771,3 +771,5 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .opportunity-filter-row .opportunity-archived-link{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:none;box-shadow:none;border:0;color:#64748b;font-weight:600;font-size:13px;padding:6px 10px}
 .opportunity-filter-row .opportunity-archived-link:hover{background:#f1f5f9;color:#10213d}
 .opportunity-filter-row .opportunity-archived-link.is-active{color:#1d4ed8}
+/* Las entradas de Licitaciones (nav-parent) heredaban justify-content:space-between y el texto quedaba a la derecha. */
+.nav-domain-groups a.nav-parent{justify-content:flex-start}
