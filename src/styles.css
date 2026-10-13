@@ -766,3 +766,8 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .user-menu-item:hover{background:#f1f5f9}
 .user-menu-item.is-exit{color:#a12622}
 @media(max-width:900px){.user-menu-name{display:none}.topbar-right{margin-left:0}}
+/* Archivadas: consulta, no paso del proceso. */
+.opportunity-filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.opportunity-filter-row .opportunity-archived-link{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:none;box-shadow:none;border:0;color:#64748b;font-weight:600;font-size:13px;padding:6px 10px}
+.opportunity-filter-row .opportunity-archived-link:hover{background:#f1f5f9;color:#10213d}
+.opportunity-filter-row .opportunity-archived-link.is-active{color:#1d4ed8}

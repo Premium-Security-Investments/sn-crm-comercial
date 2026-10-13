@@ -141,11 +141,14 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
     <header className="tender-compact-header"><div className="tender-compact-title"><h2 id="tender-dossiers-heading">Oportunidades</h2><div className="tender-compact-meta"><span>Licitaciones convertidas: expediente, decisión y preparación</span></div></div><div className="row-actions"><button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></div></header>
     {moduleNavigation}
     {error && <div className="error" role="alert">{error}</div>}
+    <div className="opportunity-filter-row">
     <div className="opportunity-primary-filters" role="group" aria-label="Filtrar oportunidades">
       <button type="button" className="secondary" aria-pressed={filter === 'all'} disabled={loading} onClick={() => { setFilter('all'); setPage(1); }}>Todas</button>
       <button type="button" className="secondary" aria-pressed={filter === 'por_decidir'} disabled={loading} onClick={() => { setFilter('por_decidir'); setPage(1); }}>Por decidir</button>
       <button type="button" className="secondary" aria-pressed={filter === 'en_curso'} disabled={loading} onClick={() => { setFilter('en_curso'); setPage(1); }}>En curso</button>
-      <button type="button" className="secondary" aria-pressed={filter === 'archivadas'} disabled={loading} onClick={() => { setFilter('archivadas'); setPage(1); }}>Archivadas</button>
+    </div>
+      {/* Archivadas es de consulta, no un paso del proceso (Juan, 2026-10-13): va aparte, a la derecha y discreta. */}
+      <button type="button" className={`opportunity-archived-link${filter === 'archivadas' ? ' is-active' : ''}`} aria-pressed={filter === 'archivadas'} disabled={loading} onClick={() => { setFilter(filter === 'archivadas' ? 'all' : 'archivadas'); setPage(1); }}>{filter === 'archivadas' ? 'Viendo archivadas · volver' : 'Ver archivadas'}</button>
     </div>
     {!displayRows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{displayRows.map(dossier => {
       const stage = classifyOpportunityStage(dossier);
