@@ -922,6 +922,7 @@ function initialWorkspaceTab(): TenderWorkspaceTab {
   const section = query.get('section') || '';
   if (query.get('focus') === 'documents' || section === 'tender-document-review') return 'documentos';
   if (section === 'tender-follow-up' || query.get('focus') === 'interaction') return 'historial';
+  if (section === 'tender-analysis') return 'analisis';
   return 'principal';
 }
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
@@ -1052,6 +1053,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
               onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })} />
           : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} />}
       </div>
+      {moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report={tenderInitialReport} /></div>}
       <div className="tw-panel tw-panel-documentos">
         <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async () => { await load(); await refresh(); }} />
       </div>

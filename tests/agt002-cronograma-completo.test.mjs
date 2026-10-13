@@ -38,3 +38,10 @@ test('el reporte expone la etiqueta y la pantalla la usa en el cronograma', () =
   assert.match(workspace, /<TenderScheduleCard report=\{report\} \/>/);
   assert.match(workspace, /<TenderScheduleCard report=\{report\} compact \/>/);
 });
+
+test('después del GO el análisis sigue visible en su propia pestaña, sin el registro de la decisión', () => {
+  const workspace = readFileSync(new URL('../src/tenders/workspace/TenderWorkspace.tsx', import.meta.url), 'utf8');
+  assert.match(workspace, /\.\.\.\(moment === 'preparar' \? \[\{ id: 'analisis' as const, label: 'Análisis' \}\] : \[\]\)/);
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.match(main, /\{moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report=\{tenderInitialReport\} \/><\/div>\}/);
+});

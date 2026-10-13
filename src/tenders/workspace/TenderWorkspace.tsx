@@ -13,7 +13,7 @@ import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionI
 import { TenderVigiaChannel } from './TenderVigiaChannel';
 import { OFFER_STATUS_LABEL, POST_GO_STATUSES, countdownLabel, daysUntil, formatDay, formatDeadline, todayInBogota } from './tenderWorkspaceFormat';
 
-export type TenderWorkspaceTab = 'principal' | 'documentos' | 'historial';
+export type TenderWorkspaceTab = 'principal' | 'analisis' | 'documentos' | 'historial';
 export type TenderWorkspaceMoment = 'decidir' | 'preparar';
 
 /** Estado de la oferta leído del servidor (la oportunidad del listado puede traerlo viejo justo tras el GO). */
@@ -65,6 +65,8 @@ export function TenderWorkspaceTabs({ tab, moment, onChange, onBack, sourceUrl }
 }) {
   const tabs: { id: TenderWorkspaceTab; label: string }[] = [
     { id: 'principal', label: moment === 'preparar' ? 'Preparar' : 'Decidir' },
+    // Después del GO el análisis sigue disponible para consulta en su propia pestaña (antes del GO vive en Decidir).
+    ...(moment === 'preparar' ? [{ id: 'analisis' as const, label: 'Análisis' }] : []),
     { id: 'documentos', label: 'Documentos' },
     { id: 'historial', label: 'Historial' },
   ];
@@ -184,20 +186,21 @@ export function TenderScheduleCard({ report, compact = false }: { report: Agt002
 
 // --- Antes del GO: ¿nos presentamos? ------------------------------------------------------------------
 
-export function TenderDecideView({ report, decisionPanel }: { report: Agt002InitialReport | null; decisionPanel: ReactNode }) {
+/** Antes del GO, con el registro de la decisión; después del GO, el mismo análisis para consulta (sin decisionPanel). */
+export function TenderDecideView({ report, decisionPanel }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode }) {
   const rows = useMemo(() => buildRequirementRows(report), [report]);
   const decisive = useMemo(() => decisiveRequirementRows(rows), [rows]);
   const others = useMemo(() => otherRiskNotes(report, rows), [report, rows]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const browserRef = useRef<HTMLDivElement | null>(null);
   if (!report) return <div className="tw-decide">
-    <div className="notice tw-empty">El análisis de Vig-IA todavía no está listo. Su estado se ve en <strong>Documentos</strong>. Puede registrar la decisión igual.</div>
+    <div className="notice tw-empty">El análisis de Vig-IA todavía no está listo. Su estado se ve en <strong>Documentos</strong>.{decisionPanel ? ' Puede registrar la decisión igual.' : ''}</div>
     {decisionPanel}
   </div>;
   const verdict = initialReportVerdict(report.recommendation.kind);
   return <div className="tw-decide">
     <section className={`tw-card tw-verdict-card tone-${verdict.tone}`}>
-      <small>Lo que recomienda Vig-IA</small>
+      <small>{decisionPanel ? 'Lo que recomienda Vig-IA' : 'Lo que recomendó Vig-IA antes del GO'}</small>
       <h3>{verdict.label}</h3>
       <p>{initialReportRecommendationText(report.recommendation.label)}</p>
       <p className="tw-muted">{initialReportCompanyFit(report)} · confianza {initialReportLabels.confidence(report.recommendation.confidence)} · {rows.length} requisitos revisados</p>

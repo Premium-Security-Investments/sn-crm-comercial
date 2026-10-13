@@ -28,7 +28,8 @@
 
 .tw-workspace[data-tab]:not([data-tab="principal"]) .tw-panel-principal,
 .tw-workspace[data-tab]:not([data-tab="documentos"]) .tw-panel-documentos,
-.tw-workspace[data-tab]:not([data-tab="historial"]) .tw-panel-historial{display:none}
+.tw-workspace[data-tab]:not([data-tab="historial"]) .tw-panel-historial,
+.tw-workspace[data-tab]:not([data-tab="analisis"]) .tw-panel-analisis{display:none}
 /* Con reporte inicial, el análisis completo vive en la lista de requisitos; el bloque viejo queda montado pero oculto. */
 .tw-workspace[data-has-report="true"] .tw-panel-documentos #tender-analysis{display:none}
 
