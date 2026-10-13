@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { enterTrackingFromRadar, loadProfiles, loadRadar, loadRadarRunDelta, loadRadarRunReceiptHistory, loadRadarRunReceiptLatest } from './api';
+import { enterTrackingFromRadar, loadCompanyBase, loadProfiles, loadRadar, loadRadarRunDelta, loadRadarRunReceiptHistory, loadRadarRunReceiptLatest } from './api';
 import { TenderSavedSearches } from './components/TenderSavedSearches';
 import { tenderDetailSectionHref } from './detailNavigationState';
 import { tenderDocumentStatusLabel } from './statusLabels';
@@ -7,6 +7,8 @@ import { safePublicTenderSourceUrl } from './tenderUiState';
 import { TENDER_OFFICIAL_SOURCES, TENDER_RADAR_RUN_DELTA_SELECTABLE_CATEGORIES, TENDER_SN_REGIONS, deduplicateTenders, filterRadarTenders, isTenderExpired, sortTenderCards, readableTenderTitle, tenderFitBadgeLabel, tenderFitPlainReasons, tenderPhaseContinuityLabel, tenderRadarRunDeltaCardLabels, tenderRadarRunDeltaCategoryLabel, tenderRadarRunDeltaSourceEvents, tenderRadarRunDeltaStableKeysForCategory, tenderRadarRunReceiptCoverageRatio, tenderRadarRunReceiptHistoryOrdered, tenderRadarRunReceiptSourceStatusLabel, tenderRadarRunReceiptStatusLabel, tenderRadarRunReceiptTimeLabel } from './radarUtils';
 import type { PublicTender, TenderConversionResult, TenderDeadlineFilter, TenderInternalStatus, TenderRadarFilters, TenderRadarPayload, TenderRadarRunDelta, TenderRadarRunDeltaCategory, TenderRadarRunReceipt, TenderRegionKey, TenderScoreFilter, TenderSearchProfile, TenderSection, TenderSortKey, TenderValueFilter, TendersModuleProps } from './types';
 import { isTenderReadOnlyProfile } from './permissions';
+import type { CompanySite } from './companyBase';
+import { radarCoverageMark } from './companyCoverage';
 
 const PAGE_SIZE = 24;
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -46,6 +48,8 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
   const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
   const [profiles, setProfiles] = useState<TenderSearchProfile[]>([]);
   const [profilesError, setProfilesError] = useState<string | null>(null);
+  // Sedes de Empresa para la marca de cobertura; si no cargan, el Radar sigue igual y sin marca.
+  const [companySites, setCompanySites] = useState<CompanySite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -103,7 +107,10 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
       setRunDeltaError('No fue posible actualizar los cambios desde la corrida anterior.');
     }
   };
-  useEffect(() => { void load(); void loadRunReceipts(); void loadRunDelta(); }, []);
+  const loadCompanySites = async () => {
+    try { setCompanySites((await loadCompanyBase(request)).sites || []); } catch { setCompanySites([]); }
+  };
+  useEffect(() => { void load(); void loadRunReceipts(); void loadRunDelta(); void loadCompanySites(); }, []);
   const applyProfile = (profile: TenderSearchProfile) => {
     setQuery(profile.query_text || ''); setSource(profile.source_filter || 'todas'); setRegion(profile.region_key || 'todas');
     setDeadline(profile.deadline_filter || 'todas'); setValue(profile.value_filter || 'todas'); setScore(profile.score_filter || 'todas');
@@ -219,8 +226,9 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
       const stateLabel = statusLabel(tender);
       const plainReasons = tenderFitPlainReasons(tender.fit);
       const sourceUrl = safePublicTenderSourceUrl(tender.url);
+      const coverage = radarCoverageMark(tender.dept, companySites);
       return <article key={tender.id} id={`tender-${tender.id}`} className={`card tender-card tender-${tender.section} ${focusTenderId === tender.id ? 'tender-highlight' : ''}`}>
-        <div className="tender-card-tags"><span className="badge">{tender.source}</span><span className={`badge tender-fit-${tender.fit?.band || 'por_validar'}`}>{tenderFitBadgeLabel(tender.fit)}</span>{stateLabel && <span className="badge badge-state">{stateLabel}</span>}{tenderRadarRunDeltaCardLabels(runDelta, tender.stable_key || tender.id).map(label => <span key={label} className="badge badge-delta">{label}</span>)}{phaseLabel && <span className="badge">{phaseLabel}</span>}</div>
+        <div className="tender-card-tags"><span className="badge">{tender.source}</span><span className={`badge tender-fit-${tender.fit?.band || 'por_validar'}`}>{tenderFitBadgeLabel(tender.fit)}</span>{stateLabel && <span className="badge badge-state">{stateLabel}</span>}{tenderRadarRunDeltaCardLabels(runDelta, tender.stable_key || tender.id).map(label => <span key={label} className="badge badge-delta">{label}</span>)}{phaseLabel && <span className="badge">{phaseLabel}</span>}{coverage && <span className={`badge tender-coverage tender-coverage-${coverage.tone}`} title="Cruce del departamento de ejecución con las sedes de Empresa">{coverage.text}</span>}</div>
         <h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3>
         <p className="tender-card-object" title={tender.title}>{readableTenderTitle(tender.title)}</p>
         <dl className="tender-card-facts"><div><dt>Valor</dt><dd>{Number(tender.value) > 0 ? money.format(Number(tender.value)) : 'Sin valor'}</dd></div><div><dt>Cierre</dt><dd>{deadlineLabel(tender.deadline)}</dd></div><div><dt>Referencia</dt><dd>{tender.ref || tender.process_id || '—'}</dd></div></dl>

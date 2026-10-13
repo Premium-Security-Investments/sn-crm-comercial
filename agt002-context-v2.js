@@ -14,6 +14,10 @@ const COMPANY_DOSSIER_KEYS = [
   'financial_capacity', 'organizational_capacity', 'experience', 'certifications',
   'recurring_documents', 'restrictions',
 ];
+// Opcionales (Juan, 2026-10-13: cobertura territorial temprana). Los dossiers congelados antes no las traen y
+// siguen siendo válidos; los nuevos las incluyen siempre: sedes/agencias por departamento y el alcance de la
+// licencia de SuperVigilancia (modalidades y domicilio).
+const COMPANY_DOSSIER_OPTIONAL_KEYS = ['sites', 'license_scope'];
 const COMMERCIAL_CONTEXT_KEYS = [
   'opportunity_status', 'commercial_owner', 'account_relationship', 'next_action', 'due_at', 'authorized_notes',
 ];
@@ -145,10 +149,11 @@ function normalizeSourcedValue(raw, label, { redact = true } = {}) {
   return normalized;
 }
 
-function normalizeSection(raw, keys, label) {
-  rejectUnknownKeys(raw, keys, label);
+function normalizeSection(raw, keys, label, optionalKeys = []) {
+  rejectUnknownKeys(raw, [...keys, ...optionalKeys], label);
   requireCompleteKeys(raw, keys, label);
-  return Object.fromEntries(keys.map(key => [
+  const present = [...keys, ...optionalKeys.filter(key => Object.prototype.hasOwnProperty.call(raw, key))];
+  return Object.fromEntries(present.map(key => [
     key,
     normalizeSourcedValue(raw[key], `${label}.${key}`, { redact: !key.endsWith('_id') }),
   ]));
@@ -190,7 +195,7 @@ export function buildAgt002ContextV2(raw) {
     context_version: AGT002_CONTEXT_VERSION,
     snapshot_id: normalizeText(raw.snapshot_id, 'snapshot_id', { max: 200, redact: false }),
     opportunity: normalizeSection(raw.opportunity, OPPORTUNITY_KEYS, 'opportunity'),
-    company_dossier: normalizeSection(raw.company_dossier, COMPANY_DOSSIER_KEYS, 'company_dossier'),
+    company_dossier: normalizeSection(raw.company_dossier, COMPANY_DOSSIER_KEYS, 'company_dossier', COMPANY_DOSSIER_OPTIONAL_KEYS),
     commercial_context: normalizeSection(raw.commercial_context, COMMERCIAL_CONTEXT_KEYS, 'commercial_context'),
     human_evidence: normalizeHumanEvidence(raw.human_evidence),
   };
@@ -203,5 +208,6 @@ export function buildAgt002ContextV2(raw) {
 export const AGT002_CONTEXT_V2_FIELDS = Object.freeze({
   opportunity: Object.freeze([...OPPORTUNITY_KEYS]),
   company_dossier: Object.freeze([...COMPANY_DOSSIER_KEYS]),
+  company_dossier_optional: Object.freeze([...COMPANY_DOSSIER_OPTIONAL_KEYS]),
   commercial_context: Object.freeze([...COMMERCIAL_CONTEXT_KEYS]),
 });

@@ -2,6 +2,8 @@ import { AGT002_CONTEXT_V2_FIELDS, buildAgt002ContextV2 } from './agt002-context
 import { assertAgt002CompanyEvidenceRegistryMinimalExposureSelect } from './agt002-company-evidence-classes.js';
 
 export const AGT002_COMPANY_PROFILE_SELECT = 'id,legal_name,nit,rup_status,rup_updated_at,rup_unspsc_codes,authorized_services,supervigilancia_license,financial_capacity,organizational_capacity,experience_summary,certifications,recurring_documents,disqualifications_notes,source_document_name,updated_at,created_at';
+// Sedes y agencias (migración 127). Sin dirección ni notas: el análisis sólo necesita dónde hay presencia autorizada.
+export const AGT002_COMPANY_SITE_SELECT = 'id,department,city,is_main,supervigilancia_authorization,source,updated_at,created_at';
 export const AGT002_COMPANY_DOCUMENT_SELECT = 'id,document_type,display_name,issued_at,expires_at,version,content_hash,current,updated_at,created_at';
 // P2-2: this legacy select reads the same psi_agt002_company_evidence_registry (061) as
 // agt002-company-evidence-classes.js's own typed select, so it is guarded by the same
@@ -141,7 +143,26 @@ function emptySection(keys, record, prefix) {
   ]));
 }
 
-export function buildAgt002CompanyDossier({ profile = {}, documents = [], registryEntries = [] }) {
+// Una línea por sede, en orden estable: departamento, ciudad, si es la principal y el estado de su autorización.
+function siteLines(sites) {
+  return (Array.isArray(sites) ? sites : [])
+    .filter(site => String(site?.department || '').trim())
+    .map(site => [
+      `department=${String(site.department).trim()}`,
+      `city=${String(site.city || '').trim() || 'sin_ciudad'}`,
+      `kind=${site.is_main === true ? 'sede_principal' : 'agencia'}`,
+      `supervigilancia_authorization=${String(site.supervigilancia_authorization || '').trim() || 'sin_observacion'}`,
+    ].join('|'))
+    .sort();
+}
+
+function latestRecord(list) {
+  return (Array.isArray(list) ? list : [])
+    .slice()
+    .sort((left, right) => String(right?.updated_at || right?.created_at || '').localeCompare(String(left?.updated_at || left?.created_at || '')))[0];
+}
+
+export function buildAgt002CompanyDossier({ profile = {}, documents = [], registryEntries = [], sites = [] }) {
   const current = currentDocuments(documents);
   const registry = activeRegistryEntries(registryEntries);
   const rupDocument = findDocument(current, /(^|_)rup($|_)/);
@@ -204,6 +225,8 @@ export function buildAgt002CompanyDossier({ profile = {}, documents = [], regist
       recurringOptions,
     ),
     restrictions: evidence(profile.disqualifications_notes, 'psi_company_procurement_profile:disqualifications_notes', profile, profileOptions),
+    sites: evidence(siteLines(sites), 'psi_company_sites', latestRecord(sites) || profile, { label: 'Sedes y agencias declaradas en Empresa' }),
+    license_scope: evidence(profile.supervigilancia_license, 'psi_company_procurement_profile:supervigilancia_license', profile, profileOptions),
   };
 
   const validated = buildAgt002ContextV2({
@@ -257,5 +280,11 @@ export async function loadAgt002CompanyDossier(database) {
       .eq('integration_active', true)
       .order('entry_id'),
   );
-  return buildAgt002CompanyDossier({ profile: profileResult.data || {}, documents, registryEntries });
+  const sites = await optionalRows(
+    database.from('psi_company_sites')
+      .select(AGT002_COMPANY_SITE_SELECT)
+      .order('department')
+      .order('city'),
+  );
+  return buildAgt002CompanyDossier({ profile: profileResult.data || {}, documents, registryEntries, sites });
 }
