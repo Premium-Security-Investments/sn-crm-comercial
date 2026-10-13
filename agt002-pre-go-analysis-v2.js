@@ -16,6 +16,16 @@ export const AGT002_PRE_GO_ANALYSIS_V2 = 'pre_go_analysis.v2';
 
 const NULLABLE_UUID = Object.freeze({ oneOf: [{ type: 'null' }, { $ref: '#/$defs/uuid' }] });
 
+// Cronograma completo (Juan, 2026-10-13): con solo 4 tipos y sin etiqueta, el análisis de Fondo Único
+// perdió la mitad del cronograma de la Resolución 00390 y llamó "observaciones" al plazo para observar la
+// evaluación. v2 suma tipos para cada trámite habitual y una etiqueta con el nombre del trámite tal como
+// lo escribe el documento. Ambos son aditivos: los análisis v2 ya guardados siguen siendo válidos.
+// OBSERVATIONS queda para las observaciones al pliego de condiciones (definitivo).
+export const AGT002_V2_EXTRA_DEADLINE_KINDS = Object.freeze([
+  'PUBLICATION', 'PROJECT_OBSERVATIONS', 'RISK_HEARING', 'OBSERVATION_RESPONSES', 'SITE_VISIT',
+  'EVALUATION_REPORT', 'EVALUATION_OBSERVATIONS', 'AWARD', 'CONTRACT_SIGNING',
+]);
+
 export function deriveAgt002PreGoSchemaV2(v1Schema) {
   const schema = structuredClone(v1Schema);
   schema.$id = 'https://premiumsecurity.ai/schemas/agt002/pre_go_analysis.v2.schema.json';
@@ -27,6 +37,9 @@ export function deriveAgt002PreGoSchemaV2(v1Schema) {
   schema.$defs.evidencePackage.properties.snapshot_id = structuredClone(NULLABLE_UUID);
   const vitality = schema.$defs.evidencePackage.properties.member_refs.items.properties.vitality;
   vitality.enum = [...vitality.enum, 'UNCLASSIFIED'];
+  const deadline = schema.$defs.deadline;
+  deadline.properties.kind.enum = [...deadline.properties.kind.enum, ...AGT002_V2_EXTRA_DEADLINE_KINDS];
+  deadline.properties.label = { type: 'string', minLength: 1, maxLength: 200 };
   return schema;
 }
 

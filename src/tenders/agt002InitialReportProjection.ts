@@ -11,7 +11,7 @@ export type Agt002InitialReport = {
   companyFitLabel?: string;
   checksExecuted: boolean;
   documents: { id: string; name: string | null }[];
-  deadlines: { kind: string; value: string | null; certainty: string; status: string }[];
+  deadlines: { kind: string; value: string | null; certainty: string; status: string; label?: string | null }[];
   coverage: { block: string; status: string; critical: boolean; gapReason: string | null }[];
   findings: { id: string; severity: string; category: string; title: string; impact: string; blocker: boolean; claimIds: string[] }[];
   requirements: { id: string; category: string; textClaimId: string; applicability: string; companyEvaluation: string; blocker: boolean; requiredAction: string | null; evidenceClaimIds?: string[] }[];
@@ -57,7 +57,12 @@ const COVERAGE_BLOCK: Record<string, string> = {
   EXPERIENCE_FINANCIAL_CAPACITY: 'Experiencia y capacidad financiera', ECONOMIC_VIABILITY: 'Viabilidad económica',
   CONTRACT_RISK: 'Riesgo contractual', TIMELINE_FEASIBILITY: 'Cronograma',
 };
-const DEADLINE_KIND: Record<string, string> = { OBSERVATIONS: 'Observaciones', ADDENDA: 'Adendas', SUBMISSION: 'Entrega de ofertas', OTHER: 'Otro plazo' };
+const DEADLINE_KIND: Record<string, string> = {
+  PUBLICATION: 'Publicación', PROJECT_OBSERVATIONS: 'Observaciones al proyecto de pliego', OBSERVATIONS: 'Observaciones al pliego',
+  RISK_HEARING: 'Audiencia de riesgos', OBSERVATION_RESPONSES: 'Respuesta a observaciones', ADDENDA: 'Adendas', SITE_VISIT: 'Visita técnica',
+  SUBMISSION: 'Cierre y entrega de ofertas', EVALUATION_REPORT: 'Informe de evaluación', EVALUATION_OBSERVATIONS: 'Observaciones a la evaluación',
+  AWARD: 'Adjudicación', CONTRACT_SIGNING: 'Firma del contrato', OTHER: 'Otro plazo',
+};
 const CERTAINTY: Record<string, string> = { CONFIRMED: 'confirmado', INFERRED: 'inferido', CONTRADICTED: 'contradictorio', UNKNOWN: 'desconocido' };
 const REQUIREMENT_CATEGORY: Record<string, string> = {
   TECHNICAL: 'Técnico', LEGAL: 'Jurídico', FINANCIAL: 'Financiero', EXPERIENCE: 'Experiencia', PERSONNEL: 'Personal',
