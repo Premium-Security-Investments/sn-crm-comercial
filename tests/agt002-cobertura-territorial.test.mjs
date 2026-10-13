@@ -1,4 +1,4 @@
-// AGT-002 · Cobertura territorial temprana (Juan, 2026-10-13): marca del Radar, sedes y licencia en el perfil
+// AGT-002 · Cobertura territorial temprana (Juan, 2026-10-13): sedes y licencia en el perfil
 // congelado, veredicto de participación en la política del análisis y en la vista.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,26 +22,6 @@ const SITES = [
   { id: 's6', department: 'Valle del Cauca', city: 'Cali', is_main: false },
   { id: 's7', department: 'Quindío', city: 'Armenia', is_main: false, supervigilancia_authorization: 'Pendiente de resolución de la SVSP' },
 ];
-
-test('Radar: marca según el departamento de ejecución', () => {
-  const mark = dept => coverage.radarCoverageMark(dept, SITES);
-  assert.deepEqual(mark('Risaralda'), { tone: 'ok', text: 'Tenemos sede en Risaralda (Pereira)' });
-  assert.deepEqual(mark('VALLE DEL CAUCA'), { tone: 'ok', text: 'Tenemos sede en VALLE DEL CAUCA (Cartago, Cali)' });
-  assert.equal(mark('Distrito Capital de Bogotá').tone, 'ok');
-  assert.equal(mark('Bogotá, D.C.').tone, 'ok');
-  assert.match(mark('Cundinamarca').text, /^Tenemos sede en Bogotá \(suele cubrir Cundinamarca/);
-  assert.deepEqual(mark('Quindío'), { tone: 'pending', text: 'Sede con autorización pendiente en Quindío (Armenia)' });
-  assert.deepEqual(mark('Nariño'), { tone: 'partner', text: 'Solo en unión temporal: sin sede en Nariño' });
-  assert.deepEqual(mark('Departamento de Casanare'), { tone: 'partner', text: 'Solo en unión temporal: sin sede en Departamento de Casanare' });
-  assert.equal(mark(''), null, 'sin departamento no hay marca');
-  assert.equal(mark(null), null);
-  assert.equal(coverage.radarCoverageMark('Nariño', []), null, 'sin sedes cargadas no se afirma nada');
-});
-
-test('Radar: Cundinamarca sin sede en Bogotá pide socio', () => {
-  const sinBogota = SITES.filter(site => site.city !== 'Bogotá');
-  assert.equal(coverage.radarCoverageMark('Cundinamarca', sinBogota).tone, 'partner');
-});
 
 test('Veredicto de participación leído de recommendation.label', () => {
   assert.deepEqual(coverage.participationVerdict('Solo en unión temporal: sin sede en Bolívar, Casanare y Nariño; el socio debe aportarlas.'),
@@ -115,10 +95,9 @@ test('Política del análisis: veredicto de participación sólo cuando hay perf
   for (const phrase of AGT002_PARTICIPATION_VERDICTS) assert.ok(runtime.includes(`"${phrase}"`), `la política nombra "${phrase}"`);
 });
 
-test('Vista: Radar y análisis muestran la cobertura', () => {
+test('Vista: el análisis muestra el veredicto; el Radar no cruza sedes (Juan, 2026-10-13)', () => {
   const radar = read('../src/tenders/TenderRadarView.tsx');
-  assert.match(radar, /radarCoverageMark\(tender\.dept, companySites\)/);
-  assert.match(radar, /loadCompanyBase\(request\)/);
+  assert.doesNotMatch(radar, /radarCoverageMark|loadCompanyBase|companySites/);
   for (const path of ['../src/tenders/components/TenderInitialReport.tsx', '../src/tenders/components/TenderInitialDecisionSummary.tsx']) {
     assert.match(read(path), /participationVerdict\(/);
   }
