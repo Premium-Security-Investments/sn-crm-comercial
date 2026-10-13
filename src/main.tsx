@@ -19,7 +19,7 @@ import { TenderDocumentSection } from './tenders/components/TenderDocumentSectio
 import { TenderDecisionExperience } from './tenders/components/TenderDecisionExperience';
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
-import { TenderDecideView, TenderPrepareView, TenderWorkspaceHeader, TenderWorkspaceTabs, tenderWorkspaceMoment, useTenderOfferStatus, type TenderWorkspaceTab } from './tenders/workspace/TenderWorkspace';
+import { TenderDecideView, TenderNextStep, TenderPrepareView, TenderWorkspaceHeader, TenderWorkspaceTabs, tenderWorkspaceMoment, useTenderOfferStatus, type TenderWorkspaceTab } from './tenders/workspace/TenderWorkspace';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { NavIcon, UserMenu } from './shell/UserMenu';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
@@ -914,11 +914,29 @@ const TENDER_POST_GO_HERO_LABELS: Record<string, string> = {
   adjudicada: 'Adjudicada',
   no_adjudicada: 'No adjudicada',
 };
+/**
+ * Avisos de SECOP en lenguaje del equipo (Juan, 2026-10-13): sin listas de archivos ni notas internas del
+ * proceso de descarga, y sin repetir el mismo aviso con otras palabras. Del más reciente al más antiguo.
+ */
+function plainSecopNotices(lines: string[]): string[] {
+  const clean = (line: string) => line
+    .replace(/:\s[^;]*\.(?:pdf|docx?|xlsx?|zip)\b[^;]*/gi, '')
+    .replace(/;?\s*por duda NO se archiv[óo]:?[^;]*?\.(?:pdf|docx?|xlsx?|zip)\b(?:\s*\(revisar\))?/gi, '')
+    .replace(/\s*\(no entran al análisis\)/gi, '')
+    .replace(/\s*\(revisar\)/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([;.,])/g, '$1')
+    .trim();
+  const key = (line: string) => line.toLowerCase().replace(/[^a-z0-9ñáéíóú]+/g, ' ').split(' ').slice(0, 8).join(' ');
+  const seen = new Set<string>();
+  return [...lines].reverse().map(clean).filter(line => line && !seen.has(key(line)) && Boolean(seen.add(key(line))));
+}
 function initialWorkspaceTab(): TenderWorkspaceTab {
   if (typeof window === 'undefined') return 'principal';
   const query = new URLSearchParams(window.location.hash.split('?')[1] || '');
   const section = query.get('section') || '';
-  if (query.get('focus') === 'documents' || section === 'tender-document-review') return 'documentos';
+  // "Abrir expediente" (section=tender-document-review) entra a la pestaña de trabajo; solo focus=documents abre Documentos.
+  if (query.get('focus') === 'documents') return 'documentos';
   if (section === 'tender-follow-up' || query.get('focus') === 'interaction') return 'historial';
   if (section === 'tender-analysis') return 'analisis';
   return 'principal';
@@ -1031,7 +1049,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     const moment = tenderWorkspaceMoment(tenderOfferStatus);
     const canDecide = can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
     const reloadAll = async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); };
-    const phaseNotices = resolveTenderPhaseChangeNotices(o.observaciones);
+    const secopNotices = plainSecopNotices(resolveTenderPhaseChangeNotices(o.observaciones));
     const decisionPanel = <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
       <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}-${tenderRevision}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} questionResponses={tenderQuestionResponses} onChanged={reloadAll} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} />
     </div>;
@@ -1044,6 +1062,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
       <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />
       <TenderWorkspaceTabs tab={workspaceTab} moment={moment} onChange={setWorkspaceTab} onBack={() => go('#/tenders?view=oportunidades')} sourceUrl={resolveTenderSourceUrl(o.source_url, o.observaciones)} />
+      <TenderNextStep tab={workspaceTab} moment={moment} offerStatus={tenderOfferStatus} onGo={setWorkspaceTab} />
       <div className="tw-panel tw-panel-principal">
         {moment === 'preparar'
           ? <TenderPrepareView key={`tender-prepare-${o.id}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={canDecide} report={tenderInitialReport} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus}
@@ -1056,9 +1075,10 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async () => { await load(); await refresh(); }} />
       </div>
       <div className="tw-panel tw-panel-historial">
-        {moment === 'preparar' && decisionPanel}
-        {phaseNotices.length > 0 && <section className="tw-card"><small>Avisos de SECOP</small>{[...phaseNotices].reverse().map(line => <p key={line}>{line}</p>)}</section>}
+        {secopNotices.length > 0 && <section className="tw-card"><small>Avisos de SECOP</small>{secopNotices.map(line => <p key={line}>{line}</p>)}</section>}
         <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}><PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /></div>
+        {/* La decisión ya está en la línea de tiempo; cambiarla a NO GO es raro y queda al final, plegado. */}
+        {moment === 'preparar' && <details className="tw-fold tw-change-decision"><summary>Cambiar la decisión</summary>{decisionPanel}</details>}
       </div>
     </section>;
   }
@@ -1614,15 +1634,20 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
   const processHistory = useMemo<TenderProcessHistoryItem[]>(() => [
     ...events.filter(event => {
       if (decisions.length && ['go_decided', 'no_go_decided'].includes(event.event_type)) return false;
-      if (offerHistory.length && event.event_type === 'offer_preparation_started') return false;
+      // "Preparación de oferta iniciada" la produce el propio GO: con el GO en la lista, repetirla no dice nada.
+      if ((offerHistory.length || decisions.some(decision => decision.decision === 'go')) && event.event_type === 'offer_preparation_started') return false;
+      // Evento interno del sistema: repite el GO con palabras de sistema ("Expediente operativo sembrado").
+      if (event.event_type === 'dossier_seeded') return false;
       return true;
     }).map(event => ({ id: `tracking-${event.id}`, title: publicActuationLabel(event.event_type), createdAt: event.created_at, actor: actorLabel(event), note: event.note, sourceUrl: eventLink(event) })),
     ...decisions.map(decision => ({ id: `decision-${decision.id}`, title: decision.decision === 'go' ? 'GO registrado' : 'NO GO registrado', createdAt: decision.decided_at, actor: decision.psi_sales_profiles?.full_name || decision.decided_by || 'Persona autorizada', note: decision.justification })),
     ...offerHistory.map(event => ({ id: `offer-${event.id}`, title: `${offerStatusLabels[event.from_status] || event.from_status} → ${offerStatusLabels[event.to_status] || event.to_status}`, createdAt: event.changed_at, actor: event.psi_sales_profiles?.full_name || event.actor_id || 'Persona autorizada', note: event.note })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [events, decisions, offerHistory, profiles]);
   return <div className="stack">
-    {!isReadOnlyProfile(currentProfile) && <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required aria-describedby={!note.trim() ? 'tender-follow-up-note-help' : undefined} placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/>{!note.trim() && <small id="tender-follow-up-note-help" className="form-helper">Escriba una descripción para habilitar Guardar actuación.</small>}<small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>}
-    <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline tender-business-timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
+    <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y novedades del proceso, de lo más reciente a lo más antiguo.</p>
+      {/* Registrar actuación o novedad: plegado detrás de un botón para que el historial se lea primero (Juan, 2026-10-13). */}
+      {!isReadOnlyProfile(currentProfile) && <details className="tw-fold tender-follow-up-add"><summary>Agregar una nota o novedad</summary><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required aria-describedby={!note.trim() ? 'tender-follow-up-note-help' : undefined} placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/>{!note.trim() && <small id="tender-follow-up-note-help" className="form-helper">Escriba una descripción para habilitar Guardar actuación.</small>}<small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></details>}
+<div className="timeline tender-business-timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
   </div>;
 }
 function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; refresh: () => Promise<void> }) {

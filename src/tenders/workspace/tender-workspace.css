@@ -149,3 +149,8 @@
 .tw-schedule-when{text-align:right;font-size:13px}
 .tw-workspace .tw-link{background:none;box-shadow:none;color:#1d4ed8;padding:4px 0;font-weight:600;justify-self:start}
 @media(max-width:900px){.tw-schedule-list li{grid-template-columns:1fr;gap:2px}.tw-schedule-when{text-align:left}}
+
+/* Siguiente paso */
+.tw-next{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#10213d;font-size:14px}
+.tw-workspace .tw-next button{padding:7px 14px;box-shadow:none;font-weight:600}
+.tw-change-decision{margin-top:8px}

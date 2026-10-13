@@ -63,11 +63,12 @@ export function TenderWorkspaceHeader({ entity, owner, city, amountLabel, closeD
 export function TenderWorkspaceTabs({ tab, moment, onChange, onBack, sourceUrl }: {
   tab: TenderWorkspaceTab; moment: TenderWorkspaceMoment; onChange: (tab: TenderWorkspaceTab) => void; onBack: () => void; sourceUrl?: string | null;
 }) {
+  // Orden del proceso (Juan, 2026-10-13): Documentos · Análisis · Preparar · Historial. Antes del GO el análisis
+  // vive en Decidir. Se entra siempre a la pestaña de trabajo; las demás se abren desde aquí.
   const tabs: { id: TenderWorkspaceTab; label: string }[] = [
-    { id: 'principal', label: moment === 'preparar' ? 'Preparar' : 'Decidir' },
-    // Después del GO el análisis sigue disponible para consulta en su propia pestaña (antes del GO vive en Decidir).
-    ...(moment === 'preparar' ? [{ id: 'analisis' as const, label: 'Análisis' }] : []),
     { id: 'documentos', label: 'Documentos' },
+    ...(moment === 'preparar' ? [{ id: 'analisis' as const, label: 'Análisis' }] : []),
+    { id: 'principal', label: moment === 'preparar' ? 'Preparar' : 'Decidir' },
     { id: 'historial', label: 'Historial' },
   ];
   return <nav className="tw-tabs" aria-label="Secciones de la licitación">
@@ -77,6 +78,21 @@ export function TenderWorkspaceTabs({ tab, moment, onChange, onBack, sourceUrl }
     </div>
     {sourceUrl && <a className="tw-source" href={sourceUrl} target="_blank" rel="noreferrer">Fuente oficial ↗</a>}
   </nav>;
+}
+
+/**
+ * Llamado a la acción (Juan, 2026-10-13): desde cualquier pestaña se ve cuál es el siguiente paso y se llega
+ * con un clic. En la pestaña de trabajo lo muestra la propia vista (Decidir o Preparar).
+ */
+export function TenderNextStep({ tab, moment, offerStatus, onGo }: { tab: TenderWorkspaceTab; moment: TenderWorkspaceMoment; offerStatus: TenderOfferStatus | null; onGo: (tab: TenderWorkspaceTab) => void }) {
+  if (tab === 'principal' || !offerStatus) return null;
+  const text = moment === 'decidir'
+    ? (offerStatus === 'cerrada_no_go' ? 'La licitación tiene NO GO.' : 'Siguiente paso: decidir si nos presentamos.')
+    : offerStatus === 'en_preparacion' ? 'Siguiente paso: preparar la oferta.'
+      : offerStatus === 'lista_para_presentar' ? 'Siguiente paso: presentar la oferta y registrarlo.'
+        : offerStatus === 'presentada' ? 'Siguiente paso: registrar el resultado de la adjudicación.' : 'Proceso terminado.';
+  const action = moment === 'decidir' ? (offerStatus === 'cerrada_no_go' ? null : 'Ir a Decidir') : (['en_preparacion', 'lista_para_presentar', 'presentada'].includes(offerStatus) ? 'Ir a Preparar' : null);
+  return <div className="tw-next" role="note"><span>{text}</span>{action && <button type="button" onClick={() => onGo('principal')}>{action} →</button>}</div>;
 }
 
 // --- Lista con detalle al lado ------------------------------------------------------------------------
@@ -199,6 +215,8 @@ export function TenderDecideView({ report, decisionPanel }: { report: Agt002Init
   </div>;
   const verdict = initialReportVerdict(report.recommendation.kind);
   return <div className="tw-decide">
+    {decisionPanel && <div className="tw-next" role="note"><span>Siguiente paso: revisar lo que puede tumbar la oferta y registrar la decisión GO / NO GO.</span>
+      <button type="button" onClick={() => document.getElementById('tender-decision')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Ir a la decisión →</button></div>}
     <section className={`tw-card tw-verdict-card tone-${verdict.tone}`}>
       <small>{decisionPanel ? 'Lo que recomienda Vig-IA' : 'Lo que recomendó Vig-IA antes del GO'}</small>
       <h3>{verdict.label}</h3>
@@ -362,7 +380,12 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
   const linkedRow = selected ? rowsByKey.get(selected.item_key) : undefined;
   const disabled = !selected || busy === selected.id || selected.applicability === 'no_aplica';
 
+  const urgent = groups.open[0] || null;
+  const urgentTitle = urgent ? parseDossierItemTitle(urgent.title) : null;
   return <div className="tw-prepare">
+    {urgent && urgentTitle && <div className="tw-next" role="note">
+      <span>Lo más urgente: <strong>{urgentTitle.label}</strong>{urgentTitle.rejection ? ' (causa rechazo)' : ''} · {formatDay(urgent.target_date)}{urgent.assignee_name ? ` · ${urgent.assignee_name}` : ' · sin responsable'}</span>
+      <button type="button" onClick={() => select(urgent)}>Abrir la tarea →</button></div>}
     <section className="tw-card tw-progress">
       <div className="tw-progress-figures">
         <div><strong>{readyCount} de {requiredItems.length}</strong><span>tareas listas</span></div>

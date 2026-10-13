@@ -137,7 +137,7 @@ assert.ok(order.every(position => position >= 0), 'Cabecera, pestañas y los tre
 assert.ok(order.every((position, index) => index === 0 || position > order[index - 1]), 'El orden debe ser cabecera → pestañas → principal → documentos → historial.');
 assert.match(tenderBlock, /moment === 'preparar'\s*\?\s*<TenderPrepareView/, 'Después del GO la pestaña principal es Preparar.');
 assert.match(tenderBlock, /<TenderDecideView report=\{tenderInitialReport\} decisionPanel=\{decisionPanel\}/, 'Antes del GO la pestaña principal es Decidir, con el registro GO/NO GO.');
-assert.match(tenderBlock, /\{moment === 'preparar' && decisionPanel\}/, 'Después del GO la decisión vigente (y el cambio a NO GO) vive en Historial.');
+assert.match(tenderBlock, /\{moment === 'preparar' && <details className="tw-fold tw-change-decision"><summary>Cambiar la decisión<\/summary>\{decisionPanel\}<\/details>\}/, 'Después del GO el cambio de decisión vive al final de Historial, plegado.');
 
 const reviewPanelStart = main.indexOf('function TenderDocumentReviewPanel(');
 const reviewPanelEnd = main.indexOf('\nfunction TenderOfferPreparationPanel', reviewPanelStart);
