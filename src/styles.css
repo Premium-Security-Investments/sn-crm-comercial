@@ -812,6 +812,5 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .company-record-grid .company-record-check input{width:auto;min-height:0}
 @media(max-width:768px){.company-base-counts,.company-base-pair,.company-base-indicators,.company-record-grid{grid-template-columns:repeat(1,minmax(0,1fr))}.company-base-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.company-record-grid label.wide{grid-column:auto}}
 /* AGT-002 cobertura territorial (Juan, 2026-10-13): marca del Radar y veredicto de participación del análisis. */
-.tender-coverage{white-space:normal;text-align:left}.tender-coverage-ok{background:#dcfce7;color:#166534}.tender-coverage-pending{background:#fef3c7;color:#92400e}.tender-coverage-partner{background:#fee2e2;color:#b91c1c}
 .initial-participation{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;border-radius:10px;padding:8px 12px;margin:6px 0;font-size:14px}
 .initial-participation-sola{background:#dcfce7;color:#166534}.initial-participation-union_temporal{background:#fef3c7;color:#92400e}.initial-participation-no_puede{background:#fee2e2;color:#b91c1c}
