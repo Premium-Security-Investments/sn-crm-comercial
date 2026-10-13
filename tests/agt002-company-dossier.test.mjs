@@ -48,7 +48,8 @@ const documents = [
 // conserva comportamiento anterior".
 {
   const dossier = buildAgt002CompanyDossier({ profile, documents });
-  assert.deepEqual(Object.keys(dossier), AGT002_CONTEXT_V2_FIELDS.company_dossier);
+  // Desde 2026-10-13 el dossier nuevo trae también las claves opcionales (sedes y alcance de la licencia).
+  assert.deepEqual(Object.keys(dossier), [...AGT002_CONTEXT_V2_FIELDS.company_dossier, ...AGT002_CONTEXT_V2_FIELDS.company_dossier_optional]);
   assert.equal(dossier.legal_name.value, 'Seguridad Nacional Ltda.');
   assert.equal(dossier.rup_status.value, 'Vigente y en firme');
   assert.deepEqual(dossier.unspsc_codes.value, ['92121504', '92121701']);
@@ -243,12 +244,14 @@ function makeQuery(rows, error, { single = false } = {}) {
   return builder;
 }
 
-function fakeDatabase({ profileRows = [], documentRows = [], registryRows = [], registryError = null } = {}) {
+function fakeDatabase({ profileRows = [], documentRows = [], registryRows = [], registryError = null, siteRows = [] } = {}) {
   return {
     from(table) {
       if (table === 'psi_company_procurement_profile') return makeQuery(profileRows, null);
       if (table === 'psi_company_procurement_documents') return makeQuery(documentRows, null);
       if (table === 'psi_agt002_company_evidence_registry') return makeQuery(registryRows, registryError);
+      // Sedes (migración 127, Juan 2026-10-13): opcional; la prueba de cobertura territorial cubre su lógica.
+      if (table === 'psi_company_sites') return makeQuery(siteRows, null);
       throw new Error(`unexpected table ${table}`);
     },
   };
