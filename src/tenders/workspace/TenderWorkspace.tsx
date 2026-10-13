@@ -10,6 +10,7 @@ import { initialReportCompanyFit, initialReportLabels, initialReportRecommendati
 import { groupDossierChecklist, parseDossierItemTitle } from '../dossierChecklistModel';
 import { TenderDossierArtifacts } from '../components/TenderDossierArtifacts';
 import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderOfferStatus, TenderRequest } from '../types';
+import { TenderVigiaChannel } from './TenderVigiaChannel';
 import { OFFER_STATUS_LABEL, POST_GO_STATUSES, countdownLabel, daysUntil, formatDay, formatDeadline, todayInBogota } from './tenderWorkspaceFormat';
 
 export type TenderWorkspaceTab = 'principal' | 'documentos' | 'historial';
@@ -375,6 +376,7 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
     </section>
 
     {channel}
+    {!channel && workspace.workbench_enabled && <TenderVigiaChannel opportunityId={opportunityId} request={request} />}
 
     {requiredArtifacts.length > 0 && <section className="tw-card">
       <small>Documentos que se firman y aprueban</small>

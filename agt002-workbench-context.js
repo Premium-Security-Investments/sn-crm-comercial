@@ -15,9 +15,11 @@ function dossierLink(link_kind, resource_id, label, source_ref) {
  * labelled/addressed. Snapshot and canonical run are always present; context version and
  * legal corpus version are appended only when the case actually has them.
  */
-function buildDossierLinks({ snapshot_id, canonical_run_id, context_version_id, legal_corpus_version_id }) {
+function buildDossierLinks({ snapshot_id, canonical_run_id, context_version_id, legal_corpus_version_id, snapshot_source }) {
   const links = [
-    dossierLink('snapshot', snapshot_id, 'Expediente documental analizado por Vig-IA', `psi_tender_document_snapshots:${snapshot_id}`),
+    snapshot_source === 'package'
+      ? dossierLink('snapshot', snapshot_id, 'Paquete documental analizado por Vig-IA', `psi_agt002_evidence_package_versions:${snapshot_id}`)
+      : dossierLink('snapshot', snapshot_id, 'Expediente documental analizado por Vig-IA', `psi_tender_document_snapshots:${snapshot_id}`),
     dossierLink('source', canonical_run_id, 'Análisis canónico Vig-IA', `psi_tender_analysis_runs:${canonical_run_id}`),
   ];
   if (context_version_id) {
@@ -101,7 +103,13 @@ function assertCanonicalRun(run) {
  * the minimum safe reference is returned rather than a fabricated one — never a placeholder UUID.
  */
 export function buildAgt002WorkbenchInitialReference(run) {
-  const source = assertCanonicalRun(run);
+  // Los análisis iniciales v2 (migración 102) guardan snapshot_id en null y se anclan al paquete
+  // documental congelado (package_version_id). Ese paquete es el expediente analizado: hace de
+  // ancla de la Mesa. Las corridas con snapshot siguen usando su snapshot.
+  const anchored = run && typeof run === 'object' && !Array.isArray(run) && !run.snapshot_id && run.package_version_id
+    ? { ...run, snapshot_id: run.package_version_id, snapshot_source: 'package' }
+    : run;
+  const source = assertCanonicalRun(anchored);
   const contextVersionId = source.context_version_id ?? null;
   const legalCorpusVersionId = source.legal_corpus_version_id ?? null;
   const coverage = source.result?.evidence_coverage;
@@ -133,6 +141,7 @@ export function buildAgt002WorkbenchInitialReference(run) {
   const links = continuity
     ? continuity.dossier_links
     : buildDossierLinks({
+      snapshot_source: source.snapshot_source,
       snapshot_id: source.snapshot_id,
       canonical_run_id: source.id,
       context_version_id: contextVersionId,
