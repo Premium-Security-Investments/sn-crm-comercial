@@ -64,6 +64,7 @@ import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunBy
 import { agt003PreparationDate } from '../agt003-copilot-input.js';
 import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
+import { loadCompanyBase, saveCompanyExperience, saveCompanySite } from '../company-base.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
 import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
@@ -2643,6 +2644,30 @@ app.post('/api/tender-company-document-process-upload', async (req, res) => {
       await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile));
     }
     res.status(201).json({ profile: await getTenderCompanyProfile(database), documents: await presentCompanyProcurementDocuments(database) });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/tender-company-base', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.json(await loadCompanyBase(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-sites', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    res.status(req.body?.id ? 200 : 201).json(await saveCompanySite(requireDb(), req.body, currentProfile.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-experience', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    res.status(req.body?.id ? 200 : 201).json(await saveCompanyExperience(requireDb(), req.body, currentProfile.id));
   } catch (error) { sendAuthError(res, error); }
 });
 
