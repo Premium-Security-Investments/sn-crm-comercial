@@ -23,7 +23,7 @@ test('archivar conserva trazabilidad y exige estado previo a presentar', () => {
   assert.match(migration, /en_preparacion.*lista_para_presentar/s);
   assert.match(rpc, /LICITACIONES_GO_NO_GO_APPROVE/);
   assert.match(rpc, /Debe indicar por qué no nos presentamos/);
-  assert.match(view, /Archivar: no nos presentamos/);
+  assert.match(view, /: 'Archivar'\}/, 'el botón dice solo Archivar; el motivo se pide al hacer clic (Juan, 2026-10-13)');
   assert.match(view, /window\.confirm/);
   assert.match(view, /window\.prompt/);
   assert.match(stage, /opportunity_archived/);
