@@ -158,8 +158,11 @@ test('127 en PGlite: siembra 1 sede y 8 contratos, es repetible y la reversa lim
   const migration = stripTopLevelTransactionWrapper(read(M127));
   await pg.exec(migration);
   await pg.exec(migration);
-  const sites = (await pg.query('select department, city, address, is_main, source from public.psi_company_sites')).rows;
-  assert.deepEqual(sites, [{ department: 'Risaralda', city: 'Pereira', address: 'Calle 10 # 15-64', is_main: true, source: 'RUP 17-jun-2026 (informe)' }]);
+  const sites = (await pg.query('select department, city, address, is_main, supervigilancia_authorization, source from public.psi_company_sites order by is_main desc, city')).rows;
+  assert.equal(sites.length, 7);
+  assert.deepEqual(sites[0], { department: 'Risaralda', city: 'Pereira', address: 'Calle 10 # 15-64', is_main: true, supervigilancia_authorization: null, source: 'RUP 17-jun-2026 (informe); Juan 2026-10-13' });
+  assert.deepEqual(sites.slice(1).map(row => row.city), ['Armenia', 'Bogotá', 'Cali', 'Cartago', 'Manizales', 'Medellín']);
+  assert.equal(sites.find(row => row.city === 'Armenia').supervigilancia_authorization, 'Pendiente de resolución de la SVSP');
   const experience = (await pg.query('select rup_number, value_smmlv::text, value_cop::text, source from public.psi_company_experience order by seed_key')).rows;
   assert.equal(experience.length, 8);
   assert.ok(experience.every(row => row.source === 'RUP 17-jun-2026 (informe)'));

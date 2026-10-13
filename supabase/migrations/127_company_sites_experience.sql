@@ -55,8 +55,15 @@ revoke all on table public.psi_company_experience from public, anon, authenticat
 grant select, insert, update on table public.psi_company_sites to service_role;
 grant select, insert, update on table public.psi_company_experience to service_role;
 
-insert into public.psi_company_sites (seed_key, department, city, address, is_main, source)
-values ('rup_2026_06_17_sede_principal', 'Risaralda', 'Pereira', 'Calle 10 # 15-64', true, 'RUP 17-jun-2026 (informe)')
+insert into public.psi_company_sites (seed_key, department, city, address, is_main, supervigilancia_authorization, notes, source)
+values
+  ('rup_2026_06_17_sede_principal', 'Risaralda', 'Pereira', 'Calle 10 # 15-64', true, null, 'Sede principal', 'RUP 17-jun-2026 (informe); Juan 2026-10-13'),
+  ('juan_2026_10_13_agencia_medellin', 'Antioquia', 'Medellín', null, false, null, 'Agencia', 'Juan 2026-10-13'),
+  ('juan_2026_10_13_agencia_bogota', 'Bogotá D.C.', 'Bogotá', null, false, null, 'Agencia', 'Juan 2026-10-13'),
+  ('juan_2026_10_13_agencia_cartago', 'Valle del Cauca', 'Cartago', null, false, null, 'Agencia', 'Juan 2026-10-13'),
+  ('juan_2026_10_13_agencia_manizales', 'Caldas', 'Manizales', null, false, null, 'Agencia', 'Juan 2026-10-13'),
+  ('juan_2026_10_13_agencia_cali', 'Valle del Cauca', 'Cali', null, false, null, 'Agencia', 'Juan 2026-10-13'),
+  ('juan_2026_10_13_agencia_armenia', 'Quindío', 'Armenia', null, false, 'Pendiente de resolución de la SVSP', 'Agencia', 'Juan 2026-10-13')
 on conflict (seed_key) do nothing;
 
 insert into public.psi_company_experience (seed_key, rup_number, contracting_party, contract_object, value_smmlv, value_cop, contract_year, source)
