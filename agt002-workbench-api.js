@@ -109,7 +109,7 @@ async function mapped(operation) {
  * filters by it) so no reference can ever carry another dossier's provenance. The mapped
  * error carries no identifiers.
  */
-async function resolveCanonicalReference(database, opportunityId, { dossierContext = false } = {}) {
+async function resolveCanonicalReference(database, opportunityId, { dossierContext = false, question = null } = {}) {
   const run = await getLatestCanonicalAgt002AnalysisRun(database, { opportunityId });
   if (!run) {
     throw apiError(
@@ -133,11 +133,59 @@ async function resolveCanonicalReference(database, opportunityId, { dossierConte
     );
   }
   if (!dossierContext) return reference;
-  return { ...reference, context_links: [...reference.context_links, ...await dossierTaskLinks(database, opportunityId, MAX_CONTEXT_LINKS - reference.context_links.length)] };
+  // Con pregunta, primero los fragmentos de los documentos que la responden; después las tareas.
+  const passages = question ? await documentPassageLinks(database, opportunityId, question, MAX_PASSAGE_LINKS) : [];
+  const base = [...reference.context_links, ...passages];
+  return { ...reference, context_links: [...base, ...await dossierTaskLinks(database, opportunityId, MAX_CONTEXT_LINKS - base.length)] };
 }
 
 // El contrato admite hasta 20 referencias por trabajo; las de origen (paquete, análisis) van primero.
 const MAX_CONTEXT_LINKS = 20;
+const MAX_PASSAGE_LINKS = 6;
+const STOPWORDS = new Set(('para pero como cual cuales cuando donde desde hasta hacia entre sobre esta este estos estas ese esos esas '
+  + 'tiene tienen tenemos hace hacer puede pueden podemos debe deben debemos favor quiero quisiera saber dime digame '
+  + 'nuestra nuestro nuestros nuestras ellos ellas usted ustedes algo algun alguna algunos todo todos toda todas '
+  + 'porque pues tambien solo cada otra otro otros otras mismo misma ante tras segun sino aqui alli entonces ahora '
+  + 'licitacion proceso vigia que hay son fue ser esta estan').split(/\s+/));
+const DATE_QUESTION = /\b(cu[aá]ndo|fecha|fechas|plazo|plazos|hasta|vence|vencen|cronograma|d[ií]a)\b/i;
+
+/** Términos de búsqueda de una pregunta: raíces de las palabras de 4 o más letras que no son de relleno, más "cronograma" si pregunta por fechas. */
+export function passageSearchTerms(question) {
+  const plain = String(question || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const words = [...new Set(plain.match(/[a-z0-9%]{4,}/g) || [])].filter(word => !STOPWORDS.has(word));
+  if (DATE_QUESTION.test(question || '')) words.push('cronograma');
+  // Raíz de 6 letras: "presentar" encuentra "presentación", "observación" encuentra "observaciones".
+  return [...new Set(words.map(word => (/^\d/.test(word) ? word : word.slice(0, 6))))].slice(0, 12);
+}
+
+/**
+ * Fragmentos de los documentos vigentes que mejor responden la pregunta (126). Sin esto Vig-IA solo veía
+ * el análisis, que puede tener huecos: el 2026-10-13 el análisis perdió el cronograma de la Resolución
+ * 00390. Un vínculo por documento (el contrato no repite recursos), con el nombre del documento como
+ * etiqueta para que Vig-IA cite la fuente. Si la búsqueda falla, la Mesa sigue sin fragmentos.
+ */
+export async function documentPassageLinks(database, opportunityId, question, room) {
+  const terms = passageSearchTerms(question);
+  if (room <= 0 || terms.length === 0 || typeof database?.rpc !== 'function') return [];
+  let rows;
+  try {
+    const { data, error } = await database.rpc('psi_search_tender_document_passages', { p_opportunity_id: opportunityId, p_terms: terms });
+    if (error || !Array.isArray(data)) return [];
+    rows = data;
+  } catch {
+    return [];
+  }
+  return rows
+    .filter(row => typeof row?.document_version_id === 'string' && /^[0-9a-f-]{36}$/i.test(row.document_version_id) && Number(row.score) >= 20)
+    .sort((a, b) => Number(b.score) - Number(a.score))
+    .slice(0, room)
+    .map(row => ({
+      kind: 'source',
+      id: row.document_version_id.toLowerCase(),
+      label: compact(`Documento del proceso: ${row.name || 'sin nombre'}`, 300),
+      source_ref: compact(`Fragmento: ${row.excerpt || ''}`, 1000),
+    }));
+}
 const REJECTION_MARK = /\s*[—-]\s*CAUSA RECHAZO\s*$/i;
 const TASK_STATUS = { pendiente: 'pendiente', en_progreso: 'en progreso', bloqueado: 'bloqueada', listo: 'lista' };
 const compact = (value, max) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -280,7 +328,7 @@ export async function postAgt002MessageApi(database, body, currentProfile, optio
     throw apiError('content o context_links no es válido.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
   }
   return mapped(async () => {
-    const reference = await resolveCanonicalReference(database, opportunityId, { dossierContext: options.dossierContext === true });
+    const reference = await resolveCanonicalReference(database, opportunityId, { dossierContext: options.dossierContext === true, question: body.content });
     const idempotencyKey = computeAgt002WorkbenchIdempotencyKey({
       threadId,
       originMessageId: messageId,
