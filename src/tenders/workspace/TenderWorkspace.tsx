@@ -128,6 +128,60 @@ function RequirementBrowser({ rows, selectedKey, onSelect }: { rows: Requirement
   </div>;
 }
 
+// --- Cronograma ---------------------------------------------------------------------------------------
+
+type ScheduleRow = { key: string; label: string; value: string; day: string; days: number | null; certainty: string };
+
+function scheduleRows(report: Agt002InitialReport): ScheduleRow[] {
+  return report.deadlines
+    .filter(deadline => deadline.value)
+    .map((deadline, index) => {
+      const value = deadline.value as string;
+      const day = value.slice(0, 10);
+      return { key: `${deadline.kind}-${value}-${index}`, label: deadline.label || initialReportLabels.deadlineKind(deadline.kind), value, day, days: daysUntil(day), certainty: deadline.certainty };
+    })
+    .sort((a, b) => a.value.localeCompare(b.value));
+}
+
+function scheduleWhen(days: number | null) {
+  if (days === null) return { text: '', tone: '' };
+  if (days < 0) return { text: 'Ya pasó', tone: 'is-past' };
+  if (days === 0) return { text: 'Hoy', tone: 'is-today' };
+  if (days === 1) return { text: 'Mañana', tone: 'is-soon' };
+  return { text: `Faltan ${days} días`, tone: days <= 3 ? 'is-soon' : '' };
+}
+
+/**
+ * Cronograma del proceso, completo y en orden (Juan, 2026-10-13: "tenemos que tener eso muy claro").
+ * Cada trámite con el nombre que le da el documento; el próximo se resalta. Los análisis anteriores al
+ * cronograma completo no traen nombres y pueden omitir filas: se avisa.
+ */
+export function TenderScheduleCard({ report, compact = false }: { report: Agt002InitialReport | null; compact?: boolean }) {
+  const [showPast, setShowPast] = useState(false);
+  if (!report) return null;
+  const rows = scheduleRows(report);
+  if (!rows.length) return null;
+  const complete = report.deadlines.some(deadline => Boolean(deadline.label));
+  const nextKey = rows.find(row => row.days !== null && row.days >= 0)?.key;
+  const past = rows.filter(row => row.days !== null && row.days < 0);
+  const visible = compact && !showPast ? rows.filter(row => !(row.days !== null && row.days < 0)) : rows;
+  return <section className="tw-card tw-schedule" aria-label="Cronograma del proceso">
+    <small>Cronograma del proceso</small>
+    {!complete && <p className="tw-schedule-warning">Este análisis es anterior al cronograma completo y puede omitir fechas. El cronograma oficial está en el acto de apertura y en SECOP II; Vig-IA lo busca en los documentos si se le pregunta.</p>}
+    <ol className="tw-schedule-list">
+      {visible.map(row => {
+        const when = scheduleWhen(row.days);
+        return <li key={row.key} className={`${when.tone} ${row.key === nextKey ? 'is-next' : ''}`}>
+          <span className="tw-schedule-date">{formatDeadline(row.value)}</span>
+          <span className="tw-schedule-label">{row.label}{row.certainty !== 'CONFIRMED' && <em> · {initialReportLabels.certainty(row.certainty)}, verificar</em>}</span>
+          <span className="tw-schedule-when">{row.key === nextKey ? `Próximo · ${when.text}` : when.text}</span>
+        </li>;
+      })}
+    </ol>
+    {compact && past.length > 0 && <button type="button" className="tw-link" onClick={() => setShowPast(value => !value)}>{showPast ? 'Ocultar las fechas que ya pasaron' : `Ver también las ${past.length} fechas que ya pasaron`}</button>}
+  </section>;
+}
+
 // --- Antes del GO: ¿nos presentamos? ------------------------------------------------------------------
 
 export function TenderDecideView({ report, decisionPanel }: { report: Agt002InitialReport | null; decisionPanel: ReactNode }) {
@@ -141,7 +195,6 @@ export function TenderDecideView({ report, decisionPanel }: { report: Agt002Init
     {decisionPanel}
   </div>;
   const verdict = initialReportVerdict(report.recommendation.kind);
-  const deadlines = report.deadlines.filter(deadline => deadline.value);
   return <div className="tw-decide">
     <section className={`tw-card tw-verdict-card tone-${verdict.tone}`}>
       <small>Lo que recomienda Vig-IA</small>
@@ -149,6 +202,8 @@ export function TenderDecideView({ report, decisionPanel }: { report: Agt002Init
       <p>{initialReportRecommendationText(report.recommendation.label)}</p>
       <p className="tw-muted">{initialReportCompanyFit(report)} · confianza {initialReportLabels.confidence(report.recommendation.confidence)} · {rows.length} requisitos revisados</p>
     </section>
+
+    <TenderScheduleCard report={report} />
 
     {decisive.length > 0 && <section className="tw-card">
       <small>Lo que puede tumbar la oferta</small>
@@ -168,10 +223,8 @@ export function TenderDecideView({ report, decisionPanel }: { report: Agt002Init
       <RequirementBrowser rows={rows} selectedKey={selectedKey} onSelect={setSelectedKey} />
     </section>
 
-    {(others.length > 0 || deadlines.length > 0) && <section className="tw-card tw-secondary">
-      {deadlines.length > 0 && <div><small>Fechas que tomó el análisis</small><p className="tw-muted">El análisis puede omitir fechas: el cronograma completo está en el acto de apertura y en SECOP II. Pregúntele a Vig-IA, que busca en los documentos.</p><ul className="tw-deadlines">{deadlines.map(deadline => <li key={`${deadline.kind}-${deadline.value}`}>
-        <strong>{initialReportLabels.deadlineKind(deadline.kind)}:</strong> {formatDeadline(deadline.value)}{deadline.certainty !== 'CONFIRMED' ? ` · ${initialReportLabels.certainty(deadline.certainty)}: verificar en el cronograma` : ''}
-      </li>)}</ul></div>}
+    {others.length > 0 && <section className="tw-card tw-secondary">
+
       {others.length > 0 && <details><summary>Otros riesgos que señala el análisis ({others.length})</summary>
         {others.map(note => <div className="tw-note" key={note.title}><strong>{note.severityLabel} · {note.title}</strong>{note.impact && <p>{note.impact}</p>}</div>)}
       </details>}
@@ -321,6 +374,8 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
       </div>}
     </section>
     {error && <div className="error" role="alert">{error}</div>}
+
+    <TenderScheduleCard report={report} compact />
 
     {!hasRequirementItems && report && <div className="notice tw-seed">
       <span>Esta licitación todavía no tiene en su lista los requisitos del análisis.</span>

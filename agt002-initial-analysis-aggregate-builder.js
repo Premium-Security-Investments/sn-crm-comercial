@@ -83,6 +83,8 @@ export function buildInitialSynthesisModelSchema({ documentIds, scope = 'A' }) {
     properties: { document_id: { enum: [...documentIds] }, locator: nonEmptyText },
   };
   if (scope === 'A') defs.recommendation.properties.kind = { enum: [...SCOPE_A_RECOMMENDATION_KINDS] };
+  // El modelo siempre nombra el trámite de cada fecha (el esquema guardado la admite opcional para los análisis viejos).
+  defs.deadline.required = [...new Set([...defs.deadline.required, 'label'])];
   const keys = scope === 'A_PLUS_B' ? INITIAL_MODEL_COMPANY_KEYS : INITIAL_MODEL_ANALYSIS_KEYS;
 
   const properties = {};

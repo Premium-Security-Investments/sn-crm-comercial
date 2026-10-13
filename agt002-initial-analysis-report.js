@@ -55,6 +55,7 @@ export function projectAgt002InitialReport(envelope, documentNames = new Map()) 
       value: typeof deadline.value === 'string' ? deadline.value : null,
       certainty: text(deadline.certainty),
       status: text(deadline.status),
+      label: typeof deadline.label === 'string' && deadline.label.trim() ? deadline.label.trim() : null,
     })),
     coverage: arr(envelope?.coverage).map(entry => ({
       block: text(entry.block),
