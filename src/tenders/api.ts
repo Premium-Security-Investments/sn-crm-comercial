@@ -78,6 +78,10 @@ export async function loadCompanyProfile<T>(request: TenderRequest): Promise<T> 
   return request<T>('/api/tender-company-profile');
 }
 
+export async function loadCompanyBase(request: TenderRequest): Promise<import('./companyBase').CompanyBasePayload> {
+  return request<import('./companyBase').CompanyBasePayload>('/api/tender-company-base');
+}
+
 export async function loadCompanyProcurementDocuments(request: TenderRequest): Promise<import('./types').TenderCompanyDocument[]> {
   return request<import('./types').TenderCompanyDocument[]>('/api/tender-company-documents');
 }

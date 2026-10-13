@@ -777,3 +777,37 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .tender-module-navigation .tender-company-button{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;font-weight:700;font-size:14px;border:1px solid #cbd5e1;background:#fff;color:#10213d;box-shadow:none}
 .tender-module-navigation .tender-company-button:hover{background:#f1f5f9}
 .tender-module-navigation .tender-company-button.is-active{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+/* Empresa (AGT-002, fase 1): estado, bloques, sedes, experiencia e indicadores con la paleta clara del CRM. */
+.company-base-view .panel{display:grid;gap:14px}
+.company-base-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.company-base-count{display:grid;gap:2px;justify-items:start;padding:12px 14px;border:1px solid #e2eaf5;border-radius:14px;background:#fff;color:#10213d;text-align:left;box-shadow:none;cursor:pointer}
+.company-base-count strong{font-size:28px;line-height:1.05}
+.company-base-count span{color:#526173;font-size:12px;font-weight:800}
+.company-base-count[aria-pressed="true"]{border-color:#174ea6;background:#f2f7ff;box-shadow:inset 0 0 0 1px #174ea6}
+.company-base-count.state-al_dia strong{color:#166534}.company-base-count.state-vence_pronto strong{color:#92400e}.company-base-count.state-vencido strong{color:#991b1b}.company-base-count.state-sin_verificar strong{color:#5b21b6}
+.company-base-facts{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0;color:#526173;font-size:13px}.company-base-facts strong{color:#10213d}
+.company-base-table table{min-width:760px;table-layout:auto}
+.company-base-table td strong{color:#10213d}
+.company-base-table td small{display:block;margin-top:3px;color:#64748b;line-height:1.35}
+.company-base-table .numeric{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.company-base-area th{position:static;background:#eef3fa;color:#40516b;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.company-block-state{display:inline-flex;align-items:center;padding:4px 8px;border-radius:8px;font-size:11px;font-weight:900;white-space:nowrap}
+.company-block-state.state-al_dia{background:#dcfce7;color:#166534}.company-block-state.state-vence_pronto{background:#fef3c7;color:#92400e}.company-block-state.state-vencido{background:#fee2e2;color:#991b1b}.company-block-state.state-sin_verificar{background:#ede9fe;color:#5b21b6}
+.company-block-expiry{display:block;font-size:13px}
+.company-base-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.company-base-indicators{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0}
+.company-base-indicators>div{padding:10px;border-radius:12px;background:#f8fbff}
+.company-base-indicators dt{color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.company-base-indicators dd{margin:4px 0 0;color:#10213d;font-size:16px;font-weight:900;font-variant-numeric:tabular-nums}
+.company-base-codes{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.company-base-codes li{display:flex;gap:10px;align-items:baseline;color:#40516b;font-size:13px}
+.company-base-codes code{color:#174ea6;font-weight:800}
+.company-profile-panel>summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;cursor:pointer;list-style:none}
+.company-profile-panel>summary::-webkit-details-marker{display:none}
+.company-profile-panel>summary h3{margin:0;color:#10213d;font-size:19px}
+.company-record-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.company-record-grid label{display:grid;gap:6px;color:#40516b;font-size:12px;font-weight:900}
+.company-record-grid label.wide{grid-column:1/-1}
+.company-record-grid .company-record-check{display:flex;align-items:center;gap:8px}
+.company-record-grid .company-record-check input{width:auto;min-height:0}
+@media(max-width:768px){.company-base-counts,.company-base-pair,.company-base-indicators,.company-record-grid{grid-template-columns:repeat(1,minmax(0,1fr))}.company-base-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.company-record-grid label.wide{grid-column:auto}}

@@ -12,8 +12,10 @@ for (const marker of [
   'loadCompanyProfile', 'createTenderConfigurationActions', 'Actualizar RUP', 'Información empresa',
   'Guardar cambios', 'Nombre legal', 'NIT', 'RUP / códigos UNSPSC',
   'Servicios autorizados', 'Licencia SuperVigilancia', 'Capacidad financiera',
-  'Experiencia habilitante', 'Información útil para cruzar contra pliegos',
+  'Experiencia habilitante',
 ]) assert.ok(configuration.includes(marker), `TenderConfigurationView missing marker: ${marker}`);
+// Empresa fase 1 (Juan, 2026-10-13): el informe pegado deja de mostrarse; el dato sigue en la base.
+assert.ok(!configuration.includes('Información útil para cruzar contra pliegos'), 'Empresa no debe mostrar el informe pegado.');
 for (const marker of [
   '/api/tender-company-profile', '/api/tender-company-profile-upload-url',
   '/api/tender-company-profile-process-upload', 'uploadToSignedUrl', '50 * 1024 * 1024', '50MB',
