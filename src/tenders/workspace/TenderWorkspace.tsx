@@ -169,8 +169,8 @@ export function TenderDecideView({ report, decisionPanel }: { report: Agt002Init
     </section>
 
     {(others.length > 0 || deadlines.length > 0) && <section className="tw-card tw-secondary">
-      {deadlines.length > 0 && <div><small>Fechas del proceso</small><ul className="tw-deadlines">{deadlines.map(deadline => <li key={`${deadline.kind}-${deadline.value}`}>
-        <strong>{initialReportLabels.deadlineKind(deadline.kind)}:</strong> {formatDeadline(deadline.value)}{deadline.certainty !== 'CONFIRMED' ? ` · ${initialReportLabels.certainty(deadline.certainty)}` : ''}
+      {deadlines.length > 0 && <div><small>Fechas que tomó el análisis</small><p className="tw-muted">El análisis puede omitir fechas: el cronograma completo está en el acto de apertura y en SECOP II. Pregúntele a Vig-IA, que busca en los documentos.</p><ul className="tw-deadlines">{deadlines.map(deadline => <li key={`${deadline.kind}-${deadline.value}`}>
+        <strong>{initialReportLabels.deadlineKind(deadline.kind)}:</strong> {formatDeadline(deadline.value)}{deadline.certainty !== 'CONFIRMED' ? ` · ${initialReportLabels.certainty(deadline.certainty)}: verificar en el cronograma` : ''}
       </li>)}</ul></div>}
       {others.length > 0 && <details><summary>Otros riesgos que señala el análisis ({others.length})</summary>
         {others.map(note => <div className="tw-note" key={note.title}><strong>{note.severityLabel} · {note.title}</strong>{note.impact && <p>{note.impact}</p>}</div>)}
