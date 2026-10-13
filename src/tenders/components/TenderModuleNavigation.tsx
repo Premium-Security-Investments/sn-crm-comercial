@@ -10,6 +10,10 @@ export function TenderModuleNavigation({ active, navigate, currentProfile }: {
   const canConfigure = canConfigureTenders(currentProfile);
   return <div className="tender-module-navigation">
     <TenderModuleTabs active={active} navigate={navigate} />
-    {canConfigure && <button type="button" className="link-button tender-configuration-link" onClick={() => navigate('#/tenders?view=configuracion')}>Configuración</button>}
+    {/* Información base de la empresa (Juan, 2026-10-13): botón visible "Empresa" en vez del enlace "Configuración". */}
+    {canConfigure && <button type="button" className={`secondary tender-configuration-link tender-company-button${active === 'configuracion' ? ' is-active' : ''}`} aria-pressed={active === 'configuracion'} onClick={() => navigate('#/tenders?view=configuracion')}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4M10 10h4M10 14h4M10 18h4" /></svg>
+      Empresa
+    </button>}
   </div>;
 }
