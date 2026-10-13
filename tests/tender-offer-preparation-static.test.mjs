@@ -34,7 +34,7 @@ for (const file of [server, api]) {
 
 // El expediente operativo titulado es uno solo: TenderDossierWorkspacePanel. main.tsx ya no monta
 // un segundo Panel "Expediente de Oferta" ni repite el plan legado que aquel representa de verdad.
-assert(dossierPanel.includes('<h2>Expediente de oferta</h2>'), 'El expediente operativo canónico debe conservar su título.');
+assert(dossierPanel.includes('<h2>Preparación de la oferta</h2>'), 'El expediente operativo canónico debe conservar su título.');
 assert(!src.includes('Expediente de Oferta'), 'main.tsx no puede montar un segundo expediente titulado.');
 assert(!src.includes('<Panel title="Expediente de Oferta">'), 'El panel de preparación no puede envolverse en un Panel titulado duplicado.');
 assert(!src.includes('Aprobar preparación de oferta'), 'La UI no puede conservar el control legacy de preparación.');

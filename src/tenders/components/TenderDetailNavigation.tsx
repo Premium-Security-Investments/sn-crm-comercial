@@ -10,7 +10,17 @@ type TenderDetailNavigationProps = {
   expectedCloseDate?: string | null;
   statusSnapshot: TenderDetailStatusSnapshot;
   onBack: () => void;
+  /** Pestaña visible: el contenedor muestra solo esa sección (las demás se ocultan con CSS, sin desmontarse). */
+  onActiveSectionChange?: (id: TenderDetailSectionId) => void;
+  /** Con pestañas solo hay una sección visible: la lectura por desplazamiento no aplica. */
+  tabbed?: boolean;
 };
+
+/** Evento para abrir una pestaña desde cualquier panel del detalle (p. ej. "Ver el análisis completo"). */
+export const TENDER_DETAIL_NAVIGATE_EVENT = 'tender-detail-navigate';
+export function requestTenderDetailSection(id: TenderDetailSectionId) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(TENDER_DETAIL_NAVIGATE_EVENT, { detail: id }));
+}
 
 export type TenderDetailValidity = { label: 'Vigente' | 'Vencida'; tone: 'success' | 'danger' };
 
@@ -191,7 +201,7 @@ export function openTenderDetailSection(
   focusTenderDetailSection(resolveElement(id));
 }
 
-export function TenderDetailNavigation({ entity, sourceUrl, observations, expectedCloseDate, statusSnapshot, onBack }: TenderDetailNavigationProps) {
+export function TenderDetailNavigation({ entity, sourceUrl, observations, expectedCloseDate, statusSnapshot, onBack, onActiveSectionChange, tabbed = false }: TenderDetailNavigationProps) {
   const officialUrl = resolveTenderSourceUrl(sourceUrl, observations);
   const validity = resolveTenderValidity(expectedCloseDate);
   const [activeSection, setActiveSection] = useState<TenderDetailSectionId>(() => typeof window === 'undefined' ? 'tender-summary' : resolveInitialTenderDetailSection(window.location.hash));
@@ -210,6 +220,20 @@ export function TenderDetailNavigation({ entity, sourceUrl, observations, expect
   }
   const navigationIntent = navigationIntentRef.current;
 
+  const onActiveSectionChangeRef = useRef(onActiveSectionChange);
+  onActiveSectionChangeRef.current = onActiveSectionChange;
+  useEffect(() => { onActiveSectionChangeRef.current?.(activeSection); }, [activeSection]);
+
+  useEffect(() => {
+    const onNavigateRequest = (event: Event) => {
+      const id = (event as CustomEvent<unknown>).detail;
+      const section = TENDER_DETAIL_SECTIONS.find(candidate => candidate.id === id);
+      if (section) navigationIntent.navigate(section.id);
+    };
+    window.addEventListener(TENDER_DETAIL_NAVIGATE_EVENT, onNavigateRequest);
+    return () => window.removeEventListener(TENDER_DETAIL_NAVIGATE_EVENT, onNavigateRequest);
+  }, [navigationIntent]);
+
   useEffect(() => {
     if (activeSection !== 'tender-summary') focusTenderDetailSection(document.getElementById(activeSection));
     // Only the mount-time hash/anchor deep link should steal focus; later section changes are user-driven via scrollTo.
@@ -217,7 +241,7 @@ export function TenderDetailNavigation({ entity, sourceUrl, observations, expect
   }, []);
 
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return;
+    if (tabbed || typeof IntersectionObserver === 'undefined') return;
     return createTenderDetailSectionObserver<Element>({
       resolveElement: id => document.getElementById(id),
       onVisibleSection: navigationIntent.onObservedSection,
@@ -226,7 +250,7 @@ export function TenderDetailNavigation({ entity, sourceUrl, observations, expect
         { rootMargin: '-20% 0px -65% 0px', threshold: [0, 0.1, 0.5] },
       ),
     });
-  }, [navigationIntent]);
+  }, [navigationIntent, tabbed]);
 
   useEffect(() => {
     const onLayoutChanged = () => navigationIntent.onLayoutChanged();

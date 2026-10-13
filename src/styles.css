@@ -736,3 +736,11 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .opportunity-facts{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}.opportunity-facts dd small{display:block;margin-top:2px;color:#64748b;font-weight:700}.opportunity-vigia{display:grid;gap:4px;padding:10px 12px;border-radius:12px;border:1px solid #dbe6f4;background:#fff}.opportunity-vigia strong{color:#10213d;font-size:14px}.opportunity-vigia strong small{color:#64748b;font-weight:700}.opportunity-vigia p{margin:0;color:#334155;font-size:13px;line-height:1.45}.opportunity-next{margin:0;color:#334155;font-size:13px}.opportunity-footnote{margin:0;font-size:12px}
 @media(max-width:900px){.tender-card-facts{grid-template-columns:1fr 1fr}.tender-compact-header{align-items:flex-start}}
 .tenders-page .row-actions>.button,.tenders-page .row-actions>button{font-family:inherit;justify-content:center;text-align:center}.tender-card-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.tender-card-facts>div:nth-child(3){grid-column:1/-1}.tender-card-facts>div:nth-child(-n+2) dd{white-space:nowrap}.tenders-page .tender-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}.tenders-page .tender-card-actions>*{width:100%;white-space:normal}.tenders-page .tender-card-actions>:last-child:nth-child(odd){grid-column:1/-1}
+/* Detalle de licitación por pestañas (2026-10-12): la cabecera queda fija y solo se ve la sección elegida. */
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-summary"]) .tender-opportunity-summary-panel,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-document-review"]) #tender-document-review,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-analysis"]) #tender-analysis,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-decision"]) #tender-decision,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-preparation"]) #tender-preparation,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-follow-up"]) #tender-follow-up{display:none}
+.tender-phase-change-notice details summary{cursor:pointer;font-weight:700;margin-top:4px}
