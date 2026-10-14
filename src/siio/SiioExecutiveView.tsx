@@ -10,6 +10,8 @@ import { FollowupCell, FollowupComposer } from './SiioFollowups';
 import { addDays, isOverdue, openFollowupFor, todayIso, useFollowups, type FollowupDraft } from './followups';
 import { privateReadings, tenderReadings, type CommercialSummary } from './commercialSummary';
 import { pulseReadings, type FinancialPulse } from './financialPulse';
+import { deriveOperationsSummary } from './operationsSummary';
+import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState } from './types';
 
@@ -105,6 +107,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     alerts: total.alerts + (row.alert ? 1 : 0),
   }), { people: 0, accrued: 0, deductions: 0, net: 0, alerts: 0 }), [payrollRows]);
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
+  const operations = useMemo(() => deriveOperationsSummary(payload.operationsMetrics || []), [payload.operationsMetrics]);
   const followups = useFollowups();
   const [followupDraft, setFollowupDraft] = useState<FollowupDraft | null>(null);
   const today = followups.data?.today || todayIso();
@@ -166,6 +169,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           </li>)}</ul>
         </> : null}
       </section>
+      <SiioOperationsAttention summary={operations} />
       {followups.data?.permissions.view ? <section className="siio-attention-section" aria-label="Seguimiento gerencial">
         <h3>Seguimiento gerencial</h3>
         <p className="siio-secondary">
@@ -204,6 +208,10 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     <DetailSection title="Licitaciones públicas · detalle" hint="Otras licitaciones activas e indicadores en construcción">
       <SiioTenderDetail summary={commercial} state={commercialState} />
+    </DetailSection>
+
+    <DetailSection title="Operaciones · detalle" hint="Cifras de SecurityOps por cliente y uso de la herramienta por regional">
+      <SiioOperationsDetail summary={operations} />
     </DetailSection>
 
     <DetailSection title="Nómina agregada" hint="Personas, devengado y neto por área, sin datos individuales">

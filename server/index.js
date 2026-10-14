@@ -2886,7 +2886,8 @@ const siioTables = {
   financialMetrics: 'siio_financial_metrics_current',
   commercialSignals: 'siio_commercial_signals',
   payrollAggregates: 'siio_payroll_aggregates',
-  strategicOpportunities: 'siio_strategic_opportunities'
+  strategicOpportunities: 'siio_strategic_opportunities',
+  operationsMetrics: 'siio_operations_metrics_current'
 };
 function siioFoundationUnavailable(error) {
   const message = String(error?.message || '').toLowerCase();
@@ -2906,6 +2907,19 @@ async function requiredSiioList(database, table, select = '*', order = 'created_
       unavailable.code = 'SIIO_FOUNDATION_UNAVAILABLE';
       throw unavailable;
     }
+    throw error;
+  }
+  return data || [];
+}
+// AGT-004: Operaciones es una fuente nueva (migración 128). Mientras la vista no exista o esté
+// vacía, la Torre muestra el bloque como pendiente en vez de caerse entera.
+async function optionalSiioOperationsMetrics(database) {
+  const { data, error } = await database.from(siioTables.operationsMetrics)
+    .select('period_month,client_key,client_label,regional,metric,value,data_quality,extracted_at')
+    .order('period_month', { ascending: true })
+    .limit(5000);
+  if (error) {
+    if (siioFoundationUnavailable(error)) return [];
     throw error;
   }
   return data || [];
@@ -2996,9 +3010,9 @@ app.get('/api/siio/bootstrap', async (req, res) => {
     const database = requireDb();
     if (profile.role === 'junta') {
       const boardReports = filterBoardReportsForProfile(profile, await requiredSiioList(database, siioTables.boardReports, '*', 'period_month'));
-      return res.json({ fronts: [], records: [], sources: [], decisions: [], boardReports, boardSections: [], financialMetrics: [], commercialSignals: [], payrollAggregates: [], strategicOpportunities: [], currentProfile: profile });
+      return res.json({ fronts: [], records: [], sources: [], decisions: [], boardReports, boardSections: [], financialMetrics: [], commercialSignals: [], payrollAggregates: [], strategicOpportunities: [], operationsMetrics: [], currentProfile: profile });
     }
-    const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities] = await Promise.all([
+    const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities, operationsMetrics] = await Promise.all([
       requiredSiioList(database, siioTables.fronts, '*', 'id'),
       requiredSiioList(database, siioTables.records, '*', 'updated_at'),
       requiredSiioList(database, siioTables.sources, '*', 'id'),
@@ -3008,10 +3022,11 @@ app.get('/api/siio/bootstrap', async (req, res) => {
       requiredSiioList(database, siioTables.financialMetrics, '*', 'period_month'),
       requiredSiioList(database, siioTables.commercialSignals, '*', 'period_month'),
       requiredSiioList(database, siioTables.payrollAggregates, 'id,period_month,area,total_people,total_accrued,total_deductions,net_total,variation_abs,alert,source_id,visibility_level', 'period_month'),
-      requiredSiioList(database, siioTables.strategicOpportunities, '*', 'id')
+      requiredSiioList(database, siioTables.strategicOpportunities, '*', 'id'),
+      optionalSiioOperationsMetrics(database)
     ]);
     const visiblePayrollAggregates = filterPayrollAggregatesForManagement(payrollAggregates);
-    res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates: visiblePayrollAggregates, strategicOpportunities, currentProfile: profile });
+    res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates: visiblePayrollAggregates, strategicOpportunities, operationsMetrics, currentProfile: profile });
   } catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/fronts', async (req, res) => {
