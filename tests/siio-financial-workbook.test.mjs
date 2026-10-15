@@ -30,9 +30,28 @@ function balanceSheet(withProvision = true, { detailOnly = false } = {}) {
   ]);
 }
 
-function workbookBuffer({ unknownSheet = false, detailOnly = false } = {}) {
+// Formato del balance desde agosto de 2026: un total suelto en la fila 1, encabezados en la fila 2 y
+// sólo cuentas auxiliares de 8 dígitos, sin los totales por clase, grupo, cuenta y subcuenta.
+function auxiliaryOnlyBalanceSheet() {
+  const auxiliaries = [
+    [11050500, 'CAJA GENERAL', 40, 30, 10, 60], [11100500, 'BANCOS', 0, 40, 0, 40],
+    [21050500, 'PROVEEDORES', 0, 0, 60, -60], [31050500, 'CAPITAL', 0, 0, 30, -30],
+    [41450500, 'SERVICIO DE VIGILANCIA', -40, 0, 10, -50], [72050500, 'MANO DE OBRA', 0, 40, 0, 40],
+  ];
+  return worksheet([
+    number('F1', 0), number('I1', 125),
+    inline('A2', 'Codigo Cuenta'), inline('B2', 'Nombre Cuenta'), inline('C2', '  Saldo Anterior'), inline('D2', '     Debito'), inline('E2', '    Credito'), inline('F2', '   Saldo Actual'),
+    ...auxiliaries.map(([account, name, previous, debit, credit, final], index) => {
+      const row = index + 3;
+      return [number(`A${row}`, account), inline(`B${row}`, name), number(`C${row}`, previous), number(`D${row}`, debit), number(`E${row}`, credit), number(`F${row}`, final)].join('');
+    }),
+  ]);
+}
+
+function workbookBuffer({ unknownSheet = false, detailOnly = false, auxiliaryOnly = false, resumControlRow = null } = {}) {
   const sheets = ['PYG NIIF', 'Comparat', 'Resum', '1 26', '2 26', '3 26', '4 26', '1 25', '2 25', '3 25', '4 25', 'NOMINA'];
   if (unknownSheet) sheets.push('Hoja inesperada');
+  if (auxiliaryOnly) sheets.push('Ingresos');
   const zip = new AdmZip();
   const workbook = `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((name, index) => `<sheet name="${name}" sheetId="${index + 1}"${name === 'NOMINA' ? ' state="hidden"' : ''} r:id="rId${index + 1}"/>`).join('')}</sheets></workbook>`;
   const relationships = `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join('')}</Relationships>`;
@@ -50,12 +69,15 @@ function workbookBuffer({ unknownSheet = false, detailOnly = false } = {}) {
   const content = new Map([
     ['PYG NIIF', worksheet([inline('C4', 'A: 30 DE ABRIL DE 2026 COMPARADO CON 30 DE ABRIL DE 2025'), number('B5', 1), inline('C15', 'TOTAL INGRESOS'), number('G15', 100), number('L15', 80), inline('C53', 'UTILIDAD DEL EJERCICIO'), number('G53', 15), number('L53', 11)])],
     ['Comparat', worksheet(comparatCells)],
-    ['Resum', worksheet([number('B43', 0)])],
-    ['1 26', balanceSheet(false)], ['2 26', balanceSheet()], ['3 26', balanceSheet()], ['4 26', balanceSheet(true, { detailOnly })],
+    ['Resum', worksheet(resumControlRow
+      ? [inline(`A${resumControlRow - 1}`, 'Utilidad neta'), number(`B${resumControlRow - 1}`, -15), number(`B${resumControlRow}`, 0), number('B43', 999)]
+      : [number('B43', 0)])],
+    ['1 26', balanceSheet(false)], ['2 26', balanceSheet()], ['3 26', balanceSheet()], ['4 26', auxiliaryOnly ? auxiliaryOnlyBalanceSheet() : balanceSheet(true, { detailOnly })],
     ['1 25', balanceSheet()], ['2 25', balanceSheet()], ['3 25', balanceSheet()], ['4 25', balanceSheet()],
     // XML deliberadamente inválido: demuestra que la hoja privada no se abre.
     ['NOMINA', '<contenido-privado-invalido'],
     ['Hoja inesperada', worksheet([])],
+    ['Ingresos', worksheet([inline('A1', 'PERIODO DE FACTURACIÓN')])],
   ]);
   sheets.forEach((name, index) => zip.addFile(`xl/worksheets/sheet${index + 1}.xml`, Buffer.from(content.get(name))));
   return zip.toBuffer();
@@ -103,4 +125,33 @@ test('no avisa cambio de estructura por el crecimiento normal de las hojas mensu
   const diff = compareFinancialStructures(base, relabeled);
   assert.equal(diff.changed, true);
   assert.deepEqual(diff.changes, [{ type: 'report_labels_changed', sheet: 'Comparat', added: ['GASTOS ADMINISTRATIVOS'], removed: ['GASTOS'] }]);
+});
+
+test('lee el balance con sólo cuentas auxiliares y reconstruye los niveles de resumen', () => {
+  const result = parseSiioFinancialWorkbook(workbookBuffer({ auxiliaryOnly: true }), metadata);
+  assert.equal(result.status, 'listo_revision');
+  const april = result.balance_lines.filter(line => line.source_sheet === '4 26');
+  assert.equal(april.filter(line => line.level === 8).length, 6);
+  const byAccount = new Map(april.map(line => [line.account, line]));
+  // Nombres tomados de los meses que sí traen los totales.
+  assert.equal(byAccount.get('1').account_name, 'Activo');
+  assert.deepEqual(['1', '11', '1105', '110505', '1110', '111005'].map(account => byAccount.get(account)?.final_balance), [100, 100, 60, 60, 40, 40]);
+  assert.equal(byAccount.get('41').final_balance, -50);
+  assert.equal(byAccount.get('72').debits, 40);
+  assert.equal(byAccount.get('1').source_row, 3);
+  assert.match(byAccount.get('1').original_formula, /suma de 2 cuenta/);
+  assert.equal(byAccount.get('11050500').original_formula, null);
+  const check = result.validations.find(item => item.rule === 'V1_BALANCE_CUADRA' && item.detail.startsWith('4 26'));
+  assert.equal(check.ok, true);
+  assert.deepEqual(result.structure.balance_headers.find(item => item.sheet === '4 26').headers, {
+    account: 'CODIGOCUENTA', name: 'NOMBRECUENTA', previous: 'SALDOANTERIOR', debit: 'DEBITO', credit: 'CREDITO', final: 'SALDOACTUAL',
+  });
+});
+
+test('ubica el control de Resum debajo de la utilidad neta aunque cambie de fila', () => {
+  const moved = parseSiioFinancialWorkbook(workbookBuffer({ resumControlRow: 41 }), metadata).validations.find(item => item.rule === 'V5_CONTROL_RESUM');
+  assert.equal(moved.ok, true);
+  assert.match(moved.detail, /Resum!B41/);
+  const legacy = parseSiioFinancialWorkbook(workbookBuffer(), metadata).validations.find(item => item.rule === 'V5_CONTROL_RESUM');
+  assert.match(legacy.detail, /Resum!B43/);
 });

@@ -5,7 +5,7 @@ import { DOMParser } from '@xmldom/xmldom';
 
 export const SIIO_FINANCIAL_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 export const SIIO_FINANCIAL_IMPORT_BUCKET = 'siio-financial-imports';
-export const SIIO_FINANCIAL_IMPORT_PARSER_VERSION = 'siio-financial-workbook@1';
+export const SIIO_FINANCIAL_IMPORT_PARSER_VERSION = 'siio-financial-workbook@2';
 
 const REQUIRED_SHEETS = Object.freeze(['PYG NIIF', 'Comparat', 'Resum']);
 const PRIVATE_SHEETS = new Set([
@@ -19,7 +19,7 @@ const KNOWN_NON_MONTHLY_SHEETS = new Set([
   'Divers', 'COMER', 'MONITOREO', 'VIGILANCIA', 'CRUCE NOTAS', 'base agencias',
   'PUBLICIDAD', 'Junta', 'AJUSTES', 'AJUSTES MES', 'UEN', 'Graf', 'Hoja1', 'Dotac',
   'Ingr Monit', 'Socios', 'Ingr S Pub', 'Ot Pag', 'Cuentas Dr.', 'CCuentas', 'BASE',
-  'Analis', 'Dr Mauricio', 'Amortiz', 'ENERGIA',
+  'Analis', 'Dr Mauricio', 'Amortiz', 'ENERGIA', 'Ingresos',
 ]);
 const MONTHLY_SHEET_PATTERN = /^(1[0-2]|[1-9]) (\d{2})$/;
 const REQUIRED_BALANCE_CLASSES = [1, 2, 3, 4];
@@ -194,8 +194,12 @@ function sheetRows(sheet) {
   return rows;
 }
 
+// Older balances put the headers in row 1; the export used since August 2026 leaves a loose total in
+// row 1 and the headers in row 2, so the first rows are scanned for the header row.
+const BALANCE_HEADER_SEARCH_ROWS = 3;
+
 function balanceHeaderColumns(sheet) {
-  const headers = sheetRows(sheet).get(1) || new Map();
+  const rows = sheetRows(sheet);
   const aliases = {
     account: new Set(['CUENTA', 'CODIGOCUENTA']),
     name: new Set(['NOMBRECUENTA', 'NOMBREDELACUENTA']),
@@ -204,13 +208,15 @@ function balanceHeaderColumns(sheet) {
     credit: new Set(['CREDITO', 'CREDITOS']),
     final: new Set(['SALDOACTUAL', 'SALDOFINAL']),
   };
-  const result = {};
-  for (const [column, item] of headers) {
-    const normalized = normalizeHeader(item.value);
-    for (const [key, accepted] of Object.entries(aliases)) if (accepted.has(normalized)) result[key] = column;
+  for (let headerRow = 1; headerRow <= BALANCE_HEADER_SEARCH_ROWS; headerRow += 1) {
+    const columns = {};
+    for (const [column, item] of rows.get(headerRow) || new Map()) {
+      const normalized = normalizeHeader(item.value);
+      for (const [key, accepted] of Object.entries(aliases)) if (accepted.has(normalized)) columns[key] = column;
+    }
+    if (Object.keys(columns).length === Object.keys(aliases).length) return { headerRow, columns };
   }
-  if (Object.keys(result).length !== Object.keys(aliases).length) throw new FinancialWorkbookError('balance_headers', `La hoja ${sheet.name} no tiene las seis columnas contables esperadas.`);
-  return result;
+  throw new FinancialWorkbookError('balance_headers', `La hoja ${sheet.name} no tiene las seis columnas contables esperadas.`);
 }
 
 function columnLetters(index) {
@@ -226,10 +232,10 @@ function hasFormulaConstant(value) {
 }
 
 function parseBalanceSheet(sheet, period) {
-  const columns = balanceHeaderColumns(sheet);
+  const { headerRow, columns } = balanceHeaderColumns(sheet);
   const rows = [];
   for (const [rowNumber, row] of sheetRows(sheet)) {
-    if (rowNumber === 1) continue;
+    if (rowNumber <= headerRow) continue;
     const accountValue = row.get(columns.account)?.value;
     const account = String(accountValue ?? '').trim().replace(/\.0+$/, '');
     if (!/^\d{1,8}$/.test(account)) continue;
@@ -256,7 +262,31 @@ function parseBalanceSheet(sheet, period) {
     });
   }
   if (!rows.length) throw new FinancialWorkbookError('empty_balance', `La hoja ${sheet.name} no contiene líneas contables.`);
-  return { headers: Object.fromEntries(Object.entries(columns).map(([key, value]) => [key, normalizeHeader(cell(sheet, columnLetters(value), 1))])), rows };
+  return { headers: Object.fromEntries(Object.entries(columns).map(([key, value]) => [key, normalizeHeader(cell(sheet, columnLetters(value), headerRow))])), rows };
+}
+
+const DERIVED_LEVELS = Object.freeze([1, 2, 4, 6]);
+
+// The export used since August 2026 lists only 8-digit auxiliary accounts. The class, group, account
+// and subaccount totals (levels 1, 2, 4 and 6) are rebuilt by adding their auxiliaries, so the balance
+// check and the monthly pulse read the same levels as in the older layout. Rebuilt lines point to the
+// first auxiliary row they add and say so in original_formula.
+function deriveSummaryLevels(rows, accountNames) {
+  if (!rows.length || rows.some(row => row.level !== 8)) return rows;
+  const totals = new Map();
+  for (const row of rows) {
+    for (const level of DERIVED_LEVELS) {
+      const account = row.account.slice(0, level);
+      const total = totals.get(account) || { ...row, account, level, account_name: accountNames.get(account) || '', previous_balance: 0, debits: 0, credits: 0, final_balance: 0, has_manual_adjustment: false, auxiliaries: 0 };
+      for (const key of ['previous_balance', 'debits', 'credits', 'final_balance']) total[key] += row[key] || 0;
+      total.has_manual_adjustment ||= row.has_manual_adjustment;
+      total.source_row = Math.min(total.source_row, row.source_row);
+      total.auxiliaries += 1;
+      totals.set(account, total);
+    }
+  }
+  const derived = [...totals.values()].map(({ auxiliaries, ...total }) => ({ ...total, original_formula: JSON.stringify({ derived: `suma de ${auxiliaries} cuenta(s) auxiliar(es)` }) }));
+  return [...derived, ...rows].sort((left, right) => left.account.localeCompare(right.account) || left.level - right.level);
 }
 
 function financialCategory(concept) {
@@ -299,6 +329,15 @@ function findPygNetIncome(pygSheet) {
   return null;
 }
 
+// The control (Resum utility + PYG NIIF utility) sits right below the "Utilidad neta" row, which moves
+// when Contabilidad adds or removes expense lines (B43 in April 2026, B41 in August 2026).
+const LEGACY_RESUM_CONTROL_CELL = 'B43';
+
+function findResumControlCell(resumSheet) {
+  for (const row of sheetRows(resumSheet).keys()) if (normalizeLabel(cell(resumSheet, 'A', row)) === 'UTILIDAD NETA') return `B${row + 1}`;
+  return LEGACY_RESUM_CONTROL_CELL;
+}
+
 function validation(rule, severity, ok, expected, obtained, detail) {
   return { rule, severity, ok, expected: expected == null ? null : String(expected), obtained: obtained == null ? null : String(obtained), difference: numeric(obtained) != null && numeric(expected) != null ? numeric(obtained) - numeric(expected) : null, detail };
 }
@@ -324,8 +363,9 @@ function calculateValidations({ parsedBalances, metrics, pygSheet, resumSheet, p
   validations.push(validation('V3_INGRESOS_POR_LINEA', 'bloqueante', Math.abs(lineTotal - byConcept.get('INGRESOS').value_current) <= 1000, byConcept.get('INGRESOS').value_current, lineTotal, 'Ingresos = Vigilancia + Monitoreo + Comercialización.'));
   const netIncome = findPygNetIncome(pygSheet);
   validations.push(validation('V5_UTILIDAD_REPORTADA', 'bloqueante', netIncome !== null && Math.abs(netIncome - byConcept.get('UTILIDAD NETA').value_current) <= 1000, byConcept.get('UTILIDAD NETA').value_current, netIncome, 'Comparat frente a PYG NIIF.'));
-  const resumControl = numeric(cell(resumSheet, 'B', 43));
-  validations.push(validation('V5_CONTROL_RESUM', 'bloqueante', resumControl !== null && Math.abs(resumControl) <= 1, 0, resumControl, 'Control de cuadre Resum!B43.'));
+  const resumControlCell = findResumControlCell(resumSheet);
+  const resumControl = numeric(resumSheet.cells.get(resumControlCell)?.value);
+  validations.push(validation('V5_CONTROL_RESUM', 'bloqueante', resumControl !== null && Math.abs(resumControl) <= 1, 0, resumControl, `Control de cuadre Resum!${resumControlCell}.`));
   const keyErrorCells = [];
   for (const item of metrics) {
     const row = Number(item.source_cell.slice(1));
@@ -335,7 +375,7 @@ function calculateValidations({ parsedBalances, metrics, pygSheet, resumSheet, p
     if (!['TOTAL INGRESOS', 'UTILIDAD DEL EJERCICIO'].includes(normalizeLabel(cell(pygSheet, 'C', row)))) continue;
     for (const column of ['G', 'L']) if (pygSheet.cells.get(`${column}${row}`)?.type === 'e') keyErrorCells.push(`${column}${row}`);
   }
-  if (resumSheet.cells.get('B43')?.type === 'e') keyErrorCells.push('B43');
+  if (resumSheet.cells.get(resumControlCell)?.type === 'e') keyErrorCells.push(resumControlCell);
   const keyErrors = keyErrorCells.length;
   validations.push(validation('V7_ERRORES_EN_CELDAS_CLAVE', 'bloqueante', keyErrors === 0, 0, keyErrors, 'Errores de Excel en PYG NIIF o Resum.'));
   const currentYearBalances = parsedBalances.filter(item => item.year === period.year);
@@ -398,6 +438,10 @@ export function parseSiioFinancialWorkbook(buffer, input = {}) {
     const parsedBalance = parseBalanceSheet(parsed.get(sheet.name), balancePeriod);
     parsedBalances.push({ ...parsedBalance, ...balancePeriod, sheetName: sheet.name, sheet: parsed.get(sheet.name) });
   }
+  // Names for rebuilt summary lines come from the months that still list them.
+  const accountNames = new Map();
+  for (const balance of parsedBalances) for (const row of balance.rows) if (row.level < 8 && row.account_name && !accountNames.has(row.account)) accountNames.set(row.account, row.account_name);
+  for (const balance of parsedBalances) balance.rows = deriveSummaryLevels(balance.rows, accountNames);
   const metrics = parseReportedMetrics(parsed.get('Comparat')).map(item => ({ ...item, period_month: input.periodMonth, _sheet: parsed.get('Comparat') }));
   const validations = calculateValidations({ parsedBalances, metrics, pygSheet: parsed.get('PYG NIIF'), resumSheet: parsed.get('Resum'), period, privateSheetCount: declarations.filter(sheet => PRIVATE_SHEETS.has(sheet.name)).length });
   const structure = structureSummary(declarations, parsedBalances, [parsed.get('PYG NIIF'), parsed.get('Comparat'), parsed.get('Resum')]);
