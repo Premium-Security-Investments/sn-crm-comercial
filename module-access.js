@@ -8,6 +8,9 @@ export const MODULE_PERMISSIONS = Object.freeze([
   freezePermission('modulo_oportunidades', 'Oportunidades', 'Acceso al módulo de Oportunidades.'),
   freezePermission('modulo_metas', 'Metas y Cumplimiento', 'Acceso al módulo de Metas y Cumplimiento.'),
   freezePermission('licitaciones', 'Licitaciones', 'Acceso al módulo de Licitaciones.'),
+  // Entrada a la aplicación de Programación de turnos (migración 130). Aplica a todos los roles: el detalle lo decide
+  // Programación en su pestaña Usuarios.
+  freezePermission('modulo_programacion', 'Programación', 'Entrada a la aplicación de Programación de turnos.'),
 
   freezePermission('modulo_usuarios', 'Usuarios y Permisos', 'Acceso al módulo de Usuarios y Permisos.'),
 ]);
@@ -27,12 +30,12 @@ const ROLE_MODULE_CEILINGS = new Map([
   ['admin', ALL_MODULES],
   ['gerencia', new Set(MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_usuarios'))],
   ['director', new Set(MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_usuarios' && code !== 'modulo_siio_gerencial'))],
-  ['comercial', new Set(['modulo_vig_ia', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones'])],
-  ['colaborador', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas'])],
-  ['junta', new Set(['modulo_siio_gerencial'])],
+  ['comercial', new Set(['modulo_vig_ia', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones', 'modulo_programacion'])],
+  ['colaborador', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'modulo_programacion'])],
+  ['junta', new Set(['modulo_siio_gerencial', 'modulo_programacion'])],
   // Directivo de solo consulta (asesor externo de junta): ve todo lo directivo, nunca administra metas, usuarios ni Vig-IA.
   // modulo_alertas_comerciales sólo habilita el motor de prioridades que alimenta el Dashboard comercial.
-  ['consulta', new Set(['modulo_siio_gerencial', 'modulo_dashboard_comercial', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'licitaciones'])],
+  ['consulta', new Set(['modulo_siio_gerencial', 'modulo_dashboard_comercial', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'licitaciones', 'modulo_programacion'])],
 ]);
 
 export function eligibleModulePermissions(role) {

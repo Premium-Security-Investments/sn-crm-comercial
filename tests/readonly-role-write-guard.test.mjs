@@ -14,7 +14,7 @@ process.env.VERCEL = '1';
 const server = await import('../server/index.js');
 for (const [key, value] of Object.entries(savedEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
 
-const READ_MODULES = ['modulo_siio_gerencial', 'modulo_dashboard_comercial', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'licitaciones'];
+const READ_MODULES = ['modulo_siio_gerencial', 'modulo_dashboard_comercial', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'licitaciones', 'modulo_programacion'];
 const consulta = (overrides = {}) => ({ id: 'consulta-1', role: 'consulta', active: true, identity_type: 'human', areas: [], permissions: READ_MODULES, ...overrides });
 const crm = { area_code: 'comercial', subarea_code: null, owner_id: 'otro-comercial' };
 const siioAssignment = { area_code: 'gerencia', subarea_code: null, assignee_id: 'alguien' };
@@ -107,7 +107,8 @@ test('las identidades técnicas no se editan como usuarios', () => {
 });
 
 test('navegación de consulta: Torre de Control, Dashboard, Oportunidades y Radar; nunca rutas de escritura', () => {
-  const profile = consulta();
+  // Sin Programación (esa pestaña se prueba en siio-usuarios-por-pestanas).
+  const profile = consulta({ permissions: READ_MODULES.filter(code => code !== 'modulo_programacion') });
   assert.deepEqual(getVisibleNavGroups(profile), [
     { title: 'Gerencia', items: [{ href: '#/siio', label: 'Torre de Control', page: 'siio' }] },
     { title: 'Comercial', items: [{ href: '#/dashboard2', label: 'Dashboard', page: 'dashboard2' }, { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' }] },
@@ -132,7 +133,8 @@ test('la interfaz oculta las acciones de escritura al rol de solo consulta', () 
   assert.match(detail, /\{!readOnly && (?:!decisionPending && )?<div id="opportunity-follow-up"[\s\S]{0,200}<FollowUpForm/);
   assert.match(main, /\{areaFor\(route\) === 'Comercial' && canAccessRoute\(currentProfile, 'new'\) && <NewOpportunityButton data=\{viewData\} \/>\}/);
   assert.match(main, /if \(!blocking\) return <button onClick=\{\(\) => go\('#\/new'\)\}>Nueva oportunidad<\/button>;/);
-  assert.match(main, /\['consulta','Directivo de solo consulta'\]/, 'el selector de rol de Usuarios incluye consulta');
+  // 2026-10-15: ya no hay selector de rol; solo consulta es una casilla del formulario por pestañas.
+  assert.match(main, /Solo consulta: ve, pero no cambia nada/, 'Usuarios ofrece solo consulta');
   assert.match(main, /consulta: 'Directivo de solo consulta'/);
   const siio = readFileSync(new URL('../src/siio/SiioDashboard.tsx', import.meta.url), 'utf8');
   assert.match(siio, /\{!readOnly && <button type="button" onClick=\{\(\) => setBoardDraftOpen\(true\)\}>Preparar informe de Junta<\/button>\}/);

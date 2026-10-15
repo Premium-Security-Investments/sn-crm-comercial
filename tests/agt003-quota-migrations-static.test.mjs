@@ -70,7 +70,7 @@ test('pantallas: "Perfil de uso de IA" en Usuarios y permisos y "Tope actual" co
   for (const text of ['Perfil de uso de IA', '<option value="">Sin perfil</option>', "disabled={aiProfiles.status !== 'ready'}", 'Los perfiles se crean en IT → Agentes → Perfiles de uso.', '/api/platform/ai-usage-profiles', 'se conserva el perfil guardado']) {
     assert.ok(users.includes(text), text);
   }
-  assert.ok(users.includes("aiProfiles.status === 'ready' ? { ...formWithoutAiProfile, ai_usage_profile: aiUsageProfile ?? null } : formWithoutAiProfile"), 'sin plataforma no se envía el campo');
+  assert.ok(users.includes("...(aiProfiles.status === 'ready' ? { ai_usage_profile: form.ai_usage_profile ?? null } : {})"), 'sin plataforma no se envía el campo');
   const usage = read('../src/platform/ModelUsageSection.tsx');
   assert.ok(usage.includes('Tope actual del equipo {limit.periodLabel}'));
   assert.ok(usage.includes('limitSourceText(item.limit)'));

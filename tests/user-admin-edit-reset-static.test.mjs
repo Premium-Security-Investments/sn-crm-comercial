@@ -21,8 +21,8 @@ assert(src.includes("/api/users?id="), 'Frontend debe editar usuarios con /api/u
 assert(src.includes('Editar') && src.includes('Cancelar edición'), 'Tabla de usuarios debe tener acción Editar y opción Cancelar edición.');
 assert(src.includes('editFormRef') && src.includes('scrollIntoView'), 'Al hacer clic en Editar, la vista debe llevar al usuario al formulario de edición.');
 assert(src.includes('Editar usuario ·'), 'El formulario debe mostrar claramente qué usuario se está editando.');
-assert(src.includes('Módulos y pestañas'), 'Usuarios y permisos debe exponer la asignación explícita de módulos.');
-assert(src.includes('permissions: user.permissions || []'), 'Editar debe conservar exactamente los módulos persistidos del usuario.');
+assert(src.includes('Pestañas que puede abrir'), 'Usuarios y permisos debe exponer la asignación explícita de pestañas.');
+assert(src.includes('access: tabsFromProfile(user)'), 'Editar debe partir de las pestañas que hoy tiene el usuario.');
 
 for (const file of [server, api]) {
   assert(file.includes("app.patch('/api/users'"), 'API debe exponer PATCH /api/users?id=... para editar usuarios existentes.');

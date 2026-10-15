@@ -5,9 +5,9 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { formatDateOnly } from './dateOnly';
 import { bogotaToday, followUpDateToIso } from './followUpDate';
-import { canAccessRoute, canManageUsers as navCanManageUsers, canUseCommercialView, canViewTenders as navCanViewTenders, canWriteGoals, effectiveNavProfile, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, isReadOnlyProfile, preferredLandingRoute, type NavViewMode } from './navPermissions';
+import { canAccessRoute, canManageUsers as navCanManageUsers, canUseCommercialView, canViewTenders as navCanViewTenders, canWriteGoals, effectiveNavProfile, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, isReadOnlyProfile, preferredLandingRoute, PROGRAMACION_APP_URL, type NavViewMode } from './navPermissions';
 import { api, apiDownload, exitTenderOpportunity, setApiAccessToken } from './apiClient';
-import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
+import { isModulePermissionEligible } from '../module-access.js';
 import { agt002UnavailableMessage } from '../agt002-reanalysis-error-message.js';
 import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
@@ -35,7 +35,8 @@ import { useAgt002InitialReport } from './tenders/useAgt002InitialReport';
 import { agt002GovernedRunStateFromReanalysisJob, type Agt002GovernedAnalysisRunState } from './tenders/governedWorksetSelection';
 import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
-import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
+import { type AccessAssignment } from './profileAccessState';
+import { EMPTY_TABS_ACCESS, PROFILE_TEMPLATES, PROGRAMACION_PERMISSION, accessFromTabs, tabsFromProfile, tabsSummary, templateAccess, type DerivedAccess, type ProfileTabCode, type TabsAccess } from '../profile-tabs.js';
 import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
 import { VigiaOpportunityCopilot } from './vigia/VigiaOpportunityCopilot';
@@ -59,7 +60,7 @@ type Stage = { code: string; name: string; stage_order: number; close_probabilit
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
 type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
 type AccessCatalog = { areas: Array<{ code: string; name: string }>; subareas: Array<{ code: string; area_code: string; name: string }>; permissions: Array<{ code: string; name: string; description: string }> };
-type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; can_own_opportunities?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[]; ai_usage_profile?: string | null; programacion_access?: ProgramacionAccessValue | null };
+type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; can_own_opportunities?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[]; ai_usage_profile?: string | null; last_seen_at?: string | null };
 type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
@@ -82,8 +83,7 @@ type SalesGoal = { id?: string; user_id: string | null; period_month: string; se
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number; leadAnalysesToday?: string[] };
 type ProgramacionAccessValue = { rol: string; ciudad_id: string | null };
 type ProgramacionAccessState = { status: 'loading' | 'ready' | 'error'; ciudades: { id: string; nombre: string }[]; byProfile: Record<string, ProgramacionAccessValue> };
-const PROGRAMACION_ROLE_OPTIONS: [string, string][] = [['coordinador', 'Coordinador (programa y aprueba novedades)'], ['nomina', 'Nómina (cierre y liquidación)'], ['consulta', 'Consulta (solo ver)'], ['admin', 'Administrador (todo, incluso accesos)']];
-type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; areas: AccessAssignment[]; permissions: string[]; can_edit_customer_segment?: boolean; can_own_opportunities?: boolean; ai_usage_profile?: string | null; programacion_access?: ProgramacionAccessValue | null };
+const PROGRAMACION_ROLE_LABELS: Record<string, string> = { coordinador: 'Coordinador', nomina: 'Nómina', consulta: 'Consulta', admin: 'Administrador' };
 type AiUsageProfileOption = { profile_id: string; display_name: string };
 type TenderSection = 'hacer' | 'revisar' | 'prioridad_baja';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
@@ -119,7 +119,6 @@ function canManageUsers(profile?: Profile | null) { return navCanManageUsers(pro
 function canManageGoals(profile?: Profile | null) { return canWriteGoals(profile); }
 function canViewTenders(profile?: Profile | null) { return navCanViewTenders(profile); }
 // "Puede tener oportunidades propias (vista comercial)" sólo aplica a roles humanos no comerciales y nunca a solo consulta.
-function canOwnOpportunitiesApplies(role: string) { return role !== 'comercial' && !isReadOnlyRole(role); }
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
 const PRODUCT_OPERATIONAL_UNITS: Record<string, string> = {
@@ -553,7 +552,7 @@ function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfi
   };
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
-    {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}><NavIcon href={item.href} /><span>{item.label}</span></a>)}</div>)}
+    {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => item.external ? <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer"><NavIcon href={item.href} /><span>{item.label}</span></a> : <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}><NavIcon href={item.href} /><span>{item.label}</span></a>)}</div>)}
   </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
@@ -574,8 +573,21 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
   if (route.page === 'agents') return <AgentsView key={route.id || 'agents'} agentId={route.id} />;
+  const hasOpportunities = isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'));
+  // Quien sólo entra a Programación (u otra pestaña sin Oportunidades) no ve el tablero comercial.
+  if (!hasOpportunities) return <NoCommercialHome profile={data.currentProfile} />;
   if (data.currentProfile.role === 'comercial') return <CommercialPersonalDashboard data={data} refresh={refresh} />;
   return <Home data={data} />;
+}
+function NoCommercialHome({ profile }: { profile: Profile }) {
+  const programacion = isModulePermissionEligible(profile.role, 'modulo_programacion') && Boolean(profile.permissions?.includes('modulo_programacion'));
+  return <section className="stack">
+    <Panel title={`Hola, ${profile.full_name.split(' ')[0] || profile.full_name}`}>
+      {programacion
+        ? <p>Su trabajo está en Programación de turnos. <a href={PROGRAMACION_APP_URL} target="_blank" rel="noopener noreferrer">Abrir Programación</a></p>
+        : <p>Use el menú de la izquierda para entrar a sus secciones. Si no ve ninguna, pida acceso a quien administra el SIIO.</p>}
+    </Panel>
+  </section>;
 }
 function stageTone(stageCode?: string | null) {
   if (stageCode === 'aprobado') return 'success';
@@ -3095,22 +3107,24 @@ function monthName(month: number) {
 }
 
 
+// Usuarios y permisos por pestañas (Juan Botero, 2026-10-15): se marcan las pestañas del menú que la persona abre y las
+// opciones dentro de ellas. El rol, los permisos y las áreas se calculan con profile-tabs.js; el servidor valida igual.
+type UserForm = { full_name: string; microsoft_email: string; active: boolean; password: string; send_invite: boolean; access: TabsAccess; ai_usage_profile: string | null; legacy_role: string | null; existing_areas: AccessAssignment[] };
+const LEGACY_ROLE_NOTE: Record<string, string> = { director: 'Directivo', junta: 'Junta', colaborador: 'Colaborador' };
 function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
-  const [catalog, setCatalog] = useState<AccessCatalog>({ areas: [], subareas: [], permissions: [] });
   const [catalogStatus, setCatalogStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement | null>(null);
-  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, areas: [], permissions: [], can_edit_customer_segment: false, can_own_opportunities: false, ai_usage_profile: null, programacion_access: null };
+  const emptyUserForm: UserForm = { full_name: '', microsoft_email: '', active: true, password: '', send_invite: true, access: { ...EMPTY_TABS_ACCESS, tabs: [] }, ai_usage_profile: null, legacy_role: null, existing_areas: [] };
   // "Perfil de uso de IA": perfiles no archivados de la Plataforma de Agentes. Si la plataforma no responde, el campo se
   // deshabilita y no se envía (el servidor conserva el valor guardado).
   const [aiProfiles, setAiProfiles] = useState<{ status: 'loading' | 'ready' | 'error'; profiles: AiUsageProfileOption[] }>({ status: 'loading', profiles: [] });
-  // "Acceso a Programación" (AGT-006): rol y ciudad en la aplicación de Programación. Si la lista no carga, el campo se
-  // deshabilita y no se envía (el servidor conserva lo guardado).
+  // Estado en Programación (solo lectura aquí): qué rol y ciudad le dio Programación en su pestaña Usuarios.
   const [progAccess, setProgAccess] = useState<ProgramacionAccessState>({ status: 'loading', ciudades: [], byProfile: {} });
-  const [form, setForm] = useState<UserPayload>(emptyUserForm);
-  const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'role'|'area'|'permission'|'segment'|'status'>>({ key: 'name', direction: 'asc' });
+  const [form, setForm] = useState<UserForm>(emptyUserForm);
+  const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'tabs'|'seen'|'status'>>({ key: 'name', direction: 'asc' });
   const load = async () => {
     setCatalogStatus('loading');
     try {
@@ -3120,85 +3134,110 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
       api<{ ciudades: { id: string; nombre: string }[]; accesos: (ProgramacionAccessValue & { profile_id: string; activo: boolean })[] }>('/api/programacion-access')
         .then(result => setProgAccess({ status: 'ready', ciudades: Array.isArray(result?.ciudades) ? result.ciudades : [], byProfile: Object.fromEntries((Array.isArray(result?.accesos) ? result.accesos : []).filter(item => item.activo).map(item => [item.profile_id, { rol: item.rol, ciudad_id: item.ciudad_id ?? null }])) }))
         .catch(() => setProgAccess({ status: 'error', ciudades: [], byProfile: {} }));
-      const [nextUsers, nextCatalog] = await Promise.all([api<Profile[]>('/api/users'), api<AccessCatalog>('/api/access-catalog')]);
+      const [nextUsers] = await Promise.all([api<Profile[]>('/api/users'), api<AccessCatalog>('/api/access-catalog')]);
       setUsers(nextUsers);
-      setCatalog(nextCatalog);
       setCatalogStatus('ready');
     } catch (error) {
       setCatalogStatus('error');
       throw error;
     }
   };
-  const areaLabel = (code: string) => catalog.areas.find(area => area.code === code)?.name || formatDisplayName(code);
-  const scopeLabel = (assignment: AccessAssignment) => assignment.subarea_code ? `${areaLabel(assignment.area_code)} · ${catalog.subareas.find(subarea => subarea.code === assignment.subarea_code)?.name || formatDisplayName(assignment.subarea_code)}` : `Toda ${areaLabel(assignment.area_code)}`;
-  const scopesLabel = (user: Profile) => user.areas?.length ? user.areas.map(scopeLabel).join(', ') : 'Sin alcance asignado';
-  const permissionsLabel = (user: Profile) => user.permissions?.length ? user.permissions.map(permission => catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission)).join(', ') : 'Sin permisos';
-  const moduleNamesByCode = new Map(MODULE_PERMISSIONS.map(module => [module.code, module.name]));
-  const modulePermissions = catalog.permissions
-    .filter(permission => MODULE_PERMISSION_CODES.includes(permission.code))
-    .map(permission => ({ ...permission, name: moduleNamesByCode.get(permission.code) || permission.name }));
-  const eligibleModuleCodes = new Set(eligibleModulePermissions(form.role));
-  const eligibleModules = modulePermissions.filter(permission => eligibleModuleCodes.has(permission.code));
-  const selectedModuleNames = form.permissions
-    .filter(permission => MODULE_PERMISSION_CODES.includes(permission))
-    .map(permission => moduleNamesByCode.get(permission) || catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission));
-  const capabilityNamesByCode = new Map(CAPABILITY_PERMISSIONS.map(capability => [capability.code, capability.name]));
-  const capabilityPermissions = catalog.permissions
-    .filter(permission => CAPABILITY_PERMISSION_CODES.includes(permission.code))
-    .map(permission => ({ ...permission, name: capabilityNamesByCode.get(permission.code) || permission.name }));
-  const selectedCapabilityNames = form.permissions
-    .filter(permission => CAPABILITY_PERMISSION_CODES.includes(permission))
-    .map(permission => capabilityNamesByCode.get(permission) || catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission));
+  const access = form.access;
+  const has = (tab: ProfileTabCode) => access.tabs.includes(tab);
+  const setAccess = (patch: Partial<TabsAccess>) => setForm(current => ({ ...current, access: { ...current.access, ...patch } }));
+  const toggleTab = (tab: ProfileTabCode, checked: boolean) => setForm(current => {
+    const tabs = checked ? [...new Set([...current.access.tabs, tab])] : current.access.tabs.filter(item => item !== tab);
+    return { ...current, access: { ...current.access, tabs } };
+  });
+  const applyTemplate = (code: string) => { const next = templateAccess(code); if (next) setForm(current => ({ ...current, access: next })); };
+  let derived: DerivedAccess | null = null;
+  let derivedError = '';
+  try { derived = accessFromTabs(access, form.existing_areas); } catch (error) { derivedError = error instanceof Error ? error.message : String(error); }
+  const programacionLabel = (user: Profile) => {
+    if (!user.permissions?.includes(PROGRAMACION_PERMISSION)) return '—';
+    const value = progAccess.byProfile[user.id];
+    if (!value) return progAccess.status === 'ready' ? 'Pendiente de configurar en Programación' : 'Sí';
+    const rol = PROGRAMACION_ROLE_LABELS[value.rol] || value.rol;
+    const ciudad = value.ciudad_id ? (progAccess.ciudades.find(item => item.id === value.ciudad_id)?.nombre || value.ciudad_id) : 'todas las ciudades';
+    return `${rol} · ${ciudad}`;
+  };
+  const tabsLabel = (user: Profile) => { const names = tabsSummary(tabsFromProfile(user)); const readOnly = isReadOnlyRole(user.role) || user.role === 'junta'; return (names.length ? names.join(', ') : 'Ninguna') + (readOnly ? ' · solo consulta' : ''); };
+  const seenLabel = (user: Profile) => user.last_seen_at ? formatDateOnly(user.last_seen_at.slice(0, 10)) : 'Nunca';
   const sortedUsers = [...users].sort((a,b) => {
-    const value = (u: Profile) => usersSortConfig.key === 'name' ? u.full_name : usersSortConfig.key === 'email' ? u.microsoft_email : usersSortConfig.key === 'role' ? u.role : usersSortConfig.key === 'area' ? scopesLabel(u) : usersSortConfig.key === 'permission' ? permissionsLabel(u) : usersSortConfig.key === 'segment' ? (u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado') : (u.active ? 'Activo' : 'Inactivo');
+    const value = (u: Profile) => usersSortConfig.key === 'name' ? u.full_name : usersSortConfig.key === 'email' ? u.microsoft_email : usersSortConfig.key === 'tabs' ? tabsLabel(u) : usersSortConfig.key === 'seen' ? (u.last_seen_at || '') : (u.active ? 'Activo' : 'Inactivo');
     return compareSortValues(value(a), value(b), usersSortConfig.direction);
   });
-  const programacionAccessLabel = (value: ProgramacionAccessValue) => `${(PROGRAMACION_ROLE_OPTIONS.find(([code]) => code === value.rol)?.[1] || value.rol).split(' (')[0]} · ${value.ciudad_id ? (progAccess.ciudades.find(ciudad => ciudad.id === value.ciudad_id)?.nombre || value.ciudad_id) : 'todas las ciudades'}`;
   const sortUsersBy = (key: typeof usersSortConfig.key) => setUsersSortConfig(current => nextSort(current, key));
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">No tiene autorización para administrar usuarios.</div>;
-  const setAreaScope = (areaCode: string, subareaCode: string | null, checked: boolean) =>
-    setForm(current => ({ ...current, areas: setAreaScopeSelection(current.areas, areaCode, subareaCode, checked) }));
-  const changeRole = (role: string) => setForm(current => ({ ...current, role, can_own_opportunities: canOwnOpportunitiesApplies(role) && !!current.can_own_opportunities, permissions: current.permissions.filter(permission => (!MODULE_PERMISSION_CODES.includes(permission) || isModulePermissionEligible(role, permission)) && (!isReadOnlyRole(role) || MODULE_PERMISSION_CODES.includes(permission))) }));
-  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, areas: user.areas || [], permissions: user.permissions || [], can_edit_customer_segment: !!user.can_edit_customer_segment, can_own_opportunities: !!user.can_own_opportunities, ai_usage_profile: user.ai_usage_profile ?? null, programacion_access: progAccess.byProfile[user.id] ?? null }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
+  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, active: user.active, password: '', send_invite: false, access: tabsFromProfile(user), ai_usage_profile: user.ai_usage_profile ?? null, legacy_role: LEGACY_ROLE_NOTE[user.role] ? user.role : null, existing_areas: user.areas || [] }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
   const cancelEdit = () => { setEditingUserId(null); setForm(emptyUserForm); setStatus(''); };
-  const submit = async (e: React.FormEvent) => { e.preventDefault(); if (catalogStatus !== 'ready') { setStatus('El catálogo de acceso no está disponible. Espera a que cargue o actualiza la página.'); return; } setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…'); try { const { ai_usage_profile: aiUsageProfile, programacion_access: programacionAccess, ...formWithoutAiProfile } = form; const payloadBase = aiProfiles.status === 'ready' ? { ...formWithoutAiProfile, ai_usage_profile: aiUsageProfile ?? null } : formWithoutAiProfile; const payload = progAccess.status === 'ready' ? { ...payloadBase, programacion_access: programacionAccess ?? null } : payloadBase; const saved = await api<(Profile & { invited?: boolean; access_link?: string | null; auth_warning?: string | null; ai_usage_profile_warning?: string | null; programacion_access_warning?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(payload) }); const wasEditing = !!editingUserId; setForm(emptyUserForm); setEditingUserId(null); await load(); const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Correo de acceso enviado.' : ''); const warning = `${saved.auth_warning ? ` ${saved.auth_warning}` : ''}${saved.ai_usage_profile_warning ? ` ${saved.ai_usage_profile_warning}` : ''}${saved.programacion_access_warning ? ` ${saved.programacion_access_warning}` : ''}`; setStatus(wasEditing ? `Usuario actualizado.${mailStatus}${warning}` : `Usuario/perfil guardado.${mailStatus}${warning}`); } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); } };
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (catalogStatus !== 'ready') { setStatus('El catálogo de acceso no está disponible. Espera a que cargue o actualiza la página.'); return; }
+    if (!derived) { setStatus(derivedError || 'Revise las pestañas marcadas.'); return; }
+    setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…');
+    try {
+      const payload = {
+        full_name: form.full_name, microsoft_email: form.microsoft_email, active: form.active, password: form.password, send_invite: form.send_invite,
+        role: derived.role, areas: derived.areas, permissions: derived.permissions,
+        can_edit_customer_segment: derived.can_edit_customer_segment, can_own_opportunities: derived.can_own_opportunities,
+        ...(aiProfiles.status === 'ready' ? { ai_usage_profile: form.ai_usage_profile ?? null } : {}),
+      };
+      const saved = await api<(Profile & { invited?: boolean; access_link?: string | null; auth_warning?: string | null; ai_usage_profile_warning?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+      const wasEditing = !!editingUserId;
+      setForm(emptyUserForm); setEditingUserId(null); await load();
+      const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Correo de acceso enviado.' : '');
+      const warning = `${saved.auth_warning ? ` ${saved.auth_warning}` : ''}${saved.ai_usage_profile_warning ? ` ${saved.ai_usage_profile_warning}` : ''}`;
+      setStatus(wasEditing ? `Usuario actualizado.${mailStatus}${warning}` : `Usuario guardado.${mailStatus}${warning}`);
+    } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); }
+  };
+  const tabBox = (tab: ProfileTabCode, label: string, disabled = false) => <label className="checkline"><input type="checkbox" disabled={disabled} checked={has(tab)} onChange={e => toggleTab(tab, e.target.checked)}/> {label}</label>;
+  const readOnly = access.read_only;
+  const menuSummary = derived ? tabsSummary(derived.access) : [];
   return <section className="stack">
-    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Quién entra y qué puede ver</h2><p>Admin y Gerencia tienen alcance global. Las asignaciones se conservan como contexto administrativo y el servidor siempre valida el acceso efectivo.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
+    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Quién entra y qué puede abrir</h2><p>Marque las pestañas del menú que la persona puede abrir. Lo que no marque no le aparece.</p></div><div className="hero-facts"><div><small>Personas</small><strong>{users.length}</strong></div><div><small>Activas</small><strong>{users.filter(user => user.active).length}</strong></div></div></section>
     <div ref={editFormRef} className="users-edit-anchor"><Panel title={editingUserId ? `Editar usuario · ${form.full_name || form.microsoft_email}` : 'Crear usuario'}><form className="form gridform" onSubmit={submit}>
-      <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Correo electrónico<input type="email" required disabled={Boolean(editingUserId)} title={editingUserId ? 'El email identifica de forma inmutable al usuario; cree un perfil nuevo para otra identidad.' : undefined} value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
-      <label>Rol<Select value={form.role} onChange={changeRole} options={[['comercial','Comercial'],['colaborador','Colaborador'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin'],['junta','Junta'],['consulta','Directivo de solo consulta']]} empty="Rol"/></label>{isReadOnlyRole(form.role) && <p className="muted wide">Solo consulta: ve Dashboard comercial, oportunidades, SIIO y Licitaciones, sin poder crear, editar, decidir ni administrar nada.</p>}
-      <fieldset className="access-scope wide"><legend>Alcance por áreas y subáreas</legend><p>Selecciona toda un área o subáreas específicas. Puedes combinar varias áreas.</p><div className="access-scope-grid">{catalog.areas.map(area => { const whole = form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === null); const subareas = catalog.subareas.filter(subarea => subarea.area_code === area.code); return <fieldset className="access-area-card" key={area.code}><legend>{area.name}</legend><label className="checkline"><input type="checkbox" checked={whole} onChange={e => setAreaScope(area.code, null, e.target.checked)}/> Toda el área</label>{subareas.map(subarea => <label className="checkline access-subarea" key={subarea.code}><input type="checkbox" disabled={whole} checked={form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === subarea.code)} onChange={e => setAreaScope(area.code, subarea.code, e.target.checked)}/>{subarea.name}</label>)}</fieldset>; })}</div></fieldset>
-      <fieldset className="access-permission wide">
-        <legend>Módulos y pestañas</legend>
-        <p>Selecciona solo los módulos que esta persona debe ver y abrir. El rol define el techo, pero no asigna módulos automáticamente.</p>
-        {catalogStatus === 'loading' && <p className="muted">Cargando catálogo de módulos…</p>}
-        {catalogStatus === 'error' && <p className="error">No fue posible cargar el catálogo de módulos. Actualiza la página antes de guardar.</p>}
-        {catalogStatus === 'ready' && eligibleModules.map(permission => <label className="checkline" key={permission.code}>
-          <input type="checkbox" checked={form.permissions.includes(permission.code)} onChange={e => setForm(current => ({
-            ...current,
-            permissions: e.target.checked ? [...new Set([...current.permissions, permission.code])] : current.permissions.filter(item => item !== permission.code),
-          }))}/>
-          {permission.name}<small>{permission.description}</small>
-        </label>)}
-        {catalogStatus === 'ready' && eligibleModules.length === 0 && <p className="muted">Este rol no tiene módulos elegibles.</p>}
-      </fieldset>
-      <fieldset className="access-permission wide">
-        <legend>Capacidades operativas exclusivas</legend>
-        <p>Asigna solo a la persona responsable. Estas capacidades no crean módulos ni navegación adicional.</p>
-        {catalogStatus === 'ready' && isReadOnlyRole(form.role) && <p className="muted">El perfil de solo consulta no recibe capacidades operativas.</p>}
-        {catalogStatus === 'ready' && !isReadOnlyRole(form.role) && capabilityPermissions.map(permission => <label className="checkline" key={permission.code}>
-          <input type="checkbox" checked={form.permissions.includes(permission.code)} onChange={e => setForm(current => ({
-            ...current,
-            permissions: e.target.checked ? [...new Set([...current.permissions, permission.code])] : current.permissions.filter(item => item !== permission.code),
-          }))}/>
-          {permission.name}<small>{permission.description}</small>
-        </label>)}
-      </fieldset>
-      <aside className="access-permission wide"><strong>Resumen antes de guardar</strong><small>Módulos seleccionados: {selectedModuleNames.length ? selectedModuleNames.join(', ') : 'Ninguno'}</small><small>Capacidades exclusivas: {selectedCapabilityNames.length ? selectedCapabilityNames.join(', ') : 'Ninguna'}</small><small>Áreas asignadas: {form.areas.length ? form.areas.map(scopeLabel).join(', ') : 'Sin alcance asignado'}</small></aside>
-      <label className="checkline"><input type="checkbox" checked={!!form.can_edit_customer_segment} onChange={e=>setForm({...form, can_edit_customer_segment:e.target.checked})}/> Habilitar edición posterior de Cliente Nuevo / Cliente Actual</label>{canOwnOpportunitiesApplies(form.role) && <label className="checkline"><input type="checkbox" checked={!!form.can_own_opportunities} onChange={e=>setForm({...form, can_own_opportunities:e.target.checked})}/> Puede tener oportunidades propias (vista comercial)</label>}<label>Perfil de uso de IA<select value={form.ai_usage_profile || ''} disabled={aiProfiles.status !== 'ready'} onChange={e=>setForm({...form, ai_usage_profile: e.target.value || null})}><option value="">Sin perfil</option>{form.ai_usage_profile && !aiProfiles.profiles.some(profile => profile.profile_id === form.ai_usage_profile) && <option value={form.ai_usage_profile}>{aiProfiles.status === 'ready' ? `${form.ai_usage_profile} (archivado o inexistente)` : form.ai_usage_profile}</option>}{aiProfiles.profiles.map(profile => <option key={profile.profile_id} value={profile.profile_id}>{profile.display_name}</option>)}</select><small className="muted">{aiProfiles.status === 'error' ? 'La plataforma de agentes no responde: el campo queda deshabilitado y se conserva el perfil guardado.' : aiProfiles.status === 'loading' ? 'Cargando perfiles de uso…' : 'Define el cupo de IA por persona. Los perfiles se crean en IT → Agentes → Perfiles de uso.'}</small></label><label>Acceso a Programación<select value={form.programacion_access?.rol || ''} disabled={progAccess.status !== 'ready'} onChange={e=>setForm({...form, programacion_access: e.target.value ? { rol: e.target.value, ciudad_id: form.programacion_access?.ciudad_id ?? null } : null})}><option value="">Sin acceso</option>{PROGRAMACION_ROLE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><small className="muted">{progAccess.status === 'error' ? 'El acceso a Programación no está disponible: el campo queda deshabilitado y se conserva lo guardado.' : progAccess.status === 'loading' ? 'Cargando accesos de Programación…' : 'Aplicación de programación de turnos (AGT-006).'}</small></label>{form.programacion_access && <label>Ciudad en Programación<select value={form.programacion_access.ciudad_id || ''} disabled={progAccess.status !== 'ready'} onChange={e=>setForm({...form, programacion_access: { rol: form.programacion_access?.rol || 'consulta', ciudad_id: e.target.value || null }})}><option value="">Todas las ciudades</option>{progAccess.ciudades.map(ciudad => <option key={ciudad.id} value={ciudad.id}>{ciudad.nombre}</option>)}</select></label>}{!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}<label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label><label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> {editingUserId ? 'Enviar correo seguro para definir o restablecer acceso' : 'Enviar correo de invitación para activar el acceso'}</label><div className="formactions"><button disabled={catalogStatus !== 'ready'}>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
+      <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Correo electrónico<input type="email" required disabled={Boolean(editingUserId)} title={editingUserId ? 'El correo identifica de forma inmutable al usuario; cree un perfil nuevo para otra identidad.' : undefined} value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
+      <label className="wide">Empezar desde una plantilla<select value="" onChange={e => { applyTemplate(e.target.value); }}><option value="">Elegir plantilla (opcional)…</option>{PROFILE_TEMPLATES.map(template => <option key={template.code} value={template.code}>{template.label}</option>)}</select><small className="muted">La plantilla solo marca casillas; después puede ajustarlas.</small></label>
+      {form.legacy_role && <p className="muted wide">Esta persona tiene un perfil antiguo ({LEGACY_ROLE_NOTE[form.legacy_role]}). Al guardar queda exactamente con lo que esté marcado abajo.</p>}
+      <fieldset className="access-scope wide"><legend>Pestañas que puede abrir</legend><p>Al marcar una pestaña con opciones, estas aparecen debajo.</p>{catalogStatus === 'loading' && <p className="muted">Cargando catálogo de accesos…</p>}{catalogStatus === 'error' && <p className="error">No fue posible cargar el catálogo de accesos. Actualiza la página antes de guardar.</p>}<div className="access-scope-grid">
+        <fieldset className="access-area-card"><legend>Gerencia</legend>{tabBox('torre', 'Torre de Control')}</fieldset>
+        <fieldset className="access-area-card"><legend>Comercial</legend>
+          {tabBox('dashboard', 'Dashboard')}
+          {tabBox('oportunidades', 'Oportunidades')}
+          {has('oportunidades') && <div className="access-subarea">
+            <label className="checkline"><input type="radio" name="opportunity_scope" disabled={readOnly} checked={access.opportunity_scope === 'propias' && !readOnly} onChange={() => setAccess({ opportunity_scope: 'propias' })}/> Ve solo las suyas (con Mi día)</label>
+            <label className="checkline"><input type="radio" name="opportunity_scope" checked={access.opportunity_scope === 'todas' || readOnly} onChange={() => setAccess({ opportunity_scope: 'todas' })}/> Ve todas las de la empresa</label>
+            {access.opportunity_scope === 'todas' && !readOnly && <label className="checkline"><input type="checkbox" checked={access.owns_opportunities} onChange={e => setAccess({ owns_opportunities: e.target.checked })}/> También vende: puede tener oportunidades a su nombre</label>}
+            {!readOnly && <label className="checkline"><input type="checkbox" checked={access.copilot} onChange={e => setAccess({ copilot: e.target.checked })}/> Vig-IA Comercial · Próximo seguimiento</label>}
+            {!readOnly && <label className="checkline"><input type="checkbox" checked={access.edit_segment} onChange={e => setAccess({ edit_segment: e.target.checked })}/> Puede cambiar Cliente Nuevo / Cliente Actual</label>}
+            {!readOnly && <label className="checkline"><input type="checkbox" checked={access.delete_opportunities} onChange={e => setAccess({ delete_opportunities: e.target.checked })}/> Aprueba eliminar oportunidades</label>}
+          </div>}
+          {tabBox('metas', 'Cargar metas', readOnly)}
+        </fieldset>
+        <fieldset className="access-area-card"><legend>Licitaciones</legend>
+          {tabBox('licitaciones', 'Licitaciones (Radar, Seguimiento y Oportunidades)')}
+          {has('licitaciones') && !readOnly && <div className="access-subarea">
+            <label className="checkline"><input type="checkbox" checked={access.tender_custody} onChange={e => setAccess({ tender_custody: e.target.checked })}/> Custodia: convierte detecciones y aprueba reglas</label>
+            <label className="checkline"><input type="checkbox" checked={access.tender_company} onChange={e => setAccess({ tender_company: e.target.checked })}/> Mantiene la información de la empresa</label>
+          </div>}
+        </fieldset>
+        <fieldset className="access-area-card"><legend>Programación</legend>
+          {tabBox('programacion', 'Programación de turnos')}
+          <small className="muted">Da la entrada. Qué hace y en qué ciudades se define dentro de Programación, en su pestaña Usuarios.</small>
+        </fieldset>
+        <fieldset className="access-area-card"><legend>IT · Administración</legend>{tabBox('usuarios', 'Usuarios y permisos · Agentes', readOnly)}<small className="muted">Administra el SIIO: da accesos a otras personas.</small></fieldset>
+      </div></fieldset>
+      <label className="checkline wide"><input type="checkbox" checked={readOnly} onChange={e => setAccess(e.target.checked ? { read_only: true, tabs: access.tabs.filter(tab => tab !== 'metas' && tab !== 'usuarios'), copilot: false, edit_segment: false, delete_opportunities: false, tender_custody: false, tender_company: false, owns_opportunities: false, opportunity_scope: 'todas' } : { read_only: false })}/> Solo consulta: ve, pero no cambia nada</label>
+      <label>Perfil de uso de IA<select value={form.ai_usage_profile || ''} disabled={aiProfiles.status !== 'ready'} onChange={e=>setForm({...form, ai_usage_profile: e.target.value || null})}><option value="">Sin perfil</option>{form.ai_usage_profile && !aiProfiles.profiles.some(profile => profile.profile_id === form.ai_usage_profile) && <option value={form.ai_usage_profile}>{aiProfiles.status === 'ready' ? `${form.ai_usage_profile} (archivado o inexistente)` : form.ai_usage_profile}</option>}{aiProfiles.profiles.map(profile => <option key={profile.profile_id} value={profile.profile_id}>{profile.display_name}</option>)}</select><small className="muted">{aiProfiles.status === 'error' ? 'La plataforma de agentes no responde: el campo queda deshabilitado y se conserva el perfil guardado.' : aiProfiles.status === 'loading' ? 'Cargando perfiles de uso…' : 'Define el cupo de IA por persona. Los perfiles se crean en IT → Agentes → Perfiles de uso.'}</small></label>
+      <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
+      {!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}
+      <label className="checkline"><input type="checkbox" checked={form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> {editingUserId ? 'Enviar correo seguro para definir o restablecer acceso' : 'Enviar correo de invitación para activar el acceso'}</label>
+      <aside className="access-permission wide"><strong>Verá en su menú</strong><small>{derivedError || (menuSummary.length ? menuSummary.join(' · ') : 'Ninguna pestaña')}{readOnly ? ' — solo consulta' : ''}</small></aside>
+      <div className="formactions"><button disabled={catalogStatus !== 'ready'}>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
     </form></Panel></div>
-    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Áreas" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Permisos" sortKey="permission" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td><Badge>{roleLabel(p.role)}</Badge></td><td>{scopesLabel(p)}</td><td>{permissionsLabel(p)}{progAccess.byProfile[p.id] && <div className="muted">Programación: {programacionAccessLabel(progAccess.byProfile[p.id])}</div>}</td><td>{p.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
+    <Panel title="Personas"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Correo" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Pestañas" sortKey="tabs" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Programación</th><SortableTh label="Último ingreso" sortKey="seen" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td>{tabsLabel(p)}</td><td>{programacionLabel(p)}</td><td>{seenLabel(p)}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }
 
