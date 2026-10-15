@@ -6494,6 +6494,24 @@ app.get('/api/access-catalog', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+// Usuarios y permisos → "Acceso a Programación": ciudades y accesos actuales (migración 129). Si la función no existe
+// o la base no responde → 503 neutro y la pantalla deshabilita el campo sin perder lo guardado.
+app.get('/api/programacion-access', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+    res.set('Cache-Control', 'no-store');
+    const { data, error } = await requireDb().rpc('psi_admin_programacion_access_list');
+    if (error || !data || !Array.isArray(data.ciudades) || !Array.isArray(data.accesos)) {
+      if (error) console.warn('programacion_access_list_unavailable', { code: error.code || null });
+      return res.status(503).json({ error: 'El acceso a Programación no está disponible.' });
+    }
+    res.json({ ciudades: data.ciudades, accesos: data.accesos });
+  } catch (error) { sendAuthError(res, error); }
+});
+app.all('/api/programacion-access', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
 app.get('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -6731,6 +6749,31 @@ async function persistAiUsageProfile(database, { profileId, value, currentValue,
     : 'No se pudo guardar el perfil de uso de IA; el resto del usuario sí quedó guardado.';
 }
 
+// "Acceso a Programación" de cada persona (migración 129; AGT-006): rol y ciudad en la aplicación de Programación
+// (esquema `programacion`). Sólo se toca si el cuerpo trae `programacion_access` ({ rol, ciudad_id } o null = sin
+// acceso); la pantalla no lo envía si la lista no cargó, y así no se pierde lo guardado.
+const PROGRAMACION_ROLES = new Set(['admin', 'coordinador', 'nomina', 'consulta']);
+function programacionAccessFromBody(body) {
+  if (!body || !Object.hasOwn(body, 'programacion_access')) return { present: false, value: null };
+  const raw = body.programacion_access;
+  if (raw === null) return { present: true, value: null };
+  const rol = typeof raw?.rol === 'string' ? raw.rol : '';
+  const ciudad = raw?.ciudad_id == null || raw.ciudad_id === '' ? null : raw.ciudad_id;
+  if (!PROGRAMACION_ROLES.has(rol) || (ciudad !== null && (typeof ciudad !== 'string' || !/^[a-z][a-z0-9_-]{0,40}$/.test(ciudad)))) {
+    const error = new Error('El acceso a Programación no es válido.'); error.status = 400; error.code = 'PROGRAMACION_ACCESS_INVALID'; throw error;
+  }
+  return { present: true, value: { rol, ciudad_id: ciudad } };
+}
+// Devuelve un aviso (texto) si no se pudo guardar; nunca deshace el resto del guardado del usuario.
+async function persistProgramacionAccess(database, { profileId, value, actorProfileId }) {
+  const { error } = await database.rpc('psi_admin_set_programacion_access', { p_profile_id: profileId, p_rol: value?.rol ?? null, p_ciudad_id: value?.ciudad_id ?? null, p_actor_profile_id: actorProfileId });
+  if (!error) return null;
+  console.warn('profile_programacion_access_not_saved', { code: error.code || null });
+  if (error.code === 'PGRST202' || error.code === '42883') return 'El acceso a Programación todavía no se puede guardar (falta habilitarlo en la base de datos).';
+  if (error.code === '42501' && /último administrador/.test(error.message || '')) return 'No se cambió el acceso a Programación: es el último administrador de Programación.';
+  return 'No se pudo guardar el acceso a Programación; el resto del usuario sí quedó guardado.';
+}
+
 app.post('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -6751,6 +6794,7 @@ app.post('/api/users', async (req, res) => {
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
     const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
     const aiUsageProfile = aiUsageProfileFromBody(req.body);
+    const programacionAccess = programacionAccessFromBody(req.body);
     const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
     const userMetadata = { full_name, role };
     let beforeProfile;
@@ -6770,8 +6814,9 @@ app.post('/api/users', async (req, res) => {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
     const aiUsageProfileWarning = aiUsageProfile.present ? await persistAiUsageProfile(database, { profileId: row.id, value: aiUsageProfile.value, currentValue: storedAiUsageProfile, actorProfileId: currentProfile.id }) : null;
+    const programacionAccessWarning = programacionAccess.present ? await persistProgramacionAccess(database, { profileId: row.id, value: programacionAccess.value, actorProfileId: currentProfile.id }) : null;
     const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
-    res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning, ai_usage_profile_warning: aiUsageProfileWarning });
+    res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning, ai_usage_profile_warning: aiUsageProfileWarning, programacion_access_warning: programacionAccessWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -6807,6 +6852,7 @@ app.patch('/api/users', async (req, res) => {
     const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
     assertNoAdminSelfLockout(currentProfile, { profileId: id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
     const aiUsageProfile = aiUsageProfileFromBody(req.body);
+    const programacionAccess = programacionAccessFromBody(req.body);
     const storedAiUsageProfile = aiUsageProfile.present ? await readStoredAiUsageProfile(database, id) : null;
     if (aiUsageProfile.present) await assertAiUsageProfileSelectable(aiUsageProfile.value, storedAiUsageProfile);
     const beforeAccess = await readProfileAccess(database, id);
@@ -6820,8 +6866,9 @@ app.patch('/api/users', async (req, res) => {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
     const aiUsageProfileWarning = aiUsageProfile.present ? await persistAiUsageProfile(database, { profileId: row.id, value: aiUsageProfile.value, currentValue: storedAiUsageProfile, actorProfileId: currentProfile.id }) : null;
+    const programacionAccessWarning = programacionAccess.present ? await persistProgramacionAccess(database, { profileId: row.id, value: programacionAccess.value, actorProfileId: currentProfile.id }) : null;
     const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
-    res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning, ai_usage_profile_warning: aiUsageProfileWarning });
+    res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning, ai_usage_profile_warning: aiUsageProfileWarning, programacion_access_warning: programacionAccessWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 
