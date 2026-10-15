@@ -140,3 +140,20 @@ test('la vista muestra pérdidas con el signo antes del peso', async () => {
   assert.match(view, /rounded < 0 \? '−' : ''\}\$\$\{Math\.abs\(rounded\)/);
   assert.match(view, /corte \{cutoffLabel\(pulse\.source\.cutoff_date\)\}/);
 });
+
+test('un mes del año anterior que no cuadra de forma material no se usa como comparación', async () => {
+  const { pulseReadings, pulseBreakdown, isComparable } = await loadModule('../src/siio/financialPulse.ts');
+  // Marzo 2025 ingresa 80 y su balance no cuadra por 30 (más del 1%): agosto 2025 en el libro real.
+  const material = buildFinancialPulse(lines, { periodMonth: '2026-03-01', monthsWithBalanceDifference: [{ year: 2025, month: 3, difference: 30_000_000 }] });
+  const march2025 = material.months.find(item => item.year === 2025 && item.month === 3);
+  assert.equal(isComparable(march2025), false);
+  const readings = pulseReadings(material);
+  assert.ok(readings.some(text => /^Marzo de 2025 no se usa como comparación/.test(text)), readings.join('\n'));
+  assert.ok(readings.some(text => /^Frente a febrero, los ingresos de marzo de 2026 subieron 0%/.test(text)), readings.join('\n'));
+  assert.ok(!readings.some(text => /87,5%|Los costos representan/.test(text)), 'sin comparaciones contra el mes que no cuadra');
+  assert.equal(pulseBreakdown(material).find(row => row.key === 'mano_obra').sameMonthLastYear, null);
+  // Una diferencia pequeña (julio 2026: $1 M sobre $13.699 M) no saca el mes de las comparaciones.
+  const small = buildFinancialPulse(lines, { periodMonth: '2026-03-01', monthsWithBalanceDifference: [{ year: 2025, month: 3, difference: 1_000 }] });
+  assert.equal(isComparable(small.months.find(item => item.year === 2025 && item.month === 3)), true);
+  assert.ok(pulseReadings(small).some(text => /87,5%/.test(text)));
+});
