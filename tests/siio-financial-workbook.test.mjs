@@ -48,7 +48,7 @@ function auxiliaryOnlyBalanceSheet() {
   ]);
 }
 
-function workbookBuffer({ unknownSheet = false, detailOnly = false, auxiliaryOnly = false, resumControlRow = null } = {}) {
+function workbookBuffer({ unknownSheet = false, detailOnly = false, auxiliaryOnly = false, resumControlRow = null, overrides = {} } = {}) {
   const sheets = ['PYG NIIF', 'Comparat', 'Resum', '1 26', '2 26', '3 26', '4 26', '1 25', '2 25', '3 25', '4 25', 'NOMINA'];
   if (unknownSheet) sheets.push('Hoja inesperada');
   if (auxiliaryOnly) sheets.push('Ingresos');
@@ -79,6 +79,7 @@ function workbookBuffer({ unknownSheet = false, detailOnly = false, auxiliaryOnl
     ['Hoja inesperada', worksheet([])],
     ['Ingresos', worksheet([inline('A1', 'PERIODO DE FACTURACIÓN')])],
   ]);
+  for (const [name, xml] of Object.entries(overrides)) content.set(name, xml);
   sheets.forEach((name, index) => zip.addFile(`xl/worksheets/sheet${index + 1}.xml`, Buffer.from(content.get(name))));
   return zip.toBuffer();
 }
@@ -154,4 +155,23 @@ test('ubica el control de Resum debajo de la utilidad neta aunque cambie de fila
   assert.match(moved.detail, /Resum!B41/);
   const legacy = parseSiioFinancialWorkbook(workbookBuffer(), metadata).validations.find(item => item.rule === 'V5_CONTROL_RESUM');
   assert.match(legacy.detail, /Resum!B43/);
+});
+
+test('un mes anterior al corte que no cuadra se publica como advertencia; el mes del corte sigue bloqueando', () => {
+  const unbalanced = worksheet([
+    inline('A1', 'Codigo Cuenta'), inline('B1', 'Nombre Cuenta'), inline('C1', 'Saldo Anterior'), inline('D1', 'Debito'), inline('E1', 'Credito'), inline('F1', 'Saldo Actual'), number('I1', 125),
+    number('A2', 1), inline('B2', 'Activo'), number('C2', 0), number('D2', 0), number('E2', 0), number('F2', 100),
+    number('A3', 2), inline('B3', 'Pasivo'), number('C3', 0), number('D3', 0), number('E3', 0), number('F3', -60),
+    number('A4', 3), inline('B4', 'Patrimonio'), number('C4', 0), number('D4', 0), number('E4', 0), number('F4', -30),
+    number('A5', 4), inline('B5', 'Ingresos'), number('C5', 0), number('D5', 0), number('E5', 0), number('F5', -7),
+  ]);
+  const earlier = parseSiioFinancialWorkbook(workbookBuffer({ overrides: { '2 25': unbalanced } }), metadata);
+  const warning = earlier.validations.find(item => item.rule === 'V1_BALANCE_CUADRA' && item.detail.startsWith('2 25'));
+  assert.equal(warning.severity, 'advertencia');
+  assert.equal(warning.ok, false);
+  assert.equal(warning.obtained, '3');
+  assert.equal(earlier.status, 'listo_revision');
+  const cutMonth = parseSiioFinancialWorkbook(workbookBuffer({ overrides: { '4 26': unbalanced } }), metadata);
+  assert.equal(cutMonth.validations.find(item => item.rule === 'V1_BALANCE_CUADRA' && item.detail.startsWith('4 26')).severity, 'bloqueante');
+  assert.equal(cutMonth.status, 'con_errores');
 });

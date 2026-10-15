@@ -59,7 +59,7 @@ export function SiioFinancialPulse({ pulse, state, financialRows }: { pulse: Fin
     <div className="siio-pulse-block">
       <h4>Tendencia {pulse.year} frente a {pulse.year - 1}</h4>
       <div className="siio-table-wrap"><table className="siio-pulse-table">
-        <thead><tr><th>Concepto</th>{yearMonths.map(month => <th key={month}>{shortMonth(month)}{pulseMonth(pulse, pulse.year, month)?.provision_declared === false ? ' *' : ''}</th>)}</tr></thead>
+        <thead><tr><th>Concepto</th>{yearMonths.map(month => <th key={month}>{shortMonth(month)}{pulseMonth(pulse, pulse.year, month)?.provision_declared === false ? ' *' : ''}{pulseMonth(pulse, pulse.year, month)?.balance_difference || pulseMonth(pulse, pulse.year - 1, month)?.balance_difference ? ' †' : ''}</th>)}</tr></thead>
         <tbody>{TREND_ROWS.map(row => <tr key={row.key}>
           <th scope="row">{row.label}</th>
           {yearMonths.map(month => <td key={month}>
@@ -69,6 +69,7 @@ export function SiioFinancialPulse({ pulse, state, financialRows }: { pulse: Fin
         </tr>)}</tbody>
       </table></div>
       {pulse.months.some(item => item.year === pulse.year && !item.provision_declared) ? <p className="siio-pulse-footnote">* Mes sin provisión de ingresos declarada en el Excel: su ingreso puede verse más bajo y el del mes siguiente más alto.</p> : null}
+      {pulse.months.some(item => item.balance_difference) ? <p className="siio-pulse-footnote">† El balance de ese mes ({pulse.months.filter(item => item.balance_difference).map(item => `${longMonth(item.month)} ${item.year}`).join(', ')}) no cuadra en el Excel: sus cifras pueden no ser exactas hasta que Contabilidad lo corrija.</p> : null}
       <p className="siio-pulse-footnote">Cada mes se calcula como la diferencia entre el cierre de ese mes y el del mes anterior, incluida la provisión de ingresos que Contabilidad registra y revierte cada mes.</p>
     </div>
 

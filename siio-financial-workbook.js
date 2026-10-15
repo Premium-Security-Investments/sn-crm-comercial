@@ -342,6 +342,15 @@ function validation(rule, severity, ok, expected, obtained, detail) {
   return { rule, severity, ok, expected: expected == null ? null : String(expected), obtained: obtained == null ? null : String(obtained), difference: numeric(obtained) != null && numeric(expected) != null ? numeric(obtained) - numeric(expected) : null, detail };
 }
 
+// Only the cut month blocks publication. An earlier month that does not balance (July 2026 and
+// August 2025 in the August 2026 workbook) is published as a warning and the pulse marks that month.
+function balanceCheck(balance, topLevelTotal, period) {
+  const ok = Math.abs(topLevelTotal) <= 1;
+  const isCutMonth = balance.year === period.year && balance.month === period.month;
+  if (ok || isCutMonth) return validation('V1_BALANCE_CUADRA', 'bloqueante', ok, 0, topLevelTotal, `${balance.sheetName}: suma de clases 1 a 7.`);
+  return validation('V1_BALANCE_CUADRA', 'advertencia', false, 0, topLevelTotal, `${balance.sheetName}: suma de clases 1 a 7. Mes anterior al corte con diferencia; se publica marcado para revisión de Contabilidad.`);
+}
+
 function calculateValidations({ parsedBalances, metrics, pygSheet, resumSheet, period, privateSheetCount }) {
   const validations = [];
   for (const balance of parsedBalances) {
@@ -351,7 +360,7 @@ function calculateValidations({ parsedBalances, metrics, pygSheet, resumSheet, p
     const missingClasses = REQUIRED_BALANCE_CLASSES.filter(accountClass => !topLevelRows.some(row => row.account_class === accountClass));
     validations.push(missingClasses.length
       ? validation('V1_BALANCE_CUADRA', 'bloqueante', false, `clases ${REQUIRED_BALANCE_CLASSES.join(', ')}`, `faltan clases ${missingClasses.join(', ')}`, `${balance.sheetName}: el balance no trae las cuentas de primer nivel necesarias para comprobar el cuadre.`)
-      : validation('V1_BALANCE_CUADRA', 'bloqueante', Math.abs(topLevelTotal) <= 1, 0, topLevelTotal, `${balance.sheetName}: suma de clases 1 a 7.`));
+      : balanceCheck(balance, topLevelTotal, period));
   }
   const byConcept = new Map(metrics.map(item => [item.concept, item]));
   const comparatSheet = metrics[0]._sheet;

@@ -7,7 +7,7 @@ export type FinancialPulseTotals = {
   resultado_no_operacional: number;
 };
 
-export type FinancialPulseMonth = { year: number; month: number; values: Record<string, number>; carried_from_previous_month: Record<string, number>; provision_declared: boolean; totals: FinancialPulseTotals };
+export type FinancialPulseMonth = { year: number; month: number; values: Record<string, number>; carried_from_previous_month: Record<string, number>; provision_declared: boolean; balance_difference?: number | null; totals: FinancialPulseTotals };
 export type FinancialPulseGroup = { key: string; label: string; kind: string };
 export type FinancialPulse = {
   source: { import_id: string; file_name: string; period_month: string; cutoff_date: string; import_type: string; status: string; basis: string };
@@ -69,6 +69,7 @@ export function pulseBreakdown(pulse: FinancialPulse): PulseBreakdownRow[] {
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const money = (value: number) => `$${Math.round(value / 1e6).toLocaleString('es-CO')} millones`;
+const pesos = (value: number) => `$${Math.round(Math.abs(value)).toLocaleString('es-CO')}`;
 const pct = (value: number) => `${(value * 100).toLocaleString('es-CO', { maximumFractionDigits: 1 })}%`;
 
 // Deterministic reading: each sentence states the figures it relies on, nothing is inferred beyond them.
@@ -91,6 +92,11 @@ export function pulseReadings(pulse: FinancialPulse): string[] {
     readings.push(next
       ? `${capitalize(longMonth(item.month))} no tiene provisión de ingresos declarada: su ingreso (${money(item.totals.ingresos)}) puede verse más bajo y el de ${longMonth(next.month)} (${money(next.totals.ingresos)}) más alto de lo real. Juntos promedian ${money((item.totals.ingresos + next.totals.ingresos) / 2)} al mes.`
       : `${capitalize(longMonth(item.month))} no tiene provisión de ingresos declarada: su ingreso (${money(item.totals.ingresos)}) puede estar subestimado.`);
+  }
+
+  // Months whose balance does not add up in the Excel are published marked, not hidden.
+  for (const item of pulse.months.filter(month => month.balance_difference)) {
+    readings.push(`El balance de ${longMonth(item.month)} de ${item.year} en el Excel no cuadra por ${pesos(item.balance_difference || 0)}: sus cifras pueden no ser exactas hasta que Contabilidad lo corrija.`);
   }
 
   let biggestJump: { from: FinancialPulseMonth; to: FinancialPulseMonth; change: number } | null = null;
