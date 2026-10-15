@@ -1,0 +1,26 @@
+# Puente dedicado AGT-001 (Vig-IA Gerencia). Mismo código que el puente AGT-003 (ops/agt003-claude-bridge/run-server.mjs),
+# instancia aparte: usuario, puerto, secreto HMAC, vhost y sesión OAuth de Claude propios.
+[Unit]
+Description=AGT-001 dedicated Claude bridge (Vig-IA Gerencia)
+After=network.target
+
+[Service]
+Type=simple
+User=agt001-bridge
+Group=agt001-bridge
+EnvironmentFile=/etc/agt001-bridge/agt001-bridge.env
+Environment=CLAUDE_CONFIG_DIR=/opt/agt001-bridge/.claude
+Environment=HOME=/opt/agt001-bridge
+ExecStart=/usr/bin/node /opt/agt001-bridge/ops/agt003-claude-bridge/run-server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/agt001-bridge/.claude /opt/agt001-bridge/var
+CPUQuota=100%
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

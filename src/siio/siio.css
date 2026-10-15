@@ -1173,3 +1173,31 @@
 }
 
 .siio-followup-main .siio-alert-text{color:#92400e}
+
+/* Recomendaciones de Vig-IA Gerencia (AGT-001). Naranja sólo para prioridad alta, como lo urgente en la Torre. */
+.siio-dashboard .siio-recommendations{display:grid;gap:12px;padding:18px 20px;border:1px solid #dbe6f4;border-radius:14px;box-shadow:none}
+.siio-recommendations-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px}
+.siio-recommendations-head h2{margin:2px 0 4px;color:#10213d;font-size:18px}
+.siio-recommendations-head .siio-secondary{margin:0;text-transform:none}
+.siio-recommendations-action{display:grid;gap:4px;justify-items:end}
+.siio-recommendations-action small{color:#526173;font-size:12px}
+.siio-recommendations-summary{margin:0;color:#10213d;font-size:15px;line-height:1.5}
+.siio-recommendation-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.siio-recommendation{display:grid;gap:6px;padding:12px 14px;border:1px solid #e7edf5;border-left:4px solid #9fb3cc;border-radius:12px;background:#fff}
+.siio-recommendation-alta{border-left-color:#ea580c}
+.siio-recommendation-media{border-left-color:#174ea6}
+.siio-recommendation strong{color:#10213d;font-size:15px}
+.siio-recommendation p{margin:0;color:#24344d;font-size:14px;line-height:1.5}
+.siio-recommendation-why{color:#40516b}
+.siio-recommendation-why span{font-weight:700}
+.siio-recommendation small{color:#526173;font-size:12px}
+.siio-recommendation-tags{display:flex;flex-wrap:wrap;gap:6px}
+.siio-recommendation-area,.siio-recommendation-priority{padding:2px 8px;border-radius:999px;background:#eef3fa;color:#24344d;font-size:12px;font-weight:600}
+.siio-recommendation-alta .siio-recommendation-priority{background:#fff1e6;color:#9a3412}
+.siio-recommendation-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.siio-recommendation-actions [role=group]{display:inline-flex;gap:6px}
+.siio-dashboard .siio-recommendation-actions [role=group] button{padding:4px 10px;font-size:13px}
+.siio-dashboard .siio-recommendation-actions button.is-selected{border-color:#174ea6;background:#e8f0fe;color:#174ea6}
+.siio-recommendations-missing h4{margin:4px 0;color:#10213d;font-size:14px}
+.siio-recommendations-missing ul{margin:0;padding-left:18px;color:#40516b;font-size:13px}
+@media (max-width:640px){.siio-recommendations-action{justify-items:start}}

@@ -12,6 +12,7 @@ import { privateReadings, tenderReadings, type CommercialSummary } from './comme
 import { pulseReadings, type FinancialPulse } from './financialPulse';
 import { deriveOperationsSummary } from './operationsSummary';
 import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
+import { SiioRecommendations } from './SiioRecommendations';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState } from './types';
 
@@ -143,8 +144,11 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     <SiioTrendCharts pulse={pulse} summary={commercial} />
 
+    <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
+    {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
+
     <Panel title="Requiere atención">
-      {followupDraft ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
+      {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
       <section className="siio-attention-section" aria-label="Licitaciones públicas">
         <h3>Licitaciones públicas</h3>
         {tenderNotes.length ? <div className="siio-pulse-readings"><ul>{tenderNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}

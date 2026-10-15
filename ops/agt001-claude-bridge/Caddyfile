@@ -1,0 +1,7 @@
+# Puente dedicado AGT-001 (Vig-IA Gerencia).
+agt001.5-78-140-24.sslip.io {
+	request_body {
+		max_size 1MiB
+	}
+	reverse_proxy 127.0.0.1:8789
+}
