@@ -51,7 +51,7 @@ function groupForAccount(account) {
 // so previous_balance(N) differs from final_balance(N-1). The month's figure is therefore the
 // difference between consecutive closing balances: it telescopes to the year-to-date total of the
 // latest sheet. The opening gap is kept apart as the provision carried between months.
-export function buildFinancialPulse(lines, { periodMonth, monthsWithoutProvision = [] }) {
+export function buildFinancialPulse(lines, { periodMonth, monthsWithoutProvision = [], monthsWithBalanceDifference = [] }) {
   if (!PERIOD_PATTERN.test(String(periodMonth || ''))) throw pulseError('El periodo del pulso debe ser el primer día de un mes.');
   const [year, month] = periodMonth.split('-').map(Number);
   const groups = new Map(GROUPS.map(group => [group.key, { key: group.key, label: group.label, kind: group.kind }]));
@@ -101,6 +101,7 @@ export function buildFinancialPulse(lines, { periodMonth, monthsWithoutProvision
         values,
         carried_from_previous_month: carried,
         provision_declared: !monthsWithoutProvision.some(item => item.year === bucket.year && item.month === bucket.month),
+        balance_difference: monthsWithBalanceDifference.find(item => item.year === bucket.year && item.month === bucket.month)?.difference ?? null,
         totals: {
           ingresos: round(income),
           costos: round(costs),
@@ -145,6 +146,16 @@ export async function loadFinancialPulse(database, requestedPeriod) {
     .map(name => /^(1[0-2]|[1-9]) (\d{2})$/.exec(name.trim()))
     .filter(Boolean)
     .map(match => ({ month: Number(match[1]), year: 2000 + Number(match[2]) }));
+  // V1 warnings name the earlier monthly sheet that does not balance ("7 26: suma de clases…").
+  const balanceChecks = requireResult(await database.from('siio_financial_validations')
+    .select('ok,obtained,detail')
+    .eq('import_id', active.id)
+    .eq('rule', 'V1_BALANCE_CUADRA')
+    .eq('severity', 'advertencia')) || [];
+  const monthsWithBalanceDifference = balanceChecks.filter(item => !item.ok)
+    .map(item => ({ match: /^(1[0-2]|[1-9]) (\d{2}):/.exec(String(item.detail || '')), difference: Number(item.obtained) }))
+    .filter(item => item.match && Number.isFinite(item.difference))
+    .map(({ match, difference }) => ({ month: Number(match[1]), year: 2000 + Number(match[2]), difference: round(difference) }));
   const lines = requireResult(await database.from('siio_financial_balance_lines')
     .select('year,month,account,level,previous_balance,final_balance')
     .eq('import_id', active.id)
@@ -160,7 +171,7 @@ export async function loadFinancialPulse(database, requestedPeriod) {
       status: active.status,
       basis: 'balance_de_cuentas',
     },
-    ...buildFinancialPulse(lines, { periodMonth: active.period_month, monthsWithoutProvision }),
+    ...buildFinancialPulse(lines, { periodMonth: active.period_month, monthsWithoutProvision, monthsWithBalanceDifference }),
   };
 }
 

@@ -72,7 +72,11 @@ function fakeDatabase(imports, balanceLines) {
       limit: () => chain,
       then: (resolve) => {
         calls.push(state);
-        if (table === 'siio_financial_validations') return resolve({ data: [{ ok: false, obtained: '1 26' }], error: null });
+        if (table === 'siio_financial_validations') {
+          const rule = state.filters.find(item => item[1] === 'rule')?.[2];
+          if (rule === 'V1_BALANCE_CUADRA') return resolve({ data: [{ ok: false, obtained: '-1032138.04', detail: '2 26: suma de clases 1 a 7. Mes anterior al corte con diferencia; se publica marcado para revisión de Contabilidad.' }], error: null });
+          return resolve({ data: [{ ok: false, obtained: '1 26' }], error: null });
+        }
         if (table === 'siio_financial_imports') {
           const period = state.filters.find(item => item[1] === 'period_month')?.[2];
           return resolve({ data: imports.filter(item => !period || item.period_month === period), error: null });
@@ -95,6 +99,9 @@ test('usa el corte publicado más reciente y no lee nada si no hay', async () =>
   assert.equal(pulse.source.import_id, 'a');
   assert.equal(pulse.source.basis, 'balance_de_cuentas');
   assert.equal(pulse.months.find(item => item.year === 2026 && item.month === 1).provision_declared, false, 'lee la advertencia V9 del mismo corte');
+  assert.equal(pulse.months.find(item => item.year === 2026 && item.month === 2).balance_difference, -1032138.04, 'marca el mes anterior que no cuadra (advertencia V1)');
+  assert.equal(pulse.months.find(item => item.year === 2026 && item.month === 3).balance_difference, null);
+  assert.ok(database.calls.some(call => call.table === 'siio_financial_validations' && call.filters.some(item => item[1] === 'severity' && item[2] === 'advertencia')), 'sólo lee las diferencias publicadas como advertencia');
   assert.equal(database.calls.find(call => call.table === 'siio_financial_balance_lines').filters.find(item => item[1] === 'import_id')[2], 'a');
   assert.equal(await loadFinancialPulse(fakeDatabase([], []), null), null);
   await assert.rejects(() => loadFinancialPulse(database, '2026-03'), error => error.status === 400);
