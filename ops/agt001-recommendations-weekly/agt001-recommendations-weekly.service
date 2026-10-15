@@ -1,0 +1,19 @@
+# Pide al CRM la corrida semanal de recomendaciones (POST /api/siio/recommendations/weekly). No lee datos ni llama
+# al modelo: todo ocurre en el CRM. El secreto va por stdin para que no aparezca en la lista de procesos.
+[Unit]
+Description=AGT-001 Vig-IA Gerencia: corrida semanal de recomendaciones de la Torre
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=true
+# AGT001_WEEKLY_SECRET y AGT001_WEEKLY_URL. Root 0600; el mismo secreto está en Vercel.
+EnvironmentFile=/etc/agt001-recommendations-weekly/env
+ExecStart=/bin/sh -c 'printf "Authorization: Bearer %%s\n" "$$AGT001_WEEKLY_SECRET" | /usr/bin/curl -fsS --max-time 175 -X POST -H @- "$$AGT001_WEEKLY_URL"'
+TimeoutStartSec=4min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

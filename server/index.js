@@ -7,6 +7,7 @@ import { cleanFinancialImportRequest, financialImportStoragePath, listFinancialI
 import { loadFinancialPulse } from '../siio-financial-pulse.js';
 import { loadCommercialSummary } from '../siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../siio-followups.js';
+import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../siio-recommendations.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
 import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
@@ -484,6 +485,9 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/siio/financial-imports': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/financial-pulse': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/commercial-summary': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/recommendations': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/recommendations/generate': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'POST /api/siio/recommendations/:id/feedback': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'POST /api/siio/financial-imports/upload-url': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'POST /api/siio/financial-imports/process-upload': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'POST /api/siio/financial-imports/:id/validate': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
@@ -506,6 +510,9 @@ export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
   'GET /api/siio/financial-imports': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'GET /api/siio/financial-pulse': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'GET /api/siio/commercial-summary': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/recommendations': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/recommendations/generate': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/recommendations/:id/feedback': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/upload-url': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/process-upload': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/:id/validate': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
@@ -3135,6 +3142,38 @@ app.patch('/api/siio/followups/:id', async (req, res) => {
     requireModuleAction(profile, 'siio');
     res.json(await updateFollowup(requireDb(), req.params.id, req.body || {}, profile));
   } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Recomendaciones de Vig-IA Gerencia: lunes automático (timer del servidor) y botón con tope diario.
+app.get('/api/siio/recommendations', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/recommendations');
+    res.json(await loadRecommendations(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/recommendations/generate', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/recommendations/generate');
+    res.json(await generateRecommendations(requireDb(), { trigger: 'boton', profile }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/siio/recommendations/:id/feedback', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/recommendations/:id/feedback');
+    res.json(await setRecommendationFeedback(requireDb(), req.params.id, req.body || {}, profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/siio/recommendations/weekly', async (req, res) => {
+  const authorization = String(req.headers.authorization || '');
+  // Lo llama el timer agt001-recommendations-weekly del servidor de puentes (ops/agt001-recommendations-weekly/).
+  if (!secretMatches(process.env.AGT001_WEEKLY_SECRET, authorization.startsWith('Bearer ') ? authorization.slice(7) : '')) return res.status(401).json({ error: 'No autorizado.' });
+  try {
+    const result = await generateRecommendations(requireDb(), { trigger: 'semanal' });
+    res.json({ ok: true, recommendations: result.recommendations.length });
+  } catch (error) { sendError(res, error, error?.status || 500); }
 });
 
 app.post('/api/siio/financial-imports/upload-url', async (req, res) => {

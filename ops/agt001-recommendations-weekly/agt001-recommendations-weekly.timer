@@ -1,0 +1,10 @@
+[Unit]
+Description=AGT-001 Vig-IA Gerencia: recomendaciones de la Torre, lunes 6:30 a.m. Bogotá (11:30 UTC)
+
+[Timer]
+OnCalendar=Mon *-*-* 11:30:00 UTC
+Persistent=true
+Unit=agt001-recommendations-weekly.service
+
+[Install]
+WantedBy=timers.target
