@@ -47,7 +47,7 @@ for (const file of [server, api]) {
   assert(file.includes('normalizeUserRole'), 'API debe normalizar aliases de rol como directivo -> director.');
   assert(file.includes("raw === 'directivo'"), 'API debe aceptar Directivo como alias compatible del rol director.');
   assert(file.includes("role === 'comercial'"), 'API debe tratar comercial como rol restringido.');
-  assert.equal((file.match(/const created_by = currentProfile\.id;/g) || []).length, 2, 'Ambas rutas de interacción deben derivar el autor del perfil autenticado.');
+  assert.equal((file.match(/const created_by = currentProfile\.id;/g) || []).length, 3, 'Las dos rutas de interacción y el chat de registro (addInteractionForProfile) deben derivar el autor del perfil autenticado.');
 }
 
 assert.match(server, /psi_profile_area_assignments'\)\.select\('profile_id,area_code,subarea_code'\)/, 'El bootstrap debe derivar alcance desde asignaciones canónicas del servidor.');

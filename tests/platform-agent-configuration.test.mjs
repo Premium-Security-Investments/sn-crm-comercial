@@ -33,6 +33,7 @@ import { buildConfiguration, formFromConfiguration, profileSlug, validateForms }
 
 const COPILOT = 'agt003.opportunity-copilot.preview';
 const LEAD = 'agt003.lead-deep-analysis';
+const CHAT = 'agt003.chat-registro';
 const PERSON = '6a1f8c2e-1111-4222-8333-444455556666';
 const OTHER = '7b2f8c2e-1111-4222-8333-444455556666';
 const context = { agentId: 'AGT-003', profileIds: new Set(['comercial', 'gerencia']), personIds: new Set([PERSON, OTHER]), today: '2026-10-09' };
@@ -47,22 +48,24 @@ function validConfiguration() {
         exceptions: [{ person: PERSON, extra: 10, per: 'day', expires: '2026-10-31' }],
       },
       [LEAD]: { enabled: true, model: 'sonnet', fallback: 'notify', team_cap: { per: 'month', max: 30 } },
+      [CHAT]: { enabled: true, model: 'sonnet', fallback: 'notify', team_cap: { per: 'day', max: 100 } },
     },
   };
 }
 
-test('catálogo: AGT-003 tiene dos funciones con nombre humano; modelos y plan B en lista cerrada', () => {
-  assert.deepEqual(AGENT_AI_FUNCTIONS['AGT-003'].map(item => [item.capability, item.label]), [[COPILOT, 'Próximo seguimiento'], [LEAD, 'Análisis profundo']]);
+test('catálogo: AGT-003 tiene tres funciones con nombre humano; modelos y plan B en lista cerrada', () => {
+  assert.deepEqual(AGENT_AI_FUNCTIONS['AGT-003'].map(item => [item.capability, item.label]), [[COPILOT, 'Próximo seguimiento'], [LEAD, 'Análisis profundo'], [CHAT, 'Chat de registro']]);
   assert.deepEqual(AI_MODEL_OPTIONS.map(option => [option.id, option.label]), [['sonnet', 'Sonnet (suscripción)']]);
   assert.equal(AGENT_AI_FUNCTIONS['AGT-002'], undefined, 'los demás agentes no tienen funciones con IA configuradas todavía');
 });
 
-test('valores del código: 20 por día y 30 por mes con sonnet (la primera propuesta será la versión 1)', () => {
+test('valores del código: 20 por día, 30 por mes y 100 por día con sonnet (la primera propuesta será la versión 1)', () => {
   assert.deepEqual(defaultAgentConfiguration('AGT-003'), {
     timezone: 'America/Bogota',
     capabilities: {
       [COPILOT]: { enabled: true, model: 'sonnet', fallback: 'notify', team_cap: { per: 'day', max: 20 } },
       [LEAD]: { enabled: true, model: 'sonnet', fallback: 'notify', team_cap: { per: 'month', max: 30 } },
+      [CHAT]: { enabled: true, model: 'sonnet', fallback: 'notify', team_cap: { per: 'day', max: 100 } },
     },
   });
   assert.equal(defaultAgentConfiguration('AGT-003', { [COPILOT]: { period: 'day', max: 35 } }).capabilities[COPILOT].team_cap.max, 35);
@@ -176,12 +179,12 @@ test('presentación: estados, vigente por agente, cambios frente a la vigente, m
   assert.equal(payload.versions[0].changes.length, 3, 'cambios de la propuesta frente a la vigente');
   assert.deepEqual(payload.versions[1].changes, []);
   assert.deepEqual(payload.profile_matrix.rows.map(row => row.profile_id), ['comercial', 'gerencia'], 'los archivados no salen en la matriz');
-  assert.deepEqual(payload.profile_matrix.rows[0].cells['AGT-003'], [{ function: 'Próximo seguimiento', text: 'Sólo cupo del equipo' }, { function: 'Análisis profundo', text: 'Sólo cupo del equipo' }]);
+  assert.deepEqual(payload.profile_matrix.rows[0].cells['AGT-003'], [{ function: 'Próximo seguimiento', text: 'Sólo cupo del equipo' }, { function: 'Análisis profundo', text: 'Sólo cupo del equipo' }, { function: 'Chat de registro', text: 'Sólo cupo del equipo' }]);
   assert.equal(payload.today, '2026-10-28');
-  assert.deepEqual(payload.catalog['AGT-003'].map(item => item.label), ['Próximo seguimiento', 'Análisis profundo']);
+  assert.deepEqual(payload.catalog['AGT-003'].map(item => item.label), ['Próximo seguimiento', 'Análisis profundo', 'Chat de registro']);
   // Matriz y avisos con una configuración vigente con perfiles y excepciones.
   const matrix = buildProfileMatrix([{ profile_id: 'gerencia', display_name: 'Gerencia' }], { 'AGT-003': validConfiguration() });
-  assert.deepEqual(matrix.rows[0].cells['AGT-003'].map(cell => cell.text), ['Sin cupo propio (techo de seguridad 200)', 'Sólo cupo del equipo']);
+  assert.deepEqual(matrix.rows[0].cells['AGT-003'].map(cell => cell.text), ['Sin cupo propio (techo de seguridad 200)', 'Sólo cupo del equipo', 'Sólo cupo del equipo']);
   assert.equal(buildProfileMatrix([{ profile_id: 'gerencia', display_name: 'Gerencia' }], {}).rows[0].cells['AGT-003'][0].text, 'Sin configuración aprobada');
   assert.deepEqual(expiringExceptions({ 'AGT-003': validConfiguration() }, { today: '2026-10-28', personNames: { [PERSON]: 'Ana Pérez' } }), [{ agent_id: 'AGT-003', function: 'Próximo seguimiento', person: 'Ana Pérez', expires: '2026-10-31' }]);
   assert.deepEqual(expiringExceptions({ 'AGT-003': validConfiguration() }, { today: '2026-10-01' }), []);
@@ -195,7 +198,7 @@ test('quien firma sale del perfil autenticado', () => {
 test('formulario: valores del código → JSON válido; perfiles, excepciones y avisos antes de enviar', () => {
   const functions = AGENT_AI_FUNCTIONS['AGT-003'].map(({ capability, label, description }) => ({ capability, label, description }));
   const forms = formFromConfiguration(null, functions, defaultAgentConfiguration('AGT-003'));
-  assert.deepEqual(forms.map(form => [form.label, form.teamMax, form.teamPer, form.model]), [['Próximo seguimiento', '20', 'day', 'sonnet'], ['Análisis profundo', '30', 'month', 'sonnet']]);
+  assert.deepEqual(forms.map(form => [form.label, form.teamMax, form.teamPer, form.model]), [['Próximo seguimiento', '20', 'day', 'sonnet'], ['Análisis profundo', '30', 'month', 'sonnet'], ['Chat de registro', '100', 'day', 'sonnet']]);
   assert.deepEqual(normalizeProposedConfiguration(buildConfiguration(forms), context), defaultAgentConfiguration('AGT-003'));
   const round = formFromConfiguration(validConfiguration(), functions, defaultAgentConfiguration('AGT-003'));
   assert.deepEqual(buildConfiguration(round), validConfiguration(), 'ida y vuelta sin pérdida');

@@ -87,7 +87,7 @@ import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } fro
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
 import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
-import { AGT003_AGENT_ID, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
+import { AGT003_AGENT_ID, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
 import { codeDefaultEffectiveConfiguration, getEffectiveAgentConfiguration } from '../platform-agent-effective-configuration.js';
 import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, capabilityPolicy, claimLeadAnalysis, leadAnalysisQuotaMessage, readActorAiUsageProfile } from '../agt003-ai-quota.js';
 import {
@@ -193,6 +193,8 @@ import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-
 import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
 import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
+import { CHAT_HISTORY_TURNS, assignChatRefs, buildChatInput, chatQuotaMessage, claimChatTurn, runChatTurn } from '../agt003-chat-registro.js';
+import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
 import {
   AGT002_GOVERNED_WORKSET_CAPACITY_REJECTED_CODE,
@@ -448,6 +450,10 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/agt003/lead-analysis': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'GET /api/agt003/lead-analysis': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/lead-analysis-message': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/agt003/chat': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/chat': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/chat/confirm': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/chat/discard': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
@@ -3676,6 +3682,305 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     }
     sendError(res, error, error.status);
   }
+});
+
+// Chat de registro: al confirmar se guarda con los MISMOS pasos de las rutas del formulario y de la ficha
+// (POST /api/opportunities, PUT /api/opportunity, POST /api/opportunity-interactions). Si cambian esas rutas, cambiar
+// también estas funciones (tests/agt003-chat-registro.test.mjs vigila que conserven los mismos controles).
+// Crear oportunidad (igual que POST /api/opportunities).
+async function createOpportunityForProfile(database, currentProfile, body) {
+  const payload = cleanOpportunity(body);
+  if (hasClientProfileFields(body)) normalizeClientProfile(body);
+  if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+  await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
+  const isPublicTender = payload.service_type_code === 'licitacion_publica';
+  if (currentProfile.role === 'comercial' && !isPublicTender) await requireNoPendingDecisions(database, currentProfile.id);
+  const requestedClientId = isPublicTender ? null : (body.client_id || null);
+  const authorizedSiblingIds = isPublicTender ? null : await prepareClientForNewOpportunity(database, currentProfile, payload, requestedClientId);
+  const data = await persistSalesOpportunity(database, {
+    mode: 'create',
+    opportunityId: null,
+    actorProfileId: currentProfile.id,
+    requestedClientId,
+    opportunity: payload,
+    client: isPublicTender ? null : pickClientMasterFields(payload),
+    authorizedSiblingIds,
+  });
+  if (!isPublicTender) await saveClientProfile(database, data.id, body);
+  return data;
+}
+
+// Editar oportunidad (igual que PUT /api/opportunity).
+async function updateOpportunityForProfile(database, currentProfile, id, body) {
+  const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  const payload = cleanOpportunity(body, existing.regional_nombre);
+  if (hasClientProfileFields(body)) normalizeClientProfile(body);
+  await keepHiddenOpportunityFields(database, existing.id, body, payload, existing);
+  if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+  if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
+  const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
+  const clientPlan = isPublicTender
+    ? { kind: 'noop', clientId: null }
+    : await prepareClientForOpportunityUpdate(database, existing, payload, body.client_id || null, body);
+  if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
+  const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
+    ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
+    : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, id);
+  const data = await persistSalesOpportunity(database, {
+    mode: 'update',
+    opportunityId: id,
+    actorProfileId: currentProfile.id,
+    requestedClientId,
+    opportunity: payload,
+    client,
+    authorizedSiblingIds,
+  });
+  await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+  if (!isPublicTender) await saveClientProfile(database, id, body);
+  return data;
+}
+
+// Registrar seguimiento (igual que POST /api/opportunity-interactions).
+async function addInteractionForProfile(database, currentProfile, id, body) {
+  await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  if (body.created_by && body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
+  const notes = preparePublicInteractionNotes(body.notes);
+  const occurred_at = body.occurred_at || new Date().toISOString();
+  const interaction_type = body.interaction_type || 'nota';
+  const created_by = currentProfile.id;
+  const next_action_at = body.next_action_at || null;
+  const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
+  const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
+  const update = { last_interaction_at: occurred_at };
+  if (next_action_at) update.next_action_at = next_action_at;
+  await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+  return data;
+}
+
+// AGT-003 — Chat de registro en Mi día (agt003.chat-registro; decisión del 2026-10-15). El comercial cuenta lo que hizo;
+// Vig-IA propone cambios sobre SUS oportunidades y nada se guarda hasta que pulsa "Confirmar". Al confirmar se usan las
+// mismas reglas del formulario y de la ficha (createOpportunityForProfile, updateOpportunityForProfile,
+// addInteractionForProfile). Cupo propio de 100 mensajes al día para el equipo (configurable en IT → Agentes).
+const CHAT_TURN_PUBLIC_FIELDS = 'id,user_text,status,reply_text,proposal,proposal_status,applied,decided_at,created_at,finished_at';
+const CHAT_CLOSED_STAGES = new Set(['aprobado', 'descartado', 'perdido']);
+const CHAT_FORM_KEYS = [
+  'company_name', 'client_id', 'owner_id', 'stage_code', 'service_type_code', 'offer_value', 'expected_close_date', 'next_action_at',
+  'quote_city', 'regional_nombre', 'sede', 'economic_sector', 'decision_maker_name', 'decision_maker_email', 'decision_maker_phone',
+  'loss_reason_code', 'loss_notes', 'observaciones', 'commission_rate', 'customer_segment', ...CLIENT_PROFILE_FIELDS,
+];
+function chatError(message, status, code) { const error = new Error(message); error.status = status; if (code) error.code = code; return error; }
+async function requireChatAccess(database, profile) {
+  requireModuleAction(profile, 'opportunities');
+  const assignments = await must(database.from('psi_profile_area_assignments').select('area_code,subarea_code').eq('profile_id', profile.id));
+  const allowed = [{}, ...(assignments || [])].some(assignment => can(profile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, crmResource(profile.id, assignment)));
+  if (!allowed) throw chatError('No tiene acceso al chat de Vig-IA.', 403);
+}
+async function chatTeamQuota() {
+  const policy = capabilityPolicy({
+    effective: await getEffectiveAgentConfiguration(AGT003_AGENT_ID),
+    fallbackEffective: codeDefaultEffectiveConfiguration(AGT003_AGENT_ID),
+    capability: AGT003_CHAT_CAPABILITY,
+  });
+  return policy?.quota?.team || { per: 'day', max: CHAT_REGISTRO_DEFAULT_DAILY_MAX, period_start: bogotaDayStartIso(new Date()) };
+}
+async function chatState(database, profile) {
+  const teamQuota = await chatTeamQuota();
+  const [turns, used] = await Promise.all([
+    database.from('psi_agt003_chat_turns').select(CHAT_TURN_PUBLIC_FIELDS).eq('actor_id', profile.id).gte('created_at', bogotaDayStartIso(new Date())).order('created_at', { ascending: true }).limit(60),
+    database.from('psi_agt003_chat_turns').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', teamQuota.period_start),
+  ]);
+  if (turns.error) { if (turns.error.code === '42P01') return { available: false, turns: [] }; throw turns.error; }
+  if (used.error) throw used.error;
+  return { available: isAgt003CopilotConfigured(process.env), turns: turns.data || [], used: used.count || 0, max: teamQuota.max };
+}
+// Oportunidades comerciales abiertas del propio comercial (más recientes primero), con los datos del perfil.
+async function loadChatOpportunities(database, profile) {
+  const rows = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('owner_id', profile.id).order('updated_at', { ascending: false }).limit(400));
+  const open = (rows || []).filter(row => row.service_type_code !== 'licitacion_publica' && !CHAT_CLOSED_STAGES.has(row.stage_code));
+  return open.length ? attachCommercialMetadata(database, open) : [];
+}
+async function chatCanCreate(database, profile) {
+  if (profile.role !== 'comercial') return true;
+  try { await requireNoPendingDecisions(database, profile.id); return true; }
+  catch (error) { if (error?.code === 'CRM_PENDING_DECISIONS') return false; throw error; }
+}
+// Traduce las referencias a oportunidades reales, revisa duplicados y la regla de pendientes, y deja cada acción con su
+// descripción para la tarjeta.
+async function resolveChatProposal(database, { output, refs, services, canCreate }) {
+  const serviceName = code => services.find(service => service.code === code)?.name || code;
+  const avisos = [...output.avisos];
+  const acciones = [];
+  let clients = null;
+  for (const action of output.acciones) {
+    if (action.tipo === 'crear_oportunidad') {
+      if (!canCreate) { avisos.push(`No incluí el cliente nuevo ${action.nueva.company_name}: primero decida sus pendientes en Mi día.`); continue; }
+      clients ||= await must(database.from('psi_sales_clients').select('id,company_name'));
+      const normalized = normalizeClientName(action.nueva.company_name);
+      if (clients.some(client => normalizeClientName(client.company_name) === normalized)) {
+        avisos.push(`${action.nueva.company_name} ya existe en el CRM, así que no lo creé de nuevo. Si es suyo, cuénteme sobre esa oportunidad; si es de otro comercial, hable con su gerente.`);
+        continue;
+      }
+      const parecidos = typeaheadMatches(clients, action.nueva.company_name).map(client => client.company_name).slice(0, 3);
+      const { cliente, lineas } = describeChatAction(action, { serviceName });
+      acciones.push({ ...action, cliente, lineas, ...(parecidos.length ? { parecidos } : {}) });
+      continue;
+    }
+    const target = refs.get(action.ref);
+    if (!target) continue;
+    const { ref, ...rest } = action;
+    void ref;
+    const { lineas } = describeChatAction(action, { labelFor: () => target.label });
+    acciones.push({ ...rest, opportunity_id: target.id, cliente: target.city ? `${target.label} · ${target.city}` : target.label, lineas });
+  }
+  return { acciones, avisos };
+}
+async function applyChatAction(database, profile, action) {
+  if (action.tipo === 'registrar_seguimiento') {
+    await addInteractionForProfile(database, profile, action.opportunity_id, { notes: action.nota, occurred_at: action.fecha, interaction_type: action.canal });
+    return { opportunity_id: action.opportunity_id };
+  }
+  if (action.tipo === 'proximo_seguimiento') {
+    await ensureOpportunityAccess(database, action.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    await must(database.from('psi_sales_opportunities').update({ next_action_at: action.fecha }).eq('id', action.opportunity_id).select('id').single());
+    return { opportunity_id: action.opportunity_id };
+  }
+  if (action.tipo === 'actualizar_datos') {
+    const current = await loadLeadAnalysisOpportunity(database, action.opportunity_id);
+    const body = Object.fromEntries(CHAT_FORM_KEYS.map(key => [key, current[key] ?? (key === 'current_security_provider_none' ? false : '')]));
+    Object.assign(body, action.datos);
+    if (action.datos.current_security_provider) body.current_security_provider_none = false;
+    await updateOpportunityForProfile(database, profile, action.opportunity_id, body);
+    return { opportunity_id: action.opportunity_id };
+  }
+  if (action.tipo === 'crear_oportunidad') {
+    const created = await createOpportunityForProfile(database, profile, {
+      ...action.nueva, owner_id: profile.id, stage_code: 'prospecto', customer_segment: 'cliente_nuevo', offer_value: 0,
+      next_action_at: action.proxima_fecha || null,
+    });
+    if (action.nota) await addInteractionForProfile(database, profile, created.id, { notes: action.nota, occurred_at: action.fecha, interaction_type: action.canal || 'nota' });
+    return { opportunity_id: created.id };
+  }
+  throw chatError('Acción no reconocida.', 400);
+}
+
+app.get('/api/agt003/chat', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await chatState(database, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/agt003/chat', async (req, res) => {
+  let turnId = null;
+  let database = null;
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    const mensaje = typeof req.body?.mensaje === 'string' ? req.body.mensaje.trim() : '';
+    if (!mensaje) throw chatError('Escriba un mensaje.', 400);
+    if (mensaje.length > CHAT_MESSAGE_MAX_CHARS) throw chatError(`El mensaje es muy largo (máximo ${CHAT_MESSAGE_MAX_CHARS} caracteres). Divídalo en dos.`, 400);
+    if (!isAgt003CopilotConfigured(process.env)) throw chatError('Vig-IA no está disponible en este momento.', 503);
+    const policy = await resolveAgt003CapabilityPolicy(database, AGT003_CHAT_CAPABILITY, currentProfile);
+    if (!policy) throw new Error('No se pudo leer la configuración de Vig-IA.');
+    if (!policy.enabled) {
+      await recordModelRejection({ capability: AGT003_CHAT_CAPABILITY, model: policy.model, failureCode: AGT003_CAPABILITY_DISABLED_CODE, correlationId: randomUUID() });
+      throw chatError(AGT003_CAPABILITY_DISABLED_MESSAGE, 503, AGT003_CAPABILITY_DISABLED_CODE);
+    }
+    const claim = await claimChatTurn(database, { actorId: currentProfile.id, userText: mensaje, quota: policy.quota });
+    if (claim?.status === 'in_progress') throw chatError('Vig-IA todavía está respondiendo su mensaje anterior. Espere un momento.', 409);
+    if (claim?.status === 'quota') {
+      const personal = claim.scope === 'actor';
+      const code = personal ? 'AGT003_CHAT_PERSONAL_QUOTA' : 'AGT003_CHAT_QUOTA';
+      await recordModelRejection({ capability: AGT003_CHAT_CAPABILITY, model: policy.model, failureCode: code, correlationId: randomUUID() });
+      throw chatError(chatQuotaMessage(personal ? 'actor' : 'team', claim.used, claim.max), 429, code);
+    }
+    if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el mensaje.');
+    turnId = claim.id;
+    const today = bogotaDay(new Date());
+    const [opportunities, services, history, canCreate] = await Promise.all([
+      loadChatOpportunities(database, currentProfile),
+      must(database.from('psi_sales_service_types').select('code,name').eq('active', true).order('name')),
+      must(database.from('psi_agt003_chat_turns').select('user_text,reply_text,proposal_status').eq('actor_id', currentProfile.id).eq('status', 'completed').gte('created_at', bogotaDayStartIso(new Date())).order('created_at', { ascending: false }).limit(CHAT_HISTORY_TURNS)),
+      chatCanCreate(database, currentProfile),
+    ]);
+    const { refs, rows } = assignChatRefs(opportunities);
+    const commercialServices = (services || []).filter(service => service.code !== 'licitacion_publica');
+    const input = buildChatInput({ today, comercial: currentProfile.full_name, canCreate, rows, services: commercialServices, history: [...(history || [])].reverse(), mensaje });
+    let result;
+    try {
+      result = await runChatTurn({ input, refs, today, serviceCodes: commercialServices.map(service => service.code), idempotencyKey: turnId, environment: process.env, model: policy.model });
+    } catch (runError) {
+      await database.from('psi_agt003_chat_turns').update({ status: 'failed', failure_code: String(runError?.code || 'AGT003_CHAT_FAILED').toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 96), finished_at: new Date().toISOString() }).eq('id', turnId);
+      turnId = null;
+      const category = classifyAgt003ModelFailure(runError) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+      throw chatError(`${agt003ModelFailureMessage(category, 'chat')} No se descontó de su cupo.`, category === AGT003_MODEL_FAILURE.MODEL_ERROR ? 502 : 503);
+    }
+    const proposal = await resolveChatProposal(database, { output: result.output, refs, services: commercialServices, canCreate });
+    const hasProposal = proposal.acciones.length > 0 || proposal.avisos.length > 0;
+    const { error: finishError } = await database.from('psi_agt003_chat_turns').update({
+      status: 'completed', reply_text: result.output.respuesta.slice(0, 2000), proposal: hasProposal ? proposal : null,
+      proposal_status: proposal.acciones.length ? 'pendiente' : null, model: result.model,
+      input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens, finished_at: new Date().toISOString(),
+    }).eq('id', turnId);
+    if (finishError) throw finishError;
+    turnId = null;
+    res.status(201).json(await chatState(database, currentProfile));
+  } catch (error) {
+    if (turnId && database) {
+      try { await database.from('psi_agt003_chat_turns').update({ status: 'failed', failure_code: 'AGT003_CHAT_INTERNAL', finished_at: new Date().toISOString() }).eq('id', turnId); } catch { /* best effort */ }
+    }
+    if (!error?.status) {
+      console.error(error);
+      return res.status(503).json({ error: 'Vig-IA no pudo responder por ahora. Intente de nuevo en unos minutos.' });
+    }
+    sendError(res, error, error.status);
+  }
+});
+// "Confirmar": aplica la propuesta con las reglas del CRM. Una propuesta se aplica una sola vez (paso atómico
+// pendiente → aplicando). Si ninguna acción se pudo guardar, vuelve a quedar pendiente con el motivo.
+app.post('/api/agt003/chat/confirm', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    const turnId = String(req.body?.turn_id || '');
+    if (!turnId) throw chatError('Solicitud inválida.', 400);
+    const { data: claimed, error: claimError } = await database.from('psi_agt003_chat_turns').update({ proposal_status: 'aplicando' })
+      .eq('id', turnId).eq('actor_id', currentProfile.id).eq('proposal_status', 'pendiente').select('id,proposal').maybeSingle();
+    if (claimError) throw claimError;
+    if (!claimed) throw chatError('Esta propuesta ya fue confirmada o descartada.', 409);
+    const applied = [];
+    for (const [index, action] of (claimed.proposal?.acciones || []).entries()) {
+      try {
+        applied.push({ index, ok: true, ...(await applyChatAction(database, currentProfile, action)) });
+      } catch (error) {
+        if (!error?.status) console.error(error);
+        applied.push({ index, ok: false, error: error?.status ? String(error.message || 'No se pudo guardar.').slice(0, 300) : 'No se pudo guardar este cambio.' });
+      }
+    }
+    const anyOk = applied.some(item => item.ok);
+    const { error: finishError } = await database.from('psi_agt003_chat_turns').update({
+      proposal_status: anyOk ? 'confirmada' : 'pendiente', applied, decided_at: anyOk ? new Date().toISOString() : null,
+    }).eq('id', turnId);
+    if (finishError) throw finishError;
+    res.json(await chatState(database, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/agt003/chat/discard', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    const turnId = String(req.body?.turn_id || '');
+    if (!turnId) throw chatError('Solicitud inválida.', 400);
+    const { error } = await database.from('psi_agt003_chat_turns').update({ proposal_status: 'descartada', decided_at: new Date().toISOString() })
+      .eq('id', turnId).eq('actor_id', currentProfile.id).eq('proposal_status', 'pendiente');
+    if (error) throw error;
+    res.json(await chatState(database, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 // Último ingreso al CRM: una marca por día de Bogotá vía psi_touch_profile_last_seen (migración 111). Se dispara sin

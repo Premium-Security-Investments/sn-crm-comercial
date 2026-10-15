@@ -11,7 +11,7 @@ export const AGT003_MODEL_FAILURE: Readonly<{
 }>;
 export const AGT003_MODEL_FAILURE_CODES: readonly Agt003ModelFailureCategory[];
 export function classifyAgt003ModelFailure(codeOrError: unknown): Agt003ModelFailureCategory | null;
-export function agt003ModelFailureMessage(category: string | null | undefined, feature?: 'copilot' | 'lead_analysis'): string;
+export function agt003ModelFailureMessage(category: string | null | undefined, feature?: 'copilot' | 'lead_analysis' | 'chat'): string;
 export const AGT003_MODEL_FAILURE_MESSAGES: readonly string[];
 export function isAgt003ModelFailureMessage(message: unknown): boolean;
 export const AGT003_MODEL_FAILURE_IT_TEXT: Readonly<Record<Agt003ModelFailureCategory, Readonly<{ title: string; help: string }>>>;
