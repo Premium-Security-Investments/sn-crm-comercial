@@ -3,7 +3,7 @@ import type { SiioFinancialMetric } from '../siioExecutive';
 import { millions } from './SiioCommercialPanel';
 import { SiioColumnChart, SiioLineChart, type ChartSeries } from './SiioCharts';
 import { closingDateLabel, type CommercialSummary } from './commercialSummary';
-import { longMonth, pulseMonth, relativeChange, shortMonth, type FinancialPulse, type FinancialPulseTotals } from './financialPulse';
+import { hasMaterialBalanceDifference, isComparable, longMonth, pulseMonth, relativeChange, shortMonth, type FinancialPulse, type FinancialPulseMonth, type FinancialPulseTotals } from './financialPulse';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -33,30 +33,48 @@ function Figure({ label, value, detail, comparison, alert, children }: { label: 
   </div>;
 }
 
+// Months whose balance does not add up are left out of the charts instead of drawing a false bar.
 function monthSeries(pulse: FinancialPulse, year: number, key: keyof FinancialPulseTotals) {
   return Array.from({ length: pulse.month }, (_, index) => {
-    const value = pulseMonth(pulse, year, index + 1)?.totals[key];
+    const month = pulseMonth(pulse, year, index + 1);
+    const value = isComparable(month) ? month.totals[key] : null;
     return value === null || value === undefined ? null : Number(value);
   });
+}
+
+function caveatNote(pulse: FinancialPulse) {
+  const label = (item: FinancialPulseMonth) => `${shortMonth(item.month)} ${item.year}`;
+  const notes = [
+    ...pulse.months.filter(item => item.month <= pulse.month && !item.provision_declared).map(item => `${label(item)} sin provisión de ingresos`),
+    ...pulse.months.filter(item => item.month <= pulse.month && hasMaterialBalanceDifference(item)).map(item => `${label(item)} sin dato: el balance no cuadra en el Excel`),
+  ];
+  return notes.length ? ` · ${notes.join(' · ')}` : '';
 }
 
 function FinancialFigures({ pulse, state, financialRows }: { pulse: FinancialPulse | null; state: LoadState; financialRows: SiioFinancialMetric[] }) {
   const current = pulse ? pulseMonth(pulse, pulse.year, pulse.month) : null;
   if (state === 'loading') return <p className="siio-secondary">Cargando cifras financieras…</p>;
   if (!pulse || !current) return <p className="siio-secondary">Sin corte contable publicado con saldos por cuenta.</p>;
-  const lastYear = pulseMonth(pulse, pulse.year - 1, pulse.month);
-  const reference = `${shortMonth(pulse.month)} ${pulse.year - 1}`;
+  // Same month last year is the reference; if its balance does not add up, the previous month stands in and the
+  // card says why.
+  const sameMonthLastYear = pulseMonth(pulse, pulse.year - 1, pulse.month);
+  const previousMonth = pulse.month > 1 ? pulseMonth(pulse, pulse.year, pulse.month - 1) : null;
+  const useLastYear = isComparable(sameMonthLastYear);
+  const lastYear = useLastYear ? sameMonthLastYear : isComparable(previousMonth) ? previousMonth : null;
+  const reference = lastYear ? `${shortMonth(lastYear.month)} ${lastYear.year}` : '';
+  const caveat = sameMonthLastYear && !useLastYear ? `Frente al mes anterior: ${shortMonth(pulse.month)} ${pulse.year - 1} no es comparable porque su balance no cuadra en el Excel.` : null;
+  const notComparable = sameMonthLastYear && !lastYear ? `${shortMonth(pulse.month)} ${pulse.year - 1}: no comparable, su balance no cuadra en el Excel` : null;
   const month = shortMonth(pulse.month);
   const net = financialRows.find(row => row.concept === 'UTILIDAD NETA');
   const netCurrent = net?.value_current === null || net?.value_current === undefined ? null : Number(net.value_current);
   const netPrevious = net?.value_comparison === null || net?.value_comparison === undefined ? null : Number(net.value_comparison);
   const range = pulse.month === 1 ? 'ene' : `ene–${month}`;
   return <div className="siio-key-grid siio-key-grid-4">
-    <Figure label={`Ingresos ${month}`} value={millions(current.totals.ingresos)} comparison={versus(reference, current.totals.ingresos, lastYear?.totals.ingresos, 'monto')}>
+    <Figure label={`Ingresos ${month}`} value={millions(current.totals.ingresos)} comparison={notComparable ?? versus(reference, current.totals.ingresos, lastYear?.totals.ingresos, 'monto')} detail={caveat}>
     </Figure>
-    <Figure label={`Utilidad operacional ${month}`} value={millions(current.totals.utilidad_operacional)} comparison={versus(reference, current.totals.utilidad_operacional, lastYear?.totals.utilidad_operacional, 'monto')}>
+    <Figure label={`Utilidad operacional ${month}`} value={millions(current.totals.utilidad_operacional)} comparison={notComparable ?? versus(reference, current.totals.utilidad_operacional, lastYear?.totals.utilidad_operacional, 'monto')}>
     </Figure>
-    <Figure label={`Margen operacional ${month}`} value={current.totals.margen_operacional === null ? '—' : percentText(current.totals.margen_operacional)} comparison={versus(reference, current.totals.margen_operacional, lastYear?.totals.margen_operacional, 'margen')}>
+    <Figure label={`Margen operacional ${month}`} value={current.totals.margen_operacional === null ? '—' : percentText(current.totals.margen_operacional)} comparison={notComparable ?? versus(reference, current.totals.margen_operacional, lastYear?.totals.margen_operacional, 'margen')}>
     </Figure>
     <Figure label={`Utilidad neta ${range}`} value={netCurrent === null ? '—' : millions(netCurrent)} comparison={versus(`${range} ${pulse.year - 1}`, netCurrent, netPrevious, 'monto')} detail="Acumulado del estado de resultados reportado" />
   </div>;
@@ -123,9 +141,9 @@ export function SiioTrendCharts({ pulse, summary }: { pulse: FinancialPulse | nu
   return <section className="panel siio-trends" aria-label="Tendencia">
     <h2>Tendencia</h2>
     <div className="siio-chart-grid-layout">
-      {pulse ? <SiioColumnChart title="Ingresos por mes" note="Millones de pesos" categories={months} series={yearSeries('ingresos')} format={millions} axisFormat={axisMillions} /> : null}
-      {pulse ? <SiioColumnChart title="Utilidad operacional por mes" note="Millones de pesos · enero sin provisión de ingresos" categories={months} series={yearSeries('utilidad_operacional')} format={millions} axisFormat={axisMillions} /> : null}
-      {pulse ? <SiioLineChart title="Margen operacional por mes" note="Utilidad operacional sobre ingresos" categories={months} series={yearSeries('margen_operacional')} format={percentText} axisFormat={axisPercent} /> : null}
+      {pulse ? <SiioColumnChart title="Ingresos por mes" note={`Millones de pesos${caveatNote(pulse)}`} categories={months} series={yearSeries('ingresos')} format={millions} axisFormat={axisMillions} /> : null}
+      {pulse ? <SiioColumnChart title="Utilidad operacional por mes" note={`Millones de pesos${caveatNote(pulse)}`} categories={months} series={yearSeries('utilidad_operacional')} format={millions} axisFormat={axisMillions} /> : null}
+      {pulse ? <SiioLineChart title="Margen operacional por mes" note={`Utilidad operacional sobre ingresos${caveatNote(pulse)}`} categories={months} series={yearSeries('margen_operacional')} format={percentText} axisFormat={axisPercent} /> : null}
       {closed.length ? <SiioColumnChart title="Ventas nuevas a privados por mes" note="Valor mensual del servicio, por mes de cotización · millones · sin licitaciones" categories={closed.map((_, index) => MONTHS_SHORT[index])} series={[{ name: `Ventas ${summary?.sales.year}`, values: closed.map(item => item.approved_monthly_value), tone: 'accent' }, { name: 'Meta del mes', values: closed.map(item => item.goal || null), tone: 'reference' }]} format={millions} axisFormat={axisMillions} labelAll={false} /> : null}
     </div>
   </section>;

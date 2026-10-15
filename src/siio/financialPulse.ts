@@ -39,6 +39,22 @@ export function pulseMonth(pulse: FinancialPulse, year: number, month: number) {
   return pulse.months.find(item => item.year === year && item.month === month) || null;
 }
 
+// A month whose balance does not add up in the Excel (V1 warning) is shown, but never used as a comparison:
+// August 2025 in the August 2026 workbook made the year-over-year changes look far better than they were.
+// Small differences (July 2026: $1 M on $13.699 M) keep the month usable; only a material one (over 1% of the
+// month's income) takes it out of comparisons and charts.
+export const MATERIAL_BALANCE_DIFFERENCE_SHARE = 0.01;
+
+export function hasMaterialBalanceDifference(month: FinancialPulseMonth | null | undefined) {
+  if (!month?.balance_difference) return false;
+  const income = Math.abs(Number(month.totals.ingresos) || 0);
+  return Math.abs(month.balance_difference) > Math.max(income * MATERIAL_BALANCE_DIFFERENCE_SHARE, 10_000_000);
+}
+
+export function isComparable(month: FinancialPulseMonth | null | undefined): month is FinancialPulseMonth {
+  return Boolean(month) && !hasMaterialBalanceDifference(month);
+}
+
 export function relativeChange(current: number | null | undefined, previous: number | null | undefined) {
   if (current === null || current === undefined || previous === null || previous === undefined || !previous) return null;
   return (current - previous) / Math.abs(previous);
@@ -46,7 +62,8 @@ export function relativeChange(current: number | null | undefined, previous: num
 
 export function pulseBreakdown(pulse: FinancialPulse): PulseBreakdownRow[] {
   const current = pulseMonth(pulse, pulse.year, pulse.month);
-  const lastYear = pulseMonth(pulse, pulse.year - 1, pulse.month);
+  const reference = pulseMonth(pulse, pulse.year - 1, pulse.month);
+  const lastYear = isComparable(reference) ? reference : null;
   const yearMonths = pulse.months.filter(item => item.year === pulse.year);
   const income = current?.totals.ingresos || 0;
   return pulse.groups
@@ -77,10 +94,19 @@ export function pulseReadings(pulse: FinancialPulse): string[] {
   const readings: string[] = [];
   const current = pulseMonth(pulse, pulse.year, pulse.month);
   if (!current) return readings;
-  const lastYear = pulseMonth(pulse, pulse.year - 1, pulse.month);
+  const reference = pulseMonth(pulse, pulse.year - 1, pulse.month);
+  const lastYear = isComparable(reference) ? reference : null;
   const yearMonths = pulse.months.filter(item => item.year === pulse.year);
   const monthLabel = `${longMonth(pulse.month)} de ${pulse.year}`;
 
+  if (reference && !lastYear) {
+    readings.push(`${capitalize(longMonth(pulse.month))} de ${pulse.year - 1} no se usa como comparación: su balance no cuadra en el Excel por ${pesos(reference.balance_difference || 0)}.`);
+    const previous = pulseMonth(pulse, pulse.year, pulse.month - 1);
+    const incomeChange = isComparable(previous) ? relativeChange(current.totals.ingresos, previous.totals.ingresos) : null;
+    if (previous && incomeChange !== null) {
+      readings.push(`Frente a ${longMonth(previous.month)}, los ingresos de ${monthLabel} ${incomeChange >= 0 ? 'subieron' : 'bajaron'} ${pct(Math.abs(incomeChange))} (${money(current.totals.ingresos)}) y la utilidad operacional pasó de ${money(previous.totals.utilidad_operacional)} a ${money(current.totals.utilidad_operacional)}.`);
+    }
+  }
   if (lastYear) {
     const change = relativeChange(current.totals.ingresos, lastYear.totals.ingresos);
     if (change !== null) readings.push(`Los ingresos de ${monthLabel} fueron ${money(current.totals.ingresos)}, ${change >= 0 ? 'un' : 'una caída del'} ${pct(Math.abs(change))} ${change >= 0 ? 'más que' : 'frente a'} ${longMonth(pulse.month)} de ${pulse.year - 1}.`);
@@ -95,7 +121,7 @@ export function pulseReadings(pulse: FinancialPulse): string[] {
   }
 
   // Months whose balance does not add up in the Excel are published marked, not hidden.
-  for (const item of pulse.months.filter(month => month.balance_difference)) {
+  for (const item of pulse.months.filter(month => month.balance_difference && month !== reference)) {
     readings.push(`El balance de ${longMonth(item.month)} de ${item.year} en el Excel no cuadra por ${pesos(item.balance_difference || 0)}: sus cifras pueden no ser exactas hasta que Contabilidad lo corrija.`);
   }
 
