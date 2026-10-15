@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   RECOMMENDATIONS_DAILY_BUTTON_LIMIT, RECOMMENDATIONS_OUTPUT_SCHEMA, bogotaDate, buildRecommendationsInput, generateRecommendations,
-  loadRecommendations, resolveAgt001BridgeConfig, setRecommendationFeedback, validateRecommendationsOutput,
+  loadRecommendations, resolveAgt001BridgeConfig, spellSheetMonths, setRecommendationFeedback, validateRecommendationsOutput,
 } from '../siio-recommendations.js';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -191,4 +191,10 @@ test('puente propio de AGT-001 y timer semanal sin secretos en la línea de coma
   assert.match(weekly, /"\$\$AGT001_WEEKLY_SECRET" \| \/usr\/bin\/curl [^']*-H @-/);
   assert.match(read('ops/agt001-recommendations-weekly/agt001-recommendations-weekly.timer'), /OnCalendar=Mon \*-\*-\* 11:30:00 UTC/);
   for (const path of ['ops/agt001-claude-bridge/env.example', 'ops/agt001-recommendations-weekly/env.example']) assert.match(read(path), /SECRET=\n/);
+});
+
+test('las advertencias contables nombran el mes completo para que Vig-IA no confunda el año', () => {
+  assert.equal(spellSheetMonths('7 26: suma de clases 1 a 7.'), 'julio de 2026: suma de clases 1 a 7.');
+  assert.equal(spellSheetMonths('8 25: no cuadra'), 'agosto de 2025: no cuadra');
+  assert.equal(spellSheetMonths('Hay meses sin provisión'), 'Hay meses sin provisión');
 });

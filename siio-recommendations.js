@@ -214,8 +214,17 @@ export function buildRecommendationsInput({ financialMetrics = [], pulse = null,
   };
 }
 
+const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+// Workbook sheets are named "7 26" (July 2026); the model misread that code as a 2025 month, so the month is
+// spelled out before it reaches Vig-IA.
+export function spellSheetMonths(textValue) {
+  return String(textValue || '').replace(/\b(1[0-2]|[1-9]) (\d{2})\b/g, (match, month, year) => `${MONTH_NAMES[Number(month) - 1]} de 20${year}`);
+}
+
 function financialWarningTexts(validations = []) {
-  return validations.filter(item => item.severity === 'advertencia' && !item.ok).map(item => String(item.detail || '').slice(0, 200));
+  return validations.filter(item => item.severity === 'advertencia' && !item.ok)
+    .map(item => spellSheetMonths(`${item.detail || ''}${item.obtained && /^[\d ,]+$/.test(item.obtained) ? ` (${item.obtained})` : ''}`).slice(0, 240));
 }
 
 async function loadRecommendationContext(database, now) {
