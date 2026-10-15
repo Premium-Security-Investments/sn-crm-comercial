@@ -16,7 +16,8 @@ const mainMarkers = [
   'const commercialProfiles = data.profiles.filter(isCommercialProfile)',
   'const goalCommercialProfiles = data.profiles.filter(isCommercialProfile)',
   'ROLE_LABELS[value || \'\']',
-  'roleLabel(p.role)',
+  // La lista de personas muestra pestañas (2026-10-15), no el rol.
+  'tabsLabel(p)',
   'setSidebarOpen',
   'event.key === \'Escape\'',
   '<aside id="app-sidebar"',

@@ -6539,7 +6539,10 @@ app.get('/api/users', async (req, res) => {
         must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code').in('profile_id', ids)),
         must(database.from('psi_profile_permissions').select('profile_id,permission_code').in('profile_id', ids)),
       ]);
-      res.json(enrichProfilesWithAccess(profiles, assignmentRows, permissionRows));
+      // "Último ingreso" (psi_profile_last_seen, migración 111). Si no se puede leer, la lista sale igual sin la fecha.
+      const { data: seenRows } = await database.from('psi_profile_last_seen').select('profile_id,last_seen_at').in('profile_id', ids);
+      const seenById = new Map((Array.isArray(seenRows) ? seenRows : []).map(row => [row.profile_id, row.last_seen_at]));
+      res.json(enrichProfilesWithAccess(profiles, assignmentRows, permissionRows).map(profile => ({ ...profile, last_seen_at: seenById.get(profile.id) ?? null })));
     } catch (error) { throw profileAccessReadFailure(error); }
   } catch (error) { sendAuthError(res, error); }
 });

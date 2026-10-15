@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Bot, Briefcase, ChevronDown, FileCheck2, Gauge, LayoutDashboard, LogOut, Eye, Radar, RefreshCw, ShieldCheck, Sun, Target,
+  Bot, Briefcase, CalendarClock, ChevronDown, FileCheck2, Gauge, LayoutDashboard, LogOut, Eye, Radar, RefreshCw, ShieldCheck, Sun, Target,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -16,6 +16,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   '#/tenders?view=oportunidades': FileCheck2,
   '#/agents': Bot,
   '#/users': ShieldCheck,
+  // Programación de turnos (aplicación aparte).
+  'https://main.dud08epu9vf89.amplifyapp.com': CalendarClock,
 };
 
 export function NavIcon({ href }: { href: string }) {

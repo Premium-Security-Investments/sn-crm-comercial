@@ -31,10 +31,11 @@ export type NavRoutePage =
   | 'centinel'
   | 'users'
   | 'siio'
+  | 'programacion'
   | 'agents';
 
-export type NavItem = { href: string; label: string; page: NavRoutePage };
-export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'IT' | 'Administración'; items: NavItem[] };
+export type NavItem = { href: string; label: string; page: NavRoutePage; external?: boolean };
+export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Programación' | 'IT' | 'Administración'; items: NavItem[] };
 
 type NavGroupDefinition = {
   title: NavGroup['title'];
@@ -50,6 +51,8 @@ const goalWriterRoles = new Set(['admin', 'gerencia']);
 // Rutas de escritura que un rol de solo consulta nunca abre, aunque tenga el módulo.
 // IT → Agentes administra la Plataforma de Agentes: nunca se abre en solo consulta, aunque hoy la vista sea de lectura.
 const writeOnlyPages = new Set<NavRoutePage>(['new', 'edit', 'users', 'goals', 'agents']);
+
+export const PROGRAMACION_APP_URL = 'https://main.dud08epu9vf89.amplifyapp.com';
 
 const navGroups: readonly NavGroupDefinition[] = [
   {
@@ -78,6 +81,13 @@ const navGroups: readonly NavGroupDefinition[] = [
       { href: '#/tenders?view=radar', label: 'Radar', page: 'tenders' },
       { href: '#/tenders?view=seguimiento', label: 'Seguimiento', page: 'tenders' },
       { href: '#/tenders?view=oportunidades', label: 'Oportunidades', page: 'tenders' },
+    ],
+  },
+  {
+    // Aplicación aparte (AGT-006): se abre en otra pestaña. El SIIO sólo decide quién entra (Juan, 2026-10-15).
+    title: 'Programación',
+    items: [
+      { href: PROGRAMACION_APP_URL, label: 'Programación de turnos', page: 'programacion', external: true },
     ],
   },
   {
@@ -111,6 +121,7 @@ const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   tenders: 'licitaciones',
   users: 'modulo_usuarios',
   agents: 'modulo_usuarios',
+  programacion: 'modulo_programacion',
 };
 
 export function isManagementRole(role?: string | null) {
@@ -197,14 +208,14 @@ export function isInitialAppHash(hash: string) {
 }
 
 export function preferredLandingRoute(profile: NavProfile): NavRoutePage {
-  if (profile?.active === true && profile.role === 'comercial') return 'home';
+  if (profile?.active === true && profile.role === 'comercial' && hasModuleAccess(profile, 'modulo_oportunidades')) return 'home';
   return LANDING_PRIORITY.find(route => canAccessRoute(profile, route)) || 'home';
 }
 
 // "Mi día" es la entrada del comercial; los directivos trabajan desde el Dashboard comercial.
 // "Cargar metas" sólo aparece para quien puede escribirlas; la ruta #/goals sigue abierta para enlaces (Ver mi meta).
 function isNavItemVisible(profile: NavProfile, page: NavRoutePage) {
-  if (page === 'home') return profile?.active === true && profile.role === 'comercial';
+  if (page === 'home') return profile?.active === true && profile.role === 'comercial' && hasModuleAccess(profile, 'modulo_oportunidades');
   if (page === 'goals') return canWriteGoals(profile);
   return true;
 }
@@ -216,7 +227,7 @@ export function getVisibleNavGroups(profile?: NavProfile): NavGroup[] {
       items: group.items
         .filter(item => canAccessRoute(profile, item.page))
         .filter(item => isNavItemVisible(profile, item.page))
-        .map(({ href, label, page }) => ({ href, label, page })),
+        .map(({ href, label, page, external }): NavItem => (external ? { href, label, page, external } : { href, label, page })),
     }))
     .filter((group): group is NavGroup => group.items.length > 0);
 }

@@ -29,7 +29,7 @@ test('el menú tiene el grupo IT antes de Administración (que va al final) con 
   const itIdx = nav.indexOf("title: 'IT'");
   assert.ok(itIdx > -1 && adminIdx > itIdx, 'IT va antes de Administración');
   assert.ok(nav.indexOf("{ href: '#/agents', label: 'Agentes', page: 'agents' }") > itIdx);
-  assert.match(nav, /title: 'Gerencia' \| 'Comercial' \| 'Licitaciones' \| 'IT' \| 'Administración';/);
+  assert.match(nav, /title: 'Gerencia' \| 'Comercial' \| 'Licitaciones' \| 'Programación' \| 'IT' \| 'Administración';/);
   assert.match(nav, /\| 'agents';/, 'agents es una página de NavRoutePage');
   assert.equal(moduleActionForPage('agents'), 'modulo_usuarios');
 });

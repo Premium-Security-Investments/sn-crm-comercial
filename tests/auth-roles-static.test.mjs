@@ -24,7 +24,7 @@ assert(src.includes("'users'"), 'Frontend debe incluir ruta users para administr
 assert(src.includes('UsersAdmin'), 'Frontend debe incluir módulo UsersAdmin.');
 assert(src.includes('canManageUsers'), 'Frontend debe ocultar administración a roles no autorizados.');
 assert(apiClient.includes('Authorization') && apiClient.includes('Bearer ${currentAccessToken}'), 'Frontend debe enviar Authorization Bearer a la API.');
-assert(src.includes("['director','Directivo']"), 'Frontend debe mostrar el rol director como Directivo para usuarios ejecutivos.');
+assert(src.includes("director: 'Directivo'"), 'Frontend debe mostrar el rol director como Directivo para usuarios ejecutivos.');
 assert(src.includes('currentProfile={data.currentProfile}'), 'Formulario de seguimiento debe recibir currentProfile como identidad autenticada.');
 const followUpStart = src.indexOf('function FollowUpForm(');
 const followUpEnd = src.indexOf('\nconst publicActuationOptions', followUpStart);
