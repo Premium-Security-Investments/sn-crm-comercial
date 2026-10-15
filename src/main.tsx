@@ -52,6 +52,7 @@ import { profileCompleteness } from './vigia/client-profile.js';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
+import { VigiaChatRegistro } from './vigia/VigiaChatRegistro';
 import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm, TodayQueue, UpcomingList } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
@@ -2481,6 +2482,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
           ? `No tiene nada atrasado. Hoy tiene ${todayRows.length === 1 ? '1 gestión' : `${todayRows.length} gestiones`}.`
           : 'Está al día: no tiene oportunidades pendientes ni gestiones para hoy.'}</p></div>
     </section>
+    {canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro firstName={formatDisplayName(firstName)} onSaved={refresh} />}
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}

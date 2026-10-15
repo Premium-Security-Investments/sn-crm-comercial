@@ -91,8 +91,8 @@ test('las categorías reutilizan los códigos existentes de sesión vencida y l�
 // ---------------------------------------------------------------------------------------------------------------
 // 2. Mensajes al usuario (plan B "avisar")
 
-test('mensajes: distintos por categoría, en lenguaje común, sin códigos ni nombres técnicos, en las dos funciones', () => {
-  for (const feature of ['copilot', 'lead_analysis']) {
+test('mensajes: distintos por categoría, en lenguaje común, sin códigos ni nombres técnicos, en las tres funciones', () => {
+  for (const feature of ['copilot', 'lead_analysis', 'chat']) {
     const messages = AGT003_MODEL_FAILURE_CODES.map(category => agt003ModelFailureMessage(category, feature));
     assert.equal(new Set(messages).size, 4, `${feature}: un mensaje distinto por categoría`);
     for (const message of messages) {
@@ -107,7 +107,8 @@ test('mensajes: distintos por categoría, en lenguaje común, sin códigos ni no
   assert.match(agt003ModelFailureMessage(MODEL_ERROR, 'lead_analysis'), /el análisis/);
   assert.match(agt003ModelFailureMessage(MODEL_ERROR, 'copilot'), /el seguimiento/);
   assert.equal(agt003ModelFailureMessage('LO_QUE_SEA'), agt003ModelFailureMessage(MODEL_ERROR), 'categoría desconocida: mensaje genérico');
-  assert.equal(AGT003_MODEL_FAILURE_MESSAGES.length, 8);
+  assert.match(agt003ModelFailureMessage(MODEL_ERROR, 'chat'), /la respuesta/);
+  assert.equal(AGT003_MODEL_FAILURE_MESSAGES.length, 12);
   assert.equal(isAgt003ModelFailureMessage('Error 500: connection refused'), false);
 });
 

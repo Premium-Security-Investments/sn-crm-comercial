@@ -18,6 +18,7 @@ export const MODEL_GATEWAY_PROVIDER = 'claude_subscription';
 export const AGT003_AGENT_ID = 'AGT-003';
 export const AGT003_COPILOT_CAPABILITY = 'agt003.opportunity-copilot.preview';
 export const AGT003_LEAD_ANALYSIS_CAPABILITY = 'agt003.lead-deep-analysis';
+export const AGT003_CHAT_CAPABILITY = 'agt003.chat-registro';
 
 export const RECORD_MODEL_USAGE_SQL = 'select platform.record_model_usage($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)';
 
@@ -30,6 +31,8 @@ export const MODEL_GATEWAY_REJECTION_CODES = Object.freeze(new Set([
   'VIGIA_COPILOT_PERSONAL_QUOTA',
   'AGT003_LEAD_ANALYSIS_PERSONAL_QUOTA',
   'AGT003_CAPABILITY_DISABLED',
+  'AGT003_CHAT_QUOTA',
+  'AGT003_CHAT_PERSONAL_QUOTA',
 ]));
 
 const FAILURE_CODE = /^[A-Z0-9_]{1,96}$/;

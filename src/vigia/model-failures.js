@@ -61,10 +61,10 @@ export function classifyAgt003ModelFailure(codeOrError) {
 }
 
 const IT_RECORDED = 'Ya quedó registrado para el equipo de IT.';
-const WHAT = Object.freeze({ copilot: 'el seguimiento', lead_analysis: 'el análisis' });
+const WHAT = Object.freeze({ copilot: 'el seguimiento', lead_analysis: 'el análisis', chat: 'la respuesta' });
 
 /**
- * Mensaje para quien usa la función (plan B "avisar"). `feature`: 'copilot' | 'lead_analysis'. Nunca contiene
+ * Mensaje para quien usa la función (plan B "avisar"). `feature`: 'copilot' | 'lead_analysis' | 'chat'. Nunca contiene
  * códigos, nombres de servidores ni texto del proveedor.
  */
 export function agt003ModelFailureMessage(category, feature = 'copilot') {
@@ -83,7 +83,7 @@ export function agt003ModelFailureMessage(category, feature = 'copilot') {
 
 /** Todos los mensajes posibles (para que la interfaz sepa que puede mostrarlos tal cual). */
 export const AGT003_MODEL_FAILURE_MESSAGES = Object.freeze(
-  ['copilot', 'lead_analysis'].flatMap(feature => AGT003_MODEL_FAILURE_CODES.map(category => agt003ModelFailureMessage(category, feature))),
+  ['copilot', 'lead_analysis', 'chat'].flatMap(feature => AGT003_MODEL_FAILURE_CODES.map(category => agt003ModelFailureMessage(category, feature))),
 );
 
 export function isAgt003ModelFailureMessage(message) {
