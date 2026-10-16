@@ -61,7 +61,7 @@ type Stage = { code: string; name: string; stage_order: number; close_probabilit
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
 type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
 type AccessCatalog = { areas: Array<{ code: string; name: string }>; subareas: Array<{ code: string; area_code: string; name: string }>; permissions: Array<{ code: string; name: string; description: string }> };
-type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; can_own_opportunities?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[]; ai_usage_profile?: string | null; last_seen_at?: string | null };
+type Profile = { id: string; full_name: string; microsoft_email: string; whatsapp_phone?: string | null; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; can_own_opportunities?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[]; ai_usage_profile?: string | null; last_seen_at?: string | null };
 type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
@@ -3111,7 +3111,14 @@ function monthName(month: number) {
 
 // Usuarios y permisos por pestañas (Juan Botero, 2026-10-15): se marcan las pestañas del menú que la persona abre y las
 // opciones dentro de ellas. El rol, los permisos y las áreas se calculan con profile-tabs.js; el servidor valida igual.
-type UserForm = { full_name: string; microsoft_email: string; active: boolean; password: string; send_invite: boolean; access: TabsAccess; ai_usage_profile: string | null; legacy_role: string | null; existing_areas: AccessAssignment[] };
+/** WhatsApp del perfil en formato internacional (E.164). Vacío → null; 10 dígitos que empiezan por 3 → celular de Colombia (+57); inválido → undefined. */
+export function normalizarWhatsapp(valor: string): string | null | undefined {
+  const limpio = valor.replace(/[\s().-]/g, '');
+  if (!limpio) return null;
+  const numero = /^3\d{9}$/.test(limpio) ? `+57${limpio}` : /^57\d{10}$/.test(limpio) ? `+${limpio}` : limpio;
+  return /^\+[1-9]\d{7,14}$/.test(numero) ? numero : undefined;
+}
+type UserForm = { full_name: string; microsoft_email: string; whatsapp_phone: string; active: boolean; password: string; send_invite: boolean; access: TabsAccess; ai_usage_profile: string | null; legacy_role: string | null; existing_areas: AccessAssignment[] };
 const LEGACY_ROLE_NOTE: Record<string, string> = { director: 'Directivo', junta: 'Junta', colaborador: 'Colaborador' };
 function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
@@ -3119,7 +3126,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement | null>(null);
-  const emptyUserForm: UserForm = { full_name: '', microsoft_email: '', active: true, password: '', send_invite: true, access: { ...EMPTY_TABS_ACCESS, tabs: [] }, ai_usage_profile: null, legacy_role: null, existing_areas: [] };
+  const emptyUserForm: UserForm = { full_name: '', microsoft_email: '', whatsapp_phone: '', active: true, password: '', send_invite: true, access: { ...EMPTY_TABS_ACCESS, tabs: [] }, ai_usage_profile: null, legacy_role: null, existing_areas: [] };
   // "Perfil de uso de IA": perfiles no archivados de la Plataforma de Agentes. Si la plataforma no responde, el campo se
   // deshabilita y no se envía (el servidor conserva el valor guardado).
   const [aiProfiles, setAiProfiles] = useState<{ status: 'loading' | 'ready' | 'error'; profiles: AiUsageProfileOption[] }>({ status: 'loading', profiles: [] });
@@ -3172,16 +3179,18 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const sortUsersBy = (key: typeof usersSortConfig.key) => setUsersSortConfig(current => nextSort(current, key));
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">No tiene autorización para administrar usuarios.</div>;
-  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, active: user.active, password: '', send_invite: false, access: tabsFromProfile(user), ai_usage_profile: user.ai_usage_profile ?? null, legacy_role: LEGACY_ROLE_NOTE[user.role] ? user.role : null, existing_areas: user.areas || [] }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
+  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, whatsapp_phone: user.whatsapp_phone ?? '', active: user.active, password: '', send_invite: false, access: tabsFromProfile(user), ai_usage_profile: user.ai_usage_profile ?? null, legacy_role: LEGACY_ROLE_NOTE[user.role] ? user.role : null, existing_areas: user.areas || [] }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
   const cancelEdit = () => { setEditingUserId(null); setForm(emptyUserForm); setStatus(''); };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (catalogStatus !== 'ready') { setStatus('El catálogo de acceso no está disponible. Espera a que cargue o actualiza la página.'); return; }
     if (!derived) { setStatus(derivedError || 'Revise las pestañas marcadas.'); return; }
+    const whatsapp = normalizarWhatsapp(form.whatsapp_phone);
+    if (whatsapp === undefined) { setStatus('El número de WhatsApp no es válido. Escríbalo con indicativo, por ejemplo +57 300 123 4567.'); return; }
     setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…');
     try {
       const payload = {
-        full_name: form.full_name, microsoft_email: form.microsoft_email, active: form.active, password: form.password, send_invite: form.send_invite,
+        full_name: form.full_name, microsoft_email: form.microsoft_email, whatsapp_phone: whatsapp, active: form.active, password: form.password, send_invite: form.send_invite,
         role: derived.role, areas: derived.areas, permissions: derived.permissions,
         can_edit_customer_segment: derived.can_edit_customer_segment, can_own_opportunities: derived.can_own_opportunities,
         ...(aiProfiles.status === 'ready' ? { ai_usage_profile: form.ai_usage_profile ?? null } : {}),
@@ -3201,6 +3210,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
     <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Quién entra y qué puede abrir</h2><p>Marque las pestañas del menú que la persona puede abrir. Lo que no marque no le aparece.</p></div><div className="hero-facts"><div><small>Personas</small><strong>{users.length}</strong></div><div><small>Activas</small><strong>{users.filter(user => user.active).length}</strong></div></div></section>
     <div ref={editFormRef} className="users-edit-anchor"><Panel title={editingUserId ? `Editar usuario · ${form.full_name || form.microsoft_email}` : 'Crear usuario'}><form className="form gridform" onSubmit={submit}>
       <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Correo electrónico<input type="email" required disabled={Boolean(editingUserId)} title={editingUserId ? 'El correo identifica de forma inmutable al usuario; cree un perfil nuevo para otra identidad.' : undefined} value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
+      <label>WhatsApp<input type="tel" inputMode="tel" placeholder="+57 300 123 4567" value={form.whatsapp_phone} onChange={e=>setForm({...form, whatsapp_phone:e.target.value})}/><small>Opcional. Celular con indicativo del país; si es de Colombia basta con los 10 dígitos.</small></label>
       <label className="wide">Empezar desde una plantilla<select value="" onChange={e => { applyTemplate(e.target.value); }}><option value="">Elegir plantilla (opcional)…</option>{PROFILE_TEMPLATES.map(template => <option key={template.code} value={template.code}>{template.label}</option>)}</select><small className="muted">La plantilla solo marca casillas; después puede ajustarlas.</small></label>
       {form.legacy_role && <p className="muted wide">Esta persona tiene un perfil antiguo ({LEGACY_ROLE_NOTE[form.legacy_role]}). Al guardar queda exactamente con lo que esté marcado abajo.</p>}
       <fieldset className="access-scope wide"><legend>Pestañas que puede abrir</legend><p>Al marcar una pestaña con opciones, estas aparecen debajo.</p>{catalogStatus === 'loading' && <p className="muted">Cargando catálogo de accesos…</p>}{catalogStatus === 'error' && <p className="error">No fue posible cargar el catálogo de accesos. Actualiza la página antes de guardar.</p>}<div className="access-scope-grid">
@@ -3239,7 +3249,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
       <aside className="access-permission wide"><strong>Verá en su menú</strong><small>{derivedError || (menuSummary.length ? menuSummary.join(' · ') : 'Ninguna pestaña')}{readOnly ? ' — solo consulta' : ''}</small></aside>
       <div className="formactions"><button disabled={catalogStatus !== 'ready'}>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
     </form></Panel></div>
-    <Panel title="Personas"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Correo" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Pestañas" sortKey="tabs" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Programación</th><SortableTh label="Último ingreso" sortKey="seen" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td>{tabsLabel(p)}</td><td>{programacionLabel(p)}</td><td>{seenLabel(p)}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
+    <Panel title="Personas"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Correo" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Pestañas" sortKey="tabs" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Programación</th><SortableTh label="Último ingreso" sortKey="seen" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}{p.whatsapp_phone ? <div className="muted">WhatsApp {p.whatsapp_phone}</div> : null}</td><td>{tabsLabel(p)}</td><td>{programacionLabel(p)}</td><td>{seenLabel(p)}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }
 

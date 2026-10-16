@@ -242,7 +242,7 @@ assert.deepEqual(
 assert.deepEqual(rpcCalls, [{
   name: 'psi_admin_persist_profile_access',
   params: {
-    p_mode: 'patch', p_target_id: oldProfile.id, p_expected_profile: oldProfile,
+    p_mode: 'patch', p_target_id: oldProfile.id, p_expected_profile: { ...oldProfile, whatsapp_phone: null },
     p_profile: changedProfile, p_areas: afterAccess.areas, p_permissions: afterAccess.permissions, p_actor_profile_id: 'admin', p_operation_id: 'operation',
   },
 }], 'el helper envía un único comando transaccional con snapshot optimista');

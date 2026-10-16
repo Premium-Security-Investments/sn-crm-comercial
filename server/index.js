@@ -564,6 +564,12 @@ function getBearerToken(req) {
 function isExactNonblankString(value) {
   return typeof value === 'string' && value.length > 0 && value.trim() === value;
 }
+export function normalizeWhatsappPhone(value) {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return null;
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!/^\+[1-9][0-9]{7,14}$/.test(normalized)) throw accessValidationError('El número de WhatsApp debe usar formato internacional E.164, por ejemplo +573001234567.');
+  return normalized;
+}
 function normalizeAccessAssignments(rows) {
   if (!Array.isArray(rows)) throw new Error('Asignaciones de área inválidas.');
   const assignments = [];
@@ -746,7 +752,7 @@ export async function replaceProfileAccess(database, { profileId, actorProfileId
     throw profileAccessWriteFailure(error);
   }
 }
-const profileAdminSelect = 'id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at';
+const profileAdminSelect = 'id,full_name,microsoft_email,whatsapp_phone,role,active,commercial_area,can_edit_customer_segment,created_at';
 function profileExpectedSnapshot(profile) {
   return {
     id: profile.id,
@@ -756,6 +762,7 @@ function profileExpectedSnapshot(profile) {
     active: profile.active,
     commercial_area: profile.commercial_area ?? null,
     can_edit_customer_segment: profile.can_edit_customer_segment === true,
+    whatsapp_phone: profile.whatsapp_phone ?? null,
   };
 }
 export async function acquireProfileAdministrationLock(database, actorProfileId) {
@@ -6865,7 +6872,7 @@ app.get('/api/users', async (req, res) => {
     let profiles;
     try {
       // "Perfil de uso de IA" (migración 119). Si la columna aún no existe, se lee sin ella y el valor queda en null.
-      const userColumns = 'id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities,created_at,identity_type';
+      const userColumns = 'id,full_name,microsoft_email,whatsapp_phone,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities,created_at,identity_type';
       const withAiProfile = await database.from('psi_sales_profiles').select(`${userColumns},ai_usage_profile`).order('full_name');
       profiles = withAiProfile.error && withAiProfile.error.code === '42703'
         ? (await must(database.from('psi_sales_profiles').select(userColumns).order('full_name'))).map(profile => ({ ...profile, ai_usage_profile: null }))
@@ -7129,6 +7136,7 @@ app.post('/api/users', async (req, res) => {
     const database = requireDb();
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
+    const whatsapp_phone = normalizeWhatsappPhone(req.body.whatsapp_phone);
     const role = normalizeUserRole(req.body.role);
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
@@ -7156,7 +7164,7 @@ app.post('/api/users', async (req, res) => {
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
     try {
-      row = await persistProfileAccessChange(database, { mode: 'post', targetId: beforeProfile?.id || null, beforeProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
+      row = await persistProfileAccessChange(database, { mode: 'post', targetId: beforeProfile?.id || null, beforeProfile, profileValues: { full_name, microsoft_email, whatsapp_phone, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
@@ -7174,12 +7182,14 @@ app.patch('/api/users', async (req, res) => {
     requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
     const id = String(req.query.id || '').trim();
-    const existingRow = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,identity_type').eq('id', id).single());
+    const existingRow = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,whatsapp_phone,role,active,commercial_area,can_edit_customer_segment,identity_type').eq('id', id).single());
     if (!existingRow) { const error = new Error('Usuario no encontrado.'); error.status = 404; throw error; }
     assertEditableHumanProfile(existingRow);
     const { identity_type: _existingIdentityType, ...existingProfile } = existingRow;
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
+    // Si la pantalla no envía el campo (versión anterior en caché), se conserva el número guardado.
+    const whatsapp_phone = req.body.whatsapp_phone === undefined ? (existingProfile.whatsapp_phone ?? null) : normalizeWhatsappPhone(req.body.whatsapp_phone);
     const role = normalizeUserRole(req.body.role);
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
@@ -7208,7 +7218,7 @@ app.patch('/api/users', async (req, res) => {
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
     try {
-      row = await persistProfileAccessChange(database, { mode: 'patch', targetId: id, beforeProfile: existingProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
+      row = await persistProfileAccessChange(database, { mode: 'patch', targetId: id, beforeProfile: existingProfile, profileValues: { full_name, microsoft_email, whatsapp_phone, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
