@@ -122,6 +122,28 @@ function isEsuTenderTrackable(item) {
   const isNonCommercialAct = TENDER_NON_COMMERCIAL_ACT_TERMS.some(term => text.includes(normTenderText(term)));
   return !hasNonSecurityContext && !isNonCommercialAct && isTenderTrackableStatus(item) && !TENDER_DISQUALIFYING_TERMS.some(term => text.includes(normTenderText(term)));
 }
+// ESU contrata para sus clientes a través de aliados proveedores: la convocatoria para ser aliado
+// (SPO "aliados proveedores") es la puerta de entrada y siempre se muestra; si es de vigilancia o de
+// seguridad electrónica va a "hacer". El nombre de la propia ESU ("Seguridad y Soluciones Urbanas")
+// no cuenta como señal de seguridad.
+const ESU_ALIADOS_SECURITY_TERMS = ['vigilancia', 'seguridad privada', 'sistemas integrales de seguridad', 'seguridad electronica', 'cctv', 'videovigilancia', 'control de acceso', 'alarma'].map(normTenderText);
+const ESU_SECURITY_LINES = ['Vigilancia física', 'Sistemas integrales de seguridad'];
+export function isEsuAliadosConvocatoria(tender) {
+  const raw = tender?.raw && typeof tender.raw === 'object' ? tender.raw : {};
+  if (normTenderText(raw.tipoProceso).trim() === 'spo') return true;
+  // Seleccionar aliados (plural); "el ALIADO PROVEEDOR se obliga…" es un contrato ya asignado.
+  return /\b(seleccion|seleccionar|solicitud publica de ofertas?)\b[\s\S]{0,200}\baliad[oa]s\s+proveedor/.test(normTenderText(`${tender?.title || ''} ${raw.objeto || ''} ${raw.nombre_del_procedimiento || ''}`));
+}
+export function esuAliadosSection(tender) {
+  const raw = tender?.raw && typeof tender.raw === 'object' ? tender.raw : {};
+  if ((raw.lines || []).some(line => ESU_SECURITY_LINES.includes(line))) return 'hacer';
+  const text = normTenderText(`${tender?.title || ''} ${raw.objeto || ''}`).replace(/seguridad y soluciones urbanas|seguridad urbana/g, ' ');
+  return ESU_ALIADOS_SECURITY_TERMS.some(term => text.includes(term)) ? 'hacer' : 'revisar';
+}
+export function withEsuAliadosPriority(tender) {
+  if (!isEsuAliadosConvocatoria(tender)) return tender;
+  return { ...tender, reasons: [...new Set(['ESU: convocatoria de aliados proveedores', ...(tender.reasons || [])])].slice(0, 7), section: esuAliadosSection(tender) };
+}
 function normalizeDocumentType(value, filename = '') {
   if (ESU_DOCUMENT_TYPES.includes(value)) return value;
   const name = normTenderText(filename);
@@ -221,7 +243,7 @@ function normalizeEsuProcess(process, detail = null) {
     score: scored.score, reasons: [...new Set(scored.reasons || [])].slice(0, 7), risks: [...new Set([...(scored.risks || []), 'ESU: validar pliego/anexos en detalle del proceso'])].slice(0, 5),
     url: process.url || ESU_CONTRATACION_URL, raw: { numero, objeto, tipoProceso, fechaApertura, fechaCierre, estado, funcionario, ciiu: detail?.ciiu || [], lines: detail?.lines || [], documents: detail ? detail.documents || [] : [], documents_count: detail?.documents?.length || 0 }
   };
-  const withId = { ...tender, section: classifyTenderSection(tender) };
+  const withId = withEsuAliadosPriority({ ...tender, section: classifyTenderSection(tender) });
   return { ...withId, id: stableTenderKey(withId), stable_key: stableTenderKey(withId), internal_status: 'nueva', converted_opportunity_id: null };
 }
 
@@ -298,7 +320,10 @@ export async function fetchEsuProcesses({ includeHistorical = false, fetchIndexP
   // the index/search-derived rows as-is, before the current-candidate filters below and before any
   // detail enrichment. Default candidate-discovery behavior is unchanged.
   if (includeHistorical) return sortEsuTenders(normalized);
-  const preliminary = sortEsuTenders(normalized.filter(t => t.days === null || t.days >= 0).filter(isEsuTenderTrackable));
+  // Una convocatoria de aliados abierta se sigue aunque su objeto no sea de seguridad (p. ej. logística):
+  // sólo se le exige estado vigente; las demás filas pasan por el filtro de relevancia de siempre.
+  const isCandidate = t => (isEsuAliadosConvocatoria(t) ? isTenderTrackableStatus(t) : isEsuTenderTrackable(t));
+  const preliminary = sortEsuTenders(normalized.filter(t => t.days === null || t.days >= 0).filter(isCandidate));
   const enriched = [];
   for (const [index, tender] of preliminary.entries()) {
     if (index >= 40) { enriched.push(tender); continue; }
@@ -306,5 +331,5 @@ export async function fetchEsuProcesses({ includeHistorical = false, fetchIndexP
     const detail = await fetchEsuProcessDetail(sourceRow);
     enriched.push(normalizeEsuProcess(sourceRow, detail));
   }
-  return sortEsuTenders(enriched.filter(t => t.days === null || t.days >= 0).filter(isEsuTenderTrackable));
+  return sortEsuTenders(enriched.filter(t => t.days === null || t.days >= 0).filter(isCandidate));
 }

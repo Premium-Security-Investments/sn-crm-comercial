@@ -515,3 +515,42 @@ test('contratación directa convertida en oportunidad sigue visible', () => {
   const convertida = { ...directaSeleccionada, id: 'CD-CONVERTIDA', internal_status: 'convertida_oportunidad' };
   assert.equal(evaluateTenderCompetibility(convertida, { nowIso: OCT17 }).status, 'competible');
 });
+
+// ESU (decisión de Juan, 17-oct): sólo la convocatoria de aliados proveedores es competible;
+// el resto de publicaciones de ESU son asignaciones a aliados ya elegidos.
+const esuUnicaOferta = baseTender({
+  id: 'ESU-2026-144',
+  source: 'ESU Contratación',
+  title: 'Contrato de prestación de servicios para el apoyo a la gestión en los procesos y trámites presupuestales',
+  ref: '2026-144',
+  deadline_at: null,
+  raw: { numero: '2026-144', tipoProceso: 'Única Oferta', estado: 'Celebrado' },
+});
+
+test('ESU: publicación que no es convocatoria de aliados → no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(esuUnicaOferta, { nowIso: OCT17 }).status, 'no_competible');
+  const spva = { ...esuUnicaOferta, id: 'ESU-2026-27', title: 'Adquisición de vehículos especiales (camioneta para patrullaje canino)', raw: { tipoProceso: 'SPVA', estado: 'Convocado' }, deadline_at: '2026-11-01T17:00:00.000Z' };
+  assert.equal(evaluateTenderCompetibility(spva, { nowIso: OCT17 }).status, 'no_competible');
+});
+
+test('ESU: convocatoria SPO del portal con plazo → competible', () => {
+  const spo = { ...esuUnicaOferta, id: 'ESU-SPO-2026-5', title: 'Selección de empresas comercializadoras e integradoras de sistemas integrales de seguridad', deadline_at: '2026-11-05T16:00:00.000Z', raw: { tipoProceso: 'SPO', estado: 'Convocado' } };
+  assert.equal(evaluateTenderCompetibility(spo, { nowIso: OCT17 }).status, 'competible');
+});
+
+test('ESU vía SECOP: "aliados proveedores" en régimen especial reciente → competible; vieja → no_competible', () => {
+  const reciente = { ...esuUnicaOferta, id: 'ESU-SECOP-ALIADOS', title: 'SELECCIONAR EMPRESAS COMO ALIADOS PROVEEDORES PARA LA FIRMA DE ACUERDOS MARCO CON LA ESU', raw: { modalidad_de_contratacion: 'Contratación régimen especial', estado_del_procedimiento: 'Publicado', fecha_de_publicacion_del: '2026-10-10T00:00:00.000' } };
+  assert.equal(evaluateTenderCompetibility(reciente, { nowIso: OCT17 }).status, 'competible');
+  const vieja = { ...reciente, id: 'ESU-SECOP-ALIADOS-VIEJA', raw: { ...reciente.raw, fecha_de_publicacion_del: '2026-09-01T00:00:00.000' } };
+  assert.equal(evaluateTenderCompetibility(vieja, { nowIso: OCT17 }).status, 'no_competible');
+});
+
+test('ESU convertida en oportunidad sigue visible', () => {
+  const convertida = { ...esuUnicaOferta, id: 'ESU-CONVERTIDA', internal_status: 'convertida_oportunidad' };
+  assert.equal(evaluateTenderCompetibility(convertida, { nowIso: OCT17 }).status, 'competible');
+});
+
+test('ESU: contrato "el ALIADO PROVEEDOR se obliga…" es asignación, no convocatoria → no_competible', () => {
+  const asignado = { ...esuUnicaOferta, id: 'ESU-ASIGNADO', title: 'El ALIADO PROVEEDOR se obliga con la ESU a la prestación integral de servicios de operación logística', raw: { modalidad_de_contratacion: 'Contratación régimen especial', estado_del_procedimiento: 'Publicado', fecha_de_publicacion_del: '2026-10-10T00:00:00.000' } };
+  assert.equal(evaluateTenderCompetibility(asignado, { nowIso: OCT17 }).status, 'no_competible');
+});
