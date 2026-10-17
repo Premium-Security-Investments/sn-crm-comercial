@@ -138,7 +138,7 @@ import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
 import { readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
 import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
-import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId } from '../esu-direct-crawl.js';
+import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId, withEsuAliadosPriority } from '../esu-direct-crawl.js';
 import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
 import { buildAgt002RadarRunReceipt, readAgt002RadarRunReceiptHistory, readLatestAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../agt002-radar-run-receipt.js';
 import { buildAgt002RadarRunSnapshot, computeAgt002RadarRunDelta } from '../agt002-radar-run-delta.js';
@@ -1605,7 +1605,7 @@ function normalizeEsuDatosGovProcess(row, originalSource) {
     crm_next_step: 'Validar fecha de cierre y documentos en SECOP/portal ESU; si encaja, marcar en revisión o convertir desde CRM.',
     raw: { ...(tender.raw || row), source_origin: originalSource, discovery: 'datos.gov.co' }
   };
-  return { ...withSource, id: stableTenderKey(withSource), stable_key: stableTenderKey(withSource), section: classifyTenderSection(withSource) };
+  return withEsuAliadosPriority({ ...withSource, id: stableTenderKey(withSource), stable_key: stableTenderKey(withSource), section: classifyTenderSection(withSource) });
 }
 function keywordWhere(fields) {
   const terms = ['vigilancia','seguridad privada','cctv','videovigilancia','control de acceso','alarma','monitoreo','camaras','cámaras','biometrico','biométrico'];

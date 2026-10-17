@@ -75,3 +75,31 @@ test('includeHistorical:true surfaces past/terminal ESU direct rows that default
   assert.equal(defaultMode.some(t => t.ref === 'IDX-2020-001'), false, 'default candidate-discovery mode must still exclude past/terminal rows');
   assert.equal(defaultMode.some(t => t.ref === 'SRCH-2020-002'), false, 'default candidate-discovery mode must still exclude past/terminal rows');
 });
+
+// Convocatorias de aliados proveedores (SPO): se siguen aunque el objeto no sea de seguridad; las de
+// vigilancia o seguridad electrónica van a "hacer". El nombre de ESU no cuenta como señal de seguridad.
+const SPO_LOGISTICA_ROW = {
+  url: 'https://example.invalid/procesos/view/9990101',
+  cells: ['1', '2099-4', 'SELECCIÓN DE ALIADOS PROVEEDORES PARA LA PRESTACIÓN INTEGRAL DE SERVICIOS DE OPERACIÓN LOGÍSTICA DE LA EMPRESA PARA LA SEGURIDAD Y SOLUCIONES URBANAS – ESU', 'SPO', '2099-09-01 11:23:00', '2099-09-09 15:00:00', 'Convocado', 'Juliana Aguilar', 'Ver'],
+};
+const SPO_SEGURIDAD_ROW = {
+  url: 'https://example.invalid/procesos/view/9990102',
+  cells: ['2', '2099-5', 'Selección de empresas comercializadoras e integradoras de bienes y servicios de tecnología y sistemas integrales de seguridad como aliados proveedores', 'SPO', '2099-10-17 17:14:00', '2099-11-05 11:00:00', 'Convocado', 'Ana López', 'Ver'],
+};
+
+test('SPO de aliados: logística se sigue en "revisar" y seguridad electrónica va a "hacer"', async () => {
+  const tenders = await fetchEsuProcesses({ fetchIndexPages: async () => [SPO_LOGISTICA_ROW, SPO_SEGURIDAD_ROW], searchProcesses: async () => [] });
+  const logistica = tenders.find(t => t.ref === '2099-4');
+  const seguridad = tenders.find(t => t.ref === '2099-5');
+  assert.ok(logistica, 'la SPO de logística debe seguirse aunque no sea de seguridad');
+  assert.equal(logistica.section, 'revisar');
+  assert.ok(logistica.reasons.includes('ESU: convocatoria de aliados proveedores'));
+  assert.ok(seguridad, 'la SPO de sistemas integrales de seguridad debe seguirse');
+  assert.equal(seguridad.section, 'hacer');
+});
+
+test('SPO de aliados ya celebrada no se sigue', async () => {
+  const celebrada = { ...SPO_SEGURIDAD_ROW, url: 'https://example.invalid/procesos/view/9990103', cells: SPO_SEGURIDAD_ROW.cells.map((c, i) => (i === 1 ? '2099-6' : i === 6 ? 'Celebrado' : c)) };
+  const tenders = await fetchEsuProcesses({ fetchIndexPages: async () => [celebrada], searchProcesses: async () => [] });
+  assert.equal(tenders.some(t => t.ref === '2099-6'), false);
+});

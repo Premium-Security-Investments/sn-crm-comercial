@@ -4,7 +4,8 @@
 // Hide automático estrecho tipo Pereira: modalidad EXACTA `Contratación régimen especial`
 // (no "con ofertas") + sin plazo + (proveedor nombrado, ref CTO/CONTRATO, estado Seleccionado
 // o última publicación de hace más de 30 días) → no_competible. Modalidad EXACTA
-// `Contratación directa` (no "con ofertas") → no_competible.
+// `Contratación directa` (no "con ofertas") → no_competible. ESU: sólo su convocatoria de
+// aliados proveedores es competible; el resto de ESU → no_competible.
 
 const CONTINUITY_TEXT_PATTERN = /prorroga|renovacion|continuidad/;
 const ACCEPTANCE_TEXT_PATTERN = /adjudicacion|aceptacion|ejecucion/;
@@ -241,6 +242,24 @@ function isExactDirectContracting(row) {
     .some(value => String(value || '').trim() === EXACT_DIRECT_CONTRACTING);
 }
 
+// ESU contrata para sus clientes a través de aliados proveedores ya elegidos: de ESU sólo es
+// competible la convocatoria para ser aliado (SPO / "aliados proveedores"); el resto son
+// asignaciones a aliados y se ocultan del Radar (decisión de Juan, 2026-10-17). La convocatoria
+// sigue pasando por las demás reglas (p. ej. régimen especial viejo sin plazo).
+const ESU_SOURCE = 'ESU Contratación';
+// Convocatoria = seleccionar aliados (plural); "el ALIADO PROVEEDOR se obliga…" es un contrato ya asignado.
+const ESU_ALIADOS_PATTERN = /\b(seleccion|seleccionar|solicitud publica de ofertas?)\b[\s\S]{0,200}\baliad[oa]s\s+proveedor/;
+
+function isEsuAliadosConvocatoria(row) {
+  const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+  if (String(raw.tipoProceso || '').trim().toUpperCase() === 'SPO') return true;
+  return ESU_ALIADOS_PATTERN.test(normalizeText(`${row?.title || ''} ${raw.objeto || ''} ${raw.nombre_del_procedimiento || ''}`));
+}
+
+function isEsuAssignmentToAllies(row) {
+  return String(row?.source || '').trim() === ESU_SOURCE && !isEsuAliadosConvocatoria(row);
+}
+
 function isConvertedRow(row) {
   // Convertida de verdad: confirmación manual o estado interno. Un converted_opportunity_id
   // colgado (fila aún `nueva`) no bypass: EPM CW396234 vive así y debe seguir no_competible.
@@ -253,6 +272,7 @@ export function evaluateTenderCompetibility(row, { nowIso } = {}) {
   if (hasBlockingStructuredEvidence(row) || hasCuratedBlockingEvidence(row)) return { status: 'no_competible' };
   if (isSpecialRegimePublicity(row, nowIso)) return { status: 'no_competible' };
   if (isExactDirectContracting(row)) return { status: 'no_competible' };
+  if (isEsuAssignmentToAllies(row)) return { status: 'no_competible' };
   const signals = freeTextSignals(row);
   if (signals.continuity && signals.acceptance) return { status: 'por_verificar' };
   return { status: 'competible' };
