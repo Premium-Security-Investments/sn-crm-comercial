@@ -44,7 +44,8 @@ const secopIIRawRow = {
   descripci_n_del_procedimiento: 'Continuidad del contrato de interventoría integral',
   fase: 'Selección',
   estado_del_procedimiento: 'Presentación de oferta',
-  fecha_de_publicacion_del: '2026-09-01T00:00:00.000',
+  // Reciente respecto al nowIso del test (1-oct): más de 30 días sin plazo ya se oculta.
+  fecha_de_publicacion_del: '2026-09-20T00:00:00.000',
   precio_base: '500000000',
   codigo_principal_de_categoria: 'V1.81101500',
   urlproceso: { url: 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.TEST' },
