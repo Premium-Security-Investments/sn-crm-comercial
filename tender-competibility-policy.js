@@ -2,7 +2,9 @@
 // proceso de Radar sigue siendo una competencia abierta real o si evidencia conjunta
 // verificable (o la falta de ella) obliga a ocultarlo o marcarlo incierto antes de convertir.
 // Hide automático estrecho tipo Pereira: modalidad EXACTA `Contratación régimen especial`
-// (no "con ofertas") + sin plazo + (proveedor nombrado o ref CTO/CONTRATO) → no_competible.
+// (no "con ofertas") + sin plazo + (proveedor nombrado, ref CTO/CONTRATO, estado Seleccionado
+// o última publicación de hace más de 30 días) → no_competible. Modalidad EXACTA
+// `Contratación directa` (no "con ofertas") → no_competible.
 
 const CONTINUITY_TEXT_PATTERN = /prorroga|renovacion|continuidad/;
 const ACCEPTANCE_TEXT_PATTERN = /adjudicacion|aceptacion|ejecucion/;
@@ -194,10 +196,49 @@ function hasCtoOrContratoRef(row) {
   return /\bCTO\b|CONTRATO/i.test(ref);
 }
 
+// Titular 2026-10-17: SECOP casi siempre deja `nombre_del_proveedor` en "No Definido" y pone el
+// contratista en el título, así que las señales de arriba se escapaban. Dos señales más:
+// estado "Seleccionado" (el proveedor ya está escogido) o la última publicación con más de
+// STALE_SPECIAL_REGIME_DAYS días sin plazo. Lo publicado en esa ventana sigue visible (SINCHI).
+const STALE_SPECIAL_REGIME_DAYS = 30;
+const DAY_MS = 86400000;
+
+function isSeleccionadoStatus(row) {
+  const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+  return [row?.estado_del_procedimiento, raw.estado_del_procedimiento]
+    .some(value => normalizeText(value).trim() === 'seleccionado');
+}
+
+// La publicación más reciente que reporte la fila; sin ninguna fecha válida no se oculta.
+function latestPublicationMs(row) {
+  const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+  const times = [raw.fecha_de_ultima_publicaci, raw.fecha_de_publicacion_del, row?.published_at, row?.published]
+    .map(value => (value ? new Date(value).getTime() : NaN))
+    .filter(Number.isFinite);
+  return times.length ? Math.max(...times) : null;
+}
+
+function isStalePublication(row, nowIso) {
+  const published = latestPublicationMs(row);
+  if (published == null) return false;
+  const now = new Date(nowIso || Date.now()).getTime();
+  return now - published > STALE_SPECIAL_REGIME_DAYS * DAY_MS;
+}
+
 function isSpecialRegimePublicity(row, nowIso) {
   if (!isExactSpecialRegimenNotConOfertas(row)) return false;
   if (hasValidFutureDeadline(specialRegimeDeadline(row), nowIso)) return false;
-  return isNamedProveedor(row) || hasCtoOrContratoRef(row);
+  return isNamedProveedor(row) || hasCtoOrContratoRef(row) || isSeleccionadoStatus(row) || isStalePublication(row, nowIso);
+}
+
+// Contratación directa (no "con ofertas"): no hay competencia abierta, el proveedor lo escoge la
+// entidad. La compuerta del preanálisis ya la marcaba, pero desde #203 no gobierna visibilidad.
+const EXACT_DIRECT_CONTRACTING = 'Contratación directa';
+
+function isExactDirectContracting(row) {
+  const raw = row?.raw && typeof row.raw === 'object' ? row.raw : {};
+  return [row?.modalidad_de_contratacion, raw.modalidad_de_contratacion]
+    .some(value => String(value || '').trim() === EXACT_DIRECT_CONTRACTING);
 }
 
 function isConvertedRow(row) {
@@ -211,6 +252,7 @@ export function evaluateTenderCompetibility(row, { nowIso } = {}) {
   if (isConvertedRow(row)) return { status: 'competible' };
   if (hasBlockingStructuredEvidence(row) || hasCuratedBlockingEvidence(row)) return { status: 'no_competible' };
   if (isSpecialRegimePublicity(row, nowIso)) return { status: 'no_competible' };
+  if (isExactDirectContracting(row)) return { status: 'no_competible' };
   const signals = freeTextSignals(row);
   if (signals.continuity && signals.acceptance) return { status: 'por_verificar' };
   return { status: 'competible' };
