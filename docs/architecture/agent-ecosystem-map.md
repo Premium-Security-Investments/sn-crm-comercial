@@ -2,22 +2,29 @@
 
 **Estado:** diagnóstico de arquitectura; no autoriza integración ni despliegue
 
-**Fecha de corte:** 2026-10-02
+**Fecha de corte:** 2026-10-02; AGT-001, AGT-004 y AGT-006 actualizados al 2026-10-18
 
 **Repositorios revisados:**
 
 - [`sn-crm-comercial@223a085`](https://github.com/Premium-Security-Investments/sn-crm-comercial/commit/223a085be330f099863a876ed3ccfdb56efe51a9);
 - [`agente-it@988becc`](https://github.com/Premium-Security-Investments/agente-it/commit/988becc75f0e866688281db61dd3ec21e9ede17e);
-- [`plataforma-agentes@1b609c4`](https://github.com/Premium-Security-Investments/plataforma-agentes/commit/1b609c47a9373b611958cd60ab9960c76b926dbc).
+- [`plataforma-agentes@1b609c4`](https://github.com/Premium-Security-Investments/plataforma-agentes/commit/1b609c47a9373b611958cd60ab9960c76b926dbc);
+- actualización 2026-10-18: `sn-crm-comercial@96a006d` y
+  [`programacion-personal`](https://github.com/Premium-Security-Investments/programacion-personal) (`main`, PR #38).
 
 ## 1. Conclusión
 
-Los tres repositorios no son implementaciones equivalentes ni deben fusionarse
+Los repositorios no son implementaciones equivalentes ni deben fusionarse
 por nombre:
 
 - `sn-crm-comercial` es hoy el sistema fuente y el runtime funcional de
   AGT-002 y AGT-003: contiene reglas de dominio, contratos, datos, API,
-  persistencia, UI y operación;
+  persistencia, UI y operación. Desde octubre aloja también AGT-001
+  (Gerencia / Torre de Control) y AGT-004 (Operaciones, con SecurityOps
+  como fuente externa de sólo lectura);
+- `programacion-personal` es la aplicación de AGT-006 (Programación de
+  personal): esquema `programacion` en la base del SIIO, publicada en AWS
+  Amplify; el CRM sólo administra quién entra;
 - `agente-it` es el prototipo institucional anterior y más avanzado
   operacionalmente y constituye la implementación de `AGT-000`: tiene un
   núcleo de confianza y consulta documental desplegado en un proyecto dedicado,
@@ -43,12 +50,12 @@ grado de desarrollo que pueda existir en un sistema fuente:
 | ID | Dominio | Estado institucional y siguiente frontera |
 | --- | --- | --- |
 | `AGT-000` | IT | Primer corte vertical; futuro adaptador P3.1 |
-| `AGT-001` | Gerencial | Reconocido institucionalmente; estado técnico y paquete de integración pendientes de definición |
+| `AGT-001` | Gerencial | Desplegado en CRM/SIIO (Torre de Control); recomendaciones de IA con una corrida real; sin integración a la Plataforma |
 | `AGT-002` | Licitaciones | `INITIAL`, R1; futuro contrato P3.2 |
 | `AGT-003` | Comercial | Futuro contrato P3.3; su runtime no se reactiva automáticamente |
-| `AGT-004` | Operaciones | Conceptual; pendiente de gates y plan propio |
+| `AGT-004` | Operaciones | Desplegado en CRM/SIIO (cifras de SecurityOps en la Torre); operativo `por confirmar`; lectura con sesión personal temporal |
 | `AGT-005` | Reclutamiento | Conceptual; pendiente de gates y plan propio |
-| `AGT-006` | Programación | Conceptual; pendiente de gates y plan propio |
+| `AGT-006` | Programación | Desplegado en `programacion-personal` (Amplify + esquema `programacion`); no operativo: sin usuarios y reglas de nómina sin validar |
 
 Este mapa no significa que todos los agentes estén implementados o activos. En
 particular:
@@ -59,8 +66,10 @@ particular:
   desplegar o conectar datos reales;
 - ninguna migración, contrato encontrado, proceso local, flag heredado o
   reinicio de infraestructura reactiva AGT-003;
-- AGT-004/005/006 no deben recibir runtime, secretos, datos o contratos antes
-  de tener gates y planes propios aprobados.
+- AGT-005 no debe recibir runtime, secretos, datos o contratos antes de tener
+  gate y plan propios aprobados. AGT-004 y AGT-006 ya recibieron runtime y
+  datos; su regularización está en `DEC-AGT-014` y `DEC-AGT-015` (propuestas)
+  del [registro de decisiones](./agent-decision-registry.md).
 
 `plataforma-agentes` queda fuera de la numeración `AGT-###`: es el plano de
 control y gobierno común. Cada agente conserva su propósito, owner, runtime,
@@ -74,6 +83,9 @@ no significa trasladar o duplicar allí toda su lógica de dominio.
 | Datos y ciclo comercial privado | CRM/SIIO | CRM/SIIO |
 | Lógica, score y contratos de AGT-003 | CRM/SIIO | CRM/SIIO |
 | Datos, radar y análisis licitatorio AGT-002 | CRM/SIIO | CRM/SIIO |
+| Torre de Control y recomendaciones gerenciales AGT-001 | CRM/SIIO | CRM/SIIO |
+| Cifras de Operaciones AGT-004 | CRM/SIIO, leyendo SecurityOps | CRM/SIIO; SecurityOps sigue siendo el sistema fuente |
+| Programación de turnos y nómina AGT-006 | `programacion-personal` (esquema `programacion`) | Igual; el acceso se administra desde CRM/SIIO |
 | Identidad, configuración y policy institucional | Prototipo en `agente-it` y base nueva sin integrar | Plataforma Agentes |
 | Admisión PEP/PDP y recibo común | Dos implementaciones incompatibles | Plataforma Agentes, con adaptador/versionado explícito |
 | Consulta documental de AGT-000 | Runtime `agente-it` | AGT-000 gobernado por Plataforma Agentes |
@@ -89,12 +101,12 @@ Plataforma Agentes (no es un AGT)
 registro · identidad · policy · admisión · auditoría
           |
           +-- AGT-000 / IT ------------> runtime agente-it
-          +-- AGT-001 / Gerencial -----> paquete por definir
+          +-- AGT-001 / Gerencial -----> dominio CRM/SIIO
           +-- AGT-002 / Licitaciones --> dominio CRM/SIIO
           +-- AGT-003 / Comercial -----> dominio CRM/SIIO
-          +-- AGT-004 / Operaciones ---> conceptual
+          +-- AGT-004 / Operaciones ---> dominio CRM/SIIO (lee SecurityOps)
           +-- AGT-005 / Reclutamiento -> conceptual
-          `-- AGT-006 / Programación --> conceptual
+          `-- AGT-006 / Programación --> programacion-personal
 ```
 
 El Agente Comercial PSI clasifica intención y enruta. No es un cuarto motor,
@@ -116,6 +128,34 @@ proceso público o licitación  -> AGT-002
 - La sesión humana, los permisos de módulo y el scope de datos se resuelven hoy
   en el CRM; aún no existe identidad técnica productiva de AGT-002/003 emitida
   por una plataforma común.
+
+### `sn-crm-comercial` — AGT-001 y AGT-004 (actualización 2026-10-18)
+
+- AGT-001 / Vig-IA Gerencia:
+  - Torre de Control y cargue contable (migración 122), seguimiento gerencial
+    (123) y recomendaciones de IA (131);
+  - puente propio `agt001-bridge` y timer semanal (`ops/agt001-*`);
+  - desplegado; una corrida real de recomendaciones el 2026-10-15.
+- AGT-004 / Vig-IA Operaciones:
+  - extractor de SecurityOps (`scripts/agt004_securityops_operations.py`),
+    migración 128 y panel en la Torre (PR #371);
+  - desplegado, con una corrida de 491 filas cargada;
+  - el cliente por puesto es aproximado porque SecurityOps no tiene campo
+    cliente;
+  - la lectura usa la sesión personal de Juan hasta que exista la cuenta de
+    servicio `vigia-operaciones-lectura`.
+
+### `programacion-personal` — AGT-006
+
+- Reemplaza los Excel de programación de turnos; piloto en Pereira.
+- El motor reproduce la macro y la hoja NOMINA de Pereira (1.271 bloques del
+  periodo 24-jul a 23-ago-2026).
+- Esquema `programacion` en la misma base del SIIO, con RLS y sin acceso
+  anónimo; publicado en AWS Amplify desde `main`.
+- El CRM administra el acceso (migración 129, PR #372; pestaña por perfil,
+  migración 130) y enlaza la app desde el menú.
+- No operativo: sin usuarios de Programación y reglas de nómina sin validar
+  por Nómina.
 
 ### `agente-it`
 
