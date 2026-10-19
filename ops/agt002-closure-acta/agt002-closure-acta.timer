@@ -1,0 +1,11 @@
+[Unit]
+Description=AGT-002 closure minutes: 40 minutes after each SECOP phase review (Bogotá)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 09,14,19:40:00 America/Bogota
+OnCalendar=Sat,Sun *-*-* 14:40:00 America/Bogota
+Persistent=true
+RandomizedDelaySec=120s
+
+[Install]
+WantedBy=timers.target

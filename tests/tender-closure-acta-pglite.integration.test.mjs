@@ -33,6 +33,12 @@ async function callRpc(pg, name, args) {
   return result.rows[0]?.data ?? null;
 }
 
+/** Para las funciones que devuelven filas (`returns table`), no un solo valor. */
+async function callTableRpc(pg, name, args) {
+  const result = await pg.query(`select * from public.${name}(${args.map(sqlLiteral).join(',')})`);
+  return result.rows;
+}
+
 async function createDatabase() {
   const pg = new PGlite();
   await pg.exec(`
@@ -40,19 +46,20 @@ async function createDatabase() {
     alter role service_role bypassrls;
     grant service_role to current_user;
     create table public.psi_sales_profiles (id uuid primary key, active boolean not null default true, identity_type text default 'human', role text not null default 'comercial', full_name text);
-    create table public.psi_sales_opportunities (id uuid primary key, tender_offer_status text, archived_at timestamptz, archived_by uuid, archive_note text);
-    create table public.psi_public_tenders (id uuid primary key, converted_opportunity_id uuid references public.psi_sales_opportunities(id));
+    create table public.psi_sales_opportunities (id uuid primary key, company_name text, tender_offer_status text, archived_at timestamptz, archived_by uuid, archive_note text, updated_at timestamptz not null default now());
+    create table public.psi_public_tenders (id uuid primary key, nombre text, converted_opportunity_id uuid references public.psi_sales_opportunities(id));
     create table public.psi_tender_offer_status_transitions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, tender_id uuid not null, actor_id uuid not null, from_status text, to_status text, note text, changed_at timestamptz not null default now());
     create table public.psi_tender_go_no_go_decisions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, tender_id uuid not null, decision text not null, justification text, decided_by uuid not null, decided_at timestamptz not null default now(), supersedes_decision_id uuid);
+    create table public.psi_tender_analysis_runs (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, tender_id uuid not null, result jsonb, created_at timestamptz not null default now());
     insert into public.psi_sales_profiles values ('${JUAN}', true, 'human', 'admin', 'Juan Botero');
     insert into public.psi_sales_profiles values ('${VIGIA}', true, 'agent', 'comercial', 'Vig-IA');
     insert into public.psi_sales_profiles values ('${COMERCIAL}', true, 'human', 'comercial', 'Asesor Comercial');
-    insert into public.psi_sales_opportunities values ('${NO_GO}', 'cerrada_no_go', null, null, null);
-    insert into public.psi_sales_opportunities values ('${EN_CURSO}', 'en_preparacion', null, null, null);
-    insert into public.psi_sales_opportunities values ('${ADJUDICADA}', 'adjudicada', null, null, null);
-    insert into public.psi_public_tenders values ('${TENDER_NO_GO}', '${NO_GO}');
-    insert into public.psi_public_tenders values ('77777777-7777-4777-8777-777777777777', '${EN_CURSO}');
-    insert into public.psi_public_tenders values ('99999999-9999-4999-8999-999999999999', '${ADJUDICADA}');
+    insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('${NO_GO}', 'Cali Seguridad', 'cerrada_no_go');
+    insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('${EN_CURSO}', 'Fiscalía', 'en_preparacion');
+    insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('${ADJUDICADA}', 'Supersalud', 'adjudicada');
+    insert into public.psi_public_tenders (id, nombre, converted_opportunity_id) values ('${TENDER_NO_GO}', 'Cali — Secretaría de Seguridad', '${NO_GO}');
+    insert into public.psi_public_tenders (id, nombre, converted_opportunity_id) values ('77777777-7777-4777-8777-777777777777', 'Fiscalía', '${EN_CURSO}');
+    insert into public.psi_public_tenders (id, nombre, converted_opportunity_id) values ('99999999-9999-4999-8999-999999999999', 'Supersalud', '${ADJUDICADA}');
     insert into public.psi_tender_go_no_go_decisions (opportunity_id, tender_id, decision, justification, decided_by)
       values ('${NO_GO}', '${TENDER_NO_GO}', 'no_go', '${NOTA_DE_JUAN.replace(/'/g, "''")}', '${JUAN}');
   `);
@@ -104,8 +111,8 @@ await (async function closingNoteComesFromWhereThePersonWroteIt() {
   assert.deepEqual(await callRpc(pg, 'psi_tender_closure_note', [NO_GO]), { note: 'Falta de sede en Bolívar, Casanare y Nariño.', source: 'archive_note' });
 
   // Sin nota en ninguna parte, el acta se abre igual y queda sin punto de partida.
-  await pg.exec(`insert into public.psi_sales_opportunities values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'no_adjudicada', null, null, null);
-    insert into public.psi_public_tenders values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');`);
+  await pg.exec(`insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Pereira', 'no_adjudicada');
+    insert into public.psi_public_tenders (id, nombre, converted_opportunity_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Pereira', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');`);
   assert.equal(await callRpc(pg, 'psi_tender_closure_note', ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']), null);
   const sinNota = await upsert(pg, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', VIGIA, {});
   assert.equal(sinNota.acta.closing_note, null);
@@ -230,6 +237,40 @@ await (async function archivedOpportunityGetsActa() {
   assert.equal(acta.acta.closure_kind, 'archivada');
   assert.equal(acta.acta.closing_note, 'No hubo socio de unión temporal a tiempo.');
   assert.equal(acta.acta.closing_note_source, 'archive_note');
+  await pg.close();
+})();
+
+// --- La lista de pendientes es lo que Vig-IA tiene por redactar
+await (async function pendingListForVigia() {
+  const pg = await createDatabase();
+  // Cali (NO-GO) tiene nota; la adjudicada todavía no, así que no está pendiente.
+  await pg.exec(`insert into public.psi_tender_analysis_runs (opportunity_id, tender_id, result)
+    values ('${NO_GO}', '${TENDER_NO_GO}', '{"integral_analysis":{"analysis_units":[{"unit_id":"u1","title":"Experiencia general"}]}}'::jsonb)`);
+  const primera = await callTableRpc(pg, 'psi_list_tender_closure_acta_pending', [10]);
+  assert.equal(primera.length, 1, 'sin nota de cierre no hay nada que profundizar');
+  assert.equal(primera[0].opportunity_id, NO_GO);
+  assert.equal(primera[0].closure_kind, 'cerrada_no_go');
+  assert.equal(primera[0].closing_note, NOTA_DE_JUAN);
+  assert.equal(primera[0].tender_name, 'Cali — Secretaría de Seguridad');
+  assert.equal(primera[0].analysis_result.integral_analysis.analysis_units[0].title, 'Experiencia general');
+
+  // Al escribir el acta, deja de estar pendiente.
+  await upsert(pg, NO_GO, VIGIA, profundizacionVigia);
+  assert.deepEqual(await callTableRpc(pg, 'psi_list_tender_closure_acta_pending', [10]), []);
+
+  // La que sigue abierta nunca aparece, ni con nota.
+  await pg.exec(`insert into public.psi_tender_offer_status_transitions (opportunity_id, tender_id, actor_id, from_status, to_status, note)
+    values ('${EN_CURSO}', '77777777-7777-4777-8777-777777777777', '${JUAN}', 'presentada', 'adjudicada', 'nota de una licitación abierta')`);
+  assert.deepEqual(await callTableRpc(pg, 'psi_list_tender_closure_acta_pending', [10]), []);
+
+  // Al archivarla con nota, entra a la lista.
+  await pg.exec(`update public.psi_sales_opportunities set archived_at = now(), archive_note = 'No hubo socio.' where id = '${EN_CURSO}'`);
+  const segunda = await callTableRpc(pg, 'psi_list_tender_closure_acta_pending', [10]);
+  assert.equal(segunda.length, 1);
+  assert.equal(segunda[0].closure_kind, 'archivada');
+  assert.equal(segunda[0].analysis_result, null, 'sin análisis, el acta se redacta con la nota sola');
+
+  await assert.rejects(() => callTableRpc(pg, 'psi_list_tender_closure_acta_pending', [0]), /entre 1 y 50/i);
   await pg.close();
 })();
 

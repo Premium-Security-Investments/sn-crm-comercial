@@ -5,6 +5,7 @@ begin;
 drop function if exists public.psi_reopen_tender_closure_acta(uuid, uuid, timestamptz);
 drop function if exists public.psi_confirm_tender_closure_acta(uuid, uuid, timestamptz);
 drop function if exists public.psi_upsert_tender_closure_acta(uuid, uuid, jsonb, timestamptz);
+drop function if exists public.psi_list_tender_closure_acta_pending(int);
 drop function if exists public.psi_get_tender_closure_acta(uuid);
 drop function if exists public.psi_tender_closure_acta_snapshot(uuid);
 drop function if exists public.psi_tender_closure_note(uuid);
