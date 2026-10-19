@@ -2,7 +2,8 @@
 
 **Estado:** diagnóstico de arquitectura; no autoriza integración ni despliegue
 
-**Fecha de corte:** 2026-10-02; AGT-001, AGT-004 y AGT-006 actualizados al 2026-10-18
+**Fecha de corte:** 2026-10-02; AGT-001, AGT-004 y AGT-006 actualizados al 2026-10-18;
+AGT-003 actualizado al 2026-10-19
 
 **Repositorios revisados:**
 
@@ -52,7 +53,7 @@ grado de desarrollo que pueda existir en un sistema fuente:
 | `AGT-000` | IT | Primer corte vertical; futuro adaptador P3.1 |
 | `AGT-001` | Gerencial | Desplegado en CRM/SIIO (Torre de Control); recomendaciones de IA con una corrida real; sin integración a la Plataforma |
 | `AGT-002` | Licitaciones | `INITIAL`, R1; futuro contrato P3.2 |
-| `AGT-003` | Comercial | Futuro contrato P3.3; su runtime no se reactiva automáticamente |
+| `AGT-003` | Comercial | Operativo en CRM/SIIO: información para los comerciales y correo semanal (lo envía Hermes); futuro contrato P3.3 |
 | `AGT-004` | Operaciones | Desplegado en CRM/SIIO (cifras de SecurityOps en la Torre); operativo `por confirmar`; lectura con sesión personal temporal |
 | `AGT-005` | Reclutamiento | Conceptual; pendiente de gates y plan propio |
 | `AGT-006` | Programación | Desplegado en `programacion-personal` (Amplify + esquema `programacion`); no operativo: sin usuarios y reglas de nómina sin validar |
@@ -61,14 +62,17 @@ Este mapa no significa que todos los agentes estén implementados o activos. En
 particular:
 
 - el código funcional existente de AGT-002/003 en el CRM no promueve por sí
-  solo su estado institucional;
+  solo su estado institucional; el estado institucional de cada agente está en
+  la sección 2.2 del [registro de decisiones](./agent-decision-registry.md)
+  (`DEC-AGT-016`);
 - P3.1, P3.2 y P3.3 son fronteras futuras distintas, no una autorización para
   desplegar o conectar datos reales;
-- ninguna migración, contrato encontrado, proceso local, flag heredado o
-  reinicio de infraestructura reactiva AGT-003;
+- AGT-003 está operativo (`DEC-AGT-006`, aclarada el 2026-10-19). Sigue
+  separado de AGT-002: el trabajo sobre AGT-002 no cambia su runtime, datos,
+  fuentes ni identidad;
 - AGT-005 no debe recibir runtime, secretos, datos o contratos antes de tener
   gate y plan propios aprobados. AGT-004 y AGT-006 ya recibieron runtime y
-  datos; su regularización está en `DEC-AGT-014` y `DEC-AGT-015` (propuestas)
+  datos; su regularización está en `DEC-AGT-014` y `DEC-AGT-015` (aceptadas)
   del [registro de decisiones](./agent-decision-registry.md).
 
 `plataforma-agentes` queda fuera de la numeración `AGT-###`: es el plano de
