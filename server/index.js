@@ -30,6 +30,7 @@ import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPr
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { callTenderOpportunityArchive } from '../tender-offer-archive-rpc.js';
 import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClosureActa, callReopenTenderClosureActa } from '../tender-closure-acta-rpc.js';
+import { draftClosureActaAfterClosure } from '../agt002-closure-acta-live.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -5618,7 +5619,12 @@ app.post('/api/tender-go-no-go-decision', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
     await requireTenderAnalysisFoundation(database);
-    res.status(201).json(await callTenderGoNoGoDecision(database, req.body || {}, currentProfile));
+    const decided = await callTenderGoNoGoDecision(database, req.body || {}, currentProfile);
+    // Un NO-GO deja la oferta en cerrada_no_go: ahí nace el acta.
+    if (decided?.decision?.tender_offer_status === 'cerrada_no_go') {
+      await draftClosureActaAfterClosure(database, req.body?.opportunity_id);
+    }
+    res.status(201).json(decided);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -5642,14 +5648,24 @@ app.post('/api/tender-offer-status', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
-    res.status(201).json(await callTenderOfferStatusTransition(requireDb(), req.body || {}, currentProfile));
+    const database = requireDb();
+    const transition = await callTenderOfferStatusTransition(database, req.body || {}, currentProfile);
+    // Sólo los estados finales cierran la licitación; los demás no abren acta.
+    if (['adjudicada', 'no_adjudicada'].includes(String(req.body?.to_status || ''))) {
+      await draftClosureActaAfterClosure(database, req.body?.opportunity_id);
+    }
+    res.status(201).json(transition);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 app.post('/api/tender-offer-archive', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    res.status(201).json(await callTenderOpportunityArchive(requireDb(), req.body || {}, currentProfile));
+    const database = requireDb();
+    const archived = await callTenderOpportunityArchive(database, req.body || {}, currentProfile);
+    // El cierre ya está guardado: si el acta falla, se registra y la toma la revisión semanal.
+    await draftClosureActaAfterClosure(database, req.body?.opportunity_id);
+    res.status(201).json(archived);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

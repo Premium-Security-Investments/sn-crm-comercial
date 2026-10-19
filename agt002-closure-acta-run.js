@@ -18,26 +18,30 @@ export async function runAgt002ClosureActaDrafts(database, {
   drafter,
   agentId,
   limit = DEFAULT_LIMIT,
+  opportunityId = null,
   log = () => {},
 } = {}) {
   if (!database || typeof database.rpc !== 'function') throw new Error('El acta de cierre requiere una conexión a la base.');
   if (!drafter || typeof drafter.draft !== 'function') throw new Error('El acta de cierre requiere un redactor configurado.');
   if (!agentId || !String(agentId).trim()) throw new Error('El acta de cierre requiere la identidad de Vig-IA.');
 
-  const { data: pending, error } = await database.rpc('psi_list_tender_closure_acta_pending', { p_limit: boundedLimit(limit) });
+  // Con `opportunityId` se redacta sólo la licitación que acaba de cerrarse; sin
+  // él, todas las pendientes (la revisión semanal).
+  const { data: pending, error } = await database.rpc('psi_list_tender_closure_acta_pending', { p_limit: opportunityId ? MAX_LIMIT : boundedLimit(limit) });
   if (error) throw error;
-  const rows = Array.isArray(pending) ? pending : [];
+  const all = Array.isArray(pending) ? pending : [];
+  const rows = opportunityId ? all.filter(row => row?.opportunity_id === opportunityId) : all;
   if (rows.length === 0) {
-    log({ event: 'agt002_closure_acta_nothing_pending' });
+    log({ event: 'agt002_closure_acta_nothing_pending', opportunity_id: opportunityId || null });
     return { pending: 0, drafted: 0, failed: 0, results: [] };
   }
 
   const results = [];
   for (const row of rows) {
-    const opportunityId = row?.opportunity_id;
+    const rowOpportunityId = row?.opportunity_id;
     try {
       const input = buildClosureActaInput({
-        opportunityId,
+        opportunityId: rowOpportunityId,
         tenderName: row?.tender_name,
         closureKind: row?.closure_kind,
         closingNote: row?.closing_note,
@@ -45,25 +49,25 @@ export async function runAgt002ClosureActaDrafts(database, {
       });
       const acta = await drafter.draft(input);
       const { error: writeError } = await database.rpc('psi_upsert_tender_closure_acta', {
-        p_opportunity_id: opportunityId,
+        p_opportunity_id: rowOpportunityId,
         p_actor_id: agentId,
         p_payload: acta,
         p_expected_updated_at: null,
       });
       if (writeError) throw writeError;
-      results.push({ opportunityId, status: 'drafted' });
+      results.push({ opportunityId: rowOpportunityId, status: 'drafted' });
       log({
         event: 'agt002_closure_acta_drafted',
-        opportunity_id: opportunityId,
+        opportunity_id: rowOpportunityId,
         closure_kind: row?.closure_kind,
         reasons: acta.reasons.length,
         requirements_unmet: acta.requirements_unmet.length,
         context_entries: input.context.length,
       });
     } catch (cause) {
-      results.push({ opportunityId, status: 'failed', code: cause?.code || null });
+      results.push({ opportunityId: rowOpportunityId, status: 'failed', code: cause?.code || null });
       // Nunca se registra el contenido del acta ni el del modelo: sólo el código de la falla.
-      log({ event: 'agt002_closure_acta_failed', opportunity_id: opportunityId, code: cause?.code || null, message: String(cause?.message || '').slice(0, 300) });
+      log({ event: 'agt002_closure_acta_failed', opportunity_id: rowOpportunityId, code: cause?.code || null, message: String(cause?.message || '').slice(0, 300) });
     }
   }
 
