@@ -6,7 +6,8 @@
 implementación, despliegue ni operación
 
 **Fecha de corte:** 2026-10-03; estado de AGT-001, AGT-004 y AGT-006 actualizado
-al 2026-10-18 (sección 2.1)
+al 2026-10-18 (sección 2.1); estado institucional de los siete agentes al
+2026-10-19 (sección 2.2)
 
 **Ámbito:** identidad, ownership, fronteras, secuencia y gates de AGT-000 a
 AGT-006 y Plataforma Agentes
@@ -45,6 +46,7 @@ solamente las afirmaciones señaladas y no reescribe su evidencia original.
 | `DEC-AGT-013` | `AGT-001` / Vig-IA Gerencia vive en CRM/SIIO (`sn-crm-comercial`): Torre de Control, cargue contable y recomendaciones de IA con puente dedicado `agt001-bridge`. | Aceptada | Reconoce un estado ya desplegado; no autoriza nuevas fuentes ni capacidades. | Sección 2.1 |
 | `DEC-AGT-014` | `AGT-004` / Vig-IA Operaciones vive en CRM/SIIO (`sn-crm-comercial`) y lee SecurityOps como sistema fuente externo, sin escribir en él. | Aceptada | Las cifras se publican agregadas; reemplazar la sesión personal por una cuenta de servicio de sólo lectura antes de ampliar el alcance. | Sección 2.1 |
 | `DEC-AGT-015` | `AGT-006` / Vig-IA Programación vive en el repositorio `programacion-personal` (esquema `programacion` de la base del SIIO, publicado en AWS Amplify); CRM/SIIO sólo administra quién entra. | Aceptada | No duplicar en el CRM lógica de turnos o nómina; las reglas de nómina siguen sin validar por Nómina. | Sección 2.1 |
+| `DEC-AGT-016` | El estado institucional de cada agente se fija en la sección 2.2 de este registro, con el vocabulario de estados del catálogo institucional; el catálogo de SharePoint lo refleja. | Aceptada (Juan Botero, 2026-10-19) | Un cambio de estado institucional entra primero aquí; el catálogo se actualiza después. Dueños, funciones y límites siguen en el catálogo. | Sección 2.2 |
 
 ### 2.1 Estado verificado de AGT-001, AGT-004 y AGT-006 (corte 2026-10-18)
 
@@ -64,6 +66,35 @@ plan aprobado previo para la entrada de datos y runtime de AGT-004 y AGT-006:
 Ninguno de los tres tiene todavía registro, identidad técnica o adaptador en
 Plataforma Agentes. Estar desplegado no los integra a la Plataforma ni abre gates
 posteriores (`DEC-AGT-012`).
+
+### 2.2 Estado institucional por agente (vocabulario del catálogo)
+
+Esta tabla es la fuente del estado institucional que publica el catálogo de
+SharePoint (`DEC-AGT-016`). Los estados son los de la sección "Estados
+institucionales" del catálogo:
+
+- Declarado;
+- Piloto controlado;
+- Operación parcial;
+- Operación plena;
+- Retirado;
+- Definido conceptualmente;
+- Pendiente de declaración.
+
+Un estado institucional no prueba despliegue ni operación: eso lo dice la
+sección 2.1 con su evidencia (`DEC-AGT-012`). `por confirmar` significa que el
+catálogo conserva su estado vigente, anota la diferencia y no la resuelve por
+su cuenta.
+
+| ID | Nombre | Estado institucional | Fuente | Nota |
+| --- | --- | --- | --- | --- |
+| `AGT-000` | Vig-IA IT | Declarado; construido parcialmente, cerrado por defecto | `DEC-AGT-003`; catálogo v1.7 | Sin cambio. |
+| `AGT-001` | Vig-IA Gerencia | Piloto controlado; desplegado en el SIIO | `DEC-AGT-013`; sección 2.1 | Antes: Piloto controlado básico. |
+| `AGT-002` | Vig-IA Licitaciones | Operación parcial | `DEC-AGT-005`; catálogo v1.7 | Sin cambio. |
+| `AGT-003` | Vig-IA Comercial | `por confirmar` (el catálogo conserva Operación parcial) | `DEC-AGT-006`; catálogo v1.7 | `DEC-AGT-006` dice que su runtime no se reactiva por registro, documentación, migración ni trabajo sobre AGT-002; el catálogo lo tiene en Operación parcial y el correo semanal sigue activo. Pendiente de aclarar. |
+| `AGT-004` | Vig-IA Operaciones | Piloto controlado; primer bloque de cifras desplegado en la Torre | `DEC-AGT-014`; sección 2.1 | Antes: Definido conceptualmente. |
+| `AGT-005` | Vig-IA Reclutamiento | Definido conceptualmente | `DEC-AGT-007`; sección 2.1 | Sin cambio. |
+| `AGT-006` | Vig-IA Programación | Declarado; aplicación desplegada, no operativa | `DEC-AGT-015`; sección 2.1 | Antes: Definido conceptualmente; aplicación en construcción avanzada. |
 
 ## 3. Secuencia de trabajo ratificada
 
