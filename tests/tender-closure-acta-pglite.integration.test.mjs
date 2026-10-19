@@ -298,6 +298,19 @@ await (async function rlsAndGrantsFailClosed() {
   await pg.close();
 })();
 
+// --- Ninguna función del acta queda con search_path mutable (advisor de Supabase)
+await (async function everyFunctionPinsSearchPath() {
+  const pg = await createDatabase();
+  const sinFijar = await pg.query(`
+    select p.proname
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname like '%tender_closure%'
+      and coalesce(array_to_string(p.proconfig, ','), '') not like '%search_path%'
+  `);
+  assert.deepEqual(sinFijar.rows, [], `funciones con search_path mutable: ${JSON.stringify(sinFijar.rows)}`);
+  await pg.close();
+})();
+
 // --- El rollback deja la base como estaba
 await (async function rollbackIsClean() {
   const pg = await createDatabase();

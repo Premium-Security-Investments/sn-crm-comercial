@@ -62,7 +62,7 @@ create table if not exists public.psi_tender_closure_acta_events (
 create index if not exists psi_tender_closure_acta_events_acta_idx on public.psi_tender_closure_acta_events (acta_id, created_at desc, id desc);
 
 create or replace function public.psi_tender_closure_acta_events_prevent_mutation()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = public, pg_temp as $$
 begin
   raise exception 'El historial del acta de cierre es inmutable.';
 end;
@@ -75,7 +75,7 @@ grant select on public.psi_tender_closure_acta_events to service_role;
 
 -- Cómo se cerró la oportunidad, o null si todavía no está cerrada.
 create or replace function public.psi_tender_closure_kind(p_opportunity public.psi_sales_opportunities)
-returns text language sql immutable as $$
+returns text language sql immutable set search_path = public, pg_temp as $$
   select case
     when p_opportunity.archived_at is not null then 'archivada'
     when coalesce(p_opportunity.tender_offer_status, 'pendiente_decision') in ('cerrada_no_go', 'adjudicada', 'no_adjudicada') then p_opportunity.tender_offer_status
