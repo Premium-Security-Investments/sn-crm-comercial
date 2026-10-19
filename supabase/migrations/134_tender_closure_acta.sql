@@ -1,31 +1,10 @@
--- Acta de cierre de licitación: Vig-IA propone el borrador, un humano corrige y confirma.
--- El acta se abre para todos los cierres (adjudicada, no adjudicada, cerrada NO-GO y archivada).
--- No bloquea el cierre: queda en estado 'borrador' hasta que un humano la confirme.
+-- Acta de cierre de licitación.
+-- El punto de partida es la nota de cierre que escribe la persona al cerrar la
+-- licitación; Vig-IA la profundiza con lo que tiene aprendido del expediente, y
+-- la persona corrige y confirma. No hay lista de motivos predefinida: los
+-- motivos los propone Vig-IA en el acta y la persona los ajusta.
+-- El acta se abre para todos los cierres y nunca bloquea el cierre.
 begin;
-
-create table if not exists public.psi_tender_closure_reason (
-  code text primary key,
-  label text not null check (nullif(btrim(label), '') is not null),
-  sort_order int not null default 100,
-  active boolean not null default true
-);
-
-insert into public.psi_tender_closure_reason (code, label, sort_order) values
-  ('tecnologia_no_vigilancia', 'Es de tecnología y no de vigilancia', 10),
-  ('falta_experiencia', 'Nos falta experiencia', 20),
-  ('requisito_habilitante_incumplido', 'No cumplimos un requisito habilitante', 30),
-  ('falta_sede', 'No tenemos sede donde se exige', 40),
-  ('sin_socio_union_temporal', 'No hubo socio de unión temporal a tiempo', 50),
-  ('tiempo_insuficiente', 'No alcanzaba el tiempo', 60),
-  ('precio_no_competitivo', 'Nuestro precio no era competitivo', 70),
-  ('rechazo_tecnico', 'La oferta fue rechazada por un motivo técnico', 80),
-  ('resultado_favorable', 'Resultado favorable: la ganamos', 90),
-  ('otro', 'Otro motivo (explicado en el acta)', 999)
-on conflict (code) do nothing;
-
-alter table public.psi_tender_closure_reason enable row level security;
-revoke all on public.psi_tender_closure_reason from public, anon, authenticated, service_role;
-grant select on public.psi_tender_closure_reason to service_role;
 
 create table if not exists public.psi_tender_closure_acta (
   id uuid primary key default gen_random_uuid(),
@@ -33,13 +12,16 @@ create table if not exists public.psi_tender_closure_acta (
   tender_id uuid not null references public.psi_public_tenders(id) on delete restrict,
   status text not null default 'borrador' check (status in ('borrador', 'confirmada')),
   closure_kind text not null check (closure_kind in ('adjudicada', 'no_adjudicada', 'cerrada_no_go', 'archivada')),
+  -- Lo que escribió la persona al cerrar, tal cual, y de dónde se tomó.
+  closing_note text,
+  closing_note_source text check (closing_note_source in ('archive_note', 'status_transition', 'no_go_justification', 'manual')),
+  -- Lo que Vig-IA profundiza a partir de esa nota y del expediente.
   decision_summary text,
   decision_quote text,
   requirements_unmet jsonb not null default '[]'::jsonb check (jsonb_typeof(requirements_unmet) = 'array'),
   factors_against jsonb not null default '[]'::jsonb check (jsonb_typeof(factors_against) = 'array'),
   gaps_to_compete jsonb not null default '[]'::jsonb check (jsonb_typeof(gaps_to_compete) = 'array'),
   recommendation text,
-  reason_other text,
   system_lesson text,
   proposed_by uuid not null references public.psi_sales_profiles(id) on delete restrict,
   proposed_at timestamptz not null default now(),
@@ -55,11 +37,16 @@ alter table public.psi_tender_closure_acta enable row level security;
 revoke all on public.psi_tender_closure_acta from public, anon, authenticated, service_role;
 grant select on public.psi_tender_closure_acta to service_role;
 
+-- Motivos del cierre, en frases cortas que propone Vig-IA y la persona ajusta.
+-- No hay catálogo fijo: el vocabulario se aprende de las actas confirmadas, y
+-- el resumen mensual cuenta agrupando por `label`.
 create table if not exists public.psi_tender_closure_acta_reason (
   acta_id uuid not null references public.psi_tender_closure_acta(id) on delete cascade,
-  reason_code text not null references public.psi_tender_closure_reason(code) on delete restrict,
-  primary key (acta_id, reason_code)
+  label text not null check (nullif(btrim(label), '') is not null and length(btrim(label)) <= 120),
+  sort_order int not null default 0,
+  primary key (acta_id, label)
 );
+create index if not exists psi_tender_closure_acta_reason_label_idx on public.psi_tender_closure_acta_reason (label);
 alter table public.psi_tender_closure_acta_reason enable row level security;
 revoke all on public.psi_tender_closure_acta_reason from public, anon, authenticated, service_role;
 grant select on public.psi_tender_closure_acta_reason to service_role;
@@ -86,7 +73,7 @@ alter table public.psi_tender_closure_acta_events enable row level security;
 revoke all on public.psi_tender_closure_acta_events from public, anon, authenticated, service_role;
 grant select on public.psi_tender_closure_acta_events to service_role;
 
--- Estado de cierre de una oportunidad, o null si todavía no está cerrada.
+-- Cómo se cerró la oportunidad, o null si todavía no está cerrada.
 create or replace function public.psi_tender_closure_kind(p_opportunity public.psi_sales_opportunities)
 returns text language sql immutable as $$
   select case
@@ -96,11 +83,44 @@ returns text language sql immutable as $$
   end;
 $$;
 
+-- La nota de cierre que ya escribió la persona, buscada donde queda en cada
+-- camino de cierre. Es el punto de partida del acta, no se le pide otra vez.
+create or replace function public.psi_tender_closure_note(p_opportunity_id uuid)
+returns jsonb language plpgsql stable set search_path = public, pg_temp as $$
+declare
+  v_opportunity public.psi_sales_opportunities%rowtype;
+  v_note text;
+begin
+  select * into v_opportunity from public.psi_sales_opportunities where id = p_opportunity_id;
+  if not found then return null; end if;
+
+  v_note := nullif(btrim(coalesce(v_opportunity.archive_note, '')), '');
+  if v_note is not null then return jsonb_build_object('note', v_note, 'source', 'archive_note'); end if;
+
+  select nullif(btrim(coalesce(t.note, '')), '') into v_note
+  from public.psi_tender_offer_status_transitions t
+  where t.opportunity_id = p_opportunity_id and t.to_status in ('adjudicada', 'no_adjudicada') and nullif(btrim(coalesce(t.note, '')), '') is not null
+  order by t.changed_at desc, t.id desc limit 1;
+  if v_note is not null then return jsonb_build_object('note', v_note, 'source', 'status_transition'); end if;
+
+  select nullif(btrim(coalesce(d.justification, '')), '') into v_note
+  from public.psi_tender_go_no_go_decisions d
+  where d.opportunity_id = p_opportunity_id and d.decision = 'no_go' and nullif(btrim(coalesce(d.justification, '')), '') is not null
+    and not exists (select 1 from public.psi_tender_go_no_go_decisions child where child.supersedes_decision_id = d.id)
+  order by d.decided_at desc, d.id desc limit 1;
+  if v_note is not null then return jsonb_build_object('note', v_note, 'source', 'no_go_justification'); end if;
+
+  return null;
+end;
+$$;
+revoke all on function public.psi_tender_closure_note(uuid) from public, anon, authenticated, service_role;
+grant execute on function public.psi_tender_closure_note(uuid) to service_role;
+
 create or replace function public.psi_tender_closure_acta_snapshot(p_acta_id uuid)
 returns jsonb language sql stable set search_path = public, pg_temp as $$
   select jsonb_build_object(
     'acta', to_jsonb(a),
-    'reasons', coalesce((select jsonb_agg(r.reason_code order by r.reason_code) from public.psi_tender_closure_acta_reason r where r.acta_id = a.id), '[]'::jsonb)
+    'reasons', coalesce((select jsonb_agg(r.label order by r.sort_order, r.label) from public.psi_tender_closure_acta_reason r where r.acta_id = a.id), '[]'::jsonb)
   )
   from public.psi_tender_closure_acta a
   where a.id = p_acta_id;
@@ -124,8 +144,9 @@ $$;
 revoke all on function public.psi_get_tender_closure_acta(uuid) from public, anon, authenticated, service_role;
 grant execute on function public.psi_get_tender_closure_acta(uuid) to service_role;
 
--- Crea o actualiza el borrador del acta. Lo puede hacer Vig-IA (identity_type 'agent') o un humano autorizado.
--- Un acta confirmada no se puede cambiar sin reabrirla antes.
+-- Crea o actualiza el borrador. Al crearlo toma la nota de cierre ya escrita por
+-- la persona; Vig-IA ('agent') la profundiza y una persona autorizada corrige.
+-- Un acta confirmada no se cambia sin reabrirla antes.
 create or replace function public.psi_upsert_tender_closure_acta(p_opportunity_id uuid, p_actor_id uuid, p_payload jsonb, p_expected_updated_at timestamptz)
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -134,8 +155,8 @@ declare
   v_closure_kind text;
   v_acta public.psi_tender_closure_acta%rowtype;
   v_actor public.psi_sales_profiles%rowtype;
-  v_reasons text[];
-  v_unknown text;
+  v_reasons jsonb;
+  v_closing jsonb;
   v_now timestamptz := now();
   v_action text;
 begin
@@ -156,9 +177,8 @@ begin
   select t.id into v_tender_id from public.psi_public_tenders t where t.converted_opportunity_id = p_opportunity_id limit 1;
   if v_tender_id is null then raise exception 'No existe una licitación vinculada.' using errcode = 'P0002'; end if;
 
-  v_reasons := coalesce((select array_agg(distinct value) from jsonb_array_elements_text(coalesce(nullif(p_payload -> 'reasons', 'null'::jsonb), '[]'::jsonb))), array[]::text[]);
-  select r into v_unknown from unnest(v_reasons) r where r not in (select code from public.psi_tender_closure_reason where active = true) limit 1;
-  if v_unknown is not null then raise exception 'El motivo "%" no está en el catálogo.', v_unknown using errcode = '22023'; end if;
+  v_reasons := coalesce(nullif(p_payload -> 'reasons', 'null'::jsonb), '[]'::jsonb);
+  if jsonb_typeof(v_reasons) <> 'array' then raise exception 'Los motivos deben venir en una lista.' using errcode = '22023'; end if;
 
   select * into v_acta from public.psi_tender_closure_acta where opportunity_id = p_opportunity_id for update;
   if found then
@@ -167,39 +187,48 @@ begin
     v_action := 'editada';
     update public.psi_tender_closure_acta set
       closure_kind = v_closure_kind,
+      closing_note = coalesce(nullif(btrim(coalesce(p_payload ->> 'closing_note', '')), ''), v_acta.closing_note),
+      closing_note_source = case when nullif(btrim(coalesce(p_payload ->> 'closing_note', '')), '') is null then v_acta.closing_note_source
+        when nullif(btrim(coalesce(p_payload ->> 'closing_note', '')), '') is distinct from v_acta.closing_note then 'manual'
+        else v_acta.closing_note_source end,
       decision_summary = nullif(btrim(coalesce(p_payload ->> 'decision_summary', '')), ''),
       decision_quote = nullif(btrim(coalesce(p_payload ->> 'decision_quote', '')), ''),
       requirements_unmet = coalesce(nullif(p_payload -> 'requirements_unmet', 'null'::jsonb), '[]'::jsonb),
       factors_against = coalesce(nullif(p_payload -> 'factors_against', 'null'::jsonb), '[]'::jsonb),
       gaps_to_compete = coalesce(nullif(p_payload -> 'gaps_to_compete', 'null'::jsonb), '[]'::jsonb),
       recommendation = nullif(btrim(coalesce(p_payload ->> 'recommendation', '')), ''),
-      reason_other = nullif(btrim(coalesce(p_payload ->> 'reason_other', '')), ''),
       system_lesson = nullif(btrim(coalesce(p_payload ->> 'system_lesson', '')), ''),
       updated_at = v_now
     where id = v_acta.id;
   else
     if p_expected_updated_at is not null then raise exception 'El acta no existe todavía.' using errcode = '40001'; end if;
+    v_closing := public.psi_tender_closure_note(p_opportunity_id);
     v_action := 'propuesta';
     insert into public.psi_tender_closure_acta (
-      opportunity_id, tender_id, closure_kind, decision_summary, decision_quote,
-      requirements_unmet, factors_against, gaps_to_compete, recommendation, reason_other, system_lesson,
-      proposed_by, proposed_at, updated_at
+      opportunity_id, tender_id, closure_kind, closing_note, closing_note_source,
+      decision_summary, decision_quote, requirements_unmet, factors_against, gaps_to_compete,
+      recommendation, system_lesson, proposed_by, proposed_at, updated_at
     ) values (
       p_opportunity_id, v_tender_id, v_closure_kind,
+      coalesce(nullif(btrim(coalesce(p_payload ->> 'closing_note', '')), ''), v_closing ->> 'note'),
+      case when nullif(btrim(coalesce(p_payload ->> 'closing_note', '')), '') is not null then 'manual' else v_closing ->> 'source' end,
       nullif(btrim(coalesce(p_payload ->> 'decision_summary', '')), ''),
       nullif(btrim(coalesce(p_payload ->> 'decision_quote', '')), ''),
       coalesce(nullif(p_payload -> 'requirements_unmet', 'null'::jsonb), '[]'::jsonb),
       coalesce(nullif(p_payload -> 'factors_against', 'null'::jsonb), '[]'::jsonb),
       coalesce(nullif(p_payload -> 'gaps_to_compete', 'null'::jsonb), '[]'::jsonb),
       nullif(btrim(coalesce(p_payload ->> 'recommendation', '')), ''),
-      nullif(btrim(coalesce(p_payload ->> 'reason_other', '')), ''),
       nullif(btrim(coalesce(p_payload ->> 'system_lesson', '')), ''),
       p_actor_id, v_now, v_now
     ) returning * into v_acta;
   end if;
 
   delete from public.psi_tender_closure_acta_reason where acta_id = v_acta.id;
-  insert into public.psi_tender_closure_acta_reason (acta_id, reason_code) select v_acta.id, r from unnest(v_reasons) r;
+  insert into public.psi_tender_closure_acta_reason (acta_id, label, sort_order)
+  select v_acta.id, btrim(entry.label), entry.ord
+  from jsonb_array_elements_text(v_reasons) with ordinality as entry(label, ord)
+  where nullif(btrim(entry.label), '') is not null
+  on conflict (acta_id, label) do nothing;
 
   insert into public.psi_tender_closure_acta_events (acta_id, action, actor_id, snapshot, created_at)
   values (v_acta.id, v_action, p_actor_id, public.psi_tender_closure_acta_snapshot(v_acta.id), v_now);

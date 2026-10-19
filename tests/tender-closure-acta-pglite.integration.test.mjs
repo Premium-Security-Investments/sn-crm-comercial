@@ -1,6 +1,7 @@
-// Acta de cierre de licitación (migración 134): Vig-IA propone el borrador, una
-// persona autorizada lo corrige y lo confirma. El acta se abre para todos los
-// cierres y nunca bloquea el cierre de la licitación.
+// Acta de cierre de licitación (migración 134): parte de la nota de cierre que
+// escribió la persona, Vig-IA la profundiza con lo que tiene aprendido del
+// expediente, y una persona autorizada corrige y confirma. No hay catálogo de
+// motivos: los propone Vig-IA en el acta. El acta nunca bloquea el cierre.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
@@ -15,6 +16,10 @@ const COMERCIAL = '33333333-3333-4333-8333-333333333333';
 const NO_GO = '44444444-4444-4444-8444-444444444444';
 const EN_CURSO = '55555555-5555-4555-8555-555555555555';
 const ADJUDICADA = '88888888-8888-4888-8888-888888888888';
+const TENDER_NO_GO = '66666666-6666-4666-8666-666666666666';
+
+// La nota de cierre de Juan en el caso Cali Seguridad (NO-GO del 17-oct-2026).
+const NOTA_DE_JUAN = 'Es un proceso 100% de tecnología y aún no cumplimos los requisitos para este tipo de proyectos; debemos ir trabajando en ciertos requisitos y/o buscar un aliado que nos complemente.';
 
 function sqlLiteral(value) {
   if (value === null || value === undefined) return 'null';
@@ -37,29 +42,33 @@ async function createDatabase() {
     create table public.psi_sales_profiles (id uuid primary key, active boolean not null default true, identity_type text default 'human', role text not null default 'comercial', full_name text);
     create table public.psi_sales_opportunities (id uuid primary key, tender_offer_status text, archived_at timestamptz, archived_by uuid, archive_note text);
     create table public.psi_public_tenders (id uuid primary key, converted_opportunity_id uuid references public.psi_sales_opportunities(id));
+    create table public.psi_tender_offer_status_transitions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, tender_id uuid not null, actor_id uuid not null, from_status text, to_status text, note text, changed_at timestamptz not null default now());
+    create table public.psi_tender_go_no_go_decisions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, tender_id uuid not null, decision text not null, justification text, decided_by uuid not null, decided_at timestamptz not null default now(), supersedes_decision_id uuid);
     insert into public.psi_sales_profiles values ('${JUAN}', true, 'human', 'admin', 'Juan Botero');
     insert into public.psi_sales_profiles values ('${VIGIA}', true, 'agent', 'comercial', 'Vig-IA');
     insert into public.psi_sales_profiles values ('${COMERCIAL}', true, 'human', 'comercial', 'Asesor Comercial');
     insert into public.psi_sales_opportunities values ('${NO_GO}', 'cerrada_no_go', null, null, null);
     insert into public.psi_sales_opportunities values ('${EN_CURSO}', 'en_preparacion', null, null, null);
     insert into public.psi_sales_opportunities values ('${ADJUDICADA}', 'adjudicada', null, null, null);
-    insert into public.psi_public_tenders values ('66666666-6666-4666-8666-666666666666', '${NO_GO}');
+    insert into public.psi_public_tenders values ('${TENDER_NO_GO}', '${NO_GO}');
     insert into public.psi_public_tenders values ('77777777-7777-4777-8777-777777777777', '${EN_CURSO}');
     insert into public.psi_public_tenders values ('99999999-9999-4999-8999-999999999999', '${ADJUDICADA}');
+    insert into public.psi_tender_go_no_go_decisions (opportunity_id, tender_id, decision, justification, decided_by)
+      values ('${NO_GO}', '${TENDER_NO_GO}', 'no_go', '${NOTA_DE_JUAN.replace(/'/g, "''")}', '${JUAN}');
   `);
   await pg.exec(migration134);
   return pg;
 }
 
-// El borrador que Vig-IA propondría para el caso Cali Seguridad (NO-GO del 17-oct-2026).
-const caliDraft = {
+// Lo que Vig-IA profundiza a partir de la nota de Juan y del expediente.
+const profundizacionVigia = {
   decision_summary: 'No nos presentamos porque es un proyecto 100% de tecnología, sin componente de vigilancia.',
-  decision_quote: 'Es un proceso 100% de tecnología y aún no cumplimos los requisitos para este tipo de proyectos.',
+  decision_quote: NOTA_DE_JUAN,
   requirements_unmet: [{ titulo: 'Experiencia general', detalle: 'El RUP coincide solo en 4 códigos UNSPSC.', fuente: 'Complemento al pliego definitivo, num. 11.2' }],
   factors_against: [{ detalle: 'Solo hay unas 11 semanas para importar, instalar y poner en marcha.', fuente: 'Estudios previos, num. 9.2' }],
   gaps_to_compete: [{ detalle: 'Aliado integrador en unión temporal que aporte los códigos UNSPSC.' }],
   recommendation: 'Seguimos trabajando las licitaciones de tecnología; no se descartan de entrada.',
-  reasons: ['tecnologia_no_vigilancia', 'falta_experiencia', 'requisito_habilitante_incumplido'],
+  reasons: ['Es de tecnología y no de vigilancia', 'Nos falta experiencia', 'No cumplimos un requisito habilitante (códigos del RUP y cartas de fabricante)'],
   system_lesson: 'Cuando llegue una parecida, el Radar debe marcarla "tecnología: parecida a Cali Seguridad; buscar aliado integrador" y mostrarla igual.',
 };
 
@@ -70,32 +79,63 @@ const upsert = (pg, opportunityId, actorId, payload, expectedUpdatedAt = null) =
 await (async function onlyClosedAndOnlyAuthorized() {
   const pg = await createDatabase();
   assert.equal(await callRpc(pg, 'psi_get_tender_closure_acta', [NO_GO]), null, 'sin acta no se inventa una vacía');
-  await assert.rejects(() => upsert(pg, EN_CURSO, VIGIA, caliDraft), /sólo se abre cuando la licitación está cerrada/i);
-  await assert.rejects(() => upsert(pg, NO_GO, COMERCIAL, caliDraft), /No tiene permisos/i);
-  await assert.rejects(() => upsert(pg, NO_GO, VIGIA, { ...caliDraft, reasons: ['inventado'] }), /no está en el catálogo/i);
+  await assert.rejects(() => upsert(pg, EN_CURSO, VIGIA, profundizacionVigia), /sólo se abre cuando la licitación está cerrada/i);
+  await assert.rejects(() => upsert(pg, NO_GO, COMERCIAL, profundizacionVigia), /No tiene permisos/i);
   await pg.close();
 })();
 
-// --- Vig-IA propone, Juan corrige, Juan confirma
-await (async function proposeCorrectConfirm() {
+// --- La nota de cierro ya escrita es el punto de partida: no se le pide otra vez
+await (async function closingNoteComesFromWhereThePersonWroteIt() {
   const pg = await createDatabase();
-  const propuesta = await upsert(pg, NO_GO, VIGIA, caliDraft);
+
+  // NO-GO: la nota vive en la justificación de la decisión.
+  assert.deepEqual(await callRpc(pg, 'psi_tender_closure_note', [NO_GO]), { note: NOTA_DE_JUAN, source: 'no_go_justification' });
+  const actaNoGo = await upsert(pg, NO_GO, VIGIA, { decision_summary: 'x', reasons: ['Es de tecnología'] });
+  assert.equal(actaNoGo.acta.closing_note, NOTA_DE_JUAN, 'el acta arranca de la nota de Juan, sin que nadie la reescriba');
+  assert.equal(actaNoGo.acta.closing_note_source, 'no_go_justification');
+
+  // Adjudicada / no adjudicada: la nota vive en la transición de estado.
+  await pg.exec(`insert into public.psi_tender_offer_status_transitions (opportunity_id, tender_id, actor_id, from_status, to_status, note)
+    values ('${ADJUDICADA}', '99999999-9999-4999-8999-999999999999', '${JUAN}', 'presentada', 'adjudicada', 'La ganamos por precio y por el equipo propuesto.')`);
+  assert.deepEqual(await callRpc(pg, 'psi_tender_closure_note', [ADJUDICADA]), { note: 'La ganamos por precio y por el equipo propuesto.', source: 'status_transition' });
+
+  // Archivada: la nota vive en archive_note y manda sobre las demás.
+  await pg.exec(`update public.psi_sales_opportunities set archived_at = now(), archive_note = 'Falta de sede en Bolívar, Casanare y Nariño.' where id = '${NO_GO}'`);
+  assert.deepEqual(await callRpc(pg, 'psi_tender_closure_note', [NO_GO]), { note: 'Falta de sede en Bolívar, Casanare y Nariño.', source: 'archive_note' });
+
+  // Sin nota en ninguna parte, el acta se abre igual y queda sin punto de partida.
+  await pg.exec(`insert into public.psi_sales_opportunities values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'no_adjudicada', null, null, null);
+    insert into public.psi_public_tenders values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');`);
+  assert.equal(await callRpc(pg, 'psi_tender_closure_note', ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']), null);
+  const sinNota = await upsert(pg, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', VIGIA, {});
+  assert.equal(sinNota.acta.closing_note, null);
+  assert.equal(sinNota.acta.closing_note_source, null);
+  await pg.close();
+})();
+
+// --- Vig-IA profundiza la nota, Juan corrige, Juan confirma
+await (async function deepenCorrectConfirm() {
+  const pg = await createDatabase();
+  const propuesta = await upsert(pg, NO_GO, VIGIA, profundizacionVigia);
   assert.equal(propuesta.acta.status, 'borrador', 'lo que propone el agente nace como borrador');
   assert.equal(propuesta.acta.closure_kind, 'cerrada_no_go');
+  assert.equal(propuesta.acta.closing_note, NOTA_DE_JUAN);
   assert.equal(propuesta.acta.proposed_by, VIGIA);
   assert.equal(propuesta.proposed_by_name, 'Vig-IA');
-  assert.deepEqual(propuesta.reasons, ['falta_experiencia', 'requisito_habilitante_incumplido', 'tecnologia_no_vigilancia']);
+  assert.deepEqual(propuesta.reasons, profundizacionVigia.reasons, 'los motivos son los que redactó Vig-IA, en su orden');
   assert.deepEqual(propuesta.events.map(e => e.action), ['propuesta']);
 
   await assert.rejects(() => callRpc(pg, 'psi_confirm_tender_closure_acta', [NO_GO, VIGIA, propuesta.acta.updated_at]), /Sólo una persona autorizada/i, 'Vig-IA no confirma su propia acta');
 
   const corregida = await upsert(pg, NO_GO, JUAN, {
-    ...caliDraft,
+    ...profundizacionVigia,
     recommendation: 'Corregido por Juan: no se descartan de entrada y desde el primer día se busca aliado.',
-    reasons: [...caliDraft.reasons, 'tiempo_insuficiente'],
+    reasons: [...profundizacionVigia.reasons, 'No alcanzaba el tiempo'],
   }, propuesta.acta.updated_at);
   assert.match(corregida.acta.recommendation, /Corregido por Juan/);
-  assert.equal(corregida.reasons.length, 4);
+  assert.equal(corregida.reasons.length, 4, 'Juan puede añadir un motivo que Vig-IA no vio');
+  assert.equal(corregida.acta.closing_note, NOTA_DE_JUAN, 'corregir el acta no toca la nota de cierre original');
+  assert.equal(corregida.acta.closing_note_source, 'no_go_justification');
   assert.equal(corregida.acta.proposed_by, VIGIA, 'corregir no borra quién propuso el borrador');
   assert.deepEqual(corregida.events.map(e => e.action), ['editada', 'propuesta']);
 
@@ -107,13 +147,23 @@ await (async function proposeCorrectConfirm() {
   await pg.close();
 })();
 
+// --- Reescribir la nota a mano queda marcado como tal
+await (async function manualNoteIsMarked() {
+  const pg = await createDatabase();
+  const propuesta = await upsert(pg, NO_GO, VIGIA, { decision_summary: 'x', reasons: ['Es de tecnología'] });
+  const reescrita = await upsert(pg, NO_GO, JUAN, { decision_summary: 'x', reasons: ['Es de tecnología'], closing_note: 'Lo cierro por otra razón: el presupuesto no daba.' }, propuesta.acta.updated_at);
+  assert.equal(reescrita.acta.closing_note, 'Lo cierro por otra razón: el presupuesto no daba.');
+  assert.equal(reescrita.acta.closing_note_source, 'manual');
+  await pg.close();
+})();
+
 // --- Una sola acta por licitación, con bloqueo optimista
 await (async function singleActaAndOptimisticLock() {
   const pg = await createDatabase();
-  const propuesta = await upsert(pg, NO_GO, VIGIA, caliDraft);
-  await assert.rejects(() => upsert(pg, NO_GO, JUAN, caliDraft), /cambió mientras la editaba/i, 'no se crea una segunda acta');
-  await assert.rejects(() => upsert(pg, NO_GO, JUAN, caliDraft, '2020-01-01T00:00:00Z'), /cambió mientras la editaba/i);
-  await assert.rejects(() => upsert(pg, ADJUDICADA, JUAN, caliDraft, '2020-01-01T00:00:00Z'), /El acta no existe todavía/i);
+  const propuesta = await upsert(pg, NO_GO, VIGIA, profundizacionVigia);
+  await assert.rejects(() => upsert(pg, NO_GO, JUAN, profundizacionVigia), /cambió mientras la editaba/i, 'no se crea una segunda acta');
+  await assert.rejects(() => upsert(pg, NO_GO, JUAN, profundizacionVigia, '2020-01-01T00:00:00Z'), /cambió mientras la editaba/i);
+  await assert.rejects(() => upsert(pg, ADJUDICADA, JUAN, profundizacionVigia, '2020-01-01T00:00:00Z'), /El acta no existe todavía/i);
   const unicas = await pg.query(`select count(*)::int as total from public.psi_tender_closure_acta where opportunity_id = '${NO_GO}'`);
   assert.equal(unicas.rows[0].total, 1);
   assert.ok(propuesta.acta.id);
@@ -123,9 +173,9 @@ await (async function singleActaAndOptimisticLock() {
 // --- Confirmar un acta la congela; reabrirla deja el historial intacto
 await (async function confirmFreezesAndReopenKeepsHistory() {
   const pg = await createDatabase();
-  const propuesta = await upsert(pg, NO_GO, VIGIA, caliDraft);
+  const propuesta = await upsert(pg, NO_GO, VIGIA, profundizacionVigia);
   const confirmada = await callRpc(pg, 'psi_confirm_tender_closure_acta', [NO_GO, JUAN, propuesta.acta.updated_at]);
-  await assert.rejects(() => upsert(pg, NO_GO, JUAN, caliDraft, confirmada.acta.updated_at), /debe reabrirla/i);
+  await assert.rejects(() => upsert(pg, NO_GO, JUAN, profundizacionVigia, confirmada.acta.updated_at), /debe reabrirla/i);
   await assert.rejects(() => callRpc(pg, 'psi_confirm_tender_closure_acta', [NO_GO, JUAN, confirmada.acta.updated_at]), /ya está confirmada/i);
   await assert.rejects(() => callRpc(pg, 'psi_reopen_tender_closure_acta', [NO_GO, COMERCIAL, confirmada.acta.updated_at]), /Sólo una persona autorizada/i);
 
@@ -136,13 +186,14 @@ await (async function confirmFreezesAndReopenKeepsHistory() {
   assert.deepEqual(reabierta.events.map(e => e.action), ['reabierta', 'confirmada', 'propuesta']);
   const congelada = await pg.query(`select snapshot from public.psi_tender_closure_acta_events where action = 'confirmada'`);
   assert.equal(congelada.rows[0].snapshot.acta.status, 'confirmada', 'el historial conserva la versión confirmada');
+  assert.deepEqual(congelada.rows[0].snapshot.reasons, profundizacionVigia.reasons);
 
   await assert.rejects(() => pg.exec(`update public.psi_tender_closure_acta_events set action = 'propuesta'`), /inmutable/i);
   await assert.rejects(() => pg.exec(`delete from public.psi_tender_closure_acta_events`), /inmutable/i);
   await pg.close();
 })();
 
-// --- Confirmar exige decisión y al menos un motivo para el conteo
+// --- Confirmar exige la decisión redactada y al menos un motivo
 await (async function confirmRequiresDecisionAndReason() {
   const pg = await createDatabase();
   const vacia = await upsert(pg, ADJUDICADA, VIGIA, {});
@@ -150,26 +201,42 @@ await (async function confirmRequiresDecisionAndReason() {
   await assert.rejects(() => callRpc(pg, 'psi_confirm_tender_closure_acta', [ADJUDICADA, JUAN, vacia.acta.updated_at]), /necesita la decisión/i);
   const conDecision = await upsert(pg, ADJUDICADA, JUAN, { decision_summary: 'La ganamos.' }, vacia.acta.updated_at);
   await assert.rejects(() => callRpc(pg, 'psi_confirm_tender_closure_acta', [ADJUDICADA, JUAN, conDecision.acta.updated_at]), /al menos un motivo/i);
-  const completa = await upsert(pg, ADJUDICADA, JUAN, { decision_summary: 'La ganamos.', reasons: ['resultado_favorable'] }, conDecision.acta.updated_at);
+  const completa = await upsert(pg, ADJUDICADA, JUAN, { decision_summary: 'La ganamos.', reasons: ['La ganamos por precio y por el equipo propuesto'] }, conDecision.acta.updated_at);
   const confirmada = await callRpc(pg, 'psi_confirm_tender_closure_acta', [ADJUDICADA, JUAN, completa.acta.updated_at]);
   assert.equal(confirmada.acta.status, 'confirmada');
+  await pg.close();
+})();
+
+// --- Los motivos se pueden contar entre actas, aunque los redacte Vig-IA
+await (async function reasonsAreCountableAcrossActas() {
+  const pg = await createDatabase();
+  await upsert(pg, NO_GO, VIGIA, profundizacionVigia);
+  await upsert(pg, ADJUDICADA, VIGIA, { decision_summary: 'x', reasons: ['Nos falta experiencia', 'Precio no competitivo'] });
+  const conteo = await pg.query(`select label, count(*)::int as total from public.psi_tender_closure_acta_reason group by label order by total desc, label asc`);
+  assert.equal(conteo.rows[0].label, 'Nos falta experiencia');
+  assert.equal(conteo.rows[0].total, 2, 'el mismo motivo en dos actas se cuenta junto');
+  // Un motivo repetido dentro de la misma acta no se duplica.
+  const acta = await callRpc(pg, 'psi_get_tender_closure_acta', [NO_GO]);
+  const reescrita = await upsert(pg, NO_GO, JUAN, { ...profundizacionVigia, reasons: ['Nos falta experiencia', 'Nos falta experiencia'] }, acta.acta.updated_at);
+  assert.deepEqual(reescrita.reasons, ['Nos falta experiencia']);
   await pg.close();
 })();
 
 // --- Archivar también abre acta, aunque la oferta no se hubiera presentado
 await (async function archivedOpportunityGetsActa() {
   const pg = await createDatabase();
-  await pg.exec(`update public.psi_sales_opportunities set archived_at = now() where id = '${EN_CURSO}'`);
-  const acta = await upsert(pg, EN_CURSO, VIGIA, { decision_summary: 'Archivada por falta de sede en tres departamentos.', reasons: ['falta_sede', 'sin_socio_union_temporal'] });
+  await pg.exec(`update public.psi_sales_opportunities set archived_at = now(), archive_note = 'No hubo socio de unión temporal a tiempo.' where id = '${EN_CURSO}'`);
+  const acta = await upsert(pg, EN_CURSO, VIGIA, { decision_summary: 'Archivada sin presentar.', reasons: ['No hubo socio de unión temporal a tiempo'] });
   assert.equal(acta.acta.closure_kind, 'archivada');
-  assert.deepEqual(acta.reasons, ['falta_sede', 'sin_socio_union_temporal']);
+  assert.equal(acta.acta.closing_note, 'No hubo socio de unión temporal a tiempo.');
+  assert.equal(acta.acta.closing_note_source, 'archive_note');
   await pg.close();
 })();
 
 // --- RLS y grants cerrados: nada para anon ni authenticated, ni escritura directa
 await (async function rlsAndGrantsFailClosed() {
   const pg = await createDatabase();
-  await upsert(pg, NO_GO, VIGIA, caliDraft);
+  await upsert(pg, NO_GO, VIGIA, profundizacionVigia);
   const grants = await pg.query(`select grantee, privilege_type, table_name from information_schema.role_table_grants where table_name like 'psi_tender_closure%' and grantee in ('anon', 'authenticated', 'public')`);
   assert.equal(grants.rows.length, 0, `grants indebidos: ${JSON.stringify(grants.rows)}`);
   const rls = await pg.query(`select relname, relrowsecurity from pg_class where relname like 'psi_tender_closure%' and relkind = 'r'`);
@@ -193,7 +260,7 @@ await (async function rlsAndGrantsFailClosed() {
 // --- El rollback deja la base como estaba
 await (async function rollbackIsClean() {
   const pg = await createDatabase();
-  await upsert(pg, NO_GO, VIGIA, caliDraft);
+  await upsert(pg, NO_GO, VIGIA, profundizacionVigia);
   await pg.exec(rollback134);
   const tablas = await pg.query(`select relname from pg_class where relname like 'psi_tender_closure%'`);
   assert.equal(tablas.rows.length, 0, `quedaron objetos: ${JSON.stringify(tablas.rows)}`);
