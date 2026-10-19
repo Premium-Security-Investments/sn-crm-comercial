@@ -835,3 +835,51 @@ export type TenderGoNoGoPostPayload = {
 };
 export type TenderModuleData = { currentProfile: TenderCurrentProfile; profiles: Array<{ id: string; full_name: string; role: string }> };
 export type TendersModuleProps = { view: TenderModuleView; data: TenderModuleData; refresh: () => Promise<void>; request: TenderRequest; navigate: (hash: string) => void; children?: ReactNode };
+
+/** Acta de cierre: arranca de la nota que escribió la persona al cerrar y Vig-IA la profundiza. */
+export type TenderClosureActaEntry = { titulo?: string | null; detalle?: string | null; fuente?: string | null };
+export type TenderClosureActaStatus = 'borrador' | 'confirmada';
+export type TenderClosureKind = 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go' | 'archivada';
+export type TenderClosureNoteSource = 'archive_note' | 'status_transition' | 'no_go_justification' | 'manual';
+export type TenderClosureActa = {
+  acta: {
+    id: string;
+    opportunity_id: string;
+    tender_id: string;
+    status: TenderClosureActaStatus;
+    closure_kind: TenderClosureKind;
+    closing_note: string | null;
+    closing_note_source: TenderClosureNoteSource | null;
+    decision_summary: string | null;
+    decision_quote: string | null;
+    requirements_unmet: TenderClosureActaEntry[];
+    factors_against: TenderClosureActaEntry[];
+    gaps_to_compete: TenderClosureActaEntry[];
+    recommendation: string | null;
+    system_lesson: string | null;
+    proposed_by: string;
+    proposed_at: string;
+    confirmed_by: string | null;
+    confirmed_at: string | null;
+    updated_at: string;
+  };
+  reasons: string[];
+  proposed_by_name: string | null;
+  confirmed_by_name: string | null;
+  events: Array<{ action: 'propuesta' | 'editada' | 'confirmada' | 'reabierta'; actor_name: string | null; created_at: string }>;
+};
+/** Respuesta del GET: cómo se cerró la licitación y el acta, si ya se abrió. */
+export type TenderClosureActaView = { closure_kind: TenderClosureKind | null; acta: TenderClosureActa | null };
+export type TenderClosureActaInput = {
+  opportunity_id: string;
+  expected_updated_at?: string | null;
+  closing_note?: string | null;
+  decision_summary?: string | null;
+  decision_quote?: string | null;
+  requirements_unmet?: TenderClosureActaEntry[];
+  factors_against?: TenderClosureActaEntry[];
+  gaps_to_compete?: TenderClosureActaEntry[];
+  recommendation?: string | null;
+  system_lesson?: string | null;
+  reasons?: string[];
+};

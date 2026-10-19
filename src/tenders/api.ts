@@ -1,4 +1,4 @@
-import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -156,4 +156,21 @@ export async function retryTenderDossierWorkbenchJob(request: TenderRequest, inp
 
 export async function reviewTenderDossierWorkbenchLearning(request: TenderRequest, input: TenderDossierWorkbenchLearningReviewInput): Promise<unknown> {
   return request('/api/tender-dossier-workbench/learning/review', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** Acta de cierre. `acta` en `null` significa que todavía no se ha abierto para esta licitación. */
+export async function loadTenderClosureActa(request: TenderRequest, opportunityId: string): Promise<TenderClosureActaView> {
+  return request<TenderClosureActaView>(`/api/tender-closure-acta?id=${encodeURIComponent(opportunityId)}`);
+}
+
+export async function saveTenderClosureActa(request: TenderRequest, input: TenderClosureActaInput): Promise<TenderClosureActa> {
+  return request<TenderClosureActa>('/api/tender-closure-acta', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function confirmTenderClosureActa(request: TenderRequest, opportunityId: string, expectedUpdatedAt: string): Promise<TenderClosureActa> {
+  return request<TenderClosureActa>('/api/tender-closure-acta/confirm', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunityId, expected_updated_at: expectedUpdatedAt }) });
+}
+
+export async function reopenTenderClosureActa(request: TenderRequest, opportunityId: string, expectedUpdatedAt: string): Promise<TenderClosureActa> {
+  return request<TenderClosureActa>('/api/tender-closure-acta/reopen', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunityId, expected_updated_at: expectedUpdatedAt }) });
 }

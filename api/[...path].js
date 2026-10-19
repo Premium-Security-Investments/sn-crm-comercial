@@ -29,6 +29,7 @@ import { runInConcurrentChunks } from '../tender-concurrency.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { callTenderOpportunityArchive } from '../tender-offer-archive-rpc.js';
+import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClosureActa, callReopenTenderClosureActa } from '../tender-closure-acta-rpc.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -5649,6 +5650,44 @@ app.post('/api/tender-offer-archive', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     res.status(201).json(await callTenderOpportunityArchive(requireDb(), req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-closure-acta', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.json(await getTenderClosureActa(database, opportunityId, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-closure-acta', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callUpsertTenderClosureActa(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-closure-acta/confirm', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callConfirmTenderClosureActa(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-closure-acta/reopen', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callReopenTenderClosureActa(database, req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

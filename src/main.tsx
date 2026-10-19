@@ -20,6 +20,7 @@ import { TenderDecisionExperience } from './tenders/components/TenderDecisionExp
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderDecideView, TenderNextStep, TenderPrepareView, TenderWorkspaceHeader, TenderWorkspaceTabs, tenderWorkspaceMoment, useTenderOfferStatus, type TenderWorkspaceTab } from './tenders/workspace/TenderWorkspace';
+import { TenderClosureActa } from './tenders/workspace/TenderClosureActa';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { NavIcon, UserMenu } from './shell/UserMenu';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
@@ -1092,6 +1093,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       </div>
       <div className="tw-panel tw-panel-historial">
         {secopNotices.length > 0 && <section className="tw-card"><small>Avisos de SECOP</small>{secopNotices.map(line => <p key={line}>{line}</p>)}</section>}
+        {/* El acta de cierre se muestra sola cuando la licitación ya está cerrada; el servidor dice cómo se cerró. */}
+        <TenderClosureActa key={`tender-closure-acta-${o.id}`} opportunityId={o.id} request={api} currentProfile={data.currentProfile} />
         <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}><PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /></div>
         {/* La decisión ya está en la línea de tiempo; cambiarla a NO GO es raro y queda al final, plegado. */}
         {moment === 'preparar' && <details className="tw-fold tw-change-decision"><summary>Cambiar la decisión</summary>{decisionPanel}</details>}
