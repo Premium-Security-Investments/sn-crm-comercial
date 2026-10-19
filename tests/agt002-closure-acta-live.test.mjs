@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { draftClosureActaAfterClosure } from '../agt002-closure-acta-live.js';
+import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../agt002-closure-acta-live.js';
 
 const CALI = '44444444-4444-4444-8444-444444444444';
 const VIGIA = 'a0020000-0000-4000-8000-000000000002';
@@ -131,6 +131,36 @@ test('los tres cierres la disparan y ninguno deja caer el pedido', () => {
   const decision = server.slice(server.indexOf("app.post('/api/tender-go-no-go-decision'"), server.indexOf("app.post('/api/tender-dossier-agt002-sync'"));
   assert.match(decision, /tender_offer_status === 'cerrada_no_go'/, 'sólo un NO-GO abre acta');
   assert.match(decision, /draftClosureActaAfterClosure/);
+});
+
+test('la red de seguridad corre donde vive la configuración, no en el servidor', async () => {
+  // El servidor sólo llama al endpoint con el secreto compartido; redacta el proceso web.
+  const script = fs.readFileSync(new URL('../ops/agt002-closure-acta/run-agt002-closure-acta.sh', import.meta.url), 'utf8');
+  assert.match(script, /AGT002_CLOSURE_ACTA_WORKER_URL/);
+  assert.match(script, /x-agt002-workbench-secret/);
+  assert.doesNotMatch(script, /SUPABASE|HMAC|WORKBENCH_MODEL/, 'el servidor no debe conocer la configuración del modelo');
+
+  const unit = fs.readFileSync(new URL('../ops/agt002-closure-acta/agt002-closure-acta.service', import.meta.url), 'utf8');
+  assert.match(unit, /User=agt002-workbench-scheduler/, 'misma identidad que el scheduler de la Mesa');
+  assert.equal((unit.match(/^EnvironmentFile=/gm) || []).length, 1, 'un solo archivo de entorno: ya no necesita el de la base');
+
+  const server = fs.readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  assert.match(server, /app\.post\('\/api\/tender-closure-acta\/worker\/run', runAgt002ClosureActaSweepOnce\)/);
+  const handler = server.slice(server.indexOf('async function runAgt002ClosureActaSweepOnce'), server.indexOf("app.post('/api/tender-closure-acta/worker/run'"));
+  assert.match(handler, /isAgt002WorkbenchDrainEnabled\(process\.env\)[\s\S]*?status = 404/, 'apagada: 404');
+  assert.match(handler, /isAgt002WorkbenchWorkerAuthorized\(req\)[\s\S]*?status = 403/, 'sin secreto: 403');
+
+  // El barrido no redacta nada con la Mesa apagada.
+  const database = fakeDatabase();
+  assert.deepEqual(await sweepTenderClosureActas(database, { environment: { ...CONFIGURED, AGT002_WORKBENCH_DRAIN_ENABLED: 'false' }, log: () => {} }), { status: 'skipped', reason: 'apagada' });
+  assert.equal(database.calls.length, 0);
+
+  // Encendida, redacta todas las pendientes, no sólo una.
+  const otra = { ...pendingRow, opportunity_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+  const conDos = fakeDatabase([pendingRow, otra]);
+  const outcome = await sweepTenderClosureActas(conDos, { environment: CONFIGURED, bridgeClient: bridgeClient(), log: () => {} });
+  assert.equal(outcome.status, 'ran');
+  assert.equal(outcome.drafted, 2);
 });
 
 test('la red de seguridad quedó semanal, no tres veces al día', () => {

@@ -6,9 +6,6 @@
 //   --phase-change-review  its own unit (agt002-phase-change-review.timer: Mon–Fri 9:00, 14:00, 19:00; Sat–Sun 14:00
 //               Bogotá): new SECOP phase of ACTIVE converted tenders — link, new documents, archive of obsolete ones,
 //               full reanalysis, mail outbox for Hermes (agt002-phase-change-review.js). Never part of the daily chain.
-//   --closure-acta  drafts the closure minutes (acta de cierre) for tenders already closed that still have none,
-//               starting from the closing note the person wrote. The draft is always editable and Vig-IA can never
-//               confirm it (migration 134; agt002-closure-acta-run.js).
 //   --requests  runs the full import for a pending "Sincronizar fuentes oficiales" request, if any.
 //   --compare   reads the sources with the full import and compares against the Radar, writing nothing.
 //   --top5      writes the Discord "5 de mayor encaje" text and the Radar export built from the CRM's own Radar
@@ -20,8 +17,8 @@ process.env.CRM_SKIP_LISTEN = '1';
 process.env.NEXT_PUBLIC_SUPABASE_URL ||= process.env.SUPABASE_URL;
 const log = event => console.log(JSON.stringify(event));
 const mode = process.argv[2];
-if (!['--daily', '--requests', '--compare', '--top5', '--phase-change-review', '--closure-acta'].includes(mode)) {
-  log({ event: 'agt002_radar_import_usage', usage: 'run-agt002-radar-import.mjs --daily|--requests|--compare|--top5|--phase-change-review|--closure-acta' });
+if (!['--daily', '--requests', '--compare', '--top5', '--phase-change-review'].includes(mode)) {
+  log({ event: 'agt002_radar_import_usage', usage: 'run-agt002-radar-import.mjs --daily|--requests|--compare|--top5|--phase-change-review' });
   process.exit(2);
 }
 
@@ -44,29 +41,6 @@ async function runPhaseChangeReview() {
     api, budgetMs, environment: process.env, log,
     stateDir: process.env.AGT002_LICITACIONES_ALERTS_DIR || '/var/lib/agt002-licitaciones-alerts',
   });
-}
-
-// Acta de cierre (Juan, 2026-10-19): Vig-IA profundiza la nota con la que se cerró la licitación. Usa el mismo puente
-// y el mismo interruptor de la Mesa; si la Mesa está apagada o sin configurar, no se invoca al modelo y no se escribe nada.
-async function runClosureActa() {
-  const [{ runAgt002ClosureActaDrafts }, { createClosureActaDrafter }, runtime, bridge] = await Promise.all([
-    import('../../agt002-closure-acta-run.js'),
-    import('../../agt002-closure-acta-draft.js'),
-    import('../../agt002-workbench-runtime.js'),
-    import('../../agt002-hetzner-bridge-client.js'),
-  ]);
-  if (!runtime.isAgt002WorkbenchDrainEnabled(process.env)) {
-    log({ event: 'agt002_closure_acta_disabled' });
-    return;
-  }
-  const config = runtime.getAgt002WorkbenchRuntimeConfig(process.env);
-  const drafter = createClosureActaDrafter({
-    client: bridge.createAgt002HetznerBridgeClient({ url: config.bridgeUrl, hmacSecret: config.hmacSecret }),
-    model: config.model,
-    timeoutMs: config.timeoutMs,
-    checkGate: () => runtime.isAgt002WorkbenchDrainEnabled(process.env),
-  });
-  await runAgt002ClosureActaDrafts(database, { drafter, agentId: config.agentId, limit: process.env.AGT002_CLOSURE_ACTA_MAX_PER_RUN, log });
 }
 
 async function runDaily() {
@@ -140,7 +114,6 @@ try {
   if (mode === '--compare') await runCompare();
   if (mode === '--top5') await runTop5();
   if (mode === '--phase-change-review') await runPhaseChangeReview();
-  if (mode === '--closure-acta') await runClosureActa();
   process.exit(0);
 } catch (error) {
   const cause = error?.cause ? { cause: String(error.cause?.code || error.cause?.name || ''), cause_message: String(error.cause?.message || error.cause).slice(0, 300) } : {};

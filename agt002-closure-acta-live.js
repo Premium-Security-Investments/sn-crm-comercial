@@ -11,6 +11,35 @@ import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.
 // cualquier falla se registra y se deja para la revisión semanal
 // (`run-agt002-radar-import.mjs --closure-acta`). Tampoco se invoca al modelo si
 // la Mesa está apagada o sin configurar.
+/**
+ * Redacta todas las actas pendientes. Es la red de seguridad: corre donde vive la
+ * configuración del modelo (el proceso web), llamada por el `timer` semanal del
+ * servidor a través de un endpoint protegido por secreto. El servidor no tiene la
+ * configuración del puente y no debe tenerla.
+ */
+export async function sweepTenderClosureActas(database, {
+  environment = process.env,
+  limit,
+  log = event => console.log(JSON.stringify(event)),
+  bridgeClient,
+} = {}) {
+  if (!isAgt002WorkbenchDrainEnabled(environment)) return { status: 'skipped', reason: 'apagada' };
+  const config = getAgt002WorkbenchRuntimeConfig(environment);
+  const drafter = createClosureActaDrafter({
+    client: bridgeClient || createAgt002HetznerBridgeClient({ url: config.bridgeUrl, hmacSecret: config.hmacSecret }),
+    model: config.model,
+    timeoutMs: config.timeoutMs,
+    checkGate: () => isAgt002WorkbenchDrainEnabled(environment),
+  });
+  const outcome = await runAgt002ClosureActaDrafts(database, {
+    drafter,
+    agentId: config.agentId,
+    limit: limit ?? environment.AGT002_CLOSURE_ACTA_MAX_PER_RUN,
+    log,
+  });
+  return { status: 'ran', ...outcome };
+}
+
 export async function draftClosureActaAfterClosure(database, opportunityId, {
   environment = process.env,
   log = event => console.log(JSON.stringify(event)),

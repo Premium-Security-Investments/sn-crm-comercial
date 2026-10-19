@@ -6,24 +6,27 @@ datos no se lo permite a Vig-IA (`psi_confirm_tender_closure_acta` exige `identi
 
 - En el cierre: `agt002-closure-acta-live.js`, llamado desde `/api/tender-offer-archive`,
   `/api/tender-offer-status` (sólo estados finales) y `/api/tender-go-no-go-decision` (sólo NO-GO).
-- Red de seguridad semanal: `run-agt002-radar-import.mjs --closure-acta`
+- Red de seguridad semanal: `run-agt002-closure-acta.sh` → `POST /api/tender-closure-acta/worker/run`
 - Código: `agt002-closure-acta-run.js`, `agt002-closure-acta-draft.js`
 - Base: migración `134_tender_closure_acta.sql` (`psi_list_tender_closure_acta_pending`)
 - Pantalla: pestaña Historial de la ficha (`src/tenders/workspace/TenderClosureActa.tsx`)
 
-## Estado: propuesto, NO instalado
+## Cómo está armado
 
-Dos cosas por decidir antes de instalar esto:
+El servidor **no conoce la configuración del modelo y no debe conocerla** (su archivo de entorno
+sólo tiene la URL y el secreto del trabajador). Igual que el scheduler de la Mesa, este servicio
+sólo dispara una llamada HTTP al endpoint protegido por secreto
+`POST /api/tender-closure-acta/worker/run`, y es el proceso web quien redacta.
 
-1. **Permisos de los dos archivos de entorno.** El servicio necesita el de Supabase (el mismo del análisis
-   automático, usuario `psi-agt002`) y el del puente de la Mesa (modo `0640` de
-   `root:agt002-workbench-scheduler`). Hay que resolver si `psi-agt002` puede leer el segundo o si el
-   servicio corre con otra identidad. Sin esto, el servicio arranca y falla.
-2. ~~**Cuándo corre.**~~ **Decidido (Juan, 2026-10-19):** el acta se redacta **en el momento del cierre**,
-   dentro del pedido HTTP que archiva, cambia el estado a adjudicada/no adjudicada o registra un NO-GO
-   (`agt002-closure-acta-live.js`). El `timer` de este directorio pasa a ser una **red de seguridad semanal**
-   (lunes), sólo para los cierres que fallaron o que ocurrieron con la Mesa apagada. Son pocos cierres al mes
-   y el expediente ya está terminado, así que no justifica correr tres veces al día.
+## Instalación
+
+1. Copiar `run-agt002-closure-acta.sh` a `/opt/agt002-workbench-scheduler/` (junto al de la Mesa),
+   con permiso de ejecución y propietario `root:agt002-workbench-scheduler`.
+2. Añadir `AGT002_CLOSURE_ACTA_WORKER_URL` al archivo de entorno del scheduler de la Mesa
+   (ver `env.example`). El secreto ya está ahí y es el mismo.
+3. Instalar `agt002-closure-acta.service` y `.timer`, `daemon-reload` y `enable --now` el timer.
+
+No necesita credenciales de Supabase ni acceso a otros archivos de entorno: no toca la base.
 
 ## Interruptor
 

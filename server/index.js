@@ -30,7 +30,7 @@ import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPr
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { callTenderOpportunityArchive } from '../tender-offer-archive-rpc.js';
 import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClosureActa, callReopenTenderClosureActa } from '../tender-closure-acta-rpc.js';
-import { draftClosureActaAfterClosure } from '../agt002-closure-acta-live.js';
+import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../agt002-closure-acta-live.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -5871,6 +5871,25 @@ async function runAgt002WorkbenchDrainOnce(req, res) {
 }
 app.post('/api/tender-dossier-workbench/worker/run', runAgt002WorkbenchDrainOnce);
 app.all('/api/tender-dossier-workbench/worker/run', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
+
+// Red de seguridad semanal del acta de cierre. El servidor no tiene -- ni debe tener --
+// la configuración del modelo: sólo llama aquí con el mismo secreto de la Mesa, igual
+// que el scheduler del workbench. Lo normal es que el acta ya se haya redactado en el
+// momento del cierre; esto sólo recoge las que fallaron o se cerraron con la Mesa apagada.
+async function runAgt002ClosureActaSweepOnce(req, res) {
+  try {
+    if (!isAgt002WorkbenchDrainEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
+    if (!isAgt002WorkbenchWorkerAuthorized(req)) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
+  } catch (error) { return sendError(res, error, error.status || 400); }
+  try {
+    res.json(await sweepTenderClosureActas(requireDb(), { environment: process.env }));
+  } catch (error) {
+    console.warn('agt002_closure_acta_sweep_failed', { event: 'agt002_closure_acta_sweep_failed' });
+    res.status(503).json({ error: 'El acta de cierre no está disponible en este momento.', code: 'AGT002_CLOSURE_ACTA_UNAVAILABLE' });
+  }
+}
+app.post('/api/tender-closure-acta/worker/run', runAgt002ClosureActaSweepOnce);
+app.all('/api/tender-closure-acta/worker/run', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
 
 app.post('/api/tender-offer-preparation-approve', async (req, res) => {
   try {

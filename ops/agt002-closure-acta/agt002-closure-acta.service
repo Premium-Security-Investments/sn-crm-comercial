@@ -1,25 +1,18 @@
 [Unit]
-Description=AGT-002 closure minutes (acta de cierre): Vig-IA drafts from the closing note the person wrote
-After=network-online.target
+Description=AGT-002 closure minutes (acta de cierre): weekly safety net; the draft is normally written at closing time
 Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=oneshot
-# PENDIENTE DE CONFIRMAR CON OPS: este servicio necesita dos cosas que hoy viven en archivos de entorno
-# distintos y con dueños distintos — el de Supabase (el mismo del análisis automático, usuario psi-agt002) y
-# el del puente de la Mesa (modo 0640, de root:agt002-workbench-scheduler). Hay que decidir si psi-agt002
-# puede leer el segundo, o si el servicio corre con otra identidad. Sin esa decisión, NO instalar.
-User=psi-agt002
-Group=psi-agt002
-EnvironmentFile=/etc/psi-agt002-initial-analysis/env
+# Misma identidad y mismo archivo de entorno que el scheduler de la Mesa: este servicio
+# sólo llama a un endpoint con el secreto compartido. No conoce la configuración del
+# modelo ni toca la base de datos, así que no necesita las credenciales de Supabase.
+User=agt002-workbench-scheduler
+Group=agt002-workbench-scheduler
 EnvironmentFile=/etc/agt002-workbench-scheduler/env
-UMask=0022
-# Cuántas actas como máximo por corrida; cada una es una llamada al modelo.
-Environment=AGT002_CLOSURE_ACTA_MAX_PER_RUN=5
-# Release path is set by the deploy drop-in (10-release.conf).
-WorkingDirectory=/opt/psi-comercial/app
-ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-radar-daily/run-agt002-radar-import.mjs --closure-acta
-TimeoutStartSec=10min
+ExecStart=/opt/agt002-workbench-scheduler/run-agt002-closure-acta.sh
+TimeoutStartSec=310s
 
 NoNewPrivileges=true
 PrivateTmp=true
@@ -31,7 +24,11 @@ ProtectKernelLogs=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
+MemoryDenyWriteExecute=true
 CapabilityBoundingSet=
 AmbientCapabilities=
-RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+RestrictAddressFamilies=AF_INET AF_INET6
 SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
