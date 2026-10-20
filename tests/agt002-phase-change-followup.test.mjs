@@ -672,13 +672,15 @@ test('archivado (Fondo Único, nombres reales del borrador): proyecto de pliego,
   assert.deepEqual(onlyResolution.archive, [], 'sin pliego definitivo, el proyecto sigue vigente');
 });
 
-test('archivado (DANE LP-001-2026, nombres reales): por tanda; adendas, estudios previos y CDP nunca; dudas avisadas', () => {
+test('archivado (DANE LP-001-2026, nombres reales): por tanda; adendas y CDP nunca; estudio previo sólo ante su versión Definitiva; dudas avisadas', () => {
   const base = ['Aviso Convocatoria LP-001-2026 (Rev).pdf', 'Anexo N°. 1 Especificaciones Tecnicas.pdf', 'Anexo N°. 3 Matriz de Riesgos.xlsx', 'Anexo N° 4. Oferta Económica.xlsx',
     'Formatos LP-001-2026 Vigilancia VF.zip', 'Proyecto Pliego Condiciones LP-001-2026  Vigilancia V25-08-2026.pdf', 'Anexo N° 6. CDP 96426.pdf',
     'Estudios Previos Vigilancia 2026_VF En limpio (Firmado).pdf', 'Anexo N°. 2 Análisis del Sector Vigilancia 2026.pdf', 'Anexo N° 5. Consolidado_Costos_Vigilancia 2026-2029.xlsx'];
   const sep20 = ['Resolución Apertura LP-001-2026 (Suscrita).pdf', 'Pliego de Condiciones Definitivo LP-001-2026 Vigilancia (21-09-2026).pdf', 'Estudios Previos Vigilancia 2026_VF  Definitivo.pdf', 'Formatos Definitivos LP-001-2026.zip', 'Anexos al Estudio Previo LP-001-2026 Definitivos.zip'];
   const first = planObsoleteTenderDocuments({ currentNames: base, incomingNames: sep20 });
-  assert.deepEqual(first.archive.map(item => item.name).sort(), ['Formatos LP-001-2026 Vigilancia VF.zip', 'Proyecto Pliego Condiciones LP-001-2026  Vigilancia V25-08-2026.pdf']);
+  // 2026-10-20 (Juan, Cali): un estudio previo con su versión "Definitivo" explícita de la misma familia pasa a historial.
+  assert.deepEqual(first.archive.map(item => item.name).sort(), ['Estudios Previos Vigilancia 2026_VF En limpio (Firmado).pdf', 'Formatos LP-001-2026 Vigilancia VF.zip', 'Proyecto Pliego Condiciones LP-001-2026  Vigilancia V25-08-2026.pdf']);
+  assert.equal(first.archive.find(item => item.name.startsWith('Estudios Previos')).replacedBy, 'Estudios Previos Vigilancia 2026_VF  Definitivo.pdf');
   const current = [...base.filter(name => !first.archive.some(item => item.name === name)), ...sep20];
   const sep29 = ['Anexo N°. 1 Especificaciones Tecnicas Consolidado Adenda 03.pdf', 'Solicitud Adenda N° 03 Componente Tecnico.pdf', 'Anexo N°. 5 Consolidado_Costos_Vigilancia 2026-2029 Adenda 03.xlsx',
     'Anexo N°. 4 Oferta Economica Consolidado Adenda 03.xlsx', 'Adenda N° 03 LP-001-2026.pdf', 'Formato N° 4 Apoyo a la Industria Nacional Discapacidad Mujeres Consolidado Adenda 03.docx',
@@ -687,7 +689,8 @@ test('archivado (DANE LP-001-2026, nombres reales): por tanda; adendas, estudios
   const third = planObsoleteTenderDocuments({ currentNames: [...current, 'Adenda N° 01 LP-001-2026 (Suscrita).pdf'], incomingNames: sep29 });
   assert.deepEqual(third.archive.map(item => item.name).sort(), ['Anexo N° 4. Oferta Económica.xlsx', 'Anexo N° 5. Consolidado_Costos_Vigilancia 2026-2029.xlsx', 'Anexo N°. 1 Especificaciones Tecnicas.pdf', 'Anexo N°. 3 Matriz de Riesgos.xlsx']);
   assert.ok(third.doubts.some(item => item.name.startsWith('Pliego de Condiciones Definitivo LP-001-2026 Vigilancia')), 'un pliego definitivo reemplazado por el consolidado es duda: no se archiva');
-  const protectedNames = [...third.archive, ...first.archive].map(item => item.name).filter(name => /estudio|cdp|adenda n° 01|aviso|an[aá]lisis del sector/i.test(name));
+  const protectedNames = [...third.archive, ...first.archive].map(item => item.name).filter(name => /cdp|adenda n° 01|aviso|an[aá]lisis del sector/i.test(name));
+  assert.ok(!third.archive.some(item => /estudio/i.test(item.name)), 'el estudio previo "Consolidado Adenda 03" no es una versión definitiva: el definitivo sigue vigente');
   assert.deepEqual(protectedNames, []);
 });
 

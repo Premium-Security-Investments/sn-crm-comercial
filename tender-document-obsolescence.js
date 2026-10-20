@@ -5,8 +5,10 @@
 //   · el proyecto de pliego, cuando llega el pliego definitivo;
 //   · el anexo técnico del borrador, cuando llega el definitivo (mismo anexo);
 //   · los formatos (oferta económica, factores de calidad, anexos editables), cuando llega su versión nueva.
-// Nunca se archivan: estudios previos, análisis del sector, CDP y aprobaciones de Hacienda o vigencias futuras, avisos,
-// respuestas a observaciones, adendas ni resoluciones. Si hay duda, NO se archiva y se dice en el aviso.
+//   · cualquier documento cuando llega su versión marcada "Definitivo/Definitiva" de la misma familia (2026-10-20).
+// Nunca se archivan, salvo por esa versión definitiva explícita: estudios previos, análisis del sector, CDP y
+// aprobaciones de Hacienda o vigencias futuras, avisos, respuestas a observaciones, adendas ni resoluciones (estos
+// cinco últimos, nunca). Si hay duda, NO se archiva y se dice en el aviso.
 //
 // Módulo puro: sólo nombres de archivo, sin red ni base de datos.
 
@@ -21,6 +23,12 @@ function extensionOf(name) {
 }
 
 const NEVER_ARCHIVE = /\b(estudios? previos?|analisis (del|de) sector|estudio (del|de) sector|cdp|certificado de disponibilidad|disponibilidad presupuestal|vigencias? futuras?|hacienda|aprobacion|aviso|respuestas?|observaciones|adendas?|resolucion|concepto|radicado|oficio|solicitud)\b/;
+// Versión definitiva explícita: "2. Estudios Previos Definitivo.pdf" reemplaza a "4. Estudios Previos.pdf" de la misma
+// familia, aunque los estudios previos estén protegidos (Juan, 2026-10-20: en Cali quedaron vigentes a la vez el
+// presupuesto viejo y el definitivo, con cifras que se contradicen). Nunca para adendas, respuestas, avisos,
+// resoluciones ni documentos presupuestales: no tienen versión "definitiva" de sí mismos.
+const DEFINITIVE = /\b(definitiv[oa]s?|final)\b/;
+const NO_DEFINITIVE_REPLACEMENT = /\b(adendas?|respuestas?|observaciones|aviso|resolucion|radicado|oficio|solicitud|cdp|certificado de disponibilidad|disponibilidad presupuestal|vigencias? futuras?)\b/;
 const DRAFT_PLIEGO = /\b(proyecto|borrador|pre) ?(de )?pliego|\bprepliego\b/;
 const PLIEGO = /\bpliegos?\b/;
 const TECHNICAL_ANNEX = /\b(anexos? (no |n )?\d* ?tecnicos?|ficha tecnica|especificaciones tecnicas)\b/;
@@ -95,6 +103,14 @@ export function planObsoleteTenderDocuments({ currentNames = [], incomingNames =
       if (newer) doubts.push({ name, candidate: newer.name, reason: 'pliego_definitivo_reemplazado' });
       continue;
     }
+    const plain = normalize(name);
+    if ((kind === 'protected' || kind === 'other') && family && family.split(' ').length >= 2 && !DEFINITIVE.test(plain) && !NO_DEFINITIVE_REPLACEMENT.test(plain)) {
+      const definitive = incoming.find(doc => doc.family === family && DEFINITIVE.test(normalize(doc.name)));
+      if (definitive) {
+        archive.push({ name, reason: 'version_definitiva', replacedBy: definitive.name });
+        continue;
+      }
+    }
     if (kind !== 'technical_annex' && kind !== 'format') continue;
     const same = incoming.find(doc => doc.kind === kind && doc.family === family && family);
     if (same) {
@@ -105,4 +121,22 @@ export function planObsoleteTenderDocuments({ currentNames = [], incomingNames =
     if (similar) doubts.push({ name, candidate: similar.name, reason: 'posible_version_nueva' });
   }
   return { archive, doubts };
+}
+
+/**
+ * El mismo portafolio de SECOP II puede traer el proyecto y el definitivo juntos (Cali, 2026-10-20: 28-sep y 15-oct en
+ * un solo portafolio, sin aviso nuevo). Con documentos de más de un día de carga, los del último día son los que
+ * "llegan" y los anteriores los vigentes; con un solo día no hay nada que decidir.
+ * `documents`: `[{ name, loadedAt }]` (fecha de carga de datos.gov.co).
+ */
+export function planSamePortfolioObsoleteTenderDocuments(documents = []) {
+  const dayOf = document => String(document?.loadedAt || '').slice(0, 10);
+  const days = [...new Set(documents.map(dayOf).filter(Boolean))].sort();
+  if (days.length < 2) return { archive: [], doubts: [], incomingNames: [] };
+  const latest = days.at(-1);
+  const incomingNames = [...new Set(documents.filter(document => dayOf(document) === latest).map(document => document.name))];
+  const incomingKeys = new Set(incomingNames.map(normalize));
+  const currentNames = [...new Set(documents.filter(document => dayOf(document) !== latest).map(document => document.name))]
+    .filter(name => !incomingKeys.has(normalize(name)));
+  return { ...planObsoleteTenderDocuments({ currentNames, incomingNames }), incomingNames };
 }

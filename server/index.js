@@ -14,7 +14,7 @@ import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-sug
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../tender-phase-identity.js';
 import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../agt002-phase-change-followup.js';
-import { planObsoleteTenderDocuments } from '../tender-document-obsolescence.js';
+import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../tender-document-obsolescence.js';
 import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../tender-process-family.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
@@ -4856,6 +4856,8 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
   // catálogo de nombres) y lo que el tope deje fuera queda enumerado con
   // identidad y motivo, nunca con la URL firmada de descarga.
   let officialCoverage = null;
+  // Proyecto y definitivo en el mismo portafolio (sin aviso nuevo): qué versiones viejas pasan a historial.
+  let samePortfolioPlan = null;
   if (/community\.secop\.gov\.co/i.test(officialUrl)) {
     const process = await resolveSecopProcessByExactUrl(officialUrl);
     const docs = phaseChange ? phaseChange.docs : await listSecopDocumentsByPortfolio(process.id_del_portafolio);
@@ -4863,6 +4865,7 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     sourceLabel = 'SECOP II';
     sourceContext = { source: 'SECOP II', process_id: process.id_del_proceso, portfolio_id: process.id_del_portafolio, notice_uid: noticeUidFromSecopUrl(officialUrl) };
     const officialDocs = phaseChange ? phaseChange.ordered.documents : docs;
+    if (!phaseChange) samePortfolioPlan = planSamePortfolioObsoleteTenderDocuments(docs.map(doc => ({ name: cleanFileName(doc.nombre_archivo), loadedAt: doc.fecha_carga })));
     const secopSelection = secopOfficialDocumentSelection(officialDocs);
     officialCoverage = secopSelection.coverage;
     // Fase nueva: sólo se bajan los documentos nuevos; los demás ya están vigentes en la oportunidad.
@@ -4949,9 +4952,20 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
   // fallida (republicación con portafolio nuevo) nunca deja el expediente sin sus documentos vigentes.
   const archivedNames = new Set((phaseChange?.obsolete?.archive || []).map(item => secopDocumentNameKey(item.name)));
   const retiredCount = phaseChange ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: phaseChange.ordered.documents.map(doc => cleanFileName(doc.nombre_archivo)).filter(name => !archivedNames.has(secopDocumentNameKey(name))), actorId: currentProfile.id }) : 0;
+  // Mismo portafolio: sólo después de una descarga completa, y sólo los que el plan marca (todo lo demás sigue vigente).
+  let samePortfolioRetired = 0;
+  if (samePortfolioPlan?.archive.length && !refreshResults.some(result => result?.status === 'failed')) {
+    await requireTenderDocumentRetirement(database);
+    const currentSecop = await must(database.from('psi_tender_document_versions').select('name').eq('opportunity_id', opportunityId).eq('source', 'secop ii').eq('current', true));
+    const superseded = new Set(samePortfolioPlan.archive.map(item => secopDocumentNameKey(item.name)));
+    samePortfolioRetired = await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: [...new Set((currentSecop || []).map(row => row.name))].filter(name => !superseded.has(secopDocumentNameKey(name))), actorId: currentProfile.id });
+  }
+  const samePortfolioOutcome = samePortfolioPlan?.archive.length || samePortfolioPlan?.doubts.length
+    ? { retired_count: samePortfolioRetired, archived: samePortfolioPlan.archive, archive_doubts: samePortfolioPlan.doubts }
+    : {};
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
-  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
+  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, ...samePortfolioOutcome, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
   const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
   if (beginRefresh.error) throw beginRefresh.error;
   const refreshToken = String(beginRefresh.data || '').trim();
@@ -4989,7 +5003,7 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     ...refreshSummary,
     imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     official_document_coverage: officialCoverage,
-    ...(phaseChange ? { changed_count: refreshSummary.new_count + refreshSummary.updated_count, retired_count: retiredCount, incoming_names: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, archive_doubts: phaseChange.obsolete.doubts } : {}),
+    ...(phaseChange ? { changed_count: refreshSummary.new_count + refreshSummary.updated_count, retired_count: retiredCount, incoming_names: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, archive_doubts: phaseChange.obsolete.doubts } : samePortfolioOutcome),
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }
