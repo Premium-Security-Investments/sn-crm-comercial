@@ -149,6 +149,8 @@ test('la red de seguridad corre donde vive la configuración, no en el servidor'
   const handler = server.slice(server.indexOf('async function runAgt002ClosureActaSweepOnce'), server.indexOf("app.post('/api/tender-closure-acta/worker/run'"));
   assert.match(handler, /isAgt002WorkbenchDrainEnabled\(process\.env\)[\s\S]*?status = 404/, 'apagada: 404');
   assert.match(handler, /isAgt002WorkbenchWorkerAuthorized\(req\)[\s\S]*?status = 403/, 'sin secreto: 403');
+  assert.match(handler, /cause = String\(error\?\.code \|\| ''\)/, 'el 503 debe decir la causa: sin eso el fallo es ciego');
+  assert.match(handler, /code: 'AGT002_CLOSURE_ACTA_UNAVAILABLE', cause/);
 
   // El barrido no redacta nada con la Mesa apagada.
   const database = fakeDatabase();

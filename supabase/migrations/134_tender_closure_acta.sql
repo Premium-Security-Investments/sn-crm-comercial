@@ -125,7 +125,7 @@ language plpgsql stable security definer set search_path = public, pg_temp as $$
 begin
   if p_limit is null or p_limit < 1 or p_limit > 50 then raise exception 'El límite debe estar entre 1 y 50.' using errcode = '22023'; end if;
   return query
-  select o.id, t.id, public.psi_tender_closure_kind(o), note.note, coalesce(t.nombre, o.company_name), run.result
+  select o.id, t.id, public.psi_tender_closure_kind(o), note.note, coalesce(t.title, o.company_name), run.result
   from public.psi_sales_opportunities o
   join public.psi_public_tenders t on t.converted_opportunity_id = o.id
   cross join lateral (select public.psi_tender_closure_note(o.id) as payload) closing

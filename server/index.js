@@ -5884,8 +5884,9 @@ async function runAgt002ClosureActaSweepOnce(req, res) {
   try {
     res.json(await sweepTenderClosureActas(requireDb(), { environment: process.env }));
   } catch (error) {
-    console.warn('agt002_closure_acta_sweep_failed', { event: 'agt002_closure_acta_sweep_failed' });
-    res.status(503).json({ error: 'El acta de cierre no está disponible en este momento.', code: 'AGT002_CLOSURE_ACTA_UNAVAILABLE' });
+    const cause = String(error?.code || '').slice(0, 40) || null;
+    console.warn('agt002_closure_acta_sweep_failed', { event: 'agt002_closure_acta_sweep_failed', cause });
+    res.status(503).json({ error: 'El acta de cierre no está disponible en este momento.', code: 'AGT002_CLOSURE_ACTA_UNAVAILABLE', cause });
   }
 }
 app.post('/api/tender-closure-acta/worker/run', runAgt002ClosureActaSweepOnce);

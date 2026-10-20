@@ -47,7 +47,9 @@ async function createDatabase() {
     grant service_role to current_user;
     create table public.psi_sales_profiles (id uuid primary key, active boolean not null default true, identity_type text default 'human', role text not null default 'comercial', full_name text);
     create table public.psi_sales_opportunities (id uuid primary key, company_name text, tender_offer_status text, archived_at timestamptz, archived_by uuid, archive_note text, updated_at timestamptz not null default now());
-    create table public.psi_public_tenders (id uuid primary key, nombre text, converted_opportunity_id uuid references public.psi_sales_opportunities(id));
+    -- Columnas tal como existen en producción (verificadas contra el esquema el 2026-10-20):
+    -- el nombre de la licitación es "title"; no existe ninguna columna "nombre".
+    create table public.psi_public_tenders (id uuid primary key, title text, entity text, ref text, converted_opportunity_id uuid references public.psi_sales_opportunities(id));
     create table public.psi_tender_offer_status_transitions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, tender_id uuid not null, actor_id uuid not null, from_status text, to_status text, note text, changed_at timestamptz not null default now());
     create table public.psi_tender_go_no_go_decisions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, tender_id uuid not null, decision text not null, justification text, decided_by uuid not null, decided_at timestamptz not null default now(), supersedes_decision_id uuid);
     create table public.psi_tender_analysis_runs (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, tender_id uuid not null, result jsonb, created_at timestamptz not null default now());
@@ -57,9 +59,9 @@ async function createDatabase() {
     insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('${NO_GO}', 'Cali Seguridad', 'cerrada_no_go');
     insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('${EN_CURSO}', 'Fiscalía', 'en_preparacion');
     insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('${ADJUDICADA}', 'Supersalud', 'adjudicada');
-    insert into public.psi_public_tenders (id, nombre, converted_opportunity_id) values ('${TENDER_NO_GO}', 'Cali — Secretaría de Seguridad', '${NO_GO}');
-    insert into public.psi_public_tenders (id, nombre, converted_opportunity_id) values ('77777777-7777-4777-8777-777777777777', 'Fiscalía', '${EN_CURSO}');
-    insert into public.psi_public_tenders (id, nombre, converted_opportunity_id) values ('99999999-9999-4999-8999-999999999999', 'Supersalud', '${ADJUDICADA}');
+    insert into public.psi_public_tenders (id, title, converted_opportunity_id) values ('${TENDER_NO_GO}', 'Cali — Secretaría de Seguridad', '${NO_GO}');
+    insert into public.psi_public_tenders (id, title, converted_opportunity_id) values ('77777777-7777-4777-8777-777777777777', 'Fiscalía', '${EN_CURSO}');
+    insert into public.psi_public_tenders (id, title, converted_opportunity_id) values ('99999999-9999-4999-8999-999999999999', 'Supersalud', '${ADJUDICADA}');
     insert into public.psi_tender_go_no_go_decisions (opportunity_id, tender_id, decision, justification, decided_by)
       values ('${NO_GO}', '${TENDER_NO_GO}', 'no_go', '${NOTA_DE_JUAN.replace(/'/g, "''")}', '${JUAN}');
   `);
@@ -112,7 +114,7 @@ await (async function closingNoteComesFromWhereThePersonWroteIt() {
 
   // Sin nota en ninguna parte, el acta se abre igual y queda sin punto de partida.
   await pg.exec(`insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Pereira', 'no_adjudicada');
-    insert into public.psi_public_tenders (id, nombre, converted_opportunity_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Pereira', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');`);
+    insert into public.psi_public_tenders (id, title, converted_opportunity_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Pereira', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');`);
   assert.equal(await callRpc(pg, 'psi_tender_closure_note', ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']), null);
   const sinNota = await upsert(pg, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', VIGIA, {});
   assert.equal(sinNota.acta.closing_note, null);
