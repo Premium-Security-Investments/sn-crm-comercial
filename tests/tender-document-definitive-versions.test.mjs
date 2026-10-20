@@ -62,12 +62,14 @@ test('mismo portafolio: los del último día de carga son los que llegan; con un
   assert.deepEqual(single, { archive: [], doubts: [], incomingNames: [] });
 });
 
-test('"Actualizar documentos" aplica el plan sólo tras una descarga completa y sólo a lo que el plan marca', () => {
+test('"Actualizar documentos" retira cada versión vieja sólo si su reemplazo ya está vigente', () => {
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
   const start = server.indexOf('async function importOfficialTenderDocuments(');
   const body = server.slice(start, server.indexOf('\nasync function ', start + 10));
   assert.match(body, /if \(!phaseChange\) samePortfolioPlan = planSamePortfolioObsoleteTenderDocuments\(docs\.map\(doc => \(\{ name: cleanFileName\(doc\.nombre_archivo\), loadedAt: doc\.fecha_carga \}\)\)\);/);
-  assert.match(body, /if \(samePortfolioPlan\?\.archive\.length && !refreshResults\.some\(result => result\?\.status === 'failed'\)\) \{\s*await requireTenderDocumentRetirement\(database\);/);
+  assert.match(body, /if \(samePortfolioPlan\?\.archive\.length\) \{\s*await requireTenderDocumentRetirement\(database\);/);
+  assert.match(body, /samePortfolioReady = samePortfolioPlan\.archive\.filter\(item => currentKeys\.has\(secopDocumentNameKey\(item\.replacedBy\)\)\);/, 'sin reemplazo vigente no se retira');
+  assert.match(body, /if \(superseded\.size\) samePortfolioRetired = await retireSupersededOfficialTenderDocuments/);
   assert.match(body, /keepNames: \[\.\.\.new Set\(\(currentSecop \|\| \[\]\)\.map\(row => row\.name\)\)\]\.filter\(name => !superseded\.has\(secopDocumentNameKey\(name\)\)\)/);
   const retireAt = body.indexOf('samePortfolioRetired = await retireSupersededOfficialTenderDocuments');
   const snapshotAt = body.indexOf('registerTenderDocumentSnapshot(database');

@@ -4952,16 +4952,21 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
   // fallida (republicación con portafolio nuevo) nunca deja el expediente sin sus documentos vigentes.
   const archivedNames = new Set((phaseChange?.obsolete?.archive || []).map(item => secopDocumentNameKey(item.name)));
   const retiredCount = phaseChange ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: phaseChange.ordered.documents.map(doc => cleanFileName(doc.nombre_archivo)).filter(name => !archivedNames.has(secopDocumentNameKey(name))), actorId: currentProfile.id }) : 0;
-  // Mismo portafolio: sólo después de una descarga completa, y sólo los que el plan marca (todo lo demás sigue vigente).
+  // Mismo portafolio: un documento viejo pasa a historial sólo si su reemplazo ya está vigente en el expediente. Una
+  // descarga fallida de otro documento no lo impide (Cali, 2026-10-20: un tiempo de espera al re-bajar el análisis del
+  // sector, que ya estaba desde el 19-oct, bloqueaba todo); nunca se retira algo cuyo reemplazo falte.
   let samePortfolioRetired = 0;
-  if (samePortfolioPlan?.archive.length && !refreshResults.some(result => result?.status === 'failed')) {
+  let samePortfolioReady = [];
+  if (samePortfolioPlan?.archive.length) {
     await requireTenderDocumentRetirement(database);
     const currentSecop = await must(database.from('psi_tender_document_versions').select('name').eq('opportunity_id', opportunityId).eq('source', 'secop ii').eq('current', true));
-    const superseded = new Set(samePortfolioPlan.archive.map(item => secopDocumentNameKey(item.name)));
-    samePortfolioRetired = await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: [...new Set((currentSecop || []).map(row => row.name))].filter(name => !superseded.has(secopDocumentNameKey(name))), actorId: currentProfile.id });
+    const currentKeys = new Set((currentSecop || []).map(row => secopDocumentNameKey(row.name)));
+    samePortfolioReady = samePortfolioPlan.archive.filter(item => currentKeys.has(secopDocumentNameKey(item.replacedBy)));
+    const superseded = new Set(samePortfolioReady.map(item => secopDocumentNameKey(item.name)));
+    if (superseded.size) samePortfolioRetired = await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: [...new Set((currentSecop || []).map(row => row.name))].filter(name => !superseded.has(secopDocumentNameKey(name))), actorId: currentProfile.id });
   }
   const samePortfolioOutcome = samePortfolioPlan?.archive.length || samePortfolioPlan?.doubts.length
-    ? { retired_count: samePortfolioRetired, archived: samePortfolioPlan.archive, archive_doubts: samePortfolioPlan.doubts }
+    ? { retired_count: samePortfolioRetired, archived: samePortfolioReady, archive_waiting: samePortfolioPlan.archive.filter(item => !samePortfolioReady.includes(item)), archive_doubts: samePortfolioPlan.doubts }
     : {};
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
