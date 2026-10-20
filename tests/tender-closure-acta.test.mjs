@@ -73,9 +73,11 @@ test('confirmar y reabrir exigen la versión que la persona está viendo', async
   await assert.rejects(() => callReopenTenderClosureActa(fakeDatabase(), { opportunity_id: OPPORTUNITY }, JUAN), /Debe indicar la versión/);
   await assert.rejects(() => callConfirmTenderClosureActa(fakeDatabase(), { opportunity_id: OPPORTUNITY, expected_updated_at: 'ayer' }, JUAN), /no es válida/);
   const database = fakeDatabase();
-  await callConfirmTenderClosureActa(database, { opportunity_id: OPPORTUNITY, expected_updated_at: '2026-10-19T16:00:00.000Z' }, JUAN);
+  // Con microsegundos, como los devuelve Postgres: deben llegar intactos. Si se
+  // reformatea la fecha se pierden y la versión no coincide nunca.
+  await callConfirmTenderClosureActa(database, { opportunity_id: OPPORTUNITY, expected_updated_at: '2026-10-20T02:31:45.123456+00:00' }, JUAN);
   assert.equal(database.calls[0].name, 'psi_confirm_tender_closure_acta');
-  assert.equal(database.calls[0].args.p_expected_updated_at, '2026-10-19T16:00:00.000Z');
+  assert.equal(database.calls[0].args.p_expected_updated_at, '2026-10-20T02:31:45.123456+00:00');
 });
 
 test('los errores de la base llegan con el estado HTTP que les corresponde', async () => {

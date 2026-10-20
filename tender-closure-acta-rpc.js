@@ -10,11 +10,15 @@ const MAX_REASON_LENGTH = 120;
 function actaError(message, status = 400) { const error = new Error(message); error.status = status; return error; }
 function uuid(value, label) { const id = String(value || '').trim(); if (!UUID_PATTERN.test(id)) throw actaError('Debe indicar ' + label + '.'); return id; }
 function text(value, field) { const trimmed = String(value ?? '').trim(); return trimmed ? trimmed.slice(0, TEXT_LIMITS[field]) : null; }
+// La versión viaja TAL CUAL la entregó la base. Convertirla con `new Date(...)`
+// recorta los microsegundos a milisegundos, y entonces `updated_at is distinct
+// from p_expected_updated_at` da siempre verdadero: ninguna edición se podía
+// guardar. Aquí sólo se valida la forma; no se reformatea.
 function expectedUpdatedAt(value) {
   if (value === null || value === undefined || value === '') return null;
-  const stamp = new Date(String(value));
-  if (Number.isNaN(stamp.getTime())) throw actaError('La versión del acta no es válida.');
-  return stamp.toISOString();
+  const text = String(value).trim();
+  if (text.length > 64 || Number.isNaN(new Date(text).getTime())) throw actaError('La versión del acta no es válida.');
+  return text;
 }
 function list(value, field) {
   if (value === null || value === undefined) return [];
