@@ -197,7 +197,7 @@ begin
     raise exception 'No tiene permisos para redactar el acta de cierre.' using errcode = '42501';
   end if;
 
-  select * into v_opportunity from public.psi_sales_opportunities where id = p_opportunity_id for update;
+  select * into v_opportunity from public.psi_sales_opportunities where id = p_opportunity_id for key share;
   if not found then raise exception 'La oportunidad no existe.' using errcode = 'P0002'; end if;
 
   v_closure_kind := public.psi_tender_closure_kind(v_opportunity);

@@ -66,6 +66,10 @@ function mapError(error) {
   if (error?.code === '42501') error.status = 403;
   if (['40001', '23514', '23505'].includes(error?.code)) error.status = 409;
   if (error?.code === 'P0002') error.status = 404;
+  // 55P03: otra operación tiene tomada la fila. 57014: la consulta pasó del límite.
+  // Las funciones ponen ambos límites para no quedarse esperando detrás de la pasarela.
+  if (error?.code === '55P03') { error.status = 409; error.message = 'El acta está siendo modificada por otra operación. Vuelva a intentarlo en un momento.'; }
+  if (error?.code === '57014') { error.status = 504; error.message = 'La base de datos tardó demasiado y canceló la operación. No se guardó nada.'; }
   return error;
 }
 
