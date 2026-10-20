@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -17,6 +17,7 @@ import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSectio
 import { TenderDetailNavigation, requestTenderDetailSection, resolveInitialTenderDetailSection, resolveTenderPhaseChangeNotices, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
 import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
 import { TenderDecisionExperience } from './tenders/components/TenderDecisionExperience';
+import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalysis';
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderDecideView, TenderNextStep, TenderPrepareView, TenderWorkspaceHeader, TenderWorkspaceTabs, tenderWorkspaceMoment, useTenderOfferStatus, type TenderWorkspaceTab } from './tenders/workspace/TenderWorkspace';
@@ -1012,8 +1013,11 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   }, [id]);
   useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
-  const tenderInitialReport = useAgt002InitialReport(id, api, detail?.opportunity.service_type_code === 'licitacion_publica');
+  const [tenderReportRevision, setTenderReportRevision] = useState(0);
+  const tenderInitialReport = useAgt002InitialReport(id, api, detail?.opportunity.service_type_code === 'licitacion_publica', tenderReportRevision);
   const tenderOfferStatus = useTenderOfferStatus(id, api, tenderRevision, detail?.opportunity.service_type_code === 'licitacion_publica');
+  // Terminó un análisis pedido con "Volver a analizar": se recargan el reporte y el estado de la ficha.
+  const onTenderReanalysisCompleted = useCallback(() => { setTenderReportRevision(revision => revision + 1); setTenderRevision(revision => revision + 1); }, []);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
   const followUpHistory = buildFollowUpHistory(o, detail.interactions);
@@ -1067,6 +1071,10 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     const canDecide = can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
     const reloadAll = async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); };
     const secopNotices = plainSecopNotices(resolveTenderPhaseChangeNotices(o.observaciones));
+    // "Volver a analizar" (Juan, 2026-10-20): sólo quien puede lanzar análisis y no es de solo consulta.
+    const reanalysis = !readOnly && can(data.currentProfile, ACTIONS.AI_ANALYSIS_RUN) && tenderInitialReport
+      ? <TenderManualReanalysis key={`tender-reanalysis-${o.id}`} opportunityId={o.id} request={api} analyzedAt={tenderInitialReport.createdAt || null} onCompleted={onTenderReanalysisCompleted} />
+      : null;
     const decisionPanel = <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
       <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}-${tenderRevision}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} questionResponses={tenderQuestionResponses} onChanged={reloadAll} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} />
     </div>;
@@ -1085,9 +1093,9 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           ? <TenderPrepareView key={`tender-prepare-${o.id}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={canDecide} report={tenderInitialReport} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus}
               onOfferStatusChanged={reloadAll}
               onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })} />
-          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} />}
+          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} />}
       </div>
-      {moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report={tenderInitialReport} /></div>}
+      {moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report={tenderInitialReport} reanalysis={reanalysis} /></div>}
       <div className="tw-panel tw-panel-documentos">
         <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async () => { await load(); await refresh(); }} />
       </div>

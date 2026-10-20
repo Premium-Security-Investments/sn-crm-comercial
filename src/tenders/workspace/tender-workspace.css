@@ -154,3 +154,8 @@
 .tw-next{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#10213d;font-size:14px}
 .tw-workspace .tw-next button{padding:7px 14px;box-shadow:none;font-weight:600}
 .tw-change-decision{margin-top:8px}
+/* "Volver a analizar" dentro de la tarjeta de la recomendación (Juan, 2026-10-20). */
+.tw-reanalysis{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0}
+.tw-reanalysis-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.tw-reanalysis p{margin:0}
+.tw-reanalysis-warn{color:#b45309;font-size:13px}

@@ -43,5 +43,6 @@ test('después del GO el análisis sigue visible en su propia pestaña, sin el r
   const workspace = readFileSync(new URL('../src/tenders/workspace/TenderWorkspace.tsx', import.meta.url), 'utf8');
   assert.match(workspace, /\.\.\.\(moment === 'preparar' \? \[\{ id: 'analisis' as const, label: 'Análisis' \}\] : \[\]\)/);
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-  assert.match(main, /\{moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report=\{tenderInitialReport\} \/><\/div>\}/);
+  // Con "Volver a analizar" (2026-10-20), pero nunca con el registro de la decisión.
+  assert.match(main, /\{moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report=\{tenderInitialReport\} reanalysis=\{reanalysis\} \/><\/div>\}/);
 });

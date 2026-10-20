@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { parseAgt002InitialReportResponse, type Agt002InitialReport } from './agt002InitialReportProjection';
 import type { TenderRequest } from './types';
 
-/** Reads the INITIAL review report once per opportunity (no polling). Null until it is ready or if it cannot be read. */
-export function useAgt002InitialReport(opportunityId: string, request: TenderRequest, enabled = true): Agt002InitialReport | null {
+/** Reads the INITIAL review report once per opportunity and revision (no polling). Null until it is ready or if it cannot be read. */
+export function useAgt002InitialReport(opportunityId: string, request: TenderRequest, enabled = true, revision = 0): Agt002InitialReport | null {
   const [report, setReport] = useState<Agt002InitialReport | null>(null);
   useEffect(() => {
     let active = true;
@@ -13,6 +13,6 @@ export function useAgt002InitialReport(opportunityId: string, request: TenderReq
       .then(value => { if (active) setReport(parseAgt002InitialReportResponse(value).report); })
       .catch(() => { if (active) setReport(null); });
     return () => { active = false; };
-  }, [opportunityId, request, enabled]);
+  }, [opportunityId, request, enabled, revision]);
   return report;
 }

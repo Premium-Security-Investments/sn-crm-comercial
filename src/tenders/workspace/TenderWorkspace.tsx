@@ -203,7 +203,7 @@ export function TenderScheduleCard({ report, compact = false }: { report: Agt002
 // --- Antes del GO: ¿nos presentamos? ------------------------------------------------------------------
 
 /** Antes del GO, con el registro de la decisión; después del GO, el mismo análisis para consulta (sin decisionPanel). */
-export function TenderDecideView({ report, decisionPanel }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode }) {
+export function TenderDecideView({ report, decisionPanel, reanalysis }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode; reanalysis?: ReactNode }) {
   const rows = useMemo(() => buildRequirementRows(report), [report]);
   const decisive = useMemo(() => decisiveRequirementRows(rows), [rows]);
   const others = useMemo(() => otherRiskNotes(report, rows), [report, rows]);
@@ -222,6 +222,7 @@ export function TenderDecideView({ report, decisionPanel }: { report: Agt002Init
       <h3>{verdict.label}</h3>
       <p>{initialReportRecommendationText(report.recommendation.label)}</p>
       <p className="tw-muted">{initialReportCompanyFit(report)} · confianza {initialReportLabels.confidence(report.recommendation.confidence)} · {rows.length} requisitos revisados</p>
+      {reanalysis}
     </section>
 
     <TenderScheduleCard report={report} />

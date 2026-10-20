@@ -6,9 +6,12 @@
 //      cost) and is never admitted to an analysis, because step 2 only admits conversions since the activation.
 //   2. Analysis: admits the INITIAL analysis for every conversion whose documents are ready (agt002-auto-initial.js),
 //      within the daily cap; the initial-analysis worker timer then runs it.
+//   3. "Volver a analizar": admits the reanalysis a person asked for from the opportunity (agt002-manual-reanalysis.js),
+//      outside the daily cap of first analyses; the same worker timer runs it.
 //   (New SECOP phases of converted tenders have their own review service: agt002-phase-change-review.)
 import { createClient } from '@supabase/supabase-js';
 import { filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions } from '../../agt002-auto-initial.js';
+import { runAgt002ManualReanalysisRequests } from '../../agt002-manual-reanalysis.js';
 
 const CLAIMABLE = ['queued', 'discovering_documents', 'importing_documents', 'retry_wait', 'ready_for_snapshot', 'snapshot_ready'];
 const log = event => console.log(JSON.stringify(event));
@@ -61,5 +64,11 @@ try {
   for (const event of await runAgt002AutoInitialAdmissions(database, { since, dailyCap, environment: env })) log(event);
 } catch (error) {
   log({ event: 'agt002_auto_initial_admission_pass_failed', message: String(error?.message || error).slice(0, 200) });
+  process.exitCode = 1;
+}
+try {
+  for (const event of await runAgt002ManualReanalysisRequests(database, { environment: env })) log(event);
+} catch (error) {
+  log({ event: 'agt002_manual_reanalysis_pass_failed', message: String(error?.message || error).slice(0, 200) });
   process.exitCode = 1;
 }
