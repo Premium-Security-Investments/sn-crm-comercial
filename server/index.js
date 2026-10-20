@@ -4703,19 +4703,9 @@ function esuDocumentId(doc) {
   const match = String(doc?.url || '').match(/\/procesos\/descargar\/(\d+)/i);
   return match ? `esu-${match[1]}` : deterministicDocumentFallbackId({ name: doc?.name, url: doc?.url }).slice(0, 16);
 }
-async function saveTenderDocumentBuffer(database, opportunityId, file, currentProfile, sourceMeta = {}) {
-  const name = cleanFileName(file.name);
-  const buffer = file.buffer;
-  if (!buffer?.length) throw new Error(`Archivo vacío: ${name}`);
-  if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
-  const id = createHash('sha256').update(`${opportunityId}:${sourceMeta.source_document_id || ''}:${name}:${buffer.length}`).digest('hex').slice(0, 24);
-  const storagePath = `${opportunityId}/${id}-${name}`;
-  const documentType = normalizeDocumentType(file.document_type, name);
-  const extractedText = await extractTextFromTenderFile(buffer, name, file.mime_type || '');
-  const { error: uploadError } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: file.mime_type || 'application/octet-stream', upsert: true });
-  if (uploadError) throw uploadError;
-  return { id, name, size: buffer.length, mime_type: file.mime_type || null, document_type: documentType, current: file.current !== false, storage_path: storagePath, uploaded_at: new Date().toISOString(), extracted_text: extractedText, auto_import: !!sourceMeta.auto_import, source_url: sourceMeta.source_url || null, source_document_id: sourceMeta.source_document_id || null };
-}
+// Fuente e identidad de los documentos que una persona carga a mano en el expediente (no vienen de SECOP ni de ESU).
+const TENDER_MANUAL_UPLOAD_SOURCE = 'carga manual';
+const tenderManualUploadDocumentId = buffer => `manual-${createHash('sha256').update(buffer).digest('hex').slice(0, 32)}`;
 async function getCurrentTenderDocumentVersion(database, opportunityId, source, sourceDocumentId) {
   const normalizedSource = String(source || '').trim().toLowerCase();
   const normalizedSourceDocumentId = normalizeTenderSourceDocumentId(sourceDocumentId);
@@ -6088,11 +6078,56 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       return { file, name, buffer };
     });
     const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+    // Los complementarios cargados a mano entran al expediente versionado (psi_tender_document_versions), igual que los
+    // oficiales: es de ahí que Vig-IA elige qué leer. Antes sólo quedaban en la nota de la interacción y ningún análisis
+    // los veía (Juan, 2026-10-20, respuestas a observaciones de Cali). La identidad es el contenido: volver a cargar el
+    // mismo archivo no crea otra versión.
     await ensureTenderBucket(database);
-    const uploaded = [];
-    for (const { file, name, buffer } of preparedFiles) {
-      uploaded.push(await saveTenderDocumentBuffer(database, opportunityId, { name, buffer, mime_type: file.mime_type || '', document_type: file.document_type, current: file.current }, currentProfile));
-    }
+    const results = await refreshTenderDocumentBatch(preparedFiles.map(({ file, name, buffer }) => ({
+      name,
+      buffer,
+      mime_type: file.mime_type || 'application/octet-stream',
+      document_type: file.document_type,
+      source_document_id: tenderManualUploadDocumentId(buffer),
+      errorPrefix: name,
+    })), async doc => refreshOfficialTenderDocument({
+      opportunityId,
+      source: TENDER_MANUAL_UPLOAD_SOURCE,
+      document: doc,
+      currentVersion: await getCurrentTenderDocumentVersion(database, opportunityId, TENDER_MANUAL_UPLOAD_SOURCE, doc.source_document_id),
+      download: item => item.buffer,
+      cleanName: cleanFileName,
+      extractText: extractTypedTextFromTenderFile,
+      ensureStorage: () => ensureTenderBucket(database),
+      upload: async (storagePath, buffer, mimeType) => {
+        const { error } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+        if (error) throw error;
+      },
+      recordVersion: async version => {
+        const response = await database.rpc('psi_record_tender_document_version', {
+          p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: TENDER_MANUAL_UPLOAD_SOURCE, p_source_document_id: version.source_document_id,
+          p_name: version.name, p_content_hash: version.content_hash, p_storage_path: version.storage_path,
+          p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
+          p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
+          p_source_url: null, p_actor_id: currentProfile.id,
+        });
+        if (response.error) throw response.error;
+        return response.data;
+      },
+      recordExtraction: ({ extraction, version }) => recordTenderDocumentExtraction(database, extraction, {
+        opportunityId, tenderId, documentVersionId: version.id, actorId: currentProfile.id,
+      }),
+    }));
+    const failed = results.filter(result => result?.status === 'failed');
+    if (failed.length === results.length) throw new Error(failed.map(result => result.error).join(' · '));
+    // La nota se conserva (línea de tiempo, migración 027), sin el texto extraído y con el mismo id de origen que la
+    // versión, para que la lista no muestre el documento dos veces (mergeTenderDocumentRecords).
+    const uploaded = preparedFiles.map(({ file, name, buffer }, index) => ({
+      name, size: buffer.length, mime_type: file.mime_type || null, document_type: normalizeDocumentType(file.document_type, name),
+      current: true, uploaded_at: new Date().toISOString(), auto_import: false,
+      source: TENDER_MANUAL_UPLOAD_SOURCE, source_document_id: tenderManualUploadDocumentId(buffer),
+      status: results[index]?.status || 'failed', error: results[index]?.error || null,
+    }));
     await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
     const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
     if (beginRefresh.error) throw beginRefresh.error;
@@ -6107,7 +6142,7 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       company_profile: await getTenderCompanyProfile(database),
       refresh_token: refreshToken,
     });
-    res.status(201).json(await getTenderDocumentRecords(database, opportunityId));
+    res.status(201).json({ ...(await getTenderDocumentRecords(database, opportunityId)), upload_results: uploaded.map(({ name, status, error }) => ({ name, status, error })) });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

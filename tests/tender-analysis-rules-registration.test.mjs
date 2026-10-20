@@ -321,7 +321,7 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
 
   const manualUpload = source.match(/app\.post\('\/api\/tender-documents-upload'[\s\S]*?\n}\);/);
   assert.ok(manualUpload, `${path} must retain the manual tender-document upload endpoint`);
-  const manualWriteIndex = manualUpload[0].indexOf('saveTenderDocumentBuffer');
+  const manualWriteIndex = manualUpload[0].indexOf('refreshOfficialTenderDocument');
   const manualTokenIndex = manualUpload[0].indexOf('psi_begin_tender_document_refresh');
   const manualSnapshotIndex = manualUpload[0].indexOf('registerTenderDocumentSnapshot');
   assert.ok(manualWriteIndex >= 0 && manualTokenIndex > manualWriteIndex && manualSnapshotIndex > manualTokenIndex, `${path} must open the manual publication token after its own writes and before publishing the snapshot`);
