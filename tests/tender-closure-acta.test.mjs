@@ -90,6 +90,19 @@ test('los errores de la base llegan con el estado HTTP que les corresponde', asy
   }
 });
 
+test('una llamada que se cuelga devuelve un error claro, no un timeout de la pasarela', async () => {
+  // Sin esto, la pasarela de Vercel corta la petición y el usuario sólo ve
+  // "upstream request timeout", sin rastro en ningún registro.
+  const colgada = { async rpc() { return new Promise(() => {}); }, from() { return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: null, error: null }; } }; } };
+  const started = Date.now();
+  await assert.rejects(
+    () => callConfirmTenderClosureActa(colgada, { opportunity_id: OPPORTUNITY, expected_updated_at: '2026-10-19T16:00:00.000Z' }, JUAN),
+    error => error.status === 504 && /no respondió a tiempo/.test(error.message),
+    'una RPC colgada debe salir como 504 explícito',
+  );
+  assert.ok(Date.now() - started >= 19_000, 'y no antes de agotar el plazo');
+});
+
 test('una oportunidad inválida se rechaza antes de tocar la base', async () => {
   const database = fakeDatabase();
   await assert.rejects(() => callUpsertTenderClosureActa(database, { opportunity_id: 'no-es-uuid' }, JUAN), /Debe indicar una oportunidad válida/);

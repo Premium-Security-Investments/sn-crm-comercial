@@ -37,6 +37,31 @@ function reasons(value) {
   return unique;
 }
 
+// La pasarela de Vercel corta la petición sin dejar rastro ni en el log de la
+// función ni en el de Postgres: el usuario sólo ve "upstream request timeout" y
+// no hay forma de saber dónde murió. Acotamos cada llamada para que un bloqueo
+// se convierta en un error explícito y registrado antes de que la pasarela corte.
+const RPC_TIMEOUT_MS = 20_000;
+
+async function callRpcWithTimeout(database, name, args) {
+  const started = Date.now();
+  let timer;
+  try {
+    const result = await Promise.race([
+      database.rpc(name, args),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(actaError('La base de datos no respondió a tiempo (' + (RPC_TIMEOUT_MS / 1000) + ' s). No se guardó nada; vuelva a intentarlo.', 504)), RPC_TIMEOUT_MS); }),
+    ]);
+    const elapsed = Date.now() - started;
+    if (elapsed > 5_000) console.warn('tender_closure_acta_rpc_slow', { event: 'tender_closure_acta_rpc_slow', rpc: name, ms: elapsed });
+    return result;
+  } catch (error) {
+    if (error?.status === 504) console.warn('tender_closure_acta_rpc_timeout', { event: 'tender_closure_acta_rpc_timeout', rpc: name, ms: Date.now() - started });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function mapError(error) {
   if (error?.code === '42501') error.status = 403;
   if (['40001', '23514', '23505'].includes(error?.code)) error.status = 409;
@@ -56,7 +81,7 @@ function closureKind(opportunity) {
 export async function getTenderClosureActa(database, opportunityId, currentProfile) {
   requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
   const id = uuid(opportunityId, 'una oportunidad válida');
-  const { data: acta, error } = await database.rpc('psi_get_tender_closure_acta', { p_opportunity_id: id });
+  const { data: acta, error } = await callRpcWithTimeout(database, 'psi_get_tender_closure_acta', { p_opportunity_id: id });
   if (error) throw mapError(error);
   const { data: opportunity, error: readError } = await database.from('psi_sales_opportunities').select('archived_at, tender_offer_status').eq('id', id).maybeSingle();
   if (readError) throw mapError(readError);
@@ -76,7 +101,7 @@ export async function callUpsertTenderClosureActa(database, input, currentProfil
     reasons: reasons(input?.reasons),
   };
   for (const field of LIST_FIELDS) payload[field] = list(input?.[field], field);
-  const { data, error } = await database.rpc('psi_upsert_tender_closure_acta', {
+  const { data, error } = await callRpcWithTimeout(database, 'psi_upsert_tender_closure_acta', {
     p_opportunity_id: opportunityId,
     p_actor_id: actorId,
     p_payload: payload,
@@ -100,7 +125,7 @@ async function callActaDecision(database, input, currentProfile, rpcName) {
   requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
   const version = expectedUpdatedAt(input?.expected_updated_at);
   if (!version) throw actaError('Debe indicar la versión del acta que está revisando.');
-  const { data, error } = await database.rpc(rpcName, { p_opportunity_id: opportunityId, p_actor_id: actorId, p_expected_updated_at: version });
+  const { data, error } = await callRpcWithTimeout(database, rpcName, { p_opportunity_id: opportunityId, p_actor_id: actorId, p_expected_updated_at: version });
   if (error) throw mapError(error);
   return data;
 }
