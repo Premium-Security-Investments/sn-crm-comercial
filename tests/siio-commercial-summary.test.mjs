@@ -20,7 +20,7 @@ const stages = [
   { code: 'aprobado', name: 'Aprobado', stage_order: 5, close_probability: 1, is_terminal: true },
   { code: 'descartado', name: 'Descartado', stage_order: 6, close_probability: 0, is_terminal: true },
 ];
-const opp = (id, fields) => ({ id, owner_id: 'u1', company_name: `Cliente ${id}`, service_type_code: 'seguridad_fisica', created_at: '2026-01-05T00:00:00Z', updated_at: '2026-10-01T00:00:00Z', last_interaction_at: '2026-10-05T00:00:00Z', approved_at: null, deleted_at: null, tender_offer_status: null, ...fields });
+const opp = (id, fields) => ({ id, owner_id: 'u1', company_name: `Cliente ${id}`, service_type_code: 'seguridad_fisica', created_at: '2026-01-05T00:00:00Z', updated_at: '2026-10-01T00:00:00Z', last_interaction_at: '2026-10-05T00:00:00Z', approved_at: null, deleted_at: null, archived_at: null, tender_offer_status: null, ...fields });
 const fixture = {
   stages,
   profiles: [{ id: 'u1', full_name: 'Comercial Uno' }],
@@ -53,6 +53,38 @@ const fixture = {
     { opportunity_id: 't6', decision: 'no_go', decided_at: '2026-09-20' },
   ],
 };
+
+// Caso real: DANE (archivada el 2026-10-12) y Fondo Único de TIC (archivada el 2026-10-18) seguían
+// saliendo en "Requiere atención" y en las recomendaciones de Vig-IA. Pasaban todos los filtros
+// —no borradas, etapa no terminal, oferta en preparación, sin no_go— porque nadie miraba archived_at.
+test('una oportunidad archivada desaparece del embudo y de lo que pide atención', () => {
+  const archivadas = {
+    ...fixture,
+    opportunities: [
+      ...fixture.opportunities,
+      opp('a1', { stage_code: 'negociacion', offer_value: 777, archived_at: '2026-10-12T16:31:00Z' }),
+      opp('a2', { service_type_code: 'licitacion_publica', stage_code: 'prospecto', offer_value: 22215, tender_offer_status: 'en_preparacion', archived_at: '2026-10-18T01:58:00Z' }),
+    ],
+    tenders: [...fixture.tenders, { converted_opportunity_id: 'a2', entity: 'DANE', value: 22215, deadline_at: '2026-10-06T22:00:00Z' }],
+  };
+  const base = buildCommercialSummary(fixture, { now });
+  const summary = buildCommercialSummary(archivadas, { now });
+  assert.equal(summary.pipeline.open_count, base.pipeline.open_count, 'la archivada no entra al embudo');
+  assert.equal(summary.pipeline.weighted_monthly_value, base.pipeline.weighted_monthly_value);
+  assert.equal(summary.tenders.calendar.some(row => row.entity === 'DANE'), false, 'la licitación archivada no pide atención');
+  assert.equal(summary.tenders.open_count, base.tenders.open_count);
+  assert.equal(summary.tenders.overdue_status, base.tenders.overdue_status, 'no suma un cierre vencido que ya se decidió');
+  assert.equal(summary.pipeline.stale_large.some(row => row.id === 'a1'), false);
+});
+
+// Archivar no borra una venta que ya ocurrió.
+test('una venta aprobada y archivada sigue contando en el acumulado', () => {
+  const conArchivada = {
+    ...fixture,
+    opportunities: [...fixture.opportunities, opp('w4', { stage_code: 'aprobado', offer_value: 120, quote_date: '2026-05-10', archived_at: '2026-10-01T00:00:00Z' })],
+  };
+  assert.equal(buildCommercialSummary(conArchivada, { now }).sales.ytd_monthly_value, 840 + 120);
+});
 
 test('ventas por mes de cotización frente a la meta de los meses cerrados', () => {
   const summary = buildCommercialSummary(fixture, { now });
