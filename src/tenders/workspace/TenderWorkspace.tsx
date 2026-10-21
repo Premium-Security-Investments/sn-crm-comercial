@@ -3,6 +3,7 @@ import '../components/tender-dossier.css';
 import './tender-workspace.css';
 import {
   REQUIREMENT_ITEM_KEY_PREFIX, REQUIREMENT_STATUS_LABEL, buildRequirementRows, decisiveRequirementRows, groupRowsByCategory, otherRiskNotes,
+  placeAgt002Clarifications,
   type RequirementRow,
 } from '../../../agt002-requirements-model.js';
 import { appendTenderDossierItemAction, loadTenderDossierWorkspace, loadTenderOfferStatus, recordTenderOfferStatusTransition } from '../api';
@@ -11,7 +12,7 @@ import { groupDossierChecklist, parseDossierItemTitle } from '../dossierChecklis
 import { TenderDossierArtifacts } from '../components/TenderDossierArtifacts';
 import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderOfferStatus, TenderRequest } from '../types';
 import { TenderVigiaChannel } from './TenderVigiaChannel';
-import { TenderClarifyInline } from './TenderClarify';
+import { TenderClarificationNotes, TenderClarificationsCard, TenderClarifyInline, useTenderClarifications, type TenderClarification, type TenderClarificationPlacement } from './TenderClarify';
 import { OFFER_STATUS_LABEL, POST_GO_STATUSES, countdownLabel, daysUntil, formatDay, formatDeadline, todayInBogota } from './tenderWorkspaceFormat';
 
 export type TenderWorkspaceTab = 'principal' | 'analisis' | 'documentos' | 'historial';
@@ -122,7 +123,10 @@ function RequirementAnalysisDetail({ row, compact = false }: { row: RequirementR
 
 type ClarifyContext = { opportunityId: string; request: TenderRequest };
 
-function RequirementBrowser({ rows, selectedKey, onSelect, clarify }: { rows: RequirementRow[]; selectedKey: string | null; onSelect: (key: string) => void; clarify?: ClarifyContext }) {
+function RequirementBrowser({ rows, selectedKey, onSelect, clarify, clarificationsByRow, onClarified }: {
+  rows: RequirementRow[]; selectedKey: string | null; onSelect: (key: string) => void; clarify?: ClarifyContext;
+  clarificationsByRow?: Map<string, TenderClarification[]>; onClarified?: () => void;
+}) {
   const groups = groupRowsByCategory(rows);
   const selected = rows.find(row => row.key === selectedKey) || rows[0] || null;
   const detailRef = useRef<HTMLDivElement | null>(null);
@@ -134,7 +138,8 @@ function RequirementBrowser({ rows, selectedKey, onSelect, clarify }: { rows: Re
           className={`tw-browser-item ${selected?.key === row.key ? 'is-selected' : ''} ${row.rejection ? 'is-rejection' : ''}`}
           onClick={() => { onSelect(row.key); if (window.matchMedia?.('(max-width: 900px)').matches) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
           <span className="tw-browser-item-title">{row.title}</span>
-          <span className="tw-browser-item-meta"><StatusChip status={row.status} />{row.rejection && <span className="tw-reject">Causa rechazo</span>}</span>
+          <span className="tw-browser-item-meta"><StatusChip status={row.status} />{row.rejection && <span className="tw-reject">Causa rechazo</span>}
+            {(clarificationsByRow?.get(row.key)?.length || 0) > 0 && <span className="tw-clarified-chip">Aclarado</span>}</span>
         </button>)}
       </div>)}
     </div>
@@ -144,7 +149,8 @@ function RequirementBrowser({ rows, selectedKey, onSelect, clarify }: { rows: Re
         <h3>{selected.title}</h3>
         <p className="tw-browser-detail-meta"><StatusChip status={selected.status} />{selected.rejection && <span className="tw-reject">Causa rechazo</span>}{selected.severityLabel && <span className="tw-muted">Riesgo {selected.severityLabel.toLowerCase()}</span>}</p>
         <RequirementAnalysisDetail row={selected} />
-        {clarify && <TenderClarifyInline key={`clarify-${selected.key}`} opportunityId={clarify.opportunityId} request={clarify.request} target={{ kind: 'requirement', id: selected.key, label: selected.title }} />}
+        <TenderClarificationNotes items={clarificationsByRow?.get(selected.key) || []} />
+        {clarify && <TenderClarifyInline key={`clarify-${selected.key}`} opportunityId={clarify.opportunityId} request={clarify.request} target={{ kind: 'requirement', id: selected.key, label: selected.title }} onSaved={onClarified} />}
       </article> : <p className="tw-muted">El análisis no trae requisitos.</p>}
     </div>
   </div>;
@@ -213,6 +219,11 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel, c
   const others = useMemo(() => otherRiskNotes(report, rows), [report, rows]);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const browserRef = useRef<HTMLDivElement | null>(null);
+  // Punto 3 de la definición de Juan: cada aclaración junto a su punto y todas juntas en una lista.
+  const { clarifications, reload: reloadClarifications } = useTenderClarifications(clarify?.opportunityId, clarify?.request);
+  const placement = useMemo(() => placeAgt002Clarifications(clarifications, { requirements: rows, findings: others }), [clarifications, rows, others]);
+  const listedClarifications: TenderClarificationPlacement[] = placement.listed;
+  const showRequirement = (key: string) => { setSelectedKey(key); browserRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   if (!report) return <div className="tw-decide">
     <div className="notice tw-empty">El análisis de Vig-IA todavía no está listo. Su estado se ve en <strong>Documentos</strong>.{decisionPanel ? ' Puede registrar la decisión igual.' : ''}</div>
     {decisionPanel}
@@ -234,7 +245,7 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel, c
     {decisive.length > 0 && <section className="tw-card">
       <small>Lo que puede tumbar la oferta</small>
       <ul className="tw-decisive">
-        {decisive.map(row => <li key={row.key}><button type="button" onClick={() => { setSelectedKey(row.key); browserRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
+        {decisive.map(row => <li key={row.key}><button type="button" onClick={() => showRequirement(row.key)}>
           <span className="tw-browser-item-title">{row.title}</span>
           <span className="tw-browser-item-meta"><StatusChip status={row.status} />{row.rejection && <span className="tw-reject">Causa rechazo</span>}</span>
           {row.actions[0] && <span className="tw-decisive-action">{row.actions[0]}</span>}
@@ -247,16 +258,20 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel, c
 
     {decisionPanel}
 
+    <TenderClarificationsCard listed={listedClarifications} onSelectRequirement={showRequirement} />
+
     <section className="tw-card" ref={browserRef}>
       <small>Requisitos del pliego</small>
-      <RequirementBrowser rows={rows} selectedKey={selectedKey} onSelect={setSelectedKey} clarify={clarify} />
+      <RequirementBrowser rows={rows} selectedKey={selectedKey} onSelect={setSelectedKey} clarify={clarify}
+        clarificationsByRow={placement.byRequirement} onClarified={() => void reloadClarifications()} />
     </section>
 
     {others.length > 0 && <section className="tw-card tw-secondary">
 
       {others.length > 0 && <details><summary>Otros riesgos que señala el análisis ({others.length})</summary>
         {others.map(note => <div className="tw-note" key={note.title}><strong>{note.severityLabel} · {note.title}</strong>{note.impact && <p>{note.impact}</p>}
-          {clarify && note.id && <TenderClarifyInline opportunityId={clarify.opportunityId} request={clarify.request} target={{ kind: 'finding', id: note.id, label: note.title }} />}</div>)}
+          <TenderClarificationNotes items={(note.id && placement.byFinding.get(note.id)) || []} />
+          {clarify && note.id && <TenderClarifyInline opportunityId={clarify.opportunityId} request={clarify.request} target={{ kind: 'finding', id: note.id, label: note.title }} onSaved={() => void reloadClarifications()} />}</div>)}
       </details>}
     </section>}
     <p className="tw-footnote">Análisis hecho con inteligencia artificial sobre los documentos vigentes: orienta, no decide. Verifique contra el pliego original.</p>

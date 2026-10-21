@@ -226,3 +226,60 @@ export function requirementSeedItems(rows, closeDate, today) {
     };
   });
 }
+
+// --- Dónde se ve cada aclaración (punto 3 de la definición de Juan, 2026-10-21) ----------------------
+// Una aclaración se ve junto al punto que aclara y, además, en la lista de aclaraciones de la licitación.
+// El análisis renumera sus claims en cada versión, así que el punto se busca por su id y, si ese id ya no
+// existe, por el nombre con el que se guardó. La que no se puede ubicar NO se pierde: sale en la lista
+// como "el análisis cambió de nombre", porque callarla sería peor que mostrarla sin su sitio.
+
+const targetText = value => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+const pushInto = (map, key, item) => { const list = map.get(key) || []; list.push(item); map.set(key, list); };
+
+/**
+ * Reparte las aclaraciones de una licitación entre los puntos del análisis vigente. `requirements` son las
+ * filas de `buildRequirementRows` y `findings` las notas de `otherRiskNotes`. Devuelve las aclaraciones de
+ * cada fila (`byRequirement`, por `row.key`), las de cada hallazgo suelto (`byFinding`, por id) y `listed`:
+ * todas en el orden en que se escribieron, cada una con el punto donde quedó.
+ */
+export function placeAgt002Clarifications(clarifications = [], { requirements = [], findings = [] } = {}) {
+  const byRequirement = new Map();
+  const byFinding = new Map();
+  const listed = [];
+  const rowByKey = new Map(requirements.map(row => [row.key, row]));
+  const rowByRequirementId = new Map(requirements.flatMap(row => (row.requirementIds || []).map(id => [id, row])));
+  const rowByFindingId = new Map(requirements.flatMap(row => (row.findingIds || []).map(id => [id, row])));
+  const rowByTitle = new Map(requirements.map(row => [targetText(row.title), row]));
+  const findingById = new Map(findings.map(note => [note.id, note]));
+  const findingByTitle = new Map(findings.map(note => [targetText(note.title), note]));
+  for (const clarification of clarifications) {
+    if (!clarification?.target_kind) { listed.push({ clarification, scope: 'general', rowKey: null, findingId: null, label: null }); continue; }
+    const id = clarification.target_id;
+    const label = targetText(clarification.target_label);
+    const row = clarification.target_kind === 'requirement'
+      ? rowByKey.get(id) || rowByRequirementId.get(id) || (label ? rowByTitle.get(label) : null)
+      : null;
+    if (row) {
+      pushInto(byRequirement, row.key, clarification);
+      listed.push({ clarification, scope: 'requirement', rowKey: row.key, findingId: null, label: row.title });
+      continue;
+    }
+    if (clarification.target_kind === 'finding') {
+      const note = findingById.get(id) || (label ? findingByTitle.get(label) : null);
+      if (note) {
+        pushInto(byFinding, note.id, clarification);
+        listed.push({ clarification, scope: 'finding', rowKey: null, findingId: note.id, label: note.title });
+        continue;
+      }
+      // Un hallazgo puede estar dentro de una fila de requisito: la aclaración se ve ahí.
+      const host = rowByFindingId.get(id);
+      if (host) {
+        pushInto(byRequirement, host.key, clarification);
+        listed.push({ clarification, scope: 'requirement', rowKey: host.key, findingId: null, label: host.title });
+        continue;
+      }
+    }
+    listed.push({ clarification, scope: 'orphan', rowKey: null, findingId: null, label: clarification.target_label || null });
+  }
+  return { byRequirement, byFinding, listed };
+}
