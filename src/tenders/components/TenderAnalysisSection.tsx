@@ -115,7 +115,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   // retired legacy engine's controls. Opportunities that do hold a legacy analysis keep their legacy view unchanged.
   if (!initialFirst && !analysis && initialAnalysis?.state === 'pending') {
     return <div className="tender-analysis-section tender-detail-anchor is-pre-analysis">
-      <TenderPreAnalysisPanel documentsCount={documents.length} processing={processingStatus} statusText={statusText} statusTone={statusTone} />
+      <TenderPreAnalysisPanel documentsCount={documents.length} processing={processingStatus} statusText={statusText} statusTone={statusTone} onRetry={onRetryProcessing} busy={busy} />
     </div>;
   }
   if (initialFirst && initialAnalysis) {

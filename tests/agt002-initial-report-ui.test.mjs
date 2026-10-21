@@ -302,7 +302,7 @@ test('a new opportunity shows where it stands and the next step, never the retir
   const downloading = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, {
     documentsCount: 3, processing: { status: 'importing_documents', counts: { discovered: 35, processed: 12, imported: 12, unchanged: 0, failed: 0 } },
   }));
-  assert.match(downloading, /Bajando los documentos de SECOP/);
+  assert.match(downloading, /Bajando los documentos de la fuente oficial/);
   assert.match(downloading, /12 de 35/);
   const ready = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, { documentsCount: 35, processing: { status: 'awaiting_analysis_authorization', counts: { discovered: 35, processed: 35, imported: 35, unchanged: 0, failed: 0 } } }));
   assert.match(ready, /el análisis arranca en unos minutos/);
@@ -310,6 +310,10 @@ test('a new opportunity shows where it stands and the next step, never the retir
   const stopped = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, { documentsCount: 0, processing: { status: 'needs_attention', last_error_message: 'SECOP no respondió' } }));
   assert.match(stopped, /Se detuvo antes de empezar/);
   assert.match(stopped, /SECOP no respondió/);
+  // 2026-10-21 (ESU 2026-5): con el reintento disponible, el bloque detenido ofrece "Reintentar la descarga".
+  assert.doesNotMatch(stopped, /Reintentar la descarga/, 'sin onRetry no hay botón');
+  const retryable = renderToStaticMarkup(createElement(TenderPreAnalysisPanel, { documentsCount: 0, processing: { status: 'needs_attention' }, onRetry: () => {} }));
+  assert.match(retryable, /<button[^>]*>Reintentar la descarga<\/button>/);
   const section = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
   assert.match(section, /!initialFirst && !analysis && initialAnalysis\?\.state === 'pending'[\s\S]*<TenderPreAnalysisPanel/);
   assert.doesNotMatch(section, /<strong>INITIAL:/, 'the internal name never labels a visible state');

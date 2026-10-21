@@ -6500,7 +6500,7 @@ app.post('/api/tender-processing-retry', async (req, res) => {
     if (!idempotencyKey) throw new Error('Debe indicar la clave de idempotencia del proceso.');
     const { data: job, error } = await database
       .from('psi_tender_processing_jobs')
-      .select('id,tender_id,status,current_step,lease_id')
+      .select('id,tender_id,status,current_step,lease_id,documents_discovered')
       .eq('opportunity_id', opportunityId)
       .eq('idempotency_key', idempotencyKey)
       .maybeSingle();
@@ -6516,7 +6516,10 @@ app.post('/api/tender-processing-retry', async (req, res) => {
       stateError.status = 409;
       throw stateError;
     }
-    const nextStatus = job.current_step === 'analysis' ? 'waiting_agent_capacity' : 'importing_documents';
+    // Si no se encontró ningún documento, reintentar la importación no sirve: se vuelve a buscar (ESU 2026-5, 2026-10-20:
+    // 0 documentos por una regla de enlaces ya corregida).
+    const nextStatus = job.current_step === 'analysis' ? 'waiting_agent_capacity'
+      : Number(job.documents_discovered || 0) === 0 ? 'queued' : 'importing_documents';
     const updateResult = await database.rpc('psi_update_tender_processing_job', {
       p_job_id: job.id,
       p_lease_id: job.lease_id,
