@@ -22,6 +22,7 @@ const KNOWN_NON_MONTHLY_SHEETS = new Set([
   'Analis', 'Dr Mauricio', 'Amortiz', 'ENERGIA', 'Ingresos',
 ]);
 const MONTHLY_SHEET_PATTERN = /^(1[0-2]|[1-9]) (\d{2})$/;
+const REVENUE_SHEET = 'Ingresos';
 const REQUIRED_BALANCE_CLASSES = [1, 2, 3, 4];
 const APPROVED_CONCEPTS = new Set([
   'INGRESOS', 'COSTOS', 'GASTOS', 'UTILIDAD OPERACIONAL', 'MARGEN OPERACIONAL',
@@ -296,6 +297,88 @@ function financialCategory(concept) {
   return 'resultado';
 }
 
+// La hoja "Ingresos" trae la provisión de ingresos del mes por tercero: primero los servicios del
+// mes, después los ajustes de meses anteriores y al final el total, que puede restar alguna fila
+// (en agosto de 2026 el total resta C9). Debajo viene el mismo bloque del año anterior, que no se lee
+// porque su encabezado y sus filas declaran meses distintos.
+const REVENUE_HEADER_LABEL = 'TERCERO';
+const REVENUE_SERVICES_TOTAL_LABEL = 'TOTAL SERVICIOS';
+const REVENUE_MAX_LINES = 200;
+
+function revenueExcludedRows(expression) {
+  const excluded = new Set();
+  for (const match of String(expression || '').matchAll(/-\s*\$?C\$?(\d+)/gi)) excluded.add(Number(match[1]));
+  return excluded;
+}
+
+function revenuePeriodLabel(sheet, headerRow) {
+  for (let row = headerRow - 1; row >= 1; row -= 1) {
+    const label = String(cell(sheet, 'A', row) ?? '').trim();
+    if (normalizeLabel(label).startsWith('PERIODO DE FACTURACION')) return label.replace(/\s+/g, ' ');
+  }
+  return null;
+}
+
+function parseRevenueProvision(sheet) {
+  if (!sheet) return null;
+  const rowNumbers = [...sheetRows(sheet).keys()].sort((left, right) => left - right);
+  const headerRow = rowNumbers.find(row => normalizeLabel(cell(sheet, 'B', row)) === REVENUE_HEADER_LABEL);
+  if (!headerRow) return null;
+  const lines = [];
+  let lineType = 'servicio';
+  let declaredServices = null;
+  let totalRow = null;
+  for (const row of rowNumbers.filter(item => item > headerRow)) {
+    const label = normalizeLabel(cell(sheet, 'B', row));
+    const amount = numeric(cell(sheet, 'C', row));
+    if (label === REVENUE_HEADER_LABEL) break;
+    if (label === REVENUE_SERVICES_TOTAL_LABEL) { declaredServices = amount; lineType = 'ajuste'; continue; }
+    if (!label) {
+      if (amount !== null && declaredServices !== null) { totalRow = row; break; }
+      continue;
+    }
+    if (amount === null) continue;
+    if (lines.length >= REVENUE_MAX_LINES) throw new FinancialWorkbookError('revenue_lines_overflow', `La hoja ${sheet.name} trae más de ${REVENUE_MAX_LINES} líneas de ingresos por tercero.`);
+    lines.push({
+      line_type: lineType,
+      client_label: String(cell(sheet, 'B', row) ?? '').trim().replace(/\s+/g, ' '),
+      service_month: String(cell(sheet, 'A', row) ?? '').trim() || null,
+      amount,
+      excluded_from_total: false,
+      source_sheet: sheet.name,
+      source_row: row,
+    });
+  }
+  if (!lines.length) return null;
+  const totalFormula = totalRow ? formula(sheet, 'C', totalRow) : null;
+  const excluded = revenueExcludedRows(totalFormula);
+  for (const line of lines) line.excluded_from_total = excluded.has(line.source_row);
+  const services = lines.filter(line => line.line_type === 'servicio');
+  return {
+    period_label: revenuePeriodLabel(sheet, headerRow),
+    lines,
+    declared_services: declaredServices,
+    computed_services: services.reduce((sum, line) => sum + line.amount, 0),
+    declared_total: totalRow ? numeric(cell(sheet, 'C', totalRow)) : null,
+    computed_total: lines.reduce((sum, line) => line.excluded_from_total ? sum : sum + line.amount, 0),
+    total_formula: totalFormula,
+    excluded_rows: [...excluded],
+  };
+}
+
+// El total de la hoja debe coincidir con la provisión declarada del mes del corte (I1, o J1 en los
+// meses que la ponen ahí) y con la suma de sus propias líneas de servicios.
+function revenueCheck(revenue, parsedBalances, period) {
+  const cutBalance = parsedBalances.find(item => item.year === period.year && item.month === period.month);
+  const declaredProvision = cutBalance ? numeric(cell(cutBalance.sheet, 'I', 1)) ?? numeric(cell(cutBalance.sheet, 'J', 1)) : null;
+  const total = revenue.declared_total ?? revenue.computed_total;
+  const servicesMatch = revenue.declared_services === null || Math.abs(revenue.declared_services - revenue.computed_services) <= 1000;
+  const ok = declaredProvision !== null && Math.abs(total - declaredProvision) <= 1000 && servicesMatch;
+  const excludedDetail = revenue.excluded_rows.length ? ` El total del archivo resta ${revenue.excluded_rows.length} fila(s): ${revenue.lines.filter(line => line.excluded_from_total).map(line => line.client_label).join('; ') || revenue.excluded_rows.join(', ')}.` : '';
+  return validation('V17_PROVISION_POR_TERCERO', 'advertencia', ok, declaredProvision, total,
+    `Hoja ${REVENUE_SHEET}: ${revenue.lines.length} línea(s) por tercero frente a la provisión declarada del mes del corte.${servicesMatch ? '' : ' El total de servicios escrito no coincide con la suma de sus líneas.'}${excludedDetail}`);
+}
+
 function parseReportedMetrics(sheet) {
   const result = [];
   for (const row of sheetRows(sheet).keys()) {
@@ -430,6 +513,8 @@ export function parseSiioFinancialWorkbook(buffer, input = {}) {
   const currentSuffix = String(period.year).slice(-2);
   const previousSuffix = String(period.year - 1).slice(-2);
   const selectedNames = new Set(REQUIRED_SHEETS);
+  // La hoja de ingresos por tercero apareció en agosto de 2026 y puede no venir: se lee si está.
+  if (names.has(REVENUE_SHEET)) selectedNames.add(REVENUE_SHEET);
   for (let month = 1; month <= period.month; month += 1) {
     selectedNames.add(`${month} ${currentSuffix}`);
     selectedNames.add(`${month} ${previousSuffix}`);
@@ -453,6 +538,8 @@ export function parseSiioFinancialWorkbook(buffer, input = {}) {
   for (const balance of parsedBalances) balance.rows = deriveSummaryLevels(balance.rows, accountNames);
   const metrics = parseReportedMetrics(parsed.get('Comparat')).map(item => ({ ...item, period_month: input.periodMonth, _sheet: parsed.get('Comparat') }));
   const validations = calculateValidations({ parsedBalances, metrics, pygSheet: parsed.get('PYG NIIF'), resumSheet: parsed.get('Resum'), period, privateSheetCount: declarations.filter(sheet => PRIVATE_SHEETS.has(sheet.name)).length });
+  const revenue = parseRevenueProvision(parsed.get(REVENUE_SHEET));
+  if (revenue) validations.push(revenueCheck(revenue, parsedBalances, period));
   const structure = structureSummary(declarations, parsedBalances, [parsed.get('PYG NIIF'), parsed.get('Comparat'), parsed.get('Resum')]);
   const blockingFailures = validations.filter(item => item.severity === 'bloqueante' && !item.ok);
   const versionMatch = /(?:^|[_ -])V(\d+)(?:[_ .-]|$)/i.exec(fileName);
@@ -469,12 +556,15 @@ export function parseSiioFinancialWorkbook(buffer, input = {}) {
     structure_signature: createHash('sha256').update(JSON.stringify(structure)).digest('hex'),
     structure,
     balance_lines: parsedBalances.flatMap(item => item.rows),
+    revenue_lines: (revenue?.lines || []).map(line => ({ ...line, period_month: input.periodMonth })),
+    revenue_provision: revenue ? { period_label: revenue.period_label, declared_services: revenue.declared_services, declared_total: revenue.declared_total, computed_total: revenue.computed_total, total_formula: revenue.total_formula } : null,
     metrics: metrics.map(({ _sheet, ...item }) => item),
     validations,
     summary: {
       balance_sheets: parsedBalances.length,
       balance_lines: parsedBalances.reduce((sum, item) => sum + item.rows.length, 0),
       metrics: metrics.length,
+      revenue_lines: revenue?.lines.length || 0,
       blocking_failures: blockingFailures.length,
       warnings: validations.filter(item => item.severity === 'advertencia' && !item.ok).length,
       private_sheets_excluded: declarations.filter(sheet => PRIVATE_SHEETS.has(sheet.name)).length,

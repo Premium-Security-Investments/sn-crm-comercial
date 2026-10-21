@@ -1201,3 +1201,8 @@
 .siio-recommendations-missing h4{margin:4px 0;color:#10213d;font-size:14px}
 .siio-recommendations-missing ul{margin:0;padding-left:18px;color:#40516b;font-size:13px}
 @media (max-width:640px){.siio-recommendations-action{justify-items:start}}
+
+/* Provisión de ingresos por tercero: la fila que el archivo deja fuera de su propio total se ve,
+   pero se lee como secundaria, y los ajustes de meses anteriores van bajo su propio rótulo. */
+.siio-row-muted td{color:#526173;background:#fbfcfe}
+.siio-row-section td{padding-top:14px;color:#526173;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
