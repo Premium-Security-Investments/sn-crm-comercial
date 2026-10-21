@@ -201,6 +201,13 @@ export function requirementTargetDate(row, closeDate, today = new Date().toISOSt
 }
 
 /** Ítems del expediente para un GO: uno por requisito aplicable que no esté ya cumplido. */
+// La instrucción va como nota de la acción 'created' (psi_tender_dossier_item_actions.note, máximo 2000 caracteres). Con
+// 4000 un solo requisito largo hacía fallar todo el lote (Fiscalía, 2026-10-21: 2308 caracteres, 400 en la siembra).
+export const REQUIREMENT_SEED_INSTRUCTION_MAX = 2000;
+function clipInstruction(text) {
+  return text.length <= REQUIREMENT_SEED_INSTRUCTION_MAX ? text : `${text.slice(0, REQUIREMENT_SEED_INSTRUCTION_MAX - 1).trimEnd()}…`;
+}
+
 export function requirementSeedItems(rows, closeDate, today) {
   return rows.filter(row => row.status !== 'no_aplica').map(row => {
     const lines = [];
@@ -215,7 +222,7 @@ export function requirementSeedItems(rows, closeDate, today) {
       title: `${row.area} · ${row.title}${row.rejection ? ' — CAUSA RECHAZO' : ''}`.slice(0, 400),
       required: true,
       target_date: requirementTargetDate(row, closeDate, today),
-      instruction: lines.join('\n').slice(0, 4000),
+      instruction: clipInstruction(lines.join('\n')),
     };
   });
 }

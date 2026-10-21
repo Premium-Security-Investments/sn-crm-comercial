@@ -94,3 +94,12 @@ test('migración 125: función solo para service_role y siembra append-only por 
   assert.match(sql, /on conflict \(opportunity_id, item_key\) do nothing/);
   assert.doesNotMatch(sql, /\bupdate\b|\bdelete\b/i);
 });
+
+test('la instrucción de cada requisito cabe en la nota de la base (2000): un requisito largo no tumba la siembra', async () => {
+  const { requirementSeedItems, REQUIREMENT_SEED_INSTRUCTION_MAX } = await import('../agt002-requirements-model.js');
+  assert.equal(REQUIREMENT_SEED_INSTRUCTION_MAX, 2000);
+  const long = 'x'.repeat(1500);
+  const [item] = requirementSeedItems([{ key: 'r1', area: 'Jurídico', title: 'Garantía', rejection: true, status: 'por_confirmar', actions: [long], demand: long, sources: [] }], '2026-10-23', '2026-10-21');
+  assert.equal(item.instruction.length, 2000);
+  assert.ok(item.instruction.endsWith('…'));
+});
