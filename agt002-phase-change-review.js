@@ -22,7 +22,9 @@ import {
   runAgt002PhaseChangeAnalysisAdmissions,
   runAgt002PhaseChangeDocumentRefresh,
   noticeUidFromTenderUrl,
+  appendAgt002ObservationLine,
 } from './agt002-phase-change-followup.js';
+import { runAgt002ScheduleFreshnessReview } from './agt002-schedule-freshness.js';
 import { agt002AlertItems, agt002AlertsOutboxSummary, bogotaDay, bogotaTime, buildAgt002AlertsOutbox } from './agt002-licitaciones-alerts.js';
 
 export const AGT002_ALERTS_STATE_DIR = '/var/lib/agt002-licitaciones-alerts';
@@ -120,6 +122,8 @@ export function writeAgt002AlertsOutbox(dir, outbox, fsImpl = { mkdirSync, readF
 export async function runAgt002PhaseChangeReview(database, {
   api, environment = process.env, now = new Date(), budgetMs, stateDir = AGT002_ALERTS_STATE_DIR,
   fsImpl = { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync }, admit, freezeProfile, log = () => {},
+  // Verificación de frescura (pendiente de Juan, 2026-10-21): inyectable para poder probarla sin base.
+  freshnessReview = runAgt002ScheduleFreshnessReview,
 } = {}) {
   const runId = `${bogotaDay(now.toISOString())}-${bogotaTime(now.toISOString()).replace(':', '')}-${now.toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`;
   const step = async (name, fn, fallback) => { try { return await fn(); } catch (error) { log({ event: `agt002_phase_change_review_${name}_failed`, message: String(error?.message || error).slice(0, 200) }); return fallback; } };
@@ -137,6 +141,13 @@ export async function runAgt002PhaseChangeReview(database, {
   const analysisEvents = await step('analysis', () => runAgt002PhaseChangeAnalysisAdmissions(database, { now, environment, ...(admit ? { admit } : {}), ...(freezeProfile ? { freezeProfile } : {}) }), []);
   const results = await step('results', () => collectAgt002PhaseChangeAnalysisResults(database, { now }), []);
   const detections = await step('detections', () => listRecentAgt002PhaseChangeDetections(database, { now }), []);
+  // Frescura: una fecha clave del cronograma que pasó sin que SECOP se mueva. Deja el aviso en la oportunidad
+  // (línea que no se duplica) y no interrumpe el resto de la revisión si falla.
+  await step('freshness', () => freshnessReview(database, {
+    now, log,
+    inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
+    appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
+  }), []);
   for (const event of [...documentEvents, ...analysisEvents, ...results]) log({ ...event, change: undefined });
 
   const day = bogotaDay(now.toISOString());
