@@ -4684,6 +4684,10 @@ async function downloadSecopDocument(doc, referer) {
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
+// ESU publica la descarga como /procesos/descargar/<id> o, desde octubre de 2026, con el nombre del archivo al final
+// (/procesos/descargar/23640/.PLIEGO%20DE%20CONDICIONES....pdf). Con la regla vieja (sólo el id) se descartaban todos los
+// documentos y la conversión de ESU 2026-5 quedó sin documentos (2026-10-20). Un solo segmento extra, nunca subrutas.
+export const ESU_DOCUMENT_DOWNLOAD_PATH = /^\/procesos\/descargar\/\d+(?:\/[^/]+)?\/?$/i;
 async function listEsuDocumentsFromProcessUrl(sourceUrl) {
   const processUrl = String(sourceUrl || '');
   if (!/^https:\/\/esucontratacion\.com\/procesos\/view\/\d+/i.test(processUrl)) throw new Error('La oportunidad no tiene enlace ESU /procesos/view/<id> para importar documentos automáticamente.');
@@ -4692,12 +4696,12 @@ async function listEsuDocumentsFromProcessUrl(sourceUrl) {
   const detail = parseEsuProcessDetail(html, processUrl);
   return (detail.documents || []).filter(d => {
     if (!d.url || !/\/procesos\/descargar\//i.test(d.url)) return false;
-    try { validateOfficialHttpsUrl(d.url, { ...ESU_FETCH_POLICY, allowedPath: /^\/procesos\/descargar\/\d+\/?$/i }); return true; }
+    try { validateOfficialHttpsUrl(d.url, { ...ESU_FETCH_POLICY, allowedPath: ESU_DOCUMENT_DOWNLOAD_PATH }); return true; }
     catch { return false; }
   });
 }
 async function downloadEsuDocument(doc, referer) {
-  const response = await safeOfficialFetch(doc.url, { ...ESU_FETCH_POLICY, allowedPath: /^\/procesos\/descargar\/\d+\/?$/i }, { headers: { 'User-Agent': 'SN-CRM-ESU-Documents/1.0', 'Accept': 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/octet-stream,*/*', 'Referer': referer } });
+  const response = await safeOfficialFetch(doc.url, { ...ESU_FETCH_POLICY, allowedPath: ESU_DOCUMENT_DOWNLOAD_PATH }, { headers: { 'User-Agent': 'SN-CRM-ESU-Documents/1.0', 'Accept': 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/octet-stream,*/*', 'Referer': referer } });
   if (!response.ok) throw new Error(`Documento ${doc.name} respondió ${response.status}`);
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
