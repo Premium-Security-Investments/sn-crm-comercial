@@ -1,4 +1,5 @@
 import { buildClosureActaInput, closureActaContextFromAnalysis } from './agt002-closure-acta-draft.js';
+import { listAgt002Clarifications } from './agt002-clarifications.js';
 
 // Recorre las licitaciones ya cerradas que todavía no tienen acta y le pide a
 // Vig-IA el borrador, a partir de la nota con la que la persona cerró. Cada
@@ -19,6 +20,9 @@ export async function runAgt002ClosureActaDrafts(database, {
   agentId,
   limit = DEFAULT_LIMIT,
   opportunityId = null,
+  // Punto 5 de la definición de Juan (2026-10-21): el acta usa las aclaraciones de la licitación. Si no se
+  // pueden leer, el acta se redacta igual: la razón del cierre está en la nota, no en ellas.
+  loadClarifications = listAgt002Clarifications,
   log = () => {},
 } = {}) {
   if (!database || typeof database.rpc !== 'function') throw new Error('El acta de cierre requiere una conexión a la base.');
@@ -40,12 +44,19 @@ export async function runAgt002ClosureActaDrafts(database, {
   for (const row of rows) {
     const rowOpportunityId = row?.opportunity_id;
     try {
+      let clarifications = [];
+      try {
+        clarifications = await loadClarifications(database, rowOpportunityId);
+      } catch (cause) {
+        log({ event: 'agt002_closure_acta_clarifications_unavailable', opportunity_id: rowOpportunityId, message: String(cause?.message || '').slice(0, 200) });
+      }
       const input = buildClosureActaInput({
         opportunityId: rowOpportunityId,
         tenderName: row?.tender_name,
         closureKind: row?.closure_kind,
         closingNote: row?.closing_note,
         context: closureActaContextFromAnalysis(row?.analysis_result),
+        clarifications,
       });
       const acta = await drafter.draft(input);
       const { error: writeError } = await database.rpc('psi_upsert_tender_closure_acta', {
@@ -63,6 +74,7 @@ export async function runAgt002ClosureActaDrafts(database, {
         reasons: acta.reasons.length,
         requirements_unmet: acta.requirements_unmet.length,
         context_entries: input.context.length,
+        clarifications: (input.human_clarifications || []).length,
       });
     } catch (cause) {
       results.push({ opportunityId: rowOpportunityId, status: 'failed', code: cause?.code || null });

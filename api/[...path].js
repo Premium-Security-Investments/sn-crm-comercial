@@ -140,6 +140,7 @@ import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
 import { readAgt002ManualReanalysisStatus, requestAgt002ManualReanalysis } from '../agt002-manual-reanalysis.js';
 import { listAgt002Clarifications, recordAgt002Clarification } from '../agt002-clarifications.js';
+import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
 import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId, withEsuAliadosPriority } from '../esu-direct-crawl.js';
@@ -468,6 +469,9 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/agt002-manual-reanalysis': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-clarifications': ['tenders', ACTIONS.LICITACIONES_WORKBENCH_USE],
   'POST /api/agt002-clarifications': ['tenders', ACTIONS.LICITACIONES_WORKBENCH_USE],
+  // Punto 4 de las aclaraciones: guardar en la ficha de la empresa lo que es de la empresa. Escribe la ficha,
+  // así que pide el permiso de la ficha, no el de la Mesa.
+  'POST /api/agt002-clarification-to-company-profile': ['tenders', ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
@@ -6404,7 +6408,55 @@ app.post('/api/agt002-clarifications', async (req, res) => {
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
     res.set('Cache-Control', 'private, no-store');
-    return res.status(201).json(await recordAgt002Clarification(database, { opportunityId, actorId: currentProfile?.id || '', body: req.body || {} }));
+    const recorded = await recordAgt002Clarification(database, { opportunityId, actorId: currentProfile?.id || '', body: req.body || {} });
+    // Punto 4: si la aclaración es un dato de la empresa, Vig-IA lo propone para la ficha. Sólo propone.
+    const suggestion = agt002CompanyClarificationSuggestion(
+      { ...(recorded.clarification || {}), author_name: currentProfile?.full_name || null },
+      { tenderLabel: await tenderLabelForOpportunity(database, opportunityId) },
+    );
+    return res.status(201).json({ ...recorded, company_profile_suggestion: suggestion });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/** Referencia de la licitación convertida, para dejar la procedencia del dato en la ficha. Nunca falla el flujo. */
+async function tenderLabelForOpportunity(database, opportunityId) {
+  try {
+    const { data } = await database.from('psi_public_tenders').select('ref,entity').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
+    return [data?.ref, data?.entity].filter(Boolean).join(' · ').slice(0, 200);
+  } catch { return ''; }
+}
+
+/**
+ * Guarda en la ficha de la empresa el dato de una aclaración, con la línea que la persona aprobó (puede haberla
+ * editado). Vig-IA propone y la persona autoriza: esta ruta exige el permiso de la ficha. Sólo agrega a
+ * `useful_company_info`, nunca reescribe el resto del perfil, y no duplica una línea que ya esté.
+ */
+app.post('/api/agt002-clarification-to-company-profile', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    const clarificationId = String(req.body?.clarification_id || '');
+    if (!opportunityId || !clarificationId) throw clientInputError('Debe indicar la oportunidad y la aclaración.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const clarification = (await listAgt002Clarifications(database, opportunityId)).find(row => row.id === clarificationId);
+    if (!clarification) throw clientInputError('La aclaración no pertenece a esta licitación.');
+    const suggestion = agt002CompanyClarificationSuggestion(clarification, { tenderLabel: await tenderLabelForOpportunity(database, opportunityId) });
+    const line = String(req.body?.line ?? suggestion.line ?? '').replace(/\s+/g, ' ').trim();
+    if (!line) throw clientInputError('No hay texto para guardar en la ficha.');
+    if (line.length > AGT002_COMPANY_CLARIFICATION_LINE_MAX) throw clientInputError('El texto para la ficha es demasiado largo.');
+    const current = await getTenderCompanyProfile(database);
+    const existing = String(current?.useful_company_info || '');
+    if (existing.split('\n').map(row => row.trim()).includes(line)) {
+      res.set('Cache-Control', 'private, no-store');
+      return res.json({ appended: false, profile: current });
+    }
+    const payload = cleanTenderCompanyProfile({ ...current, useful_company_info: [existing, line].filter(Boolean).join('\n') }, currentProfile);
+    if (can(currentProfile, ACTIONS.LICITACIONES_CONFIGURE)) await saveTenderCompanyProfile(database, payload);
+    else await saveTenderCompanyProfileDirect(database, payload);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ appended: true, profile: await getTenderCompanyProfile(database) });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
