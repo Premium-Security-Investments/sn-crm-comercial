@@ -64,3 +64,12 @@ test('las dos funciones de la Mesa usan la validación nueva; la del expediente 
   assert.match(rollback, /psi_assert_tender_dossier_go\(p_opportunity_id\)/);
   assert.match(rollback, /drop function if exists public\.psi_assert_agt002_workbench_open\(uuid\)/);
 });
+
+test('141 completa la 140: la lectura de la Mesa tampoco exige el GO; ninguna función de la Mesa lo exige', () => {
+  const m141 = readFileSync(new URL('../supabase/migrations/141_agt002_clarifications.sql', import.meta.url), 'utf8');
+  const read = m141.slice(m141.indexOf('create or replace function public.psi_get_agt002_workbench('), m141.indexOf('$$;', m141.indexOf('create or replace function public.psi_get_agt002_workbench(')));
+  assert.match(read, /public\.psi_assert_agt002_workbench_open\(p_opportunity_id\)/);
+  assert.doesNotMatch(read, /psi_assert_tender_dossier_go/);
+  const rollback = readFileSync(new URL('../supabase/rollbacks/141_agt002_clarifications_rollback.sql', import.meta.url), 'utf8');
+  assert.match(rollback, /function public\.psi_get_agt002_workbench\([\s\S]*psi_assert_tender_dossier_go\(p_opportunity_id\)/);
+});
