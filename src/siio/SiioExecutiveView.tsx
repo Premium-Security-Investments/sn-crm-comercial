@@ -12,7 +12,9 @@ import { privateReadings, tenderReadings, type CommercialSummary } from './comme
 import { pulseReadings, type FinancialPulse } from './financialPulse';
 import { deriveOperationsSummary } from './operationsSummary';
 import { deriveRevenueByClient } from './revenueByClient';
+import { deriveHorasPorCliente } from './horasPorCliente';
 import { SiioRevenueByClient } from './SiioRevenueByClient';
+import { SiioHorasPorCliente } from './SiioHorasPorCliente';
 import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
 import { SiioRecommendations } from './SiioRecommendations';
 import type { SiioFinancialMetric } from '../siioExecutive';
@@ -112,6 +114,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
   const operations = useMemo(() => deriveOperationsSummary(payload.operationsMetrics || []), [payload.operationsMetrics]);
   const revenueByClient = useMemo(() => deriveRevenueByClient(payload.revenueLines || [], selectedPeriod), [payload.revenueLines, selectedPeriod]);
+  const horasPorCliente = useMemo(() => deriveHorasPorCliente(payload.programacionHoras || []), [payload.programacionHoras]);
   const followups = useFollowups();
   const [followupDraft, setFollowupDraft] = useState<FollowupDraft | null>(null);
   const today = followups.data?.today || todayIso();
@@ -202,6 +205,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
         </div>
       </div> : null}
       <SiioRevenueByClient summary={revenueByClient} period={selectedPeriod} />
+      <SiioHorasPorCliente summary={horasPorCliente} />
       <div className="siio-pulse-block">
         <h4>En construcción</h4>
         <div className="siio-commercial-pending-grid">
