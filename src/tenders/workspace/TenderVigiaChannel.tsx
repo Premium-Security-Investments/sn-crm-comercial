@@ -80,7 +80,7 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
   return <section className="tw-card tw-channel" aria-label="Conversación con Vig-IA">
     <div>
       <small>Preguntarle a Vig-IA</small>
-      <p className="tw-muted">Vig-IA conoce los requisitos y las tareas abiertas de esta licitación. Responde y sugiere; no aprueba, no firma ni presenta nada.</p>
+      <p className="tw-muted">Vig-IA conoce el análisis, los documentos y, después del GO, las tareas abiertas de esta licitación. Responde y sugiere; no aprueba, no firma ni presenta nada, ni decide el GO.</p>
     </div>
     {previousCount > 0 && <button type="button" className="tw-link" onClick={() => setShowPrevious(value => !value)}>{showPrevious ? 'Ocultar las conversaciones anteriores' : `Ver conversaciones anteriores (${previousCount} mensajes)`}</button>}
     <div className="tw-channel-thread" role="log" aria-live="polite">

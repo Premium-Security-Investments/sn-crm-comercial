@@ -203,7 +203,7 @@ export function TenderScheduleCard({ report, compact = false }: { report: Agt002
 // --- Antes del GO: ¿nos presentamos? ------------------------------------------------------------------
 
 /** Antes del GO, con el registro de la decisión; después del GO, el mismo análisis para consulta (sin decisionPanel). */
-export function TenderDecideView({ report, decisionPanel, reanalysis }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode; reanalysis?: ReactNode }) {
+export function TenderDecideView({ report, decisionPanel, reanalysis, channel }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode; reanalysis?: ReactNode; channel?: ReactNode }) {
   const rows = useMemo(() => buildRequirementRows(report), [report]);
   const decisive = useMemo(() => decisiveRequirementRows(rows), [rows]);
   const others = useMemo(() => otherRiskNotes(report, rows), [report, rows]);
@@ -237,6 +237,9 @@ export function TenderDecideView({ report, decisionPanel, reanalysis }: { report
         </button></li>)}
       </ul>
     </section>}
+
+    {/* Antes del GO también se le puede preguntar y aclarar a Vig-IA (Juan, 2026-10-20; migración 140). */}
+    {channel}
 
     {decisionPanel}
 

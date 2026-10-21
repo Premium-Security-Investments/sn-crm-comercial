@@ -18,6 +18,7 @@ import { TenderDetailNavigation, requestTenderDetailSection, resolveInitialTende
 import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
 import { TenderDecisionExperience } from './tenders/components/TenderDecisionExperience';
 import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalysis';
+import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderDecideView, TenderNextStep, TenderPrepareView, TenderWorkspaceHeader, TenderWorkspaceTabs, tenderWorkspaceMoment, useTenderOfferStatus, type TenderWorkspaceTab } from './tenders/workspace/TenderWorkspace';
@@ -1110,7 +1111,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           ? <TenderPrepareView key={`tender-prepare-${o.id}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={canDecide} report={tenderInitialReport} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus}
               onOfferStatusChanged={reloadAll}
               onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })} />
-          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} />}
+          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} channel={!readOnly && tenderInitialReport ? <TenderVigiaChannel key={`tender-channel-${o.id}`} opportunityId={o.id} request={api} /> : null} />}
       </div>
       {moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report={tenderInitialReport} reanalysis={reanalysis} /></div>}
       <div className="tw-panel tw-panel-documentos">
