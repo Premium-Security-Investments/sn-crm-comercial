@@ -128,6 +128,32 @@ test('no avisa cambio de estructura por el crecimiento normal de las hojas mensu
   assert.deepEqual(diff.changes, [{ type: 'report_labels_changed', sheet: 'Comparat', added: ['GASTOS ADMINISTRATIVOS'], removed: ['GASTOS'] }]);
 });
 
+// Caso real del 2026-10-21: volver a subir el MISMO archivo marcaba los 16 balances como
+// "cambió la estructura". Las llaves de los encabezados salían en otro orden —y la base, que los
+// guarda como jsonb, los reordena— así que la comparación de texto siempre difería.
+test('volver a leer el mismo archivo no reporta cambio de estructura por el orden de las llaves', () => {
+  const base = parseSiioFinancialWorkbook(workbookBuffer(), metadata).structure;
+  const reordenado = structuredClone(base);
+  reordenado.balance_headers = reordenado.balance_headers.map(item => ({
+    ...item,
+    headers: Object.fromEntries(Object.entries(item.headers).reverse()),
+  }));
+  assert.equal(compareFinancialStructures(base, reordenado).changed, false);
+  // Un encabezado que de verdad cambia sí se reporta.
+  const distinto = structuredClone(base);
+  distinto.balance_headers[0].headers.final = 'SALDOFINAL';
+  const diff = compareFinancialStructures(base, distinto);
+  assert.equal(diff.changed, true);
+  assert.deepEqual(diff.changes, [{ type: 'balance_headers_changed', sheet: distinto.balance_headers[0].sheet }]);
+});
+
+test('los encabezados salen siempre en el mismo orden', () => {
+  const headers = parseSiioFinancialWorkbook(workbookBuffer(), metadata).structure.balance_headers;
+  for (const item of headers) {
+    assert.deepEqual(Object.keys(item.headers), ['account', 'name', 'previous', 'debit', 'credit', 'final']);
+  }
+});
+
 test('lee el balance con sólo cuentas auxiliares y reconstruye los niveles de resumen', () => {
   const result = parseSiioFinancialWorkbook(workbookBuffer({ auxiliaryOnly: true }), metadata);
   assert.equal(result.status, 'listo_revision');

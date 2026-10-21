@@ -215,7 +215,12 @@ function balanceHeaderColumns(sheet) {
       const normalized = normalizeHeader(item.value);
       for (const [key, accepted] of Object.entries(aliases)) if (accepted.has(normalized)) columns[key] = column;
     }
-    if (Object.keys(columns).length === Object.keys(aliases).length) return { headerRow, columns };
+    // El orden de las llaves se fija aquí y no en el orden en que aparezcan las columnas de la
+    // hoja: `structure_signature` y la comparación entre versiones convierten esto a texto, y un
+    // orden distinto haría ver como cambio de estructura un archivo idéntico.
+    if (Object.keys(columns).length === Object.keys(aliases).length) {
+      return { headerRow, columns: Object.fromEntries(Object.keys(aliases).map(key => [key, columns[key]])) };
+    }
   }
   throw new FinancialWorkbookError('balance_headers', `La hoja ${sheet.name} no tiene las seis columnas contables esperadas.`);
 }
@@ -572,6 +577,10 @@ export function parseSiioFinancialWorkbook(buffer, input = {}) {
   };
 }
 
+function canonicalHeaders(headers) {
+  return JSON.stringify(Object.entries(headers || {}).sort(([left], [right]) => left.localeCompare(right)));
+}
+
 // Monthly balance sheets change state and size every month by design, so only changes that alter
 // what the parser reads are reported: added or removed sheets, balance headers and report labels.
 export function compareFinancialStructures(previous, current) {
@@ -581,10 +590,13 @@ export function compareFinancialStructures(previous, current) {
   const currentSheets = new Set((current.sheets || []).map(item => item.name));
   for (const name of currentSheets) if (!priorSheets.has(name)) changes.push({ type: 'sheet_added', sheet: name });
   for (const name of priorSheets) if (!currentSheets.has(name)) changes.push({ type: 'sheet_removed', sheet: name });
-  const priorHeaders = new Map((previous.balance_headers || []).map(item => [item.sheet, JSON.stringify(item.headers)]));
+  // Se compara por contenido, no por orden: los cargues anteriores quedaron guardados como jsonb,
+  // que reordena las llaves, y comparar el texto tal cual marcaba los 16 balances como cambiados
+  // cada vez que se volvía a subir el mismo archivo.
+  const priorHeaders = new Map((previous.balance_headers || []).map(item => [item.sheet, canonicalHeaders(item.headers)]));
   for (const item of current.balance_headers || []) {
     const prior = priorHeaders.get(item.sheet);
-    if (prior !== undefined && prior !== JSON.stringify(item.headers)) changes.push({ type: 'balance_headers_changed', sheet: item.sheet });
+    if (prior !== undefined && prior !== canonicalHeaders(item.headers)) changes.push({ type: 'balance_headers_changed', sheet: item.sheet });
   }
   for (const [sheet, labels] of Object.entries(current.report_labels || {})) {
     const prior = previous.report_labels?.[sheet];
