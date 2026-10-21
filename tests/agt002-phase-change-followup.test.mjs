@@ -377,12 +377,12 @@ test('I2: sólo oportunidades activas (Por decidir / En curso); proceso terminal
   const awarded = world();
   awarded.psi_sales_opportunities[0].tender_offer_status = 'no_adjudicada';
   for (const [tables, reason] of [[closedProcess, 'terminal_status'], [lost, 'opportunity_closed'], [noGo, 'opportunity_closed'], [awarded, 'opportunity_closed']]) {
-    const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(tables), { probeDocuments: async () => { throw new Error('no debe llamarse'); }, importDocuments: async () => { throw new Error('no'); } });
+    const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(tables), { probeDocuments: async () => { throw new Error('no debe llamarse'); }, importDocuments: async () => { throw new Error('no'); }, now: NOW });
     assert.deepEqual(events.map(e => [e.event, e.reason]), [['agt002_phase_change_documents_skipped', reason]]);
   }
   const goInPreparation = world({ psi_tender_go_no_go_decisions: [{ id: 'g1', opportunity_id: 'opp-ftic', tender_id: 't-ftic', decision: 'go', decided_at: '2026-10-01T00:00:00Z' }] });
   goInPreparation.psi_sales_opportunities[0].tender_offer_status = 'en_preparacion';
-  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(goInPreparation), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); } });
+  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(goInPreparation), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); }, now: NOW });
   assert.deepEqual(events.map(e => e.event), ['agt002_phase_change_documents_waiting_new_documents'], 'En curso (GO, en preparación) sí se sigue');
 });
 
@@ -987,7 +987,7 @@ test('activa = bandeja: "aprobado" con GO y oferta en preparación se sigue; la 
   const approved = world({ psi_tender_go_no_go_decisions: [{ id: 'g1', opportunity_id: 'opp-ftic', tender_id: 't-ftic', decision: 'go', decided_at: '2026-10-01T00:00:00Z' }] });
   approved.psi_sales_opportunities[0].stage_code = 'aprobado';
   approved.psi_sales_opportunities[0].tender_offer_status = 'en_preparacion';
-  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(approved), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); } });
+  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(approved), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); }, now: NOW });
   assert.deepEqual(events.map(e => e.event), ['agt002_phase_change_documents_waiting_new_documents']);
   const otherTender = world({ psi_tender_go_no_go_decisions: [{ id: 'x', opportunity_id: 'opp-ftic', tender_id: 't-otra', decision: 'no_go', decided_at: '2026-10-05T00:00:00Z' }] });
   const { agt002PhaseChangeOpportunityBlocker } = await import('../agt002-phase-change-followup.js');
