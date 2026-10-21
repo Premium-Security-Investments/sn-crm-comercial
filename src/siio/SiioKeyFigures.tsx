@@ -141,8 +141,9 @@ export function SiioTrendCharts({ pulse, summary }: { pulse: FinancialPulse | nu
   return <section className="panel siio-trends" aria-label="Tendencia">
     <h2>Tendencia</h2>
     <div className="siio-chart-grid-layout">
-      {pulse ? <SiioColumnChart title="Ingresos por mes" note={`Millones de pesos${caveatNote(pulse)}`} categories={months} series={yearSeries('ingresos')} format={millions} axisFormat={axisMillions} /> : null}
-      {pulse ? <SiioColumnChart title="Utilidad operacional por mes" note={`Millones de pesos${caveatNote(pulse)}`} categories={months} series={yearSeries('utilidad_operacional')} format={millions} axisFormat={axisMillions} /> : null}
+      {/* Ingresos y utilidad por mes salieron de aquí: el margen ya combina las dos, y la tabla
+          mes a mes con las cifras exactas está en el detalle de Finanzas. Cuatro gráficas de la
+          misma serie llenan la pantalla sin agregar una lectura. */}
       {pulse ? <SiioLineChart title="Margen operacional por mes" note={`Utilidad operacional sobre ingresos${caveatNote(pulse)}`} categories={months} series={yearSeries('margen_operacional')} format={percentText} axisFormat={axisPercent} /> : null}
       {closed.length ? <SiioColumnChart title="Ventas nuevas a privados por mes" note="Valor mensual del servicio, por mes de cotización · millones · sin licitaciones" categories={closed.map((_, index) => MONTHS_SHORT[index])} series={[{ name: `Ventas ${summary?.sales.year}`, values: closed.map(item => item.approved_monthly_value), tone: 'accent' }, { name: 'Meta del mes', values: closed.map(item => item.goal || null), tone: 'reference' }]} format={millions} axisFormat={axisMillions} labelAll={false} /> : null}
     </div>

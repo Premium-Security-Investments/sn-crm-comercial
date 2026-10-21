@@ -76,14 +76,5 @@ export function SiioOperationsDetail({ summary }: { summary: OperationsSummary |
       </table></div>
     </div>
 
-    <div className="siio-pulse-block">
-      <h4>En construcción</h4>
-      <div className="siio-commercial-pending-grid">
-        <div className="siio-commercial-pending"><strong>Rentabilidad por cliente (empieza por ARA)</strong><span>Pendiente: cruzar los ingresos por cliente del estado de resultados con el costo de su operación.</span></div>
-        <div className="siio-commercial-pending"><strong>Cumplimiento contra contrato</strong><span>Pendiente: frecuencias exigidas por cliente (visitas, tiempos de tickets, aprovisionamientos).</span></div>
-        <div className="siio-commercial-pending"><strong>Servicio técnico y cotizaciones</strong><span>Pendiente: cotizaciones abiertas y tiempos de atención por cliente.</span></div>
-        <div className="siio-commercial-pending"><strong>Alertas de video</strong><span>Pendiente: fuente de monitoreo.</span></div>
-      </div>
-    </div>
   </>;
 }
