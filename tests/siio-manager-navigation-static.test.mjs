@@ -31,10 +31,13 @@ assert.doesNotMatch(dashboard, /global.*filter/i);
 
 const intelligence = readFileSync('src/siio/SiioSourcesIntelligenceView.tsx', 'utf8');
 const agents = readFileSync('src/siio/SiioAgentsView.tsx', 'utf8');
-for (const marker of ['Vigencia', 'Confianza', 'Tipo de fuente', 'Restricciones', 'Última revisión', 'Próxima revisión', 'Frentes relacionados', 'Pendiente de evidencia', 'Periodo pendiente', 'Evidencia', 'Fuentes', 'Periodo de origen', 'Acción recomendada']) {
+// "Vigencia" y "Próxima revisión" salieron: la vigencia se calcula contra el último dato real de
+// cada fuente, no contra una fecha escrita a mano que nadie llenaba (17 de 17 vacías).
+for (const marker of ['Estado del dato', 'Confianza', 'Tipo de fuente', 'Restricciones', 'Último dato en la Torre', 'Registrada el', 'Frentes relacionados', 'Pendiente de evidencia', 'Periodo pendiente', 'Evidencia', 'Fuentes', 'Periodo de origen', 'Acción recomendada']) {
   assert.match(intelligence, new RegExp(marker));
 }
 assert.match(intelligence, /filterSources/);
+assert.match(intelligence, /deriveCalidadFuentes/);
 assert.match(intelligence, /deriveRecommendations/);
 assert.equal((intelligence.match(/<select/g) || []).length, 3, 'intelligence must expose only its three contextual filters');
 assert.match(intelligence, /source\.url \?/);
