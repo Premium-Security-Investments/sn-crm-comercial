@@ -20,15 +20,24 @@ const SEVERITY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
 const SEVERITY_LABEL = { CRITICAL: 'Crítico', HIGH: 'Alto', MEDIUM: 'Medio', LOW: 'Bajo', INFO: 'Informativo' };
 const EVALUATION_RANK = { BLOCKER: 0, PENDING: 1, NOT_EVALUATED: 2, AVAILABLE: 3, VERIFIED: 4, NOT_APPLICABLE: 5 };
 
-/** Estado de la empresa frente al requisito, en tres palabras que entiende cualquiera. */
-export const REQUIREMENT_STATUS_LABEL = { falta: 'Falta', por_confirmar: 'Por confirmar', cumple: 'Cumple', no_aplica: 'No aplica' };
+/**
+ * Estado de la empresa frente al requisito, en pocas palabras que entiende cualquiera. `declarado` y
+ * `por_confirmar` se separaron el 2026-10-21 (Juan: "esto no debería estar acá, usted sabe que tenemos
+ * sede en Medellín"): no es lo mismo que la empresa diga que lo tiene y falte el soporte, que no saber
+ * si lo tiene. Antes los dos se mostraban "Por confirmar" y se leían como un problema.
+ */
+export const REQUIREMENT_STATUS_LABEL = { falta: 'Falta', por_confirmar: 'Por confirmar', declarado: 'Cumple, falta el soporte', cumple: 'Cumple', no_aplica: 'No aplica' };
 
 function statusFromEvaluation(evaluation) {
   if (evaluation === 'BLOCKER') return 'falta';
   if (evaluation === 'VERIFIED') return 'cumple';
+  if (evaluation === 'AVAILABLE') return 'declarado';
   if (evaluation === 'NOT_APPLICABLE') return 'no_aplica';
   return 'por_confirmar';
 }
+
+/** El requisito ya está resuelto o no nos aplica: lo que diga el pliego sobre rechazos no nos cuelga. */
+const SETTLED_STATUSES = new Set(['cumple', 'declarado', 'no_aplica']);
 
 /** Quita códigos internos (CLM-, REQ-…) y nombres de campos en inglés de un texto que lee una persona. */
 export function cleanRequirementText(value) {
@@ -88,6 +97,7 @@ export function buildRequirementRows(report) {
     const textClaim = claims.get(points[0].textClaimId);
     const worst = points.reduce((current, point) => ((EVALUATION_RANK[point.companyEvaluation] ?? 2) < (EVALUATION_RANK[current] ?? 2) ? point.companyEvaluation : current), 'NOT_APPLICABLE');
     const applicable = points.some(point => point.applicability !== 'NOT_APPLICABLE');
+    const status = applicable ? statusFromEvaluation(worst) : 'no_aplica';
     const findings = (report.findings || []).filter(finding => intersects(finding.claimIds, new Set([points[0].textClaimId])) || intersects(finding.claimIds, claimIds));
     const openItems = (report.openItems || []).filter(item => (item.status === 'OPEN' || !item.status) && intersects(item.claimIds, claimIds));
     const severity = findings.reduce((current, finding) => ((SEVERITY_RANK[finding.severity] ?? 9) < (SEVERITY_RANK[current] ?? 9) ? finding.severity : current), null);
@@ -105,10 +115,14 @@ export function buildRequirementRows(report) {
       title: '',
       demand: cleanRequirementText(textClaim?.text || ''),
       sources: (textClaim?.sources || []).map(source => ({ documentName: source.documentName || null, locator: source.locator || '' })),
-      status: applicable ? statusFromEvaluation(worst) : 'no_aplica',
+      status,
       // El análisis casi nunca marca `blocker`; el pliego sí dice cuándo algo causa rechazo sin remedio.
+      // Pero el texto del pliego habla de cualquier oferente: que diga "la oferta conjunta causa rechazo"
+      // no nos cuelga si nos presentamos solos (Juan, 2026-10-21). Por eso la marca por texto sólo vale
+      // mientras el requisito siga abierto; el bloqueo explícito del análisis vale siempre.
       rejection: points.some(point => point.blocker || point.companyEvaluation === 'BLOCKER')
-        || REJECTION_TEXT.test(textClaim?.text || '') || findings.some(finding => REJECTION_TEXT.test(`${finding.title} ${finding.impact}`)),
+        || (!SETTLED_STATUSES.has(status)
+          && (REJECTION_TEXT.test(textClaim?.text || '') || findings.some(finding => REJECTION_TEXT.test(`${finding.title} ${finding.impact}`)))),
       severity,
       severityLabel: severity ? SEVERITY_LABEL[severity] || null : null,
       company,
@@ -132,7 +146,7 @@ export function buildRequirementRows(report) {
     const weak = !fromDemand || fromDemand.length < 20 || /^(?:con|en|para|según|entre|de|los|las|el requisito|al menos)\b/i.test(fromDemand);
     row.title = (weak && exclusive ? exclusive : fromDemand) || exclusive || row.categoryLabel;
   }
-  const statusOrder = { falta: 0, por_confirmar: 1, cumple: 2, no_aplica: 3 };
+  const statusOrder = { falta: 0, por_confirmar: 1, declarado: 2, cumple: 3, no_aplica: 4 };
   return rows.sort((a, b) => Number(b.rejection) - Number(a.rejection)
     || (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9)
     || statusOrder[a.status] - statusOrder[b.status]
@@ -141,7 +155,7 @@ export function buildRequirementRows(report) {
 
 /** Lo que puede tumbar la oferta: causales de rechazo y riesgos altos aún sin resolver (máximo `limit`). */
 export function decisiveRequirementRows(rows, limit = 5) {
-  return rows.filter(row => row.status !== 'cumple' && row.status !== 'no_aplica'
+  return rows.filter(row => !SETTLED_STATUSES.has(row.status)
     && (row.rejection || row.severity === 'CRITICAL' || row.severity === 'HIGH')).slice(0, limit);
 }
 
