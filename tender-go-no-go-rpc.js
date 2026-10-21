@@ -234,7 +234,11 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
   // La siembra de requisitos va después de la decisión y nunca la revierte: si falla, el expediente
   // ofrece el botón "Cargar los requisitos del análisis" (misma función, idempotente).
   if (decision === 'go' && requirementsAvailable) {
-    await seedTenderDossierRequirements(database, opportunityId, actorId, { readReport: async () => initialReport }).catch(() => null);
+    // Nunca revierte el GO, pero deja rastro: la Fiscalía (2026-10-21) quedó sólo con la plantilla y no se supo por qué.
+    await seedTenderDossierRequirements(database, opportunityId, actorId, { readReport: async () => initialReport }).catch(error => {
+      console.warn('tender_go_requirement_seed_failed', { event: 'tender_go_requirement_seed_failed', opportunity_id: opportunityId, code: String(error?.code || 'unknown').slice(0, 40) });
+      return null;
+    });
   }
   const persistedPreparation = result.preparation_created
     ? preparation
