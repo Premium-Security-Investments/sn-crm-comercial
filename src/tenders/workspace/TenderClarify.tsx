@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { TenderRequest } from '../types';
 import { formatDeadline } from './tenderWorkspaceFormat';
+import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../../../agt002-company-clarification.js';
 
 // Aclaraciones del encargado (Juan, 2026-10-21): le resuelven una duda o le corrigen algo a Vig-IA. Quedan con nombre y
 // fecha, y Vig-IA actualiza el análisis sólo en lo que tocan (reanálisis incremental).
@@ -16,6 +17,17 @@ export async function sendTenderClarification(request: TenderRequest, opportunit
   return request<ClarifyResponse>('/api/agt002-clarifications', {
     method: 'POST',
     body: JSON.stringify({ opportunity_id: opportunityId, content, ...(target ? { target_kind: target.kind, target_id: target.id, target_label: target.label } : {}) }),
+  });
+}
+
+/**
+ * Punto 4 de la definición de Juan: guardar en la ficha de la empresa el dato de una aclaración. Vig-IA propone
+ * el texto; quien aprueba puede editarlo antes de guardar. La ruta exige el permiso de la ficha.
+ */
+export async function saveTenderClarificationToCompanyProfile(request: TenderRequest, opportunityId: string, clarificationId: string, line: string) {
+  return request<{ appended: boolean }>('/api/agt002-clarification-to-company-profile', {
+    method: 'POST',
+    body: JSON.stringify({ opportunity_id: opportunityId, clarification_id: clarificationId, line }),
   });
 }
 
@@ -101,8 +113,9 @@ function clarificationWhere(entry: TenderClarificationPlacement): string {
 }
 
 /** Todas las aclaraciones de la licitación en un solo lugar (punto 3 de la definición de Juan). */
-export function TenderClarificationsCard({ listed, onSelectRequirement }: {
+export function TenderClarificationsCard({ listed, onSelectRequirement, proposal }: {
   listed: TenderClarificationPlacement[]; onSelectRequirement?: (rowKey: string) => void;
+  proposal?: (clarification: TenderClarification) => ReactNode;
 }) {
   if (!listed.length) return null;
   return <section className="tw-card tw-clarifications" aria-label="Aclaraciones de la licitación">
@@ -115,7 +128,52 @@ export function TenderClarificationsCard({ listed, onSelectRequirement }: {
         <small className="tw-muted">{clarificationSignature(entry.clarification)}</small>
         {entry.scope === 'requirement' && entry.rowKey && onSelectRequirement
           && <button type="button" className="tw-link" onClick={() => onSelectRequirement(entry.rowKey as string)}>Ver el requisito →</button>}
+        {proposal?.(entry.clarification)}
       </li>)}
     </ul>
   </section>;
+}
+
+/**
+ * Vig-IA propone guardar en la ficha de la empresa lo que es de la empresa (punto 4). No escribe nada sola: el
+ * texto se puede editar y guardar es un clic de la persona. Lo que es de esta licitación no se propone.
+ */
+export function TenderCompanyClarificationProposal({ clarification, opportunityId, request, tenderLabel }: {
+  clarification: TenderClarification; opportunityId: string; request: TenderRequest; tenderLabel?: string;
+}) {
+  const suggestion = agt002CompanyClarificationSuggestion(clarification, { tenderLabel: tenderLabel || '' });
+  const [draft, setDraft] = useState(suggestion.line);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  if (!suggestion.company || done === 'descartada') return null;
+  if (done) return <p className="tw-muted" role="status">{done}</p>;
+  const save = async () => {
+    const line = draft.trim();
+    if (!line) return;
+    setBusy(true); setError('');
+    try {
+      const response = await saveTenderClarificationToCompanyProfile(request, opportunityId, clarification.id, line);
+      setDone(response.appended ? '✓ Guardado en la ficha de la empresa.' : '✓ Ya estaba en la ficha de la empresa.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally { setBusy(false); }
+  };
+  return <div className="tw-company-proposal">
+    <p><strong>Esto parece un dato de la empresa</strong> ({suggestion.topicLabel}). {suggestion.reason} Guardado en la ficha sirve para toda licitación, no solo para esta.</p>
+    {!open && <div className="row-actions">
+      <button type="button" onClick={() => setOpen(true)}>Guardar en la ficha de la empresa</button>
+      <button type="button" className="secondary" onClick={() => setDone('descartada')}>Solo para esta licitación</button>
+    </div>}
+    {open && <>
+      <label><span>Texto que queda en la ficha (puede editarlo)</span>
+        <textarea value={draft} maxLength={AGT002_COMPANY_CLARIFICATION_LINE_MAX} onChange={event => setDraft(event.target.value)} /></label>
+      <div className="row-actions">
+        <button type="button" disabled={busy || !draft.trim()} onClick={() => void save()}>{busy ? 'Guardando…' : 'Guardar'}</button>
+        <button type="button" className="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancelar</button>
+      </div>
+    </>}
+    {error && <p className="tw-reanalysis-warn" role="status">{error}</p>}
+  </div>;
 }
