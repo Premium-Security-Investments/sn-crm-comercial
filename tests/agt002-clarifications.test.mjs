@@ -4,9 +4,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { listAgt002Clarifications, parseAgt002ClarificationBody, recordAgt002Clarification } from '../agt002-clarifications.js';
 import { createAgt002InitialAnalysisRuntime } from '../agt002-initial-analysis-runtime.js';
-import { otherRiskNotes } from '../agt002-requirements-model.js';
+import { otherRiskNotes, placeAgt002Clarifications } from '../agt002-requirements-model.js';
 
 test('el cuerpo de una aclaración: texto obligatorio, punto opcional pero completo', () => {
   assert.throws(() => parseAgt002ClarificationBody({ content: '  ' }), /Escriba la aclaración/);
@@ -75,4 +76,59 @@ test('la síntesis incremental recibe las aclaraciones fijadas y su instrucción
 test('los otros riesgos traen su id para poder aclararlos', () => {
   const notes = otherRiskNotes({ findings: [{ id: 'F-9', title: 'Riesgo', impact: 'x', severity: 'HIGH' }], contradictions: [{ id: 'R-1', topic: 'Decimales', requiredAction: 'y', status: 'OPEN' }] }, []);
   assert.deepEqual(notes.map(note => note.id), ['F-9', 'R-1']);
+});
+
+// --- Punto 3 de la definición de Juan: cada aclaración junto a su punto y todas en una lista ----------
+
+const ROWS = [
+  { key: 'CLM-GAR', title: 'Garantía de seriedad', requirementIds: ['REQ-GAR'], findingIds: ['FND-GAR'] },
+  { key: 'CLM-EXP', title: 'Experiencia de 35.192 SMLMV', requirementIds: ['REQ-EXP'], findingIds: [] },
+];
+const NOTES = [{ id: 'FND-SUELTO', title: 'Reajuste de precios' }];
+const clarification = (id, overrides = {}) => ({ id, content: `texto ${id}`, target_kind: null, target_id: null, target_label: null, created_at: '2026-10-21T02:46:00Z', author_name: 'Juan Botero', ...overrides });
+
+test('aclaración ligada a un requisito: queda en su fila y en la lista con el nombre del requisito', () => {
+  const placed = placeAgt002Clarifications([clarification('c1', { target_kind: 'requirement', target_id: 'CLM-GAR', target_label: 'Garantía de seriedad' })], { requirements: ROWS, findings: NOTES });
+  assert.deepEqual(placed.byRequirement.get('CLM-GAR').map(item => item.id), ['c1']);
+  assert.deepEqual(placed.listed.map(entry => [entry.clarification.id, entry.scope, entry.rowKey, entry.label]), [['c1', 'requirement', 'CLM-GAR', 'Garantía de seriedad']]);
+});
+
+test('el análisis renumera sus claims: el punto se reencuentra por el id del requisito o por el nombre guardado', () => {
+  const byRequirementId = placeAgt002Clarifications([clarification('c2', { target_kind: 'requirement', target_id: 'REQ-EXP', target_label: 'otro nombre' })], { requirements: ROWS });
+  assert.deepEqual(byRequirementId.byRequirement.get('CLM-EXP').map(item => item.id), ['c2']);
+  // Mismo nombre con otra puntuación, mayúsculas y espacios: sigue siendo el mismo punto.
+  const byLabel = placeAgt002Clarifications([clarification('c3', { target_kind: 'requirement', target_id: 'CLM-VIEJO-DE-LA-V2', target_label: '  GARANTÍA  de seriedad ' })], { requirements: ROWS });
+  assert.deepEqual(byLabel.byRequirement.get('CLM-GAR').map(item => item.id), ['c3']);
+});
+
+test('aclaración sobre un hallazgo: en el hallazgo suelto, o en la fila del requisito que lo contiene', () => {
+  const placed = placeAgt002Clarifications([
+    clarification('c4', { target_kind: 'finding', target_id: 'FND-SUELTO', target_label: 'Reajuste de precios' }),
+    clarification('c5', { target_kind: 'finding', target_id: 'FND-GAR', target_label: 'Garantías' }),
+  ], { requirements: ROWS, findings: NOTES });
+  assert.deepEqual(placed.byFinding.get('FND-SUELTO').map(item => item.id), ['c4']);
+  assert.deepEqual(placed.byRequirement.get('CLM-GAR').map(item => item.id), ['c5']);
+  assert.deepEqual(placed.listed.map(entry => entry.scope), ['finding', 'requirement']);
+});
+
+test('la general va sin punto y la que ya no tiene punto no se pierde: sale como huérfana con su nombre', () => {
+  const placed = placeAgt002Clarifications([
+    clarification('c6'),
+    clarification('c7', { target_kind: 'requirement', target_id: 'CLM-QUE-YA-NO-EXISTE', target_label: 'Domicilio en Cali' }),
+  ], { requirements: ROWS, findings: NOTES });
+  assert.equal(placed.byRequirement.size, 0);
+  assert.deepEqual(placed.listed.map(entry => [entry.clarification.id, entry.scope, entry.label]), [['c6', 'general', null], ['c7', 'orphan', 'Domicilio en Cali']]);
+});
+
+test('sin análisis vigente (sin filas) ninguna aclaración se traga: todas quedan listadas', () => {
+  const placed = placeAgt002Clarifications([clarification('c8', { target_kind: 'requirement', target_id: 'CLM-GAR', target_label: 'Garantía de seriedad' }), clarification('c9')], {});
+  assert.deepEqual(placed.listed.map(entry => entry.scope), ['orphan', 'general']);
+});
+
+test('la pantalla de la licitación muestra las aclaraciones en su punto y la lista completa', async () => {
+  const source = readFileSync(new URL('../src/tenders/workspace/TenderWorkspace.tsx', import.meta.url), 'utf8');
+  assert.match(source, /placeAgt002Clarifications\(clarifications, \{ requirements: rows, findings: others \}\)/, 'reparte las aclaraciones del expediente');
+  assert.match(source, /<TenderClarificationNotes items=\{clarificationsByRow\?\.get\(selected\.key\) \|\| \[\]\} \/>/, 'el requisito seleccionado muestra lo que ya se aclaró');
+  assert.match(source, /<TenderClarificationsCard listed=\{listedClarifications\}/, 'la licitación tiene su lista de aclaraciones');
+  assert.match(source, /onSaved=\{\(\) => void reloadClarifications\(\)\}/, 'al registrar una aclaración la lista se recarga');
 });

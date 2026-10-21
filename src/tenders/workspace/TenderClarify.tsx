@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { TenderRequest } from '../types';
+import { formatDeadline } from './tenderWorkspaceFormat';
 
 // Aclaraciones del encargado (Juan, 2026-10-21): le resuelven una duda o le corrigen algo a Vig-IA. Quedan con nombre y
 // fecha, y Vig-IA actualiza el análisis sólo en lo que tocan (reanálisis incremental).
@@ -61,4 +62,60 @@ export function TenderClarifyInline({ opportunityId, request, target, onSaved }:
     </div>}
     {status && <p className={status.error ? 'tw-reanalysis-warn' : 'tw-muted'} role="status">{status.text}</p>}
   </div>;
+}
+
+/** Las aclaraciones de la licitación, con recarga para cuando se registra una nueva. */
+export function useTenderClarifications(opportunityId: string | undefined, request: TenderRequest | undefined) {
+  const [clarifications, setClarifications] = useState<TenderClarification[]>([]);
+  const reload = useCallback(async () => {
+    if (!opportunityId || !request) { setClarifications([]); return; }
+    try { setClarifications(await loadTenderClarifications(request, opportunityId)); } catch { /* la pantalla sigue sin ellas */ }
+  }, [opportunityId, request]);
+  useEffect(() => { void reload(); }, [reload]);
+  return { clarifications, reload };
+}
+
+/** Una aclaración en su punto: lo que dijo el encargado, con su nombre y la fecha. */
+export type TenderClarificationPlacement = {
+  clarification: TenderClarification; scope: 'requirement' | 'finding' | 'general' | 'orphan';
+  rowKey: string | null; findingId: string | null; label: string | null;
+};
+
+function clarificationSignature(clarification: TenderClarification) {
+  return [clarification.author_name, formatDeadline(clarification.created_at)].filter(Boolean).join(' · ');
+}
+
+/** Las aclaraciones ya registradas sobre un requisito o un hallazgo, pegadas a ese punto. */
+export function TenderClarificationNotes({ items }: { items: TenderClarification[] }) {
+  if (!items.length) return null;
+  return <section className="tw-clarified"><h4>Lo que ya se aclaró</h4>
+    {items.map(item => <p key={item.id}><q>{item.content}</q> <small className="tw-muted">{clarificationSignature(item)}</small></p>)}
+  </section>;
+}
+
+/** Punto donde quedó la aclaración, para la lista de la licitación. */
+function clarificationWhere(entry: TenderClarificationPlacement): string {
+  if (entry.scope === 'general') return 'Sobre la licitación';
+  if (entry.scope === 'orphan') return entry.label ? `${entry.label} · el análisis ya no trae ese punto` : 'Un punto que el análisis ya no trae';
+  return entry.label || 'Un punto del análisis';
+}
+
+/** Todas las aclaraciones de la licitación en un solo lugar (punto 3 de la definición de Juan). */
+export function TenderClarificationsCard({ listed, onSelectRequirement }: {
+  listed: TenderClarificationPlacement[]; onSelectRequirement?: (rowKey: string) => void;
+}) {
+  if (!listed.length) return null;
+  return <section className="tw-card tw-clarifications" aria-label="Aclaraciones de la licitación">
+    <small>Aclaraciones · {listed.length}</small>
+    <p className="tw-muted">Lo que se le aclaró a Vig-IA sobre esta licitación. Vig-IA las cita en el análisis; una aclaración no reemplaza el soporte que pide el pliego.</p>
+    <ul className="tw-clarification-list">
+      {listed.map(entry => <li key={entry.clarification.id} className={entry.scope === 'orphan' ? 'is-orphan' : ''}>
+        <span className="tw-clarification-where">{clarificationWhere(entry)}</span>
+        <q>{entry.clarification.content}</q>
+        <small className="tw-muted">{clarificationSignature(entry.clarification)}</small>
+        {entry.scope === 'requirement' && entry.rowKey && onSelectRequirement
+          && <button type="button" className="tw-link" onClick={() => onSelectRequirement(entry.rowKey as string)}>Ver el requisito →</button>}
+      </li>)}
+    </ul>
+  </section>;
 }

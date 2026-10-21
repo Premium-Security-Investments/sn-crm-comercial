@@ -34,3 +34,16 @@ export function otherRiskNotes(report: Agt002InitialReport | null | undefined, r
 export function groupRowsByCategory(rows: RequirementRow[]): RequirementGroup[];
 export function requirementTargetDate(row: RequirementRow, closeDate: string | null, today?: string): string | null;
 export function requirementSeedItems(rows: RequirementRow[], closeDate: string | null, today?: string): RequirementSeedItem[];
+
+export type Agt002ClarificationLike = {
+  id: string; content: string; target_kind: 'requirement' | 'finding' | null; target_id: string | null; target_label: string | null;
+  created_at: string; author_name: string | null;
+};
+export type Agt002ClarificationPlacementEntry<T = Agt002ClarificationLike> = {
+  clarification: T; scope: 'requirement' | 'finding' | 'general' | 'orphan';
+  rowKey: string | null; findingId: string | null; label: string | null;
+};
+export function placeAgt002Clarifications<T extends Agt002ClarificationLike>(
+  clarifications: T[],
+  context?: { requirements?: RequirementRow[]; findings?: RequirementNote[] },
+): { byRequirement: Map<string, T[]>; byFinding: Map<string, T[]>; listed: Agt002ClarificationPlacementEntry<T>[] };
