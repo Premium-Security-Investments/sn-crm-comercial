@@ -39,7 +39,11 @@ export function buildCommercialSummary({ opportunities = [], stages = [], goals 
   const stageByCode = new Map(stages.map(stage => [stage.code, stage]));
   const ownerName = new Map(profiles.map(profile => [profile.id, profile.full_name]));
   const live = opportunities.filter(item => !item.deleted_at);
+  // Archivar una oportunidad es haber decidido sobre ella: deja de pedir atención y sale del
+  // embudo. Las ventas ya aprobadas sí siguen contando, porque ocurrieron.
+  const activas = live.filter(item => !item.archived_at);
   const sales = live.filter(item => item.service_type_code !== TENDER_SERVICE);
+  const salesActivas = activas.filter(item => item.service_type_code !== TENDER_SERVICE);
 
   // Same definition as v_psi_sales_kpis_by_commercial_month: approved value grouped by quote month.
   const months = Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`);
@@ -61,7 +65,7 @@ export function buildCommercialSummary({ opportunities = [], stages = [], goals 
   const goalYear = months.reduce((total, month) => total + goalByMonth[month], 0);
   const salesYear = months.reduce((total, month) => total + salesByMonth[month], 0);
 
-  const open = sales.filter(item => {
+  const open = salesActivas.filter(item => {
     const stage = stageByCode.get(item.stage_code);
     return stage && !stage.is_terminal;
   });
@@ -97,11 +101,11 @@ export function buildCommercialSummary({ opportunities = [], stages = [], goals 
       owner_name: ownerName.get(item.owner_id) || null,
     }));
 
-  // Tenders: only live processes. Closed or discarded ones do not exist for the Torre.
+  // Tenders: only live processes. Closed, discarded or archived ones do not exist for the Torre.
   const tenderByOpportunity = new Map(tenders.filter(item => item.converted_opportunity_id).map(item => [item.converted_opportunity_id, item]));
   const latestDecision = new Map();
   for (const decision of [...decisions].sort((a, b) => String(a.decided_at).localeCompare(String(b.decided_at)))) latestDecision.set(decision.opportunity_id, decision.decision);
-  const tenderRows = live
+  const tenderRows = activas
     .filter(item => item.service_type_code === TENDER_SERVICE)
     .filter(item => !stageByCode.get(item.stage_code)?.is_terminal)
     .filter(item => !CLOSED_TENDER_STATUSES.has(item.tender_offer_status) && latestDecision.get(item.id) !== 'no_go')
@@ -181,7 +185,7 @@ function requireResult(result) {
 export async function loadCommercialSummary(database, { now = new Date() } = {}) {
   const [opportunities, stages, goals, tenders, decisions, profiles] = await Promise.all([
     database.from('psi_sales_opportunities')
-      .select('id,owner_id,company_name,service_type_code,stage_code,offer_value,quote_date,created_at,updated_at,last_interaction_at,approved_at,deleted_at,tender_offer_status')
+      .select('id,owner_id,company_name,service_type_code,stage_code,offer_value,quote_date,created_at,updated_at,last_interaction_at,approved_at,deleted_at,archived_at,tender_offer_status')
       .is('deleted_at', null)
       .limit(5000),
     database.from('psi_sales_pipeline_stages').select('code,name,stage_order,close_probability,is_terminal'),
