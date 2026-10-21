@@ -1,5 +1,6 @@
 import type { SiioFinancialMetric, SiioManagementInsight, SiioPayrollAggregate } from '../siioExecutive';
 import type { SiioOperationsMetric } from './operationsSummary';
+import type { SiioRevenueLine } from './revenueByClient';
 
 export const SIIO_VIEWS = ['resumen', 'seguimiento', 'inteligencia', 'agentes'] as const;
 export type SiioView = typeof SIIO_VIEWS[number];
@@ -47,4 +48,4 @@ export type SiioFinancialImport = {
   validated_by_uploader?: boolean;
   validations: SiioFinancialValidation[];
 };
-export type SiioBootstrapPayload = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: SiioBoardSection[]; financialMetrics: SiioFinancialMetric[]; commercialSignals: unknown[]; payrollAggregates: SiioPayrollAggregate[]; strategicOpportunities: unknown[]; operationsMetrics?: SiioOperationsMetric[]; currentProfile: SiioCurrentProfile };
+export type SiioBootstrapPayload = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: SiioBoardSection[]; financialMetrics: SiioFinancialMetric[]; commercialSignals: unknown[]; payrollAggregates: SiioPayrollAggregate[]; strategicOpportunities: unknown[]; operationsMetrics?: SiioOperationsMetric[]; revenueLines?: SiioRevenueLine[]; currentProfile: SiioCurrentProfile };
