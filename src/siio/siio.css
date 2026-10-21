@@ -1206,3 +1206,15 @@
    pero se lee como secundaria, y los ajustes de meses anteriores van bajo su propio rótulo. */
 .siio-row-muted td{color:#526173;background:#fbfcfe}
 .siio-row-section td{padding-top:14px;color:#526173;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+
+/* Decisiones con fecha: lo primero de la pantalla. Una línea por asunto, el plazo primero,
+   porque es lo que decide si se mira ahora o después. */
+.siio-semana-list{display:grid;gap:8px;margin:10px 0 0;padding:0;list-style:none}
+.siio-semana-item{display:grid;grid-template-columns:200px 1fr auto;gap:14px;align-items:center;padding:12px 14px;border:1px solid #e7edf5;border-left:4px solid #9fb3cc;border-radius:12px;background:#fff}
+.siio-semana-vencido{border-left-color:#ea580c;background:#fffaf5}
+.siio-semana-cuando{display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:#24344d;font-size:14px}
+.siio-semana-que{display:grid;gap:2px;min-width:0}
+.siio-semana-que strong{color:#10213d;font-size:15px}
+.siio-semana-que span{color:#40516b;font-size:13px}
+.siio-semana-accion{justify-self:end}
+@media (max-width:720px){.siio-semana-item{grid-template-columns:1fr;gap:6px}.siio-semana-accion{justify-self:start}}

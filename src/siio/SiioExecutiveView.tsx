@@ -9,6 +9,8 @@ import { SiioKeyFigures, SiioTrendCharts } from './SiioKeyFigures';
 import { FollowupCell, FollowupComposer } from './SiioFollowups';
 import { addDays, isOverdue, openFollowupFor, todayIso, useFollowups, type FollowupDraft } from './followups';
 import { privateReadings, tenderReadings, type CommercialSummary } from './commercialSummary';
+import { deriveEstaSemana, sinLoUrgente } from './estaSemana';
+import { SiioEstaSemana } from './SiioEstaSemana';
 import { pulseReadings, type FinancialPulse } from './financialPulse';
 import { deriveOperationsSummary } from './operationsSummary';
 import { deriveRevenueByClient } from './revenueByClient';
@@ -123,8 +125,15 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const lateFollowups = openFollowups.filter(item => isOverdue(item, today));
   const [pulse, pulseState] = useSiioData<FinancialPulse | null>(`/api/siio/financial-pulse${selectedPeriod ? `?period=${encodeURIComponent(selectedPeriod)}` : ''}`);
   const [commercial, commercialState] = useSiioData<CommercialSummary>('/api/siio/commercial-summary');
+  // Lo que tiene plazo sube a la franja de arriba; el bloque de licitaciones muestra el resto,
+  // para que un mismo hecho no aparezca dos veces en la misma pantalla.
+  const estaSemana = useMemo(() => deriveEstaSemana({ commercial, followups: followups.data, today }), [commercial, followups.data, today]);
+  const licitacionesRestantes = useMemo(() => (commercial ? sinLoUrgente(commercial) : null), [commercial]);
+  const licitacionesArriba = estaSemana.asuntos.some(item => item.tipo === 'licitacion');
+  const quedanLicitaciones = Boolean(licitacionesRestantes?.tenders.calendar.some(item => item.attention));
+
   // Each business reads apart: tenders (total contract value), private sales (monthly value), finance.
-  const tenderNotes = commercial ? tenderReadings(commercial) : [];
+  const tenderNotes = licitacionesRestantes ? tenderReadings(licitacionesRestantes) : [];
   const privateNotes = commercial ? privateReadings(commercial).filter(text => !/^(Ventas nuevas|El pipeline ponderado)/.test(text)) : [];
   const financeNotes = pulse ? pulseReadings(pulse).filter(text => !/provisión|^Enero cerró/.test(text)).slice(0, 2) : [];
   const alertBasis = (recommendation: { id: string; period?: string | null }) => recommendation.id === 'payroll-source-alert'
@@ -146,6 +155,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
 
+    <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
+
     <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} />
 
     <SiioTrendCharts pulse={pulse} summary={commercial} />
@@ -158,7 +169,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       <section className="siio-attention-section" aria-label="Licitaciones públicas">
         <h3>Licitaciones públicas</h3>
         {tenderNotes.length ? <div className="siio-pulse-readings"><ul>{tenderNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
-        {commercial ? <TenderAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
+        {licitacionesArriba ? <p className="siio-pulse-footnote">Las que cierran dentro de {estaSemana.ventanaDias} días o ya cerraron están arriba, en Decisiones con fecha.</p> : null}
+        {licitacionesRestantes && (quedanLicitaciones || !licitacionesArriba) ? <TenderAttentionTable summary={licitacionesRestantes} followups={attentionFollowups} today={today} /> : null}
       </section>
       <section className="siio-attention-section" aria-label="Comercial privado">
         <h3>Comercial privado</h3>
