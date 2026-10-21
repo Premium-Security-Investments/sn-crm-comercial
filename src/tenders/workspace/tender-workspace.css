@@ -76,6 +76,8 @@
 .tw-chip-falta,.tw-chip-item-bloqueado{background:#fee2e2;color:#991b1b}
 .tw-chip-por_confirmar,.tw-chip-item-pendiente{background:#fef3c7;color:#92400e}
 .tw-chip-cumple,.tw-chip-item-listo{background:#dcfce7;color:#166534}
+/* Lo declarado por la empresa, sin el soporte todavía: ni problema ni cerrado (Juan, 2026-10-21). */
+.tw-chip-declarado{background:#ecfccb;color:#3f6212}
 .tw-chip-item-en_progreso{background:#dbeafe;color:#1e40af}
 .tw-reject{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#dc2626;color:#fff}
 
