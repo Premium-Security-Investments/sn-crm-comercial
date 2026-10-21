@@ -34,6 +34,7 @@ export const RECOMMENDATIONS_POLICY = [
   'Escribes recomendaciones para los dueños y directores, que las leen en la Torre de Control. Español de Colombia, directo, sin jerga técnica.',
   'Usa SOLO los datos entregados. No inventes cifras, clientes, contratos ni causas. Cada recomendación cita en por_que las cifras exactas en que se apoya (en millones de pesos cuando sean dinero) y en fuentes los bloques de donde salen.',
   'Cruza la información: por ejemplo, márgenes del Pulso contra el ritmo comercial, o licitaciones próximas a cerrar contra la capacidad de operación. Prefiere recomendaciones accionables esta semana sobre observaciones generales.',
+  'Entrega como máximo TRES recomendaciones: las tres que de verdad cambian lo que hay que hacer esta semana. Escoger es parte del trabajo; una lista larga no se lee. Si solo hay dos que valgan la pena, entrega dos. Lo que quede por fuera, si falta un dato para evaluarlo, va en datos_faltantes.',
   'Separa siempre lo privado (area comercial: clientes privados del CRM) de lo público (area licitaciones). No mezcles sus cifras en una misma recomendación salvo en area transversal, diciendo cuál es cuál.',
   'Nunca nombres personas. En temas de personal o nómina habla de áreas o cargos, nunca de individuos. Los responsables sugeridos son áreas o cargos (por ejemplo: Gerencia, Contabilidad, Dirección comercial, Licitaciones, Operaciones).',
   'Si un dato tiene advertencias de calidad (meses que no cuadran, meses sin provisión, cifras aproximadas), dilo y no saques conclusiones fuertes de él.',
@@ -49,7 +50,7 @@ export const RECOMMENDATIONS_OUTPUT_SCHEMA = Object.freeze({
   properties: {
     resumen: text(600, 20),
     recomendaciones: {
-      type: 'array', minItems: 3, maxItems: 7,
+      type: 'array', minItems: 2, maxItems: 3,
       items: {
         type: 'object', additionalProperties: false,
         required: ['area', 'prioridad', 'titulo', 'recomendacion', 'por_que', 'fuentes', 'responsable_sugerido', 'plazo_dias'],

@@ -17,6 +17,7 @@ import { deriveRevenueByClient } from './revenueByClient';
 import { deriveHorasPorCliente } from './horasPorCliente';
 import { SiioRevenueByClient } from './SiioRevenueByClient';
 import { SiioHorasPorCliente } from './SiioHorasPorCliente';
+import { SiioLoQueFalta } from './SiioLoQueFalta';
 import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
 import { SiioRecommendations } from './SiioRecommendations';
 import type { SiioFinancialMetric } from '../siioExecutive';
@@ -166,17 +167,17 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     <Panel title="Requiere atención">
       {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
-      <section className="siio-attention-section" aria-label="Licitaciones públicas">
+      {licitacionesArriba || quedanLicitaciones ? <section className="siio-attention-section" aria-label="Licitaciones públicas">
         <h3>Licitaciones públicas</h3>
         {tenderNotes.length ? <div className="siio-pulse-readings"><ul>{tenderNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
         {licitacionesArriba ? <p className="siio-pulse-footnote">Las que cierran dentro de {estaSemana.ventanaDias} días o ya cerraron están arriba, en Decisiones con fecha.</p> : null}
-        {licitacionesRestantes && (quedanLicitaciones || !licitacionesArriba) ? <TenderAttentionTable summary={licitacionesRestantes} followups={attentionFollowups} today={today} /> : null}
-      </section>
-      <section className="siio-attention-section" aria-label="Comercial privado">
+        {licitacionesRestantes && quedanLicitaciones ? <TenderAttentionTable summary={licitacionesRestantes} followups={attentionFollowups} today={today} /> : null}
+      </section> : null}
+      {commercial?.pipeline.stale_large.length || privateNotes.length ? <section className="siio-attention-section" aria-label="Comercial privado">
         <h3>Comercial privado</h3>
         {privateNotes.length ? <div className="siio-pulse-readings"><ul>{privateNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
         {commercial ? <PrivateAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
-      </section>
+      </section> : null}
       <section className="siio-attention-section" aria-label="Finanzas">
         <h3>Finanzas y nómina</h3>
         {financeNotes.length ? <div className="siio-pulse-readings"><ul>{financeNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
@@ -218,12 +219,6 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       </div> : null}
       <SiioRevenueByClient summary={revenueByClient} period={selectedPeriod} />
       <SiioHorasPorCliente summary={horasPorCliente} />
-      <div className="siio-pulse-block">
-        <h4>En construcción</h4>
-        <div className="siio-commercial-pending-grid">
-          <div className="siio-commercial-pending"><strong>Comparación con presupuesto</strong><span>Pendiente: presupuesto mensual del año por rubro.</span></div>
-        </div>
-      </div>
     </DetailSection>
 
     <DetailSection title="Comercial privado · detalle" hint="Pipeline por etapa, indicadores en construcción y calidad del dato del CRM">
@@ -236,6 +231,10 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     <DetailSection title="Operaciones · detalle" hint="Cifras de SecurityOps por cliente y uso de la herramienta por regional">
       <SiioOperationsDetail summary={operations} />
+    </DetailSection>
+
+    <DetailSection title="Lo que falta para completar la Torre" hint="Lo que todavía no se puede mostrar y el dato que destraba cada cosa">
+      <SiioLoQueFalta summary={commercial} />
     </DetailSection>
 
     <DetailSection title="Nómina agregada" hint="Personas, devengado y neto por área, sin datos individuales">
