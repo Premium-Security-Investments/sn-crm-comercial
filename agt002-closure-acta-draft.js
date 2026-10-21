@@ -112,6 +112,48 @@ export const AGT002_CLOSURE_ACTA_OUTPUT_SCHEMA = Object.freeze({
 const CLOSURE_KINDS = new Set(['adjudicada', 'no_adjudicada', 'cerrada_no_go', 'archivada']);
 
 /**
+ * Análisis vigente de Vig-IA (pre_go_analysis.v2, INITIAL/REANALYSIS desde el 6-oct): hallazgos, requisitos que la
+ * empresa no cumple o tiene pendientes, el veredicto de participación y la recomendación, cada uno con el numeral que
+ * cita. Sin esto el acta de Cali (2026-10-21) se redactó sólo con la nota de cierre: "el contexto no trae el numeral".
+ */
+function preGoV2ContextEntries(result) {
+  if (!Array.isArray(result?.findings) && !Array.isArray(result?.requirements)) return [];
+  const claims = new Map((Array.isArray(result.claims) ? result.claims : []).filter(claim => claim?.claim_id).map(claim => [claim.claim_id, claim]));
+  const sourceOf = claimIds => {
+    for (const id of claimIds || []) {
+      const ref = (claims.get(id)?.source_refs || []).find(item => item?.locator);
+      if (ref) return clean(ref.locator, LIMITS.fuente);
+    }
+    return '';
+  };
+  const entries = [];
+  const participation = claims.get('CLM-PARTICIPACION');
+  if (participation?.display_text) {
+    entries.push({ label: 'Participación según el análisis', source_ref: sourceOf(['CLM-PARTICIPACION']),
+      text: clean([participation.display_text, participation.inference_basis].filter(Boolean).join(' '), LIMITS.context_entry), blocking: true });
+  }
+  if (result.recommendation?.label) {
+    entries.push({ label: 'Recomendación del análisis', source_ref: sourceOf(result.recommendation.basis_claim_ids),
+      text: clean(result.recommendation.label, LIMITS.context_entry), blocking: false });
+  }
+  for (const finding of Array.isArray(result.findings) ? result.findings : []) {
+    const text = clean(finding?.impact, LIMITS.context_entry);
+    if (!text) continue;
+    entries.push({ label: clean(finding.title, LIMITS.titulo) || 'hallazgo del análisis', source_ref: sourceOf(finding.claim_ids), text,
+      blocking: finding.blocker === true || finding.severity === 'CRITICAL' });
+  }
+  for (const requirement of Array.isArray(result.requirements) ? result.requirements : []) {
+    if (!['BLOCKER', 'PENDING'].includes(requirement?.company_evaluation)) continue;
+    const statement = claims.get(requirement.text_claim_id)?.display_text;
+    const text = clean([statement, requirement.company_evaluation === 'BLOCKER' ? 'La empresa no cumple.' : 'Pendiente de confirmar en la empresa.', requirement.required_action].filter(Boolean).join(' '), LIMITS.context_entry);
+    if (!text) continue;
+    entries.push({ label: clean(statement, LIMITS.titulo) || 'requisito del pliego', source_ref: sourceOf([requirement.text_claim_id, ...(requirement.evidence_claim_ids || [])]), text,
+      blocking: requirement.company_evaluation === 'BLOCKER' || requirement.blocker === true });
+  }
+  return entries;
+}
+
+/**
  * Contexto del acta a partir del análisis integral: las unidades que bloquean
  * van primero, porque son las que explican por qué no cumplíamos. Tolera formas
  * distintas del análisis: lo que no reconozca lo deja fuera en lugar de fallar,
@@ -121,7 +163,7 @@ export function closureActaContextFromAnalysis(result, { limit = MAX_ENTRIES.con
   const units = Array.isArray(result?.integral_analysis?.analysis_units) ? result.integral_analysis.analysis_units
     : Array.isArray(result?.analysis_units) ? result.analysis_units
     : [];
-  const entries = [];
+  const entries = preGoV2ContextEntries(result);
   for (const unit of units) {
     if (unit === null || typeof unit !== 'object' || Array.isArray(unit)) continue;
     const text = [
