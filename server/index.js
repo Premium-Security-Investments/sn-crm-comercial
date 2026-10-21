@@ -6161,7 +6161,18 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       company_profile: await getTenderCompanyProfile(database),
       refresh_token: refreshToken,
     });
-    res.status(201).json({ ...(await getTenderDocumentRecords(database, opportunityId)), upload_results: uploaded.map(({ name, status, error }) => ({ name, status, error })) });
+    // Lo nuevo se analiza solo, sobre el análisis vigente (Juan, 2026-10-20): se pide un reanálisis INCREMENTAL a nombre
+    // de quien cargó; el job del host lo lanza (o espera a que termine el análisis en curso). Nunca hace fallar la carga.
+    let analysisRequest = null;
+    if (uploaded.some(item => item.status === 'new' || item.status === 'updated')) {
+      try {
+        const requested = await requestAgt002ManualReanalysis(database, { opportunityId, requestedBy: currentProfile?.id || '', mode: 'incremental' });
+        analysisRequest = { requested: requested.requested, already_open: requested.alreadyOpen, state: requested.status?.state || null };
+      } catch (requestError) {
+        analysisRequest = { requested: false, reason: requestError?.reason || null, message: String(requestError?.message || 'No fue posible pedir el análisis.').slice(0, 300) };
+      }
+    }
+    res.status(201).json({ ...(await getTenderDocumentRecords(database, opportunityId)), upload_results: uploaded.map(({ name, status, error }) => ({ name, status, error })), analysis_request: analysisRequest });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

@@ -759,6 +759,9 @@ export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   analysis_attempt?: TenderAnalysisAttempt | null;
   reanalysis_job?: Agt002ReanalysisJob | null;
   decision_axis_surface_enabled?: boolean;
+  // Carga manual (2026-10-20): resultado por archivo y el análisis incremental pedido.
+  upload_results?: { name: string; status: 'new' | 'updated' | 'unchanged' | 'failed'; error: string | null }[];
+  analysis_request?: { requested: boolean; already_open?: boolean; state?: string | null; reason?: string | null; message?: string } | null;
   analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1' | null; fallback: boolean; state?: Agt002ReanalysisJob['status']; job_id?: string; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {

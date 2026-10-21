@@ -66,6 +66,46 @@ function omitProperties(definition, keys) {
   return next;
 }
 
+/**
+ * Reanálisis incremental (Juan, 2026-10-20): el análisis vigente guardado, devuelto a la forma que el modelo escribe
+ * (la de buildInitialSynthesisModelSchema), para que lo actualice con los documentos nuevos. Las fuentes vuelven a
+ * {document_id, locator}; las que citan documentos que ya no están en el paquete se quitan y se informan en
+ * `retired_document_ids`, para que el modelo las vuelva a sustentar o retire lo que dependía de ellas.
+ */
+export function agt002PriorAnalysisForModel(result, { documentIds, scope = 'A' } = {}) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw agt002InitialDiagnosticError('prior_analysis_unavailable');
+  const current = new Set(documentIds || []);
+  const retired = new Set();
+  const keys = scope === 'A_PLUS_B' ? INITIAL_MODEL_COMPANY_KEYS : INITIAL_MODEL_ANALYSIS_KEYS;
+  const prior = {};
+  for (const key of keys) {
+    if (key === 'claims') {
+      prior.claims = (Array.isArray(result.claims) ? result.claims : []).map(claim => {
+        const { created_by: _by, created_at: _at, decision_ref: _ref, ...rest } = claim || {};
+        return {
+          ...rest,
+          source_refs: (Array.isArray(claim?.source_refs) ? claim.source_refs : []).flatMap(ref => {
+            if (current.has(ref?.document_id)) return [{ document_id: ref.document_id, locator: ref.locator }];
+            if (ref?.document_id) retired.add(ref.document_id);
+            return [];
+          }),
+        };
+      });
+    } else if (key === 'process_deadlines') {
+      prior.process_deadlines = Array.isArray(result.meta?.process_deadlines) ? result.meta.process_deadlines : [];
+    } else if (key === 'company_fit') {
+      prior.company_fit = {
+        overall_label: result.company_fit?.overall_label,
+        requirement_ids: Array.isArray(result.company_fit?.requirement_ids) ? result.company_fit.requirement_ids : [],
+        limitation_claim_ids: Array.isArray(result.company_fit?.limitation_claim_ids) ? result.company_fit.limitation_claim_ids : [],
+      };
+    } else {
+      prior[key] = result[key];
+    }
+  }
+  return { prior, retiredDocumentIds: [...retired].sort() };
+}
+
 /** The schema the MODEL fills for the synthesis phase: analytical sections only, sources as {document_id, locator}. */
 export function buildInitialSynthesisModelSchema({ documentIds, scope = 'A' }) {
   if (!INITIAL_SCOPES.includes(scope)) throw agt002InitialDiagnosticError('scope_not_supported', { scope: String(scope) });

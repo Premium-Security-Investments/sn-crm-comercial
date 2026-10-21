@@ -959,6 +959,23 @@ function initialWorkspaceTab(): TenderWorkspaceTab {
   if (section === 'tender-analysis') return 'analisis';
   return 'principal';
 }
+// Qué pasó con cada archivo cargado a mano y con el análisis incremental (Juan, 2026-10-20: "no tengo idea si subieron").
+function tenderUploadSummary(data: TenderDocumentsPayload): string {
+  const results = data.upload_results || [];
+  if (!results.length) return 'Documentos guardados y texto extraído.';
+  const added = results.filter(item => item.status === 'new' || item.status === 'updated');
+  const same = results.filter(item => item.status === 'unchanged');
+  const failed = results.filter(item => item.status === 'failed');
+  const parts = [];
+  if (added.length) parts.push(`✓ ${added.length === 1 ? 'Se agregó al expediente' : `Se agregaron ${added.length} documentos al expediente`}: ${added.map(item => item.name).join(', ')}.`);
+  if (same.length) parts.push(`${same.length === 1 ? 'Ya estaba en el expediente' : `${same.length} ya estaban en el expediente`}: ${same.map(item => item.name).join(', ')}.`);
+  if (failed.length) parts.push(`✗ No se pudo cargar: ${failed.map(item => `${item.name} (${item.error || 'error'})`).join('; ')}.`);
+  const request = data.analysis_request;
+  if (request?.requested || request?.already_open) parts.push(`${VIGIA_VISIBLE_NAMES.tenders} va a revisar lo nuevo y actualizar su análisis en unos minutos; el resultado aparece en Decidir.`);
+  else if (request && request.message) parts.push(`El análisis de lo nuevo no se lanzó: ${request.message}`);
+  return parts.join(' ');
+}
+
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
   const [exitingTender, setExitingTender] = useState<'radar' | 'seguimiento' | null>(null);
@@ -1348,7 +1365,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         content_base64: await fileToBase64(file)
       })));
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText(tenderUploadSummary(data));
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };

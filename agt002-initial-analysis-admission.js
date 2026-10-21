@@ -30,11 +30,12 @@ async function rpc(database, name, args) {
 }
 
 export function computeAgt002InitialAnalysisAdmissionIdempotencyKey({
-  workflowInstanceId, authorizationId, packageVersionId, packageHash, policyVersion, sourceAnalysisRunId = null,
+  workflowInstanceId, authorizationId, packageVersionId, packageHash, policyVersion, sourceAnalysisRunId = null, incremental = false,
 }) {
-  // INITIAL keys stay byte-identical; a REANALYSIS key also binds the run it succeeds.
+  // INITIAL and REANALYSIS keys stay byte-identical; a REANALYSIS key also binds the run it succeeds, and an
+  // INCREMENTAL one has its own kind so it never collides with a full reanalysis.
   return hash({
-    kind: sourceAnalysisRunId ? 'agt002_initial_reanalysis_admission' : 'agt002_initial_analysis_admission',
+    kind: incremental ? 'agt002_incremental_reanalysis_admission' : sourceAnalysisRunId ? 'agt002_initial_reanalysis_admission' : 'agt002_initial_analysis_admission',
     workflowInstanceId,
     authorizationId,
     packageVersionId,
@@ -65,6 +66,7 @@ export async function admitAgt002InitialAnalysis(database, {
   attempt = null,
   analysisKind = 'INITIAL',
   sourceAnalysisRunId = null,
+  incremental = false,
   environment = {},
 } = {}) {
   requireNonBlank(opportunityId, 'La oportunidad');
@@ -79,6 +81,7 @@ export async function admitAgt002InitialAnalysis(database, {
   else if (sourceAnalysisRunId !== null && sourceAnalysisRunId !== undefined) {
     throw new Error('Un análisis INITIAL no tiene corrida fuente.');
   }
+  if (incremental && !reanalysis) throw new Error('El análisis incremental es un REANALYSIS.');
 
   const runtime = readAgt002InitialAnalysisRuntimeConfig(environment);
   if (!runtime.runtimeReady) {
@@ -143,6 +146,7 @@ export async function admitAgt002InitialAnalysis(database, {
     packageHash: frozen.package_hash,
     policyVersion,
     sourceAnalysisRunId: reanalysis ? sourceAnalysisRunId : null,
+    incremental,
   });
   const job = await admitAgt002InitialAnalysisJob(database, {
     authorization_id: authorizationId,
@@ -169,6 +173,7 @@ export async function admitAgt002InitialAnalysis(database, {
     },
     requested_by: actorProfileId,
     ...(reanalysis ? { source_analysis_run_id: sourceAnalysisRunId } : {}),
+    ...(incremental ? { incremental: true } : {}),
   }, environment);
 
   return Object.freeze({

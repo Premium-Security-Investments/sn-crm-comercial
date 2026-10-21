@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { resolveAgt002GovernedDocumentForExecution } from './agt002-governed-document-rehydration.js';
 import { validatePreGoAnalysisV2 } from './agt002-pre-go-analysis-v2.js';
 import {
-  agt002InitialDiagnosticError, buildInitialAggregate, buildInitialMemberOutputSchema, buildInitialSynthesisModelSchema,
+  agt002InitialDiagnosticError, agt002PriorAnalysisForModel, buildInitialAggregate, buildInitialMemberOutputSchema, buildInitialSynthesisModelSchema,
 } from './agt002-initial-analysis-aggregate-builder.js';
 import { loadAgt002CompanyProfileSnapshotForWorkflow } from './agt002-company-profile-snapshot.js';
 
@@ -52,6 +52,19 @@ async function defaultLoadPackage(database, packageVersionId) {
   return { version: versionResult.data, members: membersResult.data };
 }
 
+// Reanálisis incremental: el resultado de la corrida fuente, leído por el servidor (nunca viene del job ni del cliente).
+async function defaultLoadPriorAnalysis(database, { analysisRunId, opportunityId }) {
+  const { data, error } = await database
+    .from('psi_tender_analysis_runs')
+    .select('id,opportunity_id,status,result')
+    .eq('id', analysisRunId)
+    .maybeSingle();
+  if (error || !data || data.opportunity_id !== opportunityId || data.status !== 'completed' || !data.result) {
+    throw agt002InitialDiagnosticError('prior_analysis_unavailable');
+  }
+  return data.result;
+}
+
 // Official process data the CRM already holds (captured from SECOP by Radar). Supplementary: if it cannot be read the
 // synthesis proceeds without it rather than failing the analysis.
 async function defaultLoadOfficialContext(database, { tenderId }) {
@@ -75,6 +88,8 @@ async function defaultLoadOfficialContext(database, { tenderId }) {
 }
 
 const OFFICIAL_CONTEXT_POLICY = ' Datos oficiales del CRM (official_crm_data, capturados de SECOP): úselos para entidad, referencia, presupuesto, estado y fecha de cierre. Si ningún documento lo contradice, registre el cierre oficial como plazo SUBMISSION con certeza CONFIRMED, apoyado en una afirmación marked_inference cuya inference_basis diga "dato oficial del CRM (SECOP)"; si un documento lo contradice, regístrelo como contradicción. En cada pendiente (open_items) indique owner_role (área responsable: Licitaciones, Jurídico, Financiero, Operaciones o Comercial) y due_at cuando la fecha se pueda derivar del cronograma o del cierre.';
+// Reanálisis incremental (Juan, 2026-10-20): documentos cargados a mano sobre un análisis vigente.
+const INCREMENTAL_POLICY = 'MODO INCREMENTAL. prior_analysis es el análisis vigente de esta licitación, hecho con los documentos que ya estaban en el expediente. Las notas de lote (members) vienen SÓLO de los documentos nuevos que una persona cargó. Actualice prior_analysis con lo que aportan esos documentos nuevos y devuelva el análisis COMPLETO actualizado (todas las secciones, no sólo lo que cambió). Conserve lo que los documentos nuevos no tocan, con sus mismos identificadores (claim_id, requirement ids, finding ids), sus textos y sus fuentes. Cuando un documento nuevo confirme, aclare, modifique o contradiga algo, ajústelo, cítelo con su {document_id, locator} y explique en el hallazgo afectado qué cambió y por qué ("Con las respuestas a observaciones: ..."). Las afirmaciones cuyas fuentes estaban en retired_document_ids perdieron esas citas porque esos documentos salieron del expediente: vuelva a sustentarlas con documentos vigentes o retírelas junto con lo que dependía de ellas. Un documento de un tercero (por ejemplo, la carta de otro proponente) no es una regla del proceso: úselo como contexto y nunca como requisito. ';
 const MEMBER_POLICY = 'Analice únicamente la evidencia suministrada. Cada nota debe indicar el documento del que sale (document_id) y dónde lo encontró (locator). No invente datos que el documento no contenga; separe lo hallado de lo pendiente. Si el documento trae un cronograma (tabla de trámites con fechas), transcríbalo completo en una nota propia: una línea por fila con el trámite tal como está escrito, la fecha y la hora si la hay, sin resumir ni omitir filas aunque la fecha ya haya pasado. No decida GO/NO-GO ni ejecute acciones.';
 // Writing rules for what a person reads (owner review 2026-10-06): every note must stand on its own, without opening
 // the sources, and each topic is told once.
@@ -128,6 +143,7 @@ export function createAgt002InitialAnalysisRuntime({
   loadCompanyProfile = loadAgt002CompanyProfileSnapshotForWorkflow,
   memberCallMaxChars = Number(process.env.AGT002_INITIAL_ANALYSIS_MEMBER_CALL_MAX_CHARS) || 300_000,
   loadOfficialContext = defaultLoadOfficialContext,
+  loadPriorAnalysis = defaultLoadPriorAnalysis,
   executorVersion = process.env.AGT002_DEPLOYED_VERSION || 'agt002-initial-analysis-worker',
   now = () => new Date(),
 } = {}) {
@@ -194,6 +210,14 @@ export function createAgt002InitialAnalysisRuntime({
         outputSchema = buildInitialSynthesisModelSchema({ documentIds: pkg.members.map(member => member.document_version_id), scope: persistence.g1Scope });
         const officialContext = await loadOfficialContext(database, { opportunityId: job.opportunityId, tenderId: job.tenderId });
         if (officialContext) extraInput.official_crm_data = officialContext;
+        if (batch.mode === 'incremental') {
+          // Sólo la corrida que el servidor puso como fuente de este reanálisis (migración 139).
+          if (!batch.priorAnalysisRunId || batch.priorAnalysisRunId !== persistence.sourceAnalysisRunId) throw agt002InitialDiagnosticError('prior_analysis_mismatch');
+          const priorResult = await loadPriorAnalysis(database, { analysisRunId: batch.priorAnalysisRunId, opportunityId: job.opportunityId });
+          const { prior, retiredDocumentIds } = agt002PriorAnalysisForModel(priorResult, { documentIds: pkg.members.map(member => member.document_version_id), scope: persistence.g1Scope });
+          extraInput.prior_analysis = prior;
+          extraInput.retired_document_ids = retiredDocumentIds;
+        }
         extraInput.evidence_catalog = pkg.members.map(member => ({
           document_id: member.document_version_id,
           source_classification: member.source_classification,
@@ -250,7 +274,7 @@ export function createAgt002InitialAnalysisRuntime({
 
       const response = await bridgeClient.run({
         model: modelId,
-        policy: (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : ''),
+        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : ''),
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,

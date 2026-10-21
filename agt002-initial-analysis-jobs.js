@@ -37,11 +37,11 @@ function requireNonBlank(value, label) {
  * database constructs payload.persistence from the governed bindings; callers cannot supply a
  * different lineage envelope through payload. With `sourceAnalysisRunId` the job is a REANALYSIS
  * (migration 108): the successor of that run, which must be the opportunity's current canonical
- * analysis.
+ * analysis. With `incremental` it is the INCREMENTAL variant (migration 139).
  */
 export async function admitAgt002InitialAnalysisJob(database, {
   authorizationId, workflowInstanceId, opportunityId, tenderId, packageVersionId, packageHash,
-  g1Scope, policyVersion, idempotencyKey, payload, requestedBy, sourceAnalysisRunId = null,
+  g1Scope, policyVersion, idempotencyKey, payload, requestedBy, sourceAnalysisRunId = null, incremental = false,
 } = {}) {
   requireNonBlank(authorizationId, 'La autorización G1');
   requireNonBlank(workflowInstanceId, 'La instancia de flujo de trabajo');
@@ -66,9 +66,13 @@ export async function admitAgt002InitialAnalysisJob(database, {
   const reanalysis = sourceAnalysisRunId !== null && sourceAnalysisRunId !== undefined;
   if (reanalysis) requireNonBlank(sourceAnalysisRunId, 'La corrida fuente del reanálisis');
 
-  const data = await rpc(database, reanalysis
-    ? 'psi_admit_authorized_agt002_initial_reanalysis_job'
-    : 'psi_admit_authorized_agt002_initial_analysis_job', {
+  if (incremental && !reanalysis) throw new Error('El reanálisis incremental exige la corrida fuente.');
+  // Incremental (migration 139): same REANALYSIS succession, reading only the documents the source run did not read.
+  const data = await rpc(database, incremental
+    ? 'psi_admit_authorized_agt002_incremental_reanalysis_job'
+    : reanalysis
+      ? 'psi_admit_authorized_agt002_initial_reanalysis_job'
+      : 'psi_admit_authorized_agt002_initial_analysis_job', {
     p_authorization_id: authorizationId,
     p_workflow_instance_id: workflowInstanceId,
     p_opportunity_id: opportunityId,
