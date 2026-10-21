@@ -139,6 +139,7 @@ import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportuni
 import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
 import { readAgt002ManualReanalysisStatus, requestAgt002ManualReanalysis } from '../agt002-manual-reanalysis.js';
+import { listAgt002Clarifications, recordAgt002Clarification } from '../agt002-clarifications.js';
 import { readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
 import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId, withEsuAliadosPriority } from '../esu-direct-crawl.js';
@@ -465,6 +466,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/agt002-initial-analysis-report': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-manual-reanalysis': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'POST /api/agt002-manual-reanalysis': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
+  'GET /api/agt002-clarifications': ['tenders', ACTIONS.LICITACIONES_WORKBENCH_USE],
+  'POST /api/agt002-clarifications': ['tenders', ACTIONS.LICITACIONES_WORKBENCH_USE],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
@@ -6339,6 +6342,33 @@ app.post('/api/agt002-manual-reanalysis', async (req, res) => {
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
     res.set('Cache-Control', 'private, no-store');
     return res.json(await requestAgt002ManualReanalysis(database, { opportunityId, requestedBy: currentProfile?.id || '' }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Aclaraciones del encargado (Juan, 2026-10-21): quedan con autor y fecha y piden el reanálisis incremental.
+app.get('/api/agt002-clarifications', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ clarifications: await listAgt002Clarifications(database, opportunityId) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/agt002-clarifications', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    return res.status(201).json(await recordAgt002Clarification(database, { opportunityId, actorId: currentProfile?.id || '', body: req.body || {} }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

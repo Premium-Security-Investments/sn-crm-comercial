@@ -143,6 +143,14 @@ async function freshDb({ with108 = true } = {}) {
   if (with108) await pg.exec(migrationSource('109_agt002_radar_import_requests.sql'));
   if (with108) await pg.exec(migrationSource('138_agt002_manual_reanalysis_requests.sql'));
   if (with108) await pg.exec(migrationSource('139_agt002_incremental_reanalysis.sql'));
+  if (with108) {
+    // Las validaciones de la Mesa (045/140) no son el objeto de esta prueba: se simulan.
+    await pg.exec(`
+      create function public.psi_assert_agt002_workbench_actor(p_actor uuid, p_agent boolean) returns void language sql as $$ select $$;
+      create function public.psi_assert_agt002_workbench_open(p_opportunity_id uuid) returns uuid language sql as $$ select id from public.psi_public_tenders where converted_opportunity_id = p_opportunity_id limit 1 $$;
+    `);
+    await pg.exec(migrationSource('141_agt002_clarifications.sql'));
+  }
   return pg;
 }
 
@@ -398,6 +406,64 @@ test('incremental still requires the canonical source and is service_role only; 
     assert.equal(left, 0);
     const modeColumn = (await pg.query(`select count(*)::int as n from information_schema.columns where table_name = 'psi_agt002_manual_reanalysis_requests' and column_name = 'mode'`)).rows[0].n;
     assert.equal(modeColumn, 0, 'el rollback también quita el modo de la cola');
+  } finally {
+    await pg.close();
+  }
+});
+
+const clarify = (pg, content, target = {}) => callRpc(pg, 'psi_record_agt002_clarification', {
+  p_opportunity_id: O, p_actor_id: ACTOR, p_content: content,
+  p_target_kind: target.kind ?? null, p_target_id: target.id ?? null, p_target_label: target.label ?? null,
+});
+
+test('141: una aclaración sin documentos nuevos basta: sólo síntesis, con la aclaración fijada', async () => {
+  const pg = await freshDb();
+  try {
+    const initialRunId = await completedInitial(pg);
+    const sourcePackage = await sourcePackageOf(pg, initialRunId);
+    const row = await clarify(pg, 'En Cali somos agencia desde 2016, con Cámara de Comercio y resolución de SuperVigilancia.', { kind: 'requirement', id: 'REQ-DOM', label: 'Domicilio en Cali' });
+    assert.equal(row.target_kind, 'requirement');
+    const workflow = await incrementalWorkflow(pg, { label: 'aclara', sourcePackageVersionId: sourcePackage, extra: [] });
+    const admitted = await admitIncremental(pg, workflow, initialRunId, 'admit-aclara');
+    assert.equal(admitted.status, 'admitted');
+    assert.equal(admitted.payload.batches.length, 1, 'sin documentos nuevos no hay lotes de lectura');
+    const [synthesis] = admitted.payload.batches;
+    assert.equal(synthesis.phase, 'synthesis');
+    assert.equal(synthesis.batchIndex, 0);
+    assert.deepEqual(synthesis.sourceBatchIndexes, []);
+    assert.deepEqual(synthesis.expectedMemberIds, []);
+    assert.deepEqual(synthesis.clarificationIds, [row.id]);
+    assert.equal(synthesis.requestHash, hash(`${workflow.packageHash}:incremental:${initialRunId}:${JSON.stringify([row.id]).replace(',', ', ')}:synthesis:0`));
+  } finally {
+    await pg.close();
+  }
+});
+
+test('141: las aclaraciones anteriores al análisis vigente no cuentan; se agregan y nunca se editan', async () => {
+  const pg = await freshDb();
+  try {
+    await clarify(pg, 'Aclaración vieja.');
+    await pg.query(`update public.psi_agt002_clarifications set content = content`).then(() => assert.fail('no debe editarse'), error => assert.match(error.message, /no se editan ni se borran/));
+    const initialRunId = await completedInitial(pg);
+    const sourcePackage = await sourcePackageOf(pg, initialRunId);
+    const workflow = await incrementalWorkflow(pg, { label: 'vieja', sourcePackageVersionId: sourcePackage, extra: [] });
+    await assert.rejects(admitIncremental(pg, workflow, initialRunId, 'admit-vieja'), /No hay documentos nuevos ni aclaraciones nuevas/);
+    await assert.rejects(clarify(pg, '   '));
+  } finally {
+    await pg.close();
+  }
+});
+
+test('141: el rollback devuelve la admisión de la 139 y quita las aclaraciones', async () => {
+  const pg = await freshDb();
+  try {
+    await pg.exec(rollbackSource('141_agt002_clarifications_rollback.sql'));
+    const left = (await pg.query(`select to_regclass('public.psi_agt002_clarifications') as t`)).rows[0].t;
+    assert.equal(left, null);
+    const initialRunId = await completedInitial(pg);
+    const sourcePackage = await sourcePackageOf(pg, initialRunId);
+    const workflow = await incrementalWorkflow(pg, { label: 'rb', sourcePackageVersionId: sourcePackage, extra: [] });
+    await assert.rejects(admitIncremental(pg, workflow, initialRunId, 'admit-rb'), /No hay documentos nuevos frente al análisis vigente/);
   } finally {
     await pg.close();
   }

@@ -11,6 +11,7 @@ import { groupDossierChecklist, parseDossierItemTitle } from '../dossierChecklis
 import { TenderDossierArtifacts } from '../components/TenderDossierArtifacts';
 import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderOfferStatus, TenderRequest } from '../types';
 import { TenderVigiaChannel } from './TenderVigiaChannel';
+import { TenderClarifyInline } from './TenderClarify';
 import { OFFER_STATUS_LABEL, POST_GO_STATUSES, countdownLabel, daysUntil, formatDay, formatDeadline, todayInBogota } from './tenderWorkspaceFormat';
 
 export type TenderWorkspaceTab = 'principal' | 'analisis' | 'documentos' | 'historial';
@@ -119,7 +120,9 @@ function RequirementAnalysisDetail({ row, compact = false }: { row: RequirementR
   </div>;
 }
 
-function RequirementBrowser({ rows, selectedKey, onSelect }: { rows: RequirementRow[]; selectedKey: string | null; onSelect: (key: string) => void }) {
+type ClarifyContext = { opportunityId: string; request: TenderRequest };
+
+function RequirementBrowser({ rows, selectedKey, onSelect, clarify }: { rows: RequirementRow[]; selectedKey: string | null; onSelect: (key: string) => void; clarify?: ClarifyContext }) {
   const groups = groupRowsByCategory(rows);
   const selected = rows.find(row => row.key === selectedKey) || rows[0] || null;
   const detailRef = useRef<HTMLDivElement | null>(null);
@@ -141,6 +144,7 @@ function RequirementBrowser({ rows, selectedKey, onSelect }: { rows: Requirement
         <h3>{selected.title}</h3>
         <p className="tw-browser-detail-meta"><StatusChip status={selected.status} />{selected.rejection && <span className="tw-reject">Causa rechazo</span>}{selected.severityLabel && <span className="tw-muted">Riesgo {selected.severityLabel.toLowerCase()}</span>}</p>
         <RequirementAnalysisDetail row={selected} />
+        {clarify && <TenderClarifyInline key={`clarify-${selected.key}`} opportunityId={clarify.opportunityId} request={clarify.request} target={{ kind: 'requirement', id: selected.key, label: selected.title }} />}
       </article> : <p className="tw-muted">El análisis no trae requisitos.</p>}
     </div>
   </div>;
@@ -203,7 +207,7 @@ export function TenderScheduleCard({ report, compact = false }: { report: Agt002
 // --- Antes del GO: ¿nos presentamos? ------------------------------------------------------------------
 
 /** Antes del GO, con el registro de la decisión; después del GO, el mismo análisis para consulta (sin decisionPanel). */
-export function TenderDecideView({ report, decisionPanel, reanalysis, channel }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode; reanalysis?: ReactNode; channel?: ReactNode }) {
+export function TenderDecideView({ report, decisionPanel, reanalysis, channel, clarify }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode; reanalysis?: ReactNode; channel?: ReactNode; clarify?: ClarifyContext }) {
   const rows = useMemo(() => buildRequirementRows(report), [report]);
   const decisive = useMemo(() => decisiveRequirementRows(rows), [rows]);
   const others = useMemo(() => otherRiskNotes(report, rows), [report, rows]);
@@ -245,13 +249,14 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel }:
 
     <section className="tw-card" ref={browserRef}>
       <small>Requisitos del pliego</small>
-      <RequirementBrowser rows={rows} selectedKey={selectedKey} onSelect={setSelectedKey} />
+      <RequirementBrowser rows={rows} selectedKey={selectedKey} onSelect={setSelectedKey} clarify={clarify} />
     </section>
 
     {others.length > 0 && <section className="tw-card tw-secondary">
 
       {others.length > 0 && <details><summary>Otros riesgos que señala el análisis ({others.length})</summary>
-        {others.map(note => <div className="tw-note" key={note.title}><strong>{note.severityLabel} · {note.title}</strong>{note.impact && <p>{note.impact}</p>}</div>)}
+        {others.map(note => <div className="tw-note" key={note.title}><strong>{note.severityLabel} · {note.title}</strong>{note.impact && <p>{note.impact}</p>}
+          {clarify && note.id && <TenderClarifyInline opportunityId={clarify.opportunityId} request={clarify.request} target={{ kind: 'finding', id: note.id, label: note.title }} />}</div>)}
       </details>}
     </section>}
     <p className="tw-footnote">Análisis hecho con inteligencia artificial sobre los documentos vigentes: orienta, no decide. Verifique contra el pliego original.</p>

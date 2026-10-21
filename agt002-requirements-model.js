@@ -152,9 +152,9 @@ export function otherRiskNotes(report, rows) {
   const findings = (report.findings || []).filter(finding => !linked.has(finding.id)
     && finding.severity !== 'INFO')
     .sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9))
-    .map(finding => ({ title: cleanRequirementText(finding.title), impact: cleanRequirementText(finding.impact), severity: finding.severity, severityLabel: SEVERITY_LABEL[finding.severity] || '' }));
+    .map(finding => ({ id: finding.id, title: cleanRequirementText(finding.title), impact: cleanRequirementText(finding.impact), severity: finding.severity, severityLabel: SEVERITY_LABEL[finding.severity] || '' }));
   const contradictions = (report.contradictions || []).filter(item => item.status !== 'RESOLVED')
-    .map(item => ({ title: cleanRequirementText(item.topic), impact: cleanRequirementText(item.requiredAction || ''), severity: 'MEDIUM', severityLabel: 'Por aclarar' }));
+    .map(item => ({ id: item.id, title: cleanRequirementText(item.topic), impact: cleanRequirementText(item.requiredAction || ''), severity: 'MEDIUM', severityLabel: 'Por aclarar' }));
   // Una contradicción suele repetir un hallazgo con otras palabras: se queda la primera.
   const kept = [];
   for (const note of [...findings, ...contradictions]) if (!kept.some(other => similar(other.title, note.title))) kept.push(note);

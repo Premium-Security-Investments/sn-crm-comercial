@@ -32,7 +32,7 @@ const REASON_TEXT = Object.freeze({
   solicitud_abierta: 'Ya se pidió un análisis nuevo; arranca en unos minutos.',
   limite_por_proceso: `Ya se hicieron ${AGT002_MANUAL_REANALYSIS_LIMITS.perProcessPerDay} análisis de este proceso hoy.`,
   limite_total: `Ya se hicieron ${AGT002_MANUAL_REANALYSIS_LIMITS.totalPerDay} análisis manuales hoy en total.`,
-  sin_documentos_nuevos: 'No hay documentos nuevos frente al análisis vigente.',
+  sin_documentos_nuevos: 'No hay documentos ni aclaraciones nuevas frente al análisis vigente.',
   sin_documentos_legibles: 'No hay documentos legibles para analizar.',
   analisis_apagado: 'El análisis automático está apagado en el servidor.',
 });

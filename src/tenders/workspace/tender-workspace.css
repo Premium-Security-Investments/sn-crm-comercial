@@ -163,3 +163,11 @@
 .tw-reanalysis-changes summary{cursor:pointer;font-weight:600}
 .tw-reanalysis-changes ul{margin:4px 0 8px;padding-left:18px}
 .tw-reanalysis-changes p{margin:6px 0 2px}
+/* Aclaraciones (2026-10-21) */
+.tw-clarify{margin-top:8px;display:grid;gap:6px}
+.tw-clarify-open{justify-self:start}
+.tw-clarify-form label{display:grid;gap:4px;font-size:13px}
+.tw-clarify-form textarea{min-height:80px}
+.tw-msg.is-clarification{border-left:3px solid #d97706;background:#fffbeb}
+.tw-channel-mode{display:flex;gap:6px;flex-wrap:wrap}
+.tw-channel-mode button[aria-pressed="true"]{background:#1d4ed8;color:#fff}

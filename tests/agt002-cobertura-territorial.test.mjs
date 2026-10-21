@@ -91,7 +91,7 @@ test('Política del análisis: veredicto de participación sólo cuando hay perf
   assert.match(runtime, /claim_id CLM-PARTICIPACION/);
   assert.match(runtime, /company_profile\.sites/);
   assert.match(runtime, /company_profile\.license_scope/);
-  assert.match(runtime, /policy: \(batch\.mode === 'incremental' \? INCREMENTAL_POLICY : ''\) \+ \(company \? SYNTHESIS_COMPANY_POLICY \+ PARTICIPATION_POLICY : SYNTHESIS_POLICY\) \+ WRITING_POLICY \+ DEADLINES_POLICY \+/);
+  assert.match(runtime, /policy: \(batch\.mode === 'incremental' \? INCREMENTAL_POLICY \+ \(extraInput\.human_clarifications \? CLARIFICATIONS_POLICY : ''\) : ''\) \+ \(company \? SYNTHESIS_COMPANY_POLICY \+ PARTICIPATION_POLICY : SYNTHESIS_POLICY\) \+ WRITING_POLICY \+ DEADLINES_POLICY \+/);
   for (const phrase of AGT002_PARTICIPATION_VERDICTS) assert.ok(runtime.includes(`"${phrase}"`), `la política nombra "${phrase}"`);
 });
 

@@ -44,5 +44,6 @@ test('después del GO el análisis sigue visible en su propia pestaña, sin el r
   assert.match(workspace, /\.\.\.\(moment === 'preparar' \? \[\{ id: 'analisis' as const, label: 'Análisis' \}\] : \[\]\)/);
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
   // Con "Volver a analizar" (2026-10-20), pero nunca con el registro de la decisión.
-  assert.match(main, /\{moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report=\{tenderInitialReport\} reanalysis=\{reanalysis\} \/><\/div>\}/);
+  assert.match(main, /\{moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report=\{tenderInitialReport\} reanalysis=\{reanalysis\} clarify=\{[^}]*\}[^/]*\/><\/div>\}/);
+  assert.doesNotMatch(main.slice(main.indexOf("moment === 'preparar' && <div className=\"tw-panel tw-panel-analisis\">")).split('\n')[0], /decisionPanel/);
 });

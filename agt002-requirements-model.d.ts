@@ -1,7 +1,7 @@
 import type { Agt002InitialReport } from './src/tenders/agt002InitialReportProjection';
 
 export type RequirementStatus = 'falta' | 'por_confirmar' | 'cumple' | 'no_aplica';
-export type RequirementNote = { title: string; impact: string; severity: string; severityLabel: string };
+export type RequirementNote = { id?: string; title: string; impact: string; severity: string; severityLabel: string };
 export type RequirementRow = {
   key: string;
   requirementIds: string[];
