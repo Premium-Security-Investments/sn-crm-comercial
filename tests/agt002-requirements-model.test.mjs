@@ -3,6 +3,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import {
   buildRequirementRows, decisiveRequirementRows, otherRiskNotes, requirementSeedItems, requirementTargetDate, REQUIREMENT_ITEM_KEY_PREFIX,
+  REQUIREMENT_STATUS_LABEL,
 } from '../agt002-requirements-model.js';
 
 const claim = (id, text, locator = 'Numeral 1') => ({ id, type: 'cited_fact', text, materiality: 'MATERIAL', evidenceStatus: 'SUPPORTED', inferenceBasis: null, sources: [{ documentId: 'd1', documentName: 'pliego.pdf', locator }] });
@@ -38,9 +39,38 @@ test('una fila por texto exigido: los puntos sobre el mismo requisito no se repi
   assert.equal(rows.length, 3);
   const rup = rows.find(row => row.key === 'CLM-RUP');
   assert.deepEqual(rup.requirementIds, ['REQ-RUP', 'REQ-RUP-2']);
-  assert.equal(rup.status, 'por_confirmar');
+  assert.equal(rup.status, 'declarado', 'la empresa dice tenerlo y falta el soporte: no es lo mismo que no saber');
   assert.equal(rup.title, 'RUP vigente y en firme');
   assert.deepEqual(rup.actions, ['Pedir un RUP nuevo.'], 'lo verificado no genera acción');
+});
+
+test('estado: lo que la empresa declara se separa de lo que no se sabe', () => {
+  const rows = buildRequirementRows(report);
+  assert.equal(rows.find(row => row.key === 'CLM-RUP').status, 'declarado', 'AVAILABLE = cumple, falta el soporte');
+  assert.equal(rows.find(row => row.key === 'CLM-GAR').status, 'por_confirmar', 'PENDING = no se sabe');
+  assert.equal(REQUIREMENT_STATUS_LABEL.declarado, 'Cumple, falta el soporte');
+});
+
+// Caso real (ESU 2026-5, Juan 2026-10-21): "el hecho de que solo se puedan presentar personas jurídicas no
+// es una causal de rechazo debido a que Seguridad Nacional es una persona jurídica". El pliego habla de
+// cualquier oferente; la marca es sobre nosotros.
+test('lo que el pliego rechaza de otros no se marca como causa de rechazo nuestra', () => {
+  const base = {
+    ...report,
+    claims: [claim('CLM-NO-UT', 'Solo pueden presentarse personas jurídicas. El pliego no admite uniones temporales, y la oferta conjunta es causal de rechazo.')],
+    requirements: [{ id: 'REQ-NO-UT', category: 'LEGAL', textClaimId: 'CLM-NO-UT', applicability: 'APPLICABLE', companyEvaluation: 'AVAILABLE', blocker: false, requiredAction: 'Confirmar que se presenta sola.', evidenceClaimIds: [] }],
+    findings: [], openItems: [], contradictions: [],
+  };
+  const declarado = buildRequirementRows(base)[0];
+  assert.equal(declarado.status, 'declarado');
+  assert.equal(declarado.rejection, false, 'nos presentamos solos: ese rechazo no nos aplica');
+  assert.deepEqual(decisiveRequirementRows(buildRequirementRows(base)), [], 'y no entra en lo que puede tumbar la oferta');
+  // Mientras siga abierto, la advertencia del pliego sí vale.
+  const abierto = buildRequirementRows({ ...base, requirements: [{ ...base.requirements[0], companyEvaluation: 'PENDING' }] })[0];
+  assert.equal(abierto.rejection, true);
+  // Y un bloqueo explícito del análisis manda siempre, aunque la empresa diga que lo tiene.
+  const bloqueado = buildRequirementRows({ ...base, requirements: [{ ...base.requirements[0], blocker: true }] })[0];
+  assert.equal(bloqueado.rejection, true, 'el bloqueo que marca el análisis no se descarta por el estado');
 });
 
 test('causa rechazo sale del texto del pliego aunque el análisis no marque blocker', () => {
