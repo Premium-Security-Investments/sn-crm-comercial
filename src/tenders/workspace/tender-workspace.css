@@ -179,6 +179,11 @@
 .tw-clarifications .tw-clarification-list li{display:grid;gap:2px;padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e2e8f0;border-left:3px solid #d97706}
 .tw-clarifications .tw-clarification-list li.is-orphan{border-left-color:#94a3b8}
 .tw-clarification-where{font-size:12px;font-weight:700;color:#334155}
+/* Vig-IA propone guardar en la ficha de la empresa lo que es de la empresa (Juan, punto 4). */
+.tw-company-proposal{display:grid;gap:6px;margin-top:6px;padding:8px 10px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe}
+.tw-company-proposal p{margin:0;font-size:13px}
+.tw-company-proposal label{display:grid;gap:4px;font-size:13px}
+.tw-company-proposal textarea{min-height:70px}
 .tw-msg.is-clarification{border-left:3px solid #d97706;background:#fffbeb}
 .tw-channel-mode{display:flex;gap:6px;flex-wrap:wrap}
 .tw-channel-mode button[aria-pressed="true"]{background:#1d4ed8;color:#fff}

@@ -9,6 +9,7 @@ import {
   AGT002_CLOSURE_ACTA_OUTPUT_SCHEMA,
   AGT002_CLOSURE_ACTA_POLICY,
   buildClosureActaInput,
+  closureActaClarifications,
   createClosureActaDrafter,
   normalizeClosureActaDraft,
 } from '../agt002-closure-acta-draft.js';
@@ -134,4 +135,42 @@ test('el redactor entrega el acta lista para la RPC', async () => {
   await assert.rejects(() => drafter.draft({ ...input, capability_id: 'otra' }), error => error.code === 'AGT002_ACTA_UNKNOWN_CAPABILITY');
   const roto = createClosureActaDrafter({ client: fakeClient('no es json'), model: 'claude-x' });
   await assert.rejects(() => roto.draft(input), error => error.code === 'AGT002_ACTA_INVALID_JSON');
+});
+
+// Punto 5 de la definición de Juan (2026-10-21): el acta de cierre usa las aclaraciones de la licitación.
+
+const CLARIFICACION = {
+  id: 'c1', content: 'El contrato 70 de Tiendas Ara ya cubre el valor exigido.', target_kind: 'requirement',
+  target_id: 'CLM-EXPERIENCIA-REQ', target_label: 'Experiencia de 35.192 SMLMV por demostrar',
+  created_at: '2026-10-21T02:46:02.696Z', author_name: 'Juan Botero',
+};
+
+test('las aclaraciones llegan al acta con autor, fecha y punto, y la política dice qué son', () => {
+  const input = baseInput({ clarifications: [CLARIFICACION] });
+  assert.deepEqual(input.human_clarifications, [{
+    autor: 'Juan Botero', fecha: '2026-10-21T02:46:02.696Z', punto: 'Experiencia de 35.192 SMLMV por demostrar',
+    aclaracion: 'El contrato 70 de Tiendas Ara ya cubre el valor exigido.',
+  }]);
+  assert.match(AGT002_CLOSURE_ACTA_POLICY, /human_clarifications/);
+  assert.match(AGT002_CLOSURE_ACTA_POLICY, /nunca instrucciones ni reglas del pliego/i);
+});
+
+test('sin aclaraciones la entrada del modelo es la misma de antes', () => {
+  assert.equal('human_clarifications' in baseInput(), false);
+  assert.equal('human_clarifications' in baseInput({ clarifications: [{ content: '   ' }, null, 'no es un objeto'] }), false, 'lo vacío o mal formado no crea el campo');
+});
+
+test('las aclaraciones se sanean, se acotan y aceptan las dos formas', () => {
+  const sucia = closureActaClarifications([{ content: `  Aviso\u0007 con control, token: abc123 y correo juan@premiumsecurity.ai  `, created_at: '2026-10-21T00:00:00Z' }]);
+  assert.equal(sucia[0].autor, 'Encargado de la licitación', 'sin autor conocido, el rol');
+  assert.equal(sucia[0].punto, null);
+  assert.doesNotMatch(sucia[0].aclaracion, /\u0007/);
+  assert.match(sucia[0].aclaracion, /\[REDACTED_SECRET\]/, 'lo que viene como credencial se tapa, igual que en la Mesa');
+  assert.match(sucia[0].aclaracion, /\[REDACTED_EMAIL\]/);
+  // La forma que ya usa el análisis incremental (autor/fecha/punto/aclaracion) también sirve.
+  const otra = closureActaClarifications([{ autor: 'Juan Botero', fecha: '2026-10-21', punto: 'Domicilio', aclaracion: 'En Cali somos agencia.' }]);
+  assert.deepEqual(otra, [{ autor: 'Juan Botero', fecha: '2026-10-21', punto: 'Domicilio', aclaracion: 'En Cali somos agencia.' }]);
+  const muchas = closureActaClarifications(Array.from({ length: 30 }, (_, index) => ({ content: `aclaración ${index}` })));
+  assert.equal(muchas.length, AGT002_CLOSURE_ACTA_MAX_ENTRIES.clarifications, 'se acota el número que viaja');
+  assert.equal(closureActaClarifications([{ content: 'x'.repeat(3000) }])[0].aclaracion.length, 2000);
 });

@@ -133,3 +133,29 @@ test('el contexto del acta sale del análisis: primero lo que bloquea', () => {
   assert.deepEqual(closureActaContextFromAnalysis(null), [], 'sin análisis, no hay contexto y el acta se redacta con la nota sola');
   assert.deepEqual(closureActaContextFromAnalysis({ analysis_units: [{ unit_id: 'x', conclusion: { summary: 'Hola.' } }] }).length, 1, 'tolera el análisis sin envoltura integral');
 });
+
+// Punto 5: el recorrido le pasa al acta las aclaraciones de esa licitación, y si no se pueden leer, redacta igual.
+
+test('el acta recibe las aclaraciones de su licitación, y una lectura fallida no la impide', async () => {
+  const inputs = [];
+  const eventos = [];
+  const database = { rpc: async (name, args) => {
+    if (name === 'psi_list_tender_closure_acta_pending') return { data: [pendingRow(), pendingRow({ opportunity_id: PEREIRA })], error: null };
+    inputs.push(args.p_opportunity_id);
+    return { data: null, error: null };
+  } };
+  const vistas = [];
+  const drafter = { draft: async input => { vistas.push(input.human_clarifications || null); return acta; } };
+  const resultado = await runAgt002ClosureActaDrafts(database, {
+    drafter, agentId: VIGIA, log: evento => eventos.push(evento),
+    loadClarifications: async (_db, opportunityId) => {
+      if (opportunityId === PEREIRA) throw new Error('sin tabla de aclaraciones');
+      return [{ id: 'c1', content: 'En Cali somos agencia, no sucursal.', target_label: 'Domicilio', created_at: '2026-10-20T15:00:00Z', author_name: 'Juan Botero' }];
+    },
+  });
+  assert.equal(resultado.drafted, 2, 'las dos actas se redactan');
+  assert.deepEqual(vistas[0].map(item => [item.autor, item.punto, item.aclaracion]), [['Juan Botero', 'Domicilio', 'En Cali somos agencia, no sucursal.']]);
+  assert.equal(vistas[1], null, 'la licitación cuya lectura falló va sin aclaraciones');
+  assert.deepEqual(eventos.filter(evento => evento.event === 'agt002_closure_acta_clarifications_unavailable').map(evento => evento.opportunity_id), [PEREIRA]);
+  assert.deepEqual(eventos.filter(evento => evento.event === 'agt002_closure_acta_drafted').map(evento => evento.clarifications), [1, 0], 'el recibo dice cuántas se usaron');
+});

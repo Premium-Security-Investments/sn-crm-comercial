@@ -12,7 +12,7 @@ import { groupDossierChecklist, parseDossierItemTitle } from '../dossierChecklis
 import { TenderDossierArtifacts } from '../components/TenderDossierArtifacts';
 import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderOfferStatus, TenderRequest } from '../types';
 import { TenderVigiaChannel } from './TenderVigiaChannel';
-import { TenderClarificationNotes, TenderClarificationsCard, TenderClarifyInline, useTenderClarifications, type TenderClarification, type TenderClarificationPlacement } from './TenderClarify';
+import { TenderClarificationNotes, TenderClarificationsCard, TenderClarifyInline, TenderCompanyClarificationProposal, useTenderClarifications, type TenderClarification, type TenderClarificationPlacement } from './TenderClarify';
 import { OFFER_STATUS_LABEL, POST_GO_STATUSES, countdownLabel, daysUntil, formatDay, formatDeadline, todayInBogota } from './tenderWorkspaceFormat';
 
 export type TenderWorkspaceTab = 'principal' | 'analisis' | 'documentos' | 'historial';
@@ -121,7 +121,7 @@ function RequirementAnalysisDetail({ row, compact = false }: { row: RequirementR
   </div>;
 }
 
-type ClarifyContext = { opportunityId: string; request: TenderRequest };
+type ClarifyContext = { opportunityId: string; request: TenderRequest; canSaveToCompany?: boolean; tenderLabel?: string };
 
 function RequirementBrowser({ rows, selectedKey, onSelect, clarify, clarificationsByRow, onClarified }: {
   rows: RequirementRow[]; selectedKey: string | null; onSelect: (key: string) => void; clarify?: ClarifyContext;
@@ -258,7 +258,10 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel, c
 
     {decisionPanel}
 
-    <TenderClarificationsCard listed={listedClarifications} onSelectRequirement={showRequirement} />
+    <TenderClarificationsCard listed={listedClarifications} onSelectRequirement={showRequirement}
+      proposal={clarify?.canSaveToCompany
+        ? clarification => <TenderCompanyClarificationProposal clarification={clarification} opportunityId={clarify.opportunityId} request={clarify.request} tenderLabel={clarify.tenderLabel} />
+        : undefined} />
 
     <section className="tw-card" ref={browserRef}>
       <small>Requisitos del pliego</small>
