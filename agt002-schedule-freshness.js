@@ -13,6 +13,10 @@
 
 const ENTITY_PUBLICATION_KINDS = new Set(['PUBLICATION', 'OBSERVATION_RESPONSES', 'ADDENDA', 'EVALUATION_REPORT', 'AWARD', 'RISK_HEARING']);
 const DEFINITIVE_PLIEGO = /pliego de condiciones definitivo|pliego definitivo|acto administrativo de apertura/i;
+// Un documento que cargamos nosotros no es una publicación de la entidad. La primera corrida en producción
+// (2026-10-22T00:00Z) lo mostró: las seis cartas de observaciones que cargó Juan en la Fiscalía taparon los
+// avisos del pliego definitivo del 16-oct, porque eran posteriores a esa fecha.
+const MANUAL_SOURCE = /manual|legacy|carga/i;
 const DEFAULT_RADAR_STALE_HOURS = 48;
 const DEFAULT_CLOSING_HORIZON_DAYS = 7;
 const DAY_MS = 86_400_000;
@@ -26,6 +30,13 @@ const ms = value => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 const squash = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+
+/** ¿El documento entró por el portal oficial (SECOP II, ESU) o lo cargamos nosotros? */
+export function agt002IsOfficialDocumentSource(source) {
+  const text = squash(source);
+  if (!text) return false;
+  return !MANUAL_SOURCE.test(text);
+}
 
 /** Fecha en palabras para la línea que lee una persona, en hora de Bogotá. */
 export function agt002FreshnessDay(value) {
@@ -131,10 +142,12 @@ export async function runAgt002ScheduleFreshnessReview(database, {
         .select('id,result').eq('opportunity_id', opportunityId).eq('canonical', true).limit(1);
       const deadlines = runs?.[0]?.result?.meta?.process_deadlines;
       if (!Array.isArray(deadlines) || !deadlines.length) { events.push({ event: 'agt002_schedule_freshness_no_schedule', opportunityId }); continue; }
+      // Sólo cuentan los documentos que publicó la entidad: una carga nuestra no rompe el silencio.
       const { data: documents } = await database.from('psi_tender_document_versions')
-        .select('created_at').eq('opportunity_id', opportunityId).order('created_at', { ascending: false }).limit(1);
+        .select('created_at,source').eq('opportunity_id', opportunityId).order('created_at', { ascending: false }).limit(50);
+      const lastOfficial = (documents || []).find(document => agt002IsOfficialDocumentSource(document?.source));
       const notices = agt002ScheduleFreshnessNotices({
-        deadlines, tender, lastDocumentAt: documents?.[0]?.created_at || null, now,
+        deadlines, tender, lastDocumentAt: lastOfficial?.created_at || null, now,
       });
       for (const notice of notices) {
         if (appendLine) await appendLine(database, opportunityId, notice.text);
