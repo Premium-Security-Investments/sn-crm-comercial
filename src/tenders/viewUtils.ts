@@ -1,4 +1,4 @@
-import { isOpportunityPrimaryFilter, matchesOpportunityPrimaryFilter, type TenderOpportunityPrimaryFilter } from './opportunityStage';
+import { classifyOpportunityStage, isOpportunityPrimaryFilter, matchesOpportunityPrimaryFilter, type TenderOpportunityPrimaryFilter } from './opportunityStage';
 import type { TenderModuleView, TenderOpportunityFilter, TenderOpportunitySummary } from './types';
 
 const tenderOpportunityFilters: readonly TenderOpportunityFilter[] = ['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed', 'archivadas'];
@@ -48,10 +48,26 @@ export async function reloadCurrentDossierPage<T>(page: number, limit: number, l
   return loadPage(dossierPageQuery(page, limit));
 }
 
-export function sortTenderOpportunitySummaries<T extends { expected_close_date?: string | null; last_updated_at?: string | null; opportunity_id: string }>(rows: T[]): T[] {
+// Punto (3) del contrato del 2026-09-29: en "Todas" la lista se lee en bloques. Lo que espera decisión va
+// primero, después lo que está en curso y al final lo cerrado. Hasta ahora el bloque no contaba para nada y
+// sólo mandaba la fecha, así que una licitación ya cerrada podía quedar encima de una que esperaba decisión.
+// Dentro de cada bloque no cambia nada: sigue el mismo orden por fecha de cierre de siempre. En los filtros de
+// un solo estado esto no tiene efecto, porque todas las filas caen en el mismo bloque.
+const OPPORTUNITY_STAGE_RANK: Record<string, number> = { por_decidir: 0, en_curso: 1, cerradas: 2, archivadas: 3 };
+
+type SortableOpportunity = Partial<Pick<TenderOpportunitySummary, 'decision' | 'tender_offer_status' | 'archived_at'>>
+  & { expected_close_date?: string | null; last_updated_at?: string | null; opportunity_id: string };
+
+function stageRank(row: SortableOpportunity): number {
+  const rank = OPPORTUNITY_STAGE_RANK[classifyOpportunityStage(row)];
+  return rank === undefined ? OPPORTUNITY_STAGE_RANK.archivadas : rank;
+}
+
+export function sortTenderOpportunitySummaries<T extends SortableOpportunity>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
     const aDate = a.expected_close_date || '9999-12-31';
     const bDate = b.expected_close_date || '9999-12-31';
-    return aDate.localeCompare(bDate) || String(b.last_updated_at || '').localeCompare(String(a.last_updated_at || '')) || a.opportunity_id.localeCompare(b.opportunity_id);
+    return stageRank(a) - stageRank(b)
+      || aDate.localeCompare(bDate) || String(b.last_updated_at || '').localeCompare(String(a.last_updated_at || '')) || a.opportunity_id.localeCompare(b.opportunity_id);
   });
 }

@@ -13,18 +13,15 @@
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-const PENDIENTES_CONOCIDOS = [
-  {
-    file: 'tests/siio-client-master-sibling-race.test.mjs',
-    motivo: 'P1-1: carrera en la autorización de oportunidades hermanas del cliente maestro. La prueba se declara "RED" y documenta el defecto mientras no se arregla.',
-    desde: '2026-10-22 (fecha en que se catalogó; el defecto es anterior)',
-  },
-  {
-    file: 'tests/tender-opportunities-compact-redesign.test.mjs',
-    motivo: 'Contrato de producto aprobado el 2026-09-29 para el rediseño compacto de "Oportunidades" en Licitaciones. Fija tres comportamientos que todavía no se construyen.',
-    desde: '2026-09-29',
-  },
-];
+// Vacía desde el 2026-10-22. Las dos que había se resolvieron el mismo día que se catalogaron:
+//   · tender-opportunities-compact-redesign: de los doce puntos del contrato del 2026-09-29 faltaba uno, el
+//     agrupado de "Todas" por bloques; se construyó.
+//   · siio-client-master-sibling-race (P1-1): ya estaba arreglado en el servidor y en el RPC. La prueba no lo
+//     podía demostrar porque a sus dobles les faltaba stage_code y la petición moría antes, en la regla de
+//     próxima gestión obligatoria. Verificado aparte contra la función desplegada: recibe el conjunto
+//     autorizado, bloquea las filas, compara los dos conjuntos ordenados y aborta la transacción si difieren.
+// Si mañana hace falta volver a listar algo, cada entrada lleva file, motivo y desde.
+const PENDIENTES_CONOCIDOS = [];
 
 const LOTE = 25;
 const cubiertoPorOtroTrabajo = file => file.includes('agt002') || file.includes('agt003') || file.startsWith('vigia-');
