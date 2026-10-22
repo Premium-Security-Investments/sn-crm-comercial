@@ -198,7 +198,7 @@ import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-
 import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
 import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
-import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../agt003-chat-registro.js';
+import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../agt003-chat-registro.js';
 import { nextActionRequirement } from '../src/vigia/next-action-rule.js';
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
@@ -3931,12 +3931,12 @@ async function resolveChatProposal(database, { output, refs, services, canCreate
 }
 async function applyChatAction(database, profile, action) {
   if (action.tipo === 'registrar_seguimiento') {
-    await addInteractionForProfile(database, profile, action.opportunity_id, { notes: action.nota, occurred_at: action.fecha, interaction_type: action.canal });
+    await addInteractionForProfile(database, profile, action.opportunity_id, { notes: action.nota, occurred_at: chatDayToIso(action.fecha), interaction_type: action.canal });
     return { opportunity_id: action.opportunity_id };
   }
   if (action.tipo === 'proximo_seguimiento') {
     await ensureOpportunityAccess(database, action.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    await must(database.from('psi_sales_opportunities').update({ next_action_at: action.fecha }).eq('id', action.opportunity_id).select('id').single());
+    await must(database.from('psi_sales_opportunities').update({ next_action_at: chatDayToIso(action.fecha) }).eq('id', action.opportunity_id).select('id').single());
     return { opportunity_id: action.opportunity_id };
   }
   if (action.tipo === 'actualizar_datos') {
@@ -3950,9 +3950,9 @@ async function applyChatAction(database, profile, action) {
   if (action.tipo === 'crear_oportunidad') {
     const created = await createOpportunityForProfile(database, profile, {
       ...action.nueva, owner_id: profile.id, stage_code: 'prospecto', customer_segment: 'cliente_nuevo', offer_value: 0,
-      next_action_at: action.proxima_fecha || null,
+      next_action_at: chatDayToIso(action.proxima_fecha) || null,
     });
-    if (action.nota) await addInteractionForProfile(database, profile, created.id, { notes: action.nota, occurred_at: action.fecha, interaction_type: action.canal || 'nota' });
+    if (action.nota) await addInteractionForProfile(database, profile, created.id, { notes: action.nota, occurred_at: chatDayToIso(action.fecha), interaction_type: action.canal || 'nota' });
     return { opportunity_id: created.id };
   }
   throw chatError('Acción no reconocida.', 400);

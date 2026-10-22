@@ -127,6 +127,21 @@ export async function claimChatTurn(database, { actorId, userText, quota }) {
   return data;
 }
 
+// Las fechas del chat vienen como día ("2026-10-26") y la base guarda un instante. Sin hora, Postgres las toma como
+// medianoche UTC, que en Bogotá es EL DÍA ANTERIOR: el 2026-10-22 el próximo seguimiento de Frontier quedó el domingo
+// 25 a las 19:00 en vez del lunes 26, y dos notas del chat quedaron fechadas el 21. Se fija el mediodía de Bogotá,
+// el mismo criterio que usa el formulario de la ficha (`followUpDateToIso` en src/followUpDate.ts), que nunca cae en
+// otro día por más que se mueva la zona horaria de quien mira.
+const CHAT_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Día de Bogotá → instante del mediodía de ese día. Lo que no es un día exacto se devuelve como viene. */
+export function chatDayToIso(value) {
+  const day = String(value ?? '').trim();
+  if (!day) return null;
+  if (!CHAT_DAY.test(day)) return value;
+  return new Date(`${day}T12:00:00-05:00`).toISOString();
+}
+
 export function chatQuotaMessage(scope, used, max) {
   const count = Number.isInteger(used) && Number.isInteger(max) ? ` (${used} de ${max})` : '';
   return scope === 'actor'
