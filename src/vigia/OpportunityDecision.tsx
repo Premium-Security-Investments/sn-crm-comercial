@@ -271,9 +271,12 @@ export function UpcomingList({ upcoming }: { upcoming: DecisionOpportunity[] }) 
     <h3>Próximas gestiones (7 días)</h3>
     {upcoming.length
       ? <ul>{upcoming.map(opportunity => <li key={opportunity.id}>
-          <span className="upcoming-day">{opportunity.next_action_at ? UPCOMING_DAY.format(new Date(opportunity.next_action_at)) : ''}</span>
-          <a href={`#/detail/${opportunity.id}`}><strong>{opportunity.company_name}</strong></a>
-          <small>{opportunity.stage_name}</small>
+          <a className="row-link" href={`#/detail/${opportunity.id}`}>
+            <span className="upcoming-day">{opportunity.next_action_at ? UPCOMING_DAY.format(new Date(opportunity.next_action_at)) : ''}</span>
+            <strong>{opportunity.company_name}</strong>
+            <small>{opportunity.stage_name}</small>
+            <span className="row-link-go">Ver ficha →</span>
+          </a>
         </li>)}</ul>
       : <p className="muted">No tiene gestiones agendadas en los próximos 7 días.</p>}
   </section>;
@@ -300,8 +303,11 @@ export function StalledInStageList({ opportunities, now = new Date() }: { opport
   return <section className="panel stalled-list" aria-label="Oportunidades estancadas">
     <h3>Se están enfriando ({rows.length})</h3>
     <ul>{rows.slice(0, STALLED_LIMIT).map(({ opportunity, stall }) => <li key={opportunity.id}>
-      <a href={`#/detail/${opportunity.id}`}><strong>{opportunity.company_name}</strong></a>
-      <small>{stall.label} Sin próxima gestión agendada.</small>
+      <a className="row-link" href={`#/detail/${opportunity.id}`}>
+        <strong>{opportunity.company_name}</strong>
+        <small>{stall.label} Sin próxima gestión agendada.</small>
+        <span className="row-link-go">Ver ficha →</span>
+      </a>
     </li>)}</ul>
     {rows.length > STALLED_LIMIT && <p className="muted">Mostrando {STALLED_LIMIT} de {rows.length}.</p>}
   </section>;

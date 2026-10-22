@@ -20,11 +20,24 @@ export function isObservationCapturedInNotes(observaciones, interactions) {
   if (!needle || !Array.isArray(interactions) || !interactions.length) return false;
   return interactions.some(item => normalizeFollowUpText(item?.notes).includes(needle));
 }
+// Las observaciones de la oportunidad se muestran como una entrada más del historial. Quién las escribió depende de
+// de dónde viene la oportunidad: las que llegaron del Excel traen `legacy_excel_id`, y ésas sí son "Migrado /
+// sistema". Una oportunidad creada hoy —por el chat o por el formulario— no es migrada, y firmarla así era decir algo
+// falso: lo vio Juan en la revisión visual del 2026-10-22, en una nota escrita ese mismo día.
 export function buildMigratedObservationEvent(opportunity) {
   const notes = opportunity?.observaciones;
   if (!String(notes ?? '').trim()) return null;
-  const at = opportunity?.quote_date || opportunity?.created_at || null;
-  return { id: 'observacion-migrada', interaction_type: 'nota', notes, occurred_at: at, created_at: at, actor_label: 'Migrado / sistema', psi_sales_profiles: null };
+  const migrated = Boolean(String(opportunity?.legacy_excel_id ?? '').trim() || String(opportunity?.excel_hoja_origen ?? '').trim());
+  const at = (migrated ? opportunity?.quote_date : null) || opportunity?.created_at || opportunity?.quote_date || null;
+  return {
+    id: 'observacion-migrada',
+    interaction_type: 'nota',
+    notes,
+    occurred_at: at,
+    created_at: at,
+    actor_label: migrated ? 'Migrado / sistema' : 'Observaciones de la ficha',
+    psi_sales_profiles: null,
+  };
 }
 function sortKey(item) {
   const parsed = Date.parse(item?.occurred_at || item?.created_at || '');
