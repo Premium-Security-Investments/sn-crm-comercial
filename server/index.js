@@ -198,7 +198,7 @@ import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-
 import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
 import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
-import { CHAT_HISTORY_TURNS, assignChatRefs, buildChatInput, chatQuotaMessage, claimChatTurn, runChatTurn } from '../agt003-chat-registro.js';
+import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../agt003-chat-registro.js';
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
 import {
@@ -3850,6 +3850,25 @@ async function loadChatOpportunities(database, profile) {
   const open = (rows || []).filter(row => row.service_type_code !== 'licitacion_publica' && !CHAT_CLOSED_STAGES.has(row.stage_code));
   return open.length ? attachCommercialMetadata(database, open) : [];
 }
+// Una propuesta vieja sin confirmar deja de ser confirmable cuando Vig-IA propone algo nuevo: el comercial veía dos
+// tarjetas con "Confirmar" y podía guardar la vieja encima de la nueva. Queda como reemplazada, no como descartada por
+// él. Nunca rompe el turno: si no se puede marcar, se avisa en el log y la tarjeta vieja sigue como estaba.
+async function supersedeOlderChatProposals(database, { actorId, turnId, now = new Date() }) {
+  try {
+    const { data, error } = await database.from('psi_agt003_chat_turns').select('id,proposal,proposal_status')
+      .eq('actor_id', actorId).eq('proposal_status', 'pendiente').neq('id', turnId).order('created_at', { ascending: true }).limit(60);
+    if (error) throw error;
+    const plan = planSupersededChatProposals(data, { turnId, now });
+    for (const { id, patch } of plan) {
+      const { error: patchError } = await database.from('psi_agt003_chat_turns').update(patch).eq('id', id).eq('proposal_status', 'pendiente');
+      if (patchError) throw patchError;
+    }
+    return plan.length;
+  } catch (error) {
+    console.warn('agt003 chat: no se pudo reemplazar la propuesta anterior', { code: error?.code || null });
+    return 0;
+  }
+}
 async function chatCanCreate(database, profile) {
   if (profile.role !== 'comercial') return true;
   try { await requireNoPendingDecisions(database, profile.id); return true; }
@@ -3977,6 +3996,7 @@ app.post('/api/agt003/chat', async (req, res) => {
       input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens, finished_at: new Date().toISOString(),
     }).eq('id', turnId);
     if (finishError) throw finishError;
+    if (proposal.acciones.length) await supersedeOlderChatProposals(database, { actorId: currentProfile.id, turnId });
     turnId = null;
     res.status(201).json(await chatState(database, currentProfile));
   } catch (error) {
@@ -4002,7 +4022,12 @@ app.post('/api/agt003/chat/confirm', async (req, res) => {
     const { data: claimed, error: claimError } = await database.from('psi_agt003_chat_turns').update({ proposal_status: 'aplicando' })
       .eq('id', turnId).eq('actor_id', currentProfile.id).eq('proposal_status', 'pendiente').select('id,proposal').maybeSingle();
     if (claimError) throw claimError;
-    if (!claimed) throw chatError('Esta propuesta ya fue confirmada o descartada.', 409);
+    if (!claimed) {
+      const { data: current } = await database.from('psi_agt003_chat_turns').select('proposal').eq('id', turnId).eq('actor_id', currentProfile.id).maybeSingle();
+      throw chatError(current?.proposal?.[CHAT_SUPERSEDED_BY_KEY]
+        ? 'Esta propuesta quedó reemplazada por lo que contó después. Confirme la tarjeta más reciente.'
+        : 'Esta propuesta ya fue confirmada o descartada.', 409);
+    }
     const applied = [];
     for (const [index, action] of (claimed.proposal?.acciones || []).entries()) {
       try {

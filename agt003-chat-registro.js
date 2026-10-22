@@ -132,3 +132,25 @@ export function chatQuotaMessage(scope, used, max) {
     ? `Su cupo personal de mensajes con Vig-IA de hoy está agotado${count}. Vuelva mañana.`
     : `Se acabó el cupo de mensajes con Vig-IA del equipo para hoy${count}. Vuelva mañana; mientras tanto puede registrar desde la ficha.`;
 }
+
+// Una sola propuesta confirmable (defecto del 2026-10-15): cuando Vig-IA propone algo nuevo, la propuesta anterior que
+// el comercial no confirmó deja de ser confirmable. Antes veía dos tarjetas con "Confirmar" y podía guardar la vieja
+// encima de la nueva. No la descartó él, así que la tarjeta dice "Reemplazado": el motivo viaja dentro de la propuesta
+// (`reemplazada_por`) porque la migración 132 sólo admite cuatro estados y agregar uno exigiría cambiar la base.
+export const CHAT_SUPERSEDED_BY_KEY = 'reemplazada_por';
+
+/** Qué propuestas pendientes quedan reemplazadas por el turno `turnId`. Puro: devuelve el parche de cada fila. */
+export function planSupersededChatProposals(rows, { turnId, now }) {
+  if (!turnId) return [];
+  const decidedAt = now instanceof Date ? now.toISOString() : now;
+  return (rows || [])
+    .filter(row => row?.id && row.id !== turnId && row.proposal_status === 'pendiente')
+    .map(row => ({
+      id: row.id,
+      patch: {
+        proposal_status: 'descartada',
+        decided_at: decidedAt,
+        proposal: { ...(row.proposal || {}), [CHAT_SUPERSEDED_BY_KEY]: turnId },
+      },
+    }));
+}

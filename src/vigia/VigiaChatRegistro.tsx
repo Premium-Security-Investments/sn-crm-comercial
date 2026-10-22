@@ -9,7 +9,7 @@ type StoredAction = { tipo: string; cliente: string; lineas: string[]; parecidos
 type Applied = { index: number; ok: boolean; error?: string; opportunity_id?: string };
 type ChatTurn = {
   id: string; user_text: string; status: 'running' | 'completed' | 'failed'; reply_text: string | null;
-  proposal: { acciones: StoredAction[]; avisos: string[] } | null;
+  proposal: { acciones: StoredAction[]; avisos: string[]; reemplazada_por?: string } | null;
   proposal_status: 'pendiente' | 'aplicando' | 'confirmada' | 'descartada' | null;
   applied: Applied[] | null; created_at: string;
 };
@@ -46,7 +46,9 @@ function ProposalCard({ turn, busy, onConfirm, onDiscard }: { turn: ChatTurn; bu
   const state = turn.proposal_status;
   return <div className={`vchat-card is-${state || 'avisos'}`}>
     {proposal.acciones.length > 0 && <>
-      <div className="vchat-card-head">{state === 'confirmada' ? 'Guardado en el CRM' : state === 'descartada' ? 'Descartado: no se guardó nada' : state === 'aplicando' ? 'Guardando…' : 'Cambios para confirmar'}</div>
+      <div className="vchat-card-head">{state === 'confirmada' ? 'Guardado en el CRM'
+        : state === 'descartada' ? (proposal.reemplazada_por ? 'Reemplazado por lo que contó después: no se guardó nada' : 'Descartado: no se guardó nada')
+        : state === 'aplicando' ? 'Guardando…' : 'Cambios para confirmar'}</div>
       {groupByClient(proposal.acciones).map(group => <div key={group.cliente} className="vchat-client">
         <strong>{group.cliente}</strong>
         <ul>{group.items.map(({ action, index }) => {
