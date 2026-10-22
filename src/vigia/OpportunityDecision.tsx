@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import { bogotaDay, FREEZE_DAYS, type DecisionCode } from './opportunity-decision-rules.js';
 import { stageStaleness } from './stage-staleness';
-import { futureDayPhrase, pastDayPhrase, readablePhone, sentenceName } from './my-day-presentation';
+import { closeDateLine, futureDayPhrase, pastDayPhrase, readablePhone, sentenceName } from './my-day-presentation';
 
 // CRM comercial — decisión obligatoria por oportunidad (2026-10-07). Toda oportunidad abierta debe quedar con una
 // decisión vigente: sigue viva (con fecha), avanza, congelada, descartada, perdida o con eliminación pedida.
@@ -221,14 +221,18 @@ export function NextConversation({ opportunity, sameClient = 1, now = new Date()
   if (opportunity.last_interaction_at) {
     facts.push({ key: 'ultima', icon: ICON_CLOCK, title: `Le habló ${pastDayPhrase(opportunity.last_interaction_at, now)}`, note: `A las ${TIME_LABEL.format(new Date(opportunity.last_interaction_at))}` });
   }
-  if (opportunity.expected_close_date) {
-    facts.push({ key: 'cierre', icon: ICON_CALENDAR, title: `Espera cerrarla ${futureDayPhrase(`${String(opportunity.expected_close_date).slice(0, 10)}T12:00:00-05:00`, now)}`, note: stageLine });
+  const closeLine = closeDateLine(opportunity.expected_close_date, now);
+  if (closeLine) {
+    facts.push({ key: 'cierre', icon: ICON_CALENDAR, title: closeLine, note: stageLine });
   } else if (stageLine) {
     facts.push({ key: 'etapa', icon: ICON_CALENDAR, title: stageLine, note: 'Sin fecha de cierre estimada' });
   }
   const sector = opportunity.economic_sector || opportunity.service_type_name;
   if (sector) {
-    facts.push({ key: 'sector', icon: ICON_BUILDING, title: sector, note: sameClient > 1 ? `${sameClient} oportunidades suyas con este cliente` : 'Única oportunidad suya con este cliente' });
+    // Sin cliente registrado no se puede saber cuántas hay: se calla en vez de afirmar "única".
+    const clientNote = sameClient > 1 ? `${sameClient} oportunidades suyas con este cliente`
+      : sameClient === 1 ? 'Única oportunidad suya con este cliente' : '';
+    facts.push({ key: 'sector', icon: ICON_BUILDING, title: sector, note: clientNote });
   }
 
   const place = [opportunity.quote_city, opportunity.regional_nombre].filter(Boolean).join(', ');

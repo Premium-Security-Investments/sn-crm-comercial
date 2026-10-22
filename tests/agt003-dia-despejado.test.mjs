@@ -103,3 +103,31 @@ test('el CSS del día despejado existe y conserva las dos columnas', () => {
 });
 
 console.log('día despejado: texto puro, pantalla y CSS verificados');
+
+test('la fecha de cierre no miente cuando ya pasó', async () => {
+  const closeDateLine = await load('../src/vigia/my-day-presentation.ts', 'closeDateLine');
+  // 74 de las 193 oportunidades abiertas tienen fecha de cierre pasada: decir "espera cerrarla hoy" de una
+  // fecha de julio es afirmar algo falso. Defecto encontrado en la corrida técnica del 2026-10-22.
+  assert.equal(closeDateLine('2026-12-15', NOW), 'Espera cerrarla el 15 de diciembre');
+  assert.equal(closeDateLine('2026-10-23', NOW), 'Espera cerrarla mañana');
+  assert.equal(closeDateLine('2026-10-22', NOW), 'Espera cerrarla hoy');
+  assert.equal(closeDateLine('2026-10-21', NOW), 'La fecha de cierre que puso pasó ayer');
+  assert.equal(closeDateLine('2026-07-30', NOW), 'La fecha de cierre que puso pasó el 30 de julio');
+  assert.equal(closeDateLine(null, NOW), '');
+  assert.equal(closeDateLine('', NOW), '');
+});
+
+test('sin cliente registrado no se afirma que sea la única oportunidad', () => {
+  const decision = readFileSync(new URL('../src/vigia/OpportunityDecision.tsx', import.meta.url), 'utf8');
+  const card = decision.slice(decision.indexOf('export function NextConversation('), decision.indexOf('const DONE_LIMIT'));
+  assert.match(card, /sameClient === 1 \? 'Única oportunidad suya con este cliente' : ''/,
+    'con 0 (client_id nulo, 14 de 209 oportunidades) la tarjeta se calla en vez de afirmar "única"');
+  assert.match(card, /const closeLine = closeDateLine\(opportunity\.expected_close_date, now\);/,
+    'y la fecha de cierre pasa por la regla que separa pasado de futuro');
+});
+
+test('los controles de Mi día tienen foco de teclado propio', () => {
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.now-main:focus-visible,\.now-link:focus-visible/, 'la app no tiene regla global de foco: estos la traen');
+  assert.match(css, /outline:3px solid #1b64f2;outline-offset:2px/);
+});

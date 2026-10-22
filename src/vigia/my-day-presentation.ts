@@ -263,3 +263,19 @@ export function readablePhone(value: string | null | undefined): string {
 export function sentenceName(name: string): string {
   return String(name || '').replace(/\.$/, '');
 }
+
+/**
+ * La fecha de cierre estimada en una frase. Separa pasado de futuro a propósito: 74 de las 193 oportunidades
+ * abiertas tienen una fecha de cierre que ya pasó, y decir "espera cerrarla hoy" de una fecha de julio es
+ * afirmar algo falso. Cuando ya pasó, el dato útil es justamente que se venció.
+ */
+export function closeDateLine(value: string | null | undefined, now: Date = new Date()): string {
+  const day = value ? String(value).slice(0, 10) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+  const instant = `${day}T12:00:00-05:00`;
+  const today = dayKey(now);
+  if (!today) return '';
+  if (day < today) return `La fecha de cierre que puso pasó ${pastDayPhrase(instant, now)}`;
+  if (day === today) return 'Espera cerrarla hoy';
+  return `Espera cerrarla ${futureDayPhrase(instant, now)}`;
+}
