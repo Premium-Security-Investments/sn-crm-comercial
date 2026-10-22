@@ -27,7 +27,7 @@ const completa = {
   stage_entered_at: enDias(-40), stage_entered_at_measured: true, staleness_days: 14,
 };
 
-test('el brief arma los hechos del cliente y del negocio con lo que hay en el CRM', () => {
+test('el brief sólo trae lo que no está ya en la ficha', () => {
   const brief = meetingBrief({
     opportunity: completa,
     interactions: [
@@ -37,11 +37,10 @@ test('el brief arma los hechos del cliente y del negocio con lo que hay en el CR
     now: NOW,
   });
 
-  assert.deepEqual(brief.cliente.map(item => item.label), ['Sector', 'Dónde', 'Decisor', 'Contacto', 'Página web', 'Seguridad hoy', 'Contrato actual vence']);
-  assert.equal(brief.cliente.find(item => item.label === 'Decisor').value, 'Ana Ruiz · Administradora');
-  assert.equal(brief.cliente.find(item => item.label === 'Seguridad hoy').value, 'Atlas');
-  assert.match(brief.estado.find(item => item.label === 'Etapa').value, /^Envío de Oferta · Lleva 40 día\(s\) en Envío de Oferta$/);
-  assert.equal(brief.estado.find(item => item.label === 'Valor').value, plata(12_000_000));
+  // Sector, decisor, contacto, valor y fechas se ven en el encabezado y en las tarjetas: aquí no se repiten.
+  assert.deepEqual(brief.contexto.map(item => item.label), ['Seguridad hoy', 'Contrato actual vence', 'En esta etapa']);
+  assert.equal(brief.contexto.find(item => item.label === 'Seguridad hoy').value, 'Atlas');
+  assert.equal(brief.contexto.find(item => item.label === 'En esta etapa').value, '40 día(s) en Envío de Oferta');
   assert.equal(brief.desdeLaUltimaVez.length, 2, 'lo más reciente primero');
   assert.match(brief.desdeLaUltimaVez[0], /Llamada: Pidió la propuesta por correo$/);
   assert.deepEqual(brief.faltaEnElCrm, [], 'con el perfil completo no falta nada');
@@ -65,7 +64,7 @@ test('sin proveedor y con contrato vencido, el brief lo dice en los términos de
     opportunity: { ...completa, current_security_provider: null, current_security_provider_none: true, current_contract_end_date: '2026-09-30' },
     now: NOW,
   });
-  assert.equal(brief.cliente.find(item => item.label === 'Seguridad hoy').value, 'No tiene proveedor');
+  assert.equal(brief.contexto.find(item => item.label === 'Seguridad hoy').value, 'No tiene proveedor');
   assert.ok(brief.sugerencias.some(item => /la conversación es de primera vez, no de reemplazo/.test(item)));
   assert.ok(brief.sugerencias.some(item => /venció el 30 de septiembre: confirme con quién está hoy el servicio/.test(item)));
 });
@@ -91,20 +90,16 @@ test('lo que no está en el CRM se nombra, no se rellena', () => {
     opportunity: { id: 'o9', company_name: 'Cliente nuevo', stage_code: 'prospecto', stage_name: 'Prospecto' },
     now: NOW,
   });
-  assert.deepEqual(brief.faltaEnElCrm, [
-    'quién decide', 'cómo contactarlo', 'el sector', 'con quién están hoy',
-    'cuándo vence su contrato actual', 'el valor estimado', 'no hay seguimientos registrados',
-  ]);
+  assert.deepEqual(brief.faltaEnElCrm, ['quién decide', 'cómo contactarlo', 'con quién están hoy', 'cuándo vence su contrato actual']);
   assert.deepEqual(brief.desdeLaUltimaVez, []);
-  assert.deepEqual(brief.cliente, [], 'no inventa ni un campo');
+  assert.deepEqual(brief.contexto, [], 'no inventa ni un campo');
 });
 
 test('pantalla: el brief vive en la ficha, se abre desde la cola de hoy y rotula lo que es sugerencia', () => {
   const ui = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
   assert.match(ui, /const brief = meetingBrief\(\{ opportunity, interactions, siblings \}\);/);
-  assert.match(ui, /\{list\(`Sugerencias de \$\{VIGIA_VISIBLE_NAMES\.commercial\} \(no son datos\)`, brief\.sugerencias, 'is-suggestion'\)\}/,
-    'el nombre visible del agente sale de la constante, como exige vigia-visible-identity-static');
-  assert.match(ui, /\{list\('No está en el CRM', brief\.faltaEnElCrm, 'is-missing'\)\}/);
+  assert.match(ui, /\{list\('Para tener en cuenta', brief\.sugerencias, 'is-suggestion'\)\}/);
+  assert.match(ui, /\{list\('Pregunte en la reunión', brief\.faltaEnElCrm, 'is-missing'\)\}/);
   assert.match(ui, /siblings=\{data\.opportunities\.filter\(row => row\.client_id && row\.client_id === o\.client_id\)\}/);
   assert.match(ui, /const briefFocusRequested = focusTarget === 'brief';/);
   assert.doesNotMatch(ui, /MeetingBriefPanel[\s\S]{0,400}api</, 'el brief no llama a ninguna ruta: sale de lo que ya está cargado');
@@ -112,4 +107,30 @@ test('pantalla: el brief vive en la ficha, se abre desde la cola de hoy y rotula
   const decision = readFileSync(new URL('../src/vigia/OpportunityDecision.tsx', import.meta.url), 'utf8');
   const today = decision.slice(decision.indexOf('export function TodayQueue('));
   assert.match(today, /<a className="decision-brief-link" href=\{`#\/detail\/\$\{opportunity\.id\}\?focus=brief`\}>Antes de la reunión<\/a>/);
+});
+
+test('nada de "0 días" ni de preguntar por un contrato que no existe (revisión de Juan del 22-oct)', () => {
+  // Con la medición de etapas recién arrancada, la primera versión decía "Lleva al menos 0 día(s) en Prospecto".
+  const reciente = meetingBrief({ opportunity: { ...completa, stage_entered_at: NOW.toISOString(), stage_entered_at_measured: true }, now: NOW });
+  assert.equal(reciente.contexto.some(item => item.label === 'En esta etapa'), false, 'con cero días no se dice nada');
+
+  // Y decía "Seguridad hoy: No tiene proveedor" junto a "falta: cuándo vence su contrato actual".
+  const sinProveedor = meetingBrief({
+    opportunity: { ...completa, current_security_provider: null, current_security_provider_none: true, current_contract_end_date: null },
+    now: NOW,
+  });
+  assert.equal(sinProveedor.faltaEnElCrm.includes('cuándo vence su contrato actual'), false, 'sin proveedor no hay contrato que venza');
+  assert.equal(sinProveedor.faltaEnElCrm.includes('con quién están hoy'), false);
+});
+
+test('las notas largas se recortan: el brief no se come la pantalla', () => {
+  const larga = `Envié el mensaje sugerido por Vig-IA. ${'palabra '.repeat(80)}fin`;
+  const brief = meetingBrief({ opportunity: completa, interactions: [{ interaction_type: 'whatsapp', notes: larga, occurred_at: enDias(-1) }], now: NOW });
+  const linea = brief.desdeLaUltimaVez[0];
+  assert.ok(linea.endsWith('…'), 'se corta con puntos suspensivos');
+  assert.ok(linea.length < 230, `la línea mide ${linea.length}`);
+  assert.equal(meetingBrief({
+    opportunity: completa, now: NOW,
+    interactions: [1, 2, 3, 4, 5].map(n => ({ interaction_type: 'nota', notes: `nota ${n}`, occurred_at: enDias(-n) })),
+  }).desdeLaUltimaVez.length, 3, 'máximo tres gestiones');
 });

@@ -20,6 +20,7 @@ const EXAMPLES = [
   'Hoy visité un conjunto residencial nuevo en Envigado: la administradora quiere vigilancia 24 horas.',
   'Le escribí por WhatsApp al cliente, quedó de responder el viernes. Su proveedor actual es Atlas.',
 ];
+const VISIBLE_TURNS = 1;
 const ACTION_ICON: Record<string, string> = { registrar_seguimiento: '✎', proximo_seguimiento: '◷', actualizar_datos: '☰', crear_oportunidad: '+' };
 const timeLabel = (value: string) => new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
 
@@ -79,6 +80,8 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
   const [busyTurn, setBusyTurn] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
+  // El chat se llevaba toda la pantalla de Mi día (Juan, 2026-10-22): por defecto sólo el último intercambio.
+  const [showAllTurns, setShowAllTurns] = useState(false);
   const recognitionRef = useRef<InstanceType<SpeechCtor> | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -98,7 +101,7 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
     setSending(true); setError('');
     try {
       setState(await api<ChatState>('/api/agt003/chat', { method: 'POST', body: JSON.stringify({ mensaje }) }));
-      setDraft('');
+      setDraft(''); setShowAllTurns(false);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setSending(false); inputRef.current?.focus(); }
   }, [draft, sending]);
@@ -134,6 +137,8 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
   if (!state || (!state.available && !state.turns.length)) return null;
   const left = typeof state.max === 'number' ? Math.max(0, state.max - (state.used || 0)) : null;
   const turns = state.turns;
+  const visibleTurns = showAllTurns ? turns : turns.slice(-VISIBLE_TURNS);
+  const hiddenTurns = turns.length - visibleTurns.length;
   return <section className="panel vchat" aria-label="Contarle a Vig-IA">
     <header className="vchat-header">
       <div>
@@ -143,8 +148,11 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
       </div>
       {left !== null && <small className="vchat-quota" title="Mensajes con Vig-IA que le quedan hoy a todo el equipo">{left} mensajes del equipo hoy</small>}
     </header>
+    {hiddenTurns > 0 && <button type="button" className="secondary vchat-more" onClick={() => setShowAllTurns(true)}>
+      Ver la conversación de hoy ({turns.length} {turns.length === 1 ? 'mensaje' : 'mensajes'})
+    </button>}
     {turns.length > 0 && <div className="vchat-thread" role="log" aria-live="polite">
-      {turns.map(turn => <div key={turn.id} className="vchat-turn">
+      {visibleTurns.map(turn => <div key={turn.id} className="vchat-turn">
         <div className="vchat-msg is-human"><span className="vchat-meta">Usted · {timeLabel(turn.created_at)}</span><p>{turn.user_text}</p></div>
         {turn.status === 'completed' && <div className="vchat-msg is-agent">
           <span className="vchat-meta">Vig-IA</span>

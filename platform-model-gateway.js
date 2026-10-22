@@ -19,6 +19,7 @@ export const AGT003_AGENT_ID = 'AGT-003';
 export const AGT003_COPILOT_CAPABILITY = 'agt003.opportunity-copilot.preview';
 export const AGT003_LEAD_ANALYSIS_CAPABILITY = 'agt003.lead-deep-analysis';
 export const AGT003_CHAT_CAPABILITY = 'agt003.chat-registro';
+export const AGT003_BRIEF_CAPABILITY = 'agt003.brief-reunion';
 
 export const RECORD_MODEL_USAGE_SQL = 'select platform.record_model_usage($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)';
 
