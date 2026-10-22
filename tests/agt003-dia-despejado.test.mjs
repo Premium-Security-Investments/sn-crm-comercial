@@ -131,3 +131,15 @@ test('los controles de Mi día tienen foco de teclado propio', () => {
   assert.match(css, /\.now-main:focus-visible,\.now-link:focus-visible/, 'la app no tiene regla global de foco: estos la traen');
   assert.match(css, /outline:3px solid #1b64f2;outline-offset:2px/);
 });
+
+test('un comercial sin el módulo de oportunidades sabe qué acceso pedir', () => {
+  // El menú no le muestra "Mi día" (navPermissions, isNavItemVisible), así que cae en NoCommercialHome.
+  // Antes el texto era genérico ("pida acceso a quien administra el SIIO") y no decía cuál acceso falta.
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const panel = main.slice(main.indexOf('function NoCommercialHome('), main.indexOf('function stageTone('));
+  assert.match(panel, /le falta el acceso a <strong>Oportunidades<\/strong>\. Pídaselo a su administrador del SIIO\./);
+  assert.match(panel, /profile\.role === 'comercial'/, 'sólo al comercial: a los demás roles no les falta ese módulo');
+  assert.match(panel, /Su trabajo está en Programación de turnos/, 'quien sólo tiene Programación sigue viendo su enlace');
+  // Y la guarda que lo trae aquí sigue en pie: sin el módulo no se pinta el tablero comercial.
+  assert.match(main, /if \(!hasOpportunities\) return <NoCommercialHome profile=\{data\.currentProfile\} \/>;/);
+});

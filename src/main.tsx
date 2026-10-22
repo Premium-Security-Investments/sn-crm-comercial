@@ -607,7 +607,11 @@ function NoCommercialHome({ profile }: { profile: Profile }) {
     <Panel title={`Hola, ${profile.full_name.split(' ')[0] || profile.full_name}`}>
       {programacion
         ? <p>Su trabajo está en Programación de turnos. <a href={PROGRAMACION_APP_URL} target="_blank" rel="noopener noreferrer">Abrir Programación</a></p>
-        : <p>Use el menú de la izquierda para entrar a sus secciones. Si no ve ninguna, pida acceso a quien administra el SIIO.</p>}
+        : profile.role === 'comercial'
+          // Un comercial sin el módulo de oportunidades no ve "Mi día" en el menú (navPermissions, isNavItemVisible)
+          // y llega aquí. Decirle cuál acceso le falta le ahorra la adivinanza, a él y a quien se lo tiene que dar.
+          ? <p>Para entrar a <strong>Mi día</strong> y a su cartera le falta el acceso a <strong>Oportunidades</strong>. Pídaselo a su administrador del SIIO.</p>
+          : <p>Use el menú de la izquierda para entrar a sus secciones. Si no ve ninguna, pida acceso a quien administra el SIIO.</p>}
     </Panel>
   </section>;
 }
