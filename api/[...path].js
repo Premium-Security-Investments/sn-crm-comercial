@@ -1193,6 +1193,14 @@ async function logCustomerSegmentChange(database, opportunityId, actorId, oldVal
   if ((oldValue || null) === (newValue || null)) return;
   await database.from('psi_sales_opportunity_audit_logs').insert({ opportunity_id: opportunityId, changed_by: actorId, field_name: 'customer_segment', old_value: oldValue || null, new_value: newValue || null, notes: 'Cambio de Cliente Nuevo / Cliente Actual' });
 }
+// Quién movió la etapa y cuándo. La FECHA de entrada la pone el disparador de la migración 145 (pasa por ahí
+// cualquier camino, incluidas las rutas de licitaciones); esto agrega la persona, que el disparador no conoce.
+async function logStageChange(database, opportunityId, actorId, oldValue, newValue) {
+  if ((oldValue || null) === (newValue || null)) return;
+  const { error } = await database.from('psi_sales_opportunity_audit_logs').insert({ opportunity_id: opportunityId, changed_by: actorId, field_name: 'stage_code', old_value: oldValue || null, new_value: newValue || null, notes: 'Cambio de etapa' });
+  // Un fallo del registro no puede tumbar el cambio de etapa, que ya quedó guardado.
+  if (error) console.warn('psi_sales_opportunity_audit_logs stage_code falló', { code: error.code || null });
+}
 
 
 
@@ -3787,6 +3795,7 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
     authorizedSiblingIds,
   });
   await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+  await logStageChange(database, id, currentProfile.id, existing.stage_code, payload.stage_code);
   if (!isPublicTender) await saveClientProfile(database, id, body);
   return data;
 }
@@ -6843,6 +6852,7 @@ app.put('/api/opportunities/:id', async (req, res) => {
       authorizedSiblingIds,
     });
     await logCustomerSegmentChange(database, req.params.id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+    await logStageChange(database, req.params.id, currentProfile.id, existing.stage_code, payload.stage_code);
     if (!isPublicTender) await saveClientProfile(database, req.params.id, req.body);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -7056,6 +7066,7 @@ app.put('/api/opportunity', async (req, res) => {
       authorizedSiblingIds,
     });
     await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+    await logStageChange(database, id, currentProfile.id, existing.stage_code, payload.stage_code);
     if (!isPublicTender) await saveClientProfile(database, id, req.body);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
