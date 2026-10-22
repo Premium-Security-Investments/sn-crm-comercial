@@ -51,6 +51,7 @@ import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
 import { stageStaleness } from './vigia/stage-staleness';
 import { hasLiveNextAction } from './vigia/next-action-rule.js';
 import { lossBreakdown } from './vigia/loss-report';
+import { meetingBrief } from './vigia/meeting-brief';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
@@ -1039,10 +1040,12 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   activeDetailIdRef.current = id;
   const documentReviewRef = useRef<HTMLDivElement>(null);
   const followUpRef = useRef<HTMLDivElement>(null);
+  const briefRef = useRef<HTMLDivElement>(null);
   const tenderQuestionResponseSaveRef = useRef<((input: TenderQuestionResponseInput, files: File[]) => Promise<void>) | null>(null);
   const focusTarget = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus');
   const documentFocusRequested = focusTarget === 'documents';
   const interactionFocusRequested = focusTarget === 'interaction';
+  const briefFocusRequested = focusTarget === 'brief';
   const load = async () => {
     const requestedId = id; const version = ++detailRequestRef.current;
     try {
@@ -1067,6 +1070,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   }, [id]);
   useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
+  useEffect(() => { if (briefFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(briefRef.current); }, [briefFocusRequested, detail?.opportunity.id]);
   const [tenderReportRevision, setTenderReportRevision] = useState(0);
   const tenderInitialReport = useAgt002InitialReport(id, api, detail?.opportunity.service_type_code === 'licitacion_publica', tenderReportRevision);
   const tenderOfferStatus = useTenderOfferStatus(id, api, tenderRevision, detail?.opportunity.service_type_code === 'licitacion_publica');
@@ -1237,6 +1241,12 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       opportunityId={o.id}
       request={api}
       preflight={{ nextAction: priorityNextAction, expectedClose: priorityClose, decisionMaker: priorityDecisionMaker }}
+    />}
+    {o.service_type_code !== 'licitacion_publica' && <MeetingBriefPanel
+      opportunity={o}
+      interactions={detail?.interactions || []}
+      siblings={data.opportunities.filter(row => row.client_id && row.client_id === o.client_id)}
+      focusRef={briefRef}
     />}
     {o.service_type_code !== 'licitacion_publica' && <LeadAnalysisPanel opportunityId={o.id} profile={profileCompleteness(o as unknown as Record<string, unknown>)} canRun={canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && !readOnly} showCost={data.currentProfile.role === 'admin'} onMessageUsed={() => { void load(); void refresh(); }} />}
     </div>
@@ -1654,6 +1664,32 @@ function FollowUpContent({ content }: { content: string }) {
   </>;
 }
 
+// F12 — brief antes de la reunión. Todo sale de datos del CRM; lo que es sugerencia va rotulado y lo que no se sabe
+// se nombra. Sin llamada a un modelo: nada que leer aquí puede ser inventado.
+function MeetingBriefPanel({ opportunity, interactions, siblings, focusRef }: {
+  opportunity: Opportunity; interactions: Interaction[]; siblings: Opportunity[]; focusRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const brief = meetingBrief({ opportunity, interactions, siblings });
+  const list = (title: string, items: string[], className = '') => items.length > 0 && <div className={`brief-block ${className}`}>
+    <h4>{title}</h4><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul>
+  </div>;
+  return <div ref={focusRef} id="brief" tabIndex={-1}>
+    <details className="panel meeting-brief" open>
+      <summary>Antes de la reunión</summary>
+      <div className="brief-grid">
+        {brief.cliente.length > 0 && <div className="brief-block"><h4>El cliente</h4>
+          <ul>{brief.cliente.map(item => <li key={item.label}><span className="brief-label">{item.label}:</span> {item.value}</li>)}</ul></div>}
+        {brief.estado.length > 0 && <div className="brief-block"><h4>Dónde va el negocio</h4>
+          <ul>{brief.estado.map(item => <li key={item.label}><span className="brief-label">{item.label}:</span> {item.value}</li>)}</ul></div>}
+        {list('Desde la última vez', brief.desdeLaUltimaVez)}
+        {list('Otras oportunidades abiertas de este cliente', brief.otrasOportunidades)}
+        {list('Se perdió antes', brief.perdidasPrevias)}
+        {list(`Sugerencias de ${VIGIA_VISIBLE_NAMES.commercial} (no son datos)`, brief.sugerencias, 'is-suggestion')}
+        {list('No está en el CRM', brief.faltaEnElCrm, 'is-missing')}
+      </div>
+    </details>
+  </div>;
+}
 function FollowUpForm({ opportunityId, opportunity, currentProfile, onSaved }: { opportunityId: string; opportunity: Opportunity; currentProfile: Profile; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: bogotaToday(), next_action_at: '' }); const [status, setStatus] = useState('');
   // F4: una oportunidad abierta no puede quedar sin próxima gestión. No se pide si el negocio ya se cerró, si es
