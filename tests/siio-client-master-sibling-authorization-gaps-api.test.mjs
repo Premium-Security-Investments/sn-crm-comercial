@@ -71,13 +71,13 @@ const owners = {
 
 const opportunities = {
   'opp-lonely': {
-    id: 'opp-lonely', owner_id: 'comercial-1', client_id: 'client-lonely',
+    id: 'opp-lonely', owner_id: 'comercial-1', client_id: 'client-lonely', stage_code: 'prospecto',
     company_name: 'Empresa Solitaria', customer_segment: 'cliente_actual', regional_nombre: 'Nariño',
     sede: 'Sede A', quote_city: 'Pasto', economic_sector: 'seguridad_fisica',
     decision_maker_name: 'Juan Perez', decision_maker_email: 'juan@example.test', decision_maker_phone: '3000000000',
   },
   'opp-sibling-owned-by-other': {
-    id: 'opp-sibling-owned-by-other', owner_id: 'comercial-2', client_id: 'client-shared',
+    id: 'opp-sibling-owned-by-other', owner_id: 'comercial-2', client_id: 'client-shared', stage_code: 'prospecto',
     company_name: 'Empresa Compartida', customer_segment: 'cliente_actual', regional_nombre: 'Nariño',
     sede: 'Sede A', quote_city: 'Pasto', economic_sector: 'seguridad_fisica',
     decision_maker_name: 'Ana Gomez', decision_maker_email: 'ana@example.test', decision_maker_phone: '3000000001',

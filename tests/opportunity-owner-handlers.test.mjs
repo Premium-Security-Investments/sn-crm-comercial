@@ -67,7 +67,9 @@ const owners = {
   'owner-current': { id: 'owner-current', active: false },
   'owner-inactive': { id: 'owner-inactive', active: false },
 };
-const existing = { id: 'opportunity-existing', owner_id: 'owner-current', customer_segment: 'cliente_nuevo', regional_nombre: ' Nariño ' };
+// stage_code faltaba en el doble: sin él, toda edición parecía un cambio de etapa y chocaba con la regla de
+// próxima gestión obligatoria (2026-10-22), que sólo se exige cuando la etapa cambia de verdad.
+const existing = { id: 'opportunity-existing', owner_id: 'owner-current', stage_code: 'prospecto', customer_segment: 'cliente_nuevo', regional_nombre: ' Nariño ' };
 const observed = [];
 
 function record(req, url, body = undefined) {
