@@ -47,7 +47,7 @@ import { PSI_AGENT_ROUTER_NAME, VIGIA_VISIBLE_NAMES } from './vigia/agentIdentit
 import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
 import { buildFollowUpHistory } from './opportunity-followup-presentation.js';
 import { decisionMakerCardState, expectedCloseCardState, followUpAgeLabel, nextActionCardState, presentFollowUpEntry } from './vigia/opportunity-ficha-presentation';
-import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
+import { buildMyDayQueue, futureDayPhrase, type MyDayAlert } from './vigia/my-day-presentation';
 import { stageStaleness } from './vigia/stage-staleness';
 import { hasLiveNextAction } from './vigia/next-action-rule.js';
 import { lossBreakdown } from './vigia/loss-report';
@@ -60,7 +60,7 @@ import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDele
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
 import { VigiaChatRegistro } from './vigia/VigiaChatRegistro';
-import { DeleteRequestsPanel, NowQueue, OpportunityDecisionForm, WeekList } from './vigia/OpportunityDecision';
+import { DeleteRequestsPanel, NextConversation, NowQueue, OpportunityDecisionForm, TodayDone, WeekList } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
 
@@ -2616,9 +2616,21 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   const pendingCount = pendingDecisionRows.length;
   const todayCount = todayRows.length;
   const quota = commercialDecisionQuota(data);
-  const nextUp = upcomingRows[0] || null;
   const daysLeft = daysLeftInMonth(now);
   const pendingDataTotal = myDay.prepararTotal + myDay.depurarCrmTotal;
+  // Día despejado (Juan, 2026-10-22): sin nada vencido ni agendado para hoy, la pantalla deja de anunciar que no
+  // hay nada y pasa a ser la próxima conversación. La siguiente gestión se busca en toda la cartera, no sólo en
+  // los 7 días: el vacío de la semana no debe dejar la pantalla muda.
+  const isCalm = !pendingCount && !todayCount;
+  const nextTalk = useMemo(() => activeRows
+    .filter(o => (bogotaDay(o.next_action_at as string) || '') > todayKey)
+    .sort((a, b) => String(a.next_action_at).localeCompare(String(b.next_action_at)))[0] || null, [activeRows, todayKey]);
+  const nextUp = nextTalk;
+  const sameClientCount = nextTalk ? opportunities.filter(o => o.client_id && o.client_id === nextTalk.client_id).length : 0;
+  const openRows = opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !isTerminalStage(o.stage_code));
+  const openValue = openRows.reduce((total, o) => total + (Number(o.offer_value) || 0), 0);
+  // "Esta semana" no repite lo que ya está arriba como la próxima conversación.
+  const weekRows = isCalm && nextTalk ? upcomingRows.filter(o => o.id !== nextTalk.id) : upcomingRows;
   // Una sola frase de estado, en el orden de las tres preguntas: qué hago ahora, qué viene, cómo voy (Juan, 2026-10-22).
   const headline = pendingCount && todayCount
     ? `Hoy tiene ${todayCount === 1 ? 'una gestión' : `${todayCount} gestiones`} y ${pendingCount === 1 ? '1 oportunidad' : `${pendingCount} oportunidades`} esperando decisión.`
@@ -2626,7 +2638,9 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
       ? `Tiene ${pendingCount === 1 ? '1 oportunidad' : `${pendingCount} oportunidades`} esperando decisión.`
       : todayCount
         ? `No tiene nada vencido. Hoy tiene ${todayCount === 1 ? 'una gestión' : `${todayCount} gestiones`}.`
-        : 'Está al día. Nada vencido y nada para hoy.';
+        : nextTalk
+          ? `Hoy está despejado. Su próxima conversación es ${futureDayPhrase(nextTalk.next_action_at, now)}.`
+          : 'Hoy está despejado. No tiene ninguna conversación agendada.';
   // La cuota diaria de decisiones (regla del 2026-10-08) deja de vivir dentro de la cola y pasa a la línea de estado.
   const subline = quota && quota.required > 0
     ? (quota.blocked
@@ -2638,7 +2652,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
     <p className="now-empty-title">Nada pendiente hoy.</p>
     <p className="now-empty-text">{nextUp
       ? `Lo próximo es el ${MY_DAY_WEEKDAY.format(new Date(nextUp.next_action_at as string))} a las ${MY_DAY_TIME.format(new Date(nextUp.next_action_at as string))} con ${nextUp.company_name.replace(/\.$/, '')}.`
-      : 'No tiene gestiones agendadas en los próximos 7 días.'}</p>
+      : 'No tiene ninguna conversación agendada.'}</p>
     <div className="now-acts">
       {nextUp && <a className="now-main" href={`#/detail/${nextUp.id}?focus=brief`}>Preparar la reunión</a>}
       {canCreate && <button type="button" className={nextUp ? 'now-link' : 'now-main'} onClick={() => go('#/new')}>Registrar un cliente nuevo</button>}
@@ -2659,14 +2673,18 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
         <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
         {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
       </section>
-      : <div className={`my-day-grid${!pendingCount && !todayCount ? ' is-calm' : ''}`}>
+      : <div className={`my-day-grid${isCalm ? ' is-calm' : ''}`}>
         <div className="my-day-col">
-          <NowQueue pending={pendingDecisionRows} today={todayRows} stages={data.stages} lossReasons={data.lossReasons}
-            competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />
-          <WeekList upcoming={upcomingRows} />
+          {isCalm && nextTalk
+            ? <NextConversation opportunity={nextTalk} sameClient={sameClientCount} now={now} />
+            : <NowQueue pending={pendingDecisionRows} today={todayRows} stages={data.stages} lossReasons={data.lossReasons}
+              competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />}
+          {isCalm && <TodayDone opportunities={opportunities.filter(o => isAgt003CommercialOpportunity(o))} now={now} />}
+          <WeekList upcoming={weekRows} />
+          {isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
         </div>
         <div className="my-day-side">
-          {canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
+          {!isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
           <section className="my-day-goal" aria-label="Meta del mes">
             <h3>Meta del mes</h3>
             {goal.budget ? <>
@@ -2675,6 +2693,11 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
               <p className="goal-note">{daysLeft === 0 ? 'Hoy es el último día del mes.' : `${daysLeft === 1 ? 'Queda 1 día' : `Quedan ${daysLeft} días`} de ${MY_DAY_MONTH.format(now)}.`} <a href="#/goals">Ver mi meta</a></p>
             </> : <p className="goal-note">Su gerente todavía no le cargó la meta de {MY_DAY_MONTH.format(now)}. <a href="#/goals">Ver mi meta</a></p>}
           </section>
+          {isCalm && <section className="my-day-book" aria-label="Su cartera">
+            <h3>Su cartera</h3>
+            <p className="book-fig"><strong>{openRows.length === 1 ? '1 oportunidad abierta' : `${openRows.length} oportunidades abiertas`}</strong> · <span className="numeric-value">{fmtMoneyCompact(openValue)}</span> en juego</p>
+            <p className="goal-note">Ninguna vencida, ninguna sin fecha. <a href="#/opportunities">Ver todas</a></p>
+          </section>}
         </div>
         {pendingDataTotal > 0 && <details className="my-day-pending-data">
           <summary>Datos por completar ({pendingDataTotal})</summary>

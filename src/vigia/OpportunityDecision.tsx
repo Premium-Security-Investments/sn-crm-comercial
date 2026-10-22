@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import { bogotaDay, FREEZE_DAYS, type DecisionCode } from './opportunity-decision-rules.js';
 import { stageStaleness } from './stage-staleness';
+import { futureDayPhrase, pastDayPhrase, readablePhone, sentenceName } from './my-day-presentation';
 
 // CRM comercial — decisión obligatoria por oportunidad (2026-10-07). Toda oportunidad abierta debe quedar con una
 // decisión vigente: sigue viva (con fecha), avanza, congelada, descartada, perdida o con eliminación pedida.
@@ -12,6 +13,8 @@ export type DecisionOpportunity = {
   created_at?: string | null; frozen_until?: string | null; delete_requested_at?: string | null; delete_request_reason?: string | null;
   decision_maker_name?: string | null; decision_maker_phone?: string | null; sede?: string | null; quote_city?: string | null;
   stage_entered_at?: string | null; stage_entered_at_measured?: boolean | null; staleness_days?: number | null;
+  client_id?: string | null; economic_sector?: string | null; service_type_name?: string | null; regional_nombre?: string | null;
+  expected_close_date?: string | null; approved_at?: string | null; lost_at?: string | null; discarded_at?: string | null;
 };
 type StageOption = { code: string; name: string; stage_order: number; is_terminal: boolean };
 type ReasonOption = { code: string; name: string };
@@ -185,6 +188,102 @@ function stallLabel(opportunity: DecisionOpportunity, now: Date): string {
   });
   if (!stall.stale || stall.days === null) return '';
   return `${stall.atLeast ? 'Al menos ' : ''}${stall.days} ${stall.days === 1 ? 'día' : 'días'} en ${opportunity.stage_name}`;
+}
+
+const ICON_PERSON = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" /><path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" /></svg>;
+const ICON_CLOCK = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3.2-6.9" /><path d="M12 7v5l3 2" /></svg>;
+const ICON_CALENDAR = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 11h18" /></svg>;
+const ICON_BUILDING = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 21V9l9-6 9 6v12" /><path d="M9 21v-7h6v7" /></svg>;
+
+/**
+ * El día despejado (Juan, 2026-10-22): sin nada vencido ni agendado para hoy, la pantalla deja de anunciar que no
+ * hay nada —"dice mucho pero no dice nada"— y pasa a ser la próxima conversación. Aquí sí hay un objeto, así que
+ * aquí sí va una tarjeta. Sólo se pinta lo que está en los datos ya cargados: Mi día no trae las notas, así que no
+ * se promete de qué se habló.
+ */
+export function NextConversation({ opportunity, sameClient = 1, now = new Date() }: {
+  opportunity: DecisionOpportunity; sameClient?: number; now?: Date;
+}) {
+  const when = new Date(opportunity.next_action_at as string);
+  const days = daysBetween(bogotaDay(now) || todayDay(), bogotaDay(opportunity.next_action_at as string) || todayDay());
+  const stall = stageStaleness({
+    stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
+    stalenessDays: opportunity.staleness_days, nextActionAt: opportunity.next_action_at, stageName: null, now,
+  });
+  const stageLine = stall.days === null ? '' : stall.days === 0
+    ? `Entró a ${opportunity.stage_name} hoy`
+    : `${stall.atLeast ? 'Lleva al menos' : 'Lleva'} ${stall.days} ${stall.days === 1 ? 'día' : 'días'} en ${opportunity.stage_name}`;
+
+  const facts: { key: string; icon: React.ReactNode; title: string; note: string }[] = [];
+  if (opportunity.decision_maker_name) {
+    facts.push({ key: 'decisor', icon: ICON_PERSON, title: opportunity.decision_maker_name, note: readablePhone(opportunity.decision_maker_phone) || 'Sin teléfono registrado' });
+  }
+  if (opportunity.last_interaction_at) {
+    facts.push({ key: 'ultima', icon: ICON_CLOCK, title: `Le habló ${pastDayPhrase(opportunity.last_interaction_at, now)}`, note: `A las ${TIME_LABEL.format(new Date(opportunity.last_interaction_at))}` });
+  }
+  if (opportunity.expected_close_date) {
+    facts.push({ key: 'cierre', icon: ICON_CALENDAR, title: `Espera cerrarla ${futureDayPhrase(`${String(opportunity.expected_close_date).slice(0, 10)}T12:00:00-05:00`, now)}`, note: stageLine });
+  } else if (stageLine) {
+    facts.push({ key: 'etapa', icon: ICON_CALENDAR, title: stageLine, note: 'Sin fecha de cierre estimada' });
+  }
+  const sector = opportunity.economic_sector || opportunity.service_type_name;
+  if (sector) {
+    facts.push({ key: 'sector', icon: ICON_BUILDING, title: sector, note: sameClient > 1 ? `${sameClient} oportunidades suyas con este cliente` : 'Única oportunidad suya con este cliente' });
+  }
+
+  const place = [opportunity.quote_city, opportunity.regional_nombre].filter(Boolean).join(', ');
+  const meta = [opportunity.stage_name, valueLabel(opportunity), opportunity.service_type_name, place].filter(Boolean).join(' · ');
+
+  return <section className="next-talk" aria-label="Su próxima conversación">
+    <p className="next-when">{WEEK_DAY.format(when)}, {TIME_LABEL.format(when)} <em>· {days === 1 ? 'mañana' : `en ${days} días`}</em></p>
+    <h3 className="next-name">{opportunity.company_name}</h3>
+    <p className="next-meta">{meta}</p>
+    {facts.length > 0 && <div className="next-facts">{facts.map(fact => <div key={fact.key} className="next-fact">
+      {fact.icon}
+      <div><strong>{fact.title}</strong>{fact.note && <span>{fact.note}</span>}</div>
+    </div>)}</div>}
+    <div className="next-acts">
+      <a className="now-main" href={`#/detail/${opportunity.id}?focus=brief`}>Preparar la reunión</a>
+      <a className="now-link" href={`#/detail/${opportunity.id}`}>Ver ficha</a>
+    </div>
+  </section>;
+}
+
+const DONE_LIMIT = 5;
+
+/**
+ * "Hoy ya hizo": un día sin pendientes no es un día vacío. Sale de lo que ya está cargado (fechas de la
+ * oportunidad), no de una consulta nueva. Un cierre y su gestión comparten la hora, así que cada oportunidad
+ * aporta un solo renglón: ganar, perder y descartar pesan más que registrar.
+ */
+export function TodayDone({ opportunities, now = new Date() }: { opportunities: DecisionOpportunity[]; now?: Date }) {
+  const today = bogotaDay(now);
+  const rows: { key: string; at: string; text: React.ReactNode }[] = [];
+  for (const opportunity of opportunities) {
+    // Cuando el nombre cierra la frase se le quita el punto de "S.A.S."; en medio de la frase se deja entero.
+    const ending = <strong>{sentenceName(opportunity.company_name)}</strong>;
+    const inline = <strong>{opportunity.company_name}</strong>;
+    const scheduled = opportunity.next_action_at && (bogotaDay(opportunity.next_action_at) || '') > (today || '');
+    const candidates: Array<[string | null | undefined, React.ReactNode]> = [
+      [opportunity.approved_at, <>Ganó {ending}.</>],
+      [opportunity.lost_at, <>Marcó perdida {ending}.</>],
+      [opportunity.discarded_at, <>Descartó {ending}.</>],
+      [opportunity.last_interaction_at, scheduled
+        ? <>Registró una gestión con {inline} y dejó la próxima para {futureDayPhrase(opportunity.next_action_at, now)}.</>
+        : <>Registró una gestión con {ending}.</>],
+    ];
+    const hit = candidates.find(([at]) => at && bogotaDay(at) === today);
+    if (hit) rows.push({ key: opportunity.id, at: hit[0] as string, text: hit[1] });
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return <section className="today-done" aria-label="Lo que hizo hoy">
+    <h3>Hoy ya hizo</h3>
+    {rows.slice(0, DONE_LIMIT).map(row => <div key={row.key} className="done-row">
+      <time dateTime={row.at}>{TIME_LABEL.format(new Date(row.at))}</time>
+      <p>{row.text}</p>
+    </div>)}
+  </section>;
 }
 
 /**
