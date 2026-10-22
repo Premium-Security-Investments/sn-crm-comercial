@@ -1630,6 +1630,7 @@ function ClientProfilePanel({ o, canEdit }: { o: Opportunity; canEdit: boolean }
     <header><h2>Perfil del cliente</h2><span className={profile.complete ? 'client-profile-score is-complete' : 'client-profile-score'}>{profile.complete ? 'Perfil completo' : `${profile.done} de ${profile.total}`}</span></header>
     <div className="client-profile-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profile.pct}><span style={{ width: `${profile.pct}%` }} /></div>
     {!profile.complete && <p className="client-profile-missing">Falta: {profile.missing.join(', ')}.{canEdit && <> <a href={`#/edit/${o.id}`}>Completar perfil</a></>}</p>}
+    {profile.suggested.length > 0 && <p className="client-profile-suggested">Opcional: {profile.suggested.join(', ')}. Suma al análisis, pero no hace falta para ganarlo.</p>}
     <dl className="client-profile-fields">
       <div><dt>Página web</dt><dd>{link(o.company_website)}</dd></div>
       <div><dt>Cargo del decisor</dt><dd>{o.decision_maker_title || '—'}</dd></div>
