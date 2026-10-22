@@ -614,39 +614,10 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .v2-tender-aside:hover,.v2-tender-aside:focus-visible{border-color:#94a3b8;outline:none}
 @media(max-width:760px){.v2-tender-aside{flex-direction:column;align-items:flex-start}}
 /* CRM comercial — decisión obligatoria por oportunidad (Mi día, detalle y tablero). */
-.decision-queue{padding:18px;border:1px solid #fcd9a8;border-radius:20px;background:linear-gradient(180deg,#fffaf2,#fff);box-shadow:0 14px 32px rgba(21,38,69,.07)}
-.decision-queue .eyebrow{background:#fef3c7;color:#92400e}
 .topbar-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}.topbar-blocked-note{color:#92400e;font-size:12px;font-weight:700}.topbar-blocked-note a{color:inherit}
-.decision-queue-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-.decision-queue-header h3{margin:4px 0 6px;color:#10213d;font-size:clamp(20px,2vw,26px)}
-.decision-queue-header p{margin:0;color:#526173;font-size:14px;line-height:1.4;max-width:70ch}
-.decision-queue-count{flex:none;min-width:64px;padding:10px 14px;border-radius:16px;background:#fff1dc;color:#b45309;font-size:30px;text-align:center}
 .decision-list{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
 .decision-list>li{border:1px solid #e2eaf5;border-radius:14px;background:#fff}
-.decision-list>li.is-open{border-color:#93c5fd;box-shadow:0 8px 20px rgba(29,78,216,.08)}
-.decision-row{display:flex;align-items:center;gap:10px;padding:10px 12px}
-.decision-row input[type=checkbox]{width:20px;height:20px;flex:none}
-.decision-row-main{flex:1;display:grid;gap:2px;min-width:0;padding:6px 10px;border:0;border-radius:10px;background:none;box-shadow:none;text-align:left;cursor:pointer;color:inherit;white-space:normal}
-.decision-row-main:hover{background:#f1f5fb}
-.decision-open{flex:none;padding:9px 18px}
-.today-queue{border-color:#bfdbfe;background:#f5f9ff}
-.today-queue .eyebrow{background:#dbeafe;color:#1e40af}
-.today-queue .decision-queue-count{background:#dbeafe;color:#1e40af}
-.upcoming-list h3{margin:0 0 8px}
-.upcoming-list ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.upcoming-list li{border-radius:10px;background:#f8fbff}
 td.numeric-value{white-space:nowrap}
-.upcoming-day{min-width:150px;color:#1e40af;font-weight:800;font-size:13px}
-.upcoming-day::first-letter{text-transform:uppercase}
-.upcoming-list a,.stalled-list a{color:#10213d;text-decoration:none}
-/* La fila entera es el enlace: se ve que se puede pulsar y el área táctil sirve en celular (Juan, 22-oct). */
-.row-link{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:10px;border-radius:10px;transition:background .12s ease}
-.row-link:hover,.row-link:focus-visible{background:#e8f0ff;outline:none}
-.row-link strong{overflow-wrap:anywhere}
-.row-link-go{margin-left:auto;color:#1b4fd0;font-size:13px;font-weight:800;white-space:nowrap}
-.row-link:hover .row-link-go,.row-link:focus-visible .row-link-go{text-decoration:underline}
-.upcoming-list small{color:#526173}
-.decision-brief-link{align-self:center;margin-right:10px;color:#1b4fd0;font-size:13px;font-weight:700;text-decoration:none}
 .meeting-brief summary{cursor:pointer;font-weight:800;color:#10213d}
 .brief-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:10px}
 .brief-block h4{margin:0 0 6px;font-size:13px;color:#526173}
@@ -663,20 +634,8 @@ td.numeric-value{white-space:nowrap}
 .loss-report summary{cursor:pointer;font-weight:800;color:#10213d}
 .loss-report-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:10px}
 .loss-report-table h4{margin:0 0 6px;font-size:13px;color:#526173}
-.stalled-list h3{margin:0 0 8px}
-.stalled-list ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.stalled-list li{border-radius:10px;background:#fffbeb}
-.stalled-list .row-link:hover,.stalled-list .row-link:focus-visible{background:#fef3c7}
-.stalled-list small{color:#7c2d12}
 .my-day-card.is-estancada{border-left:3px solid #f59e0b}
-.my-day-prospect{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
-.my-day-prospect p{margin:0}
-.decision-queue-header .decision-quota{margin-top:8px;padding:8px 12px;border-radius:10px;background:#fff1dc;color:#7c2d12;font-weight:700}
-.decision-queue-header .decision-quota.is-done{background:#dcfce7;color:#14532d}
 .decision-full-link{display:inline-block;margin:0 14px 14px;color:#1b4fd0;font-size:13px;font-weight:700}
-.decision-row-main strong{color:#10213d;font-size:15px;overflow-wrap:anywhere}
-.decision-row-main span{color:#526173;font-size:13px}
-.decision-row-main em{color:#b45309;font-style:normal;font-size:13px;font-weight:800}
 .decision-form{padding:4px 14px 14px}
 .decision-choices{display:flex;flex-wrap:wrap;gap:6px}
 .decision-choice{padding:8px 12px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#10213d;font-weight:800;font-size:13px;cursor:pointer}
@@ -710,10 +669,6 @@ td.numeric-value{white-space:nowrap}
 .delete-request-row em{color:#b91c1c;font-style:normal;font-size:13px;font-weight:800}
 .delete-request-row input{min-width:200px}
 @media(max-width:760px){
-  .decision-queue{padding:14px}
-  .decision-queue-header{flex-direction:column}
-  .decision-row{flex-wrap:wrap}
-  .decision-row .decision-open{margin-left:30px}
   .decision-choice{flex:1 1 calc(50% - 6px);text-align:center}
   .decision-actions button{width:100%}
 }
@@ -722,8 +677,104 @@ td.numeric-value{white-space:nowrap}
 /* Dashboard comercial: tres preguntas */
 .dashboard-three-questions{gap:22px}.dashboard-question .v2-deal-row{grid-template-columns:minmax(0,1fr) minmax(130px,.34fr) auto}.dashboard-details>summary{cursor:pointer;font-weight:900;color:#10213d}.dashboard-details[open]>summary{margin-bottom:12px}.dashboard-footnote{margin:0;font-size:12.5px}.dashboard-simple-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}.dashboard-simple-list li{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}.dashboard-simple-list span{color:#526173;font-size:13px}
 .behavior-table table{min-width:980px}.behavior-table td small{color:#64748b}.behavior-explanation{font-size:12.5px;line-height:1.45;margin:0}
-/* Mi día del comercial */
-.my-day-home{gap:16px}.my-day-goal-line{margin:0;padding:12px 16px;border:1px solid #dbe7f4;border-radius:16px;background:#f8fbff;color:#10213d;font-weight:750}.my-day-goal-line a{font-weight:900}.my-day-more>summary{cursor:pointer;font-weight:900;color:#10213d}.my-day-more h3{margin:14px 0 8px;font-size:15px}.my-day-personal-banner{grid-template-columns:1fr}.my-day-first{display:grid;gap:12px;justify-items:start}
+/* ===== Mi día del comercial (rediseño del 2026-10-22) =====
+   Juan: "todo es como lo mismo, no hay jerarquías de nada, no hay divisiones". La respuesta es una sola
+   superficie elevada —"Ahora"— y todo lo demás en filas planas sobre el fondo, con separadores reales.
+   Celular primero: el orden de lectura es estado → Ahora → Vig-IA → Esta semana → Meta. */
+.my-day-home{gap:18px;container-type:inline-size}
+.my-day-first{display:grid;gap:12px;justify-items:start}
+.my-day-personal-banner{grid-template-columns:1fr}
+.my-day-head{display:flex;flex-direction:column;gap:6px}
+.my-day-dayline{margin:0;font-size:13px;font-weight:600;color:#5d6b82}
+.my-day-dayline strong{color:#40516b;font-weight:800}
+.my-day-headline{margin:0;font-size:21px;line-height:1.26;letter-spacing:-.021em;color:#172033;max-width:34ch;text-wrap:balance}
+.my-day-subline{margin:0;font-size:13.5px;line-height:1.5;color:#5d6b82;max-width:52ch}
+.my-day-subline strong{color:#b45309}
+/* En celular los envoltorios desaparecen y cada bloque fija su orden; en computador vuelven a ser dos columnas. */
+.my-day-grid{display:flex;flex-direction:column;gap:18px}
+.my-day-col,.my-day-side{display:contents}
+.now-queue{order:1}.vchat{order:2}.week-list{order:3}.my-day-goal{order:4}.my-day-pending-data{order:5}
+
+/* "Ahora": lo único con fondo, borde y sombra en toda la pantalla. */
+.now-queue{background:#fff;border:1px solid #dfe6f1;border-radius:18px;box-shadow:0 10px 30px rgba(21,38,69,.1);overflow:hidden}
+.now-head{padding:15px 16px 13px;border-bottom:1px solid #dfe6f1}
+.now-head h3{margin:0;display:flex;align-items:baseline;gap:8px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.now-count{font-size:13px;font-weight:700;color:#5d6b82}
+.now-group{margin:0;padding:12px 16px 4px;font-size:11.5px;font-weight:800;letter-spacing:.055em;text-transform:uppercase;color:#5d6b82}
+.now-list{list-style:none;margin:0;padding:0}
+.now-item{border-top:1px solid #dfe6f1}
+.now-group+.now-list>.now-item:first-child{border-top:0}
+.now-item.is-open{background:#f7faff}
+.now-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:9px;padding:12px 16px 14px}
+.now-pick{flex:none;width:20px;height:20px;margin-top:5px}
+.now-dot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:7px;background:#b45309}
+.now-row.is-hoy .now-dot{background:#1b64f2}
+.now-body{flex:1 1 200px;min-width:0}
+.now-name{display:block;font-size:16px;font-weight:650;line-height:1.3;color:#172033;overflow-wrap:anywhere}
+.now-fact{margin:3px 0 0;font-size:13px;line-height:1.45;color:#5d6b82}
+.now-fact em{font-style:normal;font-weight:800;color:#b45309}
+.now-row.is-hoy .now-fact em{color:#1b4fd0}
+/* El estancamiento es una marca de la fila, no una sección aparte: toda estancada ya está esperando decisión. */
+.now-stall{display:inline-block;margin:6px 0 0;padding:2px 8px;border:1px solid #e7cfa6;border-radius:999px;background:#fdf6e9;color:#b45309;font-size:12px;font-weight:800}
+.now-acts{flex:1 1 100%;display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:2px;padding-left:16px}
+.now-main{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:11px 15px;border:0;border-radius:11px;background:linear-gradient(135deg,#1b64f2,#174ea6);color:#fff;font:inherit;font-size:14px;font-weight:800;text-decoration:none;cursor:pointer;box-shadow:0 8px 18px rgba(27,100,242,.2)}
+.now-main:hover{background:linear-gradient(135deg,#0d4fd0,#123f8e)}
+.now-link{display:inline-flex;align-items:center;min-height:44px;padding:11px 10px;border:0;border-radius:9px;background:transparent;color:#1b4fd0;font:inherit;font-size:13.5px;font-weight:800;text-decoration:none;cursor:pointer;box-shadow:none}
+.now-link:hover{background:#eaf2ff}
+.now-more,.now-bulk-toggle{display:block;width:100%;min-height:48px;padding:14px 16px;border:0;border-top:1px solid #dfe6f1;background:transparent;color:#1b4fd0;font:inherit;font-size:13.5px;font-weight:800;text-align:left;cursor:pointer;box-shadow:none}
+.now-more:hover,.now-bulk-toggle:hover{background:#eaf2ff}
+.now-bulk-toggle{color:#5d6b82;font-weight:700}
+.now-bulk-toggle[aria-pressed=true]{color:#1b4fd0;background:#eaf2ff}
+.now-queue .decision-bulk{margin:8px 16px 0}
+/* El vacío es el caso normal a media mañana y se diseña como tal. */
+.now-empty{padding:16px}
+.now-empty-title{margin:0;font-size:16px;font-weight:650;color:#172033}
+.now-empty-text{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:#5d6b82}
+.now-empty .now-acts{flex:none;margin-top:12px;padding-left:0}
+.now-item .decision-form,.now-item .decision-full-link{margin:0 16px 14px}
+
+/* "Esta semana": filas planas agrupadas por día; la fila entera es el enlace a la ficha. */
+.week-list h3{margin:0 0 4px;display:flex;align-items:baseline;gap:8px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.week-count{font-size:13px;font-weight:700;color:#5d6b82}
+.week-day{margin:0;padding:12px 0 6px;font-size:11.5px;font-weight:800;letter-spacing:.055em;color:#5d6b82}
+.week-day::first-letter{text-transform:uppercase}
+.week-row{display:grid;grid-template-columns:minmax(0,1fr) 20px;grid-template-rows:auto auto;align-items:center;gap:3px 12px;min-height:58px;padding:13px 8px;border-top:1px solid #cbd7e8;border-radius:8px;color:inherit;text-decoration:none;transition:background .16s ease}
+.week-row:hover,.week-row:focus-visible{background:rgba(255,255,255,.75);outline:none}
+.week-row:focus-visible{box-shadow:0 0 0 3px rgba(27,100,242,.3)}
+.week-row strong{grid-column:1;grid-row:1;min-width:0;font-size:15px;font-weight:650;line-height:1.3;color:#172033;overflow-wrap:anywhere}
+.week-row small{grid-column:1;grid-row:2;min-width:0;font-size:12.5px;color:#5d6b82}
+.week-row .row-chevron{grid-column:2;grid-row:1/3;justify-self:end;color:#9aa9c0}
+.week-row:hover .row-chevron,.week-row:focus-visible .row-chevron{color:#1b64f2}
+
+/* "Meta del mes": una medida, plana, sin tarjeta ni cifra gigante. */
+.my-day-goal h3{margin:0 0 9px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.my-day-goal .goal-fig{margin:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:7px}
+.my-day-goal .goal-fig strong{font-size:22px;font-weight:800;letter-spacing:-.02em;color:#172033}
+.my-day-goal .goal-fig span{font-size:13.5px;font-weight:700;color:#5d6b82}
+.goal-track{margin-top:9px;height:6px;border-radius:999px;background:#dae3f0;overflow:hidden}
+.goal-track i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#1b64f2,#4d8bff)}
+.goal-note{margin:8px 0 0;font-size:12.5px;line-height:1.5;color:#5d6b82}
+.goal-note a{color:#1b4fd0;font-weight:800;text-decoration:none}
+.goal-note a:hover{text-decoration:underline}
+
+/* Preparar y depurar bajan de peso: quedan plegados al final, sin competir con "Ahora". */
+.my-day-pending-data>summary{cursor:pointer;padding:12px 14px;border:1px solid #dbe7f4;border-radius:14px;background:#f8fbff;color:#40516b;font-size:13.5px;font-weight:800}
+.my-day-pending-data[open]>summary{border-radius:14px 14px 0 0}
+.my-day-pending-data .my-day-personal-banner{border-radius:0 0 14px 14px}
+
+@container (min-width:880px){
+  .my-day-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px 24px;align-items:start}
+  .my-day-col,.my-day-side{display:flex;flex-direction:column;gap:18px;min-width:0}
+  .my-day-col{grid-column:1}
+  .my-day-side{grid-column:2}
+  .my-day-pending-data{grid-column:1/-1}
+  .now-queue,.vchat,.week-list,.my-day-goal,.my-day-pending-data{order:0}
+  .my-day-headline{font-size:25px;max-width:42ch}
+  .now-row{flex-wrap:nowrap;align-items:center;padding:14px 18px}
+  .now-acts{flex:none;margin-top:0;padding-left:0}
+  .now-head,.now-group,.now-more,.now-bulk-toggle{padding-left:18px;padding-right:18px}
+  .now-queue .decision-bulk{margin-left:18px;margin-right:18px}
+}
 
 /* AGT-003 — perfil del cliente en el formulario */
 .client-profile-intro{border-top:1px solid #e2eaf5;padding-top:12px}.client-profile-intro h3{margin:0 0 4px;color:#10213d}.client-profile-intro p{margin:0;color:#526173;font-size:13px;font-weight:400}

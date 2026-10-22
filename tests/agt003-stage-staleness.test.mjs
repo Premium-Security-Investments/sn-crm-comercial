@@ -118,7 +118,14 @@ test('servidor y pantalla: la persona que mueve la etapa queda registrada y la i
 
   const ui = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
   assert.match(ui, /<StageStallBadge opportunity=\{o\} \/>/, 'insignia junto a la etapa en el listado');
-  assert.match(ui, /<StalledInStageList opportunities=\{openRows\} now=\{now\} \/>/, 'sección "Se están enfriando" en Mi día');
+  // Rediseño de Mi día (Juan, 2026-10-22): "Se están enfriando" deja de ser una sección. El aviso se apaga si hay
+  // próxima gestión con fecha futura y "pendiente de decisión" es "vencida o sin fecha": toda oportunidad estancada
+  // es también una que espera decisión, así que la lista aparte mostraba dos veces la misma fila. Ahora es una marca.
+  assert.doesNotMatch(ui, /StalledInStageList/, 'la sección aparte se retiró de Mi día');
+  const decision = readFileSync(new URL('../src/vigia/OpportunityDecision.tsx', import.meta.url), 'utf8');
+  assert.match(decision, /function stallLabel\(opportunity: DecisionOpportunity, now: Date\): string \{/, 'el estancamiento se calcula para la fila de "Ahora"');
+  assert.match(decision, /\{stall && <p className="now-stall">\{stall\}<\/p>\}/, 'y se pinta como marca sobre esa misma fila');
+  assert.match(decision, /stageStaleness\(\{\n    stageEnteredAt: opportunity\.stage_entered_at/, 'sigue saliendo de la misma regla pura, no de una copia');
   assert.match(ui, /stage_entered_at\?: string \| null; stage_entered_at_measured\?: boolean \| null; staleness_days\?: number \| null;/);
 });
 

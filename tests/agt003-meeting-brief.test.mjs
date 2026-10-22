@@ -105,8 +105,11 @@ test('pantalla: el brief vive en la ficha, se abre desde la cola de hoy y rotula
   assert.doesNotMatch(ui, /MeetingBriefPanel[\s\S]{0,400}api</, 'el brief no llama a ninguna ruta: sale de lo que ya está cargado');
 
   const decision = readFileSync(new URL('../src/vigia/OpportunityDecision.tsx', import.meta.url), 'utf8');
-  const today = decision.slice(decision.indexOf('export function TodayQueue('));
-  assert.match(today, /<a className="decision-brief-link" href=\{`#\/detail\/\$\{opportunity\.id\}\?focus=brief`\}>Antes de la reunión<\/a>/);
+  // Desde el rediseño de Mi día (2026-10-22) lo agendado para hoy vive dentro de "Ahora", y su enlace secundario
+  // sigue siendo el brief: "Antes de la reunión".
+  const now = decision.slice(decision.indexOf('export function NowQueue('));
+  assert.ok(now.includes("kind === 'hoy' ? '?focus=brief' : ''"), 'la fila de hoy enlaza al brief');
+  assert.ok(now.includes("kind === 'hoy' ? 'Antes de la reunión' : 'Ver ficha'"), 'y lo nombra "Antes de la reunión"');
 });
 
 test('nada de "0 días" ni de preguntar por un contrato que no existe (revisión de Juan del 22-oct)', () => {
