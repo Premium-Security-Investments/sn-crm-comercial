@@ -121,3 +121,17 @@ test('servidor y pantalla: la persona que mueve la etapa queda registrada y la i
   assert.match(ui, /<StalledInStageList opportunities=\{openRows\} now=\{now\} \/>/, 'sección "Se están enfriando" en Mi día');
   assert.match(ui, /stage_entered_at\?: string \| null; stage_entered_at_measured\?: boolean \| null; staleness_days\?: number \| null;/);
 });
+
+test('migración 146: el arranque no se apoya en una escritura masiva vieja y sólo toca datos', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/146_crm_stage_staleness_arranque.sql', import.meta.url), 'utf8');
+  assert.match(sql, /set stage_entered_at = now\(\)\s+where stage_entered_at_measured = false/,
+    'las fechas sembradas se llevan al corte de medición; las medidas no se tocan');
+  assert.match(sql, /set staleness_days = 30\s+where code = 'prospecto'/);
+  const ejecutable = sql.replace(/^\s*--.*$/gm, '');
+  assert.doesNotMatch(ejecutable, /alter table|create |drop |grant |revoke /i, 'la 146 es sólo datos');
+  assert.doesNotMatch(ejecutable, /updated_at/, 'updated_at no se modifica');
+
+  const rollback = readFileSync(new URL('../supabase/rollbacks/146_crm_stage_staleness_arranque_rollback.sql', import.meta.url), 'utf8');
+  assert.match(rollback, /set stage_entered_at = coalesce\(updated_at, created_at\)/);
+  assert.match(rollback, /set staleness_days = 14\s+where code = 'prospecto'/);
+});
