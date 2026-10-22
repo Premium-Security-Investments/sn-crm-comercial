@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   agt002FreshnessDay,
+  agt002IsOfficialDocumentSource,
   agt002ScheduleFreshnessNotices,
   runAgt002ScheduleFreshnessReview,
 } from '../agt002-schedule-freshness.js';
@@ -114,7 +115,7 @@ test('la revisión programada: sólo lee, agrega el aviso por licitación y una 
             if (chain.filters.opportunity_id === 'opp-sin-analisis') return resolve({ data: [], error: null });
             return resolve({ data: [{ id: 'run', result: { meta: { process_deadlines: FISCALIA } } }], error: null });
           }
-          if (table === 'psi_tender_document_versions') return resolve({ data: [{ created_at: ULTIMO_DOCUMENTO }], error: null });
+          if (table === 'psi_tender_document_versions') return resolve({ data: [{ created_at: ULTIMO_DOCUMENTO, source: 'secop ii' }], error: null });
           return resolve({ data: [], error: null });
         },
       };
@@ -167,4 +168,47 @@ test('la revisión de fases llama la frescura, le pasa el aviso atómico y sigue
   });
   assert.deepEqual(logs.filter(event => event.event === 'agt002_phase_change_review_freshness_failed').map(event => event.message), ['la frescura falló']);
   assert.ok(logs.some(event => event.event === 'agt002_licitaciones_alerts_nothing_new'), 'la revisión termina normalmente');
+});
+
+test('una carga nuestra no rompe el silencio de la entidad', () => {
+  // Caso real: las seis cartas que cargó Juan en la Fiscalía el 21-oct son posteriores al 16-oct, pero no las
+  // publicó la entidad. La primera corrida en producción taponó los avisos por esto.
+  assert.equal(agt002IsOfficialDocumentSource('secop ii'), true);
+  assert.equal(agt002IsOfficialDocumentSource('esu contratación'), true);
+  assert.equal(agt002IsOfficialDocumentSource('carga manual'), false);
+  assert.equal(agt002IsOfficialDocumentSource('manual_upload'), false);
+  assert.equal(agt002IsOfficialDocumentSource('legacy_upload'), false);
+  assert.equal(agt002IsOfficialDocumentSource(''), false, 'sin origen conocido no se da por oficial');
+});
+
+test('la revisión programada mira el último documento OFICIAL, no el último cargado', async () => {
+  const appended = [];
+  const documents = [
+    { created_at: '2026-10-21T19:18:59+00', source: 'carga manual' },
+    { created_at: '2026-10-06T22:25:56+00', source: 'secop ii' },
+  ];
+  const database = {
+    from(table) {
+      const chain = {
+        filters: {},
+        select() { return chain; },
+        eq(column, value) { chain.filters[column] = value; return chain; },
+        order() { return chain; },
+        limit() { return chain; },
+        then(resolve) {
+          if (table === 'psi_public_tenders') return resolve({ data: [{ id: 't-fiscalia', ref: 'FGN-NC-IPSE-0054-2026', status: 'Presentación de observaciones', published_at: TENDER.published_at, last_seen_at: TENDER.last_seen_at, converted_opportunity_id: 'opp-fiscalia', internal_status: 'convertida_oportunidad' }], error: null });
+          if (table === 'psi_tender_analysis_runs') return resolve({ data: [{ id: 'run', result: { meta: { process_deadlines: FISCALIA } } }], error: null });
+          if (table === 'psi_tender_document_versions') return resolve({ data: documents, error: null });
+          return resolve({ data: [], error: null });
+        },
+      };
+      return chain;
+    },
+  };
+  const events = await runAgt002ScheduleFreshnessReview(database, {
+    now: NOW, appendLine: async (_db, opportunityId, line) => { appended.push(line); },
+  });
+  assert.ok(appended.length >= 3, 'la carga manual del 21-oct no debe tapar los avisos del 16-oct');
+  assert.ok(appended.some(line => /16 de octubre/.test(line)));
+  assert.deepEqual(events.filter(event => event.event === 'agt002_schedule_freshness_notice').map(event => event.code)[0], 'cierre_sin_pliego_definitivo');
 });
