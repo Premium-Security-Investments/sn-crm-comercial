@@ -184,7 +184,9 @@ test('servidor: las funciones del chat conservan los mismos controles que las ru
       'prepareClientForOpportunityUpdate(', 'canEditCustomerSegment(currentProfile, existing)', 'resolveClientArgsForOpportunityUpdate(', 'logCustomerSegmentChange(', 'saveClientProfile(']],
     [body('async function addInteractionForProfile('), routeBody("app.post('/api/opportunity-interactions', async"), [
       'ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT)', 'No puede registrar seguimientos a nombre de otro usuario.', 'preparePublicInteractionNotes(',
-      "from('psi_sales_interactions').insert(row)", 'last_interaction_at: occurred_at']],
+      // Desde el 2026-10-22 la escritura de "última gestión" pasa por advancedLastInteraction, que sólo avanza:
+      // el control compartido ya no es el literal del campo sino la llamada a esa regla.
+      "from('psi_sales_interactions').insert(row)", 'advancedLastInteraction(']],
   ];
   for (const [helper, route, guards] of pairs) {
     for (const guard of guards) {

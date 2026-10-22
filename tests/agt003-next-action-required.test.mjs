@@ -68,7 +68,9 @@ test('servidor: la regla se exige al registrar seguimiento y al mover la etapa, 
 
   // La oportunidad que carga el control de acceso trae etapa y próxima gestión: sin eso la regla no puede decidir
   // y el registro del cambio de etapa comparaba contra undefined.
-  assert.match(server, /select\('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,deleted_at'\)/);
+  // last_interaction_at entró el 2026-10-22: las rutas que registran una gestión lo comparan antes de
+  // escribirlo, para que "última gestión" no retroceda al registrar algo viejo (advancedLastInteraction).
+  assert.match(server, /select\('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,last_interaction_at,deleted_at'\)/);
 });
 
 test('chat: la próxima gestión se aplica antes del seguimiento, conservando el índice de cada acción', () => {

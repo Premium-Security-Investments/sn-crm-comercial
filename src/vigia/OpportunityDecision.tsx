@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import { bogotaDay, FREEZE_DAYS, type DecisionCode } from './opportunity-decision-rules.js';
 import { stageStaleness } from './stage-staleness';
-import { closeDateLine, futureDayPhrase, pastDayPhrase, readablePhone, sentenceName } from './my-day-presentation';
+import { closeDateLine, clockTime, futureDayPhrase, pastDayPhrase, readablePhone, sentenceName } from './my-day-presentation';
 
 // CRM comercial — decisión obligatoria por oportunidad (2026-10-07). Toda oportunidad abierta debe quedar con una
 // decisión vigente: sigue viva (con fecha), avanza, congelada, descartada, perdida o con eliminación pedida.
@@ -151,7 +151,6 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, comp
 }
 
 const PENDING_SHOWN = 3;
-const TIME_LABEL = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' });
 const WEEK_DAY = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', timeZone: 'America/Bogota' });
 const CHEVRON = <svg className="row-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>;
@@ -205,6 +204,8 @@ export function NextConversation({ opportunity, sameClient = 1, now = new Date()
   opportunity: DecisionOpportunity; sameClient?: number; now?: Date;
 }) {
   const when = new Date(opportunity.next_action_at as string);
+  // La hora sólo se muestra si alguien la escogió: 9:00 y 12:00 son lo que pone el calendario cuando no hay hora.
+  const whenClock = clockTime(opportunity.next_action_at);
   const days = daysBetween(bogotaDay(now) || todayDay(), bogotaDay(opportunity.next_action_at as string) || todayDay());
   const stall = stageStaleness({
     stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
@@ -219,7 +220,8 @@ export function NextConversation({ opportunity, sameClient = 1, now = new Date()
     facts.push({ key: 'decisor', icon: ICON_PERSON, title: opportunity.decision_maker_name, note: readablePhone(opportunity.decision_maker_phone) || 'Sin teléfono registrado' });
   }
   if (opportunity.last_interaction_at) {
-    facts.push({ key: 'ultima', icon: ICON_CLOCK, title: `Le habló ${pastDayPhrase(opportunity.last_interaction_at, now)}`, note: `A las ${TIME_LABEL.format(new Date(opportunity.last_interaction_at))}` });
+    const lastClock = clockTime(opportunity.last_interaction_at);
+    facts.push({ key: 'ultima', icon: ICON_CLOCK, title: `Le habló ${pastDayPhrase(opportunity.last_interaction_at, now)}`, note: lastClock ? `A las ${lastClock}` : 'Quedó registrada sin hora' });
   }
   const closeLine = closeDateLine(opportunity.expected_close_date, now);
   if (closeLine) {
@@ -239,7 +241,7 @@ export function NextConversation({ opportunity, sameClient = 1, now = new Date()
   const meta = [opportunity.stage_name, valueLabel(opportunity), opportunity.service_type_name, place].filter(Boolean).join(' · ');
 
   return <section className="next-talk" aria-label="Su próxima conversación">
-    <p className="next-when">{WEEK_DAY.format(when)}, {TIME_LABEL.format(when)} <em>· {days === 1 ? 'mañana' : `en ${days} días`}</em></p>
+    <p className="next-when">{WEEK_DAY.format(when)}{whenClock ? `, ${whenClock}` : ''} <em>· {days === 1 ? 'mañana' : `en ${days} días`}</em></p>
     <h3 className="next-name">{opportunity.company_name}</h3>
     <p className="next-meta">{meta}</p>
     {facts.length > 0 && <div className="next-facts">{facts.map(fact => <div key={fact.key} className="next-fact">
@@ -284,7 +286,7 @@ export function TodayDone({ opportunities, now = new Date() }: { opportunities: 
   return <section className="today-done" aria-label="Lo que hizo hoy">
     <h3>Hoy ya hizo</h3>
     {rows.slice(0, DONE_LIMIT).map(row => <div key={row.key} className="done-row">
-      <time dateTime={row.at}>{TIME_LABEL.format(new Date(row.at))}</time>
+      <time dateTime={row.at}>{clockTime(row.at) || 'Sin hora'}</time>
       <p>{row.text}</p>
     </div>)}
   </section>;
@@ -341,9 +343,8 @@ export function NowQueue({ pending, today, stages, lossReasons, competitors = []
   const row = (opportunity: DecisionOpportunity, kind: 'pendiente' | 'hoy') => {
     const isOpen = openId === opportunity.id;
     const stall = stallLabel(opportunity, now);
-    const head = kind === 'hoy'
-      ? `Hoy a las ${TIME_LABEL.format(new Date(opportunity.next_action_at as string))}`
-      : pendingReason(opportunity);
+    const todayClock = clockTime(opportunity.next_action_at);
+    const head = kind === 'hoy' ? (todayClock ? `Hoy a las ${todayClock}` : 'Agendada para hoy') : pendingReason(opportunity);
     return <li key={opportunity.id} className={`now-item${isOpen ? ' is-open' : ''}`}>
       <div className={`now-row is-${kind}`}>
         {picking && kind === 'pendiente' && <input type="checkbox" className="now-pick" aria-label={`Seleccionar ${opportunity.company_name}`}

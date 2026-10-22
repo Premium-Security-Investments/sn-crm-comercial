@@ -142,3 +142,37 @@ test('migración 146: el arranque no se apoya en una escritura masiva vieja y s�
   assert.match(rollback, /set stage_entered_at = coalesce\(updated_at, created_at\)/);
   assert.match(rollback, /set staleness_days = 14\s+where code = 'prospecto'/);
 });
+
+test('una sola definición de "estancada" en todo el producto', async () => {
+  const stalledInStage = await load('../src/vigia/stage-staleness.ts', 'stalledInStage');
+  // Hasta el 2026-10-22 convivían dos: la vieja —vista v_psi_sales_stalled_sustentacion, umbral de 5 días escrito
+  // dentro, sólo para esa etapa, medido en días sin contacto— y la nueva, por días en la etapa y configurable.
+  // Medido ese día sobre la base real: la vieja marcaba 3 oportunidades y la nueva 0, sin una sola en común.
+  const base = { stage_entered_at: diasAntes(20), stage_entered_at_measured: true, next_action_at: null };
+  const filas = stalledInStage([
+    { id: 'prospecto-viejo', stage_code: 'prospecto', stage_name: 'Prospecto', staleness_days: 30, ...base },
+    { id: 'sustentacion-parada', stage_code: 'sustentacion', stage_name: 'Sustentación', staleness_days: 14, ...base },
+    { id: 'negociacion-mas-parada', stage_code: 'negociacion', stage_name: 'Negociación', staleness_days: 14, stage_entered_at: diasAntes(40), stage_entered_at_measured: true, next_action_at: null },
+    { id: 'con-compromiso', stage_code: 'sustentacion', stage_name: 'Sustentación', staleness_days: 14, stage_entered_at: diasAntes(40), stage_entered_at_measured: true, next_action_at: new Date(NOW.getTime() + 86_400_000).toISOString() },
+  ], NOW);
+  assert.deepEqual(filas.map(f => f.opportunity.id), ['negociacion-mas-parada', 'sustentacion-parada'],
+    'la más parada primero; la que no llegó al umbral y la que tiene compromiso quedan fuera');
+  assert.equal(filas[0].stall.days, 40);
+  // El estancamiento ya no es cosa de una sola etapa.
+  assert.ok(filas.some(f => f.opportunity.stage_code === 'negociacion'));
+
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(main, /data\.stalled/, 'la pantalla ya no lee la lista de la vista vieja');
+  assert.match(main, /const stalled = stalledInStage\(data\.opportunities\.filter\(o => !isTerminalStage\(o\.stage_code\)\)\);/,
+    'el tablero calcula las estancadas con la regla compartida');
+  assert.match(main, /const filteredStalled = stalledInStage\(/, 'el tablero del gerente también');
+  assert.match(main, /if \(q\.includes\('estancad'\) \|\| q\.includes\('enfri'\)\) \{/, 'y Prioridades también');
+  assert.doesNotMatch(main, /Sustentación estancada|Alertas de sustentación|Más de 5 días/,
+    'ya no quedan textos de la regla vieja');
+
+  const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  assert.equal(server, api, 'el espejo de Vercel queda igual');
+  assert.doesNotMatch(server, /v_psi_sales_stalled_sustentacion/, 'el bootstrap dejó de consultar la vista vieja');
+  assert.doesNotMatch(server, /\bstalled\b/, 'y de enviar esa lista');
+});

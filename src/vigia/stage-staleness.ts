@@ -63,3 +63,35 @@ export function stageStaleness({
   const committed = next !== null && next > nowMs;
   return { stale: days >= threshold && !committed, days, atLeast, label };
 }
+
+export type StalledCandidate = {
+  stage_code?: string | null;
+  stage_name?: string | null;
+  stage_entered_at?: string | null;
+  stage_entered_at_measured?: boolean | null;
+  staleness_days?: number | null;
+  next_action_at?: string | null;
+};
+
+/**
+ * Las estancadas de una lista, de la más parada a la menos. Es la ÚNICA definición de "estancada" del producto
+ * (Juan, 2026-10-22). Hasta hoy convivía con "Sustentación estancada": una vista de base con el umbral de 5 días
+ * escrito dentro, sólo para esa etapa, y que medía días sin contacto en vez de días en la etapa. El tablero decía
+ * una cosa y Mi día otra sobre la misma oportunidad; medido el 22 de octubre, la vieja marcaba 3 y la nueva 0, sin
+ * una sola oportunidad en común.
+ */
+export function stalledInStage<T extends StalledCandidate>(
+  opportunities: T[], now: Date = new Date(),
+): Array<{ opportunity: T; stall: StageStaleness }> {
+  return opportunities
+    .map(opportunity => ({
+      opportunity,
+      stall: stageStaleness({
+        stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
+        stalenessDays: opportunity.staleness_days, nextActionAt: opportunity.next_action_at,
+        stageName: opportunity.stage_name, now,
+      }),
+    }))
+    .filter(row => row.stall.stale)
+    .sort((a, b) => (b.stall.days || 0) - (a.stall.days || 0));
+}

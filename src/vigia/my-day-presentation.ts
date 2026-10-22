@@ -279,3 +279,26 @@ export function closeDateLine(value: string | null | undefined, now: Date = new 
   if (day === today) return 'Espera cerrarla hoy';
   return `Espera cerrarla ${futureDayPhrase(instant, now)}`;
 }
+
+/**
+ * Una fecha escogida en un calendario se guarda a una hora de convención, no a la hora en que algo va a pasar:
+ * 9:00 desde el formulario de decisión (dayToIso) y 12:00 desde el chat y la ficha (chatDayToIso, followUpDate).
+ * Mostrar esa hora como si fuera una cita es inventarla. Medido el 2026-10-22: 10 de las 69 próximas gestiones
+ * y 21 de las 174 últimas gestiones caen exactamente en una de esas dos horas. Colombia no tiene horario de
+ * verano, así que el desfase es siempre -05:00.
+ */
+export function hasRealClockTime(value: string | null | undefined): boolean {
+  const ms = value ? Date.parse(String(value).replace(' ', 'T')) : NaN;
+  if (!Number.isFinite(ms)) return false;
+  const bogota = new Date(ms - 5 * 3_600_000);
+  if (bogota.getUTCSeconds() !== 0 || bogota.getUTCMilliseconds() !== 0 || bogota.getUTCMinutes() !== 0) return true;
+  const hour = bogota.getUTCHours();
+  return hour !== 9 && hour !== 12;
+}
+
+const CLOCK = new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+
+/** La hora, sólo cuando es de verdad. Vacío cuando viene de un calendario. */
+export function clockTime(value: string | null | undefined): string {
+  return hasRealClockTime(value) ? CLOCK.format(new Date(String(value).replace(' ', 'T'))) : '';
+}

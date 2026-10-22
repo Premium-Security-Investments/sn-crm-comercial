@@ -1082,7 +1082,6 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const visibleOwnerIds = readableOwnerIds(currentProfile, humanProfiles, ownerAssignments, globalScope);
   const commercialData = capabilities.opportunities || capabilities.dashboard || capabilities.alerts || capabilities.vigia;
   const scopedOpportunities = globalScope ? payload.opportunities : payload.opportunities.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
-  const scopedStalled = globalScope ? payload.stalled : payload.stalled.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
   const scopedTopClosing = globalScope ? payload.topClosing : payload.topClosing.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
   const scopedMonthlyKpis = globalScope ? payload.monthlyKpis : payload.monthlyKpis.filter(k => visibleOwnerIds.has(k.owner_id));
   const scopedGoals = globalScope ? payload.goals : payload.goals.filter(g => !g.user_id || visibleOwnerIds.has(g.user_id));
@@ -1095,7 +1094,6 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const summary = capabilities.dashboard || capabilities.vigia
     ? (globalScope ? payload.summary : recomputeSummary(stages, opportunities))
     : [];
-  const stalled = capabilities.dashboard ? scopedStalled : [];
   const topClosing = capabilities.dashboard ? scopedTopClosing : [];
   const monthlyKpis = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedMonthlyKpis : [];
   const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
@@ -1113,7 +1111,7 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, competitors, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
+  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, competitors, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
 }
 function opportunityOwnerError(message, status) {
   const error = new Error(message);
@@ -1145,7 +1143,7 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,deleted_at').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,last_interaction_at,deleted_at').eq('id', id).single());
   if (opportunity.deleted_at) { const error = new Error('Oportunidad no encontrada.'); error.status = 404; throw error; }
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
@@ -3646,7 +3644,7 @@ app.post('/api/agt003/lead-analysis-message', async (req, res) => {
     const analysisId = String(req.body?.analysis_id || '');
     const action = req.body?.action;
     if (!id || !analysisId || !['used', 'dismissed'].includes(action)) { const error = new Error('Solicitud inválida.'); error.status = 400; throw error; }
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const target = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const analysis = await must(database.from('psi_agt003_lead_analyses').select('id,opportunity_id,status,output').eq('id', analysisId).maybeSingle());
     if (!analysis || analysis.opportunity_id !== id || analysis.status !== 'completed') { const error = new Error('Análisis no encontrado.'); error.status = 404; throw error; }
     const existing = await must(database.from('psi_agt003_lead_analysis_message_events').select('id').eq('analysis_id', analysisId).maybeSingle());
@@ -3661,7 +3659,8 @@ app.post('/api/agt003/lead-analysis-message', async (req, res) => {
         occurred_at: occurredAt,
       }).select('id').single());
       interactionId = interaction.id;
-      await must(database.from('psi_sales_opportunities').update({ last_interaction_at: occurredAt }).eq('id', id).select('id').single());
+      const advanced = advancedLastInteraction(target?.last_interaction_at, occurredAt);
+      if (advanced) await must(database.from('psi_sales_opportunities').update({ last_interaction_at: advanced }).eq('id', id).select('id').single());
     }
     const { error } = await database.from('psi_agt003_lead_analysis_message_events').insert({ analysis_id: analysisId, actor_id: currentProfile.id, action, interaction_id: interactionId });
     if (error && error.code !== '23505') throw error;
@@ -3810,6 +3809,19 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
 // Registrar seguimiento (igual que POST /api/opportunity-interactions).
 // F4 (Juan, 2026-10-22): ninguna oportunidad abierta queda sin próxima gestión. Se exige al registrar un seguimiento
 // y al mover la etapa; no se exige si el negocio quedó cerrado o si ya hay una fecha futura vigente.
+/**
+ * "Última gestión" es la más reciente, no la última escrita (Juan, 2026-10-22). Las cuatro rutas que registran una
+ * gestión sobrescribían `last_interaction_at` a ciegas, así que registrar hoy una visita de la semana pasada hacía
+ * retroceder la fecha. Caso real en Frontier: la nota del 22 a mediodía se registró a las 7:33 y el WhatsApp de las
+ * 9:05, escrito después, la dejó en 9:05. Devuelve el valor nuevo sólo cuando de verdad avanza.
+ */
+function advancedLastInteraction(currentValue, occurredAt) {
+  const next = Date.parse(occurredAt || '');
+  if (!Number.isFinite(next)) return null;
+  const current = Date.parse(currentValue || '');
+  return Number.isFinite(current) && current >= next ? null : occurredAt;
+}
+
 function requireNextAction({ stageCode, currentNextActionAt, proposedNextActionAt }) {
   const verdict = nextActionRequirement({ stageCode, currentNextActionAt, proposedNextActionAt });
   if (verdict.ok) return;
@@ -3829,9 +3841,11 @@ async function addInteractionForProfile(database, currentProfile, id, body) {
   const next_action_at = body.next_action_at || null;
   const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
   const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-  const update = { last_interaction_at: occurred_at };
+  const update = {};
+  const advanced = advancedLastInteraction(existing?.last_interaction_at, occurred_at);
+  if (advanced) update.last_interaction_at = advanced;
   if (next_action_at) update.next_action_at = next_action_at;
-  await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+  if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
   return data;
 }
 
@@ -4178,7 +4192,7 @@ app.get('/api/bootstrap', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
     touchProfileLastSeen(database, currentProfile.id);
-    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
+    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, topClosing, monthlyKpis, goals] = await Promise.all([
       must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
       must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
       must(database.from('psi_sales_profiles').select(BOOTSTRAP_PROFILE_SELECT).eq('active', true).order('full_name')),
@@ -4187,13 +4201,11 @@ app.get('/api/bootstrap', async (req, res) => {
       must(database.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_competitors').select('id,name').eq('active', true).order('name')),
-      must(database.from('v_psi_sales_stalled_sustentacion').select(opportunitySelect).order('prioritization_date')),
       must(database.from('v_psi_sales_top3_closing').select(opportunitySelect).order('owner_name')),
       must(database.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
       must(database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500)),
     ]);
     const enrichedOpportunities = await attachCommercialMetadata(database, opportunities);
-    const enrichedStalled = await attachCommercialMetadata(database, stalled);
     const enrichedTopClosing = await attachCommercialMetadata(database, topClosing);
     const totals = enrichedOpportunities.reduce((acc, o) => {
       acc.count += 1;
@@ -4204,7 +4216,7 @@ app.get('/api/bootstrap', async (req, res) => {
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
     const decisionsToday = currentProfile.role === 'comercial' ? await countDecisionsToday(database, currentProfile.id) : 0;
     const leadAnalysesToday = await listLeadAnalysesToday(database, currentProfile.id);
-    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
+    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
   } catch (error) { sendAuthError(res, error); }
 });
 app.all('/api/bootstrap', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
@@ -7012,7 +7024,7 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
-    await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const target = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     if (req.body.created_by && req.body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
     const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
@@ -7021,9 +7033,11 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: req.params.id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-    const update = { last_interaction_at: occurred_at };
+    const update = {};
+    const advanced = advancedLastInteraction(target?.last_interaction_at, occurred_at);
+    if (advanced) update.last_interaction_at = advanced;
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
+    if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -7218,9 +7232,11 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-    const update = { last_interaction_at: occurred_at };
+    const update = {};
+    const advanced = advancedLastInteraction(existingOpportunity?.last_interaction_at, occurred_at);
+    if (advanced) update.last_interaction_at = advanced;
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+    if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });

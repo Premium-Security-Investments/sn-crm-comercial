@@ -48,7 +48,7 @@ import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
 import { buildFollowUpHistory } from './opportunity-followup-presentation.js';
 import { decisionMakerCardState, expectedCloseCardState, followUpAgeLabel, nextActionCardState, presentFollowUpEntry } from './vigia/opportunity-ficha-presentation';
 import { buildMyDayQueue, futureDayPhrase, type MyDayAlert } from './vigia/my-day-presentation';
-import { stageStaleness } from './vigia/stage-staleness';
+import { stageStaleness, stalledInStage } from './vigia/stage-staleness';
 import { hasLiveNextAction } from './vigia/next-action-rule.js';
 import { lossBreakdown } from './vigia/loss-report';
 import { meetingBrief } from './vigia/meeting-brief';
@@ -91,7 +91,7 @@ type Competitor = { id: string; name: string };
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
-type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; competitors?: Competitor[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number; leadAnalysesToday?: string[] };
+type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; competitors?: Competitor[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number; leadAnalysesToday?: string[] };
 type ProgramacionAccessValue = { rol: string; ciudad_id: string | null };
 type ProgramacionAccessState = { status: 'loading' | 'ready' | 'error'; ciudades: { id: string; nombre: string }[]; byProfile: Record<string, ProgramacionAccessValue> };
 const PROGRAMACION_ROLE_LABELS: Record<string, string> = { coordinador: 'Coordinador', nomina: 'Nómina', consulta: 'Consulta', admin: 'Administrador' };
@@ -262,7 +262,6 @@ function bootstrapForViewMode(data: Bootstrap, viewMode: NavViewMode): Bootstrap
     ...data,
     currentProfile: effective,
     opportunities: data.opportunities.filter(own),
-    stalled: data.stalled.filter(own),
     topClosing: data.topClosing.filter(own),
     monthlyKpis: data.monthlyKpis.filter(k => k.owner_id === selfId),
     goals: data.goals.filter(g => g.user_id === selfId),
@@ -607,7 +606,11 @@ function NoCommercialHome({ profile }: { profile: Profile }) {
     <Panel title={`Hola, ${profile.full_name.split(' ')[0] || profile.full_name}`}>
       {programacion
         ? <p>Su trabajo está en Programación de turnos. <a href={PROGRAMACION_APP_URL} target="_blank" rel="noopener noreferrer">Abrir Programación</a></p>
-        : <p>Use el menú de la izquierda para entrar a sus secciones. Si no ve ninguna, pida acceso a quien administra el SIIO.</p>}
+        : profile.role === 'comercial'
+          // Un comercial sin el módulo de oportunidades no ve "Mi día" en el menú (navPermissions, isNavItemVisible)
+          // y llega aquí. Decirle cuál acceso le falta le ahorra la adivinanza, a él y a quien se lo tiene que dar.
+          ? <p>Para entrar a <strong>Mi día</strong> y a su cartera le falta el acceso a <strong>Oportunidades</strong>. Pídaselo a su administrador del SIIO.</p>
+          : <p>Use el menú de la izquierda para entrar a sus secciones. Si no ve ninguna, pida acceso a quien administra el SIIO.</p>}
     </Panel>
   </section>;
 }
@@ -621,6 +624,8 @@ function stageTone(stageCode?: string | null) {
 function Home({ data }: { data: Bootstrap }) {
   const active = data.opportunities.filter(o => !['aprobado','perdido','descartado'].includes(o.stage_code)).length;
   const largestStage = [...data.summary].sort((a,b)=>Number(b.total_offer_value)-Number(a.total_offer_value))[0];
+  // Una sola definición de "estancada" en todo el producto: días en la etapa, la misma regla que usa Mi día.
+  const stalled = stalledInStage(data.opportunities.filter(o => !isTerminalStage(o.stage_code)));
   return <section className="stack dashboard-home">
     <ExecutiveSummary data={data} active={active} largestStage={largestStage} />
     <div className="grid kpis">
@@ -628,12 +633,12 @@ function Home({ data }: { data: Bootstrap }) {
       <Kpi icon="$" tone="purple" label="Valor total pipeline" value={fmtMoneyCompact(data.totals.pipeline)} hint="Todas las etapas" meta={fmtMoney(data.totals.pipeline)} />
       <Kpi icon="≈" tone="indigo" label="Valor ponderado" value={fmtMoneyCompact(data.totals.weighted)} hint="Probabilidad por etapa" meta={fmtMoney(data.totals.weighted)} />
       <Kpi icon="✓" tone="green" label="Aprobado / ganado" value={fmtMoneyCompact(data.totals.approved)} hint="Ventas aprobadas" meta={fmtMoney(data.totals.approved)} />
-      <Kpi icon={data.stalled.length ? '!' : '✓'} tone={data.stalled.length ? 'amber' : 'green'} label="Sustentación estancada" value={data.stalled.length.toString()} hint="Más de 5 días sin gestión" meta={data.stalled.length ? 'Requiere atención' : 'Todo al día'} />
+      <Kpi icon={stalled.length ? '!' : '✓'} tone={stalled.length ? 'amber' : 'green'} label="Estancadas" value={stalled.length.toString()} hint="Llevan demasiado en su etapa y sin próxima gestión" meta={stalled.length ? 'Requiere atención' : 'Todo al día'} />
     </div>
     <Panel title="Pipeline por etapa"><StageBars summary={data.summary} /></Panel>
     <div className="grid two dashboard-panels">
       <Panel title="Top oportunidades próximas a cierre"><MiniTable rows={data.topClosing.slice(0, 9)} /></Panel>
-      <Panel title="Alertas de sustentación">{data.stalled.length ? <MiniTable rows={data.stalled.slice(0, 9)} /> : <EmptyState title="Todo al día" text="No hay oportunidades en sustentación con más de 5 días sin gestión." />}</Panel>
+      <Panel title="Se están enfriando">{stalled.length ? <MiniTable rows={stalled.slice(0, 9).map(row => row.opportunity)} /> : <EmptyState title="Ninguna estancada" text="Ninguna oportunidad lleva más días en su etapa de los que admite, sin una próxima gestión agendada." />}</Panel>
     </div>
   </section>;
 }
@@ -2073,7 +2078,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     (!onlyActive || !isTerminalStage(o.stage_code))
   ), [data.opportunities, period, q, owner, regional, stage, service, onlyActive]);
   const scopedIds = useMemo(() => new Set(scopedOpportunities.map(o => o.id)), [scopedOpportunities]);
-  const filteredStalled = data.stalled.filter(o => scopedIds.has(o.id));
+  const filteredStalled = stalledInStage(scopedOpportunities.filter(o => !isTerminalStage(o.stage_code))).map(row => row.opportunity);
   const activeOpportunities = scopedOpportunities.filter(o => !isTerminalStage(o.stage_code));
   const active = activeOpportunities.length;
   const actionRows = activeOpportunities.map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }));
@@ -3042,12 +3047,28 @@ function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPa
     ] };
   }
 
-  if (q.includes('sustentación') || q.includes('sustentacion') || q.includes('estancad')) {
-    const rows = active.filter(o => o.stage_code === 'sustentacion').sort((a,b) => Number(daysSince(b.last_interaction_at || b.updated_at || b.created_at)||0) - Number(daysSince(a.last_interaction_at || a.updated_at || a.created_at)||0));
-    return { mode: 'stalled', title: 'Clientes en sustentación', summary: 'Oportunidades en sustentación priorizadas por días sin seguimiento y valor comercial.', rows, cards: [
+  // "Estancada" tiene una sola definición (Juan, 2026-10-22): días en la etapa por encima de su umbral y sin
+  // próxima gestión agendada. Antes esta respuesta usaba la regla vieja —sustentación con más de 5 días sin
+  // contacto—, así que Prioridades podía contradecir a Mi día sobre la misma oportunidad.
+  if (q.includes('estancad') || q.includes('enfri')) {
+    const stalledRows = stalledInStage(active);
+    const rows = stalledRows.map(row => row.opportunity);
+    const worst = stalledRows[0];
+    return { mode: 'stalled', title: 'Oportunidades estancadas', summary: 'Llevan más días en su etapa de los que admite esa etapa y no tienen una próxima gestión agendada.', rows, cards: [
+      { label: 'Estancadas', value: String(rows.length), detail: 'En todas las etapas, no sólo sustentación' },
+      { label: 'La más parada', value: worst ? `${worst.stall.days} días` : '—', detail: worst ? worst.opportunity.company_name : 'Ninguna' },
+      { label: 'Valor detenido', value: fmtMoneyCompact(rows.reduce((total, o) => total + Number(o.offer_value || 0), 0)), detail: 'Pipeline sin movimiento' },
+    ] };
+  }
+
+  // Preguntar por una etapa sigue siendo una pregunta válida, pero es un listado, no un diagnóstico de estancamiento.
+  if (q.includes('sustentación') || q.includes('sustentacion')) {
+    const rows = active.filter(o => o.stage_code === 'sustentacion').sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
+    const stalledHere = stalledInStage(rows).length;
+    return { mode: 'stalled', title: 'Clientes en sustentación', summary: 'Oportunidades en la etapa de sustentación, de mayor a menor valor.', rows, cards: [
       { label: 'En sustentación', value: String(rows.length), detail: 'Oportunidades activas' },
-      { label: 'Más de 5 días', value: String(rows.filter(o => Number(daysSince(o.last_interaction_at || o.updated_at || o.created_at)||0) > 5).length), detail: 'Requieren revisión gerencial' },
-      { label: 'Valor asociado', value: fmtMoneyCompact(rows.reduce((s,o)=>s+Number(o.offer_value||0),0)), detail: 'Pipeline en sustentación' },
+      { label: 'Estancadas', value: String(stalledHere), detail: 'Con la misma regla de todo el producto' },
+      { label: 'Valor asociado', value: fmtMoneyCompact(rows.reduce((total, o) => total + Number(o.offer_value || 0), 0)), detail: 'Pipeline en sustentación' },
     ] };
   }
 
