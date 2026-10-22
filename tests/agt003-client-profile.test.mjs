@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalizeClientProfile, profileCompleteness, hasClientProfileFields, CLIENT_PROFILE_FIELDS } from '../src/vigia/client-profile.js';
+import { normalizeClientProfile, profileCompleteness, hasClientProfileFields, CLIENT_PROFILE_FIELDS, PROFILE_CHECKS } from '../src/vigia/client-profile.js';
 import { PROFILE_COLUMNS, statusOf } from '../scripts/agt003-client-profile-fields-migration.mjs';
 
 test('normaliza web, LinkedIn y proveedor', () => {
@@ -29,6 +29,36 @@ test('perfil completo: NIT y vencimiento no cuentan; "No tiene" sí cuenta', () 
   assert.equal(missing.complete, false);
   assert.deepEqual(missing.missing, ['Proveedor actual (o "No tiene")']);
   assert.equal(profileCompleteness({}).done, 0);
+});
+
+test('LinkedIn es opcional: suma pero no bloquea el análisis profundo (Juan, 2026-10-22)', () => {
+  // Hay contactos que no tienen LinkedIn; antes el comercial se quedaba sin el premio por un dato que no existe.
+  const sinLinkedin = {
+    economic_sector: 'Logística', company_website: 'https://a.co', decision_maker_name: 'Ana',
+    decision_maker_title: 'Gerente', decision_maker_email: 'a@a.co', decision_maker_phone: '300',
+    current_security_provider_none: true,
+  };
+  const resultado = profileCompleteness(sinLinkedin);
+  assert.equal(resultado.complete, true, 'el perfil queda completo sin LinkedIn');
+  assert.deepEqual(resultado.missing, [], 'no aparece como faltante');
+  assert.deepEqual(resultado.suggested, ['LinkedIn del decisor'], 'se ofrece aparte');
+  assert.deepEqual([resultado.done, resultado.total, resultado.pct], [7, 7, 100], 'los puntos obligatorios son siete');
+
+  const conLinkedin = profileCompleteness({ ...sinLinkedin, decision_maker_linkedin: 'https://linkedin.com/in/a' });
+  assert.deepEqual(conLinkedin.suggested, [], 'si está, deja de ofrecerse');
+  assert.equal(conLinkedin.complete, true);
+
+  // El dato sigue existiendo y validándose cuando se escribe.
+  assert.equal(normalizeClientProfile({ decision_maker_linkedin: 'linkedin.com/in/ana' }).decision_maker_linkedin, 'https://linkedin.com/in/ana');
+  assert.equal(PROFILE_CHECKS.filter(check => check.optional).map(check => check.key).join(','), 'decision_maker_linkedin');
+
+  // La puerta del análisis profundo mira `complete`, así que con esto deja de pedir LinkedIn.
+  const server = readFileSync('server/index.js', 'utf8');
+  assert.match(server, /if \(!completeness\.complete\) \{ const error = new Error\(`Complete el perfil del cliente para ganar el análisis\. Falta: \$\{completeness\.missing\.join\(', '\)\}\.`\)/);
+
+  // Y la ficha lo ofrece sin exigirlo.
+  const ui = readFileSync('src/main.tsx', 'utf8');
+  assert.match(ui, /Opcional: \{profile\.suggested\.join\(', '\)\}\. Suma al análisis, pero no hace falta para ganarlo\./);
 });
 
 test('sólo toca el perfil si la petición trae sus campos', () => {

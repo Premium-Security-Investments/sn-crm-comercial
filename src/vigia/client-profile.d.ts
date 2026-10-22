@@ -7,5 +7,5 @@ export function normalizeWebsite(value: unknown): string | null;
 export function normalizeLinkedin(value: unknown): string | null;
 export function hasClientProfileFields(body: unknown): boolean;
 export function normalizeClientProfile(body?: Record<string, unknown>): ClientProfile;
-export const PROFILE_CHECKS: readonly { key: string; label: string; done: (o: Record<string, unknown>) => boolean }[];
-export function profileCompleteness(opportunity?: Record<string, unknown>): { done: number; total: number; pct: number; complete: boolean; missing: string[] };
+export const PROFILE_CHECKS: readonly { key: string; label: string; optional?: boolean; done: (o: Record<string, unknown>) => boolean }[];
+export function profileCompleteness(opportunity?: Record<string, unknown>): { done: number; total: number; pct: number; complete: boolean; missing: string[]; suggested: string[] };
