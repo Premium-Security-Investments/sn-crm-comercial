@@ -694,6 +694,13 @@ td.numeric-value{white-space:nowrap}
 .my-day-grid{display:flex;flex-direction:column;gap:18px}
 .my-day-col,.my-day-side{display:contents}
 .now-queue{order:1}.vchat{order:2}.week-list{order:3}.my-day-goal{order:4}.my-day-pending-data{order:5}
+/* En el día despejado el celular lee: próxima conversación, lo que ya hizo, la semana, el chat y el mes. */
+.my-day-grid.is-calm .next-talk{order:1}
+.my-day-grid.is-calm .today-done{order:2}
+.my-day-grid.is-calm .week-list{order:3}
+.my-day-grid.is-calm .vchat{order:4}
+.my-day-grid.is-calm .my-day-goal{order:5}
+.my-day-grid.is-calm .my-day-book{order:6}
 
 /* "Ahora": lo único con fondo, borde y sombra en toda la pantalla. */
 .now-queue{background:#fff;border:1px solid #dfe6f1;border-radius:18px;box-shadow:0 10px 30px rgba(21,38,69,.1);overflow:hidden}
@@ -733,6 +740,33 @@ td.numeric-value{white-space:nowrap}
 .now-empty .now-acts{flex:none;margin-top:12px;padding-left:0}
 .now-item .decision-form,.now-item .decision-full-link{margin:0 16px 14px}
 
+/* El día despejado: la próxima conversación como objeto. Aquí sí hay algo, así que aquí sí va una tarjeta. */
+.next-talk{background:#fff;border:1px solid #dfe6f1;border-radius:18px;box-shadow:0 10px 30px rgba(21,38,69,.1);overflow:hidden}
+.next-when{margin:0;padding:14px 16px 0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:800;color:#174ea6;font-variant-numeric:tabular-nums}
+.next-when::first-letter{text-transform:uppercase}
+.next-when em{font-style:normal;font-weight:600;color:#5d6b82}
+.next-name{margin:6px 0 0;padding:0 16px;font-size:20px;line-height:1.22;letter-spacing:-.02em;color:#172033;overflow-wrap:anywhere}
+.next-meta{margin:5px 0 0;padding:0 16px 14px;font-size:13px;line-height:1.5;color:#5d6b82;font-variant-numeric:tabular-nums}
+.next-facts{display:grid;border-top:1px solid #dfe6f1}
+.next-fact{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;align-items:start;padding:11px 16px;border-top:1px solid #dfe6f1}
+.next-fact:first-child{border-top:0}
+.next-fact>svg{margin-top:2px;color:#93a3bb}
+.next-fact strong{display:block;font-size:14px;font-weight:650;color:#172033;overflow-wrap:anywhere}
+.next-fact span{display:block;margin-top:1px;font-size:12.5px;color:#5d6b82;font-variant-numeric:tabular-nums}
+.next-acts{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:13px 16px 15px;border-top:1px solid #dfe6f1}
+
+/* "Hoy ya hizo": un día sin pendientes no es un día vacío. */
+.today-done h3{margin:0 0 2px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.done-row{display:grid;grid-template-columns:78px minmax(0,1fr);gap:12px;align-items:baseline;padding:10px 2px;border-top:1px solid #cbd7e8}
+.done-row time{font-size:12.5px;font-weight:700;color:#5d6b82;white-space:nowrap;font-variant-numeric:tabular-nums}
+.done-row p{margin:0;font-size:14px;line-height:1.45;color:#172033}
+.done-row p strong{font-weight:650}
+
+/* "Su cartera": el tamaño de lo que tiene entre manos, en una línea. */
+.my-day-book h3{margin:0 0 9px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.book-fig{margin:0;font-size:14px;line-height:1.5;color:#172033}
+.book-fig strong{font-weight:700}
+
 /* "Esta semana": filas planas agrupadas por día; la fila entera es el enlace a la ficha. */
 .week-list h3{margin:0 0 4px;display:flex;align-items:baseline;gap:8px;font-size:15px;color:#172033;letter-spacing:-.008em}
 .week-count{font-size:13px;font-weight:700;color:#5d6b82}
@@ -766,23 +800,19 @@ td.numeric-value{white-space:nowrap}
   .my-day-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px 24px;align-items:start}
   /* El encabezado no compite con el de la aplicación: la fecha es un pie de la frase, no un título. */
   .my-day-head{gap:4px}
-  /* Día tranquilo (nada que decidir ni agendado para hoy): una sola columna angosta. Con la segunda
-     columna, el chat terminaba pesando más que "Ahora" y la jerarquía se invertía sola. */
-  .my-day-grid.is-calm{display:flex;flex-direction:column;align-items:stretch;gap:18px;max-width:720px}
-  .my-day-grid.is-calm .my-day-col,.my-day-grid.is-calm .my-day-side{display:contents}
-  /* Y "qué viene" sube antes del chat: sin nada que hacer ahora, la agenda es la respuesta y el chat
-     es sólo la herramienta. En celular el chat sigue en segundo lugar, donde se aprobó. */
-  .my-day-grid.is-calm .now-queue{order:1}
-  .my-day-grid.is-calm .week-list{order:2}
-  .my-day-grid.is-calm .vchat{order:3}
-  .my-day-grid.is-calm .my-day-goal{order:4}
-  .my-day-grid.is-calm .my-day-pending-data{order:5}
+  /* El día despejado conserva las dos columnas: la derecha responde "¿cómo voy?" con el mes y la
+     cartera, en vez de quedarse con el chat, que es lo que antes invertía la jerarquía. */
+  .my-day-grid.is-calm{grid-template-columns:minmax(0,1fr) 300px}
   .my-day-col,.my-day-side{display:flex;flex-direction:column;gap:18px;min-width:0}
   .my-day-col{grid-column:1}
   .my-day-side{grid-column:2}
   .my-day-pending-data{grid-column:1/-1}
-  .now-queue,.vchat,.week-list,.my-day-goal,.my-day-pending-data{order:0}
+  .now-queue,.vchat,.week-list,.my-day-goal,.my-day-pending-data,.next-talk,.today-done,.my-day-book{order:0}
   .my-day-headline{font-size:25px;max-width:42ch}
+  .next-when,.next-name,.next-meta,.next-fact,.next-acts{padding-left:18px;padding-right:18px}
+  .next-facts{grid-template-columns:1fr 1fr}
+  .next-fact:nth-child(2){border-left:1px solid #dfe6f1}
+  .next-fact:nth-child(-n+2){border-top:0}
   .now-row{flex-wrap:nowrap;align-items:center;padding:14px 18px}
   .now-acts{flex:none;margin-top:0;padding-left:0}
   .now-head,.now-group,.now-more,.now-bulk-toggle{padding-left:18px;padding-right:18px}

@@ -207,3 +207,59 @@ export function buildMyDayQueue(opportunities: MyDayOpportunity[], now: Date = n
     depurarCrmTotal: depurarAlerts.length,
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// El día despejado (Juan, 2026-10-22). Texto puro: cómo se nombra una fecha dentro de una frase y
+// cómo se lee un teléfono. Sin JSX y sin red, para poder probarlo.
+// ---------------------------------------------------------------------------------------------
+
+const BOGOTA_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' });
+const LONG_DATE = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
+const WEEKDAY_ONLY = new Intl.DateTimeFormat('es-CO', { weekday: 'long', timeZone: 'America/Bogota' });
+
+function dayKey(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value).replace(' ', 'T'));
+  return Number.isNaN(date.getTime()) ? null : BOGOTA_DAY.format(date);
+}
+
+function wholeDaysBetween(fromDay: string, toDay: string): number {
+  return Math.round((new Date(`${toDay}T12:00:00Z`).getTime() - new Date(`${fromDay}T12:00:00Z`).getTime()) / 86_400_000);
+}
+
+/** Cómo se nombra una fecha pasada dentro de una frase: "hoy", "ayer", "hace 4 días", "el 7 de octubre". */
+export function pastDayPhrase(value: string | null | undefined, now: Date = new Date()): string {
+  const day = dayKey(value);
+  const today = dayKey(now);
+  if (!day || !today) return '';
+  const days = wholeDaysBetween(day, today);
+  if (days <= 0) return 'hoy';
+  if (days === 1) return 'ayer';
+  if (days < 7) return `hace ${days} días`;
+  return `el ${LONG_DATE.format(new Date(String(value)))}`;
+}
+
+/** Y una futura: "hoy", "mañana", "el lunes", "el 15 de diciembre". */
+export function futureDayPhrase(value: string | null | undefined, now: Date = new Date()): string {
+  const day = dayKey(value);
+  const today = dayKey(now);
+  if (!day || !today) return '';
+  const days = wholeDaysBetween(today, day);
+  if (days <= 0) return 'hoy';
+  if (days === 1) return 'mañana';
+  if (days <= 6) return `el ${WEEKDAY_ONLY.format(new Date(String(value)))}`;
+  return `el ${LONG_DATE.format(new Date(String(value)))}`;
+}
+
+/** El teléfono del decisor se lee, no se audita: "+573107285800" se marca igual, pero así se puede dictar. */
+export function readablePhone(value: string | null | undefined): string {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('57')) return `+57 ${digits.slice(2, 5)} ${digits.slice(5, 8)} ${digits.slice(8)}`;
+  if (digits.length === 10) return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  return String(value || '').trim();
+}
+
+/** Un nombre que ya termina en punto ("... S.A.S.") no lleva otro al cerrar la frase. */
+export function sentenceName(name: string): string {
+  return String(name || '').replace(/\.$/, '');
+}
