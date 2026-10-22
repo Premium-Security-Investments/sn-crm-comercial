@@ -1089,6 +1089,7 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const stages = commercialData ? payload.stages : [];
   const services = commercialData || capabilities.goals ? payload.services : [];
   const lossReasons = capabilities.opportunities ? payload.lossReasons : [];
+  const competitors = capabilities.opportunities ? (payload.competitors || []) : [];
   const summary = capabilities.dashboard || capabilities.vigia
     ? (globalScope ? payload.summary : recomputeSummary(stages, opportunities))
     : [];
@@ -1110,7 +1111,7 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
+  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, competitors, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
 }
 function opportunityOwnerError(message, status) {
   const error = new Error(message);
@@ -4109,7 +4110,7 @@ app.get('/api/bootstrap', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
     touchProfileLastSeen(database, currentProfile.id);
-    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
+    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
       must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
       must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
       must(database.from('psi_sales_profiles').select(BOOTSTRAP_PROFILE_SELECT).eq('active', true).order('full_name')),
@@ -4117,6 +4118,7 @@ app.get('/api/bootstrap', async (req, res) => {
       must(database.from('psi_sales_pipeline_stages').select('*').order('stage_order')),
       must(database.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
+      must(database.from('psi_sales_competitors').select('id,name').eq('active', true).order('name')),
       must(database.from('v_psi_sales_stalled_sustentacion').select(opportunitySelect).order('prioritization_date')),
       must(database.from('v_psi_sales_top3_closing').select(opportunitySelect).order('owner_name')),
       must(database.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
@@ -4134,7 +4136,7 @@ app.get('/api/bootstrap', async (req, res) => {
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
     const decisionsToday = currentProfile.role === 'comercial' ? await countDecisionsToday(database, currentProfile.id) : 0;
     const leadAnalysesToday = await listLeadAnalysesToday(database, currentProfile.id);
-    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
+    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
   } catch (error) { sendAuthError(res, error); }
 });
 app.all('/api/bootstrap', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
@@ -6796,6 +6798,7 @@ function cleanOpportunity(body, existingRegional = null) {
     service_type_code: body.service_type_code || null,
     stage_code: body.stage_code || 'prospecto',
     loss_reason_code: body.stage_code === 'perdido' ? body.loss_reason_code : null,
+    competitor_id: body.stage_code === 'perdido' ? (body.competitor_id || null) : null,
     loss_notes: body.loss_notes || null,
     next_action_at: body.next_action_at || null,
     expected_close_date: body.expected_close_date || null,
@@ -7009,6 +7012,28 @@ function decisionDatabaseError(error) {
   return error;
 }
 
+// F5 (Juan, 2026-10-22): contra quién se perdió el negocio. El catálogo se alimenta al registrar la pérdida: si el
+// comercial escribe un nombre que no está, se crea una vez y se reutiliza. La comparación es por nombre en minúsculas
+// y sin espacios de sobra, igual que el índice único de la migración 147, para no terminar con "Atlas" y "atlas ".
+async function resolveCompetitorId(database, profileId, body) {
+  if (body?.competitor_id) return String(body.competitor_id);
+  const name = typeof body?.competitor_name === 'string' ? body.competitor_name.trim().replace(/\s+/g, ' ').slice(0, 120) : '';
+  if (name.length < 2) return null;
+  const key = name.toLowerCase();
+  const match = async () => {
+    const { data } = await database.from('psi_sales_competitors').select('id,name');
+    return (data || []).find(row => String(row.name || '').trim().toLowerCase() === key)?.id || null;
+  };
+  const existing = await match();
+  if (existing) return existing;
+  const { data: created, error } = await database.from('psi_sales_competitors').insert({ name, created_by: profileId }).select('id').single();
+  if (!error) return created.id;
+  // Dos registros del mismo competidor a la vez: manda el índice único y se reutiliza el que quedó.
+  const afterRace = await match();
+  if (afterRace) return afterRace;
+  throw error;
+}
+
 app.post('/api/opportunity-decision', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -7020,6 +7045,16 @@ app.post('/api/opportunity-decision', async (req, res) => {
     const params = normalizeDecisionRequest(req.body);
     const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
     if (error) throw decisionDatabaseError(error);
+    // El competidor se guarda después de la decisión y nunca la tumba: es un dato opcional y la pérdida ya quedó
+    // registrada. Si falla, queda el aviso en el log y el competidor se puede poner desde la ficha.
+    if (params.p_decision === 'lose' && (req.body?.competitor_id || req.body?.competitor_name)) {
+      try {
+        const competitorId = await resolveCompetitorId(database, currentProfile.id, req.body);
+        if (competitorId) await must(database.from('psi_sales_opportunities').update({ competitor_id: competitorId }).eq('id', id).select('id').single());
+      } catch (competitorError) {
+        console.warn('psi_sales_competitors no se pudo registrar', { code: competitorError?.code || null });
+      }
+    }
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
