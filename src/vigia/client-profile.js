@@ -69,7 +69,13 @@ export function normalizeClientProfile(body = {}) {
 
 const filled = value => typeof value === 'string' ? value.trim().length > 0 : Boolean(value);
 
-/** Puntos que cuentan para "perfil completo" (NIT y vencimiento del contrato no cuentan). */
+/**
+ * Puntos del perfil (NIT y vencimiento del contrato no cuentan).
+ *
+ * `optional: true` significa que suma pero NO bloquea el premio del análisis profundo. Hoy sólo el LinkedIn del
+ * decisor: decisión de Juan del 2026-10-22, porque hay contactos que simplemente no tienen LinkedIn y el comercial
+ * se quedaba sin poder ganar el análisis por un dato que no existe.
+ */
 export const PROFILE_CHECKS = Object.freeze([
   { key: 'economic_sector', label: 'Sector', done: o => filled(o.economic_sector) },
   { key: 'company_website', label: 'Página web', done: o => filled(o.company_website) },
@@ -77,13 +83,19 @@ export const PROFILE_CHECKS = Object.freeze([
   { key: 'decision_maker_title', label: 'Cargo del decisor', done: o => filled(o.decision_maker_title) },
   { key: 'decision_maker_email', label: 'Correo del decisor', done: o => filled(o.decision_maker_email) },
   { key: 'decision_maker_phone', label: 'Teléfono del decisor', done: o => filled(o.decision_maker_phone) },
-  { key: 'decision_maker_linkedin', label: 'LinkedIn del decisor', done: o => filled(o.decision_maker_linkedin) },
+  { key: 'decision_maker_linkedin', label: 'LinkedIn del decisor', optional: true, done: o => filled(o.decision_maker_linkedin) },
   { key: 'current_security_provider', label: 'Proveedor actual (o "No tiene")', done: o => filled(o.current_security_provider) || o.current_security_provider_none === true },
 ]);
 
+/**
+ * `{ done, total, pct, complete, missing, suggested }` sobre los puntos OBLIGATORIOS. `suggested` son los opcionales
+ * que faltan: se ofrecen, no se exigen, y nunca entran en `missing` para que nadie quede bloqueado por ellos.
+ */
 export function profileCompleteness(opportunity = {}) {
-  const missing = PROFILE_CHECKS.filter(check => !check.done(opportunity)).map(check => check.label);
-  const total = PROFILE_CHECKS.length;
+  const required = PROFILE_CHECKS.filter(check => !check.optional);
+  const missing = required.filter(check => !check.done(opportunity)).map(check => check.label);
+  const suggested = PROFILE_CHECKS.filter(check => check.optional && !check.done(opportunity)).map(check => check.label);
+  const total = required.length;
   const done = total - missing.length;
-  return { done, total, pct: Math.round((done / total) * 100), complete: missing.length === 0, missing };
+  return { done, total, pct: Math.round((done / total) * 100), complete: missing.length === 0, missing, suggested };
 }
