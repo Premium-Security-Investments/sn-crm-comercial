@@ -634,11 +634,17 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .today-queue .decision-queue-count{background:#dbeafe;color:#1e40af}
 .upcoming-list h3{margin:0 0 8px}
 .upcoming-list ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.upcoming-list li{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:8px 10px;border-radius:10px;background:#f8fbff}
+.upcoming-list li{border-radius:10px;background:#f8fbff}
 td.numeric-value{white-space:nowrap}
 .upcoming-day{min-width:150px;color:#1e40af;font-weight:800;font-size:13px}
 .upcoming-day::first-letter{text-transform:uppercase}
-.upcoming-list a{color:#10213d;text-decoration:none}
+.upcoming-list a,.stalled-list a{color:#10213d;text-decoration:none}
+/* La fila entera es el enlace: se ve que se puede pulsar y el área táctil sirve en celular (Juan, 22-oct). */
+.row-link{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:10px;border-radius:10px;transition:background .12s ease}
+.row-link:hover,.row-link:focus-visible{background:#e8f0ff;outline:none}
+.row-link strong{overflow-wrap:anywhere}
+.row-link-go{margin-left:auto;color:#1b4fd0;font-size:13px;font-weight:800;white-space:nowrap}
+.row-link:hover .row-link-go,.row-link:focus-visible .row-link-go{text-decoration:underline}
 .upcoming-list small{color:#526173}
 .client-profile-suggested{margin:4px 0 0;color:#526173;font-size:13px}
 .loss-report summary{cursor:pointer;font-weight:800;color:#10213d}
@@ -646,8 +652,8 @@ td.numeric-value{white-space:nowrap}
 .loss-report-table h4{margin:0 0 6px;font-size:13px;color:#526173}
 .stalled-list h3{margin:0 0 8px}
 .stalled-list ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.stalled-list li{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:8px 10px;border-radius:10px;background:#fffbeb}
-.stalled-list a{color:#10213d;text-decoration:none}
+.stalled-list li{border-radius:10px;background:#fffbeb}
+.stalled-list .row-link:hover,.stalled-list .row-link:focus-visible{background:#fef3c7}
 .stalled-list small{color:#7c2d12}
 .my-day-card.is-estancada{border-left:3px solid #f59e0b}
 .my-day-prospect{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
