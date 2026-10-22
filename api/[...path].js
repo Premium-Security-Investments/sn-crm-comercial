@@ -199,6 +199,7 @@ import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js
 import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
 import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../agt003-chat-registro.js';
+import { nextActionRequirement } from '../src/vigia/next-action-rule.js';
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
 import {
@@ -1141,7 +1142,7 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,deleted_at').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,deleted_at').eq('id', id).single());
   if (opportunity.deleted_at) { const error = new Error('Oportunidad no encontrada.'); error.status = 404; throw error; }
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
@@ -3782,6 +3783,9 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
     ? { kind: 'noop', clientId: null }
     : await prepareClientForOpportunityUpdate(database, existing, payload, body.client_id || null, body);
   if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
+  if (!isPublicTender && (payload.stage_code || null) !== (existing.stage_code || null)) {
+    requireNextAction({ stageCode: payload.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: payload.next_action_at || null });
+  }
   const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
     ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
     : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, id);
@@ -3801,8 +3805,19 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
 }
 
 // Registrar seguimiento (igual que POST /api/opportunity-interactions).
+// F4 (Juan, 2026-10-22): ninguna oportunidad abierta queda sin próxima gestión. Se exige al registrar un seguimiento
+// y al mover la etapa; no se exige si el negocio quedó cerrado o si ya hay una fecha futura vigente.
+function requireNextAction({ stageCode, currentNextActionAt, proposedNextActionAt }) {
+  const verdict = nextActionRequirement({ stageCode, currentNextActionAt, proposedNextActionAt });
+  if (verdict.ok) return;
+  const error = new Error(verdict.message);
+  error.status = 400;
+  error.code = verdict.code;
+  throw error;
+}
 async function addInteractionForProfile(database, currentProfile, id, body) {
-  await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  requireNextAction({ stageCode: existing.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: body.next_action_at || null });
   if (body.created_by && body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
   const notes = preparePublicInteractionNotes(body.notes);
   const occurred_at = body.occurred_at || new Date().toISOString();
@@ -4038,7 +4053,12 @@ app.post('/api/agt003/chat/confirm', async (req, res) => {
         : 'Esta propuesta ya fue confirmada o descartada.', 409);
     }
     const applied = [];
-    for (const [index, action] of (claimed.proposal?.acciones || []).entries()) {
+    // La próxima gestión se guarda ANTES del seguimiento: desde F4 un seguimiento sobre una oportunidad abierta exige
+    // fecha futura, y la propuesta del chat trae las dos cosas como acciones separadas. El índice original se conserva
+    // porque la tarjeta muestra el resultado por índice.
+    const chatActionsInOrder = [...(claimed.proposal?.acciones || []).entries()]
+      .sort(([, a], [, b]) => Number(b?.tipo === 'proximo_seguimiento') - Number(a?.tipo === 'proximo_seguimiento'));
+    for (const [index, action] of chatActionsInOrder) {
       try {
         applied.push({ index, ok: true, ...(await applyChatAction(database, currentProfile, action)) });
       } catch (error) {
@@ -6839,6 +6859,9 @@ app.put('/api/opportunities/:id', async (req, res) => {
       ? { kind: 'noop', clientId: null }
       : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
+    if (!isPublicTender && (payload.stage_code || null) !== (existing.stage_code || null)) {
+      requireNextAction({ stageCode: payload.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: payload.next_action_at || null });
+    }
     const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
       ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
       : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, req.params.id);
@@ -7053,6 +7076,9 @@ app.put('/api/opportunity', async (req, res) => {
       ? { kind: 'noop', clientId: null }
       : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
+    if (!isPublicTender && (payload.stage_code || null) !== (existing.stage_code || null)) {
+      requireNextAction({ stageCode: payload.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: payload.next_action_at || null });
+    }
     const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
       ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
       : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, id);
@@ -7079,8 +7105,9 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const existingOpportunity = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     if (req.body.created_by && req.body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
+    requireNextAction({ stageCode: existingOpportunity.stage_code, currentNextActionAt: existingOpportunity.next_action_at, proposedNextActionAt: req.body.next_action_at || null });
     const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';

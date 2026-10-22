@@ -22,6 +22,10 @@ async function listen(server) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   return server.address().port;
 }
+// F4 (2026-10-22): un seguimiento sobre una oportunidad abierta exige próxima gestión futura. Esta prueba es de
+// autoría, no de agenda: la fecha va en el cuerpo para que siga probando lo suyo.
+const NEXT_ACTION_AT = new Date(Date.now() + 7 * 86_400_000).toISOString();
+
 async function requestJson(port, path, body) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
@@ -88,12 +92,12 @@ try {
       for (const route of routes) {
         interactionInserts = [];
         opportunityUpdates = [];
-        const forged = await requestJson(appPort, route, { notes: 'Intento de suplantación', interaction_type: 'nota', occurred_at: '2026-08-26T17:00:00.000Z', created_by: OTHER_PROFILE_ID });
+        const forged = await requestJson(appPort, route, { notes: 'Intento de suplantación', interaction_type: 'nota', occurred_at: '2026-08-26T17:00:00.000Z', next_action_at: NEXT_ACTION_AT, created_by: OTHER_PROFILE_ID });
         const forgedObservation = { status: forged.status, interactionInserts: interactionInserts.length, opportunityUpdates: opportunityUpdates.length };
 
         interactionInserts = [];
         opportunityUpdates = [];
-        const accepted = await requestJson(appPort, route, { notes: 'Seguimiento legítimo', interaction_type: 'nota', occurred_at: '2026-08-26T17:00:00.000Z' });
+        const accepted = await requestJson(appPort, route, { notes: 'Seguimiento legítimo', interaction_type: 'nota', occurred_at: '2026-08-26T17:00:00.000Z', next_action_at: NEXT_ACTION_AT });
         observations.push({
           backendIndex,
           route: route.startsWith('/api/opportunities/') ? 'canonical' : 'alias',
