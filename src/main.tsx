@@ -1247,6 +1247,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       interactions={detail?.interactions || []}
       siblings={data.opportunities.filter(row => row.client_id && row.client_id === o.client_id)}
       focusRef={briefRef}
+      canAskVigia={canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && !readOnly}
     />}
     {o.service_type_code !== 'licitacion_publica' && <LeadAnalysisPanel opportunityId={o.id} profile={profileCompleteness(o as unknown as Record<string, unknown>)} canRun={canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && !readOnly} showCost={data.currentProfile.role === 'admin'} onMessageUsed={() => { void load(); void refresh(); }} />}
     </div>
@@ -1667,10 +1668,22 @@ function FollowUpContent({ content }: { content: string }) {
 
 // F12 — brief antes de la reunión. Todo sale de datos del CRM; lo que es sugerencia va rotulado y lo que no se sabe
 // se nombra. Sin llamada a un modelo: nada que leer aquí puede ser inventado.
-function MeetingBriefPanel({ opportunity, interactions, siblings, focusRef }: {
-  opportunity: Opportunity; interactions: Interaction[]; siblings: Opportunity[]; focusRef: React.RefObject<HTMLDivElement | null>;
+function MeetingBriefPanel({ opportunity, interactions, siblings, focusRef, canAskVigia }: {
+  opportunity: Opportunity; interactions: Interaction[]; siblings: Opportunity[];
+  focusRef: React.RefObject<HTMLDivElement | null>; canAskVigia: boolean;
 }) {
   const brief = meetingBrief({ opportunity, interactions, siblings });
+  // El bloque con IA se pide con el botón y no se guarda: vive mientras la ficha esté abierta (Juan, 2026-10-22).
+  const [summary, setSummary] = useState<{ pendiente: string; proponer: string[]; notes_used?: number } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
+  const askVigia = async () => {
+    setAsking(true); setSummaryError('');
+    try {
+      setSummary(await api(`/api/agt003/meeting-brief?id=${encodeURIComponent(opportunity.id)}`, { method: 'POST' }));
+    } catch (error) { setSummaryError(error instanceof Error ? error.message : String(error)); }
+    finally { setAsking(false); }
+  };
   const list = (title: string, items: string[], className = '') => items.length > 0 && <div className={`brief-block ${className}`}>
     <h4>{title}</h4><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul>
   </div>;
@@ -1678,16 +1691,26 @@ function MeetingBriefPanel({ opportunity, interactions, siblings, focusRef }: {
     <details className="panel meeting-brief" open>
       <summary>Antes de la reunión</summary>
       <div className="brief-grid">
-        {brief.cliente.length > 0 && <div className="brief-block"><h4>El cliente</h4>
-          <ul>{brief.cliente.map(item => <li key={item.label}><span className="brief-label">{item.label}:</span> {item.value}</li>)}</ul></div>}
-        {brief.estado.length > 0 && <div className="brief-block"><h4>Dónde va el negocio</h4>
-          <ul>{brief.estado.map(item => <li key={item.label}><span className="brief-label">{item.label}:</span> {item.value}</li>)}</ul></div>}
+        {brief.contexto.length > 0 && <div className="brief-block">
+          <ul>{brief.contexto.map(item => <li key={item.label}><span className="brief-label">{item.label}:</span> {item.value}</li>)}</ul></div>}
         {list('Desde la última vez', brief.desdeLaUltimaVez)}
         {list('Otras oportunidades abiertas de este cliente', brief.otrasOportunidades)}
         {list('Se perdió antes', brief.perdidasPrevias)}
-        {list(`Sugerencias de ${VIGIA_VISIBLE_NAMES.commercial} (no son datos)`, brief.sugerencias, 'is-suggestion')}
-        {list('No está en el CRM', brief.faltaEnElCrm, 'is-missing')}
+        {list('Para tener en cuenta', brief.sugerencias, 'is-suggestion')}
+        {list('Pregunte en la reunión', brief.faltaEnElCrm, 'is-missing')}
       </div>
+      {canAskVigia && <div className="brief-ai">
+        {!summary && <button type="button" className="secondary" disabled={asking} onClick={() => void askVigia()}>
+          {asking ? 'Leyendo las notas…' : `Preguntar a ${VIGIA_VISIBLE_NAMES.commercial}: qué quedó pendiente`}
+        </button>}
+        {summaryError && <p className="brief-ai-error" role="alert">{summaryError}</p>}
+        {summary && <div className="brief-block is-suggestion">
+          <h4>{VIGIA_VISIBLE_NAMES.commercial} leyó {summary.notes_used === 1 ? 'la nota' : `las ${summary.notes_used ?? ''} notas`} de este cliente (es una sugerencia, no un dato)</h4>
+          <p className="brief-ai-pending"><span className="brief-label">Quedó pendiente:</span> {summary.pendiente}</p>
+          {summary.proponer.length > 0 && <ul>{summary.proponer.map((item, index) => <li key={index}>{item}</li>)}</ul>}
+          <button type="button" className="secondary" disabled={asking} onClick={() => void askVigia()}>{asking ? 'Leyendo…' : 'Volver a preparar'}</button>
+        </div>}
+      </div>}
     </details>
   </div>;
 }

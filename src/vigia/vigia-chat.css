@@ -5,7 +5,8 @@
 .vchat-header p{margin:0;color:#526173;line-height:1.45}
 .vchat .eyebrow{background:#dbeafe;color:#1e40af}
 .vchat-quota{color:#526173;font-weight:700;white-space:nowrap;font-size:12px}
-.vchat-thread{display:grid;gap:12px;max-height:520px;overflow-y:auto;padding:4px 2px}
+.vchat-thread{display:grid;gap:12px;max-height:360px;overflow-y:auto;padding:4px 2px}
+.vchat-more{align-self:flex-start;margin-bottom:4px;font-size:13px;padding:6px 10px}
 .vchat-turn{display:grid;gap:8px}
 .vchat-msg{max-width:min(720px,92%);padding:10px 13px;border-radius:14px;line-height:1.45}
 .vchat-msg p{margin:2px 0 0;white-space:pre-wrap}

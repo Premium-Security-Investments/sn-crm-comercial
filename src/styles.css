@@ -655,6 +655,10 @@ td.numeric-value{white-space:nowrap}
 .brief-label{color:#526173}
 .brief-block.is-suggestion li{padding:6px 8px;border-radius:8px;background:#f8fbff}
 .brief-block.is-missing li{color:#7c2d12}
+.brief-ai{margin-top:12px;border-top:1px solid #e4ebf5;padding-top:12px}
+.brief-ai button{font-size:13px;padding:8px 12px}
+.brief-ai-error{margin:6px 0 0;color:#b91c1c;font-size:13px}
+.brief-ai-pending{margin:0 0 6px;font-size:13px;color:#10213d}
 .client-profile-suggested{margin:4px 0 0;color:#526173;font-size:13px}
 .loss-report summary{cursor:pointer;font-weight:800;color:#10213d}
 .loss-report-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:10px}

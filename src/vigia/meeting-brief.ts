@@ -1,7 +1,9 @@
 // AGT-003 — brief antes de la reunión (F12 de la especificación del 2026-10-22; capacidad 2 del mapa del 10-oct).
 //
-// Lo que el comercial necesita leer en treinta segundos antes de entrar: qué tiene hoy el cliente, qué pasó desde la
-// última vez, qué más hay abierto con él, qué se perdió antes y qué conviene llevar preparado.
+// Lo que el comercial necesita leer en treinta segundos antes de entrar. La primera versión repetía media ficha
+// (sector, decisor, contacto, valor, fechas) y volcaba el historial entero; Juan lo vio el 2026-10-22 y tenía razón.
+// Ahora sólo va lo que NO está ya en la pantalla: con quién están hoy, cuándo vence ese contrato, cuánto lleva parada
+// la etapa, las tres últimas gestiones recortadas, qué más hay con ese cliente y qué se le perdió antes.
 //
 // Dos reglas que lo gobiernan, de la especificación:
 //   · cada afirmación sale de datos del CRM. No hay llamada a un modelo aquí: lo que no está registrado no se dice,
@@ -14,7 +16,8 @@ import { stageStaleness } from './stage-staleness';
 
 const DAY_MS = 86_400_000;
 const RENEWAL_HORIZON_DAYS = 90;
-const RECENT_INTERACTIONS = 5;
+const RECENT_INTERACTIONS = 3;
+const NOTE_MAX_CHARS = 180;
 
 export type BriefOpportunity = {
   id: string;
@@ -49,8 +52,8 @@ export type BriefOpportunity = {
 export type BriefInteraction = { interaction_type?: string | null; notes?: string | null; occurred_at?: string | null };
 export type BriefFact = { label: string; value: string };
 export type MeetingBrief = {
-  cliente: BriefFact[];
-  estado: BriefFact[];
+  /** Sólo lo que no se ve ya en la ficha. */
+  contexto: BriefFact[];
   desdeLaUltimaVez: string[];
   otrasOportunidades: string[];
   perdidasPrevias: string[];
@@ -91,29 +94,22 @@ export function meetingBrief({
   now?: Date;
 }): MeetingBrief {
   const nowMs = now.getTime();
-  const cliente: BriefFact[] = [];
-  fact(cliente, 'Sector', opportunity.economic_sector);
-  fact(cliente, 'Dónde', [opportunity.sede, opportunity.quote_city, opportunity.regional_nombre].map(text).filter(Boolean)[0]);
-  fact(cliente, 'Decisor', [opportunity.decision_maker_name, opportunity.decision_maker_title].map(text).filter(Boolean).join(' · '));
-  fact(cliente, 'Contacto', [opportunity.decision_maker_phone, opportunity.decision_maker_email].map(text).filter(Boolean).join(' · '));
-  fact(cliente, 'Página web', opportunity.company_website);
-  fact(cliente, 'Seguridad hoy', opportunity.current_security_provider_none === true
+  // Nada de lo que ya está en el encabezado y en las tarjetas de la ficha: sector, decisor, contacto, valor, próxima
+  // gestión y último seguimiento se ven ahí mismo, repetirlos sólo alarga el bloque.
+  const contexto: BriefFact[] = [];
+  fact(contexto, 'Seguridad hoy', opportunity.current_security_provider_none === true
     ? 'No tiene proveedor'
     : opportunity.current_security_provider);
   const contractEnd = day(opportunity.current_contract_end_date);
-  if (contractEnd) fact(cliente, 'Contrato actual vence', contractEnd);
+  if (contractEnd) fact(contexto, 'Contrato actual vence', contractEnd);
 
   const stall = stageStaleness({
     stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
     stalenessDays: opportunity.staleness_days, nextActionAt: opportunity.next_action_at,
     stageName: opportunity.stage_name, now,
   });
-  const estado: BriefFact[] = [];
-  fact(estado, 'Etapa', [opportunity.stage_name, stall.days === null ? '' : stall.label.replace(/\.$/, '')].filter(Boolean).join(' · '));
-  fact(estado, 'Servicio', opportunity.service_type_name);
-  if (Number(opportunity.offer_value) > 0) fact(estado, 'Valor', MONEY.format(Number(opportunity.offer_value)));
-  fact(estado, 'Próxima gestión', day(opportunity.next_action_at));
-  fact(estado, 'Último seguimiento', day(opportunity.last_interaction_at));
+  // Con cero días no se dice nada: "lleva al menos 0 días" es ruido, y es lo que salía el primer día de medición.
+  if (stall.days !== null && stall.days > 0) fact(contexto, 'En esta etapa', stall.label.replace(/^Lleva /, '').replace(/\.$/, ''));
 
   const desdeLaUltimaVez = [...interactions]
     .sort((a, b) => (ms(b.occurred_at) || 0) - (ms(a.occurred_at) || 0))
@@ -121,7 +117,8 @@ export function meetingBrief({
     .map(item => {
       const when = day(item.occurred_at);
       const channel = CHANNEL[text(item.interaction_type)] || 'Nota';
-      const note = text(item.notes).replace(/\s+/g, ' ');
+      const full = text(item.notes).replace(/\s+/g, ' ');
+      const note = full.length > NOTE_MAX_CHARS ? `${full.slice(0, NOTE_MAX_CHARS).trimEnd()}…` : full;
       return `${when ? `${when} · ` : ''}${channel}${note ? `: ${note}` : ''}`;
     });
 
@@ -152,14 +149,15 @@ export function meetingBrief({
   if (perdidasPrevias.length) sugerencias.push('Ya se perdió una oportunidad de este cliente: revise el motivo antes de repetir la propuesta.');
   if (!ms(opportunity.next_action_at) || (ms(opportunity.next_action_at) || 0) <= nowMs) sugerencias.push('No hay próxima gestión vigente: deje la fecha del siguiente contacto antes de cerrar la reunión.');
 
+  // Sólo lo que sirve para preguntar en la reunión. Si no tienen proveedor, no hay contrato que venza: preguntarlo
+  // sería contradecir la línea de arriba, que es justo lo que se veía en la primera versión.
   const faltaEnElCrm: string[] = [];
   if (!text(opportunity.decision_maker_name)) faltaEnElCrm.push('quién decide');
   if (!text(opportunity.decision_maker_phone) && !text(opportunity.decision_maker_email)) faltaEnElCrm.push('cómo contactarlo');
-  if (!text(opportunity.economic_sector)) faltaEnElCrm.push('el sector');
-  if (opportunity.current_security_provider_none !== true && !text(opportunity.current_security_provider)) faltaEnElCrm.push('con quién están hoy');
-  if (!contractEnd) faltaEnElCrm.push('cuándo vence su contrato actual');
-  if (!(Number(opportunity.offer_value) > 0)) faltaEnElCrm.push('el valor estimado');
-  if (!interactions.length) faltaEnElCrm.push('no hay seguimientos registrados');
+  if (opportunity.current_security_provider_none !== true) {
+    if (!text(opportunity.current_security_provider)) faltaEnElCrm.push('con quién están hoy');
+    if (!contractEnd) faltaEnElCrm.push('cuándo vence su contrato actual');
+  }
 
-  return { cliente, estado, desdeLaUltimaVez, otrasOportunidades, perdidasPrevias, sugerencias, faltaEnElCrm };
+  return { contexto, desdeLaUltimaVez, otrasOportunidades, perdidasPrevias, sugerencias, faltaEnElCrm };
 }

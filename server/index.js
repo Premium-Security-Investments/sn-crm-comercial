@@ -89,7 +89,7 @@ import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } fro
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
 import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
-import { AGT003_AGENT_ID, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
+import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
 import { codeDefaultEffectiveConfiguration, getEffectiveAgentConfiguration } from '../platform-agent-effective-configuration.js';
 import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, capabilityPolicy, claimLeadAnalysis, leadAnalysisQuotaMessage, readActorAiUsageProfile } from '../agt003-ai-quota.js';
 import {
@@ -200,6 +200,7 @@ import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
 import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../agt003-chat-registro.js';
 import { nextActionRequirement } from '../src/vigia/next-action-rule.js';
+import { briefQuotaMessage, buildBriefInput, claimBriefRun, runBriefSummary } from '../agt003-brief-reunion.js';
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
 import {
@@ -460,6 +461,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/agt003/chat': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/agt003/chat/confirm': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/agt003/chat/discard': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/meeting-brief': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
@@ -4075,6 +4077,72 @@ app.post('/api/agt003/chat/confirm', async (req, res) => {
     res.json(await chatState(database, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
+
+// F12 con IA (Juan, 2026-10-22): el bloque "qué quedó pendiente y qué proponer" del brief. Lee SÓLO las notas de esa
+// oportunidad y no guarda el resultado: la fila de `psi_agt003_brief_runs` existe para contar el cupo, nada más.
+app.post('/api/agt003/meeting-brief', async (req, res) => {
+  let runId = null;
+  let database = null;
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    const id = String(req.query.id || '');
+    if (!id) throw chatError('Falta la oportunidad.', 400);
+    const access = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    if (access.service_type_code === 'licitacion_publica') throw chatError('El brief es sólo para oportunidades comerciales.', 400);
+    if (!isAgt003CopilotConfigured(process.env)) throw chatError('Vig-IA no está disponible en este momento.', 503);
+    const policy = await resolveAgt003CapabilityPolicy(database, AGT003_BRIEF_CAPABILITY, currentProfile);
+    if (!policy) throw new Error('No se pudo leer la configuración de Vig-IA.');
+    if (!policy.enabled) {
+      await recordModelRejection({ capability: AGT003_BRIEF_CAPABILITY, model: policy.model, failureCode: AGT003_CAPABILITY_DISABLED_CODE, correlationId: randomUUID() });
+      throw chatError(AGT003_CAPABILITY_DISABLED_MESSAGE, 503, AGT003_CAPABILITY_DISABLED_CODE);
+    }
+    const claim = await claimBriefRun(database, { actorId: currentProfile.id, opportunityId: id, quota: policy.quota });
+    if (claim?.status === 'in_progress') throw chatError('Ya hay un resumen preparándose. Espere un momento.', 409);
+    if (claim?.status === 'quota') {
+      const personal = claim.scope === 'actor';
+      const code = personal ? 'AGT003_BRIEF_PERSONAL_QUOTA' : 'AGT003_BRIEF_QUOTA';
+      await recordModelRejection({ capability: AGT003_BRIEF_CAPABILITY, model: policy.model, failureCode: code, correlationId: randomUUID() });
+      throw chatError(briefQuotaMessage(personal ? 'actor' : 'team', claim.used, claim.max), 429, code);
+    }
+    if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el resumen.');
+    runId = claim.id;
+    const [opportunity, interactions] = await Promise.all([
+      loadLeadAnalysisOpportunity(database, id),
+      must(database.from('psi_sales_interactions').select('interaction_type,notes,occurred_at').eq('opportunity_id', id).order('occurred_at', { ascending: false }).limit(30)),
+    ]);
+    const input = buildBriefInput({
+      cliente: opportunity.company_name, etapa: opportunity.stage_name, servicio: opportunity.service_type_name,
+      hoy: bogotaDay(new Date()), interactions: interactions || [],
+    });
+    let result;
+    try {
+      result = await runBriefSummary({ input, idempotencyKey: runId, environment: process.env, model: policy.model });
+    } catch (runError) {
+      await database.from('psi_agt003_brief_runs').update({ status: 'failed', failure_code: String(runError?.code || 'AGT003_BRIEF_FAILED').toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 96), finished_at: new Date().toISOString() }).eq('id', runId);
+      runId = null;
+      const category = classifyAgt003ModelFailure(runError) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+      throw chatError(`${agt003ModelFailureMessage(category, 'brief')} No se descontó de su cupo.`, category === AGT003_MODEL_FAILURE.MODEL_ERROR ? 502 : 503);
+    }
+    const { error: finishError } = await database.from('psi_agt003_brief_runs').update({
+      status: 'completed', model: result.model, input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens, finished_at: new Date().toISOString(),
+    }).eq('id', runId);
+    if (finishError) throw finishError;
+    runId = null;
+    res.json({ ...result.output, prepared_at: new Date().toISOString(), notes_used: input.notas.length });
+  } catch (error) {
+    if (runId && database) {
+      try { await database.from('psi_agt003_brief_runs').update({ status: 'failed', failure_code: 'AGT003_BRIEF_INTERNAL', finished_at: new Date().toISOString() }).eq('id', runId); } catch { /* best effort */ }
+    }
+    if (!error?.status) {
+      console.error(error);
+      return res.status(503).json({ error: 'Vig-IA no pudo preparar el resumen por ahora. Intente de nuevo en unos minutos.' });
+    }
+    sendError(res, error, error.status);
+  }
+});
+
 app.post('/api/agt003/chat/discard', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);

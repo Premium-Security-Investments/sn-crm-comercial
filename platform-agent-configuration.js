@@ -16,7 +16,7 @@ import {
   platformSslConfig,
   platformUnavailableError,
 } from './platform-agents.js';
-import { AGT003_AGENT_ID, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment } from './platform-model-gateway.js';
+import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment } from './platform-model-gateway.js';
 
 export const PLATFORM_ADMIN_UNAVAILABLE_MESSAGE = 'La administración de la plataforma no está conectada.';
 export const PLATFORM_ADMIN_REJECTED_MESSAGE = 'La plataforma no aceptó el cambio. Actualice la página, revise el estado y vuelva a intentarlo.';
@@ -56,6 +56,12 @@ export const AGENT_AI_FUNCTIONS = Object.freeze({
       label: 'Chat de registro',
       description: 'El comercial cuenta lo que hizo en Mi día y Vig-IA propone los cambios; se guardan al confirmar.',
       default_cap: Object.freeze({ per: 'day', max: 100 }),
+    }),
+    Object.freeze({
+      capability: AGT003_BRIEF_CAPABILITY,
+      label: 'Brief de reunión',
+      description: 'Lee las notas de seguimiento de un cliente y resume qué quedó pendiente y qué proponer. A pedido, en la ficha.',
+      default_cap: Object.freeze({ per: 'day', max: 20 }),
     }),
   ]),
 });
