@@ -1145,7 +1145,7 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,deleted_at').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,last_interaction_at,deleted_at').eq('id', id).single());
   if (opportunity.deleted_at) { const error = new Error('Oportunidad no encontrada.'); error.status = 404; throw error; }
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
@@ -3646,7 +3646,7 @@ app.post('/api/agt003/lead-analysis-message', async (req, res) => {
     const analysisId = String(req.body?.analysis_id || '');
     const action = req.body?.action;
     if (!id || !analysisId || !['used', 'dismissed'].includes(action)) { const error = new Error('Solicitud inválida.'); error.status = 400; throw error; }
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const target = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const analysis = await must(database.from('psi_agt003_lead_analyses').select('id,opportunity_id,status,output').eq('id', analysisId).maybeSingle());
     if (!analysis || analysis.opportunity_id !== id || analysis.status !== 'completed') { const error = new Error('Análisis no encontrado.'); error.status = 404; throw error; }
     const existing = await must(database.from('psi_agt003_lead_analysis_message_events').select('id').eq('analysis_id', analysisId).maybeSingle());
@@ -3661,7 +3661,8 @@ app.post('/api/agt003/lead-analysis-message', async (req, res) => {
         occurred_at: occurredAt,
       }).select('id').single());
       interactionId = interaction.id;
-      await must(database.from('psi_sales_opportunities').update({ last_interaction_at: occurredAt }).eq('id', id).select('id').single());
+      const advanced = advancedLastInteraction(target?.last_interaction_at, occurredAt);
+      if (advanced) await must(database.from('psi_sales_opportunities').update({ last_interaction_at: advanced }).eq('id', id).select('id').single());
     }
     const { error } = await database.from('psi_agt003_lead_analysis_message_events').insert({ analysis_id: analysisId, actor_id: currentProfile.id, action, interaction_id: interactionId });
     if (error && error.code !== '23505') throw error;
@@ -3810,6 +3811,19 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
 // Registrar seguimiento (igual que POST /api/opportunity-interactions).
 // F4 (Juan, 2026-10-22): ninguna oportunidad abierta queda sin próxima gestión. Se exige al registrar un seguimiento
 // y al mover la etapa; no se exige si el negocio quedó cerrado o si ya hay una fecha futura vigente.
+/**
+ * "Última gestión" es la más reciente, no la última escrita (Juan, 2026-10-22). Las cuatro rutas que registran una
+ * gestión sobrescribían `last_interaction_at` a ciegas, así que registrar hoy una visita de la semana pasada hacía
+ * retroceder la fecha. Caso real en Frontier: la nota del 22 a mediodía se registró a las 7:33 y el WhatsApp de las
+ * 9:05, escrito después, la dejó en 9:05. Devuelve el valor nuevo sólo cuando de verdad avanza.
+ */
+function advancedLastInteraction(currentValue, occurredAt) {
+  const next = Date.parse(occurredAt || '');
+  if (!Number.isFinite(next)) return null;
+  const current = Date.parse(currentValue || '');
+  return Number.isFinite(current) && current >= next ? null : occurredAt;
+}
+
 function requireNextAction({ stageCode, currentNextActionAt, proposedNextActionAt }) {
   const verdict = nextActionRequirement({ stageCode, currentNextActionAt, proposedNextActionAt });
   if (verdict.ok) return;
@@ -3829,9 +3843,11 @@ async function addInteractionForProfile(database, currentProfile, id, body) {
   const next_action_at = body.next_action_at || null;
   const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
   const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-  const update = { last_interaction_at: occurred_at };
+  const update = {};
+  const advanced = advancedLastInteraction(existing?.last_interaction_at, occurred_at);
+  if (advanced) update.last_interaction_at = advanced;
   if (next_action_at) update.next_action_at = next_action_at;
-  await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+  if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
   return data;
 }
 
@@ -7012,7 +7028,7 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
-    await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const target = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     if (req.body.created_by && req.body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
     const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
@@ -7021,9 +7037,11 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: req.params.id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-    const update = { last_interaction_at: occurred_at };
+    const update = {};
+    const advanced = advancedLastInteraction(target?.last_interaction_at, occurred_at);
+    if (advanced) update.last_interaction_at = advanced;
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
+    if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -7218,9 +7236,11 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-    const update = { last_interaction_at: occurred_at };
+    const update = {};
+    const advanced = advancedLastInteraction(existingOpportunity?.last_interaction_at, occurred_at);
+    if (advanced) update.last_interaction_at = advanced;
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+    if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
