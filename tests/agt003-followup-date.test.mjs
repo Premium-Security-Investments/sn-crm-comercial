@@ -12,7 +12,9 @@ const followUp = main.slice(start, end);
 assert.equal((followUp.match(/type="date"/g) || []).length, 1, 'only Fecha del seguimiento uses a date control');
 assert.match(followUp, /Fecha del seguimiento<input type="date" value=\{form\.occurred_at\}/);
 assert.equal((followUp.match(/type="datetime-local"/g) || []).length, 1, 'Próxima gestión keeps its datetime-local control');
-assert.match(followUp, /Próxima gestión \(opcional\)<input type="datetime-local" value=\{form\.next_action_at\}/);
+// Desde F4 (2026-10-22) la etiqueta es condicional: el campo es obligatorio cuando la oportunidad abierta no
+// tiene próxima gestión vigente. El control sigue siendo el mismo datetime-local.
+assert.match(followUp, /: 'Próxima gestión \(opcional\)'\}<input type="datetime-local" required=\{nextActionRequired\} value=\{form\.next_action_at\}/);
 assert.match(followUp, /occurred_at: bogotaToday\(\)/, 'the initial follow-up day must come from America/Bogota');
 assert.match(followUp, /occurred_at: followUpDateToIso\(form\.occurred_at\)/, 'submission must use the deterministic noon conversion');
 assert.doesNotMatch(followUp, /new Date\(form\.occurred_at\)|new Date\(['"]YYYY-MM-DD/, 'the day must never be parsed as UTC midnight');
