@@ -2647,7 +2647,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
 
   return <section className="stack my-day-home" aria-label="Mi día">
     <div className="my-day-head">
-      <p className="my-day-dayline"><strong>Mi día</strong> · {MY_DAY_DATE.format(now).replace(',', '')}</p>
+      <p className="my-day-dayline">{MY_DAY_DATE.format(now).replace(',', '')}</p>
       <h2 className="my-day-headline">{headline}</h2>
       {subline && <p className="my-day-subline">{subline}</p>}
     </div>
@@ -2659,7 +2659,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
         <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
         {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
       </section>
-      : <div className="my-day-grid">
+      : <div className={`my-day-grid${!pendingCount && !todayCount ? ' is-calm' : ''}`}>
         <div className="my-day-col">
           <NowQueue pending={pendingDecisionRows} today={todayRows} stages={data.stages} lossReasons={data.lossReasons}
             competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />
