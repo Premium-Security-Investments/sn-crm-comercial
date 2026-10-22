@@ -193,7 +193,7 @@ assert.doesNotThrow(() => buildMyDayQueue(frozenInput, now), 'no debe mutar sus 
 // --- entrada vacía --------------------------------------------------------------------------
 assert.deepEqual(
   buildMyDayQueue([], now),
-  { hacerHoy: [], hacerHoyTotal: 0, preparar: [], prepararTotal: 0, depurarCrm: [], depurarCrmTotal: 0 },
+  { hacerHoy: [], hacerHoyTotal: 0, estancadasTotal: 0, preparar: [], prepararTotal: 0, depurarCrm: [], depurarCrmTotal: 0 },
 );
 
 console.log('AGT-003 "Mi día" presentation checks passed');

@@ -48,6 +48,7 @@ import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
 import { buildFollowUpHistory } from './opportunity-followup-presentation.js';
 import { decisionMakerCardState, expectedCloseCardState, followUpAgeLabel, nextActionCardState, presentFollowUpEntry } from './vigia/opportunity-ficha-presentation';
 import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
+import { stageStaleness } from './vigia/stage-staleness';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
@@ -56,7 +57,7 @@ import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDele
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
 import { VigiaChatRegistro } from './vigia/VigiaChatRegistro';
-import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm, TodayQueue, UpcomingList } from './vigia/OpportunityDecision';
+import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm, StalledInStageList, TodayQueue, UpcomingList } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
 
@@ -80,6 +81,7 @@ type Opportunity = {
   customer_segment?: CustomerSegment | null; owner_commercial_area?: CommercialArea | null; owner_can_edit_customer_segment?: boolean | null; source_url?: string | null; tender_offer_status?: TenderOfferStatus | null;
   frozen_until?: string | null; frozen_reason?: string | null; delete_requested_at?: string | null; delete_request_reason?: string | null;
   lost_at?: string | null; discarded_at?: string | null;
+  stage_entered_at?: string | null; stage_entered_at_measured?: boolean | null; staleness_days?: number | null;
 };
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
@@ -764,7 +766,7 @@ function OpportunityList({ data }: { data: Bootstrap }) {
     {urgencySort && priorities.status === 'error' && <p className="muted">La urgencia no está disponible en este momento; se mantiene el orden actual.</p>}
     <p className="muted filter-summary"><strong>{filtered.length}</strong> de {listBase.length} oportunidades {showTenders ? 'de licitación' : 'comerciales'} visibles.{hiddenTenderCount ? <> Las {hiddenTenderCount} licitaciones públicas se trabajan en <a href="#/tenders?view=oportunidades">Licitaciones</a>.</> : null}</p>
     <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>La mayor: {topFilteredOpportunity.company_name} · {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
-    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/>{showUrgency && <th>Urgencia</th>}</tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDateOnly(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td>{showUrgency && <td>{(() => { const priority = priorities.byId.get(o.id); return priority ? <><Badge tone={priority.level === 'alto' ? 'danger' : priority.level === 'medio' ? 'amber' : 'blue'}>{priorityReason(priority)}</Badge><br/><small>{priority.recommendation}</small></> : <small className="muted">Sin alerta</small>; })()}</td>}</tr>)}</tbody></table></div>
+    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/>{showUrgency && <th>Urgencia</th>}</tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge><StageStallBadge opportunity={o} /></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDateOnly(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td>{showUrgency && <td>{(() => { const priority = priorities.byId.get(o.id); return priority ? <><Badge tone={priority.level === 'alto' ? 'danger' : priority.level === 'medio' ? 'amber' : 'blue'}>{priorityReason(priority)}</Badge><br/><small>{priority.recommendation}</small></> : <small className="muted">Sin alerta</small>; })()}</td>}</tr>)}</tbody></table></div>
     <Pagination page={opportunitiesPage} pageSize={OPPORTUNITIES_PAGE_SIZE} total={filtered.length} onChange={setOpportunitiesPage} label="Paginación de oportunidades" />
   </section>;
 }
@@ -890,12 +892,22 @@ function NewOpportunityButton({ data }: { data: Bootstrap | null }) {
     <small id="new-opportunity-blocked" className="topbar-blocked-note">Decida {blocking === 1 ? '1 oportunidad más' : `${blocking} oportunidades más`} hoy en <a href="#/home">Mi día</a></small>
   </div>;
 }
+// Insignia de estancamiento (migración 145). Sólo aparece cuando la etapa tiene umbral y la oportunidad lo pasó;
+// con fecha sembrada el texto dice "al menos", porque ese número es una cota inferior y no un dato exacto.
+function StageStallBadge({ opportunity }: { opportunity: Opportunity }) {
+  const stall = stageStaleness({
+    stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
+    stalenessDays: opportunity.staleness_days, nextActionAt: opportunity.next_action_at, stageName: null,
+  });
+  if (!stall.stale) return null;
+  return <><br/><Badge tone="amber">{stall.atLeast ? `≥ ${stall.days} días en la etapa` : `${stall.days} días en la etapa`}</Badge></>;
+}
 function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; alerts: MyDayAlert[]; total: number; tone: string; empty: string }) {
   return <div className={`my-day-group my-day-${tone}`}>
     {title && <h4>{title}{total > alerts.length ? ` · mostrando ${alerts.length} de ${total}` : ''}</h4>}
     {alerts.length
-      ? <div className="my-day-list">{alerts.map(a => <article className="my-day-card" key={a.id}>
-          <strong>{a.companyName}</strong>
+      ? <div className="my-day-list">{alerts.map(a => <article className={`my-day-card${a.stale ? ' is-estancada' : ''}`} key={a.id}>
+          <strong>{a.companyName}</strong>{a.stale && <Badge tone="amber">Estancada</Badge>}
           <p className="my-day-fact"><em>Qué pasó:</em> {a.fact}</p>
           <p className="my-day-gap"><em>Falta:</em> {a.gap}</p>
           <p className="my-day-goal"><em>Objetivo:</em> {a.goal}</p>
@@ -2494,6 +2506,11 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
     const pendingIds = new Set(pendingDecisionRows.map(o => o.id));
     return opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !isTerminalStage(o.stage_code) && !pendingIds.has(o.id) && o.next_action_at);
   }, [opportunities, pendingDecisionRows, now]);
+  // Las mismas filas, sin exigir próxima gestión: el estancamiento vive justamente donde no hay agenda.
+  const openRows = useMemo(() => {
+    const pendingIds = new Set(pendingDecisionRows.map(o => o.id));
+    return opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !isTerminalStage(o.stage_code) && !pendingIds.has(o.id));
+  }, [opportunities, pendingDecisionRows, now]);
   const todayKey = bogotaDay(now) || '';
   const weekKey = bogotaDay(new Date(now.getTime() + 7 * 86_400_000)) || '';
   const todayRows = activeRows.filter(o => bogotaDay(o.next_action_at as string) === todayKey).sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
@@ -2518,6 +2535,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
     <DecisionQueue pending={pendingDecisionRows} quota={commercialDecisionQuota(data)} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />
     {opportunities.length > 0 && <TodayQueue today={todayRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />}
     {opportunities.length > 0 && !hasPending && <UpcomingList upcoming={upcomingRows} />}
+    {opportunities.length > 0 && !hasPending && <StalledInStageList opportunities={openRows} now={now} />}
     {opportunities.length > 0 && !hasPending && !todayRows.length && canCreate && <section className="panel my-day-prospect">
       <p><strong>Buen momento para prospectar.</strong> Registre los clientes nuevos con los que está hablando.</p>
       <button type="button" onClick={() => go('#/new')}>Nueva oportunidad</button>

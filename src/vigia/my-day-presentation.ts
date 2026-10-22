@@ -6,6 +6,7 @@
 // única fuente de verdad para el estado de próxima gestión y de decisor.
 
 import { nextActionCardState, decisionMakerCardState, type FichaCardState } from './opportunity-ficha-presentation';
+import { stageStaleness, type StageStaleness } from './stage-staleness';
 
 export type MyDayBucket = 'hacer_hoy' | 'preparar' | 'depurar_crm';
 
@@ -17,11 +18,15 @@ export type MyDayAlert = {
   gap: string;
   goal: string;
   ctaHref: string;
+  /** La oportunidad pasó el umbral de días de su etapa (migración 145). */
+  stale: boolean;
 };
 
 export type MyDayQueue = {
   hacerHoy: MyDayAlert[];
   hacerHoyTotal: number;
+  /** Cuántas oportunidades están estancadas, contadas sin el tope de la canasta. */
+  estancadasTotal: number;
   preparar: MyDayAlert[];
   prepararTotal: number;
   depurarCrm: MyDayAlert[];
@@ -33,6 +38,7 @@ export type MyDayOpportunity = {
   service_type_code: string | null; offer_value: number | null; regional_nombre: string | null;
   next_action_at: string | null; expected_close_date?: string | null;
   decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null;
+  stage_entered_at?: string | null; stage_entered_at_measured?: boolean | null; staleness_days?: number | null;
 };
 
 const HACER_HOY_LIMIT = 20;
@@ -66,6 +72,13 @@ function compareByValueStageNameId(a: MyDayOpportunity, b: MyDayOpportunity): nu
     || String(a.id).localeCompare(String(b.id));
 }
 
+// El estancamiento no abre una canasta nueva: una oportunidad estancada es, por definición, una que no tiene
+// próxima gestión futura, así que ya está en "Hacer hoy". Lo que agrega es el hecho de cuánto lleva parada.
+function withStall(alert: MyDayAlert, stall: StageStaleness): MyDayAlert {
+  if (!stall.stale || !stall.label) return alert;
+  return { ...alert, fact: `${alert.fact} ${stall.label}`, stale: true };
+}
+
 function overdueAlert(o: MyDayOpportunity, next: FichaCardState): MyDayAlert {
   return {
     id: o.id,
@@ -75,6 +88,7 @@ function overdueAlert(o: MyDayOpportunity, next: FichaCardState): MyDayAlert {
     gap: 'La fecha pasó y no hay una próxima acción vigente.',
     goal: 'Registrar el resultado pendiente, si aplica, y agendar la próxima gestión.',
     ctaHref: ctaHref(o.id),
+    stale: false,
   };
 }
 
@@ -87,6 +101,7 @@ function missingAlert(o: MyDayOpportunity): MyDayAlert {
     gap: 'No hay fecha ni acción definida para el siguiente contacto.',
     goal: 'Agendar la próxima gestión con fecha concreta.',
     ctaHref: ctaHref(o.id),
+    stale: false,
   };
 }
 
@@ -99,6 +114,7 @@ function todayAlert(o: MyDayOpportunity): MyDayAlert {
     gap: 'Falta hacer el contacto y registrar qué pasó.',
     goal: 'Hacer la gestión, registrar el resultado y agendar la siguiente.',
     ctaHref: ctaHref(o.id),
+    stale: false,
   };
 }
 
@@ -111,6 +127,7 @@ function prepararAlert(o: MyDayOpportunity, decision: FichaCardState): MyDayAler
     gap: decision.detail,
     goal: 'Completar el contacto del decisor antes de avanzar la negociación.',
     ctaHref: ctaHref(o.id),
+    stale: false,
   };
 }
 
@@ -126,20 +143,27 @@ function depurarAlert(o: MyDayOpportunity): MyDayAlert {
     gap: missing.join(' y '),
     goal: 'Completar los datos para mejorar reportes y priorización.',
     ctaHref: ctaHref(o.id),
+    stale: false,
   };
 }
 
 export function buildMyDayQueue(opportunities: MyDayOpportunity[], now: Date = new Date()): MyDayQueue {
   const eligible = opportunities.filter(o => !TERMINAL_STAGES.includes(o.stage_code) && o.service_type_code !== 'licitacion_publica');
 
-  const hacerHoyEntries: Array<{ opportunity: MyDayOpportunity; next: FichaCardState }> = [];
+  const hacerHoyEntries: Array<{ opportunity: MyDayOpportunity; next: FichaCardState; stall: StageStaleness }> = [];
   const prepararEntries: Array<{ opportunity: MyDayOpportunity; decision: FichaCardState }> = [];
   const depurarEntries: MyDayOpportunity[] = [];
 
+  let estancadasTotal = 0;
   for (const o of eligible) {
+    const stall = stageStaleness({
+      stageEnteredAt: o.stage_entered_at, measured: o.stage_entered_at_measured,
+      stalenessDays: o.staleness_days, nextActionAt: o.next_action_at, stageName: o.stage_name, now,
+    });
+    if (stall.stale) estancadasTotal += 1;
     const next = nextActionCardState({ stage_code: o.stage_code, next_action_at: o.next_action_at }, now);
     if (next.code === 'overdue' || next.code === 'missing' || next.code === 'today') {
-      hacerHoyEntries.push({ opportunity: o, next });
+      hacerHoyEntries.push({ opportunity: o, next, stall });
       continue;
     }
     if (ADVANCED_STAGES.includes(o.stage_code)) {
@@ -154,20 +178,29 @@ export function buildMyDayQueue(opportunities: MyDayOpportunity[], now: Date = n
     }
   }
 
+  // Dentro de cada grupo, primero la que lleva más tiempo parada: con tope de 20 tarjetas, una oportunidad
+  // estancada que quede por debajo del corte no se vería nunca.
   hacerHoyEntries.sort((a, b) => {
     const rank = (code: string) => (code === 'overdue' ? 0 : code === 'missing' ? 1 : 2);
-    return rank(a.next.code) - rank(b.next.code) || compareByValueStageNameId(a.opportunity, b.opportunity);
+    return rank(a.next.code) - rank(b.next.code)
+      || Number(b.stall.stale) - Number(a.stall.stale)
+      || (b.stall.stale && a.stall.stale ? (b.stall.days || 0) - (a.stall.days || 0) : 0)
+      || compareByValueStageNameId(a.opportunity, b.opportunity);
   });
   prepararEntries.sort((a, b) => compareByValueStageNameId(a.opportunity, b.opportunity));
   depurarEntries.sort(compareByValueStageNameId);
 
-  const hacerHoyAlerts = hacerHoyEntries.map(({ opportunity, next }) => (next.code === 'overdue' ? overdueAlert(opportunity, next) : next.code === 'missing' ? missingAlert(opportunity) : todayAlert(opportunity)));
+  const hacerHoyAlerts = hacerHoyEntries.map(({ opportunity, next, stall }) => withStall(
+    next.code === 'overdue' ? overdueAlert(opportunity, next) : next.code === 'missing' ? missingAlert(opportunity) : todayAlert(opportunity),
+    stall,
+  ));
   const prepararAlerts = prepararEntries.map(({ opportunity, decision }) => prepararAlert(opportunity, decision));
   const depurarAlerts = depurarEntries.map(depurarAlert);
 
   return {
     hacerHoy: hacerHoyAlerts.slice(0, HACER_HOY_LIMIT),
     hacerHoyTotal: hacerHoyAlerts.length,
+    estancadasTotal,
     preparar: prepararAlerts.slice(0, PREPARAR_LIMIT),
     prepararTotal: prepararAlerts.length,
     depurarCrm: depurarAlerts.slice(0, DEPURAR_LIMIT),

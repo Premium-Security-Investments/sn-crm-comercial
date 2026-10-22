@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import { bogotaDay, FREEZE_DAYS, type DecisionCode, type DecisionQuota } from './opportunity-decision-rules.js';
+import { stageStaleness } from './stage-staleness';
 
 // CRM comercial — decisión obligatoria por oportunidad (2026-10-07). Toda oportunidad abierta debe quedar con una
 // decisión vigente: sigue viva (con fecha), avanza, congelada, descartada, perdida o con eliminación pedida.
@@ -10,6 +11,7 @@ export type DecisionOpportunity = {
   offer_value: number | null; next_action_at: string | null; last_interaction_at?: string | null; updated_at?: string | null;
   created_at?: string | null; frozen_until?: string | null; delete_requested_at?: string | null; delete_request_reason?: string | null;
   decision_maker_name?: string | null; decision_maker_phone?: string | null; sede?: string | null; quote_city?: string | null;
+  stage_entered_at?: string | null; stage_entered_at_measured?: boolean | null; staleness_days?: number | null;
 };
 type StageOption = { code: string; name: string; stage_order: number; is_terminal: boolean };
 type ReasonOption = { code: string; name: string };
@@ -256,6 +258,34 @@ export function UpcomingList({ upcoming }: { upcoming: DecisionOpportunity[] }) 
           <small>{opportunity.stage_name}</small>
         </li>)}</ul>
       : <p className="muted">No tiene gestiones agendadas en los próximos 7 días.</p>}
+  </section>;
+}
+
+const STALLED_LIMIT = 5;
+
+// "Se están enfriando": oportunidades que pasaron el umbral de días de su etapa y no tienen próxima gestión
+// agendada (migración 145). Primero la que lleva más tiempo parada. No repite las pendientes de decisión: Mi día
+// las muestra aparte y antes que esto.
+export function StalledInStageList({ opportunities, now = new Date() }: { opportunities: DecisionOpportunity[]; now?: Date }) {
+  const rows = opportunities
+    .map(opportunity => ({
+      opportunity,
+      stall: stageStaleness({
+        stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
+        stalenessDays: opportunity.staleness_days, nextActionAt: opportunity.next_action_at,
+        stageName: opportunity.stage_name, now,
+      }),
+    }))
+    .filter(row => row.stall.stale)
+    .sort((a, b) => (b.stall.days || 0) - (a.stall.days || 0));
+  if (!rows.length) return null;
+  return <section className="panel stalled-list" aria-label="Oportunidades estancadas">
+    <h3>Se están enfriando ({rows.length})</h3>
+    <ul>{rows.slice(0, STALLED_LIMIT).map(({ opportunity, stall }) => <li key={opportunity.id}>
+      <a href={`#/detail/${opportunity.id}`}><strong>{opportunity.company_name}</strong></a>
+      <small>{stall.label} Sin próxima gestión agendada.</small>
+    </li>)}</ul>
+    {rows.length > STALLED_LIMIT && <p className="muted">Mostrando {STALLED_LIMIT} de {rows.length}.</p>}
   </section>;
 }
 
