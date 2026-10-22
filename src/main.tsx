@@ -60,7 +60,7 @@ import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDele
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
 import { VigiaChatRegistro } from './vigia/VigiaChatRegistro';
-import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm, StalledInStageList, TodayQueue, UpcomingList } from './vigia/OpportunityDecision';
+import { DeleteRequestsPanel, NowQueue, OpportunityDecisionForm, WeekList } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
 
@@ -294,6 +294,17 @@ function parseRoute(): Route {
 function go(hash: string) { window.location.hash = hash; }
 
 function fmtMoney(n: number | null | undefined) { return money.format(Number(n || 0)); }
+// Mi día: la fecha del encabezado, el día de una gestión próxima y el mes de la meta, todos en Bogotá.
+const MY_DAY_DATE = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
+const MY_DAY_WEEKDAY = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', timeZone: 'America/Bogota' });
+const MY_DAY_TIME = new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+const MY_DAY_MONTH = new Intl.DateTimeFormat('es-CO', { month: 'long', timeZone: 'America/Bogota' });
+/** Días que quedan del mes en curso, contados en Bogotá y sin incluir hoy. */
+function daysLeftInMonth(now: Date): number {
+  const [year, month, day] = String(bogotaDay(now) || '').split('-').map(Number);
+  if (!year || !month || !day) return 0;
+  return Math.max(0, new Date(Date.UTC(year, month, 0)).getUTCDate() - day);
+}
 function fmtMoneyCompact(n: number | null | undefined) {
   const value = Number(n || 0);
   if (Math.abs(value) >= 1_000_000) return `$ ${(value / 1_000_000).toLocaleString('es-CO', { maximumFractionDigits: 0 })} M`;
@@ -2589,57 +2600,94 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
     const pendingIds = new Set(pendingDecisionRows.map(o => o.id));
     return buildMyDayQueue(opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !pendingIds.has(o.id)), now);
   }, [opportunities, pendingDecisionRows, now]);
-  // Tres casos de Mi día (Juan, 2026-10-08): atrasado → decidir; al día con agenda hoy → hacer hoy; al día sin agenda → próximas + prospectar.
+  // "Ahora" junta lo que espera decisión con lo agendado para hoy, en ese orden (Juan, 2026-10-07). "Esta semana"
+  // son los siguientes 7 días, y se muestra siempre: responde "¿qué viene?" aunque el día esté cargado.
   const activeRows = useMemo(() => {
     const pendingIds = new Set(pendingDecisionRows.map(o => o.id));
     return opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !isTerminalStage(o.stage_code) && !pendingIds.has(o.id) && o.next_action_at);
-  }, [opportunities, pendingDecisionRows, now]);
-  // Las mismas filas, sin exigir próxima gestión: el estancamiento vive justamente donde no hay agenda.
-  const openRows = useMemo(() => {
-    const pendingIds = new Set(pendingDecisionRows.map(o => o.id));
-    return opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !isTerminalStage(o.stage_code) && !pendingIds.has(o.id));
   }, [opportunities, pendingDecisionRows, now]);
   const todayKey = bogotaDay(now) || '';
   const weekKey = bogotaDay(new Date(now.getTime() + 7 * 86_400_000)) || '';
   const todayRows = activeRows.filter(o => bogotaDay(o.next_action_at as string) === todayKey).sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
   const upcomingRows = activeRows.filter(o => { const day = bogotaDay(o.next_action_at as string) || ''; return day > todayKey && day <= weekKey; }).sort((a, b) => String(a.next_action_at).localeCompare(String(b.next_action_at)));
-  const hasPending = pendingDecisionRows.length > 0;
   const goal = monthlyGoalCompliance({ opportunities, goals: data.goals, month: bogotaMonth(now), ownerId: selfId });
-  const firstName = (data.currentProfile.full_name || '').split(' ')[0] || 'comercial';
   const canCreate = canAccessRoute(data.currentProfile, 'new');
 
+  const pendingCount = pendingDecisionRows.length;
+  const todayCount = todayRows.length;
+  const quota = commercialDecisionQuota(data);
+  const nextUp = upcomingRows[0] || null;
+  const daysLeft = daysLeftInMonth(now);
+  const pendingDataTotal = myDay.prepararTotal + myDay.depurarCrmTotal;
+  // Una sola frase de estado, en el orden de las tres preguntas: qué hago ahora, qué viene, cómo voy (Juan, 2026-10-22).
+  const headline = pendingCount && todayCount
+    ? `Hoy tiene ${todayCount === 1 ? 'una gestión' : `${todayCount} gestiones`} y ${pendingCount === 1 ? '1 oportunidad' : `${pendingCount} oportunidades`} esperando decisión.`
+    : pendingCount
+      ? `Tiene ${pendingCount === 1 ? '1 oportunidad' : `${pendingCount} oportunidades`} esperando decisión.`
+      : todayCount
+        ? `No tiene nada vencido. Hoy tiene ${todayCount === 1 ? 'una gestión' : `${todayCount} gestiones`}.`
+        : 'Está al día. Nada vencido y nada para hoy.';
+  // La cuota diaria de decisiones (regla del 2026-10-08) deja de vivir dentro de la cola y pasa a la línea de estado.
+  const subline = quota && quota.required > 0
+    ? (quota.blocked
+      ? <>Decida <strong>{quota.required} hoy</strong> para poder crear oportunidades nuevas. Va en {quota.done}.</>
+      : <>Cumplió las {quota.required} de hoy: ya puede crear oportunidades nuevas.</>)
+    : null;
+  // El vacío es el caso normal a media mañana: dice qué sigue y ofrece la acción natural, en vez de callarse.
+  const nowEmpty = <>
+    <p className="now-empty-title">Nada pendiente hoy.</p>
+    <p className="now-empty-text">{nextUp
+      ? `Lo próximo es el ${MY_DAY_WEEKDAY.format(new Date(nextUp.next_action_at as string))} a las ${MY_DAY_TIME.format(new Date(nextUp.next_action_at as string))} con ${nextUp.company_name.replace(/\.$/, '')}.`
+      : 'No tiene gestiones agendadas en los próximos 7 días.'}</p>
+    <div className="now-acts">
+      {nextUp && <a className="now-main" href={`#/detail/${nextUp.id}?focus=brief`}>Preparar la reunión</a>}
+      {canCreate && <button type="button" className={nextUp ? 'now-link' : 'now-main'} onClick={() => go('#/new')}>Registrar un cliente nuevo</button>}
+    </div>
+  </>;
+
   return <section className="stack my-day-home" aria-label="Mi día">
-    <section className="executive-hero consultant-hero">
-      <div><span className="eyebrow">Mi día</span><h2>Hola, {formatDisplayName(firstName)}</h2><p>{hasPending
-        ? 'Primero decida lo pendiente; luego haga las gestiones de hoy.'
-        : todayRows.length
-          ? `No tiene nada atrasado. Hoy tiene ${todayRows.length === 1 ? '1 gestión' : `${todayRows.length} gestiones`}.`
-          : 'Está al día: no tiene oportunidades pendientes ni gestiones para hoy.'}</p></div>
-    </section>
-    {canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro firstName={formatDisplayName(firstName)} onSaved={refresh} />}
+    <div className="my-day-head">
+      <p className="my-day-dayline"><strong>Mi día</strong> · {MY_DAY_DATE.format(now).replace(',', '')}</p>
+      <h2 className="my-day-headline">{headline}</h2>
+      {subline && <p className="my-day-subline">{subline}</p>}
+    </div>
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}
-    <DecisionQueue pending={pendingDecisionRows} quota={commercialDecisionQuota(data)} stages={data.stages} lossReasons={data.lossReasons} competitors={data.competitors || []} onChanged={refresh} />
-    {opportunities.length > 0 && <TodayQueue today={todayRows} stages={data.stages} lossReasons={data.lossReasons} competitors={data.competitors || []} onChanged={refresh} />}
-    {opportunities.length > 0 && !hasPending && <UpcomingList upcoming={upcomingRows} />}
-    {opportunities.length > 0 && !hasPending && <StalledInStageList opportunities={openRows} now={now} />}
-    {opportunities.length > 0 && !hasPending && !todayRows.length && canCreate && <section className="panel my-day-prospect">
-      <p><strong>Buen momento para prospectar.</strong> Registre los clientes nuevos con los que está hablando.</p>
-      <button type="button" onClick={() => go('#/new')}>Nueva oportunidad</button>
-    </section>}
-    {!opportunities.length ? <section className="panel my-day-first">
-      <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
-      {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
-    </section> : (myDay.preparar.length > 0 || myDay.depurarCrm.length > 0) && <section className="commercial-followup-banner my-day-personal-banner" aria-label="Preparar y depurar">
-      <div className="my-day">
-        {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
-        {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
-          <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
+    {!opportunities.length
+      ? <section className="panel my-day-first">
+        <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
+        {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
+      </section>
+      : <div className="my-day-grid">
+        <div className="my-day-col">
+          <NowQueue pending={pendingDecisionRows} today={todayRows} stages={data.stages} lossReasons={data.lossReasons}
+            competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />
+          <WeekList upcoming={upcomingRows} />
+        </div>
+        <div className="my-day-side">
+          {canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
+          <section className="my-day-goal" aria-label="Meta del mes">
+            <h3>Meta del mes</h3>
+            {goal.budget ? <>
+              <p className="goal-fig"><strong className="numeric-value">{fmtMoneyCompact(goal.approved)}</strong> <span>de {fmtMoneyCompact(goal.budget)}</span> <span className="numeric-value">· {goal.pct}%</span></p>
+              <div className="goal-track"><i style={{ width: `${Math.max(0, Math.min(100, goal.pct || 0))}%` }} /></div>
+              <p className="goal-note">{daysLeft === 0 ? 'Hoy es el último día del mes.' : `${daysLeft === 1 ? 'Queda 1 día' : `Quedan ${daysLeft} días`} de ${MY_DAY_MONTH.format(now)}.`} <a href="#/goals">Ver mi meta</a></p>
+            </> : <p className="goal-note">Su gerente todavía no le cargó la meta de {MY_DAY_MONTH.format(now)}. <a href="#/goals">Ver mi meta</a></p>}
+          </section>
+        </div>
+        {pendingDataTotal > 0 && <details className="my-day-pending-data">
+          <summary>Datos por completar ({pendingDataTotal})</summary>
+          <section className="commercial-followup-banner my-day-personal-banner" aria-label="Preparar y depurar">
+            <div className="my-day">
+              {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
+              {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
+                <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
+              </details>}
+            </div>
+          </section>
         </details>}
-      </div>
-    </section>}
-    <p className="my-day-goal-line">Meta del mes: {goal.budget ? <><strong>{fmtMoneyCompact(goal.approved)}</strong> de <strong>{fmtMoneyCompact(goal.budget)}</strong> ({goal.pct}%)</> : <>todavía no tiene meta cargada para este mes (la carga su gerente) · {fmtMoneyCompact(goal.approved)} aprobado</>} · <a href="#/goals">Ver mi meta →</a></p>
+      </div>}
   </section>;
 }
 

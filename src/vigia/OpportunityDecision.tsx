@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { api } from '../apiClient';
-import { bogotaDay, FREEZE_DAYS, type DecisionCode, type DecisionQuota } from './opportunity-decision-rules.js';
+import { bogotaDay, FREEZE_DAYS, type DecisionCode } from './opportunity-decision-rules.js';
 import { stageStaleness } from './stage-staleness';
 
 // CRM comercial — decisión obligatoria por oportunidad (2026-10-07). Toda oportunidad abierta debe quedar con una
@@ -48,18 +48,10 @@ function daysBetween(fromDay: string, toDay: string) {
 /** Por qué pide decisión, en una frase. */
 export function pendingReason(opportunity: DecisionOpportunity): string {
   const today = todayDay();
-  if (!opportunity.next_action_at) return 'No tiene próxima gestión';
+  if (!opportunity.next_action_at) return 'Sin próxima gestión';
   const next = bogotaDay(opportunity.next_action_at) || today;
   const days = daysBetween(next, today);
-  return days === 1 ? 'La gestión se venció ayer' : `La gestión se venció hace ${days} días`;
-}
-
-function lastActivity(opportunity: DecisionOpportunity): string {
-  const value = opportunity.last_interaction_at || opportunity.updated_at || opportunity.created_at;
-  const day = value ? bogotaDay(value) : null;
-  if (!day) return 'Sin actividad registrada';
-  const days = daysBetween(day, todayDay());
-  return days <= 0 ? 'Actividad hoy' : `Última actividad hace ${days} días`;
+  return `Vencida hace ${days} ${days === 1 ? 'día' : 'días'}`;
 }
 
 async function sendDecision(id: string, body: Record<string, unknown>) {
@@ -155,19 +147,73 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, comp
   </form>;
 }
 
-export function DecisionQueue({ pending, quota, stages, lossReasons, competitors = [], onChanged }: {
-  pending: DecisionOpportunity[]; quota?: DecisionQuota | null; stages: StageOption[]; lossReasons: ReasonOption[];
-  competitors?: CompetitorOption[]; onChanged: () => Promise<void>;
+const PENDING_SHOWN = 3;
+const TIME_LABEL = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' });
+const WEEK_DAY = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', timeZone: 'America/Bogota' });
+const CHEVRON = <svg className="row-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>;
+
+/** En las filas de Mi día el valor se lee de un vistazo, no se audita: va compacto, como en los KPIs. */
+function compactValue(value: number): string {
+  return `$ ${(value / 1_000_000).toLocaleString('es-CO', { maximumFractionDigits: value >= 1_000_000 ? 0 : 1 })} M`;
+}
+
+function valueLabel(opportunity: DecisionOpportunity): string {
+  return Number(opportunity.offer_value || 0) > 0 ? compactValue(Number(opportunity.offer_value)) : 'Sin valor';
+}
+
+/**
+ * Cuántos días lleva vencida. Sin fecha devuelve -1: una oportunidad sin próxima gestión también espera decisión,
+ * pero no se puede decir cuánto lleva esperando, así que va después de las que sí tienen la cuenta.
+ */
+function overdueRank(opportunity: DecisionOpportunity): number {
+  if (!opportunity.next_action_at) return -1;
+  return daysBetween(bogotaDay(opportunity.next_action_at) || todayDay(), todayDay());
+}
+
+/**
+ * El estancamiento (migración 145) NO abre una sección aparte. El aviso se apaga en cuanto hay una próxima gestión
+ * con fecha futura, y "pendiente de decisión" es exactamente "vencida o sin fecha": por lo tanto toda oportunidad
+ * estancada es también una que espera decisión, y una lista aparte mostraba dos veces la misma fila (Juan, 2026-10-22).
+ * Queda como marca sobre la fila de "Ahora".
+ */
+function stallLabel(opportunity: DecisionOpportunity, now: Date): string {
+  const stall = stageStaleness({
+    stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
+    stalenessDays: opportunity.staleness_days, nextActionAt: opportunity.next_action_at,
+    stageName: opportunity.stage_name, now,
+  });
+  if (!stall.stale || stall.days === null) return '';
+  return `${stall.atLeast ? 'Al menos ' : ''}${stall.days} ${stall.days === 1 ? 'día' : 'días'} en ${opportunity.stage_name}`;
+}
+
+/**
+ * "Ahora": la única pregunta de la primera pantalla de Mi día. Junta en un solo bloque lo que espera decisión
+ * (vencidas o sin fecha) y lo agendado para hoy, en el orden que fijó Juan el 2026-10-07: primero decidir, después
+ * hacer. La cuota diaria de decisiones no se toca; vive en la línea de estado, arriba.
+ */
+export function NowQueue({ pending, today, stages, lossReasons, competitors = [], onChanged, empty, now = new Date() }: {
+  pending: DecisionOpportunity[]; today: DecisionOpportunity[]; stages: StageOption[]; lossReasons: ReasonOption[];
+  competitors?: CompetitorOption[]; onChanged: () => Promise<void>; empty?: React.ReactNode; now?: Date;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [visible, setVisible] = useState(10);
+  const [showAll, setShowAll] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<{ decision: 'discard' | 'freeze'; reason: string; days: number; notes: string }>({ decision: 'discard', reason: '', days: 30, notes: '' });
   const [bulkStatus, setBulkStatus] = useState('');
   const [running, setRunning] = useState(false);
-  const ordered = useMemo(() => [...pending].sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0) || a.company_name.localeCompare(b.company_name, 'es')), [pending]);
+
+  // Primero la que lleva más tiempo vencida. Ordenar por valor dejaba el orden en alfabético, porque la cartera
+  // migrada del Excel llegó casi toda sin valor registrado y "¿qué hago ahora?" se quedaba sin respuesta.
+  const ordered = useMemo(() => [...pending].sort((a, b) => overdueRank(b) - overdueRank(a)
+    || Number(b.offer_value || 0) - Number(a.offer_value || 0)
+    || a.company_name.localeCompare(b.company_name, 'es')), [pending]);
+  const shown = showAll ? ordered : ordered.slice(0, PENDING_SHOWN);
+  const hidden = ordered.length - shown.length;
+  const total = pending.length + today.length;
+
   const toggle = (id: string) => setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  const shown = ordered.slice(0, visible);
 
   const runBulk = async () => {
     if (bulk.notes.trim().length < 5) { setBulkStatus('Escriba en una frase por qué (aplica a todas las seleccionadas).'); return; }
@@ -189,127 +235,92 @@ export function DecisionQueue({ pending, quota, stages, lossReasons, competitors
     await onChanged();
   };
 
-  if (!pending.length) return null;
-  return <section className="decision-queue" aria-label="Oportunidades sin decisión">
-    <header className="decision-queue-header">
-      <div><span className="eyebrow">Antes de seguir</span>
-        <h3>Decida {pending.length === 1 ? 'esta oportunidad' : `estas ${pending.length} oportunidades`}</h3>
-        <p>Toda oportunidad abierta debe tener una decisión: que siga viva con fecha, que avance, congelarla, descartarla o pedir eliminarla. Mientras esté atrasado, decida al menos 10 al día para poder crear oportunidades nuevas.</p>
-        {quota && quota.required > 0 && <p className={quota.blocked ? 'decision-quota' : 'decision-quota is-done'}>{quota.blocked
-          ? <>Hoy lleva <strong>{quota.done} de {quota.required}</strong>. Le {quota.remaining === 1 ? 'falta 1' : `faltan ${quota.remaining}`} para poder crear oportunidades nuevas hoy.</>
-          : <>Cumplió las {quota.required} de hoy: ya puede crear oportunidades nuevas. Mañana siga con las que quedan.</>}</p>}</div>
-      <strong className="decision-queue-count numeric-value">{pending.length}</strong>
-    </header>
-    {selected.size > 0 && <div className="decision-bulk" role="region" aria-label="Decidir varias">
-      <strong>{selected.size === 1 ? '1 seleccionada' : `${selected.size} seleccionadas`}:</strong>
-      <select value={bulk.decision} onChange={e => setBulk({ ...bulk, decision: e.target.value as 'discard' | 'freeze' })}><option value="discard">Descartar</option><option value="freeze">Congelar</option></select>
-      {bulk.decision === 'discard'
-        ? <select value={bulk.reason} onChange={e => setBulk({ ...bulk, reason: e.target.value })}><option value="">Motivo</option>{lossReasons.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select>
-        : <select value={bulk.days} onChange={e => setBulk({ ...bulk, days: Number(e.target.value) })}>{FREEZE_DAYS.map(days => <option key={days} value={days}>{days} días</option>)}</select>}
-      <input placeholder="Por qué (aplica a todas)" value={bulk.notes} onChange={e => setBulk({ ...bulk, notes: e.target.value })} />
-      <button type="button" disabled={running} onClick={() => void runBulk()}>Aplicar</button>
-      <button type="button" className="secondary" disabled={running} onClick={() => setSelected(new Set())}>Quitar selección</button>
-      {bulkStatus && <small role="status">{bulkStatus}</small>}
-    </div>}
-    {!selected.size && bulkStatus && <p className="decision-bulk-result" role="status">{bulkStatus}</p>}
-    <ul className="decision-list">{shown.map(opportunity => <li key={opportunity.id} className={openId === opportunity.id ? 'is-open' : ''}>
-      <div className="decision-row">
-        <input type="checkbox" aria-label={`Seleccionar ${opportunity.company_name}`} checked={selected.has(opportunity.id)} onChange={() => toggle(opportunity.id)} />
-        <button type="button" className="decision-row-main" onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>
-          <strong>{opportunity.company_name}</strong>
-          <span>{opportunity.stage_name} · {Number(opportunity.offer_value || 0) > 0 ? money.format(Number(opportunity.offer_value)) : 'Sin valor'} · {lastActivity(opportunity)}</span>
-          <em>{pendingReason(opportunity)}</em>
-        </button>
-        <button type="button" className={openId === opportunity.id ? 'secondary decision-open' : 'decision-open'} onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>{openId === opportunity.id ? 'Cerrar' : 'Decidir'}</button>
+  const row = (opportunity: DecisionOpportunity, kind: 'pendiente' | 'hoy') => {
+    const isOpen = openId === opportunity.id;
+    const stall = stallLabel(opportunity, now);
+    const head = kind === 'hoy'
+      ? `Hoy a las ${TIME_LABEL.format(new Date(opportunity.next_action_at as string))}`
+      : pendingReason(opportunity);
+    return <li key={opportunity.id} className={`now-item${isOpen ? ' is-open' : ''}`}>
+      <div className={`now-row is-${kind}`}>
+        {picking && kind === 'pendiente' && <input type="checkbox" className="now-pick" aria-label={`Seleccionar ${opportunity.company_name}`}
+          checked={selected.has(opportunity.id)} onChange={() => toggle(opportunity.id)} />}
+        <span className="now-dot" aria-hidden="true" />
+        <div className="now-body">
+          <strong className="now-name">{opportunity.company_name}</strong>
+          <p className="now-fact"><em>{head}</em> · {opportunity.stage_name} · {valueLabel(opportunity)}</p>
+          {stall && <p className="now-stall">{stall}</p>}
+        </div>
+        <div className="now-acts">
+          <button type="button" className="now-main" aria-expanded={isOpen} onClick={() => setOpenId(isOpen ? null : opportunity.id)}>
+            {isOpen ? 'Cerrar' : kind === 'hoy' ? 'Registrar gestión' : 'Decidir'}</button>
+          <a className="now-link" href={`#/detail/${opportunity.id}${kind === 'hoy' ? '?focus=brief' : ''}`}>{kind === 'hoy' ? 'Antes de la reunión' : 'Ver ficha'}</a>
+        </div>
       </div>
-      {openId === opportunity.id && <>
-        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} competitors={competitors} onDone={async () => { setOpenId(null); await onChanged(); }} />
+      {isOpen && <>
+        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} competitors={competitors}
+          onDone={async () => { setOpenId(null); await onChanged(); }} />
         <a className="decision-full-link" href={`#/detail/${opportunity.id}`}>Ver ficha completa (historial y contacto)</a>
       </>}
-    </li>)}</ul>
-    {ordered.length > visible && <button type="button" className="secondary decision-more" onClick={() => setVisible(visible + 20)}>Ver {Math.min(20, ordered.length - visible)} más (quedan {ordered.length - visible})</button>}
-    <p className="decision-tip">Para decidir varias de una vez, márquelas y use Descartar o Congelar arriba.</p>
-  </section>;
-}
+    </li>;
+  };
 
-// Mi día cuando no hay nada atrasado: lo agendado para hoy (con "Actualizar", el mismo panel de decisión)
-// y las próximas gestiones de la semana. Decisión de Juan, 2026-10-08.
-export function TodayQueue({ today, stages, lossReasons, competitors = [], onChanged }: {
-  today: DecisionOpportunity[]; stages: StageOption[]; lossReasons: ReasonOption[]; competitors?: CompetitorOption[];
-  onChanged: () => Promise<void>;
-}) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  if (!today.length) return null;
-  return <section className="decision-queue today-queue" aria-label="Hacer hoy">
-    <header className="decision-queue-header">
-      <div><span className="eyebrow">Agendado para hoy</span>
-        <h3>Hacer hoy</h3>
-        <p>Cuando haga cada gestión, dele Actualizar: cuente qué pasó y deje la próxima fecha. Lo que no actualice hoy pasa mañana a "Decida esta oportunidad".</p></div>
-      <strong className="decision-queue-count numeric-value">{today.length}</strong>
-    </header>
-    <ul className="decision-list">{today.map(opportunity => <li key={opportunity.id} className={openId === opportunity.id ? 'is-open' : ''}>
-      <div className="decision-row">
-        <button type="button" className="decision-row-main" onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>
-          <strong>{opportunity.company_name}</strong>
-          <span>{opportunity.stage_name} · {Number(opportunity.offer_value || 0) > 0 ? money.format(Number(opportunity.offer_value)) : 'Sin valor'} · {lastActivity(opportunity)}</span>
-        </button>
-        <a className="decision-brief-link" href={`#/detail/${opportunity.id}?focus=brief`}>Antes de la reunión</a>
-        <button type="button" className={openId === opportunity.id ? 'secondary decision-open' : 'decision-open'} onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>{openId === opportunity.id ? 'Cerrar' : 'Actualizar'}</button>
-      </div>
-      {openId === opportunity.id && <>
-        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} competitors={competitors} onDone={async () => { setOpenId(null); await onChanged(); }} />
-        <a className="decision-full-link" href={`#/detail/${opportunity.id}`}>Ver ficha completa (historial y contacto)</a>
+  return <section className="now-queue" aria-label="Ahora">
+    <header className="now-head"><h3>Ahora{total > 0 ? <span className="now-count numeric-value">{total}</span> : null}</h3></header>
+    {total === 0
+      ? <div className="now-empty">{empty}</div>
+      : <>
+        {pending.length > 0 && <>
+          <p className="now-group">Esperando decisión · {pending.length}</p>
+          {selected.size > 0 && <div className="decision-bulk" role="region" aria-label="Decidir varias">
+            <strong>{selected.size === 1 ? '1 seleccionada' : `${selected.size} seleccionadas`}:</strong>
+            <select value={bulk.decision} onChange={e => setBulk({ ...bulk, decision: e.target.value as 'discard' | 'freeze' })}><option value="discard">Descartar</option><option value="freeze">Congelar</option></select>
+            {bulk.decision === 'discard'
+              ? <select value={bulk.reason} onChange={e => setBulk({ ...bulk, reason: e.target.value })}><option value="">Motivo</option>{lossReasons.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select>
+              : <select value={bulk.days} onChange={e => setBulk({ ...bulk, days: Number(e.target.value) })}>{FREEZE_DAYS.map(days => <option key={days} value={days}>{days} días</option>)}</select>}
+            <input placeholder="Por qué (aplica a todas)" value={bulk.notes} onChange={e => setBulk({ ...bulk, notes: e.target.value })} />
+            <button type="button" disabled={running} onClick={() => void runBulk()}>Aplicar</button>
+            <button type="button" className="secondary" disabled={running} onClick={() => setSelected(new Set())}>Quitar selección</button>
+            {bulkStatus && <small role="status">{bulkStatus}</small>}
+          </div>}
+          {!selected.size && bulkStatus && <p className="decision-bulk-result" role="status">{bulkStatus}</p>}
+          <ul className="now-list">{shown.map(opportunity => row(opportunity, 'pendiente'))}</ul>
+          {(hidden > 0 || showAll) && <button type="button" className="now-more" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+            {showAll ? 'Ver menos' : `Ver las ${hidden} que faltan`}</button>}
+          <button type="button" className="now-bulk-toggle" aria-pressed={picking} onClick={() => { setPicking(!picking); setSelected(new Set()); }}>
+            {picking ? 'Salir de decidir varias' : 'Decidir varias'}</button>
+        </>}
+        {today.length > 0 && <>
+          <p className="now-group">Agendado para hoy · {today.length}</p>
+          <ul className="now-list">{today.map(opportunity => row(opportunity, 'hoy'))}</ul>
+        </>}
       </>}
-    </li>)}</ul>
   </section>;
 }
 
-const UPCOMING_DAY = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'America/Bogota' });
-
-export function UpcomingList({ upcoming }: { upcoming: DecisionOpportunity[] }) {
-  return <section className="panel upcoming-list" aria-label="Próximas gestiones">
-    <h3>Próximas gestiones (7 días)</h3>
-    {upcoming.length
-      ? <ul>{upcoming.map(opportunity => <li key={opportunity.id}>
-          <a className="row-link" href={`#/detail/${opportunity.id}`}>
-            <span className="upcoming-day">{opportunity.next_action_at ? UPCOMING_DAY.format(new Date(opportunity.next_action_at)) : ''}</span>
-            <strong>{opportunity.company_name}</strong>
-            <small>{opportunity.stage_name}</small>
-            <span className="row-link-go">Ver ficha →</span>
-          </a>
-        </li>)}</ul>
-      : <p className="muted">No tiene gestiones agendadas en los próximos 7 días.</p>}
-  </section>;
-}
-
-const STALLED_LIMIT = 5;
-
-// "Se están enfriando": oportunidades que pasaron el umbral de días de su etapa y no tienen próxima gestión
-// agendada (migración 145). Primero la que lleva más tiempo parada. No repite las pendientes de decisión: Mi día
-// las muestra aparte y antes que esto.
-export function StalledInStageList({ opportunities, now = new Date() }: { opportunities: DecisionOpportunity[]; now?: Date }) {
-  const rows = opportunities
-    .map(opportunity => ({
-      opportunity,
-      stall: stageStaleness({
-        stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
-        stalenessDays: opportunity.staleness_days, nextActionAt: opportunity.next_action_at,
-        stageName: opportunity.stage_name, now,
-      }),
-    }))
-    .filter(row => row.stall.stale)
-    .sort((a, b) => (b.stall.days || 0) - (a.stall.days || 0));
-  if (!rows.length) return null;
-  return <section className="panel stalled-list" aria-label="Oportunidades estancadas">
-    <h3>Se están enfriando ({rows.length})</h3>
-    <ul>{rows.slice(0, STALLED_LIMIT).map(({ opportunity, stall }) => <li key={opportunity.id}>
-      <a className="row-link" href={`#/detail/${opportunity.id}`}>
+/**
+ * "Esta semana": lo que viene en los próximos 7 días, agrupado por día. Filas planas con separadores, sin tarjeta:
+ * la única superficie elevada de la pantalla es "Ahora". La fila entera es el enlace a la ficha.
+ */
+export function WeekList({ upcoming }: { upcoming: DecisionOpportunity[] }) {
+  if (!upcoming.length) return null;
+  const groups: { day: string; label: string; rows: DecisionOpportunity[] }[] = [];
+  for (const opportunity of upcoming) {
+    const day = bogotaDay(opportunity.next_action_at as string) || '';
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) last.rows.push(opportunity);
+    else groups.push({ day, label: WEEK_DAY.format(new Date(opportunity.next_action_at as string)), rows: [opportunity] });
+  }
+  return <section className="week-list" aria-label="Esta semana">
+    <h3>Esta semana<span className="week-count numeric-value">{upcoming.length}</span></h3>
+    {groups.map(group => <div key={group.day}>
+      <p className="week-day">{group.label}</p>
+      {group.rows.map(opportunity => <a key={opportunity.id} className="week-row" href={`#/detail/${opportunity.id}`}>
         <strong>{opportunity.company_name}</strong>
-        <small>{stall.label} Sin próxima gestión agendada.</small>
-        <span className="row-link-go">Ver ficha →</span>
-      </a>
-    </li>)}</ul>
-    {rows.length > STALLED_LIMIT && <p className="muted">Mostrando {STALLED_LIMIT} de {rows.length}.</p>}
+        <small>{opportunity.stage_name}{Number(opportunity.offer_value || 0) > 0 ? ` · ${compactValue(Number(opportunity.offer_value))}` : ''}</small>
+        {CHEVRON}
+      </a>)}
+    </div>)}
   </section>;
 }
 

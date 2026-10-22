@@ -24,6 +24,11 @@ const EXAMPLES = [
   'Hoy visité un conjunto residencial nuevo en Envigado: la administradora quiere vigilancia 24 horas.',
 ];
 const VISIBLE_TURNS = 1;
+/** Por debajo de este número el cupo del equipo cambia lo que la persona puede hacer hoy; por encima, es ruido del sistema. */
+const QUOTA_WARN_AT = 20;
+const ICON_MIC = <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" /><path d="M12 18v3" /></svg>;
+const ICON_STOP = <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /></svg>;
+const ICON_SEND = <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12h15" /><path d="M13 6l6 6-6 6" /></svg>;
 const ACTION_ICON: Record<string, string> = { registrar_seguimiento: '✎', proximo_seguimiento: '◷', actualizar_datos: '☰', crear_oportunidad: '+' };
 const timeLabel = (value: string) => new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
 
@@ -76,7 +81,7 @@ function ProposalCard({ turn, busy, onConfirm, onDiscard }: { turn: ChatTurn; bu
   </div>;
 }
 
-export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; onSaved: () => void | Promise<void> }) {
+export function VigiaChatRegistro({ onSaved }: { onSaved: () => void | Promise<void> }) {
   const [state, setState] = useState<ChatState | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -96,6 +101,13 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
     return () => { alive = false; recognitionRef.current?.stop(); };
   }, []);
   useEffect(() => { if (state?.turns.length) endRef.current?.scrollIntoView({ block: 'nearest' }); }, [state?.turns.length, sending]);
+  // Entrada compacta que crece con lo que se escribe: el chat es la herramienta, no el protagonista (Juan, 2026-10-22).
+  useEffect(() => {
+    const field = inputRef.current;
+    if (!field) return;
+    field.style.height = 'auto';
+    field.style.height = `${Math.min(field.scrollHeight, 148)}px`;
+  }, [draft]);
 
   const send = useCallback(async () => {
     const mensaje = draft.trim();
@@ -142,14 +154,10 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
   const turns = state.turns;
   const visibleTurns = showAllTurns ? turns : turns.slice(-VISIBLE_TURNS);
   const hiddenTurns = turns.length - visibleTurns.length;
-  return <section className="panel vchat" aria-label="Contarle a Vig-IA">
+  return <section className="vchat" aria-label="Contarle a Vig-IA">
     <header className="vchat-header">
-      <div>
-        <span className="eyebrow">Vig-IA Comercial</span>
-        <h2>¿Qué actualizamos hoy, {firstName}?</h2>
-        <p>Cuénteme lo que pasó o lo que cambió: una gestión, la próxima fecha, datos de un cliente o uno nuevo. Yo preparo los cambios del CRM y usted los confirma.</p>
-      </div>
-      {left !== null && <small className="vchat-quota" title="Mensajes con Vig-IA que le quedan hoy a todo el equipo">Quedan {left}{typeof state.max === 'number' ? ` de ${state.max}` : ''} mensajes del equipo hoy</small>}
+      <h3>Contarle a Vig-IA</h3>
+      {left !== null && left < QUOTA_WARN_AT && <small className="vchat-quota" title="Mensajes con Vig-IA que le quedan hoy a todo el equipo">Quedan {left === 1 ? '1 mensaje' : `${left} mensajes`} del equipo hoy</small>}
     </header>
     {hiddenTurns > 0 && <button type="button" className="secondary vchat-more" onClick={() => setShowAllTurns(true)}>
       Ver la conversación de hoy ({turns.length} {turns.length === 1 ? 'mensaje' : 'mensajes'})
@@ -173,13 +181,13 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
     </div>}
     {error && <div className="error" role="alert">{error}</div>}
     <div className={`vchat-composer${listening ? ' is-listening' : ''}`}>
-      <textarea ref={inputRef} aria-label="Mensaje para Vig-IA" rows={2} value={draft} maxLength={CHAT_MESSAGE_MAX_CHARS} disabled={sending}
-        placeholder={listening ? 'Le escucho… hable con normalidad y pulse el micrófono para terminar.' : 'Ej.: Hablé con Frontier, les interesa cotizar 2 puestos. Los llamo el martes. O: pase la próxima gestión de Frontier para el jueves.'}
+      <textarea ref={inputRef} aria-label="Mensaje para Vig-IA" rows={1} value={draft} maxLength={CHAT_MESSAGE_MAX_CHARS} disabled={sending}
+        placeholder={listening ? 'Le escucho… pulse el micrófono para terminar.' : '¿Qué actualizamos hoy?'}
         onChange={event => setDraft(event.target.value)}
         onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} />
-      {Speech && <button type="button" className={`secondary vchat-mic${listening ? ' is-on' : ''}`} aria-pressed={listening} aria-label={listening ? 'Terminar de dictar' : 'Dictar con el micrófono'} title={listening ? 'Terminar de dictar' : 'Dictar'} disabled={sending} onClick={toggleDictation}>{listening ? '■' : '🎤'}</button>}
-      <button type="button" disabled={sending || !draft.trim() || left === 0} onClick={() => void send()}>{sending ? 'Enviando…' : 'Enviar'}</button>
+      {Speech && <button type="button" className={`vchat-icon-btn vchat-mic${listening ? ' is-on' : ''}`} aria-pressed={listening} aria-label={listening ? 'Terminar de dictar' : 'Dictar con el micrófono'} title={listening ? 'Terminar de dictar' : 'Dictar'} disabled={sending} onClick={toggleDictation}>{listening ? ICON_STOP : ICON_MIC}</button>}
+      <button type="button" className="vchat-send" aria-label={sending ? 'Enviando' : 'Enviar'} title="Enviar" disabled={sending || !draft.trim() || left === 0} onClick={() => void send()}>{ICON_SEND}</button>
     </div>
-    <p className="vchat-foot">Enter envía · Mayús + Enter hace un salto de línea. Vig-IA sólo propone: nada se guarda hasta que usted pulsa <strong>Confirmar</strong>.</p>
+    <p className="vchat-foot">Enter envía. Vig-IA sólo propone: nada se guarda hasta que usted pulsa <strong>Confirmar</strong>.</p>
   </section>;
 }
