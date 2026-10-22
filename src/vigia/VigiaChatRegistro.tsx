@@ -15,10 +15,13 @@ type ChatTurn = {
 };
 type ChatState = { available: boolean; turns: ChatTurn[]; used?: number; max?: number };
 
+// Cuatro ejemplos, uno por cada cosa que el chat sabe hacer: registrar una gestión, mover la próxima fecha,
+// completar datos de la ficha y crear un cliente nuevo.
 const EXAMPLES = [
   'Llamé a la gerente de la constructora, le interesa cotizar 2 puestos. La vuelvo a llamar el martes.',
+  'Pase la próxima gestión del conjunto Los Pinos para el jueves.',
+  'El decisor de la constructora es Ana Ruiz, gerente administrativa, 300 123 4567.',
   'Hoy visité un conjunto residencial nuevo en Envigado: la administradora quiere vigilancia 24 horas.',
-  'Le escribí por WhatsApp al cliente, quedó de responder el viernes. Su proveedor actual es Atlas.',
 ];
 const ACTION_ICON: Record<string, string> = { registrar_seguimiento: '✎', proximo_seguimiento: '◷', actualizar_datos: '☰', crear_oportunidad: '+' };
 const timeLabel = (value: string) => new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
@@ -138,8 +141,8 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
     <header className="vchat-header">
       <div>
         <span className="eyebrow">Vig-IA Comercial</span>
-        <h2>¿Cómo le fue hoy, {firstName}?</h2>
-        <p>Cuénteme con quién habló y qué quedó pendiente. Yo preparo los cambios del CRM y usted los confirma.</p>
+        <h2>¿Qué actualizamos hoy, {firstName}?</h2>
+        <p>Cuénteme lo que pasó o lo que cambió: una gestión, la próxima fecha, datos de un cliente o uno nuevo. Yo preparo los cambios del CRM y usted los confirma.</p>
       </div>
       {left !== null && <small className="vchat-quota" title="Mensajes con Vig-IA que le quedan hoy a todo el equipo">Quedan {left}{typeof state.max === 'number' ? ` de ${state.max}` : ''} mensajes del equipo hoy</small>}
     </header>
@@ -163,7 +166,7 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
     {error && <div className="error" role="alert">{error}</div>}
     <div className={`vchat-composer${listening ? ' is-listening' : ''}`}>
       <textarea ref={inputRef} aria-label="Mensaje para Vig-IA" rows={2} value={draft} maxLength={CHAT_MESSAGE_MAX_CHARS} disabled={sending}
-        placeholder={listening ? 'Le escucho… hable con normalidad y pulse el micrófono para terminar.' : 'Ej.: Hablé con Frontier, les interesa cotizar 2 puestos. Los llamo el martes.'}
+        placeholder={listening ? 'Le escucho… hable con normalidad y pulse el micrófono para terminar.' : 'Ej.: Hablé con Frontier, les interesa cotizar 2 puestos. Los llamo el martes. O: pase la próxima gestión de Frontier para el jueves.'}
         onChange={event => setDraft(event.target.value)}
         onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} />
       {Speech && <button type="button" className={`secondary vchat-mic${listening ? ' is-on' : ''}`} aria-pressed={listening} aria-label={listening ? 'Terminar de dictar' : 'Dictar con el micrófono'} title={listening ? 'Terminar de dictar' : 'Dictar'} disabled={sending} onClick={toggleDictation}>{listening ? '■' : '🎤'}</button>}
