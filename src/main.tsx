@@ -50,6 +50,7 @@ import { decisionMakerCardState, expectedCloseCardState, followUpAgeLabel, nextA
 import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
 import { stageStaleness } from './vigia/stage-staleness';
 import { hasLiveNextAction } from './vigia/next-action-rule.js';
+import { lossBreakdown } from './vigia/loss-report';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
@@ -83,11 +84,13 @@ type Opportunity = {
   frozen_until?: string | null; frozen_reason?: string | null; delete_requested_at?: string | null; delete_request_reason?: string | null;
   lost_at?: string | null; discarded_at?: string | null;
   stage_entered_at?: string | null; stage_entered_at_measured?: boolean | null; staleness_days?: number | null;
+  competitor_id?: string | null; competitor_name?: string | null;
 };
+type Competitor = { id: string; name: string };
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
-type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number; leadAnalysesToday?: string[] };
+type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; competitors?: Competitor[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number; leadAnalysesToday?: string[] };
 type ProgramacionAccessValue = { rol: string; ciudad_id: string | null };
 type ProgramacionAccessState = { status: 'loading' | 'ready' | 'error'; ciudades: { id: string; nombre: string }[]; byProfile: Record<string, ProgramacionAccessValue> };
 const PROGRAMACION_ROLE_LABELS: Record<string, string> = { coordinador: 'Coordinador', nomina: 'Nómina', consulta: 'Consulta', admin: 'Administrador' };
@@ -767,6 +770,7 @@ function OpportunityList({ data }: { data: Bootstrap }) {
     {urgencySort && priorities.status === 'error' && <p className="muted">La urgencia no está disponible en este momento; se mantiene el orden actual.</p>}
     <p className="muted filter-summary"><strong>{filtered.length}</strong> de {listBase.length} oportunidades {showTenders ? 'de licitación' : 'comerciales'} visibles.{hiddenTenderCount ? <> Las {hiddenTenderCount} licitaciones públicas se trabajan en <a href="#/tenders?view=oportunidades">Licitaciones</a>.</> : null}</p>
     <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>La mayor: {topFilteredOpportunity.company_name} · {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
+    <LossReportPanel rows={filtered} />
     <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/>{showUrgency && <th>Urgencia</th>}</tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge><StageStallBadge opportunity={o} /></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDateOnly(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td>{showUrgency && <td>{(() => { const priority = priorities.byId.get(o.id); return priority ? <><Badge tone={priority.level === 'alto' ? 'danger' : priority.level === 'medio' ? 'amber' : 'blue'}>{priorityReason(priority)}</Badge><br/><small>{priority.recommendation}</small></> : <small className="muted">Sin alerta</small>; })()}</td>}</tr>)}</tbody></table></div>
     <Pagination page={opportunitiesPage} pageSize={OPPORTUNITIES_PAGE_SIZE} total={filtered.length} onChange={setOpportunitiesPage} label="Paginación de oportunidades" />
   </section>;
@@ -917,6 +921,25 @@ function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; aler
       : (empty && <p className="my-day-empty">{empty}</p>)}
   </div>;
 }
+// F5: pérdidas por motivo y por competidor, sobre el mismo filtro que ya está aplicado al listado. Si no hay
+// pérdidas en lo filtrado, no se muestra nada en vez de una tabla vacía.
+function LossReportPanel({ rows }: { rows: Opportunity[] }) {
+  const report = lossBreakdown(rows);
+  if (!report.total) return null;
+  const table = (title: string, groups: { label: string; count: number; value: number }[]) => <div className="loss-report-table">
+    <h4>{title}</h4>
+    <table className="mini-table"><tbody>{groups.map(group => <tr key={group.label}>
+      <td>{group.label}</td><td className="numeric-value">{group.count}</td><td className="numeric-value">{fmtMoneyCompact(group.value)}</td>
+    </tr>)}</tbody></table>
+  </div>;
+  return <details className="panel loss-report">
+    <summary>Pérdidas en lo filtrado: {report.total} · {fmtMoneyCompact(report.value)}</summary>
+    <div className="loss-report-grid">
+      {table('Por motivo', report.byReason)}
+      {table('Frente a quién', report.byCompetitor)}
+    </div>
+  </details>;
+}
 function Pagination({ page, pageSize, total, onChange, label }: { page: number; pageSize: number; total: number; onChange: (page: number) => void; label?: string }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize)); const current = Math.min(Math.max(1, page), totalPages);
   return <nav className="pagination" aria-label={label || 'Paginación'}><button type="button" className="secondary" onClick={() => onChange(current - 1)} disabled={current <= 1}>Anterior</button><span className="pagination-status">Página {current} de {totalPages}</span><button type="button" className="secondary" onClick={() => onChange(current + 1)} disabled={current >= totalPages}>Siguiente</button></nav>;
@@ -935,7 +958,7 @@ function OpportunityDecisionPanel({ opportunity, data, onChanged }: { opportunit
   return <details className="panel decision-panel" open aria-label="Decisión">
     <summary><h2>{pending ? 'Esta oportunidad necesita una decisión' : frozen ? `Congelada hasta ${fmtDateOnly(opportunity.frozen_until)}` : 'Actualizar oportunidad'}</h2>
       <span className="v2-panel-note">{pending ? 'Su gestión se venció o no tiene agenda.' : frozen ? `Motivo: ${opportunity.frozen_reason || '—'}. Puede reactivarla o decidir otra cosa.` : 'Registre qué pasó y qué sigue: sigue viva, avanza, congelar, descartar o pedir eliminar.'}</span></summary>
-    <OpportunityDecisionForm opportunity={opportunity} stages={data.stages} lossReasons={data.lossReasons} onDone={onChanged} />
+    <OpportunityDecisionForm opportunity={opportunity} stages={data.stages} lossReasons={data.lossReasons} competitors={data.competitors || []} onDone={onChanged} />
   </details>;
 }
 
@@ -2537,8 +2560,8 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}
-    <DecisionQueue pending={pendingDecisionRows} quota={commercialDecisionQuota(data)} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />
-    {opportunities.length > 0 && <TodayQueue today={todayRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />}
+    <DecisionQueue pending={pendingDecisionRows} quota={commercialDecisionQuota(data)} stages={data.stages} lossReasons={data.lossReasons} competitors={data.competitors || []} onChanged={refresh} />
+    {opportunities.length > 0 && <TodayQueue today={todayRows} stages={data.stages} lossReasons={data.lossReasons} competitors={data.competitors || []} onChanged={refresh} />}
     {opportunities.length > 0 && !hasPending && <UpcomingList upcoming={upcomingRows} />}
     {opportunities.length > 0 && !hasPending && <StalledInStageList opportunities={openRows} now={now} />}
     {opportunities.length > 0 && !hasPending && !todayRows.length && canCreate && <section className="panel my-day-prospect">

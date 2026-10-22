@@ -15,6 +15,8 @@ export type DecisionOpportunity = {
 };
 type StageOption = { code: string; name: string; stage_order: number; is_terminal: boolean };
 type ReasonOption = { code: string; name: string };
+export type CompetitorOption = { id: string; name: string };
+const OTHER_COMPETITOR = '__otro__';
 
 const DECISION_LABELS: Record<DecisionCode, string> = {
   continue: 'Sigue viva', advance: 'Avanza', freeze: 'Congelar', discard: 'Descartar', lose: 'Perdida', request_delete: 'Pedir eliminar',
@@ -64,11 +66,15 @@ async function sendDecision(id: string, body: Record<string, unknown>) {
   return api(`/api/opportunity-decision?id=${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify(body) });
 }
 
-export function OpportunityDecisionForm({ opportunity, stages, lossReasons, onDone, initial = 'continue' }: {
-  opportunity: DecisionOpportunity; stages: StageOption[]; lossReasons: ReasonOption[]; onDone: () => Promise<void> | void; initial?: DecisionCode;
+export function OpportunityDecisionForm({ opportunity, stages, lossReasons, competitors = [], onDone, initial = 'continue' }: {
+  opportunity: DecisionOpportunity; stages: StageOption[]; lossReasons: ReasonOption[]; competitors?: CompetitorOption[];
+  onDone: () => Promise<void> | void; initial?: DecisionCode;
 }) {
   const today = todayDay();
   const [decision, setDecision] = useState<DecisionCode>(initial);
+  // F5: contra quién se perdió. Opcional, como pide la especificación, y con opción de escribir uno nuevo.
+  const [competitor, setCompetitor] = useState('');
+  const [competitorName, setCompetitorName] = useState('');
   const [notes, setNotes] = useState('');
   // Si ya hay una próxima gestión futura (dentro del máximo de 90 días), se propone esa en vez de "en una semana".
   const scheduledDay = opportunity.next_action_at ? bogotaDay(opportunity.next_action_at) : null;
@@ -97,6 +103,10 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, onDo
       if (askValue && value) body.offer_value = Number(value.replace(/[^\d]/g, ''));
       if (decision === 'freeze') body.freeze_days = freezeDays;
       if (decision === 'discard' || decision === 'lose') body.loss_reason_code = reason;
+      if (decision === 'lose') {
+        if (competitor && competitor !== OTHER_COMPETITOR) body.competitor_id = competitor;
+        else if (competitor === OTHER_COMPETITOR && competitorName.trim()) body.competitor_name = competitorName.trim();
+      }
       await sendDecision(opportunity.id, body);
       setStatus('Listo.');
       await onDone();
@@ -129,6 +139,11 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, onDo
       {(decision === 'discard' || decision === 'lose') && <label>Motivo<select required value={reason} onChange={e => setReason(e.target.value)}>
         <option value="">Seleccionar</option>{lossReasons.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
       </select></label>}
+      {decision === 'lose' && <label>¿Frente a quién? (opcional)<select value={competitor} onChange={e => setCompetitor(e.target.value)}>
+        <option value="">No se sabe</option>{competitors.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}<option value={OTHER_COMPETITOR}>Otro (escribirlo)</option>
+      </select>
+        {competitor === OTHER_COMPETITOR && <input placeholder="Nombre del competidor" maxLength={120} value={competitorName} onChange={e => setCompetitorName(e.target.value)} />}
+      </label>}
       {decision === 'request_delete' && <label>Por qué eliminarla<select value={deleteReason} onChange={e => setDeleteReason(e.target.value)}>
         {DELETE_REASONS.map(item => <option key={item} value={item}>{item}</option>)}
       </select></label>}
@@ -140,8 +155,9 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, onDo
   </form>;
 }
 
-export function DecisionQueue({ pending, quota, stages, lossReasons, onChanged }: {
-  pending: DecisionOpportunity[]; quota?: DecisionQuota | null; stages: StageOption[]; lossReasons: ReasonOption[]; onChanged: () => Promise<void>;
+export function DecisionQueue({ pending, quota, stages, lossReasons, competitors = [], onChanged }: {
+  pending: DecisionOpportunity[]; quota?: DecisionQuota | null; stages: StageOption[]; lossReasons: ReasonOption[];
+  competitors?: CompetitorOption[]; onChanged: () => Promise<void>;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [visible, setVisible] = useState(10);
@@ -207,7 +223,7 @@ export function DecisionQueue({ pending, quota, stages, lossReasons, onChanged }
         <button type="button" className={openId === opportunity.id ? 'secondary decision-open' : 'decision-open'} onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>{openId === opportunity.id ? 'Cerrar' : 'Decidir'}</button>
       </div>
       {openId === opportunity.id && <>
-        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} onDone={async () => { setOpenId(null); await onChanged(); }} />
+        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} competitors={competitors} onDone={async () => { setOpenId(null); await onChanged(); }} />
         <a className="decision-full-link" href={`#/detail/${opportunity.id}`}>Ver ficha completa (historial y contacto)</a>
       </>}
     </li>)}</ul>
@@ -218,8 +234,9 @@ export function DecisionQueue({ pending, quota, stages, lossReasons, onChanged }
 
 // Mi día cuando no hay nada atrasado: lo agendado para hoy (con "Actualizar", el mismo panel de decisión)
 // y las próximas gestiones de la semana. Decisión de Juan, 2026-10-08.
-export function TodayQueue({ today, stages, lossReasons, onChanged }: {
-  today: DecisionOpportunity[]; stages: StageOption[]; lossReasons: ReasonOption[]; onChanged: () => Promise<void>;
+export function TodayQueue({ today, stages, lossReasons, competitors = [], onChanged }: {
+  today: DecisionOpportunity[]; stages: StageOption[]; lossReasons: ReasonOption[]; competitors?: CompetitorOption[];
+  onChanged: () => Promise<void>;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   if (!today.length) return null;
@@ -239,7 +256,7 @@ export function TodayQueue({ today, stages, lossReasons, onChanged }: {
         <button type="button" className={openId === opportunity.id ? 'secondary decision-open' : 'decision-open'} onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>{openId === opportunity.id ? 'Cerrar' : 'Actualizar'}</button>
       </div>
       {openId === opportunity.id && <>
-        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} onDone={async () => { setOpenId(null); await onChanged(); }} />
+        <OpportunityDecisionForm opportunity={opportunity} stages={stages} lossReasons={lossReasons} competitors={competitors} onDone={async () => { setOpenId(null); await onChanged(); }} />
         <a className="decision-full-link" href={`#/detail/${opportunity.id}`}>Ver ficha completa (historial y contacto)</a>
       </>}
     </li>)}</ul>
