@@ -7,7 +7,7 @@ import {
   addDays, chatCalendar, chatRegistroOutputSchema, describeChatAction, humanDay, normalizeChatOutput, weekdayName,
   CHAT_NEXT_MAX_DAYS, CHAT_REGISTRO_DEFAULT_DAILY_MAX,
 } from '../src/vigia/chat-registro.js';
-import { assignChatRefs, buildChatInput, chatQuotaMessage, planSupersededChatProposals, CHAT_POLICY, CHAT_SUPERSEDED_BY_KEY, runChatTurn } from '../agt003-chat-registro.js';
+import { assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, planSupersededChatProposals, CHAT_POLICY, CHAT_SUPERSEDED_BY_KEY, runChatTurn } from '../agt003-chat-registro.js';
 import { AGENT_AI_FUNCTIONS } from '../platform-agent-configuration.js';
 import { AGT003_CHAT_CAPABILITY, MODEL_GATEWAY_REJECTION_CODES } from '../platform-model-gateway.js';
 
@@ -240,4 +240,47 @@ test('servidor y pantalla: el reemplazo corre al cerrar el turno, sólo si propo
   const ui = readFileSync(new URL('../src/vigia/VigiaChatRegistro.tsx', import.meta.url), 'utf8');
   assert.match(ui, /proposal\.reemplazada_por \? 'Reemplazado por lo que contó después: no se guardó nada' : 'Descartado: no se guardó nada'/);
   assert.match(ui, /reemplazada_por\?: string/, 'el tipo del turno declara el motivo');
+});
+
+test('fechas del chat: el día se guarda al mediodía de Bogotá, no a medianoche UTC', () => {
+  // Defecto real del 2026-10-22: el próximo seguimiento de Frontier quedó el domingo 25 a las 19:00 (Bogotá)
+  // porque "2026-10-26" se guardó como medianoche UTC.
+  assert.equal(chatDayToIso('2026-10-26'), '2026-10-26T17:00:00.000Z');
+  const enBogota = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' });
+  for (const day of ['2026-10-26', '2026-01-01', '2026-12-31', '2026-06-15']) {
+    assert.equal(enBogota.format(new Date(chatDayToIso(day))), day, `${day} se sigue viendo el mismo día en Bogotá`);
+  }
+  // Mismo criterio que el formulario de la ficha (src/followUpDate.ts: mediodía con desfase -05:00).
+  const comoElFormulario = new Date('2026-10-26T12:00:00-05:00').toISOString();
+  assert.equal(chatDayToIso('2026-10-26'), comoElFormulario);
+  // Lo que no es un día exacto pasa sin tocarse: un instante completo ya trae su hora.
+  assert.equal(chatDayToIso('2026-10-26T14:30:00.000Z'), '2026-10-26T14:30:00.000Z');
+  assert.equal(chatDayToIso(null), null);
+  assert.equal(chatDayToIso(''), null);
+});
+
+test('servidor: las tres fechas que escribe el chat pasan por la conversión', () => {
+  const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  assert.equal(server, api, 'el espejo de Vercel queda igual');
+  assert.match(server, /occurred_at: chatDayToIso\(action\.fecha\), interaction_type: action\.canal \}/, 'seguimiento registrado');
+  assert.match(server, /update\(\{ next_action_at: chatDayToIso\(action\.fecha\) \}\)/, 'próximo seguimiento');
+  assert.match(server, /next_action_at: chatDayToIso\(action\.proxima_fecha\) \|\| null,/, 'oportunidad nueva');
+  assert.match(server, /occurred_at: chatDayToIso\(action\.fecha\), interaction_type: action\.canal \|\| 'nota' \}/, 'nota de la oportunidad nueva');
+  assert.doesNotMatch(server, /occurred_at: action\.fecha\b/, 'ya no queda ninguna fecha del chat sin convertir');
+  assert.doesNotMatch(server, /next_action_at: action\.(fecha|proxima_fecha)\b/);
+});
+
+test('migración 148: corrige sólo las tres filas afectadas, exigiendo el valor viejo', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/148_crm_corregir_fechas_del_chat.sql', import.meta.url), 'utf8');
+  const updates = sql.match(/update public\./g) || [];
+  assert.equal(updates.length, 4, 'tres fechas más el último seguimiento de Frontier');
+  assert.equal((sql.match(/timestamptz '2026-10-26 17:00:00\+00'/g) || []).length, 1, 'el lunes 26 al mediodía de Bogotá');
+  assert.equal((sql.match(/timestamptz '2026-10-22 17:00:00\+00'/g) || []).length, 3);
+  // Cada update exige el valor viejo: si alguien ya lo corrigió a mano, no se vuelve a mover.
+  assert.equal((sql.match(/and (next_action_at|occurred_at|last_interaction_at) = timestamptz '2026-10-2[26] 00:00:00\+00'/g) || []).length, 4);
+  const ejecutable = sql.replace(/^\s*--.*$/gm, '');
+  assert.doesNotMatch(ejecutable, /alter |create |drop |delete from|truncate/i, 'la 148 es sólo datos');
+  const rollback = readFileSync(new URL('../supabase/rollbacks/148_crm_corregir_fechas_del_chat_rollback.sql', import.meta.url), 'utf8');
+  assert.match(rollback, /set next_action_at = timestamptz '2026-10-26 00:00:00\+00'/);
 });
