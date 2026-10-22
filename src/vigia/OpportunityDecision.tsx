@@ -253,6 +253,7 @@ export function TodayQueue({ today, stages, lossReasons, competitors = [], onCha
           <strong>{opportunity.company_name}</strong>
           <span>{opportunity.stage_name} · {Number(opportunity.offer_value || 0) > 0 ? money.format(Number(opportunity.offer_value)) : 'Sin valor'} · {lastActivity(opportunity)}</span>
         </button>
+        <a className="decision-brief-link" href={`#/detail/${opportunity.id}?focus=brief`}>Antes de la reunión</a>
         <button type="button" className={openId === opportunity.id ? 'secondary decision-open' : 'decision-open'} onClick={() => setOpenId(openId === opportunity.id ? null : opportunity.id)} aria-expanded={openId === opportunity.id}>{openId === opportunity.id ? 'Cerrar' : 'Actualizar'}</button>
       </div>
       {openId === opportunity.id && <>

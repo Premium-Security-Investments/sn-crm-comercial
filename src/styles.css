@@ -646,6 +646,15 @@ td.numeric-value{white-space:nowrap}
 .row-link-go{margin-left:auto;color:#1b4fd0;font-size:13px;font-weight:800;white-space:nowrap}
 .row-link:hover .row-link-go,.row-link:focus-visible .row-link-go{text-decoration:underline}
 .upcoming-list small{color:#526173}
+.decision-brief-link{align-self:center;margin-right:10px;color:#1b4fd0;font-size:13px;font-weight:700;text-decoration:none}
+.meeting-brief summary{cursor:pointer;font-weight:800;color:#10213d}
+.brief-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:10px}
+.brief-block h4{margin:0 0 6px;font-size:13px;color:#526173}
+.brief-block ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.brief-block li{font-size:13px;color:#10213d;overflow-wrap:anywhere}
+.brief-label{color:#526173}
+.brief-block.is-suggestion li{padding:6px 8px;border-radius:8px;background:#f8fbff}
+.brief-block.is-missing li{color:#7c2d12}
 .client-profile-suggested{margin:4px 0 0;color:#526173;font-size:13px}
 .loss-report summary{cursor:pointer;font-weight:800;color:#10213d}
 .loss-report-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:10px}
