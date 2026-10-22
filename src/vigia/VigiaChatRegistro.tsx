@@ -141,7 +141,7 @@ export function VigiaChatRegistro({ firstName, onSaved }: { firstName: string; o
         <h2>¿Cómo le fue hoy, {firstName}?</h2>
         <p>Cuénteme con quién habló y qué quedó pendiente. Yo preparo los cambios del CRM y usted los confirma.</p>
       </div>
-      {left !== null && <small className="vchat-quota" title="Mensajes con Vig-IA que le quedan hoy a todo el equipo">{left} mensajes del equipo hoy</small>}
+      {left !== null && <small className="vchat-quota" title="Mensajes con Vig-IA que le quedan hoy a todo el equipo">Quedan {left}{typeof state.max === 'number' ? ` de ${state.max}` : ''} mensajes del equipo hoy</small>}
     </header>
     {turns.length > 0 && <div className="vchat-thread" role="log" aria-live="polite">
       {turns.map(turn => <div key={turn.id} className="vchat-turn">
