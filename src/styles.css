@@ -681,7 +681,7 @@ td.numeric-value{white-space:nowrap}
    Juan: "todo es como lo mismo, no hay jerarquías de nada, no hay divisiones". La respuesta es una sola
    superficie elevada —"Ahora"— y todo lo demás en filas planas sobre el fondo, con separadores reales.
    Celular primero: el orden de lectura es estado → Ahora → Vig-IA → Esta semana → Meta. */
-.my-day-home{gap:18px;container-type:inline-size}
+.my-day-home{gap:18px;container-type:inline-size;max-width:1060px}
 .my-day-first{display:grid;gap:12px;justify-items:start}
 .my-day-personal-banner{grid-template-columns:1fr}
 .my-day-head{display:flex;flex-direction:column;gap:6px}
@@ -727,7 +727,7 @@ td.numeric-value{white-space:nowrap}
 .now-bulk-toggle[aria-pressed=true]{color:#1b4fd0;background:#eaf2ff}
 .now-queue .decision-bulk{margin:8px 16px 0}
 /* El vacío es el caso normal a media mañana y se diseña como tal. */
-.now-empty{padding:16px}
+.now-empty{padding:15px 16px 16px}
 .now-empty-title{margin:0;font-size:16px;font-weight:650;color:#172033}
 .now-empty-text{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:#5d6b82}
 .now-empty .now-acts{flex:none;margin-top:12px;padding-left:0}
@@ -764,6 +764,19 @@ td.numeric-value{white-space:nowrap}
 
 @container (min-width:880px){
   .my-day-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px 24px;align-items:start}
+  /* El encabezado no compite con el de la aplicación: la fecha es un pie de la frase, no un título. */
+  .my-day-head{gap:4px}
+  /* Día tranquilo (nada que decidir ni agendado para hoy): una sola columna angosta. Con la segunda
+     columna, el chat terminaba pesando más que "Ahora" y la jerarquía se invertía sola. */
+  .my-day-grid.is-calm{display:flex;flex-direction:column;align-items:stretch;gap:18px;max-width:720px}
+  .my-day-grid.is-calm .my-day-col,.my-day-grid.is-calm .my-day-side{display:contents}
+  /* Y "qué viene" sube antes del chat: sin nada que hacer ahora, la agenda es la respuesta y el chat
+     es sólo la herramienta. En celular el chat sigue en segundo lugar, donde se aprobó. */
+  .my-day-grid.is-calm .now-queue{order:1}
+  .my-day-grid.is-calm .week-list{order:2}
+  .my-day-grid.is-calm .vchat{order:3}
+  .my-day-grid.is-calm .my-day-goal{order:4}
+  .my-day-grid.is-calm .my-day-pending-data{order:5}
   .my-day-col,.my-day-side{display:flex;flex-direction:column;gap:18px;min-width:0}
   .my-day-col{grid-column:1}
   .my-day-side{grid-column:2}
