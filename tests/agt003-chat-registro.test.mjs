@@ -7,7 +7,7 @@ import {
   addDays, chatCalendar, chatRegistroOutputSchema, describeChatAction, humanDay, normalizeChatOutput, weekdayName,
   CHAT_NEXT_MAX_DAYS, CHAT_REGISTRO_DEFAULT_DAILY_MAX,
 } from '../src/vigia/chat-registro.js';
-import { assignChatRefs, buildChatInput, chatQuotaMessage, CHAT_POLICY, runChatTurn } from '../agt003-chat-registro.js';
+import { assignChatRefs, buildChatInput, chatQuotaMessage, planSupersededChatProposals, CHAT_POLICY, CHAT_SUPERSEDED_BY_KEY, runChatTurn } from '../agt003-chat-registro.js';
 import { AGENT_AI_FUNCTIONS } from '../platform-agent-configuration.js';
 import { AGT003_CHAT_CAPABILITY, MODEL_GATEWAY_REJECTION_CODES } from '../platform-model-gateway.js';
 
@@ -204,4 +204,40 @@ test('limpieza: la próxima fecha también se acepta en proxima_fecha (dentro de
   }, { refs, today: TODAY, serviceCodes });
   assert.deepEqual(out.acciones.filter(a => a.tipo === 'proximo_seguimiento').map(a => [a.ref, a.fecha]), [['o1', '2026-10-20'], ['o2', '2026-10-21']]);
   assert.deepEqual(out.avisos, []);
+});
+
+test('una sola propuesta confirmable: la anterior sin confirmar queda reemplazada, no descartada por el comercial', () => {
+  const now = new Date('2026-10-22T14:00:00.000Z');
+  const rows = [
+    { id: 'vieja', proposal_status: 'pendiente', proposal: { acciones: [{ tipo: 'proximo_seguimiento' }], avisos: [] } },
+    { id: 'tambien-vieja', proposal_status: 'pendiente', proposal: null },
+    { id: 'ya-guardada', proposal_status: 'confirmada', proposal: { acciones: [], avisos: [] } },
+    { id: 'descartada-por-el', proposal_status: 'descartada', proposal: { acciones: [], avisos: [] } },
+    { id: 'nueva', proposal_status: 'pendiente', proposal: { acciones: [{ tipo: 'registrar_seguimiento' }], avisos: [] } },
+  ];
+  const plan = planSupersededChatProposals(rows, { turnId: 'nueva', now });
+
+  assert.deepEqual(plan.map(item => item.id), ['vieja', 'tambien-vieja'], 'sólo las pendientes, nunca la nueva');
+  assert.equal(plan[0].patch.proposal_status, 'descartada', 'la migración 132 sólo admite cuatro estados');
+  assert.equal(plan[0].patch.decided_at, '2026-10-22T14:00:00.000Z');
+  assert.equal(plan[0].patch.proposal[CHAT_SUPERSEDED_BY_KEY], 'nueva', 'el motivo queda en la propuesta');
+  assert.deepEqual(plan[0].patch.proposal.acciones, [{ tipo: 'proximo_seguimiento' }], 'lo propuesto se conserva');
+  assert.equal(plan[1].patch.proposal[CHAT_SUPERSEDED_BY_KEY], 'nueva', 'una propuesta vacía también se cierra');
+  assert.deepEqual(planSupersededChatProposals(rows, { turnId: null, now }), [], 'sin turno nuevo no se reemplaza nada');
+});
+
+test('servidor y pantalla: el reemplazo corre al cerrar el turno, sólo si propone acciones, y la tarjeta lo dice', () => {
+  const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  assert.equal(server, api, 'el espejo de Vercel queda igual');
+  assert.match(server, /if \(proposal\.acciones\.length\) await supersedeOlderChatProposals\(database, \{ actorId: currentProfile\.id, turnId \}\);/,
+    'sólo una propuesta con acciones reemplaza a la anterior');
+  const helper = server.slice(server.indexOf('async function supersedeOlderChatProposals('), server.indexOf('async function chatCanCreate('));
+  assert.match(helper, /\.eq\('actor_id', actorId\)\.eq\('proposal_status', 'pendiente'\)\.neq\('id', turnId\)/, 'sólo las pendientes del mismo comercial');
+  assert.match(helper, /\.eq\('id', id\)\.eq\('proposal_status', 'pendiente'\)/, 'el parche es atómico: pendiente → descartada');
+  assert.match(helper, /catch \(error\) \{\n    console\.warn\('agt003 chat: no se pudo reemplazar la propuesta anterior'/, 'una falla al reemplazar no rompe el turno');
+  assert.match(server, /quedó reemplazada por lo que contó después/, 'confirmar una tarjeta vieja explica por qué no se puede');
+  const ui = readFileSync(new URL('../src/vigia/VigiaChatRegistro.tsx', import.meta.url), 'utf8');
+  assert.match(ui, /proposal\.reemplazada_por \? 'Reemplazado por lo que contó después: no se guardó nada' : 'Descartado: no se guardó nada'/);
+  assert.match(ui, /reemplazada_por\?: string/, 'el tipo del turno declara el motivo');
 });
