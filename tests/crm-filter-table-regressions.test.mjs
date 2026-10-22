@@ -9,7 +9,9 @@ const opportunityEnd = main.indexOf('function findTenderOwner', opportunityStart
 const opportunity = main.slice(opportunityStart, opportunityEnd);
 assert.match(opportunity, /const \[period, setPeriod\] = useState<DashboardPeriodFilter>\(hashQueryParam\('period'\)/, 'Oportunidades conserva el periodo desde la URL');
 assert.match(opportunity, /matchesDashboardPeriod\(o, period\)/, 'Oportunidades aplica el periodo a filas y métricas');
-assert.match(opportunity, /\[q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, sortConfig\.key, sortConfig\.direction, urgencySort\]/, 'cambiar periodo (o el orden por urgencia) reinicia la paginación');
+// El arreglo ganó onlyWithoutNextAction cuando entró el filtro "Sin próxima gestión": cambiarlo también tiene
+// que devolver la paginación a la primera página, que es justo lo que esta prueba vigila.
+assert.match(opportunity, /\[q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, onlyWithoutNextAction, sortConfig\.key, sortConfig\.direction, urgencySort\]/, 'cambiar periodo (o el orden por urgencia) reinicia la paginación');
 assert.match(opportunity, /empty="Periodo"/, 'Oportunidades renderiza el selector de periodo');
 assert.match(opportunity, /setPeriod\(''\)/, 'Limpiar restablece el periodo');
 assert.match(styles, /\.filters\.opportunity-filters\.compact-dashboard-filters\{grid-template-columns:minmax\(210px,1\.45fr\) repeat\(5,minmax\(120px,1fr\)\)\}/, 'Oportunidades usa seis columnas explícitas y dos filas con especificidad efectiva');

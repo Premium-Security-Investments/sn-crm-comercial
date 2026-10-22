@@ -91,25 +91,25 @@ const owners = {
 
 const opportunities = {
   'opp-target': {
-    id: 'opp-target', owner_id: 'comercial-1', client_id: 'client-pair',
+    id: 'opp-target', owner_id: 'comercial-1', client_id: 'client-pair', stage_code: 'prospecto',
     company_name: 'Empresa Par', customer_segment: 'cliente_actual', regional_nombre: 'Nariño',
     sede: 'Sede A', quote_city: 'Pasto', economic_sector: 'seguridad_fisica',
     decision_maker_name: 'Juan Perez', decision_maker_email: 'juan@example.test', decision_maker_phone: '3000000000',
   },
   'opp-sib': {
-    id: 'opp-sib', owner_id: 'comercial-1', client_id: 'client-pair',
+    id: 'opp-sib', owner_id: 'comercial-1', client_id: 'client-pair', stage_code: 'prospecto',
     company_name: 'Empresa Par', customer_segment: 'cliente_actual', regional_nombre: 'Nariño',
     sede: 'Sede A', quote_city: 'Pasto', economic_sector: 'seguridad_fisica',
     decision_maker_name: 'Juan Perez', decision_maker_email: 'juan@example.test', decision_maker_phone: '3000000000',
   },
   'opp-solo': {
-    id: 'opp-solo', owner_id: 'comercial-1', client_id: null,
+    id: 'opp-solo', owner_id: 'comercial-1', client_id: null, stage_code: 'prospecto',
     company_name: 'Empresa Solo', customer_segment: 'cliente_actual', regional_nombre: 'Nariño',
     sede: 'Sede A', quote_city: 'Pasto', economic_sector: 'seguridad_fisica',
     decision_maker_name: 'Juan Perez', decision_maker_email: 'juan@example.test', decision_maker_phone: '3000000000',
   },
   'opp-locked-sib': {
-    id: 'opp-locked-sib', owner_id: 'comercial-2', client_id: 'client-locked',
+    id: 'opp-locked-sib', owner_id: 'comercial-2', client_id: 'client-locked', stage_code: 'prospecto',
     company_name: 'Empresa Bloqueada', customer_segment: 'cliente_actual', regional_nombre: 'Nariño',
     sede: 'Sede A', quote_city: 'Pasto', economic_sector: 'seguridad_fisica',
     decision_maker_name: 'Ana Gomez', decision_maker_email: 'ana@example.test', decision_maker_phone: '3000000001',

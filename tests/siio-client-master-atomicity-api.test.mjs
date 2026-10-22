@@ -61,7 +61,7 @@ const actor = {
 
 const opportunities = {
   'opp-existing': {
-    id: 'opp-existing', owner_id: 'comercial-1', client_id: 'client-existing',
+    id: 'opp-existing', owner_id: 'comercial-1', client_id: 'client-existing', stage_code: 'prospecto',
     company_name: 'Empresa Existente', customer_segment: 'cliente_actual', regional_nombre: 'Nariño',
     sede: 'Sede A', quote_city: 'Pasto', economic_sector: 'seguridad_fisica',
     decision_maker_name: 'Juan Perez', decision_maker_email: 'juan@example.test', decision_maker_phone: '3000000000',
