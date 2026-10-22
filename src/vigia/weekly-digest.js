@@ -24,8 +24,9 @@
 //     commercial-dashboard-model.ts, que es TypeScript y no se puede importar desde Node sin compilar).
 //   Sin cartera (Juan, 2026-10-08): quien queda "al día" sólo porque no tiene oportunidades activas se muestra como
 //     "Sin cartera" (no como "Al día"), para no confundir al gerente.
-//   Premio (Juan, 2026-10-08): la ficha de cada comercial en el resumen del gerente muestra perfiles completos (8/8,
-//     profileCompleteness de client-profile.js) sobre sus oportunidades activas y análisis profundos ganados en el mes
+//   Premio (Juan, 2026-10-08): la ficha de cada comercial en el resumen del gerente muestra perfiles completos (el
+//     total lo fija profileCompleteness de client-profile.js y hoy son 7 campos, no 8: el LinkedIn del decisor pasó
+//     a opcional el 2026-10-22) sobre sus oportunidades activas y análisis profundos ganados en el mes
 //     (psi_agt003_lead_analyses completados por el comercial desde el inicio del mes de Bogotá).
 //   Sólo oportunidades comerciales privadas de AGT-003 (commercial-scope.js). Nunca se lee ni se muestra el texto de
 //   los seguimientos (notas), ni observaciones, ni ids internos en el contenido.
@@ -144,7 +145,7 @@ export function withPortfolioStatus(row) {
   return row;
 }
 
-/** Perfiles completos (8/8) sobre las oportunidades activas de un comercial y análisis ganados en el mes. */
+/** Perfiles completos (el total lo fija profileCompleteness, hoy 7 campos) sobre las oportunidades activas y análisis ganados en el mes. */
 export function premiumStats({ ownerId, opportunities = [], leadAnalyses = [], now }) {
   const active = list(opportunities).filter(o => o.owner_id === ownerId && !isTerminalStage(o.stage_code) && !isOutOfActivePipeline(o, now));
   const complete = active.filter(o => profileCompleteness(o).complete).length;

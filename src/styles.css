@@ -767,6 +767,13 @@ td.numeric-value{white-space:nowrap}
 .book-fig{margin:0;font-size:14px;line-height:1.5;color:#172033}
 .book-fig strong{font-weight:700}
 
+/* Foco de teclado en los controles de Mi día: la app no tiene una regla global, así que estos quedaban con el
+   anillo que ponga el navegador. Criterio del plan del 22 de octubre: foco visible. */
+.now-main:focus-visible,.now-link:focus-visible,.now-more:focus-visible,.now-bulk-toggle:focus-visible,
+.next-talk a:focus-visible,.my-day-goal a:focus-visible,.my-day-book a:focus-visible,.goal-note a:focus-visible{
+  outline:3px solid #1b64f2;outline-offset:2px;border-radius:9px}
+.now-main:focus-visible{outline-color:#0b3ea8}
+
 /* "Esta semana": filas planas agrupadas por día; la fila entera es el enlace a la ficha. */
 .week-list h3{margin:0 0 4px;display:flex;align-items:baseline;gap:8px;font-size:15px;color:#172033;letter-spacing:-.008em}
 .week-count{font-size:13px;font-weight:700;color:#5d6b82}
