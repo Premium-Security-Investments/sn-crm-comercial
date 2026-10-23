@@ -6,7 +6,7 @@
 // única fuente de verdad para el estado de próxima gestión y de decisor.
 
 import { nextActionCardState, decisionMakerCardState, type FichaCardState } from './opportunity-ficha-presentation';
-import { stageStaleness, type StageStaleness } from './stage-staleness';
+import { stageStaleness, type StageStaleness } from './stage-staleness.js';
 
 export type MyDayBucket = 'hacer_hoy' | 'preparar' | 'depurar_crm';
 

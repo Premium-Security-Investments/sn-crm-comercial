@@ -12,7 +12,7 @@
 //
 // Módulo puro: no lee red ni base, y no altera lo que recibe.
 
-import { stageStaleness } from './stage-staleness';
+import { stageStaleness } from './stage-staleness.js';
 
 const DAY_MS = 86_400_000;
 const RENEWAL_HORIZON_DAYS = 90;

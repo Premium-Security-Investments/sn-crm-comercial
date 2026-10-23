@@ -48,7 +48,7 @@ import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
 import { buildFollowUpHistory } from './opportunity-followup-presentation.js';
 import { decisionMakerCardState, expectedCloseCardState, followUpAgeLabel, nextActionCardState, presentFollowUpEntry } from './vigia/opportunity-ficha-presentation';
 import { buildMyDayQueue, futureDayPhrase, type MyDayAlert } from './vigia/my-day-presentation';
-import { stageStaleness, stalledInStage } from './vigia/stage-staleness';
+import { stageStaleness, stalledInStage } from './vigia/stage-staleness.js';
 import { hasLiveNextAction } from './vigia/next-action-rule.js';
 import { lossBreakdown } from './vigia/loss-report';
 import { meetingBrief } from './vigia/meeting-brief';

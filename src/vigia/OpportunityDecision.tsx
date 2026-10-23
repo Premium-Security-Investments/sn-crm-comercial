@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import { bogotaDay, FREEZE_DAYS, type DecisionCode } from './opportunity-decision-rules.js';
-import { stageStaleness } from './stage-staleness';
+import { stageStaleness } from './stage-staleness.js';
 import { closeDateLine, clockTime, futureDayPhrase, pastDayPhrase, readablePhone, sentenceName } from './my-day-presentation';
 
 // CRM comercial — decisión obligatoria por oportunidad (2026-10-07). Toda oportunidad abierta debe quedar con una
