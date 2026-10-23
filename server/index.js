@@ -70,6 +70,7 @@ import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } fro
 import { loadCompanyBase, saveCompanyExperience, saveCompanySite } from '../company-base.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
 import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../tender-manual-upload-path.js';
+import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../tender-document-origin.js';
 import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../tender-official-document-coverage.js';
@@ -4548,7 +4549,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeExtrac
   await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const typedVersionsResponse = await database.from('psi_tender_document_versions')
-    .select('id,opportunity_id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,version,extracted_text,created_at')
+    .select('id,opportunity_id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,version,extracted_text,created_at,origin')
     .eq('opportunity_id', opportunityId)
     .eq('current', true);
   if (typedVersionsResponse.error) throw typedVersionsResponse.error;
@@ -4561,6 +4562,9 @@ async function getTenderDocumentRecords(database, opportunityId, { includeExtrac
     uploaded_at: version.created_at, auto_import: true,
     source: version.source, source_url: version.source_url, source_document_id: version.source_document_id,
     opportunity_id: version.opportunity_id, version: version.version, content_hash: version.content_hash,
+    // Quién produjo el documento (migración 150). `null` = sin declarar, y la pantalla lo muestra como tal:
+    // es lo que hay que corregir para que el análisis deje de tratarlo como de un tercero.
+    origin: version.origin || null,
   }, canonicalExtractions.get(version.id), version.extracted_text));
   const documents = [];
   const analyses = [];
@@ -5135,6 +5139,8 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
           p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
           p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
           p_source_url: version.source_url || null, p_actor_id: currentProfile.id,
+          // Importación oficial (SECOP II / ESU): el origen no se declara, se sabe de dónde se bajó.
+          p_origin: 'entidad',
         });
         if (response.error) throw response.error;
         return response.data;
@@ -5430,6 +5436,8 @@ function buildTenderProcessingWorkerDeps(database) {
             p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
             p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
             p_source_url: version.source_url || null, p_actor_id: actor.requested_by,
+            // Importación oficial por el trabajador de procesamiento: mismo caso que arriba.
+            p_origin: 'entidad',
           });
           if (response.error) throw response.error;
           return response.data;
@@ -6342,6 +6350,9 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       buffer,
       mime_type: file.mime_type || 'application/octet-stream',
       document_type: file.document_type,
+      // Quién produjo el documento, declarado por quien lo carga. Ortogonal al tipo: una carta de un tercero
+      // con la palabra "pliego" en el nombre es `tercero`, aunque el tipo quede `pliego`.
+      origin: normalizeTenderDocumentOrigin(file.origin),
       source_document_id: tenderManualUploadDocumentId(buffer),
       errorPrefix: name,
     })), async doc => refreshOfficialTenderDocument({
@@ -6364,6 +6375,9 @@ app.post('/api/tender-documents-upload', async (req, res) => {
           p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
           p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
           p_source_url: null, p_actor_id: currentProfile.id,
+          // Carga manual: el origen lo declara la persona. Sin declarar va null, y la cadena lo trata como
+          // `third_party` (tender-document-origin.js). Nunca se asume `entidad` por el nombre del archivo.
+          p_origin: normalizeTenderDocumentOrigin(version.origin),
         });
         if (response.error) throw response.error;
         return response.data;
@@ -6408,6 +6422,32 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       }
     }
     res.status(201).json({ ...(await getTenderDocumentRecords(database, opportunityId)), upload_results: uploaded.map(({ name, status, error }) => ({ name, status, error })), analysis_request: analysisRequest });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Declarar o corregir el ORIGEN de un documento ya cargado, sin volver a subirlo (migración 150). El origen es
+// una declaración de la persona, no parte del contenido: corregir una mala clasificación no debe obligar a
+// recargar un PDF de 3 MB. Es la ruta que deja arreglar lo que entró antes de que el campo existiera.
+app.post('/api/tender-document-origin', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.body.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const documentVersionId = String(req.body.document_version_id || '');
+    if (!documentVersionId) throw clientInputError('Debe indicar el documento.');
+    const origin = normalizeTenderDocumentOrigin(req.body.origin);
+    if (!origin) throw clientInputError(`El origen debe ser uno de: ${Object.keys(TENDER_DOCUMENT_ORIGINS).join(', ')}.`);
+    // El documento tiene que ser de ESTA oportunidad: el id solo no autoriza nada.
+    const owned = await must(database.from('psi_tender_document_versions')
+      .select('id').eq('id', documentVersionId).eq('opportunity_id', opportunityId).maybeSingle(), 'documento');
+    if (!owned) throw clientInputError('El documento no pertenece a esta oportunidad.');
+    const response = await database.rpc('psi_set_tender_document_origin', {
+      p_document_version_id: documentVersionId, p_origin: origin, p_actor_id: currentProfile.id,
+    });
+    if (response.error) throw response.error;
+    res.json({ ...(await getTenderDocumentRecords(database, opportunityId)), origin_set: response.data || null });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

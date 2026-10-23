@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { apiDownload } from '../../apiClient';
-import type { TenderDocumentRecord, TenderDocumentRefreshResult } from '../types';
+import type { TenderDocumentOrigin, TenderDocumentRecord, TenderDocumentRefreshResult } from '../types';
+import { TENDER_DOCUMENT_ORIGIN_LABELS } from '../types';
 
 type TenderDocumentSectionProps = {
   documents: TenderDocumentRecord[];
@@ -8,8 +9,10 @@ type TenderDocumentSectionProps = {
   statusText?: string;
   refreshResult?: TenderDocumentRefreshResult | null;
   onRefresh: () => void;
-  onUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onUpload: (event: React.ChangeEvent<HTMLInputElement>, origin: TenderDocumentOrigin) => void;
   documentTypeLabel?: (value: string) => string;
+  // Corregir el origen de un documento ya cargado, sin volver a subirlo.
+  onSetOrigin?: (documentId: string, origin: TenderDocumentOrigin) => void;
 };
 
 function fileSize(bytes: number) {
@@ -39,7 +42,13 @@ async function fetchTenderDocument(downloadUrl: string, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
-export function TenderDocumentSection({ documents, busy, statusText, refreshResult, onRefresh, onUpload, documentTypeLabel = defaultTypeLabel }: TenderDocumentSectionProps) {
+const ORIGIN_VALUES = Object.keys(TENDER_DOCUMENT_ORIGIN_LABELS) as TenderDocumentOrigin[];
+
+export function TenderDocumentSection({ documents, busy, statusText, refreshResult, onRefresh, onUpload, documentTypeLabel = defaultTypeLabel, onSetOrigin }: TenderDocumentSectionProps) {
+  // Quién produjo lo que se va a cargar. Se declara ANTES de escoger los archivos y no tiene valor por
+  // defecto: que el sistema lo adivine por el nombre del archivo es justo el defecto que esto corrige.
+  const [uploadOrigin, setUploadOrigin] = useState<TenderDocumentOrigin | ''>('');
+  const sinDeclarar = documents.filter(document => !document.origin).length;
   const [query, setQuery] = useState('');
   const [type, setType] = useState('all');
   const [downloadError, setDownloadError] = useState('');
@@ -67,9 +76,9 @@ export function TenderDocumentSection({ documents, busy, statusText, refreshResu
     <header><div><span className="eyebrow">Revisión documental</span><h3 id="tender-document-title">Documentos vigentes del proceso</h3><p>La actualización oficial versiona archivos sin generar un análisis nuevo. Los complementarios se cargan por separado.</p></div></header>
     <div className="tender-document-actions" aria-label="Acciones documentales">
       <div className="tender-document-actions-group" role="group" aria-label="Gestión documental">
-        <details><summary className="button secondary tender-document-action tender-document-action-consult"><span className="tender-document-action-kicker">Consultar</span><strong>Ver documentos ({documents.length})</strong></summary><div className="tender-document-browser"><div className="tender-document-filters"><label>Buscar documentos<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nombre del archivo"/></label><label>Tipo de documento<select value={type} onChange={event => setType(event.target.value)}><option value="all">Todos</option>{types.map(value => <option key={value} value={value}>{documentTypeLabel(value)}</option>)}</select></label></div>{Object.keys(documentsByType).length ? Object.entries(documentsByType).map(([group, groupDocuments]) => <section key={group} className="tender-document-group"><h4>{documentTypeLabel(group)} · {groupDocuments.length}</h4>{groupDocuments.map(document => <div className="document-row" key={document.id}><div><strong>{document.download_url ? <a href={document.download_url} rel="noreferrer" onClick={event => { event.preventDefault(); void openDocument(document); }}>{document.name}</a> : document.name}</strong><small>{fileSize(document.size)} · {new Date(document.uploaded_at).toLocaleDateString('es-CO')} · {document.uploaded_by || 'Sistema'}</small></div><span className="document-current">{document.current ? 'Vigente' : 'Histórico'}</span></div>)}</section>) : <p className="muted">No hay documentos que coincidan con los filtros.</p>}</div></details>
+        <details><summary className="button secondary tender-document-action tender-document-action-consult"><span className="tender-document-action-kicker">Consultar</span><strong>Ver documentos ({documents.length})</strong></summary><div className="tender-document-browser">{sinDeclarar > 0 && <p className="notice" role="status">{sinDeclarar === 1 ? 'Hay 1 documento sin declarar su origen.' : `Hay ${sinDeclarar} documentos sin declarar su origen.`} Mientras no se declare, el análisis los trata como de un tercero: sirven de contexto y no definen requisitos.</p>}<div className="tender-document-filters"><label>Buscar documentos<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nombre del archivo"/></label><label>Tipo de documento<select value={type} onChange={event => setType(event.target.value)}><option value="all">Todos</option>{types.map(value => <option key={value} value={value}>{documentTypeLabel(value)}</option>)}</select></label></div>{Object.keys(documentsByType).length ? Object.entries(documentsByType).map(([group, groupDocuments]) => <section key={group} className="tender-document-group"><h4>{documentTypeLabel(group)} · {groupDocuments.length}</h4>{groupDocuments.map(document => <div className="document-row" key={document.id}><div><strong>{document.download_url ? <a href={document.download_url} rel="noreferrer" onClick={event => { event.preventDefault(); void openDocument(document); }}>{document.name}</a> : document.name}</strong><small>{fileSize(document.size)} · {new Date(document.uploaded_at).toLocaleDateString('es-CO')} · {document.uploaded_by || 'Sistema'}</small>{onSetOrigin ? <label className="document-origin">Origen<select value={document.origin || ''} onChange={event => { const value = event.target.value as TenderDocumentOrigin | ''; if (value) onSetOrigin(document.id, value); }} disabled={busy}><option value="">Sin declarar</option>{ORIGIN_VALUES.map(value => <option key={value} value={value}>{TENDER_DOCUMENT_ORIGIN_LABELS[value]}</option>)}</select></label> : <small className="document-origin-label">{document.origin ? TENDER_DOCUMENT_ORIGIN_LABELS[document.origin] : 'Origen sin declarar'}</small>}</div><span className="document-current">{document.current ? 'Vigente' : 'Histórico'}</span></div>)}</section>) : <p className="muted">No hay documentos que coincidan con los filtros.</p>}</div></details>
         <button type="button" className="tender-document-action tender-document-action-refresh" onClick={onRefresh} disabled={busy}><span className="tender-document-action-kicker">Actualizar</span><strong>{busy ? 'Actualizando…' : 'Actualizar documentos'}</strong></button>
-        <details><summary className="button secondary tender-document-action tender-document-action-upload"><span className="tender-document-action-kicker">Cargar</span><strong>Cargar complementarios</strong></summary><label className="document-upload-box">Seleccionar archivos<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={onUpload} disabled={busy}/><small>PDF, Word, TXT, ZIP o archivos de soporte. Límite operativo: 50 MiB por archivo.</small></label></details>
+        <details><summary className="button secondary tender-document-action tender-document-action-upload"><span className="tender-document-action-kicker">Cargar</span><strong>Cargar complementarios</strong></summary><div className="document-upload-box"><label>¿Quién produjo estos documentos?<select value={uploadOrigin} onChange={event => setUploadOrigin(event.target.value as TenderDocumentOrigin | '')} disabled={busy}><option value="">Escoja el origen…</option>{ORIGIN_VALUES.map(value => <option key={value} value={value}>{TENDER_DOCUMENT_ORIGIN_LABELS[value]}</option>)}</select></label><label>Seleccionar archivos<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={event => { if (uploadOrigin) onUpload(event, uploadOrigin); }} disabled={busy || !uploadOrigin}/></label><small>{uploadOrigin ? 'PDF, Word, TXT, ZIP o archivos de soporte. Hasta 50 MB por archivo, 8 por carga.' : 'Primero diga de quién es: lo que la entidad publica define requisitos, lo de un tercero es contexto. Solo lo de la entidad cuenta como publicación suya.'}</small></div></details>
       </div>
     </div>
     {refreshResult && <div className="tender-refresh-summary" role="status"><strong>Última actualización</strong><span>{refreshResult.new_count} nuevos</span><span>{refreshResult.updated_count} actualizados</span><span>{refreshResult.unchanged_count} sin cambios</span><span>{refreshResult.failed_count} fallidos</span></div>}
