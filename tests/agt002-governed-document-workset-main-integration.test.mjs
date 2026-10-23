@@ -16,7 +16,9 @@ assert.match(types, /export type Agt002GovernedDocumentWorksetFreezeResponse = \
 // --- shared upload helper --------------------------------------------------------------------
 const uploadStart = main.indexOf('const uploadTenderDocumentFiles = async');
 assert.notEqual(uploadStart, -1, 'main.tsx debe definir uploadTenderDocumentFiles(selected: File[])');
-assert.match(main.slice(uploadStart, uploadStart + 120), /uploadTenderDocumentFiles = async \(selected: File\[\]\) => \{/);
+// El origen del documento (migración 150) entra como segundo parámetro OPCIONAL: lo que esta prueba cuida
+// es que el ayudante siga recibiendo los archivos, no que la firma no pueda crecer.
+assert.match(main.slice(uploadStart, uploadStart + 160), /uploadTenderDocumentFiles = async \(selected: File\[\](, origin\?: TenderDocumentOrigin)? ?\) => \{/);
 const uploadEnd = main.indexOf('\n  };', uploadStart);
 const uploadBlock = main.slice(uploadStart, uploadEnd);
 assert.match(uploadBlock, /selected\.slice\(0, 8\)/, 'debe preservar el máximo de 8 documentos');
@@ -34,11 +36,11 @@ assert.match(uploadBlock, /setPayload\(data\)/, 'debe aplicar la lectura devuelt
 assert.match(uploadBlock, /onNavigationStateChanged\?\.\(/, 'debe reportar estado/navegación');
 assert.match(uploadBlock, /finally \{ setBusy\(false\); \}/);
 
-const addFilesStart = main.indexOf('const addFiles = (event: React.ChangeEvent<HTMLInputElement>)');
+const addFilesStart = main.indexOf('const addFiles = (event: React.ChangeEvent<HTMLInputElement>'); // la firma admite el origen opcional
 assert.notEqual(addFilesStart, -1, 'el manejador del input existente debe delegar en uploadTenderDocumentFiles');
 const addFilesEnd = main.indexOf('\n  };', addFilesStart);
 const addFilesBlock = main.slice(addFilesStart, addFilesEnd);
-assert.match(addFilesBlock, /void uploadTenderDocumentFiles\(selected\)/);
+assert.match(addFilesBlock, /void uploadTenderDocumentFiles\(selected(, origin)?\)/);
 assert.doesNotMatch(addFilesBlock, /setSelection|selection\[/i, 'no debe existir auto-selección de documentos');
 
 // --- governed freeze + analyze function ---------------------------------------------------------
