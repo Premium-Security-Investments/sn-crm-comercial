@@ -31,8 +31,13 @@ export const CHAT_POLICY = [
   `- proximo_seguimiento: la próxima fecha de contacto acordada, en el campo fecha (entre hoy y ${CHAT_NEXT_MAX_DAYS} días). Usa el calendario para convertir "el martes", "la otra semana", etc. Si dice una fecha vaga ("la otra semana"), elige el primer día hábil de ese periodo y dilo en la respuesta.`,
   '- actualizar_datos: datos de la ficha que el comercial menciona (decisor, cargo, correo, teléfono, web, NIT, proveedor actual de seguridad o "no tiene", vencimiento del contrato actual, sector, ciudad). Sólo lo que el comercial dijo; nunca inventes ni completes por tu cuenta.',
   '- crear_oportunidad: un cliente que NO está en la lista. Requiere nombre de la empresa, servicio de interés (de la lista "servicios") y regional (de la lista "regionales"). Si falta el servicio o la regional, no la crees: pregúntalo. Puedes incluir la nota del contacto y la próxima fecha en la misma acción.',
+  '- mover_etapa: la etapa cambia porque el comercial cuenta que algo se decidió. Dos decisiones, en el campo decision:',
+  '  * "avanzar": la oportunidad pasa a una etapa de la lista "etapas" con orden MAYOR al de su etapa actual (etapa_orden). La etapa nunca retrocede. Ganar es avanzar a la etapa que cierra ganando (cierra = true): ahí no se pide próxima fecha. En cualquier otra etapa hace falta proxima_fecha, porque una oportunidad abierta no puede quedar sin próxima gestión.',
+  '  * "perder": requiere motivo, con uno de los códigos de la lista "motivos_de_perdida". Si el comercial dice frente a quién la perdió, va en competidor, con el nombre tal como él lo dijo (si ese competidor ya aparece en "competidores_conocidos", usa esa misma escritura). El competidor es opcional: no lo inventes ni lo preguntes dos veces.',
+  '  En las dos, nota es obligatoria: una frase con lo que el comercial contó, en primera persona, que explique la decisión. Si no te dijo por qué, pregúntale antes de proponerla.',
+  '  Si el comercial no dice qué etapa ni se deduce de lo que contó, pregúntale en vez de escoger tú una etapa.',
   'Si el comercial tiene pendientes por decidir (comercial.puede_crear_oportunidades = false), no propongas crear oportunidades: explícale que primero debe ponerse al día decidiendo sus pendientes en Mi día.',
-  'No cambies etapa, valor de la oferta ni dueño, ni descartes o congeles oportunidades: si el comercial lo pide, dile que lo haga con el botón "Decidir" de la ficha.',
+  'No cambies el valor de la oferta ni el dueño, y no descartes ni congeles oportunidades: eso sigue en el botón "Decidir" de la ficha. Descartar y congelar son decisiones de cartera, no el relato de lo que pasó con el cliente.',
   'Después de proponer, si a ese cliente le faltan datos del perfil (campo faltan_del_perfil) y viene al caso, pide UNO o DOS de esos datos al final de la respuesta, de forma natural. Completar el perfil le da el premio "Análisis profundo".',
   'La respuesta resume en una o dos frases lo que propones (el detalle lo ve en la tarjeta) y hace las preguntas necesarias. Si el mensaje no tiene nada para registrar (saludo, pregunta general), responde breve y deja acciones vacío.',
   'Puedes usar la conversación previa del día (historial) para entender respuestas cortas como "sí, es la de Rionegro" o "el NIT es 900…". Si una propuesta anterior quedó pendiente y el comercial la corrige, vuelve a proponer la versión corregida completa.',
@@ -46,7 +51,16 @@ export function assignChatRefs(opportunities) {
   const refs = new Map();
   const rows = (opportunities || []).slice(0, CHAT_OPPORTUNITIES_MAX).map((opportunity, index) => {
     const ref = `o${index + 1}`;
-    refs.set(ref, { id: opportunity.id, label: opportunity.company_name || 'Cliente', city: opportunity.quote_city || null });
+    refs.set(ref, {
+      id: opportunity.id,
+      label: opportunity.company_name || 'Cliente',
+      city: opportunity.quote_city || null,
+      // La etapa actual viaja con la referencia porque sin ella no se puede comprobar que la etapa propuesta avance
+      // (la misma regla que `psi_record_opportunity_decision` aplica después sobre la base).
+      stageCode: opportunity.stage_code || null,
+      stageName: opportunity.stage_name || null,
+      stageOrder: Number(opportunity.stage_order ?? 0),
+    });
     return { ref, opportunity };
   });
   return { refs, rows };
@@ -64,6 +78,8 @@ function opportunityForModel({ ref, opportunity }) {
     cliente: clip(opportunity.company_name, 200),
     ciudad: clip(opportunity.quote_city, 80),
     etapa: clip(opportunity.stage_name, 60),
+    etapa_codigo: clip(opportunity.stage_code, 60),
+    etapa_orden: Number(opportunity.stage_order ?? 0),
     servicio: clip(opportunity.service_type_name, 80),
     proximo_seguimiento: clip(String(opportunity.next_action_at || ''), 10),
     ultimo_seguimiento: clip(String(opportunity.last_interaction_at || ''), 10),
@@ -73,13 +89,17 @@ function opportunityForModel({ ref, opportunity }) {
 }
 
 /** Entrada de la IA: lo mínimo para identificar el cliente y proponer cambios. */
-export function buildChatInput({ today, comercial, canCreate, rows, services, history, mensaje }) {
+export function buildChatInput({ today, comercial, canCreate, rows, services, stages, lossReasons, competitors, history, mensaje }) {
   return {
     hoy: `${today} (${weekdayName(today)})`,
     calendario: chatCalendar(today),
     comercial: { nombre: clip(comercial, 120) || 'el comercial', puede_crear_oportunidades: Boolean(canCreate) },
     servicios: (services || []).filter(s => s.code !== 'licitacion_publica').map(s => ({ codigo: s.code, nombre: s.name })),
     regionales: [...REGIONAL_OPTIONS],
+    // El pipeline y los motivos salen de la base: así el chat no puede proponer una etapa o un motivo que no exista.
+    etapas: (stages || []).map(stage => ({ codigo: stage.code, nombre: stage.name, orden: Number(stage.stage_order ?? 0), cierra: Boolean(stage.is_terminal) })),
+    motivos_de_perdida: (lossReasons || []).map(reason => ({ codigo: reason.code, nombre: reason.name })),
+    competidores_conocidos: (competitors || []).map(competitor => clip(competitor.name, 120)).filter(Boolean).slice(0, 60),
     oportunidades: (rows || []).map(opportunityForModel),
     historial: (history || []).slice(-CHAT_HISTORY_TURNS).map(turn => ({
       comercial: clip(turn.user_text, 1200),
@@ -91,7 +111,7 @@ export function buildChatInput({ today, comercial, canCreate, rows, services, hi
 }
 
 /** Ejecuta un turno por el puente de Vig-IA. Devuelve `{ output: { respuesta, acciones, avisos }, usage, model }`. */
-export async function runChatTurn({ input, refs, today, serviceCodes, idempotencyKey, environment = process.env, client: injectedClient, recordUsage, model } = {}) {
+export async function runChatTurn({ input, refs, today, serviceCodes, stages = [], lossReasons = [], idempotencyKey, environment = process.env, client: injectedClient, recordUsage, model } = {}) {
   const baseConfig = getAgt003CopilotRuntimeConfig(environment);
   const config = typeof model === 'string' && model.trim() ? { ...baseConfig, model: model.trim() } : baseConfig;
   const bridge = injectedClient || (() => {
@@ -103,10 +123,18 @@ export async function runChatTurn({ input, refs, today, serviceCodes, idempotenc
     ...(recordUsage ? { recordUsage } : {}),
   });
   const result = await client.run({
-    model: config.model, policy: CHAT_POLICY, input, outputSchema: chatRegistroOutputSchema(serviceCodes),
-    timeoutMs: CHAT_TIMEOUT_MS, idempotencyKey,
+    model: config.model,
+    policy: CHAT_POLICY,
+    input,
+    outputSchema: chatRegistroOutputSchema(serviceCodes, {
+      // `descartado` y `perdido` no entran como destino de "avanzar": se llega a ellos por una decisión, no avanzando.
+      stageCodes: stages.filter(stage => stage?.code && stage.code !== 'descartado' && stage.code !== 'perdido').map(stage => stage.code),
+      lossReasonCodes: lossReasons.filter(reason => reason?.code).map(reason => reason.code),
+    }),
+    timeoutMs: CHAT_TIMEOUT_MS,
+    idempotencyKey,
   });
-  const output = normalizeChatOutput(result.content, { refs, today, serviceCodes });
+  const output = normalizeChatOutput(result.content, { refs, today, serviceCodes, stages, lossReasons });
   return { output, usage: { input_tokens: result.usage?.input_tokens ?? null, output_tokens: result.usage?.output_tokens ?? null }, model: config.model };
 }
 
