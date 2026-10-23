@@ -4,15 +4,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
+import { stageStaleness, stalledInStage } from '../src/vigia/stage-staleness.js';
 
-// Los módulos son TypeScript: se empaquetan en memoria, como en tests/agt003-my-day-presentation.test.mjs.
+// `my-day-presentation` sigue siendo TypeScript: se empaqueta en memoria, como en
+// tests/agt003-my-day-presentation.test.mjs. La regla de estancamiento ya no: pasó a JavaScript con sus tipos en
+// `stage-staleness.d.ts` (2026-10-23) para que el correo semanal, que corre en Node sin compilar, use la MISMA
+// definición en vez de una copia. Se importa directo, que es además la mejor prueba de que Node puede cargarla.
 const load = async (relative, named) => {
   const entry = new URL(relative, import.meta.url).pathname;
   const bundle = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', write: false });
   const moduleUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
   return (await import(moduleUrl))[named];
 };
-const stageStaleness = await load('../src/vigia/stage-staleness.ts', 'stageStaleness');
 const buildMyDayQueue = await load('../src/vigia/my-day-presentation.ts', 'buildMyDayQueue');
 
 const NOW = new Date('2026-10-22T15:00:00.000Z');
@@ -144,7 +147,6 @@ test('migración 146: el arranque no se apoya en una escritura masiva vieja y s�
 });
 
 test('una sola definición de "estancada" en todo el producto', async () => {
-  const stalledInStage = await load('../src/vigia/stage-staleness.ts', 'stalledInStage');
   // Hasta el 2026-10-22 convivían dos: la vieja —vista v_psi_sales_stalled_sustentacion, umbral de 5 días escrito
   // dentro, sólo para esa etapa, medido en días sin contacto— y la nueva, por días en la etapa y configurable.
   // Medido ese día sobre la base real: la vieja marcaba 3 oportunidades y la nueva 0, sin una sola en común.

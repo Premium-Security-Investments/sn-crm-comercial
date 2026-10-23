@@ -83,7 +83,10 @@ function isMissingRelation(error) {
 }
 
 // Sólo columnas de conteo, fecha e identificación del cliente. Nunca notes, observaciones ni loss_notes.
-const OPPORTUNITY_SELECT = 'id,owner_id,company_name,quote_city,regional_nombre,service_type_code,stage_code,offer_value,next_action_at,last_interaction_at,approved_at,updated_at,frozen_until,delete_requested_at';
+// `stage_name`, `stage_entered_at`, `stage_entered_at_measured` y `staleness_days` entran por la marca de
+// estancamiento del correo (2026-10-23): son los cuatro campos que pide stalledInStage, y los sirve la vista desde la
+// migración 145.
+const OPPORTUNITY_SELECT = 'id,owner_id,company_name,quote_city,regional_nombre,service_type_code,stage_code,stage_name,stage_entered_at,stage_entered_at_measured,staleness_days,offer_value,next_action_at,last_interaction_at,approved_at,updated_at,frozen_until,delete_requested_at';
 const PROFILE_SELECT = 'id,economic_sector,company_website,decision_maker_name,decision_maker_title,decision_maker_email,decision_maker_phone,decision_maker_linkedin,current_security_provider,current_security_provider_none';
 const INTERACTION_SELECT = 'opportunity_id,created_by,interaction_type,created_at';
 

@@ -10,32 +10,20 @@
 // compromiso vigente y no hace falta un segundo recordatorio.
 //
 // Módulo puro: no lee red ni base, y no altera lo que recibe.
+//
+// Es JavaScript con sus tipos en `stage-staleness.d.ts`, y no TypeScript, por una razón concreta (2026-10-23): el
+// correo semanal (`weekly-digest.js`) corre en Node sin compilar y necesita esta misma regla. Mientras vivió en
+// TypeScript, el correo no podía importarla y la alternativa era copiarla: dos definiciones de "estancada" que el
+// día que una cambie dirían cosas distintas sobre la misma oportunidad. Es el mismo patrón de `client-profile.js` y
+// `commercial-behavior.js`.
 
 const DAY_MS = 86_400_000;
 
-export type StageStalenessInput = {
-  stageEnteredAt?: string | null;
-  measured?: boolean | null;
-  stalenessDays?: number | null;
-  nextActionAt?: string | null;
-  stageName?: string | null;
-  now?: Date;
-};
+/** @type {import('./stage-staleness.js').StageStaleness} */
+const NOT_STALE = { stale: false, days: null, atLeast: false, label: '' };
 
-export type StageStaleness = {
-  /** Supera el umbral de su etapa y no hay próxima gestión futura. */
-  stale: boolean;
-  /** Días completos en la etapa; cota inferior si `atLeast`. `null` si no se puede saber. */
-  days: number | null;
-  /** true cuando la fecha fue sembrada: los días son un mínimo, no un dato exacto. */
-  atLeast: boolean;
-  /** Texto para la persona, vacío si no hay nada que decir. */
-  label: string;
-};
-
-const NOT_STALE: StageStaleness = { stale: false, days: null, atLeast: false, label: '' };
-
-function ms(value?: string | null): number | null {
+function ms(value) {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
   const text = String(value ?? '').trim();
   if (!text) return null;
   // Postgres entrega "2026-10-21 13:07:56.568+00": espacio en vez de T y desfase sin minutos.
@@ -46,10 +34,10 @@ function ms(value?: string | null): number | null {
 /** Cuánto lleva en la etapa y si eso ya es un estancamiento. */
 export function stageStaleness({
   stageEnteredAt = null, measured = false, stalenessDays = null, nextActionAt = null, stageName = null, now = new Date(),
-}: StageStalenessInput = {}): StageStaleness {
+} = {}) {
   const enteredAt = ms(stageEnteredAt);
-  const nowMs = now instanceof Date ? now.getTime() : ms(now as unknown as string);
-  if (enteredAt === null || nowMs === null || !Number.isFinite(nowMs)) return NOT_STALE;
+  const nowMs = ms(now);
+  if (enteredAt === null || nowMs === null) return NOT_STALE;
 
   const days = Math.max(0, Math.floor((nowMs - enteredAt) / DAY_MS));
   const atLeast = measured !== true;
@@ -64,15 +52,6 @@ export function stageStaleness({
   return { stale: days >= threshold && !committed, days, atLeast, label };
 }
 
-export type StalledCandidate = {
-  stage_code?: string | null;
-  stage_name?: string | null;
-  stage_entered_at?: string | null;
-  stage_entered_at_measured?: boolean | null;
-  staleness_days?: number | null;
-  next_action_at?: string | null;
-};
-
 /**
  * Las estancadas de una lista, de la más parada a la menos. Es la ÚNICA definición de "estancada" del producto
  * (Juan, 2026-10-22). Hasta hoy convivía con "Sustentación estancada": una vista de base con el umbral de 5 días
@@ -80,10 +59,8 @@ export type StalledCandidate = {
  * una cosa y Mi día otra sobre la misma oportunidad; medido el 22 de octubre, la vieja marcaba 3 y la nueva 0, sin
  * una sola oportunidad en común.
  */
-export function stalledInStage<T extends StalledCandidate>(
-  opportunities: T[], now: Date = new Date(),
-): Array<{ opportunity: T; stall: StageStaleness }> {
-  return opportunities
+export function stalledInStage(opportunities, now = new Date()) {
+  return (opportunities || [])
     .map(opportunity => ({
       opportunity,
       stall: stageStaleness({
