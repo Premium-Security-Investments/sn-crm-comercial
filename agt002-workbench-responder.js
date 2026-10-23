@@ -19,6 +19,9 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_LINK_LABEL_CHARS = 300;
 const MAX_LINK_SOURCE_REF_CHARS = 1000;
+const MAX_RESOLVED_SOURCES = 10;
+const MAX_SOURCE_VALUE_CHARS = 6000;
+const MAX_SOURCE_PROVENANCE_CHARS = 500;
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -49,17 +52,46 @@ function sanitizeText(value, maxChars) {
   return redactAgt003CopilotText(stripControlChars(value)).slice(0, maxChars);
 }
 
-function buildMinimizedInput(input) {
+// Una fuente resuelta sólo sostiene una afirmación si está vigente y viene tipada. En prosa, o
+// sin verificar, viaja igual —el modelo debe saber que existe— pero marcada como insuficiente,
+// de modo que la salida honesta sea declararla en missing_information en vez de afirmar sobre
+// ella. La cita sigue siendo cosa de context_links: el contrato de la Mesa exige que todo
+// source_link sea un UUID del expediente, y una entrada de catálogo no lo es.
+function sostieneAfirmacion(fuente) {
+  return fuente?.estado === 'vigente' && fuente?.forma === 'tipado';
+}
+
+function minimizarFuente(fuente) {
+  return Object.freeze({
+    nombre: fuente.nombre,
+    estado: fuente.estado,
+    as_of: fuente.as_of,
+    vence_el: fuente.vence_el,
+    interpretable: fuente.interpretable === true,
+    sostiene_afirmacion: sostieneAfirmacion(fuente),
+    responsable: fuente.responsable || null,
+    procedencia: sanitizeText(JSON.stringify(fuente.procedencia ?? null), MAX_SOURCE_PROVENANCE_CHARS),
+    valor: sanitizeText(JSON.stringify(fuente.valor ?? null), MAX_SOURCE_VALUE_CHARS),
+  });
+}
+
+function buildMinimizedInput(input, fuentesResueltas = []) {
   const contextLinks = input.context_links.map(link => Object.freeze({
     kind: link.kind,
     id: link.id,
     label: sanitizeText(link.label, MAX_LINK_LABEL_CHARS),
     source_ref: sanitizeText(link.source_ref, MAX_LINK_SOURCE_REF_CHARS),
   }));
-  return Object.freeze({
+  const minimizado = {
     message: sanitizeText(input.message, MAX_MESSAGE_CHARS),
     context_links: Object.freeze(contextLinks),
-  });
+  };
+  // La clave sólo aparece cuando hay algo resuelto: una Mesa sin catálogo conectado conserva
+  // exactamente el contrato de dos claves que tenía antes.
+  if (fuentesResueltas.length > 0) {
+    minimizado.fuentes_resueltas = Object.freeze(fuentesResueltas.slice(0, MAX_RESOLVED_SOURCES).map(minimizarFuente));
+  }
+  return Object.freeze(minimizado);
 }
 
 function sourceLinksSchema(allowedSourceIds) {
@@ -194,6 +226,7 @@ export function createAgt002WorkbenchResponder({
   policyText = AGT002_WORKBENCH_POLICY,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   checkGate = () => true,
+  resolveSources = null,
 } = {}) {
   if (!client || typeof client.run !== 'function') {
     throw new Error('La Mesa Vig-IA requiere un cliente de puente configurado.');
@@ -202,6 +235,27 @@ export function createAgt002WorkbenchResponder({
   if (!nonEmpty(policyText)) throw new Error('La Mesa Vig-IA requiere una política configurada.');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('La Mesa Vig-IA requiere un timeout configurado.');
   if (typeof checkGate !== 'function') throw new Error('La Mesa Vig-IA requiere una función de verificación del interruptor.');
+  if (resolveSources !== null && typeof resolveSources !== 'function') {
+    throw new Error('La Mesa Vig-IA requiere que el resolvedor de fuentes sea una función.');
+  }
+
+  // Sin catálogo conectado la Mesa sigue funcionando como antes. Si el catálogo falla, la Mesa
+  // tampoco se cae: se queda sin esas fuentes y lo registra, de modo que el modelo no recibe el
+  // dato y tiene que declararlo faltante en vez de inventarlo.
+  async function resolverFuentes(input) {
+    if (!resolveSources) return [];
+    try {
+      const resueltas = await resolveSources({ tenderId: input.tender_id, capabilityId: input.capability_id });
+      return Array.isArray(resueltas) ? resueltas.filter(isRecord) : [];
+    } catch (error) {
+      console.warn('agt002_workbench_sources_unresolved', {
+        event: 'agt002_workbench_sources_unresolved',
+        job_id: input.job_id,
+        code: error?.code || 'resolver_failed',
+      });
+      return [];
+    }
+  }
 
   return Object.freeze({
     async respond(input) {
@@ -216,9 +270,14 @@ export function createAgt002WorkbenchResponder({
         );
       }
 
+      // Entrega 1 del catálogo de fuentes: el servidor resuelve por adelantado los datos
+      // declarados y los estampa en la entrada, antes de llamar al modelo. Sin esto la Mesa sólo
+      // recibe punteros y rellena los huecos por su cuenta — el 23-oct llamó "Valienta" a la
+      // empresa porque nunca recibió ninguna.
+      const fuentesResueltas = await resolverFuentes(input);
       const allowedSourceIds = input.context_links.map(link => link.id);
       const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds });
-      const minimizedInput = buildMinimizedInput(input);
+      const minimizedInput = buildMinimizedInput(input, fuentesResueltas);
 
       // Re-chequeo del interruptor inmediatamente antes de invocar al puente: un
       // apagado a mitad del drain nunca debe llegar a llamar al modelo, aunque el
