@@ -69,6 +69,7 @@ import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { loadCompanyBase, saveCompanyExperience, saveCompanySite } from '../company-base.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
+import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../tender-manual-upload-path.js';
 import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../tender-official-document-coverage.js';
@@ -1436,6 +1437,12 @@ function isCalendarDate(value) {
 function companyDocumentStoragePath(profile, name, size) {
   const id = createHash('sha256').update(`company-profile:${profile.id}:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
   return `company-profile/documents/${profile.id}/${id}-${name}`;
+}
+/** La ruta tiene que ser la que esta API firmó para ESTA oportunidad (tender-manual-upload-path.js). */
+function assertTenderManualUploadStoragePath(storagePath, opportunityId, name) {
+  if (!isTenderManualUploadStoragePath(storagePath, opportunityId)) {
+    throw clientInputError(`Ruta de documento inválida: ${name}`);
+  }
 }
 async function presentCompanyProcurementDocuments(database) {
   const documents = await listCompanyProcurementDocuments(database);
@@ -6259,6 +6266,29 @@ app.get('/api/tender-documents/:documentId/download', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+// URL firmada para la carga manual de un documento de licitación. Misma autorización que la carga
+// (`ensureTenderOpportunity`) y el mismo techo de 50 MB, que por este camino sí se puede alcanzar porque los bytes
+// nunca pasan por la API. Ver `tenderManualUploadStoragePath` para el 413 que lo motivó.
+app.post('/api/tender-documents-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.body.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const name = cleanFileName(req.body?.name || '');
+    if (!name) throw clientInputError('Debe indicar el nombre del documento.');
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError(`Archivo vacío: ${name}`);
+    if (size > RUP_MAX_BYTES) throw clientInputError(`Archivo supera 50MB: ${name}`);
+    await ensureTenderBucket(database);
+    const storagePath = tenderManualUploadStoragePath({ opportunityId, profileId: currentProfile.id, name, size });
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(storagePath);
+    if (error) throw error;
+    res.json({ storage_path: storagePath, token: data.token });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.post('/api/tender-documents-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -6268,13 +6298,25 @@ app.post('/api/tender-documents-upload', async (req, res) => {
     const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
     const files = Array.isArray(req.body.files) ? req.body.files : [];
     if (!files.length) throw new Error('Debe adjuntar al menos un documento.');
-    const preparedFiles = files.slice(0, 8).map(file => {
+    // Dos caminos para los bytes. `storage_path`: el navegador ya subió el archivo con una URL firmada, así que la
+    // petición no lleva contenido y el límite de cuerpo de Vercel deja de importar. `content_base64`: el camino
+    // viejo, que se conserva porque sigue sirviendo para lo pequeño y para cualquier otro llamador.
+    const preparedFiles = await Promise.all(files.slice(0, 8).map(async file => {
       const name = cleanFileName(file.name);
-      const buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
+      const storagePath = String(file.storage_path || '');
+      let buffer;
+      if (storagePath) {
+        assertTenderManualUploadStoragePath(storagePath, opportunityId, name);
+        const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+        if (error) throw error;
+        buffer = Buffer.from(await data.arrayBuffer());
+      } else {
+        buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
+      }
       if (!buffer.length) throw new Error(`Archivo vacío: ${name}`);
       if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
       return { file, name, buffer };
-    });
+    }));
     const tenderId = await getTenderIdForOpportunity(database, opportunityId);
     // Los complementarios cargados a mano entran al expediente versionado (psi_tender_document_versions), igual que los
     // oficiales: es de ahí que Vig-IA elige qué leer. Antes sólo quedaban en la nota de la interacción y ningún análisis
