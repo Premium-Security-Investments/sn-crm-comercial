@@ -108,7 +108,7 @@ export async function findAgt002AutoInitialCandidates(database, { since }) {
 /** The governed document selection for one opportunity, from its current versions and their extractions. */
 export async function selectAgt002AutoInitialMembers(database, opportunityId) {
   const versions = await must(database.from('psi_tender_document_versions')
-    .select('id,name,tender_id').eq('opportunity_id', opportunityId).eq('current', true), 'documentos');
+    .select('id,name,tender_id,origin').eq('opportunity_id', opportunityId).eq('current', true), 'documentos');
   const extractions = await must(database.from('psi_tender_document_extractions')
     .select('document_version_id,status,char_count,gap_reason,created_at').eq('opportunity_id', opportunityId), 'extracciones');
   const { included, excluded } = selectAgt002InitialDocuments(versions, extractions);

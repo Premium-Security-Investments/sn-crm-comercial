@@ -4,6 +4,8 @@
 // investment files, the structuring-team designation, internal filings). Documents without text are excluded with
 // their gap.
 
+import { tenderDocumentSourceClassification } from './tender-document-origin.js';
+
 const EXCLUDE = [
   [/cotizaci/i, 'cotizaciones de terceros: precios de referencia, no definen requisitos'],
   [/(^|[^a-z])(detallado\s+)?bp[-_ ]?\d|ficha[_ ]?ebi/i, 'ficha del proyecto de inversión (BP/EBI): no define requisitos del proceso'],
@@ -57,7 +59,19 @@ export function selectAgt002InitialDocuments(versions, extractions) {
   };
 }
 
-/** The manifest/admission members for the included documents. */
+/**
+ * The manifest/admission members for the included documents.
+ *
+ * La clase sale del ORIGEN declarado al cargar (migración 150), no de una suposición. Hasta el 2026-10-23 esta
+ * línea ponía `'official'` a todo documento admitido, que el constructor del agregado traduce a
+ * `OFFICIAL_PROCESS_DOCUMENT` / `VERIFIED_OFFICIAL`: por eso las seis cartas de terceros de la Fiscalía y la
+ * carta de otra empresa en Pereira entraron con el peso del pliego de la entidad. Lo no declarado cae en
+ * `third_party` (tender-document-origin.js): falla hacia "esto no es una regla del proceso".
+ */
 export function agt002InitialRequestedMembers(included) {
-  return included.map(row => ({ document_version_id: row.version.id, source_classification: 'official', inclusion_reason: row.reason.slice(0, 500) }));
+  return included.map(row => ({
+    document_version_id: row.version.id,
+    source_classification: tenderDocumentSourceClassification(row.version.origin),
+    inclusion_reason: row.reason.slice(0, 500),
+  }));
 }

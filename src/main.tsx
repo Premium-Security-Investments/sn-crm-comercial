@@ -36,7 +36,7 @@ import { parseAgt002InitialAnalysisProjection, type Agt002InitialAnalysisProject
 import { parseAgt002InitialReportResponse, type Agt002InitialReport } from './tenders/agt002InitialReportProjection';
 import { useAgt002InitialReport } from './tenders/useAgt002InitialReport';
 import { agt002GovernedRunStateFromReanalysisJob, type Agt002GovernedAnalysisRunState } from './tenders/governedWorksetSelection';
-import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
+import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentOrigin, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { type AccessAssignment } from './profileAccessState';
 import { EMPTY_TABS_ACCESS, PROFILE_TEMPLATES, PROGRAMACION_PERMISSION, accessFromTabs, tabsFromProfile, tabsSummary, templateAccess, type DerivedAccess, type ProfileTabCode, type TabsAccess } from '../profile-tabs.js';
@@ -1408,7 +1408,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       window.clearInterval(processingTimer);
     };
   }, [opportunity.id]);
-  const uploadTenderDocumentFiles = async (selected: File[]) => {
+  const uploadTenderDocumentFiles = async (selected: File[], origin?: TenderDocumentOrigin) => {
     if (!selected.length) return;
     setBusy(true); setStatusText('Subiendo y extrayendo texto…');
     onNavigationStateChanged?.({ phase: 'pending', label: 'Carga documental en curso' }, { phase: 'ready', value: payload.analysis || null });
@@ -1427,7 +1427,10 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
           mime_type: file.type || 'application/octet-stream',
           document_type: inferTenderDocumentType(file.name),
           current: true,
-          storage_path: ticket.storage_path
+          storage_path: ticket.storage_path,
+          // Quién produjo el documento, declarado por quien carga. Sin declarar va vacío y el análisis lo
+          // trata como de un tercero, nunca como de la entidad.
+          origin: origin || null
         };
       }));
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
@@ -1435,11 +1438,25 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
-  const addFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const addFiles = (event: React.ChangeEvent<HTMLInputElement>, origin?: TenderDocumentOrigin) => {
     const selected = Array.from(event.currentTarget.files || []);
     event.currentTarget.value = '';
     if (!selected.length) return;
-    void uploadTenderDocumentFiles(selected);
+    void uploadTenderDocumentFiles(selected, origin);
+  };
+
+  // Corregir el origen de un documento ya cargado, sin recargarlo: el origen es una declaración de la
+  // persona, no parte del contenido.
+  const setDocumentOrigin = async (documentId: string, origin: TenderDocumentOrigin) => {
+    setBusy(true); setStatusText('Declarando el origen…');
+    try {
+      const data = await api<TenderDocumentsPayload>('/api/tender-document-origin', {
+        method: 'POST',
+        body: JSON.stringify({ opportunity_id: opportunity.id, document_version_id: documentId, origin })
+      });
+      setPayload(data); emitNavigationPayload(data); setStatusText('Origen declarado.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
 
   async function pollAgt002Reanalysis(jobId: string, requestedOpportunityId: string) {
@@ -1594,7 +1611,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   // ancla documental para poder ser la superficie completa de condiciones e impedimentos.
   return <>
     <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
-      <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
+      <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={(event, origin) => void addFiles(event, origin)} onSetOrigin={(documentId, origin) => void setDocumentOrigin(documentId, origin)} documentTypeLabel={tenderDocumentTypeLabel} />
     </div>
     <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
       <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} runState={runState} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} initialAnalysis={initialAnalysis} initialReport={initialReport} officialCloseDate={opportunity.expected_close_date} />

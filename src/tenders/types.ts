@@ -704,6 +704,17 @@ export type TenderDocumentRecord = {
   extraction_status?: string | null;
   extraction_gap_reason?: string | null;
   analysis_suggestion?: Agt002DocumentRelevanceSuggestion | null;
+  // Quién produjo el documento (migración 150). `null` = sin declarar, y el análisis lo trata como de un
+  // tercero. Es ortogonal a `document_type`, que dice qué es.
+  origin?: TenderDocumentOrigin | null;
+};
+/** El mismo vocabulario cerrado que acepta la base y traduce `tender-document-origin.js`. */
+export type TenderDocumentOrigin = 'entidad' | 'tercero' | 'propio' | 'borrador';
+export const TENDER_DOCUMENT_ORIGIN_LABELS: Record<TenderDocumentOrigin, string> = {
+  entidad: 'De la entidad',
+  tercero: 'De un tercero',
+  propio: 'Nuestro',
+  borrador: 'Borrador',
 };
 export type TenderAnalysisAttempt = {
   event_id: string;
