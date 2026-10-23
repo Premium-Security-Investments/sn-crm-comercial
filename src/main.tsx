@@ -1292,14 +1292,6 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
 const tenderDocumentTypeOptions = [
   ['pliego','Pliego'], ['estudios_previos','Estudios previos'], ['anexo_tecnico','Anexo técnico'], ['adenda','Adenda'], ['formatos','Formatos'], ['otro','Otro']
 ];
-function fileToBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
-    reader.onerror = () => reject(reader.error || new Error('No fue posible leer el archivo.'));
-    reader.readAsDataURL(file);
-  });
-}
 function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onQuestionResponsesChanged, onDecisionSurfaceFlagChanged, onQuestionResponseSaverReady, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onQuestionResponsesChanged?: (responses: TenderQuestionResponse[]) => void; onDecisionSurfaceFlagChanged?: (enabled: boolean) => void; onQuestionResponseSaverReady?: (saver: ((input: TenderQuestionResponseInput, files: File[]) => Promise<void>) | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
@@ -1421,13 +1413,23 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     setBusy(true); setStatusText('Subiendo y extrayendo texto…');
     onNavigationStateChanged?.({ phase: 'pending', label: 'Carga documental en curso' }, { phase: 'ready', value: payload.analysis || null });
     try {
-      const files = await Promise.all(selected.slice(0, 8).map(async file => ({
-        name: file.name,
-        mime_type: file.type || 'application/octet-stream',
-        document_type: inferTenderDocumentType(file.name),
-        current: true,
-        content_base64: await fileToBase64(file)
-      })));
+      // Cada archivo sube directo al almacenamiento con una URL firmada; a la API sólo le llega la ruta. Antes iba
+      // todo en base64 dentro del JSON y Vercel rechazaba el lote con 413 pasados los ~3 MB (Supersalud, 2026-10-23).
+      const files = await Promise.all(selected.slice(0, 8).map(async file => {
+        const ticket = await api<{ storage_path: string; token: string }>('/api/tender-documents-upload-url', {
+          method: 'POST',
+          body: JSON.stringify({ opportunity_id: opportunity.id, name: file.name, size: file.size })
+        });
+        const uploaded = await supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(ticket.storage_path, ticket.token, file);
+        if (uploaded.error) throw new Error(`No fue posible subir ${file.name}: ${uploaded.error.message}`);
+        return {
+          name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          document_type: inferTenderDocumentType(file.name),
+          current: true,
+          storage_path: ticket.storage_path
+        };
+      }));
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
       setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText(tenderUploadSummary(data));
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
