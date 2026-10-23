@@ -15,7 +15,16 @@ export const CHAT_MAX_ACTIONS = 12;
 export const CHAT_PAST_DAYS = 30;
 export const CHAT_NEXT_MAX_DAYS = 90;
 
-export const CHAT_ACTION_TYPES = Object.freeze(['registrar_seguimiento', 'proximo_seguimiento', 'actualizar_datos', 'crear_oportunidad']);
+export const CHAT_ACTION_TYPES = Object.freeze(['registrar_seguimiento', 'proximo_seguimiento', 'actualizar_datos', 'crear_oportunidad', 'mover_etapa']);
+/**
+ * Decisiones de etapa que el chat puede PROPONER (Juan, 2026-10-23): avanzar —incluido ganar, que es avanzar a
+ * `aprobado`— y perder con motivo. Congelar y descartar siguen siendo del botón "Decidir" de la ficha: son decisiones
+ * de cartera, no el relato de lo que pasó con el cliente.
+ */
+export const CHAT_STAGE_DECISIONS = Object.freeze(['avanzar', 'perder']);
+/** La nota de una decisión es obligatoria y la base exige al menos 5 caracteres (`psi_record_opportunity_decision`). */
+export const CHAT_DECISION_NOTE_MIN = 5;
+const DECISION_LABEL = Object.freeze({ avanzar: 'Avanza', perder: 'Perdida' });
 export const CHAT_CHANNELS = Object.freeze(['llamada', 'whatsapp', 'correo', 'reunion', 'nota']);
 const CHANNEL_LABEL = Object.freeze({ llamada: 'Llamada', whatsapp: 'WhatsApp', correo: 'Correo', reunion: 'Reunión', nota: 'Nota' });
 
@@ -47,8 +56,10 @@ const dataProperties = () => Object.fromEntries([
  * Contrato de salida (JSON Schema cerrado). Los servicios y las regionales van como listas cerradas para que Vig-IA no
  * invente valores.
  */
-export function chatRegistroOutputSchema(serviceCodes = []) {
+export function chatRegistroOutputSchema(serviceCodes = [], { stageCodes = [], lossReasonCodes = [] } = {}) {
   const services = [...new Set(serviceCodes.filter(code => typeof code === 'string' && code && code !== 'licitacion_publica'))];
+  const stages = [...new Set((stageCodes || []).filter(code => typeof code === 'string' && code))];
+  const reasons = [...new Set((lossReasonCodes || []).filter(code => typeof code === 'string' && code))];
   return {
     type: 'object',
     additionalProperties: false,
@@ -69,6 +80,10 @@ export function chatRegistroOutputSchema(serviceCodes = []) {
             fecha: { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' },
             nota: str(1500),
             proxima_fecha: { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' },
+            decision: { type: 'string', enum: [...CHAT_STAGE_DECISIONS] },
+            etapa: stages.length ? { type: 'string', enum: stages } : str(60),
+            motivo: reasons.length ? { type: 'string', enum: reasons } : str(60),
+            competidor: str(120),
             datos: { type: 'object', additionalProperties: false, properties: dataProperties() },
             nueva: {
               type: 'object',
@@ -151,15 +166,20 @@ function cleanData(raw, { avisos, label }) {
 
 /**
  * Valida y limpia la salida de Vig-IA. Una acción inválida se descarta (con aviso), no tumba la respuesta. Devuelve
- * `{ respuesta, acciones, avisos }`. `refs`: Map ref → { label } de las oportunidades que se le mostraron.
+ * `{ respuesta, acciones, avisos }`. `refs`: Map ref → { label, stageCode, stageOrder } de las oportunidades que se le
+ * mostraron. `stages`: el pipeline completo (`{ code, name, stage_order, is_terminal }`); `lossReasons`: los motivos
+ * de pérdida activos (`{ code, name }`). Las dos listas llegan de la base: aquí nunca se escribe una etapa ni un
+ * motivo que no exista.
  */
-export function normalizeChatOutput(raw, { refs = new Map(), today, serviceCodes = [] } = {}) {
+export function normalizeChatOutput(raw, { refs = new Map(), today, serviceCodes = [], stages = [], lossReasons = [] } = {}) {
   const value = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { throw fail('AGT003_CHAT_INVALID_JSON'); } })() : raw;
   if (!isPlain(value)) throw fail('AGT003_CHAT_INVALID_SHAPE');
   const respuesta = text(value.respuesta, 1200);
   if (!respuesta) throw fail('AGT003_CHAT_INVALID_SHAPE');
   if (!ISO_DATE.test(String(today || ''))) throw new Error('Falta la fecha de hoy.');
   const services = new Set(serviceCodes);
+  const stageByCode = new Map((stages || []).filter(stage => stage?.code).map(stage => [stage.code, stage]));
+  const reasonByCode = new Map((lossReasons || []).filter(reason => reason?.code).map(reason => [reason.code, reason]));
   const avisos = [];
   const acciones = [];
   const byKey = new Map();
@@ -212,6 +232,40 @@ export function normalizeChatOutput(raw, { refs = new Map(), today, serviceCodes
       if (item.proxima_fecha) addNext(item.ref, item.proxima_fecha, label);
     } else if (item.tipo === 'proximo_seguimiento') {
       addNext(item.ref, item.fecha || item.proxima_fecha, label);
+    } else if (item.tipo === 'mover_etapa') {
+      // Las reglas son las del botón "Decidir" de la ficha, y la base las vuelve a validar de forma atómica en
+      // `psi_record_opportunity_decision`: aquí se filtra lo que no tiene sentido proponerle al comercial, no se
+      // sustituye esa validación.
+      const target = refs.get(item.ref) || {};
+      const decision = CHAT_STAGE_DECISIONS.includes(item.decision) ? item.decision : null;
+      if (!decision) { avisos.push(`No entendí qué decisión tomar con ${label}.`); continue; }
+      const nota = text(item.nota, 1500);
+      if (!nota || nota.length < CHAT_DECISION_NOTE_MIN) { avisos.push(`Para mover la etapa de ${label} necesito que me cuente en una frase qué pasó.`); continue; }
+      const key = `stage:${item.ref}`;
+      if (byKey.has(key)) { avisos.push(`Dejé una sola decisión para ${label}.`); continue; }
+      const action = { tipo: 'mover_etapa', ref: item.ref, decision, nota };
+      if (decision === 'avanzar') {
+        const stage = stageByCode.get(item.etapa);
+        if (!stage || stage.code === 'descartado' || stage.code === 'perdido') { avisos.push(`No reconocí la etapa a la que quiere mover ${label}.`); continue; }
+        const currentOrder = Number(target.stageOrder ?? 0);
+        if (Number(stage.stage_order) <= currentOrder) { avisos.push(`${label} ya está en ${target.stageName || 'su etapa'} o más adelante: la etapa sólo avanza.`); continue; }
+        action.etapa = stage.code;
+        action.etapa_nombre = stage.name || stage.code;
+        if (!stage.is_terminal) {
+          const day = nextOk(item.proxima_fecha) ? item.proxima_fecha : (nextOk(item.fecha) ? item.fecha : null);
+          if (!day) { avisos.push(`Para avanzar ${label} a ${action.etapa_nombre} falta la próxima gestión: una oportunidad abierta no puede quedar sin fecha.`); continue; }
+          action.proxima_fecha = day;
+        }
+      } else {
+        const reason = reasonByCode.get(item.motivo);
+        if (!reason) { avisos.push(`Para registrar la pérdida de ${label} falta el motivo.`); continue; }
+        action.motivo = reason.code;
+        action.motivo_nombre = reason.name || reason.code;
+        const competidor = text(item.competidor, 120);
+        if (competidor) action.competidor = competidor;
+      }
+      byKey.set(key, action);
+      acciones.push(action);
     } else if (item.tipo === 'actualizar_datos') {
       const datos = cleanData(item.datos, { avisos, label });
       if (!Object.keys(datos).length) continue;
@@ -220,7 +274,17 @@ export function normalizeChatOutput(raw, { refs = new Map(), today, serviceCodes
       else { const action = { tipo: 'actualizar_datos', ref: item.ref, datos }; byKey.set(key, action); acciones.push(action); }
     }
   }
-  return { respuesta, acciones, avisos };
+  // La decisión va al final de la propuesta y se aplica de última: el seguimiento y los datos del cliente tienen que
+  // quedar registrados ANTES de que la oportunidad se cierre, no después.
+  const moves = acciones.filter(action => action.tipo === 'mover_etapa');
+  const ordered = moves.length ? [...acciones.filter(action => action.tipo !== 'mover_etapa'), ...moves] : acciones;
+  // Una decisión que cierra la oportunidad (ganada o perdida) manda sobre cualquier próxima fecha de ese mismo
+  // cliente: la base la borra, así que proponerla sería prometer algo que no va a quedar.
+  const closing = new Set(moves.filter(action => action.decision === 'perder' || !action.proxima_fecha).map(action => action.ref));
+  const final = closing.size
+    ? ordered.filter(action => !(action.tipo === 'proximo_seguimiento' && closing.has(action.ref)))
+    : ordered;
+  return { respuesta, acciones: final, avisos };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -259,6 +323,19 @@ export function describeChatAction(action, { labelFor = () => 'Cliente', service
   const cliente = labelFor(action.ref);
   if (action.tipo === 'registrar_seguimiento') return { cliente, lineas: [`${CHANNEL_LABEL[action.canal] || 'Nota'} del ${humanDay(action.fecha)}: ${action.nota}`] };
   if (action.tipo === 'proximo_seguimiento') return { cliente, lineas: [`Próximo seguimiento: ${humanDay(action.fecha)}`] };
+  if (action.tipo === 'mover_etapa') {
+    const lineas = [];
+    if (action.decision === 'avanzar') {
+      lineas.push(`${DECISION_LABEL.avanzar} a ${action.etapa_nombre || action.etapa}`);
+      if (action.proxima_fecha) lineas.push(`Próximo seguimiento: ${humanDay(action.proxima_fecha)}`);
+      else lineas.push('Queda cerrada, sin próxima gestión');
+    } else {
+      lineas.push(`${DECISION_LABEL.perder} · Motivo: ${action.motivo_nombre || action.motivo}`);
+      if (action.competidor) lineas.push(`Frente a: ${action.competidor}`);
+    }
+    lineas.push(`Qué pasó: ${action.nota}`);
+    return { cliente, lineas };
+  }
   return { cliente, lineas: describeData(action.datos) };
 }
 
