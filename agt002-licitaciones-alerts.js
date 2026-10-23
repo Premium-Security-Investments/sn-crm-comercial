@@ -60,9 +60,11 @@ const ANALYSIS_TEXT = {
  * Convierte los hechos de una revisión en ítems con clave estable (lo que ya se informó no se repite).
  * `facts`: { detections, documents, analyses, results, reviews, failures } con `opportunityId` en cada uno.
  */
-export function agt002AlertItems({ detections = [], documents = [], analyses = [], results = [], reviews = [], failures = [] } = {}, { day }) {
+export function agt002AlertItems({ detections = [], reopens = [], documents = [], analyses = [], results = [], reviews = [], failures = [] } = {}, { day }) {
   const items = [];
   for (const d of detections) items.push({ key: `link:${d.opportunityId}:${d.noticeUid}`, opportunityId: d.opportunityId, type: 'link', fact: d });
+  // Un descartado al que le cambió el cierre: la clave lleva el aviso nuevo, así que se informa una sola vez.
+  for (const r of reopens) items.push({ key: `reopen:${r.opportunityId}:${r.noticeUid || r.deadline}`, opportunityId: r.opportunityId, type: 'reopen', fact: r });
   for (const d of documents) items.push({ key: `docs:${d.opportunityId}:${d.setHash}`, opportunityId: d.opportunityId, type: 'documents', fact: d });
   for (const a of analyses) {
     const daily = ['safety_limit', 'not_admitted', 'failed'].includes(a.outcome) ? `:${day}` : '';
@@ -79,6 +81,8 @@ function itemLines(item) {
   switch (item.type) {
     case 'link':
       return [`SECOP publicó ${whatPublished(fact.change || fact)}. El enlace de la oportunidad se actualizó; el anterior queda como histórico.${fact.url ? ` Nuevo enlace: ${fact.url}` : ''}`];
+    case 'reopen':
+      return [`Este proceso se descartó con el cierre del ${fact.previousDeadlineLabel}, pero SECOP publicó «${fact.ref}»${fact.phase ? ` en «${fact.phase}»` : ''} con cierre el ${fact.deadlineLabel}. La decisión se tomó con una fecha que ya no es la vigente: vale la pena mirarlo otra vez. La oportunidad sigue descartada; nada se reanalizó.${fact.url ? ` Enlace: ${fact.url}` : ''}`];
     case 'documents': {
       const lines = [`Llegaron ${fact.newDocuments ?? fact.incomingNames?.length ?? 0} documento(s) nuevo(s): ${(fact.incomingNames || []).join(', ') || 'ver la oportunidad'}.`];
       if (fact.archived?.length) lines.push(`Pasaron a historial (ya no entran al análisis): ${fact.archived.map(a => `${a.name}${a.replacedBy ? ` (lo reemplaza ${a.replacedBy})` : ''}`).join('; ')}.`);
@@ -100,7 +104,7 @@ function itemLines(item) {
   }
 }
 
-const ORDER = ['link', 'documents', 'analysis', 'result', 'failure', 'review'];
+const ORDER = ['reopen', 'link', 'documents', 'analysis', 'result', 'failure', 'review'];
 
 /**
  * Outbox de una revisión. `items`: ya filtrados (sólo lo no informado). `opportunities`: Map id → { entity, value, title }.
