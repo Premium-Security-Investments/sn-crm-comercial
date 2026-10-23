@@ -67,7 +67,11 @@ test('servidor: el competidor se resuelve o se crea una vez, y nunca tumba la p�
   assert.match(helper, /String\(row\.name \|\| ''\)\.trim\(\)\.toLowerCase\(\) === key/, 'la comparación ignora mayúsculas y espacios');
   assert.match(helper, /const afterRace = await match\(\);/, 'dos registros a la vez reutilizan el que quedó');
 
-  assert.match(server, /if \(params\.p_decision === 'lose' && \(req\.body\?\.competitor_id \|\| req\.body\?\.competitor_name\)\)/);
+  // Desde el 2026-10-23 la decisión vive en `recordOpportunityDecision`, una sola puerta que usan el botón "Decidir"
+  // de la ficha y la acción `mover_etapa` del chat de Mi día. La regla no cambió: el competidor se resuelve sólo en una
+  // pérdida y sólo si el comercial lo dijo.
+  assert.match(server, /if \(params\.p_decision === 'lose' && \(body\?\.competitor_id \|\| body\?\.competitor_name\)\)/);
+  assert.equal((server.match(/async function recordOpportunityDecision\(/g) || []).length, 1, 'una sola puerta para las decisiones');
   assert.match(server, /catch \(competitorError\) \{\s+console\.warn\('psi_sales_competitors no se pudo registrar'/,
     'si falla el competidor, la decisión ya guardada no se cae');
   assert.match(server, /competitor_id: body\.stage_code === 'perdido' \? \(body\.competitor_id \|\| null\) : null,/,

@@ -3970,6 +3970,15 @@ async function applyChatAction(database, profile, action) {
     await updateOpportunityForProfile(database, profile, action.opportunity_id, body);
     return { opportunity_id: action.opportunity_id };
   }
+  if (action.tipo === 'mover_etapa') {
+    // El chat sólo propone; aquí se aplica por la MISMA puerta que el botón "Decidir" de la ficha, incluidas la nota
+    // obligatoria, la próxima gestión de una etapa que no cierra y el competidor opcional de la pérdida.
+    const body = action.decision === 'avanzar'
+      ? { decision: 'advance', stage_code: action.etapa, notes: action.nota, next_action_at: chatDayToIso(action.proxima_fecha) || null }
+      : { decision: 'lose', loss_reason_code: action.motivo, notes: action.nota, ...(action.competidor ? { competitor_name: action.competidor } : {}) };
+    await recordOpportunityDecision(database, profile, action.opportunity_id, body);
+    return { opportunity_id: action.opportunity_id };
+  }
   if (action.tipo === 'crear_oportunidad') {
     const created = await createOpportunityForProfile(database, profile, {
       ...action.nueva, owner_id: profile.id, stage_code: 'prospecto', customer_segment: 'cliente_nuevo', offer_value: 0,
@@ -4018,18 +4027,23 @@ app.post('/api/agt003/chat', async (req, res) => {
     if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el mensaje.');
     turnId = claim.id;
     const today = bogotaDay(new Date());
-    const [opportunities, services, history, canCreate] = await Promise.all([
+    const [opportunities, services, stages, lossReasons, competitors, history, canCreate] = await Promise.all([
       loadChatOpportunities(database, currentProfile),
       must(database.from('psi_sales_service_types').select('code,name').eq('active', true).order('name')),
+      // Las etapas, los motivos y los competidores salen de la base en cada turno: el chat no puede proponer un valor
+      // que no exista, y un motivo que se desactive deja de ofrecerse sin tocar código.
+      must(database.from('psi_sales_pipeline_stages').select('code,name,stage_order,is_terminal').order('stage_order')),
+      must(database.from('psi_sales_loss_reasons').select('code,name').eq('active', true).order('name')),
+      must(database.from('psi_sales_competitors').select('name').order('name').limit(60)),
       must(database.from('psi_agt003_chat_turns').select('user_text,reply_text,proposal_status').eq('actor_id', currentProfile.id).eq('status', 'completed').gte('created_at', bogotaDayStartIso(new Date())).order('created_at', { ascending: false }).limit(CHAT_HISTORY_TURNS)),
       chatCanCreate(database, currentProfile),
     ]);
     const { refs, rows } = assignChatRefs(opportunities);
     const commercialServices = (services || []).filter(service => service.code !== 'licitacion_publica');
-    const input = buildChatInput({ today, comercial: currentProfile.full_name, canCreate, rows, services: commercialServices, history: [...(history || [])].reverse(), mensaje });
+    const input = buildChatInput({ today, comercial: currentProfile.full_name, canCreate, rows, services: commercialServices, stages: stages || [], lossReasons: lossReasons || [], competitors: competitors || [], history: [...(history || [])].reverse(), mensaje });
     let result;
     try {
-      result = await runChatTurn({ input, refs, today, serviceCodes: commercialServices.map(service => service.code), idempotencyKey: turnId, environment: process.env, model: policy.model });
+      result = await runChatTurn({ input, refs, today, serviceCodes: commercialServices.map(service => service.code), stages: stages || [], lossReasons: lossReasons || [], idempotencyKey: turnId, environment: process.env, model: policy.model });
     } catch (runError) {
       await database.from('psi_agt003_chat_turns').update({ status: 'failed', failure_code: String(runError?.code || 'AGT003_CHAT_FAILED').toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 96), finished_at: new Date().toISOString() }).eq('id', turnId);
       turnId = null;
@@ -7158,6 +7172,28 @@ async function resolveCompetitorId(database, profileId, body) {
   throw error;
 }
 
+// Una sola puerta para las decisiones de una oportunidad: la usan el botón "Decidir" de la ficha y el chat de Mi día
+// (acción `mover_etapa`). Las reglas no viven aquí: las valida `normalizeDecisionRequest` y, de forma atómica,
+// `psi_record_opportunity_decision`. Si el chat trajera su propia copia de esas reglas, el día que cambie una la
+// pantalla y el chat dirían cosas distintas.
+async function recordOpportunityDecision(database, currentProfile, id, body) {
+  await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  const params = normalizeDecisionRequest(body);
+  const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
+  if (error) throw decisionDatabaseError(error);
+  // El competidor se guarda después de la decisión y nunca la tumba: es un dato opcional y la pérdida ya quedó
+  // registrada. Si falla, queda el aviso en el log y el competidor se puede poner desde la ficha.
+  if (params.p_decision === 'lose' && (body?.competitor_id || body?.competitor_name)) {
+    try {
+      const competitorId = await resolveCompetitorId(database, currentProfile.id, body);
+      if (competitorId) await must(database.from('psi_sales_opportunities').update({ competitor_id: competitorId }).eq('id', id).select('id').single());
+    } catch (competitorError) {
+      console.warn('psi_sales_competitors no se pudo registrar', { code: competitorError?.code || null });
+    }
+  }
+  return data;
+}
+
 app.post('/api/opportunity-decision', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -7165,21 +7201,7 @@ app.post('/api/opportunity-decision', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) { const error = new Error('Falta la oportunidad.'); error.status = 400; throw error; }
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    const params = normalizeDecisionRequest(req.body);
-    const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
-    if (error) throw decisionDatabaseError(error);
-    // El competidor se guarda después de la decisión y nunca la tumba: es un dato opcional y la pérdida ya quedó
-    // registrada. Si falla, queda el aviso en el log y el competidor se puede poner desde la ficha.
-    if (params.p_decision === 'lose' && (req.body?.competitor_id || req.body?.competitor_name)) {
-      try {
-        const competitorId = await resolveCompetitorId(database, currentProfile.id, req.body);
-        if (competitorId) await must(database.from('psi_sales_opportunities').update({ competitor_id: competitorId }).eq('id', id).select('id').single());
-      } catch (competitorError) {
-        console.warn('psi_sales_competitors no se pudo registrar', { code: competitorError?.code || null });
-      }
-    }
-    res.status(201).json(data);
+    res.status(201).json(await recordOpportunityDecision(database, currentProfile, id, req.body));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
