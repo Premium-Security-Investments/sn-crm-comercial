@@ -1,5 +1,15 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { createAgt002WorkbenchResponder } from './agt002-workbench-responder.js';
+import { resolverParaLector } from './catalogo-fuentes.js';
+
+// Entrada 1 del catálogo de fuentes: lo que el servidor resuelve y estampa antes de llamar al
+// modelo. Son las tres que faltaban el 23-oct, cuando la Mesa inventó el nombre de la empresa
+// porque su contrato sólo llevaba el mensaje y unos punteros. Crece una línea por entrada.
+export const AGT002_MESA_FUENTES = Object.freeze([
+  'empresa.identidad',
+  'empresa.codigos_rup',
+  'analisis.canonico.company_fit',
+]);
 import {
   claimAgt002WorkbenchJob,
   appendAgt002WorkbenchJobEvent,
@@ -175,6 +185,11 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
         model: config.model,
         timeoutMs: config.timeoutMs,
         checkGate: () => isAgt002WorkbenchDrainEnabled(environment),
+        resolveSources: ({ tenderId }) => resolverParaLector(database, {
+          lector: 'agt002.mesa',
+          nombres: AGT002_MESA_FUENTES,
+          tenderId,
+        }),
       });
 
       const outcome = await runAgt002WorkbenchWorker({

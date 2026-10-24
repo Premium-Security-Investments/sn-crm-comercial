@@ -15,7 +15,10 @@ const FROZEN = {
   // el clasificador de fallas (`classifyFailure`) a la puerta; cupos, engine y puente no cambian.
   'agt003-copilot-runtime.js': 'f96f41512f1d11067722588548f9e5b9cdb3d68a39e0b6767e251dd62ae3b706',
   'agt003-preflight-runtime.js': '48e761d6badba31ae8f15bf563df0be05d5180410c3c48a806bda955ccdc34af',
-  'agt002-workbench-runtime.js': 'ee1a0815f0954617370ee909e2ce33c679426e85e82f4a1bcea1bb9c59742d39',
+  // Actualizado a propósito (2026-10-23): el drain de la Mesa resuelve las entradas declaradas del catálogo de
+  // fuentes antes de llamar al modelo (`resolveSources`). Cupos, motor y puente no cambian: la construcción del
+  // cliente del puente, el modelo, el timeout y el interruptor quedan exactamente como estaban.
+  'agt002-workbench-runtime.js': '052d9f08abd69ffcf30e8c24308c9d22ce1253b68de4f1374837901d0e9b93b3',
   'agt002-preview-runtime.js': 'd2834ae9df2e8146553e0a056949d0ded9c8a27094541976d7075c2c179072cb',
   'ops/agt003-claude-bridge/run-server.mjs': '13c6ca09fcbc6f5db880fa3dfff4cea01430897728c9a8d6434afb235cc05bf1',
   'ops/agt003-claude-bridge/env.example': '168cb44d29fea92b6d3592a903d83ce9935837bfb13bdfd02cd9700baae86b0d',
