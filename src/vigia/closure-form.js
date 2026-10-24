@@ -24,6 +24,17 @@ export const CLOSURE_FORM_VERSION = 18;
 /** El IVA del 19 % va sobre el AIU, no sobre el valor del servicio. */
 export const CLOSURE_FORM_IVA_RATE = 0.19;
 
+/**
+ * Secciones en el orden en que se llenan. Viven aquí y no en la pantalla por lo mismo que los campos: el formato va
+ * en su versión 18, y mover un campo de sección no debería ser una pelea con el JSX.
+ */
+export const CLOSURE_FORM_SECTIONS = Object.freeze([
+  { key: 'cliente', label: 'Cliente y contratación' },
+  { key: 'tributario', label: 'Representante legal y datos tributarios' },
+  { key: 'facturacion', label: 'Facturación y pago' },
+  { key: 'servicio', label: 'El servicio vendido' },
+]);
+
 const TEXT = 'texto';
 const EMAIL = 'correo';
 const DATE = 'fecha';
@@ -35,41 +46,41 @@ const OPTION = 'opcion';
  * residencial). `auto` marca lo que el CRM autocompleta: el comercial puede corregirlo, pero no tiene que escribirlo.
  */
 export const CLOSURE_FORM_FIELDS = Object.freeze([
-  { key: 'authorized_by_name', label: 'Nombre de quien autorizó el servicio', kind: TEXT, max: 160, required: true, auto: true },
-  { key: 'authorized_by_title', label: 'Cargo de quien autorizó', kind: TEXT, max: 120, required: true, auto: true },
-  { key: 'contracting_company_name', label: 'Razón social para contratar', kind: TEXT, max: 200, required: true, auto: true },
-  { key: 'contracting_company_nit', label: 'NIT para contratar', kind: TEXT, max: 30, required: true, auto: true },
-  { key: 'billing_company_name', label: 'Razón social para facturar', kind: TEXT, max: 200, required: true, auto: true },
-  { key: 'billing_company_nit', label: 'NIT para facturar', kind: TEXT, max: 30, required: true, auto: true },
-  { key: 'establishment_name', label: 'Nombre del establecimiento', kind: TEXT, max: 200, required: true },
-  { key: 'sector', label: 'Sector al que pertenece', kind: OPTION, options: ['comercial', 'industrial', 'financiero', 'salud', 'educacion', 'residencial'], required: true, auto: true },
-  { key: 'residential_stratum', label: 'Estrato', kind: TEXT, max: 10, required: form => form?.sector === 'residencial' },
-  { key: 'ciiu_code', label: 'Código CIIU', kind: TEXT, max: 20, required: true },
-  { key: 'contact_email', label: 'Correo electrónico de contacto', kind: EMAIL, max: 160, required: true, auto: true },
-  { key: 'contact_phones', label: 'Teléfonos fijos y celular', kind: TEXT, max: 120, required: true, auto: true },
-  { key: 'legal_rep_name', label: 'Representante legal', kind: TEXT, max: 160, required: true },
-  { key: 'legal_rep_id_number', label: 'Cédula del representante legal', kind: TEXT, max: 30, required: true },
+  { key: 'authorized_by_name', section: 'cliente', label: 'Nombre de quien autorizó el servicio', kind: TEXT, max: 160, required: true, auto: true },
+  { key: 'authorized_by_title', section: 'cliente', label: 'Cargo de quien autorizó', kind: TEXT, max: 120, required: true, auto: true },
+  { key: 'contracting_company_name', section: 'cliente', label: 'Razón social para contratar', kind: TEXT, max: 200, required: true, auto: true },
+  { key: 'contracting_company_nit', section: 'cliente', label: 'NIT para contratar', kind: TEXT, max: 30, required: true, auto: true },
+  { key: 'billing_company_name', section: 'facturacion', label: 'Razón social para facturar', kind: TEXT, max: 200, required: true, auto: true },
+  { key: 'billing_company_nit', section: 'facturacion', label: 'NIT para facturar', kind: TEXT, max: 30, required: true, auto: true },
+  { key: 'establishment_name', section: 'cliente', label: 'Nombre del establecimiento', kind: TEXT, max: 200, required: true },
+  { key: 'sector', section: 'cliente', label: 'Sector al que pertenece', kind: OPTION, options: ['comercial', 'industrial', 'financiero', 'salud', 'educacion', 'residencial'], required: true, auto: true },
+  { key: 'residential_stratum', section: 'cliente', label: 'Estrato', kind: TEXT, max: 10, required: form => form?.sector === 'residencial' },
+  { key: 'ciiu_code', section: 'cliente', label: 'Código CIIU', kind: TEXT, max: 20, required: true },
+  { key: 'contact_email', section: 'cliente', label: 'Correo electrónico de contacto', kind: EMAIL, max: 160, required: true, auto: true },
+  { key: 'contact_phones', section: 'cliente', label: 'Teléfonos fijos y celular', kind: TEXT, max: 120, required: true, auto: true },
+  { key: 'legal_rep_name', section: 'tributario', label: 'Representante legal', kind: TEXT, max: 160, required: true },
+  { key: 'legal_rep_id_number', section: 'tributario', label: 'Cédula del representante legal', kind: TEXT, max: 30, required: true },
   // En el ejemplar real venía vacío: se pide, no se exige.
-  { key: 'legal_rep_id_issued_at', label: 'Cédula expedida en', kind: TEXT, max: 120, required: false },
-  { key: 'withholding_agent', label: 'Agente de retención', kind: YES_NO, required: true },
-  { key: 'tax_regime', label: 'Régimen', kind: OPTION, options: ['simplificado', 'comun'], required: true },
-  { key: 'large_taxpayer', label: 'Gran contribuyente', kind: YES_NO, required: true },
-  { key: 'contract_mail_address', label: 'Dirección de envío de contrato y factura', kind: TEXT, max: 400, required: true },
-  { key: 'einvoice_email', label: 'Correo de facturación electrónica', kind: EMAIL, max: 160, required: true },
-  { key: 'payment_contact_name', label: 'Encargado de pago', kind: TEXT, max: 160, required: true },
-  { key: 'payment_contact_title', label: 'Cargo del encargado de pago', kind: TEXT, max: 120, required: true },
-  { key: 'payment_terms', label: 'Forma de pago', kind: TEXT, max: 160, required: true },
-  { key: 'operational_supervisor', label: 'Interventor operativo del contrato', kind: TEXT, max: 160, required: true },
-  { key: 'service_start_date', label: 'Fecha de inicio del servicio', kind: DATE, required: true },
-  { key: 'service_end_date', label: 'Fecha de terminación del servicio', kind: DATE, required: true },
-  { key: 'visit_officer_name', label: 'Funcionario que realizó la visita', kind: TEXT, max: 160, required: true },
-  { key: 'service_mode', label: 'Modalidad del servicio', kind: OPTION, options: ['fija', 'movil'], required: true },
-  { key: 'complementary_notes', label: 'Aspectos complementarios al servicio', kind: TEXT, max: 2000, required: false },
-  { key: 'loaned_equipment_notes', label: 'Equipos en comodato', kind: TEXT, max: 2000, required: false },
+  { key: 'legal_rep_id_issued_at', section: 'tributario', label: 'Cédula expedida en', kind: TEXT, max: 120, required: false },
+  { key: 'withholding_agent', section: 'tributario', label: 'Agente de retención', kind: YES_NO, required: true },
+  { key: 'tax_regime', section: 'tributario', label: 'Régimen', kind: OPTION, options: ['simplificado', 'comun'], required: true },
+  { key: 'large_taxpayer', section: 'tributario', label: 'Gran contribuyente', kind: YES_NO, required: true },
+  { key: 'contract_mail_address', section: 'facturacion', label: 'Dirección de envío de contrato y factura', kind: TEXT, max: 400, required: true },
+  { key: 'einvoice_email', section: 'facturacion', label: 'Correo de facturación electrónica', kind: EMAIL, max: 160, required: true },
+  { key: 'payment_contact_name', section: 'facturacion', label: 'Encargado de pago', kind: TEXT, max: 160, required: true },
+  { key: 'payment_contact_title', section: 'facturacion', label: 'Cargo del encargado de pago', kind: TEXT, max: 120, required: true },
+  { key: 'payment_terms', section: 'facturacion', label: 'Forma de pago', kind: TEXT, max: 160, required: true },
+  { key: 'operational_supervisor', section: 'servicio', label: 'Interventor operativo del contrato', kind: TEXT, max: 160, required: true },
+  { key: 'service_start_date', section: 'servicio', label: 'Fecha de inicio del servicio', kind: DATE, required: true },
+  { key: 'service_end_date', section: 'servicio', label: 'Fecha de terminación del servicio', kind: DATE, required: true },
+  { key: 'visit_officer_name', section: 'servicio', label: 'Funcionario que realizó la visita', kind: TEXT, max: 160, required: true },
+  { key: 'service_mode', section: 'servicio', label: 'Modalidad del servicio', kind: OPTION, options: ['fija', 'movil'], required: true },
+  { key: 'complementary_notes', section: 'servicio', label: 'Aspectos complementarios al servicio', kind: TEXT, max: 2000, required: false },
+  { key: 'loaned_equipment_notes', section: 'servicio', label: 'Equipos en comodato', kind: TEXT, max: 2000, required: false },
   // Queda opcional a propósito: no se conoce la política de AIU de facturación, y poner 0 en silencio sería inventar
   // una base gravable. Si falta, el formulario y su exportación lo dicen ("sin registrar") en vez de calcular un IVA
   // de cero como si fuera un dato.
-  { key: 'aiu_value', label: 'AIU informativo', kind: 'dinero', required: false },
+  { key: 'aiu_value', section: 'facturacion', label: 'AIU informativo', kind: 'dinero', required: false },
 ]);
 
 const FIELD_BY_KEY = new Map(CLOSURE_FORM_FIELDS.map(field => [field.key, field]));
@@ -333,9 +344,75 @@ export function closureFormCatalog(form = {}) {
     key: field.key,
     label: field.label,
     kind: field.kind,
+    section: field.section,
     required: isRequired(field, form),
     auto: Boolean(field.auto),
     ...(field.options ? { options: [...field.options] } : {}),
     ...(field.max ? { max: field.max } : {}),
   }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// El formulario como texto
+
+const MONEY_FORMAT = value => `$${Math.round(Number(value) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+const YES_NO_LABEL = value => (value === true ? 'Sí' : value === false ? 'No' : 'sin registrar');
+const SECTOR_LABEL = Object.freeze({ comercial: 'Comercial', industrial: 'Industrial', financiero: 'Financiero', salud: 'Salud', educacion: 'Educación', residencial: 'Residencial' });
+const MODE_LABEL = Object.freeze({ fija: 'Fija', movil: 'Móvil' });
+const REGIME_LABEL = Object.freeze({ simplificado: 'Simplificado', comun: 'Común' });
+
+function fieldText(field, value) {
+  if (value === null || value === undefined || value === '') return 'sin registrar';
+  if (field.kind === YES_NO) return YES_NO_LABEL(value);
+  if (field.kind === 'dinero') return MONEY_FORMAT(value);
+  if (field.key === 'sector') return SECTOR_LABEL[String(value)] || String(value);
+  if (field.key === 'service_mode') return MODE_LABEL[String(value)] || String(value);
+  if (field.key === 'tax_regime') return REGIME_LABEL[String(value)] || String(value);
+  return String(value);
+}
+
+/**
+ * El formulario en texto plano, para copiarlo y enviarlo mientras la entrega a Avancys no exista. Es la misma
+ * información que la pantalla, con las etiquetas del formato, y dice "sin registrar" donde falta algo en vez de
+ * dejar un renglón en blanco que nadie sabe si es un dato vacío o un olvido.
+ */
+export function closureFormPlainText({ form = {}, sites = [], posts = [], company = null } = {}) {
+  const money = closureFormMoney({ posts, aiuValue: form.aiu_value });
+  const lines = [
+    `${CLOSURE_FORM_FORMAT} — Nuevo puesto de vigilancia física (versión ${CLOSURE_FORM_VERSION})`,
+    company ? `Cliente: ${company}` : null,
+    '',
+  ];
+  for (const section of CLOSURE_FORM_SECTIONS) {
+    const fields = CLOSURE_FORM_FIELDS.filter(field => field.section === section.key && isRequired(field, form) || (field.section === section.key && isFilled(form[field.key])));
+    if (!fields.length) continue;
+    lines.push(section.label.toUpperCase());
+    for (const field of fields) lines.push(`  ${field.label}: ${fieldText(field, form[field.key])}`);
+    lines.push('');
+  }
+  const duration = closureFormDurationDays(form.service_start_date, form.service_end_date);
+  if (duration !== null) {
+    // 30,44 y no 30: con 30 un contrato de tres años (1.096 días) salía de 37 meses.
+    lines.push(`  Duración: ${duration} días (unos ${Math.round(duration / 30.44)} meses)`, '');
+  }
+  lines.push('DIRECCIONES DE PRESTACIÓN DEL SERVICIO');
+  if (!sites.length) lines.push('  sin registrar');
+  for (const site of sites) {
+    lines.push(`  ${site.address || 'sin dirección'} · ${site.city || 'sin ciudad'}${site.phone ? ` · ${site.phone}` : ''}${site.contact_name ? ` · encargado: ${site.contact_name}` : ''}`);
+  }
+  lines.push('', 'PUESTOS');
+  if (!posts.length) lines.push('  sin registrar');
+  posts.forEach((post, index) => {
+    const horario = post.shift_start && post.shift_end ? `${post.shift_start} a ${post.shift_end}` : 'sin horario';
+    const dias = post.days_per_month ? `, ${post.days_per_month} días al mes` : '';
+    lines.push(`  ${index + 1}. ${post.description || 'sin descripción'}`);
+    lines.push(`     ${horario}${dias} · ${post.guards_required || 'sin'} vigilante(s) · ${post.armed ? 'con arma' : 'sin arma'} · ${MONEY_FORMAT(post.monthly_value)} al mes`);
+    if (post.notes) lines.push(`     ${post.notes}`);
+  });
+  lines.push('');
+  lines.push(`  Subtotal: ${MONEY_FORMAT(money.subtotal)}`);
+  lines.push(`  AIU informativo: ${money.aiuMissing ? 'sin registrar' : MONEY_FORMAT(money.aiu)}`);
+  lines.push(`  IVA 19 % sobre el AIU: ${money.iva === null ? 'sin registrar' : MONEY_FORMAT(money.iva)}`);
+  lines.push(`  Total: ${MONEY_FORMAT(money.total)}${money.aiuMissing ? ' (sin IVA, falta el AIU)' : ''}`);
+  return lines.filter(line => line !== null).join('\n');
 }

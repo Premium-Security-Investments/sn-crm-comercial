@@ -3,6 +3,7 @@ export type ClosureFormFieldKind = 'texto' | 'correo' | 'fecha' | 'si_no' | 'opc
 export type ClosureFormField = {
   key: string;
   label: string;
+  section: string;
   kind: ClosureFormFieldKind;
   max?: number;
   options?: string[];
@@ -51,10 +52,12 @@ export function closureFormDurationDays(startDay?: string | null, endDay?: strin
 export function closureFormCompleteness(input?: { form?: ClosureForm; sites?: ClosureFormSite[]; posts?: ClosureFormPost[] }): ClosureFormCompleteness;
 export function closureFormWinVerdict(input?: { form?: ClosureForm | null; sites?: ClosureFormSite[]; posts?: ClosureFormPost[] }): ClosureFormWinVerdict;
 
-export type ClosureFormCatalogField = { key: string; label: string; kind: ClosureFormFieldKind; required: boolean; auto: boolean; options?: string[]; max?: number };
+export type ClosureFormCatalogField = { key: string; label: string; section: string; kind: ClosureFormFieldKind; required: boolean; auto: boolean; options?: string[]; max?: number };
 export type ClosureFormInput = { form: ClosureForm; sites: ClosureFormSite[]; posts: ClosureFormPost[]; avisos: string[] };
 
 export const CLOSURE_FORM_MAX_SITES: number;
 export const CLOSURE_FORM_MAX_POSTS: number;
 export function cleanClosureFormInput(body?: unknown): ClosureFormInput;
 export function closureFormCatalog(form?: ClosureForm): ClosureFormCatalogField[];
+export const CLOSURE_FORM_SECTIONS: readonly { key: string; label: string }[];
+export function closureFormPlainText(input?: { form?: ClosureForm; sites?: ClosureFormSite[]; posts?: ClosureFormPost[]; company?: string | null }): string;

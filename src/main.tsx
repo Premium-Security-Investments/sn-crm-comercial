@@ -49,6 +49,7 @@ import { buildFollowUpHistory } from './opportunity-followup-presentation.js';
 import { decisionMakerCardState, expectedCloseCardState, followUpAgeLabel, nextActionCardState, presentFollowUpEntry } from './vigia/opportunity-ficha-presentation';
 import { buildMyDayQueue, futureDayPhrase, type MyDayAlert } from './vigia/my-day-presentation';
 import { stageStaleness, stalledInStage } from './vigia/stage-staleness.js';
+import { ClosureFormPanel } from './vigia/ClosureFormPanel';
 import { hasLiveNextAction } from './vigia/next-action-rule.js';
 import { lossBreakdown } from './vigia/loss-report';
 import { meetingBrief } from './vigia/meeting-brief';
@@ -1232,6 +1233,14 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-grid' : undefined}>
     <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-main' : undefined}>
     {!readOnly && o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code) && <OpportunityDecisionPanel opportunity={o} data={data} onChanged={async () => { await load(); await refresh(); }} />}
+    {/* El formulario de cierre (GGC-FO-001): va junto a la decisión, porque es lo que habrá que tener completo para
+        poder marcar el negocio como ganado (Juan, 2026-10-23). Se ve también cuando ya está ganado, para leerlo. */}
+    {o.service_type_code !== 'licitacion_publica' && <ClosureFormPanel
+      opportunityId={o.id}
+      company={o.company_name}
+      canEdit={!readOnly && canAccessRoute(data.currentProfile, 'edit')}
+      onSaved={async () => { await load(); await refresh(); }}
+    />}
     <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
       <h2 className="followup-section-title">Seguimiento comercial</h2>
       <div className="followup-section-grid">
