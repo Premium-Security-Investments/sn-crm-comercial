@@ -164,15 +164,26 @@ test('el dinero: un valor que no es número no entra en la suma', () => {
   assert.equal(money.aiu, null);
 });
 
-test('duración del contrato: se calcula y no se escribe a mano', () => {
-  // En el Word, el campo "AÑOS" del caso real traía "2026" —un año donde iba una cantidad— y los días decían 1095
-  // para las fechas 2026-10-01 → 2029-10-01, que son 1096 de diferencia. Aquí hay una sola definición: la
-  // diferencia entre las dos fechas. Si el negocio cuenta el último día de otra forma, se decide una vez, aquí.
-  assert.equal(closureFormDurationDays('2026-10-01', '2029-10-01'), 1096);
-  assert.equal(closureFormDurationDays('2026-10-01', '2026-10-31'), 30);
-  assert.equal(closureFormDurationDays('2026-10-01', '2026-10-01'), null, 'sin duración no se devuelve cero');
-  assert.equal(closureFormDurationDays('2029-10-01', '2026-10-01'), null, 'al revés tampoco');
+test('duración del contrato: la terminación es el último día y cuenta', () => {
+  // Decisión de Juan del 2026-10-24: la fecha de terminación es el último día de servicio. Entonces octubre
+  // completo son 31 días, no 30, y tres años desde el 1 de octubre de 2026 terminan el 30 de septiembre de 2029.
+  // En el Word el caso real decía 1095 días con terminación el 2029-10-01, y eso no cuadra con ninguna
+  // convención: era una suma a mano, y la fecha además estaba corrida un día.
+  assert.equal(closureFormDurationDays('2026-10-01', '2026-10-31'), 31, 'el mes completo');
+  assert.equal(closureFormDurationDays('2026-10-01', '2029-09-30'), 1096, 'tres años, con el 2028 bisiesto');
+  assert.equal(closureFormDurationDays('2026-10-01', '2026-10-01'), 1, 'un servicio de un solo día es un día');
+  assert.equal(closureFormDurationDays('2029-10-01', '2026-10-01'), null, 'al revés no se calcula');
   assert.equal(closureFormDurationDays('ayer', '2029-10-01'), null);
+  assert.notEqual(closureFormDurationDays('2026-10-01', '2029-10-01'), 1095, 'el número del Word no se puede reproducir');
+});
+
+test('migración 154: la terminación puede ser el mismo día del inicio', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/154_agt003_cierre_duracion_ultimo_dia.sql', import.meta.url), 'utf8');
+  assert.match(sql, /check \(service_end_date is null or service_start_date is null or service_end_date >= service_start_date\)/);
+  assert.match(sql, /Último día de servicio, inclusive/);
+  assert.doesNotMatch(sql, /drop table|delete from/i, 'no borra nada');
+  const rollback = readFileSync(new URL('../supabase/rollbacks/154_agt003_cierre_duracion_ultimo_dia_rollback.sql', import.meta.url), 'utf8');
+  assert.match(rollback, /service_end_date > service_start_date/);
 });
 
 test('la puerta de "ganado": sin formulario no se gana, y se dice qué hacer', () => {
@@ -354,7 +365,7 @@ test('texto para enviar: trae el formato, los puestos y las sumas calculadas', (
   assert.match(texto, /CLIENTE Y CONTRATACIÓN/);
   assert.match(texto, /Sector al que pertenece: Comercial/, 'las opciones se leen con su nombre, no con el código');
   assert.match(texto, /Agente de retención: Sí/);
-  assert.match(texto, /Duración: 1096 días \(unos 36 meses\)/, '30,44 y no 30: con 30 daban 37 meses');
+  assert.match(texto, /Duración: 1097 días \(unos 36 meses\)/, 'las fechas del ejemplar, con el último día contado');
   assert.match(texto, /06:00 a 06:00, 30 días al mes · 3 vigilante\(s\) · sin arma · \$19\.308\.499 al mes/);
   assert.match(texto, /Subtotal: \$38\.616\.998/);
   assert.match(texto, /IVA 19 % sobre el AIU: \$283\.560/);

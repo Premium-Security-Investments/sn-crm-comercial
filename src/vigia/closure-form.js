@@ -72,7 +72,7 @@ export const CLOSURE_FORM_FIELDS = Object.freeze([
   { key: 'payment_terms', section: 'facturacion', label: 'Forma de pago', kind: TEXT, max: 160, required: true },
   { key: 'operational_supervisor', section: 'servicio', label: 'Interventor operativo del contrato', kind: TEXT, max: 160, required: true },
   { key: 'service_start_date', section: 'servicio', label: 'Fecha de inicio del servicio', kind: DATE, required: true },
-  { key: 'service_end_date', section: 'servicio', label: 'Fecha de terminación del servicio', kind: DATE, required: true },
+  { key: 'service_end_date', section: 'servicio', label: 'Fecha de terminación (último día de servicio)', kind: DATE, required: true },
   { key: 'visit_officer_name', section: 'servicio', label: 'Funcionario que realizó la visita', kind: TEXT, max: 160, required: true },
   { key: 'service_mode', section: 'servicio', label: 'Modalidad del servicio', kind: OPTION, options: ['fija', 'movil'], required: true },
   { key: 'complementary_notes', section: 'servicio', label: 'Aspectos complementarios al servicio', kind: TEXT, max: 2000, required: false },
@@ -170,13 +170,22 @@ export function closureFormMoney({ posts = [], aiuValue = null } = {}) {
   };
 }
 
-/** Días completos entre dos días ISO, o null. Sirve para la duración del contrato, que el Word pedía a mano. */
+/**
+ * Días de servicio del contrato, o null. La fecha de terminación es **el último día de servicio** y
+ * cuenta (decisión de Juan, 2026-10-24), así que octubre completo —del 1 al 31— son 31 días y no 30.
+ *
+ * El ejemplar real del Word decía 1.095 días para un inicio el 2026-10-01 y una terminación el
+ * 2029-10-01, y eso no cuadra con ninguna convención: contando el último día son 1.097, y sin
+ * contarlo 1.096. Era una suma a mano, y el error estaba además en la fecha: tres años de servicio
+ * desde el 1 de octubre terminan el 30 de septiembre, no el 1 de octubre. Aquí hay una sola
+ * definición y el número lo calcula el sistema.
+ */
 export function closureFormDurationDays(startDay, endDay) {
   if (!ISO_DATE.test(String(startDay || '')) || !ISO_DATE.test(String(endDay || ''))) return null;
   const start = Date.parse(`${startDay}T12:00:00Z`);
   const end = Date.parse(`${endDay}T12:00:00Z`);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-  return Math.round((end - start) / 86_400_000);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  return Math.round((end - start) / 86_400_000) + 1;
 }
 
 function fieldProblem(field, form) {
