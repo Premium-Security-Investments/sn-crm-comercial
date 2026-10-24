@@ -1,4 +1,4 @@
-import { redactAgt003CopilotText } from './agt003-copilot-input.js';
+import { redactAgt003CopilotText } from './verticales/comercial/agt003-copilot-input.js';
 
 // Vig-IA profundiza el acta de cierre a partir de la nota con la que la persona
 // cerró la licitación (Juan, 2026-10-19). La nota es el punto de partida y es

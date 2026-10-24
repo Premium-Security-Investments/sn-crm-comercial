@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { buildAgt003CopilotPreflightRequest } from '../agt003-preflight-input.js';
-import { buildAgt003Facts, buildAgt003Interactions } from '../agt003-copilot-input.js';
+import { buildAgt003CopilotPreflightRequest } from '../verticales/comercial/agt003-preflight-input.js';
+import { buildAgt003Facts, buildAgt003Interactions } from '../verticales/comercial/agt003-copilot-input.js';
 
 const opportunity = {
   id: 'opp preflight/001',

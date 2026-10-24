@@ -30,7 +30,7 @@ for (const [file, expected] of [[requestSchemaPath, expectedManifest.request_sch
 }
 
 const rows = JSON.parse(readFileSync(path.join(repoRoot, 'tests/fixtures/phase3a-p3b2/scoped-opportunities.json'), 'utf8'));
-const { buildAgt003PrioritiesData } = await import('../agt003-priorities-service.js');
+const { buildAgt003PrioritiesData } = await import('../verticales/comercial/agt003-priorities-service.js');
 const { buildSyntheticAgt003PrioritiesResponse } = await import('../agent-agt003-synthetic-responder.js');
 const now = '2030-02-01T10:00:00.000Z';
 const decision = Object.freeze({
@@ -115,7 +115,7 @@ denied({ metadata: { ...metadata, policy_version: 'gate0-v1.1' } });
 denied({ request: new Proxy({ ...request }, {}) });
 denied({ metadata: Object.defineProperty({ ...metadata }, 'run_id', { enumerable: true, get: () => 'syn-run-hostile' }) });
 
-for (const relative of ['agt003-priorities-service.js', 'agent-agt003-synthetic-responder.js']) {
+for (const relative of ['verticales/comercial/agt003-priorities-service.js', 'agent-agt003-synthetic-responder.js']) {
   const source = readFileSync(path.join(repoRoot, relative), 'utf8');
   assert.doesNotMatch(source, /\b(?:fetch|setTimeout|setInterval)\s*\(|(?:from|require\s*\()\s*['"](?:node:)?(?:http|https|net|tls|fs|child_process)|supabase|express|jwt|jwks|oidc/i, `${relative}: external I/O/runtime is forbidden`);
 }

@@ -8,13 +8,13 @@
 // traduce, así una referencia inventada o de otro comercial no puede llegar a la base.
 import { createAgt003CopilotBridgeClient } from './agt003-copilot-bridge-client.js';
 import { getAgt003CopilotRuntimeConfig, resolveAgt003BridgeConnection } from './agt003-copilot-runtime.js';
-import { AGT003_CHAT_CAPABILITY, createModelGatewayClient } from './platform-model-gateway.js';
-import { classifyAgt003ModelFailure } from './src/vigia/model-failures.js';
-import { profileCompleteness } from './src/vigia/client-profile.js';
+import { AGT003_CHAT_CAPABILITY, createModelGatewayClient } from '../../platform-model-gateway.js';
+import { classifyAgt003ModelFailure } from '../../src/vigia/model-failures.js';
+import { profileCompleteness } from '../../src/vigia/client-profile.js';
 import {
   CHAT_DATA_FIELDS, CHAT_NEXT_MAX_DAYS, chatCalendar, chatRegistroOutputSchema, normalizeChatOutput, weekdayName,
-} from './src/vigia/chat-registro.js';
-import { REGIONAL_OPTIONS } from './src/regional-options.js';
+} from '../../src/vigia/chat-registro.js';
+import { REGIONAL_OPTIONS } from '../../src/regional-options.js';
 
 export const CHAT_TIMEOUT_MS = 75_000;
 export const CHAT_OPPORTUNITIES_MAX = 200;

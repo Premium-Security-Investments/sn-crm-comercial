@@ -23,12 +23,12 @@ for (const [name, url] of [
   assert.doesNotMatch(route, /preflight\(|createRuntime|Runtime|claim|requireDb|rpc\(/, `${name} never builds the runtime, calls the bridge nor claims quota`);
 
   assert.ok(!source.includes('createBackendAgt003PreflightApi'), `${name} no longer wires the preflight API`);
-  assert.ok(!source.includes("from '../agt003-preflight-api.js'"), `${name} no longer imports the preflight API`);
-  assert.ok(!source.includes("from '../agt003-preflight-runtime.js'"), `${name} no longer imports the preflight runtime`);
+  assert.ok(!source.includes("from '../verticales/comercial/agt003-preflight-api.js'"), `${name} no longer imports the preflight API`);
+  assert.ok(!source.includes("from '../verticales/comercial/agt003-preflight-runtime.js'"), `${name} no longer imports the preflight runtime`);
   assert.ok(!source.includes('AGT003_PREFLIGHT_API_KEY'), `${name} never receives a provider key`);
 }
 
-for (const file of ['agt003-preflight-api.js', 'agt003-preflight-engine.js', 'agt003-preflight-runtime.js', 'agt003-preflight-contract.js', 'agt003-preflight-input.js']) {
+for (const file of ['verticales/comercial/agt003-preflight-api.js', 'verticales/comercial/agt003-preflight-engine.js', 'verticales/comercial/agt003-preflight-runtime.js', 'verticales/comercial/agt003-preflight-contract.js', 'verticales/comercial/agt003-preflight-input.js']) {
   assert.ok(existsSync(new URL(`../${file}`, import.meta.url)), `${file} (motor) se conserva`);
 }
 

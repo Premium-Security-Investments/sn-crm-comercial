@@ -61,7 +61,7 @@ export function loadVigiaApprovedAssets({ path, now = new Date().toISOString() }
   return validateVigiaApprovedAssetManifest(manifest, { now });
 }
 
-const DEFAULT_MANIFEST_PATH = new URL('./config/vigia-approved-assets.v1.json', import.meta.url).pathname;
+const DEFAULT_MANIFEST_PATH = new URL('../../config/vigia-approved-assets.v1.json', import.meta.url).pathname;
 
 // Same legacy shape/host/URL rules as `validateAsset`, applied to assets
 // adapted from the published-knowledge DB projection (§16.3) so both sources
