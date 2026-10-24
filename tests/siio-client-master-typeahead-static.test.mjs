@@ -13,7 +13,10 @@ const FROZEN = {
   // Actualizado a propósito (2026-10-09): el runtime del copiloto envuelve el cliente del puente con la puerta única de modelos
   // y, desde el Paso 2 (parte 3), acepta el modelo aprobado en la Plataforma de Agentes (opción `model`). Paso 3: pasa
   // el clasificador de fallas (`classifyFailure`) a la puerta; cupos, engine y puente no cambian.
-  'agt003-copilot-runtime.js': 'f96f41512f1d11067722588548f9e5b9cdb3d68a39e0b6767e251dd62ae3b706',
+  // Actualizado a propósito (2026-10-24): el copiloto comercial resuelve las entradas declaradas del
+  // catálogo de fuentes antes de llamar al modelo (`resolveSources`), igual que la Mesa. Cupos, motor y
+  // puente no cambian: la puerta de modelos, el cliente del puente, el modelo y los cupos siguen igual.
+  'agt003-copilot-runtime.js': '27845356d5f3448a8831bca8313edf1b4321fa9669c16dd9547820bc229a8c06',
   'agt003-preflight-runtime.js': '48e761d6badba31ae8f15bf563df0be05d5180410c3c48a806bda955ccdc34af',
   // Actualizado a propósito (2026-10-23): el drain de la Mesa resuelve las entradas declaradas del catálogo de
   // fuentes antes de llamar al modelo (`resolveSources`). Cupos, motor y puente no cambian: la construcción del
