@@ -81,7 +81,7 @@ export function getAgt003CopilotRuntimeConfig(environment = process.env) {
 
 // `model` (opcional): el modelo aprobado en la Plataforma de Agentes (lista cerrada, ver agt003-ai-quota.js). Sin él,
 // el del entorno.
-export function createAgt003CopilotRuntime({ environment = process.env, countDailyRuns, recordUsage, model } = {}) {
+export function createAgt003CopilotRuntime({ environment = process.env, countDailyRuns, recordUsage, model, resolveSources } = {}) {
   const baseConfig = getAgt003CopilotRuntimeConfig(environment);
   const config = typeof model === 'string' && model.trim() ? { ...baseConfig, model: model.trim() } : baseConfig;
   const resolved = resolveAgt003BridgeConnection(environment);
@@ -107,5 +107,6 @@ export function createAgt003CopilotRuntime({ environment = process.env, countDai
     maxConcurrent: config.maxConcurrent,
     dailyMaxRuns: config.dailyMaxRuns,
     ...(countDailyRuns ? { countDailyRuns } : {}),
+    ...(resolveSources ? { resolveSources } : {}),
   });
 }

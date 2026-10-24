@@ -76,7 +76,12 @@ test('sin estados declarados la respuesta nace no verificada, nunca vigente', ()
 
 test('negado por defecto: el silencio significa no', () => {
   assert.equal(puedeLeer('empresa.identidad', 'agt002.mesa'), true);
-  assert.equal(puedeLeer('empresa.identidad', 'agt003.copiloto'), false);
+  assert.equal(puedeLeer('empresa.identidad', 'agt003.copiloto'), true);
+  // El copiloto comercial no analiza licitaciones: no está declarado para el análisis canónico
+  // ni para los códigos del RUP, y lo que no está declarado no se entrega.
+  assert.equal(puedeLeer('analisis.canonico.company_fit', 'agt003.copiloto'), false);
+  assert.equal(puedeLeer('empresa.codigos_rup', 'agt003.copiloto'), false);
+  assert.equal(puedeLeer('empresa.identidad', 'agente.no.declarado'), false);
   assert.equal(puedeLeer('dato.inexistente', 'agt002.mesa'), false);
 });
 
@@ -176,7 +181,7 @@ test('el servidor resuelve por adelantado solo lo que ese lector puede leer', as
   });
   const resueltos = await resolverParaLector(database, {
     lector: 'agt002.mesa',
-    nombres: ['empresa.identidad', 'empresa.codigos_rup', 'empresa.sedes', 'dato.inexistente'],
+    nombres: ['empresa.identidad', 'empresa.codigos_rup', 'dato.inexistente'],
   });
   const nombres = resueltos.map(entrada => entrada.nombre);
   assert.deepEqual(nombres, ['empresa.identidad', 'empresa.codigos_rup']);
@@ -192,4 +197,29 @@ test('cada respuesta resuelta dice de cuándo es y de dónde salió', async () =
   assert.ok(resueltos[0].as_of, 'la respuesta debe traer su fecha de corte');
   assert.ok(resueltos[0].procedencia, 'la respuesta debe traer su procedencia');
   assert.ok(Object.isFrozen(resueltos[0]));
+});
+
+test('el mismo catálogo sirve a dos lectores distintos, cada uno con lo suyo', async () => {
+  const database = baseDeDatos({
+    psi_company_rup_codes: CODIGOS_TIPADOS,
+    psi_company_procurement_profile: [{ legal_name: 'SEGURIDAD NACIONAL LIMITADA', nit: '891408256-4', supervigilancia_license: null, rup_updated_at: '2026-09-28', updated_at: '2026-10-13T00:00:00.000Z' }],
+    psi_company_sites: [
+      { department: 'Risaralda', city: 'Pereira', is_main: true, supervigilancia_authorization: null, source: 'RUP', updated_at: '2026-10-13T00:00:00.000Z' },
+      { department: 'Quindío', city: 'Armenia', is_main: false, supervigilancia_authorization: 'Pendiente de resolución de la SVSP', source: 'Juan', updated_at: '2026-10-13T00:00:00.000Z' },
+    ],
+  });
+  const pedidos = ['empresa.identidad', 'empresa.sedes', 'empresa.codigos_rup'];
+  const mesa = await resolverParaLector(database, { lector: 'agt002.mesa', nombres: pedidos });
+  const copiloto = await resolverParaLector(database, { lector: 'agt003.copiloto', nombres: pedidos });
+
+  assert.deepEqual(mesa.map(e => e.nombre), ['empresa.identidad', 'empresa.sedes', 'empresa.codigos_rup']);
+  // El copiloto comercial recibe empresa, no licitaciones: los códigos del RUP no son suyos.
+  assert.deepEqual(copiloto.map(e => e.nombre), ['empresa.identidad', 'empresa.sedes']);
+
+  const sedes = copiloto.find(e => e.nombre === 'empresa.sedes');
+  assert.equal(sedes.valor.total, 2);
+  assert.equal(sedes.valor.sedes[0].tipo, 'sede_principal');
+  // La agencia pendiente ante la SVSP llega declarada, no como una nota que haya que interpretar.
+  assert.equal(sedes.valor.sedes[1].autorizacion_supervigilancia, 'Pendiente de resolución de la SVSP');
+  assert.equal(sedes.responsable, 'Juan');
 });
