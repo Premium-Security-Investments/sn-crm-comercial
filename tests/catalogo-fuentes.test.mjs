@@ -16,16 +16,33 @@ import {
 
 // Base de datos de mentira con el encadenamiento mínimo que usan los resolvedores:
 // select/eq/order/limit devuelven la cadena; maybeSingle y el await resuelven filas.
+//
+// El doble valida las columnas pedidas contra las que la tabla tiene, igual que PostgREST, y
+// devuelve 42703 si alguna no existe. Sin eso, el 2026-10-24 un `updated_at` inexistente en
+// psi_tender_analysis_runs hizo fallar la consulta entera en producción mientras todas las
+// pruebas seguían verdes: el análisis existía y la Mesa dijo que no.
 function baseDeDatos(tablas, { ausentes = [] } = {}) {
   return {
     from(tabla) {
       const filtros = [];
+      let columnasPedidas = [];
       const filas = () => (tablas[tabla] || []).filter(fila => filtros.every(([clave, valor]) => fila[clave] === valor));
-      const resultado = () => (ausentes.includes(tabla)
-        ? { data: null, error: { code: 'PGRST205', message: 'tabla ausente' } }
-        : { data: filas(), error: null });
+      const resultado = () => {
+        if (ausentes.includes(tabla)) return { data: null, error: { code: 'PGRST205', message: 'tabla ausente' } };
+        const faltante = columnaInexistente();
+        if (faltante) return { data: null, error: { code: '42703', message: `column ${tabla}.${faltante} does not exist` } };
+        return { data: filas(), error: null };
+      };
+      const columnaInexistente = () => {
+        const disponibles = Object.keys((tablas[tabla] || [])[0] || {});
+        if (disponibles.length === 0) return null;
+        return columnasPedidas.find(columna => !disponibles.includes(columna)) || null;
+      };
       const cadena = {
-        select() { return cadena; },
+        select(columnas = '') {
+          columnasPedidas = String(columnas).split(',').map(parte => parte.trim()).filter(Boolean);
+          return cadena;
+        },
         eq(clave, valor) { filtros.push([clave, valor]); return cadena; },
         order() { return cadena; },
         limit() { return cadena; },
@@ -71,7 +88,7 @@ test('el certificado del RUP vence a los 60 días calendario; el hecho inscrito 
 test('los códigos del RUP se sirven tipados, con su base de conteo y su vencimiento', async () => {
   const resuelto = await resolverCodigosRup(baseDeDatos({ psi_company_rup_codes: CODIGOS_TIPADOS }));
   assert.equal(resuelto.forma, FORMAS.TIPADO);
-  assert.equal(resuelto.interpretable, false);
+  assert.equal(resuelto.requiere_interpretacion, false);
   assert.equal(resuelto.frescura, FRESCURAS.CONGELADA_CON_VENCIMIENTO);
   assert.equal(resuelto.valor.total, 2);
   assert.equal(resuelto.valor.inscritos_al, '2026-09-28');
@@ -91,7 +108,7 @@ test('sin la tabla tipada cae a la prosa y lo declara, en vez de devolver vacío
   }, { ausentes: ['psi_company_rup_codes'] });
   const resuelto = await resolverCodigosRup(database);
   assert.equal(resuelto.forma, FORMAS.PROSA);
-  assert.equal(resuelto.interpretable, true);
+  assert.equal(resuelto.requiere_interpretacion, true);
   assert.deepEqual(resuelto.valor.codigos, ['46151600', '92121500']);
   assert.match(resuelto.procedencia.nota, /prosa/);
 });
@@ -132,7 +149,9 @@ test('company_fit se sirve del análisis canónico congelado, por sección', asy
       tender_id: 'tender-1',
       canonical: true,
       result: { company_fit: { veredicto: 'parcial' }, claims: ['…'] },
-      updated_at: '2026-10-22T00:00:00.000Z',
+      created_at: '2026-10-22T00:00:00.000Z',
+      completed_at: '2026-10-23T00:00:00.000Z',
+      analysis_core_hash: 'abc123',
     }],
   });
   const resuelto = await resolverCompanyFit(database, { tenderId: 'tender-1' });
@@ -140,6 +159,8 @@ test('company_fit se sirve del análisis canónico congelado, por sección', asy
   assert.equal(resuelto.frescura, FRESCURAS.CONGELADA);
   assert.equal(resuelto.procedencia.run_id, 'run-1');
   assert.equal(resuelto.procedencia.seccion, 'company_fit');
+  assert.equal(resuelto.procedencia.analysis_core_hash, 'abc123');
+  assert.equal(resuelto.as_of, '2026-10-23');
 });
 
 test('sin proceso en el expediente company_fit no inventa: declara que no lo tiene', async () => {

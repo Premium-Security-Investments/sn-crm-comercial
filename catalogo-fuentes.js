@@ -94,8 +94,11 @@ function soloFecha(valor) {
   return iso ? iso.slice(0, 10) : null;
 }
 
-// Una respuesta siempre dice de cuándo es y de dónde salió. `interpretable` marca las fuentes en
-// prosa: se sirven, pero quien las lea sabe que tuvo que entenderlas, no leerlas.
+// Una respuesta siempre dice de cuándo es y de dónde salió. `requiere_interpretacion` marca las
+// fuentes en prosa: se sirven, pero quien las lea sabe que tuvo que entenderlas, no leerlas.
+// El nombre importa: la primera corrida contra producción llevaba `interpretable: false` para las
+// fuentes tipadas y el modelo lo leyó al revés — "los datos figuran como no interpretables, hay
+// que confirmarlos contra el certificado" —, degradando un dato que era el más confiable de todos.
 function respuesta({ nombre, valor, estado, frescura, forma, asOf, procedencia, venceEl = null }) {
   const vencida = venceEl && asOf && new Date(venceEl).getTime() < Date.now();
   return Object.freeze({
@@ -104,7 +107,7 @@ function respuesta({ nombre, valor, estado, frescura, forma, asOf, procedencia, 
     estado: vencida ? ESTADOS.VENCIDO : estado,
     frescura,
     forma,
-    interpretable: forma === FORMAS.PROSA,
+    requiere_interpretacion: forma === FORMAS.PROSA,
     as_of: asOf,
     vence_el: venceEl,
     procedencia,
@@ -235,9 +238,14 @@ export async function resolverCompanyFit(database, { tenderId }) {
       procedencia: Object.freeze({ tabla: 'psi_tender_analysis_runs', nota: 'sin proceso en el expediente' }),
     });
   }
+  // `psi_tender_analysis_runs` no tiene `updated_at`: pedirlo hacía fallar la consulta entera y
+  // el análisis existente salía como inexistente. Lo descubrió la primera corrida contra
+  // producción el 2026-10-24, donde la Mesa dijo "no hay análisis canónico con company_fit"
+  // mientras la fila estaba ahí. La fecha de corte es `completed_at`, y `analysis_core_hash`
+  // identifica la versión exacta del análisis que respondió.
   const { data, error } = await database
     .from('psi_tender_analysis_runs')
-    .select('id,result,created_at,updated_at')
+    .select('id,result,created_at,completed_at,analysis_core_hash')
     .eq('tender_id', tenderId)
     .eq('canonical', true)
     .limit(1)
@@ -260,8 +268,13 @@ export async function resolverCompanyFit(database, { tenderId }) {
     estado: ESTADOS.VIGENTE,
     frescura: FRESCURAS.CONGELADA,
     forma: FORMAS.TIPADO,
-    asOf: soloFecha(data.updated_at || data.created_at),
-    procedencia: Object.freeze({ tabla: 'psi_tender_analysis_runs', run_id: data.id, seccion: 'company_fit' }),
+    asOf: soloFecha(data.completed_at || data.created_at),
+    procedencia: Object.freeze({
+      tabla: 'psi_tender_analysis_runs',
+      run_id: data.id,
+      seccion: 'company_fit',
+      analysis_core_hash: data.analysis_core_hash || null,
+    }),
   });
 }
 
