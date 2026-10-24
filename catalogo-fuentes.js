@@ -116,7 +116,7 @@ function respuesta({ nombre, valor, estado, frescura, forma, asOf, procedencia, 
 
 const CODIGOS_DEL_PERFIL = /\b\d{8}\b/g;
 
-// Resolvedor de empresa.codigos_rup. La tabla tipada manda; si todavía no existe (migración 152
+// Resolvedor de empresa.codigos_rup. La tabla tipada manda; si todavía no existe (migración 153
 // sin aplicar) cae a la prosa del perfil y lo declara, en vez de devolver vacío en silencio.
 export async function resolverCodigosRup(database) {
   const { data, error } = await database
