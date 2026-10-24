@@ -67,7 +67,7 @@ function minimizarFuente(fuente) {
     estado: fuente.estado,
     as_of: fuente.as_of,
     vence_el: fuente.vence_el,
-    interpretable: fuente.interpretable === true,
+    requiere_interpretacion: fuente.requiere_interpretacion === true,
     sostiene_afirmacion: sostieneAfirmacion(fuente),
     responsable: fuente.responsable || null,
     procedencia: sanitizeText(JSON.stringify(fuente.procedencia ?? null), MAX_SOURCE_PROVENANCE_CHARS),

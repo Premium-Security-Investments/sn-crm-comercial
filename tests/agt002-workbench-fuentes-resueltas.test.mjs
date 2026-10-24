@@ -56,7 +56,7 @@ const CODIGOS_TIPADOS = Object.freeze({
   nombre: 'empresa.codigos_rup',
   estado: 'vigente',
   forma: 'tipado',
-  interpretable: false,
+  requiere_interpretacion: false,
   as_of: '2026-09-28',
   vence_el: '2026-11-27',
   responsable: 'Katherine',
@@ -68,7 +68,7 @@ const PERFIL_EN_PROSA = Object.freeze({
   nombre: 'empresa.identidad',
   estado: 'vigente',
   forma: 'prosa',
-  interpretable: true,
+  requiere_interpretacion: true,
   as_of: '2026-10-13',
   vence_el: null,
   responsable: 'Katherine',
@@ -154,7 +154,7 @@ test('una fuente en prosa viaja como dato, marcada como insuficiente', async () 
   // interpretable y sin sostener afirmaciones, así que lo honesto es declararla faltante.
   const [fuente] = client.visto.input.fuentes_resueltas;
   assert.equal(fuente.sostiene_afirmacion, false);
-  assert.equal(fuente.interpretable, true);
+  assert.equal(fuente.requiere_interpretacion, true);
   assert.match(fuente.valor, /SEGURIDAD NACIONAL LIMITADA/);
 });
 
