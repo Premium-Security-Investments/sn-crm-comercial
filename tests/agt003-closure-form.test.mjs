@@ -5,9 +5,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   CLOSURE_FORM_FIELDS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_IVA_RATE, CLOSURE_FORM_MAX_POSTS,
-  CLOSURE_FORM_MAX_SITES, CLOSURE_FORM_VERSION,
+  CLOSURE_FORM_MAX_SITES, CLOSURE_FORM_SECTIONS, CLOSURE_FORM_VERSION,
   autofillClosureForm, autofillClosureSites, cleanClosureFormInput, closureFormCatalog,
-  closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormWinVerdict,
+  closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormPlainText,
+  closureFormWinVerdict,
 } from '../src/vigia/closure-form.js';
 
 const OPPORTUNITY = {
@@ -330,4 +331,60 @@ test('servidor: los dos endpoints, con sus permisos y la semántica de parche', 
   assert.match(put, /completed_at: stored\?\.completed_at \|\|/);
   // Las licitaciones no entran por aquí.
   assert.match(server, /Las licitaciones públicas no usan este formulario/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Secciones, texto para enviar y la pantalla
+
+test('secciones: cada campo tiene la suya y cada sección tiene campos', () => {
+  const claves = new Set(CLOSURE_FORM_SECTIONS.map(section => section.key));
+  assert.equal(claves.size, CLOSURE_FORM_SECTIONS.length);
+  for (const field of CLOSURE_FORM_FIELDS) assert.ok(claves.has(field.section), `${field.key} sin sección válida`);
+  for (const section of CLOSURE_FORM_SECTIONS) {
+    assert.ok(CLOSURE_FORM_FIELDS.some(field => field.section === section.key), `${section.key} quedó vacía`);
+    assert.ok(section.label.length > 3);
+  }
+  assert.ok(closureFormCatalog({}).every(field => typeof field.section === 'string'), 'la sección viaja al catálogo');
+});
+
+test('texto para enviar: trae el formato, los puestos y las sumas calculadas', () => {
+  const texto = closureFormPlainText({ form: fullForm(), sites: SITES, posts: POSTS, company: 'Bansuri Hotel Group S.A.S.' });
+  assert.match(texto, /^GGC-FO-001 — Nuevo puesto de vigilancia física \(versión 18\)/);
+  assert.match(texto, /Cliente: Bansuri Hotel Group S\.A\.S\./);
+  assert.match(texto, /CLIENTE Y CONTRATACIÓN/);
+  assert.match(texto, /Sector al que pertenece: Comercial/, 'las opciones se leen con su nombre, no con el código');
+  assert.match(texto, /Agente de retención: Sí/);
+  assert.match(texto, /Duración: 1096 días \(unos 36 meses\)/, '30,44 y no 30: con 30 daban 37 meses');
+  assert.match(texto, /06:00 a 06:00, 30 días al mes · 3 vigilante\(s\) · sin arma · \$19\.308\.499 al mes/);
+  assert.match(texto, /Subtotal: \$38\.616\.998/);
+  assert.match(texto, /IVA 19 % sobre el AIU: \$283\.560/);
+  assert.match(texto, /Total: \$38\.900\.558/);
+  assert.doesNotMatch(texto, /15\.207\.760/, 'el total del Word no puede reaparecer');
+});
+
+test('texto para enviar: lo que falta se nombra, y sin AIU el total lo dice', () => {
+  const texto = closureFormPlainText({ form: autofillClosureForm(OPPORTUNITY), sites: [], posts: [] });
+  assert.match(texto, /Nombre del establecimiento: sin registrar/, 'un dato faltante se nombra, no se deja en blanco');
+  assert.match(texto, /DIRECCIONES DE PRESTACIÓN DEL SERVICIO\n  sin registrar/);
+  assert.match(texto, /PUESTOS\n  sin registrar/);
+  assert.match(texto, /AIU informativo: sin registrar/);
+  assert.match(texto, /Total: \$0 \(sin IVA, falta el AIU\)/);
+});
+
+test('pantalla: va en la ficha y no reimplementa ninguna regla', () => {
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  assert.match(main, /import \{ ClosureFormPanel \} from '\.\/vigia\/ClosureFormPanel'/);
+  assert.match(main, /o\.service_type_code !== 'licitacion_publica' && <ClosureFormPanel/, 'no se le muestra a una licitación');
+
+  const panel = readFileSync(new URL('../src/vigia/ClosureFormPanel.tsx', import.meta.url), 'utf8');
+  // Las reglas se importan: la pantalla no tiene su propia idea de completitud ni de aritmética.
+  for (const regla of ['closureFormCompleteness', 'closureFormMoney', 'closureFormPlainText', 'CLOSURE_FORM_SECTIONS']) {
+    assert.ok(panel.includes(regla), `la pantalla debe usar ${regla}`);
+  }
+  assert.doesNotMatch(panel, /0\.19|\* 19|subtotal \+/, 'ni el IVA ni el subtotal se calculan en el JSX');
+  // Los campos salen del catálogo del servidor, no de una lista escrita a mano en la pantalla.
+  assert.doesNotMatch(panel, /legal_rep_id_number|contract_mail_address|withholding_agent/, 'ninguna clave del formulario escrita a mano');
+  assert.match(panel, /state\.catalog\.filter/);
+  // Guardar incompleto es válido: queda borrador. Y se dice.
+  assert.match(panel, /queda como borrador/);
 });

@@ -946,3 +946,33 @@ td.numeric-value{white-space:nowrap}
 /* AGT-002 cobertura territorial (Juan, 2026-10-13): marca del Radar y veredicto de participación del análisis. */
 .initial-participation{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;border-radius:10px;padding:8px 12px;margin:6px 0;font-size:14px}
 .initial-participation-sola{background:#dcfce7;color:#166534}.initial-participation-union_temporal{background:#fef3c7;color:#92400e}.initial-participation-no_puede{background:#fee2e2;color:#b91c1c}
+/* AGT-003 formulario de cierre (GGC-FO-001; Juan, 2026-10-23): el Word que iba por correo, dentro de la ficha. */
+.closure-form-panel header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.closure-form-badge{border-radius:999px;padding:3px 10px;background:#fffaeb;color:#b54708;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+.closure-form-badge.is-complete{background:#ecfdf3;color:#067647}
+.closure-form-intro{margin:6px 0 0;color:var(--muted);font-size:13px}
+.closure-form-missing{display:grid;gap:4px;margin:10px 0 0;padding-left:18px;color:#b54708;font-size:13px}
+.closure-form-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
+.closure-form-body{display:grid;gap:14px;margin-top:14px}
+.closure-form-section{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0}
+.closure-form-section legend{padding:0 6px;color:var(--text);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.closure-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
+.closure-form-field{display:grid;gap:4px;color:var(--muted);font-size:12px;font-weight:700}
+.closure-form-field.is-required>small{color:var(--text)}
+.closure-form-auto{margin-left:6px;border-radius:999px;padding:1px 6px;background:#eef4ff;color:#174ea6;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}
+.closure-form-row{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin-bottom:8px}
+.closure-form-row input{flex:1 1 140px;min-width:0}
+.closure-form-row label{display:grid;gap:4px;color:var(--muted);font-size:11px;font-weight:800}
+.closure-form-check{flex-direction:row;align-items:center;gap:6px}
+.closure-form-check input{width:auto;min-height:0}
+.closure-form-post{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
+.closure-form-post:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.closure-form-money{display:grid;gap:6px;margin:12px 0 0}
+.closure-form-money>div{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:13px}
+.closure-form-money dt{font-weight:700}
+.closure-form-money dd{margin:0;font-variant-numeric:tabular-nums;font-weight:800}
+.closure-form-money .closure-form-total{border-top:1px solid var(--line);padding-top:6px;color:var(--text);font-size:15px}
+.closure-form-note{margin:8px 0 0;color:var(--muted);font-size:12px}
+.closure-form-error{margin:10px 0 0;color:#b42318;font-size:13px;font-weight:700}
+.closure-form-warnings{display:grid;gap:4px;margin:10px 0 0;padding-left:18px;color:#b54708;font-size:12px}
+@media(max-width:768px){.closure-form-grid{grid-template-columns:repeat(1,minmax(0,1fr))}}
