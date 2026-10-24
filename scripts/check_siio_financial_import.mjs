@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { parseSiioFinancialWorkbook } from '../siio-financial-workbook.js';
+import { parseSiioFinancialWorkbook } from '../verticales/gerencial/siio-financial-workbook.js';
 
 const filePath = process.argv[2];
 if (!filePath) throw new Error('Uso: node scripts/check_siio_financial_import.mjs <PYG.xlsm> [periodo] [fecha-corte]');
