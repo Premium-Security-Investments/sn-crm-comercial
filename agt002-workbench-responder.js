@@ -14,6 +14,9 @@ export const AGT002_WORKBENCH_POLICY = [
   'Cita únicamente identificadores presentes en context_links; nunca inventes fuentes ni enlaces.',
   'Produce un borrador o respuesta editable sujeta a revisión humana; nunca una acción ejecutada.',
   'Devuelve exclusivamente el objeto JSON solicitado por el esquema de salida, sin texto adicional ni claves inesperadas.',
+  'Las entradas de fuentes_resueltas son datos que el servidor verificó y estampó: úsalas tal como vienen, respeta su fecha de corte (as_of) y nunca las contradigas con conocimiento propio ni las sustituyas por una suposición.',
+  'Una fuente con sostiene_afirmacion en falso —por estar en prosa, vencida, en disputa o sin verificar— no sostiene ninguna afirmación: declárala en missing_information en vez de afirmar sobre ella.',
+  'Si fuentes_resueltas no trae el dato que la pregunta necesita, dilo en missing_information; nunca completes el hueco con lo que recuerdes.',
 ].join(' ');
 
 const DEFAULT_TIMEOUT_MS = 30_000;

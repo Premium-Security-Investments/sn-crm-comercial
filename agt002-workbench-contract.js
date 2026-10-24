@@ -1,5 +1,15 @@
 export const AGT002_WORKBENCH_CONTRACT_VERSION = 'agt002.dossier-workbench.v1';
-export const AGT002_WORKBENCH_POLICY_VERSION = 'agt002.dossier-workbench.policy.v1';
+export const AGT002_WORKBENCH_POLICY_VERSION = 'agt002.dossier-workbench.policy.v2';
+
+// Un trabajo ya encolado se validó contra la política vigente cuando se encoló. Si al subir la
+// versión solo aceptáramos la nueva, un despliegue con trabajos en vuelo los rechazaría — la
+// pregunta de una persona se perdería por un cambio que no tiene nada que ver con ella. Por eso
+// se acepta la anterior para LEER lo encolado, mientras lo nuevo se estampa siempre con la
+// vigente. Una versión sale de esta lista cuando ya no puede quedar nada suyo en la cola.
+export const AGT002_WORKBENCH_POLICY_VERSIONS_ACEPTADAS = Object.freeze([
+  AGT002_WORKBENCH_POLICY_VERSION,
+  'agt002.dossier-workbench.policy.v1',
+]);
 export const AGT002_WORKBENCH_CAPABILITIES = Object.freeze({
   reply: 'agt002.dossier-workbench.reply.v1',
   draft: 'agt002.dossier-workbench.draft.v1',
@@ -153,7 +163,7 @@ export function validateAgt002WorkbenchJobInput(value) {
   if (value.contract_version !== AGT002_WORKBENCH_CONTRACT_VERSION) {
     throw new Error('contract_version no coincide con el contrato AGT-002.');
   }
-  if (value.policy_version !== AGT002_WORKBENCH_POLICY_VERSION) {
+  if (!AGT002_WORKBENCH_POLICY_VERSIONS_ACEPTADAS.includes(value.policy_version)) {
     throw new Error('policy_version no coincide con la política AGT-002.');
   }
   if (!Array.isArray(value.context_links) || value.context_links.length > 20) {

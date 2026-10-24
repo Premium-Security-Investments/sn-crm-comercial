@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { getAgt002WorkbenchApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
-import { AGT002_WORKBENCH_CAPABILITIES } from '../agt002-workbench-contract.js';
+import { AGT002_WORKBENCH_CAPABILITIES, AGT002_WORKBENCH_POLICY_VERSION } from '../agt002-workbench-contract.js';
 import {
   apply,
   countEvidence,
@@ -18,6 +18,11 @@ import {
 // reintentable en lugar de confundirse con un trabajo en curso.
 const dossierMigration = readFileSync(new URL('../supabase/migrations/040_tender_dossier_workspace.sql', import.meta.url), 'utf8');
 const workbenchMigration = readFileSync(new URL('../supabase/migrations/045_agt002_dossier_workbench.sql', import.meta.url), 'utf8');
+// La Mesa de producción no es solo 045: 140 trae el flujo previo al GO y 154 abre la política a
+// la versión vigente y la anterior. Sin encadenarlas, esta prueba corría contra una base que ya
+// no se parece a la real y daba verde por el motivo equivocado.
+const beforeGoMigration = readFileSync(new URL('../supabase/migrations/140_agt002_workbench_before_go.sql', import.meta.url), 'utf8');
+const politicaV2Migration = readFileSync(new URL('../supabase/migrations/154_agt002_workbench_politica_v2.sql', import.meta.url), 'utf8');
 
 const ids = Object.freeze({
   operator: '11111111-1111-4111-8111-111111111111',
@@ -64,6 +69,8 @@ await db.exec(`
 `);
 await db.exec(dossierMigration);
 await db.exec(workbenchMigration);
+await db.exec(beforeGoMigration);
+await db.exec(politicaV2Migration);
 
 // exec_sql equivalente al de producción: una cadena SQL entra, las filas del último
 // resultado salen. Es la ÚNICA vía por la que el runner toca la base.
@@ -242,7 +249,9 @@ for (const testCase of CASES) {
   assert.equal(job.tender_id, ids.tender);
   assert.equal(job.capability_id, AGT002_WORKBENCH_CAPABILITIES.reply);
   assert.equal(job.contract_version, 'agt002.dossier-workbench.v1');
-  assert.equal(job.policy_version, 'agt002.dossier-workbench.policy.v1');
+  // Lo encolado se estampa SIEMPRE con la política vigente, nunca con una fija: si esta línea
+  // vuelve a clavar una versión, el día que suba la siguiente se romperá sin motivo.
+  assert.equal(job.policy_version, AGT002_WORKBENCH_POLICY_VERSION);
   assert.equal(job.requested_by, ids.operator);
   assert.match(job.idempotency_key, /^[a-f0-9]{64}$/);
   assert.ok(Array.isArray(job.context_links) && job.context_links.length === 2);
