@@ -241,3 +241,101 @@ export function closureFormWinVerdict({ form = null, sites = [], posts = [] } = 
     missing,
   };
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Limpieza de lo que llega del formulario (pantalla o chat)
+
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/** Techos: un cierre con más de esto no es un cierre, es un error de pegado. */
+export const CLOSURE_FORM_MAX_SITES = 20;
+export const CLOSURE_FORM_MAX_POSTS = 30;
+
+function cleanTime(value) {
+  const text = typeof value === 'string' ? value.trim().slice(0, 5) : '';
+  return TIME_RE.test(text) ? text : null;
+}
+function cleanDay(value) {
+  const text = String(value ?? '').trim().slice(0, 10);
+  return ISO_DATE.test(text) ? text : null;
+}
+function cleanInt(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  const rounded = Math.round(number);
+  return rounded >= min && rounded <= max ? rounded : null;
+}
+
+/**
+ * Convierte lo que llega de la pantalla (o del chat) en lo que se guarda: sólo las claves del catálogo, cada una
+ * según su tipo, y las dos listas con su orden. Nada que no esté en el catálogo pasa, así que un campo inventado no
+ * puede colarse hasta la base. Los avisos explican lo que se descartó, para no borrar en silencio lo que el comercial
+ * escribió.
+ */
+export function cleanClosureFormInput(body = {}) {
+  const raw = body && typeof body === 'object' ? body : {};
+  const source = raw.form && typeof raw.form === 'object' ? raw.form : {};
+  const avisos = [];
+  const form = {};
+  for (const field of CLOSURE_FORM_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(source, field.key)) continue;
+    const value = source[field.key];
+    if (value === null || value === '' || value === undefined) { form[field.key] = null; continue; }
+    if (field.kind === YES_NO) {
+      form[field.key] = typeof value === 'boolean' ? value : null;
+      if (typeof value !== 'boolean') avisos.push(`${field.label} quedó sin responder: se esperaba sí o no.`);
+    } else if (field.kind === DATE) {
+      form[field.key] = cleanDay(value);
+      if (!form[field.key]) avisos.push(`${field.label} no es una fecha válida.`);
+    } else if (field.kind === OPTION) {
+      form[field.key] = field.options.includes(String(value)) ? String(value) : null;
+      if (!form[field.key]) avisos.push(`${field.label} tiene un valor que el formato no reconoce.`);
+    } else if (field.kind === 'dinero') {
+      form[field.key] = money(value);
+      if (form[field.key] === null) avisos.push(`${field.label} no es un valor válido.`);
+    } else {
+      form[field.key] = clean(value, field.max);
+    }
+  }
+
+  const siteList = Array.isArray(raw.sites) ? raw.sites.slice(0, CLOSURE_FORM_MAX_SITES) : [];
+  if (Array.isArray(raw.sites) && raw.sites.length > CLOSURE_FORM_MAX_SITES) avisos.push(`Dejé las primeras ${CLOSURE_FORM_MAX_SITES} direcciones de prestación.`);
+  const sites = siteList.map((site, index) => ({
+    address: clean(site?.address, 400),
+    city: clean(site?.city, 80),
+    phone: clean(site?.phone, 120),
+    contact_name: clean(site?.contact_name, 160),
+    position: index + 1,
+  }));
+
+  const postList = Array.isArray(raw.posts) ? raw.posts.slice(0, CLOSURE_FORM_MAX_POSTS) : [];
+  if (Array.isArray(raw.posts) && raw.posts.length > CLOSURE_FORM_MAX_POSTS) avisos.push(`Dejé los primeros ${CLOSURE_FORM_MAX_POSTS} puestos.`);
+  const posts = postList.map((post, index) => ({
+    description: clean(post?.description, 500),
+    shift_start: cleanTime(post?.shift_start),
+    shift_end: cleanTime(post?.shift_end),
+    days_per_month: post?.days_per_month === null || post?.days_per_month === undefined || post?.days_per_month === '' ? null : cleanInt(post.days_per_month, 1, 31),
+    guards_required: cleanInt(post?.guards_required, 1, 50),
+    armed: post?.armed === true,
+    monthly_value: money(post?.monthly_value),
+    notes: clean(post?.notes, 1000),
+    position: index + 1,
+  }));
+
+  return { form, sites, posts, avisos };
+}
+
+/**
+ * El catálogo como lo puede leer una pantalla: sin funciones, con `required` ya resuelto contra el formulario que se
+ * está llenando (por eso el estrato aparece obligatorio sólo cuando el sector es residencial).
+ */
+export function closureFormCatalog(form = {}) {
+  return CLOSURE_FORM_FIELDS.map(field => ({
+    key: field.key,
+    label: field.label,
+    kind: field.kind,
+    required: isRequired(field, form),
+    auto: Boolean(field.auto),
+    ...(field.options ? { options: [...field.options] } : {}),
+    ...(field.max ? { max: field.max } : {}),
+  }));
+}

@@ -4,9 +4,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  CLOSURE_FORM_FIELDS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_IVA_RATE, CLOSURE_FORM_VERSION,
-  autofillClosureForm, autofillClosureSites, closureFormCompleteness, closureFormDurationDays,
-  closureFormMoney, closureFormWinVerdict,
+  CLOSURE_FORM_FIELDS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_IVA_RATE, CLOSURE_FORM_MAX_POSTS,
+  CLOSURE_FORM_MAX_SITES, CLOSURE_FORM_VERSION,
+  autofillClosureForm, autofillClosureSites, cleanClosureFormInput, closureFormCatalog,
+  closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormWinVerdict,
 } from '../src/vigia/closure-form.js';
 
 const OPPORTUNITY = {
@@ -214,4 +215,119 @@ test('migración 151: tres tablas, sólo service_role, y su rollback', () => {
     assert.match(rollback, new RegExp(`drop table if exists public\\.${table}`), `el rollback quita ${table}`);
   }
   assert.match(rollback, /PIERDE DATOS/, 'el rollback advierte qué se pierde');
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Lo que llega de la pantalla o del chat, y los dos endpoints
+
+test('limpieza: sólo pasan las claves del catálogo, cada una según su tipo', () => {
+  const { form, avisos } = cleanClosureFormInput({
+    form: {
+      establishment_name: '  Hotel   de   Pereira ',
+      withholding_agent: true,
+      large_taxpayer: 'SI',
+      tax_regime: 'especial',
+      service_start_date: '2026-10-01T05:00:00Z',
+      service_end_date: 'mañana',
+      aiu_value: '1492420',
+      ciiu_code: '5501',
+      stage_code: 'aprobado',
+      id: 'otra-cosa',
+    },
+  });
+  assert.equal(form.establishment_name, 'Hotel de Pereira', 'se normalizan los espacios');
+  assert.equal(form.withholding_agent, true);
+  assert.equal(form.large_taxpayer, null, '"SI" no es un booleano');
+  assert.equal(form.tax_regime, null, 'una opción que el formato no tiene no entra');
+  assert.equal(form.service_start_date, '2026-10-01', 'de un instante se toma el día');
+  assert.equal(form.service_end_date, null);
+  assert.equal(form.aiu_value, 1492420);
+  assert.equal('stage_code' in form, false, 'ningún campo ajeno al catálogo llega a la base');
+  assert.equal('id' in form, false);
+  // Lo descartado se avisa: no se borra en silencio lo que el comercial escribió. Tres avisos, uno por cada valor
+  // que no se pudo usar; la fecha de inicio no avisa porque de un instante válido sí se pudo tomar el día.
+  assert.equal(avisos.length, 3);
+  assert.ok(avisos.some(a => a.includes('Gran contribuyente')));
+  assert.ok(avisos.some(a => a.includes('Régimen')));
+});
+
+test('limpieza: un campo que no viene en el cuerpo no se toca, y uno vacío se borra', () => {
+  const { form } = cleanClosureFormInput({ form: { ciiu_code: '', establishment_name: 'Hotel' } });
+  assert.equal(form.ciiu_code, null, 'vacío es borrar');
+  assert.equal('legal_rep_name' in form, false, 'lo que no viene no se menciona: el servidor lo mezcla con lo guardado');
+});
+
+test('limpieza: los puestos quedan con horario válido, enteros y su orden', () => {
+  const { posts } = cleanClosureFormInput({
+    posts: [
+      { description: 'Portería 24/7', shift_start: '6:00', shift_end: '18:00', guards_required: '3', monthly_value: '19308499', armed: 'si', days_per_month: 30 },
+      { description: 'Ronda', shift_start: '25:00', shift_end: '06:00', guards_required: 0, monthly_value: -1, days_per_month: 45 },
+    ],
+  });
+  assert.equal(posts.length, 2);
+  assert.equal(posts[0].shift_start, null, '"6:00" no es una hora de dos dígitos');
+  assert.equal(posts[0].shift_end, '18:00');
+  assert.equal(posts[0].guards_required, 3, 'el texto numérico sí se acepta');
+  assert.equal(posts[0].monthly_value, 19308499);
+  assert.equal(posts[0].armed, false, 'armado sólo es true con true: "si" no arma a nadie');
+  assert.equal(posts[0].position, 1);
+  assert.equal(posts[1].shift_start, null);
+  assert.equal(posts[1].guards_required, null, 'cero vigilantes no es un puesto');
+  assert.equal(posts[1].monthly_value, null);
+  assert.equal(posts[1].days_per_month, null, '45 días en un mes, no');
+  assert.equal(posts[1].position, 2);
+});
+
+test('limpieza: hay techo de direcciones y de puestos, y se dice cuándo se recortó', () => {
+  const muchos = Array.from({ length: CLOSURE_FORM_MAX_POSTS + 3 }, (_, i) => ({ description: `Puesto ${i + 1}`, guards_required: 1, monthly_value: 1000 }));
+  const { posts, avisos } = cleanClosureFormInput({ posts: muchos });
+  assert.equal(posts.length, CLOSURE_FORM_MAX_POSTS);
+  assert.ok(avisos.some(a => a.includes('primeros')));
+  const sitios = Array.from({ length: CLOSURE_FORM_MAX_SITES + 1 }, () => ({ address: 'Calle 1', city: 'Pereira' }));
+  const limpio = cleanClosureFormInput({ sites: sitios });
+  assert.equal(limpio.sites.length, CLOSURE_FORM_MAX_SITES);
+  assert.ok(limpio.avisos.some(a => a.includes('direcciones')));
+});
+
+test('el catálogo para la pantalla no lleva funciones, y el estrato cambia con el sector', () => {
+  const comercial = closureFormCatalog({ sector: 'comercial' });
+  const residencial = closureFormCatalog({ sector: 'residencial' });
+  const estrato = c => c.find(field => field.key === 'residential_stratum');
+  assert.equal(estrato(comercial).required, false);
+  assert.equal(estrato(residencial).required, true);
+  for (const field of comercial) {
+    assert.equal(typeof field.required, 'boolean', field.key);
+    assert.equal(typeof field.label, 'string');
+  }
+  assert.doesNotThrow(() => JSON.stringify(comercial), 'tiene que poder viajar como JSON');
+  const auto = comercial.filter(field => field.auto).map(field => field.key);
+  assert.equal(auto.length, 9, 'nueve campos los pone el CRM; el resto los escribe el comercial');
+});
+
+test('servidor: los dos endpoints, con sus permisos y la semántica de parche', () => {
+  const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  assert.equal(server, api, 'el espejo de Vercel queda igual');
+
+  assert.match(server, /'GET \/api\/agt003\/closure-form': \['opportunities', ACTIONS\.CRM_OPPORTUNITY_DETAIL_VIEW\]/);
+  assert.match(server, /'PUT \/api\/agt003\/closure-form': \['opportunities', ACTIONS\.CRM_OPPORTUNITY_EDIT\]/);
+
+  // Abrir la oportunidad no crea filas: el borrador autocompletado se devuelve, no se guarda.
+  const getHandler = server.slice(server.indexOf("app.get('/api/agt003/closure-form'"), server.indexOf("app.put('/api/agt003/closure-form'"));
+  assert.doesNotMatch(getHandler, /\.insert\(|\.upsert\(|\.delete\(/, 'el GET no escribe nada');
+
+  const putHandler = server.slice(server.indexOf("app.put('/api/agt003/closure-form'"));
+  const put = putHandler.slice(0, putHandler.indexOf('\n});'));
+  // Las listas se reemplazan sólo si vienen: así el chat puede llenar dos campos sin borrar los puestos.
+  assert.match(put, /const sendsSites = Array\.isArray\(req\.body\?\.sites\)/);
+  assert.match(put, /const sendsPosts = Array\.isArray\(req\.body\?\.posts\)/);
+  assert.match(put, /if \(sendsSites\) \{/);
+  assert.match(put, /if \(sendsPosts\) \{/);
+  // El estado lo decide la regla, no el cuerpo de la petición.
+  assert.match(put, /status: completeness\.complete \? 'completo' : 'borrador'/);
+  assert.doesNotMatch(put, /req\.body\?\.status|body\.status/, 'nadie se declara completo desde el cuerpo');
+  // La fecha de "completo" no se borra si después le quitan un dato.
+  assert.match(put, /completed_at: stored\?\.completed_at \|\|/);
+  // Las licitaciones no entran por aquí.
+  assert.match(server, /Las licitaciones públicas no usan este formulario/);
 });
