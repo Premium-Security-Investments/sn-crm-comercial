@@ -1,0 +1,34 @@
+# Las pruebas que no cubre ningún otro trabajo.
+#
+# Hasta el 2026-10-22 el CI corría 506 de los 869 archivos de prueba: los de AGT-002 y los de AGT-003. Los otros
+# 363 estaban escritos pero no los ejecutaba nadie, así que dos de los cuatro despliegues de ese día rompieron
+# pruebas sin que el CI lo notara. Este trabajo los corre por lotes y trata aparte los pendientes conocidos
+# (contratos escritos antes de construirlos), que están listados con su motivo en scripts/run-rest-tests.mjs.
+name: tests-resto
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-resto-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: resto_suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm run test:resto

@@ -11,6 +11,8 @@
 //   3. Salvaguarda: si el Radar no ha visto el proceso hace poco, el silencio puede ser nuestro y no de SECOP.
 //      En ese caso no se afirma nada; se avisa que no se puede concluir.
 
+import { tenderDocumentBreaksEntitySilence } from './tender-document-origin.js';
+
 const ENTITY_PUBLICATION_KINDS = new Set(['PUBLICATION', 'OBSERVATION_RESPONSES', 'ADDENDA', 'EVALUATION_REPORT', 'AWARD', 'RISK_HEARING']);
 const DEFINITIVE_PLIEGO = /pliego de condiciones definitivo|pliego definitivo|acto administrativo de apertura/i;
 // Un documento que cargamos nosotros no es una publicación de la entidad. La primera corrida en producción
@@ -142,10 +144,13 @@ export async function runAgt002ScheduleFreshnessReview(database, {
         .select('id,result').eq('opportunity_id', opportunityId).eq('canonical', true).limit(1);
       const deadlines = runs?.[0]?.result?.meta?.process_deadlines;
       if (!Array.isArray(deadlines) || !deadlines.length) { events.push({ event: 'agt002_schedule_freshness_no_schedule', opportunityId }); continue; }
-      // Sólo cuentan los documentos que publicó la entidad: una carga nuestra no rompe el silencio.
+      // Sólo cuentan los documentos que publicó la entidad: una carga nuestra no rompe el silencio. Desde la
+      // migración 150 también cuenta una carga manual DECLARADA como `entidad` — el caso de Supersalud el
+      // 23-oct, cuyos consolidados de respuestas se bajaron del módulo de mensajes de SECOP II y se subieron a
+      // mano, mientras esta verificación afirmaba que la entidad no había publicado nada.
       const { data: documents } = await database.from('psi_tender_document_versions')
-        .select('created_at,source').eq('opportunity_id', opportunityId).order('created_at', { ascending: false }).limit(50);
-      const lastOfficial = (documents || []).find(document => agt002IsOfficialDocumentSource(document?.source));
+        .select('created_at,source,origin').eq('opportunity_id', opportunityId).order('created_at', { ascending: false }).limit(50);
+      const lastOfficial = (documents || []).find(document => tenderDocumentBreaksEntitySilence(document, agt002IsOfficialDocumentSource));
       const notices = agt002ScheduleFreshnessNotices({
         deadlines, tender, lastDocumentAt: lastOfficial?.created_at || null, now,
       });

@@ -131,3 +131,53 @@ test('los controles de Mi día tienen foco de teclado propio', () => {
   assert.match(css, /\.now-main:focus-visible,\.now-link:focus-visible/, 'la app no tiene regla global de foco: estos la traen');
   assert.match(css, /outline:3px solid #1b64f2;outline-offset:2px/);
 });
+
+test('un comercial sin el módulo de oportunidades sabe qué acceso pedir', () => {
+  // El menú no le muestra "Mi día" (navPermissions, isNavItemVisible), así que cae en NoCommercialHome.
+  // Antes el texto era genérico ("pida acceso a quien administra el SIIO") y no decía cuál acceso falta.
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const panel = main.slice(main.indexOf('function NoCommercialHome('), main.indexOf('function stageTone('));
+  assert.match(panel, /le falta el acceso a <strong>Oportunidades<\/strong>\. Pídaselo a su administrador del SIIO\./);
+  assert.match(panel, /profile\.role === 'comercial'/, 'sólo al comercial: a los demás roles no les falta ese módulo');
+  assert.match(panel, /Su trabajo está en Programación de turnos/, 'quien sólo tiene Programación sigue viendo su enlace');
+  // Y la guarda que lo trae aquí sigue en pie: sin el módulo no se pinta el tablero comercial.
+  assert.match(main, /if \(!hasOpportunities\) return <NoCommercialHome profile=\{data\.currentProfile\} \/>;/);
+});
+
+test('la hora sólo se muestra cuando alguien la escogió', async () => {
+  const hasRealClockTime = await load('../src/vigia/my-day-presentation.ts', 'hasRealClockTime');
+  const clockTime = await load('../src/vigia/my-day-presentation.ts', 'clockTime');
+  // Una fecha escogida en un calendario se guarda a una hora de convención: 9:00 desde el formulario de decisión
+  // (dayToIso) y 12:00 desde el chat y la ficha (chatDayToIso, followUpDate). Medido el 2026-10-22: 10 de las 69
+  // próximas gestiones y 21 de las 174 últimas caen exactamente en una de esas dos horas, Frontier incluida.
+  assert.equal(hasRealClockTime('2026-10-26T12:00:00-05:00'), false, 'mediodía exacto es convención del chat');
+  assert.equal(hasRealClockTime('2026-10-26T09:00:00-05:00'), false, 'las nueve exactas, del formulario');
+  assert.equal(hasRealClockTime('2026-10-22T08:04:00-05:00'), true, 'una hora cualquiera sí se eligió');
+  assert.equal(hasRealClockTime('2026-10-22T12:00:30-05:00'), true, 'con segundos ya no es la convención');
+  assert.equal(hasRealClockTime('2026-10-22T12:01:00-05:00'), true, 'con minutos tampoco');
+  assert.equal(hasRealClockTime(null), false);
+  assert.equal(clockTime('2026-10-26T12:00:00-05:00'), '', 'y entonces no se escribe ninguna hora');
+  assert.match(clockTime('2026-10-22T08:04:00-05:00'), /8:04/);
+
+  const decision = readFileSync(new URL('../src/vigia/OpportunityDecision.tsx', import.meta.url), 'utf8');
+  assert.match(decision, /const whenClock = clockTime\(opportunity\.next_action_at\);/, 'la tarjeta no inventa la hora de la cita');
+  assert.match(decision, /note: lastClock \? `A las \$\{lastClock\}` : 'Quedó registrada sin hora'/);
+  assert.match(decision, /kind === 'hoy' \? \(todayClock \? `Hoy a las \$\{todayClock\}` : 'Agendada para hoy'\)/);
+  assert.match(decision, /\{clockTime\(row\.at\) \|\| 'Sin hora'\}/, '"Hoy ya hizo" tampoco');
+});
+
+test('la última gestión no retrocede cuando se registra algo viejo', () => {
+  const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  assert.equal(server, api, 'el espejo de Vercel queda igual');
+  // Defecto real: las cuatro rutas sobrescribían last_interaction_at a ciegas. En Frontier, la nota del 22 a
+  // mediodía se registró a las 7:33 y el WhatsApp de las 9:05, escrito después, dejó el campo en 9:05.
+  assert.match(server, /function advancedLastInteraction\(currentValue, occurredAt\) \{/);
+  assert.match(server, /return Number\.isFinite\(current\) && current >= next \? null : occurredAt;/,
+    'sólo devuelve el valor nuevo cuando de verdad avanza');
+  assert.equal(server.split('advancedLastInteraction(').length - 1, 5, 'el ayudante y sus cuatro llamadas');
+  assert.doesNotMatch(server, /update\(\{ last_interaction_at: occurred_?[aA]t \}\)/,
+    'ya no queda ninguna escritura a ciegas');
+  assert.match(server, /select\('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,last_interaction_at,deleted_at'\)/,
+    'y el cargador de acceso trae el valor para poder compararlo');
+});

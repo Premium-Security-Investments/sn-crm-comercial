@@ -25,6 +25,7 @@ import {
   appendAgt002ObservationLine,
 } from './agt002-phase-change-followup.js';
 import { runAgt002ScheduleFreshnessReview } from './agt002-schedule-freshness.js';
+import { runAgt002DiscardedPhaseWatch } from './agt002-discarded-phase-watch.js';
 import { agt002AlertItems, agt002AlertsOutboxSummary, bogotaDay, bogotaTime, buildAgt002AlertsOutbox } from './agt002-licitaciones-alerts.js';
 
 export const AGT002_ALERTS_STATE_DIR = '/var/lib/agt002-licitaciones-alerts';
@@ -36,7 +37,7 @@ function parseNotes(notes) {
 }
 
 /** Hechos de la revisión a partir de los eventos de cada paso. */
-export function agt002ReviewFacts({ documentEvents = [], analysisEvents = [], results = [], detections = [] }) {
+export function agt002ReviewFacts({ documentEvents = [], analysisEvents = [], results = [], detections = [], reopenEvents = [] }) {
   const analysisOutcome = event => {
     if (event.event === 'agt002_phase_change_analysis_admitted') return 'launched';
     if (event.event === 'agt002_phase_change_analysis_deferred' && event.reason === 'safety_limit') return 'safety_limit';
@@ -48,6 +49,9 @@ export function agt002ReviewFacts({ documentEvents = [], analysisEvents = [], re
   };
   return {
     detections,
+    // Descartados con fase nueva (pedido de Juan, 2026-10-22): el único paso que informa de una oportunidad NO activa,
+    // y sólo para avisar. Nada de la cadena la toca.
+    reopens: reopenEvents.filter(event => event.event === 'agt002_discarded_phase_watch_notice'),
     documents: documentEvents.filter(event => event.event === 'agt002_phase_change_documents_imported'),
     analyses: analysisEvents.map(event => ({ ...event, outcome: analysisOutcome(event) })).filter(event => event.outcome && event.setHash),
     results,
@@ -124,6 +128,8 @@ export async function runAgt002PhaseChangeReview(database, {
   fsImpl = { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync }, admit, freezeProfile, log = () => {},
   // Verificación de frescura (pendiente de Juan, 2026-10-21): inyectable para poder probarla sin base.
   freshnessReview = runAgt002ScheduleFreshnessReview,
+  // Vigilancia de lo descartado (pedido de Juan, 2026-10-22): igual de inyectable, y por la misma razón.
+  discardedWatch = runAgt002DiscardedPhaseWatch,
 } = {}) {
   const runId = `${bogotaDay(now.toISOString())}-${bogotaTime(now.toISOString()).replace(':', '')}-${now.toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`;
   const step = async (name, fn, fallback) => { try { return await fn(); } catch (error) { log({ event: `agt002_phase_change_review_${name}_failed`, message: String(error?.message || error).slice(0, 200) }); return fallback; } };
@@ -148,13 +154,19 @@ export async function runAgt002PhaseChangeReview(database, {
     inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
     appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
   }), []);
+  // Descartados cuya fase nueva corre con otro cierre: sólo el aviso. No baja documentos, no reanaliza y no cambia la
+  // etapa de la oportunidad, así que no contradice la decisión del #335 de no tocar las no activas.
+  const reopenEvents = await step('discarded_watch', () => discardedWatch(database, {
+    now, log,
+    appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
+  }), []);
   for (const event of [...documentEvents, ...analysisEvents, ...results]) log({ ...event, change: undefined });
 
   const day = bogotaDay(now.toISOString());
   const { keys: reported, rebuilt } = readReported(stateDir, fsImpl);
   if (rebuilt) log({ event: 'agt002_licitaciones_alerts_reported_keys_rebuilt', from: rebuilt, keys: Object.keys(reported).length });
   const freshDetections = rebuilt === 'none' ? detections.filter(item => now.getTime() - Date.parse(item.recordedAt || 0) <= FRESH_DETECTION_MS) : detections;
-  const items = agt002AlertItems(agt002ReviewFacts({ documentEvents, analysisEvents, results, detections: freshDetections }), { day })
+  const items = agt002AlertItems(agt002ReviewFacts({ documentEvents, analysisEvents, results, detections: freshDetections, reopenEvents }), { day })
     .filter((item, index, list) => !reported[item.key] && list.findIndex(other => other.key === item.key) === index);
   if (!items.length) { log({ event: 'agt002_licitaciones_alerts_nothing_new', run_id: runId }); return { runId, outbox: null, items: [] }; }
   const opportunities = await opportunityInfo(database, [...new Set(items.map(item => item.opportunityId))]);

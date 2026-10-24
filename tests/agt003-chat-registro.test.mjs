@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   addDays, chatCalendar, chatRegistroOutputSchema, describeChatAction, humanDay, normalizeChatOutput, weekdayName,
-  CHAT_NEXT_MAX_DAYS, CHAT_REGISTRO_DEFAULT_DAILY_MAX,
+  CHAT_NEXT_MAX_DAYS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, CHAT_STAGE_DECISIONS,
 } from '../src/vigia/chat-registro.js';
 import { assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, planSupersededChatProposals, CHAT_POLICY, CHAT_SUPERSEDED_BY_KEY, runChatTurn } from '../agt003-chat-registro.js';
 import { AGENT_AI_FUNCTIONS } from '../platform-agent-configuration.js';
@@ -126,7 +126,8 @@ test('política: propone sin guardar, pregunta ante la duda y respeta pendientes
   assert.match(CHAT_POLICY, /Tú no guardas nada; sólo propones/);
   assert.match(CHAT_POLICY, /Si hay duda entre dos o más, NO propongas cambios/);
   assert.match(CHAT_POLICY, /puede_crear_oportunidades = false/);
-  assert.match(CHAT_POLICY, /No cambies etapa, valor de la oferta ni dueño/);
+  // La etapa dejó de ser intocable el 2026-10-23: lo que sigue fuera del chat es el valor, el dueño, descartar y congelar.
+  assert.match(CHAT_POLICY, /No cambies el valor de la oferta ni el dueño/);
 });
 
 test('turno por el puente: usa la capacidad del chat y limpia la salida', async () => {
@@ -184,7 +185,9 @@ test('servidor: las funciones del chat conservan los mismos controles que las ru
       'prepareClientForOpportunityUpdate(', 'canEditCustomerSegment(currentProfile, existing)', 'resolveClientArgsForOpportunityUpdate(', 'logCustomerSegmentChange(', 'saveClientProfile(']],
     [body('async function addInteractionForProfile('), routeBody("app.post('/api/opportunity-interactions', async"), [
       'ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT)', 'No puede registrar seguimientos a nombre de otro usuario.', 'preparePublicInteractionNotes(',
-      "from('psi_sales_interactions').insert(row)", 'last_interaction_at: occurred_at']],
+      // Desde el 2026-10-22 la escritura de "última gestión" pasa por advancedLastInteraction, que sólo avanza:
+      // el control compartido ya no es el literal del campo sino la llamada a esa regla.
+      "from('psi_sales_interactions').insert(row)", 'advancedLastInteraction(']],
   ];
   for (const [helper, route, guards] of pairs) {
     for (const guard of guards) {
@@ -283,4 +286,150 @@ test('migración 148: corrige sólo las tres filas afectadas, exigiendo el valor
   assert.doesNotMatch(ejecutable, /alter |create |drop |delete from|truncate/i, 'la 148 es sólo datos');
   const rollback = readFileSync(new URL('../supabase/rollbacks/148_crm_corregir_fechas_del_chat_rollback.sql', import.meta.url), 'utf8');
   assert.match(rollback, /set next_action_at = timestamptz '2026-10-26 00:00:00\+00'/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Mover etapa desde el chat (Juan, 2026-10-23): avanzar, ganar y perder con motivo y competidor.
+
+const STAGES = [
+  { code: 'prospecto', name: 'Prospecto', stage_order: 1, is_terminal: false },
+  { code: 'envio_oferta', name: 'Envío de Oferta', stage_order: 2, is_terminal: false },
+  { code: 'sustentacion', name: 'Sustentación', stage_order: 3, is_terminal: false },
+  { code: 'negociacion', name: 'Negociación', stage_order: 4, is_terminal: false },
+  { code: 'aprobado', name: 'Aprobado', stage_order: 5, is_terminal: true },
+  { code: 'descartado', name: 'Descartado', stage_order: 6, is_terminal: true },
+  { code: 'perdido', name: 'Perdido', stage_order: 7, is_terminal: true },
+];
+const LOSS_REASONS = [{ code: 'precio', name: 'Precio' }, { code: 'tiempo', name: 'Se fue en tiempo' }];
+// o1 va en Envío de Oferta (orden 2): avanzar sí, retroceder no.
+const stageRefs = new Map([
+  ['o1', { id: 'id-1', label: 'Frontier', stageCode: 'envio_oferta', stageName: 'Envío de Oferta', stageOrder: 2 }],
+  ['o2', { id: 'id-2', label: 'Conjunto Los Pinos', stageCode: 'negociacion', stageName: 'Negociación', stageOrder: 4 }],
+]);
+const moveOptions = { refs: stageRefs, today: TODAY, serviceCodes, stages: STAGES, lossReasons: LOSS_REASONS };
+const move = acciones => normalizeChatOutput({ respuesta: 'Listo.', acciones }, moveOptions);
+
+test('contrato: etapas y motivos viajan como listas cerradas', () => {
+  const schema = chatRegistroOutputSchema(serviceCodes, { stageCodes: ['envio_oferta', 'negociacion'], lossReasonCodes: ['precio'] });
+  const item = schema.properties.acciones.items;
+  assert.deepEqual(item.properties.decision.enum, [...CHAT_STAGE_DECISIONS]);
+  assert.deepEqual(item.properties.etapa.enum, ['envio_oferta', 'negociacion']);
+  assert.deepEqual(item.properties.motivo.enum, ['precio']);
+  assert.ok(Buffer.byteLength(JSON.stringify(schema)) < 65_536);
+});
+
+test('avanzar: etapa más adelantada, con su próxima gestión y la nota de lo que pasó', () => {
+  const out = move([{ tipo: 'mover_etapa', ref: 'o1', decision: 'avanzar', etapa: 'negociacion', proxima_fecha: '2026-10-20', nota: 'Pasamos a negociar el precio del puesto nocturno.' }]);
+  assert.deepEqual(out.avisos, []);
+  assert.equal(out.acciones.length, 1);
+  assert.deepEqual(out.acciones[0], {
+    tipo: 'mover_etapa', ref: 'o1', decision: 'avanzar', nota: 'Pasamos a negociar el precio del puesto nocturno.',
+    etapa: 'negociacion', etapa_nombre: 'Negociación', proxima_fecha: '2026-10-20',
+  });
+  const { cliente, lineas } = describeChatAction(out.acciones[0], { labelFor: () => 'Frontier' });
+  assert.equal(cliente, 'Frontier');
+  assert.deepEqual(lineas, ['Avanza a Negociación', 'Próximo seguimiento: martes 20 oct', 'Qué pasó: Pasamos a negociar el precio del puesto nocturno.']);
+});
+
+test('ganar es avanzar a la etapa que cierra: sin próxima gestión, y borra la que se hubiera propuesto', () => {
+  const out = move([
+    { tipo: 'proximo_seguimiento', ref: 'o2', fecha: '2026-10-20' },
+    { tipo: 'mover_etapa', ref: 'o2', decision: 'avanzar', etapa: 'aprobado', nota: 'Firmaron el contrato de dos puestos.' },
+  ]);
+  assert.deepEqual(out.avisos, []);
+  assert.deepEqual(out.acciones.map(action => action.tipo), ['mover_etapa']);
+  assert.equal(out.acciones[0].proxima_fecha, undefined);
+  const { lineas } = describeChatAction(out.acciones[0], { labelFor: () => 'Conjunto Los Pinos' });
+  assert.deepEqual(lineas, ['Avanza a Aprobado', 'Queda cerrada, sin próxima gestión', 'Qué pasó: Firmaron el contrato de dos puestos.']);
+});
+
+test('avanzar sin próxima gestión no se propone: una oportunidad abierta no puede quedar sin fecha', () => {
+  const out = move([{ tipo: 'mover_etapa', ref: 'o1', decision: 'avanzar', etapa: 'sustentacion', nota: 'Quedó la sustentación con el consejo.' }]);
+  assert.deepEqual(out.acciones, []);
+  assert.equal(out.avisos.length, 1);
+  assert.match(out.avisos[0], /falta la próxima gestión/);
+});
+
+test('la etapa sólo avanza: la misma, una anterior, o perdido y descartado como destino quedan fuera', () => {
+  for (const etapa of ['envio_oferta', 'prospecto', 'perdido', 'descartado']) {
+    const out = move([{ tipo: 'mover_etapa', ref: 'o1', decision: 'avanzar', etapa, proxima_fecha: '2026-10-20', nota: 'Lo que contó el comercial.' }]);
+    assert.deepEqual(out.acciones, [], etapa);
+    assert.equal(out.avisos.length, 1, etapa);
+  }
+});
+
+test('perder: exige motivo del catálogo, deja el competidor opcional y cierra sin próxima fecha', () => {
+  const sinMotivo = move([{ tipo: 'mover_etapa', ref: 'o1', decision: 'perder', nota: 'Nos sacaron del proceso.' }]);
+  assert.deepEqual(sinMotivo.acciones, []);
+  assert.match(sinMotivo.avisos[0], /falta el motivo/);
+
+  const inventado = move([{ tipo: 'mover_etapa', ref: 'o1', decision: 'perder', motivo: 'no_existe', nota: 'Nos sacaron del proceso.' }]);
+  assert.deepEqual(inventado.acciones, []);
+
+  const out = move([
+    { tipo: 'proximo_seguimiento', ref: 'o1', fecha: '2026-10-20' },
+    { tipo: 'mover_etapa', ref: 'o1', decision: 'perder', motivo: 'precio', competidor: '  Atlas   Seguridad ', nota: 'Se la llevó Atlas por precio.' },
+  ]);
+  assert.deepEqual(out.avisos, []);
+  assert.deepEqual(out.acciones.map(action => action.tipo), ['mover_etapa']);
+  assert.equal(out.acciones[0].competidor, 'Atlas Seguridad');
+  assert.equal(out.acciones[0].motivo_nombre, 'Precio');
+  const { lineas } = describeChatAction(out.acciones[0], { labelFor: () => 'Frontier' });
+  assert.deepEqual(lineas, ['Perdida · Motivo: Precio', 'Frente a: Atlas Seguridad', 'Qué pasó: Se la llevó Atlas por precio.']);
+});
+
+test('sin nota no hay decisión: la base exige una frase y aquí se pide antes de proponerla', () => {
+  for (const nota of [undefined, '', '   ', 'ok']) {
+    const out = move([{ tipo: 'mover_etapa', ref: 'o1', decision: 'avanzar', etapa: 'negociacion', proxima_fecha: '2026-10-20', nota }]);
+    assert.deepEqual(out.acciones, [], String(nota));
+    assert.match(out.avisos[0], /qué pasó/);
+  }
+});
+
+test('una decisión por cliente, y la decisión se aplica de última', () => {
+  const out = move([
+    { tipo: 'mover_etapa', ref: 'o1', decision: 'perder', motivo: 'precio', nota: 'Se la llevó Atlas por precio.' },
+    { tipo: 'registrar_seguimiento', ref: 'o1', canal: 'llamada', fecha: TODAY, nota: 'Me confirmaron por teléfono que no sigo.' },
+    { tipo: 'mover_etapa', ref: 'o1', decision: 'avanzar', etapa: 'negociacion', proxima_fecha: '2026-10-20', nota: 'Otra decisión para el mismo cliente.' },
+  ]);
+  assert.deepEqual(out.acciones.map(action => action.tipo), ['registrar_seguimiento', 'mover_etapa']);
+  assert.equal(out.acciones[1].decision, 'perder');
+  assert.equal(out.avisos.length, 1);
+  assert.match(out.avisos[0], /una sola decisión/);
+});
+
+test('decisión que no se reconoce: ni congelar ni descartar entran por el chat', () => {
+  for (const decision of ['congelar', 'descartar', 'win', undefined]) {
+    const out = move([{ tipo: 'mover_etapa', ref: 'o1', decision, etapa: 'negociacion', proxima_fecha: '2026-10-20', nota: 'Lo que contó el comercial.' }]);
+    assert.deepEqual(out.acciones, [], String(decision));
+  }
+});
+
+test('la IA recibe el pipeline, los motivos y los competidores ya conocidos', () => {
+  const { rows } = assignChatRefs([{ id: 'id-1', company_name: 'Frontier', stage_code: 'envio_oferta', stage_name: 'Envío de Oferta', stage_order: 2 }]);
+  const input = buildChatInput({
+    today: TODAY, comercial: 'Juan', canCreate: true, rows, services: [{ code: 'tecnologia', name: 'Tecnología' }],
+    stages: STAGES, lossReasons: LOSS_REASONS, competitors: [{ name: 'Atlas Seguridad' }], history: [], mensaje: 'Ganamos el de Frontier',
+  });
+  assert.deepEqual(input.etapas.find(stage => stage.codigo === 'aprobado'), { codigo: 'aprobado', nombre: 'Aprobado', orden: 5, cierra: true });
+  assert.deepEqual(input.motivos_de_perdida, [{ codigo: 'precio', nombre: 'Precio' }, { codigo: 'tiempo', nombre: 'Se fue en tiempo' }]);
+  assert.deepEqual(input.competidores_conocidos, ['Atlas Seguridad']);
+  assert.equal(input.oportunidades[0].etapa_codigo, 'envio_oferta');
+  assert.equal(input.oportunidades[0].etapa_orden, 2);
+  // La referencia lleva la etapa actual: sin ella no se podría comprobar que la etapa propuesta avance.
+  const { refs: builtRefs } = assignChatRefs([{ id: 'id-1', company_name: 'Frontier', stage_code: 'envio_oferta', stage_name: 'Envío de Oferta', stage_order: 2 }]);
+  assert.equal(builtRefs.get('o1').stageOrder, 2);
+});
+
+test('servidor: la decisión del chat entra por la misma puerta que el botón "Decidir"', () => {
+  const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  assert.equal(server, api, 'el espejo de Vercel queda igual');
+  assert.equal((server.match(/async function recordOpportunityDecision\(/g) || []).length, 1, 'una sola puerta');
+  assert.equal((server.match(/psi_record_opportunity_decision'/g) || []).length, 1, 'la RPC se llama en un solo lugar');
+  assert.match(server, /decision: 'advance', stage_code: action\.etapa, notes: action\.nota, next_action_at: chatDayToIso\(action\.proxima_fecha\) \|\| null/);
+  assert.match(server, /decision: 'lose', loss_reason_code: action\.motivo, notes: action\.nota/);
+  // La política le dice a la IA que descartar y congelar siguen en la ficha.
+  assert.match(CHAT_POLICY, /no descartes ni congeles oportunidades/);
+  assert.match(CHAT_POLICY, /La etapa nunca retrocede/);
 });

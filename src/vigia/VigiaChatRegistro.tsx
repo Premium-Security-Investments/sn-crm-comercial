@@ -29,7 +29,7 @@ const QUOTA_WARN_AT = 20;
 const ICON_MIC = <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" /><path d="M12 18v3" /></svg>;
 const ICON_STOP = <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" /></svg>;
 const ICON_SEND = <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12h15" /><path d="M13 6l6 6-6 6" /></svg>;
-const ACTION_ICON: Record<string, string> = { registrar_seguimiento: '✎', proximo_seguimiento: '◷', actualizar_datos: '☰', crear_oportunidad: '+' };
+const ACTION_ICON: Record<string, string> = { registrar_seguimiento: '✎', proximo_seguimiento: '◷', actualizar_datos: '☰', crear_oportunidad: '+', mover_etapa: '→' };
 const timeLabel = (value: string) => new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
 
 type SpeechCtor = new () => { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };

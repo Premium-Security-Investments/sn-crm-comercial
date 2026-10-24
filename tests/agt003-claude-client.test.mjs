@@ -279,6 +279,49 @@ async function testSessionLimitUsesOnlyTheKnownSafePhrase() {
   }
 }
 
+/**
+ * Una sesión OAuth inservible llega con `subtype: success`, sin `error.type` y con la causa sólo en
+ * el texto de `result`: así la reportó el CLI el 2026-10-23, cuando el chat de Vig-IA quedó caído y
+ * el comercial leyó un error genérico en vez de que su acceso necesitaba renovarse. Debe clasificar
+ * como `AGT003_CLAUDE_LOGIN_REQUIRED` (503 en el puente, "La sesión de Claude venció" en IT →
+ * Agentes) y seguir sin propagar el texto del proveedor.
+ */
+async function testExpiredOauthSessionClassifiesAsLoginRequired() {
+  const cases = [
+    'Failed to authenticate: OAuth session expired and could not be refreshed',
+    'FAILED TO AUTHENTICATE: OAuth session expired and could not be refreshed',
+    'OAuth session expired',
+  ];
+  for (const result of cases) {
+    const { client, children } = harness();
+    const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
+    await settleSoon(() => {
+      children[0].stdout.emit('data', JSON.stringify({ is_error: true, subtype: 'success', terminal_reason: 'api_error', result }));
+      children[0].emit('exit', 1, null);
+    });
+    await assert.rejects(pending, error => {
+      assert.equal(error.code, 'AGT003_CLAUDE_LOGIN_REQUIRED', result);
+      assert.equal(error.providerErrorCode, undefined, '`success` nunca es un provider_error_code');
+      const serialized = `${error.message} ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+      assert.equal(serialized.includes(result), false, 'el texto libre del proveedor no se propaga');
+      return true;
+    });
+  }
+
+  for (const result of ['could not be refreshed', 'authorization header missing', 'arbitrary provider detail']) {
+    const { client, children } = harness();
+    const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
+    await settleSoon(() => {
+      children[0].stdout.emit('data', JSON.stringify({ is_error: true, subtype: 'success', result }));
+      children[0].emit('exit', 0, null);
+    });
+    await assert.rejects(pending, error => {
+      assert.equal(error.code, 'AGT003_CLAUDE_PROVIDER_ERROR', `no se debe sobreclasificar: ${result}`);
+      return true;
+    });
+  }
+}
+
 async function testOversizedStdoutFailsClosed() {
   const { client, children } = harness();
   const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
@@ -535,6 +578,7 @@ await testPreAbortedSignalNeverSpawns();
 await testMalformedOutputsFailClosed();
 await testProviderErrorsMapToSafeCodes();
 await testSessionLimitUsesOnlyTheKnownSafePhrase();
+await testExpiredOauthSessionClassifiesAsLoginRequired();
 await testOversizedStdoutFailsClosed();
 await testStderrIsNeverSurfaced();
 await testSpawnFailureFailsClosed();

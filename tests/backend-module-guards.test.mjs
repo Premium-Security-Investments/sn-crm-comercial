@@ -100,14 +100,13 @@ const payload = {
   stages: [{ code: 'prospecto', name: 'Prospecto' }],
   services: [{ code: 'seguridad', name: 'Seguridad' }],
   lossReasons: [{ code: 'precio', name: 'Precio' }],
-  stalled: [{ id: 'own', owner_id: 'comercial-profile' }, { id: 'other', owner_id: 'other-profile' }],
   topClosing: [{ id: 'own', owner_id: 'comercial-profile' }, { id: 'other', owner_id: 'other-profile' }],
   monthlyKpis: [{ owner_id: 'comercial-profile' }, { owner_id: 'other-profile' }],
   goals: [{ user_id: 'comercial-profile' }, { user_id: 'other-profile' }],
   totals: { count: 2, pipeline: 30, weighted: 25, approved: 20 },
 };
 const emptyBootstrap = filterBootstrapForProfile(payload, scenarios.commercialWithoutModules);
-for (const key of ['summary', 'opportunities', 'profiles', 'stages', 'services', 'lossReasons', 'stalled', 'topClosing', 'monthlyKpis', 'goals']) assert.deepEqual(emptyBootstrap[key], [], `sin módulos no expone ${key}`);
+for (const key of ['summary', 'opportunities', 'profiles', 'stages', 'services', 'lossReasons', 'topClosing', 'monthlyKpis', 'goals']) assert.deepEqual(emptyBootstrap[key], [], `sin módulos no expone ${key}`);
 assert.deepEqual(emptyBootstrap.totals, { count: 0, pipeline: 0, weighted: 0, approved: 0 }, 'sin módulos no expone totales comerciales');
 assert.equal(emptyBootstrap.currentProfile, scenarios.commercialWithoutModules, 'currentProfile siempre permanece disponible');
 
@@ -116,7 +115,7 @@ assert.deepEqual(opportunitiesBootstrap.opportunities.map(row => row.id), ['own'
 assert.equal(opportunitiesBootstrap.stages.length, 1, 'Oportunidades conserva catálogo de etapas');
 assert.equal(opportunitiesBootstrap.services.length, 1, 'Oportunidades conserva catálogo de servicios');
 assert.equal(opportunitiesBootstrap.lossReasons.length, 1, 'Oportunidades conserva catálogo de motivos de pérdida');
-for (const key of ['summary', 'stalled', 'topClosing', 'monthlyKpis', 'goals']) assert.deepEqual(opportunitiesBootstrap[key], [], `Oportunidades no recibe ${key} exclusivo de otros módulos`);
+for (const key of ['summary', 'topClosing', 'monthlyKpis', 'goals']) assert.deepEqual(opportunitiesBootstrap[key], [], `Oportunidades no recibe ${key} exclusivo de otros módulos`);
 
 const goalsBootstrap = filterBootstrapForProfile(payload, scenarios.goalsOnly);
 assert.deepEqual(goalsBootstrap.opportunities, [], 'Metas no expone registros de oportunidades');
@@ -129,7 +128,11 @@ const dashboardBootstrap = filterBootstrapForProfile(payload, scenarios.dashboar
 assert.equal(bootstrapCapabilities(scenarios.dashboardOnly).dashboard, true, 'capacidad Dashboard se deriva de módulo explícito');
 assert.deepEqual(dashboardBootstrap.opportunities, payload.opportunities, 'Dashboard conserva agregados/fuentes compartidas que consume');
 assert.deepEqual(dashboardBootstrap.summary, payload.summary, 'Dashboard conserva resumen compartido');
-assert.deepEqual(dashboardBootstrap.stalled, payload.stalled, 'Dashboard conserva alertas agregadas');
+// El bootstrap dejó de traer una lista de estancadas (2026-10-22): venía de v_psi_sales_stalled_sustentacion,
+// con su propio umbral de 5 días sólo para esa etapa, y contradecía a Mi día sobre la misma oportunidad. Hoy la
+// pantalla las calcula con stalledInStage sobre las oportunidades que ya tiene. Esta guarda impide que vuelva a
+// aparecer una segunda fuente de verdad por la puerta de atrás.
+assert.equal('stalled' in dashboardBootstrap, false, 'el bootstrap ya no envía una lista de estancadas');
 assert.deepEqual(dashboardBootstrap.topClosing, payload.topClosing, 'Dashboard conserva cierres agregados');
 
 console.log('backend module route guard and capability bootstrap contract passed');

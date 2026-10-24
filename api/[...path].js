@@ -69,6 +69,8 @@ import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { loadCompanyBase, saveCompanyExperience, saveCompanySite } from '../company-base.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
+import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../tender-manual-upload-path.js';
+import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../tender-document-origin.js';
 import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../tender-official-document-coverage.js';
@@ -1082,7 +1084,6 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const visibleOwnerIds = readableOwnerIds(currentProfile, humanProfiles, ownerAssignments, globalScope);
   const commercialData = capabilities.opportunities || capabilities.dashboard || capabilities.alerts || capabilities.vigia;
   const scopedOpportunities = globalScope ? payload.opportunities : payload.opportunities.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
-  const scopedStalled = globalScope ? payload.stalled : payload.stalled.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
   const scopedTopClosing = globalScope ? payload.topClosing : payload.topClosing.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
   const scopedMonthlyKpis = globalScope ? payload.monthlyKpis : payload.monthlyKpis.filter(k => visibleOwnerIds.has(k.owner_id));
   const scopedGoals = globalScope ? payload.goals : payload.goals.filter(g => !g.user_id || visibleOwnerIds.has(g.user_id));
@@ -1095,7 +1096,6 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const summary = capabilities.dashboard || capabilities.vigia
     ? (globalScope ? payload.summary : recomputeSummary(stages, opportunities))
     : [];
-  const stalled = capabilities.dashboard ? scopedStalled : [];
   const topClosing = capabilities.dashboard ? scopedTopClosing : [];
   const monthlyKpis = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedMonthlyKpis : [];
   const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
@@ -1113,7 +1113,7 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, competitors, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
+  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, competitors, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
 }
 function opportunityOwnerError(message, status) {
   const error = new Error(message);
@@ -1145,7 +1145,7 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,deleted_at').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,last_interaction_at,deleted_at').eq('id', id).single());
   if (opportunity.deleted_at) { const error = new Error('Oportunidad no encontrada.'); error.status = 404; throw error; }
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
@@ -1438,6 +1438,12 @@ function isCalendarDate(value) {
 function companyDocumentStoragePath(profile, name, size) {
   const id = createHash('sha256').update(`company-profile:${profile.id}:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
   return `company-profile/documents/${profile.id}/${id}-${name}`;
+}
+/** La ruta tiene que ser la que esta API firmó para ESTA oportunidad (tender-manual-upload-path.js). */
+function assertTenderManualUploadStoragePath(storagePath, opportunityId, name) {
+  if (!isTenderManualUploadStoragePath(storagePath, opportunityId)) {
+    throw clientInputError(`Ruta de documento inválida: ${name}`);
+  }
 }
 async function presentCompanyProcurementDocuments(database) {
   const documents = await listCompanyProcurementDocuments(database);
@@ -3646,7 +3652,7 @@ app.post('/api/agt003/lead-analysis-message', async (req, res) => {
     const analysisId = String(req.body?.analysis_id || '');
     const action = req.body?.action;
     if (!id || !analysisId || !['used', 'dismissed'].includes(action)) { const error = new Error('Solicitud inválida.'); error.status = 400; throw error; }
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const target = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const analysis = await must(database.from('psi_agt003_lead_analyses').select('id,opportunity_id,status,output').eq('id', analysisId).maybeSingle());
     if (!analysis || analysis.opportunity_id !== id || analysis.status !== 'completed') { const error = new Error('Análisis no encontrado.'); error.status = 404; throw error; }
     const existing = await must(database.from('psi_agt003_lead_analysis_message_events').select('id').eq('analysis_id', analysisId).maybeSingle());
@@ -3661,7 +3667,8 @@ app.post('/api/agt003/lead-analysis-message', async (req, res) => {
         occurred_at: occurredAt,
       }).select('id').single());
       interactionId = interaction.id;
-      await must(database.from('psi_sales_opportunities').update({ last_interaction_at: occurredAt }).eq('id', id).select('id').single());
+      const advanced = advancedLastInteraction(target?.last_interaction_at, occurredAt);
+      if (advanced) await must(database.from('psi_sales_opportunities').update({ last_interaction_at: advanced }).eq('id', id).select('id').single());
     }
     const { error } = await database.from('psi_agt003_lead_analysis_message_events').insert({ analysis_id: analysisId, actor_id: currentProfile.id, action, interaction_id: interactionId });
     if (error && error.code !== '23505') throw error;
@@ -3810,6 +3817,19 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
 // Registrar seguimiento (igual que POST /api/opportunity-interactions).
 // F4 (Juan, 2026-10-22): ninguna oportunidad abierta queda sin próxima gestión. Se exige al registrar un seguimiento
 // y al mover la etapa; no se exige si el negocio quedó cerrado o si ya hay una fecha futura vigente.
+/**
+ * "Última gestión" es la más reciente, no la última escrita (Juan, 2026-10-22). Las cuatro rutas que registran una
+ * gestión sobrescribían `last_interaction_at` a ciegas, así que registrar hoy una visita de la semana pasada hacía
+ * retroceder la fecha. Caso real en Frontier: la nota del 22 a mediodía se registró a las 7:33 y el WhatsApp de las
+ * 9:05, escrito después, la dejó en 9:05. Devuelve el valor nuevo sólo cuando de verdad avanza.
+ */
+function advancedLastInteraction(currentValue, occurredAt) {
+  const next = Date.parse(occurredAt || '');
+  if (!Number.isFinite(next)) return null;
+  const current = Date.parse(currentValue || '');
+  return Number.isFinite(current) && current >= next ? null : occurredAt;
+}
+
 function requireNextAction({ stageCode, currentNextActionAt, proposedNextActionAt }) {
   const verdict = nextActionRequirement({ stageCode, currentNextActionAt, proposedNextActionAt });
   if (verdict.ok) return;
@@ -3829,9 +3849,11 @@ async function addInteractionForProfile(database, currentProfile, id, body) {
   const next_action_at = body.next_action_at || null;
   const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
   const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-  const update = { last_interaction_at: occurred_at };
+  const update = {};
+  const advanced = advancedLastInteraction(existing?.last_interaction_at, occurred_at);
+  if (advanced) update.last_interaction_at = advanced;
   if (next_action_at) update.next_action_at = next_action_at;
-  await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+  if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
   return data;
 }
 
@@ -3949,6 +3971,15 @@ async function applyChatAction(database, profile, action) {
     await updateOpportunityForProfile(database, profile, action.opportunity_id, body);
     return { opportunity_id: action.opportunity_id };
   }
+  if (action.tipo === 'mover_etapa') {
+    // El chat sólo propone; aquí se aplica por la MISMA puerta que el botón "Decidir" de la ficha, incluidas la nota
+    // obligatoria, la próxima gestión de una etapa que no cierra y el competidor opcional de la pérdida.
+    const body = action.decision === 'avanzar'
+      ? { decision: 'advance', stage_code: action.etapa, notes: action.nota, next_action_at: chatDayToIso(action.proxima_fecha) || null }
+      : { decision: 'lose', loss_reason_code: action.motivo, notes: action.nota, ...(action.competidor ? { competitor_name: action.competidor } : {}) };
+    await recordOpportunityDecision(database, profile, action.opportunity_id, body);
+    return { opportunity_id: action.opportunity_id };
+  }
   if (action.tipo === 'crear_oportunidad') {
     const created = await createOpportunityForProfile(database, profile, {
       ...action.nueva, owner_id: profile.id, stage_code: 'prospecto', customer_segment: 'cliente_nuevo', offer_value: 0,
@@ -3997,18 +4028,23 @@ app.post('/api/agt003/chat', async (req, res) => {
     if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el mensaje.');
     turnId = claim.id;
     const today = bogotaDay(new Date());
-    const [opportunities, services, history, canCreate] = await Promise.all([
+    const [opportunities, services, stages, lossReasons, competitors, history, canCreate] = await Promise.all([
       loadChatOpportunities(database, currentProfile),
       must(database.from('psi_sales_service_types').select('code,name').eq('active', true).order('name')),
+      // Las etapas, los motivos y los competidores salen de la base en cada turno: el chat no puede proponer un valor
+      // que no exista, y un motivo que se desactive deja de ofrecerse sin tocar código.
+      must(database.from('psi_sales_pipeline_stages').select('code,name,stage_order,is_terminal').order('stage_order')),
+      must(database.from('psi_sales_loss_reasons').select('code,name').eq('active', true).order('name')),
+      must(database.from('psi_sales_competitors').select('name').order('name').limit(60)),
       must(database.from('psi_agt003_chat_turns').select('user_text,reply_text,proposal_status').eq('actor_id', currentProfile.id).eq('status', 'completed').gte('created_at', bogotaDayStartIso(new Date())).order('created_at', { ascending: false }).limit(CHAT_HISTORY_TURNS)),
       chatCanCreate(database, currentProfile),
     ]);
     const { refs, rows } = assignChatRefs(opportunities);
     const commercialServices = (services || []).filter(service => service.code !== 'licitacion_publica');
-    const input = buildChatInput({ today, comercial: currentProfile.full_name, canCreate, rows, services: commercialServices, history: [...(history || [])].reverse(), mensaje });
+    const input = buildChatInput({ today, comercial: currentProfile.full_name, canCreate, rows, services: commercialServices, stages: stages || [], lossReasons: lossReasons || [], competitors: competitors || [], history: [...(history || [])].reverse(), mensaje });
     let result;
     try {
-      result = await runChatTurn({ input, refs, today, serviceCodes: commercialServices.map(service => service.code), idempotencyKey: turnId, environment: process.env, model: policy.model });
+      result = await runChatTurn({ input, refs, today, serviceCodes: commercialServices.map(service => service.code), stages: stages || [], lossReasons: lossReasons || [], idempotencyKey: turnId, environment: process.env, model: policy.model });
     } catch (runError) {
       await database.from('psi_agt003_chat_turns').update({ status: 'failed', failure_code: String(runError?.code || 'AGT003_CHAT_FAILED').toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 96), finished_at: new Date().toISOString() }).eq('id', turnId);
       turnId = null;
@@ -4178,7 +4214,7 @@ app.get('/api/bootstrap', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
     touchProfileLastSeen(database, currentProfile.id);
-    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
+    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, topClosing, monthlyKpis, goals] = await Promise.all([
       must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
       must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
       must(database.from('psi_sales_profiles').select(BOOTSTRAP_PROFILE_SELECT).eq('active', true).order('full_name')),
@@ -4187,13 +4223,11 @@ app.get('/api/bootstrap', async (req, res) => {
       must(database.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_competitors').select('id,name').eq('active', true).order('name')),
-      must(database.from('v_psi_sales_stalled_sustentacion').select(opportunitySelect).order('prioritization_date')),
       must(database.from('v_psi_sales_top3_closing').select(opportunitySelect).order('owner_name')),
       must(database.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
       must(database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500)),
     ]);
     const enrichedOpportunities = await attachCommercialMetadata(database, opportunities);
-    const enrichedStalled = await attachCommercialMetadata(database, stalled);
     const enrichedTopClosing = await attachCommercialMetadata(database, topClosing);
     const totals = enrichedOpportunities.reduce((acc, o) => {
       acc.count += 1;
@@ -4204,7 +4238,7 @@ app.get('/api/bootstrap', async (req, res) => {
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
     const decisionsToday = currentProfile.role === 'comercial' ? await countDecisionsToday(database, currentProfile.id) : 0;
     const leadAnalysesToday = await listLeadAnalysesToday(database, currentProfile.id);
-    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
+    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
   } catch (error) { sendAuthError(res, error); }
 });
 app.all('/api/bootstrap', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
@@ -4515,7 +4549,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeExtrac
   await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const typedVersionsResponse = await database.from('psi_tender_document_versions')
-    .select('id,opportunity_id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,version,extracted_text,created_at')
+    .select('id,opportunity_id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,version,extracted_text,created_at,origin')
     .eq('opportunity_id', opportunityId)
     .eq('current', true);
   if (typedVersionsResponse.error) throw typedVersionsResponse.error;
@@ -4528,6 +4562,9 @@ async function getTenderDocumentRecords(database, opportunityId, { includeExtrac
     uploaded_at: version.created_at, auto_import: true,
     source: version.source, source_url: version.source_url, source_document_id: version.source_document_id,
     opportunity_id: version.opportunity_id, version: version.version, content_hash: version.content_hash,
+    // Quién produjo el documento (migración 150). `null` = sin declarar, y la pantalla lo muestra como tal:
+    // es lo que hay que corregir para que el análisis deje de tratarlo como de un tercero.
+    origin: version.origin || null,
   }, canonicalExtractions.get(version.id), version.extracted_text));
   const documents = [];
   const analyses = [];
@@ -5102,6 +5139,8 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
           p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
           p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
           p_source_url: version.source_url || null, p_actor_id: currentProfile.id,
+          // Importación oficial (SECOP II / ESU): el origen no se declara, se sabe de dónde se bajó.
+          p_origin: 'entidad',
         });
         if (response.error) throw response.error;
         return response.data;
@@ -5397,6 +5436,8 @@ function buildTenderProcessingWorkerDeps(database) {
             p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
             p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
             p_source_url: version.source_url || null, p_actor_id: actor.requested_by,
+            // Importación oficial por el trabajador de procesamiento: mismo caso que arriba.
+            p_origin: 'entidad',
           });
           if (response.error) throw response.error;
           return response.data;
@@ -6247,6 +6288,29 @@ app.get('/api/tender-documents/:documentId/download', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+// URL firmada para la carga manual de un documento de licitación. Misma autorización que la carga
+// (`ensureTenderOpportunity`) y el mismo techo de 50 MB, que por este camino sí se puede alcanzar porque los bytes
+// nunca pasan por la API. Ver `tenderManualUploadStoragePath` para el 413 que lo motivó.
+app.post('/api/tender-documents-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.body.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const name = cleanFileName(req.body?.name || '');
+    if (!name) throw clientInputError('Debe indicar el nombre del documento.');
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError(`Archivo vacío: ${name}`);
+    if (size > RUP_MAX_BYTES) throw clientInputError(`Archivo supera 50MB: ${name}`);
+    await ensureTenderBucket(database);
+    const storagePath = tenderManualUploadStoragePath({ opportunityId, profileId: currentProfile.id, name, size });
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(storagePath);
+    if (error) throw error;
+    res.json({ storage_path: storagePath, token: data.token });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.post('/api/tender-documents-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -6256,13 +6320,25 @@ app.post('/api/tender-documents-upload', async (req, res) => {
     const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
     const files = Array.isArray(req.body.files) ? req.body.files : [];
     if (!files.length) throw new Error('Debe adjuntar al menos un documento.');
-    const preparedFiles = files.slice(0, 8).map(file => {
+    // Dos caminos para los bytes. `storage_path`: el navegador ya subió el archivo con una URL firmada, así que la
+    // petición no lleva contenido y el límite de cuerpo de Vercel deja de importar. `content_base64`: el camino
+    // viejo, que se conserva porque sigue sirviendo para lo pequeño y para cualquier otro llamador.
+    const preparedFiles = await Promise.all(files.slice(0, 8).map(async file => {
       const name = cleanFileName(file.name);
-      const buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
+      const storagePath = String(file.storage_path || '');
+      let buffer;
+      if (storagePath) {
+        assertTenderManualUploadStoragePath(storagePath, opportunityId, name);
+        const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+        if (error) throw error;
+        buffer = Buffer.from(await data.arrayBuffer());
+      } else {
+        buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
+      }
       if (!buffer.length) throw new Error(`Archivo vacío: ${name}`);
       if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
       return { file, name, buffer };
-    });
+    }));
     const tenderId = await getTenderIdForOpportunity(database, opportunityId);
     // Los complementarios cargados a mano entran al expediente versionado (psi_tender_document_versions), igual que los
     // oficiales: es de ahí que Vig-IA elige qué leer. Antes sólo quedaban en la nota de la interacción y ningún análisis
@@ -6274,6 +6350,9 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       buffer,
       mime_type: file.mime_type || 'application/octet-stream',
       document_type: file.document_type,
+      // Quién produjo el documento, declarado por quien lo carga. Ortogonal al tipo: una carta de un tercero
+      // con la palabra "pliego" en el nombre es `tercero`, aunque el tipo quede `pliego`.
+      origin: normalizeTenderDocumentOrigin(file.origin),
       source_document_id: tenderManualUploadDocumentId(buffer),
       errorPrefix: name,
     })), async doc => refreshOfficialTenderDocument({
@@ -6296,6 +6375,9 @@ app.post('/api/tender-documents-upload', async (req, res) => {
           p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
           p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
           p_source_url: null, p_actor_id: currentProfile.id,
+          // Carga manual: el origen lo declara la persona. Sin declarar va null, y la cadena lo trata como
+          // `third_party` (tender-document-origin.js). Nunca se asume `entidad` por el nombre del archivo.
+          p_origin: normalizeTenderDocumentOrigin(version.origin),
         });
         if (response.error) throw response.error;
         return response.data;
@@ -6340,6 +6422,32 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       }
     }
     res.status(201).json({ ...(await getTenderDocumentRecords(database, opportunityId)), upload_results: uploaded.map(({ name, status, error }) => ({ name, status, error })), analysis_request: analysisRequest });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Declarar o corregir el ORIGEN de un documento ya cargado, sin volver a subirlo (migración 150). El origen es
+// una declaración de la persona, no parte del contenido: corregir una mala clasificación no debe obligar a
+// recargar un PDF de 3 MB. Es la ruta que deja arreglar lo que entró antes de que el campo existiera.
+app.post('/api/tender-document-origin', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.body.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const documentVersionId = String(req.body.document_version_id || '');
+    if (!documentVersionId) throw clientInputError('Debe indicar el documento.');
+    const origin = normalizeTenderDocumentOrigin(req.body.origin);
+    if (!origin) throw clientInputError(`El origen debe ser uno de: ${Object.keys(TENDER_DOCUMENT_ORIGINS).join(', ')}.`);
+    // El documento tiene que ser de ESTA oportunidad: el id solo no autoriza nada.
+    const owned = await must(database.from('psi_tender_document_versions')
+      .select('id').eq('id', documentVersionId).eq('opportunity_id', opportunityId).maybeSingle(), 'documento');
+    if (!owned) throw clientInputError('El documento no pertenece a esta oportunidad.');
+    const response = await database.rpc('psi_set_tender_document_origin', {
+      p_document_version_id: documentVersionId, p_origin: origin, p_actor_id: currentProfile.id,
+    });
+    if (response.error) throw response.error;
+    res.json({ ...(await getTenderDocumentRecords(database, opportunityId)), origin_set: response.data || null });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -7012,7 +7120,7 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
-    await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const target = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     if (req.body.created_by && req.body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
     const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
@@ -7021,9 +7129,11 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: req.params.id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-    const update = { last_interaction_at: occurred_at };
+    const update = {};
+    const advanced = advancedLastInteraction(target?.last_interaction_at, occurred_at);
+    if (advanced) update.last_interaction_at = advanced;
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
+    if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -7102,6 +7212,28 @@ async function resolveCompetitorId(database, profileId, body) {
   throw error;
 }
 
+// Una sola puerta para las decisiones de una oportunidad: la usan el botón "Decidir" de la ficha y el chat de Mi día
+// (acción `mover_etapa`). Las reglas no viven aquí: las valida `normalizeDecisionRequest` y, de forma atómica,
+// `psi_record_opportunity_decision`. Si el chat trajera su propia copia de esas reglas, el día que cambie una la
+// pantalla y el chat dirían cosas distintas.
+async function recordOpportunityDecision(database, currentProfile, id, body) {
+  await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  const params = normalizeDecisionRequest(body);
+  const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
+  if (error) throw decisionDatabaseError(error);
+  // El competidor se guarda después de la decisión y nunca la tumba: es un dato opcional y la pérdida ya quedó
+  // registrada. Si falla, queda el aviso en el log y el competidor se puede poner desde la ficha.
+  if (params.p_decision === 'lose' && (body?.competitor_id || body?.competitor_name)) {
+    try {
+      const competitorId = await resolveCompetitorId(database, currentProfile.id, body);
+      if (competitorId) await must(database.from('psi_sales_opportunities').update({ competitor_id: competitorId }).eq('id', id).select('id').single());
+    } catch (competitorError) {
+      console.warn('psi_sales_competitors no se pudo registrar', { code: competitorError?.code || null });
+    }
+  }
+  return data;
+}
+
 app.post('/api/opportunity-decision', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -7109,21 +7241,7 @@ app.post('/api/opportunity-decision', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) { const error = new Error('Falta la oportunidad.'); error.status = 400; throw error; }
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    const params = normalizeDecisionRequest(req.body);
-    const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
-    if (error) throw decisionDatabaseError(error);
-    // El competidor se guarda después de la decisión y nunca la tumba: es un dato opcional y la pérdida ya quedó
-    // registrada. Si falla, queda el aviso en el log y el competidor se puede poner desde la ficha.
-    if (params.p_decision === 'lose' && (req.body?.competitor_id || req.body?.competitor_name)) {
-      try {
-        const competitorId = await resolveCompetitorId(database, currentProfile.id, req.body);
-        if (competitorId) await must(database.from('psi_sales_opportunities').update({ competitor_id: competitorId }).eq('id', id).select('id').single());
-      } catch (competitorError) {
-        console.warn('psi_sales_competitors no se pudo registrar', { code: competitorError?.code || null });
-      }
-    }
-    res.status(201).json(data);
+    res.status(201).json(await recordOpportunityDecision(database, currentProfile, id, req.body));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -7218,9 +7336,11 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-    const update = { last_interaction_at: occurred_at };
+    const update = {};
+    const advanced = advancedLastInteraction(existingOpportunity?.last_interaction_at, occurred_at);
+    if (advanced) update.last_interaction_at = advanced;
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+    if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
