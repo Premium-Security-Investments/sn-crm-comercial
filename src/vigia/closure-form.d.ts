@@ -50,3 +50,11 @@ export function closureFormMoney(input?: { posts?: ClosureFormPost[]; aiuValue?:
 export function closureFormDurationDays(startDay?: string | null, endDay?: string | null): number | null;
 export function closureFormCompleteness(input?: { form?: ClosureForm; sites?: ClosureFormSite[]; posts?: ClosureFormPost[] }): ClosureFormCompleteness;
 export function closureFormWinVerdict(input?: { form?: ClosureForm | null; sites?: ClosureFormSite[]; posts?: ClosureFormPost[] }): ClosureFormWinVerdict;
+
+export type ClosureFormCatalogField = { key: string; label: string; kind: ClosureFormFieldKind; required: boolean; auto: boolean; options?: string[]; max?: number };
+export type ClosureFormInput = { form: ClosureForm; sites: ClosureFormSite[]; posts: ClosureFormPost[]; avisos: string[] };
+
+export const CLOSURE_FORM_MAX_SITES: number;
+export const CLOSURE_FORM_MAX_POSTS: number;
+export function cleanClosureFormInput(body?: unknown): ClosureFormInput;
+export function closureFormCatalog(form?: ClosureForm): ClosureFormCatalogField[];

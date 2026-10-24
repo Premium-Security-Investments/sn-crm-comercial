@@ -204,6 +204,10 @@ import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatIn
 import { nextActionRequirement } from '../src/vigia/next-action-rule.js';
 import { briefQuotaMessage, buildBriefInput, claimBriefRun, runBriefSummary } from '../agt003-brief-reunion.js';
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
+import {
+  CLOSURE_FORM_FIELD_KEYS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_VERSION, autofillClosureForm, autofillClosureSites,
+  cleanClosureFormInput, closureFormCatalog, closureFormCompleteness, closureFormDurationDays, closureFormMoney,
+} from '../src/vigia/closure-form.js';
 import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
 import {
   AGT002_GOVERNED_WORKSET_CAPACITY_REJECTED_CODE,
@@ -459,6 +463,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/agt003/lead-analysis': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'GET /api/agt003/lead-analysis': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/lead-analysis-message': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/agt003/closure-form': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'PUT /api/agt003/closure-form': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/agt003/chat': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/agt003/chat': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/agt003/chat/confirm': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
@@ -3856,6 +3862,120 @@ async function addInteractionForProfile(database, currentProfile, id, body) {
   if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
   return data;
 }
+
+// AGT-003 — Formulario de cierre, formato GGC-FO-001 (Juan, 2026-10-23). El comercial deja de mandarlo por correo en
+// un Word: vive aquí, se autocompleta con lo que el CRM ya sabe y él llena el resto. Las reglas —qué pide, cuándo está
+// completo, cuánto vale— viven en src/vigia/closure-form.js, no aquí: las comparten la pantalla, el chat y la puerta
+// que impedirá marcar ganado sin el formulario completo.
+const CLOSURE_FORM_SELECT = ['id', 'opportunity_id', 'status', ...CLOSURE_FORM_FIELD_KEYS, 'created_by', 'created_at', 'updated_by', 'updated_at', 'completed_by', 'completed_at'].join(',');
+const CLOSURE_SITE_SELECT = 'id,address,city,phone,contact_name,position';
+const CLOSURE_POST_SELECT = 'id,description,shift_start,shift_end,days_per_month,guards_required,armed,monthly_value,notes,position';
+// Lo que el formulario autocompleta. `ensureOpportunityAccess` no trae el NIT ni el cargo del decisor, así que se leen
+// aquí en vez de dejar al comercial escribiendo datos que el CRM ya tiene.
+const CLOSURE_OPPORTUNITY_SELECT = 'id,company_name,company_nit,economic_sector,quote_city,decision_maker_name,decision_maker_title,decision_maker_email,decision_maker_phone,service_type_code,stage_code,offer_value';
+
+async function closureFormOpportunity(database, id, profile, action) {
+  const access = await ensureOpportunityAccess(database, id, profile, action);
+  if (access.service_type_code === 'licitacion_publica') {
+    const error = new Error('Las licitaciones públicas no usan este formulario: su cierre se registra en Licitaciones.');
+    error.status = 400;
+    throw error;
+  }
+  return must(database.from('psi_sales_opportunities').select(CLOSURE_OPPORTUNITY_SELECT).eq('id', id).single());
+}
+
+async function closureFormChildren(database, formId) {
+  const [sites, posts] = await Promise.all([
+    must(database.from('psi_sales_closure_form_sites').select(CLOSURE_SITE_SELECT).eq('form_id', formId).order('position', { ascending: true })),
+    must(database.from('psi_sales_closure_form_posts').select(CLOSURE_POST_SELECT).eq('form_id', formId).order('position', { ascending: true })),
+  ]);
+  return { sites: sites || [], posts: posts || [] };
+}
+
+/**
+ * El estado que leen la pantalla y el chat. Si el formulario no existe todavía NO se guarda nada: se devuelve el
+ * borrador autocompletado, para que abrir la oportunidad no cree filas vacías en la base.
+ */
+async function closureFormState(database, opportunity) {
+  const stored = await must(database.from('psi_sales_closure_forms').select(CLOSURE_FORM_SELECT).eq('opportunity_id', opportunity.id).maybeSingle());
+  const children = stored ? await closureFormChildren(database, stored.id) : { sites: [], posts: [] };
+  const form = stored || { opportunity_id: opportunity.id, status: 'borrador', ...autofillClosureForm(opportunity) };
+  const sites = stored ? children.sites : autofillClosureSites(opportunity);
+  const posts = children.posts;
+  return {
+    saved: Boolean(stored),
+    format: { code: CLOSURE_FORM_FORMAT, version: CLOSURE_FORM_VERSION },
+    opportunity: { id: opportunity.id, company_name: opportunity.company_name, stage_code: opportunity.stage_code, offer_value: opportunity.offer_value },
+    form,
+    sites,
+    posts,
+    money: closureFormMoney({ posts, aiuValue: form.aiu_value }),
+    completeness: closureFormCompleteness({ form, sites, posts }),
+    duration_days: closureFormDurationDays(form.service_start_date, form.service_end_date),
+    catalog: closureFormCatalog(form),
+  };
+}
+
+app.get('/api/agt003/closure-form', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const id = String(req.query.opportunity_id || req.query.id || '');
+    if (!id) { const error = new Error('Debe indicar la oportunidad.'); error.status = 400; throw error; }
+    const opportunity = await closureFormOpportunity(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await closureFormState(database, opportunity));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.put('/api/agt003/closure-form', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const id = String(req.query.opportunity_id || req.query.id || '');
+    if (!id) { const error = new Error('Debe indicar la oportunidad.'); error.status = 400; throw error; }
+    const opportunity = await closureFormOpportunity(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const { form: patch, sites: cleanSites, posts: cleanPosts, avisos } = cleanClosureFormInput(req.body);
+    // Semántica de parche: la cabecera se mezcla con lo guardado, y las listas se reemplazan SÓLO si vienen en el
+    // cuerpo. Así el chat puede llenar dos campos sin borrar los puestos que el comercial ya escribió.
+    const sendsSites = Array.isArray(req.body?.sites);
+    const sendsPosts = Array.isArray(req.body?.posts);
+    const stored = await must(database.from('psi_sales_closure_forms').select(CLOSURE_FORM_SELECT).eq('opportunity_id', id).maybeSingle());
+    const previous = stored ? await closureFormChildren(database, stored.id) : { sites: [], posts: [] };
+    const base = stored || autofillClosureForm(opportunity);
+    const merged = Object.fromEntries(CLOSURE_FORM_FIELD_KEYS.map(key => [key, Object.prototype.hasOwnProperty.call(patch, key) ? patch[key] : (base?.[key] ?? null)]));
+    const sites = sendsSites ? cleanSites : previous.sites;
+    const posts = sendsPosts ? cleanPosts : previous.posts;
+    const completeness = closureFormCompleteness({ form: merged, sites, posts });
+    const now = new Date().toISOString();
+    const row = {
+      ...merged,
+      opportunity_id: id,
+      status: completeness.complete ? 'completo' : 'borrador',
+      updated_by: currentProfile.id,
+      updated_at: now,
+      // Queda la primera vez que estuvo completo: si después se le quita un dato, no se borra ese hecho.
+      completed_at: stored?.completed_at || (completeness.complete ? now : null),
+      completed_by: stored?.completed_by || (completeness.complete ? currentProfile.id : null),
+      ...(stored ? {} : { created_by: currentProfile.id }),
+    };
+    const saved = stored
+      ? await must(database.from('psi_sales_closure_forms').update(row).eq('id', stored.id).select('id').single())
+      : await must(database.from('psi_sales_closure_forms').insert(row).select('id').single());
+    if (sendsSites) {
+      await must(database.from('psi_sales_closure_form_sites').delete().eq('form_id', saved.id).select('id'));
+      if (sites.length) await must(database.from('psi_sales_closure_form_sites').insert(sites.map(site => ({ ...site, form_id: saved.id }))).select('id'));
+    }
+    if (sendsPosts) {
+      await must(database.from('psi_sales_closure_form_posts').delete().eq('form_id', saved.id).select('id'));
+      if (posts.length) await must(database.from('psi_sales_closure_form_posts').insert(posts.map(post => ({ ...post, form_id: saved.id }))).select('id'));
+    }
+    const state = await closureFormState(database, opportunity);
+    res.json(avisos.length ? { ...state, avisos } : state);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 
 // AGT-003 — Chat de registro en Mi día (agt003.chat-registro; decisión del 2026-10-15). El comercial cuenta lo que hizo;
 // Vig-IA propone cambios sobre SUS oportunidades y nada se guarda hasta que pulsa "Confirmar". Al confirmar se usan las
