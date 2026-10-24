@@ -22,7 +22,7 @@ const UUID = Object.freeze({
 
 assert.equal(Object.isFrozen(AGT002_WORKBENCH_CAPABILITIES), true);
 assert.equal(AGT002_WORKBENCH_CONTRACT_VERSION, 'agt002.dossier-workbench.v1');
-assert.equal(AGT002_WORKBENCH_POLICY_VERSION, 'agt002.dossier-workbench.policy.v1');
+assert.equal(AGT002_WORKBENCH_POLICY_VERSION, 'agt002.dossier-workbench.policy.v2');
 assert.deepEqual(AGT002_WORKBENCH_CAPABILITIES, {
   reply: 'agt002.dossier-workbench.reply.v1',
   draft: 'agt002.dossier-workbench.draft.v1',
