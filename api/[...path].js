@@ -63,6 +63,10 @@ import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { BEHAVIOR_FOLLOW_UP_TYPES, bogotaWeekStart, buildCommercialBehavior } from '../src/vigia/commercial-behavior.js';
 import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
 import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
+import { resolverParaLector } from '../catalogo-fuentes.js';
+
+// Lo que el copiloto comercial recibe resuelto antes de cada corrida. Crece una línea por entrada.
+const AGT003_COPILOTO_FUENTES = Object.freeze(['empresa.identidad', 'empresa.sedes']);
 import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
 import { agt003PreparationDate } from '../agt003-copilot-input.js';
 import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
@@ -3441,7 +3445,16 @@ function createBackendAgt003CopilotApi(database) {
     claimRun: options => claimAgt003CopilotRun(database, options),
     findRunByKey: idempotencyKey => findAgt003CopilotRunByKey(database, idempotencyKey),
     findRunById: runId => findAgt003CopilotRunById(database, runId),
-    createRuntime: ({ model } = {}) => createAgt003CopilotRuntime({ environment: process.env, model }),
+    createRuntime: ({ model } = {}) => createAgt003CopilotRuntime({
+      environment: process.env,
+      model,
+      // Catálogo de fuentes, segundo lector: el copiloto comercial recibe quiénes somos y dónde
+      // tenemos presencia autorizada. Antes su único campo de empresa era el nombre del CLIENTE.
+      resolveSources: () => resolverParaLector(database, {
+        lector: 'agt003.copiloto',
+        nombres: AGT003_COPILOTO_FUENTES,
+      }),
+    }),
     recordRun: options => recordAgt003CopilotRun(database, options),
     recordFailure: options => recordAgt003CopilotFailure(database, options),
     releaseClaim: options => releaseAgt003CopilotClaim(database, options),

@@ -52,7 +52,7 @@ export const DATOS = Object.freeze({
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
     fuentes: Object.freeze(['psi_company_procurement_profile']),
-    lectores: Object.freeze(['agt002.mesa', 'agt002.analisis']),
+    lectores: Object.freeze(['agt002.mesa', 'agt002.analisis', 'agt003.copiloto']),
   }),
   'empresa.codigos_rup': Object.freeze({
     estado: ESTADOS.VIGENTE,
@@ -64,7 +64,7 @@ export const DATOS = Object.freeze({
     estado: ESTADOS.VIGENTE,
     responsable: 'Juan',
     fuentes: Object.freeze(['psi_company_sites']),
-    lectores: Object.freeze(['agt002.mesa', 'agt002.analisis']),
+    lectores: Object.freeze(['agt002.mesa', 'agt002.analisis', 'agt003.copiloto']),
   }),
   'analisis.canonico.company_fit': Object.freeze({
     estado: ESTADOS.VIGENTE,
@@ -278,8 +278,73 @@ export async function resolverCompanyFit(database, { tenderId }) {
   });
 }
 
+// Resolvedor de empresa.sedes. Una línea por sede, con su estado ante la SVSP: la agencia de
+// Armenia está declarada y pendiente de resolución, y esa diferencia es la que ningún agente
+// debe tener que deducir de una nota en prosa.
+export async function resolverSedes(database) {
+  const { data, error } = await database
+    .from('psi_company_sites')
+    .select('department,city,is_main,supervigilancia_authorization,source,updated_at')
+    .order('is_main', { ascending: false })
+    .order('department');
+  if (error || !Array.isArray(data) || data.length === 0) {
+    return respuesta({
+      nombre: 'empresa.sedes',
+      valor: null,
+      estado: ESTADOS.NO_VERIFICADO,
+      frescura: FRESCURAS.VIVA,
+      forma: FORMAS.TIPADO,
+      asOf: null,
+      procedencia: Object.freeze({ tabla: 'psi_company_sites' }),
+    });
+  }
+  const sedes = data.map(fila => Object.freeze({
+    departamento: fila.department,
+    ciudad: fila.city,
+    tipo: fila.is_main === true ? 'sede_principal' : 'agencia',
+    autorizacion_supervigilancia: fila.supervigilancia_authorization || null,
+  }));
+  return respuesta({
+    nombre: 'empresa.sedes',
+    valor: Object.freeze({ total: sedes.length, sedes: Object.freeze(sedes) }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: soloFecha(data.map(fila => fila.updated_at).sort().pop()),
+    procedencia: Object.freeze({ tabla: 'psi_company_sites' }),
+  });
+}
+
+// Una fuente resuelta sólo sostiene una afirmación si está vigente y viene tipada. En prosa, o
+// sin verificar, viaja igual —quien la lea debe saber que existe— pero marcada como insuficiente,
+// de modo que la salida honesta sea declararla faltante en vez de afirmar sobre ella.
+export function sostieneAfirmacion(fuente) {
+  return fuente?.estado === ESTADOS.VIGENTE && fuente?.forma === FORMAS.TIPADO;
+}
+
+/**
+ * Da a las fuentes resueltas la forma con que viajan al modelo. La comparten todos los lectores
+ * —la Mesa y el copiloto comercial—, porque si cada uno inventara la suya volveríamos al problema
+ * del principio: el mismo hecho contado de dos maneras distintas.
+ */
+export function minimizarFuentes(fuentes, { sanitizar, maxFuentes = 10, maxValor = 6000, maxProcedencia = 500 } = {}) {
+  const recorte = typeof sanitizar === 'function' ? sanitizar : ((texto, max) => String(texto ?? '').slice(0, max));
+  return Object.freeze((Array.isArray(fuentes) ? fuentes : []).slice(0, maxFuentes).map(fuente => Object.freeze({
+    nombre: fuente.nombre,
+    estado: fuente.estado,
+    as_of: fuente.as_of,
+    vence_el: fuente.vence_el,
+    requiere_interpretacion: fuente.requiere_interpretacion === true,
+    sostiene_afirmacion: sostieneAfirmacion(fuente),
+    responsable: fuente.responsable || null,
+    procedencia: recorte(JSON.stringify(fuente.procedencia ?? null), maxProcedencia),
+    valor: recorte(JSON.stringify(fuente.valor ?? null), maxValor),
+  })));
+}
+
 const RESOLVEDORES = Object.freeze({
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
+  'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),
   'analisis.canonico.company_fit': (database, contexto) => resolverCompanyFit(database, contexto),
 });

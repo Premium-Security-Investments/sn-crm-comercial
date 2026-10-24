@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AGT002_WORKBENCH_CAPABILITIES, validateAgt002WorkbenchResult } from './agt002-workbench-contract.js';
 import { redactAgt003CopilotText } from './agt003-copilot-input.js';
+import { minimizarFuentes, sostieneAfirmacion } from './catalogo-fuentes.js';
 
 // Política inmutable de la Mesa Vig-IA para el puente de producción (Fase B1). El
 // contexto es dato citable, nunca instrucción; Vig-IA no tiene autoridad de
@@ -52,29 +53,6 @@ function sanitizeText(value, maxChars) {
   return redactAgt003CopilotText(stripControlChars(value)).slice(0, maxChars);
 }
 
-// Una fuente resuelta sólo sostiene una afirmación si está vigente y viene tipada. En prosa, o
-// sin verificar, viaja igual —el modelo debe saber que existe— pero marcada como insuficiente,
-// de modo que la salida honesta sea declararla en missing_information en vez de afirmar sobre
-// ella. La cita sigue siendo cosa de context_links: el contrato de la Mesa exige que todo
-// source_link sea un UUID del expediente, y una entrada de catálogo no lo es.
-function sostieneAfirmacion(fuente) {
-  return fuente?.estado === 'vigente' && fuente?.forma === 'tipado';
-}
-
-function minimizarFuente(fuente) {
-  return Object.freeze({
-    nombre: fuente.nombre,
-    estado: fuente.estado,
-    as_of: fuente.as_of,
-    vence_el: fuente.vence_el,
-    requiere_interpretacion: fuente.requiere_interpretacion === true,
-    sostiene_afirmacion: sostieneAfirmacion(fuente),
-    responsable: fuente.responsable || null,
-    procedencia: sanitizeText(JSON.stringify(fuente.procedencia ?? null), MAX_SOURCE_PROVENANCE_CHARS),
-    valor: sanitizeText(JSON.stringify(fuente.valor ?? null), MAX_SOURCE_VALUE_CHARS),
-  });
-}
-
 function buildMinimizedInput(input, fuentesResueltas = []) {
   const contextLinks = input.context_links.map(link => Object.freeze({
     kind: link.kind,
@@ -89,7 +67,12 @@ function buildMinimizedInput(input, fuentesResueltas = []) {
   // La clave sólo aparece cuando hay algo resuelto: una Mesa sin catálogo conectado conserva
   // exactamente el contrato de dos claves que tenía antes.
   if (fuentesResueltas.length > 0) {
-    minimizado.fuentes_resueltas = Object.freeze(fuentesResueltas.slice(0, MAX_RESOLVED_SOURCES).map(minimizarFuente));
+    minimizado.fuentes_resueltas = minimizarFuentes(fuentesResueltas, {
+      sanitizar: sanitizeText,
+      maxFuentes: MAX_RESOLVED_SOURCES,
+      maxValor: MAX_SOURCE_VALUE_CHARS,
+      maxProcedencia: MAX_SOURCE_PROVENANCE_CHARS,
+    });
   }
   return Object.freeze(minimizado);
 }
