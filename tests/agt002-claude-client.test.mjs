@@ -252,6 +252,52 @@ async function testSessionLimitMapsToItsOwnCode() {
   });
 }
 
+/**
+ * Una sesión OAuth inservible llega con `subtype: success`, sin `error.type` y con la causa sólo en el texto
+ * de `result`. Así la reportó el CLI el 2026-10-23 en el puente de AGT-003, cuando el chat de Vig-IA Comercial
+ * quedó caído y el comercial leyó un error genérico en vez de que su acceso necesitaba renovarse
+ * (commit 3a45617). AGT-002 tiene su propia copia de este cliente y arrastraba el mismo defecto, con su
+ * sesión venciendo el 2026-11-01. Debe clasificar como `AGT002_CLAUDE_LOGIN_REQUIRED` —503 en el puente y
+ * "La sesión de Claude venció" en IT → Agentes, que es la tarjeta que dice qué hacer— y seguir sin propagar
+ * el texto del proveedor.
+ */
+async function testExpiredOauthSessionClassifiesAsLoginRequired() {
+  const cases = [
+    'Failed to authenticate: OAuth session expired and could not be refreshed',
+    'FAILED TO AUTHENTICATE: OAuth session expired and could not be refreshed',
+    'OAuth session expired',
+  ];
+  for (const result of cases) {
+    const { client, children } = harness();
+    const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
+    await settleSoon(() => {
+      children[0].stdout.emit('data', JSON.stringify({ is_error: true, subtype: 'success', terminal_reason: 'api_error', result }));
+      children[0].emit('exit', 1, null);
+    });
+    await assert.rejects(pending, error => {
+      assert.equal(error.code, 'AGT002_CLAUDE_LOGIN_REQUIRED', result);
+      assert.equal(error.providerErrorCode, undefined, '`success` nunca es un provider_error_code');
+      const serialized = `${error.message} ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+      assert.equal(serialized.includes(result), false, 'el texto libre del proveedor no se propaga');
+      return true;
+    });
+  }
+
+  // Y no se sobreclasifica: un texto que sólo se parece sigue siendo un error genérico del proveedor.
+  for (const result of ['could not be refreshed', 'authorization header missing', 'arbitrary provider detail']) {
+    const { client, children } = harness();
+    const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
+    await settleSoon(() => {
+      children[0].stdout.emit('data', JSON.stringify({ is_error: true, subtype: 'success', result }));
+      children[0].emit('exit', 0, null);
+    });
+    await assert.rejects(pending, error => {
+      assert.equal(error.code, 'AGT002_CLAUDE_PROVIDER_ERROR', `no se debe sobreclasificar: ${result}`);
+      return true;
+    });
+  }
+}
+
 async function testOversizedStdoutFailsClosed() {
   const { client, children } = harness();
   const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
@@ -446,4 +492,5 @@ console.log('agt002-claude-client.test.mjs Paso 3 OK');
 await testEffortIsForwardedToClaudeCliAndAckedWhenRequested();
 await testUnsupportedEffortIsRejectedBeforeSpawn();
 await testEffortOmittedNeverInventsAnAck();
+await testExpiredOauthSessionClassifiesAsLoginRequired();
 console.log('agt002-claude-client.test.mjs Paso 4 OK');
