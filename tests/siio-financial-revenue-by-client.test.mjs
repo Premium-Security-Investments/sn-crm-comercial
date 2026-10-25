@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import AdmZip from 'adm-zip';
 import { build } from 'esbuild';
-import { parseSiioFinancialWorkbook } from '../siio-financial-workbook.js';
+import { parseSiioFinancialWorkbook } from '../verticales/gerencial/siio-financial-workbook.js';
 
 async function loadModule(relativePath) {
   const result = await build({ entryPoints: [new URL(relativePath, import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', write: false });

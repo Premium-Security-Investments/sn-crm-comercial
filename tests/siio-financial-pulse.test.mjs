@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
-import { buildFinancialPulse, loadFinancialPulse } from '../siio-financial-pulse.js';
+import { buildFinancialPulse, loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse.js';
 
 process.env.NEXT_PUBLIC_SUPABASE_URL ||= 'http://127.0.0.1:1';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-service-key';

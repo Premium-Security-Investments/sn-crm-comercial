@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import AdmZip from 'adm-zip';
-import { cleanFinancialImportRequest } from '../siio-financial-import-service.js';
-import { compareFinancialStructures, parseSiioFinancialWorkbook } from '../siio-financial-workbook.js';
+import { cleanFinancialImportRequest } from '../verticales/gerencial/siio-financial-import-service.js';
+import { compareFinancialStructures, parseSiioFinancialWorkbook } from '../verticales/gerencial/siio-financial-workbook.js';
 
 const xmlEscape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const inline = (ref, value) => `<c r="${ref}" t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>`;
