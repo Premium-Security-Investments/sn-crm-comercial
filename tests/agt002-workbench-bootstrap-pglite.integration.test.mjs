@@ -14,7 +14,7 @@ const workbenchMigration = readFileSync(new URL('../supabase/migrations/045_agt0
 // la versión vigente y la anterior. Sin encadenarlas, esta prueba corría contra una base que ya
 // no se parece a la real y daba verde por el motivo equivocado.
 const beforeGoMigration = readFileSync(new URL('../supabase/migrations/140_agt002_workbench_before_go.sql', import.meta.url), 'utf8');
-const politicaV2Migration = readFileSync(new URL('../supabase/migrations/154_agt002_workbench_politica_v2.sql', import.meta.url), 'utf8');
+const politicaV2Migration = readFileSync(new URL('../supabase/migrations/156_agt002_workbench_politica_v2.sql', import.meta.url), 'utf8');
 
 const ids = Object.freeze({
   operator: '11111111-1111-4111-8111-111111111111',

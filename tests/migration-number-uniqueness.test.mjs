@@ -7,18 +7,11 @@ const carpetas = {
   'supabase/rollbacks': new URL('../supabase/rollbacks/', import.meta.url),
 };
 
-// Colisiones ya fusionadas y aplicadas en producción. No se renumeran: el número quedó en el
-// libro de migraciones de la base (`supabase_migrations.schema_migrations`), en los PR y en los
-// handoffs, y renombrar el archivo sólo movería la inconsistencia de sitio. Esta lista es la
-// excepción explícita; cualquier colisión nueva sigue fallando.
-//
-// - `154`: el 2026-10-24 dos agentes trabajando en paralelo usaron el mismo número
-//   (`154_agt002_workbench_politica_v2` del PR #429 y `154_agt003_cierre_duracion_ultimo_dia`
-//   del PR #430). Las dos se fusionaron y se aplicaron. Decidir si se renumera es de Juan.
+// No hay colisiones aceptadas. La del número 154 se resolvió renumerando la migración de la
+// Mesa a 156 (2026-10-25): había quedado sin aplicar porque la herramienta vio el 154 del
+// otro PR en el libro de migraciones y dio la suya por hecha.
 const COLISIONES_ACEPTADAS = {
-  'supabase/migrations': {
-    154: ['154_agt002_workbench_politica_v2.sql', '154_agt003_cierre_duracion_ultimo_dia.sql'],
-  },
+  'supabase/migrations': {},
   'supabase/rollbacks': {},
 };
 
