@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   RECOMMENDATIONS_DAILY_BUTTON_LIMIT, RECOMMENDATIONS_OUTPUT_SCHEMA, bogotaDate, buildRecommendationsInput, generateRecommendations,
   loadRecommendations, resolveAgt001BridgeConfig, spellSheetMonths, setRecommendationFeedback, validateRecommendationsOutput,
-} from '../siio-recommendations.js';
+} from '../verticales/gerencial/siio-recommendations.js';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const moduleUrl = new URL('../siio-sales-clients.js', import.meta.url);
+const moduleUrl = new URL('../verticales/gerencial/siio-sales-clients.js', import.meta.url);
 const NBSP = String.fromCharCode(160);
 
 test('siio-sales-clients.js existe', () => {
