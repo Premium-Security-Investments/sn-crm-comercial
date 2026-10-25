@@ -3882,7 +3882,7 @@ async function addInteractionForProfile(database, currentProfile, id, body) {
 // que impedirá marcar ganado sin el formulario completo.
 const CLOSURE_FORM_SELECT = ['id', 'opportunity_id', 'status', ...CLOSURE_FORM_FIELD_KEYS, 'created_by', 'created_at', 'updated_by', 'updated_at', 'completed_by', 'completed_at'].join(',');
 const CLOSURE_SITE_SELECT = 'id,address,city,phone,contact_name,position';
-const CLOSURE_POST_SELECT = 'id,description,shift_start,shift_end,days_per_month,guards_required,armed,monthly_value,notes,position';
+const CLOSURE_POST_SELECT = 'id,description,shift_start,shift_end,days_per_month,guards_required,armed,service_value,notes,position';
 // Lo que el formulario autocompleta. `ensureOpportunityAccess` no trae el NIT ni el cargo del decisor, así que se leen
 // aquí en vez de dejar al comercial escribiendo datos que el CRM ya tiene.
 const CLOSURE_OPPORTUNITY_SELECT = 'id,company_name,company_nit,economic_sector,quote_city,decision_maker_name,decision_maker_title,decision_maker_email,decision_maker_phone,service_type_code,stage_code,offer_value';
@@ -3918,11 +3918,12 @@ async function closureFormState(database, opportunity) {
   return {
     saved: Boolean(stored),
     format: { code: CLOSURE_FORM_FORMAT, version: CLOSURE_FORM_VERSION },
-    opportunity: { id: opportunity.id, company_name: opportunity.company_name, stage_code: opportunity.stage_code, offer_value: opportunity.offer_value },
+    // `service_type_code` viaja porque de él depende si el valor que se escribe es mensual o el total del proyecto.
+    opportunity: { id: opportunity.id, company_name: opportunity.company_name, stage_code: opportunity.stage_code, offer_value: opportunity.offer_value, service_type_code: opportunity.service_type_code },
     form,
     sites,
     posts,
-    money: closureFormMoney({ posts, aiuValue: form.aiu_value }),
+    money: closureFormMoney({ posts }),
     completeness: closureFormCompleteness({ form, sites, posts }),
     duration_days: closureFormDurationDays(form.service_start_date, form.service_end_date),
     catalog: closureFormCatalog(form),

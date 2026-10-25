@@ -4,11 +4,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  CLOSURE_FORM_FIELDS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_IVA_RATE, CLOSURE_FORM_MAX_POSTS,
-  CLOSURE_FORM_MAX_SITES, CLOSURE_FORM_SECTIONS, CLOSURE_FORM_VERSION,
+  CLOSURE_FORM_AIU_RATE, CLOSURE_FORM_FIELDS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_IVA_RATE,
+  CLOSURE_FORM_MAX_POSTS, CLOSURE_FORM_MAX_SITES, CLOSURE_FORM_SECTIONS, CLOSURE_FORM_VERSION,
   autofillClosureForm, autofillClosureSites, cleanClosureFormInput, closureFormCatalog,
   closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormPlainText,
-  closureFormWinVerdict,
+  closureFormValueBasis, closureFormWinVerdict,
 } from '../src/vigia/closure-form.js';
 
 const OPPORTUNITY = {
@@ -39,16 +39,15 @@ const fullForm = (overrides = {}) => ({
   payment_terms: 'Dentro del mes',
   operational_supervisor: 'Camilo Gómez',
   service_start_date: '2026-10-01',
-  service_end_date: '2029-10-01',
+  service_end_date: '2029-09-30',
   visit_officer_name: 'Jhon Bermúdez',
   service_mode: 'fija',
-  aiu_value: 1_492_420,
   ...overrides,
 });
 const SITES = [{ address: 'Vereda Los Planes km 5 vía Cerritos', city: 'Pereira', phone: '3004224960', contact_name: 'Camilo', position: 1 }];
 const POSTS = [
-  { description: 'Vigilante para el acceso principal, 24/7', shift_start: '06:00', shift_end: '06:00', days_per_month: 30, guards_required: 3, armed: false, monthly_value: 19_308_499, position: 1 },
-  { description: 'Control de acceso de empleados y zonas de cargue', shift_start: '06:00', shift_end: '06:00', days_per_month: 30, guards_required: 3, armed: false, monthly_value: 19_308_499, position: 2 },
+  { description: 'Vigilante para el acceso principal, 24/7', shift_start: '06:00', shift_end: '06:00', days_per_month: 30, guards_required: 3, armed: false, service_value: 19_308_499, position: 1 },
+  { description: 'Control de acceso de empleados y zonas de cargue', shift_start: '06:00', shift_end: '06:00', days_per_month: 30, guards_required: 3, armed: false, service_value: 19_308_499, position: 2 },
 ];
 
 test('el formato queda nombrado: GGC-FO-001 versión 18, IVA del 19 % sobre el AIU', () => {
@@ -131,37 +130,56 @@ test('completitud: a un puesto le faltan cosas y se dice cuáles', () => {
   const frase = verdict.missing.find(m => m.startsWith('Al puesto 1'));
   assert.ok(frase.includes('hora de inicio'));
   assert.ok(frase.includes('hora de fin'));
-  assert.ok(frase.includes('valor mensual'));
+  assert.ok(frase.includes('valor sin IVA'));
 });
 
-test('el dinero se calcula: el descuadre del Word no se puede repetir', () => {
-  const money = closureFormMoney({ posts: POSTS, aiuValue: 1_492_420 });
-  // Los dos puestos del caso real, sumados por el sistema.
-  assert.equal(money.subtotal, 38_616_998);
-  assert.equal(money.aiu, 1_492_420);
-  assert.equal(money.iva, 283_560, 'el 19 % del AIU, redondeado al peso');
-  assert.equal(money.total, 38_900_558);
-  assert.equal(money.aiuMissing, false);
-  // El ejemplar real traía TOTAL 15.207.760 con estos mismos puestos: 23,7 millones menos que la suma.
-  assert.notEqual(money.total, 15_207_760);
-});
-
-test('el dinero: sin AIU no se inventa un IVA de cero', () => {
+test('el dinero se calcula entero: el AIU es el 10 % y el IVA el 19 % de ese 10 %', () => {
+  // Regla de Juan, 2026-10-24. Con los dos puestos del caso real:
   const money = closureFormMoney({ posts: POSTS });
-  assert.equal(money.subtotal, 38_616_998);
-  assert.equal(money.aiu, null);
-  assert.equal(money.iva, null, 'null dice "no registrado"; cero diría "no hay IVA"');
-  assert.equal(money.total, 38_616_998);
-  assert.equal(money.aiuMissing, true);
+  assert.equal(CLOSURE_FORM_AIU_RATE, 0.10);
+  assert.equal(money.subtotal, 38_616_998, 'la suma de los puestos, sin IVA');
+  assert.equal(money.aiu, 3_861_700, 'el 10 % del servicio');
+  assert.equal(money.iva, 733_723, 'el 19 % del AIU');
+  assert.equal(money.total, 39_350_721);
+  // El ejemplar real traía AIU 1.492.420 (3,86 %), IVA 283.560 y TOTAL 15.207.760: ninguno se puede reproducir.
+  for (const cifra of [1_492_420, 283_560, 15_207_760]) {
+    assert.ok(![money.aiu, money.iva, money.total].includes(cifra), `el número del Word no reaparece: ${cifra}`);
+  }
+  // Y nada de esto se le pregunta al comercial.
+  assert.equal(CLOSURE_FORM_FIELDS.some(field => field.key === 'aiu_value'), false);
+});
+
+test('el dinero: sin puestos todo queda en cero, sin inventar nada', () => {
   const vacio = closureFormMoney();
-  assert.deepEqual([vacio.subtotal, vacio.total, vacio.posts], [0, 0, 0]);
+  assert.deepEqual([vacio.subtotal, vacio.aiu, vacio.iva, vacio.total, vacio.posts], [0, 0, 0, 0, 0]);
 });
 
 test('el dinero: un valor que no es número no entra en la suma', () => {
-  const money = closureFormMoney({ posts: [{ monthly_value: 'mil pesos' }, { monthly_value: -5 }, { monthly_value: '1000' }], aiuValue: 'nada' });
+  const money = closureFormMoney({ posts: [{ service_value: 'mil pesos' }, { service_value: -5 }, { service_value: '1000' }] });
   assert.equal(money.subtotal, 1000);
   assert.equal(money.posts, 1);
-  assert.equal(money.aiu, null);
+  assert.equal(money.aiu, 100, 'el 10 % de lo que sí era un número');
+  assert.equal(money.iva, 19);
+});
+
+test('la base del valor: total en proyectos y licitaciones, mensual en todo lo demás', () => {
+  // Regla de Juan, 2026-10-25.
+  for (const code of ['seguridad_fisica', 'monitoreo', 'escoltas', 'porteria_virtual', 'mantenimiento']) {
+    const basis = closureFormValueBasis(code);
+    assert.equal(basis.monthly, true, code);
+    assert.match(basis.label, /^Valor mensual, sin IVA$/, code);
+    assert.equal(basis.short, 'al mes', code);
+  }
+  const proyecto = closureFormValueBasis('proyecto');
+  assert.equal(proyecto.monthly, false);
+  assert.match(proyecto.label, /total del proyecto, sin IVA/i);
+  assert.equal(proyecto.short, 'en total');
+  // Las licitaciones no pasan por este formulario, pero la regla queda escrita.
+  const licitacion = closureFormValueBasis('licitacion_publica');
+  assert.equal(licitacion.monthly, false);
+  assert.match(licitacion.label, /total del contrato, sin IVA/i);
+  assert.equal(closureFormValueBasis().monthly, true, 'sin servicio se asume mensual');
+  assert.equal(closureFormValueBasis('algo_que_no_existe').monthly, true, 'un servicio nuevo nace mensual, que es el caso común');
 });
 
 test('duración del contrato: la terminación es el último día y cuenta', () => {
@@ -253,7 +271,9 @@ test('limpieza: sólo pasan las claves del catálogo, cada una según su tipo', 
   assert.equal(form.tax_regime, null, 'una opción que el formato no tiene no entra');
   assert.equal(form.service_start_date, '2026-10-01', 'de un instante se toma el día');
   assert.equal(form.service_end_date, null);
-  assert.equal(form.aiu_value, 1492420);
+  // El AIU se calcula desde el 2026-10-24, así que dejó de ser una clave del formulario: aunque alguien lo mande,
+  // no entra. Lo mismo que cualquier campo ajeno.
+  assert.equal('aiu_value' in form, false, 'el AIU ya no se escribe, se calcula');
   assert.equal('stage_code' in form, false, 'ningún campo ajeno al catálogo llega a la base');
   assert.equal('id' in form, false);
   // Lo descartado se avisa: no se borra en silencio lo que el comercial escribió. Tres avisos, uno por cada valor
@@ -272,26 +292,26 @@ test('limpieza: un campo que no viene en el cuerpo no se toca, y uno vacío se b
 test('limpieza: los puestos quedan con horario válido, enteros y su orden', () => {
   const { posts } = cleanClosureFormInput({
     posts: [
-      { description: 'Portería 24/7', shift_start: '6:00', shift_end: '18:00', guards_required: '3', monthly_value: '19308499', armed: 'si', days_per_month: 30 },
-      { description: 'Ronda', shift_start: '25:00', shift_end: '06:00', guards_required: 0, monthly_value: -1, days_per_month: 45 },
+      { description: 'Portería 24/7', shift_start: '6:00', shift_end: '18:00', guards_required: '3', service_value: '19308499', armed: 'si', days_per_month: 30 },
+      { description: 'Ronda', shift_start: '25:00', shift_end: '06:00', guards_required: 0, service_value: -1, days_per_month: 45 },
     ],
   });
   assert.equal(posts.length, 2);
   assert.equal(posts[0].shift_start, null, '"6:00" no es una hora de dos dígitos');
   assert.equal(posts[0].shift_end, '18:00');
   assert.equal(posts[0].guards_required, 3, 'el texto numérico sí se acepta');
-  assert.equal(posts[0].monthly_value, 19308499);
+  assert.equal(posts[0].service_value, 19308499);
   assert.equal(posts[0].armed, false, 'armado sólo es true con true: "si" no arma a nadie');
   assert.equal(posts[0].position, 1);
   assert.equal(posts[1].shift_start, null);
   assert.equal(posts[1].guards_required, null, 'cero vigilantes no es un puesto');
-  assert.equal(posts[1].monthly_value, null);
+  assert.equal(posts[1].service_value, null);
   assert.equal(posts[1].days_per_month, null, '45 días en un mes, no');
   assert.equal(posts[1].position, 2);
 });
 
 test('limpieza: hay techo de direcciones y de puestos, y se dice cuándo se recortó', () => {
-  const muchos = Array.from({ length: CLOSURE_FORM_MAX_POSTS + 3 }, (_, i) => ({ description: `Puesto ${i + 1}`, guards_required: 1, monthly_value: 1000 }));
+  const muchos = Array.from({ length: CLOSURE_FORM_MAX_POSTS + 3 }, (_, i) => ({ description: `Puesto ${i + 1}`, guards_required: 1, service_value: 1000 }));
   const { posts, avisos } = cleanClosureFormInput({ posts: muchos });
   assert.equal(posts.length, CLOSURE_FORM_MAX_POSTS);
   assert.ok(avisos.some(a => a.includes('primeros')));
@@ -365,11 +385,12 @@ test('texto para enviar: trae el formato, los puestos y las sumas calculadas', (
   assert.match(texto, /CLIENTE Y CONTRATACIÓN/);
   assert.match(texto, /Sector al que pertenece: Comercial/, 'las opciones se leen con su nombre, no con el código');
   assert.match(texto, /Agente de retención: Sí/);
-  assert.match(texto, /Duración: 1097 días \(unos 36 meses\)/, 'las fechas del ejemplar, con el último día contado');
-  assert.match(texto, /06:00 a 06:00, 30 días al mes · 3 vigilante\(s\) · sin arma · \$19\.308\.499 al mes/);
-  assert.match(texto, /Subtotal: \$38\.616\.998/);
-  assert.match(texto, /IVA 19 % sobre el AIU: \$283\.560/);
-  assert.match(texto, /Total: \$38\.900\.558/);
+  assert.match(texto, /Duración: 1096 días \(unos 36 meses\)/, 'del 1 de octubre al 30 de septiembre, contando el último día');
+  assert.match(texto, /06:00 a 06:00, 30 días al mes · 3 vigilante\(s\) · sin arma · \$19\.308\.499 al mes, sin IVA/);
+  assert.match(texto, /Subtotal mensual, sin IVA: \$38\.616\.998/);
+  assert.match(texto, /AIU \(10 %\): \$3\.861\.700/);
+  assert.match(texto, /IVA 19 % sobre el AIU: \$733\.723/);
+  assert.match(texto, /Total: \$39\.350\.721/);
   assert.doesNotMatch(texto, /15\.207\.760/, 'el total del Word no puede reaparecer');
 });
 
@@ -378,8 +399,8 @@ test('texto para enviar: lo que falta se nombra, y sin AIU el total lo dice', ()
   assert.match(texto, /Nombre del establecimiento: sin registrar/, 'un dato faltante se nombra, no se deja en blanco');
   assert.match(texto, /DIRECCIONES DE PRESTACIÓN DEL SERVICIO\n  sin registrar/);
   assert.match(texto, /PUESTOS\n  sin registrar/);
-  assert.match(texto, /AIU informativo: sin registrar/);
-  assert.match(texto, /Total: \$0 \(sin IVA, falta el AIU\)/);
+  assert.match(texto, /AIU \(10 %\): \$0/);
+  assert.match(texto, /Total: \$0/);
 });
 
 test('pantalla: va en la ficha y no reimplementa ninguna regla', () => {
@@ -398,4 +419,29 @@ test('pantalla: va en la ficha y no reimplementa ninguna regla', () => {
   assert.match(panel, /state\.catalog\.filter/);
   // Guardar incompleto es válido: queda borrador. Y se dice.
   assert.match(panel, /queda como borrador/);
+});
+
+test('migración 155: el valor deja de llamarse mensual y el AIU sale de la base', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/155_agt003_cierre_aiu_y_valor.sql', import.meta.url), 'utf8');
+  assert.match(sql, /rename column monthly_value to service_value/);
+  assert.match(sql, /drop column if exists aiu_value/);
+  // El comentario de la columna dice la convención, para quien lea la base sin leer el código.
+  assert.match(sql, /Mensual, salvo en los proyectos/);
+  assert.match(sql, /el AIU es el 10 % del valor del servicio y el IVA el 19 % del AIU/);
+  assert.doesNotMatch(sql, /drop table|delete from|truncate/i, 'no borra filas');
+  // Se puede hacer porque no hay nada guardado, y la migración lo dice.
+  assert.match(sql, /cero.*formularios y \*\*cero\*\* puestos/);
+  const rollback = readFileSync(new URL('../supabase/rollbacks/155_agt003_cierre_aiu_y_valor_rollback.sql', import.meta.url), 'utf8');
+  assert.match(rollback, /rename column service_value to monthly_value/);
+  assert.match(rollback, /add column if not exists aiu_value/);
+});
+
+test('servidor: la columna nueva y la base del valor viajan al cliente', () => {
+  const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  assert.equal(server, api, 'el espejo de Vercel queda igual');
+  assert.match(server, /guards_required,armed,service_value,notes,position/, 'el select usa el nombre nuevo');
+  assert.doesNotMatch(server, /monthly_value/, 'el nombre viejo no queda en ninguna parte del backend');
+  assert.match(server, /service_type_code: opportunity\.service_type_code/, 'el tipo de servicio viaja: de él depende si el valor es mensual');
+  assert.match(server, /closureFormMoney\(\{ posts \}\)/, 'el dinero ya no recibe un AIU escrito');
 });

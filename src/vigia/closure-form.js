@@ -23,6 +23,34 @@ export const CLOSURE_FORM_FORMAT = 'GGC-FO-001';
 export const CLOSURE_FORM_VERSION = 18;
 /** El IVA del 19 % va sobre el AIU, no sobre el valor del servicio. */
 export const CLOSURE_FORM_IVA_RATE = 0.19;
+/**
+ * El AIU es el 10 % del valor del servicio (Juan, 2026-10-24), y el IVA se calcula sobre ese 10 %. Por eso el AIU
+ * dejó de ser una pregunta al comercial: se calcula. El ejemplar real del Word traía 1.492.420 de AIU sobre un
+ * servicio de 38.616.998 —un 3,86 %— y un IVA de 283.560; con esta regla el AIU son 3.861.700 y el IVA 733.723. Es
+ * decir: ese formulario se fue a facturación con la base gravable a menos de la mitad.
+ */
+export const CLOSURE_FORM_AIU_RATE = 0.10;
+/**
+ * En qué está expresado el valor que se escribe (Juan, 2026-10-25): **el total** en los proyectos y en las
+ * licitaciones públicas, y **mensual** en todo lo demás — seguridad física, monitoreo, escoltas, portería virtual y
+ * mantenimiento. Siempre **sin IVA**.
+ *
+ * Las licitaciones no pasan por este formulario (se cierran en Licitaciones y el endpoint las rechaza), pero la
+ * regla queda escrita igual: el día que algo más lea esta función, la va a leer bien.
+ *
+ * Lo usan las etiquetas de la pantalla y el texto que se envía. Un valor mensual leído como total —o al revés— es un
+ * error de dos órdenes de magnitud en el documento con el que facturación factura.
+ */
+const TOTAL_VALUE_SERVICES = Object.freeze({
+  proyecto: 'Valor total del proyecto, sin IVA',
+  licitacion_publica: 'Valor total del contrato, sin IVA',
+});
+export function closureFormValueBasis(serviceTypeCode = null) {
+  const label = TOTAL_VALUE_SERVICES[String(serviceTypeCode || '')];
+  return label
+    ? { monthly: false, label, short: 'en total' }
+    : { monthly: true, label: 'Valor mensual, sin IVA', short: 'al mes' };
+}
 
 /**
  * Secciones en el orden en que se llenan. Viven aquí y no en la pantalla por lo mismo que los campos: el formato va
@@ -77,23 +105,19 @@ export const CLOSURE_FORM_FIELDS = Object.freeze([
   { key: 'service_mode', section: 'servicio', label: 'Modalidad del servicio', kind: OPTION, options: ['fija', 'movil'], required: true },
   { key: 'complementary_notes', section: 'servicio', label: 'Aspectos complementarios al servicio', kind: TEXT, max: 2000, required: false },
   { key: 'loaned_equipment_notes', section: 'servicio', label: 'Equipos en comodato', kind: TEXT, max: 2000, required: false },
-  // Queda opcional a propósito: no se conoce la política de AIU de facturación, y poner 0 en silencio sería inventar
-  // una base gravable. Si falta, el formulario y su exportación lo dicen ("sin registrar") en vez de calcular un IVA
-  // de cero como si fuera un dato.
-  { key: 'aiu_value', section: 'facturacion', label: 'AIU informativo', kind: 'dinero', required: false },
 ]);
 
 const FIELD_BY_KEY = new Map(CLOSURE_FORM_FIELDS.map(field => [field.key, field]));
 export const CLOSURE_FORM_FIELD_KEYS = Object.freeze(CLOSURE_FORM_FIELDS.map(field => field.key));
 
 /** Lo que pide cada puesto para contar como completo. `armed` no entra: un booleano siempre tiene valor. */
-export const CLOSURE_FORM_POST_REQUIRED = Object.freeze(['description', 'shift_start', 'shift_end', 'guards_required', 'monthly_value']);
+export const CLOSURE_FORM_POST_REQUIRED = Object.freeze(['description', 'shift_start', 'shift_end', 'guards_required', 'service_value']);
 const POST_LABEL = Object.freeze({
   description: 'qué se vigila',
   shift_start: 'hora de inicio',
   shift_end: 'hora de fin',
   guards_required: 'número de vigilantes',
-  monthly_value: 'valor mensual',
+  service_value: 'valor sin IVA',
 });
 
 const EMAIL_RE = /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/;
@@ -150,21 +174,25 @@ function money(value) {
 }
 
 /**
- * Subtotal, IVA y total, calculados. `subtotal` es la suma de los valores mensuales de los puestos; el IVA es el
- * 19 % del AIU; el total es subtotal + IVA. Si el AIU no está registrado, `iva` es `null` —no cero— y el total
- * queda sin IVA, con `aiuMissing` en true para que la pantalla y la exportación lo digan.
+ * Todo el dinero del formulario, calculado: nada de esto se escribe ni se guarda. `subtotal` es la suma de los
+ * valores de los puestos (sin IVA); el AIU es el 10 % de ese subtotal; el IVA es el 19 % del AIU; el total es
+ * subtotal + IVA.
+ *
+ * Que se calcule en un solo lugar es el punto: el ejemplar real del Word traía subtotal 38.616.999, IVA 283.560 y
+ * TOTAL 15.207.760 —tres cifras que no cuadran entre sí—, y con esta regla ese contrato son 38.616.998 de servicio,
+ * 3.861.700 de AIU, 733.723 de IVA y 39.350.721 en total.
  */
-export function closureFormMoney({ posts = [], aiuValue = null } = {}) {
-  const values = (Array.isArray(posts) ? posts : []).map(post => money(post?.monthly_value)).filter(value => value !== null);
-  const subtotal = values.reduce((total, value) => total + value, 0);
-  const aiu = money(aiuValue);
-  const iva = aiu === null ? null : Math.round(aiu * CLOSURE_FORM_IVA_RATE);
+export function closureFormMoney({ posts = [] } = {}) {
+  const values = (Array.isArray(posts) ? posts : []).map(post => money(post?.service_value)).filter(value => value !== null);
+  const subtotal = Math.round(values.reduce((total, value) => total + value, 0));
+  const aiu = Math.round(subtotal * CLOSURE_FORM_AIU_RATE);
+  const iva = Math.round(aiu * CLOSURE_FORM_IVA_RATE);
   return {
-    subtotal: Math.round(subtotal),
-    aiu: aiu === null ? null : Math.round(aiu),
+    subtotal,
+    aiu,
     iva,
-    total: Math.round(subtotal) + (iva || 0),
-    aiuMissing: aiu === null,
+    total: subtotal + iva,
+    aiuRate: CLOSURE_FORM_AIU_RATE,
     ivaRate: CLOSURE_FORM_IVA_RATE,
     posts: values.length,
   };
@@ -229,7 +257,7 @@ export function closureFormCompleteness({ form = {}, sites = [], posts = [] } = 
   postList.forEach((post, index) => {
     const faltan = CLOSURE_FORM_POST_REQUIRED.filter(key => !isFilled(post?.[key])).map(key => POST_LABEL[key]);
     if (faltan.length) missing.push(`Al puesto ${index + 1} le falta ${faltan.join(', ')}.`);
-    else if (money(post.monthly_value) === null) missing.push(`El valor mensual del puesto ${index + 1} no es un número válido.`);
+    else if (money(post.service_value) === null) missing.push(`El valor del puesto ${index + 1} no es un número válido.`);
     else if (!Number.isInteger(Number(post.guards_required)) || Number(post.guards_required) < 1) missing.push(`El número de vigilantes del puesto ${index + 1} no es válido.`);
   });
 
@@ -336,7 +364,7 @@ export function cleanClosureFormInput(body = {}) {
     days_per_month: post?.days_per_month === null || post?.days_per_month === undefined || post?.days_per_month === '' ? null : cleanInt(post.days_per_month, 1, 31),
     guards_required: cleanInt(post?.guards_required, 1, 50),
     armed: post?.armed === true,
-    monthly_value: money(post?.monthly_value),
+    service_value: money(post?.service_value),
     notes: clean(post?.notes, 1000),
     position: index + 1,
   }));
@@ -385,8 +413,9 @@ function fieldText(field, value) {
  * información que la pantalla, con las etiquetas del formato, y dice "sin registrar" donde falta algo en vez de
  * dejar un renglón en blanco que nadie sabe si es un dato vacío o un olvido.
  */
-export function closureFormPlainText({ form = {}, sites = [], posts = [], company = null } = {}) {
-  const money = closureFormMoney({ posts, aiuValue: form.aiu_value });
+export function closureFormPlainText({ form = {}, sites = [], posts = [], company = null, serviceTypeCode = null } = {}) {
+  const money = closureFormMoney({ posts });
+  const basis = closureFormValueBasis(serviceTypeCode);
   const lines = [
     `${CLOSURE_FORM_FORMAT} — Nuevo puesto de vigilancia física (versión ${CLOSURE_FORM_VERSION})`,
     company ? `Cliente: ${company}` : null,
@@ -415,13 +444,13 @@ export function closureFormPlainText({ form = {}, sites = [], posts = [], compan
     const horario = post.shift_start && post.shift_end ? `${post.shift_start} a ${post.shift_end}` : 'sin horario';
     const dias = post.days_per_month ? `, ${post.days_per_month} días al mes` : '';
     lines.push(`  ${index + 1}. ${post.description || 'sin descripción'}`);
-    lines.push(`     ${horario}${dias} · ${post.guards_required || 'sin'} vigilante(s) · ${post.armed ? 'con arma' : 'sin arma'} · ${MONEY_FORMAT(post.monthly_value)} al mes`);
+    lines.push(`     ${horario}${dias} · ${post.guards_required || 'sin'} vigilante(s) · ${post.armed ? 'con arma' : 'sin arma'} · ${MONEY_FORMAT(post.service_value)} ${basis.short}, sin IVA`);
     if (post.notes) lines.push(`     ${post.notes}`);
   });
   lines.push('');
-  lines.push(`  Subtotal: ${MONEY_FORMAT(money.subtotal)}`);
-  lines.push(`  AIU informativo: ${money.aiuMissing ? 'sin registrar' : MONEY_FORMAT(money.aiu)}`);
-  lines.push(`  IVA 19 % sobre el AIU: ${money.iva === null ? 'sin registrar' : MONEY_FORMAT(money.iva)}`);
-  lines.push(`  Total: ${MONEY_FORMAT(money.total)}${money.aiuMissing ? ' (sin IVA, falta el AIU)' : ''}`);
+  lines.push(`  Subtotal ${basis.monthly ? 'mensual' : 'del proyecto'}, sin IVA: ${MONEY_FORMAT(money.subtotal)}`);
+  lines.push(`  AIU (10 %): ${MONEY_FORMAT(money.aiu)}`);
+  lines.push(`  IVA 19 % sobre el AIU: ${MONEY_FORMAT(money.iva)}`);
+  lines.push(`  Total: ${MONEY_FORMAT(money.total)}`);
   return lines.filter(line => line !== null).join('\n');
 }
