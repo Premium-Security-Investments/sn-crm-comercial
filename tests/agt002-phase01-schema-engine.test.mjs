@@ -18,12 +18,12 @@ import {
   canonicalizeAgt002Phase01,
   computeAgt002Phase01Hash,
   aggregateAgt002Phase01Verdict,
-} from '../agt002-phase01-executable-controls.js';
+} from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 const MODULE_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
-  'agt002-phase01-executable-controls.js',
+  'verticales/licitaciones/agt002-phase01-executable-controls.js',
 );
 
 test('frozen constants: exact shapes', () => {

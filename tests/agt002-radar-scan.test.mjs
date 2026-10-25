@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { AGT002_RADAR_SCAN_STAGES, createAgt002RadarScan } from '../agt002-radar-scan.js';
+import { AGT002_RADAR_SCAN_STAGES, createAgt002RadarScan } from '../verticales/licitaciones/agt002-radar-scan.js';
 
 const NOW = '2026-08-25T15:00:00.000Z';
 const TENDER = { id: '22222222-2222-4222-8222-222222222222', stable_key: 'k-1', title: 'Vigilancia', description: 'Armada', source: 'SECOP II', entity: 'E', city: 'Bogotá', dept: 'Cundinamarca', category: 'Licitación' };
@@ -188,7 +188,7 @@ for (const refreshEsuDirect of [
 
 // 9. Superficie cerrada: el scan JAMÁS puede reclamar un job, correr preanálisis, encolar, hablar
 //    con el modelo/puente ni depender de las banderas retiradas AGT002_RADAR_GATE/VISIBILITY.
-const source = readFileSync(new URL('../agt002-radar-scan.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../verticales/licitaciones/agt002-radar-scan.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /claimJob|runPreanalysis|recordPreanalysisRun|completeJob|failJob/);
 assert.doesNotMatch(source, /Date\.now\(\)|new Date\(\)/);
 assert.doesNotMatch(source, /enqueueAgt002RadarPreanalysisJob|preanalysis-jobs/);

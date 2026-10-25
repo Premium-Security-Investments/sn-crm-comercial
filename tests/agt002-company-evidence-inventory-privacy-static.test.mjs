@@ -18,19 +18,19 @@ import { readFileSync } from 'node:fs';
 import {
   AGT002_COMPANY_EVIDENCE_CLASS_IDS,
   buildAgt002CompanyEvidenceClasses,
-} from '../agt002-company-evidence-classes.js';
-import { buildAgt002CompanyEvidenceIdentity } from '../agt002-company-evidence-identity.js';
+} from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { buildAgt002CompanyEvidenceIdentity } from '../verticales/licitaciones/agt002-company-evidence-identity.js';
 
-const catalogModulePath = new URL('../agt002-company-evidence-sharepoint-catalog.js', import.meta.url);
+const catalogModulePath = new URL('../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js', import.meta.url);
 const {
   buildAgt002CompanyEvidenceInventorySnapshot,
   AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION,
 } = await import(catalogModulePath.href);
 
 const catalogSource = readFileSync(catalogModulePath, 'utf8');
-const engineSource = readFileSync(new URL('../agt002-preview-engine.js', import.meta.url), 'utf8');
-const previewInputSource = readFileSync(new URL('../agt002-preview-input.js', import.meta.url), 'utf8');
-const classesSource = readFileSync(new URL('../agt002-company-evidence-classes.js', import.meta.url), 'utf8');
+const engineSource = readFileSync(new URL('../verticales/licitaciones/agt002-preview-engine.js', import.meta.url), 'utf8');
+const previewInputSource = readFileSync(new URL('../verticales/licitaciones/agt002-preview-input.js', import.meta.url), 'utf8');
+const classesSource = readFileSync(new URL('../verticales/licitaciones/agt002-company-evidence-classes.js', import.meta.url), 'utf8');
 
 const CATALOG_HASH = 'c'.repeat(64);
 const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;

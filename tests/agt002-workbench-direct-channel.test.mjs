@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { buildAgt002WorkbenchInitialReference } from '../agt002-workbench-context.js';
-import { dossierTaskLinks } from '../agt002-workbench-api.js';
+import { buildAgt002WorkbenchInitialReference } from '../verticales/licitaciones/agt002-workbench-context.js';
+import { dossierTaskLinks } from '../verticales/licitaciones/agt002-workbench-api.js';
 
 const uuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const v2Run = { id: uuid(1), opportunity_id: uuid(2), tender_id: uuid(3), snapshot_id: null, package_version_id: uuid(4), producer: 'AGT-002', method: 'agent_ai', status: 'completed', canonical: true, result: {} };
@@ -44,7 +44,7 @@ test('el envío de un mensaje drena un trabajo en el mismo pedido, con los inter
   assert.equal((server.match(/dossierContext: true/g) || []).length, 2, 'el contexto del expediente solo lo pide el servidor, en la lectura y en el envío');
 });
 
-import { passageSearchTerms, documentPassageLinks } from '../agt002-workbench-api.js';
+import { passageSearchTerms, documentPassageLinks } from '../verticales/licitaciones/agt002-workbench-api.js';
 
 test('la pregunta se vuelve raíces de búsqueda; una pregunta de fechas agrega el cronograma', () => {
   assert.deepEqual(passageSearchTerms('hasta cuándo se pueden presentar observaciones al pliego'), ['presen', 'observ', 'pliego', 'cronog']);

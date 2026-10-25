@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { buildAgt002AnalysisConfig, ANALYSIS_FLAG_NAMES } from '../agt002-analysis-config.js';
+import { buildAgt002AnalysisConfig, ANALYSIS_FLAG_NAMES } from '../verticales/licitaciones/agt002-analysis-config.js';
 
 function run() {
   // 1) sin variables de entorno -> todas las flags en false.

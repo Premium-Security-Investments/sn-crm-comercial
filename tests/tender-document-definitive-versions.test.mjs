@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../tender-document-obsolescence.js';
+import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../verticales/licitaciones/tender-document-obsolescence.js';
 
 const CALI_OLD = [
   '2. Requerimiento a la Necesidad.pdf', '4. Estudios Previos.pdf', '5. Anexo 1  Analisis del sector.pdf', '5.1. Presupuesto Oficial.pdf',

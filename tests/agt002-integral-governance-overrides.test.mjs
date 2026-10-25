@@ -5,7 +5,7 @@ import {
   buildAgt002IntegralGovernanceOverrides,
   loadAgt002IntegralGovernanceOverrides,
   validateAgt002IntegralGovernanceProvenance,
-} from '../agt002-integral-governance-overrides.js';
+} from '../verticales/licitaciones/agt002-integral-governance-overrides.js';
 
 // ---------------------------------------------------------------------------
 // Governed source for the v3 engine's two curated maps (agt002-preview-engine.js):

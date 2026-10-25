@@ -13,9 +13,9 @@ import { createAgt002PreviewRuntime } from './agt002-preview-runtime.js';
 import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLeaseSeconds, validateAgt002GovernedWorksetExtension } from './agt002-reanalysis-input.js';
 import { computeAgt002GovernedWorksetIdempotencyKey, computeAgt002WorksetSelectionHash } from './agt002-governed-document-worksets.js';
 import { validateAgt002CheckpointGenerationRecoveryIdentity } from './agt002-checkpoint-generation-recovery.js';
-import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../../agt002-preview-allowed-models.js';
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
-import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from '../../agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import {
   createAgt002AnalysisCheckpointAdapter,

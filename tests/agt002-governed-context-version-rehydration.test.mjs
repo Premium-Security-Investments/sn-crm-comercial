@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { resolveAgt002GovernedContextVersionForExecution } from '../agt002-governed-context-version-rehydration.js';
+import { resolveAgt002GovernedContextVersionForExecution } from '../verticales/licitaciones/agt002-governed-context-version-rehydration.js';
 
 // RED slice: the AGT-002 context v2 fail-closed rehydration seam (agt002-reanalysis-executor.js,
 // see tests/agt002-reanalysis-executor.test.mjs "AGT-002 context v2 fail-closed rehydration")
@@ -160,7 +160,7 @@ test('ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs imports reso
 
   assert.match(
     source,
-    /import\s*\{\s*resolveAgt002GovernedContextVersionForExecution\s*\}\s*from\s*['"]\.\.\/\.\.\/agt002-governed-context-version-rehydration\.js['"]/,
+    /import\s*\{\s*resolveAgt002GovernedContextVersionForExecution\s*\}\s*from\s*['"]\.\.\/\.\.\/verticales\/licitaciones\/agt002-governed-context-version-rehydration\.js['"]/,
     'the worker entrypoint must import resolveAgt002GovernedContextVersionForExecution from ../../agt002-governed-context-version-rehydration.js',
   );
   assert.match(

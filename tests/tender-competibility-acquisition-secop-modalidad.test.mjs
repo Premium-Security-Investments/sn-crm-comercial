@@ -5,8 +5,8 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
-import { evaluateTenderCompetibility } from '../tender-competibility-policy.js';
+import { normalizeTenderStatusText, officialTenderStatus } from '../verticales/licitaciones/tender-source-status.js';
+import { evaluateTenderCompetibility } from '../verticales/licitaciones/tender-competibility-policy.js';
 
 const backendPaths = ['../server/index.js', '../api/[...path].js'];
 

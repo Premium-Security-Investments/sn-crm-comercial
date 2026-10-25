@@ -20,14 +20,14 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
-import { discoverTenderSemanticManifest, TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION } from '../tender-semantic-discovery.js';
-import { validateTenderSemanticManifest } from '../tender-semantic-manifest.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
+import { discoverTenderSemanticManifest, TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION } from '../verticales/licitaciones/tender-semantic-discovery.js';
+import { validateTenderSemanticManifest } from '../verticales/licitaciones/tender-semantic-manifest.js';
 import {
   computeTenderSemanticDiscoveryBatchHash,
   tenderSemanticDiscoveryBatchIdempotencyKey,
   TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION,
-} from '../tender-semantic-discovery-batches.js';
+} from '../verticales/licitaciones/tender-semantic-discovery-batches.js';
 
 function hash(value) { return createHash('sha256').update(value).digest('hex'); }
 function document(id, text) {

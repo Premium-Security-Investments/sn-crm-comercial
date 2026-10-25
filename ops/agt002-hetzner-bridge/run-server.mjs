@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { bridgeRunUrl, resolveAgt002BridgeHost, resolveAgt002BridgeListenHost } from '../../agt002-bridge-host.js';
 import { createAgt002BridgeServer } from '../../agt002-hetzner-bridge-server.js';
 import { createAgt002ClaudeClient } from '../../agt002-claude-client.js';
-import { createAgt002HostSurfaceObserver } from '../../agt002-host-surface-observer.js';
+import { createAgt002HostSurfaceObserver } from '../../verticales/licitaciones/agt002-host-surface-observer.js';
 
 function requireEnv(name) {
   const value = process.env[name];

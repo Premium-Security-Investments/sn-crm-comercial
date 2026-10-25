@@ -2,7 +2,7 @@
 // deadline/status data into the already-persisted psi_public_tenders rows for that source,
 // independent of the manual/auto-empty full-radar sync in server/index.js and api/[...path].js.
 
-import { isInactiveConvertedTender } from './tender-opportunity-stage.js';
+import { isInactiveConvertedTender } from './verticales/licitaciones/tender-opportunity-stage.js';
 
 export const ESU_DIRECT_REFRESH_SOURCE = 'ESU Contratación directo';
 export const ESU_DIRECT_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;

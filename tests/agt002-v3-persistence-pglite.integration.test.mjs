@@ -1,14 +1,14 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, registerAgt002PreviewAnalysis, findAgt002PreviewRun, computeAgt002PreviewIdempotencyKey } from '../agt002-preview-persistence.js';
-import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
-import { validateAgt002IntegralAnalysisV3 } from '../agt002-integral-analysis-v3.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { deriveAgt002ManizalesManifestWiring } from '../agt002-manizales-manifest-wiring.js';
-import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../agt002-manizales-manifest-source.js';
-import { AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID } from '../agt002-manizales-integral-manifest.js';
+import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, registerAgt002PreviewAnalysis, findAgt002PreviewRun, computeAgt002PreviewIdempotencyKey } from '../verticales/licitaciones/agt002-preview-persistence.js';
+import { projectAgt002IntegralV3ToV2 } from '../verticales/licitaciones/agt002-v3-compatibility.js';
+import { validateAgt002IntegralAnalysisV3 } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { deriveAgt002ManizalesManifestWiring } from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
+import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
+import { AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID } from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
 
 // Task 7, Step 2: v2/v3 coexistence on the real append-only + canonical-promotion (063)
 // schema, driven through the actual JS persistence module (not raw RPC calls) — a

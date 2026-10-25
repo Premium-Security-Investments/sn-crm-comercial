@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createAgt002BridgeServer } from '../agt002-hetzner-bridge-server.js';
-import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
+import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
 
 const SECRET = 'a'.repeat(32);
 

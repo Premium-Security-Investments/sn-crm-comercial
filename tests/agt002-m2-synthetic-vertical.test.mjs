@@ -11,7 +11,7 @@ import {
   AGT002_M2_ENVIRONMENT,
   recomputeAgt002M2RecordHash,
   verifyAgt002M2ChainIntegrity,
-} from '../agt002-m2-synthetic-vertical.js';
+} from '../verticales/licitaciones/agt002-m2-synthetic-vertical.js';
 
 // AGT-002 F3/M2: focused tests for the isolated in-memory synthetic vertical. All ids/locators
 // below are synthetic-prefixed / fixture:// only. No IO, no network, no DB, no wiring into the
@@ -19,7 +19,7 @@ import {
 
 const SENTINEL = AGT002_M2_PHASE_TRANSITION_SENTINEL;
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const MODULE_PATH = path.join(REPO_ROOT, 'agt002-m2-synthetic-vertical.js');
+const MODULE_PATH = path.join(REPO_ROOT, 'verticales/licitaciones/agt002-m2-synthetic-vertical.js');
 
 function hex64(seed) {
   return createHash('sha256').update(seed).digest('hex');

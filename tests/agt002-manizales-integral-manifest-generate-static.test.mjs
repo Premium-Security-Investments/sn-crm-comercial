@@ -20,7 +20,7 @@ test('generator reads exactly the three governed inputs and builds via the manif
   assert.match(source, /docs\/governance\/registro\/manizales-sa-24-2026\.registry\.json/);
   assert.match(source, /docs\/governance\/analisis\/manizales-sa-24-2026\.pre-go-analysis\.json/);
   assert.match(source, /docs\/governance\/propuestas\/manizales-sa-24-2026\.section-proposals\.json/);
-  assert.match(source, /from '\.\.\/agt002-manizales-integral-manifest\.js'/);
+  assert.match(source, /from '\.\.\/verticales\/licitaciones\/agt002-manizales-integral-manifest\.js'/);
   assert.match(source, /buildAgt002ManizalesIntegralManifest/);
   // no other JSON inputs are read
   const reads = source.match(/readFileSync\([A-Z_]+_JSON/g) || [];

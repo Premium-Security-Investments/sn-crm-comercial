@@ -2,7 +2,7 @@ import { buildAgt002LegalSource } from './agt002-legal-corpus.js';
 import {
   computeAgt002LegalManifestContentHash,
   validateAgt002LegalManifest,
-} from './scripts/validate_agt002_legal_corpus.mjs';
+} from '../../scripts/validate_agt002_legal_corpus.mjs';
 
 const VERSION_FIELDS = 'id,corpus_version,status,content_sha256,published_at,published_by';
 const SOURCE_FIELDS = [

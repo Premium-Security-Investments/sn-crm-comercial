@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
+import { buildAgt002FrozenEngineInput } from '../verticales/licitaciones/agt002-reanalysis-input.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js';
 
 const FIXTURE_EVIDENCE_IDENTITY = Object.freeze({
   source_snapshot_hash: 'a'.repeat(64),

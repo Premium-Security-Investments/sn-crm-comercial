@@ -1,18 +1,18 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002PreviewInput } from '../agt002-preview-input.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002PreviewInput } from '../verticales/licitaciones/agt002-preview-input.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
 import {
   AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID,
   AGT002_INTEGRAL_MANIFEST_PROCESO,
-} from '../agt002-manizales-integral-manifest.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
 import {
   AGT002_MANIZALES_CHECKED_IN_MANIFEST,
   selectAgt002ManizalesManifestSource,
-} from '../agt002-manizales-manifest-source.js';
+} from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 
 // Phase 3 (T3.1): wiring the checked-in versioned Manizales SA-24-2026 integral manifest
 // into the AGT002_INTEGRAL_CONTRACT_V3 runtime. The manifest source is engine/runtime

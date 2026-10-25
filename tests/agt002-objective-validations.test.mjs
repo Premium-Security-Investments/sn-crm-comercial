@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { buildAgt002ObjectiveValidations, validateAgt002ObjectiveValidations } from '../agt002-objective-validations.js';
-import { buildAgt002PreviewInput } from '../agt002-preview-input.js';
+import { buildAgt002ObjectiveValidations, validateAgt002ObjectiveValidations } from '../verticales/licitaciones/agt002-objective-validations.js';
+import { buildAgt002PreviewInput } from '../verticales/licitaciones/agt002-preview-input.js';
 
 const deepAnalysis = {
   recommendation: 'GO',

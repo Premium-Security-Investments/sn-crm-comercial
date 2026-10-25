@@ -14,14 +14,14 @@ import {
   validateAgt002PreviewModelOutput,
   validateAgt002PreviewModelOutputV3,
   validateAgt002PreviewModelOutputByVersion,
-} from '../agt002-preview-contract.js';
-import { buildAgt002PreviewInput } from '../agt002-preview-input.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
-import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+} from '../verticales/licitaciones/agt002-preview-contract.js';
+import { buildAgt002PreviewInput } from '../verticales/licitaciones/agt002-preview-input.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { retrieveAgt002LegalEvidence } from '../verticales/licitaciones/agt002-legal-retrieval.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
 
 assert.equal(AGT002_PREVIEW_SCHEMA_VERSION, '2.0-preview.1');
 assert.deepEqual([...AGT002_PREVIEW_RECOMMENDATIONS].sort(), ['advance', 'advance_conditionally', 'do_not_advance', 'pause']);

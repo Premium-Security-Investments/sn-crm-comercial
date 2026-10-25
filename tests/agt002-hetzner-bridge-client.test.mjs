@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
+import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
 import { sha256Hex, buildCanonicalString, verifySignatureConstantTime, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 
 const URL_ = 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run';

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AGT002_RADAR_LEARNING_MAX_SCORE, AGT002_RADAR_LEARNING_MAX_SIGNALS_LIMIT, buildAgt002RadarLearningSignals } from '../agt002-radar-learning-retrieval.js';
-import { projectAgt002RadarLearningObservations } from '../agt002-radar-learning-projection.js';
-import { extractTenderCoreServiceTerms } from '../tender-relevance-terms.js';
+import { AGT002_RADAR_LEARNING_MAX_SCORE, AGT002_RADAR_LEARNING_MAX_SIGNALS_LIMIT, buildAgt002RadarLearningSignals } from '../verticales/licitaciones/agt002-radar-learning-retrieval.js';
+import { projectAgt002RadarLearningObservations } from '../verticales/licitaciones/agt002-radar-learning-projection.js';
+import { extractTenderCoreServiceTerms } from '../verticales/licitaciones/tender-relevance-terms.js';
 const candidate={tender_id:'candidate-1',service_terms:['servicio de vigilancia','vigilancia armada'],entity_key:'entidad-a',modality_key:'licitacion-publica',source_key:'secop-ii',territory_key:{city:'bogota',dept:'cundinamarca'}};
 const observations={precedents:[
 {observation_id:'p3',tender_id:'t3',service_terms:[],entity_key:'otra',modality_key:'minima-cuantia',source_key:'secop-i',territory_key:{city:'cali',dept:'valle'},decided_at:'2026-08-03T00:00:00.000Z',signal_polarity:'desfavorable',evidence:[{record_id:'r3',evidence_type:'offer_outcome'}]},
@@ -24,7 +24,7 @@ assert.deepEqual(buildAgt002RadarLearningSignals({candidate:genericCandidate,obs
 assert.equal(top1.signals.some(s=>s.effect==='exclude'),false);assert.equal(buildAgt002RadarLearningSignals({candidate,observations,maxSignals:2}).signals.find(s=>s.observation_id==='p2').effect,'lower_relative_priority');
 const missingModality=buildAgt002RadarLearningSignals({candidate:{...candidate,modality_key:null},observations,maxSignals:1});assert.ok(missingModality.data_gaps.some(g=>g.gap_id==='modalidad_no_reportada'));
 
-const source=readFileSync(new URL('../agt002-radar-learning-projection.js',import.meta.url),'utf8');assert.doesNotMatch(source,/\.(insert|update|upsert|delete)\s*\(/);
+const source=readFileSync(new URL('../verticales/licitaciones/agt002-radar-learning-projection.js',import.meta.url),'utf8');assert.doesNotMatch(source,/\.(insert|update|upsert|delete)\s*\(/);
 const readCalls=[];const queryCalls=[];
 const tender={id:'t-projection',title:'Servicio de vigilancia armada',description:'Guardas',entity:'Entidad',city:'Bogotá',dept:'Cundinamarca',source:'SECOP II',category:'Licitación'};
 const fake={from:table=>{readCalls.push(table);const tableCalls=[];const track=(method,column,value)=>{const call={table,method,column,value};tableCalls.push(call);queryCalls.push(call);return query;};const query={

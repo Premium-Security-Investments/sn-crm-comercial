@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { AGT002_REANALYSIS_STATUS_FIELDS, presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
+import { AGT002_REANALYSIS_STATUS_FIELDS, presentAgt002ReanalysisStatus } from '../verticales/licitaciones/agt002-reanalysis-api.js';
 
 const expectedFields = ['job_id', 'status', 'created_at', 'started_at', 'completed_at', 'analysis_run_id', 'error_code'];
 assert.deepEqual([...AGT002_REANALYSIS_STATUS_FIELDS], expectedFields);
@@ -30,7 +30,7 @@ for (const relative of ['server/index.js', 'api/[...path].js']) {
   assert.doesNotMatch(route, /frozen_engine_input|error_message|context_version_id|snapshot_id/);
 }
 
-const adapter = fs.readFileSync(path.join(root, 'agt002-reanalysis-jobs.js'), 'utf8');
+const adapter = fs.readFileSync(path.join(root, 'verticales/licitaciones/agt002-reanalysis-jobs.js'), 'utf8');
 const latestStart = adapter.indexOf('export async function findLatestAgt002ReanalysisStatusForOpportunity');
 const latestEnd = adapter.indexOf('\n}', latestStart) + 2;
 const latest = adapter.slice(latestStart, latestEnd);

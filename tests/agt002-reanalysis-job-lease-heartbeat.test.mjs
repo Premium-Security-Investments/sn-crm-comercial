@@ -12,8 +12,8 @@
 // the Supabase-shaped `.rpc()` client, exactly as in tests/agt002-reanalysis-jobs.test.mjs.
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
-import * as reanalysisJobs from '../agt002-reanalysis-jobs.js';
-import { classifyAgt002ReanalysisWorkerError } from '../agt002-reanalysis-worker.js';
+import * as reanalysisJobs from '../verticales/licitaciones/agt002-reanalysis-jobs.js';
+import { classifyAgt002ReanalysisWorkerError } from '../verticales/licitaciones/agt002-reanalysis-worker.js';
 
 const RENEW_RPC = 'psi_renew_agt002_reanalysis_job_lease';
 

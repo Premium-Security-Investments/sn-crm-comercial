@@ -5,7 +5,7 @@ import {
   REQUIREMENT_ITEM_KEY_PREFIX, REQUIREMENT_STATUS_LABEL, buildRequirementRows, decisiveRequirementRows, groupRowsByCategory, otherRiskNotes,
   placeAgt002Clarifications,
   type RequirementRow,
-} from '../../../agt002-requirements-model.js';
+} from '../../../verticales/licitaciones/agt002-requirements-model.js';
 import { appendTenderDossierItemAction, loadTenderDossierWorkspace, loadTenderOfferStatus, recordTenderOfferStatusTransition } from '../api';
 import { initialReportCompanyFit, initialReportLabels, initialReportRecommendationText, initialReportVerdict, type Agt002InitialReport } from '../agt002InitialReportProjection';
 import { groupDossierChecklist, parseDossierItemTitle } from '../dossierChecklistModel';

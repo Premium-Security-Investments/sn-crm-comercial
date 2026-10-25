@@ -30,7 +30,7 @@ function fakeDb(reply = () => ({}), failure = null) {
 
 let adapter;
 try {
-  adapter = await import('../tender-dossier-rpc.js');
+  adapter = await import('../verticales/licitaciones/tender-dossier-rpc.js');
 } catch (error) {
   assert.fail(`RED esperado: falta adapter tender-dossier-rpc.js: ${error.message}`);
 }
@@ -206,7 +206,7 @@ await (async function backendsRegisterSevenRoutesWithParity() {
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
   const vercel = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
   assert.equal(vercel, server, 'server/index.js y api/[...path].js deben ser byte-idénticos');
-  assert.match(server, /from '\.\.\/tender-dossier-rpc\.js'/);
+  assert.match(server, /from '\.\.\/verticales\/licitaciones\/tender-dossier-rpc\.js'/);
   const routes = [
     "app.get('/api/tender-dossier-workspace'",
     "app.post('/api/tender-dossier-item'",

@@ -5,7 +5,7 @@ import {
   AGT002_WORKBENCH_POLICY_VERSION,
   validateAgt002WorkbenchJobInput,
   validateAgt002WorkbenchResult,
-} from '../agt002-workbench-contract.js';
+} from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 const UUID = Object.freeze({
   job: '10000000-0000-4000-8000-000000000001',

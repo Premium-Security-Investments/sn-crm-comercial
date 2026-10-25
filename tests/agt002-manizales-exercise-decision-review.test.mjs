@@ -7,18 +7,18 @@ import {
   validateAgt002ManizalesExerciseDecisionReviewFixture,
   AGT002_EXERCISE_REVIEW_ARTIFACT_TYPE,
   AGT002_EXERCISE_REVIEW_CONTRACT_VERSION,
-} from '../agt002-manizales-exercise-decision-review.js';
-import { AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES } from '../agt002-pre-go-analysis.js';
+} from '../verticales/licitaciones/agt002-manizales-exercise-decision-review.js';
+import { AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES } from '../verticales/licitaciones/agt002-pre-go-analysis.js';
 import {
   deriveAgt002ManizalesUnresolvedManifestEntries,
-} from '../agt002-manizales-manifest-wiring.js';
-import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
+} from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
+import { selectAgt002ManizalesManifestSource } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 import {
   AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID,
   AGT002_INTEGRAL_MANIFEST_PROCESO,
-} from '../agt002-manizales-integral-manifest.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
 import { runAgt002ManizalesV3LocalRun } from '../scripts/agt002-manizales-v3-local-run.mjs';
-import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
+import { projectAgt002IntegralV3ToV2 } from '../verticales/licitaciones/agt002-v3-compatibility.js';
 
 // AGT-002 Manizales · EJERCICIO (pre-cierre) · capa NO CANÓNICA de revisión de decisión.
 //

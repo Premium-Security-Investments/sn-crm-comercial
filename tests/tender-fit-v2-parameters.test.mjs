@@ -31,7 +31,7 @@ import {
   SCORE_BANDS,
   AXIS_MAX_POINTS,
   REASON_IMPACT_PRIORITY_GROUPS,
-} from '../tender-fit-v2-parameters.js';
+} from '../verticales/licitaciones/tender-fit-v2-parameters.js';
 
 // ---------------------------------------------------------------------------
 // 1. Versión del módulo de parámetros

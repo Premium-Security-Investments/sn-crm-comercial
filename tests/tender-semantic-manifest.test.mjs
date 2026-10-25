@@ -16,7 +16,7 @@
 //     toAgt002RequirementManifest,
 //     toAgt002RetrievalRequirements,
 //     resolveTenderSemanticFrontier,
-//   } from '../tender-semantic-manifest.js';
+//   } from '../verticales/licitaciones/tender-semantic-manifest.js';
 //
 // CONTRACT THIS FILE PINS (no universal fixed keyword catalog anywhere):
 //
@@ -52,7 +52,7 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory } from '../tender-requirement-inventory.js';
+import { buildTenderRequirementInventory } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   TENDER_SEMANTIC_MANIFEST_VERSION,
   TENDER_SEMANTIC_UNRESOLVED_REASONS,
@@ -63,7 +63,7 @@ import {
   toAgt002RequirementManifest,
   toAgt002RetrievalRequirements,
   resolveTenderSemanticFrontier,
-} from '../tender-semantic-manifest.js';
+} from '../verticales/licitaciones/tender-semantic-manifest.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 

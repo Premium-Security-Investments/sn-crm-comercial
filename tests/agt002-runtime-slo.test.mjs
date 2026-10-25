@@ -7,7 +7,7 @@ import {
   AGT002_F1_PILOT_ANALYSIS_KINDS,
   normalizeAgt002F1PilotRecord,
   computeAgt002F1PilotReport,
-} from '../agt002-runtime-slo.js';
+} from '../verticales/licitaciones/agt002-runtime-slo.js';
 
 // Pure module coverage: no fs/network/SQL, no schema/API/production wiring, no DANE concerns.
 // All fixtures are synthetic (`synthetic-` id prefixes). `now`/`pilot_started_at` are always

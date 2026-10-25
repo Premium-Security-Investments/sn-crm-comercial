@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   admitAgt002InitialAnalysis,
   computeAgt002InitialAnalysisAdmissionIdempotencyKey,
-} from '../agt002-initial-analysis-admission.js';
+} from '../verticales/licitaciones/agt002-initial-analysis-admission.js';
 
 const OPPORTUNITY_ID = '10000000-0000-4000-8000-000000000001';
 const TENDER_ID = '10000000-0000-4000-8000-000000000002';

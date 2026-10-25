@@ -75,7 +75,7 @@ function testAgt002NeverReferencesAgt003OrClaude() {
     'agt002-preview-codex-client.js',
     'agt002-hetzner-bridge-log.js',
     'agt002-hetzner-bridge-nonce-store.js',
-    'agt002-hetzner-bridge-client.js',
+    'verticales/licitaciones/agt002-hetzner-bridge-client.js',
     'agt002-claude-client.js',
     'ops/agt002-hetzner-bridge/env.example',
   ];

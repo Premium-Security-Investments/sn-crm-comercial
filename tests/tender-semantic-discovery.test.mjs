@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   discoverTenderSemanticManifest,
   TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
   TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES,
-} from '../tender-semantic-discovery.js';
-import { validateTenderSemanticManifest, TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS } from '../tender-semantic-manifest.js';
+} from '../verticales/licitaciones/tender-semantic-discovery.js';
+import { validateTenderSemanticManifest, TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS } from '../verticales/licitaciones/tender-semantic-manifest.js';
 import {
   computeTenderSemanticDiscoveryBatchHash,
   tenderSemanticDiscoveryBatchIdempotencyKey,
   TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION,
-} from '../tender-semantic-discovery-batches.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
-import { AGT002_CHECKPOINT_ERROR_CODES } from '../agt002-analysis-checkpoints.js';
+} from '../verticales/licitaciones/tender-semantic-discovery-batches.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
+import { AGT002_CHECKPOINT_ERROR_CODES } from '../verticales/licitaciones/agt002-analysis-checkpoints.js';
 
 function hash(value) { return createHash('sha256').update(value).digest('hex'); }
 function document(id, text) {

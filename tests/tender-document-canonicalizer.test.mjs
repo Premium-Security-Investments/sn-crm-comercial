@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
+import { canonicalizeTenderDocuments } from '../verticales/licitaciones/tender-document-canonicalizer.js';
 
 // Observed production bug: after refresh, current UI document rows went from 31 to 45
 // (Anexo 23->33, Estudios 4->6, Pliego 4->6) because documents with identical

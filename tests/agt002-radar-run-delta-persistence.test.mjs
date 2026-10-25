@@ -20,13 +20,13 @@ import {
   Agt002RadarRunDeltaValidationError,
   buildAgt002RadarRunSnapshot,
   computeAgt002RadarRunDelta,
-} from '../agt002-radar-run-delta.js';
-import { buildAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../agt002-radar-run-receipt.js';
+} from '../verticales/licitaciones/agt002-radar-run-delta.js';
+import { buildAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../verticales/licitaciones/agt002-radar-run-receipt.js';
 import {
   AGT002_RADAR_RUN_DELTA_SNAPSHOT_SCHEMA_VERSION,
   readAgt002RadarRunDeltaPair,
   recordAgt002RadarRunSnapshot,
-} from '../agt002-radar-run-delta-persistence.js';
+} from '../verticales/licitaciones/agt002-radar-run-delta-persistence.js';
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 const STARTED = '2026-09-30T13:00:00.000Z';

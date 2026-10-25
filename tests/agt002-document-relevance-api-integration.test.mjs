@@ -27,7 +27,7 @@
 
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { publicTenderDocumentProjection } from '../tender-document-extraction-persistence.js';
+import { publicTenderDocumentProjection } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 
 const root = new URL('../', import.meta.url);
 
@@ -54,7 +54,7 @@ const api = readFileSync(new URL('api/[...path].js', root), 'utf8');
   for (const [label, source] of [['server/index.js', server], ['api/[...path].js', api]]) {
     assert.match(
       source,
-      /import \{ suggestAgt002DocumentRelevance \} from '\.\.\/agt002-document-relevance-suggestion\.js';/,
+      /import \{ suggestAgt002DocumentRelevance \} from '\.\.\/verticales\/licitaciones\/agt002-document-relevance-suggestion\.js';/,
       `${label} debe importar suggestAgt002DocumentRelevance desde ../agt002-document-relevance-suggestion.js`,
     );
 
@@ -97,7 +97,7 @@ const api = readFileSync(new URL('api/[...path].js', root), 'utf8');
 // 3. Lista blanca: analysis_suggestion entra, extracted_text sigue afuera.
 // ===========================================================================
 {
-  const persistenceSource = readFileSync(new URL('tender-document-extraction-persistence.js', root), 'utf8');
+  const persistenceSource = readFileSync(new URL('verticales/licitaciones/tender-document-extraction-persistence.js', root), 'utf8');
   const whitelist = persistenceSource.match(/const PUBLIC_TENDER_DOCUMENT_FIELDS = Object\.freeze\(\[([\s\S]*?)\]\);/);
   assert.ok(whitelist, 'debe existir la lista blanca de campos publicos del documento');
 

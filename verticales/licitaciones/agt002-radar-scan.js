@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { agt002RadarEvaluationDate, evaluateAgt002RadarGate } from './agt002-radar-gate.js';
-import { ESU_DIRECT_REFRESH_SOURCE } from './esu-direct-refresh.js';
+import { ESU_DIRECT_REFRESH_SOURCE } from '../../esu-direct-refresh.js';
 import { isConvertedTenderRow, isInactiveConvertedTender } from './tender-opportunity-stage.js';
 
 // Deterministic, always-on when invoked: this scan filters the fetched page through the gate and

@@ -24,8 +24,11 @@ const FROZEN = {
   // Actualizado a propósito (2026-10-23): el drain de la Mesa resuelve las entradas declaradas del catálogo de
   // fuentes antes de llamar al modelo (`resolveSources`). Cupos, motor y puente no cambian: la construcción del
   // cliente del puente, el modelo, el timeout y el interruptor quedan exactamente como estaban.
-  'agt002-workbench-runtime.js': '052d9f08abd69ffcf30e8c24308c9d22ce1253b68de4f1374837901d0e9b93b3',
-  'agt002-preview-runtime.js': 'd2834ae9df2e8146553e0a056949d0ded9c8a27094541976d7075c2c179072cb',
+  // Actualizado a propósito (2026-10-25): la vertical de licitaciones pasó a verticales/licitaciones/.
+  // Los dos runtimes sólo cambiaron sus rutas de importación: cupos, motor, puente, modelo, timeout e
+  // interruptor quedan exactamente como estaban.
+  'verticales/licitaciones/agt002-workbench-runtime.js': '99cda7af5d44ac00c20a85393eca7e45f34fd62e4b39d7967f4fdcb26f15fef9',
+  'verticales/licitaciones/agt002-preview-runtime.js': 'ad4b2af766cdc5d4feccd6a660a1a4a9bedc185605d3d44af8542797097566ac',
   'ops/agt003-claude-bridge/run-server.mjs': '13c6ca09fcbc6f5db880fa3dfff4cea01430897728c9a8d6434afb235cc05bf1',
   'ops/agt003-claude-bridge/env.example': '168cb44d29fea92b6d3592a903d83ce9935837bfb13bdfd02cd9700baae86b0d',
   'ops/agt003-claude-bridge/agt003-bridge.service': '0847b3a05bcb751e0e8989d96ef2aeb7a447521f7a1c9a0213447a93a95fecfd',

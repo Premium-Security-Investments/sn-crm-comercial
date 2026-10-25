@@ -20,9 +20,9 @@ import {
   AGT002_NOT_CONFIGURED_CODE,
   AGT002_RUNTIME_CONFIG_INVALID_CODE,
   agt002CanonicalEnqueueBlockCode,
-} from '../agt002-canonical-enqueue-gate.js';
-import { getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
-import { buildAgt002FrozenEngineInput, isAgt002QueueableTimeoutMs } from '../agt002-reanalysis-input.js';
+} from '../verticales/licitaciones/agt002-canonical-enqueue-gate.js';
+import { getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
+import { buildAgt002FrozenEngineInput, isAgt002QueueableTimeoutMs } from '../verticales/licitaciones/agt002-reanalysis-input.js';
 
 function configuredEnv(overrides = {}) {
   return {

@@ -7,7 +7,7 @@ import {
   buildAgt002GovernanceDraftProposal,
   validateAgt002GovernanceDraftProposal,
   findAgt002GovernanceDraftForbiddenTextKeyPaths,
-} from '../agt002-governance-draft-proposal.js';
+} from '../verticales/licitaciones/agt002-governance-draft-proposal.js';
 
 // ---------------------------------------------------------------------------
 // Governed, auditable, NOT-executable draft of categoryOverrides /
@@ -290,7 +290,7 @@ function baseInput(overrides = {}) {
 // overrides.js) must fail — this is the mechanical proof that the artifact cannot reach
 // runtime without a human adding real curation fields first. ---
 {
-  const { buildAgt002IntegralGovernanceOverrides } = await import('../agt002-integral-governance-overrides.js');
+  const { buildAgt002IntegralGovernanceOverrides } = await import('../verticales/licitaciones/agt002-integral-governance-overrides.js');
   const draft = buildAgt002GovernanceDraftProposal(baseInput());
   const asOverrideRows = draft.category_override_proposals.map(proposal => ({
     requirement_id: proposal.requirement_id,

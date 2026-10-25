@@ -1,7 +1,7 @@
 import test from 'node:test';
 import { strict as assert } from 'node:assert';
-import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../agt002-preview-contract.js';
-import { AGT002_INTEGRAL_MILESTONE_STATUSES } from '../agt002-integral-analysis-v3.js';
+import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../verticales/licitaciones/agt002-preview-contract.js';
+import { AGT002_INTEGRAL_MILESTONE_STATUSES } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
 
 // AGT-002 milestone wire-contract hotfix (production incident: a Codex turn declared
 // milestone.status "verified" with at/source_ref left null — schema-valid, but rejected

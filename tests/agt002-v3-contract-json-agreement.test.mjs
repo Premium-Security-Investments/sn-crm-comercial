@@ -26,11 +26,11 @@ import {
   AGT002_INTEGRAL_MILESTONE_TYPES,
   AGT002_INTEGRAL_ESCALATION_LEVELS,
   AGT002_INTEGRAL_CLOSURE_STATUSES,
-} from '../agt002-integral-analysis-v3.js';
-import { validateAgt002ManifestScope } from '../agt002-tender-adapter.js';
-import { AGT002_PROCESS_PACKAGE_KEYS, validateAgt002ProcessPackage } from '../agt002-process-package.js';
-import { deriveAgt002ManizalesManifestScope } from '../agt002-manizales-manifest-wiring.js';
-import { AGT002_MANIZALES_PROCESS_PACKAGE, AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../agt002-manizales-manifest-source.js';
+} from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { validateAgt002ManifestScope } from '../verticales/licitaciones/agt002-tender-adapter.js';
+import { AGT002_PROCESS_PACKAGE_KEYS, validateAgt002ProcessPackage } from '../verticales/licitaciones/agt002-process-package.js';
+import { deriveAgt002ManizalesManifestScope } from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
+import { AGT002_MANIZALES_PROCESS_PACKAGE, AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 
 // Phase 9 (T4): the checked-in JSON Schemas under contracts/agents/AGT-002/v3/ must MIRROR the
 // JS runtime contract, never diverge from it. This agreement test ties every enum and closed key

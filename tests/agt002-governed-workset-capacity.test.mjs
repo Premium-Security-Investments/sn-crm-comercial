@@ -96,13 +96,13 @@ import {
   AGT002_GOVERNED_WORKSET_POLICY_INVALID_CODE,
   AGT002_GOVERNED_WORKSET_EVIDENCE_INVALID_CODE,
   evaluateAgt002GovernedWorksetCapacity,
-} from '../agt002-governed-workset-capacity.js';
+} from '../verticales/licitaciones/agt002-governed-workset-capacity.js';
 
 // Namespace import for the durable-execution-mode surface (preflight function, its dedicated
 // invalid-execution-mode code, the durable policy map, and the durable-policy resolver): keeps the
 // sanity checks below as ordinary, diagnostic `assert` failures rather than a module-link
 // SyntaxError that would abort the whole file if any of these were ever removed.
-import * as Agt002GovernedWorksetCapacityModule from '../agt002-governed-workset-capacity.js';
+import * as Agt002GovernedWorksetCapacityModule from '../verticales/licitaciones/agt002-governed-workset-capacity.js';
 
 const ROUTE = AGT002_GOVERNED_WORKSET_FREEZE_ROUTE;
 const MAX_BATCHES = 64;

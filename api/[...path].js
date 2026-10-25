@@ -8,29 +8,29 @@ import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse
 import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
-import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
-import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
-import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
-import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
-import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../tender-phase-identity.js';
-import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../agt002-phase-change-followup.js';
-import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../tender-document-obsolescence.js';
-import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../tender-process-family.js';
-import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
-import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
-import { fetchTenderRadarSourceRows } from '../tender-radar-source-fetch.js';
-import { DIRECT_SERVICE_REASON as RADAR_DEEP_DIRECT_SERVICE_REASON, RADAR_DEEP_CATEGORY_FIELD, RADAR_DEEP_CHUNK_DAYS, RADAR_DEEP_MAX_ROWS_PER_WINDOW, RADAR_DEEP_PAGE_LIMIT, evaluateElectronicSecurityPath, isHighValueVigilanceTender, radarDeepKeywordWhere, radarDeepUnspscFamilyWhere, radarDeepWindows } from '../tender-radar-deep-search.js';
-import { createTenderProcessingWorker } from '../tender-processing-worker.js';
-import { createTenderProcessingDrain } from '../tender-processing-drain.js';
-import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
-import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderDocumentChunk, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
-import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
-import { runInConcurrentChunks } from '../tender-concurrency.js';
-import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 } from '../tender-go-no-go-rpc.js';
-import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
-import { callTenderOpportunityArchive } from '../tender-offer-archive-rpc.js';
-import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClosureActa, callReopenTenderClosureActa } from '../tender-closure-acta-rpc.js';
-import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../agt002-closure-acta-live.js';
+import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
+import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
+import { suggestAgt002DocumentRelevance } from '../verticales/licitaciones/agt002-document-relevance-suggestion.js';
+import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../verticales/licitaciones/tender-tracking-rpc.js';
+import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../verticales/licitaciones/tender-phase-identity.js';
+import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../verticales/licitaciones/agt002-phase-change-followup.js';
+import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../verticales/licitaciones/tender-document-obsolescence.js';
+import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../verticales/licitaciones/tender-process-family.js';
+import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../verticales/licitaciones/tender-durable-flags.js';
+import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../verticales/licitaciones/tender-competibility-policy.js';
+import { fetchTenderRadarSourceRows } from '../verticales/licitaciones/tender-radar-source-fetch.js';
+import { DIRECT_SERVICE_REASON as RADAR_DEEP_DIRECT_SERVICE_REASON, RADAR_DEEP_CATEGORY_FIELD, RADAR_DEEP_CHUNK_DAYS, RADAR_DEEP_MAX_ROWS_PER_WINDOW, RADAR_DEEP_PAGE_LIMIT, evaluateElectronicSecurityPath, isHighValueVigilanceTender, radarDeepKeywordWhere, radarDeepUnspscFamilyWhere, radarDeepWindows } from '../verticales/licitaciones/tender-radar-deep-search.js';
+import { createTenderProcessingWorker } from '../verticales/licitaciones/tender-processing-worker.js';
+import { createTenderProcessingDrain } from '../verticales/licitaciones/tender-processing-drain.js';
+import { dispatchTenderProcessingAfterConversion } from '../verticales/licitaciones/tender-processing-dispatch.js';
+import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderDocumentChunk, recordTenderImportItem, updateTenderProcessingJob } from '../verticales/licitaciones/tender-processing-worker-rpc.js';
+import { buildAgt002DocumentChunks } from '../verticales/licitaciones/agt002-document-chunks.js';
+import { runInConcurrentChunks } from '../verticales/licitaciones/tender-concurrency.js';
+import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 } from '../verticales/licitaciones/tender-go-no-go-rpc.js';
+import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../verticales/licitaciones/tender-offer-status-rpc.js';
+import { callTenderOpportunityArchive } from '../verticales/licitaciones/tender-offer-archive-rpc.js';
+import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClosureActa, callReopenTenderClosureActa } from '../verticales/licitaciones/tender-closure-acta-rpc.js';
+import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../verticales/licitaciones/agt002-closure-acta-live.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -40,12 +40,12 @@ import {
   callRecordTenderDossierArtifactReview,
   callSeedTenderDossier,
   callSeedTenderDossierRequirements,
-} from '../tender-dossier-rpc.js';
-import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
-import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../tender-analysis-foundation.js';
-import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
-import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
-import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
+} from '../verticales/licitaciones/tender-dossier-rpc.js';
+import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
+import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../verticales/licitaciones/tender-analysis-foundation-availability.js';
+import { buildTenderDeepAnalysis } from '../verticales/licitaciones/tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
 import { isReadOnlyRole } from '../access-control.js';
 import { hasPermission } from '../access-control.js';
@@ -72,27 +72,27 @@ import { agt003PreparationDate } from '../verticales/comercial/agt003-copilot-in
 import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { loadCompanyBase, saveCompanyExperience, saveCompanySite } from '../company-base.js';
-import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
-import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../tender-manual-upload-path.js';
-import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../tender-document-origin.js';
-import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
-import { isCriticalTenderDocument } from '../tender-critical-documents.js';
-import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../tender-official-document-coverage.js';
+import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
+import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
+import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../verticales/licitaciones/tender-document-origin.js';
+import { canonicalizeTenderDocuments } from '../verticales/licitaciones/tender-document-canonicalizer.js';
+import { isCriticalTenderDocument } from '../verticales/licitaciones/tender-critical-documents.js';
+import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../verticales/licitaciones/tender-official-document-coverage.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
-import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
-import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim, renewAgt002PreviewClaim } from '../agt002-preview-persistence.js';
-import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
-import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
-import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
-import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../tender-relevance-terms.js';
-import { evaluateTenderFit } from '../tender-fit-policy.js';
-import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
-import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
-import { getAgt002VercelControlPlaneIdentity } from '../agt002-vercel-control-plane-identity.js';
-import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
-import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
-import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
+import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim, renewAgt002PreviewClaim } from '../verticales/licitaciones/agt002-preview-persistence.js';
+import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
+import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../verticales/licitaciones/agt002-workbench-runtime.js';
+import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../verticales/licitaciones/tender-source-status.js';
+import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../verticales/licitaciones/tender-relevance-terms.js';
+import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
+import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../verticales/licitaciones/tender-actuation-types.js';
+import { buildAgt002AnalysisConfig } from '../verticales/licitaciones/agt002-analysis-config.js';
+import { getAgt002VercelControlPlaneIdentity } from '../verticales/licitaciones/agt002-vercel-control-plane-identity.js';
+import { createAgt002AnalysisObservability } from '../verticales/licitaciones/agt002-analysis-observability.js';
+import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
+import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { loadAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
 import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
 import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
@@ -125,35 +125,35 @@ import {
   readAiUsageProfile,
   rejectConfiguration,
 } from '../platform-agent-configuration.js';
-import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
-import { loadAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
-import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
-import { buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf } from '../agt002-company-evidence-identity.js';
+import { loadAgt002CompanyEvidenceRegistryEntries } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { loadAgt002CompanyEvidenceInventorySnapshot } from '../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js';
+import { loadAgt002IntegralGovernanceOverrides } from '../verticales/licitaciones/agt002-integral-governance-overrides.js';
+import { buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf } from '../verticales/licitaciones/agt002-company-evidence-identity.js';
 import {
   runAgt002FixedSnapshotReanalysis,
   sanitizeAgt002FixedSnapshotError,
-} from '../agt002-fixed-snapshot-reanalysis.js';
-import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
-import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
-import { loadAgt002TenderRequirementDocumentGaps } from '../agt002-tender-requirement-gaps.js';
-import { tenderRequirementInventoryIdentity } from '../tender-requirement-inventory.js';
-import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
-import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
-import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
-import { agt002CanonicalEnqueueBlockCode } from '../agt002-canonical-enqueue-gate.js';
-import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../agt002-reanalysis-jobs.js';
-import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
-import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
-import { readAgt002ManualReanalysisStatus, requestAgt002ManualReanalysis } from '../agt002-manual-reanalysis.js';
-import { listAgt002Clarifications, recordAgt002Clarification } from '../agt002-clarifications.js';
-import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../agt002-company-clarification.js';
-import { readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
-import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
+} from '../verticales/licitaciones/agt002-fixed-snapshot-reanalysis.js';
+import { adaptAgt002RetrievalDocuments } from '../verticales/licitaciones/agt002-retrieval-document-adapter.js';
+import { buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
+import { loadAgt002TenderRequirementDocumentGaps } from '../verticales/licitaciones/agt002-tender-requirement-gaps.js';
+import { tenderRequirementInventoryIdentity } from '../verticales/licitaciones/tender-requirement-inventory.js';
+import { loadPublishedAgt002LegalCorpus } from '../verticales/licitaciones/agt002-legal-corpus-store.js';
+import { selectAgt002ManizalesManifestSource } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
+import { buildAgt002FrozenEngineInput } from '../verticales/licitaciones/agt002-reanalysis-input.js';
+import { agt002CanonicalEnqueueBlockCode } from '../verticales/licitaciones/agt002-canonical-enqueue-gate.js';
+import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../verticales/licitaciones/agt002-reanalysis-jobs.js';
+import { presentAgt002ReanalysisStatus } from '../verticales/licitaciones/agt002-reanalysis-api.js';
+import { readAgt002InitialAnalysisStatus } from '../verticales/licitaciones/agt002-initial-analysis-status.js';
+import { readAgt002ManualReanalysisStatus, requestAgt002ManualReanalysis } from '../verticales/licitaciones/agt002-manual-reanalysis.js';
+import { listAgt002Clarifications, recordAgt002Clarification } from '../verticales/licitaciones/agt002-clarifications.js';
+import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
+import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
+import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId, withEsuAliadosPriority } from '../esu-direct-crawl.js';
-import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
-import { buildAgt002RadarRunReceipt, readAgt002RadarRunReceiptHistory, readLatestAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../agt002-radar-run-receipt.js';
-import { buildAgt002RadarRunSnapshot, computeAgt002RadarRunDelta } from '../agt002-radar-run-delta.js';
-import { readAgt002RadarRunDeltaPair, recordAgt002RadarRunSnapshot } from '../agt002-radar-run-delta-persistence.js';
+import { isTenderProcessingJobSuperseded } from '../verticales/licitaciones/tender-processing-status.js';
+import { buildAgt002RadarRunReceipt, readAgt002RadarRunReceiptHistory, readLatestAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../verticales/licitaciones/agt002-radar-run-receipt.js';
+import { buildAgt002RadarRunSnapshot, computeAgt002RadarRunDelta } from '../verticales/licitaciones/agt002-radar-run-delta.js';
+import { readAgt002RadarRunDeltaPair, recordAgt002RadarRunSnapshot } from '../verticales/licitaciones/agt002-radar-run-delta-persistence.js';
 import {
   ACTIONABLE_REVIEW_ATTACHMENT_DOWNLOAD_TTL_SECONDS,
   actionableReviewForbiddenError,
@@ -194,15 +194,15 @@ import {
   validateTenderKnowledgeRejectInput,
   validateTenderKnowledgeSubmitInput,
   validateTenderKnowledgeVersionInput,
-} from '../agt002-actionable-review-http.js';
+} from '../verticales/licitaciones/agt002-actionable-review-http.js';
 import {
   isActionableReviewAttachmentStoragePath,
   validateActionableReviewAttachmentBytes,
-} from '../agt002-actionable-review-attachment-validation.js';
-import { hashActionableReviewJson } from '../agt002-actionable-review-canonical.js';
-import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-generator.js';
-import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
-import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
+} from '../verticales/licitaciones/agt002-actionable-review-attachment-validation.js';
+import { hashActionableReviewJson } from '../verticales/licitaciones/agt002-actionable-review-canonical.js';
+import { generateTenderKnowledgeCandidate } from '../verticales/licitaciones/agt002-knowledge-candidate-generator.js';
+import { publishTenderKnowledgeVersion } from '../verticales/licitaciones/agt002-knowledge-sharepoint.js';
+import { createTenderKnowledgeSharePointGraphAdapter } from '../verticales/licitaciones/agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
 import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../verticales/comercial/agt003-chat-registro.js';
 import { nextActionRequirement } from '../src/vigia/next-action-rule.js';
@@ -212,14 +212,14 @@ import {
   CLOSURE_FORM_FIELD_KEYS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_VERSION, autofillClosureForm, autofillClosureSites,
   cleanClosureFormInput, closureFormCatalog, closureFormCompleteness, closureFormDurationDays, closureFormMoney,
 } from '../src/vigia/closure-form.js';
-import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
+import { buildAgt002StakeholderBriefPreview } from '../verticales/licitaciones/agt002-stakeholder-brief-preview.js';
 import {
   AGT002_GOVERNED_WORKSET_CAPACITY_REJECTED_CODE,
   AGT002_GOVERNED_WORKSET_CAPACITY_UNAVAILABLE_CODE,
   freezeAgt002GovernedDocumentWorkset,
   projectAgt002GovernedWorksetFreezeResult,
   validateAgt002GovernedWorksetFreezeRequest,
-} from '../agt002-governed-document-workset-api.js';
+} from '../verticales/licitaciones/agt002-governed-document-workset-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

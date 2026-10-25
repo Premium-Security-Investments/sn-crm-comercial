@@ -6,9 +6,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { agt002PriorAnalysisForModel } from '../agt002-initial-analysis-aggregate-builder.js';
-import { createAgt002InitialAnalysisRuntime } from '../agt002-initial-analysis-runtime.js';
-import { agt002AnalysisChanges, requestAgt002ManualReanalysis, runAgt002ManualReanalysisRequests } from '../agt002-manual-reanalysis.js';
+import { agt002PriorAnalysisForModel } from '../verticales/licitaciones/agt002-initial-analysis-aggregate-builder.js';
+import { createAgt002InitialAnalysisRuntime } from '../verticales/licitaciones/agt002-initial-analysis-runtime.js';
+import { agt002AnalysisChanges, requestAgt002ManualReanalysis, runAgt002ManualReanalysisRequests } from '../verticales/licitaciones/agt002-manual-reanalysis.js';
 
 const STORED = {
   meta: { analysis_run_id: 'run-1', process_deadlines: [{ kind: 'SUBMISSION', value: '2026-10-22T10:00:00-05:00', certainty: 'CONFIRMED', status: 'UPCOMING', label: 'Cierre' }] },

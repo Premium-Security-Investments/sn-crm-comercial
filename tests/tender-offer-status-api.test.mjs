@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
+import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../verticales/licitaciones/tender-offer-status-rpc.js';
 
 const OPPORTUNITY = '11111111-1111-4111-8111-111111111111';
 const TENDER = '22222222-2222-4222-8222-222222222222';

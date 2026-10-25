@@ -11,8 +11,8 @@
 // impacto de razones (selección de máx. 2 para UI/Discord) y el contrato general
 // (score máx. 100, feedback, totalidad sobre todas las filas).
 import assert from 'node:assert/strict';
-import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit, classifyTenderFitV2ScoreBand, compareTenderFitV2ReasonsByImpact } from '../tender-fit-policy.js';
-import { AXIS_MAX_POINTS, SCORE_BANDS } from '../tender-fit-v2-parameters.js';
+import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit, classifyTenderFitV2ScoreBand, compareTenderFitV2ReasonsByImpact } from '../verticales/licitaciones/tender-fit-policy.js';
+import { AXIS_MAX_POINTS, SCORE_BANDS } from '../verticales/licitaciones/tender-fit-v2-parameters.js';
 
 const NOW = '2026-01-04T15:00:00.000Z'; // domingo en Bogotá
 

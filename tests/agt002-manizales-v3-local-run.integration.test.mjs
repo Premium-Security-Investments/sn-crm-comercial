@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
-import { AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES } from '../agt002-pre-go-analysis.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+import { AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES } from '../verticales/licitaciones/agt002-pre-go-analysis.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 import {
   runAgt002ManizalesV3LocalRun,
   isAgt002ManizalesV3MaterialExceptionUnit,

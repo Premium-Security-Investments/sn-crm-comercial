@@ -9,8 +9,8 @@ import {
 import {
   TENDER_SEMANTIC_DISCOVERY_NO_REQUIREMENTS_CODE,
   TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS,
-} from '../tender-semantic-discovery.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
+} from '../verticales/licitaciones/tender-semantic-discovery.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
 
 // AGT-002 V7 multi-batch canary — fully local, sanitized, MECHANICAL integration test.
 //

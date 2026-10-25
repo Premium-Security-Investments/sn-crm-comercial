@@ -9,7 +9,7 @@ import {
   buildActionableReviewIntegralUnitSource,
   canonicalizeActionableReviewJson,
   hashActionableReviewJson,
-} from '../agt002-actionable-review-canonical.js';
+} from '../verticales/licitaciones/agt002-actionable-review-canonical.js';
 
 const HASH_CONTRACT = 'agt002-actionable-review-json-v1';
 
@@ -99,7 +99,7 @@ await (async function sameLogicalValueIsStable() {
 // --- The persisted hash contract constant, referenced by every table/RPC in
 // the design (§9, §11), must be a single exported source of truth. ----------
 await (async function exposesHashContractConstant() {
-  const module = await import('../agt002-actionable-review-canonical.js');
+  const module = await import('../verticales/licitaciones/agt002-actionable-review-canonical.js');
   assert.equal(module.HASH_CONTRACT, HASH_CONTRACT);
 })();
 

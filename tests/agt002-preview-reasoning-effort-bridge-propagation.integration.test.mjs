@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { startSyntheticAgt002HetznerBridge } from './fixtures/agt002-hetzner-bridge-synthetic-server.mjs';
-import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
+import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
 import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
 
 // AGT-002 end to end: real HMAC-signed bridge client -> real HTTP bridge server

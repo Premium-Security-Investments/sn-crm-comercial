@@ -36,25 +36,25 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { buildAgt002PreviewInput, buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { buildAgt002PreviewInput, buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 import {
   buildTenderSemanticManifest,
   toAgt002RequirementManifest,
   toAgt002RetrievalRequirements,
   resolveTenderSemanticDecisionFrontier,
   TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS,
-} from '../tender-semantic-manifest.js';
+} from '../verticales/licitaciones/tender-semantic-manifest.js';
 import {
   AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID,
   AGT002_INTEGRAL_MANIFEST_PROCESO,
-} from '../agt002-manizales-integral-manifest.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
 import {
   AGT002_MANIZALES_CHECKED_IN_MANIFEST,
   selectAgt002ManizalesManifestSource,
-} from '../agt002-manizales-manifest-source.js';
+} from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -207,7 +207,7 @@ const createTestEngine = ({ client, semanticDiscoveryProvider }) => createAgt002
   const apiSource = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
   assert.equal(serverSource, apiSource, 'Node/Vercel parity is byte-level, never a duplicated implementation');
 
-  const previewInputSource = readFileSync(new URL('../agt002-preview-input.js', import.meta.url), 'utf8');
+  const previewInputSource = readFileSync(new URL('../verticales/licitaciones/agt002-preview-input.js', import.meta.url), 'utf8');
   assert.match(previewInputSource, /from '\.\/tender-semantic-manifest\.js'/,
     'the semantic stage must live in one shared module both runtimes import');
   assert.doesNotMatch(serverSource, /function buildTenderSemanticManifest/,
@@ -811,7 +811,7 @@ const createTestEngine = ({ client, semanticDiscoveryProvider }) => createAgt002
 //    through a visibly unreadable source unit — one V3 demonstrably never analysed.
 // ===========================================================================
 {
-  const engineModule = await import('../agt002-preview-engine.js');
+  const engineModule = await import('../verticales/licitaciones/agt002-preview-engine.js');
   const deriveAgt002AnalyzedSourceUnitIds = engineModule.deriveAgt002AnalyzedSourceUnitIds;
   assert.equal(typeof deriveAgt002AnalyzedSourceUnitIds, 'function',
     'the engine must expose the pure derivation of the source units a V3 result actually analysed');
@@ -1044,7 +1044,7 @@ const createTestEngine = ({ client, semanticDiscoveryProvider }) => createAgt002
   // usesSemanticDiscovery, which already excludes both the Manizales pilot and any non-V3 engine
   // — and leans on section 4 above (and 10b above) for the actual one-turn behavioral proof.
   {
-    const engineSource = readFileSync(new URL('../agt002-preview-engine.js', import.meta.url), 'utf8');
+    const engineSource = readFileSync(new URL('../verticales/licitaciones/agt002-preview-engine.js', import.meta.url), 'utf8');
     assert.match(
       engineSource,
       /usesSemanticDiscovery\s*&&\s*(?:\w+\s*&&\s*)*analysisCheckpointHooks|analysisCheckpointHooks\s*&&\s*(?:\w+\s*&&\s*)*usesSemanticDiscovery/,

@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { AGT002_M1_RADAR_RELIABILITY_SCHEMA_VERSION } from '../agt002-m1-radar-reliability-contract.js';
-import { adaptLegacyRadarResultToM1 } from '../agt002-m1-radar-reliability-adapter.js';
+import { AGT002_M1_RADAR_RELIABILITY_SCHEMA_VERSION } from '../verticales/licitaciones/agt002-m1-radar-reliability-contract.js';
+import { adaptLegacyRadarResultToM1 } from '../verticales/licitaciones/agt002-m1-radar-reliability-adapter.js';
 
-// FASE RED: `agt002-m1-radar-reliability-adapter.js` todavía no existe (ver plan
+// FASE RED: `verticales/licitaciones/agt002-m1-radar-reliability-adapter.js` todavía no existe (ver plan
 // docs/superpowers/plans/2026-09-24-agt002-m1-radar-reliability-adapters.md, Tarea 1). Este
 // import estático falla con ERR_MODULE_NOT_FOUND y ningún test de este archivo se ejecuta hasta
 // FASE GREEN. Todos los datos de fixtures son 100% sintéticos: ids con prefijo `synthetic-` y
@@ -16,7 +16,7 @@ import { adaptLegacyRadarResultToM1 } from '../agt002-m1-radar-reliability-adapt
 // este repo, cero red, cero SQL, cero runtime/UI.
 
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ADAPTER_PATH = path.join(REPO_ROOT, 'agt002-m1-radar-reliability-adapter.js');
+const ADAPTER_PATH = path.join(REPO_ROOT, 'verticales/licitaciones/agt002-m1-radar-reliability-adapter.js');
 const VALIDATOR_CLI_PATH = path.join(REPO_ROOT, 'scripts', 'agt002-m1-radar-reliability-validate-adapter-fixtures.mjs');
 const CONTRACT_DIR = path.join(REPO_ROOT, 'contracts', 'agt002-radar-reliability', 'v1');
 const FIXTURES_DIR = path.join(CONTRACT_DIR, 'adapter-fixtures');

@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const read = relative => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 const migrationPath = new URL('../supabase/migrations/024_tender_offer_status_transitions.sql', import.meta.url);
-const servicePath = new URL('../tender-offer-status-rpc.js', import.meta.url);
+const servicePath = new URL('../verticales/licitaciones/tender-offer-status-rpc.js', import.meta.url);
 const panelPath = new URL('../src/tenders/components/TenderOfferStatusPanel.tsx', import.meta.url);
 
 assert.equal(existsSync(migrationPath), true, 'Debe existir la migración aditiva 024 de transiciones auditables.');
@@ -11,7 +11,7 @@ assert.equal(existsSync(servicePath), true, 'Debe existir el servicio compartido
 assert.equal(existsSync(panelPath), true, 'Debe existir un panel separado de estado de oferta.');
 
 const sql = read('supabase/migrations/024_tender_offer_status_transitions.sql');
-const service = read('tender-offer-status-rpc.js');
+const service = read('verticales/licitaciones/tender-offer-status-rpc.js');
 const panel = read('src/tenders/components/TenderOfferStatusPanel.tsx');
 const api = read('src/tenders/api.ts');
 const types = read('src/tenders/types.ts');

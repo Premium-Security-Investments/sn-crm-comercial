@@ -26,7 +26,7 @@ import {
   loadAgt002InitialAnalysisCheckpoint,
   assertAgt002InitialAnalysisCheckpointResumable,
   resumeAgt002InitialAnalysisCheckpoint,
-} from '../agt002-initial-analysis-checkpoints.js';
+} from '../verticales/licitaciones/agt002-initial-analysis-checkpoints.js';
 
 const IDS = Object.freeze({ job: 'job-1', lease: 'lease-1' });
 
@@ -224,6 +224,6 @@ test('storeAgt002InitialAnalysisCheckpoint fails closed with a sanitized code on
 // ---------------------------------------------------------------------------------------------
 
 test('agt002-initial-analysis-checkpoints.js never imports a reanalysis operational module', () => {
-  const source = readFileSync(new URL('../agt002-initial-analysis-checkpoints.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/agt002-initial-analysis-checkpoints.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /agt002-reanalysis-(api|jobs|worker|input|executor|error-message)\.js/);
 });

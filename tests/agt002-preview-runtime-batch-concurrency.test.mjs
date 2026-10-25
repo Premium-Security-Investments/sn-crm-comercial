@@ -15,10 +15,10 @@
 // every call, not just one or the other. No production file is touched by this test.
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
-import { getAgt002PreviewRuntimeConfig, createAgt002PreviewRuntime } from '../agt002-preview-runtime.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
+import { getAgt002PreviewRuntimeConfig, createAgt002PreviewRuntime } from '../verticales/licitaciones/agt002-preview-runtime.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
 
 function baseEnv(overrides = {}) {
   return {

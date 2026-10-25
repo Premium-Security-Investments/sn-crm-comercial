@@ -5,7 +5,7 @@ import {
   isTenderDocumentContentHashVerifiable,
   validateTenderRequirementInventory,
   UNVERIFIABLE_CONTENT_HASH_REASON,
-} from '../tender-requirement-inventory.js';
+} from '../verticales/licitaciones/tender-requirement-inventory.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const document = ({ id, version, text }) => ({

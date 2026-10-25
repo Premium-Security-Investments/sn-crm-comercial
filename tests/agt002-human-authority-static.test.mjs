@@ -1,26 +1,26 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { ACTIONS } from '../access-control.js';
-import { AGT002_WORKBENCH_CAPABILITIES } from '../agt002-workbench-contract.js';
+import { AGT002_WORKBENCH_CAPABILITIES } from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 // Módulos que ejecutan como agente/worker/scheduler (nunca con perfil humano
 // autenticado): ninguno debe importar los emisores de RPC de GO/NO-GO o de
 // transición de estado de oferta, que son las únicas puertas de entrada a
 // decisiones/estados reservados a humanos.
 const AGENT_WORKER_SCHEDULER_MODULES = [
-  '../tender-processing-worker.js',
-  '../tender-processing-worker-rpc.js',
-  '../agt002-preview-engine.js',
-  '../agt002-preview-runtime.js',
-  '../agt002-preview-input.js',
-  '../agt002-preview-persistence.js',
+  '../verticales/licitaciones/tender-processing-worker.js',
+  '../verticales/licitaciones/tender-processing-worker-rpc.js',
+  '../verticales/licitaciones/agt002-preview-engine.js',
+  '../verticales/licitaciones/agt002-preview-runtime.js',
+  '../verticales/licitaciones/agt002-preview-input.js',
+  '../verticales/licitaciones/agt002-preview-persistence.js',
   '../agt002-preview-codex-client.js',
-  '../agt002-workbench-worker.js',
-  '../agt002-workbench-runtime.js',
-  '../agt002-workbench-responder.js',
+  '../verticales/licitaciones/agt002-workbench-worker.js',
+  '../verticales/licitaciones/agt002-workbench-runtime.js',
+  '../verticales/licitaciones/agt002-workbench-responder.js',
   '../agt002-hetzner-bridge-server.js',
-  '../agt002-hetzner-bridge-client.js',
-  '../tender-analysis-foundation.js',
+  '../verticales/licitaciones/agt002-hetzner-bridge-client.js',
+  '../verticales/licitaciones/tender-analysis-foundation.js',
 ];
 
 const FORBIDDEN_HUMAN_ONLY_REFERENCES = [

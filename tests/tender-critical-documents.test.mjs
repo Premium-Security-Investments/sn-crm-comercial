@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { isCriticalTenderDocument } from '../tender-critical-documents.js';
+import { isCriticalTenderDocument } from '../verticales/licitaciones/tender-critical-documents.js';
 
 // Bucaramanga LPR (opportunity 08e33365, job 374195eb): all 5 documents that
 // failed import were recorded with critical=false because discoverDocuments()
@@ -37,7 +37,7 @@ assert.equal(isCriticalTenderDocument(undefined), false);
 
 for (const path of ['../server/index.js', '../api/[...path].js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ isCriticalTenderDocument \} from '\.\.\/tender-critical-documents\.js';/);
+  assert.match(source, /import \{ isCriticalTenderDocument \} from '\.\.\/verticales\/licitaciones\/tender-critical-documents\.js';/);
   assert.match(source, /critical: isCriticalTenderDocument\(name\)/, `${path} debe usar el clasificador compartido, no solo 'pliego'`);
 }
 

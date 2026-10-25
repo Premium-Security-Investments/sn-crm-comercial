@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createAgt002RadarPreanalysisRuntime, getAgt002RadarPreanalysisRuntimeConfig, isAgt002RadarPreanalysisConfigured } from '../agt002-radar-preanalysis-runtime.js';
+import { createAgt002RadarPreanalysisRuntime, getAgt002RadarPreanalysisRuntimeConfig, isAgt002RadarPreanalysisConfigured } from '../verticales/licitaciones/agt002-radar-preanalysis-runtime.js';
 import { AGT002_PREVIEW_SONNET_MODEL } from '../agt002-preview-allowed-models.js';
 
 // AGT002_RADAR_GATE no longer exists in ANALYSIS_FLAG_NAMES (agt002-analysis-config.js): an

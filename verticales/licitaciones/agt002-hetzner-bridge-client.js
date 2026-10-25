@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Agent, fetch as undiciFetch } from 'undici';
-import { bridgeRunUrl, resolveAgt002BridgeHost } from './agt002-bridge-host.js';
-import { sha256Hex, buildCanonicalString, signCanonicalString } from './agt002-hetzner-bridge-signing.js';
-import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { bridgeRunUrl, resolveAgt002BridgeHost } from '../../agt002-bridge-host.js';
+import { sha256Hex, buildCanonicalString, signCanonicalString } from '../../agt002-hetzner-bridge-signing.js';
+import { isAgt002PreviewReasoningEffort } from '../../agt002-preview-reasoning-effort.js';
 
 function transportError(message, code) {
   const error = new Error(message);

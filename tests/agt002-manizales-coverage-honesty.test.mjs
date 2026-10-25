@@ -2,10 +2,10 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { deriveAgt002ManizalesManifestScope } from '../agt002-manizales-manifest-wiring.js';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { deriveAgt002ManizalesManifestScope } from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 
 // Phase 4 (coverage honesty): a server-owned, top-level `manifest_scope` lets the UI tell the
 // 20 analyzable requirements, the 25 atomized entries, the 15 pre-GO sections of 68 registered,

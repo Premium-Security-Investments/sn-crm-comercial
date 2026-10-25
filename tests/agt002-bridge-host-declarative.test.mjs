@@ -32,7 +32,7 @@ assert.match(caddy, /agt002\.5\.78\.140\.24\.sslip\.io/);
 assert.match(caddy, /AGT002_BRIDGE_HOST/);
 assert.match(caddy, /no aplicado/i);
 
-const client = readFileSync(new URL('../agt002-hetzner-bridge-client.js', import.meta.url), 'utf8');
+const client = readFileSync(new URL('../verticales/licitaciones/agt002-hetzner-bridge-client.js', import.meta.url), 'utf8');
 const runner = readFileSync(new URL('../ops/agt002-hetzner-bridge/run-server.mjs', import.meta.url), 'utf8');
 assert.match(client, /bridgeRunUrl\(resolveAgt002BridgeHost\(\)\)/, 'El default del cliente debe derivarse del host único');
 assert.match(runner, /resolveAgt002BridgeHost\(process\.env\)/, 'El runner debe resolver el mismo host/override');

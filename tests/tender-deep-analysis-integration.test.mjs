@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
+import { buildTenderDeepAnalysis } from '../verticales/licitaciones/tender-deep-analysis.js';
 
 const documents = [
   {
@@ -62,7 +62,7 @@ assert.ok(!governedIds.includes('legal-guarantee-policy'), 'v3 must never leak t
 
 for (const backendPath of ['../server/index.js', '../api/[...path].js']) {
   const source = readFileSync(new URL(backendPath, import.meta.url), 'utf8');
-  assert.match(source, /import\s+\{\s*buildTenderDeepAnalysis\s*\}\s+from\s+'\.\.\/tender-deep-analysis\.js';/);
+  assert.match(source, /import\s+\{\s*buildTenderDeepAnalysis\s*\}\s+from\s+'\.\.\/verticales\/licitaciones\/tender-deep-analysis\.js';/);
   const builder = source.slice(source.indexOf('function buildTenderDocumentAnalysis'), source.indexOf('async function getTenderDocumentRecords'));
   assert.match(builder, /const deepAnalysis = buildTenderDeepAnalysis\(documents, companyProfile,\s*\{ governedRequirements: agt002AnalysisConfig\.AGT002_INTEGRAL_CONTRACT_V3 \}\);/);
   assert.match(builder, /deep_analysis:\s*deepAnalysis/);

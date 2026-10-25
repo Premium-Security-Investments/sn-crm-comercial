@@ -6,7 +6,7 @@
 // cannot, reproduce that historical incident mechanically. No real payload, provider, network,
 // Supabase, or secret is used anywhere below — every fixture is synthetic.
 //
-// Expected to fail at import time with "Cannot find module '../agt002-post-bridge-observability.js'"
+// Expected to fail at import time with "Cannot find module '../verticales/licitaciones/agt002-post-bridge-observability.js'"
 // until that module is implemented. That import failure IS the RED signal for this file: it is
 // absence of functionality, not a syntax defect in this test.
 import { strict as assert } from 'node:assert';
@@ -15,7 +15,7 @@ import {
   AGT002_POST_BRIDGE_STAGES,
   AGT002_POST_BRIDGE_ERROR_CODES,
   classifyAgt002PostBridgeFailure,
-} from '../agt002-post-bridge-observability.js';
+} from '../verticales/licitaciones/agt002-post-bridge-observability.js';
 
 // Requirement 1: closed catalog of stages. Every literal below must exist, and nothing else
 // may leak through classifyAgt002PostBridgeFailure's output (checked further down).

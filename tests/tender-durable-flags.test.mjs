@@ -3,7 +3,7 @@ import {
   isTenderDurablePipelineEnabled,
   isTenderPublicUiEnabled,
   isTenderAutoAnalysisEnabled,
-} from '../tender-durable-flags.js';
+} from '../verticales/licitaciones/tender-durable-flags.js';
 
 function run() {
   assert.equal(isTenderDurablePipelineEnabled({}), false);

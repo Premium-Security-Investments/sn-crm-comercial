@@ -10,7 +10,7 @@ import {
   isTenderManualUploadStoragePath,
   tenderManualUploadFolder,
   tenderManualUploadStoragePath,
-} from '../tender-manual-upload-path.js';
+} from '../verticales/licitaciones/tender-manual-upload-path.js';
 
 const OPP = 'd71a6299-f403-4a98-906d-ce705a7addf7'; // Pereira SMGA-LP-220-2026, la oportunidad real de la prueba
 const OTRA = '021c37ec-99f0-4151-b4b0-42dfb930c5c7'; // Supersalud SNS-LP-2-2026

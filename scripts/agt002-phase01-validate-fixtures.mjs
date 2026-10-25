@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { evaluateAgt002Phase01Fixture } from '../agt002-phase01-executable-controls.js';
+import { evaluateAgt002Phase01Fixture } from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES_DIR = path.join(REPO_ROOT, 'contracts', 'agt002-phase01', 'v1', 'fixtures');

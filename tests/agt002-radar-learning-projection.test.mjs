@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { projectAgt002RadarLearningObservations } from '../agt002-radar-learning-projection.js';
+import { projectAgt002RadarLearningObservations } from '../verticales/licitaciones/agt002-radar-learning-projection.js';
 import { runAgt002RadarLearningSignalsReport } from '../scripts/agt002-radar-learning-signals-report.mjs';
 import { runAgt002RadarPreanalysisDryRun } from '../scripts/agt002-radar-preanalysis-dryrun.mjs';
 
@@ -347,7 +347,7 @@ const restTables = {
 
 // 11. La proyección sigue siendo estrictamente de sólo lectura.
 {
-  const source = readFileSync(new URL('../agt002-radar-learning-projection.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/agt002-radar-learning-projection.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /\.(insert|update|upsert|delete)\s*\(/);
   assert.doesNotMatch(source, /\.rpc\s*\(/);
   assert.doesNotMatch(source, /method:\s*'(POST|PATCH|PUT|DELETE)'/);

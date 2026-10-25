@@ -4,7 +4,7 @@ import {
   nextPipelineState,
   assertValidTransition,
   isTerminalState,
-} from '../tender-pipeline-state.js';
+} from '../verticales/licitaciones/tender-pipeline-state.js';
 
 // Transiciones normativas (spec §7).
 assert.equal(nextPipelineState('queued', 'discover'), 'discovering_documents');

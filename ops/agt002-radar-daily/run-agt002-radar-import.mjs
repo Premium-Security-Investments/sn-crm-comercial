@@ -35,7 +35,7 @@ function summarize(result) {
 // 14:00 (Bogotá), en su propio servicio. Enlace nuevo, documentos nuevos, archivado de obsoletos, reanálisis y outbox de
 // correo para Hermes. Cada paso falla por separado sin cortar los demás.
 async function runPhaseChangeReview() {
-  const { runAgt002PhaseChangeReview } = await import('../../agt002-phase-change-review.js');
+  const { runAgt002PhaseChangeReview } = await import('../../verticales/licitaciones/agt002-phase-change-review.js');
   const budgetMs = Number(process.env.AGT002_PHASE_CHANGE_DOCUMENTS_BUDGET_MS || 15 * 60 * 1000);
   await runAgt002PhaseChangeReview(database, {
     api, budgetMs, environment: process.env, log,

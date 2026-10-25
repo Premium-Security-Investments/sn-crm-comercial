@@ -5,7 +5,7 @@ import {
   selectCanonicalExtractionsByDocumentVersion,
   mergeCanonicalExtractionIntoDocument,
   publicTenderDocumentProjection,
-} from '../tender-document-extraction-persistence.js';
+} from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 
 const hash = text => createHash('sha256').update(text).digest('hex');
 const ids = {

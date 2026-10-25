@@ -1,9 +1,9 @@
 import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
-import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from '../../agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 import { AGT002_WORKSET_SOURCE_CLASSIFICATIONS } from './agt002-governed-document-worksets.js';
-import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../../agt002-preview-allowed-models.js';
 
 function object(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);

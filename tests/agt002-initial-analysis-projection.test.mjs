@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   projectAgt002InitialAnalysisState,
   AGT002_INITIAL_ANALYSIS_UI_STATES,
-} from '../agt002-initial-analysis-projection.js';
+} from '../verticales/licitaciones/agt002-initial-analysis-projection.js';
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -85,7 +85,7 @@ test('unknown or contradictory durable states fail closed', () => {
 
 // --- Migration 108: a REANALYSIS successor is the canonical analysis from version 2 on ---
 test('a completed canonical REANALYSIS run (v>=2) is ready; a REANALYSIS claiming v1 is not', async () => {
-  const { projectAgt002InitialAnalysisState } = await import('../agt002-initial-analysis-projection.js');
+  const { projectAgt002InitialAnalysisState } = await import('../verticales/licitaciones/agt002-initial-analysis-projection.js');
   const job = { id: 'job-2', status: 'COMPLETED', analysis_run_id: 'run-2', error_code: null };
   const run = { id: 'run-2', status: 'completed', canonical: true, current: true, analysis_kind: 'REANALYSIS', analysis_version: 2 };
   assert.equal(projectAgt002InitialAnalysisState({ job, run }).state, 'ready');

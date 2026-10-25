@@ -1,10 +1,10 @@
-import { ACTIONS, requireAction } from './access-control.js';
+import { ACTIONS, requireAction } from '../../access-control.js';
 import { buildTenderSnapshotInput, getCurrentTenderAnalysis } from './tender-analysis-foundation.js';
 import { buildTenderOfferPreparation } from './tender-offer-preparation.js';
 import { readAgt002InitialAnalysisReport } from './agt002-initial-analysis-report.js';
 import { seedTenderDossierRequirements } from './tender-dossier-rpc.js';
 import { mergeTenderDocumentRecords } from './tender-document-versioning.js';
-import { deriveAgt002DossierHandoff, evidenceCoverageStrictlyAbsent } from './server/agt002-dossier-handoff.js';
+import { deriveAgt002DossierHandoff, evidenceCoverageStrictlyAbsent } from '../../server/agt002-dossier-handoff.js';
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
 import { AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION } from './agt002-preview-contract.js';
 import { AGT002_INTEGRAL_V3_POLICY_VERSION } from './agt002-preview-runtime.js';

@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { deriveAgt002IntegralCategoryManifest } from '../agt002-integral-category-manifest.js';
+import { deriveAgt002IntegralCategoryManifest } from '../verticales/licitaciones/agt002-integral-category-manifest.js';
 
 // ---------------------------------------------------------------------------
 // The real AGT-002 requirement manifest only ever carries `front` ∈ {legal, financial,

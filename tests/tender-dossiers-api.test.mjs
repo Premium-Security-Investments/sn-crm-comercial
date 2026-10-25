@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
-import { buildTenderSnapshotInput } from '../tender-analysis-foundation.js';
+import { buildTenderSnapshotInput } from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 // Este contrato prueba el dossier base. No debe heredar flags AGT002 del proceso que ejecuta la
 // suite, porque esos modos añaden proveedores/tablas que el mock deliberadamente no representa.

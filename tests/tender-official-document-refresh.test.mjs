@@ -9,7 +9,7 @@ import {
   summarizeTenderDocumentRefresh,
   tenderDocumentContentHash,
   tenderDocumentVersionPath,
-} from '../tender-document-versioning.js';
+} from '../verticales/licitaciones/tender-document-versioning.js';
 
 const content = Buffer.from('contenido oficial');
 const hash = createHash('sha256').update(content).digest('hex');

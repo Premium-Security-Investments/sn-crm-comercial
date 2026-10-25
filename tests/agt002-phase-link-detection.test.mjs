@@ -4,7 +4,7 @@
 // Bogotá DSAJBO-SAMC-006-2026 seguían con el enlace del borrador semanas después.
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { planRadarPhaseIdentitySync, tenderProcessBaseReference } from '../tender-phase-identity.js';
+import { planRadarPhaseIdentitySync, tenderProcessBaseReference } from '../verticales/licitaciones/tender-phase-identity.js';
 
 process.env.NEXT_PUBLIC_SUPABASE_URL ||= 'http://127.0.0.1:9';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';

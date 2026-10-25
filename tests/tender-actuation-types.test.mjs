@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { buffersAreEqual } from '../scripts/check_backend_parity.mjs';
-import { PUBLIC_ACTUATION_TYPES, assertPublicActuationType } from '../tender-actuation-types.js';
+import { PUBLIC_ACTUATION_TYPES, assertPublicActuationType } from '../verticales/licitaciones/tender-actuation-types.js';
 
 // El vocabulario licitatorio público es fijo y no incluye tipos comerciales/privados.
 assert.deepEqual(PUBLIC_ACTUATION_TYPES, [
@@ -42,7 +42,7 @@ function extractRouteHandler(source, marker) {
 }
 
 function assertBackend(source, label) {
-  assert.match(source, /import \{ assertPublicActuationType, PUBLIC_ACTUATION_TYPES \} from '\.\.\/tender-actuation-types\.js';/, `${label}: debe importar el módulo tipado`);
+  assert.match(source, /import \{ assertPublicActuationType, PUBLIC_ACTUATION_TYPES \} from '\.\.\/verticales\/licitaciones\/tender-actuation-types\.js';/, `${label}: debe importar el módulo tipado`);
   const handler = extractRouteHandler(source, "app.post('/api/tender-actuation'");
   assert.match(handler, /assertPublicActuationType\(/, `${label}: debe validar el tipo con el módulo puro`);
   assert.match(handler, /actor_kind:\s*'human'|p_actor_kind:\s*'human'/, `${label}: el actor debe ser humano fijo`);

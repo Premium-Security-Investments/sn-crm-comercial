@@ -38,8 +38,8 @@
 // would abort the file before a single case runs.
 
 import { strict as assert } from 'node:assert';
-import * as Agt002PreviewContract from '../agt002-preview-contract.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import * as Agt002PreviewContract from '../verticales/licitaciones/agt002-preview-contract.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 
 const {
   validateAgt002PreviewModelOutputV3Batch,

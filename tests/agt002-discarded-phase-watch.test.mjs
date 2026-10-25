@@ -8,7 +8,7 @@ import {
   agt002WatchDeadlineDay,
   agt002WatchNoticeUid,
   runAgt002DiscardedPhaseWatch,
-} from '../agt002-discarded-phase-watch.js';
+} from '../verticales/licitaciones/agt002-discarded-phase-watch.js';
 
 // El 8-sep a media mañana en Bogotá: el día que se creía que cerraba, con la fase de oferta ya publicada.
 const CUANDO_IMPORTABA = new Date('2026-09-08T15:00:00Z');
@@ -177,7 +177,7 @@ test('sin fase nueva la licitación queda en orden, sin escribir nada', async ()
 });
 
 test('la revisión de fases la llama, le pasa el aviso atómico y sigue aunque falle', async () => {
-  const { runAgt002PhaseChangeReview } = await import('../agt002-phase-change-review.js');
+  const { runAgt002PhaseChangeReview } = await import('../verticales/licitaciones/agt002-phase-change-review.js');
   const calls = [];
   const logs = [];
   const api = {
@@ -214,8 +214,8 @@ test('la revisión de fases la llama, le pasa el aviso atómico y sigue aunque f
 });
 
 test('el aviso llega al correo de Hermes una sola vez y dice que la oportunidad sigue descartada', async () => {
-  const { agt002AlertItems, buildAgt002AlertsOutbox, agt002AlertsOutboxSummary } = await import('../agt002-licitaciones-alerts.js');
-  const { agt002ReviewFacts } = await import('../agt002-phase-change-review.js');
+  const { agt002AlertItems, buildAgt002AlertsOutbox, agt002AlertsOutboxSummary } = await import('../verticales/licitaciones/agt002-licitaciones-alerts.js');
+  const { agt002ReviewFacts } = await import('../verticales/licitaciones/agt002-phase-change-review.js');
   const reopenEvents = [{
     event: 'agt002_discarded_phase_watch_notice', opportunityId: 'opp-sme-163', ref: 'SME-LP-163-2026 (Presentación de oferta)',
     code: 'descartado_con_fase_nueva', severity: 'alta', noticeUid: 'CO1.NTC.10850776', url: FASE_DE_OFERTA.url,

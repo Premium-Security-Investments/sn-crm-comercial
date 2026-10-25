@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   discoverTenderSemanticManifest,
   TENDER_SEMANTIC_DISCOVERY_POLICY,
-} from '../tender-semantic-discovery.js';
+} from '../verticales/licitaciones/tender-semantic-discovery.js';
 import {
   buildTenderSemanticLabelCatalog,
   buildTenderSemanticLabelOwnerIndex,
-} from '../tender-semantic-label-catalog.js';
-import { tenderSemanticObligationKey } from '../tender-semantic-manifest.js';
+} from '../verticales/licitaciones/tender-semantic-label-catalog.js';
+import { tenderSemanticObligationKey } from '../verticales/licitaciones/tender-semantic-manifest.js';
 
 // Companion to tests/tender-semantic-discovery-citation-anchor-policy.test.mjs, for the OTHER
 // recurring real-model failure mode: a V4 run that passed provider/schema/citation gates and then

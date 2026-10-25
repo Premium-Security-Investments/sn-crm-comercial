@@ -19,7 +19,7 @@ test('generator reads the offline export and builds via the registry module', ()
   assert.match(source, /\/tmp\/agt002-rama-originals/);
   assert.match(source, /manifest\.json/);
   assert.match(source, /extraction-manifest\.json/);
-  assert.match(source, /from '\.\.\/agt002-contractual-registry\.js'/);
+  assert.match(source, /from '\.\.\/verticales\/licitaciones\/agt002-contractual-registry\.js'/);
   assert.match(source, /buildContractualRegistry/);
 });
 

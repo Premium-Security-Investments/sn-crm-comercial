@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
 import { ACTIONS, can } from '../access-control.js';
-import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
+import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
 
 const human = (role, permissions = []) => ({
   id: `user-${role}`,

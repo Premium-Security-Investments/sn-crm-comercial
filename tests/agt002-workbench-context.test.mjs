@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
-import { buildAgt002WorkbenchContinuityReference } from '../agt002-tender-adapter.js';
-import { buildAgt002WorkbenchContinuityContext } from '../agt002-workbench-context.js';
+import { buildAgt002WorkbenchContinuityReference } from '../verticales/licitaciones/agt002-tender-adapter.js';
+import { buildAgt002WorkbenchContinuityContext } from '../verticales/licitaciones/agt002-workbench-context.js';
 import { buildSyntheticAgt002TenderAnalysis } from './fixtures/agt002-synthetic-responder.mjs';
 
 const snapshot = {

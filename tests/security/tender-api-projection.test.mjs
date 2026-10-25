@@ -29,7 +29,7 @@ import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
-import { publicTenderDocumentProjection, tenderDocumentDownloadUrl } from '../../tender-document-extraction-persistence.js';
+import { publicTenderDocumentProjection, tenderDocumentDownloadUrl } from '../../verticales/licitaciones/tender-document-extraction-persistence.js';
 
 const hash = text => createHash('sha256').update(text).digest('hex');
 const root = new URL('../../', import.meta.url);

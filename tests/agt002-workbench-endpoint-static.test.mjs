@@ -5,7 +5,7 @@ const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf
 const vercel = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 assert.equal(vercel, server, 'server/index.js y api/[...path].js deben ser byte-idénticos');
 
-const importMatch = server.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/agt002-workbench-api\.js';/);
+const importMatch = server.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/verticales\/licitaciones\/agt002-workbench-api\.js';/);
 assert.ok(importMatch, 'falta import de agt002-workbench-api.js en server/index.js');
 for (const name of [
   'getAgt002WorkbenchApi',
@@ -18,7 +18,7 @@ for (const name of [
 
 // Fase B2: el gate de la API humana y el del drain, y el propio drain, se importan
 // del runtime en lugar de reimplementarse.
-const runtimeImportMatch = server.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/agt002-workbench-runtime\.js';/s);
+const runtimeImportMatch = server.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/verticales\/licitaciones\/agt002-workbench-runtime\.js';/s);
 assert.ok(runtimeImportMatch, 'falta import de agt002-workbench-runtime.js en server/index.js');
 for (const name of ['isAgt002WorkbenchApiEnabled', 'isAgt002WorkbenchDrainEnabled', 'createAgt002WorkbenchDrain']) {
   assert.ok(runtimeImportMatch[1].includes(name), `falta import de ${name}`);

@@ -20,7 +20,7 @@ function policyFileUrl(overridePath, fallbackRelative) {
 }
 
 async function resolveAgt002TenderFitPolicyModule() {
-  const specifier = policyFileUrl(process.env.AGT002_TENDER_FIT_POLICY_PATH, '../../tender-fit-policy.js');
+  const specifier = policyFileUrl(process.env.AGT002_TENDER_FIT_POLICY_PATH, '../../verticales/licitaciones/tender-fit-policy.js');
   const policyModule = await import(specifier);
   if (typeof policyModule.evaluateTenderFit !== 'function') {
     throw new TypeError(`agt002-radar-discord-top5: el módulo de política (${specifier}) no exporta evaluateTenderFit`);
@@ -36,7 +36,7 @@ async function resolveAgt002TenderCompetibilityPolicyModule() {
     || (process.env.AGT002_TENDER_FIT_POLICY_PATH
       ? process.env.AGT002_TENDER_FIT_POLICY_PATH.replace(/tender-fit-policy\.js$/, 'tender-competibility-policy.js')
       : '');
-  const specifier = policyFileUrl(overridePath || null, '../../tender-competibility-policy.js');
+  const specifier = policyFileUrl(overridePath || null, '../../verticales/licitaciones/tender-competibility-policy.js');
   const policyModule = await import(specifier);
   if (typeof policyModule.filterActiveTenderCompetibilityRows !== 'function') {
     throw new TypeError(`agt002-radar-discord-top5: el módulo de competibilidad (${specifier}) no exporta filterActiveTenderCompetibilityRows`);

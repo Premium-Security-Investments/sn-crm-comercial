@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { AGT002_CONTEXT_V2_MAX_CHARS, buildAgt002ContextV2 } from '../agt002-context-v2.js';
+import { AGT002_CONTEXT_V2_MAX_CHARS, buildAgt002ContextV2 } from '../verticales/licitaciones/agt002-context-v2.js';
 
 const source = (reference, overrides = {}) => ({ type: 'database', reference, observed_at: '2026-07-29T12:00:00.000Z', ...overrides });
 const value = (content, reference, overrides = {}) => ({ status: 'verified', value: content, source: source(reference), ...overrides });

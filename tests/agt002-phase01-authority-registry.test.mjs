@@ -12,7 +12,7 @@ import {
   validateAgt002Phase01Gate,
   validateAgt002Phase01AuthorityRegistry,
   resolveAgt002Phase01Authority,
-} from '../agt002-phase01-executable-controls.js';
+} from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 // Loading throws (named exports validateAgt002Phase01AuthorityRegistry /
 // resolveAgt002Phase01Authority not found) until Task 4 Step 3 adds them to

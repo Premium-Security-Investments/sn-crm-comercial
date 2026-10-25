@@ -2,21 +2,21 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
-import { callTenderGoNoGoDecision } from '../tender-go-no-go-rpc.js';
-import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
-import { buildAgt002DocumentRetrieval } from '../agt002-document-retrieval.js';
+import { callTenderGoNoGoDecision } from '../verticales/licitaciones/tender-go-no-go-rpc.js';
+import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { buildAgt002DocumentChunks } from '../verticales/licitaciones/agt002-document-chunks.js';
+import { buildAgt002DocumentRetrieval } from '../verticales/licitaciones/agt002-document-retrieval.js';
 import {
   buildAgt002LegalSource, buildAgt002LegalCitation, validateAgt002LegalConclusion,
-} from '../agt002-legal-corpus.js';
-import { validateAgt002TenderAnalysisEnvelope, buildAgt002WorkbenchContinuityReference } from '../agt002-tender-adapter.js';
-import { buildAgt002WorkbenchContinuityContext } from '../agt002-workbench-context.js';
-import { runAgt002WorkbenchWorker } from '../agt002-workbench-worker.js';
+} from '../verticales/licitaciones/agt002-legal-corpus.js';
+import { validateAgt002TenderAnalysisEnvelope, buildAgt002WorkbenchContinuityReference } from '../verticales/licitaciones/agt002-tender-adapter.js';
+import { buildAgt002WorkbenchContinuityContext } from '../verticales/licitaciones/agt002-workbench-context.js';
+import { runAgt002WorkbenchWorker } from '../verticales/licitaciones/agt002-workbench-worker.js';
 import {
   claimAgt002WorkbenchJob, appendAgt002WorkbenchJobEvent, completeAgt002WorkbenchJob,
-} from '../agt002-workbench-persistence.js';
+} from '../verticales/licitaciones/agt002-workbench-persistence.js';
 import { createSyntheticAgt002Responder } from './fixtures/agt002-workbench-synthetic-responder.mjs';
 
 // Ciclo de vida completo E1-E6 de AGT-002/Vig-IA en un único PGlite aislado, sin

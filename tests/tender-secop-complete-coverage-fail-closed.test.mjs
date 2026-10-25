@@ -27,13 +27,13 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { buildTenderRequirementInventory } from '../tender-requirement-inventory.js';
+import { buildTenderRequirementInventory } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   buildTenderSemanticManifest,
   resolveTenderSemanticDecisionFrontier,
   resolveTenderSemanticFrontier,
-} from '../tender-semantic-manifest.js';
-import { extractTenderDocumentText } from '../tender-document-text-extraction.js';
+} from '../verticales/licitaciones/tender-semantic-manifest.js';
+import { extractTenderDocumentText } from '../verticales/licitaciones/tender-document-text-extraction.js';
 import {
   ARCHIVE_TXT_CONTENT,
   buildMixedEntriesArchive,
@@ -168,7 +168,7 @@ const zipExtraction = await extractTenderDocumentText(buildMixedEntriesArchive()
     selectTenderOfficialDocuments,
     tenderOfficialCoverageGaps,
     TENDER_OFFICIAL_DOCUMENT_OMITTED_REASON,
-  } = await import('../tender-official-document-coverage.js');
+  } = await import('../verticales/licitaciones/tender-official-document-coverage.js');
 
   // Los 7 documentos publicados entran completos: la cobertura es integral.
   const full = selectTenderOfficialDocuments(fixture.documents, {

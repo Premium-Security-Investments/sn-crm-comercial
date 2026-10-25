@@ -2,12 +2,12 @@ import { strict as assert } from 'node:assert';
 import {
   AGT002_REQUIREMENT_EVIDENCE_STATUSES,
   buildAgt002RequirementEvidenceCrosswalk,
-} from '../agt002-requirement-evidence.js';
+} from '../verticales/licitaciones/agt002-requirement-evidence.js';
 import {
   collectAgt002PreviewEvidenceIds,
   validateAgt002RequirementEvidenceCrosswalk,
-} from '../agt002-preview-contract.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
+} from '../verticales/licitaciones/agt002-preview-contract.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 
 assert.deepEqual([...AGT002_REQUIREMENT_EVIDENCE_STATUSES].sort(), [
   'cumplido_con_evidencia', 'cumplimiento_parcial', 'no_cumplido', 'requiere_validacion_humana', 'sin_evidencia_suficiente',

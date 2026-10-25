@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
+import { isTenderProcessingJobSuperseded } from '../verticales/licitaciones/tender-processing-status.js';
 
 assert.equal(
   isTenderProcessingJobSuperseded('snapshot-old', 'snapshot-current'),

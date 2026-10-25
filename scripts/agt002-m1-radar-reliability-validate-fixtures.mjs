@@ -10,7 +10,7 @@ import {
   AGT002_M1_RADAR_RELIABILITY_VERDICTS,
   AGT002_M1_RADAR_RELIABILITY_REASON_CATALOG,
   validateAgt002M1RadarReliabilityBundle,
-} from '../agt002-m1-radar-reliability-contract.js';
+} from '../verticales/licitaciones/agt002-m1-radar-reliability-contract.js';
 
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONTRACT_DIR = path.join(REPO_ROOT, 'contracts', 'agt002-radar-reliability', 'v1');

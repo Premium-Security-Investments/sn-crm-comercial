@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createAgt002ReanalysisWorker } from '../agt002-reanalysis-worker.js';
+import { createAgt002ReanalysisWorker } from '../verticales/licitaciones/agt002-reanalysis-worker.js';
 
 const JOB = Object.freeze({
   jobId: 'job-1', leaseId: 'lease-1', opportunityId: 'opp-1', tenderId: 'tender-1',

@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const worker = readFileSync(new URL('../agt002-reanalysis-worker.js', import.meta.url), 'utf8');
+const worker = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-worker.js', import.meta.url), 'utf8');
 const runner = readFileSync(new URL('../ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs', import.meta.url), 'utf8');
 
 test('preview-analyze route is retired directly to the governed helper; terminal unavailable classification belongs to the direct worker', () => {

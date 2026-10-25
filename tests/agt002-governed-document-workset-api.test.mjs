@@ -16,11 +16,11 @@ import {
   projectAgt002GovernedWorksetFreezeResult,
   resolveAgt002GovernedWorksetCandidates,
   validateAgt002GovernedWorksetFreezeRequest,
-} from '../agt002-governed-document-workset-api.js';
-import { computeAgt002WorksetSelectionHash } from '../agt002-governed-document-worksets.js';
-import { AGT002_GOVERNED_WORKSET_MAX_BATCHES, AGT002_GOVERNED_WORKSET_FREEZE_ROUTE } from '../agt002-governed-workset-capacity.js';
-import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
-import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
+} from '../verticales/licitaciones/agt002-governed-document-workset-api.js';
+import { computeAgt002WorksetSelectionHash } from '../verticales/licitaciones/agt002-governed-document-worksets.js';
+import { AGT002_GOVERNED_WORKSET_MAX_BATCHES, AGT002_GOVERNED_WORKSET_FREEZE_ROUTE } from '../verticales/licitaciones/agt002-governed-workset-capacity.js';
+import { buildAgt002FrozenEngineInput } from '../verticales/licitaciones/agt002-reanalysis-input.js';
+import { createAgt002ReanalysisExecutor } from '../verticales/licitaciones/agt002-reanalysis-executor.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 
 function uuid(label) {
@@ -679,7 +679,7 @@ describe('buildAgt002GovernedWorksetFrozenEngineInput — canonical source requi
 });
 
 describe('static contract: the module never lists or re-resolves all current tender documents', () => {
-  const source = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'agt002-governed-document-workset-api.js'), 'utf8');
+  const source = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'verticales/licitaciones/agt002-governed-document-workset-api.js'), 'utf8');
 
   for (const forbidden of ['getTenderDocumentRecords', 'currentDocs', 'analysisDocuments', "select('*')", '.select("*")']) {
     it(`never references "${forbidden}"`, () => {

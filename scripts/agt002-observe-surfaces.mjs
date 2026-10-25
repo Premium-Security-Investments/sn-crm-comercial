@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { SURFACE_NAMES } from '../agt002-control-plane-identity.js';
-import { AGT002_HOST_SURFACE_UNITS } from '../agt002-host-surface-observer.js';
-import { observeAgt002Surfaces } from '../agt002-control-plane-observe.js';
+import { SURFACE_NAMES } from '../verticales/licitaciones/agt002-control-plane-identity.js';
+import { AGT002_HOST_SURFACE_UNITS } from '../verticales/licitaciones/agt002-host-surface-observer.js';
+import { observeAgt002Surfaces } from '../verticales/licitaciones/agt002-control-plane-observe.js';
 
 function readArgValue(args, flag) {
   const index = args.indexOf(flag);

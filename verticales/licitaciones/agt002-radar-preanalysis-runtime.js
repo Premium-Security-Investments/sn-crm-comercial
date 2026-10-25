@@ -3,7 +3,7 @@ import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA, AGT002_RADAR_PREANALYSIS_POLICY_VERSION, validateAgt002RadarPreanalysis } from './agt002-radar-preanalysis-contract.js';
 import { buildAgt002RadarPreanalysisInput } from './agt002-radar-preanalysis-input.js';
 import { AGT002_RADAR_PREANALYSIS_UNTRUSTED_USAGE_CODE, measureAgt002RadarPreanalysisUsage } from './agt002-radar-preanalysis-usage.js';
-import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../../agt002-preview-allowed-models.js';
 
 const REQUIRED=['AGT002_RADAR_PREANALYSIS_MODEL','AGT002_HETZNER_BRIDGE_URL','AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
 const DEFAULT_TIMEOUT_MS=30_000;

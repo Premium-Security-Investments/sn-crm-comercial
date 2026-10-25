@@ -7,7 +7,7 @@ import {
   getAgt002WorkbenchRuntimeConfig,
   createAgt002WorkbenchRuntime,
   createAgt002WorkbenchDrain,
-} from '../agt002-workbench-runtime.js';
+} from '../verticales/licitaciones/agt002-workbench-runtime.js';
 
 const AGENT_ID = '10000000-0000-4000-8000-000000000099';
 
@@ -109,7 +109,7 @@ assert.throws(() => createAgt002WorkbenchRuntime({ environment: {} }), /no est[a
 
 // --- Never manages an API key/bearer token directly; secrets stay in env only ---
 {
-  const source = readFileSync(new URL('../agt002-workbench-runtime.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/agt002-workbench-runtime.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /console\.(log|warn|error)\([^)]*(hmacSecret|HMAC_SECRET)/i);
 }
 

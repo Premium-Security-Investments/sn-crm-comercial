@@ -16,9 +16,9 @@ import {
   AGT002_PRE_GO_RECONCILE_ARTIFACT_TYPE,
   AGT002_EXPECTED_EVIDENCE_CLASS_COUNT,
 } from '../scripts/agt002-manizales-pre-go-production-reconcile.mjs';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 import { computeAgt002LegalManifestContentHash } from '../scripts/validate_agt002_legal_corpus.mjs';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const GENERATED_AT = '2026-08-12T00:00:00.000Z';

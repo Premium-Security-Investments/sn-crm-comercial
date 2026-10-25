@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
-import { createTenderProcessingWorker } from '../tender-processing-worker.js';
-import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
-import { AGT002_MAX_DOCUMENTS, AGT002_MAX_DOCUMENT_CHARS } from '../agt002-preview-input.js';
+import { createTenderProcessingWorker } from '../verticales/licitaciones/tender-processing-worker.js';
+import { buildAgt002DocumentChunks } from '../verticales/licitaciones/agt002-document-chunks.js';
+import { AGT002_MAX_DOCUMENTS, AGT002_MAX_DOCUMENT_CHARS } from '../verticales/licitaciones/agt002-preview-input.js';
 
 function hash(text) {
   return createHash('sha256').update(text).digest('hex');

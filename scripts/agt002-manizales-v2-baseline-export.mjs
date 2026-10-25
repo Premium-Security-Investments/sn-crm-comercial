@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 import {
   assertSanitaryReconcileMetadataOnly,
   createReadOnlyClientGuard,

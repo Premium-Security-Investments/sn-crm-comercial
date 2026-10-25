@@ -5,9 +5,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { listAgt002Clarifications, parseAgt002ClarificationBody, recordAgt002Clarification } from '../agt002-clarifications.js';
-import { createAgt002InitialAnalysisRuntime } from '../agt002-initial-analysis-runtime.js';
-import { otherRiskNotes, placeAgt002Clarifications } from '../agt002-requirements-model.js';
+import { listAgt002Clarifications, parseAgt002ClarificationBody, recordAgt002Clarification } from '../verticales/licitaciones/agt002-clarifications.js';
+import { createAgt002InitialAnalysisRuntime } from '../verticales/licitaciones/agt002-initial-analysis-runtime.js';
+import { otherRiskNotes, placeAgt002Clarifications } from '../verticales/licitaciones/agt002-requirements-model.js';
 
 test('el cuerpo de una aclaración: texto obligatorio, punto opcional pero completo', () => {
   assert.throws(() => parseAgt002ClarificationBody({ content: '  ' }), /Escriba la aclaración/);

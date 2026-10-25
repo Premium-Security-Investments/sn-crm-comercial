@@ -4,7 +4,7 @@ import {
   AGT002_HOST_SURFACE_CACHE_TTL_MS,
   AGT002_HOST_SURFACE_UNITS,
   createAgt002HostSurfaceObserver,
-} from '../agt002-host-surface-observer.js';
+} from '../verticales/licitaciones/agt002-host-surface-observer.js';
 
 const SHA_A = 'a'.repeat(40);
 const SHA_B = 'b'.repeat(40);

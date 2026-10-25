@@ -18,9 +18,9 @@
 // network, no provider, no secret, no timer and no sleep.
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
-import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig } from '../agt002-preview-runtime.js';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { AGT002_POST_BRIDGE_ERROR_CODES, runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
+import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig } from '../verticales/licitaciones/agt002-preview-runtime.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { AGT002_POST_BRIDGE_ERROR_CODES, runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
 
 const RENEW_RPC = 'psi_renew_agt002_preview_claim';
 const RELEASE_RPC = 'psi_release_agt002_preview_claim';

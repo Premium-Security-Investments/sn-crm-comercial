@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { getLatestAgt002AnalysisAttempt } from '../agt002-preview-persistence.js';
-import { getCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
+import { getLatestAgt002AnalysisAttempt } from '../verticales/licitaciones/agt002-preview-persistence.js';
+import { getCurrentTenderAnalysis } from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 const ids = {
   opportunity: '22222222-2222-4222-8222-222222222222',

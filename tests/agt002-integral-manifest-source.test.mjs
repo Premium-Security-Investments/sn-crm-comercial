@@ -3,17 +3,17 @@ import { readFileSync } from 'node:fs';
 import {
   createAgt002IntegralManifestRegistry,
   AGT002_MANIFEST_SOURCE_NOT_REGISTERED_CODE,
-} from '../agt002-integral-manifest-source.js';
+} from '../verticales/licitaciones/agt002-integral-manifest-source.js';
 import {
   AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID,
   AGT002_INTEGRAL_MANIFEST_PROCESO,
-} from '../agt002-manizales-integral-manifest.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
 import {
   AGT002_MANIZALES_CHECKED_IN_MANIFEST,
   selectAgt002ManizalesManifestSource,
   AGT002_MANIZALES_PROCESS_PACKAGE,
   AGT002_MANIZALES_INTEGRAL_MANIFEST_REGISTRY,
-} from '../agt002-manizales-manifest-source.js';
+} from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 
 // Phase 9 (T3): a generic manifest registry keyed by (opportunity_id, proceso). It returns null
 // when the V3 flag is off, returns the frozen validated manifest for a registered + gate-passed

@@ -4,7 +4,7 @@
 // no cumplidos o pendientes, cada uno con su numeral; lo que bloquea va primero; el formato viejo sigue funcionando.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closureActaContextFromAnalysis } from '../agt002-closure-acta-draft.js';
+import { closureActaContextFromAnalysis } from '../verticales/licitaciones/agt002-closure-acta-draft.js';
 
 const V2 = {
   claims: [

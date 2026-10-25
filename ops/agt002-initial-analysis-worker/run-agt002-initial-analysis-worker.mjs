@@ -4,15 +4,15 @@
 // Supabase client is ever created. Wires the real initial-analysis jobs/checkpoints/engine
 // helpers; never imports, and is never imported by, any parallel operational runtime module.
 import { createClient } from '@supabase/supabase-js';
-import { createAgt002InitialAnalysisWorker } from '../../agt002-initial-analysis-worker.js';
-import { createAgt002InitialAnalysisExecutor } from '../../agt002-initial-analysis-executor.js';
-import { claimAgt002InitialAnalysisJob, renewAgt002InitialAnalysisJobLease, failAgt002InitialAnalysisJob } from '../../agt002-initial-analysis-jobs.js';
-import { resumeAgt002InitialAnalysisCheckpoint, storeAgt002InitialAnalysisCheckpoint } from '../../agt002-initial-analysis-checkpoints.js';
-import { assertAgt002RehydratedMembersMatchHashes, runAgt002AnalysisBatch } from '../../agt002-analysis-engine.js';
-import { completeAgt002InitialAnalysisJob } from '../../agt002-initial-analysis-persistence.js';
-import { createAgt002HetznerBridgeClient } from '../../agt002-hetzner-bridge-client.js';
-import { createAgt002InitialAnalysisRuntime } from '../../agt002-initial-analysis-runtime.js';
-import { createAgt002InitialAnalysisObserver, readAgt002InitialAnalysisRuntimeConfig } from '../../agt002-initial-analysis-observability.js';
+import { createAgt002InitialAnalysisWorker } from '../../verticales/licitaciones/agt002-initial-analysis-worker.js';
+import { createAgt002InitialAnalysisExecutor } from '../../verticales/licitaciones/agt002-initial-analysis-executor.js';
+import { claimAgt002InitialAnalysisJob, renewAgt002InitialAnalysisJobLease, failAgt002InitialAnalysisJob } from '../../verticales/licitaciones/agt002-initial-analysis-jobs.js';
+import { resumeAgt002InitialAnalysisCheckpoint, storeAgt002InitialAnalysisCheckpoint } from '../../verticales/licitaciones/agt002-initial-analysis-checkpoints.js';
+import { assertAgt002RehydratedMembersMatchHashes, runAgt002AnalysisBatch } from '../../verticales/licitaciones/agt002-analysis-engine.js';
+import { completeAgt002InitialAnalysisJob } from '../../verticales/licitaciones/agt002-initial-analysis-persistence.js';
+import { createAgt002HetznerBridgeClient } from '../../verticales/licitaciones/agt002-hetzner-bridge-client.js';
+import { createAgt002InitialAnalysisRuntime } from '../../verticales/licitaciones/agt002-initial-analysis-runtime.js';
+import { createAgt002InitialAnalysisObserver, readAgt002InitialAnalysisRuntimeConfig } from '../../verticales/licitaciones/agt002-initial-analysis-observability.js';
 
 const LEASE_SECONDS = 600;
 

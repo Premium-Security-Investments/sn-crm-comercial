@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   discoverTenderSemanticManifest,
   TENDER_SEMANTIC_DISCOVERY_POLICY,
   TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-} from '../tender-semantic-discovery.js';
+} from '../verticales/licitaciones/tender-semantic-discovery.js';
 import {
   buildTenderSemanticLabelCatalog,
   buildTenderSemanticLabelOwnerIndex,
@@ -13,8 +13,8 @@ import {
   TENDER_SEMANTIC_LABEL_CANDIDATES_TOTAL_FLOOR,
   TENDER_SEMANTIC_LABEL_MAX_CHARS,
   TENDER_SEMANTIC_LABEL_MIN_CHARS,
-} from '../tender-semantic-label-catalog.js';
-import { tenderSemanticObligationKey, TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS } from '../tender-semantic-manifest.js';
+} from '../verticales/licitaciones/tender-semantic-label-catalog.js';
+import { tenderSemanticObligationKey, TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS } from '../verticales/licitaciones/tender-semantic-manifest.js';
 
 // AGT-002 V4, repeated `v4_discovery_citation_anchor_invariant`: the model kept paraphrasing the
 // label instead of quoting a cited source_unit verbatim, and every such run burned a provider turn

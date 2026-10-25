@@ -12,7 +12,7 @@ import {
   runReconciliation,
   rollback,
   teardown,
-} from '../agt002-company-evidence-v031-reconciliation.js';
+} from '../verticales/licitaciones/agt002-company-evidence-v031-reconciliation.js';
 
 const clone = (value) => structuredClone(value);
 

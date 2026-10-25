@@ -17,7 +17,7 @@ import {
   claimAgt002InitialAnalysisJob,
   renewAgt002InitialAnalysisJobLease,
   failAgt002InitialAnalysisJob,
-} from '../agt002-initial-analysis-jobs.js';
+} from '../verticales/licitaciones/agt002-initial-analysis-jobs.js';
 
 function fakeDb({ rpcResults = {} } = {}) {
   const rpcCalls = [];
@@ -42,7 +42,7 @@ const IDENTITY = Object.freeze({
 // --- Source coupling / shape guard (static, mirrors scripts/agt002_initial_analysis_guard.mjs) ---
 
 test('the jobs module source never references the reanalysis operational surface', () => {
-  const source = readFileSync(new URL('../agt002-initial-analysis-jobs.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/agt002-initial-analysis-jobs.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /agt002-reanalysis-(api|jobs|worker|input|executor|error-message)\.js/);
   assert.doesNotMatch(source, /psi_agt002_reanalysis_jobs/);
   assert.doesNotMatch(source, /psi_(create|claim|complete|fail)_agt002_reanalysis_job/);

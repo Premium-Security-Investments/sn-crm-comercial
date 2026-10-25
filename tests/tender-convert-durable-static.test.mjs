@@ -40,7 +40,7 @@ function extractDurableBranch(functionBody) {
 }
 
 function assertBackend(source, label) {
-  assert.ok(source.includes("from '../tender-durable-flags.js'"), `${label}: falta import de tender-durable-flags.js`);
+  assert.ok(source.includes("from '../verticales/licitaciones/tender-durable-flags.js'"), `${label}: falta import de tender-durable-flags.js`);
   assert.ok(source.includes('callCreateTenderProcessingJob'), `${label}: falta la llamada al wrapper psi_create_tender_processing_job`);
   assert.ok(source.includes('processing:'), `${label}: la respuesta no expone la clave processing`);
 

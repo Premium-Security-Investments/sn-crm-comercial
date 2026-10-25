@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createClient } from '@supabase/supabase-js';
-import { createTenderSourceReconciliation } from '../../tender-source-reconciliation.js';
+import { createTenderSourceReconciliation } from '../../verticales/licitaciones/tender-source-reconciliation.js';
 
 const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();

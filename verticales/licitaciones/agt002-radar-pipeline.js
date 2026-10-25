@@ -8,7 +8,7 @@ import { assertAgt002RadarPreanalysisMeasuredUsage } from './agt002-radar-preana
 import { classifyAgt002RadarPreanalysisError } from './agt002-radar-preanalysis-worker.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { extractTenderCoreServiceTerms } from './tender-relevance-terms.js';
-import { ESU_DIRECT_REFRESH_SOURCE } from './esu-direct-refresh.js';
+import { ESU_DIRECT_REFRESH_SOURCE } from '../../esu-direct-refresh.js';
 
 export const AGT002_RADAR_PIPELINE_STAGES=Object.freeze(['esu_refresh','fetch','gate','ledger','claim','learning','agt','persist']);
 function enabled(environment){return buildAgt002AnalysisConfig(environment).AGT002_RADAR_GATE;}

@@ -4,7 +4,7 @@ import {
   AGT002_CHUNK_MAX_CHARS,
   AGT002_CHUNK_OVERLAP_CHARS,
   buildAgt002DocumentChunks,
-} from '../agt002-document-chunks.js';
+} from '../verticales/licitaciones/agt002-document-chunks.js';
 
 function hash(text) {
   return createHash('sha256').update(text).digest('hex');

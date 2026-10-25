@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { createTenderProcessingDrain } from '../tender-processing-drain.js';
+import { createTenderProcessingDrain } from '../verticales/licitaciones/tender-processing-drain.js';
 
 // A scripted worker whose runOnce() returns a predefined sequence of statuses
 // (falling back to 'empty' once exhausted) and can advance a shared clock so

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { resolveAgt002GovernedDocumentForExecution } from '../agt002-governed-document-rehydration.js';
+import { resolveAgt002GovernedDocumentForExecution } from '../verticales/licitaciones/agt002-governed-document-rehydration.js';
 
 // RED slice: the governed document-workset EXECUTION path (agt002-reanalysis-executor.js,
 // see tests/agt002-governed-document-workset-execution.test.mjs) already accepts an injected
@@ -310,7 +310,7 @@ test('ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs imports reso
 
   assert.match(
     source,
-    /import\s*\{\s*resolveAgt002GovernedDocumentForExecution\s*\}\s*from\s*['"]\.\.\/\.\.\/agt002-governed-document-rehydration\.js['"]/,
+    /import\s*\{\s*resolveAgt002GovernedDocumentForExecution\s*\}\s*from\s*['"]\.\.\/\.\.\/verticales\/licitaciones\/agt002-governed-document-rehydration\.js['"]/,
     'the worker entrypoint must import resolveAgt002GovernedDocumentForExecution from ../../agt002-governed-document-rehydration.js',
   );
   assert.match(

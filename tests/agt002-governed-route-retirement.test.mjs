@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
+import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
 
 function fakeResponse() {
   const response = {
@@ -28,7 +28,7 @@ test('rejects with HTTP 410 and the exact governed-retirement payload', () => {
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 
-const IMPORT_PATTERN = /\{[^}]*\brejectUngovernedAgt002Route\b[^}]*\}\s*from\s*['"]\.\.\/agt002-governed-route-retirement\.js['"]/;
+const IMPORT_PATTERN = /\{[^}]*\brejectUngovernedAgt002Route\b[^}]*\}\s*from\s*['"]\.\.\/verticales\/licitaciones\/agt002-governed-route-retirement\.js['"]/;
 
 for (const [label, source] of [['server/index.js', server], ['api/[...path].js', api]]) {
   test(`${label} imports the governed-retirement helper`, () => {

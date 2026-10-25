@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { callConfirmTenderClosureActa, callReopenTenderClosureActa, callUpsertTenderClosureActa, getTenderClosureActa, MAX_REASONS } from '../tender-closure-acta-rpc.js';
+import { callConfirmTenderClosureActa, callReopenTenderClosureActa, callUpsertTenderClosureActa, getTenderClosureActa, MAX_REASONS } from '../verticales/licitaciones/tender-closure-acta-rpc.js';
 
 const JUAN = { id: '11111111-1111-4111-8111-111111111111', role: 'gerencia', identity_type: 'human', active: true, permissions: ['licitaciones'] };
 const COMERCIAL = { ...JUAN, id: '33333333-3333-4333-8333-333333333333', role: 'comercial' };

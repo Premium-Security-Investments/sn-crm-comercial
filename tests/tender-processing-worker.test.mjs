@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
-import { createTenderProcessingWorker, INACTIVE_OPPORTUNITY_RECHECK_MS, isWorkerYieldStatus, WORKER_YIELD_STATUSES } from '../tender-processing-worker.js';
-import { MAX_ATTEMPTS } from '../tender-pipeline-backoff.js';
+import { createTenderProcessingWorker, INACTIVE_OPPORTUNITY_RECHECK_MS, isWorkerYieldStatus, WORKER_YIELD_STATUSES } from '../verticales/licitaciones/tender-processing-worker.js';
+import { MAX_ATTEMPTS } from '../verticales/licitaciones/tender-pipeline-backoff.js';
 
 function makeDeps(overrides = {}) {
   const calls = {

@@ -13,7 +13,7 @@ import test from 'node:test';
 import {
   admitAgt002InitialAnalysisJob,
   claimAgt002InitialAnalysisJob,
-} from '../agt002-initial-analysis-api.js';
+} from '../verticales/licitaciones/agt002-initial-analysis-api.js';
 
 function fakeDb({ rpcResults = {} } = {}) {
   const rpcCalls = [];

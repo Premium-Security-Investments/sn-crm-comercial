@@ -1,11 +1,11 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY } from '../agt002-preview-engine.js';
-import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
+import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
-import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../agt002-v3-prompt-budget.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../verticales/licitaciones/agt002-v3-prompt-budget.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 
 function baseEnv(overrides = {}) {
@@ -467,7 +467,7 @@ for (const badAsOf of ['2026-08-29T00:00:00.000+00:00', '2026-08-29T08:30:00.000
   assert.equal(capturedOptions.semanticDiscoveryProvider, undefined);
 }
 
-const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../verticales/licitaciones/agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
 assert.doesNotMatch(source, /readFileSync/, 'the runtime must never read the local legal corpus fixture as production evidence; it must consume an injected, DB-loaded context');
 assert.doesNotMatch(source, /AGT002_[A-Z0-9_]*SEMANTIC/, 'semantic discovery must not be gated by an environment flag of its own; it belongs to the V3 wiring');

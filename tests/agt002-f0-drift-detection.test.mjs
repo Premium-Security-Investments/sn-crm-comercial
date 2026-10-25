@@ -5,13 +5,13 @@ import { readFileSync } from 'node:fs';
 import {
   SURFACE_NAMES,
   buildAgt002ControlPlaneIdentity,
-} from '../agt002-control-plane-identity.js';
-import { observeAgt002Surfaces } from '../agt002-control-plane-observe.js';
-import { getAgt002VercelControlPlaneIdentity } from '../agt002-vercel-control-plane-identity.js';
+} from '../verticales/licitaciones/agt002-control-plane-identity.js';
+import { observeAgt002Surfaces } from '../verticales/licitaciones/agt002-control-plane-observe.js';
+import { getAgt002VercelControlPlaneIdentity } from '../verticales/licitaciones/agt002-vercel-control-plane-identity.js';
 import {
   buildRadarPipelineIdentity,
   buildReanalysisWorkerIdentity,
-} from '../agt002-control-plane-surface-builders.js';
+} from '../verticales/licitaciones/agt002-control-plane-surface-builders.js';
 import { generateAgt002ReleaseReceipt } from '../scripts/agt002-generate-release-receipt.mjs';
 import { AGT002_HOST_ROUTE_GRACE_UNTIL_UTC, checkAgt002Drift } from '../scripts/agt002-check-drift.mjs';
 import { collectAgt002SurfaceObservations, buildAgt002ObserveSurfacesResult } from '../scripts/agt002-observe-surfaces.mjs';
@@ -20,7 +20,7 @@ import {
   RADAR_MONOLITH_MODULES,
   collectAgt002SurfaceCodePaths,
   computeAgt002PinnedSurfaceMinShas,
-} from '../agt002-control-plane-surface-paths.js';
+} from '../verticales/licitaciones/agt002-control-plane-surface-paths.js';
 
 // --- identity builders: version is only ever an explicit immutable input, never inferred ---
 
@@ -574,12 +574,12 @@ test('collectAgt002SurfaceCodePaths: follows the runner import closure, adds the
 
   const radarImport = collectAgt002SurfaceCodePaths('radar_daily_import');
   assert.ok(radarImport.includes('ops/agt002-radar-daily/run-agt002-radar-import.mjs'));
-  assert.ok(radarImport.includes('tender-radar-deep-search.js'));
+  assert.ok(radarImport.includes('verticales/licitaciones/tender-radar-deep-search.js'));
   assert.equal(radarImport.includes('api/[...path].js'), false);
   assert.equal(radarImport.includes('server/index.js'), false);
   assert.deepEqual(collectAgt002SurfaceCodePaths('radar_requests'), radarImport);
   assert.deepEqual(collectAgt002SurfaceCodePaths('phase_change_review'), radarImport, 'la revisión programada corre el mismo runner');
-  assert.ok(radarImport.includes('agt002-phase-change-review.js'));
+  assert.ok(radarImport.includes('verticales/licitaciones/agt002-phase-change-review.js'));
 
   assert.throws(() => collectAgt002SurfaceCodePaths('origin_main'), /Not a pinned AGT-002 surface/);
 });

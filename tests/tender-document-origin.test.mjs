@@ -15,9 +15,9 @@ import {
   suggestTenderDocumentOrigin,
   tenderDocumentBreaksEntitySilence,
   tenderDocumentSourceClassification,
-} from '../tender-document-origin.js';
-import { agt002InitialRequestedMembers } from '../agt002-initial-document-rule.js';
-import { agt002IsOfficialDocumentSource } from '../agt002-schedule-freshness.js';
+} from '../verticales/licitaciones/tender-document-origin.js';
+import { agt002InitialRequestedMembers } from '../verticales/licitaciones/agt002-initial-document-rule.js';
+import { agt002IsOfficialDocumentSource } from '../verticales/licitaciones/agt002-schedule-freshness.js';
 
 test('el vocabulario es el mismo que acepta la base', () => {
   assert.deepEqual(TENDER_DOCUMENT_ORIGIN_VALUES, ['entidad', 'tercero', 'propio', 'borrador']);
@@ -114,9 +114,9 @@ test('el servidor declara el origen en las tres rutas que graban versiones', () 
 });
 
 test('la selección de documentos pide el origen a la base', () => {
-  const auto = readFileSync(new URL('../agt002-auto-initial.js', import.meta.url), 'utf8');
+  const auto = readFileSync(new URL('../verticales/licitaciones/agt002-auto-initial.js', import.meta.url), 'utf8');
   assert.match(auto, /\.select\('id,name,tender_id,origin'\)/, 'sin leerlo, la clase volvería a ser una suposición');
-  const frescura = readFileSync(new URL('../agt002-schedule-freshness.js', import.meta.url), 'utf8');
+  const frescura = readFileSync(new URL('../verticales/licitaciones/agt002-schedule-freshness.js', import.meta.url), 'utf8');
   assert.match(frescura, /\.select\('created_at,source,origin'\)/);
   assert.match(frescura, /tenderDocumentBreaksEntitySilence\(document, agt002IsOfficialDocumentSource\)/);
 });

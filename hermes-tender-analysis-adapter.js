@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
+import { validateTenderAnalysisResult } from './verticales/licitaciones/tender-analysis-domain.js';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
 const HERMES_PRODUCER = 'HERMES-INTERIM';

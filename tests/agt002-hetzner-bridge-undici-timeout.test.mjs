@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const sourcePath = fileURLToPath(new URL('../agt002-hetzner-bridge-client.js', import.meta.url));
+const sourcePath = fileURLToPath(new URL('../verticales/licitaciones/agt002-hetzner-bridge-client.js', import.meta.url));
 const source = readFileSync(sourcePath, 'utf8');
 
 test('imports Agent and fetch as undiciFetch from undici', () => {

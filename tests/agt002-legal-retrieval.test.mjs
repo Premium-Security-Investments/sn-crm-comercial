@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
+import { retrieveAgt002LegalEvidence } from '../verticales/licitaciones/agt002-legal-retrieval.js';
 
 function makeSource(overrides = {}) {
   return {

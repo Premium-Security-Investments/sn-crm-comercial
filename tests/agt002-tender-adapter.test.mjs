@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import {
   validateAgt002WorkbenchContinuityReference,
   buildAgt002WorkbenchContinuityReference,
-} from '../agt002-tender-adapter.js';
+} from '../verticales/licitaciones/agt002-tender-adapter.js';
 import { buildSyntheticAgt002TenderAnalysis } from './fixtures/agt002-synthetic-responder.mjs';
 
 const snapshot = {

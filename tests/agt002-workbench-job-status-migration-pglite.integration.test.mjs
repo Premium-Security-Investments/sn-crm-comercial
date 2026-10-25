@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { getAgt002WorkbenchApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
-import { AGT002_WORKBENCH_CAPABILITIES, AGT002_WORKBENCH_POLICY_VERSION } from '../agt002-workbench-contract.js';
+import { getAgt002WorkbenchApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
+import { AGT002_WORKBENCH_CAPABILITIES, AGT002_WORKBENCH_POLICY_VERSION } from '../verticales/licitaciones/agt002-workbench-contract.js';
 import {
   apply,
   countEvidence,

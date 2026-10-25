@@ -6,7 +6,7 @@
 // { document_type, name, extracted_text } signals — never exclusion, never a universal filename
 // rule, never a reproduction of the document's own text in its output.
 import { strict as assert } from 'node:assert';
-import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
+import { suggestAgt002DocumentRelevance } from '../verticales/licitaciones/agt002-document-relevance-suggestion.js';
 
 const OWN_KEYS = ['confidence', 'policy_version', 'reason', 'reason_code', 'recommended'];
 

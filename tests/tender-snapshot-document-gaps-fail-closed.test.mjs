@@ -47,17 +47,17 @@ import {
   buildTenderSnapshotInput,
   registerSiioRulesAnalysis,
   registerTenderDocumentSnapshot,
-} from '../tender-analysis-foundation.js';
-import { loadAgt002TenderRequirementDocumentGaps } from '../agt002-tender-requirement-gaps.js';
-import { buildTenderRequirementInventory } from '../tender-requirement-inventory.js';
+} from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { loadAgt002TenderRequirementDocumentGaps } from '../verticales/licitaciones/agt002-tender-requirement-gaps.js';
+import { buildTenderRequirementInventory } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   buildTenderSemanticManifest,
   resolveTenderSemanticDecisionFrontier,
-} from '../tender-semantic-manifest.js';
-import { extractTenderDocumentText } from '../tender-document-text-extraction.js';
-import { refreshOfficialTenderDocument } from '../tender-document-versioning.js';
-import { createTenderProcessingWorker } from '../tender-processing-worker.js';
-import { TENDER_OFFICIAL_DOCUMENT_OMITTED_REASON } from '../tender-official-document-coverage.js';
+} from '../verticales/licitaciones/tender-semantic-manifest.js';
+import { extractTenderDocumentText } from '../verticales/licitaciones/tender-document-text-extraction.js';
+import { refreshOfficialTenderDocument } from '../verticales/licitaciones/tender-document-versioning.js';
+import { createTenderProcessingWorker } from '../verticales/licitaciones/tender-processing-worker.js';
+import { TENDER_OFFICIAL_DOCUMENT_OMITTED_REASON } from '../verticales/licitaciones/tender-official-document-coverage.js';
 import {
   ARCHIVE_TXT_CONTENT,
   buildMixedEntriesArchive,

@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 
-import { validateAgt002EvidencePackageFreezeRequest } from '../agt002-evidence-package-api.js';
-import { normalizeAgt002WorkflowScopeSnapshot } from '../agt002-initial-workflow.js';
-import { admitAgt002InitialAnalysis } from '../agt002-initial-analysis-admission.js';
+import { validateAgt002EvidencePackageFreezeRequest } from '../verticales/licitaciones/agt002-evidence-package-api.js';
+import { normalizeAgt002WorkflowScopeSnapshot } from '../verticales/licitaciones/agt002-initial-workflow.js';
+import { admitAgt002InitialAnalysis } from '../verticales/licitaciones/agt002-initial-analysis-admission.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SCHEMA_VERSION = 'agt002-initial-analysis-admission-v1';

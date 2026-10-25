@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   buildRequirementRows, decisiveRequirementRows, otherRiskNotes, requirementSeedItems, requirementTargetDate, REQUIREMENT_ITEM_KEY_PREFIX,
   REQUIREMENT_STATUS_LABEL,
-} from '../agt002-requirements-model.js';
+} from '../verticales/licitaciones/agt002-requirements-model.js';
 
 const claim = (id, text, locator = 'Numeral 1') => ({ id, type: 'cited_fact', text, materiality: 'MATERIAL', evidenceStatus: 'SUPPORTED', inferenceBasis: null, sources: [{ documentId: 'd1', documentName: 'pliego.pdf', locator }] });
 const report = {
@@ -126,7 +126,7 @@ test('migración 125: función solo para service_role y siembra append-only por 
 });
 
 test('la instrucción de cada requisito cabe en la nota de la base (2000): un requisito largo no tumba la siembra', async () => {
-  const { requirementSeedItems, REQUIREMENT_SEED_INSTRUCTION_MAX } = await import('../agt002-requirements-model.js');
+  const { requirementSeedItems, REQUIREMENT_SEED_INSTRUCTION_MAX } = await import('../verticales/licitaciones/agt002-requirements-model.js');
   assert.equal(REQUIREMENT_SEED_INSTRUCTION_MAX, 2000);
   const long = 'x'.repeat(1500);
   const [item] = requirementSeedItems([{ key: 'r1', area: 'Jurídico', title: 'Garantía', rejection: true, status: 'por_confirmar', actions: [long], demand: long, sources: [] }], '2026-10-23', '2026-10-21');

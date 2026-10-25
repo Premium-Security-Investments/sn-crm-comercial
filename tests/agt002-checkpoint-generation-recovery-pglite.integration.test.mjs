@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { computeAgt002CheckpointGenerationRecoveryKey } from '../agt002-checkpoint-generation-recovery.js';
+import { computeAgt002CheckpointGenerationRecoveryKey } from '../verticales/licitaciones/agt002-checkpoint-generation-recovery.js';
 
 const strip = value => value.replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
 const migration = name => strip(readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8'));

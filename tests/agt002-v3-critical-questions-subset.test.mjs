@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from '../agt002-v3-compatibility.js';
+import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from '../verticales/licitaciones/agt002-v3-compatibility.js';
 
 // Phase 9 (T8/E): the v2 projection must expose `critical_questions` as a DERIVED SUBSET of the
 // full `questions` list — a material-exception shortlist that never hides or replaces the complete

@@ -2,9 +2,9 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { presentCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
-import { deriveAgt002ManizalesManifestScope } from '../agt002-manizales-manifest-wiring.js';
-import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../agt002-manizales-manifest-source.js';
+import { presentCurrentTenderAnalysis } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { deriveAgt002ManizalesManifestScope } from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
+import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 import { runAgt002ManizalesV3LocalRun } from '../scripts/agt002-manizales-v3-local-run.mjs';
 
 // AGT-002 Manizales · BLOQUE 1 BACKEND · integración productiva de PRESENTACIÓN (read-side only)

@@ -7,7 +7,7 @@ import path from 'node:path';
 import {
   AGT002_PHASE01_SCHEMA_VERSIONS,
   validateAgt002Phase01Schema,
-} from '../agt002-phase01-executable-controls.js';
+} from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 // Loading throws (ENOENT) until Task 5 Step 3 authors
 // contracts/agt002-phase01/v1/binding-registry.schema.json and

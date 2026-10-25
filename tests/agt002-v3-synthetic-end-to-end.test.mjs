@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
-import { validateAgt002IntegralAnalysisV3 } from '../agt002-integral-analysis-v3.js';
-import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from '../agt002-v3-compatibility.js';
-import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js';
+import { validateAgt002IntegralAnalysisV3 } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from '../verticales/licitaciones/agt002-v3-compatibility.js';
+import { registerAgt002PreviewAnalysis } from '../verticales/licitaciones/agt002-preview-persistence.js';
 import {
   buildAgt002V3SyntheticIntegralAnalysis, buildAgt002V3SyntheticValidationContext,
 } from './fixtures/agt002-v3-synthetic-responder.mjs';

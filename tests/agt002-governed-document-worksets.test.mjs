@@ -7,7 +7,7 @@ import {
   freezeAgt002WorksetEvidence,
   publicAgt002WorksetSummary,
   computeAgt002WorksetSelectionHash,
-} from '../agt002-governed-document-worksets.js';
+} from '../verticales/licitaciones/agt002-governed-document-worksets.js';
 
 function hex64(label) {
   const base = Buffer.from(String(label)).toString('hex');

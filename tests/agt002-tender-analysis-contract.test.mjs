@@ -6,12 +6,12 @@ import {
   validateAgt002TenderAnalysisRequest,
   validateAgt002TenderAnalysisEnvelopeV3,
   adaptAgt002TenderAnalysisV3,
-} from '../agt002-tender-adapter.js';
+} from '../verticales/licitaciones/agt002-tender-adapter.js';
 import { buildSyntheticAgt002TenderAnalysis } from './fixtures/agt002-synthetic-responder.mjs';
-import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
-import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
+import { projectAgt002IntegralV3ToV2 } from '../verticales/licitaciones/agt002-v3-compatibility.js';
 
 const v1Files = ['manifest.json', 'analysis.request.schema.json', 'analysis.response.schema.json'];
 const v1Hash = createHash('sha256').update(v1Files.map(name => readFileSync(new URL(`../contracts/agents/AGT-002/v1/${name}`, import.meta.url))).join('\n')).digest('hex');

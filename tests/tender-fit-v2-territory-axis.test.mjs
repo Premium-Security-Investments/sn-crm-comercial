@@ -3,8 +3,8 @@
 // `reasons.filter(r => r.axis === 'territorio')` para inspeccionar la razón base y
 // las razones adicionales (cobertura nacional).
 import assert from 'node:assert/strict';
-import { evaluateTenderFit } from '../tender-fit-policy.js';
-import { TERRITORY_NATIONAL_COVERAGE_PHRASES } from '../tender-fit-v2-parameters.js';
+import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
+import { TERRITORY_NATIONAL_COVERAGE_PHRASES } from '../verticales/licitaciones/tender-fit-v2-parameters.js';
 
 const NOW = '2026-09-20T15:00:00.000Z';
 

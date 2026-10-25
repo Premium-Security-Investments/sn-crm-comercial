@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import {
   resolveLegacyExtractedText,
   TenderDocumentExtractionGapError,
-} from '../tender-document-text-extraction.js';
+} from '../verticales/licitaciones/tender-document-text-extraction.js';
 
 function okResult(text) {
   return { status: 'ok', text, metadata: {} };

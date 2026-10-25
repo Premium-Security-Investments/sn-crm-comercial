@@ -14,8 +14,8 @@ import {
   computeAgt002CompanyEvidenceDocumentalManifestIdentityHash,
   AGT002_COMPANY_EVIDENCE_DOCUMENTAL_MANIFEST_IDENTITY_HASH,
   AGT002_COMPANY_EVIDENCE_DOCUMENTAL_MANIFEST,
-} from '../agt002-company-evidence-documental-manifest.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+} from '../verticales/licitaciones/agt002-company-evidence-documental-manifest.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 
 // ---------------------------------------------------------------------------
 // This suite exercises the real v0.3.1-approved-20260829 catalog exposed by the

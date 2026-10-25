@@ -8,8 +8,8 @@ import {
   sectionizeVigentePliego,
   buildContractualRegistry,
   AGT002_CONTRACTUAL_REGISTRY_ARTIFACT_TYPE,
-} from '../agt002-contractual-registry.js';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-contractual-registry.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 // Orden canónico de un numeral de pliego: comparación componente a componente numérica
 // (1.1 < 1.2 < 1.2.1 < 1.10 < 2.1 < ... < 6.16). Sirve para verificar que las secciones

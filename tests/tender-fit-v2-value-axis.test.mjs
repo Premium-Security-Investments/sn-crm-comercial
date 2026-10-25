@@ -12,7 +12,7 @@
 // (no se exige una función de eje aislada); se extrae `reasons.filter(r => r.axis
 // === 'valor')` para inspeccionar la razón base y las razones adicionales opcionales.
 import assert from 'node:assert/strict';
-import { evaluateTenderFit } from '../tender-fit-policy.js';
+import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
 import {
   SMMLV_2026,
   VALUE_FAMILY_FLOORS_SMMLV,
@@ -20,7 +20,7 @@ import {
   CAPACITY_FINANCIAL_ASSUMED_PERCENTAGE,
   CORPORATE_MAX_DEBT_RATIO,
   CORPORATE_EXPERIENCE_CAPACITY_SMMLV,
-} from '../tender-fit-v2-parameters.js';
+} from '../verticales/licitaciones/tender-fit-v2-parameters.js';
 
 const NOW = '2026-09-20T15:00:00.000Z';
 const SMMLV = SMMLV_2026.value_cop;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { TenderRequest } from '../types';
 import { formatDeadline } from './tenderWorkspaceFormat';
-import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../../../agt002-company-clarification.js';
+import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../../../verticales/licitaciones/agt002-company-clarification.js';
 
 // Aclaraciones del encargado (Juan, 2026-10-21): le resuelven una duda o le corrigen algo a Vig-IA. Quedan con nombre y
 // fecha, y Vig-IA actualiza el análisis sólo en lo que tocan (reanálisis incremental).

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
-import { AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT } from '../agt002-company-dossier.js';
+import { AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT } from '../verticales/licitaciones/agt002-company-dossier.js';
 
 // F2: the 061 registry already carries 17 typed classes with independent
 // existence_status/human_review_status/applicability_status columns, but every
@@ -12,7 +12,7 @@ import { AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT } from '../agt002-company-dossi
 // the full contract: 17 classes as separate objects, five independent status
 // dimensions that presence must never imply, a closed coverage manifest, and strict
 // exclusion of sensitive/raw fields.
-const modulePath = new URL('../agt002-company-evidence-classes.js', import.meta.url);
+const modulePath = new URL('../verticales/licitaciones/agt002-company-evidence-classes.js', import.meta.url);
 if (!existsSync(modulePath)) {
   assert.match(
     AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT,
@@ -348,7 +348,7 @@ if (!existsSync(modulePath)) {
 
   // Source-level regression: even if the guard were ever bypassed, the module's own source
   // must never literally call .select with a wildcard against this table.
-  const evidenceClassesSource = readFileSync(new URL('../agt002-company-evidence-classes.js', import.meta.url), 'utf8');
+  const evidenceClassesSource = readFileSync(new URL('../verticales/licitaciones/agt002-company-evidence-classes.js', import.meta.url), 'utf8');
   assert.doesNotMatch(
     evidenceClassesSource,
     /\.select\(\s*['"`]\*/,

@@ -13,7 +13,7 @@ import {
 import { AGT002_PROCESS_ONBOARDING_CHECKLIST_IDS } from './agt002-process-onboarding-gate.js';
 import { AGT002_PROCESS_PACKAGE_SCHEMA_VERSION } from './agt002-process-package.js';
 
-const SOURCE_URL = new URL('./data/agt002/manizales-sa-24-2026.integral-manifest.v1.json', import.meta.url);
+const SOURCE_URL = new URL('../../data/agt002/manizales-sa-24-2026.integral-manifest.v1.json', import.meta.url);
 
 function deepFreeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;

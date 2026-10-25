@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
-import { callCreateTenderProcessingJob } from '../tender-tracking-rpc.js';
-import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
+import { callCreateTenderProcessingJob } from '../verticales/licitaciones/tender-tracking-rpc.js';
+import { dispatchTenderProcessingAfterConversion } from '../verticales/licitaciones/tender-processing-dispatch.js';
 
 const tenderId = '11111111-1111-4111-8111-111111111111';
 const opportunityId = '22222222-2222-4222-8222-222222222222';

@@ -1,4 +1,4 @@
-import { ACTIONS, requireAction } from './access-control.js';
+import { ACTIONS, requireAction } from '../../access-control.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TEXT_LIMITS = { closing_note: 4000, decision_summary: 4000, decision_quote: 2000, recommendation: 4000, system_lesson: 4000 };

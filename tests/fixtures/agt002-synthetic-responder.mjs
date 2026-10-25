@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   validateAgt002TenderAnalysisEnvelope,
   validateAgt002TenderAnalysisRequest,
-} from '../../agt002-tender-adapter.js';
+} from '../../verticales/licitaciones/agt002-tender-adapter.js';
 
 /**
  * Test-only fixture. It must never be imported by runtime code: it imitates

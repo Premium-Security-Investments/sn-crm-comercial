@@ -1,4 +1,4 @@
-import { ACTIONS, requireAction } from './access-control.js';
+import { ACTIONS, requireAction } from '../../access-control.js';
 import {
   AGT002_WORKBENCH_CONTRACT_VERSION,
   AGT002_WORKBENCH_POLICY_VERSION,

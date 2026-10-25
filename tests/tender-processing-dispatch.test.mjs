@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
+import { dispatchTenderProcessingAfterConversion } from '../verticales/licitaciones/tender-processing-dispatch.js';
 
 async function run() {
   {

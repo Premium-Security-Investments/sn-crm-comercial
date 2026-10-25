@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   agt002BogotaDayStart, filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions, AGT002_AUTO_INITIAL_POLICY_VERSION,
-} from '../agt002-auto-initial.js';
+} from '../verticales/licitaciones/agt002-auto-initial.js';
 
 const SINCE = '2026-10-06T17:00:00.000Z';
 const NOW = new Date('2026-10-06T20:00:00.000Z');

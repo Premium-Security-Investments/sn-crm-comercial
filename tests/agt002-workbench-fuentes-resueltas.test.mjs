@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createAgt002WorkbenchResponder } from '../agt002-workbench-responder.js';
+import { createAgt002WorkbenchResponder } from '../verticales/licitaciones/agt002-workbench-responder.js';
 
 const ids = Object.freeze({
   job: '20000000-0000-4000-8000-000000000001',

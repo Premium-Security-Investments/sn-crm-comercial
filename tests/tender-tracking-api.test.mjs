@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
 
-const shared = readFileSync(new URL('../tender-tracking-rpc.js', import.meta.url), 'utf8');
+const shared = readFileSync(new URL('../verticales/licitaciones/tender-tracking-rpc.js', import.meta.url), 'utf8');
 assert.match(shared, /export async function callTenderTrackingUpdate/);
 assert.match(shared, /export async function callTenderTrackingTransition/);
 assert.match(shared, /export async function callTenderOpportunityDiscard/);
@@ -15,7 +15,7 @@ assert.doesNotMatch(shared, /trackingRollbackPatch/);
 
 for (const path of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate \} from '\.\.\/tender-tracking-rpc\.js';/);
+  assert.match(source, /import \{ callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate \} from '\.\.\/verticales\/licitaciones\/tender-tracking-rpc\.js';/);
   assert.match(source, /app\.get\('\/api\/tender-tracking'/);
   assert.match(source, /app\.get\('\/api\/tender-tracking-events'/);
   assert.match(source, /app\.post\('\/api\/tender-tracking-update'/);

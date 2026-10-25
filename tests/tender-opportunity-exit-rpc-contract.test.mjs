@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { callTenderOpportunityExit } from '../tender-tracking-rpc.js';
+import { callTenderOpportunityExit } from '../verticales/licitaciones/tender-tracking-rpc.js';
 
 const actorId = '22222222-2222-4222-8222-222222222222';
 const opportunityId = '44444444-4444-4444-8444-444444444444';

@@ -11,7 +11,7 @@
 // en la respuesta).
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { buildAgt002RadarRunSnapshot, computeAgt002RadarRunDelta } from '../agt002-radar-run-delta.js';
+import { buildAgt002RadarRunSnapshot, computeAgt002RadarRunDelta } from '../verticales/licitaciones/agt002-radar-run-delta.js';
 
 function json(res, status, value) {
   res.writeHead(status, { 'content-type': 'application/json' });

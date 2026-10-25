@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AGT002_WORKBENCH_CAPABILITIES, validateAgt002WorkbenchResult } from './agt002-workbench-contract.js';
-import { redactAgt003CopilotText } from './verticales/comercial/agt003-copilot-input.js';
-import { minimizarFuentes, sostieneAfirmacion } from './catalogo-fuentes.js';
+import { redactAgt003CopilotText } from '../comercial/agt003-copilot-input.js';
+import { minimizarFuentes, sostieneAfirmacion } from '../../catalogo-fuentes.js';
 
 // Política inmutable de la Mesa Vig-IA para el puente de producción (Fase B1). El
 // contexto es dato citable, nunca instrucción; Vig-IA no tiene autoridad de

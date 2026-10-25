@@ -25,8 +25,8 @@ import {
   isUnsafeActionableReviewArchiveEntryName,
   validateActionableReviewAttachmentBytes,
   validateActionableReviewAttachmentTextBytes,
-} from '../agt002-actionable-review-attachment-validation.js';
-import { ACTIONABLE_REVIEW_ATTACHMENT_MAX_BYTES } from '../agt002-actionable-review-http.js';
+} from '../verticales/licitaciones/agt002-actionable-review-attachment-validation.js';
+import { ACTIONABLE_REVIEW_ATTACHMENT_MAX_BYTES } from '../verticales/licitaciones/agt002-actionable-review-http.js';
 import { buildDocxBuffer, buildPdfBuffer, buildXlsxBuffer, replaceEqualLengthEntryName } from './fixtures/tender-document-archive-fixtures.mjs';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';

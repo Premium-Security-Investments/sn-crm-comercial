@@ -63,6 +63,6 @@ test('HR-004: both technical-video-surveillance-scope abstentions (category_over
 });
 
 test('the script imports the governed extraction entry point, not the generic v2 one', () => {
-  assert.match(source, /import\s*\{\s*buildGovernedRequirementAnalysis,\s*AGT002_GOVERNED_REQUIREMENT_CITATION_PATTERNS\s*\}\s*from\s*'\.\.\/tender-requirement-extraction\.js'/);
+  assert.match(source, /import\s*\{\s*buildGovernedRequirementAnalysis,\s*AGT002_GOVERNED_REQUIREMENT_CITATION_PATTERNS\s*\}\s*from\s*'\.\.\/verticales\/licitaciones\/tender-requirement-extraction\.js'/);
   assert.doesNotMatch(source, /\bbuildRequirementAnalysis\(documents/);
 });

@@ -25,21 +25,21 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
-import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
-import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
-import { loadAgt002OpportunityContextV2, AGT002_OPPORTUNITY_CONTEXT_SELECT } from '../agt002-opportunity-context-v2.js';
-import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
-import { getCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
-import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, loadAgt002CompanyEvidenceRegistryEntries } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { loadAgt002IntegralGovernanceOverrides } from '../verticales/licitaciones/agt002-integral-governance-overrides.js';
+import { loadAgt002OpportunityContextV2, AGT002_OPPORTUNITY_CONTEXT_SELECT } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { loadAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { adaptAgt002RetrievalDocuments } from '../verticales/licitaciones/agt002-retrieval-document-adapter.js';
+import { getCurrentTenderAnalysis } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { selectAgt002ManizalesManifestSource } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 import {
   AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID,
   AGT002_INTEGRAL_MANIFEST_PROCESO,
-} from '../agt002-manizales-integral-manifest.js';
-import { scrubOpenPii, assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
+import { scrubOpenPii, assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const EXECUTE_MARKER = resolve(PROJECT_ROOT, '.superpowers/sdd/evidence/agt002-v3-canary-execute.marker');

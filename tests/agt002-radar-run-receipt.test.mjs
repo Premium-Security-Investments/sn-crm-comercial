@@ -10,7 +10,7 @@ import {
   readLatestAgt002RadarRunReceipt,
   recordAgt002RadarRunReceipt,
   sanitizeAgt002RadarRunReceiptErrorMessage,
-} from '../agt002-radar-run-receipt.js';
+} from '../verticales/licitaciones/agt002-radar-run-receipt.js';
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 const STARTED = '2026-09-30T13:00:00.000Z';
@@ -139,7 +139,7 @@ assert.throws(() => buildAgt002RadarRunReceipt({ runId: RUN_ID, startedAt: START
     sources: [{ name: 'SECOP II', attempted: true, succeeded: true, pages_read: 1, records_read: 1, candidates_found: 1 }],
   };
   assert.deepEqual(buildAgt002RadarRunReceipt(input), buildAgt002RadarRunReceipt(input));
-  const source = readFileSync(new URL('../agt002-radar-run-receipt.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/agt002-radar-run-receipt.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /Date\.now\(\)|new Date\(\)/);
 }
 

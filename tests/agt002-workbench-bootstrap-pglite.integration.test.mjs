@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { getAgt002WorkbenchApi, postAgt002MessageApi } from '../agt002-workbench-api.js';
-import { AGT002_WORKBENCH_CAPABILITIES } from '../agt002-workbench-contract.js';
+import { getAgt002WorkbenchApi, postAgt002MessageApi } from '../verticales/licitaciones/agt002-workbench-api.js';
+import { AGT002_WORKBENCH_CAPABILITIES } from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 // Arranque real de la Mesa post-GO contra PostgreSQL (PGlite) con las migraciones
 // productivas 040 + 045: un primer GET crea el hilo de forma idempotente y deriva la

@@ -18,7 +18,7 @@ import {
   evaluateTenderCompetibility,
   filterActiveTenderCompetibilityRows,
   requireTenderCompetibleForConversion,
-} from '../tender-competibility-policy.js';
+} from '../verticales/licitaciones/tender-competibility-policy.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 

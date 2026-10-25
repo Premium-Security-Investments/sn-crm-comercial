@@ -17,7 +17,7 @@ test('generator does not import Supabase, network or secrets', () => {
 
 test('generator reads only the local registry and builds via the proposals module', () => {
   assert.match(source, /docs\/governance\/registro\/manizales-sa-24-2026\.registry\.json/);
-  assert.match(source, /from '\.\.\/agt002-pre-go-section-proposals\.js'/);
+  assert.match(source, /from '\.\.\/verticales\/licitaciones\/agt002-pre-go-section-proposals\.js'/);
   assert.match(source, /buildAgt002PreGoSectionProposals/);
 });
 

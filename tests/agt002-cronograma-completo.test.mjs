@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { PRE_GO_SCHEMA_V2, AGT002_V2_EXTRA_DEADLINE_KINDS } from '../agt002-pre-go-analysis-v2.js';
-import { buildInitialSynthesisModelSchema } from '../agt002-initial-analysis-aggregate-builder.js';
+import { PRE_GO_SCHEMA_V2, AGT002_V2_EXTRA_DEADLINE_KINDS } from '../verticales/licitaciones/agt002-pre-go-analysis-v2.js';
+import { buildInitialSynthesisModelSchema } from '../verticales/licitaciones/agt002-initial-analysis-aggregate-builder.js';
 
 const V1 = JSON.parse(readFileSync(new URL('../schemas/agt002/pre_go_analysis.v1.schema.json', import.meta.url), 'utf8'));
 
@@ -22,7 +22,7 @@ test('el modelo siempre nombra el trámite de cada fecha', () => {
 });
 
 test('instrucciones: transcribir el cronograma completo al leer y una fecha por trámite al sintetizar', () => {
-  const runtime = readFileSync(new URL('../agt002-initial-analysis-runtime.js', import.meta.url), 'utf8');
+  const runtime = readFileSync(new URL('../verticales/licitaciones/agt002-initial-analysis-runtime.js', import.meta.url), 'utf8');
   assert.match(runtime, /const MEMBER_POLICY = '[^']*transcríbalo completo en una nota propia[^']*sin resumir ni omitir filas/);
   assert.match(runtime, /const DEADLINES_POLICY = '[^']*una entrada por trámite, aunque la fecha ya haya pasado/);
   assert.match(runtime, /Nunca use OBSERVATIONS para las observaciones al informe de evaluación/);
@@ -30,7 +30,7 @@ test('instrucciones: transcribir el cronograma completo al leer y una fecha por 
 });
 
 test('el reporte expone la etiqueta y la pantalla la usa en el cronograma', () => {
-  const report = readFileSync(new URL('../agt002-initial-analysis-report.js', import.meta.url), 'utf8');
+  const report = readFileSync(new URL('../verticales/licitaciones/agt002-initial-analysis-report.js', import.meta.url), 'utf8');
   assert.match(report, /label: typeof deadline\.label === 'string'/);
   const workspace = readFileSync(new URL('../src/tenders/workspace/TenderWorkspace.tsx', import.meta.url), 'utf8');
   assert.match(workspace, /export function TenderScheduleCard/);

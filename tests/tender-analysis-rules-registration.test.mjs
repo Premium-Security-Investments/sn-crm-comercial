@@ -5,7 +5,7 @@ import {
   getCurrentTenderAnalysis,
   presentCurrentTenderAnalysis,
   registerSiioRulesAnalysis,
-} from '../tender-analysis-foundation.js';
+} from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 const ids = {
   opportunity: '22222222-2222-4222-8222-222222222222',
@@ -293,7 +293,7 @@ assert.equal(presentedCanonical.method, 'agent_ai');
 
 for (const path of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot \} from '\.\.\/tender-analysis-foundation\.js';/);
+  assert.match(source, /import \{ getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot \} from '\.\.\/verticales\/licitaciones\/tender-analysis-foundation\.js';/);
   const officialRefresh = source.match(/async function refreshTenderDocumentsFromOfficialSource[\s\S]*?\n}\nasync function convertTenderToOpportunity/);
   assert.ok(officialRefresh, `${path} must retain the governed official-document refresh`);
   const officialWriteIndex = officialRefresh[0].indexOf('refreshTenderDocumentBatch');

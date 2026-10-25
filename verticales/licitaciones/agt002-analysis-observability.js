@@ -1,4 +1,4 @@
-import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { isAgt002PreviewReasoningEffort } from '../../agt002-preview-reasoning-effort.js';
 import { safeAgt002PersistenceSubcode } from './agt002-persistence-retry.js';
 import { AGT002_INTEGRAL_LEGAL_VALIDATION_RULES } from './agt002-integral-analysis-v3.js';
 

@@ -18,7 +18,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const ENGINE_PATH = fileURLToPath(new URL('../agt002-preview-engine.js', import.meta.url));
+const ENGINE_PATH = fileURLToPath(new URL('../verticales/licitaciones/agt002-preview-engine.js', import.meta.url));
 const source = readFileSync(ENGINE_PATH, 'utf8');
 
 // Isolates the leading import block (everything up to the first non-import top-level statement) so

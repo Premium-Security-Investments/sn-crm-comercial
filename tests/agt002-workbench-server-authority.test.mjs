@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { getAgt002WorkbenchApi, postAgt002MessageApi } from '../agt002-workbench-api.js';
-import { AGT002_WORKBENCH_CAPABILITIES } from '../agt002-workbench-contract.js';
+import { getAgt002WorkbenchApi, postAgt002MessageApi } from '../verticales/licitaciones/agt002-workbench-api.js';
+import { AGT002_WORKBENCH_CAPABILITIES } from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 // Autoridad del servidor sobre la referencia canónica de cada mensaje de la Mesa, y
 // proyección honesta del estado de trabajo a partir del último evento del trabajo.
