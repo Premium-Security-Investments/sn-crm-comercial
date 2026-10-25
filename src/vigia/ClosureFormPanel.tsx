@@ -7,13 +7,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import {
   CLOSURE_FORM_SECTIONS, closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormPlainText,
+  closureFormValueBasis,
   type ClosureForm, type ClosureFormCatalogField, type ClosureFormPost, type ClosureFormSite,
 } from './closure-form.js';
 
 type ClosureFormState = {
   saved: boolean;
   format: { code: string; version: number };
-  opportunity: { id: string; company_name: string | null; stage_code: string | null; offer_value: number | null };
+  opportunity: { id: string; company_name: string | null; stage_code: string | null; offer_value: number | null; service_type_code: string | null };
   form: ClosureForm;
   sites: ClosureFormSite[];
   posts: ClosureFormPost[];
@@ -23,7 +24,7 @@ type ClosureFormState = {
 
 const money = (value: number) => `$${Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
 const EMPTY_SITE: ClosureFormSite = { address: '', city: '', phone: '', contact_name: '' };
-const EMPTY_POST: ClosureFormPost = { description: '', shift_start: '', shift_end: '', days_per_month: 30, guards_required: 1, armed: false, monthly_value: '' };
+const EMPTY_POST: ClosureFormPost = { description: '', shift_start: '', shift_end: '', days_per_month: 30, guards_required: 1, armed: false, service_value: '' };
 
 export function ClosureFormPanel({ opportunityId, company, canEdit, onSaved }: {
   opportunityId: string;
@@ -60,8 +61,10 @@ export function ClosureFormPanel({ opportunityId, company, canEdit, onSaved }: {
   // El estado se recalcula mientras el comercial escribe, con la misma regla del servidor: ve avanzar lo que falta en
   // vez de descubrirlo al guardar.
   const completeness = useMemo(() => closureFormCompleteness({ form, sites, posts }), [form, sites, posts]);
-  const totals = useMemo(() => closureFormMoney({ posts, aiuValue: form.aiu_value as number | null }), [posts, form.aiu_value]);
+  const totals = useMemo(() => closureFormMoney({ posts }), [posts]);
   const duration = closureFormDurationDays(form.service_start_date as string, form.service_end_date as string);
+  // Mensual, salvo en los proyectos. La etiqueta del valor lo dice en vez de dejarlo a la interpretación.
+  const basis = closureFormValueBasis(state?.opportunity.service_type_code || null);
 
   const save = async () => {
     setBusy(true);
@@ -176,18 +179,19 @@ export function ClosureFormPanel({ opportunityId, company, canEdit, onSaved }: {
               <label><small>Días al mes</small><input disabled={!canEdit || busy} type="number" min={1} max={31} value={post.days_per_month ?? ''} onChange={e => change({ days_per_month: e.target.value === '' ? null : Number(e.target.value) })} /></label>
               <label><small>Vigilantes</small><input disabled={!canEdit || busy} type="number" min={1} max={50} value={post.guards_required ?? ''} onChange={e => change({ guards_required: e.target.value === '' ? null : Number(e.target.value) })} /></label>
               <label className="closure-form-check"><input disabled={!canEdit || busy} type="checkbox" checked={post.armed === true} onChange={e => change({ armed: e.target.checked })} /><small>Con arma</small></label>
-              <label><small>Valor mensual</small><input disabled={!canEdit || busy} type="number" min={0} value={post.monthly_value === null || post.monthly_value === undefined ? '' : String(post.monthly_value)} onChange={e => change({ monthly_value: e.target.value === '' ? null : Number(e.target.value) })} /></label>
+              <label><small>{basis.label}</small><input disabled={!canEdit || busy} type="number" min={0} value={post.service_value === null || post.service_value === undefined ? '' : String(post.service_value)} onChange={e => change({ service_value: e.target.value === '' ? null : Number(e.target.value) })} /></label>
               {canEdit && <button type="button" className="secondary" onClick={() => setPosts(current => current.filter((_, i) => i !== index))} aria-label={`Quitar el puesto ${index + 1}`}>Quitar</button>}
             </div>
           </div>;
         })}
         {canEdit && <button type="button" className="secondary" onClick={() => setPosts(current => [...current, { ...EMPTY_POST }])}>Agregar puesto</button>}
-        {/* Las sumas las calcula el sistema: en el Word iban a mano y el ejemplar que llegó traía el total descuadrado. */}
+        {/* Todo esto lo calcula el sistema, incluido el AIU del 10 %: en el Word iba a mano y el ejemplar que llegó
+            traía el total descuadrado y el AIU al 3,86 %. Aquí no hay nada que escribir. */}
         <dl className="closure-form-money">
-          <div><dt>Subtotal</dt><dd>{money(totals.subtotal)}</dd></div>
-          <div><dt>AIU informativo</dt><dd>{totals.aiuMissing ? 'sin registrar' : money(totals.aiu as number)}</dd></div>
-          <div><dt>IVA 19 % sobre el AIU</dt><dd>{totals.iva === null ? 'sin registrar' : money(totals.iva)}</dd></div>
-          <div className="closure-form-total"><dt>Total</dt><dd>{money(totals.total)}{totals.aiuMissing ? ' (sin IVA)' : ''}</dd></div>
+          <div><dt>Subtotal {basis.monthly ? 'mensual' : 'del proyecto'}, sin IVA</dt><dd>{money(totals.subtotal)}</dd></div>
+          <div><dt>AIU (10 %)</dt><dd>{money(totals.aiu)}</dd></div>
+          <div><dt>IVA 19 % sobre el AIU</dt><dd>{money(totals.iva)}</dd></div>
+          <div className="closure-form-total"><dt>Total</dt><dd>{money(totals.total)}</dd></div>
         </dl>
       </fieldset>
 

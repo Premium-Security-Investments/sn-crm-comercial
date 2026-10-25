@@ -20,17 +20,18 @@ export type ClosureFormPost = {
   days_per_month?: number | null;
   guards_required?: number | null;
   armed?: boolean | null;
-  monthly_value?: number | string | null;
+  /** Sin IVA. Mensual, salvo en los proyectos, donde es el total del proyecto. */
+  service_value?: number | string | null;
   notes?: string | null;
   position?: number;
 };
 
 export type ClosureFormMoney = {
   subtotal: number;
-  aiu: number | null;
-  iva: number | null;
+  aiu: number;
+  iva: number;
   total: number;
-  aiuMissing: boolean;
+  aiuRate: number;
   ivaRate: number;
   posts: number;
 };
@@ -47,7 +48,7 @@ export const CLOSURE_FORM_POST_REQUIRED: readonly string[];
 
 export function autofillClosureForm(opportunity?: Record<string, unknown>): ClosureForm;
 export function autofillClosureSites(opportunity?: Record<string, unknown>): ClosureFormSite[];
-export function closureFormMoney(input?: { posts?: ClosureFormPost[]; aiuValue?: number | string | null }): ClosureFormMoney;
+export function closureFormMoney(input?: { posts?: ClosureFormPost[] }): ClosureFormMoney;
 export function closureFormDurationDays(startDay?: string | null, endDay?: string | null): number | null;
 export function closureFormCompleteness(input?: { form?: ClosureForm; sites?: ClosureFormSite[]; posts?: ClosureFormPost[] }): ClosureFormCompleteness;
 export function closureFormWinVerdict(input?: { form?: ClosureForm | null; sites?: ClosureFormSite[]; posts?: ClosureFormPost[] }): ClosureFormWinVerdict;
@@ -60,4 +61,7 @@ export const CLOSURE_FORM_MAX_POSTS: number;
 export function cleanClosureFormInput(body?: unknown): ClosureFormInput;
 export function closureFormCatalog(form?: ClosureForm): ClosureFormCatalogField[];
 export const CLOSURE_FORM_SECTIONS: readonly { key: string; label: string }[];
-export function closureFormPlainText(input?: { form?: ClosureForm; sites?: ClosureFormSite[]; posts?: ClosureFormPost[]; company?: string | null }): string;
+export function closureFormPlainText(input?: { form?: ClosureForm; sites?: ClosureFormSite[]; posts?: ClosureFormPost[]; company?: string | null; serviceTypeCode?: string | null }): string;
+export const CLOSURE_FORM_AIU_RATE: number;
+export type ClosureFormValueBasis = { monthly: boolean; label: string; short: string };
+export function closureFormValueBasis(serviceTypeCode?: string | null): ClosureFormValueBasis;
