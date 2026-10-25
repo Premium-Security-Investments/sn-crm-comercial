@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createAgt003PreflightApi } from '../agt003-preflight-api.js';
-import { createAgt003PreflightEngine } from '../agt003-preflight-engine.js';
+import { createAgt003PreflightApi } from '../verticales/comercial/agt003-preflight-api.js';
+import { createAgt003PreflightEngine } from '../verticales/comercial/agt003-preflight-engine.js';
 
 const opportunityId = '11111111-1111-4111-8111-111111111111';
 const profile = { id: 'human-1', active: true, identity_type: 'human', role: 'comercial', permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'], areas: [] };

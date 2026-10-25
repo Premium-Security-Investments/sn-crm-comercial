@@ -16,8 +16,11 @@ const FROZEN = {
   // Actualizado a propósito (2026-10-24): el copiloto comercial resuelve las entradas declaradas del
   // catálogo de fuentes antes de llamar al modelo (`resolveSources`), igual que la Mesa. Cupos, motor y
   // puente no cambian: la puerta de modelos, el cliente del puente, el modelo y los cupos siguen igual.
-  'agt003-copilot-runtime.js': '27845356d5f3448a8831bca8313edf1b4321fa9669c16dd9547820bc229a8c06',
-  'agt003-preflight-runtime.js': '48e761d6badba31ae8f15bf563df0be05d5180410c3c48a806bda955ccdc34af',
+  // Actualizado a propósito (2026-10-24): la vertical comercial pasó a verticales/comercial/ y el
+  // runtime sólo cambió sus rutas de importación. Cupos, motor, puente, modelo y puerta de
+  // modelos quedan exactamente como estaban.
+  'verticales/comercial/agt003-copilot-runtime.js': '7615d3e5d456858e675541879e65dd4a4f5e8caf6f458d075f648c1796c2dd4c',
+  'verticales/comercial/agt003-preflight-runtime.js': '48e761d6badba31ae8f15bf563df0be05d5180410c3c48a806bda955ccdc34af',
   // Actualizado a propósito (2026-10-23): el drain de la Mesa resuelve las entradas declaradas del catálogo de
   // fuentes antes de llamar al modelo (`resolveSources`). Cupos, motor y puente no cambian: la construcción del
   // cliente del puente, el modelo, el timeout y el interruptor quedan exactamente como estaban.

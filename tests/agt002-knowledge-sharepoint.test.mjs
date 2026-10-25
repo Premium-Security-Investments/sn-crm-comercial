@@ -5,7 +5,7 @@
 // §16.3 — both imports fail before any scenario runs.
 import assert from 'node:assert/strict';
 import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
-import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
+import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
 
 const LIBRARY_ROOT = 'Comercial/Licitaciones/02 Biblioteca corporativa';
 const KNOWLEDGE_ITEM_ID = '11111111-1111-4111-8111-111111111111';

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { buildAgt003CopilotRequest } from '../agt003-copilot-input.js';
-import { createAgt003CopilotEngine } from '../agt003-copilot-engine.js';
+import { buildAgt003CopilotRequest } from '../verticales/comercial/agt003-copilot-input.js';
+import { createAgt003CopilotEngine } from '../verticales/comercial/agt003-copilot-engine.js';
 
 // El copiloto comercial, con el mismo catálogo que la Mesa. Lo que estas pruebas vigilan no es la
 // empresa: es que el mecanismo sirva a un segundo lector sin que haya que modificarlo.

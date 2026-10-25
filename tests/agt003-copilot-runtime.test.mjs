@@ -6,7 +6,7 @@ import {
   getAgt003CopilotRuntimeConfig,
   isAgt003CopilotConfigured,
   resolveAgt003BridgeConnection,
-} from '../agt003-copilot-runtime.js';
+} from '../verticales/comercial/agt003-copilot-runtime.js';
 
 function env(overrides = {}) {
   return {
@@ -59,7 +59,7 @@ assert.throws(() => createAgt003CopilotRuntime({ environment: env({ AGT003_COPIL
 const runtime = createAgt003CopilotRuntime({ environment: env(), countDailyRuns: async () => 0 });
 assert.equal(typeof runtime.draft, 'function');
 
-const source = readFileSync(new URL('../agt003-copilot-runtime.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../verticales/comercial/agt003-copilot-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /ANTHROPIC_API_KEY|OPENAI_API_KEY|Authorization|Bearer|child_process|spawn\s*\(/i);
 
 console.log('AGT-003 copilot runtime configuration passed');

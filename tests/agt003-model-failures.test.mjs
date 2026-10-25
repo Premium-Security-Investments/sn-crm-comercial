@@ -21,10 +21,10 @@ import {
   isDuplicateFailureEvent,
   recordModelUsage,
 } from '../platform-model-gateway.js';
-import { createAgt003CopilotBridgeClient } from '../agt003-copilot-bridge-client.js';
-import { createAgt003CopilotEngine } from '../agt003-copilot-engine.js';
-import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
-import { runLeadAnalysis } from '../agt003-lead-analysis.js';
+import { createAgt003CopilotBridgeClient } from '../verticales/comercial/agt003-copilot-bridge-client.js';
+import { createAgt003CopilotEngine } from '../verticales/comercial/agt003-copilot-engine.js';
+import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-api.js';
+import { runLeadAnalysis } from '../verticales/comercial/agt003-lead-analysis.js';
 import { presentModelAlerts, presentModelUsage } from '../platform-model-usage.js';
 import { AI_FALLBACK_OPTIONS } from '../platform-agent-configuration.js';
 

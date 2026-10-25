@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateLeadAnalysisOutput, estimateLeadAnalysisCostUsd, bogotaMonthStartIso, monthlyMaxFrom, leadAnalysisProfileFingerprint } from '../src/vigia/lead-analysis.js';
-import { htmlToText, websitePolicy, fetchCompanyWebsite, buildLeadAnalysisInput, runLeadAnalysis, profileHash } from '../agt003-lead-analysis.js';
+import { htmlToText, websitePolicy, fetchCompanyWebsite, buildLeadAnalysisInput, runLeadAnalysis, profileHash } from '../verticales/comercial/agt003-lead-analysis.js';
 
 const valid = {
   empresa: { que_hace: 'Agencia marítima.', sedes: 'Cartagena (según su web).', tamano: 'No aparece en la información disponible.' },

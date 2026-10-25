@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { ACTIONS, requireAction } from './access-control.js';
+import { ACTIONS, requireAction } from '../../access-control.js';
 import { buildAgt003CopilotRequest } from './agt003-copilot-input.js';
 import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, copilotQuotaMessage } from './agt003-ai-quota.js';
-import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from './src/vigia/model-failures.js';
+import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../../src/vigia/model-failures.js';
 import {
   computeAgt003CopilotIdempotencyKey,
   computeAgt003CopilotRetryKey,

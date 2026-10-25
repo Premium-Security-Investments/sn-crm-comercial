@@ -55,21 +55,21 @@ import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js'
 import { CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
-import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../agt003-lead-analysis.js';
+import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../verticales/comercial/agt003-lead-analysis.js';
 import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../verticales/gerencial/siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
-import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
+import { buildAgt003PrioritiesData } from '../verticales/comercial/agt003-priorities-service.js';
 import { BEHAVIOR_FOLLOW_UP_TYPES, bogotaWeekStart, buildCommercialBehavior } from '../src/vigia/commercial-behavior.js';
-import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
-import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
+import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-api.js';
+import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../verticales/comercial/agt003-copilot-runtime.js';
 import { resolverParaLector } from '../catalogo-fuentes.js';
 
 // Lo que el copiloto comercial recibe resuelto antes de cada corrida. Crece una línea por entrada.
 const AGT003_COPILOTO_FUENTES = Object.freeze(['empresa.identidad', 'empresa.sedes']);
-import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
-import { agt003PreparationDate } from '../agt003-copilot-input.js';
-import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
+import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../verticales/comercial/agt003-copilot-persistence.js';
+import { agt003PreparationDate } from '../verticales/comercial/agt003-copilot-input.js';
+import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { loadCompanyBase, saveCompanyExperience, saveCompanySite } from '../company-base.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
@@ -97,7 +97,7 @@ import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listP
 import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
 import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
 import { codeDefaultEffectiveConfiguration, getEffectiveAgentConfiguration } from '../platform-agent-effective-configuration.js';
-import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, capabilityPolicy, claimLeadAnalysis, leadAnalysisQuotaMessage, readActorAiUsageProfile } from '../agt003-ai-quota.js';
+import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, capabilityPolicy, claimLeadAnalysis, leadAnalysisQuotaMessage, readActorAiUsageProfile } from '../verticales/comercial/agt003-ai-quota.js';
 import {
   actorNameFromProfile,
   agentAiFunctions,
@@ -204,9 +204,9 @@ import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-
 import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
 import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
-import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../agt003-chat-registro.js';
+import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../verticales/comercial/agt003-chat-registro.js';
 import { nextActionRequirement } from '../src/vigia/next-action-rule.js';
-import { briefQuotaMessage, buildBriefInput, claimBriefRun, runBriefSummary } from '../agt003-brief-reunion.js';
+import { briefQuotaMessage, buildBriefInput, claimBriefRun, runBriefSummary } from '../verticales/comercial/agt003-brief-reunion.js';
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import {
   CLOSURE_FORM_FIELD_KEYS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_VERSION, autofillClosureForm, autofillClosureSites,

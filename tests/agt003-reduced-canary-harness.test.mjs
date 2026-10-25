@@ -6,9 +6,9 @@ import { createHash } from 'node:crypto';
 import {
   createAgt003ReducedCanaryHarness,
   AGT003_REDUCED_CANARY_REVISION_BINDING,
-} from '../agt003-reduced-canary-harness.js';
-import { createAgt003CopilotEngine } from '../agt003-copilot-engine.js';
-import { createAgt003SingleCanaryPackage, reduceAgt003PayloadOffline } from '../agt003-payload-reduction.js';
+} from '../verticales/comercial/agt003-reduced-canary-harness.js';
+import { createAgt003CopilotEngine } from '../verticales/comercial/agt003-copilot-engine.js';
+import { createAgt003SingleCanaryPackage, reduceAgt003PayloadOffline } from '../verticales/comercial/agt003-payload-reduction.js';
 
 const ALREADY_RUN_CODE = 'AGT003_REDUCED_CANARY_ALREADY_RUN';
 const DEFAULT_TIMEOUT_MS = 30000;

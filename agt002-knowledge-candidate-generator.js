@@ -5,7 +5,7 @@
 // §14.1, trata soportes/notas de resolución como datos hostiles delimitados (§14.2) y
 // valida la respuesta del modelo contra un esquema cerrado (§14.3) antes de devolverla.
 // Publicar, someter y aprobar quedan siempre fuera de este módulo.
-import { redactAgt003CopilotText } from './agt003-copilot-input.js';
+import { redactAgt003CopilotText } from './verticales/comercial/agt003-copilot-input.js';
 
 const MAX_ATTACHMENTS = 8;
 const MAX_FRAGMENTS_PER_ATTACHMENT = 8;
