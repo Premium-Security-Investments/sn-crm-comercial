@@ -5,7 +5,7 @@ import {
   classifyAgt002InitialAnalysisError,
   createAgt002InitialAnalysisObserver,
   readAgt002InitialAnalysisRuntimeConfig,
-} from '../agt002-initial-analysis-observability.js';
+} from '../verticales/licitaciones/agt002-initial-analysis-observability.js';
 
 test('runtime flags are fail-closed and identity/readback is mandatory', () => {
   assert.deepEqual(readAgt002InitialAnalysisRuntimeConfig({}), {

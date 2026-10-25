@@ -15,8 +15,8 @@
 // Este módulo NO EXISTE TODAVÍA (fase RED): se espera ERR_MODULE_NOT_FOUND hasta que
 // la implementación productiva lo cree.
 import assert from 'node:assert/strict';
-import { countColombiaBusinessDays, isColombiaBusinessDay } from '../tender-fit-v2-business-days.js';
-import { COLOMBIA_HOLIDAYS_2026 } from '../tender-fit-v2-parameters.js';
+import { countColombiaBusinessDays, isColombiaBusinessDay } from '../verticales/licitaciones/tender-fit-v2-business-days.js';
+import { COLOMBIA_HOLIDAYS_2026 } from '../verticales/licitaciones/tender-fit-v2-parameters.js';
 
 // ---------------------------------------------------------------------------
 // 1. isColombiaBusinessDay: fin de semana y festivo son no-hábiles; entre semana es hábil

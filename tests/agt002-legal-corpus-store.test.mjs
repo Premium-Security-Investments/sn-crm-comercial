@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { buildAgt002LegalSource } from '../agt002-legal-corpus.js';
+import { buildAgt002LegalSource } from '../verticales/licitaciones/agt002-legal-corpus.js';
 import { canonicalizeAgt002LegalManifest, computeAgt002LegalManifestContentHash } from '../scripts/validate_agt002_legal_corpus.mjs';
-import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
+import { loadPublishedAgt002LegalCorpus } from '../verticales/licitaciones/agt002-legal-corpus-store.js';
 
 const PUBLISHED_ID = '10101010-1010-4010-8010-101010101010';
 
@@ -264,7 +264,7 @@ function fakeDatabase({ versions = [], sources = [], versionsError = null, sourc
 // 13) The store never reads the filesystem or performs network I/O: it only talks to
 // the injected service-role DB client.
 {
-  const source = readFileSync(new URL('../agt002-legal-corpus-store.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/agt002-legal-corpus-store.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /readFileSync|readFile\(|fetch\(|http\.request|https\.request/);
 }
 

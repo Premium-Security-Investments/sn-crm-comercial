@@ -6,7 +6,7 @@ import {
   agt002RadarEvaluationDate,
   computeAgt002RadarSourceRowHash,
   evaluateAgt002RadarGate,
-} from '../agt002-radar-gate.js';
+} from '../verticales/licitaciones/agt002-radar-gate.js';
 
 const NOW = '2026-08-25T15:00:00.000Z';
 const base = {

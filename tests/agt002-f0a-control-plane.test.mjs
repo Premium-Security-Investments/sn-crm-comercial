@@ -10,7 +10,7 @@ import {
   findSupabaseOrPsqlMigrationRunners,
   validateAgt002F0aObservedReceipt,
   assertAgt002F0aDoesNotClaimPass,
-} from '../agt002-f0a-control-plane.js';
+} from '../verticales/licitaciones/agt002-f0a-control-plane.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -219,7 +219,7 @@ assert.deepEqual(
 );
 
 // 16. the control-plane module source must never itself carry out restarts, daemon reloads, or migration commands
-const modulePath = path.join(repoRoot, 'agt002-f0a-control-plane.js');
+const modulePath = path.join(repoRoot, 'verticales/licitaciones/agt002-f0a-control-plane.js');
 const moduleSource = readFileSync(modulePath, 'utf8');
 assert.doesNotMatch(moduleSource, /systemctl\s+(restart|stop|start|daemon-reload)/, 'module must never issue systemctl restart/stop/start/daemon-reload');
 assert.doesNotMatch(moduleSource, /supabase\s+(db|migration)\s+\w+/, 'module must never issue supabase db/migration commands');

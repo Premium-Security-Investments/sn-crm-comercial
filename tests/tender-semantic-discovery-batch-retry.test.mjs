@@ -13,8 +13,8 @@
 // same in-memory client/inventory doubles every other discovery test in this repo already uses.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
-import { discoverTenderSemanticManifest, TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS } from '../tender-semantic-discovery.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
+import { discoverTenderSemanticManifest, TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS } from '../verticales/licitaciones/tender-semantic-discovery.js';
 
 function hash(value) { return createHash('sha256').update(value).digest('hex'); }
 function document(id, text) {

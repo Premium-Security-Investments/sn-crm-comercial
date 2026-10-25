@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { SURFACE_NAMES } from '../agt002-control-plane-identity.js';
-import { AGT002_PINNED_SURFACE_NAMES } from '../agt002-control-plane-surface-paths.js';
-import { AGT002_HOST_SURFACE_UNITS } from '../agt002-host-surface-observer.js';
+import { SURFACE_NAMES } from '../verticales/licitaciones/agt002-control-plane-identity.js';
+import { AGT002_PINNED_SURFACE_NAMES } from '../verticales/licitaciones/agt002-control-plane-surface-paths.js';
+import { AGT002_HOST_SURFACE_UNITS } from '../verticales/licitaciones/agt002-host-surface-observer.js';
 
 const DEFAULT_RECEIPT_PATH = 'agt002-release-receipt.json';
 const DEFAULT_OBSERVED_PATH = 'agt002-observed-surfaces.json';

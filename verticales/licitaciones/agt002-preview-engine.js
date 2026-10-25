@@ -33,7 +33,7 @@ import {
   AGT002_V3_PROMPT_BUDGET_EXCEEDED_CODE,
   AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
 } from './agt002-v3-prompt-budget.js';
-import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from '../../agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import { AGT002_CHECKPOINT_STAGES } from './agt002-analysis-checkpoints.js';
 import { AGT002_INTEGRAL_LEGAL_VALIDATION_RULES } from './agt002-integral-analysis-v3.js';

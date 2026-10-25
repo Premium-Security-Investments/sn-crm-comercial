@@ -13,9 +13,9 @@
 //   - a loader that uses exactly one RPC and NEVER degrades a missing/malformed RPC into an
 //     empty inventory (silently claiming "no evidence" is the failure mode this exists to stop).
 import { strict as assert } from 'node:assert';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 
-const modulePath = new URL('../agt002-company-evidence-sharepoint-catalog.js', import.meta.url);
+const modulePath = new URL('../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js', import.meta.url);
 const {
   AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION,
   AGT002_COMPANY_EVIDENCE_GOVERNED_STATES,

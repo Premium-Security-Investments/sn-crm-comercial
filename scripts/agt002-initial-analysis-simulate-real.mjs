@@ -11,10 +11,10 @@ import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
 import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
-import { createAgt002InitialAnalysisRuntime } from '../agt002-initial-analysis-runtime.js';
-import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { computeAgt002CompanyProfileSnapshotHash } from '../agt002-company-profile-snapshot.js';
-import { validatePreGoAnalysisV2 } from '../agt002-pre-go-analysis-v2.js';
+import { createAgt002InitialAnalysisRuntime } from '../verticales/licitaciones/agt002-initial-analysis-runtime.js';
+import { loadAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { computeAgt002CompanyProfileSnapshotHash } from '../verticales/licitaciones/agt002-company-profile-snapshot.js';
+import { validatePreGoAnalysisV2 } from '../verticales/licitaciones/agt002-pre-go-analysis-v2.js';
 
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
 if (process.env.ENV_FILE) {

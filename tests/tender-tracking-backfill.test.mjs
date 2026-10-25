@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { selectBackfillableInteractions, mapToTrackingEvent, runBackfill } from '../tender-tracking-backfill.js';
+import { selectBackfillableInteractions, mapToTrackingEvent, runBackfill } from '../verticales/licitaciones/tender-tracking-backfill.js';
 
 const PRIVATE_KEYWORDS = /tel[eé]fono|decisor|whatsapp|comisi[oó]n|correo|email|phone/i;
 

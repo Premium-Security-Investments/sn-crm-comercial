@@ -1,23 +1,23 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
+import { resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   discoverTenderSemanticManifest,
   TENDER_SEMANTIC_DISCOVERY_POLICY,
   TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
   TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES,
-} from '../tender-semantic-discovery.js';
+} from '../verticales/licitaciones/tender-semantic-discovery.js';
 import {
   buildTenderSemanticLabelCatalog,
   buildTenderSemanticLabelOwnerIndex,
-} from '../tender-semantic-label-catalog.js';
+} from '../verticales/licitaciones/tender-semantic-label-catalog.js';
 import {
   tenderSemanticObligationKey,
   toAgt002RequirementManifest,
   validateTenderSemanticManifest,
-} from '../tender-semantic-manifest.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
-import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
+} from '../verticales/licitaciones/tender-semantic-manifest.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
+import { buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
 
 // AGT-002 V4 semantic discovery, policy v6 — exact-repeat coalescing.
 //

@@ -4,7 +4,7 @@ import {
   claimAgt002ReanalysisJob,
   completeAgt002ReanalysisJob,
   failAgt002ReanalysisJob,
-} from '../agt002-reanalysis-jobs.js';
+} from '../verticales/licitaciones/agt002-reanalysis-jobs.js';
 
 function fakeDb({ rpcResults = {} } = {}) {
   const rpcCalls = [];

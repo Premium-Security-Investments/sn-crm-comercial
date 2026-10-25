@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const preparation = readFileSync(new URL('../tender-offer-preparation.js', import.meta.url), 'utf8');
+const preparation = readFileSync(new URL('../verticales/licitaciones/tender-offer-preparation.js', import.meta.url), 'utf8');
 const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const dossierPanel = readFileSync(new URL('../src/tenders/components/TenderDossierWorkspacePanel.tsx', import.meta.url), 'utf8');
 
@@ -20,7 +20,7 @@ assert(preparation.includes('assistant_notes'), 'Expediente debe tener espacio d
 assert(preparation.includes('Plan de preparación registrado'), 'Debe quedar claro que el plan se registra proactivamente sin afirmar archivos inexistentes.');
 
 for (const file of [server, api]) {
-  assert(file.includes("import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';"), 'Backend debe compartir el builder rico de preparación.');
+  assert(file.includes("import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';"), 'Backend debe compartir el builder rico de preparación.');
   assert(file.includes("app.get('/api/tender-offer-preparation'"), 'Debe existir endpoint para leer expediente de oferta.');
   assert(file.includes("app.post('/api/tender-offer-preparation-note'"), 'Debe existir endpoint para notas/solicitudes del asistente.');
   assert(file.includes('requireTenderGoForPreparation'), 'Preparación y notas deben consultar la decisión formal vigente.');

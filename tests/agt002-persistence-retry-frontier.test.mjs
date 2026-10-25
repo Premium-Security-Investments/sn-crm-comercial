@@ -15,13 +15,13 @@
 // uses its real ids, timings or payload: every fixture below is synthetic.
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
-import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
-import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
-import { claimAgt002PreviewRun, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
+import { createAgt002AnalysisObservability } from '../verticales/licitaciones/agt002-analysis-observability.js';
+import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
+import { claimAgt002PreviewRun, releaseAgt002PreviewClaim } from '../verticales/licitaciones/agt002-preview-persistence.js';
 import { AGT002_PREVIEW_SONNET_MODEL } from '../agt002-preview-allowed-models.js';
 import {
   AGT002_PERSISTENCE_RETRY_DEFAULTS,
@@ -33,11 +33,11 @@ import {
   resolveAgt002PersistenceRetryPolicy,
   safeAgt002PersistenceSubcode,
   shouldRetryAgt002Persistence,
-} from '../agt002-persistence-retry.js';
+} from '../verticales/licitaciones/agt002-persistence-retry.js';
 import {
   AGT002_PERSISTENCE_RETRY_LEASE_RESERVE_MS,
   createAgt002ReanalysisExecutor,
-} from '../agt002-reanalysis-executor.js';
+} from '../verticales/licitaciones/agt002-reanalysis-executor.js';
 
 // Synthetic ids only — deliberately NOT the production job/correlation ids.
 const IDS = Object.freeze({

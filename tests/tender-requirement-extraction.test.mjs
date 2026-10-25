@@ -3,7 +3,7 @@ import {
   extractLegalRequirements,
   extractFinancialRequirements,
   extractTechnicalRequirements,
-} from '../tender-requirement-extraction.js';
+} from '../verticales/licitaciones/tender-requirement-extraction.js';
 
 const legalGuaranteeComplete = {
   id: 'doc-legal-complete',

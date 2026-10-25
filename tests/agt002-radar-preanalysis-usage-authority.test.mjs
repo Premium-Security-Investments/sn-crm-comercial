@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createAgt002RadarPreanalysisRuntime } from '../agt002-radar-preanalysis-runtime.js';
+import { createAgt002RadarPreanalysisRuntime } from '../verticales/licitaciones/agt002-radar-preanalysis-runtime.js';
 import { AGT002_PREVIEW_SONNET_MODEL } from '../agt002-preview-allowed-models.js';
 
 // ---------------------------------------------------------------------------

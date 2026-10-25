@@ -6,8 +6,8 @@ const paths = ['../server/index.js', '../api/[...path].js'];
 for (const path of paths) {
   const source = fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 
-  assert.match(source, /import\s*\{[^}]*deterministicDocumentFallbackId[^}]*\}\s*from\s*['"]\.\.\/tender-document-versioning\.js['"]/, `${path} must import deterministicDocumentFallbackId`);
-  assert.match(source, /import\s*\{[^}]*canonicalizeTenderDocuments[^}]*\}\s*from\s*['"]\.\.\/tender-document-canonicalizer\.js['"]/, `${path} must import canonicalizeTenderDocuments`);
+  assert.match(source, /import\s*\{[^}]*deterministicDocumentFallbackId[^}]*\}\s*from\s*['"]\.\.\/verticales\/licitaciones\/tender-document-versioning\.js['"]/, `${path} must import deterministicDocumentFallbackId`);
+  assert.match(source, /import\s*\{[^}]*canonicalizeTenderDocuments[^}]*\}\s*from\s*['"]\.\.\/verticales\/licitaciones\/tender-document-canonicalizer\.js['"]/, `${path} must import canonicalizeTenderDocuments`);
 
   // esuDocumentId must never fall back to Date.now() -- that was the source of a fresh
   // non-deterministic source_document_id (and a fresh duplicate "current" row) on

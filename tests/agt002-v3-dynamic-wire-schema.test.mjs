@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../agt002-preview-contract.js';
+import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../verticales/licitaciones/agt002-preview-contract.js';
 
 const validationContext = {
   requirementManifest: [

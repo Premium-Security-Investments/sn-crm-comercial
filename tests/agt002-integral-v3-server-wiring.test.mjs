@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const runtime = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
+const runtime = readFileSync(new URL('../verticales/licitaciones/agt002-preview-runtime.js', import.meta.url), 'utf8');
 
 function count(source, token) {
   return source.split(token).length - 1;
@@ -22,8 +22,8 @@ function count(source, token) {
 
 assert.equal(server, api, 'server/index.js y api/[...path].js deben permanecer byte-idénticos');
 
-assert.match(server, /import \{ loadAgt002CompanyEvidenceRegistryEntries \} from '\.\.\/agt002-company-evidence-classes\.js';/);
-assert.match(server, /import \{ loadAgt002IntegralGovernanceOverrides \} from '\.\.\/agt002-integral-governance-overrides\.js';/);
+assert.match(server, /import \{ loadAgt002CompanyEvidenceRegistryEntries \} from '\.\.\/verticales\/licitaciones\/agt002-company-evidence-classes\.js';/);
+assert.match(server, /import \{ loadAgt002IntegralGovernanceOverrides \} from '\.\.\/verticales\/licitaciones\/agt002-integral-governance-overrides\.js';/);
 
 // A single shared, fail-closed-by-default loader (mirrors loadAgt002LegalCorpusContextIfEnabled):
 // returns null when the flag is off (no DB round-trip), and the real two maps + registry
@@ -47,7 +47,7 @@ for (const token of [
   'evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,',
   'governanceProvenance: integralV3Governance.governanceProvenance,',
 ]) assert.equal(count(server, token), 1, `el único runtime directo debe recibir ${token}`);
-const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+const executor = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-executor.js', import.meta.url), 'utf8');
 assert.match(executor, /companyEvidenceRegistryEntries: governance\.companyEvidenceRegistryEntries/);
 assert.match(executor, /categoryOverrides: governance\.categoryOverrides/);
 assert.match(executor, /evidenceClassLinkByRequirementId: governance\.evidenceClassLinkByRequirementId/);

@@ -1,9 +1,9 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { createAgt002PreviewRuntime } from '../agt002-preview-runtime.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
-import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../agt002-v3-prompt-budget.js';
+import { createAgt002PreviewRuntime } from '../verticales/licitaciones/agt002-preview-runtime.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../verticales/licitaciones/agt002-v3-prompt-budget.js';
 
 // Phase 9 (T7/D): the deterministic prompt budget must be ACTIVE for every appropriate V3 runtime
 // construction — it was wired into the engine (runOnceV3) but left dormant (default-off), reachable
@@ -127,7 +127,7 @@ const SYNTHETIC_COMPANY_EVIDENCE_INVENTORY_SNAPSHOT = Object.freeze({
 // Source lock: activation lives in the shared factory (parity), keyed inside the V3 block.
 // -----------------------------------------------------------------------------
 {
-  const runtimeSource = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
+  const runtimeSource = readFileSync(new URL('../verticales/licitaciones/agt002-preview-runtime.js', import.meta.url), 'utf8');
   assert.match(runtimeSource, /promptBudget:\s*true/, 'createAgt002PreviewRuntime must activate promptBudget');
 }
 

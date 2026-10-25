@@ -4,7 +4,7 @@ import {
   TENDER_DISQUALIFYING_TERMS,
   TENDER_NON_COMMERCIAL_ACT_TERMS,
   TENDER_NON_SECURITY_CONTEXT_TERMS,
-} from '../tender-relevance-terms.js';
+} from '../verticales/licitaciones/tender-relevance-terms.js';
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:1';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
@@ -19,7 +19,7 @@ assert.equal(Object.isFrozen(TENDER_NON_SECURITY_CONTEXT_TERMS), true);
 assert.equal(Object.isFrozen(TENDER_NON_COMMERCIAL_ACT_TERMS), true);
 
 const backend = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
-assert.match(backend, /from '\.\.\/tender-relevance-terms\.js'/);
+assert.match(backend, /from '\.\.\/verticales\/licitaciones\/tender-relevance-terms\.js'/);
 assert.doesNotMatch(backend, /const tenderDisqualifyingTerms = \[/);
 
 assert.equal(isTenderTrackable({ title: 'Servicio de vigilancia armada', status: 'abierto' }), true);

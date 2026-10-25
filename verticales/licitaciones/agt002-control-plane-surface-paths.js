@@ -4,7 +4,9 @@ import { join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AGT002_HOST_SURFACE_RUNNERS } from './agt002-host-surface-observer.js';
 
-const REPO_ROOT = fileURLToPath(new URL('.', import.meta.url));
+// La raíz del repositorio. Este módulo vivía en la raíz; al pasar a verticales/licitaciones/
+// hay que subir dos niveles o el plano de control mediría su propia carpeta.
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 // The CRM API monolith. The Radar import runner loads it, but nearly every CRM change (AGT-003,
 // UI, etc.) touches it, so following it would make the Radar import look stale on every merge.
@@ -23,19 +25,19 @@ const MONOLITH_PATHS = Object.freeze(['api/[...path].js', 'server/index.js']);
 // readPersistedTenderRadar and the inline functions they call) import. Guarded by a test that
 // re-derives this set from the monolith (best effort) and fails when a module is missing.
 export const RADAR_MONOLITH_MODULES = Object.freeze([
-  'tender-phase-identity.js',
-  'tender-competibility-policy.js',
-  'tender-radar-source-fetch.js',
-  'tender-radar-deep-search.js',
-  'tender-source-status.js',
-  'tender-relevance-terms.js',
-  'tender-fit-policy.js',
+  'verticales/licitaciones/tender-phase-identity.js',
+  'verticales/licitaciones/tender-competibility-policy.js',
+  'verticales/licitaciones/tender-radar-source-fetch.js',
+  'verticales/licitaciones/tender-radar-deep-search.js',
+  'verticales/licitaciones/tender-source-status.js',
+  'verticales/licitaciones/tender-relevance-terms.js',
+  'verticales/licitaciones/tender-fit-policy.js',
   'esu-direct-crawl.js',
-  'agt002-radar-run-receipt.js',
-  'agt002-radar-run-delta.js',
-  'agt002-radar-run-delta-persistence.js',
-  'tender-process-family.js',
-  'agt002-phase-change-followup.js',
+  'verticales/licitaciones/agt002-radar-run-receipt.js',
+  'verticales/licitaciones/agt002-radar-run-delta.js',
+  'verticales/licitaciones/agt002-radar-run-delta-persistence.js',
+  'verticales/licitaciones/tender-process-family.js',
+  'verticales/licitaciones/agt002-phase-change-followup.js',
 ]);
 
 // Paths every pinned surface depends on regardless of its import graph: the lockfile pins the
@@ -48,8 +50,8 @@ const SHARED_PATHS = Object.freeze(['pnpm-lock.yaml']);
 // Files read at runtime (readFileSync, not import) by a module: whenever the module is in a
 // surface's closure, these paths are part of what that surface runs.
 const RUNTIME_DATA_PATHS = Object.freeze({
-  'agt002-pre-go-analysis-v1.js': Object.freeze(['schemas/agt002']),
-  'agt002-pre-go-analysis-v2.js': Object.freeze(['schemas/agt002']),
+  'verticales/licitaciones/agt002-pre-go-analysis-v1.js': Object.freeze(['schemas/agt002']),
+  'verticales/licitaciones/agt002-pre-go-analysis-v2.js': Object.freeze(['schemas/agt002']),
 });
 
 function hostRunnerEntries(surface) {

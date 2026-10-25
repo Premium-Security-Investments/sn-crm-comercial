@@ -21,12 +21,12 @@
 // Ejecutar: node tests/tender-document-archive-canonical-version.test.mjs
 
 import { strict as assert } from 'node:assert';
-import { extractTenderDocumentText } from '../tender-document-text-extraction.js';
+import { extractTenderDocumentText } from '../verticales/licitaciones/tender-document-text-extraction.js';
 import {
   refreshOfficialTenderDocument,
   tenderDocumentCanonicalContentHash,
   tenderDocumentContentHash,
-} from '../tender-document-versioning.js';
+} from '../verticales/licitaciones/tender-document-versioning.js';
 import {
   ARCHIVE_TXT_AMENDED_CONTENT,
   ARCHIVE_TXT_CONTENT,

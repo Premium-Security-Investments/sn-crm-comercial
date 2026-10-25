@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createAgt002BridgeServer, AGT002_BRIDGE_MAX_BODY_BYTES, AGT002_BRIDGE_ALLOWED_MODELS } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
-import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
+import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
 
 const SECRET = 'a'.repeat(32);
 const PATH = '/v1/agt002-preview/run';

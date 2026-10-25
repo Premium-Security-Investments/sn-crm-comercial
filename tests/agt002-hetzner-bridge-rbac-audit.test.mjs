@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { diffEligibility, findEligibleProfiles } from '../agt002-hetzner-bridge-rbac-audit.js';
+import { diffEligibility, findEligibleProfiles } from '../verticales/licitaciones/agt002-hetzner-bridge-rbac-audit.js';
 
 function testDiffEligibilityExactMatch() {
   assert.deepEqual(diffEligibility(['a', 'b'], ['b', 'a']), { extra: [], missing: [], ok: true });

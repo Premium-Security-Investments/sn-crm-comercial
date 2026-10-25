@@ -3,8 +3,8 @@ import {
   AGT002_TENDER_CONTEXT_SELECT,
   buildAgt002OpportunityContextV2,
   loadAgt002OpportunityContextV2,
-} from '../agt002-opportunity-context-v2.js';
-import { AGT002_CONTEXT_V2_FIELDS } from '../agt002-context-v2.js';
+} from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { AGT002_CONTEXT_V2_FIELDS } from '../verticales/licitaciones/agt002-context-v2.js';
 
 const opportunity = {
   id: '11111111-1111-4111-8111-111111111111',

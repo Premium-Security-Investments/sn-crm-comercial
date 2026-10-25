@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+const executor = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-executor.js', import.meta.url), 'utf8');
 
 assert.equal(server, api, 'production backends must remain byte-identical');
 

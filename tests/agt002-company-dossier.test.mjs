@@ -5,8 +5,8 @@ import {
   AGT002_COMPANY_PROFILE_SELECT,
   AGT002_COMPANY_DOCUMENT_SELECT,
   AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT,
-} from '../agt002-company-dossier.js';
-import { AGT002_CONTEXT_V2_FIELDS } from '../agt002-context-v2.js';
+} from '../verticales/licitaciones/agt002-company-dossier.js';
+import { AGT002_CONTEXT_V2_FIELDS } from '../verticales/licitaciones/agt002-context-v2.js';
 
 const profile = {
   legal_name: 'Seguridad Nacional Ltda.',

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { AGT002_RADAR_PIPELINE_STAGES, createAgt002RadarPipeline } from '../agt002-radar-pipeline.js';
+import { AGT002_RADAR_PIPELINE_STAGES, createAgt002RadarPipeline } from '../verticales/licitaciones/agt002-radar-pipeline.js';
 
 const hostileDatabase = new Proxy({}, { get() { throw new Error('database must not be touched'); } });
 const hostile = () => { throw new Error('must not run'); };

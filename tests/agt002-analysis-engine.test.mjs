@@ -23,7 +23,7 @@ import {
   assertAgt002RehydratedMembersMatchHashes,
   validateAgt002AnalysisBatch,
   runAgt002AnalysisBatch,
-} from '../agt002-analysis-engine.js';
+} from '../verticales/licitaciones/agt002-analysis-engine.js';
 
 test('rehydrated text members may bind directly to the frozen extraction_text_hash', () => {
   const text = 'contenido extraído gobernado';
@@ -272,6 +272,6 @@ test('runAgt002AnalysisBatch never falls back to a different model id after a fa
 // ---------------------------------------------------------------------------------------------
 
 test('agt002-analysis-engine.js never imports a reanalysis operational module', () => {
-  const source = readFileSync(new URL('../agt002-analysis-engine.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/agt002-analysis-engine.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /agt002-reanalysis-(api|jobs|worker|input|executor|error-message)\.js/);
 });

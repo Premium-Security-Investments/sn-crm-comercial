@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createClient } from '@supabase/supabase-js';
-import { createAgt002RadarScan } from '../../agt002-radar-scan.js';
+import { createAgt002RadarScan } from '../../verticales/licitaciones/agt002-radar-scan.js';
 import { createSupabaseEsuDirectRefresher } from '../../esu-direct-refresh.js';
 import { fetchEsuProcesses } from '../../esu-direct-crawl.js';
 const url=process.env.SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_URL;const key=process.env.SUPABASE_SERVICE_ROLE_KEY;

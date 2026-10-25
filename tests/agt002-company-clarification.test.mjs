@@ -7,7 +7,7 @@ import {
   AGT002_COMPANY_CLARIFICATION_LINE_MAX,
   agt002CompanyClarificationLine,
   agt002CompanyClarificationSuggestion,
-} from '../agt002-company-clarification.js';
+} from '../verticales/licitaciones/agt002-company-clarification.js';
 
 const juan = (content, target_label = null) => ({
   id: 'c1', content, target_kind: target_label ? 'requirement' : null, target_id: target_label ? 'CLM-X' : null,

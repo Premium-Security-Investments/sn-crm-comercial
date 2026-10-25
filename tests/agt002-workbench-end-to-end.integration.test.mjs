@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { runAgt002WorkbenchWorker } from '../agt002-workbench-worker.js';
+import { runAgt002WorkbenchWorker } from '../verticales/licitaciones/agt002-workbench-worker.js';
 import {
   claimAgt002WorkbenchJob,
   appendAgt002WorkbenchJobEvent,
   completeAgt002WorkbenchJob,
-} from '../agt002-workbench-persistence.js';
+} from '../verticales/licitaciones/agt002-workbench-persistence.js';
 import { createSyntheticAgt002Responder } from './fixtures/agt002-workbench-synthetic-responder.mjs';
 import { ACTIONS, can } from '../access-control.js';
 

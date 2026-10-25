@@ -15,12 +15,12 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { buildTenderRequirementInventory } from '../tender-requirement-inventory.js';
+import { buildTenderRequirementInventory } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   discoverTenderSemanticManifest,
   TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS,
   TENDER_SEMANTIC_DISCOVERY_NO_REQUIREMENTS_CODE,
-} from '../tender-semantic-discovery.js';
+} from '../verticales/licitaciones/tender-semantic-discovery.js';
 
 const DEFAULT_FIXTURE_PATH = join(
   dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'agt002', 'canary', 'agt002-v7-procuraduria-multibatch.json',

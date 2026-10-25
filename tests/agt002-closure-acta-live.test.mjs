@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../agt002-closure-acta-live.js';
+import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../verticales/licitaciones/agt002-closure-acta-live.js';
 
 const CALI = '44444444-4444-4444-8444-444444444444';
 const VIGIA = 'a0020000-0000-4000-8000-000000000002';

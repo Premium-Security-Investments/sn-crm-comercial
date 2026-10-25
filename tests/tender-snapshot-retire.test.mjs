@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { planSnapshotRetirement } from '../tender-snapshot-retire.js';
+import { planSnapshotRetirement } from '../verticales/licitaciones/tender-snapshot-retire.js';
 
 const plan = planSnapshotRetirement({ jobId: '11111111-1111-4111-8111-111111111111', currentSnapshotId: '22222222-2222-4222-8222-222222222222', targetSnapshotId: '33333333-3333-4333-8333-333333333333' });
 assert.equal(plan.destructive, false);

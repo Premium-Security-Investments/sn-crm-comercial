@@ -7,8 +7,8 @@ import {
   AGT002_CHECKPOINT_GENERATION_2_RECOVERY_REASON,
   computeAgt002CheckpointGenerationRecoveryKey,
   validateAgt002CheckpointGenerationRecoveryIdentity,
-} from '../agt002-checkpoint-generation-recovery.js';
-import { claimAgt002ReanalysisJobById } from '../agt002-reanalysis-jobs.js';
+} from '../verticales/licitaciones/agt002-checkpoint-generation-recovery.js';
+import { claimAgt002ReanalysisJobById } from '../verticales/licitaciones/agt002-reanalysis-jobs.js';
 
 const ROOT_KEY = 'a'.repeat(64);
 const SOURCE_JOB_ID = '11111111-1111-4111-8111-111111111111';

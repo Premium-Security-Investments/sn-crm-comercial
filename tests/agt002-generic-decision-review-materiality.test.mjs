@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 
-import { deriveAgt002GenericDecisionReview } from '../agt002-generic-decision-review.js';
+import { deriveAgt002GenericDecisionReview } from '../verticales/licitaciones/agt002-generic-decision-review.js';
 
 // LOCK de invariantes §4 de la spec 2026-08-25-agt002-analisis-para-decidir: la vía genérica
 // preserva requirement_id/evidence_refs sin transformar, nunca auto-crea un blocker confirmado y

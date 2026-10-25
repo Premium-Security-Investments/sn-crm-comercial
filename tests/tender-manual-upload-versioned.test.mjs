@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { refreshOfficialTenderDocument } from '../tender-document-versioning.js';
+import { refreshOfficialTenderDocument } from '../verticales/licitaciones/tender-document-versioning.js';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const route = server.match(/app\.post\('\/api\/tender-documents-upload'[\s\S]*?\n}\);/)?.[0] || '';

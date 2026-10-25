@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
-import { computeAgt002RadarSourceRowHash, AGT002_RADAR_GATE_CONTEXT_VERSION, AGT002_RADAR_GATE_POLICY_VERSION } from '../agt002-radar-gate.js';
+import { computeAgt002RadarSourceRowHash, AGT002_RADAR_GATE_CONTEXT_VERSION, AGT002_RADAR_GATE_POLICY_VERSION } from '../verticales/licitaciones/agt002-radar-gate.js';
 
 function json(res, status, value) {
   res.writeHead(status, { 'content-type': 'application/json' });

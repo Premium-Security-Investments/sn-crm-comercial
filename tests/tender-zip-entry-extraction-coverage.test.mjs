@@ -30,7 +30,7 @@ import {
   TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION,
   TENDER_DOCUMENT_ARCHIVE_SAFETY_POLICY,
   TENDER_DOCUMENT_MAX_ERROR_MESSAGE_LENGTH,
-} from '../tender-document-text-extraction.js';
+} from '../verticales/licitaciones/tender-document-text-extraction.js';
 import {
   ARCHIVE_CSV_CONTENT,
   ARCHIVE_DOCX_MARKER,

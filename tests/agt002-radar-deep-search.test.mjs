@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
   RADAR_DEEP_KEYWORDS, RADAR_UNSPSC_CODES, ELECTRONIC_UNSPSC_FAMILIES, radarDeepKeywordWhere, radarDeepUnspscFamilyWhere,
   radarDeepWindows, evaluateElectronicSecurityPath, isHighValueVigilanceTender, DIRECT_SERVICE_REASON,
-} from '../tender-radar-deep-search.js';
+} from '../verticales/licitaciones/tender-radar-deep-search.js';
 
 test('keeps the Hermes search vocabulary: 77 keywords, 8 UNSPSC codes, 3 electronic families', () => {
   assert.equal(RADAR_DEEP_KEYWORDS.length, 77);

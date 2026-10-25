@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { adaptLegacyRadarResultToM1 } from '../agt002-m1-radar-reliability-adapter.js';
+import { adaptLegacyRadarResultToM1 } from '../verticales/licitaciones/agt002-m1-radar-reliability-adapter.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(SCRIPT_DIR, '..');

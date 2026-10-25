@@ -12,13 +12,13 @@ import {
   AGT002_PRE_GO_ORDINARY_PREPARATION_CATEGORIES,
   buildAgt002PreGoAnalysis,
   validateAgt002PreGoAnalysis,
-} from '../agt002-pre-go-analysis.js';
-import { buildAgt002CompanyEvidenceClasses } from '../agt002-company-evidence-classes.js';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-pre-go-analysis.js';
+import { buildAgt002CompanyEvidenceClasses } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 import {
   buildAgt002PreGoSectionProposals,
   buildAgt002SectionProposalOverlayIndex,
-} from '../agt002-pre-go-section-proposals.js';
+} from '../verticales/licitaciones/agt002-pre-go-section-proposals.js';
 
 const GENERATED_AT = '2026-08-12T00:00:00.000Z';
 const HABILITATING = ['financial-working-capital', 'legal-rce-policy', 'legal-collective-life-policy'];

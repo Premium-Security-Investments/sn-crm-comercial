@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { jobIdempotencyKey, documentIdentity, singularEventKey } from '../tender-pipeline-idempotency.js';
+import { jobIdempotencyKey, documentIdentity, singularEventKey } from '../verticales/licitaciones/tender-pipeline-idempotency.js';
 
 const tenderId = '33333333-3333-4333-8333-333333333333';
 const opportunityId = '55555555-5555-4555-8555-555555555555';

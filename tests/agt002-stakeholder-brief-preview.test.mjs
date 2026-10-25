@@ -29,9 +29,9 @@
 // All ids, entities, amounts and dates below are fabricated for this test only.
 
 import { strict as assert } from 'node:assert';
-import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
-import { AGT002_STAKEHOLDER_BRIEF_MODALITY } from '../agt002-stakeholder-brief.js';
-import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
+import { buildAgt002StakeholderBriefPreview } from '../verticales/licitaciones/agt002-stakeholder-brief-preview.js';
+import { AGT002_STAKEHOLDER_BRIEF_MODALITY } from '../verticales/licitaciones/agt002-stakeholder-brief.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_OPPORTUNITY_ID = '22222222-2222-4222-8222-222222222222';

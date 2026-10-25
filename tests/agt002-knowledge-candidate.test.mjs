@@ -4,7 +4,7 @@
 // minimal-input builder, no prompt-injection barrier and no closed-schema
 // output parser to test.
 import assert from 'node:assert/strict';
-import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-generator.js';
+import { generateTenderKnowledgeCandidate } from '../verticales/licitaciones/agt002-knowledge-candidate-generator.js';
 
 const RESOLUTION = Object.freeze({
   outcome: 'riesgo_confirmado',

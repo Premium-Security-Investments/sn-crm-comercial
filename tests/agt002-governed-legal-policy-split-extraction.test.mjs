@@ -7,7 +7,7 @@ import {
   buildGovernedRequirementAnalysis,
   extractLegalRequirements,
   AGT002_GOVERNED_REQUIREMENT_CITATION_PATTERNS,
-} from '../tender-requirement-extraction.js';
+} from '../verticales/licitaciones/tender-requirement-extraction.js';
 
 // ---------------------------------------------------------------------------
 // HR-003 (docs/governance/2026-08-11-agt002-rama-judicial-human-review.md): the

@@ -6,8 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AGT002_MANUAL_REANALYSIS_LIMITS, readAgt002ManualReanalysisStatus, requestAgt002ManualReanalysis, runAgt002ManualReanalysisRequests,
-} from '../agt002-manual-reanalysis.js';
-import { AGT002_AUTO_INITIAL_POLICY_VERSION } from '../agt002-auto-initial.js';
+} from '../verticales/licitaciones/agt002-manual-reanalysis.js';
+import { AGT002_AUTO_INITIAL_POLICY_VERSION } from '../verticales/licitaciones/agt002-auto-initial.js';
 
 const NOW = new Date('2026-10-20T15:00:00.000Z');
 const ON = { AGT002_INITIAL_ANALYSIS_ADMISSION_ENABLED: 'true', AGT002_MODEL_CALLS_ENABLED: 'true' };

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { buildAgt002LegalSource, evaluateAgt002LegalSourceStatus } from '../agt002-legal-corpus.js';
+import { buildAgt002LegalSource, evaluateAgt002LegalSourceStatus } from '../verticales/licitaciones/agt002-legal-corpus.js';
 import {
   computeAgt002LegalManifestContentHash,
   validateAgt002LegalManifest,

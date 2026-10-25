@@ -7,7 +7,7 @@ import {
   agt002IsOfficialDocumentSource,
   agt002ScheduleFreshnessNotices,
   runAgt002ScheduleFreshnessReview,
-} from '../agt002-schedule-freshness.js';
+} from '../verticales/licitaciones/agt002-schedule-freshness.js';
 
 const NOW = new Date('2026-10-21T22:00:00Z'); // 21-oct 5:00 p. m. Bogotá
 // Cronograma real de la Fiscalía, recortado a lo que importa.
@@ -135,7 +135,7 @@ test('la revisión programada: sólo lee, agrega el aviso por licitación y una 
 });
 
 test('la revisión de fases llama la frescura, le pasa el aviso atómico y sigue aunque falle', async () => {
-  const { runAgt002PhaseChangeReview } = await import('../agt002-phase-change-review.js');
+  const { runAgt002PhaseChangeReview } = await import('../verticales/licitaciones/agt002-phase-change-review.js');
   const calls = [];
   const logs = [];
   const api = {

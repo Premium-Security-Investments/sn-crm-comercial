@@ -1,15 +1,15 @@
 import { strict as assert } from 'node:assert';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 import {
   estimateAgt002V3RequestTokens,
   measureAgt002V3RequestBytes,
   budgetAgt002V3PromptRequest,
   AGT002_V3_PROMPT_BUDGET_EXCEEDED_CODE,
   AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
-} from '../agt002-v3-prompt-budget.js';
+} from '../verticales/licitaciones/agt002-v3-prompt-budget.js';
 
 // AGT-002 · Phase 5 remediation regression gate for the PROVEN context_window_exceeded canary
 // failure. The single controlled real-provider canary was rejected at admission because the

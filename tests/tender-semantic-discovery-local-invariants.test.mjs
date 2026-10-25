@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
-import { discoverTenderSemanticManifest } from '../tender-semantic-discovery.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
+import { discoverTenderSemanticManifest } from '../verticales/licitaciones/tender-semantic-discovery.js';
 
 // Root-cause fix companion suite (AGT-002 V4 discoverTenderSemanticManifest immediate provider
 // failure): the wire fix strips `uniqueItems` from the outputSchema sent to Codex App Server

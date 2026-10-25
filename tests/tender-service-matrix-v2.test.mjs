@@ -9,7 +9,7 @@
 // absorción de anclas ELECTRONICA contenidas en el span de una ancla SUMINISTRO
 // (spec §4.3.1 de docs/superpowers/specs/2026-10-01-agt002-service-matrix-v2-shadow.md).
 import assert from 'node:assert/strict';
-import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit } from '../tender-fit-policy.js';
+import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
 import {
   TENDER_SERVICE_MATRIX_V2_VERSION,
   TENDER_SERVICE_MATRIX_V2,
@@ -18,7 +18,7 @@ import {
   TenderServiceMatrixV2ValidationError,
   validateTenderServiceMatrixV2,
   evaluateTenderServiceMatrixV2,
-} from '../tender-service-matrix-v2.js';
+} from '../verticales/licitaciones/tender-service-matrix-v2.js';
 
 const NOW = '2026-09-20T15:00:00.000Z';
 

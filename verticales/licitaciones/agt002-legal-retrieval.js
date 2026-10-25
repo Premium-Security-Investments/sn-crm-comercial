@@ -4,7 +4,7 @@ import {
   evaluateAgt002LegalSourceStatus,
   validateAgt002LegalConclusion,
 } from './agt002-legal-corpus.js';
-import { validateAgt002LegalManifest } from './scripts/validate_agt002_legal_corpus.mjs';
+import { validateAgt002LegalManifest } from '../../scripts/validate_agt002_legal_corpus.mjs';
 
 const QUERY_KEYS = [
   'corpus', 'corpus_version', 'as_of', 'stale_after_days',

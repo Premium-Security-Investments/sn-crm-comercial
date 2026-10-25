@@ -13,7 +13,7 @@
 // second one.
 
 import { createHash } from 'node:crypto';
-import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { isAgt002PreviewReasoningEffort } from '../../agt002-preview-reasoning-effort.js';
 
 export const AGT002_CHECKPOINT_STAGES = Object.freeze([
   'semantic_discovery_batch',

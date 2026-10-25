@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
 
-import { projectAgt002InitialReport } from '../agt002-initial-analysis-report.js';
-import { buildInitialAggregate } from '../agt002-initial-analysis-aggregate-builder.js';
+import { projectAgt002InitialReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
+import { buildInitialAggregate } from '../verticales/licitaciones/agt002-initial-analysis-aggregate-builder.js';
 import { buildInitialScopeAV2, analysisFromBaseline, packageForDocuments } from './fixtures/agt002-pre-go-analysis-v2.mjs';
 
 function load(relative, { jsx = false } = {}) {

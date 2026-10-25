@@ -36,8 +36,8 @@ import {
   TENDER_OFFICIAL_DOCUMENT_OMITTED_REASON,
   selectTenderOfficialDocuments,
   tenderOfficialCoverageGaps,
-} from '../tender-official-document-coverage.js';
-import { buildTenderRequirementInventory } from '../tender-requirement-inventory.js';
+} from '../verticales/licitaciones/tender-official-document-coverage.js';
+import { buildTenderRequirementInventory } from '../verticales/licitaciones/tender-requirement-inventory.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/secop-ii-process-official-documents.json', import.meta.url), 'utf8'));
 
@@ -128,7 +128,7 @@ const complete = selectSecop(fixture.documents);
     complete.selected.map(secopName),
   );
 
-  const source = readFileSync(new URL('../tender-official-document-coverage.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/tender-official-document-coverage.js', import.meta.url), 'utf8');
   assert.equal(/\bfetch\s*\(/.test(source), false, 'el modulo de cobertura es puro: nunca hace red');
   assert.equal(/Date\.now\(|Math\.random\(/.test(source), false, 'la cobertura no puede depender de reloj ni de aleatoriedad');
   assert.equal(/node:fs|node:child_process/.test(source), false, 'el modulo de cobertura no toca disco ni procesos');

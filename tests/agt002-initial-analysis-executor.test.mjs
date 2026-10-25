@@ -21,8 +21,8 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { createAgt002InitialAnalysisWorker } from '../agt002-initial-analysis-worker.js';
-import { createAgt002InitialAnalysisExecutor } from '../agt002-initial-analysis-executor.js';
+import { createAgt002InitialAnalysisWorker } from '../verticales/licitaciones/agt002-initial-analysis-worker.js';
+import { createAgt002InitialAnalysisExecutor } from '../verticales/licitaciones/agt002-initial-analysis-executor.js';
 
 const PERSISTENCE_BINDINGS = Object.freeze({
   workflowInstanceId: 'wf-1', authorizationId: 'auth-1', packageVersionId: 'pkgver-1',
@@ -322,6 +322,6 @@ test('a job with a synthesis batch but no job.payload.persistence bindings fails
 // ---------------------------------------------------------------------------------------------
 
 test('agt002-initial-analysis-executor.js never imports a reanalysis operational module', () => {
-  const source = readFileSync(new URL('../agt002-initial-analysis-executor.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/agt002-initial-analysis-executor.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /agt002-reanalysis-(api|jobs|worker|input|executor|error-message)\.js/);
 });

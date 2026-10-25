@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { normalizeTenderStatusText } from '../tender-source-status.js';
-import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS } from '../tender-relevance-terms.js';
+import { normalizeTenderStatusText } from '../verticales/licitaciones/tender-source-status.js';
+import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS } from '../verticales/licitaciones/tender-relevance-terms.js';
 
 // Regression coverage for the Radar de licitaciones eligibility bug: a SECOP process
 // unrelated to PSI's offerable business (vigilancia, seguridad privada, CCTV/videovigilancia,

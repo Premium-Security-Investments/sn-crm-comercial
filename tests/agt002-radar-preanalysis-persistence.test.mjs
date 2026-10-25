@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { computeAgt002RadarPreanalysisIdempotencyKey, readAgt002RadarCanonicalPreanalysis, recordAgt002RadarGateEvaluation, recordAgt002RadarPreanalysisRun } from '../agt002-radar-preanalysis-persistence.js';
-import { claimAgt002RadarPreanalysisJob, completeAgt002RadarPreanalysisJob, enqueueAgt002RadarPreanalysisJob, failAgt002RadarPreanalysisJob } from '../agt002-radar-preanalysis-jobs.js';
+import { computeAgt002RadarPreanalysisIdempotencyKey, readAgt002RadarCanonicalPreanalysis, recordAgt002RadarGateEvaluation, recordAgt002RadarPreanalysisRun } from '../verticales/licitaciones/agt002-radar-preanalysis-persistence.js';
+import { claimAgt002RadarPreanalysisJob, completeAgt002RadarPreanalysisJob, enqueueAgt002RadarPreanalysisJob, failAgt002RadarPreanalysisJob } from '../verticales/licitaciones/agt002-radar-preanalysis-jobs.js';
 
 const calls=[];
 const database={rpc:async(name,args)=>{calls.push([name,args]); if(name.includes('claim')) return{data:{status:'claimed',job_id:'j',lease_id:'l',lease_expires_at:'x',tender_id:'t',gate_evaluation_id:'g',attempt_key:'a',policy_version:'p',context_version:'c',source_row_hash:'h'},error:null}; return{data:{status:'ok'},error:null};}};

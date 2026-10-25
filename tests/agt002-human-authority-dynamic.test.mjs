@@ -1,14 +1,14 @@
 import { strict as assert } from 'node:assert';
 import { ACTIONS, can, requireAction } from '../access-control.js';
-import { callTenderGoNoGoDecision } from '../tender-go-no-go-rpc.js';
-import { callTenderOfferStatusTransition } from '../tender-offer-status-rpc.js';
+import { callTenderGoNoGoDecision } from '../verticales/licitaciones/tender-go-no-go-rpc.js';
+import { callTenderOfferStatusTransition } from '../verticales/licitaciones/tender-offer-status-rpc.js';
 import {
   getAgt002WorkbenchApi,
   postAgt002MessageApi,
   postAgt002RetryApi,
   postAgt002LearningReviewApi,
-} from '../agt002-workbench-api.js';
-import { validateAgt002WorkbenchResult } from '../agt002-workbench-contract.js';
+} from '../verticales/licitaciones/agt002-workbench-api.js';
+import { validateAgt002WorkbenchResult } from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const AI_ONLY_ACTIONS = new Set([ACTIONS.AI_ANALYSIS_RUN, ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND]);

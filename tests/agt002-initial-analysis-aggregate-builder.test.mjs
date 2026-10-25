@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import {
   buildInitialAggregate, buildInitialMemberOutputSchema, buildInitialSynthesisModelSchema,
   computeInitialAnalysisCoreHash, INITIAL_MODEL_ANALYSIS_KEYS,
-} from '../agt002-initial-analysis-aggregate-builder.js';
+} from '../verticales/licitaciones/agt002-initial-analysis-aggregate-builder.js';
 import { toClaudeProviderOutputSchema, AGT002_CLAUDE_MAX_SCHEMA_BYTES } from '../agt002-claude-client.js';
-import { validatePreGoAnalysisV2 } from '../agt002-pre-go-analysis-v2.js';
+import { validatePreGoAnalysisV2 } from '../verticales/licitaciones/agt002-pre-go-analysis-v2.js';
 import { buildInitialScopeAV2, analysisFromBaseline, packageForDocuments } from './fixtures/agt002-pre-go-analysis-v2.mjs';
 
 const DOCUMENTS = Array.from({ length: 3 }, (_, index) => ({

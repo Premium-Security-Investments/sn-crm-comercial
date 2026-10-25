@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
 
-const shared = readFileSync(new URL('../tender-tracking-rpc.js', import.meta.url), 'utf8');
+const shared = readFileSync(new URL('../verticales/licitaciones/tender-tracking-rpc.js', import.meta.url), 'utf8');
 assert.match(shared, /export async function callTenderOpportunityConversion/);
 assert.match(shared, /rpc\(database, 'psi_convert_tender_to_opportunity'/);
 assert.match(shared, /p_tender_id: id/);

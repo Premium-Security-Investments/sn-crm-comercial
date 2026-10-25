@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractTenderDocumentText } from '../tender-document-text-extraction.js';
-import { buildTenderDocumentExtractionRpcParams } from '../tender-document-extraction-persistence.js';
+import { extractTenderDocumentText } from '../verticales/licitaciones/tender-document-text-extraction.js';
+import { buildTenderDocumentExtractionRpcParams } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 

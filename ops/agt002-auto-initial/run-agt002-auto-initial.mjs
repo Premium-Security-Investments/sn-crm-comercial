@@ -10,8 +10,8 @@
 //      outside the daily cap of first analyses; the same worker timer runs it.
 //   (New SECOP phases of converted tenders have their own review service: agt002-phase-change-review.)
 import { createClient } from '@supabase/supabase-js';
-import { filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions } from '../../agt002-auto-initial.js';
-import { runAgt002ManualReanalysisRequests } from '../../agt002-manual-reanalysis.js';
+import { filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions } from '../../verticales/licitaciones/agt002-auto-initial.js';
+import { runAgt002ManualReanalysisRequests } from '../../verticales/licitaciones/agt002-manual-reanalysis.js';
 
 const CLAIMABLE = ['queued', 'discovering_documents', 'importing_documents', 'retry_wait', 'ready_for_snapshot', 'snapshot_ready'];
 const log = event => console.log(JSON.stringify(event));

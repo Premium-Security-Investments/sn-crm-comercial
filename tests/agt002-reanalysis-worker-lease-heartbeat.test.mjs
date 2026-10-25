@@ -14,7 +14,7 @@
 // through the real fenced adapter. No network, no provider, no timer, no sleep.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createAgt002ReanalysisWorker } from '../agt002-reanalysis-worker.js';
+import { createAgt002ReanalysisWorker } from '../verticales/licitaciones/agt002-reanalysis-worker.js';
 
 const RENEW_RPC = 'psi_renew_agt002_reanalysis_job_lease';
 const LEASE_SECONDS = 600;

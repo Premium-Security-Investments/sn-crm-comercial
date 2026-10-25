@@ -16,8 +16,8 @@ const timer = read(files[2]);
 assert.match(runner, /process\.argv\.includes\('--control-plane'\)/);
 assert.match(runner, /buildRadarPipelineIdentity/);
 assert.match(runner, /resolveAgt002ReleaseArtifactEvidence/);
-assert.match(runner, /from\s+'\.\.\/\.\.\/agt002-control-plane-surface-builders\.js'/);
-assert.match(runner, /from\s+'\.\.\/\.\.\/agt002-control-plane-runtime-evidence\.js'/);
+assert.match(runner, /from\s+'\.\.\/\.\.\/verticales\/licitaciones\/agt002-control-plane-surface-builders\.js'/);
+assert.match(runner, /from\s+'\.\.\/\.\.\/verticales\/licitaciones\/agt002-control-plane-runtime-evidence\.js'/);
 assert.match(runner, /status:\s*'retired'/);
 assert.match(runner, /AGT002_RADAR_AI_RETIRED/);
 

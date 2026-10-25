@@ -1,13 +1,13 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { filterRadarRowsByCanonicalPreanalysis } from '../agt002-radar-visibility.js';
+import { filterRadarRowsByCanonicalPreanalysis } from '../verticales/licitaciones/agt002-radar-visibility.js';
 import {
   AGT002_RADAR_GATE_CONTEXT_VERSION,
   AGT002_RADAR_GATE_POLICY_VERSION,
   computeAgt002RadarSourceRowHash,
   evaluateAgt002RadarGate,
-} from '../agt002-radar-gate.js';
-import { agt002RadarDerivedDayWindowLabel } from '../agt002-radar-derived-day-churn.js';
+} from '../verticales/licitaciones/agt002-radar-gate.js';
+import { agt002RadarDerivedDayWindowLabel } from '../verticales/licitaciones/agt002-radar-derived-day-churn.js';
 
 const NOW = '2026-08-25T15:00:00.000Z';
 const nueva = { id: 't1', stable_key: 'k1', status: 'abierto' };
@@ -232,7 +232,7 @@ assert.deepEqual(
   'las convertidas se cortan antes de evaluar el gate, aun con un evaluador invalido',
 );
 
-const visibilitySource = readFileSync(new URL('../agt002-radar-visibility.js', import.meta.url), 'utf8');
+const visibilitySource = readFileSync(new URL('../verticales/licitaciones/agt002-radar-visibility.js', import.meta.url), 'utf8');
 for (const forbidden of ['internal_status', 'converted_opportunity_id']) assert.equal(visibilitySource.includes(forbidden), false);
 assert.equal(/learning/i.test(visibilitySource), false);
 

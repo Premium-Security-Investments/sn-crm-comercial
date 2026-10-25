@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { SURFACE_NAMES } from '../agt002-control-plane-identity.js';
-import { computeAgt002PinnedSurfaceMinShas } from '../agt002-control-plane-surface-paths.js';
+import { SURFACE_NAMES } from '../verticales/licitaciones/agt002-control-plane-identity.js';
+import { computeAgt002PinnedSurfaceMinShas } from '../verticales/licitaciones/agt002-control-plane-surface-paths.js';
 
 const FREEZE_CANONICAL_SHA256 = 'd7123520c4016a4963dfda7c36bdc5d5507f7ac0d5bb2b26c96193b1f95ef4b3';
 

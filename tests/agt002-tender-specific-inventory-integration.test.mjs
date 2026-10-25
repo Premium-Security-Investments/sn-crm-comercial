@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { buildAgt002PreviewInput } from '../agt002-preview-input.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { buildAgt002PreviewInput } from '../verticales/licitaciones/agt002-preview-input.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 import {
   computeAgt002PreviewIdempotencyKey,
   validateAgt002TenderRequirementInventoryCoverage,
-} from '../agt002-preview-persistence.js';
+} from '../verticales/licitaciones/agt002-preview-persistence.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const contextV2Sections = {
@@ -87,7 +87,7 @@ function previewInputFor(text) {
 for (const relativePath of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
   assert.doesNotMatch(source, /documentGaps:\s*\[\]/, `${relativePath} must never erase durable/extraction gaps at an inventory boundary`);
-  assert.match(source, /import \{ loadAgt002TenderRequirementDocumentGaps \} from '\.\.\/agt002-tender-requirement-gaps\.js';/);
+  assert.match(source, /import \{ loadAgt002TenderRequirementDocumentGaps \} from '\.\.\/verticales\/licitaciones\/agt002-tender-requirement-gaps\.js';/);
   const claimIndexes = [...source.matchAll(/await claimAgt002PreviewRun\(/g)].map(match => match.index);
   assert.equal(claimIndexes.length, 1, `${relativePath} must keep the one remaining direct AGT-002 claim path covered`);
   for (const claimIndex of claimIndexes) {
@@ -156,7 +156,7 @@ for (const relativePath of ['../api/[...path].js', '../server/index.js']) {
 // The durable worker path derives the same gate from its own frozen, governed flags, and keeps
 // enforcing the reserved identity it was enqueued with.
 {
-  const executorSource = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+  const executorSource = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-executor.js', import.meta.url), 'utf8');
   assert.match(executorSource, /expectedIdempotencyKey: job\.idempotencyKey/);
   assert.match(executorSource, /requireTenderRequirementInventory: input\.analysis_flags\.AGT002_DOCUMENT_RETRIEVAL === true/);
 }

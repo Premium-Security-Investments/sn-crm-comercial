@@ -1,6 +1,6 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { createAgt002WorkbenchResponder } from './agt002-workbench-responder.js';
-import { resolverParaLector } from './catalogo-fuentes.js';
+import { resolverParaLector } from '../../catalogo-fuentes.js';
 
 // Entrada 1 del catálogo de fuentes: lo que el servidor resuelve y estampa antes de llamar al
 // modelo. Son las tres que faltaban el 23-oct, cuando la Mesa inventó el nombre de la empresa

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { compareTenderFamilyRecency, tenderProcessFamilyKey } from '../tender-process-family.js';
+import { compareTenderFamilyRecency, tenderProcessFamilyKey } from '../verticales/licitaciones/tender-process-family.js';
 
 const backendPaths = ['../server/index.js', '../api/[...path].js'];
 

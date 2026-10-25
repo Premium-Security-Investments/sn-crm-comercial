@@ -54,10 +54,10 @@ import {
   classifyAgt002PostBridgeFailure,
   isAgt002LeaseLostError,
   runAgt002PostBridgeAnalysis,
-} from '../agt002-post-bridge-observability.js';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
-import { AGT002_REANALYSIS_QUEUE_ERROR_CODES, createAgt002ReanalysisWorker } from '../agt002-reanalysis-worker.js';
+} from '../verticales/licitaciones/agt002-post-bridge-observability.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { createAgt002ReanalysisExecutor } from '../verticales/licitaciones/agt002-reanalysis-executor.js';
+import { AGT002_REANALYSIS_QUEUE_ERROR_CODES, createAgt002ReanalysisWorker } from '../verticales/licitaciones/agt002-reanalysis-worker.js';
 
 const RELEASE_RPC = 'psi_release_agt002_preview_claim';
 const RUN_RPC = 'psi_record_agt002_canonical_analysis_run';

@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import {
   AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
   validateAgt002IntegralAnalysisV3,
-} from '../agt002-integral-analysis-v3.js';
+} from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
 // Namespace import (rather than adding to the named import above): Task 5 of
 // docs/plans/2026-09-03-agt002-durable-batched-analysis.md introduces
 // validateAgt002IntegralAnalysisV3Unit as a NEW export extracted from the existing per-unit
@@ -10,9 +10,9 @@ import {
 // (agt002-preview-contract.js / tests/agt002-integral-analysis-batch-contract.test.mjs). Until
 // it exists, a namespace import keeps the failure an ordinary diagnostic `assert` failure below
 // instead of a module-link SyntaxError that would abort every other test in this file.
-import * as Agt002IntegralAnalysisV3 from '../agt002-integral-analysis-v3.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+import * as Agt002IntegralAnalysisV3 from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
 
 // ---------------------------------------------------------------------------
 // Synthetic fixture: one requirement per formal category (discard, habilitating,

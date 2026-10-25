@@ -5,7 +5,7 @@ import {
   createEsuDirectRefresher,
   mergeAuthoritativeEsuTender,
 } from '../esu-direct-refresh.js';
-import { createAgt002RadarPipeline } from '../agt002-radar-pipeline.js';
+import { createAgt002RadarPipeline } from '../verticales/licitaciones/agt002-radar-pipeline.js';
 
 const NOW = '2026-08-27T12:00:00.000Z';
 const SIX_HOURS = 6 * 60 * 60 * 1000;

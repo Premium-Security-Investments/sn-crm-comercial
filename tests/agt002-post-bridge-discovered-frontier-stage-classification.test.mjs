@@ -20,18 +20,18 @@
 // fixture is synthetic and structural.
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
-import { assembleTenderSemanticManifest, buildTenderSemanticManifest } from '../tender-semantic-manifest.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
+import { assembleTenderSemanticManifest, buildTenderSemanticManifest } from '../verticales/licitaciones/tender-semantic-manifest.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
 import {
   AGT002_POST_BRIDGE_ERROR_CODES,
   AGT002_POST_BRIDGE_STAGES,
   runAgt002PostBridgeAnalysis,
-} from '../agt002-post-bridge-observability.js';
-import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
+} from '../verticales/licitaciones/agt002-post-bridge-observability.js';
+import { createAgt002ReanalysisExecutor } from '../verticales/licitaciones/agt002-reanalysis-executor.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 

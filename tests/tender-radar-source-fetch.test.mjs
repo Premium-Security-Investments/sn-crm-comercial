@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { fetchTenderRadarSourceRows } from '../tender-radar-source-fetch.js';
+import { fetchTenderRadarSourceRows } from '../verticales/licitaciones/tender-radar-source-fetch.js';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(testDirectory, '..');
@@ -105,6 +105,6 @@ test('readPersistedTenderRadar no longer cuts the pool at 250', async () => {
     const body = readPersistedBody(source);
     assert.equal(body.includes('.limit(250)'), false, `${label} readPersistedTenderRadar must not use .limit(250)`);
     assert.equal(body.includes('fetchTenderRadarSourceRows'), true, `${label} must call fetchTenderRadarSourceRows`);
-    assert.match(source, /from ['"]\.\.\/tender-radar-source-fetch\.js['"]/);
+    assert.match(source, /from ['"]\.\.\/verticales\/licitaciones\/tender-radar-source-fetch\.js['"]/);
   }
 });

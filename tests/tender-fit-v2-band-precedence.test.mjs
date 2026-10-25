@@ -7,7 +7,7 @@
 // ningún piso de 25 puntos de complemento ni ninguna etiqueta de prioridad para UI:
 // únicamente el valor numérico determinístico `impact_priority`.
 import assert from 'node:assert/strict';
-import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit, classifyTenderFitV2ScoreBand } from '../tender-fit-policy.js';
+import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit, classifyTenderFitV2ScoreBand } from '../verticales/licitaciones/tender-fit-policy.js';
 import {
   SCORE_BANDS,
   AXIS_MAX_POINTS,
@@ -18,7 +18,7 @@ import {
   TERRITORY_NATIONAL_COVERAGE_PHRASES,
   SMMLV_2026,
   VALUE_FAMILY_FLOORS_SMMLV,
-} from '../tender-fit-v2-parameters.js';
+} from '../verticales/licitaciones/tender-fit-v2-parameters.js';
 
 const NOW = '2026-01-04T15:00:00.000Z'; // domingo en Bogotá, mismo fixture que tests/tender-fit-v2-time-axis.test.mjs
 

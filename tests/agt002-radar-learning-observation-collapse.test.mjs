@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AGT002_RADAR_LEARNING_OBSERVATION_PRECEDENCE, collapseAgt002RadarLearningObservationsByTender as collapse } from '../agt002-radar-learning-projection.js';
+import { AGT002_RADAR_LEARNING_OBSERVATION_PRECEDENCE, collapseAgt002RadarLearningObservationsByTender as collapse } from '../verticales/licitaciones/agt002-radar-learning-projection.js';
 const obs = (type, id, tenderId, at) => ({ observation_id: `${type}:${id}`, tender_id: tenderId, decided_at: at, signal_polarity: 'favorable', evidence: [{ record_id: id, evidence_type: type }] });
 assert.deepEqual([...AGT002_RADAR_LEARNING_OBSERVATION_PRECEDENCE], ['offer_outcome', 'human_decision', 'converted_tender', 'canonical_analysis']);
 const cuatro = [obs('converted_tender', '1', 't1', '2026-08-01'), obs('canonical_analysis', '2', 't1', '2026-08-02'), obs('human_decision', '3', 't1', '2026-08-03'), obs('offer_outcome', '4', 't1', '2026-08-04')];
@@ -15,7 +15,7 @@ assert.equal(JSON.stringify(collapse(dosLic)), JSON.stringify(collapse(dosLic)),
 assert.deepEqual(collapse(dosLic).map(o => o.observation_id), [...collapse(dosLic).map(o => o.observation_id)].sort(), 'salida ordenada por observation_id');
 const precedenteIdentidad = obs('offer_outcome', '99', 't9', '2026-08-01');
 assert.equal(collapse([precedenteIdentidad])[0], precedenteIdentidad, 'collapseAgt002RadarLearningObservationsByTender debe devolver los precedentes de agt002-radar-learning-projection.js tal cual (identidad de objeto), no reconstruidos');
-const projectionSource = readFileSync(new URL('../agt002-radar-learning-projection.js', import.meta.url), 'utf8');
+const projectionSource = readFileSync(new URL('../verticales/licitaciones/agt002-radar-learning-projection.js', import.meta.url), 'utf8');
 assert.match(projectionSource, /schema_version:\s*'agt002-radar-learning-observations-v1'/, "projectAgt002RadarLearningObservations debe devolver schema_version: 'agt002-radar-learning-observations-v1'");
 assert.doesNotMatch(projectionSource, /precedents:\s*collapseAgt002RadarLearningObservationsByTender\(precedents\)/, 'projectAgt002RadarLearningObservations NO debe colapsar los precedentes en el retorno: el colapso es responsabilidad del consumidor, no de la proyección');
 assert.match(projectionSource, /schema_version:\s*'agt002-radar-learning-observations-v1',\s*precedents\s*(:\s*precedents)?\s*[,}]/, 'projectAgt002RadarLearningObservations debe exponer los precedentes crudos (sin colapsar) bajo la clave precedents');

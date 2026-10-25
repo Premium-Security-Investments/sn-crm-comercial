@@ -2,8 +2,8 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { planAgt002RadarGateAudit, runAgt002RadarGateHistoricalAudit } from '../scripts/agt002-radar-gate-historical-audit.mjs';
 import { runAgt002RadarLearningSignalsReport } from '../scripts/agt002-radar-learning-signals-report.mjs';
-import { computeAgt002RadarSourceRowHash } from '../agt002-radar-gate.js';
-import { agt002RadarDerivedDayWindowLabel } from '../agt002-radar-derived-day-churn.js';
+import { computeAgt002RadarSourceRowHash } from '../verticales/licitaciones/agt002-radar-gate.js';
+import { agt002RadarDerivedDayWindowLabel } from '../verticales/licitaciones/agt002-radar-derived-day-churn.js';
 
 const NOW = '2026-08-25T15:00:00.000Z';
 const tenders = [

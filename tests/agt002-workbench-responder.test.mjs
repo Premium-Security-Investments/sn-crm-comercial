@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { createAgt002WorkbenchResponder } from '../agt002-workbench-responder.js';
-import { validateAgt002WorkbenchResult } from '../agt002-workbench-contract.js';
+import { createAgt002WorkbenchResponder } from '../verticales/licitaciones/agt002-workbench-responder.js';
+import { validateAgt002WorkbenchResult } from '../verticales/licitaciones/agt002-workbench-contract.js';
 import { startSyntheticAgt002HetznerBridge } from './fixtures/agt002-hetzner-bridge-synthetic-server.mjs';
-import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
+import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
 
 const SECRET = 'a'.repeat(32);
 

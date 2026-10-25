@@ -25,8 +25,8 @@
 // RED command: node --test tests/agt002-batched-v3-orchestration.test.mjs
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
-import * as Agt002PreviewEngine from '../agt002-preview-engine.js';
-import { AGT002_CHECKPOINT_STAGES } from '../agt002-analysis-checkpoints.js';
+import * as Agt002PreviewEngine from '../verticales/licitaciones/agt002-preview-engine.js';
+import { AGT002_CHECKPOINT_STAGES } from '../verticales/licitaciones/agt002-analysis-checkpoints.js';
 
 // Real closed Task-2 stage this helper is expected to bind every checkpoint call to — never
 // invented here, cross-checked against the actual closed catalog.

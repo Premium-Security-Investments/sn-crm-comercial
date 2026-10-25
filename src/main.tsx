@@ -8,7 +8,7 @@ import { bogotaToday, followUpDateToIso } from './followUpDate';
 import { canAccessRoute, canManageUsers as navCanManageUsers, canUseCommercialView, canViewTenders as navCanViewTenders, canWriteGoals, effectiveNavProfile, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, isReadOnlyProfile, preferredLandingRoute, PROGRAMACION_APP_URL, type NavViewMode } from './navPermissions';
 import { api, apiDownload, exitTenderOpportunity, setApiAccessToken } from './apiClient';
 import { isModulePermissionEligible } from '../module-access.js';
-import { agt002UnavailableMessage } from '../agt002-reanalysis-error-message.js';
+import { agt002UnavailableMessage } from '../verticales/licitaciones/agt002-reanalysis-error-message.js';
 import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { AgentsView } from './platform/AgentsView';

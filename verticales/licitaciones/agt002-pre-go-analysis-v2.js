@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { validateAgainstPreGoSchema } from './agt002-pre-go-analysis-v1.js';
 
-const SCHEMA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'schemas', 'agt002');
+const SCHEMA_DIR = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'), 'schemas', 'agt002');
 
 export const AGT002_PRE_GO_ANALYSIS_V2 = 'pre_go_analysis.v2';
 

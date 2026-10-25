@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { createTenderAnalysisEngine, validateTenderAnalysisResult } from '../tender-analysis-domain.js';
+import { createTenderAnalysisEngine, validateTenderAnalysisResult } from '../verticales/licitaciones/tender-analysis-domain.js';
 import { createHermesTenderAnalysisEngine, HERMES_TENDER_POLICY } from '../hermes-tender-analysis-adapter.js';
-import { adaptAgt002TenderAnalysis } from '../agt002-tender-adapter.js';
+import { adaptAgt002TenderAnalysis } from '../verticales/licitaciones/agt002-tender-adapter.js';
 
 const snapshot = {
   snapshot_id: '11111111-1111-4111-8111-111111111111',
@@ -178,7 +178,7 @@ await assert.rejects(
   error => /indisponible/i.test(error.message) && !error.message.includes('test-only-bearer-secret') && !error.message.includes('provider body'),
 );
 
-for (const source of ['tender-analysis-domain.js', 'tender-analysis-engine.js', 'hermes-tender-analysis-adapter.js', 'agt002-tender-adapter.js']) {
+for (const source of ['verticales/licitaciones/tender-analysis-domain.js', 'verticales/licitaciones/tender-analysis-engine.js', 'hermes-tender-analysis-adapter.js', 'verticales/licitaciones/agt002-tender-adapter.js']) {
   assert.doesNotMatch(readFileSync(new URL(`../${source}`, import.meta.url), 'utf8'), /fixtures\/agt002-synthetic-responder|buildSyntheticAgt002TenderAnalysis/);
 }
 console.log('Hermes interim tender analysis gate and transport contract passed');

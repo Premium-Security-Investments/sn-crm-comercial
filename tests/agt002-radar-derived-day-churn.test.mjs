@@ -6,8 +6,8 @@ import {
   agt002RadarDerivedDayWindowLabel,
   hasAgt002RadarDerivedDayShape,
   isAgt002RadarDerivedDayOnlyChurn,
-} from '../agt002-radar-derived-day-churn.js';
-import { computeAgt002RadarSourceRowHash } from '../agt002-radar-gate.js';
+} from '../verticales/licitaciones/agt002-radar-derived-day-churn.js';
+import { computeAgt002RadarSourceRowHash } from '../verticales/licitaciones/agt002-radar-gate.js';
 
 const VENCIDO = 'vencido / validar estado';
 const URGENTE = 'urgente (0-7 días)';
@@ -65,7 +65,7 @@ assert.ok(Object.isFrozen(AGT002_RADAR_DERIVED_DAY_FIELDS));
 assert.ok(Number.isInteger(AGT002_RADAR_DERIVED_DAY_MAX_OFFSET_DAYS));
 assert.ok(AGT002_RADAR_DERIVED_DAY_MAX_OFFSET_DAYS >= 1 && AGT002_RADAR_DERIVED_DAY_MAX_OFFSET_DAYS <= 90,
   'el límite debe ser pequeño y acotado, no un barrido abierto');
-const moduleSource = readFileSync(new URL('../agt002-radar-derived-day-churn.js', import.meta.url), 'utf8');
+const moduleSource = readFileSync(new URL('../verticales/licitaciones/agt002-radar-derived-day-churn.js', import.meta.url), 'utf8');
 assert.match(moduleSource, /server\/index\.js:1203/, 'el límite debe citar la evidencia de la ventana de 60 días del recolector SECOP dominante');
 assert.match(moduleSource, /60 \* 86400000/, 'el límite debe citar la constante real de esa ingesta');
 assert.match(moduleSource, /RECENT_DAYS/, 'el límite debe nombrar RECENT_DAYS=60 del recolector SECOP dominante externo, base real del techo');

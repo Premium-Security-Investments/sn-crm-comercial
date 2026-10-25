@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { startSyntheticAgt002HetznerBridge } from './fixtures/agt002-hetzner-bridge-synthetic-server.mjs';
-import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
-import { createAgt002PreviewEngine, AGT002_PREVIEW_POLICY } from '../agt002-preview-engine.js';
+import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
+import { createAgt002PreviewEngine, AGT002_PREVIEW_POLICY } from '../verticales/licitaciones/agt002-preview-engine.js';
 
 const SECRET = 'a'.repeat(32);
 

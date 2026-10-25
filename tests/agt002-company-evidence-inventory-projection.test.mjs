@@ -17,8 +17,8 @@ import { createHash } from 'node:crypto';
 import {
   AGT002_COMPANY_EVIDENCE_CLASS_IDS,
   buildAgt002CompanyEvidenceClasses,
-} from '../agt002-company-evidence-classes.js';
-import { buildAgt002CompanyEvidenceIdentity } from '../agt002-company-evidence-identity.js';
+} from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { buildAgt002CompanyEvidenceIdentity } from '../verticales/licitaciones/agt002-company-evidence-identity.js';
 
 const ASOF = new Date('2026-08-29T00:00:00.000Z');
 const MANIFEST_VERSION = 'v0.3.1-approved-20260829';

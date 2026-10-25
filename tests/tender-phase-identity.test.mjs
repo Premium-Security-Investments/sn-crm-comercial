@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   applyOfficialSourceLink,
   planRadarPhaseIdentitySync,
-} from '../tender-phase-identity.js';
+} from '../verticales/licitaciones/tender-phase-identity.js';
 
 const HISTORICAL_URL = 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.HISTORICAL';
 const OFFICIAL_URL = 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.OFFICIAL';
@@ -258,7 +258,7 @@ assert.equal(
 const backendPaths = ['../server/index.js', '../api/[...path].js'];
 for (const path of backendPaths) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /from '\.\.\/tender-phase-identity\.js'/, `${path} must import the phase-identity planner`);
+  assert.match(source, /from '\.\.\/verticales\/licitaciones\/tender-phase-identity\.js'/, `${path} must import the phase-identity planner`);
   assert.match(source, /planRadarPhaseIdentitySync\(/, `${path} persistTenderRadar must apply the phase-identity planner`);
   assert.match(source, /applyOfficialSourceLink\(/, `${path} must rewrite the converted opportunity source link`);
   assert.match(

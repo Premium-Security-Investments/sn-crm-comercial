@@ -18,7 +18,7 @@ test('generator does not import Supabase, network or secrets', () => {
 test('generator reads only local governed artifacts and builds via the pre-GO module', () => {
   assert.match(source, /docs\/governance\/registro\/manizales-sa-24-2026\.registry\.json/);
   assert.match(source, /docs\/governance\/drafts\/agt002-rama-judicial/);
-  assert.match(source, /from '\.\.\/agt002-pre-go-analysis\.js'/);
+  assert.match(source, /from '\.\.\/verticales\/licitaciones\/agt002-pre-go-analysis\.js'/);
   assert.match(source, /buildAgt002PreGoAnalysis/);
 });
 

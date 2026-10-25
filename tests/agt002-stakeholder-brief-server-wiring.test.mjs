@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const worker = readFileSync(new URL('../tender-processing-worker.js', import.meta.url), 'utf8');
+const worker = readFileSync(new URL('../verticales/licitaciones/tender-processing-worker.js', import.meta.url), 'utf8');
 
 function count(source, token) {
   return source.split(token).length - 1;
@@ -43,7 +43,7 @@ function assertOrder(source, tokens, label) {
 assert.equal(server, api, 'server/index.js y api/[...path].js deben permanecer byte-idénticos');
 
 assert.equal(
-  count(server, "import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';"),
+  count(server, "import { buildAgt002StakeholderBriefPreview } from '../verticales/licitaciones/agt002-stakeholder-brief-preview.js';"),
   1,
   'server must import buildAgt002StakeholderBriefPreview exactly once',
 );

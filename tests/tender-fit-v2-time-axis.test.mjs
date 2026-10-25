@@ -11,7 +11,7 @@
 // día a día documentado en tests/tender-fit-v2-business-days.test.mjs, que cubre
 // el caso con festivo de forma dedicada).
 import assert from 'node:assert/strict';
-import { evaluateTenderFit } from '../tender-fit-policy.js';
+import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
 
 const NOW = '2026-01-04T15:00:00.000Z';
 

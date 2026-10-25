@@ -1,4 +1,4 @@
-import { assertAgt002CompanyEvidenceRegistryMinimalExposureSelect } from './agt002-company-evidence-classes.js';
+import { assertAgt002CompanyEvidenceRegistryMinimalExposureSelect } from './verticales/licitaciones/agt002-company-evidence-classes.js';
 
 // Vista Empresa (fase 1): sólo los metadatos que la pantalla muestra. Ambas listas previas (clases y legado)
 // ya exponen estas columnas; aquí no se añade ninguna (sin source_reference, hash ni notas restringidas).

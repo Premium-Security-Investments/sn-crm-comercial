@@ -28,7 +28,7 @@ import {
   computeAgt002WorkflowInstanceIdempotencyKey,
   computeAgt002WorkflowEventIdempotencyKey,
   buildAgt002WorkflowEventEnvelope,
-} from '../agt002-initial-workflow.js';
+} from '../verticales/licitaciones/agt002-initial-workflow.js';
 
 const UUID_A = '10000000-4000-4000-8000-000000000001';
 const UUID_B = '10000000-4000-4000-8000-000000000002';

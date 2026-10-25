@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   computeAgt002CompanyProfileSnapshotHash, freezeAgt002CompanyProfileSnapshot, loadAgt002CompanyProfileSnapshotForWorkflow,
-} from '../agt002-company-profile-snapshot.js';
+} from '../verticales/licitaciones/agt002-company-profile-snapshot.js';
 
 const DOSSIER = { profile: { legal_name: 'Seguridad Nacional', rup_status: 'vigente' }, documents: [{ id: 'd1' }] };
 

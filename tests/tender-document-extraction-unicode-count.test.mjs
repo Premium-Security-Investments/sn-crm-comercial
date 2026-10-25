@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
-import { buildTenderDocumentExtractionRpcParams } from '../tender-document-extraction-persistence.js';
+import { buildTenderDocumentExtractionRpcParams } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 
 const ids = {
   opportunity: '77777777-7777-4777-8777-777777777777',

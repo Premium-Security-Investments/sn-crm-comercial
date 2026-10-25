@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const modulePath = new URL('../tender-source-status.js', import.meta.url);
+const modulePath = new URL('../verticales/licitaciones/tender-source-status.js', import.meta.url);
 assert.ok(existsSync(modulePath), 'RED: falta el módulo compartido de estado terminal de licitaciones.');
 const lifecycle = await import(`${pathToFileURL(modulePath.pathname)}?terminal-status-regression=${Date.now()}`);
 

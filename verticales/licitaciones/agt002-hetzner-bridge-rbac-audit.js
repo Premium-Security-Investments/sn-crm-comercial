@@ -1,4 +1,4 @@
-import { requireAction, ACTIONS } from './access-control.js';
+import { requireAction, ACTIONS } from '../../access-control.js';
 
 export function diffEligibility(eligibleIds, expectedIds) {
   const eligible = new Set(eligibleIds);

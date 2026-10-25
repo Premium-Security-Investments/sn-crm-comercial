@@ -18,12 +18,12 @@ import { fileURLToPath } from 'node:url';
 import {
   buildAgt002ManizalesIntegralManifest,
   validateAgt002ManizalesIntegralManifest,
-} from '../agt002-manizales-integral-manifest.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
 import {
   applyManizalesManifestCorrections,
   buildManizalesManifestCorrectionsArtifact,
-} from '../agt002-manizales-manifest-corrections.js';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-manizales-manifest-corrections.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY_JSON = resolve(PROJECT_ROOT, 'docs/governance/registro/manizales-sa-24-2026.registry.json');

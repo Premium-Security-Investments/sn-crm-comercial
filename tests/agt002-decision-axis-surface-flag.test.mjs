@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { loadReactComponent, renderReactComponent } from './helpers/bundle-react-component.mjs';
-import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
+import { buildAgt002AnalysisConfig } from '../verticales/licitaciones/agt002-analysis-config.js';
 
 // Corte E de docs/superpowers/plans/2026-08-25-agt002-analisis-para-decidir.md: flag
 // AGT002_DECISION_AXIS_SURFACE apagado por defecto, literal server-owned en el payload documental,

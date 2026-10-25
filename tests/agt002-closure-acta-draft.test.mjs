@@ -12,7 +12,7 @@ import {
   closureActaClarifications,
   createClosureActaDrafter,
   normalizeClosureActaDraft,
-} from '../agt002-closure-acta-draft.js';
+} from '../verticales/licitaciones/agt002-closure-acta-draft.js';
 
 const NOTA = 'Es un proceso 100% de tecnología y aún no cumplimos los requisitos para este tipo de proyectos.';
 const OPPORTUNITY = '44444444-4444-4444-8444-444444444444';

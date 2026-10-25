@@ -10,7 +10,7 @@
 // source_id. No route here reanalyzes, refreshes documents or touches GO/NO-GO.
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { buildActionableReviewIntegralUnitSource } from '../agt002-actionable-review-canonical.js';
+import { buildActionableReviewIntegralUnitSource } from '../verticales/licitaciones/agt002-actionable-review-canonical.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const FOREIGN_OPPORTUNITY_ID = '99999999-9999-4999-8999-999999999999';

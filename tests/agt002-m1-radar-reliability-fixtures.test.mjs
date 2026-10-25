@@ -8,7 +8,7 @@ import {
   AGT002_M1_RADAR_RELIABILITY_VERDICTS,
   AGT002_M1_RADAR_RELIABILITY_REASON_CATALOG,
   validateAgt002M1RadarReliabilityBundle,
-} from '../agt002-m1-radar-reliability-contract.js';
+} from '../verticales/licitaciones/agt002-m1-radar-reliability-contract.js';
 
 // FASE RED 2: fixtures/expectations.json (y el resto de artefactos de fixtures) todavía no
 // existen. Los grupos que dependen de ellos fallan por ausencia de archivo/directorio, no por

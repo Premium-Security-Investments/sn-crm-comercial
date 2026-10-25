@@ -2,8 +2,8 @@
 // Cada licitación falla por separado y el acta se escribe siempre como borrador.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runAgt002ClosureActaDrafts, AGT002_CLOSURE_ACTA_MAX_LIMIT } from '../agt002-closure-acta-run.js';
-import { closureActaContextFromAnalysis } from '../agt002-closure-acta-draft.js';
+import { runAgt002ClosureActaDrafts, AGT002_CLOSURE_ACTA_MAX_LIMIT } from '../verticales/licitaciones/agt002-closure-acta-run.js';
+import { closureActaContextFromAnalysis } from '../verticales/licitaciones/agt002-closure-acta-draft.js';
 
 const VIGIA = 'a0020000-0000-4000-8000-000000000002';
 const CALI = '44444444-4444-4444-8444-444444444444';

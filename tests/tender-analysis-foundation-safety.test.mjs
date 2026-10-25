@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
-import { requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
+import { requireTenderAnalysisFoundation } from '../verticales/licitaciones/tender-analysis-foundation-availability.js';
 
 const backendPaths = [
   new URL('../server/index.js', import.meta.url),
@@ -75,7 +75,7 @@ function routeBlock(source, method, route) {
 
 for (const path of backendPaths) {
   const source = readFileSync(path, 'utf8');
-  assert.match(source, /import \{ isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation \} from '\.\.\/tender-analysis-foundation-availability\.js';/, `${path.pathname} debe importar el guard reusable.`);
+  assert.match(source, /import \{ isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation \} from '\.\.\/verticales\/licitaciones\/tender-analysis-foundation-availability\.js';/, `${path.pathname} debe importar el guard reusable.`);
   for (const [method, route] of [
     ['get', '/api/tender-documents'],
     ['post', '/api/tender-documents-upload'],

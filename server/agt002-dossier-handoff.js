@@ -33,9 +33,9 @@
 // en ese catálogo global. Con el GO ya persistido, los buckets server-owned del review
 // (blockers/decision_questions/preparation) son elegibles por sí mismos.
 
-import { deriveAgt002DecisionAnalysis } from '../agt002-decision-axis-analysis.js';
-import { deriveAgt002GenericDecisionReview } from '../agt002-generic-decision-review.js';
-import { buildActionableReviewIntegralUnitSource } from '../agt002-actionable-review-canonical.js';
+import { deriveAgt002DecisionAnalysis } from '../verticales/licitaciones/agt002-decision-axis-analysis.js';
+import { deriveAgt002GenericDecisionReview } from '../verticales/licitaciones/agt002-generic-decision-review.js';
+import { buildActionableReviewIntegralUnitSource } from '../verticales/licitaciones/agt002-actionable-review-canonical.js';
 
 export const AGT002_DOSSIER_HANDOFF_ORIGIN = 'seed_agt002_post_go';
 export const AGT002_DOSSIER_HANDOFF_ITEM_TYPE = 'pendiente_humano';

@@ -2,19 +2,19 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { deriveAgt002ManizalesManifestScope } from '../agt002-manizales-manifest-wiring.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { deriveAgt002ManizalesManifestScope } from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
 import {
   validateAgt002ManifestScope,
   validateAgt002TenderAnalysisEnvelopeV3,
   adaptAgt002TenderAnalysisV3,
-} from '../agt002-tender-adapter.js';
-import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js';
-import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+} from '../verticales/licitaciones/agt002-tender-adapter.js';
+import { registerAgt002PreviewAnalysis } from '../verticales/licitaciones/agt002-preview-persistence.js';
+import { projectAgt002IntegralV3ToV2 } from '../verticales/licitaciones/agt002-v3-compatibility.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
 
 // Phase 4 (server-owned manifest_scope): the engine derives and appends the governed scope
 // after validating model output; the adapter and persistence each independently re-validate it

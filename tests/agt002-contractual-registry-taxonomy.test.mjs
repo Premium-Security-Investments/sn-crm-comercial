@@ -15,7 +15,7 @@ import {
   scrubOpenPii,
   findOpenPiiPaths,
   assertNoOpenPii,
-} from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 test('taxonomy version is stable and vocabularies are frozen', () => {
   assert.equal(AGT002_CONTRACTUAL_REGISTRY_TAXONOMY_VERSION, 'agt002-contractual-registry-taxonomy@1');

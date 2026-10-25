@@ -1454,7 +1454,12 @@ export function validateAgt002Phase01ValidLink(claim, context) {
 }
 
 const AGT002_PHASE01_MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const AGT002_PHASE01_CONTRACTS_DIR = path.join(AGT002_PHASE01_MODULE_DIR, 'contracts', 'agt002-phase01', 'v1');
+// La raíz del repositorio, dicha en voz alta. Este módulo vivía en la raíz y usaba su propio
+// directorio como raíz: al pasar a verticales/licitaciones/ esa suposición dejó de ser cierta.
+// De aquí salen los contratos que lee y la frontera de la evidencia local, que debe seguir
+// siendo el repositorio y no la carpeta de la vertical.
+const AGT002_PHASE01_REPO_ROOT = path.resolve(AGT002_PHASE01_MODULE_DIR, '..', '..');
+const AGT002_PHASE01_CONTRACTS_DIR = path.join(AGT002_PHASE01_REPO_ROOT, 'contracts', 'agt002-phase01', 'v1');
 const AGT002_PHASE01_LOCAL_EVIDENCE_SCHEMES = Object.freeze(['fixture://', 'migration://', 'repo://']);
 
 function agt002Phase01PathIsWithin(root, candidate) {
@@ -1465,7 +1470,7 @@ function agt002Phase01PathIsWithin(root, candidate) {
 function buildAgt002Phase01LocalEvidenceResolver(rootRef) {
   let root;
   try {
-    const moduleRoot = realpathSync(AGT002_PHASE01_MODULE_DIR);
+    const moduleRoot = realpathSync(AGT002_PHASE01_REPO_ROOT);
     root = realpathSync(path.resolve(moduleRoot, rootRef));
     if (!agt002Phase01PathIsWithin(moduleRoot, root)) return () => null;
   } catch {
@@ -1506,7 +1511,7 @@ function buildAgt002Phase01LocalEvidenceResolver(rootRef) {
 function readAgt002Phase01JsonFile(relativeOrAbsolutePath) {
   const absolutePath = path.isAbsolute(relativeOrAbsolutePath)
     ? relativeOrAbsolutePath
-    : path.join(AGT002_PHASE01_MODULE_DIR, relativeOrAbsolutePath);
+    : path.join(AGT002_PHASE01_REPO_ROOT, relativeOrAbsolutePath);
   return JSON.parse(readFileSync(absolutePath, 'utf8'));
 }
 

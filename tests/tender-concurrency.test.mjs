@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { runInConcurrentChunks } from '../tender-concurrency.js';
+import { runInConcurrentChunks } from '../verticales/licitaciones/tender-concurrency.js';
 
 let active = 0;
 let maxActive = 0;

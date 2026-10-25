@@ -6,8 +6,8 @@
 // and the durable pipeline/CLI without booting the HTTP app.
 import { createHash } from 'node:crypto';
 import { safeOfficialFetch } from './safe-official-fetch.js';
-import { normalizeTenderStatusText, isTenderTrackableStatus } from './tender-source-status.js';
-import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from './tender-relevance-terms.js';
+import { normalizeTenderStatusText, isTenderTrackableStatus } from './verticales/licitaciones/tender-source-status.js';
+import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from './verticales/licitaciones/tender-relevance-terms.js';
 
 export const ESU_CONTRATACION_ORIGIN = 'https://esucontratacion.com';
 export const ESU_CONTRATACION_URL = `${ESU_CONTRATACION_ORIGIN}/procesos/index`;

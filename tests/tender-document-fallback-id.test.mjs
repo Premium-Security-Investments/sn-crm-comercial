@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { deterministicDocumentFallbackId } from '../tender-document-versioning.js';
+import { deterministicDocumentFallbackId } from '../verticales/licitaciones/tender-document-versioning.js';
 
 // Root cause: the ESU fallback id generator hashed Date.now() when a document had
 // neither a URL matching /procesos/descargar/<id> nor a name, producing a fresh

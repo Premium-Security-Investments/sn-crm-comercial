@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ACTIONS, requireAction } from './access-control.js';
+import { ACTIONS, requireAction } from '../../access-control.js';
 import { readAgt002InitialAnalysisReport } from './agt002-initial-analysis-report.js';
 import { buildRequirementRows, requirementSeedItems } from './agt002-requirements-model.js';
 

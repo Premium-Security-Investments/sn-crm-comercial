@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { evaluateTenderFit } from '../tender-fit-policy.js';
+import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
 import {
   projectAgt002RadarLearningObservations,
   collapseAgt002RadarLearningObservationsByTender,
-} from '../agt002-radar-learning-projection.js';
+} from '../verticales/licitaciones/agt002-radar-learning-projection.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 

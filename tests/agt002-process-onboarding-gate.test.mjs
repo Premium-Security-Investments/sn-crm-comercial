@@ -4,7 +4,7 @@ import {
   AGT002_PROCESS_ONBOARDING_CHECKLIST_IDS,
   evaluateAgt002ProcessOnboardingGate,
   assertAgt002ProcessEnabled,
-} from '../agt002-process-onboarding-gate.js';
+} from '../verticales/licitaciones/agt002-process-onboarding-gate.js';
 
 // Phase 9 (T3): the process-onboarding gate is the fail-closed rail that decides whether a
 // tender process may be enabled for V3. Default is REJECTED. Enablement requires ALL of:

@@ -22,8 +22,8 @@ import {
   resolveAgt002EvidencePackageCandidates,
   freezeAgt002EvidencePackage,
   projectAgt002EvidencePackageFreezeResult,
-} from '../agt002-evidence-package-api.js';
-import { computeAgt002EvidencePackageIdempotencyKey } from '../agt002-evidence-packages.js';
+} from '../verticales/licitaciones/agt002-evidence-package-api.js';
+import { computeAgt002EvidencePackageIdempotencyKey } from '../verticales/licitaciones/agt002-evidence-packages.js';
 
 function uuid(label) {
   const hex = Buffer.from(String(label)).toString('hex').padEnd(32, '0').slice(0, 32).split('');
@@ -372,8 +372,8 @@ describe('reanalysis-boundary: the evidence package modules never couple to the 
   ];
 
   const MODULE_PATHS = [
-    new URL('../agt002-evidence-packages.js', import.meta.url),
-    new URL('../agt002-evidence-package-api.js', import.meta.url),
+    new URL('../verticales/licitaciones/agt002-evidence-packages.js', import.meta.url),
+    new URL('../verticales/licitaciones/agt002-evidence-package-api.js', import.meta.url),
   ];
 
   for (const modulePath of MODULE_PATHS) {

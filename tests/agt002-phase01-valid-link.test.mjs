@@ -10,7 +10,7 @@ import {
   AGT002_PHASE01_SCHEMA_VERSIONS,
   validateAgt002Phase01ValidLink,
   validateAgt002Phase01Schema,
-} from '../agt002-phase01-executable-controls.js';
+} from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 // Loading throws (named exports AGT002_PHASE01_LINK_TERMS /
 // validateAgt002Phase01ValidLink not found) until Task 6 Step 3 adds them to

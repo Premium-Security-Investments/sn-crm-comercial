@@ -19,8 +19,8 @@
 
 import { strict as assert } from 'node:assert';
 import { readFileSync, readdirSync } from 'node:fs';
-import { getCurrentTenderAnalysis, buildTenderSnapshotInput } from '../tender-analysis-foundation.js';
-import { callTenderGoNoGoDecision, getTenderGoNoGoDecision } from '../tender-go-no-go-rpc.js';
+import { getCurrentTenderAnalysis, buildTenderSnapshotInput } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { callTenderGoNoGoDecision, getTenderGoNoGoDecision } from '../verticales/licitaciones/tender-go-no-go-rpc.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const TENDER_ID = '22222222-2222-4222-8222-222222222222';
@@ -299,14 +299,14 @@ assert.ok(
 
 // La fuente conserva las dos igualdades canónicas juntas: separarlas vuelve a inutilizar 050/063.
 {
-  const source = readFileSync(new URL('../tender-analysis-foundation.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/tender-analysis-foundation.js', import.meta.url), 'utf8');
   assert.match(source, /if \(canonicalOnly\) query = query\.eq\('canonical', true\)\.eq\('status', 'completed'\)/, 'la rama canónica debe declarar canonical y status juntos');
   assert.doesNotMatch(source, /\.select\(`id,snapshot_id,producer,method,status,result/, 'la lista de columnas no puede volver a pedir `result` incondicionalmente');
 }
 
 // El lado lectura de GO/NO-GO no puede volver a pedir el resultado completo.
 {
-  const source = readFileSync(new URL('../tender-go-no-go-rpc.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/tender-go-no-go-rpc.js', import.meta.url), 'utf8');
   const read = source.match(/export async function getTenderGoNoGoDecision[\s\S]*?\n}/)[0];
   assert.match(read, /getCurrentTenderAnalysis\(database, id, records\.documents, \{ includeResult: false \}\)/, 'el GET formal debe proyectar la lectura sin el JSONB ancho');
   const decide = source.match(/export async function callTenderGoNoGoDecision[\s\S]*?\n}/)[0];

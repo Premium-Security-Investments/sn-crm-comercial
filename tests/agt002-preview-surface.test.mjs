@@ -13,8 +13,8 @@ const vercel = readFileSync(new URL('../api/[...path].js', import.meta.url), 'ut
 const ui = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const section = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
 const governedWorkset = readFileSync(new URL('../src/tenders/components/TenderGovernedDocumentWorkset.tsx', import.meta.url), 'utf8');
-const engine = readFileSync(new URL('../agt002-preview-engine.js', import.meta.url), 'utf8');
-const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+const engine = readFileSync(new URL('../verticales/licitaciones/agt002-preview-engine.js', import.meta.url), 'utf8');
+const executor = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-executor.js', import.meta.url), 'utf8');
 const queueMigration = readFileSync(new URL('../supabase/migrations/068_agt002_reanalysis_jobs.sql', import.meta.url), 'utf8');
 
 function routeBlock(source) {

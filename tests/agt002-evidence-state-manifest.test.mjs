@@ -2,8 +2,8 @@ import { strict as assert } from 'node:assert';
 import {
   AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
   buildAgt002EvidenceStateManifest,
-} from '../agt002-evidence-state-manifest.js';
-import { buildAgt002CompanyEvidenceClasses } from '../agt002-company-evidence-classes.js';
+} from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
+import { buildAgt002CompanyEvidenceClasses } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 
 // ---------------------------------------------------------------------------
 // Gap closed here (audit P0 "cumplimiento inferido por presencia" / the five-axis

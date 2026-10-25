@@ -5,12 +5,12 @@ import {
   AGT002_DECISION_AXES,
   AGT002_MATERIAL_CATEGORY_TO_AXIS,
   assertAgt002MaterialCategoryAxisCoverage,
-} from '../agt002-decision-axis-policy.js';
+} from '../verticales/licitaciones/agt002-decision-axis-policy.js';
 import {
   AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES,
   AGT002_PRE_GO_ORDINARY_PREPARATION_CATEGORIES,
   resolveAgt002RequirementMaterialPolicy,
-} from '../agt002-pre-go-analysis.js';
+} from '../verticales/licitaciones/agt002-pre-go-analysis.js';
 
 test('AGT002_DECISION_AXES is exactly the five fixed axes and frozen', () => {
   assert.deepEqual(AGT002_DECISION_AXES, [

@@ -15,7 +15,7 @@
 // exactly as in tests/agt002-reanalysis-jobs.test.mjs.
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
-import * as previewPersistence from '../agt002-preview-persistence.js';
+import * as previewPersistence from '../verticales/licitaciones/agt002-preview-persistence.js';
 
 const RENEW_RPC = 'psi_renew_agt002_preview_claim';
 

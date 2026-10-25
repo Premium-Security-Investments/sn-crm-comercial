@@ -9,7 +9,7 @@ const CONTRACTS_DIR = path.join(REPO_ROOT, 'contracts', 'agt002-phase01', 'v1');
 const FIXTURES_DIR = path.join(CONTRACTS_DIR, 'fixtures');
 const TESTS_DIR = path.join(REPO_ROOT, 'tests');
 
-const EXECUTABLE_CONTROLS_PATH = path.join(REPO_ROOT, 'agt002-phase01-executable-controls.js');
+const EXECUTABLE_CONTROLS_PATH = path.join(REPO_ROOT, 'verticales/licitaciones/agt002-phase01-executable-controls.js');
 const VALIDATE_FIXTURES_RUNNER_PATH = path.join(REPO_ROOT, 'scripts', 'agt002-phase01-validate-fixtures.mjs');
 
 const EXPECTATIONS_PATH = path.join(FIXTURES_DIR, 'expectations.json');

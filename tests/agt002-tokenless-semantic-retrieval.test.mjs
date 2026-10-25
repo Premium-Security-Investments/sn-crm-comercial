@@ -9,15 +9,15 @@ import { createHash } from 'node:crypto';
 import {
   buildAgt002PreviewInput,
   buildAgt002TenderRequirementInventory,
-} from '../agt002-preview-input.js';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
+} from '../verticales/licitaciones/agt002-preview-input.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 import {
   buildTenderSemanticManifest,
   tenderSemanticRetrievalTerms,
   toAgt002RetrievalRequirements,
-} from '../tender-semantic-manifest.js';
+} from '../verticales/licitaciones/tender-semantic-manifest.js';
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const NBSP = '\u00a0';

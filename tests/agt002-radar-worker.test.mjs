@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { AGT002_RADAR_WORKER_STAGES, createAgt002RadarWorker } from '../agt002-radar-worker.js';
+import { AGT002_RADAR_WORKER_STAGES, createAgt002RadarWorker } from '../verticales/licitaciones/agt002-radar-worker.js';
 
 const hostileDatabase = new Proxy({}, { get() { throw new Error('database must not be touched'); } });
 const hostile = () => { throw new Error('must not run'); };

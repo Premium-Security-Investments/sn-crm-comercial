@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { computeAgt002PreviewIdempotencyKey } from '../agt002-preview-persistence.js';
+import { computeAgt002PreviewIdempotencyKey } from '../verticales/licitaciones/agt002-preview-persistence.js';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');

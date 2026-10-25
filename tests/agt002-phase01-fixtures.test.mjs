@@ -8,7 +8,7 @@ import {
   validateAgt002Phase01Schema,
   buildAgt002Phase01Context,
   evaluateAgt002Phase01Fixture,
-} from '../agt002-phase01-executable-controls.js';
+} from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 // Loading throws (named exports buildAgt002Phase01Context /
 // evaluateAgt002Phase01Fixture not found) until Task 7 Step 3 adds them to

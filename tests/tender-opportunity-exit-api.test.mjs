@@ -11,7 +11,7 @@ for (const path of ['../server/index.js', '../api/[...path].js']) {
 
   assert.match(
     source,
-    /import \{ callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate \} from '\.\.\/tender-tracking-rpc\.js';/,
+    /import \{ callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate \} from '\.\.\/verticales\/licitaciones\/tender-tracking-rpc\.js';/,
     `${path} must import the destination-aware exit wrapper`,
   );
 

@@ -5,8 +5,8 @@ import {
   AGT002_WORKBENCH_POLICY_VERSION,
   AGT002_WORKBENCH_POLICY_VERSIONS_ACEPTADAS,
   validateAgt002WorkbenchJobInput,
-} from '../agt002-workbench-contract.js';
-import { AGT002_WORKBENCH_POLICY } from '../agt002-workbench-responder.js';
+} from '../verticales/licitaciones/agt002-workbench-contract.js';
+import { AGT002_WORKBENCH_POLICY } from '../verticales/licitaciones/agt002-workbench-responder.js';
 
 function trabajo(overrides = {}) {
   return {

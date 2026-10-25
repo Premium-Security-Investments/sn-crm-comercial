@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { projectAgt002InitialReport, readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
-import { buildInitialAggregate } from '../agt002-initial-analysis-aggregate-builder.js';
+import { projectAgt002InitialReport, readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
+import { buildInitialAggregate } from '../verticales/licitaciones/agt002-initial-analysis-aggregate-builder.js';
 import { buildInitialScopeAV2, analysisFromBaseline, packageForDocuments } from './fixtures/agt002-pre-go-analysis-v2.mjs';
 
 const DOCUMENTS = [1, 2].map(index => ({ id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, classification: 'official' }));

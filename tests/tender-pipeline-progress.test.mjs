@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { summarizeImportProgress, analysisLabel } from '../tender-pipeline-progress.js';
+import { summarizeImportProgress, analysisLabel } from '../verticales/licitaciones/tender-pipeline-progress.js';
 
 // summarizeImportProgress agrupa sin exponer 40 logs individuales.
 {

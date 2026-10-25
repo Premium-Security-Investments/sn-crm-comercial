@@ -52,11 +52,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
-import { buildGovernedRequirementAnalysis, AGT002_GOVERNED_REQUIREMENT_CITATION_PATTERNS } from '../tender-requirement-extraction.js';
-import { buildAgt002RequirementManifest } from '../agt002-deep-analysis-matrix.js';
-import { buildAgt002GovernanceDraftProposal } from '../agt002-governance-draft-proposal.js';
-import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
-import { loadAgt002CompanyEvidenceRegistryEntries, AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { buildGovernedRequirementAnalysis, AGT002_GOVERNED_REQUIREMENT_CITATION_PATTERNS } from '../verticales/licitaciones/tender-requirement-extraction.js';
+import { buildAgt002RequirementManifest } from '../verticales/licitaciones/agt002-deep-analysis-matrix.js';
+import { buildAgt002GovernanceDraftProposal } from '../verticales/licitaciones/agt002-governance-draft-proposal.js';
+import { buildAgt002DocumentChunks } from '../verticales/licitaciones/agt002-document-chunks.js';
+import { loadAgt002CompanyEvidenceRegistryEntries, AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const OPPORTUNITY_ID = '54190e51-15fb-46af-b0aa-8f13461a3110';

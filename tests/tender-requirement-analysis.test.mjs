@@ -5,7 +5,7 @@ import {
   extractTechnicalRequirements,
   crosscheckCompanyProfile,
   buildRequirementAnalysis,
-} from '../tender-requirement-extraction.js';
+} from '../verticales/licitaciones/tender-requirement-extraction.js';
 
 const financialComplete = {
   id: 'doc-financial-complete',

@@ -15,8 +15,8 @@ import {
   planTenderProcessFamilySupersession,
   tenderProcessFamilyKey,
   withProcessFamilySupersededRaw,
-} from '../tender-process-family.js';
-import { applyOfficialSourceLink, planRadarPhaseIdentitySync } from '../tender-phase-identity.js';
+} from '../verticales/licitaciones/tender-process-family.js';
+import { applyOfficialSourceLink, planRadarPhaseIdentitySync } from '../verticales/licitaciones/tender-phase-identity.js';
 
 const secop = (overrides) => ({ source: 'SECOP II', status: 'Presentación de oferta', title: 'Servicio de vigilancia', ...overrides });
 const REAL_PAIRS = [
@@ -255,7 +255,7 @@ test('una republicación ya adoptada no pierde el enlace frente a la versión an
 test('backend: importación, lectura y jobs del host usan la familia de proceso y el seguimiento de fase', () => {
   for (const path of ['../server/index.js', '../api/[...path].js']) {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-    assert.match(source, /from '\.\.\/tender-process-family\.js'/, path);
+    assert.match(source, /from '\.\.\/verticales\/licitaciones\/tender-process-family\.js'/, path);
     assert.match(source, /planTenderProcessFamilySupersession\(/, `${path}: persistTenderRadar marca versiones reemplazadas`);
     assert.match(source, /!isProcessFamilySupersededRow\(row\)/, `${path}: el Radar no lista versiones reemplazadas`);
     assert.match(source, /appendAgt002ObservationLine\(database, patch\.converted_opportunity_id, phaseChangeDetectedLine/, `${path}: el aviso llega a la oportunidad con append atómico`);
@@ -273,12 +273,12 @@ test('backend: importación, lectura y jobs del host usan la familia de proceso 
     const syncBody = source.match(/export async function syncConvertedTenderPhaseLinks\([\s\S]*?\n}\n/)[0];
     assert.ok(syncBody.indexOf('recordAgt002RadarPhaseChanges(') > -1 && syncBody.indexOf('recordAgt002RadarPhaseChanges(') < syncBody.indexOf(".update(update)"), `${path}: la revisión programada deja la marca antes de cambiar el enlace`);
   }
-  for (const path of ['../tender-process-family.js', '../agt002-phase-change-followup.js', '../agt002-phase-change-review.js', '../agt002-licitaciones-alerts.js', '../tender-document-obsolescence.js']) {
+  for (const path of ['../verticales/licitaciones/tender-process-family.js', '../verticales/licitaciones/agt002-phase-change-followup.js', '../verticales/licitaciones/agt002-phase-change-review.js', '../verticales/licitaciones/agt002-licitaciones-alerts.js', '../verticales/licitaciones/tender-document-obsolescence.js']) {
     assert.doesNotMatch(readFileSync(new URL(path, import.meta.url), 'utf8'), /agt003/i, `${path} respeta el límite AGT-002`);
   }
   const radarRunner = readFileSync(new URL('../ops/agt002-radar-daily/run-agt002-radar-import.mjs', import.meta.url), 'utf8');
   assert.match(radarRunner, /runAgt002PhaseChangeReview/);
-  const review = readFileSync(new URL('../agt002-phase-change-review.js', import.meta.url), 'utf8');
+  const review = readFileSync(new URL('../verticales/licitaciones/agt002-phase-change-review.js', import.meta.url), 'utf8');
   assert.match(review, /runAgt002PhaseChangeDocumentRefresh/);
   assert.match(review, /runAgt002PhaseChangeAnalysisAdmissions/);
   assert.ok(existsSync(new URL('../supabase/migrations/116_agt002_retire_republished_tender_documents.sql', import.meta.url)));

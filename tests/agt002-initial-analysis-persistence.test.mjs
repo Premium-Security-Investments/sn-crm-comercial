@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import {
   completeAgt002InitialAnalysisJob,
   AGT002_INITIAL_ANALYSIS_PERSISTENCE_ERROR_CODES,
-} from '../agt002-initial-analysis-persistence.js';
+} from '../verticales/licitaciones/agt002-initial-analysis-persistence.js';
 import { buildInitialScopeAV2 as buildBaselineScopeA } from './fixtures/agt002-pre-go-analysis-v2.mjs';
 
 function canonicalize(value) {

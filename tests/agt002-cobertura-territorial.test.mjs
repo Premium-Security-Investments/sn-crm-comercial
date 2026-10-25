@@ -4,9 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
-import { buildAgt002CompanyDossier, loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { AGT002_CONTEXT_V2_FIELDS, buildAgt002ContextV2 } from '../agt002-context-v2.js';
-import { AGT002_PARTICIPATION_VERDICTS } from '../agt002-initial-analysis-runtime.js';
+import { buildAgt002CompanyDossier, loadAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { AGT002_CONTEXT_V2_FIELDS, buildAgt002ContextV2 } from '../verticales/licitaciones/agt002-context-v2.js';
+import { AGT002_PARTICIPATION_VERDICTS } from '../verticales/licitaciones/agt002-initial-analysis-runtime.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const bundle = buildSync({ entryPoints: [new URL('../src/tenders/companyCoverage.ts', import.meta.url).pathname], bundle: true, platform: 'node', format: 'esm', write: false });
@@ -86,7 +86,7 @@ test('Perfil congelado: sin la tabla de sedes (127 sin aplicar) sigue funcionand
 });
 
 test('Política del análisis: veredicto de participación sólo cuando hay perfil de empresa', () => {
-  const runtime = read('../agt002-initial-analysis-runtime.js');
+  const runtime = read('../verticales/licitaciones/agt002-initial-analysis-runtime.js');
   assert.match(runtime, /const PARTICIPATION_POLICY = ' Participación \(va primero\)/);
   assert.match(runtime, /claim_id CLM-PARTICIPACION/);
   assert.match(runtime, /company_profile\.sites/);

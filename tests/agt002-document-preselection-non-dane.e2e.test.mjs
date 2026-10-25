@@ -10,9 +10,9 @@ import { strict as assert } from 'node:assert';
 import crypto from 'node:crypto';
 import { buildSync } from 'esbuild';
 
-import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
-import { publicTenderDocumentProjection } from '../tender-document-extraction-persistence.js';
-import { freezeAgt002WorksetEvidence } from '../agt002-governed-document-worksets.js';
+import { suggestAgt002DocumentRelevance } from '../verticales/licitaciones/agt002-document-relevance-suggestion.js';
+import { publicTenderDocumentProjection } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
+import { freezeAgt002WorksetEvidence } from '../verticales/licitaciones/agt002-governed-document-worksets.js';
 
 const modulePath = new URL('../src/tenders/governedWorksetSelection.ts', import.meta.url).pathname;
 const bundled = buildSync({ entryPoints: [modulePath], bundle: true, platform: 'node', format: 'esm', write: false });

@@ -24,9 +24,9 @@ function extractFunctionBody(source, functionName) {
 }
 
 function assertBackend(source, label) {
-  assert.ok(source.includes("import { createTenderProcessingWorker } from '../tender-processing-worker.js';"), `${label}: falta el import del worker durable`);
+  assert.ok(source.includes("import { createTenderProcessingWorker } from '../verticales/licitaciones/tender-processing-worker.js';"), `${label}: falta el import del worker durable`);
   assert.ok(source.includes('recordTenderDocumentChunk'), `${label}: falta el wrapper RPC psi_record_tender_document_chunk`);
-  assert.ok(source.includes("from '../agt002-document-chunks.js'") && source.includes('buildAgt002DocumentChunks'), `${label}: falta el chunker puro del contrato Task 23`);
+  assert.ok(source.includes("from '../verticales/licitaciones/agt002-document-chunks.js'") && source.includes('buildAgt002DocumentChunks'), `${label}: falta el chunker puro del contrato Task 23`);
 
   const body = extractFunctionBody(source, 'buildTenderProcessingWorkerDeps');
 

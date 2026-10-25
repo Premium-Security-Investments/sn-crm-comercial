@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
 import { ACTIONS, can } from '../access-control.js';
-import { presentCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
+import { presentCurrentTenderAnalysis } from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 const read = relative => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 const panelPath = new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url);

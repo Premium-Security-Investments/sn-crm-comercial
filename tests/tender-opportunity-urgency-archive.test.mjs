@@ -4,8 +4,8 @@ import fs from 'node:fs';
 
 const migration = fs.readFileSync(new URL('../supabase/migrations/124_tender_opportunity_archive.sql', import.meta.url), 'utf8');
 const view = fs.readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
-const rpc = fs.readFileSync(new URL('../tender-offer-archive-rpc.js', import.meta.url), 'utf8');
-const stage = fs.readFileSync(new URL('../tender-opportunity-stage.js', import.meta.url), 'utf8');
+const rpc = fs.readFileSync(new URL('../verticales/licitaciones/tender-offer-archive-rpc.js', import.meta.url), 'utf8');
+const stage = fs.readFileSync(new URL('../verticales/licitaciones/tender-opportunity-stage.js', import.meta.url), 'utf8');
 
 test('las oportunidades convertidas se ordenan por cierre y las archivadas salen del activo', () => {
   assert.match(migration, /order by o\.expected_close_date asc nulls last/i);

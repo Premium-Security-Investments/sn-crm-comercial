@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 
-import { deriveAgt002DecisionAnalysis, AGT002_DECISION_AXIS_STATES } from '../agt002-decision-axis-analysis.js';
-import { AGT002_DECISION_AXES } from '../agt002-decision-axis-policy.js';
+import { deriveAgt002DecisionAnalysis, AGT002_DECISION_AXIS_STATES } from '../verticales/licitaciones/agt002-decision-axis-analysis.js';
+import { AGT002_DECISION_AXES } from '../verticales/licitaciones/agt002-decision-axis-policy.js';
 import { bundleReactModule } from './helpers/bundle-react-component.mjs';
 
 const AXIS_STATE_LABELS = Object.values(AGT002_DECISION_AXIS_STATES);

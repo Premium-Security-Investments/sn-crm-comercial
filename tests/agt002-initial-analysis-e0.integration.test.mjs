@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
 import { buildInitialScopeAV2 as buildBaselineScopeA, analysisFromBaseline, packageForDocuments } from './fixtures/agt002-pre-go-analysis-v2.mjs';
-import { validatePreGoAnalysisV2 } from '../agt002-pre-go-analysis-v2.js';
-import { createAgt002InitialAnalysisRuntime } from '../agt002-initial-analysis-runtime.js';
-import { createAgt002InitialAnalysisExecutor } from '../agt002-initial-analysis-executor.js';
-import { createAgt002InitialAnalysisWorker } from '../agt002-initial-analysis-worker.js';
-import { assertAgt002RehydratedMembersMatchHashes, runAgt002AnalysisBatch } from '../agt002-analysis-engine.js';
-import { completeAgt002InitialAnalysisJob } from '../agt002-initial-analysis-persistence.js';
+import { validatePreGoAnalysisV2 } from '../verticales/licitaciones/agt002-pre-go-analysis-v2.js';
+import { createAgt002InitialAnalysisRuntime } from '../verticales/licitaciones/agt002-initial-analysis-runtime.js';
+import { createAgt002InitialAnalysisExecutor } from '../verticales/licitaciones/agt002-initial-analysis-executor.js';
+import { createAgt002InitialAnalysisWorker } from '../verticales/licitaciones/agt002-initial-analysis-worker.js';
+import { assertAgt002RehydratedMembersMatchHashes, runAgt002AnalysisBatch } from '../verticales/licitaciones/agt002-analysis-engine.js';
+import { completeAgt002InitialAnalysisJob } from '../verticales/licitaciones/agt002-initial-analysis-persistence.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 

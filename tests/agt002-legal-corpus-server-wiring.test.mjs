@@ -3,14 +3,14 @@ import { readFileSync } from 'node:fs';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const runtime = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
+const runtime = readFileSync(new URL('../verticales/licitaciones/agt002-preview-runtime.js', import.meta.url), 'utf8');
 
 function count(source, token) {
   return source.split(token).length - 1;
 }
 
 assert.equal(server, api, 'server/index.js y api/[...path].js deben permanecer byte-idénticos');
-assert.match(server, /import \{ loadPublishedAgt002LegalCorpus \} from '\.\.\/agt002-legal-corpus-store\.js';/);
+assert.match(server, /import \{ loadPublishedAgt002LegalCorpus \} from '\.\.\/verticales\/licitaciones\/agt002-legal-corpus-store\.js';/);
 assert.equal(count(server, 'await loadAgt002LegalCorpusContextIfEnabled(database)'), 3, 'los tres flujos canónicos deben cargar el corpus (durable canonical enqueue, requestAgt002, y el constructor del frozen input del paquete gobernado)');
 assert.equal(count(server, 'legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id'), 2, 'las dos claves de idempotencia calculadas en el servidor deben ligarse al UUID publicado; el constructor del paquete gobernado reutiliza una clave ya calculada y nunca recomputa la suya');
 assert.equal(count(server, 'legalCorpusContext,'), 2, 'los dos runtimes directos/frozen del canonical enqueue y requestAgt002 deben recibir el mismo contexto validado');

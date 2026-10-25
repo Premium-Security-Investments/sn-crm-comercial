@@ -17,9 +17,9 @@
 // AGT-002 analysis, read here; admission re-verifies it is still the canonical one.
 import { readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
-import { agt002InitialRequestedMembers, selectAgt002InitialDocuments } from '../agt002-initial-document-rule.js';
+import { agt002InitialRequestedMembers, selectAgt002InitialDocuments } from '../verticales/licitaciones/agt002-initial-document-rule.js';
 
-export { classifyAgt002InitialDocument } from '../agt002-initial-document-rule.js';
+export { classifyAgt002InitialDocument } from '../verticales/licitaciones/agt002-initial-document-rule.js';
 
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
 const direct = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop());

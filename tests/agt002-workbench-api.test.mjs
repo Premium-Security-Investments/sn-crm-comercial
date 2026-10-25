@@ -5,12 +5,12 @@ import {
   postAgt002LearningReviewApi,
   postAgt002MessageApi,
   postAgt002RetryApi,
-} from '../agt002-workbench-api.js';
+} from '../verticales/licitaciones/agt002-workbench-api.js';
 import {
   AGT002_WORKBENCH_CAPABILITIES,
   AGT002_WORKBENCH_CONTRACT_VERSION,
   AGT002_WORKBENCH_POLICY_VERSION,
-} from '../agt002-workbench-contract.js';
+} from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 const ids = Object.freeze({
   actor: '10000000-0000-4000-8000-000000000001',

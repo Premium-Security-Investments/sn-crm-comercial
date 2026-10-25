@@ -16,8 +16,8 @@ import {
   AGT002_INTEGRAL_MANIFEST_DISPOSITIONS,
   AGT002_INTEGRAL_GOVERNED_RUNTIME_IDS,
   AGT002_INTEGRAL_OVERRIDES_066,
-} from '../agt002-manizales-integral-manifest.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = (rel) => JSON.parse(readFileSync(resolve(PROJECT_ROOT, rel), 'utf8'));
