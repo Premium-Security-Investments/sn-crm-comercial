@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import {
   BRIEF_MAX_NOTES, BRIEF_NOTE_MAX_CHARS, BRIEF_POLICY, briefOutputSchema, briefQuotaMessage,
   buildBriefInput, normalizeBriefOutput, runBriefSummary,
-} from '../agt003-brief-reunion.js';
+} from '../verticales/comercial/agt003-brief-reunion.js';
 import { AGT003_BRIEF_CAPABILITY } from '../platform-model-gateway.js';
 import { AGENT_AI_FUNCTIONS } from '../platform-agent-configuration.js';
 

@@ -4,7 +4,7 @@ import {
   buildAgt003Facts,
   buildAgt003Interactions,
   redactAgt003CopilotText,
-} from '../agt003-copilot-input.js';
+} from '../verticales/comercial/agt003-copilot-input.js';
 
 const opportunity = {
   id: 'opp-001',

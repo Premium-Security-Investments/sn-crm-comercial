@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { prioritizeVigiaOpportunities } from '../vigia-engine.js';
+import { prioritizeVigiaOpportunities } from '../verticales/comercial/vigia-engine.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const contractsRoot = path.join(repoRoot, 'contracts', 'agents');
@@ -242,7 +242,7 @@ for (const [agentId, capabilityIds] of Object.entries(expected)) {
 
 assert.deepEqual(allManifestCapabilities, [...allowedCapabilities], 'manifests must expose exactly the P1A allowlist');
 
-const vigiaRuntime = readFileSync(path.join(repoRoot, 'vigia-engine.js'), 'utf8');
+const vigiaRuntime = readFileSync(path.join(repoRoot, 'verticales/comercial/vigia-engine.js'), 'utf8');
 const vigiaRequest = loadJson(path.join(contractsRoot, 'AGT-003', 'v1', 'priorities.request.schema.json'));
 assert.deepEqual(vigiaRequest.properties.query.properties, {}, 'AGT-003 request must not invent filters or pagination');
 const vigiaSchema = loadJson(path.join(contractsRoot, 'AGT-003', 'v1', 'priorities.response.schema.json'));

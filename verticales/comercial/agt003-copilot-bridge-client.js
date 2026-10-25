@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { buildCanonicalString, sha256Hex, signCanonicalString } from './agt002-hetzner-bridge-signing.js';
+import { buildCanonicalString, sha256Hex, signCanonicalString } from '../../agt002-hetzner-bridge-signing.js';
 
 const MAX_RESPONSE_BYTES = 262_144;
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { buildCanonicalString, sha256Hex, signCanonicalString, verifySignatureConstantTime } from '../agt002-hetzner-bridge-signing.js';
-import { createAgt003CopilotBridgeClient } from '../agt003-copilot-bridge-client.js';
+import { createAgt003CopilotBridgeClient } from '../verticales/comercial/agt003-copilot-bridge-client.js';
 
 const URL = 'https://agents.example.test/v1/agt003-copilot/run';
 const SECRET = 's'.repeat(32);

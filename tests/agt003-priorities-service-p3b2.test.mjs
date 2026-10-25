@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const rowsPath = fileURLToPath(new URL('./fixtures/phase3a-p3b2/scoped-opportunities.json', import.meta.url));
 const rows = JSON.parse(readFileSync(rowsPath, 'utf8'));
 const now = '2030-02-01T10:00:00.000Z';
-const { buildAgt003PrioritiesData } = await import('../agt003-priorities-service.js');
+const { buildAgt003PrioritiesData } = await import('../verticales/comercial/agt003-priorities-service.js');
 
 const data = buildAgt003PrioritiesData(rows, { now });
 assert.deepEqual(Object.keys(data), ['generated_at', 'source', 'policy', 'totals', 'priorities']);

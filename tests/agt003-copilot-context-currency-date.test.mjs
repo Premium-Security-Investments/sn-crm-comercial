@@ -4,8 +4,8 @@ import {
   AGT003_CRM_DEFAULT_CURRENCY,
   agt003PreparationDate,
   buildAgt003CopilotRequest,
-} from '../agt003-copilot-input.js';
-import { AGT003_COPILOT_POLICY } from '../agt003-copilot-engine.js';
+} from '../verticales/comercial/agt003-copilot-input.js';
+import { AGT003_COPILOT_POLICY } from '../verticales/comercial/agt003-copilot-engine.js';
 
 // AGT-003 — calidad del contexto entregado a VIG-IA Comercial.
 //
@@ -123,7 +123,7 @@ for (const path of ['../server/index.js', '../api/[...path].js']) {
   assert.match(context, /loadAgt003OpportunityContext\(database, opportunityId, now = \(\) => new Date\(\)\)/, `${path}: la fecha de ejecución es inyectable`);
   assert.match(context, /preparation_date: agt003PreparationDate\(now\)/, `${path}: el contexto sella la fecha real de ejecución`);
   assert.match(context, /computeAgt003CopilotHash\(\{ opportunity, interactions \}\)/, `${path}: la fecha entra al snapshot para que un run reutilizado no arrastre una fecha vieja`);
-  assert.match(source, /import \{ agt003PreparationDate \} from '\.\.\/agt003-copilot-input\.js';/, `${path}: importa el helper compartido`);
+  assert.match(source, /import \{ agt003PreparationDate \} from '\.\.\/verticales\/comercial\/agt003-copilot-input\.js';/, `${path}: importa el helper compartido`);
 }
 
 console.log('AGT-003 copilot context currency/date checks passed');

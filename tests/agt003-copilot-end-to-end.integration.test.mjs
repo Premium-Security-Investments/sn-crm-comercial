@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
-import { createAgt003CopilotEngine } from '../agt003-copilot-engine.js';
+import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-api.js';
+import { createAgt003CopilotEngine } from '../verticales/comercial/agt003-copilot-engine.js';
 
 const opportunityId = '11111111-1111-4111-8111-111111111111';
 const profile = { id: 'human-1', active: true, identity_type: 'human', role: 'comercial', permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'], areas: [] };

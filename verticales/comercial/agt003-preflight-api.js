@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ACTIONS, requireAction } from './access-control.js';
+import { ACTIONS, requireAction } from '../../access-control.js';
 import { buildAgt003CopilotPreflightRequest } from './agt003-preflight-input.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
