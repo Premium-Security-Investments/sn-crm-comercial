@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { isAgt003CopilotConfigured, resolveAgt003BridgeConnection } from '../agt003-copilot-runtime.js';
+import { isAgt003CopilotConfigured, resolveAgt003BridgeConnection } from '../verticales/comercial/agt003-copilot-runtime.js';
 import {
   AGT003_PREFLIGHT_DEFAULT_POLICY_VERSION,
   createAgt003PreflightRuntime,
   getAgt003PreflightRuntimeConfig,
   isAgt003PreflightConfigured,
-} from '../agt003-preflight-runtime.js';
+} from '../verticales/comercial/agt003-preflight-runtime.js';
 
 function env(overrides = {}) {
   return {
@@ -90,7 +90,7 @@ assert.throws(() => createAgt003PreflightRuntime({ environment: {} }), /no está
 const runtime = createAgt003PreflightRuntime({ environment: env() });
 assert.equal(typeof runtime.preflight, 'function');
 
-const source = readFileSync(new URL('../agt003-preflight-runtime.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../verticales/comercial/agt003-preflight-runtime.js', import.meta.url), 'utf8');
 assert.match(source, /createAgt003CopilotBridgeClient/);
 assert.match(source, /resolveAgt003BridgeConnection/);
 assert.doesNotMatch(source, /ANTHROPIC_API_KEY|OPENAI_API_KEY|Authorization|Bearer|child_process|spawn\s*\(/i);

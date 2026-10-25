@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { AGT003_COPILOT_POLICY, createAgt003CopilotEngine } from '../agt003-copilot-engine.js';
+import { AGT003_COPILOT_POLICY, createAgt003CopilotEngine } from '../verticales/comercial/agt003-copilot-engine.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const request = JSON.parse(readFileSync(path.join(root, 'contracts/agents/AGT-003/v2-draft/fixtures/valid-opportunity-copilot-request.json'), 'utf8'));

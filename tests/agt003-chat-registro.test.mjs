@@ -7,7 +7,7 @@ import {
   addDays, chatCalendar, chatRegistroOutputSchema, describeChatAction, humanDay, normalizeChatOutput, weekdayName,
   CHAT_NEXT_MAX_DAYS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, CHAT_STAGE_DECISIONS,
 } from '../src/vigia/chat-registro.js';
-import { assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, planSupersededChatProposals, CHAT_POLICY, CHAT_SUPERSEDED_BY_KEY, runChatTurn } from '../agt003-chat-registro.js';
+import { assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, planSupersededChatProposals, CHAT_POLICY, CHAT_SUPERSEDED_BY_KEY, runChatTurn } from '../verticales/comercial/agt003-chat-registro.js';
 import { AGENT_AI_FUNCTIONS } from '../platform-agent-configuration.js';
 import { AGT003_CHAT_CAPABILITY, MODEL_GATEWAY_REJECTION_CODES } from '../platform-model-gateway.js';
 

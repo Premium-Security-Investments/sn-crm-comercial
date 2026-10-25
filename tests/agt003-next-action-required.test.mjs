@@ -88,7 +88,7 @@ test('chat: la próxima gestión se aplica antes del seguimiento, conservando el
     [2, 'proximo_seguimiento'], [0, 'registrar_seguimiento'], [1, 'actualizar_datos'],
   ], 'la próxima gestión primero; el resto conserva su orden y su índice original');
 
-  const policy = readFileSync(new URL('../agt003-chat-registro.js', import.meta.url), 'utf8');
+  const policy = readFileSync(new URL('../verticales/comercial/agt003-chat-registro.js', import.meta.url), 'utf8');
   assert.match(policy, /Todo seguimiento va acompañado de su proximo_seguimiento/, 'Vig-IA pide la fecha en vez de dejarla vacía');
 });
 

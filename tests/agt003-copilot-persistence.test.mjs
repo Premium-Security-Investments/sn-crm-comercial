@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import * as agt003Persistence from '../agt003-copilot-persistence.js';
+import * as agt003Persistence from '../verticales/comercial/agt003-copilot-persistence.js';
 import {
   claimAgt003CopilotRun,
   computeAgt003CopilotHash,
@@ -13,7 +13,7 @@ import {
   recordAgt003CopilotFailure,
   recordAgt003CopilotRun,
   releaseAgt003CopilotClaim,
-} from '../agt003-copilot-persistence.js';
+} from '../verticales/comercial/agt003-copilot-persistence.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const request = JSON.parse(readFileSync(path.join(root, 'contracts/agents/AGT-003/v2-draft/fixtures/valid-opportunity-copilot-request.json'), 'utf8'));

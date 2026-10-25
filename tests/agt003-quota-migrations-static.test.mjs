@@ -55,7 +55,7 @@ test('119: columna con formato de slug y escritura auditada sólo por service_ro
 });
 
 test('servidor: usa las reservas v2 con caída a las originales y nunca aplica migraciones', () => {
-  const quota = read('../agt003-ai-quota.js');
+  const quota = read('../verticales/comercial/agt003-ai-quota.js');
   for (const rpc of ['psi_claim_agt003_copilot_run_v2', 'psi_claim_agt003_copilot_run', 'psi_claim_agt003_lead_analysis_v2', 'psi_claim_agt003_lead_analysis']) assert.ok(quota.includes(`'${rpc}'`), rpc);
   assert.ok(quota.includes("console.warn('agt003_quota_rpc_fallback'"));
   const server = read('../server/index.js');

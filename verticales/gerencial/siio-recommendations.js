@@ -10,7 +10,7 @@
 // seguimientos abiertos), sin nombres de personas. Corre por su propio puente firmado (identidad AGT-001, sesión de
 // suscripción de Claude) y la puerta única de modelos registra el uso.
 import { randomUUID } from 'node:crypto';
-import { createAgt003CopilotBridgeClient } from '../../agt003-copilot-bridge-client.js';
+import { createAgt003CopilotBridgeClient } from '../comercial/agt003-copilot-bridge-client.js';
 import { createModelGatewayClient } from '../../platform-model-gateway.js';
 import { classifyAgt003ModelFailure } from '../../src/vigia/model-failures.js';
 import { estimateLeadAnalysisCostUsd } from '../../src/vigia/lead-analysis.js';

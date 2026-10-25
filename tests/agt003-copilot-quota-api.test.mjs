@@ -2,8 +2,8 @@
 // apagada, cupo del equipo vs. cupo personal, modelo aprobado enviado al puente y compatibilidad sin política.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
-import { claimAgt003CopilotRun } from '../agt003-copilot-persistence.js';
+import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-api.js';
+import { claimAgt003CopilotRun } from '../verticales/comercial/agt003-copilot-persistence.js';
 
 const OPPORTUNITY = '11111111-1111-4111-8111-111111111111';
 const ACTOR = '22222222-2222-4222-8222-222222222222';

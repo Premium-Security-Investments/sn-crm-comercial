@@ -149,14 +149,14 @@ function testAgt003ResponsesUseTheirOwnCodes() {
 // ---------------------------------------------------------------------------
 
 function testVercelSideStillSupportsTheDedicatedWireProtocol() {
-  const runtime = read('agt003-copilot-runtime.js');
+  const runtime = read('verticales/comercial/agt003-copilot-runtime.js');
   assert.ok(runtime.includes('AGT003_COPILOT_WIRE_PROTOCOL'), 'el runtime debe seguir leyendo el protocolo wire');
   assert.ok(runtime.includes("['agt002', 'agt003'].includes(resolved.wireProtocol)"), 'ambos protocolos wire deben seguir soportados');
   assert.ok(runtime.includes('AGT003_COPILOT_BRIDGE_URL'), 'el runtime debe seguir aceptando URL propia');
   assert.ok(runtime.includes('AGT003_COPILOT_HMAC_SECRET'), 'el runtime debe seguir aceptando secreto HMAC propio');
   assert.ok(runtime.includes('AGT003_COPILOT_MODEL'), 'el runtime debe seguir aceptando modelo propio');
 
-  const client = read('agt003-copilot-bridge-client.js');
+  const client = read('verticales/comercial/agt003-copilot-bridge-client.js');
   assert.ok(client.includes("wireProtocol = 'agt003'"), 'el cliente debe seguir usando el puente dedicado por defecto');
   assert.ok(client.includes('X-${headerNamespace}-Signature'), 'el cliente debe seguir firmando con el espacio de nombres del protocolo');
 

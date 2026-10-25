@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { loadVigiaApprovedAssets, validateVigiaApprovedAssetManifest } from '../vigia-approved-assets.js';
+import { loadVigiaApprovedAssets, validateVigiaApprovedAssetManifest } from '../verticales/comercial/vigia-approved-assets.js';
 
 const now = '2030-02-01T10:00:00.000Z';
 const valid = {

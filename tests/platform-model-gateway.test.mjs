@@ -19,8 +19,8 @@ import {
   safeCorrelationId,
 } from '../platform-model-gateway.js';
 import { estimateLeadAnalysisCostUsd } from '../src/vigia/lead-analysis.js';
-import { runLeadAnalysis } from '../agt003-lead-analysis.js';
-import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
+import { runLeadAnalysis } from '../verticales/comercial/agt003-lead-analysis.js';
+import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-api.js';
 
 const SECRET_INPUT = 'Cliente Secreto S.A.S. decisor@cliente.test +57 300 000 0000';
 const SECRET_OUTPUT = '{"mensaje":"Texto privado generado por el modelo"}';
@@ -278,10 +278,10 @@ test('copiloto: tope diario → recordRejection(VIGIA_COPILOT_QUOTA) sin crear r
 });
 
 test('cableado: copiloto y análisis profundo envuelven el cliente del puente con la puerta', () => {
-  const runtime = readFileSync(new URL('../agt003-copilot-runtime.js', import.meta.url), 'utf8');
+  const runtime = readFileSync(new URL('../verticales/comercial/agt003-copilot-runtime.js', import.meta.url), 'utf8');
   assert.match(runtime, /createModelGatewayClient\(\{\n    client: createAgt003CopilotBridgeClient\(/);
   assert.ok(runtime.includes('capability: AGT003_COPILOT_CAPABILITY'));
-  const lead = readFileSync(new URL('../agt003-lead-analysis.js', import.meta.url), 'utf8');
+  const lead = readFileSync(new URL('../verticales/comercial/agt003-lead-analysis.js', import.meta.url), 'utf8');
   assert.ok(lead.includes('client: bridge, capability: AGT003_LEAD_ANALYSIS_CAPABILITY'));
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
   assert.ok(server.includes("recordRejection: ({ failureCode, model, correlationId }) => recordModelRejection({ capability: AGT003_COPILOT_CAPABILITY, model, failureCode, correlationId })"));

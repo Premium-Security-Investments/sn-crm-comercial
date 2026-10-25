@@ -4,14 +4,14 @@
 // tiempo acotados) y le pasa ese texto, junto con la ficha, a Vig-IA por el mismo puente firmado del copiloto. La IA
 // no navega ni usa herramientas. La salida se valida contra un contrato cerrado y siempre requiere revisión humana.
 import { createHash } from 'node:crypto';
-import { safeOfficialFetch } from './safe-official-fetch.js';
+import { safeOfficialFetch } from '../../safe-official-fetch.js';
 import { createAgt003CopilotBridgeClient } from './agt003-copilot-bridge-client.js';
 import { getAgt003CopilotRuntimeConfig, resolveAgt003BridgeConnection } from './agt003-copilot-runtime.js';
-import { AGT003_LEAD_ANALYSIS_CAPABILITY, createModelGatewayClient } from './platform-model-gateway.js';
-import { classifyAgt003ModelFailure } from './src/vigia/model-failures.js';
+import { AGT003_LEAD_ANALYSIS_CAPABILITY, createModelGatewayClient } from '../../platform-model-gateway.js';
+import { classifyAgt003ModelFailure } from '../../src/vigia/model-failures.js';
 import {
   LEAD_ANALYSIS_OUTPUT_SCHEMA, leadAnalysisProfileFingerprint, validateLeadAnalysisOutput, estimateLeadAnalysisCostUsd,
-} from './src/vigia/lead-analysis.js';
+} from '../../src/vigia/lead-analysis.js';
 
 const WEBSITE_MAX_BYTES = 1_500_000;
 const WEBSITE_TIMEOUT_MS = 8_000;

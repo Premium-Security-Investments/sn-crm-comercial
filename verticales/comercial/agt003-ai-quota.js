@@ -20,8 +20,8 @@
 //       persona no puede mezclar día y mes.
 // - Orden: excepción > perfil > equipo. El cupo por persona nunca queda por encima del cupo del equipo cuando ambos son
 //   del mismo periodo; y en cualquier caso la reserva comprueba los dos contadores (equipo y persona).
-import { AGT003_AGENT_ID } from './platform-model-gateway.js';
-import { AI_MODEL_OPTIONS, CONFIGURATION_TIMEZONE, bogotaToday } from './platform-agent-configuration.js';
+import { AGT003_AGENT_ID } from '../../platform-model-gateway.js';
+import { AI_MODEL_OPTIONS, CONFIGURATION_TIMEZONE, bogotaToday } from '../../platform-agent-configuration.js';
 
 export const AGT003_CAPABILITY_DISABLED_CODE = 'AGT003_CAPABILITY_DISABLED';
 export const AGT003_CAPABILITY_DISABLED_MESSAGE = 'Esta función de Vig-IA está apagada por ahora. Consulta con el administrador.';

@@ -14,7 +14,7 @@ import {
   readActorAiUsageProfile,
   resolveBridgeModel,
   resolveCapabilityQuota,
-} from '../agt003-ai-quota.js';
+} from '../verticales/comercial/agt003-ai-quota.js';
 import { defaultAgentConfiguration } from '../platform-agent-configuration.js';
 import { codeDefaultEffectiveConfiguration } from '../platform-agent-effective-configuration.js';
 

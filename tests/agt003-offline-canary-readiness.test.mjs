@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const MODULE_SPECIFIER = '../agt003-offline-canary-readiness.js';
+const MODULE_SPECIFIER = '../verticales/comercial/agt003-offline-canary-readiness.js';
 const MODULE_FILE_PATH = fileURLToPath(new URL(MODULE_SPECIFIER, import.meta.url));
 
 const AUTHORIZATION = Object.freeze({ gate: 'AGT003_REDUCED_CANARY', approved: true });
@@ -687,8 +687,8 @@ test('canaryPackage.consume() resolving a distinct frozen synthetic reduced-payl
 
 test('a real M1 canary package built with AGT003_COPILOT_POLICY and createAgt003SingleCanaryPackage runs once through the M2 offline canary readiness controller, delivers the consumed reduced payload to the executor, leaks no policy/input/schema/payload/business fixture text into audit/result/state, and refuses a second run', async () => {
   const { createAgt003OfflineCanaryReadinessController } = await import(MODULE_SPECIFIER);
-  const { AGT003_COPILOT_POLICY } = await import('../agt003-copilot-engine.js');
-  const { createAgt003SingleCanaryPackage } = await import('../agt003-payload-reduction.js');
+  const { AGT003_COPILOT_POLICY } = await import('../verticales/comercial/agt003-copilot-engine.js');
+  const { createAgt003SingleCanaryPackage } = await import('../verticales/comercial/agt003-payload-reduction.js');
 
   const evidenceOpportunity = 'evidence:opportunity:opp-m1m2-int-0001:stage';
   const evidenceInteraction = 'evidence:interaction:int-m1m2-int-0001';

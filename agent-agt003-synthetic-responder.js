@@ -1,4 +1,4 @@
-import { buildAgt003PrioritiesData, deepFreeze, snapshotPlainInput } from './agt003-priorities-service.js';
+import { buildAgt003PrioritiesData, deepFreeze, snapshotPlainInput } from './verticales/comercial/agt003-priorities-service.js';
 
 const CONTRACT_VERSION = '1.0.0';
 const CAPABILITY = 'agt003.priorities.read';

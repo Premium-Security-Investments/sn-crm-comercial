@@ -11,8 +11,8 @@
 //   · el resultado es una sugerencia, se muestra rotulado y NO se guarda.
 import { createAgt003CopilotBridgeClient } from './agt003-copilot-bridge-client.js';
 import { getAgt003CopilotRuntimeConfig, resolveAgt003BridgeConnection } from './agt003-copilot-runtime.js';
-import { AGT003_BRIEF_CAPABILITY, createModelGatewayClient } from './platform-model-gateway.js';
-import { classifyAgt003ModelFailure } from './src/vigia/model-failures.js';
+import { AGT003_BRIEF_CAPABILITY, createModelGatewayClient } from '../../platform-model-gateway.js';
+import { classifyAgt003ModelFailure } from '../../src/vigia/model-failures.js';
 
 export const BRIEF_TIMEOUT_MS = 60_000;
 export const BRIEF_MAX_NOTES = 12;
