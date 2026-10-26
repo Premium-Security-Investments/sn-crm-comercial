@@ -21,8 +21,26 @@ import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effor
  * nunca inicia sesión por su cuenta ni cae hacia una API key.
  */
 
-/** Techo duro de stdout: por encima se aborta el turno sin citar la salida. */
-export const AGT002_CLAUDE_MAX_STDOUT_BYTES = 262_144;
+/**
+ * Techo duro de stdout: por encima se aborta el turno sin citar la salida.
+ *
+ * Medido el 2026-10-26 en Supersalud `SNS-LP-2-2026`, cuyo JSON de resultado crece con cada documento
+ * del expediente (`length(result::text)` de las seis corridas guardadas, y sus claims):
+ *
+ *   v1  98.471 (51 claims) · v2 103.522 (52) · v3 111.716 (54)
+ *   v4 125.937 (59)        · v5 143.540 (65) · v6 193.867 (77)
+ *
+ * Con el techo anterior de 262.144 bytes, la v6 ya iba al 74%, y los dos reanálisis siguientes —el de
+ * las 00:58Z, con el pliego definitivo de 199 páginas, y el de las 03:45Z, con cinco documentos más—
+ * murieron los dos en la fase de síntesis con AGT002_CLAUDE_OUTPUT_TOO_LARGE. No era una salida
+ * anómala: era un expediente legítimo que dejó de caber, y el proceso quedó sin poder reanalizarse a
+ * diez días del cierre.
+ *
+ * El techo acota la memoria del proceso, no defiende de nada concreto, y 262.144 era un número redondo.
+ * 1 MiB deja margen para unas cuatro veces el tamaño actual y sigue acotando. Si vuelve a tocarlo, el
+ * arreglo ya no es subirlo otra vez: es que la síntesis salga por partes.
+ */
+export const AGT002_CLAUDE_MAX_STDOUT_BYTES = 1_048_576;
 
 /**
  * Techo seguro del `--json-schema` inline en argv, medido en bytes UTF-8.
