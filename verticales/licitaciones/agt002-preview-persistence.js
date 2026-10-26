@@ -4,6 +4,7 @@ import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix
 import { validateTenderRequirementInventory } from './tender-requirement-inventory.js';
 import { validateTenderSemanticManifest, toAgt002RequirementManifest } from './tender-semantic-manifest.js';
 import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from './agt002-v3-compatibility.js';
+import { countTenderCriticalOpenUnits } from './tender-critical-open-count.js';
 import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-governance-overrides.js';
 import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
 import { validateAgt002CompanyEvidenceIdentity } from './agt002-company-evidence-identity.js';
@@ -134,7 +135,7 @@ function requireId(value, label) {
 }
 
 function countCriticalOpenQuestions(content) {
-  return Array.isArray(content?.questions) ? content.questions.filter(question => question?.critical === true).length : 0;
+  return countTenderCriticalOpenUnits(content);
 }
 
 // A Supabase/PostgREST error's `code` is a SQLSTATE-shaped category ('57014', '23505', '40P01',

@@ -659,6 +659,9 @@ export type TenderDocumentAnalysis = {
   weaknesses?: TenderAnalysisFinding[];
   blockers?: TenderAnalysisFinding[];
   questions?: TenderAnalysisFinding[];
+  // `pre_go_analysis.v2` guarda sus pendientes aquí, no en `questions`. Sólo los campos que el
+  // conteo de pendientes abiertos necesita; el resto del objeto sigue siendo libre.
+  open_items?: Array<{ open_item_id?: string | null; status?: string | null; critical?: boolean | null }> | null;
   unverified?: TenderAnalysisFinding[];
   company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: TenderAnalysisFinding[]; profile_source?: string };
   next_action?: string;

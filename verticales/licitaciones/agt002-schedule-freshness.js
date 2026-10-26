@@ -10,6 +10,12 @@
 //      se puede ofertar como está.
 //   3. Salvaguarda: si el Radar no ha visto el proceso hace poco, el silencio puede ser nuestro y no de SECOP.
 //      En ese caso no se afirma nada; se avisa que no se puede concluir.
+//
+// Límite declarado, no corregible desde aquí: esta revisión NO ve el módulo de mensajes de SECOP II, y ahí es
+// donde la entidad publica sus respuestas a observaciones. La página pública está detrás de reCAPTCHA, así que
+// no hay forma de leerla automáticamente. Supersalud `SNS-LP-2-2026` lo probó: la entidad respondió las
+// observaciones financieras y técnicas por mensajes, y estos avisos afirmaron cuatro veces que no había nada
+// nuevo. Mientras no se pueda mirar, cada aviso dice que no lo mira, en vez de dar el silencio por hecho.
 
 import { tenderDocumentBreaksEntitySilence } from './tender-document-origin.js';
 
@@ -96,7 +102,7 @@ export function agt002ScheduleFreshnessNotices({
       severity: 'media',
       deadlineLabel: item.label,
       deadlineValue: item.value,
-      text: `Vig-IA, frescura: «${item.label}» estaba para el ${agt002FreshnessDay(item.value)} y no hay nada nuevo: el proceso sigue en «${phase}» y el expediente no tiene documentos posteriores a esa fecha. Verificar en SECOP II si la fase se publicó en otro enlace.`,
+      text: `Vig-IA, frescura: «${item.label}» estaba para el ${agt002FreshnessDay(item.value)} y no hay nada nuevo en lo que esta revisión alcanza a ver: el proceso sigue en «${phase}» y el expediente no tiene documentos posteriores a esa fecha. Esta revisión no mira los mensajes del proceso en SECOP II, que es donde la entidad responde observaciones. Verificar ahí, y si la fase se publicó en otro enlace.`,
     }));
 
   // Lo que de verdad importa: cierre encima sin pliego definitivo publicado.
@@ -111,7 +117,7 @@ export function agt002ScheduleFreshnessNotices({
       severity: 'alta',
       deadlineLabel: definitive.label,
       deadlineValue: definitive.value,
-      text: `Vig-IA, frescura: el cierre es el ${agt002FreshnessDay(submission.value)} y el pliego definitivo, previsto para el ${agt002FreshnessDay(definitive.value)}, no aparece. Con el borrador no se puede armar la oferta: confirmar en SECOP II si el proceso se movió a otro enlace o si la entidad va a aplazar.`,
+      text: `Vig-IA, frescura: el cierre es el ${agt002FreshnessDay(submission.value)} y el pliego definitivo, previsto para el ${agt002FreshnessDay(definitive.value)}, no aparece en lo que esta revisión alcanza a ver —los mensajes del proceso en SECOP II no se revisan desde aquí—. Con el borrador no se puede armar la oferta: confirmar en SECOP II si el proceso se movió a otro enlace, si la entidad respondió por mensajes o si va a aplazar.`,
     });
   }
   return notices;

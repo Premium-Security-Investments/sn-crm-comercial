@@ -108,8 +108,22 @@ export function bogotaDayLabel(iso) {
   return `${local.getUTCDate()}-${MONTHS[local.getUTCMonth()]}`;
 }
 
+// No promete la importación: la anuncia como intento. La fase se detecta en el dataset de PROCESOS
+// (p6dx-8zbt) y los archivos se piden al de ARCHIVOS (dmgg-8hin), que es otro dataset con otro atraso.
+// Que el proceso esté en datos abiertos no implica que sus archivos estén. El 2026-10-25, en Supersalud
+// `SNS-LP-2-2026`, la línea vieja sostuvo durante horas que "Vig-IA bajará sus documentos y lanzará el
+// reanálisis" mientras el dataset de archivos sólo tenía los ocho de septiembre, y se leyó como que el
+// agente no había corrido.
 export function phaseChangeDetectedLine(change) {
-  return `${phaseChangeHead(change)}; el enlace de la oportunidad se actualizó${change?.url ? ` (${change.url})` : ''} y Vig-IA bajará sus documentos y lanzará el reanálisis.`;
+  return `${phaseChangeHead(change)}; el enlace de la oportunidad se actualizó${change?.url ? ` (${change.url})` : ''}. Vig-IA va a buscar sus documentos en datos abiertos y, si están, lanza el reanálisis.`;
+}
+
+// Primera revisión que no encuentra archivos nuevos: se dice de inmediato, en vez de dejar la línea
+// anterior en firme tres días hasta el aviso de revisión humana. Nombra la impresión porque el
+// cronograma no viaja en ningún documento del expediente: vive en el formulario de SECOP II.
+export function phaseChangeDocumentsPendingLine(change, { documentCount = 0 } = {}) {
+  const seen = Number(documentCount || 0);
+  return `${phaseChangeHead(change)}, pero sus archivos todavía no están en datos abiertos${seen ? ` (allí siguen los ${seen} de siempre)` : ''}: ese dataset va 1 a 3 días atrás. Para no esperar, cargar a mano el pliego definitivo y la impresión de «Información del procedimiento», que es la única que trae el cronograma.`;
 }
 
 export function phaseChangeDocumentsMissingLine(change) {
@@ -355,6 +369,10 @@ export async function runAgt002PhaseChangeDocumentRefresh(database, {
         continue;
       }
       if (!Number(probe.new_document_count || 0)) {
+        // Desde la primera pasada: el aviso dice que los archivos no están, sin esperar los 3 días del
+        // aviso de revisión humana. `appendAgt002ObservationLine` sólo agrega si la línea no está, así
+        // que repetirla en cada pasada no duplica nada.
+        await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsPendingLine(change, { documentCount: probe.document_count }));
         if (waitedLongEnough) await appendAgt002ObservationLine(database, opportunityId, phaseChangeDocumentsMissingLine(change));
         events.push({ event: 'agt002_phase_change_documents_waiting_new_documents', documents: probe.document_count, ...(waitedLongEnough ? { review: 'documents_missing' } : {}), ...base });
         continue;

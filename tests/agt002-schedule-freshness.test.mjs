@@ -36,6 +36,13 @@ test('el caso de la Fiscalía: el cierre encima sin pliego definitivo va primero
   assert.match(notices[1].text, /16 de octubre/);
   assert.match(notices[1].text, /sigue en «Presentación de observaciones»/);
   assert.match(notices[2].text, /21 de octubre/);
+  // El límite se declara en TODOS los avisos: esta revisión no ve el módulo de mensajes de SECOP II, que es
+  // donde la entidad responde observaciones. Supersalud SNS-LP-2-2026 había respondido por ahí y estos avisos
+  // afirmaron cuatro veces que no había nada nuevo (2026-10-23).
+  for (const notice of notices) {
+    assert.match(notice.text, /mensajes/, `el aviso declara que no mira los mensajes: ${notice.code}`);
+    assert.ok(!/y no hay nada nuevo:/.test(notice.text), `el aviso no afirma silencio sin matizarlo: ${notice.code}`);
+  }
   // Lo que no es de la entidad no se cuenta: el plazo de observaciones de los oferentes no genera aviso.
   assert.equal(notices.some(notice => /presentación de observaciones al pliego de condiciones»/i.test(notice.text)), false);
 });

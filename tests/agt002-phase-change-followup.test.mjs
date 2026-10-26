@@ -127,7 +127,11 @@ test('disparador: Fondo Único pasa al pliego definitivo → un cambio de fase s
   assert.equal(change.previousUrl, OLD_URL);
   assert.equal(change.blocker, null, 'proceso vivo y cierre futuro: se sigue');
   const line = phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, url: change.url, detectedAt: change.detectedAt, noticeUid: NOTICE });
-  assert.equal(line, `SECOP publicó el pliego definitivo (fase de oferta) (visto el 10-oct); el enlace de la oportunidad se actualizó (${NEW_URL}) y Vig-IA bajará sus documentos y lanzará el reanálisis.`);
+  // El aviso anuncia un intento, no una importación hecha: la fase se ve en el dataset de procesos y los
+  // archivos están en otro dataset, con otro atraso. Prometerlo se leyó como que el agente no corrió
+  // (Supersalud, 2026-10-25).
+  assert.equal(line, `SECOP publicó el pliego definitivo (fase de oferta) (visto el 10-oct); el enlace de la oportunidad se actualizó (${NEW_URL}). Vig-IA va a buscar sus documentos en datos abiertos y, si están, lanza el reanálisis.`);
+  assert.ok(!/bajará sus documentos/.test(line), 'el aviso no promete la descarga');
   assert.doesNotMatch(line.replace(NEW_URL, ''), /CO1\./, 'el aviso no muestra códigos internos; sólo el enlace');
   // Corrida siguiente: el enlace ya cambió (histórico) → nada que seguir, aunque la fila siga llegando.
   const next = planRadarPhaseIdentitySync({ fetched: [draftRow(), offerRow()], existing: [draftConverted({ url: NEW_URL, status: 'Publicado', process_id: 'CO1.REQ.11160001' })], now: '2026-10-11T11:00:00.000Z' });
@@ -299,8 +303,26 @@ test('documentos: si datos.gov.co no los publica en ~3 días, aviso visible para
   assert.deepEqual(db.appended, [], 'el segundo día aún no avisa');
   await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: missing, importDocuments, now: at('2026-10-11T12:00:00.000Z') });
   assert.deepEqual(db.appended, [`${HEAD}, pero datos.gov.co aún no publica sus documentos nuevos; revisar e importar a mano.`]);
+  // En cuanto la consulta responde (ya no falla, pero no trae archivos nuevos), el aviso lo dice con
+  // nombre y dice qué cargar a mano. El de revisión humana no se repite.
   await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probeOf('none', 0), importDocuments, now: at('2026-10-12T12:00:00.000Z') });
-  assert.equal(db.appended.length, 1, 'el aviso no se repite');
+  assert.deepEqual(db.appended, [
+    `${HEAD}, pero datos.gov.co aún no publica sus documentos nuevos; revisar e importar a mano.`,
+    `${HEAD}, pero sus archivos todavía no están en datos abiertos (allí siguen los 24 de siempre): ese dataset va 1 a 3 días atrás. Para no esperar, cargar a mano el pliego definitivo y la impresión de «Información del procedimiento», que es la única que trae el cronograma.`,
+  ]);
+  await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probeOf('none', 0), importDocuments, now: at('2026-10-13T12:00:00.000Z') });
+  assert.equal(db.appended.length, 2, 'ninguno de los dos avisos se repite');
+});
+
+test('documentos: la primera revisión sin archivos nuevos ya lo dice, sin esperar los 3 días', async () => {
+  const db = fakeDb(world());
+  const importDocuments = async () => { throw new Error('no debe importar'); };
+  // Misma mañana de la detección: la consulta responde con los documentos de siempre y ninguno nuevo.
+  await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probeOf('none', 0), importDocuments, now: at('2026-10-08T15:00:00.000Z') });
+  assert.equal(db.appended.length, 1, 'un solo aviso, el que nombra lo que falta');
+  assert.match(db.appended[0], /sus archivos todavía no están en datos abiertos/);
+  assert.match(db.appended[0], /Información del procedimiento/, 'nombra la impresión, que es la única que trae el cronograma');
+  assert.ok(!/revisar e importar a mano\.$/.test(db.appended[0]), 'el aviso de revisión humana sigue siendo el de los 3 días');
 });
 
 test('I5: un conjunto que no se estabiliza en ~3 días deja aviso visible (una vez)', async () => {

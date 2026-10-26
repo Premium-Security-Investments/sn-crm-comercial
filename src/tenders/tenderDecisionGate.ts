@@ -60,6 +60,10 @@ export function tenderExecutiveProjectionAvailable(analysis: TenderDocumentAnaly
   return !hasIntegralV3 || Boolean(analysis?.decision_review);
 }
 
+// Estados de `open_items` que ya NO están abiertos. Lo que no esté aquí se cuenta como abierto, igual
+// que en verticales/licitaciones/tender-critical-open-count.js, que escribe el conteo canónico.
+const TENDER_CLOSED_OPEN_ITEM_STATUSES = new Set(['RESOLVED', 'CLOSED', 'CANCELLED', 'WITHDRAWN']);
+
 export function tenderExecutiveOpenIssueCount(analysis: TenderDocumentAnalysis | null | undefined): number {
   const review = analysis?.decision_review;
   if (review) return Number(review.counts?.blockers || 0) + Number(review.counts?.decision_questions || 0);
@@ -68,6 +72,16 @@ export function tenderExecutiveOpenIssueCount(analysis: TenderDocumentAnalysis |
   // canónico real. Es información para la persona, nunca un gate de GO/NO-GO.
   const canonicalCount = Number(analysis?.critical_open_count || 0);
   if (Number.isFinite(canonicalCount) && canonicalCount > 0) return canonicalCount;
+
+  // Respaldo para las corridas `pre_go_analysis.v2`, cuyos pendientes viven en `open_items` y cuyo
+  // conteo canónico quedó en 0 por el defecto de escritura (tender-critical-open-count.js). Sin
+  // esto, un análisis con pendientes críticos abiertos se lee "sin pendientes": medido el
+  // 2026-10-25 en Supersalud, 16 abiertos y 2 críticos mostrados como 0. Se lee del contenido, así
+  // que arregla también los análisis ya guardados, sin recalcular nada.
+  const criticalOpenItems = (analysis?.open_items ?? [])
+    .filter(item => item?.critical === true && !TENDER_CLOSED_OPEN_ITEM_STATUSES.has(String(item?.status || '').trim().toUpperCase()))
+    .length;
+  if (criticalOpenItems > 0) return criticalOpenItems;
 
   // Respaldo seguro cuando el conteo canónico falta: sólo el enum estructural de cierre define qué
   // unidades V3 siguen abiertas. Valores futuros permanecen abiertos (fail-closed).
