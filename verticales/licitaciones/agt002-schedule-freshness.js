@@ -53,6 +53,53 @@ export function agt002FreshnessDay(value) {
   return new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'long' }).format(new Date(at));
 }
 
+const BOGOTA_OFFSET_MS = 5 * 3_600_000;
+/** Día calendario en Bogotá de un instante, como `YYYY-MM-DD`. */
+const bogotaDayKey = at => new Date(at - BOGOTA_OFFSET_MS).toISOString().slice(0, 10);
+/**
+ * Día del cierre según la fila del Radar. `deadline_at` viene de `fecha_de_recepcion_de` de los datos abiertos,
+ * que es una FECHA sin hora y se guarda como medianoche UTC: leerla como instante la correría un día hacia atrás
+ * en Bogotá (2026-11-05T00:00Z sería el 4 de noviembre). Medianoche UTC exacta se trata como fecha; cualquier
+ * otro valor trae hora de verdad y se lee como instante.
+ */
+const noticeDayKey = at => (at % 86_400_000 === 0 ? new Date(at).toISOString().slice(0, 10) : bogotaDayKey(at));
+/** La misma fecha formateada para el aviso, respetando esa distinción. */
+const noticeDayLabel = at => agt002FreshnessDay(at % 86_400_000 === 0 ? `${new Date(at).toISOString().slice(0, 10)}T12:00:00-05:00` : at);
+
+/**
+ * El cronograma del análisis vigente contra el cierre del aviso vigente. Si no coinciden, el cronograma leído
+ * es de otra fase y TODAS sus fechas se corrieron, no sólo el cierre.
+ *
+ * El caso que lo pide: Supersalud `SNS-LP-2-2026`. La entidad publicó la fase de oferta el 22-oct con cierre el
+ * 5-nov; el Radar lo detectó y corrigió la fila y la oportunidad. El reanálisis v6 del 25-oct, ya con el pliego
+ * definitivo cargado, siguió con el cronograma del aviso de convocatoria de septiembre: cierre 28-oct,
+ * adjudicación 18-nov, visita 19-oct, adendas 22-oct. Y lo escribió como hecho sostenido
+ * (`CLM-CIERRE-CRM`: *"se registra el 28 de octubre porque sale de los documentos"*), prefiriendo la fecha
+ * muerta sobre la que el Radar ya había corregido. El cronograma no viaja en ningún documento del expediente:
+ * vive en el formulario de SECOP II, y la única copia es la impresión de "Información del procedimiento".
+ *
+ * Puro. Devuelve null cuando no hay con qué comparar.
+ */
+export function agt002ScheduleSupersededNotice({ deadlines = [], tender = {} } = {}) {
+  const liveAt = ms(tender.deadlineAt ?? tender.deadline_at);
+  const submission = (Array.isArray(deadlines) ? deadlines : [])
+    .map(deadline => ({ kind: squash(deadline?.kind).toUpperCase(), label: squash(deadline?.label), value: deadline?.value, at: ms(deadline?.value) }))
+    .filter(item => item.kind === 'SUBMISSION' && item.at !== null)
+    .sort((left, right) => left.at - right.at)
+    .at(-1) || null;
+  if (liveAt === null || !submission) return null;
+  // Se comparan DÍAS, no instantes: el aviso trae fecha sin hora y el análisis trae hora de cierre, así que
+  // comparar instantes marcaría como superado todo cronograma correcto (15 horas de diferencia en el caso bueno).
+  if (noticeDayKey(liveAt) === bogotaDayKey(submission.at)) return null;
+  return {
+    code: 'cronograma_superado',
+    severity: 'alta',
+    deadlineLabel: submission.label || 'Cierre del Proceso',
+    deadlineValue: submission.value,
+    text: `Vig-IA, frescura: el cronograma del análisis vigente no es el del aviso. El análisis cierra el ${agt002FreshnessDay(submission.value)} y el aviso vigente del proceso cierra el ${noticeDayLabel(liveAt)}, así que el cronograma leído es de una fase anterior y sus otras fechas también se corrieron. Cargar al expediente la impresión de «Información del procedimiento» del aviso vigente —es la única que trae el cronograma— y volver a analizar.`,
+  };
+}
+
 /**
  * Qué está en silencio en esta licitación. Puro: no lee ni escribe nada.
  * `deadlines` son los plazos del análisis vigente (`meta.process_deadlines`); `tender` es la fila del Radar.
@@ -63,6 +110,11 @@ export function agt002ScheduleFreshnessNotices({
 } = {}) {
   const nowMs = now instanceof Date ? now.getTime() : ms(now);
   if (!Number.isFinite(nowMs)) return [];
+  // Va primero y va solo: si el cronograma es de otra fase, cada aviso que salga de sus fechas es ruido sobre
+  // plazos que ya se movieron. El 25-oct ese ruido fueron cuatro avisos de fechas corridas en una oportunidad
+  // cuyo cierre real estaba ocho días más allá.
+  const superseded = agt002ScheduleSupersededNotice({ deadlines, tender });
+  if (superseded) return [superseded];
   const phase = squash(tender.status) || 'sin fase registrada';
   const seenAt = ms(tender.lastSeenAt ?? tender.last_seen_at);
   // Sólo `published_at` dice que la entidad publicó algo nuevo. `updated_at` no sirve: el Radar reescribe la fila
@@ -134,7 +186,7 @@ export async function runAgt002ScheduleFreshnessReview(database, {
   const events = [];
   const { data: tenders, error } = await database
     .from('psi_public_tenders')
-    .select('id,ref,entity,status,updated_at,published_at,last_seen_at,converted_opportunity_id,internal_status')
+    .select('id,ref,entity,status,updated_at,published_at,last_seen_at,deadline_at,converted_opportunity_id,internal_status')
     .eq('internal_status', 'convertida_oportunidad')
     .limit(limit);
   if (error) {

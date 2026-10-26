@@ -6,6 +6,7 @@ import {
   agt002FreshnessDay,
   agt002IsOfficialDocumentSource,
   agt002ScheduleFreshnessNotices,
+  agt002ScheduleSupersededNotice,
   runAgt002ScheduleFreshnessReview,
 } from '../verticales/licitaciones/agt002-schedule-freshness.js';
 
@@ -218,4 +219,66 @@ test('la revisión programada mira el último documento OFICIAL, no el último c
   assert.ok(appended.length >= 3, 'la carga manual del 21-oct no debe tapar los avisos del 16-oct');
   assert.ok(appended.some(line => /16 de octubre/.test(line)));
   assert.deepEqual(events.filter(event => event.event === 'agt002_schedule_freshness_notice').map(event => event.code)[0], 'cierre_sin_pliego_definitivo');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Cronograma superado. Caso real: Supersalud SNS-LP-2-2026 el 2026-10-25.
+// ---------------------------------------------------------------------------------------------------------------
+
+// El cronograma que quedó en el análisis canónico v6, recortado: es el del aviso de convocatoria de septiembre.
+const SUPERSALUD_VIEJO = [
+  { kind: 'PUBLICATION', label: 'Publicación del Aviso de Convocatoria, Estudios Previos y del Proyecto de Pliego', value: '2026-09-29T00:00:00-05:00' },
+  { kind: 'PUBLICATION', label: 'Fecha prevista de Publicación del Pliego de Condiciones Definitivo', value: '2026-10-16T00:00:00-05:00' },
+  { kind: 'SITE_VISIT', label: 'Visita a las instalaciones', value: '2026-10-19T09:00:00-05:00' },
+  { kind: 'RISK_HEARING', label: 'Audiencia de asignación de Riesgos', value: '2026-10-20T10:00:00-05:00' },
+  { kind: 'ADDENDA', label: 'Fecha límite para expedir Adendas', value: '2026-10-22T00:00:00-05:00' },
+  { kind: 'SUBMISSION', label: 'Cierre del Proceso', value: '2026-10-28T10:00:00-05:00' },
+  { kind: 'AWARD', label: 'Audiencia de adjudicación', value: '2026-11-18T10:00:00-05:00' },
+];
+// La fila del Radar después de que detectó la fase de oferta: `deadline_at` viene de `fecha_de_recepcion_de`,
+// que es una fecha sin hora, guardada como medianoche UTC.
+const SUPERSALUD_TENDER = {
+  ref: 'SNS-LP-2-2026 (Presentación de oferta)', status: 'Publicado',
+  published_at: '2026-09-29T00:00:00+00', last_seen_at: '2026-10-25T19:00:50+00',
+  deadline_at: '2026-11-05 00:00:00+00',
+};
+
+test('cronograma superado: el cierre del aviso manda, y los avisos de las fechas corridas se callan', () => {
+  const notices = agt002ScheduleFreshnessNotices({
+    deadlines: SUPERSALUD_VIEJO, tender: SUPERSALUD_TENDER, lastDocumentAt: null, now: new Date('2026-10-26T01:00:00Z'),
+  });
+  assert.equal(notices.length, 1, 'un solo aviso: el resto saldría de fechas que ya se movieron');
+  assert.equal(notices[0].code, 'cronograma_superado');
+  assert.equal(notices[0].severity, 'alta');
+  assert.match(notices[0].text, /El análisis cierra el 28 de octubre/);
+  assert.match(notices[0].text, /el aviso vigente del proceso cierra el 5 de noviembre/, 'la fecha sin hora no se corre un día');
+  assert.match(notices[0].text, /Información del procedimiento/);
+  // Lo que NO debe salir: los avisos por el pliego definitivo del 16-oct, la audiencia del 20 y las adendas del 22.
+  assert.ok(!/16 de octubre|20 de octubre|22 de octubre/.test(notices[0].text));
+});
+
+test('cronograma al día: el mismo día de cierre no dispara nada, aunque el aviso no traiga hora', () => {
+  const alDia = SUPERSALUD_VIEJO.map(item => (item.kind === 'SUBMISSION' ? { ...item, value: '2026-11-05T10:00:00-05:00' } : item));
+  assert.equal(agt002ScheduleSupersededNotice({ deadlines: alDia, tender: SUPERSALUD_TENDER }), null);
+  // Y con el cronograma al día la verificación vuelve a su trabajo normal: avisa por las fechas vencidas.
+  const notices = agt002ScheduleFreshnessNotices({
+    deadlines: alDia, tender: SUPERSALUD_TENDER, lastDocumentAt: null, now: new Date('2026-10-26T01:00:00Z'),
+  });
+  assert.ok(notices.length >= 1);
+  assert.ok(notices.every(notice => notice.code !== 'cronograma_superado'));
+});
+
+test('cronograma superado: sin con qué comparar no se afirma nada', () => {
+  assert.equal(agt002ScheduleSupersededNotice({ deadlines: SUPERSALUD_VIEJO, tender: { ...SUPERSALUD_TENDER, deadline_at: null } }), null, 'sin cierre en la fila del Radar');
+  assert.equal(agt002ScheduleSupersededNotice({ deadlines: SUPERSALUD_VIEJO.filter(item => item.kind !== 'SUBMISSION'), tender: SUPERSALUD_TENDER }), null, 'sin cierre en el análisis');
+  assert.equal(agt002ScheduleSupersededNotice({ deadlines: [], tender: {} }), null);
+  assert.equal(agt002ScheduleSupersededNotice({}), null);
+});
+
+test('cronograma superado: también cuando el cierre del aviso se adelanta', () => {
+  const notice = agt002ScheduleSupersededNotice({
+    deadlines: SUPERSALUD_VIEJO, tender: { ...SUPERSALUD_TENDER, deadline_at: '2026-10-20 00:00:00+00' },
+  });
+  assert.equal(notice?.code, 'cronograma_superado', 'la discrepancia importa en los dos sentidos');
+  assert.match(notice.text, /cierra el 20 de octubre/);
 });
