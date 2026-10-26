@@ -12,6 +12,7 @@ import { deriveAgt002ManizalesExerciseDecisionReview } from './agt002-manizales-
 import { deriveAgt002GenericDecisionReview } from './agt002-generic-decision-review.js';
 import { deriveAgt002DecisionAnalysis } from './agt002-decision-axis-analysis.js';
 import { canonicalizeTenderDocumentGaps } from './tender-document-gap-canonical.js';
+import { countTenderCriticalOpenUnits } from './tender-critical-open-count.js';
 
 const RULES_PRODUCER = 'siio_rules_v1';
 const RULES_METHOD = 'rules';
@@ -86,9 +87,7 @@ function unwrapRpc(response) {
 }
 
 function countCriticalOpenQuestions(result) {
-  return Array.isArray(result?.questions)
-    ? result.questions.filter(question => question?.critical === true).length
-    : 0;
+  return countTenderCriticalOpenUnits(result);
 }
 
 /**

@@ -70,8 +70,12 @@ test('la ruta de URL firmada existe en los dos backends, autoriza igual que la c
 });
 
 test('la carga acepta la ruta firmada, la vuelve a verificar y conserva el camino de base64', () => {
-  const carga = ruta('tender-documents-upload');
+  // La secuencia salió de la ruta a `ingestTenderDossierDocuments`, para que el servidor de tareas pueda cargar un
+  // documento aportado sin navegador (Supersalud, 2026-10-25). La ruta web autoriza y delega; lo que se verifica
+  // aquí es la secuencia, más la delegación.
+  const carga = server.match(/export async function ingestTenderDossierDocuments\([\s\S]*?\n}\n/)?.[0] || '';
   assert.ok(carga);
+  assert.match(ruta('tender-documents-upload'), /ingestTenderDossierDocuments\(database, \{/, 'la ruta delega en la secuencia');
   assert.match(carga, /assertTenderManualUploadStoragePath\(storagePath, opportunityId, name\)/,
     'la ruta se verifica al procesar, no sólo al firmar: entre las dos llamadas la tiene el cliente');
   assert.match(carga, /storage\.from\(tenderDocumentBucket\)\.download\(storagePath\)/);
