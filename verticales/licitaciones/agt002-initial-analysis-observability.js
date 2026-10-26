@@ -17,6 +17,10 @@ const EVENT_NAMES = Object.freeze({
   batch_completed: 'agt002_initial_analysis_batch_completed',
   job_completed: 'agt002_initial_analysis_job_completed',
   job_failed: 'agt002_initial_analysis_job_failed',
+  // Un análisis caído deja aviso en la oportunidad (agt002-analysis-failure-notice.js). Que el aviso se
+  // haya dejado, o por qué no, también se observa: si el rastro visible falla, el silencio vuelve.
+  failure_announced: 'agt002_initial_analysis_failure_announced',
+  failure_announce_skipped: 'agt002_initial_analysis_failure_announce_skipped',
   runtime_readback: 'agt002_initial_analysis_runtime_readback',
 });
 const FIELD_MAP = Object.freeze({
@@ -27,6 +31,7 @@ const FIELD_MAP = Object.freeze({
   costUsd: 'cost_usd', latencyMs: 'latency_ms', runtimeReady: 'runtime_ready',
   admissionEnabled: 'admission_enabled', modelCallsEnabled: 'model_calls_enabled',
   runtimeIdentity: 'runtime_identity',
+  reason: 'reason',
 });
 
 function positiveInteger(value) {

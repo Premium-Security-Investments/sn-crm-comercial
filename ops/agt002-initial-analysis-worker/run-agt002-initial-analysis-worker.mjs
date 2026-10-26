@@ -13,6 +13,7 @@ import { completeAgt002InitialAnalysisJob } from '../../verticales/licitaciones/
 import { createAgt002HetznerBridgeClient } from '../../verticales/licitaciones/agt002-hetzner-bridge-client.js';
 import { createAgt002InitialAnalysisRuntime } from '../../verticales/licitaciones/agt002-initial-analysis-runtime.js';
 import { createAgt002InitialAnalysisObserver, readAgt002InitialAnalysisRuntimeConfig } from '../../verticales/licitaciones/agt002-initial-analysis-observability.js';
+import { announceAgt002AnalysisFailure } from '../../verticales/licitaciones/agt002-analysis-failure-notice.js';
 
 const LEASE_SECONDS = 600;
 
@@ -112,6 +113,12 @@ const worker = createAgt002InitialAnalysisWorker({
   executeJob,
   completeJob: completeAgt002InitialAnalysisJob,
   failJob: failAgt002InitialAnalysisJob,
+  // Un análisis caído deja aviso en la oportunidad. Hasta el 2026-10-26 no dejaba nada: dos reanálisis
+  // de Supersalud murieron en silencio esa noche y se supo horas después porque alguien preguntó.
+  announceFailure: async (db, { opportunityId, jobId, errorCode }) => {
+    const outcome = await announceAgt002AnalysisFailure(db, { opportunityId, errorCode });
+    observer.emit(outcome.announced ? 'failure_announced' : 'failure_announce_skipped', { jobId, opportunityId, errorCode, ...(outcome.reason ? { reason: outcome.reason } : {}) });
+  },
 });
 
 try {
