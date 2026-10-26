@@ -8,10 +8,17 @@ import { readFileSync } from 'node:fs';
 import { refreshOfficialTenderDocument } from '../verticales/licitaciones/tender-document-versioning.js';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
-const route = server.match(/app\.post\('\/api\/tender-documents-upload'[\s\S]*?\n}\);/)?.[0] || '';
+// La secuencia gobernada salió de la ruta a `ingestTenderDossierDocuments` para que el servidor de tareas pueda
+// cargar un documento aportado sin navegador (Supersalud, 2026-10-25: la impresión con el cronograma vigente se
+// quedó fuera del expediente por no haber otra vía). Lo que estas pruebas fijan sigue siendo lo mismo, y ahora
+// se exige además que la ruta delegue en vez de rearmarla.
+const route = server.match(/export async function ingestTenderDossierDocuments\([\s\S]*?\n}\n/)?.[0] || '';
+const webRoute = server.match(/app\.post\('\/api\/tender-documents-upload'[\s\S]*?\n}\);/)?.[0] || '';
 
 test('la carga manual registra versiones con la misma cadena que la importación oficial', () => {
-  assert.ok(route, 'la ruta de carga debe existir');
+  assert.ok(route, 'la secuencia de carga debe existir');
+  assert.ok(webRoute, 'la ruta web debe existir');
+  assert.match(webRoute, /ingestTenderDossierDocuments\(database, \{/, 'la ruta web delega en la secuencia, no la rearma');
   assert.match(server, /const TENDER_MANUAL_UPLOAD_SOURCE = 'carga manual';/);
   assert.match(server, /const tenderManualUploadDocumentId = buffer => `manual-\$\{createHash\('sha256'\)\.update\(buffer\)/);
   assert.match(route, /refreshOfficialTenderDocument\(\{[\s\S]*source: TENDER_MANUAL_UPLOAD_SOURCE/);
