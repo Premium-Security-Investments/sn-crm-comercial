@@ -8,6 +8,7 @@ export type CompanyRegistryEntry = {
   human_review_status?: 'pending_human_review' | 'approved' | 'rejected' | string | null;
   vigencia_text?: string | null;
   expiry?: string | null;
+  decision_support_document_id?: string | null;
 };
 export type CompanySite = { id: string; department: string; city?: string | null; address?: string | null; is_main: boolean; supervigilancia_authorization?: string | null; support_document_id?: string | null; notes?: string | null; source?: string | null };
 export type CompanyExperience = { id: string; rup_number?: number | null; contracting_party: string; contract_object?: string | null; value_smmlv?: number | string | null; value_cop?: number | string | null; contract_year?: number | null; source: string; notes?: string | null };
@@ -104,7 +105,7 @@ export type CompanyBlock = {
   vigenciaText: string;
   supportLoaded: boolean;
   supportDocument: TenderCompanyDocument | null;
-  review: 'Aprobado' | 'Rechazado' | 'Pendiente';
+  review: 'Aprobado' | 'Rechazado' | 'Pendiente' | 'Falta confirmar';
   reviewPending: boolean;
   porConfirmar: boolean;
 };
@@ -141,7 +142,19 @@ export function deriveCompanyBlock(entry: CompanyRegistryEntry, documents: Tende
   } else if (entry.existence_status !== 'not_verified' && (supportDocument || issuedAt)) {
     state = 'al_dia';
   }
-  const review = entry.human_review_status === 'approved' ? 'Aprobado' : entry.human_review_status === 'rejected' ? 'Rechazado' : 'Pendiente';
+  // La verificación vale para el documento contra el que se tomó. Si entró una versión nueva, la
+  // decisión quedó atrás y el bloque vuelve a pedir confirmación en vez de heredar la aprobación.
+  // Y un documento que nadie confirmó —el que cargue un agente, o los que entraron antes de esta
+  // regla— se distingue de un bloque que nadie ha mirado.
+  const decided = entry.human_review_status === 'approved' || entry.human_review_status === 'rejected';
+  const decidedFor = entry.decision_support_document_id || null;
+  const currentSupportId = supportDocument?.id || null;
+  const decisionIsStale = decided && Boolean(currentSupportId) && Boolean(decidedFor) && decidedFor !== currentSupportId;
+  const awaitingConfirmation = Boolean(currentSupportId) && (!decided || decisionIsStale);
+  const review: CompanyBlock['review'] = awaitingConfirmation ? 'Falta confirmar'
+    : entry.human_review_status === 'approved' ? 'Aprobado'
+    : entry.human_review_status === 'rejected' ? 'Rechazado'
+    : 'Pendiente';
   return {
     entryId: entry.entry_id,
     name: entry.document_class,
@@ -157,7 +170,7 @@ export function deriveCompanyBlock(entry: CompanyRegistryEntry, documents: Tende
     supportLoaded: Boolean(supportDocument),
     supportDocument,
     review,
-    reviewPending: entry.human_review_status !== 'approved' && entry.human_review_status !== 'rejected',
+    reviewPending: awaitingConfirmation || !decided,
     porConfirmar: expirySource !== 'registro' && expirySource !== 'documento',
   };
 }
@@ -175,7 +188,7 @@ export function summarizeCompanyBlocks(blocks: CompanyBlock[]) {
     counts,
     total: blocks.length,
     withSupport: blocks.filter(block => block.supportLoaded).length,
-    reviewed: blocks.filter(block => block.review !== 'Pendiente').length,
+    reviewed: blocks.filter(block => block.review === 'Aprobado' || block.review === 'Rechazado').length,
   };
 }
 

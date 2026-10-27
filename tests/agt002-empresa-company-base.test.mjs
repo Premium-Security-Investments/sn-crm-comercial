@@ -94,7 +94,10 @@ test('indicadores financieros y códigos UNSPSC se leen del texto de la ficha', 
 });
 
 test('servidor: exposición mínima del registro y validación de sedes y experiencia', async () => {
-  assert.equal(COMPANY_BASE_REGISTRY_SELECT, 'entry_id,document_class,existence_status,human_review_status,vigencia_text,expiry,current,integration_active');
+  // 159: se agrega el ancla de la decisión al documento. Es el id de un documento que esta misma
+  // pantalla ya lista, así que no amplía la exposición, y es lo que permite que una versión nueva
+  // no herede la aprobación de la anterior.
+  assert.equal(COMPANY_BASE_REGISTRY_SELECT, 'entry_id,document_class,existence_status,human_review_status,vigencia_text,expiry,current,integration_active,decision_support_document_id');
   assert.throws(() => cleanCompanySite({ city: 'Pereira' }), /departamento es obligatorio/);
   assert.deepEqual(cleanCompanySite({ department: ' Nariño ', is_main: 'true' }), { department: 'Nariño', city: null, address: null, is_main: false, supervigilancia_authorization: null, support_document_id: null, notes: null, source: null });
   assert.throws(() => cleanCompanyExperience({ contracting_party: 'X' }), /de dónde sale el dato/);

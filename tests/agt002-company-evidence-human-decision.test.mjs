@@ -74,7 +74,10 @@ test('la decisión nunca escribe aplicabilidad ni vigencia para habilitación', 
     { actorId: ACTOR },
   );
   assert.deepEqual(Object.keys(payload).sort(), DECISION_COLUMNS.slice().sort());
-  assert.deepEqual(COMPANY_EVIDENCE_DECISION_COLUMNS.slice().sort(), DECISION_COLUMNS.slice().sort());
+  // El ancla al documento (159) no sale de la entrada del usuario: la resuelve el guardado
+  // consultando cuál es el documento vigente del bloque, por eso va en la lista y no en el payload.
+  assert.deepEqual(COMPANY_EVIDENCE_DECISION_COLUMNS.slice().sort(),
+    [...DECISION_COLUMNS, 'decision_support_document_id'].sort());
 });
 
 test('158 abre la escritura por columna y deja cerrado el resto de la fila', async () => {
@@ -184,4 +187,81 @@ test('con vencimiento se cuentan los días que faltan', { skip: !deriveCompanyBl
   );
   assert.equal(bloque.daysToExpiry, 102);
   assert.equal(bloque.state, 'al_dia');
+});
+
+// A4 (plan del 2026-10-27): el estado sale de quién cargó, atado a la versión del documento.
+const { recordUploadAsVerification, COMPANY_EVIDENCE_DECISION_COLUMNS: COLUMNAS } = await import('../company-base.js');
+const { summarizeCompanyBlocks } = await import('../src/tenders/companyBase.ts');
+
+test('la decisión se amarra al documento: una versión nueva no hereda la aprobación', () => {
+  const ahora = new Date('2026-10-27T00:00:00Z');
+  const base = { entry_id: 'rce_policy', document_class: 'RCE', existence_status: 'verified', human_review_status: 'approved', vigencia_text: 'Póliza', expiry: '2027-02-06' };
+  const docViejo = { current: true, document_type: 'rce_policy', issued_at: '2026-02-06', expires_at: '2027-02-06', id: 'doc-viejo', url: 'x' };
+  const docNuevo = { ...docViejo, id: 'doc-nuevo' };
+
+  const alDia = deriveCompanyBlock({ ...base, decision_support_document_id: 'doc-viejo' }, [docViejo], ahora);
+  assert.equal(alDia.review, 'Aprobado');
+
+  const trasRenovar = deriveCompanyBlock({ ...base, decision_support_document_id: 'doc-viejo' }, [docNuevo], ahora);
+  assert.equal(trasRenovar.review, 'Falta confirmar', 'la póliza nueva no hereda la aprobación de la vieja');
+  assert.equal(trasRenovar.reviewPending, true);
+});
+
+test('un documento que nadie confirmó se distingue de un bloque que nadie miró', () => {
+  const ahora = new Date('2026-10-27T00:00:00Z');
+  const entrada = { entry_id: 'rut', document_class: 'RUT', existence_status: 'reported', human_review_status: 'pending_human_review', vigencia_text: 'Edición 2026' };
+  const conDoc = deriveCompanyBlock(entrada, [{ current: true, document_type: 'rut', id: 'doc-1', url: 'x' }], ahora);
+  assert.equal(conDoc.review, 'Falta confirmar', 'hay papel pero nadie lo confirmó');
+  const sinDoc = deriveCompanyBlock(entrada, [], ahora);
+  assert.equal(sinDoc.review, 'Pendiente', 'no hay papel: nadie lo ha mirado');
+});
+
+test('el resumen no cuenta como revisado lo que falta confirmar', () => {
+  const ahora = new Date('2026-10-27T00:00:00Z');
+  const bloques = [
+    deriveCompanyBlock({ entry_id: 'a', document_class: 'A', existence_status: 'verified', human_review_status: 'approved', vigencia_text: 'x', decision_support_document_id: 'd1' }, [{ current: true, document_type: 'a', id: 'd1' }], ahora),
+    deriveCompanyBlock({ entry_id: 'b', document_class: 'B', existence_status: 'verified', human_review_status: 'approved', vigencia_text: 'x', decision_support_document_id: 'd1' }, [{ current: true, document_type: 'b', id: 'd2' }], ahora),
+  ];
+  assert.deepEqual(bloques.map(b => b.review), ['Aprobado', 'Falta confirmar']);
+  assert.equal(summarizeCompanyBlocks(bloques).reviewed, 1);
+});
+
+test('cargar un soporte no escribe decisión sin ficha, documento o autor', async () => {
+  const sinEscribir = { from: () => { throw new Error('no debió tocar la base'); } };
+  assert.equal(await recordUploadAsVerification(sinEscribir, { entryId: '', documentId: 'd', actorId: 'a' }), null);
+  assert.equal(await recordUploadAsVerification(sinEscribir, { entryId: 'rup', documentId: '', actorId: 'a' }), null);
+  assert.equal(await recordUploadAsVerification(sinEscribir, { entryId: 'rup', documentId: 'd', actorId: '' }), null);
+  assert.ok(COLUMNAS.includes('decision_support_document_id'), 'la columna del ancla entra en las que la decisión escribe');
+});
+
+test('si escribir la verificación falla, la carga no se pierde', async () => {
+  const baseQueRompe = { from: () => ({ update: () => { throw new Error('sin permiso'); } }) };
+  assert.equal(await recordUploadAsVerification(baseQueRompe, { entryId: 'rup', documentId: 'd1', actorId: 'a1' }), null,
+    'devuelve null en vez de propagar: el documento ya quedó registrado y el bloque dirá "falta confirmar"');
+});
+
+// Desplegar y migrar son dos actos: la pantalla no se cae si la 159 aún no corrió.
+test('sin la columna de la 159, la base empresarial se carga igual', async () => {
+  const { loadCompanyBase, COMPANY_BASE_REGISTRY_SELECT } = await import('../company-base.js');
+  const pedidos = [];
+  const baseVieja = {
+    from: tabla => ({
+      select(select) {
+        if (tabla === 'psi_agt002_company_evidence_registry') pedidos.push(select);
+        const resultado = tabla !== 'psi_agt002_company_evidence_registry'
+          ? { data: [], error: null }
+          : select.includes('decision_support_document_id')
+            ? { data: null, error: { code: '42703', message: 'column does not exist' } }
+            : { data: [{ entry_id: 'rup' }], error: null };
+        const encadenable = { eq: () => encadenable, order: () => encadenable, then: (ok) => Promise.resolve(resultado).then(ok) };
+        return encadenable;
+      },
+    }),
+  };
+  const base = await loadCompanyBase(baseVieja);
+  assert.equal(pedidos.length, 2, 'reintenta una sola vez, sin la columna nueva');
+  assert.ok(pedidos[0].includes('decision_support_document_id'));
+  assert.ok(!pedidos[1].includes('decision_support_document_id'));
+  assert.deepEqual(base.registry, [{ entry_id: 'rup' }], 'los bloques se muestran como antes');
+  assert.ok(COMPANY_BASE_REGISTRY_SELECT.includes('decision_support_document_id'));
 });
