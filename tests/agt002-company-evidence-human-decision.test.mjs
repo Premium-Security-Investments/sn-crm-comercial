@@ -239,3 +239,29 @@ test('si escribir la verificación falla, la carga no se pierde', async () => {
   assert.equal(await recordUploadAsVerification(baseQueRompe, { entryId: 'rup', documentId: 'd1', actorId: 'a1' }), null,
     'devuelve null en vez de propagar: el documento ya quedó registrado y el bloque dirá "falta confirmar"');
 });
+
+// Desplegar y migrar son dos actos: la pantalla no se cae si la 159 aún no corrió.
+test('sin la columna de la 159, la base empresarial se carga igual', async () => {
+  const { loadCompanyBase, COMPANY_BASE_REGISTRY_SELECT } = await import('../company-base.js');
+  const pedidos = [];
+  const baseVieja = {
+    from: tabla => ({
+      select(select) {
+        if (tabla === 'psi_agt002_company_evidence_registry') pedidos.push(select);
+        const resultado = tabla !== 'psi_agt002_company_evidence_registry'
+          ? { data: [], error: null }
+          : select.includes('decision_support_document_id')
+            ? { data: null, error: { code: '42703', message: 'column does not exist' } }
+            : { data: [{ entry_id: 'rup' }], error: null };
+        const encadenable = { eq: () => encadenable, order: () => encadenable, then: (ok) => Promise.resolve(resultado).then(ok) };
+        return encadenable;
+      },
+    }),
+  };
+  const base = await loadCompanyBase(baseVieja);
+  assert.equal(pedidos.length, 2, 'reintenta una sola vez, sin la columna nueva');
+  assert.ok(pedidos[0].includes('decision_support_document_id'));
+  assert.ok(!pedidos[1].includes('decision_support_document_id'));
+  assert.deepEqual(base.registry, [{ entry_id: 'rup' }], 'los bloques se muestran como antes');
+  assert.ok(COMPANY_BASE_REGISTRY_SELECT.includes('decision_support_document_id'));
+});

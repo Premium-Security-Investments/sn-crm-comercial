@@ -17,6 +17,8 @@ export const COMPANY_EXPERIENCE_SELECT = 'id,rup_number,contracting_party,contra
 
 // Tablas opcionales hasta aplicar 127: la vista sigue funcionando sin ellas.
 const TABLE_ABSENT_ERROR_CODES = ['PGRST205', '42P01'];
+// Columna que aún no existe: 42703 en Postgres, PGRST204 cuando el esquema en caché no la ve.
+const COLUMN_ABSENT_ERROR_CODES = ['42703', 'PGRST204'];
 
 function inputError(message) {
   const error = new Error(message);
@@ -45,10 +47,24 @@ async function optionalRows(query) {
   return { rows: data || [], available: true };
 }
 
+// El ancla de la decisión (159) puede no existir todavía: la pantalla no se cae por eso, pide la
+// lista sin esa columna y los bloques se muestran como antes. Desplegar y migrar son dos actos.
+const COMPANY_BASE_REGISTRY_SELECT_SIN_ANCLA = COMPANY_BASE_REGISTRY_SELECT
+  .split(',').filter(column => column !== 'decision_support_document_id').join(',');
+
+async function registryRows(database) {
+  const consulta = select => database.from('psi_agt002_company_evidence_registry')
+    .select(select).eq('current', true).eq('integration_active', true).order('entry_id');
+  const { data, error } = await consulta(COMPANY_BASE_REGISTRY_SELECT);
+  if (!error) return { rows: data || [], available: true };
+  if (TABLE_ABSENT_ERROR_CODES.includes(error.code)) return { rows: [], available: false };
+  if (!COLUMN_ABSENT_ERROR_CODES.includes(String(error.code))) throw error;
+  return optionalRows(consulta(COMPANY_BASE_REGISTRY_SELECT_SIN_ANCLA));
+}
+
 export async function loadCompanyBase(database) {
   const [registry, sites, experience] = await Promise.all([
-    optionalRows(database.from('psi_agt002_company_evidence_registry').select(COMPANY_BASE_REGISTRY_SELECT)
-      .eq('current', true).eq('integration_active', true).order('entry_id')),
+    registryRows(database),
     optionalRows(database.from('psi_company_sites').select(COMPANY_SITE_SELECT)
       .order('is_main', { ascending: false }).order('department')),
     optionalRows(database.from('psi_company_experience').select(COMPANY_EXPERIENCE_SELECT)
