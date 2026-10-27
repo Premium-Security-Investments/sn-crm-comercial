@@ -71,7 +71,7 @@ import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunBy
 import { agt003PreparationDate } from '../verticales/comercial/agt003-copilot-input.js';
 import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
-import { loadCompanyBase, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite } from '../company-base.js';
+import { loadCompanyBase, recordUploadAsVerification, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite } from '../company-base.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
 import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
 import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../verticales/licitaciones/tender-document-origin.js';
@@ -2698,7 +2698,18 @@ app.post('/api/tender-company-document-process-upload', async (req, res) => {
     const buffer = Buffer.from(await data.arrayBuffer());
     if (!buffer.length) throw clientInputError('El documento empresarial cargado está vacío.');
     if (buffer.length > RUP_MAX_BYTES) throw clientInputError('El documento empresarial supera 50MB.');
-    await recordCompanyProcurementDocument(database, { ...metadata, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
+    const recorded = await recordCompanyProcurementDocument(database, { ...metadata, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
+    // Quien carga decide: una persona que escoge el bloque y sube el archivo ya verificó. La ficha
+    // queda aprobada en el mismo acto, amarrada a ESTE documento, así que una versión nueva no
+    // hereda la aprobación. Si falla, la carga no se pierde: el documento ya quedó registrado.
+    await recordUploadAsVerification(database, {
+      entryId: metadata.documentType,
+      documentId: recorded?.id,
+      actorId: currentProfile.id,
+      actorName: currentProfile.full_name,
+      displayName: metadata.displayName,
+      issuedAt: metadata.issuedAt,
+    });
     if (metadata.documentType === 'rup') {
       const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
       const existing = await getTenderCompanyProfile(database);

@@ -4,9 +4,12 @@ import { assertAgt002CompanyEvidenceRegistryMinimalExposureSelect } from './vert
 // ya exponen estas columnas; aquí no se añade ninguna (sin source_reference, hash ni notas restringidas).
 export const COMPANY_BASE_REGISTRY_ALLOWED_COLUMNS = Object.freeze([
   'entry_id', 'document_class', 'existence_status', 'human_review_status', 'vigencia_text', 'expiry', 'current', 'integration_active',
+  // 159: identificador del documento que sustenta la decisión. Es el id de un documento que esta
+  // misma pantalla ya lista; no añade exposición y es lo que permite no heredar una aprobación.
+  'decision_support_document_id',
 ]);
 export const COMPANY_BASE_REGISTRY_SELECT = assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(
-  'entry_id,document_class,existence_status,human_review_status,vigencia_text,expiry,current,integration_active',
+  'entry_id,document_class,existence_status,human_review_status,vigencia_text,expiry,current,integration_active,decision_support_document_id',
   COMPANY_BASE_REGISTRY_ALLOWED_COLUMNS,
 );
 export const COMPANY_SITE_SELECT = 'id,department,city,address,is_main,supervigilancia_authorization,support_document_id,notes,source,updated_at';
@@ -82,7 +85,7 @@ const COMPANY_EVIDENCE_EXISTENCE = Object.freeze(['verified', 'reported', 'not_v
 // `decision_humana` se escribe y no se devuelve.
 export const COMPANY_EVIDENCE_DECISION_COLUMNS = Object.freeze([
   'existence_status', 'human_review_status', 'decision_humana', 'decision_humana_fecha',
-  'estado_posterior_decision', 'decision_humana_por',
+  'estado_posterior_decision', 'decision_humana_por', 'decision_support_document_id',
 ]);
 
 function isoDay(value) {
@@ -156,8 +159,19 @@ export function saveCompanySite(database, input, actorId) {
   return upsertRow(database, 'psi_company_sites', COMPANY_SITE_SELECT, text(input?.id, 36), cleanCompanySite(input), actorId);
 }
 
+async function currentSupportDocumentId(database, entryId) {
+  const { data, error } = await database.from('psi_company_procurement_documents')
+    .select('id').eq('document_type', entryId).eq('current', true).maybeSingle();
+  if (error) {
+    if (TABLE_ABSENT_ERROR_CODES.includes(error.code)) return null;
+    throw error;
+  }
+  return data?.id || null;
+}
+
 export async function saveCompanyEvidenceDecision(database, input, actorId, now = new Date()) {
   const { entryId, payload } = cleanCompanyEvidenceDecision(input, { actorId, now });
+  payload.decision_support_document_id = await currentSupportDocumentId(database, entryId);
   const { data, error } = await database.from('psi_agt002_company_evidence_registry')
     .update(payload).eq('entry_id', entryId).eq('current', true)
     .select(COMPANY_BASE_REGISTRY_SELECT).maybeSingle();
@@ -177,6 +191,40 @@ export async function saveCompanyEvidenceDecision(database, input, actorId, now 
   }
   if (!data) throw inputError('Esa ficha no existe o no es la versión vigente del registro.');
   return data;
+}
+
+// Decisión 1.3 del plan del 2026-10-27: si una persona carga el soporte, la verificación ya
+// ocurrió al escoger el bloque y subir el archivo. Pedirle después que firme lo que acaba de hacer
+// es lo que produjo la única decisión registrada hasta hoy, cuyo motivo escrito fue "Documento
+// adjunto". Un agente, en cambio, deduce tres cosas que pueden fallar en silencio, así que no
+// escribe decisión y el bloque queda "falta confirmar".
+export async function recordUploadAsVerification(database, { entryId, documentId, actorId, actorName, displayName, issuedAt }, now = new Date()) {
+  const entry = text(entryId, 80);
+  const document = text(documentId, 36);
+  const author = text(actorId, 36);
+  if (!entry || !document || !author) return null;
+  const quien = text(actorName, 120) || 'una persona del equipo';
+  const cuando = issuedAt ? ` expedido el ${text(issuedAt, 10)},` : '';
+  const payload = {
+    human_review_status: 'approved',
+    existence_status: 'verified',
+    decision_humana: `Soporte cargado por ${quien}:${cuando} ${text(displayName, 240) || 'documento sin nombre'}.`.slice(0, 500),
+    decision_humana_fecha: isoDay(now),
+    decision_humana_por: author,
+    estado_posterior_decision: 'Verificado al cargar el soporte',
+    decision_support_document_id: document,
+  };
+  // Nada de lo que pase aquí puede tumbar la carga: el documento ya quedó registrado, y perder
+  // la carga por no poder escribir la decisión es justo el defecto que costó cuatro archivos
+  // huérfanos. Si no se escribe, el bloque se muestra como "falta confirmar", que es la verdad.
+  try {
+    const { data, error } = await database.from('psi_agt002_company_evidence_registry')
+      .update(payload).eq('entry_id', entry).eq('current', true)
+      .select('entry_id').maybeSingle();
+    return error ? null : data;
+  } catch {
+    return null;
+  }
 }
 
 export function saveCompanyExperience(database, input, actorId) {
