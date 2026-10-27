@@ -145,3 +145,43 @@ test('el cuadro de texto está acotado y no empuja la tabla', () => {
   assert.match(bloque, /\.company-review-form textarea\{[^}]*width:100%/, 'el cuadro de texto se ajusta a su contenedor');
   assert.match(bloque, /\.company-review-form textarea\{[^}]*resize:vertical/, 'sólo se puede estirar hacia abajo, no a lo ancho');
 });
+
+// A1/A3 (plan del 2026-10-27): el segundo reloj y la acción siempre presente.
+// Antes el estado salía sólo de `expiry`, así que un documento con expedición y sin vencimiento
+// caía en "falta o sin verificar" — el caso del RUP, con su "Ver soporte" al lado.
+const { deriveCompanyBlock, readIssuedFromText } = await import('../src/tenders/companyBase.ts')
+  .catch(() => ({ deriveCompanyBlock: null, readIssuedFromText: null }));
+
+test('la fecha de expedición se lee del texto del registro, sin exigir plazo', { skip: !readIssuedFromText }, () => {
+  assert.equal(readIssuedFromText('Expedido 2026-06-17; el uso contractual exige certificado reciente'), '2026-06-17');
+  assert.equal(readIssuedFromText('Expedida 2026-06-22; vigencia práctica dependiente del pliego'), '2026-06-22');
+  assert.equal(readIssuedFromText('Sin caducidad general'), null);
+});
+
+test('un documento sin vencimiento envejece, no falta', { skip: !deriveCompanyBlock }, () => {
+  const ahora = new Date('2026-10-27T00:00:00Z');
+  const entrada = { entry_id: 'rup', document_class: 'RUP', existence_status: 'reported', human_review_status: 'pending_human_review', vigencia_text: 'Expedido 2026-06-17; el uso contractual exige certificado reciente' };
+  const conDocumento = deriveCompanyBlock(entrada, [{ current: true, document_type: 'rup', issued_at: '2026-09-28', expires_at: null, url: 'x' }], ahora);
+  assert.equal(conDocumento.state, 'al_dia', 'con soporte cargado deja de ser "falta o sin verificar"');
+  assert.equal(conDocumento.issuedAt, '2026-09-28');
+  assert.equal(conDocumento.issuedSource, 'documento', 'la fecha del documento manda sobre el texto del registro');
+  assert.equal(conDocumento.daysSinceIssued, 29);
+
+  const sinDocumento = deriveCompanyBlock(entrada, [], ahora);
+  assert.equal(sinDocumento.state, 'al_dia', 'la expedición del registro también cuenta como hecho conocido');
+  assert.equal(sinDocumento.issuedSource, 'registro');
+
+  const vacia = deriveCompanyBlock({ ...entrada, vigencia_text: 'Sin datos' }, [], ahora);
+  assert.equal(vacia.state, 'sin_verificar', 'sin documento y sin fecha sí es "falta"');
+  assert.equal(vacia.issuedAt, null);
+});
+
+test('con vencimiento se cuentan los días que faltan', { skip: !deriveCompanyBlock }, () => {
+  const ahora = new Date('2026-10-27T00:00:00Z');
+  const bloque = deriveCompanyBlock(
+    { entry_id: 'rce_policy', document_class: 'RCE', existence_status: 'reported', human_review_status: 'approved', vigencia_text: 'Póliza observada', expiry: '2027-02-06' },
+    [], ahora,
+  );
+  assert.equal(bloque.daysToExpiry, 102);
+  assert.equal(bloque.state, 'al_dia');
+});
