@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   COMPANY_BLOCK_STATE_LABELS, COMPANY_BLOCK_STATES, groupCompanyBlocks, parseFinancialIndicators, parseUnspscCodes,
-  type CompanyBlock, type CompanyBlockState, type CompanyExperience, type CompanySite,
+  type CompanyBlock, type CompanyBlockState, type CompanyEvidenceDecision, type CompanyExperience, type CompanySite,
 } from '../companyBase';
 import type { TenderCompanyProfile } from '../types';
 
@@ -40,7 +40,43 @@ function expiryLabel(block: CompanyBlock) {
   return `${prefix} ${formatDay(block.expiry)}${block.expirySource === 'calculada' ? ' (calculada, por confirmar)' : ''}`;
 }
 
-export function CompanyBlocksTable({ blocks, filter, onClearFilter }: { blocks: CompanyBlock[]; filter: CompanyBlockState | null; onClearFilter: () => void }) {
+// La decisión humana se escribe y no se lee de vuelta: la allowlist de mínima exposición del
+// registro (061) prohíbe leer `decision_humana`, así que la pantalla sólo muestra el veredicto.
+function CompanyReviewCell({ block, canDecide, onDecide }: {
+  block: CompanyBlock; canDecide: boolean; onDecide?: (decision: CompanyEvidenceDecision) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const decide = async (decision: 'approved' | 'rejected') => {
+    if (!onDecide || saving) return;
+    setSaving(true);
+    try {
+      await onDecide({ entry_id: block.entryId, decision, decision_humana: reason });
+      setOpen(false);
+      setReason('');
+    } finally { setSaving(false); }
+  };
+  if (!canDecide || !onDecide) return <>{block.review}</>;
+  if (!open) return <div className="company-review-cell"><span>{block.review}</span>
+    <button type="button" className="secondary" onClick={() => setOpen(true)}>{block.reviewPending ? 'Decidir' : 'Cambiar'}</button>
+  </div>;
+  return <div className="company-review-decision">
+    <label htmlFor={`review-reason-${block.entryId}`}>En qué se basa la decisión</label>
+    <textarea id={`review-reason-${block.entryId}`} rows={2} value={reason} maxLength={500} disabled={saving}
+      placeholder="Documento y fecha que se verificaron" onChange={event => setReason(event.target.value)} />
+    <div className="row-actions">
+      <button type="button" className="secondary" onClick={() => { setOpen(false); setReason(''); }} disabled={saving}>Cancelar</button>
+      <button type="button" onClick={() => void decide('rejected')} disabled={saving || !reason.trim()}>Rechazar</button>
+      <button type="button" onClick={() => void decide('approved')} disabled={saving || !reason.trim()}>Aprobar</button>
+    </div>
+  </div>;
+}
+
+export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = false, onDecide }: {
+  blocks: CompanyBlock[]; filter: CompanyBlockState | null; onClearFilter: () => void;
+  canDecide?: boolean; onDecide?: (decision: CompanyEvidenceDecision) => Promise<void>;
+}) {
   const groups = groupCompanyBlocks(blocks, filter);
   return <section className="panel company-base-blocks" aria-labelledby="company-blocks-heading">
     <header className="company-base-section-head"><div><span className="eyebrow">Bloques con vigencia y soporte</span><h3 id="company-blocks-heading">Documentos y requisitos habilitantes</h3><p>Sin fecha registrada, el bloque queda como "falta o sin verificar" hasta que una persona la confirme.</p></div>{filter && <button type="button" className="secondary" onClick={onClearFilter}>Ver todos</button>}</header>
@@ -54,7 +90,7 @@ export function CompanyBlocksTable({ blocks, filter, onClearFilter }: { blocks: 
             <td><span className={`company-block-state state-${block.state}`}>{COMPANY_BLOCK_STATE_LABELS[block.state]}</span></td>
             <td>{expiryLabel(block) && <strong className="company-block-expiry">{expiryLabel(block)}</strong>}<small>{block.vigenciaText || 'Sin vigencia registrada'}</small></td>
             <td>{block.supportDocument?.url ? <a href={block.supportDocument.url} target="_blank" rel="noreferrer">Ver soporte<span className="sr-only">: {block.name}</span></a> : block.supportLoaded ? 'Cargado' : <span className="muted">Sin soporte cargado</span>}</td>
-            <td>{block.review}</td>
+            <td><CompanyReviewCell block={block} canDecide={canDecide} onDecide={onDecide} /></td>
           </tr>)}
         </tbody>)}
       </table></div>}

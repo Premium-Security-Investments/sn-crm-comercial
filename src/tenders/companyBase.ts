@@ -94,8 +94,12 @@ export type CompanyBlock = {
   supportLoaded: boolean;
   supportDocument: TenderCompanyDocument | null;
   review: 'Aprobado' | 'Rechazado' | 'Pendiente';
+  reviewPending: boolean;
   porConfirmar: boolean;
 };
+
+/** Lo que la pantalla manda al decidir una ficha. `decision_humana` queda en la base y no se lee de vuelta. */
+export type CompanyEvidenceDecision = { entry_id: string; decision: 'approved' | 'rejected'; decision_humana: string };
 
 export function deriveCompanyBlock(entry: CompanyRegistryEntry, documents: TenderCompanyDocument[] = [], now = new Date()): CompanyBlock {
   const supportDocument = documents.find(document => document.current && document.document_type === entry.entry_id) || null;
@@ -124,6 +128,7 @@ export function deriveCompanyBlock(entry: CompanyRegistryEntry, documents: Tende
     supportLoaded: Boolean(supportDocument),
     supportDocument,
     review,
+    reviewPending: entry.human_review_status !== 'approved' && entry.human_review_status !== 'rejected',
     porConfirmar: expirySource !== 'registro' && expirySource !== 'documento',
   };
 }

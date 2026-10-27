@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { supabaseBrowser } from '../supabaseBrowser';
 import { loadCompanyBase, loadCompanyProcurementDocuments, loadCompanyProfile } from './api';
-import { deriveCompanyBlocks, summarizeCompanyBlocks, type CompanyBasePayload, type CompanyBlockState } from './companyBase';
+import { deriveCompanyBlocks, summarizeCompanyBlocks, type CompanyBasePayload, type CompanyBlockState, type CompanyEvidenceDecision } from './companyBase';
 import { CompanyBlocksTable, CompanyExperienceSection, CompanyFinancialSection, CompanySitesSection, CompanyStatusSummary } from './components/CompanyBaseSections';
 import { TenderCompanyDocuments } from './components/TenderCompanyDocuments';
 import { createTenderConfigurationActions } from './tenderConfigurationActions';
@@ -49,6 +49,7 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   const mutationActions = createTenderConfigurationActions({
     canConfigure,
+    canDecideEvidence: canManageDocuments,
     request,
     uploadToSignedUrl: (path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file),
   });
@@ -77,6 +78,15 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
   const blocks = useMemo(() => deriveCompanyBlocks(companyBase.registry, documents), [companyBase.registry, documents]);
   const summary = useMemo(() => summarizeCompanyBlocks(blocks), [blocks]);
   const reloadBase = async () => setCompanyBase(await loadCompanyBase(request));
+  const decideEvidence = async (decision: CompanyEvidenceDecision) => {
+    if (!canManageDocuments) return;
+    try {
+      await mutationActions.decideCompanyEvidence(decision);
+      await load();
+      setMessage(decision.decision === 'approved' ? 'Ficha aprobada en revisión humana.' : 'Ficha rechazada en revisión humana.');
+    } catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
+  };
+
   const saveSite = async (site: Parameters<typeof mutationActions.saveCompanySite>[0]) => { await mutationActions.saveCompanySite(site); await reloadBase(); setMessage('Sede guardada.'); };
   const saveExperience = async (row: Parameters<typeof mutationActions.saveCompanyExperience>[0]) => { await mutationActions.saveCompanyExperience(row); await reloadBase(); setMessage('Contrato guardado.'); };
 
@@ -200,7 +210,8 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
     {message && <div className="notice" role="status">{message}</div>}
 
     <CompanyStatusSummary counts={summary.counts} total={summary.total} withSupport={summary.withSupport} reviewed={summary.reviewed} filter={blockFilter} onFilter={setBlockFilter} />
-    <CompanyBlocksTable blocks={blocks} filter={blockFilter} onClearFilter={() => setBlockFilter(null)} />
+    <CompanyBlocksTable blocks={blocks} filter={blockFilter} onClearFilter={() => setBlockFilter(null)}
+      canDecide={canManageDocuments} onDecide={decideEvidence} />
     <CompanySitesSection sites={companyBase.sites} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveSite} />
     <CompanyExperienceSection experience={companyBase.experience} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveExperience} />
     <CompanyFinancialSection profile={persistedCompany} />
