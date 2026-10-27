@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   COMPANY_BLOCK_STATE_LABELS, COMPANY_BLOCK_STATES, groupCompanyBlocks, parseFinancialIndicators, parseUnspscCodes,
   type CompanyBlock, type CompanyBlockState, type CompanyEvidenceDecision, type CompanyExperience, type CompanySite,
@@ -42,33 +42,29 @@ function expiryLabel(block: CompanyBlock) {
 
 // La decisión humana se escribe y no se lee de vuelta: la allowlist de mínima exposición del
 // registro (061) prohíbe leer `decision_humana`, así que la pantalla sólo muestra el veredicto.
-function CompanyReviewCell({ block, canDecide, onDecide }: {
-  block: CompanyBlock; canDecide: boolean; onDecide?: (decision: CompanyEvidenceDecision) => Promise<void>;
+// El formulario va en una fila propia a todo el ancho: la columna "Revisión" es demasiado
+// angosta para un cuadro de texto y lo sacaba de la tabla.
+function CompanyReviewForm({ block, onDecide, onClose }: {
+  block: CompanyBlock; onDecide: (decision: CompanyEvidenceDecision) => Promise<void>; onClose: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { fieldRef.current?.focus(); }, []);
   const decide = async (decision: 'approved' | 'rejected') => {
-    if (!onDecide || saving) return;
+    if (saving || !reason.trim()) return;
     setSaving(true);
-    try {
-      await onDecide({ entry_id: block.entryId, decision, decision_humana: reason });
-      setOpen(false);
-      setReason('');
-    } finally { setSaving(false); }
+    try { await onDecide({ entry_id: block.entryId, decision, decision_humana: reason }); onClose(); }
+    finally { setSaving(false); }
   };
-  if (!canDecide || !onDecide) return <>{block.review}</>;
-  if (!open) return <div className="company-review-cell"><span>{block.review}</span>
-    <button type="button" className="secondary" onClick={() => setOpen(true)}>{block.reviewPending ? 'Decidir' : 'Cambiar'}</button>
-  </div>;
-  return <div className="company-review-decision">
-    <label htmlFor={`review-reason-${block.entryId}`}>En qué se basa la decisión</label>
-    <textarea id={`review-reason-${block.entryId}`} rows={2} value={reason} maxLength={500} disabled={saving}
+  return <div className="company-review-form">
+    <label htmlFor={`review-reason-${block.entryId}`}>En qué se basa la decisión sobre {block.name}</label>
+    <textarea id={`review-reason-${block.entryId}`} ref={fieldRef} rows={2} value={reason} maxLength={500} disabled={saving}
       placeholder="Documento y fecha que se verificaron" onChange={event => setReason(event.target.value)} />
     <div className="row-actions">
-      <button type="button" className="secondary" onClick={() => { setOpen(false); setReason(''); }} disabled={saving}>Cancelar</button>
-      <button type="button" onClick={() => void decide('rejected')} disabled={saving || !reason.trim()}>Rechazar</button>
-      <button type="button" onClick={() => void decide('approved')} disabled={saving || !reason.trim()}>Aprobar</button>
+      <button type="button" className="secondary" onClick={onClose} disabled={saving}>Cancelar</button>
+      <button type="button" className="secondary" onClick={() => void decide('rejected')} disabled={saving || !reason.trim()}>Rechazar</button>
+      <button type="button" onClick={() => void decide('approved')} disabled={saving || !reason.trim()}>{saving ? 'Guardando…' : 'Aprobar'}</button>
     </div>
   </div>;
 }
@@ -77,6 +73,8 @@ export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = 
   blocks: CompanyBlock[]; filter: CompanyBlockState | null; onClearFilter: () => void;
   canDecide?: boolean; onDecide?: (decision: CompanyEvidenceDecision) => Promise<void>;
 }) {
+  const [openEntry, setOpenEntry] = useState<string | null>(null);
+  const decidable = canDecide && Boolean(onDecide);
   const groups = groupCompanyBlocks(blocks, filter);
   return <section className="panel company-base-blocks" aria-labelledby="company-blocks-heading">
     <header className="company-base-section-head"><div><span className="eyebrow">Bloques con vigencia y soporte</span><h3 id="company-blocks-heading">Documentos y requisitos habilitantes</h3><p>Sin fecha registrada, el bloque queda como "falta o sin verificar" hasta que una persona la confirme.</p></div>{filter && <button type="button" className="secondary" onClick={onClearFilter}>Ver todos</button>}</header>
@@ -85,13 +83,24 @@ export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = 
         <thead><tr><th>Bloque</th><th>Estado</th><th>Vigencia</th><th>Soporte</th><th>Revisión</th></tr></thead>
         {groups.map(group => <tbody key={group.area}>
           <tr className="company-base-area"><th colSpan={5} scope="colgroup">{group.area}</th></tr>
-          {group.blocks.map(block => <tr key={block.entryId}>
+          {group.blocks.map(block => <Fragment key={block.entryId}>
+          <tr>
             <td><strong>{block.name}</strong></td>
             <td><span className={`company-block-state state-${block.state}`}>{COMPANY_BLOCK_STATE_LABELS[block.state]}</span></td>
             <td>{expiryLabel(block) && <strong className="company-block-expiry">{expiryLabel(block)}</strong>}<small>{block.vigenciaText || 'Sin vigencia registrada'}</small></td>
             <td>{block.supportDocument?.url ? <a href={block.supportDocument.url} target="_blank" rel="noreferrer">Ver soporte<span className="sr-only">: {block.name}</span></a> : block.supportLoaded ? 'Cargado' : <span className="muted">Sin soporte cargado</span>}</td>
-            <td><CompanyReviewCell block={block} canDecide={canDecide} onDecide={onDecide} /></td>
-          </tr>)}
+            <td>{decidable
+              ? <div className="company-review-cell"><span>{block.review}</span>
+                <button type="button" className="secondary" aria-expanded={openEntry === block.entryId}
+                  onClick={() => setOpenEntry(openEntry === block.entryId ? null : block.entryId)}>
+                  {block.reviewPending ? 'Decidir' : 'Cambiar'}
+                </button></div>
+              : block.review}</td>
+          </tr>
+          {decidable && openEntry === block.entryId && <tr className="company-review-row">
+            <td colSpan={5}><CompanyReviewForm block={block} onDecide={onDecide!} onClose={() => setOpenEntry(null)} /></td>
+          </tr>}
+          </Fragment>)}
         </tbody>)}
       </table></div>}
   </section>;

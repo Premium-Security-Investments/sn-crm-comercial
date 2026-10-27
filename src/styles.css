@@ -926,6 +926,16 @@ td.numeric-value{white-space:nowrap}
 .company-block-state{display:inline-flex;align-items:center;padding:4px 8px;border-radius:8px;font-size:11px;font-weight:900;white-space:nowrap}
 .company-block-state.state-al_dia{background:#dcfce7;color:#166534}.company-block-state.state-vence_pronto{background:#fef3c7;color:#92400e}.company-block-state.state-vencido{background:#fee2e2;color:#991b1b}.company-block-state.state-sin_verificar{background:#ede9fe;color:#5b21b6}
 .company-block-expiry{display:block;font-size:13px}
+.company-review-cell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.company-review-row>td{background:#f8fbff;border-top:0}
+.company-review-form{display:grid;gap:8px;max-width:620px}
+.company-review-form label{color:#40516b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.company-review-form textarea{width:100%;min-height:62px;resize:vertical;font-family:inherit;font-size:14px;line-height:1.4;padding:9px 11px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#10213d}
+.company-review-form textarea:focus{outline:2px solid #174ea6;outline-offset:1px;border-color:#174ea6}
+.company-review-form label{margin:0;padding:0}
+.company-review-form .row-actions{justify-content:flex-start;gap:8px;flex-wrap:wrap;margin-top:0}
+.company-review-form .row-actions{flex-direction:row;align-items:center}
+.company-review-form .row-actions>button{width:auto;flex:0 0 auto}
 .company-base-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .company-base-indicators{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0}
 .company-base-indicators>div{padding:10px;border-radius:12px;background:#f8fbff}

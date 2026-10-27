@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { readFileSync as read } from 'node:fs';
 import { cleanCompanyEvidenceDecision, COMPANY_EVIDENCE_DECISION_COLUMNS } from '../company-base.js';
 
 const migration061 = readFileSync(new URL('../supabase/migrations/061_agt002_company_evidence_registry.sql', import.meta.url), 'utf8');
@@ -115,4 +116,32 @@ test('una decisión registrada nombra a quien la tomó', async () => {
   assert.equal(rows[0].e, 'verified');
   assert.equal(rows[0].a, ACTOR);
   await pg.close();
+});
+
+// La primera versión puso el cuadro de texto dentro de la columna "Revisión", que es la más
+// angosta de la tabla: el formulario se salía de la tabla y obligaba a desplazarla en horizontal.
+// Además usaba clases que no existían en la hoja de estilos, así que se veía en crudo.
+const seccion = read(new URL('../src/tenders/components/CompanyBaseSections.tsx', import.meta.url), 'utf8');
+const hoja = read(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+test('el formulario de decisión va en una fila a todo el ancho, no en la celda angosta', () => {
+  assert.match(seccion, /className="company-review-row"[\s\S]{0,160}colSpan=\{5\}[\s\S]{0,120}CompanyReviewForm/,
+    'el formulario debe ir en su propia fila con colSpan sobre las cinco columnas');
+  const celda = seccion.slice(seccion.indexOf('className="company-review-cell"'), seccion.indexOf('company-review-row'));
+  assert.doesNotMatch(celda, /<textarea/, 'la celda de Revisión no puede contener el cuadro de texto');
+});
+
+test('toda clase company-review-* usada tiene estilo en la hoja', () => {
+  const usadas = [...new Set([...seccion.matchAll(/company-review-[a-z-]+/g)].map(match => match[0]))];
+  assert.ok(usadas.length >= 3, 'debe haber al menos la celda, la fila y el formulario');
+  for (const clase of usadas) {
+    assert.ok(hoja.includes(`.${clase}`), `falta el estilo de .${clase}: sin él la pantalla se ve en crudo`);
+  }
+});
+
+test('el cuadro de texto está acotado y no empuja la tabla', () => {
+  const bloque = hoja.slice(hoja.indexOf('.company-review-form{'), hoja.indexOf('.company-base-pair'));
+  assert.match(bloque, /\.company-review-form\{[^}]*max-width:/, 'el formulario debe tener ancho máximo');
+  assert.match(bloque, /\.company-review-form textarea\{[^}]*width:100%/, 'el cuadro de texto se ajusta a su contenedor');
+  assert.match(bloque, /\.company-review-form textarea\{[^}]*resize:vertical/, 'sólo se puede estirar hacia abajo, no a lo ancho');
 });
