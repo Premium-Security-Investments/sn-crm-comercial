@@ -71,7 +71,7 @@ import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunBy
 import { agt003PreparationDate } from '../verticales/comercial/agt003-copilot-input.js';
 import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
-import { loadCompanyBase, saveCompanyExperience, saveCompanySite } from '../company-base.js';
+import { loadCompanyBase, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite } from '../company-base.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
 import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
 import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../verticales/licitaciones/tender-document-origin.js';
@@ -486,6 +486,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/agt002-clarifications': ['tenders', ACTIONS.LICITACIONES_WORKBENCH_USE],
   // Punto 4 de las aclaraciones: guardar en la ficha de la empresa lo que es de la empresa. Escribe la ficha,
   // así que pide el permiso de la ficha, no el de la Mesa.
+  'POST /api/tender-company-evidence-decision': ['tenders', ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE],
   'POST /api/agt002-clarification-to-company-profile': ['tenders', ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
@@ -2720,6 +2721,14 @@ app.post('/api/tender-company-sites', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     res.status(req.body?.id ? 200 : 201).json(await saveCompanySite(requireDb(), req.body, currentProfile.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-evidence-decision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE);
+    res.json(await saveCompanyEvidenceDecision(requireDb(), req.body, currentProfile.id));
   } catch (error) { sendAuthError(res, error); }
 });
 

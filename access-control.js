@@ -35,6 +35,7 @@ export const ACTIONS = Object.freeze({
   LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_COMPANY_PROFILE_UPDATE: 'licitaciones.company_profile.update',
+  LICITACIONES_COMPANY_EVIDENCE_DECIDE: 'licitaciones.company_evidence.decide',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -367,6 +368,9 @@ export function can(profile, action, resource = {}) {
     case ACTIONS.LICITACIONES_CONVERT:
     case ACTIONS.LICITACIONES_CONFIGURE:
     case ACTIONS.LICITACIONES_WORKBENCH_CUSTODY:
+    // Decidir una ficha del registro de evidencia promueve un hecho de empresa a verificado:
+    // misma custodia que configurar, con acción propia para que quede auditable por separado.
+    case ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE:
       return canTenderCustodyAction(profile);
     case ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE:
       return canTenderCompanyProfileAction(profile);
