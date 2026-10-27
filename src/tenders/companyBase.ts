@@ -71,6 +71,13 @@ function addBusinessDays(start: Date, days: number) {
  * Estima un vencimiento sólo cuando el texto registrado trae fecha de expedición y plazo
  * ("Expedido 2026-06-19; vigencia declarada de 60 días"). Es un cálculo de pantalla, siempre "por confirmar".
  */
+// El segundo reloj. `estimateExpiryFromText` exige fecha Y plazo para calcular un vencimiento;
+// aquí sólo se quiere la expedición, que muchos bloques traen sin plazo alguno.
+export function readIssuedFromText(vigenciaText?: string | null): string | null {
+  const issued = /expedid[oa]\s+(\d{4}-\d{2}-\d{2})/i.exec(String(vigenciaText || ''));
+  return issued && parseDay(issued[1]) ? issued[1] : null;
+}
+
 export function estimateExpiryFromText(vigenciaText?: string | null): string | null {
   const textValue = String(vigenciaText || '');
   const issued = /expedid[oa]\s+(\d{4}-\d{2}-\d{2})/i.exec(textValue);
@@ -90,6 +97,10 @@ export type CompanyBlock = {
   state: CompanyBlockState;
   expiry: string | null;
   expirySource: 'registro' | 'documento' | 'calculada' | null;
+  issuedAt: string | null;
+  issuedSource: 'registro' | 'documento' | null;
+  daysToExpiry: number | null;
+  daysSinceIssued: number | null;
   vigenciaText: string;
   supportLoaded: boolean;
   supportDocument: TenderCompanyDocument | null;
@@ -111,10 +122,24 @@ export function deriveCompanyBlock(entry: CompanyRegistryEntry, documents: Tende
     const estimated = estimateExpiryFromText(entry.vigencia_text);
     if (estimated) { expiry = estimated; expirySource = 'calculada'; }
   }
+  let issuedAt: string | null = null;
+  let issuedSource: CompanyBlock['issuedSource'] = null;
+  if (parseDay(supportDocument?.issued_at)) { issuedAt = String(supportDocument?.issued_at).slice(0, 10); issuedSource = 'documento'; }
+  else {
+    const fromText = readIssuedFromText(entry.vigencia_text);
+    if (fromText) { issuedAt = fromText; issuedSource = 'registro'; }
+  }
+  const daysToExpiry = expiry ? Math.round((parseDay(expiry)!.getTime() - today(now).getTime()) / DAY_MS) : null;
+  const daysSinceIssued = issuedAt ? Math.round((today(now).getTime() - parseDay(issuedAt)!.getTime()) / DAY_MS) : null;
+
+  // `sin_verificar` vuelve a querer decir lo que dice: no hay con qué responder por el bloque.
+  // Un documento presente, o una fecha de expedición conocida, no es "falta": envejece, y eso lo
+  // cuenta la columna de vigencia. El color contra un pliego es otra capa y no vive aquí.
   let state: CompanyBlockState = 'sin_verificar';
   if (entry.existence_status !== 'not_verified' && expiry) {
-    const remaining = (parseDay(expiry)!.getTime() - today(now).getTime()) / DAY_MS;
-    state = remaining < 0 ? 'vencido' : remaining <= SOON_DAYS ? 'vence_pronto' : 'al_dia';
+    state = daysToExpiry! < 0 ? 'vencido' : daysToExpiry! <= SOON_DAYS ? 'vence_pronto' : 'al_dia';
+  } else if (entry.existence_status !== 'not_verified' && (supportDocument || issuedAt)) {
+    state = 'al_dia';
   }
   const review = entry.human_review_status === 'approved' ? 'Aprobado' : entry.human_review_status === 'rejected' ? 'Rechazado' : 'Pendiente';
   return {
@@ -124,6 +149,10 @@ export function deriveCompanyBlock(entry: CompanyRegistryEntry, documents: Tende
     state,
     expiry,
     expirySource,
+    issuedAt,
+    issuedSource,
+    daysToExpiry,
+    daysSinceIssued,
     vigenciaText: String(entry.vigencia_text || '').trim(),
     supportLoaded: Boolean(supportDocument),
     supportDocument,

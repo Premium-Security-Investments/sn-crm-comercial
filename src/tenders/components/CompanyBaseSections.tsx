@@ -34,10 +34,22 @@ export function CompanyStatusSummary({ counts, total, withSupport, reviewed, fil
   </section>;
 }
 
+// Dos relojes. Con vencimiento se cuenta lo que falta; sin él, lo que lleva emitido: un documento
+// sin caducidad no vence, envejece, y eso es lo que decide si hay que volver a pedirlo.
 function expiryLabel(block: CompanyBlock) {
   if (!block.expiry) return null;
   const prefix = block.state === 'vencido' ? 'Venció' : 'Vence';
-  return `${prefix} ${formatDay(block.expiry)}${block.expirySource === 'calculada' ? ' (calculada, por confirmar)' : ''}`;
+  const dias = block.daysToExpiry === null ? ''
+    : block.daysToExpiry < 0 ? ` — hace ${Math.abs(block.daysToExpiry)} ${Math.abs(block.daysToExpiry) === 1 ? 'día' : 'días'}`
+    : block.daysToExpiry === 0 ? ' — hoy'
+    : ` — faltan ${block.daysToExpiry} ${block.daysToExpiry === 1 ? 'día' : 'días'}`;
+  return `${prefix} ${formatDay(block.expiry)}${dias}${block.expirySource === 'calculada' ? ' (calculada, por confirmar)' : ''}`;
+}
+
+function issuedLabel(block: CompanyBlock) {
+  if (block.expiry || !block.issuedAt || block.daysSinceIssued === null) return null;
+  if (block.daysSinceIssued <= 0) return `Emitido hoy (${formatDay(block.issuedAt)})`;
+  return `Emitido hace ${block.daysSinceIssued} ${block.daysSinceIssued === 1 ? 'día' : 'días'} (${formatDay(block.issuedAt)})`;
 }
 
 // La decisión humana se escribe y no se lee de vuelta: la allowlist de mínima exposición del
@@ -88,11 +100,16 @@ export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = 
           <tr>
             <td><strong>{block.name}</strong></td>
             <td><span className={`company-block-state state-${block.state}`}>{COMPANY_BLOCK_STATE_LABELS[block.state]}</span></td>
-            <td>{expiryLabel(block) && <strong className="company-block-expiry">{expiryLabel(block)}</strong>}<small>{block.vigenciaText || 'Sin vigencia registrada'}</small></td>
-            <td>{block.supportDocument?.url ? <a href={block.supportDocument.url} target="_blank" rel="noreferrer">Ver soporte<span className="sr-only">: {block.name}</span></a>
-              : block.supportLoaded ? 'Cargado'
-              : onUploadSupport ? <button type="button" className="secondary" onClick={event => onUploadSupport(event.currentTarget, block.entryId)}>Cargar<span className="sr-only"> soporte de {block.name}</span></button>
-              : <span className="muted">Sin soporte cargado</span>}</td>
+            <td>{(expiryLabel(block) || issuedLabel(block)) && <strong className="company-block-expiry">{expiryLabel(block) || issuedLabel(block)}</strong>}<small>{block.vigenciaText || 'Sin vigencia registrada'}</small></td>
+            <td><div className="company-support-cell">
+              {block.supportDocument?.url ? <a href={block.supportDocument.url} target="_blank" rel="noreferrer">Ver soporte<span className="sr-only">: {block.name}</span></a>
+                : block.supportLoaded ? <span>Cargado</span>
+                : <span className="muted">Sin soporte</span>}
+              {/* La renovación periódica era justo el caso sin botón: con documento no había acción. */}
+              {onUploadSupport && <button type="button" className="secondary" onClick={event => onUploadSupport(event.currentTarget, block.entryId)}>
+                {block.supportLoaded ? 'Actualizar' : 'Cargar'}<span className="sr-only"> el soporte de {block.name}</span>
+              </button>}
+            </div></td>
             <td>{decidable
               ? <div className="company-review-cell"><span>{block.review}</span>
                 <button type="button" className="secondary" aria-expanded={openEntry === block.entryId}
