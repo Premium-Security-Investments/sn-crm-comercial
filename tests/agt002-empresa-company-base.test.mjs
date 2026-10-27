@@ -122,7 +122,7 @@ test('endpoints: lectura con permiso de ver, escritura con permiso de configurar
 test('la vista Empresa ya no muestra el informe pegado y conserva carga de RUP y documentos', () => {
   const view = read('../src/tenders/TenderConfigurationView.tsx');
   assert.doesNotMatch(view, /Información útil para cruzar contra pliegos|key: 'useful_company_info'/);
-  for (const marker of ['CompanyStatusSummary', 'CompanyBlocksTable', 'CompanySitesSection', 'CompanyExperienceSection', 'CompanyFinancialSection', 'Actualizar RUP', 'Añadir documento empresarial', 'TenderCompanyDocuments']) assert.ok(view.includes(marker), marker);
+  for (const marker of ['CompanyStatusSummary', 'CompanyBlocksTable', 'CompanySitesSection', 'CompanyExperienceSection', 'CompanyFinancialSection', 'Actualizar RUP', 'Actualizar documento empresarial', 'TenderCompanyDocuments']) assert.ok(view.includes(marker), marker);
   const order = ['<CompanyStatusSummary', '<CompanyBlocksTable', '<CompanySitesSection', '<CompanyExperienceSection', '<CompanyFinancialSection'].map(marker => view.indexOf(marker));
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'orden: resumen, bloques, sedes, experiencia, indicadores');
 });
