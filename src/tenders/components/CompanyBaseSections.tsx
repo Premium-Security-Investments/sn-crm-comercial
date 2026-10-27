@@ -69,9 +69,10 @@ function CompanyReviewForm({ block, onDecide, onClose }: {
   </div>;
 }
 
-export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = false, onDecide }: {
+export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = false, onDecide, onUploadSupport }: {
   blocks: CompanyBlock[]; filter: CompanyBlockState | null; onClearFilter: () => void;
   canDecide?: boolean; onDecide?: (decision: CompanyEvidenceDecision) => Promise<void>;
+  onUploadSupport?: (trigger: HTMLButtonElement, presetType: string) => void;
 }) {
   const [openEntry, setOpenEntry] = useState<string | null>(null);
   const decidable = canDecide && Boolean(onDecide);
@@ -88,7 +89,10 @@ export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = 
             <td><strong>{block.name}</strong></td>
             <td><span className={`company-block-state state-${block.state}`}>{COMPANY_BLOCK_STATE_LABELS[block.state]}</span></td>
             <td>{expiryLabel(block) && <strong className="company-block-expiry">{expiryLabel(block)}</strong>}<small>{block.vigenciaText || 'Sin vigencia registrada'}</small></td>
-            <td>{block.supportDocument?.url ? <a href={block.supportDocument.url} target="_blank" rel="noreferrer">Ver soporte<span className="sr-only">: {block.name}</span></a> : block.supportLoaded ? 'Cargado' : <span className="muted">Sin soporte cargado</span>}</td>
+            <td>{block.supportDocument?.url ? <a href={block.supportDocument.url} target="_blank" rel="noreferrer">Ver soporte<span className="sr-only">: {block.name}</span></a>
+              : block.supportLoaded ? 'Cargado'
+              : onUploadSupport ? <button type="button" className="secondary" onClick={event => onUploadSupport(event.currentTarget, block.entryId)}>Cargar<span className="sr-only"> soporte de {block.name}</span></button>
+              : <span className="muted">Sin soporte cargado</span>}</td>
             <td>{decidable
               ? <div className="company-review-cell"><span>{block.review}</span>
                 <button type="button" className="secondary" aria-expanded={openEntry === block.entryId}

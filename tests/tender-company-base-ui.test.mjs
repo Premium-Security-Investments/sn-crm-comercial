@@ -11,7 +11,7 @@ const styles = read('src/styles.css');
 
 for (const marker of [
   'Base empresarial de licitaciones', 'persistedCompany', 'draftCompany', 'const [editing', 'Editar información',
-  'Cancelar', 'Guardar cambios', 'loadCompanyProcurementDocuments', 'Actualizar RUP', 'Añadir documento empresarial',
+  'Cancelar', 'Guardar cambios', 'loadCompanyProcurementDocuments', 'Actualizar RUP', 'Actualizar documento empresarial',
   'role="dialog"', 'aria-modal="true"', "event.key === 'Escape'", 'restoreFocus',
 ]) assert.ok(configuration.includes(marker), `TenderConfigurationView missing marker: ${marker}`);
 
@@ -21,8 +21,15 @@ assert.match(configuration, /catch \(cause\)[\s\S]*setMessage[\s\S]*finally/, 'L
 assert.match(configuration, /const cancelEditing[\s\S]*setDraftCompany\(persistedCompany\)[\s\S]*setEditing\(false\)/, 'Cancelar restaura la copia persistida y vuelve a consulta.');
 assert.match(configuration, /issuedAt[\s\S]*required/, 'La expedición debe exigirse cuando el API la requiere.');
 assert.match(configuration, /Promise\.allSettled\([\s\S]*loadCompanyProfile[\s\S]*loadCompanyProcurementDocuments/, 'Perfil e inventario deben cargarse de forma independiente.');
-assert.match(configuration, /uploadRup\(uploadFile\)[\s\S]*setUploadDialog\(null\)[\s\S]*loadCompanyProcurementDocuments[\s\S]*catch/, 'Una carga RUP persistida debe cerrar el diálogo antes del refresh no bloqueante.');
-assert.match(configuration, /RUP cargado[\s\S]*inventario/, 'El fallo de refresh debe comunicarse como advertencia posterior, no como fallo de carga.');
+// Un solo camino de carga (2026-10-27). El RUP entra por el mismo formulario con el bloque
+// preseleccionado, para que el documento quede siempre ligado a su ficha y para que el registro
+// del documento ocurra antes de releer el PDF: si el releído falla, la carga no se pierde.
+assert.doesNotMatch(configuration, /uploadRup\(/, 'La vista ya no usa la ruta propia del RUP: hay un solo camino de carga.');
+assert.match(configuration, /openUploadDialog\(event\.currentTarget, 'rup'\)/, 'El botón del RUP abre el formulario único con su bloque preseleccionado.');
+assert.match(configuration, /onUploadSupport=\{canManageDocuments && !editing \? openUploadDialog : undefined\}/, 'Cada bloque sin soporte debe poder cargarlo desde su propia fila.');
+assert.match(configuration, /if \(presetType\) setDocumentType\(presetType\)/, 'Abrir desde una fila preselecciona el bloque, para que nada quede desligado.');
+assert.match(configuration, /companyBase\.registry\.map\(entry => <option/, 'Los tipos de documento son las fichas del registro, no una lista genérica aparte.');
+assert.match(configuration, /RUP cargado y ficha corporativa actualizada/, 'Cargar el RUP debe confirmar que la ficha corporativa se releyó.');
 assert.match(configuration, /openUploadDialog[\s\S]*!canManageDocuments \|\| editing/, 'No se debe abrir una carga sin custodia documental ni mientras existe un borrador empresarial activo.');
 assert.equal((configuration.match(/disabled=\{editing\}/g) || []).length, 2, 'Actualizar RUP y Añadir documento deben bloquearse durante la edición.');
 
