@@ -311,3 +311,67 @@ test('si nadie pide datos de Avancys, no se abre sesión contra Odoo', async () 
   await resolverParaLector(null, { lector: 'agt003.copiloto', nombres: ['dato.inexistente'], entorno, fetchImpl });
   assert.equal(intentos, 0);
 });
+
+// ---- El cableado del copiloto comercial ----
+//
+// Estático, y por una razón: el cableado vive en los dos archivos de backend de 560 kB que deben
+// quedar idénticos (`check:backend-parity`), y no se pueden importar sin levantar el servidor.
+// Lo que se fija aquí es lo que se rompería en silencio: que la fuente esté en la lista del lector,
+// que el NIT se lea de donde vive, y que no se lea de donde no está.
+
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const BACKENDS = ['server/index.js', 'api/[...path].js'];
+const leer = rel => readFileSync(resolve(raiz, rel), 'utf8');
+
+test('los dos archivos de backend siguen siendo idénticos', () => {
+  const [uno, dos] = BACKENDS.map(leer);
+  assert.equal(uno, dos, 'server/index.js y api/[...path].js deben quedar byte a byte iguales');
+});
+
+test('el copiloto comercial pide la fuente de Avancys, en los dos backends', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    const lista = /const AGT003_COPILOTO_FUENTES = Object\.freeze\(\[([^\]]*)\]\)/.exec(texto);
+    assert.ok(lista, `${archivo}: no se encontró la lista de fuentes del copiloto`);
+    assert.match(lista[1], /'operacion\.puestos_del_cliente'/, archivo);
+    // Las que ya tenía no se pierden.
+    assert.match(lista[1], /'empresa\.identidad'/, archivo);
+    assert.match(lista[1], /'empresa\.sedes'/, archivo);
+    // La otra dirección de la llave necesita un código de puesto, que el copiloto no tiene de
+    // dónde sacar: declarada sí, pedida no. Pedirla sería ruido en cada respuesta.
+    assert.doesNotMatch(lista[1], /'operacion\.cliente_del_puesto'/, archivo);
+  }
+});
+
+test('el NIT se lee de la tabla, que es donde vive, y no de la vista enriquecida', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    const fn = /async function loadAgt003OpportunityClientNit\(database, opportunityId\) \{[\s\S]*?\n\}/.exec(texto);
+    assert.ok(fn, `${archivo}: falta el lector del NIT`);
+    const cuerpo = fn[0];
+    // `company_nit` está en psi_sales_opportunities (migración 113) y NO en
+    // v_psi_sales_opportunity_enriched. Pedirlo a la vista devolvería 42703 y el NIT saldría
+    // siempre nulo, con la fuente siempre no_verificada y sin que nada fallara a la vista.
+    assert.match(cuerpo, /from\('psi_sales_opportunities'\)/, archivo);
+    assert.match(cuerpo, /select\('company_nit'\)/, archivo);
+    assert.doesNotMatch(cuerpo, /v_psi_sales_opportunity_enriched/, archivo);
+    // Falla blanda: una oportunidad sin NIT, o una consulta caída, no impiden el borrador.
+    assert.match(cuerpo, /if \(error\) return null;/, archivo);
+    assert.match(cuerpo, /catch \{\s*return null;/, archivo);
+    assert.ok(!/\bmust\(/.test(cuerpo), `${archivo}: el lector del NIT no debe lanzar`);
+  }
+});
+
+test('el resolvedor del copiloto espera el NIT antes de preguntarle al catálogo', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    const bloque = /resolveSources: async \(\{ opportunityId \} = \{\}\) => resolverParaLector\(database, \{[\s\S]*?\}\),/.exec(texto);
+    assert.ok(bloque, `${archivo}: el resolvedor del copiloto no recibe la oportunidad`);
+    assert.match(bloque[0], /lector: 'agt003\.copiloto'/, archivo);
+    assert.match(bloque[0], /clienteIdentificacion: await loadAgt003OpportunityClientNit\(database, opportunityId\)/, archivo);
+  }
+});

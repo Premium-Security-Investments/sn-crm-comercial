@@ -159,10 +159,20 @@ export function createAgt003CopilotEngine({
   // El mismo catálogo que usa la Mesa, con otro lector. El copiloto comercial no sabía ni cómo
   // se llama la empresa: su único campo de empresa es el nombre del CLIENTE. Si el catálogo falla,
   // el copiloto responde igual y sin esas fuentes, para que lo declare en vez de inventarlo.
+  //
+  // Desde el 2026-10-28 también recibe lo que ese cliente ya tiene con nosotros en Avancys. Antes
+  // podía redactarle a una empresa a la que ya le cuidamos puestos y escribir como si fuera el
+  // primer contacto.
   async function resolverFuentes(request) {
     if (!resolveSources) return [];
     try {
-      const resueltas = await resolveSources({ capabilityId: request.capability_id });
+      // Va también la oportunidad, porque hay fuentes que dependen de a quién le estamos
+      // escribiendo: la del cliente en Avancys necesita su NIT, y el NIT no viaja en la petición
+      // —el contrato es cerrado y no se toca—, así que lo resuelve quien atiende, por el id.
+      const resueltas = await resolveSources({
+        capabilityId: request.capability_id,
+        opportunityId: request.opportunity?.opportunity_id ?? null,
+      });
       return minimizarFuentes(resueltas, {
         sanitizar: (texto, max) => redactAgt003CopilotText(texto).slice(0, max),
       });

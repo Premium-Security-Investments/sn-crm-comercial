@@ -66,7 +66,10 @@ import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003Copi
 import { resolverParaLector } from '../catalogo-fuentes.js';
 
 // Lo que el copiloto comercial recibe resuelto antes de cada corrida. Crece una línea por entrada.
-const AGT003_COPILOTO_FUENTES = Object.freeze(['empresa.identidad', 'empresa.sedes']);
+// Lo que el copiloto comercial recibe del catálogo antes de redactar. `operacion.puestos_del_cliente`
+// entró el 2026-10-28: lo que ese cliente ya tiene con nosotros en Avancys, para no escribirle como
+// si fuera el primer contacto a una empresa a la que ya le cuidamos puestos.
+const AGT003_COPILOTO_FUENTES = Object.freeze(['empresa.identidad', 'empresa.sedes', 'operacion.puestos_del_cliente']);
 import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../verticales/comercial/agt003-copilot-persistence.js';
 import { agt003PreparationDate } from '../verticales/comercial/agt003-copilot-input.js';
 import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
@@ -3388,6 +3391,31 @@ async function resolveAgt003OpportunityResource(database, opportunityId, profile
   return crmResource(opportunity.owner_id, authorized);
 }
 
+// El NIT del cliente de la oportunidad, para preguntarle a Avancys qué tiene ya con nosotros.
+//
+// Vive en `psi_sales_opportunities.company_nit` (migración 113) y es OPCIONAL: no cuenta para el
+// perfil completo, así que muchas oportunidades no lo tienen. Tampoco está en la vista enriquecida
+// —se lee aparte, como dice esa migración—, y por eso no viaja en el contexto del copiloto.
+//
+// Falla en silencio a `null` a propósito: sin NIT el catálogo sirve la fuente como `no_verificado`
+// y escribe por qué. Una oportunidad sin NIT, o un fallo de esta consulta, no deben impedir que el
+// comercial reciba su borrador.
+async function loadAgt003OpportunityClientNit(database, opportunityId) {
+  if (typeof opportunityId !== 'string' || opportunityId.trim() === '') return null;
+  try {
+    const { data, error } = await database
+      .from('psi_sales_opportunities')
+      .select('company_nit')
+      .eq('id', opportunityId)
+      .maybeSingle();
+    if (error) return null;
+    const nit = typeof data?.company_nit === 'string' ? data.company_nit.trim() : '';
+    return nit === '' ? null : nit;
+  } catch {
+    return null;
+  }
+}
+
 async function loadAgt003OpportunityContext(database, opportunityId, now = () => new Date()) {
   const row = await must(database.from('v_psi_sales_opportunity_enriched').select(VIGIA_COPILOT_OPPORTUNITY_SELECT).eq('id', opportunityId).single());
   const interactions = await must(database.from('psi_sales_interactions')
@@ -3470,9 +3498,10 @@ function createBackendAgt003CopilotApi(database) {
       model,
       // Catálogo de fuentes, segundo lector: el copiloto comercial recibe quiénes somos y dónde
       // tenemos presencia autorizada. Antes su único campo de empresa era el nombre del CLIENTE.
-      resolveSources: () => resolverParaLector(database, {
+      resolveSources: async ({ opportunityId } = {}) => resolverParaLector(database, {
         lector: 'agt003.copiloto',
         nombres: AGT003_COPILOTO_FUENTES,
+        clienteIdentificacion: await loadAgt003OpportunityClientNit(database, opportunityId),
       }),
     }),
     recordRun: options => recordAgt003CopilotRun(database, options),

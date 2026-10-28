@@ -72,6 +72,19 @@ test('el resolvedor recibe la capacidad, para poder servir distinto a cada una',
   assert.equal(vistos[0].capabilityId, PETICION.capability_id);
 });
 
+test('el resolvedor recibe también la oportunidad: hay fuentes que dependen del cliente', async () => {
+  const vistos = [];
+  const { engine, visto } = motor({ resolveSources: async (contexto) => { vistos.push(contexto); return []; } });
+  await engine.draft(PETICION);
+  // El NIT del cliente no viaja en la petición —el contrato es cerrado—, así que quien atiende lo
+  // resuelve por este id. Sin él, la fuente de Avancys no se podría pedir.
+  assert.equal(vistos[0].opportunityId, PETICION.opportunity.opportunity_id);
+  // Y el contrato sigue intacto: pasar la oportunidad al resolvedor no la agrega a la petición.
+  for (const clave of Object.keys(PETICION)) {
+    assert.deepEqual(visto[0].input[clave], PETICION[clave], clave);
+  }
+});
+
 test('si el catálogo falla, el copiloto corre igual y sin esas fuentes', async () => {
   const { engine, visto } = motor({ resolveSources: async () => { throw new Error('caído'); } });
   const salida = await engine.draft(PETICION);
