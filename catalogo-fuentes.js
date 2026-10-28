@@ -47,26 +47,102 @@ export function peorEstado(estados) {
 
 // El registro de datos. `responsable` es quien responde por que el dato sea cierto —una persona,
 // nunca una aplicación—; un dato sin responsable se sirve como no_verificado aunque tenga fuente.
+// ---------------------------------------------------------------------------------------------
+// Sensibilidad: cuánto daño hace un dato si se filtra o si alguien lo repite donde no debe.
+//
+// No es lo mismo que el permiso. El permiso dice QUIÉN puede abrir la fuente; la sensibilidad dice
+// QUÉ se puede hacer con el dato una vez abierto. Para calcular el costo de un puesto hay que leer
+// el salario de quien lo cubre: el agente necesita el dato y a la vez no debe poder escribir
+// "fulano gana tanto". Un permiso no sabe decir eso; una clasificación sí.
+// ---------------------------------------------------------------------------------------------
+export const SENSIBILIDADES = Object.freeze({
+  PUBLICA: 'publica',          // ya es público por ley o por publicación: NIT, RUP, procesos de SECOP
+  INTERNA: 'interna',          // cifras del negocio; no son secretas pero no salen de la empresa
+  RESTRINGIDA: 'restringida',  // le sirve a un competidor: tarifas, márgenes, estrategia
+  PERSONAL: 'personal',        // datos de personas identificadas; Ley 1581 de 2012
+});
+
+// La más sensible gana, igual que el peor estado gana. Una respuesta armada con tres datos, uno de
+// ellos personal, queda marcada como personal entera: no se puede desagregar de vuelta.
+const ORDEN_DE_SENSIBILIDAD = Object.freeze([
+  SENSIBILIDADES.PUBLICA, SENSIBILIDADES.INTERNA, SENSIBILIDADES.RESTRINGIDA, SENSIBILIDADES.PERSONAL,
+]);
+
+export function sensibilidadCompuesta(sensibilidades) {
+  const presentes = (Array.isArray(sensibilidades) ? sensibilidades : [])
+    .filter(s => ORDEN_DE_SENSIBILIDAD.includes(s));
+  if (presentes.length === 0) return SENSIBILIDADES.PERSONAL; // sin declarar, se trata como lo más delicado
+  return presentes.reduce((peor, actual) => (
+    ORDEN_DE_SENSIBILIDAD.indexOf(actual) > ORDEN_DE_SENSIBILIDAD.indexOf(peor) ? actual : peor
+  ));
+}
+
+// Cómo se trae una fuente. No es un detalle de implementación: cambia lo que la respuesta puede
+// sostener. Una búsqueda devuelve pasajes para citar, nunca una cifra.
+export const RECUPERACION = Object.freeze({
+  DIRECTA: 'directa',      // una fila nuestra; milisegundos
+  DESTILADO: 'destilado',  // el análisis que ya se hizo una vez sobre los documentos
+  LEXICA: 'lexica',        // búsqueda por coincidencia de palabras
+  VECTORIAL: 'vectorial',  // búsqueda semántica
+});
+
+export const DEVUELVE = Object.freeze({ VALOR: 'valor', PASAJE_CON_CITA: 'pasaje_con_cita' });
+
+// ---------------------------------------------------------------------------------------------
+// Los diez dominios de la empresa, con su sensibilidad. Clasificación propuesta por el agente y
+// aprobada por Juan el 2026-10-28. El dueño es de cada área y casi todos están sin declarar: un
+// dominio sin dueño sirve sus datos como no_verificado, por mucha fuente que tenga.
+// ---------------------------------------------------------------------------------------------
+export const DOMINIOS = Object.freeze({
+  'empresa':        Object.freeze({ sensibilidad: SENSIBILIDADES.PUBLICA,     fuente: 'CRM',          responsable: 'Katherine' }),
+  'clientes':       Object.freeze({ sensibilidad: SENSIBILIDADES.INTERNA,     fuente: 'Avancys',      responsable: null }),
+  'contratos':      Object.freeze({ sensibilidad: SENSIBILIDADES.RESTRINGIDA, fuente: 'Avancys',      responsable: null }),
+  'puestos':        Object.freeze({ sensibilidad: SENSIBILIDADES.INTERNA,     fuente: 'Avancys',      responsable: null }),
+  'tarifas':        Object.freeze({ sensibilidad: SENSIBILIDADES.RESTRINGIDA, fuente: 'Avancys',      responsable: null }),
+  'facturacion':    Object.freeze({ sensibilidad: SENSIBILIDADES.RESTRINGIDA, fuente: 'Avancys',      responsable: null }),
+  'personal':       Object.freeze({ sensibilidad: SENSIBILIDADES.PERSONAL,    fuente: 'Avancys',      responsable: null }),
+  'programacion':   Object.freeze({ sensibilidad: SENSIBILIDADES.PERSONAL,    fuente: 'Programacion', responsable: null }),
+  'operacion':      Object.freeze({ sensibilidad: SENSIBILIDADES.PERSONAL,    fuente: 'SecurityOps',  responsable: 'Fabián' }),
+  'comercial':      Object.freeze({ sensibilidad: SENSIBILIDADES.RESTRINGIDA, fuente: 'CRM',          responsable: 'Katherine' }),
+});
+
+export function dominioDeclarado(nombre) {
+  return Object.prototype.hasOwnProperty.call(DOMINIOS, nombre) ? DOMINIOS[nombre] : null;
+}
+
+/** Un dato hereda la sensibilidad de su dominio salvo que declare la suya, más alta o más baja. */
+export function sensibilidadDelDato(nombre) {
+  const dato = datoDeclarado(nombre);
+  if (!dato) return SENSIBILIDADES.PERSONAL;
+  if (dato.sensibilidad) return dato.sensibilidad;
+  const dominio = dominioDeclarado(dato.dominio);
+  return dominio ? dominio.sensibilidad : SENSIBILIDADES.PERSONAL;
+}
+
 export const DATOS = Object.freeze({
   'empresa.identidad': Object.freeze({
+    dominio: 'empresa',
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
     fuentes: Object.freeze(['psi_company_procurement_profile']),
     lectores: Object.freeze(['agt002.mesa', 'agt002.analisis', 'agt003.copiloto']),
   }),
   'empresa.codigos_rup': Object.freeze({
+    dominio: 'empresa',
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
     fuentes: Object.freeze(['psi_company_rup_codes']),
     lectores: Object.freeze(['agt002.mesa', 'agt002.analisis']),
   }),
   'empresa.sedes': Object.freeze({
+    dominio: 'empresa',
     estado: ESTADOS.VIGENTE,
     responsable: 'Juan',
     fuentes: Object.freeze(['psi_company_sites']),
     lectores: Object.freeze(['agt002.mesa', 'agt002.analisis', 'agt003.copiloto']),
   }),
   'analisis.canonico.company_fit': Object.freeze({
+    dominio: 'comercial',
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
     fuentes: Object.freeze(['psi_tender_analysis_runs.result.company_fit']),
@@ -332,6 +408,7 @@ export function minimizarFuentes(fuentes, { sanitizar, maxFuentes = 10, maxValor
   return Object.freeze((Array.isArray(fuentes) ? fuentes : []).slice(0, maxFuentes).map(fuente => Object.freeze({
     nombre: fuente.nombre,
     estado: fuente.estado,
+    sensibilidad: fuente.sensibilidad || null,
     as_of: fuente.as_of,
     vence_el: fuente.vence_el,
     requiere_interpretacion: fuente.requiere_interpretacion === true,
@@ -365,6 +442,8 @@ export async function resolverParaLector(database, { lector, nombres, tenderId =
     const declarado = datoDeclarado(nombre);
     resueltos.push(Object.freeze({
       ...resuelto,
+      sensibilidad: sensibilidadDelDato(nombre),
+      dominio: declarado.dominio || null,
       estado: peorEstado([resuelto.estado, declarado.responsable ? ESTADOS.VIGENTE : ESTADOS.NO_VERIFICADO]),
       responsable: declarado.responsable || null,
     }));
