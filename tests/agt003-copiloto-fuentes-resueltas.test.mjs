@@ -85,6 +85,26 @@ test('el resolvedor recibe también la oportunidad: hay fuentes que dependen del
   }
 });
 
+test('queda registrado qué fuentes llegaron y en qué estado, sin un solo valor', async () => {
+  const registros = [];
+  const original = console.info;
+  console.info = (evento, datos) => { if (evento === 'agt003_copilot_fuentes') registros.push(datos); };
+  try {
+    const { engine } = motor({ resolveSources: async () => [IDENTIDAD] });
+    await engine.draft(PETICION);
+  } finally {
+    console.info = original;
+  }
+  assert.equal(registros.length, 1);
+  assert.equal(registros[0].capability_id, PETICION.capability_id);
+  assert.deepEqual(registros[0].fuentes.map(f => f.nombre), ['empresa.identidad']);
+  assert.ok('estado' in registros[0].fuentes[0]);
+  assert.ok('sostiene_afirmacion' in registros[0].fuentes[0]);
+  // Lo que NO puede viajar: el valor de la fuente, que es donde están los datos del cliente.
+  assert.doesNotMatch(JSON.stringify(registros[0]), /SEGURIDAD NACIONAL LIMITADA/);
+  assert.ok(!('valor' in registros[0].fuentes[0]), 'el valor de la fuente no debe quedar en el registro');
+});
+
 test('si el catálogo falla, el copiloto corre igual y sin esas fuentes', async () => {
   const { engine, visto } = motor({ resolveSources: async () => { throw new Error('caído'); } });
   const salida = await engine.draft(PETICION);

@@ -173,9 +173,24 @@ export function createAgt003CopilotEngine({
         capabilityId: request.capability_id,
         opportunityId: request.opportunity?.opportunity_id ?? null,
       });
-      return minimizarFuentes(resueltas, {
+      const minimizadas = minimizarFuentes(resueltas, {
         sanitizar: (texto, max) => redactAgt003CopilotText(texto).slice(0, max),
       });
+      // Qué fuentes llegaron y en qué estado. Sin esto una fuente puede degradarse a
+      // `no_verificado` —Avancys sin configurar, una oportunidad sin NIT, el ERP caído— y no
+      // quedar rastro: el copiloto responde igual y nadie se entera de que respondió con menos.
+      // Que el borrador no mencione una fuente no prueba nada: el modelo no está obligado a usarla.
+      // Viajan sólo el nombre y el estado; ningún valor, que es donde están los datos del cliente.
+      console.info('agt003_copilot_fuentes', {
+        event: 'agt003_copilot_fuentes',
+        capability_id: request.capability_id,
+        fuentes: minimizadas.map(fuente => ({
+          nombre: fuente.nombre,
+          estado: fuente.estado,
+          sostiene_afirmacion: fuente.sostiene_afirmacion,
+        })),
+      });
+      return minimizadas;
     } catch (error) {
       console.warn('agt003_copilot_sources_unresolved', {
         event: 'agt003_copilot_sources_unresolved',
