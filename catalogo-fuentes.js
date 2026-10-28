@@ -14,6 +14,8 @@
 // Un agente pide por nombre y nunca sabe en qué tabla está el dato. Lo que crece es el catálogo,
 // no el contrato de la Mesa.
 
+import { crearLectorAvancys } from './avancys-odoo-lectura.js';
+
 export const ESTADOS = Object.freeze({
   VIGENTE: 'vigente',
   EN_DISPUTA: 'en_disputa',
@@ -148,7 +150,33 @@ export const DATOS = Object.freeze({
     fuentes: Object.freeze(['psi_tender_analysis_runs.result.company_fit']),
     lectores: Object.freeze(['agt002.mesa']),
   }),
+  // La llave puesto↔cliente, las dos direcciones. Es el dato que no existía en ningún sistema
+  // nuestro: SecurityOps tiene 3.048 puestos y no sabe de qué cliente es cada uno, y sin eso no
+  // hay rentabilidad por cliente. Avancys lo tiene completo —los 3.646 puestos con contrato,
+  // 2.602 contratos con cliente, medido el 2026-10-28— y es la fuente por decisión de Juan del
+  // 2026-10-23.
+  //
+  // Responde Fabián Franco, nombrado por Juan el 2026-10-28. No es un trámite: sin una persona
+  // nombrada el catálogo sirve el dato como `no_verificado` aunque la fuente esté verificada, y
+  // Vig-IA no puede afirmar nada con él. Lo que Fabián responde no es que Avancys funcione, sino
+  // que de quién es cada puesto sea cierto —incluidos los 27 que hoy llegan en disputa—.
+  'operacion.cliente_del_puesto': Object.freeze({
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Fabián Franco',
+    fuentes: Object.freeze(['avancys.hr_roster_puesto']),
+    lectores: Object.freeze(['agt003.copiloto']),
+  }),
+  'operacion.puestos_del_cliente': Object.freeze({
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Fabián Franco',
+    fuentes: Object.freeze(['avancys.project_project']),
+    lectores: Object.freeze(['agt003.copiloto']),
+  }),
 });
+
+// Los datos que se leen de Avancys y no de Postgres. Se usa para no abrir una sesión contra Odoo
+// cuando nadie pidió nada de allá.
+const DATOS_DE_AVANCYS = Object.freeze(new Set(['operacion.cliente_del_puesto', 'operacion.puestos_del_cliente']));
 
 export function datoDeclarado(nombre) {
   return Object.prototype.hasOwnProperty.call(DATOS, nombre) ? DATOS[nombre] : null;
@@ -391,6 +419,123 @@ export async function resolverSedes(database) {
   });
 }
 
+// Resolvedores de la llave puesto↔cliente. Los dos leen Avancys en vivo, así que los dos tienen
+// que sobrevivir a que Avancys no esté: un Odoo caído, un permiso retirado o un despliegue sin
+// credenciales devuelven `no_verificado` con la razón escrita. El copiloto responde peor, no
+// falla. Odoo 14 está fuera de soporte desde 2023 y el proveedor hospeda la instancia: que un día
+// no conteste no es una hipótesis.
+function sinAvancys(nombre, nota, fuente) {
+  return respuesta({
+    nombre,
+    valor: null,
+    estado: ESTADOS.NO_VERIFICADO,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: null,
+    procedencia: Object.freeze({ fuente, nota }),
+  });
+}
+
+/**
+ * Dado el código de un puesto, de quién es. El código no es único en Avancys —10 se repiten—, así
+ * que la respuesta trae la lista y su total.
+ *
+ * Tres estados, y la diferencia importa: `vigente` cuando las dos rutas al cliente coinciden,
+ * `en_disputa` cuando el contrato y la cuenta analítica apuntan a clientes distintos —27 puestos
+ * de 3.646 el 2026-10-28— y `no_verificado` cuando el puesto no existe o no lleva cliente.
+ * El peor caso de la lista manda: un lote con un puesto en disputa viaja en disputa.
+ */
+export async function resolverClienteDelPuesto(_database, { avancys, puestoCodigo } = {}) {
+  const nombre = 'operacion.cliente_del_puesto';
+  if (!avancys) return sinAvancys(nombre, 'Avancys no está configurado en este entorno', 'avancys.hr_roster_puesto');
+  if (!puestoCodigo) return sinAvancys(nombre, 'sin código de puesto en el contexto', 'avancys.hr_roster_puesto');
+  let leido;
+  try {
+    leido = await avancys.clienteDelPuesto({ codigo: puestoCodigo });
+  } catch (error) {
+    return sinAvancys(nombre, `Avancys no respondió: ${error?.codigo || 'error'}`, 'avancys.hr_roster_puesto');
+  }
+  const procedencia = Object.freeze({
+    fuente: 'avancys.hr_roster_puesto',
+    modelos: Object.freeze(['hr.roster.puesto', 'project.project', 'account.analytic.account', 'res.partner']),
+    codigo_buscado: leido.codigo,
+  });
+  if (!leido.encontrado) {
+    return respuesta({
+      nombre,
+      valor: null,
+      estado: ESTADOS.NO_VERIFICADO,
+      frescura: FRESCURAS.VIVA,
+      forma: FORMAS.TIPADO,
+      asOf: null,
+      procedencia: Object.freeze({ ...procedencia, nota: 'el código no existe en Avancys' }),
+    });
+  }
+  const estados = leido.puestos.map(puesto => {
+    if (!puesto.cliente) return ESTADOS.NO_VERIFICADO;
+    return puesto.rutas.coinciden === false ? ESTADOS.EN_DISPUTA : ESTADOS.VIGENTE;
+  });
+  return respuesta({
+    nombre,
+    valor: Object.freeze({ codigo: leido.codigo, total: leido.total, puestos: leido.puestos }),
+    estado: peorEstado(estados),
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: leido.as_of,
+    procedencia,
+  });
+}
+
+/**
+ * Dado el NIT de un cliente, qué tiene con nosotros en Avancys: sus contratos y sus puestos.
+ * `ref_num` es único, así que el NIT identifica a uno. Los totales son exactos; la lista de
+ * puestos viene recortada, porque un cliente tiene 1.002.
+ */
+export async function resolverPuestosDelCliente(_database, { avancys, clienteIdentificacion } = {}) {
+  const nombre = 'operacion.puestos_del_cliente';
+  if (!avancys) return sinAvancys(nombre, 'Avancys no está configurado en este entorno', 'avancys.project_project');
+  if (!clienteIdentificacion) return sinAvancys(nombre, 'sin identificación del cliente en el contexto', 'avancys.project_project');
+  let leido;
+  try {
+    leido = await avancys.puestosDelCliente({ identificacion: clienteIdentificacion });
+  } catch (error) {
+    return sinAvancys(nombre, `Avancys no respondió: ${error?.codigo || 'error'}`, 'avancys.project_project');
+  }
+  const procedencia = Object.freeze({
+    fuente: 'avancys.project_project',
+    modelos: Object.freeze(['res.partner', 'project.project', 'hr.roster.puesto']),
+    identificacion_buscada: leido.identificacion,
+  });
+  if (!leido.encontrado) {
+    return respuesta({
+      nombre,
+      valor: null,
+      estado: ESTADOS.NO_VERIFICADO,
+      frescura: FRESCURAS.VIVA,
+      forma: FORMAS.TIPADO,
+      asOf: null,
+      // Que no aparezca no significa que no sea cliente: puede estar con otra identificación.
+      // La respuesta lo dice en vez de dejar que se lea como "no es cliente nuestro".
+      procedencia: Object.freeze({ ...procedencia, nota: 'ninguna tercera en Avancys tiene esa identificación' }),
+    });
+  }
+  return respuesta({
+    nombre,
+    valor: Object.freeze({
+      cliente: leido.cliente,
+      total_contratos: leido.total_contratos,
+      total_puestos: leido.total_puestos,
+      puestos_listados: leido.puestos_listados ?? 0,
+      contratos: leido.contratos,
+    }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: leido.as_of,
+    procedencia,
+  });
+}
+
 // Una fuente resuelta sólo sostiene una afirmación si está vigente y viene tipada. En prosa, o
 // sin verificar, viaja igual —quien la lea debe saber que existe— pero marcada como insuficiente,
 // de modo que la salida honesta sea declararla faltante en vez de afirmar sobre ella.
@@ -424,6 +569,8 @@ const RESOLVEDORES = Object.freeze({
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),
   'analisis.canonico.company_fit': (database, contexto) => resolverCompanyFit(database, contexto),
+  'operacion.cliente_del_puesto': (database, contexto) => resolverClienteDelPuesto(database, contexto),
+  'operacion.puestos_del_cliente': (database, contexto) => resolverPuestosDelCliente(database, contexto),
 });
 
 /**
@@ -431,14 +578,26 @@ const RESOLVEDORES = Object.freeze({
  * estampa antes de llamar al modelo, sin que el agente tenga que pedir nada. Un nombre que no
  * esté declarado, o que ese lector no pueda leer, no se resuelve: el silencio significa no.
  */
-export async function resolverParaLector(database, { lector, nombres, tenderId = null }) {
+export async function resolverParaLector(database, {
+  lector,
+  nombres,
+  tenderId = null,
+  puestoCodigo = null,
+  clienteIdentificacion = null,
+  avancys,
+  entorno = process.env,
+} = {}) {
   const pedidos = Array.isArray(nombres) ? nombres : [];
+  // La sesión contra Avancys se abre solo si alguien pidió algo de allá, y ese alguien además
+  // tiene que poder leerlo. Un lector sin entradas de Avancys no toca Odoo.
+  const pideAvancys = pedidos.some(nombre => DATOS_DE_AVANCYS.has(nombre) && puedeLeer(nombre, lector));
+  const lectorAvancys = avancys !== undefined ? avancys : (pideAvancys ? crearLectorAvancys({ entorno }) : null);
   const resueltos = [];
   for (const nombre of pedidos) {
     if (!puedeLeer(nombre, lector)) continue;
     const resolvedor = RESOLVEDORES[nombre];
     if (!resolvedor) continue;
-    const resuelto = await resolvedor(database, { tenderId });
+    const resuelto = await resolvedor(database, { tenderId, puestoCodigo, clienteIdentificacion, avancys: lectorAvancys });
     const declarado = datoDeclarado(nombre);
     resueltos.push(Object.freeze({
       ...resuelto,
