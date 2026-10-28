@@ -2,6 +2,7 @@ import { classifyPipelineError, computeBackoffMs, MAX_ATTEMPTS } from './tender-
 import { createAgt002AnalysisObservability, toBoundedAgt002Error } from './agt002-analysis-observability.js';
 import { isCriticalTenderDocument } from './tender-critical-documents.js';
 import { TENDER_OFFICIAL_DOCUMENT_OMITTED_ERROR_CODE } from './tender-official-document-coverage.js';
+import { planEmptyDiscovery, TENDER_DOCUMENTS_PENDING_STATUS } from './tender-empty-discovery.js';
 
 function safeMessage(error) {
   return typeof error?.message === 'string' ? error.message : 'error desconocido';
@@ -37,11 +38,15 @@ function isLeaseConflictError(error) {
 //   - waiting_agent_capacity -> analysis backoff. Its next attempt is gated by
 //     next_attempt_at, and a shown rules preview keeps the job in this state
 //     with no backoff, so re-claiming in a tight loop must be avoided.
+//   - documents_not_published_yet -> la fuente oficial todavía no tiene documentos.
+//     El trabajo queda en 'queued' con next_attempt_at a futuro, así que reclamarlo
+//     de inmediato sólo devolvería 'empty'; ceder es lo correcto.
 // Continue statuses (discovered, batch_processed, ready_for_snapshot,
 // snapshot_published) all leave the job in a claimable state (or naturally
 // yield to 'empty' on the next claim), so the drain advances into them.
 export const WORKER_YIELD_STATUSES = Object.freeze([
   'empty', 'noop', 'completed', 'cancelled', 'needs_attention', 'waiting_agent_capacity',
+  TENDER_DOCUMENTS_PENDING_STATUS,
 ]);
 
 const WORKER_YIELD_SET = new Set(WORKER_YIELD_STATUSES);
@@ -166,6 +171,40 @@ export function createTenderProcessingWorker(deps) {
           critical: isCriticalTenderDocument(omitted.name),
           lastErrorCode: TENDER_OFFICIAL_DOCUMENT_OMITTED_ERROR_CODE,
           lastErrorMessage: `Documento oficial no importado: ${omitted.reason}`,
+        });
+      }
+
+      // Cero documentos no es una descarga fallida: casi siempre es que la entidad
+      // todavía no los publicó (tender-empty-discovery.js). Avanzar a
+      // 'importing_documents' con la lista vacía hace que la rama de importación
+      // concluya `usable = false` y aparque el trabajo en `needs_attention`, de donde
+      // no vuelve solo. Aquí se reprograma el descubrimiento y se deja escrita la razón.
+      if (items.length === 0) {
+        const plan = planEmptyDiscovery({ attempt: Number(claim.attempt_count || 0) + 1, now: now() });
+        await updateJobObserved({
+          status: plan.status,
+          current_step: plan.currentStep,
+          documents_discovered: 0,
+          attempt_count: plan.attempt,
+          next_attempt_at: plan.nextAttemptAt,
+          last_error_code: plan.errorCode,
+          last_error_message: plan.errorMessage,
+        });
+        await appendEvent({
+          tenderId, eventType: 'document_discovery_started', actorKind: 'system',
+          sourceRefType: 'job', sourceRefId: jobId,
+          metadata: {
+            discovered: 0, official_document_coverage: coverage,
+            retry: plan.retry, attempt: plan.attempt, next_attempt_at: plan.nextAttemptAt,
+            reason_code: plan.errorCode, reason: plan.errorMessage,
+          },
+        });
+        observability.record('outcome_recorded', {
+          job_id: jobId, tender_id: tenderId, stage: 'discover_documents', outcome: plan.outcome,
+        });
+        return finishStage('discover_documents', plan.outcome, {
+          status: plan.outcome, job_id: jobId, discovered: 0,
+          next_attempt_at: plan.nextAttemptAt, reason_code: plan.errorCode,
         });
       }
 
