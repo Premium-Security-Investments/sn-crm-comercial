@@ -80,19 +80,19 @@ export const DATOS = Object.freeze({
   // 2.602 contratos con cliente, medido el 2026-10-28— y es la fuente por decisión de Juan del
   // 2026-10-23.
   //
-  // `responsable: null` a propósito, y no es un olvido: nadie ha sido nombrado todavía para
-  // responder por que esta llave sea cierta. Mientras no lo haya, el catálogo sirve el dato
-  // marcado `no_verificado` aunque la fuente esté verificada, por la regla de arriba. Nombrar a
-  // la persona es lo único que falta para que sostenga una afirmación.
+  // Responde Fabián Franco, nombrado por Juan el 2026-10-28. No es un trámite: sin una persona
+  // nombrada el catálogo sirve el dato como `no_verificado` aunque la fuente esté verificada, y
+  // Vig-IA no puede afirmar nada con él. Lo que Fabián responde no es que Avancys funcione, sino
+  // que de quién es cada puesto sea cierto —incluidos los 27 que hoy llegan en disputa—.
   'operacion.cliente_del_puesto': Object.freeze({
     estado: ESTADOS.VIGENTE,
-    responsable: null,
+    responsable: 'Fabián Franco',
     fuentes: Object.freeze(['avancys.hr_roster_puesto']),
     lectores: Object.freeze(['agt003.copiloto']),
   }),
   'operacion.puestos_del_cliente': Object.freeze({
     estado: ESTADOS.VIGENTE,
-    responsable: null,
+    responsable: 'Fabián Franco',
     fuentes: Object.freeze(['avancys.project_project']),
     lectores: Object.freeze(['agt003.copiloto']),
   }),

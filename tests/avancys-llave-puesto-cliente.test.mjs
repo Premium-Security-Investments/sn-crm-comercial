@@ -274,15 +274,32 @@ test('la llave es del copiloto comercial; a la Mesa de licitaciones el catálogo
   assert.deepEqual(mesa, []);
 });
 
-test('mientras nadie responda por la llave, se sirve no_verificado aunque la fuente esté verificada', async () => {
+test('la llave llega con la persona que responde por ella, y por eso sostiene una afirmación', async () => {
   const resueltos = await resolverParaLector(null, {
     lector: 'agt003.copiloto', nombres: ['operacion.cliente_del_puesto'],
     puestoCodigo: 'CIDE RIONEGRO', avancys: AVANCYS_DE_MENTIRA, entorno: {},
   });
   assert.equal(resueltos.length, 1);
-  assert.equal(resueltos[0].responsable, null);
-  // El resolvedor la dio por vigente; la composición la degrada por no tener dueño humano.
-  assert.equal(resueltos[0].estado, ESTADOS.NO_VERIFICADO);
+  // Nombrado por Juan el 2026-10-28. Sin nombre el catálogo la degradaría a no_verificado.
+  assert.equal(resueltos[0].responsable, 'Fabián Franco');
+  assert.equal(resueltos[0].estado, ESTADOS.VIGENTE);
+  assert.equal(sostieneAfirmacion(resueltos[0]), true);
+});
+
+test('en disputa no sostiene afirmación ni con responsable nombrado', async () => {
+  const enDisputa = {
+    clienteDelPuesto: async () => ({
+      encontrado: true, codigo: 'X', total: 1, as_of: '2026-10-01T00:00:00Z',
+      puestos: [{ cliente: { nombre: 'A' }, rutas: { coinciden: false } }],
+    }),
+  };
+  const resueltos = await resolverParaLector(null, {
+    lector: 'agt003.copiloto', nombres: ['operacion.cliente_del_puesto'],
+    puestoCodigo: 'X', avancys: enDisputa, entorno: {},
+  });
+  // Tener dueño no vuelve cierto un dato que se contradice consigo mismo: el peor estado gana.
+  assert.equal(resueltos[0].responsable, 'Fabián Franco');
+  assert.equal(resueltos[0].estado, ESTADOS.EN_DISPUTA);
   assert.equal(sostieneAfirmacion(resueltos[0]), false);
 });
 
