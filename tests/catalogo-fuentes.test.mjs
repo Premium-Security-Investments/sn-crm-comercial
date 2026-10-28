@@ -11,6 +11,10 @@ import {
   resolverCompanyFit,
   resolverIdentidadEmpresa,
   resolverParaLector,
+  DOMINIOS,
+  SENSIBILIDADES,
+  sensibilidadCompuesta,
+  sensibilidadDelDato,
   vencimientoDelCertificado,
 } from '../catalogo-fuentes.js';
 
@@ -222,4 +226,55 @@ test('el mismo catálogo sirve a dos lectores distintos, cada uno con lo suyo', 
   // La agencia pendiente ante la SVSP llega declarada, no como una nota que haya que interpretar.
   assert.equal(sedes.valor.sedes[1].autorizacion_supervigilancia, 'Pendiente de resolución de la SVSP');
   assert.equal(sedes.responsable, 'Juan');
+});
+
+// --- Sensibilidad: qué se puede hacer con el dato, no quién puede abrirlo ---
+
+test('los diez dominios de la empresa están declarados, con su sensibilidad', () => {
+  const nombres = Object.keys(DOMINIOS);
+  assert.equal(nombres.length, 10);
+  for (const nombre of nombres) {
+    const d = DOMINIOS[nombre];
+    assert.ok(Object.values(SENSIBILIDADES).includes(d.sensibilidad), `${nombre} sin sensibilidad válida`);
+    assert.ok(d.fuente, `${nombre} sin fuente`);
+  }
+});
+
+test('la clasificación acordada con Juan el 2026-10-28 queda fijada', () => {
+  assert.equal(DOMINIOS['empresa'].sensibilidad, SENSIBILIDADES.PUBLICA);
+  assert.equal(DOMINIOS['clientes'].sensibilidad, SENSIBILIDADES.INTERNA);
+  assert.equal(DOMINIOS['puestos'].sensibilidad, SENSIBILIDADES.INTERNA);
+  // Las tarifas son restringidas, no internas: es lo que un competidor querría antes de una licitación.
+  assert.equal(DOMINIOS['tarifas'].sensibilidad, SENSIBILIDADES.RESTRINGIDA);
+  // Turnos y operación son personales: dicen dónde estuvo una persona identificada, y a qué hora.
+  assert.equal(DOMINIOS['programacion'].sensibilidad, SENSIBILIDADES.PERSONAL);
+  assert.equal(DOMINIOS['operacion'].sensibilidad, SENSIBILIDADES.PERSONAL);
+  assert.equal(DOMINIOS['personal'].sensibilidad, SENSIBILIDADES.PERSONAL);
+});
+
+test('la más sensible gana, como gana el peor estado', () => {
+  assert.equal(sensibilidadCompuesta([SENSIBILIDADES.PUBLICA, SENSIBILIDADES.INTERNA]), SENSIBILIDADES.INTERNA);
+  assert.equal(sensibilidadCompuesta([SENSIBILIDADES.INTERNA, SENSIBILIDADES.PERSONAL]), SENSIBILIDADES.PERSONAL);
+  assert.equal(sensibilidadCompuesta([SENSIBILIDADES.RESTRINGIDA, SENSIBILIDADES.PUBLICA]), SENSIBILIDADES.RESTRINGIDA);
+});
+
+test('sin sensibilidad declarada se trata como lo más delicado, nunca como público', () => {
+  assert.equal(sensibilidadCompuesta([]), SENSIBILIDADES.PERSONAL);
+  assert.equal(sensibilidadCompuesta(['inventada']), SENSIBILIDADES.PERSONAL);
+  assert.equal(sensibilidadDelDato('dato.que.no.existe'), SENSIBILIDADES.PERSONAL);
+});
+
+test('un dato hereda la sensibilidad de su dominio', () => {
+  assert.equal(sensibilidadDelDato('empresa.identidad'), SENSIBILIDADES.PUBLICA);
+  assert.equal(sensibilidadDelDato('empresa.sedes'), SENSIBILIDADES.PUBLICA);
+  assert.equal(sensibilidadDelDato('analisis.canonico.company_fit'), SENSIBILIDADES.RESTRINGIDA);
+});
+
+test('la sensibilidad viaja con la respuesta resuelta', async () => {
+  const database = baseDeDatos({
+    psi_company_procurement_profile: [{ legal_name: 'SEGURIDAD NACIONAL LIMITADA', nit: '891408256-4', supervigilancia_license: null, rup_updated_at: '2026-09-28', updated_at: '2026-10-13T00:00:00.000Z' }],
+  });
+  const [resuelto] = await resolverParaLector(database, { lector: 'agt002.mesa', nombres: ['empresa.identidad'] });
+  assert.equal(resuelto.sensibilidad, SENSIBILIDADES.PUBLICA);
+  assert.equal(resuelto.dominio, 'empresa');
 });
