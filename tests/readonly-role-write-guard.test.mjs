@@ -111,11 +111,11 @@ test('navegación de consulta: Torre de Control, Dashboard, Oportunidades y Rada
   const profile = consulta({ permissions: READ_MODULES.filter(code => code !== 'modulo_programacion') });
   assert.deepEqual(getVisibleNavGroups(profile), [
     { title: 'Gerencia', items: [{ href: '#/siio', label: 'Torre de Control', page: 'siio' }] },
-    { title: 'Comercial', items: [{ href: '#/dashboard2', label: 'Dashboard', page: 'dashboard2' }, { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' }] },
+    { title: 'Comercial', items: [{ href: '#/dashboard2', label: 'Dashboard', page: 'dashboard2' }, { href: '#/clients', label: 'Clientes', page: 'clients' }, { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' }] },
     { title: 'Licitaciones', items: [{ href: '#/tenders?view=radar', label: 'Radar', page: 'tenders' }, { href: '#/tenders?view=seguimiento', label: 'Seguimiento', page: 'tenders' }, { href: '#/tenders?view=oportunidades', label: 'Oportunidades', page: 'tenders' }] },
   ]);
   for (const page of ['new', 'edit', 'users', 'goals']) assert.equal(canAccessRoute(profile, page), false, page);
-  for (const page of ['detail', 'opportunities', 'dashboard2', 'siio', 'tenders', 'consultant']) assert.equal(canAccessRoute(profile, page), true, page);
+  for (const page of ['detail', 'opportunities', 'clients', 'dashboard2', 'siio', 'tenders', 'consultant']) assert.equal(canAccessRoute(profile, page), true, page);
   assert.equal(isReadOnlyProfile(profile), true);
   assert.equal(isDirectiveViewerRole('consulta'), true);
   assert.equal(isManagementRole('consulta'), false, 'consulta no es rol de gestión: no edita segmentos');

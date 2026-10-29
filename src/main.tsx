@@ -115,7 +115,7 @@ type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string;
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'invalid'; id?: string };
+type Route = { page: 'home' | 'clients' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'invalid'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
@@ -275,6 +275,7 @@ function parseRoute(): Route {
   const [page, id] = path.split('/');
   if (!page) return { page: 'dashboard' };
   if (page === 'home') return { page: 'home' };
+  if (page === 'clients') return { page: 'clients' };
   if (page === 'opportunities') return { page: 'opportunities' };
   if (page === 'tenders') return { page: 'tenders' };
   if (page === 'detail') return id ? { page: 'detail', id: decodeURIComponent(id) } : { page: 'invalid' };
@@ -548,6 +549,7 @@ function areaFor(route: Route) {
 function titleFor(route: Route, profile?: Profile | null) {
   if (route.page === 'opportunities') return 'Oportunidades';
   if (route.page === 'tenders') return 'Licitaciones';
+  if (route.page === 'clients') return profile?.role === 'comercial' ? 'Mis clientes' : 'Clientes';
   if (route.page === 'detail') return 'Detalle de oportunidad';
   if (route.page === 'new') return 'Crear oportunidad';
   if (route.page === 'edit') return 'Editar oportunidad';
@@ -580,6 +582,7 @@ function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfi
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (route.page === 'invalid') return <div className="error">URL inválida o sección no encontrada.</div>;
   if (!canAccessRoute(data.currentProfile, route.page)) return <div className="error">No tienes permiso para ver esta sección.</div>;
+  if (route.page === 'clients') return <ClientsView currentProfile={data.currentProfile} />;
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
   if (route.page === 'tenders') return <TendersModule view={tenderViewFromHash()} data={data} refresh={refresh} request={api} navigate={go} />;
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
@@ -722,6 +725,102 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
     return t.deadline || '';
   };
   return [...rows].sort((a, b) => compareSortValues(tenderSortValue(a), tenderSortValue(b), tenderSortDirection));
+}
+
+type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null; departamento: string | null; productos: string[]; tipos_de_servicio: string[] };
+type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; alcance?: 'propios' | 'todos' | null; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
+
+// Los clientes que la empresa ya tiene. Pantalla propia, al lado de Oportunidades.
+//
+// El CRM sólo mostraba el embudo de lo nuevo; los clientes actuales viven en Avancys y aquí se leen
+// en vivo. No se copian: lo que se ve es lo que hay allá en este momento, con su fecha de corte.
+//
+// El cliente es lo primero y la oportunidad cuelga de él, no al revés (Juan, 2026-10-29). Las
+// oportunidades de cada cliente todavía no se muestran aquí: es el siguiente paso.
+//
+// Dos alcances en la misma pantalla: el comercial ve los que atiende, la dirección ve todos. Quien
+// decide es el servidor, por el perfil; aquí sólo se rotula.
+function ClientsView({ currentProfile }: { currentProfile: Profile }) {
+  const [estado, setEstado] = useState<'cargando'|'listo'|'error'>('cargando');
+  const [datos, setDatos] = useState<MisClientesRespuesta | null>(null);
+  const [error, setError] = useState('');
+  const [filtro, setFiltro] = useState('');
+  const mios = currentProfile?.role === 'comercial';
+  useEffect(() => {
+    let vigente = true;
+    (async () => {
+      setEstado('cargando'); setError('');
+      try {
+        const respuesta = await api<MisClientesRespuesta>('/api/avancys/mis-clientes');
+        if (!vigente) return;
+        setDatos(respuesta); setEstado('listo');
+      } catch (err) {
+        if (!vigente) return;
+        setError(err instanceof Error ? err.message : String(err)); setEstado('error');
+      }
+    })();
+    return () => { vigente = false; };
+  }, []);
+  const [comercial, setComercial] = useState('');
+  const [departamento, setDepartamento] = useState('');
+  const [producto, setProducto] = useState('');
+  const [tipoServicio, setTipoServicio] = useState('');
+  // Cada filtro se arma con lo que de verdad trajo la lista, no con un catálogo fijo: si ningún
+  // cliente tiene cierto producto, ese producto no debe aparecer para filtrar por él.
+  const valoresDe = (saca: (c: ClienteActual) => (string | null)[]) => {
+    const vistos = new Set((datos?.clientes || []).flatMap(saca).filter((v): v is string => Boolean(v)));
+    return Array.from(vistos).sort((a, b) => a.localeCompare(b));
+  };
+  const comerciales = useMemo(() => valoresDe(c => [c.atendido_por]), [datos]);
+  const departamentos = useMemo(() => valoresDe(c => [c.departamento]), [datos]);
+  const productos = useMemo(() => valoresDe(c => c.productos), [datos]);
+  const tiposServicio = useMemo(() => valoresDe(c => c.tipos_de_servicio), [datos]);
+  const hayFiltro = Boolean(filtro || comercial || departamento || producto || tipoServicio);
+  const limpiar = () => { setFiltro(''); setComercial(''); setDepartamento(''); setProducto(''); setTipoServicio(''); };
+  const visibles = (datos?.clientes || []).filter(c => {
+    if (comercial && c.atendido_por !== comercial) return false;
+    if (departamento && c.departamento !== departamento) return false;
+    if (producto && !c.productos.includes(producto)) return false;
+    if (tipoServicio && !c.tipos_de_servicio.includes(tipoServicio)) return false;
+    if (!filtro.trim()) return true;
+    const texto = `${c.nombre || ''} ${c.identificacion?.numero || ''}`.toLowerCase();
+    return texto.includes(filtro.trim().toLowerCase());
+  });
+  return <Panel title={mios ? 'Mis clientes' : 'Clientes'}>
+    <p className="muted">Los clientes que la empresa ya tiene. Se leen de Avancys en vivo; no se copian al CRM.</p>
+    {estado === 'cargando' && <p className="muted">Consultando Avancys…</p>}
+    {estado === 'error' && <p className="muted">No fue posible consultar Avancys: {error}</p>}
+    {estado === 'listo' && datos && <>
+      {datos.motivo
+        ? <p className="muted">{datos.motivo}</p>
+        : <p className="muted filter-summary"><strong>{datos.total}</strong> {datos.total === 1 ? 'cliente' : 'clientes'}{datos.alcance === 'todos' ? ' en la compañía' : ' a su cargo'}{datos.as_of ? <> · datos de Avancys al {datos.as_of.slice(0, 10)}</> : null}{datos.recortada ? <> · lista recortada</> : null}</p>}
+      {(datos.heredados || []).map(h => <p className="muted" key={h.comercial}>Incluye los clientes de {h.comercial}. {h.motivo}</p>)}
+      {datos.total > 0 && <>
+        <div className="filters opportunity-filters compact-dashboard-filters">
+          <input placeholder="Buscar cliente o NIT…" value={filtro} onChange={e => setFiltro(e.target.value)} />
+          {comerciales.length > 1 && <Select value={comercial} onChange={setComercial} options={comerciales.map(n => [n, n])} empty="Comerciales" />}
+          {departamentos.length > 1 && <Select value={departamento} onChange={setDepartamento} options={departamentos.map(n => [n, n])} empty="Departamentos" />}
+          {productos.length > 1 && <Select value={producto} onChange={setProducto} options={productos.map(n => [n, n])} empty="Productos" />}
+          {tiposServicio.length > 1 && <Select value={tipoServicio} onChange={setTipoServicio} options={tiposServicio.map(n => [n, n])} empty="Tipo de servicio" />}
+          {hayFiltro && <button className="secondary" onClick={limpiar}>Limpiar</button>}
+        </div>
+        <p className="muted filter-summary"><strong>{visibles.length}</strong> de {datos.total} visibles.</p>
+        <ul className="dashboard-simple-list">
+          {visibles.slice(0, 200).map((c, i) => <li key={`${c.identificacion?.numero || c.nombre || ''}-${i}`}>
+            <strong>{c.nombre || 'Sin nombre'}</strong>
+            <span>{[
+              c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : 'Sin identificación en Avancys',
+              c.departamento,
+              c.productos.length ? c.productos.join(', ') : null,
+              comerciales.length > 1 ? c.atendido_por : null,
+            ].filter(Boolean).join(' · ')}</span>
+          </li>)}
+        </ul>
+        {visibles.length > 200 && <p className="muted">Se muestran los primeros 200 de {visibles.length}. Use el buscador.</p>}
+        {visibles.length === 0 && <p className="muted">Ningún cliente coincide con «{filtro}».</p>}
+      </>}
+    </>}
+  </Panel>;
 }
 
 function OpportunityList({ data }: { data: Bootstrap }) {

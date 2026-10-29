@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   AvancysLecturaError,
+  MAX_CLIENTES_LISTADOS,
   MAX_PUESTOS_LISTADOS,
   configuracionDeAvancys,
   crearLectorAvancys,
@@ -36,6 +37,8 @@ function odooDeMentira(tablas, { errorDeOdoo = null, estado = 200 } = {}) {
     const id = Array.isArray(actual) ? actual[0] : actual;
     if (operador === '=') return id === valor || (valor === false && (id === false || id === undefined || id === null));
     if (operador === 'in') return valor.includes(id);
+    if (operador === '>') return Number(id || 0) > valor;
+    if (operador === '!=') return valor === false ? !(id === false || id === undefined || id === null) : id !== valor;
     throw new Error(`operador no soportado en la prueba: ${operador}`);
   };
   const fetchImpl = async (url, opciones) => {
@@ -49,7 +52,14 @@ function odooDeMentira(tablas, { errorDeOdoo = null, estado = 200 } = {}) {
     }
     let result;
     if (service === 'common' && method === 'authenticate') result = 230;
-    else {
+    else if (args[4] === 'read_group') {
+      // Los servicios por cliente se leen agrupados; el doble devuelve los grupos que se le den.
+      const [, , , modelo, , posicional] = args;
+      llamadas[llamadas.length - 1].modelo = modelo;
+      const dominio = posicional[0] || [];
+      const enLote = dominio.find(hoja => hoja[0] === 'client_id');
+      result = (tablas.__grupos || []).filter(g => !enLote || enLote[2].includes(g.client_id[0]));
+    } else {
       const [, , , modelo, metodo, posicional, nombrado] = args;
       assert.equal(metodo, 'search_read', 'el lector solo debe usar search_read');
       const dominio = posicional[0] || [];
@@ -183,6 +193,91 @@ test('un 403 de Avancys se distingue de cualquier otro fallo HTTP', async () => 
     assert.equal(error.codigo, 'AVANCYS_ACCESO_DENEGADO');
     return true;
   });
+});
+
+// ---- La cartera del comercial ----
+
+test('la cartera trae los clientes de los usuarios de Odoo que se le pasen', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [
+    { ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'] },
+    { ...OTRO, customer_rank: 5, user_id: [77, 'VERONICA DUQUE'] },
+    { id: 999, name: 'DE OTRO COMERCIAL', ref_num: '111', verification_code: 1, customer_rank: 3, user_id: [64, 'CARLOS BEDOYA'], write_date: '2026-10-01 00:00:00' },
+  ];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  // Dos usuarios de Odoo para un solo comercial del CRM: así se le muestran al gerente los
+  // clientes de quienes ya no están en la empresa.
+  const leido = await lector.clientesDelComercial({ odooUserIds: [67, 77] });
+
+  assert.equal(leido.total, 2);
+  assert.equal(leido.recortada, false);
+  assert.deepEqual(leido.clientes.map(c => c.identificacion.numero).sort(), ['860053914', '900480569']);
+  // El de otro comercial no se cuela.
+  assert.ok(!leido.clientes.some(c => c.nombre === 'DE OTRO COMERCIAL'));
+  // Cada cliente dice quién lo atiende en Avancys, para que el comercial sepa cuáles no son suyos.
+  assert.deepEqual([...new Set(leido.clientes.map(c => c.atendido_por))].sort(), ['JOHN ESCOBAR', 'VERONICA DUQUE']);
+  assert.ok(leido.as_of);
+});
+
+test('cada cliente trae con qué filtrarlo: departamento, productos y tipo de servicio', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [{ ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'], state_id: [1, 'Risaralda (CO)'] }];
+  tablas.__grupos = [
+    { client_id: [CIDE.id, CIDE.name], product_id: [5, '[VI002] VIGILANCIA FISICA SIN ARMA'], service_type: 'fijos', __count: 3 },
+    { client_id: [CIDE.id, CIDE.name], product_id: [9, '[MO005] MONITOREO TELEMATICO (GPRS)'], service_type: 'monitoreo', __count: 1 },
+  ];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  const leido = await lector.clientesDelComercial({ odooUserIds: [67] });
+
+  assert.equal(leido.clientes[0].departamento, 'Risaralda (CO)');
+  assert.deepEqual(leido.clientes[0].productos, ['[MO005] MONITOREO TELEMATICO (GPRS)', '[VI002] VIGILANCIA FISICA SIN ARMA']);
+  assert.deepEqual(leido.clientes[0].tipos_de_servicio, ['fijos', 'monitoreo']);
+});
+
+test('un cliente sin órdenes no rompe la lista: sale con sus listas vacías', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [{ ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'] }];
+  tablas.__grupos = [];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  const leido = await lector.clientesDelComercial({ odooUserIds: [67] });
+  assert.equal(leido.total, 1);
+  assert.deepEqual(leido.clientes[0].productos, []);
+  assert.equal(leido.clientes[0].departamento, null);
+});
+
+test('un comercial sin usuario de Odoo no pide una cartera vacía: falla y se declara', async () => {
+  const { fetchImpl } = odooDeMentira(baseCoherente());
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  await assert.rejects(() => lector.clientesDelComercial({ odooUserIds: [] }), error => {
+    assert.equal(error.codigo, 'AVANCYS_COMERCIAL_SIN_USUARIO');
+    return true;
+  });
+  // Un id inválido no se convierte en una consulta sin filtro, que traería TODA la cartera ajena.
+  await assert.rejects(() => lector.clientesDelComercial({ odooUserIds: [0, -1, null, 'x'] }), AvancysLecturaError);
+});
+
+test('sin ids y sin ser dirección, la cartera no se abre entera', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [
+    { ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'] },
+    { ...OTRO, customer_rank: 5, user_id: [64, 'CARLOS BEDOYA'] },
+  ];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  // El caso peligroso: ids vacíos. Sin la guarda, el dominio quedaría sin filtro de usuario y un
+  // comercial vería los clientes de todos.
+  await assert.rejects(() => lector.clientesDelComercial({ odooUserIds: [] }), AvancysLecturaError);
+  // Con `todos` —y eso sólo lo decide el servidor por el rol— sí se abre.
+  const completa = await lector.clientesDelComercial({ odooUserIds: [], todos: true });
+  assert.equal(completa.total, 2);
+});
+
+test('el tope de la cartera existe y la respuesta avisa cuando recorta', () => {
+  assert.ok(Number.isSafeInteger(MAX_CLIENTES_LISTADOS) && MAX_CLIENTES_LISTADOS >= 900,
+    'el gerente comercial sostiene 877 clientes: el tope no puede quedar por debajo');
 });
 
 // ---- El catálogo ----
@@ -374,4 +469,37 @@ test('el resolvedor del copiloto espera el NIT antes de preguntarle al catálogo
     assert.match(bloque[0], /lector: 'agt003\.copiloto'/, archivo);
     assert.match(bloque[0], /clienteIdentificacion: await loadAgt003OpportunityClientNit\(database, opportunityId\)/, archivo);
   }
+});
+
+test('el endpoint de la cartera existe en los dos backends y falla blando', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    assert.match(texto, /'GET \/api\/avancys\/mis-clientes': \['opportunities', ACTIONS\.CRM_OPPORTUNITY_DETAIL_VIEW\]/, archivo);
+    const handler = /app\.get\('\/api\/avancys\/mis-clientes'[\s\S]*?\n\}\);/.exec(texto);
+    assert.ok(handler, `${archivo}: falta el endpoint de la cartera`);
+    const cuerpo = handler[0];
+    // La equivalencia de personas sale de la base, no de Avancys.
+    assert.match(cuerpo, /from\('psi_avancys_salesperson_map'\)/, archivo);
+    assert.match(cuerpo, /\.eq\('profile_id', currentProfile\.id\)/, archivo);
+    // Tres fallas blandas: sin equivalencia, sin Avancys configurado, y Avancys sin responder.
+    assert.match(cuerpo, /no tiene comercial equivalente/, archivo);
+    assert.match(cuerpo, /no esta configurado/, archivo);
+    assert.match(cuerpo, /Avancys no respondio/, archivo);
+    // Nunca se pide la cartera con los ids de otro perfil.
+    assert.match(cuerpo, /odooUserIds: asignaciones\.map\(fila => fila\.odoo_user_id\)/, archivo);
+    // El alcance lo decide el servidor por el rol del perfil, nunca algo que mande el navegador.
+    assert.match(cuerpo, /const todos = veTodaLaCarteraComercial\(currentProfile\);/, archivo);
+    assert.ok(!/req\.query\.(todos|alcance|scope)/.test(cuerpo), `${archivo}: el alcance no puede venir en la URL`);
+  }
+});
+
+test('la migración del mapa de comerciales no escribe en Avancys ni copia clientes', () => {
+  const sql = leer('supabase/migrations/160_avancys_comercial_del_cliente.sql');
+  assert.match(sql, /create table if not exists public\.psi_avancys_salesperson_map/);
+  assert.match(sql, /references public\.psi_sales_profiles\(id\)/);
+  // La tabla guarda personas, no clientes: si algún día alguien le mete los clientes, esto cae.
+  assert.ok(!/customer|cliente_id|partner_id/i.test(sql), 'el mapa no debe guardar clientes');
+  assert.match(sql, /revoke all on public\.psi_avancys_salesperson_map from anon, authenticated, public/);
+  // Y existe su reverso.
+  assert.match(leer('supabase/rollbacks/160_avancys_comercial_del_cliente_rollback.sql'), /drop table if exists public\.psi_avancys_salesperson_map/);
 });

@@ -74,6 +74,12 @@ const TENDER_CUSTODY_PERMISSION = 'licitaciones_custodia';
 const TENDER_COMPANY_PERMISSION = 'licitaciones_empresa';
 const HUMAN_TENDER_ROLES = new Set(['admin', 'gerencia', 'director', 'comercial']);
 const PRIVILEGED_ROLES = new Set(['admin', 'gerencia']);
+
+// Quién ve la cartera entera y no sólo la suya. Es la misma frontera que ya separa "Clientes" de
+// "Mis clientes" en el menú: el comercial ve los que atiende, la dirección ve todos.
+export function veTodaLaCarteraComercial(profile) {
+  return profile?.active === true && PRIVILEGED_ROLES.has(profile.role);
+}
 const EXPLICIT_SCOPE_ROLES = new Set(['director', 'comercial', 'colaborador']);
 const DIRECTOR_ROLE = new Set(['director']);
 const COMMERCIAL_ROLES = new Set(['comercial']);
