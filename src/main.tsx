@@ -742,6 +742,7 @@ type ClienteDetalle = {
   oportunidades: OportunidadDelCliente[];
   emparejamiento: 'enlace_confirmado' | 'nombre_aproximado' | 'sin_coincidencias';
   candidato_enlace: { client_id: string; veces: number } | null;
+  se_provisiona: boolean | null;
 };
 
 /**
@@ -758,6 +759,8 @@ function ClienteAbierto({ cliente }: { cliente: ClienteActual }) {
   const [datos, setDatos] = useState<ClienteDetalle | null>(null);
   const [error, setError] = useState('');
   const [enlazando, setEnlazando] = useState(false);
+  const [marcando, setMarcando] = useState(false);
+  const [marcaError, setMarcaError] = useState('');
   const [enlaceError, setEnlaceError] = useState('');
   const [recargar, setRecargar] = useState(0);
   const nit = cliente.identificacion?.numero || '';
@@ -781,6 +784,24 @@ function ClienteAbierto({ cliente }: { cliente: ClienteActual }) {
   if (!datos) return null;
   const av = datos.avancys;
   return <div className="stack">
+    <div>
+      {/* Si a este cliente se le provisiona el mes. Lo declara una persona porque Avancys no
+          distingue al cliente público, y de esa marca depende en qué mes cuenta la plata: los de
+          mes vencido prestan el servicio en agosto y se factura en septiembre. */}
+      <label className="check-filter">
+        <input type="checkbox" checked={datos.se_provisiona === true} disabled={marcando} onChange={async e => {
+          const activo = e.target.checked;
+          setMarcando(true); setMarcaError('');
+          try {
+            await api('/api/avancys/cliente-provision', { method: 'PUT', body: JSON.stringify({ avancys_ref_num: nit, avancys_nombre: nombre, activo }) });
+            setRecargar(n => n + 1);
+          } catch (err) { setMarcaError(err instanceof Error ? err.message : String(err)); }
+          finally { setMarcando(false); }
+        }} /> Se le provisiona el mes (facturación mes vencido)
+      </label>
+      {datos.se_provisiona === null && <small className="muted"> · nadie lo ha declarado todavía</small>}
+      {marcaError && <><br/><small className="muted">{marcaError}</small></>}
+    </div>
     <div>
       <strong>Lo que tiene con nosotros</strong>
       {datos.motivo && <p className="muted">{datos.motivo}</p>}

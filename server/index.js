@@ -470,6 +470,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'PUT /api/avancys/cliente-enlace': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'PUT /api/avancys/cliente-provision': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
@@ -4157,6 +4158,13 @@ app.get('/api/avancys/cliente', async (req, res) => {
       ? await database.from('psi_cliente_avancys').select('client_id').eq('avancys_ref_num', identificacion).maybeSingle()
       : { data: null };
 
+    // Si a este cliente se le provisiona el mes. Lo declara una persona: Avancys no distingue al
+    // cliente público, y de eso depende que el servicio de un mes cuente en ese mes o en el
+    // siguiente, cuando sale la factura.
+    const { data: provision } = identificacion
+      ? await database.from('psi_cliente_provision').select('activo,nota,marcado_at').eq('avancys_ref_num', identificacion).maybeSingle()
+      : { data: null };
+
     let oportunidades = [];
     let emparejamiento = 'sin_coincidencias';
     if (enlace?.client_id) {
@@ -4196,7 +4204,51 @@ app.get('/api/avancys/cliente', async (req, res) => {
       // parecido de nombres.
       emparejamiento,
       candidato_enlace: candidato,
+      // `null` es "nadie lo ha dicho", distinto de `false`, que es "alguien dijo que no".
+      se_provisiona: provision ? provision.activo === true : null,
     });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Declarar si a un cliente se le provisiona el servicio del mes.
+//
+// Contabilidad lo explicó el 2026-10-29: sólo los clientes públicos se facturan mes vencido, así
+// que su servicio de agosto se registra en agosto aunque la factura salga en septiembre. A los
+// demás se les factura actualizado y no hay nada que provisionar.
+//
+// Avancys no distingue al cliente público —medido, sus etiquetas son ciclos de facturación— así
+// que esto se declara, no se deduce. Y queda escrito quién lo declaró: de esta marca depende en
+// qué mes cuenta la plata.
+//
+// Quitar no borra la fila: deja `activo = false`, para que quede el rastro de que alguien lo quitó.
+app.put('/api/avancys/cliente-provision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const refNum = String(req.body?.avancys_ref_num || '').trim();
+    if (!refNum) {
+      const error = new Error('Debe indicar la identificacion del cliente en Avancys.');
+      error.status = 400;
+      throw error;
+    }
+    const activo = req.body?.activo !== false;
+    const { error } = await database.from('psi_cliente_provision').upsert({
+      avancys_ref_num: refNum,
+      avancys_nombre: String(req.body?.avancys_nombre || '').trim() || null,
+      activo,
+      nota: String(req.body?.nota || '').trim() || null,
+      marcado_por: currentProfile.id,
+      marcado_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'avancys_ref_num' });
+    if (error) {
+      const fallo = new Error('No fue posible guardar la marca.');
+      fallo.status = 500;
+      throw fallo;
+    }
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ avancys_ref_num: refNum, activo });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
