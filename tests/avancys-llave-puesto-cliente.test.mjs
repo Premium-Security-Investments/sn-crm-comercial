@@ -901,3 +901,23 @@ test('el devengado se presenta como cálculo propio, no como la provisión de Co
     assert.match(cuerpo, /Nadie ha declarado todavia/, archivo);
   }
 });
+
+test('los pendientes de la Torre dicen lo que de verdad falta, medido', () => {
+  const falta = leer('src/siio/SiioLoQueFalta.tsx');
+
+  // Decía que faltaba "el centro de costo de cada puesto en Programación". Ese centro de costo
+  // existe —es el código de la cuenta analítica del puesto en Avancys— así que el texto mandaba a
+  // buscar donde no era. Lo que falta es el permiso sobre la distribución analítica del contrato.
+  assert.ok(!/salario base de los guardas y centro de costo/.test(falta),
+    'el pendiente de rentabilidad ya no puede mandar a Programación');
+  assert.match(falta, /hr\.contract\.analytic\.distribution/);
+  assert.match(falta, /el costo no está marcado por puesto en ninguna parte/);
+
+  // Concentración de clientes dejó de faltar: el panel existe y lee Avancys.
+  assert.ok(!/titulo: 'Concentración de clientes'/.test(falta),
+    'concentración de clientes ya no es un pendiente');
+
+  // El cliente de cada puesto tampoco falta como dato: falta que SecurityOps pueda preguntarlo.
+  assert.match(falta, /que SecurityOps pueda consultarnos/);
+  assert.ok(!/el cliente se deduce del nombre y queda aproximado/.test(falta));
+});

@@ -17,17 +17,25 @@ export function faltantes(summary: CommercialSummary | null): Falta[] {
     : 'registrar en el CRM las licitaciones adjudicadas y no adjudicadas.';
   return [
     { area: 'Finanzas', titulo: 'Comparación con presupuesto', falta: 'presupuesto mensual del año por rubro.' },
-    { area: 'Finanzas', titulo: 'Rentabilidad por cliente', falta: 'salario base de los guardas y centro de costo de cada puesto en Programación; hoy ambos están vacíos.' },
+    // Reescrito el 2026-10-29 con lo medido. Decía que faltaba "el centro de costo de cada puesto
+    // en Programación": ese centro de costo SÍ existe, es el código de la cuenta analítica del
+    // puesto en Avancys. Lo que falta es otra cosa y mandaba a buscar donde no era.
+    //
+    // Lo medido: de las líneas analíticas de agosto que caen en cuentas de puesto, las negativas
+    // están en `13050500 CLIENTES VIGILANCIA` —una cuenta por cobrar— y en cuentas de ingreso. Son
+    // los dos lados de la factura, no costo. El único costo real en cuentas de puesto en todo el
+    // mes fue una comisión de 65 millones. La nómina vive en cuentas por regional y línea de
+    // servicio, así que el costo no está atribuido al puesto en ninguna parte.
+    { area: 'Finanzas', titulo: 'Rentabilidad por cliente', falta: 'permiso de lectura sobre hr.contract.analytic.distribution en Avancys: dice cómo se reparte el costo de cada empleado entre los puestos. Hoy el costo no está marcado por puesto en ninguna parte, así que no se puede atribuir a un cliente.' },
     { area: 'Comercial privado', titulo: 'Puente de ingresos', falta: 'ingreso mensual actualizado y fecha de inicio del servicio de cada venta aprobada.' },
     { area: 'Comercial privado', titulo: 'Cobertura necesaria', falta: 'tasa de cierre histórica (ofertas ganadas sobre enviadas) para fijar cuántas veces debe cubrir el pipeline la meta.' },
-    { area: 'Comercial privado', titulo: 'Concentración de clientes', falta: 'ingresos por cliente desde Avancys.' },
     { area: 'Comercial privado', titulo: 'Cierres que se corren', falta: 'guardar el historial de fechas de cierre estimadas en el CRM.' },
     { area: 'Licitaciones', titulo: 'Tasa de adjudicación', falta: adjudicacion },
     { area: 'Licitaciones', titulo: 'Contra quién se pierde', falta: 'registrar el adjudicatario de cada licitación perdida.' },
     { area: 'Operaciones', titulo: 'Cumplimiento contra contrato', falta: 'frecuencias exigidas por cliente: visitas, tiempos de tickets, aprovisionamientos.' },
     { area: 'Operaciones', titulo: 'Servicio técnico y cotizaciones', falta: 'cotizaciones abiertas y tiempos de atención por cliente.' },
     { area: 'Operaciones', titulo: 'Alertas de video', falta: 'fuente de monitoreo.' },
-    { area: 'Operaciones', titulo: 'Cliente de cada puesto en SecurityOps', falta: 'llenar la marca del puesto; hoy el cliente se deduce del nombre y queda aproximado.' },
+    { area: 'Operaciones', titulo: 'Cliente de cada puesto en SecurityOps', falta: 'que SecurityOps pueda consultarnos. El dato ya no falta: la llave puesto↔cliente está declarada en el catálogo de fuentes y se lee de Avancys, donde los puestos traen su contrato y su cliente.' },
   ];
 }
 
@@ -35,8 +43,8 @@ export function SiioLoQueFalta({ summary }: { summary: CommercialSummary | null 
   const lista = faltantes(summary);
   return <div className="siio-detail-body">
     <p className="siio-pulse-source">
-      {lista.length} cosas que la Torre todavía no puede mostrar, y el dato que destraba cada una.
-      Ninguna depende de programar algo: dependen de que exista la información.
+      {lista.length} cosas que la Torre todavía no puede mostrar, y lo que destraba cada una.
+      Casi todas dependen de que exista la información, no de programar algo.
     </p>
     <div className="siio-commercial-pending-grid">
       {lista.map(item => <div className="siio-commercial-pending" key={`${item.area}:${item.titulo}`}>
