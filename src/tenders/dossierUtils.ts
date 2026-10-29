@@ -1,9 +1,19 @@
+/** Por qué el expediente sigue sin documentos, según el pipeline (tender-empty-discovery.js). */
+export type TenderDocumentsPendingSource = {
+  reason_code: string;
+  reason?: string | null;
+  next_check_at?: string | null;
+  attempt?: number;
+  parked?: boolean;
+};
+
 export type TenderDossierQueueInput = {
   document_count: number;
   missing_document_count: number;
   document_import_status: string;
   document_import_error?: string | null;
   dossier_error?: string | null;
+  documents_pending_source?: TenderDocumentsPendingSource | null;
   decision?: 'go' | 'no_go' | null;
   preparation_status?: string | null;
   tender_offer_status?: string | null;
@@ -15,10 +25,41 @@ export type TenderDossierQueueState = {
   error: string | null;
 };
 
-export function tenderDossierQueueState(dossier: TenderDossierQueueInput): TenderDossierQueueState {
+const BOGOTA_TIME = new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Bogota' });
+const BOGOTA_DAY = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' });
+
+/** "a las 11:20 p. m." si es hoy; con el día si cae mañana o después. Una fecha ilegible no inventa hora. */
+function nextCheckAction(at: string | null | undefined, now: Date) {
+  const date = at ? new Date(at) : null;
+  if (!date || Number.isNaN(date.getTime())) return 'Vig-IA vuelve a revisar automáticamente';
+  const hora = BOGOTA_TIME.format(date);
+  return BOGOTA_DAY.format(date) === BOGOTA_DAY.format(now)
+    ? `Vig-IA vuelve a revisar a las ${hora}`
+    : `Vig-IA vuelve a revisar el ${BOGOTA_DAY.format(date)} a las ${hora}`;
+}
+
+export function tenderDossierQueueState(dossier: TenderDossierQueueInput, { now = new Date() }: { now?: Date } = {}): TenderDossierQueueState {
   const error = dossier.dossier_error || dossier.document_import_error || null;
   if (error || ['fallo_importacion', 'error'].includes(dossier.document_import_status)) {
     return { process: 'Requiere atención', nextAction: 'Resolver error documental', error: error || 'El procesamiento documental reportó un error.' };
+  }
+  // Sin documentos porque la entidad todavía no los publicó NO es un expediente que alguien deba
+  // completar: no hay nada que una persona pueda hacer, y el pipeline ya tiene cita para volver.
+  // Pedirle "Completar o importar documentos" era mandarla a resolver algo que no está en su mano.
+  const pendingSource = dossier.documents_pending_source || null;
+  if (pendingSource) {
+    if (pendingSource.parked) {
+      return {
+        process: 'Requiere atención',
+        nextAction: 'La fuente oficial nunca publicó documentos',
+        error: pendingSource.reason || 'La fuente oficial no publicó documentos en las revisiones previstas.',
+      };
+    }
+    return {
+      process: 'Esperando documentos de la entidad',
+      nextAction: nextCheckAction(pendingSource.next_check_at, now),
+      error: null,
+    };
   }
   if (dossier.missing_document_count > 0 || dossier.document_import_status === 'pendiente_documentos') {
     return { process: 'Expediente incompleto', nextAction: 'Completar o importar documentos', error: null };
