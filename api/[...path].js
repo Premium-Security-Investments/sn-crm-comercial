@@ -4006,17 +4006,20 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
       .eq('profile_id', currentProfile.id);
     if (error) throw error;
     const asignaciones = Array.isArray(data) ? data : [];
-    // Quien tiene cartera ve SU cartera, mande o no.
+    // El alcance lo manda la Vista Admin / Vista Comercial que ya existe en el CRM, no una casilla
+    // nueva. Juan la señaló el 2026-10-29: él entra en Vista Admin y ve todo, en Vista Comercial ve
+    // lo suyo, y el gerente comercial debe funcionar igual. La pantalla manda qué vista tiene.
     //
-    // El gerente comercial es `admin` en el CRM y a la vez atiende 877 clientes —los suyos más los
-    // de quienes salieron—. La primera versión leyó sólo el rol y le mostró los 1.439 de la
-    // compañía, ignorándole la cartera. Lo detectó Juan el 2026-10-29.
+    // La primera versión leyó sólo el rol y le mostró a Luis Fernando los 1.439 clientes de la
+    // compañía, ignorándole sus 877 —los suyos más los de quienes salieron—.
     //
-    // Puede pedir toda la compañía, pero no le llega por defecto, y pedirla no basta: el servidor
-    // comprueba el rol. Un comercial que mande `alcance=todos` sigue viendo sólo lo suyo.
+    // Pedir MENOS siempre se concede: estrechar nunca abre nada. Pedir MÁS se comprueba contra el
+    // rol, así que un comercial que mande `alcance=todos` sigue viendo sólo lo suyo.
     const puedeVerTodo = veTodaLaCarteraComercial(currentProfile);
-    const pidioTodo = String(req.query.alcance || '') === 'todos';
-    const todos = puedeVerTodo && (pidioTodo || asignaciones.length === 0);
+    const pedido = String(req.query.alcance || '');
+    const todos = pedido === 'propios'
+      ? false
+      : puedeVerTodo && (pedido === 'todos' || asignaciones.length === 0);
     res.set('Cache-Control', 'private, no-store');
     if (!todos && asignaciones.length === 0) {
       return res.json({

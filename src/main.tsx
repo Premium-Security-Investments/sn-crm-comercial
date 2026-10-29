@@ -746,16 +746,16 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   const [error, setError] = useState('');
   const [filtro, setFiltro] = useState('');
   const mios = currentProfile?.role === 'comercial';
-  // Quien tiene cartera empieza por la suya, mande o no; si además manda, puede pasar a toda la
-  // compañía con el interruptor. El servidor vuelve a comprobar el rol: esto sólo lo pide.
-  const [verTodo, setVerTodo] = useState(false);
   // En dos tiempos, y por una medición: la lista sola tarda 1,5 s y con los productos de cada
   // cliente, 8 s con los 1.439 de la compañía. Primero la lista —con la que ya se busca y se
   // llama— y los productos después, que sólo alimentan dos filtros.
   useEffect(() => {
     let vigente = true;
     (async () => {
-      const alcance = verTodo ? '&alcance=todos' : '';
+      // El alcance lo manda la Vista Admin / Vista Comercial que ya tiene el CRM: en Vista
+      // Comercial `currentProfile` llega con rol comercial, así que `mios` ya lo refleja. Pedir
+      // menos siempre se concede; pedir más lo comprueba el servidor contra el rol real.
+      const alcance = mios ? '&alcance=propios' : '';
       setEstado('cargando'); setError('');
       try {
         const rapida = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?sin_servicios=1${alcance}`);
@@ -775,7 +775,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
       }
     })();
     return () => { vigente = false; };
-  }, [verTodo]);
+  }, [mios]);
   const [comercial, setComercial] = useState('');
   const [departamento, setDepartamento] = useState('');
   const [producto, setProducto] = useState('');
@@ -806,7 +806,6 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   });
   return <Panel title={mios ? 'Mis clientes' : 'Clientes'}>
     <p className="muted">Los clientes que la empresa ya tiene. Se leen de Avancys en vivo; no se copian al CRM.</p>
-    {datos?.puede_ver_todo && <label className="check-filter"><input type="checkbox" checked={verTodo} onChange={e => setVerTodo(e.target.checked)} /> Ver todos los clientes de la compañía</label>}
     {estado === 'cargando' && <p className="muted">Consultando Avancys…</p>}
     {estado === 'error' && <p className="muted">No fue posible consultar Avancys: {error}</p>}
     {estado === 'listo' && datos && <>
