@@ -4063,6 +4063,33 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
   }
 });
 
+// El núcleo del nombre de un cliente, para buscarlo en el CRM.
+//
+// Los nombres de Avancys son los largos y formales —"PAPELES NACIONALES S.A"— y los del CRM los
+// cortos —"PAPELES NACIONALES"—. La primera versión buscaba oportunidades que CONTUVIERAN el
+// nombre de Avancys, así que el corto nunca calzaba y Papeles Nacionales salía sin ninguna
+// coincidencia teniendo dos. Lo vio Juan en producción el 2026-10-29.
+//
+// Se quitan las formas societarias y se toman las dos primeras palabras con sustancia: es lo que
+// tienen en común los dos mundos. Deliberadamente tosco, porque de ahí en adelante decide una
+// persona con el enlace, no esta heurística.
+const FORMAS_SOCIETARIAS = new Set(['sa', 'sas', 'ltda', 'ph', 'esp', 'sca', 'bic', 'cia', 'eu', 'limitada', 'y', 'de', 'del', 'la', 'el', 'los', 'las', 'en']);
+function palabrasDelNombre(nombre) {
+  return String(nombre || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+    .filter(palabra => palabra.length > 1 && !FORMAS_SOCIETARIAS.has(palabra))
+    .slice(0, 2);
+}
+// La búsqueda va por la PRIMERA palabra y el filtro exige las dos, en cualquier orden. Buscar
+// "camara comercio" como texto seguido tampoco calzaba con "Cámara DE Comercio de Pereira": las
+// palabras que comparten los dos mundos casi nunca están pegadas.
+function nombreCoincide(nombreCrm, palabras) {
+  const texto = String(nombreCrm || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return palabras.every(palabra => texto.includes(palabra));
+}
+
 // Las oportunidades de la tabla base, con los nombres que la vista enriquecida les pone. Se lee de
 // la tabla y no de la vista porque la vista no expone `client_id`, que es lo que necesita el enlace.
 async function enriquecerOportunidades(database, filas) {
@@ -4137,10 +4164,12 @@ app.get('/api/avancys/cliente', async (req, res) => {
         .select('id,company_name,client_id').eq('client_id', enlace.client_id).limit(50);
       oportunidades = await enriquecerOportunidades(database, data);
       emparejamiento = 'enlace_confirmado';
-    } else if (normalizeClientName(nombre)) {
+    } else if (palabrasDelNombre(nombre).length > 0) {
+      const palabras = palabrasDelNombre(nombre);
       const { data } = await database.from('psi_sales_opportunities')
-        .select('id,company_name,client_id').ilike('company_name', `%${nombre}%`).limit(50);
-      oportunidades = await enriquecerOportunidades(database, data);
+        .select('id,company_name,client_id').ilike('company_name', `%${palabras[0]}%`).limit(100);
+      const candidatas = (Array.isArray(data) ? data : []).filter(fila => nombreCoincide(fila.company_name, palabras));
+      oportunidades = await enriquecerOportunidades(database, candidatas);
       if (oportunidades.length > 0) emparejamiento = 'nombre_aproximado';
     }
     // El candidato a enlazar: el cliente del CRM que más veces aparece entre las coincidencias.
