@@ -21,6 +21,7 @@ import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversi
 import { fetchTenderRadarSourceRows } from '../verticales/licitaciones/tender-radar-source-fetch.js';
 import { DIRECT_SERVICE_REASON as RADAR_DEEP_DIRECT_SERVICE_REASON, RADAR_DEEP_CATEGORY_FIELD, RADAR_DEEP_CHUNK_DAYS, RADAR_DEEP_MAX_ROWS_PER_WINDOW, RADAR_DEEP_PAGE_LIMIT, evaluateElectronicSecurityPath, isHighValueVigilanceTender, radarDeepKeywordWhere, radarDeepUnspscFamilyWhere, radarDeepWindows } from '../verticales/licitaciones/tender-radar-deep-search.js';
 import { createTenderProcessingWorker } from '../verticales/licitaciones/tender-processing-worker.js';
+import { TENDER_DOCUMENTS_NOT_PUBLISHED_CODE, TENDER_EMPTY_DISCOVERY_EXHAUSTED_CODE } from '../verticales/licitaciones/tender-empty-discovery.js';
 import { createTenderProcessingDrain } from '../verticales/licitaciones/tender-processing-drain.js';
 import { dispatchTenderProcessingAfterConversion } from '../verticales/licitaciones/tender-processing-dispatch.js';
 import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderDocumentChunk, recordTenderImportItem, updateTenderProcessingJob } from '../verticales/licitaciones/tender-processing-worker-rpc.js';
@@ -5953,10 +5954,36 @@ function buildTenderProcessingWorkerDeps(database) {
   };
 }
 
+// Una licitación sin documentos no siempre es un expediente que alguien deba completar: casi siempre
+// la entidad todavía no los publicó y el pipeline ya tiene cita para volver a mirar
+// (tender-empty-discovery.js). Hasta el 2026-10-29 esa razón quedaba escrita en el trabajo y la bandeja
+// igual mostraba "Completar o importar documentos", pidiéndole a una persona algo que no tenía cómo
+// resolver. Esto la trae para que la tarjeta pueda decir lo que de verdad está pasando. Nunca lanza:
+// si la lectura falla, la tarjeta se comporta como antes.
+async function readTenderDocumentsPendingSource(database, opportunityId) {
+  if (!opportunityId) return null;
+  try {
+    const { data } = await database.from('psi_tender_processing_jobs')
+      .select('status,last_error_code,last_error_message,next_attempt_at,attempt_count')
+      .eq('opportunity_id', opportunityId)
+      .in('last_error_code', [TENDER_DOCUMENTS_NOT_PUBLISHED_CODE, TENDER_EMPTY_DISCOVERY_EXHAUSTED_CODE])
+      .order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    if (!data?.last_error_code) return null;
+    return {
+      reason_code: data.last_error_code,
+      reason: data.last_error_message || null,
+      next_check_at: data.next_attempt_at || null,
+      attempt: Number(data.attempt_count || 0),
+      parked: data.status === 'needs_attention',
+    };
+  } catch (_error) { return null; }
+}
+
 export async function buildTenderOpportunitySummary(database, tender, { opportunity = null, latestDecision = null } = {}) {
   const fallback = {
     ...dbTenderToPublic(tender), opportunity_id: tender.converted_opportunity_id,
     document_count: 0, missing_document_count: 0, document_import_status: 'error', document_import_error: null,
+    documents_pending_source: null,
     go_no_go: 'Pendiente', recommendation: 'Pendiente', decision: latestDecision?.decision || null,
     decided_by_name: latestDecision?.psi_sales_profiles?.full_name || null, decided_at: latestDecision?.decided_at || null,
     tender_offer_status: opportunity?.tender_offer_status || 'pendiente_decision', risk: 'Pendiente', checklist_progress: null,
@@ -5982,8 +6009,13 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     const importFailureIsCurrent = records.import_error && (!analysis || !analysis.created_at || !records.import_error.created_at || Date.parse(records.import_error.created_at) >= Date.parse(analysis.created_at));
     const preparation = preparationRecords.preparation;
     const recommendation = importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente';
+    // Sólo cuando no hay ni un documento vigente: con documentos cargados el expediente ya avanzó y
+    // la espera de la fuente dejó de ser lo que explica la tarjeta.
+    const documentsPendingSource = currentDocuments.length || importFailureIsCurrent
+      ? null
+      : await readTenderDocumentsPendingSource(database, tender.converted_opportunity_id);
     return {
-      ...fallback, document_count: currentDocuments.length,
+      ...fallback, document_count: currentDocuments.length, documents_pending_source: documentsPendingSource,
       missing_document_count: (analysis?.checklist || []).filter(item => /pendiente|falta/i.test(String(item))).length,
       document_import_status: importFailureIsCurrent ? 'fallo_importacion' : analysis ? 'analisis_generado' : currentDocuments.length ? 'documentos_cargados' : 'pendiente_documentos',
       document_import_error: importFailureIsCurrent ? 'La importación automática de documentos falló. Reintente o cargue los documentos manualmente.' : null,
