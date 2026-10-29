@@ -257,13 +257,20 @@ function canActionableReviewContributeOrPropose(profile, resource) {
   return false;
 }
 
-function canActionableReviewResolveOrKnowledgeGovern(profile, resource) {
+// Gobierno del aprendizaje institucional (revisar y publicar una versión de conocimiento): se deja como estaba. No es
+// una limitación de rol sobre el trabajo de una licitación, sino el segundo par de ojos del catálogo: quien propone no
+// aprueba lo suyo. Si el dueño quiere también abrirlo, es una decisión aparte.
+function canKnowledgeGovern(profile, resource) {
   if (!hasPermission(profile, TENDER_PERMISSION)) return false;
   if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
-  // Misma decisión del 2026-10-29: resolver una ficha del registro y gobernar el aprendizaje son parte de "todo lo de
-  // Licitaciones" para quien tiene el permiso y es la encargada.
-  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return true;
   return canDirectorCommercialResource(profile, resource);
+}
+
+// Resolver una ficha del registro accionable sí es trabajar la licitación (Juan, 2026-10-29).
+function canActionableReviewResolve(profile, resource) {
+  if (!hasPermission(profile, TENDER_PERMISSION)) return false;
+  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return true;
+  return canKnowledgeGovern(profile, resource);
 }
 
 function canSiioAssignedAction(profile, resource) {
@@ -439,9 +446,10 @@ export function can(profile, action, resource = {}) {
     case ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE:
       return canActionableReviewContributeOrPropose(profile, resource);
     case ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE:
+      return canActionableReviewResolve(profile, resource);
     case ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW:
     case ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH:
-      return canActionableReviewResolveOrKnowledgeGovern(profile, resource);
+      return canKnowledgeGovern(profile, resource);
     default:
       return false;
   }

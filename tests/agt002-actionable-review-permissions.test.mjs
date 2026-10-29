@@ -100,13 +100,23 @@ await (async function directorIsScopeGated() {
 await (async function comercialConPermisoEsLaEncargada() {
   const owner = human('comercial', { id: OWNER });
   const notOwner = human('comercial', { id: 'someone-else' });
-  for (const code of Object.values(NEW_ACTION_CODES)) {
+  // Trabajar la licitación: contribuir, proponer y resolver fichas, sea de quien sea la oportunidad.
+  const DEL_TRABAJO = [
+    ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE,
+    ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE,
+    ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE,
+  ];
+  for (const code of DEL_TRABAJO) {
     assert.equal(can(owner, code, resource()), true, `la encargada debe poder ${code}`);
     assert.equal(
       can(notOwner, code, resource()),
       true,
       `la encargada debe poder ${code} en una licitación que no figura a su nombre`,
     );
+  }
+  // Gobernar el aprendizaje institucional conserva su segundo par de ojos: quien propone no aprueba lo suyo.
+  for (const code of [ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW, ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH]) {
+    assert.equal(can(owner, code, resource()), false, `${code} sigue pidiendo revisión de otra persona`);
   }
   // Sin el permiso de Licitaciones, un comercial sigue sin nada de esto.
   const sinPermiso = human('comercial', { id: OWNER, permissions: [] });

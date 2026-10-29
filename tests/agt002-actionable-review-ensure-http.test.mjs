@@ -22,6 +22,7 @@ const ITEM_ID = '33333333-3333-4333-8333-333333333333';
 const HUMAN_ID = '44444444-4444-4444-8444-444444444444';
 const AGENT_ID = '55555555-5555-4555-8555-555555555555';
 const OTHER_COMMERCIAL_ID = '66666666-6666-4666-8666-666666666666';
+const NO_TENDER_PERMISSION_ID = 'c0000000-0000-4000-8000-00000000000a';
 const TEST_SERVICE_KEY = 'test-service-key';
 
 // The exact unit as it lives inside the immutable canonical run result. Every
@@ -115,6 +116,13 @@ const actors = {
     profile: { id: OTHER_COMMERCIAL_ID, full_name: 'Otra Comercial', microsoft_email: 'otra@example.test', auth_user_id: 'other-commercial-auth', role: 'comercial', active: true, identity_type: 'human' },
     areas: [{ area_code: 'comercial', subarea_code: 'licitaciones' }],
     permissions: [{ permission_code: 'licitaciones' }],
+  },
+  // Mismo rol, sin acceso a Licitaciones: el permiso es la frontera.
+  'no-tender-permission-token': {
+    user: { id: 'no-tender-auth', email: 'sinlicitaciones@example.test' },
+    profile: { id: NO_TENDER_PERMISSION_ID, full_name: 'Comercial sin Licitaciones', microsoft_email: 'sinlicitaciones@example.test', auth_user_id: 'no-tender-auth', role: 'comercial', active: true, identity_type: 'human' },
+    areas: [{ area_code: 'comercial', subarea_code: 'licitaciones' }],
+    permissions: [],
   },
 };
 const actorByAuthId = new Map(Object.values(actors).map(actor => [actor.user.id, actor]));
@@ -307,10 +315,13 @@ try {
       assert.deepEqual(runMismatch.body, missingRun.body, `backend ${index} makes a foreign run indistinguishable from a nonexistent one`);
       assert.equal(state.items.size, 1, `backend ${index} materializes nothing for a mismatched run`);
 
-      // --- §7.2: a `comercial` who owns nothing here gets the same safe 404 -
-      const unauthorizedRole = await requestJson(port, ENSURE_PATH, 'other-commercial-token', 'POST', ensureBody());
-      assert.equal(unauthorizedRole.status, 404, `backend ${index} hides the resource from a comercial who does not own the opportunity`);
-      assert.deepEqual(unauthorizedRole.body, foreignOpportunity.body, `backend ${index} uses the same closed 404 body for an unauthorized role`);
+      // --- Juan, 2026-10-29: la encargada de Licitaciones trabaja todas las licitaciones, no sólo las suyas, así que
+      // otro `comercial` CON el permiso de Licitaciones entra igual. Sin el permiso sigue siendo el mismo 404 cerrado.
+      const otraEncargada = await requestJson(port, ENSURE_PATH, 'other-commercial-token', 'POST', ensureBody());
+      assert.equal(otraEncargada.status, 200, `backend ${index} lets a comercial with Licitaciones access work another owner's tender`);
+      const sinPermiso = await requestJson(port, ENSURE_PATH, 'no-tender-permission-token', 'POST', ensureBody());
+      assert.equal(sinPermiso.status, 404, `backend ${index} hides the resource from a profile without Licitaciones access`);
+      assert.deepEqual(sinPermiso.body, foreignOpportunity.body, `backend ${index} uses the same closed 404 body for an unauthorized profile`);
 
       // --- §11/§18: a stored identity with another source_hash is a closed
       // 409, never a silent overwrite -----------------------------------------
