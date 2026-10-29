@@ -19,7 +19,7 @@ const CAMPOS = Object.freeze({
   puesto: Object.freeze(['id', 'code', 'name', 'analytic_account_id', 'cliente_contract_id', 'write_date']),
   contrato: Object.freeze(['id', 'name', 'partner_id', 'date_start', 'date', 'write_date']),
   cuenta: Object.freeze(['id', 'code', 'partner_id', 'write_date']),
-  cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'write_date']),
+  cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'write_date']),
 });
 
 const MODELO = Object.freeze({
@@ -33,6 +33,9 @@ const MODELO = Object.freeze({
 // viaja al modelo por `minimizarFuentes`, que recorta a 6 kB: se entrega el total completo y una
 // porción nombrada de los puestos, nunca la lista entera recortada a la mitad de un nombre.
 export const MAX_PUESTOS_LISTADOS = 25;
+// Tope de la bandeja de un comercial. El gerente comercial sostiene 564 clientes propios más los
+// de quienes salieron de la empresa, así que esto no es un número decorativo.
+export const MAX_CLIENTES_LISTADOS = 1000;
 const MAX_FILAS = 2000;
 const MAX_BYTES = 8388608;
 const TIMEOUT_MS = 20000;
@@ -326,5 +329,34 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, clienteDelPuesto, puestosDelCliente });
+  /**
+   * La cartera de un comercial: los clientes que Avancys le tiene asignados.
+   *
+   * Recibe los ids de usuario de Odoo, no el perfil del CRM, porque la equivalencia entre los dos
+   * es una decisión de negocio que vive en la base del CRM —incluido a quién se le muestran los
+   * clientes de quienes ya no están— y no tiene por qué conocerla un lector de Odoo.
+   *
+   * Devuelve la lista sin contratos ni puestos: son 564 clientes en el peor caso y contarlos uno
+   * por uno serían mil consultas. Para el detalle de uno está `puestosDelCliente`.
+   */
+  async function clientesDelComercial({ odooUserIds }) {
+    const ids = [...new Set((Array.isArray(odooUserIds) ? odooUserIds : [])
+      .filter(valor => Number.isSafeInteger(valor) && valor > 0))];
+    if (ids.length === 0) falla('AVANCYS_COMERCIAL_SIN_USUARIO');
+    const filas = await leer('cliente', [['customer_rank', '>', 0], ['user_id', 'in', ids]],
+      { limite: MAX_CLIENTES_LISTADOS, orden: 'name asc' });
+    const clientes = filas.map(fila => Object.freeze({
+      ...clientePublico(fila),
+      atendido_por: Array.isArray(fila.user_id) ? texto(fila.user_id[1]) : null,
+    }));
+    return Object.freeze({
+      total: clientes.length,
+      // Avisa cuando la lista pudo quedar recortada, en vez de mentir con un total que no lo es.
+      recortada: clientes.length >= MAX_CLIENTES_LISTADOS,
+      clientes: Object.freeze(clientes),
+      as_of: corteDe([filas]),
+    });
+  }
+
+  return Object.freeze({ origen: config.origen, database: config.database, clienteDelPuesto, puestosDelCliente, clientesDelComercial });
 }

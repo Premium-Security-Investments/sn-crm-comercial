@@ -724,6 +724,58 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
   return [...rows].sort((a, b) => compareSortValues(tenderSortValue(a), tenderSortValue(b), tenderSortDirection));
 }
 
+type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null };
+type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
+
+// Los clientes que la empresa ya tiene, para el comercial que los atiende.
+//
+// Hasta ahora el CRM sólo mostraba el embudo de lo nuevo. Los clientes actuales viven en Avancys y
+// aquí se leen en vivo: no se copian, así que lo que se ve es lo que hay allá en este momento, con
+// su fecha de corte a la vista.
+//
+// Se carga a pedido y no al abrir la pantalla: son hasta 877 clientes contra un ERP ajeno, y nadie
+// debería pagar esa espera sin haberla pedido.
+function MisClientesAvancys() {
+  const [estado, setEstado] = useState<'inicial'|'cargando'|'listo'|'error'>('inicial');
+  const [datos, setDatos] = useState<MisClientesRespuesta | null>(null);
+  const [error, setError] = useState('');
+  const [filtro, setFiltro] = useState('');
+  const cargar = async () => {
+    setEstado('cargando'); setError('');
+    try {
+      setDatos(await api<MisClientesRespuesta>('/api/avancys/mis-clientes'));
+      setEstado('listo');
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); setEstado('error'); }
+  };
+  const visibles = (datos?.clientes || []).filter(c => {
+    if (!filtro.trim()) return true;
+    const texto = `${c.nombre || ''} ${c.identificacion?.numero || ''}`.toLowerCase();
+    return texto.includes(filtro.trim().toLowerCase());
+  });
+  return <details className="panel" onToggle={e => { if ((e.target as HTMLDetailsElement).open && estado === 'inicial') void cargar(); }}>
+    <summary><strong>Mis clientes actuales</strong> <span className="muted">· lo que ya tenemos con ellos, leído de Avancys</span></summary>
+    {estado === 'cargando' && <p className="muted">Consultando Avancys…</p>}
+    {estado === 'error' && <p className="muted">No fue posible consultar Avancys: {error}</p>}
+    {estado === 'listo' && datos && <>
+      {datos.motivo
+        ? <p className="muted">{datos.motivo}</p>
+        : <p className="muted filter-summary"><strong>{datos.total}</strong> {datos.total === 1 ? 'cliente' : 'clientes'} a su cargo{datos.as_of ? <> · datos de Avancys al {datos.as_of.slice(0, 10)}</> : null}{datos.recortada ? <> · lista recortada</> : null}</p>}
+      {(datos.heredados || []).map(h => <p className="muted" key={h.comercial}>Incluye los clientes de {h.comercial}. {h.motivo}</p>)}
+      {datos.total > 0 && <>
+        <div className="filters"><input placeholder="Buscar cliente o NIT…" value={filtro} onChange={e => setFiltro(e.target.value)} /></div>
+        <ul className="dashboard-simple-list">
+          {visibles.slice(0, 200).map((c, i) => <li key={`${c.identificacion?.numero || c.nombre || ''}-${i}`}>
+            <strong>{c.nombre || 'Sin nombre'}</strong>
+            <span>{c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : 'Sin identificación en Avancys'}</span>
+          </li>)}
+        </ul>
+        {visibles.length > 200 && <p className="muted">Se muestran los primeros 200 de {visibles.length}. Use el buscador.</p>}
+        {visibles.length === 0 && <p className="muted">Ningún cliente coincide con «{filtro}».</p>}
+      </>}
+    </>}
+  </details>;
+}
+
 function OpportunityList({ data }: { data: Bootstrap }) {
   const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [customerSegmentFilter, setCustomerSegmentFilter] = useState(hashQueryParam('segment')); const [period, setPeriod] = useState<DashboardPeriodFilter>(hashQueryParam('period') as DashboardPeriodFilter); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all'); const [onlyWithoutNextAction, setOnlyWithoutNextAction] = useState(hashQueryParam('sin_gestion') === '1');
   const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'regional'|'stage'|'product'|'segment'|'value'|'close'|'last'>>({ key: 'client', direction: 'asc' });
@@ -783,6 +835,7 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   const showUrgency = urgencySort && priorities.status === 'ready';
   const pagedOpportunities = sortedOpportunities.slice((opportunitiesPage - 1) * OPPORTUNITIES_PAGE_SIZE, opportunitiesPage * OPPORTUNITIES_PAGE_SIZE);
   return <section className="stack">
+    <MisClientesAvancys />
     <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Periodo"/> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><label className="check-filter"><input type="checkbox" checked={onlyWithoutNextAction} onChange={e=>setOnlyWithoutNextAction(e.target.checked)} /> Sin próxima gestión</label><button type="button" className={urgencySort ? '' : 'secondary'} aria-pressed={urgencySort} onClick={() => setUrgencySort(current => !current)}>Ordenar por urgencia</button><button className="secondary" onClick={()=>{ setQ(''); setPeriod(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); setOnlyWithoutNextAction(false); }}>Limpiar</button></div>
     {urgencySort && priorities.status === 'loading' && <p className="muted">Calculando urgencia…</p>}
     {urgencySort && priorities.status === 'error' && <p className="muted">La urgencia no está disponible en este momento; se mantiene el orden actual.</p>}

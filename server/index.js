@@ -64,6 +64,7 @@ import { BEHAVIOR_FOLLOW_UP_TYPES, bogotaWeekStart, buildCommercialBehavior } fr
 import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-api.js';
 import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../verticales/comercial/agt003-copilot-runtime.js';
 import { resolverParaLector } from '../catalogo-fuentes.js';
+import { crearLectorAvancys } from '../avancys-odoo-lectura.js';
 
 // Lo que el copiloto comercial recibe resuelto antes de cada corrida. Crece una línea por entrada.
 // Lo que el copiloto comercial recibe del catálogo antes de redactar. `operacion.puestos_del_cliente`
@@ -464,6 +465,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
+  'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
@@ -3978,6 +3980,63 @@ async function closureFormState(database, opportunity) {
     catalog: closureFormCatalog(form),
   };
 }
+
+// La cartera del comercial: los clientes que Avancys le tiene asignados hoy.
+//
+// Hasta ahora el CRM sólo mostraba el embudo de lo nuevo —341 clientes, en su mayoría prospectos—
+// mientras los 1.411 clientes actuales de la empresa no aparecían por ninguna parte. Esto los trae,
+// sin copiarlos: el reparto vive en Avancys y se lee en vivo.
+//
+// La equivalencia entre el comercial de Odoo y el perfil del CRM sale de la base
+// (`psi_avancys_salesperson_map`), no de Avancys: incluye a quién se le muestran los clientes de
+// quienes ya no están en la empresa, que es una decisión de negocio y no un dato del ERP.
+//
+// Falla blanda en los dos puntos donde puede faltar algo: un comercial sin equivalencia y un
+// despliegue sin credenciales devuelven una lista vacía CON su razón escrita, nunca un error. Que
+// Avancys no conteste no puede tumbarle la pantalla a nadie.
+app.get('/api/avancys/mis-clientes', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const { data, error } = await database
+      .from('psi_avancys_salesperson_map')
+      .select('odoo_user_id,odoo_user_name,nota')
+      .eq('profile_id', currentProfile.id);
+    if (error) throw error;
+    const asignaciones = Array.isArray(data) ? data : [];
+    res.set('Cache-Control', 'private, no-store');
+    if (asignaciones.length === 0) {
+      return res.json({
+        total: 0, clientes: [], as_of: null, recortada: false,
+        motivo: 'Este perfil no tiene comercial equivalente en Avancys.',
+      });
+    }
+    const lector = crearLectorAvancys();
+    if (!lector) {
+      return res.json({
+        total: 0, clientes: [], as_of: null, recortada: false,
+        motivo: 'Avancys no esta configurado en este ambiente.',
+      });
+    }
+    const leido = await lector.clientesDelComercial({
+      odooUserIds: asignaciones.map(fila => fila.odoo_user_id),
+    });
+    return res.json({
+      ...leido,
+      // Quien ve clientes de otro comercial debe saber por qué, no deducirlo.
+      heredados: asignaciones.filter(fila => fila.nota).map(fila => ({
+        comercial: fila.odoo_user_name, motivo: fila.nota,
+      })),
+    });
+  } catch (error) {
+    if (error?.codigo) {
+      // Avancys no respondió. Se declara y la pantalla queda vacía con su razón.
+      return res.json({ total: 0, clientes: [], as_of: null, recortada: false, motivo: `Avancys no respondio: ${error.codigo}` });
+    }
+    sendError(res, error, error?.status || 400);
+  }
+});
 
 app.get('/api/agt003/closure-form', async (req, res) => {
   try {
