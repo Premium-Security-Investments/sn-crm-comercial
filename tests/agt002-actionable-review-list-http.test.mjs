@@ -275,9 +275,9 @@ try {
 
       const byId = id => owner.body.items.find(item => item.id === id);
 
-      // capabilities: comercial owner may contribute but not resolve (§7.1)
+      // capabilities: la encargada de Licitaciones contribuye y resuelve (Juan, 2026-10-29)
       for (const item of owner.body.items) {
-        assert.deepEqual(item.capabilities, { can_contribute: true, can_resolve: false }, `backend ${index} computes owner capabilities per item ${item.id}`);
+        assert.deepEqual(item.capabilities, { can_contribute: true, can_resolve: true }, `backend ${index} computes owner capabilities per item ${item.id}`);
       }
 
       // pendiente: no events at all

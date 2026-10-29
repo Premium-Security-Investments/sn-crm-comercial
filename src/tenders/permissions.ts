@@ -2,7 +2,8 @@ import type { TenderCurrentProfile } from './types';
 
 type TenderPermissionProfile = TenderCurrentProfile | null | undefined;
 
-const CONFIGURATION_ROLES = new Set(['admin', 'gerencia', 'director']);
+// Espeja HUMAN_TENDER_ROLES de access-control.js: los roles humanos que operan Licitaciones.
+const TENDER_ROLES = new Set(['admin', 'gerencia', 'director', 'comercial']);
 
 function isActiveHuman(profile: TenderPermissionProfile): profile is TenderCurrentProfile {
   if (!profile || profile.active !== true || profile.id.trim() !== profile.id || !profile.id) return false;
@@ -29,11 +30,13 @@ export function canManageTenderCompanyDocuments(profile: TenderPermissionProfile
     && profile.permissions.includes('licitaciones_custodia');
 }
 
-/** Mirrors LICITACIONES_GO_NO_GO_APPROVE: active human decision-makers with Licitaciones access. */
+/**
+ * Mirrors LICITACIONES_GO_NO_GO_APPROVE: todo humano activo con acceso a Licitaciones. Juan, 2026-10-29: el acceso a
+ * Licitaciones es el permiso, así que aprobar no depende del rol; el directivo de solo consulta nunca opera.
+ */
 export function canApproveTenderGoNoGo(profile: TenderPermissionProfile): boolean {
-  if (!profile || profile.active !== true || profile.id.trim() !== profile.id || !profile.id) return false;
-  if (Object.prototype.hasOwnProperty.call(profile, 'identity_type') && profile.identity_type != null && profile.identity_type !== 'human') return false;
-  return CONFIGURATION_ROLES.has(profile.role)
+  if (!isActiveHuman(profile) || isTenderReadOnlyProfile(profile)) return false;
+  return TENDER_ROLES.has(profile.role)
     && Array.isArray(profile.permissions)
     && profile.permissions.includes('licitaciones');
 }

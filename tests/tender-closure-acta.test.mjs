@@ -32,11 +32,16 @@ test('el GET dice cómo se cerró la licitación, porque la ficha no trae archiv
   assert.deepEqual(await getTenderClosureActa(abierta, OPPORTUNITY, JUAN), { closure_kind: null, acta: null });
 });
 
-test('el acta se lee en consulta pero sólo la redacta quien aprueba el GO', async () => {
+// Juan, 2026-10-29: quien aprueba el GO es quien tiene acceso a Licitaciones, y la encargada es `comercial`.
+test('el acta se lee en consulta y la redacta quien tiene acceso a Licitaciones', async () => {
   await assert.doesNotReject(() => getTenderClosureActa(fakeDatabase(), OPPORTUNITY, CONSULTA));
-  await assert.rejects(() => callUpsertTenderClosureActa(fakeDatabase(), { opportunity_id: OPPORTUNITY }, COMERCIAL), /No tiene autorización/);
+  await assert.doesNotReject(() => callUpsertTenderClosureActa(fakeDatabase(), { opportunity_id: OPPORTUNITY }, COMERCIAL));
+  await assert.doesNotReject(() => callConfirmTenderClosureActa(fakeDatabase(), { opportunity_id: OPPORTUNITY, expected_updated_at: '2026-10-19T16:00:00Z' }, COMERCIAL));
   await assert.rejects(() => callUpsertTenderClosureActa(fakeDatabase(), { opportunity_id: OPPORTUNITY }, CONSULTA), /No tiene autorización/);
-  await assert.rejects(() => callConfirmTenderClosureActa(fakeDatabase(), { opportunity_id: OPPORTUNITY, expected_updated_at: '2026-10-19T16:00:00Z' }, COMERCIAL), /No tiene autorización/);
+  await assert.rejects(
+    () => callUpsertTenderClosureActa(fakeDatabase(), { opportunity_id: OPPORTUNITY }, { ...COMERCIAL, permissions: [] }),
+    /No tiene autorización/,
+  );
 });
 
 test('la nota de cierre no se pide otra vez: si no se manda, no se toca', async () => {
