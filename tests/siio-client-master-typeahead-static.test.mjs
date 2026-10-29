@@ -135,5 +135,12 @@ test('UI #/new typeahead en Cliente/empresa rellena los 8 campos al elegir', () 
     assert.match(form, new RegExp(field));
   }
   assert.match(form, /setForm|client_id/);
-  assert.match(form, /customer_segment:\s*client\.customer_segment\s*\|\|\s*''/, 'seleccionar un cliente reemplaza el segmento previo incluso cuando el maestro está vacío');
+  // La intención no cambió: elegir un cliente REEMPLAZA el segmento anterior y nunca lo arrastra
+  // desde `prev`. Lo que cambió es que ahora hay dos orígenes (2026-10-29): un cliente del CRM trae
+  // su segmento o vacío, y uno de Avancys es `cliente_actual` por construcción —está allá porque se
+  // le factura—. Si alguna rama volviera a leer de `prev`, esto debe caer.
+  assert.match(form, /customer_segment: deAvancys \? 'cliente_actual' : \(client\.customer_segment \|\| ''\)/,
+    'seleccionar un cliente reemplaza el segmento previo incluso cuando el maestro está vacío');
+  assert.ok(!/customer_segment:\s*prev\.customer_segment/.test(form),
+    'el segmento nunca se arrastra del formulario anterior al elegir un cliente');
 });

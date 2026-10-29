@@ -119,7 +119,7 @@ type Route = { page: 'home' | 'clients' | 'opportunities' | 'tenders' | 'detail'
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
-type ClientSuggestion = { id: string; company_name: string; customer_segment: CustomerSegment | null; regional_nombre: string | null; sede: string | null; quote_city: string | null; economic_sector: string | null; decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null };
+type ClientSuggestion = { id: string; company_name: string; origen?: 'crm' | 'avancys'; company_nit?: string | null; atendido_por?: string | null; customer_segment: CustomerSegment | null; regional_nombre: string | null; sede: string | null; quote_city: string | null; economic_sector: string | null; decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
@@ -1989,11 +1989,16 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   };
   const selectClientSuggestion = (client: ClientSuggestion) => {
     selectedClientNameRef.current = client.company_name;
+    // Un cliente de Avancys todavía no existe en el CRM, así que no tiene `client_id` que mandar.
+    // Lo que sí trae es su NIT —sin que nadie lo escriba— y el hecho de que ya es cliente nuestro,
+    // que es cierto por construcción: está en Avancys porque se le factura.
+    const deAvancys = client.origen === 'avancys';
     setForm(prev => ({
       ...prev,
-      client_id: client.id,
+      client_id: deAvancys ? '' : client.id,
+      company_nit: deAvancys ? (client.company_nit || '') : (prev.company_nit || ''),
+      customer_segment: deAvancys ? 'cliente_actual' : (client.customer_segment || ''),
       company_name: client.company_name,
-      customer_segment: client.customer_segment || '',
       regional_nombre: client.regional_nombre || '',
       sede: client.sede || '',
       quote_city: client.quote_city || '',
@@ -2079,7 +2084,10 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
           <ul id="client-typeahead-listbox" role="listbox" className="client-typeahead-list">
             {clientSuggestions.map(client => (
               <li key={client.id} role="option" aria-selected={form.client_id === client.id}>
-                <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>selectClientSuggestion(client)}>{client.company_name}</button>
+                <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>selectClientSuggestion(client)}>
+                  {client.company_name}
+                  {client.origen === 'avancys' && <small className="muted"> · ya es cliente{client.company_nit ? ` · NIT ${client.company_nit}` : ''}{client.atendido_por ? ` · atiende ${client.atendido_por}` : ''}</small>}
+                </button>
               </li>
             ))}
           </ul>
