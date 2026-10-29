@@ -646,3 +646,27 @@ test('el menú de Clientes tiene icono, como las demás entradas', () => {
   const iconos = leer('src/shell/UserMenu.tsx');
   assert.match(iconos, /'#\/clients': \w+,/);
 });
+
+test('el cliente se puede abrir, y lo del CRM no depende de que Avancys responda', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    assert.match(texto, /'GET \/api\/avancys\/cliente': \['opportunities', ACTIONS\.CRM_OPPORTUNITY_DETAIL_VIEW\]/, archivo);
+    const cuerpo = /app\.get\('\/api\/avancys\/cliente'[\s\S]*?\n\}\);/.exec(texto)[0];
+    // Las oportunidades se leen ANTES de tocar Avancys: si el ERP falla, la pantalla igual sirve.
+    assert.ok(cuerpo.indexOf('v_psi_sales_opportunity_enriched') < cuerpo.indexOf('crearLectorAvancys'),
+      `${archivo}: lo del CRM debe leerse antes que Avancys`);
+    assert.match(cuerpo, /motivo = `Avancys no respondio/, archivo);
+    // El emparejamiento es por nombre y la respuesta lo declara: el NIT lo tienen 2 de 411.
+    assert.match(cuerpo, /emparejamiento: 'nombre_aproximado'/, archivo);
+    assert.match(cuerpo, /normalizeClientName\(nombre\)/, archivo);
+  }
+});
+
+test('la pantalla avisa que las oportunidades se emparejaron por nombre', () => {
+  const ui = leer('src/main.tsx');
+  const comp = ui.slice(ui.indexOf('function ClienteAbierto'), ui.indexOf('function ClientsView'));
+  assert.match(comp, /por nombre, no por NIT: revísela antes de darla por suya/);
+  // Y se consulta al abrir la fila, no al cargar la lista: son 1.439 clientes.
+  assert.match(comp, /\/api\/avancys\/cliente\?nit=/);
+  assert.match(comp, /\}, \[nit, nombre\]\);/);
+});
