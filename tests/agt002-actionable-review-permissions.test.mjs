@@ -94,17 +94,24 @@ await (async function directorIsScopeGated() {
   }
 })();
 
-// --- comercial: owner-gated, contribute/propose only, never resolve/review/publish
-await (async function comercialIsOwnerGatedAndWriteLimited() {
+// --- comercial con el permiso de Licitaciones: la encargada, sin límite por dueño ni por acción
+// Juan, 2026-10-29: "como tiene acceso a licitaciones debe poder hacer todo lo de licitaciones sin limitaciones pues
+// ella es la encargada". El permiso `licitaciones` es la llave; el rol dejó de acotar.
+await (async function comercialConPermisoEsLaEncargada() {
   const owner = human('comercial', { id: OWNER });
   const notOwner = human('comercial', { id: 'someone-else' });
-  assert.equal(can(owner, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE, resource()), true);
-  assert.equal(can(owner, ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE, resource()), true);
-  for (const code of [ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE, ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW, ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH]) {
-    assert.equal(can(owner, code, resource()), false, `owner comercial must never hold ${code}`);
-  }
   for (const code of Object.values(NEW_ACTION_CODES)) {
-    assert.equal(can(notOwner, code, resource()), false, `non-owner comercial must not hold ${code}`);
+    assert.equal(can(owner, code, resource()), true, `la encargada debe poder ${code}`);
+    assert.equal(
+      can(notOwner, code, resource()),
+      true,
+      `la encargada debe poder ${code} en una licitación que no figura a su nombre`,
+    );
+  }
+  // Sin el permiso de Licitaciones, un comercial sigue sin nada de esto.
+  const sinPermiso = human('comercial', { id: OWNER, permissions: [] });
+  for (const code of Object.values(NEW_ACTION_CODES)) {
+    assert.equal(can(sinPermiso, code, resource()), false, `un comercial sin el permiso no debe poder ${code}`);
   }
 })();
 

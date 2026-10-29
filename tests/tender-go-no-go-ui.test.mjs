@@ -95,7 +95,11 @@ for (const [label, profile] of [
 }
 assert.equal(canApproveTenderGoNoGo({ ...human('director'), active: false }), false, 'Un perfil inactivo no puede decidir.');
 assert.equal(canApproveTenderGoNoGo(human('director', [])), false, 'Un director sin permiso de licitaciones no puede decidir.');
-assert.equal(canApproveTenderGoNoGo(human('comercial')), false, 'Comercial no puede decidir.');
+// Juan, 2026-10-29: la encargada de Licitaciones es `comercial` y decide; lo que no decide es quien no tiene el
+// permiso, ni el directivo de solo consulta.
+assert.equal(canApproveTenderGoNoGo(human('comercial')), true, 'La encargada comercial decide.');
+assert.equal(canApproveTenderGoNoGo(human('comercial', [])), false, 'Un comercial sin permiso de licitaciones no decide.');
+assert.equal(canApproveTenderGoNoGo(human('consulta')), false, 'Solo consulta no decide.');
 assert.match(panel, /requestVersionRef|requestVersion/, 'Las cargas deben descartar respuestas obsoletas.');
 assert.match(panel, /syncPending/, 'Un POST persistido debe bloquear reintentos mientras sincroniza.');
 assert.match(panel, /document\.activeElement|previouslyFocused/, 'El modal debe recordar el foco previo.');

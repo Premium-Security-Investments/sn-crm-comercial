@@ -249,7 +249,10 @@ function canActionableReviewContributeOrPropose(profile, resource) {
   if (!hasPermission(profile, TENDER_PERMISSION)) return false;
   if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
   if (canDirectorCommercialResource(profile, resource)) return true;
-  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return ownsResource(profile, resource, 'owner_id');
+  // Juan, 2026-10-29: la encargada de Licitaciones es `comercial`, y con el permiso de Licitaciones trabaja todas las
+  // licitaciones, no sólo las que figuran a su nombre. El `director` sigue acotado a su área y el `colaborador` a lo
+  // que le asignaron.
+  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return true;
   if (hasHumanRole(profile, COLLABORATOR_ROLES)) return ownsResource(profile, resource, 'assigned_profile_id');
   return false;
 }
@@ -257,6 +260,9 @@ function canActionableReviewContributeOrPropose(profile, resource) {
 function canActionableReviewResolveOrKnowledgeGovern(profile, resource) {
   if (!hasPermission(profile, TENDER_PERMISSION)) return false;
   if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
+  // Misma decisión del 2026-10-29: resolver una ficha del registro y gobernar el aprendizaje son parte de "todo lo de
+  // Licitaciones" para quien tiene el permiso y es la encargada.
+  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return true;
   return canDirectorCommercialResource(profile, resource);
 }
 
@@ -370,7 +376,10 @@ export function can(profile, action, resource = {}) {
       return canHumanTenderAction(profile);
     case ACTIONS.LICITACIONES_DISCARD_APPROVE:
     case ACTIONS.LICITACIONES_GO_NO_GO_APPROVE:
-      return canHumanTenderAction(profile) && hasHumanRole(profile, new Set(['admin', 'gerencia', 'director']));
+      // Juan, 2026-10-29: el acceso a Licitaciones ES el permiso. Quien lo tiene opera Licitaciones completo, porque
+      // la encargada del área es `comercial` y aprobar ya no puede depender del rol. Siguen afuera el rol de solo
+      // consulta (no está en HUMAN_TENDER_ROLES), cualquier identidad que no sea humana, y quien no tenga el permiso.
+      return canHumanTenderAction(profile);
     case ACTIONS.LICITACIONES_CONVERT:
     case ACTIONS.LICITACIONES_CONFIGURE:
     case ACTIONS.LICITACIONES_WORKBENCH_CUSTODY:
