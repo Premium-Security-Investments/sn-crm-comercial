@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatDateOnly, parseDateOnly } from '../dateOnly';
 import { loadTenderOpportunities } from './api';
+import { TenderManualProcessForm } from './components/TenderManualProcessForm';
 import { TenderStatusBadge } from './components/TenderStatusBadge';
 import { tenderDetailSectionHref } from './detailNavigationState';
 import { tenderDossierQueueState } from './dossierUtils';
 import { classifyOpportunityStage, opportunityQueryFilter, type TenderOpportunityPrimaryFilter, type TenderOpportunityStage } from './opportunityStage';
+import { canCreateManualTenderProcess } from './permissions';
 import { tenderDecisionLabel, tenderDocumentStatusLabel, tenderOfferStatusLabel, tenderOpportunityStageLabel, tenderOpportunityStageTone, tenderStatusTone } from './statusLabels';
 import { readableTenderTitle, tenderFitBadgeLabel, tenderFitPlainReasons } from './radarUtils';
 import { beginTenderRefresh, finishTenderRefresh, safePublicTenderSourceUrl } from './tenderUiState';
 import { dossierPageQuery, reloadCurrentDossierPage as reloadDossierPage, sortTenderOpportunitySummaries } from './viewUtils';
-import type { TenderDocumentRefreshResult, TenderOpportunitySummary, TenderOpportunityVigiaAnalysis, TendersModuleProps } from './types';
+import type { TenderDocumentRefreshResult, TenderManualProcessCreated, TenderOpportunitySummary, TenderOpportunityVigiaAnalysis, TendersModuleProps } from './types';
 
 const PAGE_SIZE = 25;
 
@@ -79,7 +81,7 @@ function opportunityNextActionText(dossier: TenderOpportunitySummary, queueNextA
 
 type TenderOpportunitiesViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
 
-export function TenderOpportunitiesView({ request, navigate, moduleNavigation }: TenderOpportunitiesViewProps) {
+export function TenderOpportunitiesView({ data, request, navigate, moduleNavigation }: TenderOpportunitiesViewProps) {
   const [rows, setRows] = useState<TenderOpportunitySummary[]>([]);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<TenderOpportunityPrimaryFilter>('por_decidir');
@@ -89,7 +91,10 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
   const retryingRef = useRef<Set<string>>(new Set());
   const [refreshResults, setRefreshResults] = useState<Record<string, TenderDocumentRefreshResult>>({});
   const [error, setError] = useState<string | null>(null);
+  const [creatingManual, setCreatingManual] = useState(false);
   const requestVersionRef = useRef(0);
+  // Crear a mano un proceso que no está en SECOP: misma custodia que convertir desde el Radar.
+  const canCreateManual = canCreateManualTenderProcess(data.currentProfile);
 
   // El backend sigue hablando su vocabulario (RPC 023, intacto): el filtro primario sólo se traduce
   // al bajar. Cada predicado SQL es igual o más estrecho que su estado primario, así que acotar en
@@ -136,11 +141,19 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
     finally { retryingRef.current = finishTenderRefresh(retryingRef.current, id); setRetrying(retryingRef.current); }
   };
 
+  // Creado el proceso, se abre su expediente: es donde se cargan los documentos y se pide el análisis.
+  const openCreatedManualProcess = async (created: TenderManualProcessCreated) => {
+    setCreatingManual(false);
+    await reloadCurrentDossierPage();
+    navigate(tenderDetailSectionHref(created.opportunity_id, 'tender-document-review'));
+  };
+
   if (loading && !rows.length) return <div className="notice">Cargando expedientes…</div>;
   return <section className="stack tenders-page tender-dossiers-view" aria-labelledby="tender-dossiers-heading">
-    <header className="tender-compact-header"><div className="tender-compact-title"><h2 id="tender-dossiers-heading">Oportunidades</h2><div className="tender-compact-meta"><span>Licitaciones convertidas: expediente, decisión y preparación</span></div></div><div className="row-actions"><button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></div></header>
+    <header className="tender-compact-header"><div className="tender-compact-title"><h2 id="tender-dossiers-heading">Oportunidades</h2><div className="tender-compact-meta"><span>Licitaciones convertidas: expediente, decisión y preparación</span></div></div><div className="row-actions">{canCreateManual && <button onClick={() => setCreatingManual(current => !current)} aria-expanded={creatingManual}>{creatingManual ? 'Cerrar creación manual' : 'Crear proceso a mano'}</button>}<button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></div></header>
     {moduleNavigation}
     {error && <div className="error" role="alert">{error}</div>}
+    {canCreateManual && creatingManual && <TenderManualProcessForm request={request} onCreated={openCreatedManualProcess} onCancel={() => setCreatingManual(false)} />}
     <div className="opportunity-filter-row">
     <div className="opportunity-primary-filters" role="group" aria-label="Filtrar oportunidades">
       <button type="button" className="secondary" aria-pressed={filter === 'all'} disabled={loading} onClick={() => { setFilter('all'); setPage(1); }}>Todas</button>

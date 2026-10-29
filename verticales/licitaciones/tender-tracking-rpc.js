@@ -1,3 +1,4 @@
+import { normalizeManualTenderProcessInput } from './tender-manual-process.js';
 import { jobIdempotencyKey } from './tender-pipeline-idempotency.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -118,6 +119,43 @@ export async function callTenderOpportunityConversion(database, tenderId, payloa
     p_tipo_producto_original: payload.tipo_producto_original,
     p_observaciones: payload.observaciones,
     p_expected_tracking_updated_at: nullableTimestamp(expectedTrackingUpdatedAt),
+  });
+}
+
+/**
+ * Crear a mano un proceso que no está en SECOP (Juan, 2026-10-29). Produce la misma pareja licitación + oportunidad
+ * que la conversión del Radar, con los datos que declara una persona: de ahí cuelgan el expediente, la Mesa con
+ * Vig-IA, el botón de analizar, la carga manual de documentos y el acta de cierre.
+ *
+ * El responsable por omisión es quien registra. No crea trabajo de procesamiento de documentos: no hay fuente oficial
+ * de la cual importarlos.
+ */
+export async function callManualTenderOpportunityCreation(database, input, currentProfile) {
+  const actorId = requireUuid(currentProfile?.id, 'un actor válido');
+  const ownerId = input?.owner_id === undefined || input?.owner_id === null || input?.owner_id === ''
+    ? actorId
+    : requireUuid(input.owner_id, 'un responsable válido');
+  const process = normalizeManualTenderProcessInput(input);
+
+  return rpc(database, 'psi_create_manual_tender_opportunity', {
+    p_actor_id: actorId,
+    p_owner_id: ownerId,
+    p_stable_key: process.stableKey,
+    p_source: process.source,
+    p_section: process.section,
+    p_entity: process.entity,
+    p_title: process.title,
+    p_description: process.description,
+    p_ref: process.ref,
+    p_url: process.url,
+    p_city: process.city,
+    p_dept: process.dept,
+    p_value: process.value,
+    p_deadline_at: process.deadlineAt,
+    p_expected_close_date: process.closeDate,
+    p_external_source: process.externalSource,
+    p_observaciones: process.observaciones,
+    p_raw: process.raw,
   });
 }
 

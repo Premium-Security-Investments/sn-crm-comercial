@@ -900,3 +900,21 @@ export type TenderClosureActaInput = {
   system_lesson?: string | null;
   reasons?: string[];
 };
+
+/**
+ * Crear a mano un proceso que no está en SECOP (Juan, 2026-10-29). Lo que una persona declara; el servidor calcula la
+ * llave, el origen externo y las observaciones (`tender-manual-process.js`).
+ */
+export type TenderManualProcessInput = {
+  source: string;
+  entity: string;
+  title: string;
+  ref?: string;
+  url?: string;
+  city?: string;
+  dept?: string;
+  value?: string;
+  close_date?: string;
+  description?: string;
+};
+export type TenderManualProcessCreated = { id: string; opportunity_id: string; tender_id: string; stable_key: string };

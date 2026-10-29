@@ -1,4 +1,4 @@
-import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -68,6 +68,14 @@ export async function loadTenderOpportunities<T>(request: TenderRequest, page: T
   const offset = Math.min(10000, Math.max(0, Math.trunc(page.offset ?? 0)));
   const filter = page.filter || 'all';
   return request<T>(`/api/tender-opportunities?filter=${encodeURIComponent(filter)}&limit=${limit}&offset=${offset}`);
+}
+
+/**
+ * Crear a mano un proceso que no está en SECOP. El servidor crea la pareja licitación + oportunidad y devuelve la
+ * oportunidad, que es por donde se sigue trabajando (expediente, análisis, documentos, decisión y cierre).
+ */
+export async function createManualTenderProcess(request: TenderRequest, input: TenderManualProcessInput): Promise<TenderManualProcessCreated> {
+  return request<TenderManualProcessCreated>('/api/tenders/manual', { method: 'POST', body: JSON.stringify(input) });
 }
 
 export async function loadProfiles<T>(request: TenderRequest): Promise<T> {
