@@ -658,7 +658,7 @@ test('el cliente se puede abrir, y lo del CRM no depende de que Avancys responda
     assert.match(cuerpo, /motivo = `Avancys no respondio/, archivo);
     // La respuesta declara de dónde salió la lista, sea un enlace confirmado o un parecido.
     assert.match(cuerpo, /emparejamiento,/, archivo);
-    assert.match(cuerpo, /normalizeClientName\(nombre\)/, archivo);
+    assert.match(cuerpo, /palabrasDelNombre\(nombre\)/, archivo);
   }
 });
 
@@ -708,4 +708,45 @@ test('la migración del enlace no toca el camino crítico de escritura', () => {
   assert.ok(!/alter table public\.psi_sales_clients/.test(ejecuta), 'no debe alterar el maestro de clientes');
   assert.match(sql, /revoke all on public\.psi_cliente_avancys from anon, authenticated, public/);
   assert.match(leer('supabase/rollbacks/161_cliente_crm_avancys_rollback.sql'), /drop table if exists public\.psi_cliente_avancys/);
+});
+
+test('el nombre del CRM es el corto y el de Avancys el largo: se busca por lo que comparten', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    // El error: buscar oportunidades que CONTUVIERAN "PAPELES NACIONALES S.A". El del CRM es
+    // "PAPELES NACIONALES", más corto, así que nunca calzaba y el cliente salía sin coincidencias
+    // teniendo tres. Lo vio Juan en producción.
+    const cuerpo = /app\.get\('\/api\/avancys\/cliente'[\s\S]*?\n\}\);/.exec(texto)[0];
+    assert.ok(!/ilike\('company_name', `%\$\{nombre\}%`\)/.test(cuerpo),
+      `${archivo}: no se puede buscar por el nombre completo de Avancys`);
+    // Se busca por la primera palabra y se exigen las dos, en cualquier orden: "camara comercio"
+    // como texto seguido tampoco calza con "Cámara DE Comercio de Pereira".
+    assert.match(cuerpo, /ilike\('company_name', `%\$\{palabras\[0\]\}%`\)/, archivo);
+    assert.match(cuerpo, /nombreCoincide\(fila\.company_name, palabras\)/, archivo);
+    // Y las formas societarias no cuentan como palabra con sustancia.
+    assert.match(texto, /const FORMAS_SOCIETARIAS = new Set\(\['sa', 'sas', 'ltda'/, archivo);
+  }
+});
+
+test('el núcleo del nombre descarta formas societarias y palabras vacías', () => {
+  // Se reimplementa aquí lo mismo que el servidor, para fijar el comportamiento esperado sin
+  // levantar el servidor: si alguien cambia una de las dos, esto deja de concordar.
+  const FORMAS = new Set(['sa', 'sas', 'ltda', 'ph', 'esp', 'sca', 'bic', 'cia', 'eu', 'limitada', 'y', 'de', 'del', 'la', 'el', 'los', 'las', 'en']);
+  const palabrasDe = (nombre) => String(nombre || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+    .filter(p => p.length > 1 && !FORMAS.has(p)).slice(0, 2);
+  const coincide = (crm, palabras) => {
+    const t = String(crm || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return palabras.every(p => t.includes(p));
+  };
+  assert.deepEqual(palabrasDe('PAPELES NACIONALES S.A'), ['papeles', 'nacionales']);
+  assert.deepEqual(palabrasDe('CAMARA DE COMERCIO DE PEREIRA'), ['camara', 'comercio']);
+  assert.deepEqual(palabrasDe('JERONIMO MARTINS COLOMBIA S.A.S'), ['jeronimo', 'martins']);
+  // Encuentra al corto desde el largo, que era el caso roto.
+  assert.ok(coincide('PAPELES NACIONALES', palabrasDe('PAPELES NACIONALES S.A')));
+  assert.ok(coincide('PAPELES NACIONALES BOGOTA', palabrasDe('PAPELES NACIONALES S.A')));
+  assert.ok(coincide('Camara de Comercio de Pereira', palabrasDe('CAMARA DE COMERCIO DE PEREIRA')));
+  // Y no se lleva por delante a quien sólo comparte una palabra.
+  assert.ok(!coincide('CARTONES Y PAPELES DE RISARALDA', palabrasDe('PAPELES NACIONALES S.A')));
 });
