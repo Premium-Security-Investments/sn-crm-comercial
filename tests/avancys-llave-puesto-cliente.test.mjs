@@ -653,11 +653,11 @@ test('el cliente se puede abrir, y lo del CRM no depende de que Avancys responda
     assert.match(texto, /'GET \/api\/avancys\/cliente': \['opportunities', ACTIONS\.CRM_OPPORTUNITY_DETAIL_VIEW\]/, archivo);
     const cuerpo = /app\.get\('\/api\/avancys\/cliente'[\s\S]*?\n\}\);/.exec(texto)[0];
     // Las oportunidades se leen ANTES de tocar Avancys: si el ERP falla, la pantalla igual sirve.
-    assert.ok(cuerpo.indexOf('v_psi_sales_opportunity_enriched') < cuerpo.indexOf('crearLectorAvancys'),
+    assert.ok(cuerpo.indexOf('psi_sales_opportunities') < cuerpo.indexOf('crearLectorAvancys'),
       `${archivo}: lo del CRM debe leerse antes que Avancys`);
     assert.match(cuerpo, /motivo = `Avancys no respondio/, archivo);
-    // El emparejamiento es por nombre y la respuesta lo declara: el NIT lo tienen 2 de 411.
-    assert.match(cuerpo, /emparejamiento: 'nombre_aproximado'/, archivo);
+    // La respuesta declara de dónde salió la lista, sea un enlace confirmado o un parecido.
+    assert.match(cuerpo, /emparejamiento,/, archivo);
     assert.match(cuerpo, /normalizeClientName\(nombre\)/, archivo);
   }
 });
@@ -665,8 +665,47 @@ test('el cliente se puede abrir, y lo del CRM no depende de que Avancys responda
 test('la pantalla avisa que las oportunidades se emparejaron por nombre', () => {
   const ui = leer('src/main.tsx');
   const comp = ui.slice(ui.indexOf('function ClienteAbierto'), ui.indexOf('function ClientsView'));
-  assert.match(comp, /por nombre, no por NIT: revísela antes de darla por suya/);
+  assert.match(comp, /por nombre, no por identificación: revísela antes de darla por suya/);
+  // Y cuando alguien ya confirmó el enlace, la pantalla deja de advertir: son sus oportunidades.
+  assert.match(comp, /alguien confirmó que este es el mismo cliente/);
   // Y se consulta al abrir la fila, no al cargar la lista: son 1.439 clientes.
   assert.match(comp, /\/api\/avancys\/cliente\?nit=/);
-  assert.match(comp, /\}, \[nit, nombre\]\);/);
+  assert.match(comp, /\}, \[nit, nombre, recargar\]\);/);
+});
+
+test('el enlace cliente↔Avancys lo confirma una persona, y entonces el emparejamiento es exacto', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    // Guardar el enlace afirma algo sobre los datos de la empresa: pide permiso de edición.
+    assert.match(texto, /'PUT \/api\/avancys\/cliente-enlace': \['opportunities', ACTIONS\.CRM_OPPORTUNITY_EDIT\]/, archivo);
+    const detalle = /app\.get\('\/api\/avancys\/cliente'[\s\S]*?\n\}\);/.exec(texto)[0];
+    // Con enlace confirmado se busca por client_id —exacto—; sin él, por nombre.
+    assert.match(detalle, /\.eq\('avancys_ref_num', identificacion\)/, archivo);
+    assert.match(detalle, /emparejamiento = 'enlace_confirmado'/, archivo);
+    assert.match(detalle, /emparejamiento = 'nombre_aproximado'/, archivo);
+    // El candidato se propone, no se guarda solo.
+    assert.match(detalle, /const candidato = enlace\?\.client_id \? null : clienteMasFrecuente\(oportunidades\);/, archivo);
+
+    const enlace = /app\.put\('\/api\/avancys\/cliente-enlace'[\s\S]*?\n\}\);/.exec(texto)[0];
+    // No se enlaza a un id inventado.
+    assert.match(enlace, /El cliente del CRM no existe/, archivo);
+    // Y un cliente de Avancys no puede quedar enlazado a dos del CRM: eso sería un duplicado
+    // nuestro, y se arregla acá, no duplicando el enlace.
+    assert.match(enlace, /ya esta enlazado a otro cliente del CRM/, archivo);
+    assert.match(enlace, /confirmado_por: currentProfile\.id/, archivo);
+  }
+});
+
+test('la migración del enlace no toca el camino crítico de escritura', () => {
+  const sql = leer('supabase/migrations/161_cliente_crm_avancys.sql');
+  // Sin comentarios: la cabecera explica por qué NO se toca `psi_persist_sales_opportunity`, y esa
+  // explicación no puede hacer fallar una comprobación sobre lo que el archivo ejecuta.
+  const ejecuta = sql.split('\n').filter(linea => !linea.trim().startsWith('--')).join('\n');
+  assert.match(sql, /create table if not exists public\.psi_cliente_avancys/);
+  assert.match(sql, /constraint psi_cliente_avancys_ref_num_unico unique \(avancys_ref_num\)/);
+  // La razón de ser de esta tabla: NO tocar psi_persist_sales_opportunity ni psi_sales_clients.
+  assert.ok(!/psi_persist_sales_opportunity/.test(ejecuta), 'no debe tocar la función que escribe oportunidades');
+  assert.ok(!/alter table public\.psi_sales_clients/.test(ejecuta), 'no debe alterar el maestro de clientes');
+  assert.match(sql, /revoke all on public\.psi_cliente_avancys from anon, authenticated, public/);
+  assert.match(leer('supabase/rollbacks/161_cliente_crm_avancys_rollback.sql'), /drop table if exists public\.psi_cliente_avancys/);
 });
