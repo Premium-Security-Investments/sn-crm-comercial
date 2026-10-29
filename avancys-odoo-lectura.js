@@ -20,10 +20,12 @@ const CAMPOS = Object.freeze({
   contrato: Object.freeze(['id', 'name', 'partner_id', 'date_start', 'date', 'write_date']),
   cuenta: Object.freeze(['id', 'code', 'partner_id', 'write_date']),
   orden: Object.freeze(['id', 'client_id', 'product_id', 'service_type']),
+  factura: Object.freeze(['id', 'partner_id', 'amount_untaxed', 'move_type', 'invoice_date', 'write_date']),
   cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'state_id', 'write_date']),
 });
 
 const MODELO = Object.freeze({
+  factura: 'account.move',
   orden: 'project.service.order.line.invoice',
   puesto: 'hr.roster.puesto',
   contrato: 'project.project',
@@ -39,6 +41,9 @@ export const MAX_PUESTOS_LISTADOS = 25;
 // que esto no es un número decorativo.
 export const MAX_CLIENTES_LISTADOS = 2000;
 const MAX_FILAS = 2000;
+// Tope aparte para lecturas grandes y paginadas, como las facturas de un mes: septiembre de 2026
+// tuvo 2.137 y con el tope general se cortaba en silencio.
+const MAX_FILAS_PAGINADO = 6000;
 // Clientes por lote al agrupar sus servicios. Ver `serviciosPorCliente`.
 const LOTE_AGRUPACION = 200;
 const MAX_BYTES = 8388608;
@@ -181,17 +186,38 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
 
   // La única puerta al RPC de datos: un modelo de la lista, `search_read` y nada más, y los campos
   // de la lista. El dominio lo arma este archivo; no entra por parámetro desde afuera.
-  async function leer(clave, dominio, { limite = MAX_FILAS, orden = 'id asc' } = {}) {
+  async function leer(clave, dominio, { limite = MAX_FILAS, orden = 'id asc', pagina = 0 } = {}) {
     const modelo = MODELO[clave];
     const campos = CAMPOS[clave];
     if (!modelo || !campos) falla('AVANCYS_CONSULTA_NO_PERMITIDA');
     const id = await autenticar();
-    const nombrado = { fields: [...campos], limit: Math.min(limite, MAX_FILAS), order: orden };
-    if (config.companyId) nombrado.context = { allowed_company_ids: [config.companyId] };
-    const filas = await rpc('object', 'execute_kw',
-      [config.database, id, config.clave, modelo, 'search_read', [dominio], nombrado]);
-    if (!Array.isArray(filas)) falla('AVANCYS_RESPUESTA_INVALIDA');
-    return filas;
+    const tope = Math.min(limite, pagina ? MAX_FILAS_PAGINADO : MAX_FILAS);
+    // Sin paginar, una lectura grande se pasa del tiempo: 1.681 facturas de un mes tardaban 18,8 s
+    // y el mes siguiente no alcanzaba a volver. Por páginas, cada llamada es corta y la lectura
+    // entera aguanta aunque Avancys esté cargado.
+    if (!pagina) {
+      const nombrado = { fields: [...campos], limit: tope, order: orden };
+      if (config.companyId) nombrado.context = { allowed_company_ids: [config.companyId] };
+      const filas = await rpc('object', 'execute_kw',
+        [config.database, id, config.clave, modelo, 'search_read', [dominio], nombrado]);
+      if (!Array.isArray(filas)) falla('AVANCYS_RESPUESTA_INVALIDA');
+      return filas;
+    }
+    // El orden al paginar tiene que ser ÚNICO. Con `invoice_date asc` muchas facturas comparten
+    // fecha, así que cada página se solapaba y se saltaba filas: agosto pasó de 13.852 a 14.654
+    // millones con el mismo número de facturas, y de 1.269 clientes a 852. Mismo conteo, distinta
+    // plata: el tipo de error que no se ve si uno no compara dos corridas.
+    const todas = [];
+    while (todas.length < tope) {
+      const nombrado = { fields: [...campos], limit: Math.min(pagina, tope - todas.length), offset: todas.length, order: 'id asc' };
+      if (config.companyId) nombrado.context = { allowed_company_ids: [config.companyId] };
+      const lote = await rpc('object', 'execute_kw',
+        [config.database, id, config.clave, modelo, 'search_read', [dominio], nombrado]);
+      if (!Array.isArray(lote)) falla('AVANCYS_RESPUESTA_INVALIDA');
+      todas.push(...lote);
+      if (lote.length < nombrado.limit) break;
+    }
+    return todas;
   }
 
   // Qué le prestamos a cada cliente, para poder filtrar la lista por producto y por tipo de
@@ -445,5 +471,71 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
+  /**
+   * Lo facturado en un mes, por cliente. Es lo que la Torre no tenía: su ingreso por cliente sale
+   * hoy de una hoja que alguien importa, y que no es la facturación sino la provisión de cierre.
+   *
+   * Se leen las facturas y se suman aquí, en vez de pedirle a Odoo que agrupe. `read_group`
+   * devuelve el dominio completo de cada grupo, así que agrupar 1.300 clientes pesaba más que
+   * traer las 1.700 facturas enteras —y con los 1.439 clientes de la compañía ya reventó el tope
+   * una vez, en `serviciosPorCliente`—.
+   *
+   * Las notas crédito se restan. Sin eso, un mes con devoluciones se vería mejor de lo que fue.
+   */
+  async function facturacionPorCliente({ mes }) {
+    if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) falla('AVANCYS_MES_INVALIDO');
+    const [anio, numeroMes] = String(mes).split('-').map(Number);
+    const desde = `${mes}-01`;
+    const hasta = new Date(Date.UTC(anio, numeroMes, 0)).toISOString().slice(0, 10);
+    const filas = await leer('factura',
+      [['move_type', 'in', ['out_invoice', 'out_refund']], ['state', '=', 'posted'],
+       ['invoice_date', '>=', desde], ['invoice_date', '<=', hasta]],
+      { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+
+    const porCliente = new Map();
+    let total = 0;
+    let notasCredito = 0;
+    for (const fila of filas) {
+      const id = unoAMuchos(fila.partner_id);
+      if (id === null) continue;
+      const bruto = Number(fila.amount_untaxed) || 0;
+      // Una nota crédito viene con monto positivo y tipo `out_refund`: resta.
+      const monto = fila.move_type === 'out_refund' ? -bruto : bruto;
+      if (fila.move_type === 'out_refund') notasCredito += bruto;
+      total += monto;
+      const previo = porCliente.get(id) || { nombre: null, monto: 0, facturas: 0 };
+      previo.nombre = previo.nombre || (Array.isArray(fila.partner_id) ? texto(fila.partner_id[1]) : null);
+      previo.monto += monto;
+      previo.facturas += 1;
+      porCliente.set(id, previo);
+    }
+
+    const clientes = [...porCliente.values()]
+      .map(c => Object.freeze({
+        // El nombre de Odoo trae el NIT entre corchetes; se separa para no mostrarlo pegado.
+        nombre: (c.nombre || '').replace(/^\[[^\]]*\]\s*/, '') || c.nombre,
+        identificacion: /^\[([^\]]+)\]/.exec(c.nombre || '')?.[1] || null,
+        monto: c.monto,
+        facturas: c.facturas,
+        participacion: total > 0 ? c.monto / total : null,
+      }))
+      .sort((a, b) => b.monto - a.monto);
+
+    const acumulado = n => (total > 0 ? clientes.slice(0, n).reduce((suma, c) => suma + c.monto, 0) / total : null);
+    return Object.freeze({
+      mes,
+      total,
+      notas_credito: notasCredito,
+      facturas: filas.length,
+      // Avisa cuando pudo quedar recortado, en vez de dar por completo un mes que no lo es.
+      recortado: filas.length >= MAX_FILAS_PAGINADO,
+      clientes: Object.freeze(clientes),
+      concentracion: Object.freeze({
+        top_1: acumulado(1), top_5: acumulado(5), top_10: acumulado(10), total_clientes: clientes.length,
+      }),
+      as_of: corteDe([filas]),
+    });
+  }
+
+  return Object.freeze({ origen: config.origen, database: config.database, facturacionPorCliente, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
 }
