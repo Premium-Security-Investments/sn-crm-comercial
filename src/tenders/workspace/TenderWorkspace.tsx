@@ -224,8 +224,10 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel, c
   const placement = useMemo(() => placeAgt002Clarifications(clarifications, { requirements: rows, findings: others }), [clarifications, rows, others]);
   const listedClarifications: TenderClarificationPlacement[] = placement.listed;
   const showRequirement = (key: string) => { setSelectedKey(key); browserRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  // Sin análisis el botón sigue estando (Juan, 2026-10-29): si el automático no arrancó, se pide desde aquí.
   if (!report) return <div className="tw-decide">
     <div className="notice tw-empty">El análisis de Vig-IA todavía no está listo. Su estado se ve en <strong>Documentos</strong>.{decisionPanel ? ' Puede registrar la decisión igual.' : ''}</div>
+    {reanalysis}
     {decisionPanel}
   </div>;
   const verdict = initialReportVerdict(report.recommendation.kind);

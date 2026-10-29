@@ -17,8 +17,13 @@ import { readTenderOpportunityInactiveReason } from './tender-opportunity-stage.
 export const AGT002_AUTO_INITIAL_POLICY_VERSION = 'agt002-initial-analysis-policy-v1';
 export const AGT002_AUTO_INITIAL_DEFAULT_DAILY_CAP = 5;
 const BOGOTA_OFFSET_MS = 5 * 60 * 60 * 1000;
-// The G1 window is derived from the conversion, never from "now": a retry after a partial admission must replay the
-// exact same grant (its idempotency key binds the expiry), not attempt a second one.
+// The G1 window is derived from a stored instant, never from "now": a retry after a partial admission must replay the
+// exact same grant (its idempotency key binds the expiry), not attempt a second one. That instant is when the governed
+// document set was frozen (the job's snapshot), not the conversion: desde el arreglo del descubrimiento vacío
+// (PR #453) una entidad puede publicar días después de que la persona convirtió, y la ventana contada desde la
+// conversión vencía antes de que hubiera un solo documento que analizar — la Fiscalía del Eje Cafetero convirtió el
+// 26-oct y SECOP publicó el 29-oct. El límite de 48 h se mantiene; sólo deja de correr contra un reloj que no
+// depende de nadie. Sin snapshot se conserva la conversión como ancla.
 const AUTHORIZATION_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /** Start of the Bogotá calendar day containing `now`, as a UTC instant (Colombia has no DST). */
@@ -81,12 +86,24 @@ export async function countAgt002AutomaticAnalysesToday(database, now) {
 }
 
 /**
+ * The instant the governed document set of a job was frozen: the start of its authorization window. Returns null when
+ * the job has no snapshot or the snapshot cannot be read, and the caller falls back to the conversion.
+ */
+export async function readAgt002DocumentsFrozenAt(database, snapshotId) {
+  if (!snapshotId) return null;
+  const snapshot = await must(database.from('psi_tender_document_snapshots')
+    .select('id,created_at').eq('id', snapshotId).maybeSingle(), 'snapshot de documentos');
+  const frozenAt = snapshot?.created_at || null;
+  return frozenAt && Number.isFinite(Date.parse(frozenAt)) ? frozenAt : null;
+}
+
+/**
  * Conversions whose documents are ready and that still have no INITIAL analysis, oldest first. Each candidate carries
- * the converting person (`requested_by`) as the authorizing actor.
+ * the converting person (`requested_by`) as the authorizing actor and `documents_frozen_at`, the start of its window.
  */
 export async function findAgt002AutoInitialCandidates(database, { since }) {
   const jobs = await must(database.from('psi_tender_processing_jobs')
-    .select('id,opportunity_id,tender_id,requested_by,status,created_at')
+    .select('id,opportunity_id,tender_id,requested_by,status,created_at,snapshot_id')
     .eq('status', 'awaiting_analysis_authorization')
     .gte('created_at', since)
     .order('created_at', { ascending: true }), 'trabajos de procesamiento');
@@ -100,7 +117,7 @@ export async function findAgt002AutoInitialCandidates(database, { since }) {
     const initial = await must(database.from('psi_agt002_initial_analysis_jobs')
       .select('id').eq('opportunity_id', job.opportunity_id).limit(1), 'análisis previos');
     if ((initial || []).length > 0) continue;
-    candidates.push(job);
+    candidates.push({ ...job, documents_frozen_at: await readAgt002DocumentsFrozenAt(database, job.snapshot_id) });
   }
   return candidates;
 }
@@ -140,7 +157,10 @@ export async function runAgt002AutoInitialAdmissions(database, {
       events.push({ event: 'agt002_auto_initial_deferred', reason: 'daily_cap', dailyCap, ...base });
       continue;
     }
-    const expiresAt = new Date(Date.parse(job.created_at) + AUTHORIZATION_WINDOW_MS);
+    const windowStartsAt = job.documents_frozen_at && Number.isFinite(Date.parse(job.documents_frozen_at))
+      ? Date.parse(job.documents_frozen_at)
+      : Date.parse(job.created_at);
+    const expiresAt = new Date(windowStartsAt + AUTHORIZATION_WINDOW_MS);
     if (expiresAt <= now) {
       events.push({ event: 'agt002_auto_initial_skipped', reason: 'authorization_window_elapsed', ...base });
       continue;

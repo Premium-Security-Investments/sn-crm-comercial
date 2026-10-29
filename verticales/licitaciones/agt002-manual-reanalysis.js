@@ -1,6 +1,7 @@
 // AGT-002 — botón "Volver a analizar" (decisión del dueño, 2026-10-20). Una persona con permiso de análisis pide un
-// reanálisis completo de una oportunidad que ya tiene un análisis vigente: con los documentos vigentes y el perfil de la
-// empresa de HOY. Caso que lo motivó: la Fiscalía (FGN-NC-IPSE-0054-2026) quedó con el análisis del 6-oct mientras el
+// análisis completo de una oportunidad con los documentos vigentes y el perfil de la empresa de HOY. Desde el
+// 2026-10-29 también lanza el PRIMER análisis cuando el automático no lo hizo (la Fiscalía del Eje Cafetero quedó con
+// 12 documentos y sin análisis porque la ventana se contaba desde la conversión). Caso que lo motivó: la Fiscalía (FGN-NC-IPSE-0054-2026) quedó con el análisis del 6-oct mientras el
 // perfil ya registraba la agencia de Bogotá y la experiencia del RUP, y no había forma de pedir otro.
 //
 // La petición web sólo deja una solicitud (psi_agt002_manual_reanalysis_requests, migración 138); el job del host
@@ -27,7 +28,7 @@ const limitsFor = mode => (mode === 'incremental' ? AGT002_INCREMENTAL_REANALYSI
 const REASON_TEXT = Object.freeze({
   sin_licitacion: 'La oportunidad no está ligada a una licitación del Radar.',
   oportunidad_inactiva: 'La oportunidad ya no está activa (NO GO, cerrada o archivada).',
-  sin_analisis_previo: 'Todavía no hay un análisis terminado; el primero se hace solo al convertir.',
+  sin_analisis_previo: 'Todavía no hay un análisis terminado de esta licitación.',
   analisis_en_curso: 'Ya hay un análisis en curso para esta oportunidad.',
   solicitud_abierta: 'Ya se pidió un análisis nuevo; arranca en unos minutos.',
   limite_por_proceso: `Ya se hicieron ${AGT002_MANUAL_REANALYSIS_LIMITS.perProcessPerDay} análisis de este proceso hoy.`,
@@ -96,11 +97,20 @@ export async function evaluateAgt002ManualReanalysis(database, opportunityId, {
   const canonical = await must(database.from('psi_tender_analysis_runs')
     .select('id').eq('opportunity_id', opportunityId).eq('canonical', true).eq('status', 'completed')
     .maybeSingle(), 'análisis canónico');
-  if (!canonical?.id) return { reason: 'sin_analisis_previo', tenderId };
+  // Primer análisis a mano (Juan, 2026-10-29): el automático arranca solo al llegar los documentos, pero cuando no
+  // arrancó —la Fiscalía del Eje Cafetero quedó con 12 documentos y sin análisis— no había ninguna puerta. El botón
+  // lanza también el primero, sólo si no hay ningún análisis admitido todavía y ya hay documentos de la entidad. El
+  // incremental sigue necesitando un análisis vigente contra el que comparar.
+  if (!canonical?.id) {
+    if (mode !== 'full' || (jobs || []).length > 0) return { reason: 'sin_analisis_previo', tenderId };
+    const documents = await must(database.from('psi_tender_document_versions')
+      .select('id').eq('opportunity_id', opportunityId).eq('current', true).limit(1), 'documentos vigentes');
+    if (!(documents || []).length) return { reason: 'sin_documentos_legibles', tenderId };
+  }
   const today = await admittedToday(database, now, mode);
   if (today.filter(row => row.opportunity_id === opportunityId).length >= limits.perProcessPerDay) return { reason: 'limite_por_proceso', tenderId };
   if (today.length >= limits.totalPerDay) return { reason: 'limite_total', tenderId };
-  return { reason: null, tenderId, canonicalRunId: canonical.id };
+  return { reason: null, tenderId, canonicalRunId: canonical?.id || null };
 }
 
 const textOfClaim = (result, claimId) => (result?.claims || []).find(claim => claim?.claim_id === claimId)?.display_text || null;
@@ -279,8 +289,9 @@ export async function runAgt002ManualReanalysisRequests(database, {
         expiresAt: new Date(Date.parse(request.requested_at) + AUTHORIZATION_WINDOW_MS).toISOString(),
         policyVersion: AGT002_AUTO_INITIAL_POLICY_VERSION,
         attempt: `manual-reanalysis:${request.id}`,
-        analysisKind: 'REANALYSIS',
-        sourceAnalysisRunId: evaluation.canonicalRunId,
+        // Sin análisis canónico es el PRIMERO de la oportunidad: INITIAL sin corrida fuente, no un sucesor.
+        analysisKind: evaluation.canonicalRunId ? 'REANALYSIS' : 'INITIAL',
+        sourceAnalysisRunId: evaluation.canonicalRunId || null,
         incremental: mode === 'incremental',
         environment,
       });

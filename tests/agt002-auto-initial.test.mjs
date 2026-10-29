@@ -153,3 +153,42 @@ test('decisión del dueño 2026-10-09: el host sólo impulsa la descarga de docu
 test('an activation date is required', async () => {
   await assert.rejects(runAgt002AutoInitialAdmissions(fakeDb(world()), { environment: ON }), /AGT002_AUTO_INITIAL_SINCE/);
 });
+
+// La entidad publica días después de la conversión (PR #453): la ventana de 48 h se cuenta desde el snapshot de
+// documentos, no desde la conversión. Caso real: Fiscalía Eje Cafetero, convertida el 26-oct, documentos el 29-oct.
+test('la ventana arranca cuando se congelan los documentos, no cuando se convirtió', async () => {
+  const late = world({
+    psi_tender_document_snapshots: [{ id: 'snap-doc', created_at: '2026-10-09T13:24:00.000Z' }],
+  });
+  late.psi_tender_processing_jobs[0].snapshot_id = 'snap-doc';
+  const calls = [];
+  const admit = async (_db, input) => { calls.push(input); return { admissionStatus: 'admitted', jobId: 'ij-late' }; };
+  const now = new Date('2026-10-09T14:00:00.000Z'); // la ventana desde la conversión venció el 8-oct
+  const events = await runAgt002AutoInitialAdmissions(fakeDb(late), { since: SINCE, now, environment: ON, admit, freezeProfile });
+  assert.equal(events[0].event, 'agt002_auto_initial_admitted');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].expiresAt, '2026-10-11T13:24:00.000Z', 'el permiso vence 48 h después del snapshot');
+});
+
+test('un snapshot viejo sigue venciendo: el límite de 48 h se mantiene', async () => {
+  const stale = world({
+    psi_tender_document_snapshots: [{ id: 'snap-doc', created_at: '2026-10-06T17:40:00.000Z' }],
+  });
+  stale.psi_tender_processing_jobs[0].snapshot_id = 'snap-doc';
+  const events = await runAgt002AutoInitialAdmissions(fakeDb(stale), {
+    since: SINCE, now: new Date('2026-10-09T00:00:00.000Z'), environment: ON,
+    admit: async () => assert.fail('no admission'), freezeProfile,
+  });
+  assert.equal(events[0].reason, 'authorization_window_elapsed');
+});
+
+test('sin snapshot el ancla sigue siendo la conversión', async () => {
+  const { readAgt002DocumentsFrozenAt } = await import('../verticales/licitaciones/agt002-auto-initial.js');
+  assert.equal(await readAgt002DocumentsFrozenAt(fakeDb(world()), null), null);
+  assert.equal(await readAgt002DocumentsFrozenAt(fakeDb(world({ psi_tender_document_snapshots: [] })), 'snap-doc'), null);
+  assert.equal(
+    await readAgt002DocumentsFrozenAt(fakeDb(world({ psi_tender_document_snapshots: [{ id: 'snap-doc', created_at: 'no es una fecha' }] })), 'snap-doc'),
+    null,
+    'una fecha ilegible no abre la ventana',
+  );
+});
