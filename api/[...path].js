@@ -522,6 +522,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'PATCH /api/siio/records/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
   'GET /api/siio/sources': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/avancys/facturacion-por-cliente': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/avancys/devengado': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/sources': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'GET /api/siio/decisions': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/decisions': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
@@ -4209,6 +4210,51 @@ app.get('/api/avancys/cliente', async (req, res) => {
       se_provisiona: provision ? provision.activo === true : null,
     });
   } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// El devengado del mes: el servicio prestado a los clientes de mes vencido, esté facturado o no.
+//
+// Es lo que hoy se calcula a mano en un Excel después de bajar un archivo de Avancys. A quién se le
+// aplica no sale del ERP —Avancys no distingue al cliente público, medido el 2026-10-29— sino de la
+// lista declarada en `psi_cliente_provision`, que marca una persona.
+//
+// Se entrega como CÁLCULO PROPIO, no como "la provisión de Contabilidad". Contra la hoja de agosto
+// el total queda dentro del 4% y siete de diez clientes dentro del 8%, pero tres se separan y
+// todavía no se sabe por qué. Mientras no se sepa, decir que son el mismo número sería mentir.
+app.get('/api/siio/avancys/devengado', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'siio');
+    const database = requireDb();
+    const mes = String(req.query.mes || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(mes)) {
+      const error = new Error('Debe indicar el mes en formato AAAA-MM.');
+      error.status = 400;
+      throw error;
+    }
+    const { data: declarados } = await database.from('psi_cliente_provision')
+      .select('avancys_ref_num,avancys_nombre').eq('activo', true);
+    const lista = Array.isArray(declarados) ? declarados : [];
+    res.set('Cache-Control', 'private, no-store');
+    if (lista.length === 0) {
+      return res.json({ mes, total: 0, clientes: [], sin_encontrar: [], declarados: 0, as_of: null,
+        motivo: 'Nadie ha declarado todavia a que clientes se les provisiona el mes.' });
+    }
+    const lector = crearLectorAvancys();
+    if (!lector) {
+      return res.json({ mes, total: 0, clientes: [], sin_encontrar: [], declarados: lista.length, as_of: null,
+        motivo: 'Avancys no esta configurado en este ambiente.' });
+    }
+    const leido = await lector.devengadoDelMes({
+      mes, identificaciones: lista.map(fila => fila.avancys_ref_num),
+    });
+    return res.json({ ...leido, declarados: lista.length, motivo: null });
+  } catch (error) {
+    if (error?.codigo) {
+      return res.json({ mes: String(req.query.mes || ''), total: 0, clientes: [], sin_encontrar: [], declarados: 0, as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });
+    }
+    sendError(res, error, error?.status || 400);
+  }
 });
 
 // La facturación del mes por cliente, leída de Avancys.
