@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Bot, Briefcase, CalendarClock, ChevronDown, FileCheck2, Gauge, LayoutDashboard, LogOut, Eye, Radar, RefreshCw, ShieldCheck, Sun, Target,
+  Bot, Briefcase, Building2, CalendarClock, ChevronDown, FileCheck2, Gauge, LayoutDashboard, LogOut, Eye, Radar, RefreshCw, ShieldCheck, Sun, Target,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -9,6 +9,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   '#/siio': Gauge,
   '#/home': Sun,
   '#/dashboard2': LayoutDashboard,
+  '#/clients': Building2,
   '#/opportunities': Briefcase,
   '#/goals': Target,
   '#/tenders?view=radar': Radar,
