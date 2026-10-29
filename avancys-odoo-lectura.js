@@ -19,7 +19,7 @@ const CAMPOS = Object.freeze({
   puesto: Object.freeze(['id', 'code', 'name', 'analytic_account_id', 'cliente_contract_id', 'write_date']),
   contrato: Object.freeze(['id', 'name', 'partner_id', 'date_start', 'date', 'write_date']),
   cuenta: Object.freeze(['id', 'code', 'partner_id', 'write_date']),
-  orden: Object.freeze(['id', 'client_id', 'product_id', 'service_type']),
+  orden: Object.freeze(['id', 'client_id', 'product_id', 'service_type', 'valor_mensual', 'fact_start_date', 'fact_end_date', 'write_date']),
   factura: Object.freeze(['id', 'partner_id', 'amount_untaxed', 'move_type', 'invoice_date', 'write_date']),
   cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'state_id', 'write_date']),
 });
@@ -537,5 +537,81 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, facturacionPorCliente, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
+  /**
+   * El devengado del mes: el servicio prestado, esté facturado o no.
+   *
+   * Contabilidad lo explicó el 2026-10-29: a los clientes públicos se les factura mes vencido, así
+   * que el servicio de agosto se registra en agosto aunque la factura salga en septiembre. Hoy ese
+   * cálculo se hace a mano en un Excel después de bajar un archivo de Avancys.
+   *
+   * Sale de las órdenes de servicio, no de las facturas: las 18.591 líneas tienen fecha de inicio y
+   * fin de facturación y su valor mensual. Se prorratea por los días que la línea estuvo vigente
+   * dentro del mes, porque hay servicios que arrancan a mitad de mes.
+   *
+   * **Esto no reproduce todavía el número de Contabilidad.** Medido contra la hoja de agosto: dos
+   * clientes calzan dentro del 2% y 8%, y uno se va al 63%. Falta saber qué excluyen. Por eso el
+   * resultado se entrega como cálculo propio y no como "la provisión".
+   */
+  async function devengadoDelMes({ mes, identificaciones }) {
+    if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) falla('AVANCYS_MES_INVALIDO');
+    const nits = [...new Set((Array.isArray(identificaciones) ? identificaciones : [])
+      .map(normalizarIdentificacion).filter(Boolean))];
+    if (nits.length === 0) falla('AVANCYS_SIN_CLIENTES_DECLARADOS');
+    const [anio, numeroMes] = String(mes).split('-').map(Number);
+    const desde = `${mes}-01`;
+    const diasDelMes = new Date(Date.UTC(anio, numeroMes, 0)).getUTCDate();
+    const hasta = `${mes}-${String(diasDelMes).padStart(2, '0')}`;
+
+    const clientes = await leer('cliente', [['ref_num', 'in', nits]], { limite: nits.length + 10 });
+    if (clientes.length === 0) {
+      return Object.freeze({ mes, total: 0, clientes: Object.freeze([]), sin_encontrar: Object.freeze(nits), as_of: null });
+    }
+    const porId = new Map(clientes.map(fila => [fila.id, fila]));
+    const lineas = await leer('orden',
+      [['state', '=', 'aprobado'], ['client_id', 'in', [...porId.keys()]],
+       ['fact_start_date', '<=', hasta], ['fact_end_date', '>=', desde]],
+      { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+
+    const acumulado = new Map();
+    for (const linea of lineas) {
+      const id = unoAMuchos(linea.client_id);
+      if (id === null || !porId.has(id)) continue;
+      // Prorrateo por los días vigentes dentro del mes: un servicio que arranca el 10 no devenga
+      // el mes entero. Las fechas vienen completas en las 18.591 líneas, así que no se adivina.
+      const inicio = linea.fact_start_date > desde ? linea.fact_start_date : desde;
+      const fin = linea.fact_end_date < hasta ? linea.fact_end_date : hasta;
+      const dias = Math.round((Date.parse(`${fin}T00:00:00Z`) - Date.parse(`${inicio}T00:00:00Z`)) / 86400000) + 1;
+      if (dias <= 0) continue;
+      const parte = (Number(linea.valor_mensual) || 0) * Math.min(dias, diasDelMes) / diasDelMes;
+      const previo = acumulado.get(id) || { monto: 0, lineas: 0, parciales: 0 };
+      previo.monto += parte;
+      previo.lineas += 1;
+      if (dias < diasDelMes) previo.parciales += 1;
+      acumulado.set(id, previo);
+    }
+
+    const salida = [...porId.values()].map(cliente => {
+      const suyo = acumulado.get(cliente.id) || { monto: 0, lineas: 0, parciales: 0 };
+      return Object.freeze({
+        nombre: texto(cliente.name),
+        identificacion: texto(cliente.ref_num),
+        devengado: suyo.monto,
+        lineas: suyo.lineas,
+        // Cuántas líneas no cubrieron el mes entero: explica diferencias contra un cálculo a mano.
+        lineas_parciales: suyo.parciales,
+      });
+    }).sort((a, b) => b.devengado - a.devengado);
+
+    const encontrados = new Set(salida.map(c => c.identificacion));
+    return Object.freeze({
+      mes,
+      total: salida.reduce((suma, c) => suma + c.devengado, 0),
+      clientes: Object.freeze(salida),
+      // Los declarados que Avancys no reconoce: se dicen, no se callan.
+      sin_encontrar: Object.freeze(nits.filter(nit => !encontrados.has(nit))),
+      as_of: corteDe([clientes, lineas]),
+    });
+  }
+
+  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
 }

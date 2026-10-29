@@ -841,3 +841,63 @@ test('la concentración de clientes llegó a la Torre, y dice que no es la provi
   // Y queda enganchada donde vive el detalle de finanzas.
   assert.match(leer('src/siio/SiioExecutiveView.tsx'), /<SiioConcentracionClientes period=\{selectedPeriod\} \/>/);
 });
+
+test('el devengado prorratea por los días vigentes y sólo toma los clientes declarados', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [
+    { ...CIDE, customer_rank: 10 },
+    { ...OTRO, customer_rank: 10 },
+  ];
+  tablas['project.service.order.line.invoice'] = [
+    // Mes completo: 31 de 31 días.
+    { id: 1, client_id: [CIDE.id, CIDE.name], valor_mensual: 3100, state: 'aprobado', fact_start_date: '2026-01-01', fact_end_date: '2026-12-31', write_date: '2026-08-01 00:00:00' },
+    // Arranca el 17: 15 días de 31.
+    { id: 2, client_id: [CIDE.id, CIDE.name], valor_mensual: 3100, state: 'aprobado', fact_start_date: '2026-08-17', fact_end_date: '2026-12-31', write_date: '2026-08-01 00:00:00' },
+    // De otro cliente, declarado también.
+    { id: 3, client_id: [OTRO.id, OTRO.name], valor_mensual: 1000, state: 'aprobado', fact_start_date: '2026-01-01', fact_end_date: '2026-12-31', write_date: '2026-08-01 00:00:00' },
+    // Terminó antes del mes: no cuenta.
+    { id: 4, client_id: [CIDE.id, CIDE.name], valor_mensual: 9999, state: 'aprobado', fact_start_date: '2026-01-01', fact_end_date: '2026-07-31', write_date: '2026-08-01 00:00:00' },
+    // No aprobada: no cuenta.
+    { id: 5, client_id: [CIDE.id, CIDE.name], valor_mensual: 5555, state: 'borrador', fact_start_date: '2026-01-01', fact_end_date: '2026-12-31', write_date: '2026-08-01 00:00:00' },
+  ];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  // Sólo se declara uno de los dos clientes: el otro no debe aparecer.
+  const r = await lector.devengadoDelMes({ mes: '2026-08', identificaciones: ['860053914-4'] });
+
+  assert.equal(r.clientes.length, 1);
+  assert.equal(r.clientes[0].identificacion, '860053914');
+  // 3100 completos + 3100 × 15/31 = 1500 → 4600. Un servicio que arranca el 17 no devenga el mes.
+  assert.equal(Math.round(r.clientes[0].devengado), 4600);
+  assert.equal(r.clientes[0].lineas, 2);
+  assert.equal(r.clientes[0].lineas_parciales, 1);
+  assert.deepEqual(r.sin_encontrar, []);
+});
+
+test('un cliente declarado que Avancys no conoce se dice, no se calla', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [{ ...CIDE, customer_rank: 10 }];
+  tablas['project.service.order.line.invoice'] = [];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  const r = await lector.devengadoDelMes({ mes: '2026-08', identificaciones: ['860053914', '999999999'] });
+  assert.deepEqual(r.sin_encontrar, ['999999999']);
+  // Y sin nadie declarado, no se consulta: devolver cero en silencio sería peor.
+  await assert.rejects(() => lector.devengadoDelMes({ mes: '2026-08', identificaciones: [] }), AvancysLecturaError);
+});
+
+test('el devengado se presenta como cálculo propio, no como la provisión de Contabilidad', () => {
+  const panel = leer('src/siio/SiioDevengado.tsx');
+  // Confundir lo calculado con lo que registra Contabilidad es el error que costó toda la semana.
+  assert.match(panel, /Es un cálculo propio, no la provisión que registra Contabilidad/);
+  assert.match(panel, /tres clientes se separan y todavía no se\s+sabe qué excluyen/);
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    assert.match(texto, /'GET \/api\/siio\/avancys\/devengado': \['siio', ACTIONS\.SIIO_AREA_VIEW\]/, archivo);
+    const cuerpo = /app\.get\('\/api\/siio\/avancys\/devengado'[\s\S]*?\n\}\);/.exec(texto)[0];
+    // A quién se le aplica sale de la lista declarada, nunca de una regla adivinada sobre Avancys.
+    assert.match(cuerpo, /from\('psi_cliente_provision'\)/, archivo);
+    assert.match(cuerpo, /\.eq\('activo', true\)/, archivo);
+    assert.match(cuerpo, /Nadie ha declarado todavia/, archivo);
+  }
+});

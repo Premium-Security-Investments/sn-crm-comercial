@@ -16,6 +16,7 @@ import { deriveOperationsSummary } from './operationsSummary';
 import { deriveRevenueByClient } from './revenueByClient';
 import { deriveHorasPorCliente } from './horasPorCliente';
 import { SiioConcentracionClientes } from './SiioConcentracionClientes';
+import { SiioDevengado } from './SiioDevengado';
 import { SiioRevenueByClient } from './SiioRevenueByClient';
 import { SiioHorasPorCliente } from './SiioHorasPorCliente';
 import { SiioLoQueFalta } from './SiioLoQueFalta';
@@ -220,6 +221,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       </div> : null}
       <SiioRevenueByClient summary={revenueByClient} period={selectedPeriod} />
       <SiioConcentracionClientes period={selectedPeriod} />
+      <SiioDevengado period={selectedPeriod} />
       <SiioHorasPorCliente summary={horasPorCliente} />
     </DetailSection>
 
