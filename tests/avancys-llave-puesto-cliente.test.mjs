@@ -38,6 +38,7 @@ function odooDeMentira(tablas, { errorDeOdoo = null, estado = 200 } = {}) {
     if (operador === '=') return id === valor || (valor === false && (id === false || id === undefined || id === null));
     if (operador === 'in') return valor.includes(id);
     if (operador === '>') return Number(id || 0) > valor;
+    if (operador === 'ilike') return String(actual || '').toLowerCase().includes(String(valor).toLowerCase());
     if (operador === '!=') return valor === false ? !(id === false || id === undefined || id === null) : id !== valor;
     throw new Error(`operador no soportado en la prueba: ${operador}`);
   };
@@ -280,6 +281,34 @@ test('el tope de la cartera existe y la respuesta avisa cuando recorta', () => {
     'el gerente comercial sostiene 877 clientes: el tope no puede quedar por debajo');
 });
 
+// ---- El selector de clientes al crear una oportunidad ----
+
+test('buscar por nombre encuentra al cliente y trae su NIT sin que nadie lo escriba', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [
+    { ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'] },
+    { ...OTRO, customer_rank: 5, user_id: [64, 'CARLOS BEDOYA'] },
+  ];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  const r = await lector.buscarClientes({ texto: 'jeronimo' });
+
+  assert.equal(r.clientes.length, 1);
+  assert.equal(r.clientes[0].identificacion.numero, '900480569');
+  // Dice quién lo atiende aunque sea de otro comercial: es lo que evita crearlo por segunda vez.
+  assert.equal(r.clientes[0].atendido_por, 'CARLOS BEDOYA');
+});
+
+test('con menos de tres letras no se consulta a Avancys', async () => {
+  const { fetchImpl, llamadas } = odooDeMentira(baseCoherente());
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  const r = await lector.buscarClientes({ texto: 'pa' });
+  assert.deepEqual(r.clientes, []);
+  // Ni una sola llamada: esto corre mientras alguien teclea.
+  assert.equal(llamadas.length, 0);
+  assert.deepEqual((await lector.buscarClientes({ texto: '  ' })).clientes, []);
+});
+
 // ---- El catálogo ----
 
 const AVANCYS_DE_MENTIRA = Object.freeze({
@@ -502,4 +531,36 @@ test('la migración del mapa de comerciales no escribe en Avancys ni copia clien
   assert.match(sql, /revoke all on public\.psi_avancys_salesperson_map from anon, authenticated, public/);
   // Y existe su reverso.
   assert.match(leer('supabase/rollbacks/160_avancys_comercial_del_cliente_rollback.sql'), /drop table if exists public\.psi_avancys_salesperson_map/);
+});
+
+test('el selector de clientes suma Avancys sin duplicar ni depender de que responda', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    const handler = /app\.get\('\/api\/client-typeahead'[\s\S]*?\n\}\);/.exec(texto);
+    assert.ok(handler, `${archivo}: falta el endpoint del selector`);
+    const cuerpo = handler[0];
+    // Lo del CRM primero, y lo de Avancys sólo si no está ya por nombre.
+    assert.match(cuerpo, /const yaEstan = new Set\(delCrm\.map\(cliente => normalizeClientName\(cliente\.company_name\)\)\)/, archivo);
+    assert.match(cuerpo, /!yaEstan\.has\(normalizeClientName\(cliente\.nombre\)\)/, archivo);
+    // Un cliente de Avancys no se hace pasar por cliente del CRM.
+    assert.match(cuerpo, /id: `avancys:/, archivo);
+    assert.match(cuerpo, /origen: 'avancys'/, archivo);
+    // Avancys caído no puede impedir crear una oportunidad: va en try/catch y sólo deja aviso.
+    assert.match(cuerpo, /client_typeahead_avancys_unavailable/, archivo);
+    assert.match(cuerpo, /let deAvancys = \[\];/, archivo);
+  }
+});
+
+test('el formulario no manda un cliente de Avancys como si fuera del CRM', () => {
+  const ui = leer('src/main.tsx');
+  const fn = /const selectClientSuggestion = \(client: ClientSuggestion\) => \{[\s\S]*?\n  \};/.exec(ui);
+  assert.ok(fn, 'falta el manejador del selector');
+  const cuerpo = fn[0];
+  assert.match(cuerpo, /const deAvancys = client\.origen === 'avancys';/);
+  // Sin esto, `avancys:891400378` viajaría como client_id y la oportunidad quedaría colgada de
+  // un cliente que no existe en la base del CRM.
+  assert.match(cuerpo, /client_id: deAvancys \? '' : client\.id/);
+  // El NIT llega solo, y el segmento es cierto por construcción: está en Avancys porque se factura.
+  assert.match(cuerpo, /company_nit: deAvancys \?/);
+  assert.match(cuerpo, /customer_segment: deAvancys \? 'cliente_actual'/);
 });

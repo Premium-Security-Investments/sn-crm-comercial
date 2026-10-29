@@ -8873,9 +8873,46 @@ app.get('/api/client-typeahead', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
+    const consulta = String(req.query.q || '');
     const clients = await must(database.from('psi_sales_clients').select(CLIENT_MASTER_SELECT).order('company_name', { ascending: true }));
-    const matches = typeaheadMatches(clients, String(req.query.q || ''));
-    res.json(matches.slice(0, 20));
+    const delCrm = typeaheadMatches(clients, consulta).slice(0, 20)
+      .map(cliente => ({ ...cliente, origen: 'crm', company_nit: null, atendido_por: null }));
+
+    // Y los clientes que la empresa ya tiene, que no están en el CRM. Es lo que evita que un
+    // comercial cree por segunda vez un cliente de hace años, y trae su NIT sin escribirlo.
+    //
+    // Busca en toda la compañía y no sólo en la cartera de quien escribe: para no duplicar hay que
+    // ver también lo que atiende otro. Por eso cada sugerencia dice quién lo atiende.
+    //
+    // Si Avancys no responde, el selector sigue funcionando con lo del CRM. Un ERP caído no puede
+    // impedir crear una oportunidad.
+    let deAvancys = [];
+    try {
+      const lector = crearLectorAvancys();
+      if (lector) {
+        const yaEstan = new Set(delCrm.map(cliente => normalizeClientName(cliente.company_name)));
+        const { clientes } = await lector.buscarClientes({ texto: consulta, limite: 10 });
+        deAvancys = clientes
+          .filter(cliente => cliente.nombre && !yaEstan.has(normalizeClientName(cliente.nombre)))
+          .map(cliente => ({
+            // No es un cliente del CRM y no tiene su id: el formulario no debe mandarlo como tal.
+            id: `avancys:${cliente.identificacion?.numero || cliente.nombre}`,
+            company_name: cliente.nombre,
+            company_nit: cliente.identificacion?.numero || null,
+            atendido_por: cliente.atendido_por,
+            origen: 'avancys',
+            customer_segment: null, regional_nombre: null, sede: null,
+            quote_city: null, economic_sector: null,
+            decision_maker_name: null, decision_maker_email: null, decision_maker_phone: null,
+          }));
+      }
+    } catch (error) {
+      console.warn('client_typeahead_avancys_unavailable', {
+        event: 'client_typeahead_avancys_unavailable',
+        code: error?.codigo || 'desconocido',
+      });
+    }
+    res.json([...delCrm, ...deAvancys].slice(0, 25));
   } catch (error) { sendAuthError(res, error); }
 });
 

@@ -370,6 +370,32 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
   }
 
   /**
+   * Busca clientes por nombre, para el selector que aparece al escribir el cliente de una
+   * oportunidad nueva.
+   *
+   * Es una consulta dirigida con `ilike` y tope bajo, no la cartera entera: esto corre mientras
+   * alguien teclea, así que traer 1.439 clientes por pulsación sería inaceptable.
+   *
+   * Busca en TODA la compañía, no sólo en la cartera de quien escribe, y es a propósito: sirve
+   * para no crear por segunda vez un cliente que ya existe. Por eso cada resultado dice quién lo
+   * atiende, en vez de esconderlo.
+   */
+  async function buscarClientes({ texto: consulta, limite = 10 }) {
+    const buscado = texto(consulta);
+    if (!buscado || buscado.length < 3) return Object.freeze({ clientes: Object.freeze([]), as_of: null });
+    const filas = await leer('cliente', [['customer_rank', '>', 0], ['name', 'ilike', buscado]],
+      { limite: Math.min(Math.max(limite, 1), 25), orden: 'name asc' });
+    return Object.freeze({
+      clientes: Object.freeze(filas.map(fila => Object.freeze({
+        ...clientePublico(fila),
+        atendido_por: Array.isArray(fila.user_id) ? texto(fila.user_id[1]) : null,
+        departamento: Array.isArray(fila.state_id) ? texto(fila.state_id[1]) : null,
+      }))),
+      as_of: corteDe([filas]),
+    });
+  }
+
+  /**
    * La cartera de un comercial: los clientes que Avancys le tiene asignados.
    *
    * Recibe los ids de usuario de Odoo, no el perfil del CRM, porque la equivalencia entre los dos
@@ -412,5 +438,5 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, clienteDelPuesto, puestosDelCliente, clientesDelComercial });
+  return Object.freeze({ origen: config.origen, database: config.database, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
 }
