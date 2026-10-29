@@ -47,9 +47,16 @@ for (const marker of requiredCssMarkers) {
   assert.ok(css.includes(marker), `styles.css missing opportunity insight marker: ${marker}`);
 }
 
-const filtersIndex = main.indexOf('className="filters opportunity-filters compact-dashboard-filters"');
-const cardsIndex = main.indexOf('opportunity-insight-grid');
-const tableIndex = main.indexOf('className="tablewrap"');
+// Acotado a OpportunityList, que es de lo que habla esta prueba. Buscaba en TODO main.tsx, así
+// que cualquier otra pantalla con filtros y tabla le cambiaba el resultado: pasó el 2026-10-29
+// cuando Clientes —que usa las mismas clases a propósito, para verse igual— quedó antes en el
+// archivo. Acotarlo además la vuelve más fuerte: ahora afirma sobre la pantalla correcta.
+const listStart = main.indexOf('function OpportunityList');
+assert.ok(listStart !== -1, 'OpportunityList must exist');
+const list = main.slice(listStart);
+const filtersIndex = list.indexOf('className="filters opportunity-filters compact-dashboard-filters"');
+const cardsIndex = list.indexOf('opportunity-insight-grid');
+const tableIndex = list.indexOf('className="tablewrap"');
 assert.ok(filtersIndex !== -1, 'Opportunity filters must exist');
 assert.ok(cardsIndex !== -1, 'Opportunity KPI cards must exist');
 assert.ok(tableIndex !== -1, 'Opportunity table must exist');
