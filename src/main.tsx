@@ -740,7 +740,8 @@ type ClienteDetalle = {
   avancys: { cliente: { nombre: string | null } | null; total_contratos: number; total_puestos: number; puestos_listados: number; as_of: string | null; contratos: { nombre: string | null; inicia: string | null; vence: string | null; total_puestos: number; puestos: { codigo: string | null; nombre: string | null }[] }[] } | null;
   motivo: string | null;
   oportunidades: OportunidadDelCliente[];
-  emparejamiento: string;
+  emparejamiento: 'enlace_confirmado' | 'nombre_aproximado' | 'sin_coincidencias';
+  candidato_enlace: { client_id: string; veces: number } | null;
 };
 
 /**
@@ -756,6 +757,9 @@ function ClienteAbierto({ cliente }: { cliente: ClienteActual }) {
   const [estado, setEstado] = useState<'cargando'|'listo'|'error'>('cargando');
   const [datos, setDatos] = useState<ClienteDetalle | null>(null);
   const [error, setError] = useState('');
+  const [enlazando, setEnlazando] = useState(false);
+  const [enlaceError, setEnlaceError] = useState('');
+  const [recargar, setRecargar] = useState(0);
   const nit = cliente.identificacion?.numero || '';
   const nombre = cliente.nombre || '';
   useEffect(() => {
@@ -771,7 +775,7 @@ function ClienteAbierto({ cliente }: { cliente: ClienteActual }) {
       }
     })();
     return () => { vigente = false; };
-  }, [nit, nombre]);
+  }, [nit, nombre, recargar]);
   if (estado === 'cargando') return <p className="muted">Consultando…</p>;
   if (estado === 'error') return <p className="muted">No fue posible abrir el cliente: {error}</p>;
   if (!datos) return null;
@@ -798,7 +802,21 @@ function ClienteAbierto({ cliente }: { cliente: ClienteActual }) {
       {datos.oportunidades.length === 0
         ? <p className="muted">Ninguna oportunidad coincide con este nombre.</p>
         : <>
-          <p className="muted">{datos.oportunidades.length} {datos.oportunidades.length === 1 ? 'coincidencia' : 'coincidencias'} por nombre, no por NIT: revísela antes de darla por suya.</p>
+          {datos.emparejamiento === 'enlace_confirmado'
+            ? <p className="muted">Son sus oportunidades: alguien confirmó que este es el mismo cliente.</p>
+            : <p className="muted">{datos.oportunidades.length} {datos.oportunidades.length === 1 ? 'coincidencia' : 'coincidencias'} por nombre, no por identificación: revísela antes de darla por suya.</p>}
+          {/* El sistema propone; confirma una persona. A partir de ahí deja de adivinarse por nombre. */}
+          {datos.candidato_enlace && nit && <p>
+            <button type="button" className="secondary" disabled={enlazando} onClick={async () => {
+              setEnlazando(true); setEnlaceError('');
+              try {
+                await api('/api/avancys/cliente-enlace', { method: 'PUT', body: JSON.stringify({ client_id: datos.candidato_enlace!.client_id, avancys_ref_num: nit, avancys_nombre: nombre }) });
+                setRecargar(n => n + 1);
+              } catch (err) { setEnlaceError(err instanceof Error ? err.message : String(err)); }
+              finally { setEnlazando(false); }
+            }}>{enlazando ? 'Guardando…' : 'Sí, es el mismo cliente'}</button>
+            {enlaceError && <><br/><small className="muted">{enlaceError}</small></>}
+          </p>}
           <table className="mini-table"><tbody>
             {datos.oportunidades.slice(0, 10).map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}>
               <td><strong>{o.company_name}</strong><br/><small>{o.owner_name || 'Sin comercial'}{o.stage_name ? ` · ${o.stage_name}` : ''}</small></td>

@@ -469,6 +469,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'PUT /api/avancys/cliente-enlace': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
@@ -4062,6 +4063,43 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
   }
 });
 
+// Las oportunidades de la tabla base, con los nombres que la vista enriquecida les pone. Se lee de
+// la tabla y no de la vista porque la vista no expone `client_id`, que es lo que necesita el enlace.
+async function enriquecerOportunidades(database, filas) {
+  const base = Array.isArray(filas) ? filas : [];
+  if (base.length === 0) return [];
+  const { data } = await database.from('v_psi_sales_opportunity_enriched')
+    .select('id,company_name,stage_name,service_type_name,offer_value,owner_name,expected_close_date,last_interaction_at')
+    .in('id', base.map(fila => fila.id));
+  const porId = new Map((Array.isArray(data) ? data : []).map(fila => [fila.id, fila]));
+  return base.map(fila => {
+    const rica = porId.get(fila.id) || {};
+    return {
+      id: fila.id, client_id: fila.client_id || null,
+      company_name: rica.company_name || fila.company_name,
+      stage_name: rica.stage_name ?? null, service_type_name: rica.service_type_name ?? null,
+      offer_value: rica.offer_value ?? null, owner_name: rica.owner_name ?? null,
+      expected_close_date: rica.expected_close_date ?? null,
+      last_interaction_at: rica.last_interaction_at ?? null,
+    };
+  });
+}
+
+// El cliente del CRM que más veces aparece entre las coincidencias por nombre. Es un candidato a
+// proponer, no una conclusión: quien decide si son el mismo cliente es una persona.
+function clienteMasFrecuente(oportunidades) {
+  const cuenta = new Map();
+  for (const o of oportunidades) {
+    if (!o.client_id) continue;
+    cuenta.set(o.client_id, (cuenta.get(o.client_id) || 0) + 1);
+  }
+  let mejor = null;
+  for (const [clientId, veces] of cuenta) {
+    if (!mejor || veces > mejor.veces) mejor = { client_id: clientId, veces };
+  }
+  return mejor;
+}
+
 // Un cliente actual, abierto: lo que tiene con nosotros en Avancys y lo que el CRM sabe de él.
 //
 // Es el modelo que pidió Juan el 2026-10-29: el cliente es lo primero y la oportunidad cuelga de
@@ -4085,13 +4123,29 @@ app.get('/api/avancys/cliente', async (req, res) => {
     }
 
     // Lo del CRM primero: no depende de Avancys y es lo que sostiene la pantalla si el ERP falla.
-    const normalizado = normalizeClientName(nombre);
-    const { data: oportunidades } = normalizado
-      ? await database.from('v_psi_sales_opportunity_enriched')
-        .select('id,company_name,stage_name,service_type_name,offer_value,owner_name,expected_close_date,last_interaction_at')
-        .ilike('company_name', `%${nombre}%`)
-        .limit(50)
-      : { data: [] };
+    //
+    // Si alguien ya confirmó que este cliente de Avancys es tal cliente del CRM, se usa ese enlace
+    // y el emparejamiento es EXACTO. Si no, se cae al parecido por nombre, que es lo que había.
+    const { data: enlace } = identificacion
+      ? await database.from('psi_cliente_avancys').select('client_id').eq('avancys_ref_num', identificacion).maybeSingle()
+      : { data: null };
+
+    let oportunidades = [];
+    let emparejamiento = 'sin_coincidencias';
+    if (enlace?.client_id) {
+      const { data } = await database.from('psi_sales_opportunities')
+        .select('id,company_name,client_id').eq('client_id', enlace.client_id).limit(50);
+      oportunidades = await enriquecerOportunidades(database, data);
+      emparejamiento = 'enlace_confirmado';
+    } else if (normalizeClientName(nombre)) {
+      const { data } = await database.from('psi_sales_opportunities')
+        .select('id,company_name,client_id').ilike('company_name', `%${nombre}%`).limit(50);
+      oportunidades = await enriquecerOportunidades(database, data);
+      if (oportunidades.length > 0) emparejamiento = 'nombre_aproximado';
+    }
+    // El candidato a enlazar: el cliente del CRM que más veces aparece entre las coincidencias.
+    // Se propone, no se guarda: lo confirma una persona.
+    const candidato = enlace?.client_id ? null : clienteMasFrecuente(oportunidades);
 
     let avancys = null;
     let motivo = null;
@@ -4108,15 +4162,58 @@ app.get('/api/avancys/cliente', async (req, res) => {
     return res.json({
       avancys,
       motivo,
-      oportunidades: (Array.isArray(oportunidades) ? oportunidades : []).map(fila => ({
-        id: fila.id, company_name: fila.company_name, stage_name: fila.stage_name,
-        service_type_name: fila.service_type_name, offer_value: fila.offer_value,
-        owner_name: fila.owner_name, expected_close_date: fila.expected_close_date,
-        last_interaction_at: fila.last_interaction_at,
-      })),
-      // Que quien lea sepa que esto se emparejó por nombre y no por identificación.
-      emparejamiento: 'nombre_aproximado',
+      oportunidades,
+      // Que quien lea sepa de dónde salió esta lista: de un enlace que alguien confirmó, o de un
+      // parecido de nombres.
+      emparejamiento,
+      candidato_enlace: candidato,
     });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Confirmar que un cliente del CRM y uno de Avancys son el mismo.
+//
+// Lo guarda una persona, no un algoritmo de parecido: el sistema propone el candidato y alguien
+// dice que sí. A partir de ahí el emparejamiento deja de ser aproximado.
+//
+// Pide permiso de edición, no de lectura: esto afirma algo sobre los datos de la empresa.
+app.put('/api/avancys/cliente-enlace', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const clientId = String(req.body?.client_id || '').trim();
+    const refNum = String(req.body?.avancys_ref_num || '').trim();
+    if (!clientId || !refNum) {
+      const error = new Error('Debe indicar el cliente del CRM y la identificacion de Avancys.');
+      error.status = 400;
+      throw error;
+    }
+    // Que el cliente exista de verdad: un enlace a un id inventado no vale nada.
+    const { data: cliente } = await database.from('psi_sales_clients').select('id,company_name').eq('id', clientId).maybeSingle();
+    if (!cliente) {
+      const error = new Error('El cliente del CRM no existe.');
+      error.status = 404;
+      throw error;
+    }
+    const { error } = await database.from('psi_cliente_avancys').upsert({
+      client_id: clientId,
+      avancys_ref_num: refNum,
+      avancys_nombre: String(req.body?.avancys_nombre || '').trim() || null,
+      confirmado_por: currentProfile.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'client_id' });
+    // 23505: ese cliente de Avancys ya está enlazado a OTRO cliente del CRM. Son dos registros del
+    // CRM para el mismo cliente; eso se arregla allá, no duplicando el enlace.
+    if (error) {
+      const conflicto = new Error(error.code === '23505'
+        ? 'Ese cliente de Avancys ya esta enlazado a otro cliente del CRM.'
+        : 'No fue posible guardar el enlace.');
+      conflicto.status = error.code === '23505' ? 409 : 500;
+      throw conflicto;
+    }
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ client_id: clientId, avancys_ref_num: refNum, company_name: cliente.company_name });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
