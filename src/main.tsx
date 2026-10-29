@@ -728,6 +728,11 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
 }
 
 type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null; departamento: string | null; productos: string[]; tipos_de_servicio: string[] };
+// Los productos de Avancys vienen como "[MO001] GPRS VIGILANCIA ELECTRONICA + REACCIÓN CON
+// VIGILANCIA HUMANA". En una tabla sólo cabe el código; el nombre completo va en el `title`.
+function codigoDeProducto(nombre: string) {
+  return /^\[([^\]]+)\]/.exec(nombre)?.[1] || nombre.slice(0, 18);
+}
 type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; con_servicios?: boolean; alcance?: 'propios' | 'todos' | null; puede_ver_todo?: boolean; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
 
 // Los clientes que la empresa ya tiene. Pantalla propia, al lado de Oportunidades.
@@ -742,6 +747,10 @@ type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: s
 // decide es el servidor, por el perfil; aquí sólo se rotula.
 function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   const [estado, setEstado] = useState<'cargando'|'listo'|'error'>('cargando');
+  // Los servicios llegan después que la lista, así que tienen su propio estado. Sin esto la
+  // pantalla decía "no están disponibles" mientras simplemente no habían llegado: dos cosas
+  // distintas contadas igual, y Juan lo vio en producción el 2026-10-29.
+  const [servicios, setServicios] = useState<'cargando'|'listos'|'fallaron'>('cargando');
   const [datos, setDatos] = useState<MisClientesRespuesta | null>(null);
   const [error, setError] = useState('');
   const [filtro, setFiltro] = useState('');
@@ -756,7 +765,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
       // Comercial `currentProfile` llega con rol comercial, así que `mios` ya lo refleja. Pedir
       // menos siempre se concede; pedir más lo comprueba el servidor contra el rol real.
       const alcance = mios ? '&alcance=propios' : '';
-      setEstado('cargando'); setError('');
+      setEstado('cargando'); setServicios('cargando'); setError('');
       try {
         const rapida = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?sin_servicios=1${alcance}`);
         if (!vigente) return;
@@ -768,10 +777,10 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
       }
       try {
         const completa = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?${alcance.slice(1)}`);
-        if (vigente) setDatos(completa);
+        if (vigente) { setDatos(completa); setServicios('listos'); }
       } catch {
         // La lista ya está en pantalla; si esto falla, sólo faltan dos filtros y se declara abajo.
-        if (vigente) setDatos(previos => (previos ? { ...previos, con_servicios: false } : previos));
+        if (vigente) setServicios('fallaron');
       }
     })();
     return () => { vigente = false; };
@@ -804,14 +813,13 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
     const texto = `${c.nombre || ''} ${c.identificacion?.numero || ''}`.toLowerCase();
     return texto.includes(filtro.trim().toLowerCase());
   });
-  return <Panel title={mios ? 'Mis clientes' : 'Clientes'}>
+  // Sin título: la pantalla ya se llama "Clientes" en el encabezado, y repetirlo era ruido.
+  return <section className="panel">
     <p className="muted">Los clientes que la empresa ya tiene. Se leen de Avancys en vivo; no se copian al CRM.</p>
     {estado === 'cargando' && <p className="muted">Consultando Avancys…</p>}
     {estado === 'error' && <p className="muted">No fue posible consultar Avancys: {error}</p>}
     {estado === 'listo' && datos && <>
-      {datos.motivo
-        ? <p className="muted">{datos.motivo}</p>
-        : <p className="muted filter-summary"><strong>{datos.total}</strong> {datos.total === 1 ? 'cliente' : 'clientes'}{datos.alcance === 'todos' ? ' en la compañía' : ' a su cargo'}{datos.as_of ? <> · datos de Avancys al {datos.as_of.slice(0, 10)}</> : null}{datos.recortada ? <> · lista recortada</> : null}</p>}
+      {datos.motivo && <p className="muted">{datos.motivo}</p>}
       {(datos.heredados || []).map(h => <p className="muted" key={h.comercial}>Incluye los clientes de {h.comercial}. {h.motivo}</p>)}
       {datos.total > 0 && <>
         <div className="filters opportunity-filters compact-dashboard-filters">
@@ -822,24 +830,36 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
           {tiposServicio.length > 1 && <Select value={tipoServicio} onChange={setTipoServicio} options={tiposServicio.map(n => [n, n])} empty="Tipo de servicio" />}
           {hayFiltro && <button className="secondary" onClick={limpiar}>Limpiar</button>}
         </div>
-        <p className="muted filter-summary"><strong>{visibles.length}</strong> de {datos.total} visibles.</p>
-        {datos.con_servicios === false && <p className="muted">Los filtros de producto y tipo de servicio no están disponibles: no se pudo leer qué le prestamos a cada cliente.</p>}
-        <ul className="dashboard-simple-list">
-          {visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA).map((c, i) => <li key={`${c.identificacion?.numero || c.nombre || ''}-${i}`}>
-            <strong>{c.nombre || 'Sin nombre'}</strong>
-            <span>{[
-              c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : 'Sin identificación en Avancys',
-              c.departamento,
-              c.productos.length ? c.productos.join(', ') : null,
-              comerciales.length > 1 ? c.atendido_por : null,
-            ].filter(Boolean).join(' · ')}</span>
-          </li>)}
-        </ul>
+        <p className="muted filter-summary">
+          <strong>{visibles.length}</strong>{visibles.length === datos.total ? '' : ` de ${datos.total}`} {visibles.length === 1 ? 'cliente' : 'clientes'}{datos.alcance === 'todos' ? ' en la compañía' : ' a su cargo'}{datos.as_of ? ` · datos de Avancys al ${datos.as_of.slice(0, 10)}` : ''}{datos.recortada ? ' · lista recortada' : ''}
+          {servicios === 'cargando' && <> · <span className="muted">consultando qué le prestamos a cada uno…</span></>}
+        </p>
+        {servicios === 'fallaron' && <p className="muted">No se pudo leer qué le prestamos a cada cliente, así que los filtros de producto y tipo de servicio no están disponibles.</p>}
+        <div className="tablewrap"><table>
+          <thead><tr>
+            <th>Cliente</th><th>NIT</th><th>Departamento</th><th>Servicios</th>
+            {comerciales.length > 1 && <th>Comercial</th>}
+          </tr></thead>
+          <tbody>
+            {visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA).map((c, i) => <tr key={`${c.identificacion?.numero || c.nombre || ''}-${i}`}>
+              <td><strong>{c.nombre || 'Sin nombre'}</strong></td>
+              <td>{c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : <span className="muted">Sin identificación</span>}</td>
+              <td>{c.departamento || <span className="muted">—</span>}</td>
+              {/* El código, no el nombre: "[MO001] GPRS VIGILANCIA ELECTRONICA + REACCIÓN CON
+                  VIGILANCIA HUMANA" ocupaba dos renglones por fila. El nombre completo queda en
+                  el `title`, al pasar el mouse. */}
+              <td>{c.productos.length
+                ? c.productos.map(nombre => <span key={nombre} title={nombre}><Badge>{codigoDeProducto(nombre)}</Badge></span>)
+                : servicios === 'cargando' ? <span className="muted">…</span> : <span className="muted">—</span>}</td>
+              {comerciales.length > 1 && <td>{c.atendido_por || <span className="muted">—</span>}</td>}
+            </tr>)}
+          </tbody>
+        </table></div>
         {visibles.length > POR_PAGINA && <Pagination page={pagina} total={visibles.length} pageSize={POR_PAGINA} onChange={setPagina} label="Páginas de clientes" />}
         {visibles.length === 0 && <p className="muted">Ningún cliente coincide con los filtros.</p>}
       </>}
     </>}
-  </Panel>;
+  </section>;
 }
 
 function OpportunityList({ data }: { data: Bootstrap }) {

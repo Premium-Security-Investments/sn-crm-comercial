@@ -592,9 +592,10 @@ test('la pantalla de clientes pide primero la lista y después los productos', (
   // antes de ver un solo cliente.
   assert.match(ui, /\/api\/avancys\/mis-clientes\?sin_servicios=1/);
   assert.match(ui, /setDatos\(rapida\); setEstado\('listo'\);/);
-  // Y si la segunda falla, la lista ya visible se queda y se declara qué filtros faltan.
-  assert.match(ui, /con_servicios: false/);
-  assert.match(ui, /Los filtros de producto y tipo de servicio no están disponibles/);
+  // Y si la segunda falla, la lista ya visible se queda y se declara qué filtros faltan —ahora
+  // con su propio estado, para no confundir "falló" con "todavía no llega".
+  assert.match(ui, /setServicios\('fallaron'\)/);
+  assert.match(ui, /los filtros de producto y tipo de servicio no están disponibles/);
 });
 
 test('el endpoint acepta pedir la lista sin los servicios', () => {
@@ -613,4 +614,35 @@ test('Clientes obedece la Vista Admin / Vista Comercial que ya tiene el CRM', ()
   assert.match(ui, /\}, \[mios\]\);/);
   // Ninguna casilla propia: el CRM ya tenía ese interruptor y no se duplica (Juan, 2026-10-29).
   assert.ok(!/Ver todos los clientes de la compañía/.test(ui), 'no se inventa un segundo interruptor de vista');
+});
+
+test('la pantalla distingue "cargando los servicios" de "no se pudieron leer"', () => {
+  const ui = leer('src/main.tsx');
+  // Decía "no están disponibles" mientras simplemente no habían llegado. Dos cosas distintas
+  // contadas igual; Juan lo vio en producción el 2026-10-29.
+  assert.match(ui, /const \[servicios, setServicios\] = useState<'cargando'\|'listos'\|'fallaron'>\('cargando'\);/);
+  assert.match(ui, /servicios === 'cargando' && <> · <span className="muted">consultando qué le prestamos a cada uno…/);
+  assert.match(ui, /servicios === 'fallaron' && <p className="muted">No se pudo leer/);
+  // Y lo que se eliminó: el mensaje de falla ya no cuelga del dato que trae la respuesta rápida,
+  // que siempre viene sin servicios y por eso mentía.
+  assert.ok(!/datos\.con_servicios === false/.test(ui), 'el aviso no puede depender de la respuesta rápida');
+});
+
+test('los clientes se muestran en tabla y el producto por su código', () => {
+  const ui = leer('src/main.tsx');
+  const vista = ui.slice(ui.indexOf('function ClientsView'), ui.indexOf('function OpportunityList'));
+  assert.match(vista, /<th>Cliente<\/th><th>NIT<\/th><th>Departamento<\/th><th>Servicios<\/th>/);
+  // El nombre completo del producto ocupaba dos renglones por fila; en la celda va el código y
+  // el nombre queda al pasar el mouse.
+  assert.match(vista, /codigoDeProducto\(nombre\)/);
+  assert.match(vista, /<span key=\{nombre\} title=\{nombre\}>/);
+  // La columna del comercial sólo aparece cuando hay más de uno a la vista.
+  assert.match(vista, /\{comerciales\.length > 1 && <th>Comercial<\/th>\}/);
+  // Y el panel ya no repite el título de la pantalla.
+  assert.ok(!/<Panel title=\{mios \? 'Mis clientes' : 'Clientes'\}>/.test(vista), 'el título no se repite');
+});
+
+test('el menú de Clientes tiene icono, como las demás entradas', () => {
+  const iconos = leer('src/shell/UserMenu.tsx');
+  assert.match(iconos, /'#\/clients': \w+,/);
 });
