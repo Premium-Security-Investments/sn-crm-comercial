@@ -4026,6 +4026,8 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
     const leido = await lector.clientesDelComercial({
       odooUserIds: asignaciones.map(fila => fila.odoo_user_id),
       todos,
+      // La pantalla pide la lista primero y los servicios después; ver `serviciosPorCliente`.
+      conServicios: req.query.sin_servicios !== '1',
     });
     return res.json({
       ...leido,

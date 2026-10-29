@@ -728,7 +728,7 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
 }
 
 type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null; departamento: string | null; productos: string[]; tipos_de_servicio: string[] };
-type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; alcance?: 'propios' | 'todos' | null; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
+type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; con_servicios?: boolean; alcance?: 'propios' | 'todos' | null; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
 
 // Los clientes que la empresa ya tiene. Pantalla propia, al lado de Oportunidades.
 //
@@ -746,17 +746,28 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   const [error, setError] = useState('');
   const [filtro, setFiltro] = useState('');
   const mios = currentProfile?.role === 'comercial';
+  // En dos tiempos, y por una medición: la lista sola tarda 1,5 s y con los productos de cada
+  // cliente, 8 s con los 1.439 de la compañía. Primero la lista —con la que ya se busca y se
+  // llama— y los productos después, que sólo alimentan dos filtros.
   useEffect(() => {
     let vigente = true;
     (async () => {
       setEstado('cargando'); setError('');
       try {
-        const respuesta = await api<MisClientesRespuesta>('/api/avancys/mis-clientes');
+        const rapida = await api<MisClientesRespuesta>('/api/avancys/mis-clientes?sin_servicios=1');
         if (!vigente) return;
-        setDatos(respuesta); setEstado('listo');
+        setDatos(rapida); setEstado('listo');
       } catch (err) {
         if (!vigente) return;
         setError(err instanceof Error ? err.message : String(err)); setEstado('error');
+        return;
+      }
+      try {
+        const completa = await api<MisClientesRespuesta>('/api/avancys/mis-clientes');
+        if (vigente) setDatos(completa);
+      } catch {
+        // La lista ya está en pantalla; si esto falla, sólo faltan dos filtros y se declara abajo.
+        if (vigente) setDatos(previos => (previos ? { ...previos, con_servicios: false } : previos));
       }
     })();
     return () => { vigente = false; };
@@ -776,6 +787,9 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   const productos = useMemo(() => valoresDe(c => c.productos), [datos]);
   const tiposServicio = useMemo(() => valoresDe(c => c.tipos_de_servicio), [datos]);
   const hayFiltro = Boolean(filtro || comercial || departamento || producto || tipoServicio);
+  const [pagina, setPagina] = useState(1);
+  const POR_PAGINA = 50;
+  useEffect(() => { setPagina(1); }, [filtro, comercial, departamento, producto, tipoServicio]);
   const limpiar = () => { setFiltro(''); setComercial(''); setDepartamento(''); setProducto(''); setTipoServicio(''); };
   const visibles = (datos?.clientes || []).filter(c => {
     if (comercial && c.atendido_por !== comercial) return false;
@@ -805,8 +819,9 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
           {hayFiltro && <button className="secondary" onClick={limpiar}>Limpiar</button>}
         </div>
         <p className="muted filter-summary"><strong>{visibles.length}</strong> de {datos.total} visibles.</p>
+        {datos.con_servicios === false && <p className="muted">Los filtros de producto y tipo de servicio no están disponibles: no se pudo leer qué le prestamos a cada cliente.</p>}
         <ul className="dashboard-simple-list">
-          {visibles.slice(0, 200).map((c, i) => <li key={`${c.identificacion?.numero || c.nombre || ''}-${i}`}>
+          {visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA).map((c, i) => <li key={`${c.identificacion?.numero || c.nombre || ''}-${i}`}>
             <strong>{c.nombre || 'Sin nombre'}</strong>
             <span>{[
               c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : 'Sin identificación en Avancys',
@@ -816,8 +831,8 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
             ].filter(Boolean).join(' · ')}</span>
           </li>)}
         </ul>
-        {visibles.length > 200 && <p className="muted">Se muestran los primeros 200 de {visibles.length}. Use el buscador.</p>}
-        {visibles.length === 0 && <p className="muted">Ningún cliente coincide con «{filtro}».</p>}
+        {visibles.length > POR_PAGINA && <Pagination page={pagina} total={visibles.length} pageSize={POR_PAGINA} onChange={setPagina} label="Páginas de clientes" />}
+        {visibles.length === 0 && <p className="muted">Ningún cliente coincide con los filtros.</p>}
       </>}
     </>}
   </Panel>;
