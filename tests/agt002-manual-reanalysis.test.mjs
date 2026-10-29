@@ -194,3 +194,47 @@ test('sin la migración 138 el botón responde 503 y el host no falla', async ()
   await assert.rejects(readAgt002ManualReanalysisStatus(db, 'opp-fgn'), { code: 'AGT002_MANUAL_REANALYSIS_UNAVAILABLE', status: 503 });
   assert.deepEqual(await runAgt002ManualReanalysisRequests(db, { environment: ON }), [{ event: 'agt002_manual_reanalysis_unavailable' }]);
 });
+
+// Primer análisis a mano (Juan, 2026-10-29): la Fiscalía del Eje Cafetero quedó con 12 documentos y sin análisis
+// porque la ventana automática se contaba desde la conversión. El mismo botón pide el primero.
+const sinAnalisis = (overrides = {}) => world({
+  psi_agt002_initial_analysis_jobs: [],
+  psi_tender_analysis_runs: [],
+  psi_tender_document_versions: [{ id: 'dv-pliego', opportunity_id: 'opp-fgn', current: true }],
+  ...overrides,
+});
+
+test('sin ningún análisis todavía, el botón pide el PRIMERO y el host lo admite como INITIAL', async () => {
+  const db = fakeDb(sinAnalisis());
+  const result = await requestAgt002ManualReanalysis(db, { opportunityId: 'opp-fgn', requestedBy: 'katherine', now: NOW, inactiveReason: active });
+  assert.equal(result.requested, true);
+  const calls = [];
+  const admit = async (_db, args) => { calls.push(args); return { admissionStatus: 'admitted', jobId: 'job-first' }; };
+  const events = await runAgt002ManualReanalysisRequests(db, { now: NOW, environment: ON, admit, freezeProfile: fakeProfile, selectMembers: fakeMembers, inactiveReason: active });
+  assert.deepEqual(events.map(event => event.event), ['agt002_manual_reanalysis_admitted']);
+  assert.equal(calls[0].analysisKind, 'INITIAL');
+  assert.equal(calls[0].sourceAnalysisRunId, null);
+  assert.equal(calls[0].actorProfileId, 'katherine');
+  assert.equal(db.tables[REQUESTS][0].status, 'admitted');
+});
+
+test('el primero no se pide sin documentos de la entidad, ni cuando ya hubo un análisis admitido', async () => {
+  const vacia = fakeDb(sinAnalisis({ psi_tender_document_versions: [] }));
+  await assert.rejects(
+    requestAgt002ManualReanalysis(vacia, { opportunityId: 'opp-fgn', requestedBy: 'juan', now: NOW, inactiveReason: active }),
+    error => error.reason === 'sin_documentos_legibles',
+  );
+  const yaHubo = fakeDb(sinAnalisis({ psi_agt002_initial_analysis_jobs: [{ id: 'job-fallido', opportunity_id: 'opp-fgn', status: 'FAILED' }] }));
+  await assert.rejects(
+    requestAgt002ManualReanalysis(yaHubo, { opportunityId: 'opp-fgn', requestedBy: 'juan', now: NOW, inactiveReason: active }),
+    error => error.reason === 'sin_analisis_previo',
+  );
+});
+
+test('el incremental sigue necesitando un análisis vigente que comparar', async () => {
+  const db = fakeDb(sinAnalisis());
+  await assert.rejects(
+    requestAgt002ManualReanalysis(db, { opportunityId: 'opp-fgn', requestedBy: 'juan', mode: 'incremental', now: NOW, inactiveReason: active }),
+    error => error.reason === 'sin_analisis_previo',
+  );
+});

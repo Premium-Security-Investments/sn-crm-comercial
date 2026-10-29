@@ -1382,9 +1382,10 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     const canDecide = can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
     const reloadAll = async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); };
     const secopNotices = plainSecopNotices(resolveTenderPhaseChangeNotices(o.observaciones));
-    // "Volver a analizar" (Juan, 2026-10-20): sólo quien puede lanzar análisis y no es de solo consulta.
-    const reanalysis = !readOnly && can(data.currentProfile, ACTIONS.AI_ANALYSIS_RUN) && tenderInitialReport
-      ? <TenderManualReanalysis key={`tender-reanalysis-${o.id}`} opportunityId={o.id} request={api} analyzedAt={tenderInitialReport.createdAt || null} onCompleted={onTenderReanalysisCompleted} />
+    // "Volver a analizar" (Juan, 2026-10-20): sólo quien puede lanzar análisis y no es de solo consulta. Sin análisis
+    // todavía es el mismo botón, pidiendo el primero (Juan, 2026-10-29); el servidor dice si se puede.
+    const reanalysis = !readOnly && can(data.currentProfile, ACTIONS.AI_ANALYSIS_RUN)
+      ? <TenderManualReanalysis key={`tender-reanalysis-${o.id}`} opportunityId={o.id} request={api} analyzedAt={tenderInitialReport?.createdAt || null} firstAnalysis={!tenderInitialReport} onCompleted={onTenderReanalysisCompleted} />
       : null;
     const decisionPanel = <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
       <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}-${tenderRevision}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} questionResponses={tenderQuestionResponses} onChanged={reloadAll} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} />

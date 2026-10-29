@@ -39,8 +39,8 @@ export function manualReanalysisStatusText(status: ManualReanalysisStatus | null
   return null;
 }
 
-export function TenderManualReanalysis({ opportunityId, request, analyzedAt, onCompleted }: {
-  opportunityId: string; request: TenderRequest; analyzedAt: string | null; onCompleted: () => void;
+export function TenderManualReanalysis({ opportunityId, request, analyzedAt, firstAnalysis = false, onCompleted }: {
+  opportunityId: string; request: TenderRequest; analyzedAt: string | null; firstAnalysis?: boolean; onCompleted: () => void;
 }) {
   const [status, setStatus] = useState<ManualReanalysisStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,7 +63,9 @@ export function TenderManualReanalysis({ opportunityId, request, analyzedAt, onC
     return () => window.clearInterval(timer);
   }, [pending, load]);
   const ask = async () => {
-    if (!window.confirm('Vig-IA volverá a leer todos los documentos vigentes con el perfil actual de la empresa. Tarda unos 20 a 40 minutos y no cambia ninguna decisión. ¿Continuar?')) return;
+    if (!window.confirm(firstAnalysis
+      ? 'Vig-IA va a leer los documentos que ya trajo de la entidad con el perfil actual de la empresa. Tarda unos 20 a 40 minutos y no cambia ninguna decisión. ¿Continuar?'
+      : 'Vig-IA volverá a leer todos los documentos vigentes con el perfil actual de la empresa. Tarda unos 20 a 40 minutos y no cambia ninguna decisión. ¿Continuar?')) return;
     setBusy(true); setError(null);
     try {
       const result = await request<{ status: ManualReanalysisStatus }>('/api/agt002-manual-reanalysis', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunityId }) });
@@ -79,7 +81,7 @@ export function TenderManualReanalysis({ opportunityId, request, analyzedAt, onC
     <div className="tw-reanalysis-row">
       {analyzedAt && <span className="tw-muted">Análisis del {formatDeadline(analyzedAt)}</span>}
       {status && <button type="button" className="secondary" disabled={disabled} title={!status.canRequest && !pending ? status.blockedReasonText || undefined : undefined} onClick={() => void ask()}>
-        {busy ? 'Pidiendo…' : pending ? 'Analizando…' : 'Volver a analizar'}
+        {busy ? 'Pidiendo…' : pending ? 'Analizando…' : firstAnalysis ? 'Analizar ahora' : 'Volver a analizar'}
       </button>}
     </div>
     {text && <p className={status?.state === 'failed' || status?.state === 'rejected' ? 'tw-reanalysis-warn' : 'tw-muted'} role="status">{text}</p>}
