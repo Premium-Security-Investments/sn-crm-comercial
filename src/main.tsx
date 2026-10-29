@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -735,6 +735,82 @@ function codigoDeProducto(nombre: string) {
 }
 type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; con_servicios?: boolean; alcance?: 'propios' | 'todos' | null; puede_ver_todo?: boolean; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
 
+type OportunidadDelCliente = { id: string; company_name: string; stage_name: string | null; service_type_name: string | null; offer_value: number | null; owner_name: string | null; expected_close_date: string | null; last_interaction_at: string | null };
+type ClienteDetalle = {
+  avancys: { cliente: { nombre: string | null } | null; total_contratos: number; total_puestos: number; puestos_listados: number; as_of: string | null; contratos: { nombre: string | null; inicia: string | null; vence: string | null; total_puestos: number; puestos: { codigo: string | null; nombre: string | null }[] }[] } | null;
+  motivo: string | null;
+  oportunidades: OportunidadDelCliente[];
+  emparejamiento: string;
+};
+
+/**
+ * Un cliente abierto: lo que tiene con nosotros y lo que el CRM sabe de él.
+ *
+ * El cliente es lo primero y la oportunidad cuelga de él (Juan, 2026-10-29). Hasta ahora la lista
+ * se miraba y ya; esto es lo que la vuelve un punto de partida para el seguimiento.
+ *
+ * Se consulta al abrir la fila, no al cargar la lista: son 1.439 clientes y nadie abre más de unos
+ * pocos.
+ */
+function ClienteAbierto({ cliente }: { cliente: ClienteActual }) {
+  const [estado, setEstado] = useState<'cargando'|'listo'|'error'>('cargando');
+  const [datos, setDatos] = useState<ClienteDetalle | null>(null);
+  const [error, setError] = useState('');
+  const nit = cliente.identificacion?.numero || '';
+  const nombre = cliente.nombre || '';
+  useEffect(() => {
+    let vigente = true;
+    (async () => {
+      setEstado('cargando'); setError('');
+      try {
+        const r = await api<ClienteDetalle>(`/api/avancys/cliente?nit=${encodeURIComponent(nit)}&nombre=${encodeURIComponent(nombre)}`);
+        if (vigente) { setDatos(r); setEstado('listo'); }
+      } catch (err) {
+        if (!vigente) return;
+        setError(err instanceof Error ? err.message : String(err)); setEstado('error');
+      }
+    })();
+    return () => { vigente = false; };
+  }, [nit, nombre]);
+  if (estado === 'cargando') return <p className="muted">Consultando…</p>;
+  if (estado === 'error') return <p className="muted">No fue posible abrir el cliente: {error}</p>;
+  if (!datos) return null;
+  const av = datos.avancys;
+  return <div className="stack">
+    <div>
+      <strong>Lo que tiene con nosotros</strong>
+      {datos.motivo && <p className="muted">{datos.motivo}</p>}
+      {av && <>
+        <p className="muted">{av.total_contratos} {av.total_contratos === 1 ? 'contrato' : 'contratos'} · {av.total_puestos} {av.total_puestos === 1 ? 'puesto' : 'puestos'}{av.as_of ? ` · datos de Avancys al ${av.as_of.slice(0, 10)}` : ''}</p>
+        <ul className="dashboard-simple-list">
+          {av.contratos.slice(0, 10).map(c => <li key={c.nombre || ''}>
+            <strong>{c.nombre || 'Sin nombre'}</strong>
+            <span>{c.total_puestos} {c.total_puestos === 1 ? 'puesto' : 'puestos'}{c.vence ? ` · vence ${c.vence}` : ''}</span>
+          </li>)}
+        </ul>
+        {av.contratos.length > 10 && <p className="muted">y {av.contratos.length - 10} contratos más.</p>}
+      </>}
+    </div>
+    <div>
+      <strong>Oportunidades en el CRM</strong>
+      {/* Emparejadas por nombre, no por NIT: lo tienen 2 de 411 oportunidades. Se dice en pantalla
+          para que nadie lea esta lista como una verdad del sistema. */}
+      {datos.oportunidades.length === 0
+        ? <p className="muted">Ninguna oportunidad coincide con este nombre.</p>
+        : <>
+          <p className="muted">{datos.oportunidades.length} {datos.oportunidades.length === 1 ? 'coincidencia' : 'coincidencias'} por nombre, no por NIT: revísela antes de darla por suya.</p>
+          <table className="mini-table"><tbody>
+            {datos.oportunidades.slice(0, 10).map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}>
+              <td><strong>{o.company_name}</strong><br/><small>{o.owner_name || 'Sin comercial'}{o.stage_name ? ` · ${o.stage_name}` : ''}</small></td>
+              <td className="numeric-value">{fmtMoney(o.offer_value)}</td>
+            </tr>)}
+          </tbody></table>
+        </>}
+      <p><a className="button secondary" href="#/new">Crear oportunidad</a></p>
+    </div>
+  </div>;
+}
+
 // Los clientes que la empresa ya tiene. Pantalla propia, al lado de Oportunidades.
 //
 // El CRM sólo mostraba el embudo de lo nuevo; los clientes actuales viven en Avancys y aquí se leen
@@ -801,6 +877,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   const tiposServicio = useMemo(() => valoresDe(c => c.tipos_de_servicio), [datos]);
   const hayFiltro = Boolean(filtro || comercial || departamento || producto || tipoServicio);
   const [pagina, setPagina] = useState(1);
+  const [abierto, setAbierto] = useState<string | null>(null);
   const POR_PAGINA = 50;
   useEffect(() => { setPagina(1); }, [filtro, comercial, departamento, producto, tipoServicio]);
   const limpiar = () => { setFiltro(''); setComercial(''); setDepartamento(''); setProducto(''); setTipoServicio(''); };
@@ -841,7 +918,8 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
             {comerciales.length > 1 && <th>Comercial</th>}
           </tr></thead>
           <tbody>
-            {visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA).map((c, i) => <tr key={`${c.identificacion?.numero || c.nombre || ''}-${i}`}>
+            {visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA).map((c, i) => { const clave = `${c.identificacion?.numero || c.nombre || ''}-${i}`; return <Fragment key={clave}>
+            <tr className="clickable" onClick={() => setAbierto(actual => actual === clave ? null : clave)}>
               <td><strong>{c.nombre || 'Sin nombre'}</strong></td>
               <td>{c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : <span className="muted">Sin identificación</span>}</td>
               <td>{c.departamento || <span className="muted">—</span>}</td>
@@ -852,7 +930,9 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
                 ? c.productos.map(nombre => <span key={nombre} title={nombre}><Badge>{codigoDeProducto(nombre)}</Badge></span>)
                 : servicios === 'cargando' ? <span className="muted">…</span> : <span className="muted">—</span>}</td>
               {comerciales.length > 1 && <td>{c.atendido_por || <span className="muted">—</span>}</td>}
-            </tr>)}
+            </tr>
+            {abierto === clave && <tr><td colSpan={comerciales.length > 1 ? 5 : 4}><ClienteAbierto cliente={c} /></td></tr>}
+          </Fragment>; })}
           </tbody>
         </table></div>
         {visibles.length > POR_PAGINA && <Pagination page={pagina} total={visibles.length} pageSize={POR_PAGINA} onChange={setPagina} label="Páginas de clientes" />}

@@ -468,6 +468,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
@@ -4059,6 +4060,64 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
     }
     sendError(res, error, error?.status || 400);
   }
+});
+
+// Un cliente actual, abierto: lo que tiene con nosotros en Avancys y lo que el CRM sabe de él.
+//
+// Es el modelo que pidió Juan el 2026-10-29: el cliente es lo primero y la oportunidad cuelga de
+// él. Hasta ahora la lista de Clientes no hacía nada —se miraba y ya—, así que no servía para
+// hacer seguimiento, que era justo para lo que se pidió.
+//
+// Las oportunidades se emparejan por NOMBRE NORMALIZADO y no por NIT: el NIT lo tienen 2 de 411
+// oportunidades, así que emparejar por él no encontraría casi nada. Es un emparejamiento
+// aproximado y la respuesta lo dice, para que nadie lo lea como una verdad del sistema.
+app.get('/api/avancys/cliente', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const identificacion = String(req.query.nit || '').trim();
+    const nombre = String(req.query.nombre || '').trim();
+    if (!identificacion && !nombre) {
+      const error = new Error('Debe indicar el cliente.');
+      error.status = 400;
+      throw error;
+    }
+
+    // Lo del CRM primero: no depende de Avancys y es lo que sostiene la pantalla si el ERP falla.
+    const normalizado = normalizeClientName(nombre);
+    const { data: oportunidades } = normalizado
+      ? await database.from('v_psi_sales_opportunity_enriched')
+        .select('id,company_name,stage_name,service_type_name,offer_value,owner_name,expected_close_date,last_interaction_at')
+        .ilike('company_name', `%${nombre}%`)
+        .limit(50)
+      : { data: [] };
+
+    let avancys = null;
+    let motivo = null;
+    try {
+      const lector = crearLectorAvancys();
+      if (!lector) motivo = 'Avancys no esta configurado en este ambiente.';
+      else if (!identificacion) motivo = 'Este cliente no tiene identificacion en Avancys.';
+      else avancys = await lector.puestosDelCliente({ identificacion });
+    } catch (error) {
+      motivo = `Avancys no respondio: ${error?.codigo || 'error'}`;
+    }
+
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({
+      avancys,
+      motivo,
+      oportunidades: (Array.isArray(oportunidades) ? oportunidades : []).map(fila => ({
+        id: fila.id, company_name: fila.company_name, stage_name: fila.stage_name,
+        service_type_name: fila.service_type_name, offer_value: fila.offer_value,
+        owner_name: fila.owner_name, expected_close_date: fila.expected_close_date,
+        last_interaction_at: fila.last_interaction_at,
+      })),
+      // Que quien lea sepa que esto se emparejó por nombre y no por identificación.
+      emparejamiento: 'nombre_aproximado',
+    });
+  } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 app.get('/api/agt003/closure-form', async (req, res) => {
