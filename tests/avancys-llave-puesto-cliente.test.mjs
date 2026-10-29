@@ -750,3 +750,36 @@ test('el núcleo del nombre descarta formas societarias y palabras vacías', () 
   // Y no se lleva por delante a quien sólo comparte una palabra.
   assert.ok(!coincide('CARTONES Y PAPELES DE RISARALDA', palabrasDe('PAPELES NACIONALES S.A')));
 });
+
+test('a quién se le provisiona se declara, no se deduce de Avancys', () => {
+  for (const archivo of BACKENDS) {
+    const texto = leer(archivo);
+    assert.match(texto, /'PUT \/api\/avancys\/cliente-provision': \['opportunities', ACTIONS\.CRM_OPPORTUNITY_EDIT\]/, archivo);
+    const cuerpo = /app\.put\('\/api\/avancys\/cliente-provision'[\s\S]*?\n\}\);/.exec(texto)[0];
+    // De esta marca depende en qué mes cuenta la plata: queda escrito quién la puso.
+    assert.match(cuerpo, /marcado_por: currentProfile\.id/, archivo);
+    // Quitar no borra: deja constancia.
+    assert.match(cuerpo, /const activo = req\.body\?\.activo !== false;/, archivo);
+    assert.ok(!/\.delete\(\)/.test(cuerpo), `${archivo}: quitar la marca no debe borrar la fila`);
+
+    // Y el detalle distingue "nadie lo ha dicho" de "alguien dijo que no".
+    const detalle = /app\.get\('\/api\/avancys\/cliente'[\s\S]*?\n\}\);/.exec(texto)[0];
+    assert.match(detalle, /se_provisiona: provision \? provision\.activo === true : null/, archivo);
+  }
+  const ui = leer('src/main.tsx');
+  assert.match(ui, /Se le provisiona el mes \(facturación mes vencido\)/);
+  assert.match(ui, /datos\.se_provisiona === null && <small className="muted"> · nadie lo ha declarado todavía/);
+});
+
+test('la migración de la provisión nace vacía: los nombres de clientes no van al repositorio', () => {
+  const sql = leer('supabase/migrations/162_cliente_se_provisiona.sql');
+  assert.match(sql, /create table if not exists public\.psi_cliente_provision/);
+  // Sembrar la lista en la migración metería nombres e identificaciones de clientes en el código
+  // fuente, que queda en el repositorio para siempre. Son datos de la empresa y se declaran desde
+  // la plataforma, que además registra quién lo decidió.
+  assert.ok(!/insert into public\.psi_cliente_provision/.test(sql), 'la migración no debe sembrar clientes');
+  assert.ok(!/\b\d{8,10}\b/.test(sql.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')),
+    'ninguna identificación de cliente puede quedar en el archivo');
+  assert.match(sql, /revoke all on public\.psi_cliente_provision from anon, authenticated, public/);
+  assert.match(leer('supabase/rollbacks/162_cliente_se_provisiona_rollback.sql'), /drop table if exists public\.psi_cliente_provision/);
+});
