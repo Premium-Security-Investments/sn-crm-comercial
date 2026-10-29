@@ -19,10 +19,12 @@ const CAMPOS = Object.freeze({
   puesto: Object.freeze(['id', 'code', 'name', 'analytic_account_id', 'cliente_contract_id', 'write_date']),
   contrato: Object.freeze(['id', 'name', 'partner_id', 'date_start', 'date', 'write_date']),
   cuenta: Object.freeze(['id', 'code', 'partner_id', 'write_date']),
-  cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'write_date']),
+  orden: Object.freeze(['id', 'client_id', 'product_id', 'service_type']),
+  cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'state_id', 'write_date']),
 });
 
 const MODELO = Object.freeze({
+  orden: 'project.service.order.line.invoice',
   puesto: 'hr.roster.puesto',
   contrato: 'project.project',
   cuenta: 'account.analytic.account',
@@ -37,6 +39,8 @@ export const MAX_PUESTOS_LISTADOS = 25;
 // que esto no es un número decorativo.
 export const MAX_CLIENTES_LISTADOS = 2000;
 const MAX_FILAS = 2000;
+// Clientes por lote al agrupar sus servicios. Ver `serviciosPorCliente`.
+const LOTE_AGRUPACION = 200;
 const MAX_BYTES = 8388608;
 const TIMEOUT_MS = 20000;
 
@@ -188,6 +192,42 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
       [config.database, id, config.clave, modelo, 'search_read', [dominio], nombrado]);
     if (!Array.isArray(filas)) falla('AVANCYS_RESPUESTA_INVALIDA');
     return filas;
+  }
+
+  // Qué le prestamos a cada cliente, para poder filtrar la lista por producto y por tipo de
+  // servicio sin una consulta por cliente. Una sola agrupación devuelve ~2.700 filas para los
+  // 1.312 clientes con orden, en unos dos segundos; mil consultas no habrían sido viables.
+  async function serviciosPorCliente(idsCliente) {
+    if (idsCliente.length === 0) return new Map();
+    const modelo = MODELO.orden;
+    const id = await autenticar();
+    const porCliente = new Map();
+    // Por lotes, y no de un tirón: `read_group` de Odoo devuelve el dominio completo de cada
+    // grupo, así que la respuesta pesa muchísimo más que los datos. Con los 1.439 clientes de la
+    // compañía pasaba del tope de 8 MB y el lector fallaba justo en la vista de dirección, que es
+    // la única que lo pide entero.
+    const grupos = [];
+    for (let desde = 0; desde < idsCliente.length; desde += LOTE_AGRUPACION) {
+      const lote = idsCliente.slice(desde, desde + LOTE_AGRUPACION);
+      const nombrado = { lazy: false, limit: 20000 };
+      if (config.companyId) nombrado.context = { allowed_company_ids: [config.companyId] };
+      const parcial = await rpc('object', 'execute_kw', [config.database, id, config.clave, modelo, 'read_group',
+        [[['state', '=', 'aprobado'], ['client_id', 'in', lote]], ['id'], ['client_id', 'product_id', 'service_type']],
+        nombrado]);
+      if (!Array.isArray(parcial)) falla('AVANCYS_RESPUESTA_INVALIDA');
+      grupos.push(...parcial);
+    }
+    for (const grupo of grupos) {
+      const cliente = unoAMuchos(grupo.client_id);
+      if (cliente === null) continue;
+      if (!porCliente.has(cliente)) porCliente.set(cliente, { productos: new Set(), tipos: new Set() });
+      const entrada = porCliente.get(cliente);
+      const producto = Array.isArray(grupo.product_id) ? texto(grupo.product_id[1]) : null;
+      if (producto) entrada.productos.add(producto);
+      const tipo = texto(grupo.service_type);
+      if (tipo) entrada.tipos.add(tipo);
+    }
+    return porCliente;
   }
 
   async function clientesPorId(ids) {
@@ -350,10 +390,19 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
       : [['customer_rank', '>', 0], ['user_id', 'in', ids]];
     const filas = await leer('cliente', dominio,
       { limite: MAX_CLIENTES_LISTADOS, orden: 'name asc' });
-    const clientes = filas.map(fila => Object.freeze({
-      ...clientePublico(fila),
-      atendido_por: Array.isArray(fila.user_id) ? texto(fila.user_id[1]) : null,
-    }));
+    const servicios = await serviciosPorCliente(filas.map(fila => fila.id));
+    const clientes = filas.map(fila => {
+      const suyos = servicios.get(fila.id);
+      return Object.freeze({
+        ...clientePublico(fila),
+        atendido_por: Array.isArray(fila.user_id) ? texto(fila.user_id[1]) : null,
+        // Departamento sí, ciudad no: la tienen 1.435 de 1.439 clientes contra 234. Un filtro que
+        // esconde el 84% de la lista es peor que no tenerlo.
+        departamento: Array.isArray(fila.state_id) ? texto(fila.state_id[1]) : null,
+        productos: Object.freeze(suyos ? [...suyos.productos].sort() : []),
+        tipos_de_servicio: Object.freeze(suyos ? [...suyos.tipos].sort() : []),
+      });
+    });
     return Object.freeze({
       total: clientes.length,
       // Avisa cuando la lista pudo quedar recortada, en vez de mentir con un total que no lo es.

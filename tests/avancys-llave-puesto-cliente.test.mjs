@@ -52,7 +52,14 @@ function odooDeMentira(tablas, { errorDeOdoo = null, estado = 200 } = {}) {
     }
     let result;
     if (service === 'common' && method === 'authenticate') result = 230;
-    else {
+    else if (args[4] === 'read_group') {
+      // Los servicios por cliente se leen agrupados; el doble devuelve los grupos que se le den.
+      const [, , , modelo, , posicional] = args;
+      llamadas[llamadas.length - 1].modelo = modelo;
+      const dominio = posicional[0] || [];
+      const enLote = dominio.find(hoja => hoja[0] === 'client_id');
+      result = (tablas.__grupos || []).filter(g => !enLote || enLote[2].includes(g.client_id[0]));
+    } else {
       const [, , , modelo, metodo, posicional, nombrado] = args;
       assert.equal(metodo, 'search_read', 'el lector solo debe usar search_read');
       const dominio = posicional[0] || [];
@@ -211,6 +218,34 @@ test('la cartera trae los clientes de los usuarios de Odoo que se le pasen', asy
   // Cada cliente dice quién lo atiende en Avancys, para que el comercial sepa cuáles no son suyos.
   assert.deepEqual([...new Set(leido.clientes.map(c => c.atendido_por))].sort(), ['JOHN ESCOBAR', 'VERONICA DUQUE']);
   assert.ok(leido.as_of);
+});
+
+test('cada cliente trae con qué filtrarlo: departamento, productos y tipo de servicio', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [{ ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'], state_id: [1, 'Risaralda (CO)'] }];
+  tablas.__grupos = [
+    { client_id: [CIDE.id, CIDE.name], product_id: [5, '[VI002] VIGILANCIA FISICA SIN ARMA'], service_type: 'fijos', __count: 3 },
+    { client_id: [CIDE.id, CIDE.name], product_id: [9, '[MO005] MONITOREO TELEMATICO (GPRS)'], service_type: 'monitoreo', __count: 1 },
+  ];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  const leido = await lector.clientesDelComercial({ odooUserIds: [67] });
+
+  assert.equal(leido.clientes[0].departamento, 'Risaralda (CO)');
+  assert.deepEqual(leido.clientes[0].productos, ['[MO005] MONITOREO TELEMATICO (GPRS)', '[VI002] VIGILANCIA FISICA SIN ARMA']);
+  assert.deepEqual(leido.clientes[0].tipos_de_servicio, ['fijos', 'monitoreo']);
+});
+
+test('un cliente sin órdenes no rompe la lista: sale con sus listas vacías', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [{ ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'] }];
+  tablas.__grupos = [];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  const leido = await lector.clientesDelComercial({ odooUserIds: [67] });
+  assert.equal(leido.total, 1);
+  assert.deepEqual(leido.clientes[0].productos, []);
+  assert.equal(leido.clientes[0].departamento, null);
 });
 
 test('un comercial sin usuario de Odoo no pide una cartera vacía: falla y se declara', async () => {

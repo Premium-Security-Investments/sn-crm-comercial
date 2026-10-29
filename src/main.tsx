@@ -727,7 +727,7 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
   return [...rows].sort((a, b) => compareSortValues(tenderSortValue(a), tenderSortValue(b), tenderSortDirection));
 }
 
-type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null };
+type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null; departamento: string | null; productos: string[]; tipos_de_servicio: string[] };
 type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; alcance?: 'propios' | 'todos' | null; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
 
 // Los clientes que la empresa ya tiene. Pantalla propia, al lado de Oportunidades.
@@ -762,14 +762,26 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
     return () => { vigente = false; };
   }, []);
   const [comercial, setComercial] = useState('');
-  // Los comerciales que de verdad aparecen en la cartera leída, no una lista inventada: si un
-  // comercial no tiene clientes, no debe salir en el filtro.
-  const comerciales = useMemo(() => {
-    const vistos = new Set((datos?.clientes || []).map(c => c.atendido_por).filter((n): n is string => Boolean(n)));
+  const [departamento, setDepartamento] = useState('');
+  const [producto, setProducto] = useState('');
+  const [tipoServicio, setTipoServicio] = useState('');
+  // Cada filtro se arma con lo que de verdad trajo la lista, no con un catálogo fijo: si ningún
+  // cliente tiene cierto producto, ese producto no debe aparecer para filtrar por él.
+  const valoresDe = (saca: (c: ClienteActual) => (string | null)[]) => {
+    const vistos = new Set((datos?.clientes || []).flatMap(saca).filter((v): v is string => Boolean(v)));
     return Array.from(vistos).sort((a, b) => a.localeCompare(b));
-  }, [datos]);
+  };
+  const comerciales = useMemo(() => valoresDe(c => [c.atendido_por]), [datos]);
+  const departamentos = useMemo(() => valoresDe(c => [c.departamento]), [datos]);
+  const productos = useMemo(() => valoresDe(c => c.productos), [datos]);
+  const tiposServicio = useMemo(() => valoresDe(c => c.tipos_de_servicio), [datos]);
+  const hayFiltro = Boolean(filtro || comercial || departamento || producto || tipoServicio);
+  const limpiar = () => { setFiltro(''); setComercial(''); setDepartamento(''); setProducto(''); setTipoServicio(''); };
   const visibles = (datos?.clientes || []).filter(c => {
     if (comercial && c.atendido_por !== comercial) return false;
+    if (departamento && c.departamento !== departamento) return false;
+    if (producto && !c.productos.includes(producto)) return false;
+    if (tipoServicio && !c.tipos_de_servicio.includes(tipoServicio)) return false;
     if (!filtro.trim()) return true;
     const texto = `${c.nombre || ''} ${c.identificacion?.numero || ''}`.toLowerCase();
     return texto.includes(filtro.trim().toLowerCase());
@@ -784,16 +796,24 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
         : <p className="muted filter-summary"><strong>{datos.total}</strong> {datos.total === 1 ? 'cliente' : 'clientes'}{datos.alcance === 'todos' ? ' en la compañía' : ' a su cargo'}{datos.as_of ? <> · datos de Avancys al {datos.as_of.slice(0, 10)}</> : null}{datos.recortada ? <> · lista recortada</> : null}</p>}
       {(datos.heredados || []).map(h => <p className="muted" key={h.comercial}>Incluye los clientes de {h.comercial}. {h.motivo}</p>)}
       {datos.total > 0 && <>
-        <div className="filters">
+        <div className="filters opportunity-filters compact-dashboard-filters">
           <input placeholder="Buscar cliente o NIT…" value={filtro} onChange={e => setFiltro(e.target.value)} />
           {comerciales.length > 1 && <Select value={comercial} onChange={setComercial} options={comerciales.map(n => [n, n])} empty="Comerciales" />}
-          {(filtro || comercial) && <button className="secondary" onClick={() => { setFiltro(''); setComercial(''); }}>Limpiar</button>}
+          {departamentos.length > 1 && <Select value={departamento} onChange={setDepartamento} options={departamentos.map(n => [n, n])} empty="Departamentos" />}
+          {productos.length > 1 && <Select value={producto} onChange={setProducto} options={productos.map(n => [n, n])} empty="Productos" />}
+          {tiposServicio.length > 1 && <Select value={tipoServicio} onChange={setTipoServicio} options={tiposServicio.map(n => [n, n])} empty="Tipo de servicio" />}
+          {hayFiltro && <button className="secondary" onClick={limpiar}>Limpiar</button>}
         </div>
         <p className="muted filter-summary"><strong>{visibles.length}</strong> de {datos.total} visibles.</p>
         <ul className="dashboard-simple-list">
           {visibles.slice(0, 200).map((c, i) => <li key={`${c.identificacion?.numero || c.nombre || ''}-${i}`}>
             <strong>{c.nombre || 'Sin nombre'}</strong>
-            <span>{c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : 'Sin identificación en Avancys'}{comerciales.length > 1 && c.atendido_por ? ` · ${c.atendido_por}` : ''}</span>
+            <span>{[
+              c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : 'Sin identificación en Avancys',
+              c.departamento,
+              c.productos.length ? c.productos.join(', ') : null,
+              comerciales.length > 1 ? c.atendido_por : null,
+            ].filter(Boolean).join(' · ')}</span>
           </li>)}
         </ul>
         {visibles.length > 200 && <p className="muted">Se muestran los primeros 200 de {visibles.length}. Use el buscador.</p>}
