@@ -535,9 +535,11 @@ test('el endpoint de la cartera existe en los dos backends y falla blando', () =
     assert.match(cuerpo, /Avancys no respondio/, archivo);
     // Nunca se pide la cartera con los ids de otro perfil.
     assert.match(cuerpo, /odooUserIds: asignaciones\.map\(fila => fila\.odoo_user_id\)/, archivo);
-    // El alcance lo decide el servidor por el rol del perfil, nunca algo que mande el navegador.
-    assert.match(cuerpo, /const todos = veTodaLaCarteraComercial\(currentProfile\);/, archivo);
-    assert.ok(!/req\.query\.(todos|alcance|scope)/.test(cuerpo), `${archivo}: el alcance no puede venir en la URL`);
+    // Estrechar siempre se concede; ensanchar se comprueba contra el rol real. Esa asimetría es
+    // lo único que impide que un comercial pida `alcance=todos` por la URL y vea cartera ajena.
+    assert.match(cuerpo, /const puedeVerTodo = veTodaLaCarteraComercial\(currentProfile\);/, archivo);
+    assert.match(cuerpo, /pedido === 'propios'\s*\?\s*false/, archivo);
+    assert.match(cuerpo, /puedeVerTodo && \(pedido === 'todos' \|\| asignaciones\.length === 0\)/, archivo);
   }
 });
 
@@ -599,4 +601,16 @@ test('el endpoint acepta pedir la lista sin los servicios', () => {
   for (const archivo of BACKENDS) {
     assert.match(leer(archivo), /conServicios: req\.query\.sin_servicios !== '1'/, archivo);
   }
+});
+
+test('Clientes obedece la Vista Admin / Vista Comercial que ya tiene el CRM', () => {
+  const ui = leer('src/main.tsx');
+  // En Vista Comercial `currentProfile` llega con rol comercial, así que `mios` ya refleja la
+  // vista elegida y la pantalla pide su cartera. Sin esto, el gerente comercial veía los 1.439
+  // de la compañía aunque estuviera en Vista Comercial.
+  assert.match(ui, /const alcance = mios \? '&alcance=propios' : '';/);
+  // Y recarga al cambiar de vista: sin esto cambiaría el rótulo sin cambiar los datos.
+  assert.match(ui, /\}, \[mios\]\);/);
+  // Ninguna casilla propia: el CRM ya tenía ese interruptor y no se duplica (Juan, 2026-10-29).
+  assert.ok(!/Ver todos los clientes de la compañía/.test(ui), 'no se inventa un segundo interruptor de vista');
 });

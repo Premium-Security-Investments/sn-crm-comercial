@@ -728,7 +728,7 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
 }
 
 type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null; departamento: string | null; productos: string[]; tipos_de_servicio: string[] };
-type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; con_servicios?: boolean; alcance?: 'propios' | 'todos' | null; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
+type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; con_servicios?: boolean; alcance?: 'propios' | 'todos' | null; puede_ver_todo?: boolean; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
 
 // Los clientes que la empresa ya tiene. Pantalla propia, al lado de Oportunidades.
 //
@@ -752,9 +752,13 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   useEffect(() => {
     let vigente = true;
     (async () => {
+      // El alcance lo manda la Vista Admin / Vista Comercial que ya tiene el CRM: en Vista
+      // Comercial `currentProfile` llega con rol comercial, así que `mios` ya lo refleja. Pedir
+      // menos siempre se concede; pedir más lo comprueba el servidor contra el rol real.
+      const alcance = mios ? '&alcance=propios' : '';
       setEstado('cargando'); setError('');
       try {
-        const rapida = await api<MisClientesRespuesta>('/api/avancys/mis-clientes?sin_servicios=1');
+        const rapida = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?sin_servicios=1${alcance}`);
         if (!vigente) return;
         setDatos(rapida); setEstado('listo');
       } catch (err) {
@@ -763,7 +767,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
         return;
       }
       try {
-        const completa = await api<MisClientesRespuesta>('/api/avancys/mis-clientes');
+        const completa = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?${alcance.slice(1)}`);
         if (vigente) setDatos(completa);
       } catch {
         // La lista ya está en pantalla; si esto falla, sólo faltan dos filtros y se declara abajo.
@@ -771,7 +775,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
       }
     })();
     return () => { vigente = false; };
-  }, []);
+  }, [mios]);
   const [comercial, setComercial] = useState('');
   const [departamento, setDepartamento] = useState('');
   const [producto, setProducto] = useState('');
