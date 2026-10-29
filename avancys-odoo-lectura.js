@@ -405,7 +405,7 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
    * Devuelve la lista sin contratos ni puestos: son 564 clientes en el peor caso y contarlos uno
    * por uno serían mil consultas. Para el detalle de uno está `puestosDelCliente`.
    */
-  async function clientesDelComercial({ odooUserIds, todos = false }) {
+  async function clientesDelComercial({ odooUserIds, todos = false, conServicios = true }) {
     const ids = [...new Set((Array.isArray(odooUserIds) ? odooUserIds : [])
       .filter(valor => Number.isSafeInteger(valor) && valor > 0))];
     // `todos` es para la dirección, que ve la cartera entera. Sin él, una lista de ids vacía NO
@@ -416,7 +416,11 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
       : [['customer_rank', '>', 0], ['user_id', 'in', ids]];
     const filas = await leer('cliente', dominio,
       { limite: MAX_CLIENTES_LISTADOS, orden: 'name asc' });
-    const servicios = await serviciosPorCliente(filas.map(fila => fila.id));
+    // Los servicios por cliente son la parte cara: con los 1.439 de la compañía son siete
+    // agrupaciones y casi siete segundos, contra uno y medio de la lista sola. La pantalla pide
+    // primero la lista —que ya sirve para buscar y llamar— y los servicios después, para que
+    // nadie se quede siete segundos mirando un cargando.
+    const servicios = conServicios ? await serviciosPorCliente(filas.map(fila => fila.id)) : new Map();
     const clientes = filas.map(fila => {
       const suyos = servicios.get(fila.id);
       return Object.freeze({
@@ -431,6 +435,9 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
     return Object.freeze({
       total: clientes.length,
+      // Dice si los productos vienen o no: sin esto la pantalla no puede distinguir "este cliente
+      // no tiene productos" de "todavía no los he pedido", y apagaría filtros que sí sirven.
+      con_servicios: conServicios,
       // Avisa cuando la lista pudo quedar recortada, en vez de mentir con un total que no lo es.
       recortada: clientes.length >= MAX_CLIENTES_LISTADOS,
       clientes: Object.freeze(clientes),

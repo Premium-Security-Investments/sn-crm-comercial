@@ -249,6 +249,25 @@ test('un cliente sin órdenes no rompe la lista: sale con sus listas vacías', a
   assert.equal(leido.clientes[0].departamento, null);
 });
 
+test('sin servicios no se hace la agrupación cara, y la respuesta lo declara', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [{ ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'] }];
+  tablas.__grupos = [{ client_id: [CIDE.id, CIDE.name], product_id: [5, 'X'], service_type: 'fijos', __count: 1 }];
+  const { fetchImpl, llamadas } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+
+  const rapida = await lector.clientesDelComercial({ odooUserIds: [67], conServicios: false });
+  assert.equal(rapida.con_servicios, false);
+  assert.deepEqual(rapida.clientes[0].productos, []);
+  // Lo que importa: la agrupación —que con 1.439 clientes puede tardar 18 segundos— no se corre.
+  assert.equal(llamadas.filter(l => l.args?.[4] === 'read_group').length, 0);
+
+  const completa = await lector.clientesDelComercial({ odooUserIds: [67] });
+  assert.equal(completa.con_servicios, true);
+  assert.deepEqual(completa.clientes[0].productos, ['X']);
+  assert.ok(llamadas.filter(l => l.args?.[4] === 'read_group').length > 0);
+});
+
 test('un comercial sin usuario de Odoo no pide una cartera vacía: falla y se declara', async () => {
   const { fetchImpl } = odooDeMentira(baseCoherente());
   const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
@@ -563,4 +582,21 @@ test('el formulario no manda un cliente de Avancys como si fuera del CRM', () =>
   // El NIT llega solo, y el segmento es cierto por construcción: está en Avancys porque se factura.
   assert.match(cuerpo, /company_nit: deAvancys \?/);
   assert.match(cuerpo, /customer_segment: deAvancys \? 'cliente_actual'/);
+});
+
+test('la pantalla de clientes pide primero la lista y después los productos', () => {
+  const ui = leer('src/main.tsx');
+  // Sin esto la dirección mira un "cargando" ocho segundos —o dieciocho, que también se midió—
+  // antes de ver un solo cliente.
+  assert.match(ui, /\/api\/avancys\/mis-clientes\?sin_servicios=1/);
+  assert.match(ui, /setDatos\(rapida\); setEstado\('listo'\);/);
+  // Y si la segunda falla, la lista ya visible se queda y se declara qué filtros faltan.
+  assert.match(ui, /con_servicios: false/);
+  assert.match(ui, /Los filtros de producto y tipo de servicio no están disponibles/);
+});
+
+test('el endpoint acepta pedir la lista sin los servicios', () => {
+  for (const archivo of BACKENDS) {
+    assert.match(leer(archivo), /conServicios: req\.query\.sin_servicios !== '1'/, archivo);
+  }
 });
