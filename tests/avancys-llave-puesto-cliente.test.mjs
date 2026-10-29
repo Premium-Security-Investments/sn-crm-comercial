@@ -39,6 +39,8 @@ function odooDeMentira(tablas, { errorDeOdoo = null, estado = 200 } = {}) {
     if (operador === 'in') return valor.includes(id);
     if (operador === '>') return Number(id || 0) > valor;
     if (operador === 'ilike') return String(actual || '').toLowerCase().includes(String(valor).toLowerCase());
+    if (operador === '>=') return String(actual ?? '') >= String(valor);
+    if (operador === '<=') return String(actual ?? '') <= String(valor);
     if (operador === '!=') return valor === false ? !(id === false || id === undefined || id === null) : id !== valor;
     throw new Error(`operador no soportado en la prueba: ${operador}`);
   };
@@ -63,9 +65,10 @@ function odooDeMentira(tablas, { errorDeOdoo = null, estado = 200 } = {}) {
     } else {
       const [, , , modelo, metodo, posicional, nombrado] = args;
       assert.equal(metodo, 'search_read', 'el lector solo debe usar search_read');
-      const dominio = posicional[0] || [];
+      const dominio = (posicional[0] || []).filter(hoja => Array.isArray(hoja));
       const filas = (tablas[modelo] || []).filter(fila => dominio.every(hoja => cumple(fila, hoja)));
-      result = filas.slice(0, nombrado.limit).map(fila => {
+      const desde = nombrado.offset || 0;
+      result = filas.slice(desde, desde + nombrado.limit).map(fila => {
         const recorte = {};
         for (const campo of nombrado.fields) if (campo in fila) recorte[campo] = fila[campo];
         recorte.id = fila.id;
@@ -782,4 +785,59 @@ test('la migración de la provisión nace vacía: los nombres de clientes no van
     'ninguna identificación de cliente puede quedar en el archivo');
   assert.match(sql, /revoke all on public\.psi_cliente_provision from anon, authenticated, public/);
   assert.match(leer('supabase/rollbacks/162_cliente_se_provisiona_rollback.sql'), /drop table if exists public\.psi_cliente_provision/);
+});
+
+test('la facturación por cliente neta las notas crédito y mide la concentración', async () => {
+  const tablas = baseCoherente();
+  tablas['account.move'] = [
+    { id: 1, partner_id: [31708, '[900480569] GRANDE'], amount_untaxed: 700, move_type: 'out_invoice', state: 'posted', invoice_date: '2026-08-05', write_date: '2026-08-05 10:00:00' },
+    { id: 2, partner_id: [31765, '[860053914] MEDIANO'], amount_untaxed: 300, move_type: 'out_invoice', state: 'posted', invoice_date: '2026-08-10', write_date: '2026-08-10 10:00:00' },
+    { id: 3, partner_id: [31708, '[900480569] GRANDE'], amount_untaxed: 100, move_type: 'out_refund', state: 'posted', invoice_date: '2026-08-20', write_date: '2026-08-20 10:00:00' },
+    { id: 4, partner_id: [31708, '[900480569] GRANDE'], amount_untaxed: 999, move_type: 'out_invoice', state: 'posted', invoice_date: '2026-09-01', write_date: '2026-09-01 10:00:00' },
+  ];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  const r = await lector.facturacionPorCliente({ mes: '2026-08' });
+
+  // La factura de septiembre no entra, y la nota crédito resta: 700 - 100 + 300 = 900.
+  assert.equal(r.total, 900);
+  assert.equal(r.notas_credito, 100);
+  assert.equal(r.facturas, 3);
+  // Sin netear, el cliente grande se vería mejor de lo que fue.
+  assert.equal(r.clientes[0].monto, 600);
+  assert.equal(r.clientes[0].nombre, 'GRANDE');
+  // El NIT va aparte, no pegado al nombre entre corchetes.
+  assert.equal(r.clientes[0].identificacion, '900480569');
+  assert.ok(Math.abs(r.concentracion.top_1 - 600 / 900) < 1e-9);
+  assert.equal(r.concentracion.total_clientes, 2);
+});
+
+test('un mes mal escrito no se consulta', async () => {
+  const { fetchImpl } = odooDeMentira(baseCoherente());
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  for (const mes of ['2026-8', 'agosto', '', '2026-08-01']) {
+    await assert.rejects(() => lector.facturacionPorCliente({ mes }), AvancysLecturaError, String(mes));
+  }
+});
+
+test('al paginar, el orden tiene que ser único o la suma cambia', () => {
+  const lector = leer('avancys-odoo-lectura.js');
+  // Paginar por `invoice_date asc` hacía que las páginas se solaparan: agosto daba 13.852 millones
+  // en una corrida y 14.654 en otra, con el MISMO número de facturas. Se descubrió comparando dos
+  // corridas, no por una prueba.
+  assert.match(lector, /offset: todas\.length, order: 'id asc'/);
+  assert.match(lector, /El orden al paginar tiene que ser ÚNICO/);
+});
+
+test('la concentración de clientes llegó a la Torre, y dice que no es la provisión', () => {
+  const panel = leer('src/siio/SiioConcentracionClientes.tsx');
+  assert.match(panel, /\/api\/siio\/avancys\/facturacion-por-cliente\?mes=/);
+  // El error de toda la semana fue confundir facturado con provisionado: la pantalla lo separa.
+  assert.match(panel, /No es la provisión de cierre que detalla la hoja/);
+  assert.match(panel, /neto de notas crédito/);
+  for (const archivo of BACKENDS) {
+    assert.match(leer(archivo), /'GET \/api\/siio\/avancys\/facturacion-por-cliente': \['siio', ACTIONS\.SIIO_AREA_VIEW\]/, archivo);
+  }
+  // Y queda enganchada donde vive el detalle de finanzas.
+  assert.match(leer('src/siio/SiioExecutiveView.tsx'), /<SiioConcentracionClientes period=\{selectedPeriod\} \/>/);
 });

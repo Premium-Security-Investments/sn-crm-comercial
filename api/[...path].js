@@ -521,6 +521,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/siio/records': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'PATCH /api/siio/records/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
   'GET /api/siio/sources': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/avancys/facturacion-por-cliente': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/sources': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'GET /api/siio/decisions': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/decisions': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
@@ -4208,6 +4209,42 @@ app.get('/api/avancys/cliente', async (req, res) => {
       se_provisiona: provision ? provision.activo === true : null,
     });
   } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// La facturación del mes por cliente, leída de Avancys.
+//
+// La Torre declaraba "Concentración de clientes" como pendiente, y el dato que faltaba era
+// literalmente "ingresos por cliente desde Avancys". Ya se puede: medido el 2026-10-29, dos
+// clientes son cerca de la mitad de la facturación, y eso hoy no aparece en ninguna pantalla.
+//
+// No reemplaza la hoja contable: esto es lo FACTURADO, y la hoja es la provisión de cierre. Son
+// dos números distintos y la pantalla dice cuál está mostrando.
+//
+// Tarda unos veinte segundos: son más de dos mil facturas leídas por páginas contra un ERP ajeno.
+// Por eso se pide cuando alguien abre la sección, no al cargar la Torre.
+app.get('/api/siio/avancys/facturacion-por-cliente', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'siio');
+    const mes = String(req.query.mes || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(mes)) {
+      const error = new Error('Debe indicar el mes en formato AAAA-MM.');
+      error.status = 400;
+      throw error;
+    }
+    const lector = crearLectorAvancys();
+    res.set('Cache-Control', 'private, no-store');
+    if (!lector) {
+      return res.json({ mes, total: 0, clientes: [], concentracion: null, as_of: null, motivo: 'Avancys no esta configurado en este ambiente.' });
+    }
+    const leido = await lector.facturacionPorCliente({ mes });
+    return res.json({ ...leido, motivo: null });
+  } catch (error) {
+    if (error?.codigo) {
+      return res.json({ mes: String(req.query.mes || ''), total: 0, clientes: [], concentracion: null, as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });
+    }
+    sendError(res, error, error?.status || 400);
+  }
 });
 
 // Declarar si a un cliente se le provisiona el servicio del mes.
