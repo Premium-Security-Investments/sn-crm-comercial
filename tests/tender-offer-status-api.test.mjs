@@ -56,8 +56,16 @@ function fakeDatabase({ rpcError = null } = {}) {
   assert.equal(observed.rpc[0].args.p_actor_id, ACTOR); assert.equal(observed.rpc[0].args.p_note, 'Lista');
 }
 {
+  // Juan, 2026-10-29: la encargada de Licitaciones es `comercial` y con el permiso mueve el estado de oferta.
   const { database, observed } = fakeDatabase();
-  await assert.rejects(() => callTenderOfferStatusTransition(database, { opportunity_id: OPPORTUNITY, to_status: 'lista_para_presentar', expected_current_status: 'en_preparacion' }, viewer), error => error.status === 403);
+  const movido = await callTenderOfferStatusTransition(database, { opportunity_id: OPPORTUNITY, to_status: 'lista_para_presentar', expected_current_status: 'en_preparacion' }, viewer);
+  assert.equal(movido.status, 'lista_para_presentar');
+  assert.equal(observed.rpc[0].args.p_actor_id, viewer.id);
+}
+{
+  // Sin acceso a Licitaciones no se mueve nada, y no se toca la base.
+  const { database, observed } = fakeDatabase();
+  await assert.rejects(() => callTenderOfferStatusTransition(database, { opportunity_id: OPPORTUNITY, to_status: 'lista_para_presentar', expected_current_status: 'en_preparacion' }, noAccess), error => error.status === 403);
   assert.equal(observed.rpc.length, 0, 'POST denegado no puede invocar RPC'); assert.equal(observed.reads, 0);
 }
 {
