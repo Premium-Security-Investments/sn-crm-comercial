@@ -4006,9 +4006,17 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
       .eq('profile_id', currentProfile.id);
     if (error) throw error;
     const asignaciones = Array.isArray(data) ? data : [];
-    // Dos alcances, la misma pantalla: la dirección ve la cartera entera; el comercial, la suya.
-    // Es la frontera que separa "Clientes" de "Mis clientes" en el menú.
-    const todos = veTodaLaCarteraComercial(currentProfile);
+    // Quien tiene cartera ve SU cartera, mande o no.
+    //
+    // El gerente comercial es `admin` en el CRM y a la vez atiende 877 clientes —los suyos más los
+    // de quienes salieron—. La primera versión leyó sólo el rol y le mostró los 1.439 de la
+    // compañía, ignorándole la cartera. Lo detectó Juan el 2026-10-29.
+    //
+    // Puede pedir toda la compañía, pero no le llega por defecto, y pedirla no basta: el servidor
+    // comprueba el rol. Un comercial que mande `alcance=todos` sigue viendo sólo lo suyo.
+    const puedeVerTodo = veTodaLaCarteraComercial(currentProfile);
+    const pidioTodo = String(req.query.alcance || '') === 'todos';
+    const todos = puedeVerTodo && (pidioTodo || asignaciones.length === 0);
     res.set('Cache-Control', 'private, no-store');
     if (!todos && asignaciones.length === 0) {
       return res.json({
@@ -4020,6 +4028,7 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
     if (!lector) {
       return res.json({
         total: 0, clientes: [], as_of: null, recortada: false, alcance: todos ? 'todos' : 'propios',
+        puede_ver_todo: puedeVerTodo,
         motivo: 'Avancys no esta configurado en este ambiente.',
       });
     }
@@ -4032,6 +4041,8 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
     return res.json({
       ...leido,
       alcance: todos ? 'todos' : 'propios',
+      // Para que la pantalla sepa si ofrecer el interruptor, sin adivinarlo por el rol.
+      puede_ver_todo: puedeVerTodo,
       // Quien ve clientes de otro comercial debe saber por qué, no deducirlo.
       heredados: asignaciones.filter(fila => fila.nota).map(fila => ({
         comercial: fila.odoo_user_name, motivo: fila.nota,

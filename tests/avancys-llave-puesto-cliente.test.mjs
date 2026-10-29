@@ -535,9 +535,12 @@ test('el endpoint de la cartera existe en los dos backends y falla blando', () =
     assert.match(cuerpo, /Avancys no respondio/, archivo);
     // Nunca se pide la cartera con los ids de otro perfil.
     assert.match(cuerpo, /odooUserIds: asignaciones\.map\(fila => fila\.odoo_user_id\)/, archivo);
-    // El alcance lo decide el servidor por el rol del perfil, nunca algo que mande el navegador.
-    assert.match(cuerpo, /const todos = veTodaLaCarteraComercial\(currentProfile\);/, archivo);
-    assert.ok(!/req\.query\.(todos|alcance|scope)/.test(cuerpo), `${archivo}: el alcance no puede venir en la URL`);
+    // Quien tiene cartera ve la suya, mande o no. El gerente comercial es `admin` y atiende 877
+    // clientes: leer sólo el rol le mostraba los 1.439 de la compañía e ignoraba su cartera.
+    assert.match(cuerpo, /const todos = puedeVerTodo && \(pidioTodo \|\| asignaciones\.length === 0\);/, archivo);
+    // Pedir "todos" no basta: el servidor comprueba el rol. Un comercial que lo mande por la URL
+    // sigue viendo sólo lo suyo, y esa conjunción es lo único que lo impide.
+    assert.match(cuerpo, /const puedeVerTodo = veTodaLaCarteraComercial\(currentProfile\);/, archivo);
   }
 });
 
@@ -599,4 +602,19 @@ test('el endpoint acepta pedir la lista sin los servicios', () => {
   for (const archivo of BACKENDS) {
     assert.match(leer(archivo), /conServicios: req\.query\.sin_servicios !== '1'/, archivo);
   }
+});
+
+test('el gerente comercial ve su cartera, no la compañía entera, salvo que la pida', () => {
+  for (const archivo of BACKENDS) {
+    const cuerpo = /app\.get\('\/api\/avancys\/mis-clientes'[\s\S]*?\n\}\);/.exec(leer(archivo))[0];
+    // Con asignaciones y sin pedir nada: su cartera. Es el caso de Luis Fernando, `admin` con 877.
+    assert.match(cuerpo, /const pidioTodo = String\(req\.query\.alcance \|\| ''\) === 'todos';/, archivo);
+    // Y la pantalla sabe si ofrecer el interruptor sin adivinarlo por el rol.
+    assert.match(cuerpo, /puede_ver_todo: puedeVerTodo/, archivo);
+  }
+  const ui = leer('src/main.tsx');
+  assert.match(ui, /datos\?\.puede_ver_todo && <label/);
+  assert.match(ui, /Ver todos los clientes de la compañía/);
+  // El interruptor recarga: sin esto cambiaría el rótulo sin cambiar los datos.
+  assert.match(ui, /\}, \[verTodo\]\);/);
 });

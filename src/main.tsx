@@ -728,7 +728,7 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
 }
 
 type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null; departamento: string | null; productos: string[]; tipos_de_servicio: string[] };
-type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; con_servicios?: boolean; alcance?: 'propios' | 'todos' | null; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
+type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; con_servicios?: boolean; alcance?: 'propios' | 'todos' | null; puede_ver_todo?: boolean; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
 
 // Los clientes que la empresa ya tiene. Pantalla propia, al lado de Oportunidades.
 //
@@ -746,15 +746,19 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   const [error, setError] = useState('');
   const [filtro, setFiltro] = useState('');
   const mios = currentProfile?.role === 'comercial';
+  // Quien tiene cartera empieza por la suya, mande o no; si además manda, puede pasar a toda la
+  // compañía con el interruptor. El servidor vuelve a comprobar el rol: esto sólo lo pide.
+  const [verTodo, setVerTodo] = useState(false);
   // En dos tiempos, y por una medición: la lista sola tarda 1,5 s y con los productos de cada
   // cliente, 8 s con los 1.439 de la compañía. Primero la lista —con la que ya se busca y se
   // llama— y los productos después, que sólo alimentan dos filtros.
   useEffect(() => {
     let vigente = true;
     (async () => {
+      const alcance = verTodo ? '&alcance=todos' : '';
       setEstado('cargando'); setError('');
       try {
-        const rapida = await api<MisClientesRespuesta>('/api/avancys/mis-clientes?sin_servicios=1');
+        const rapida = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?sin_servicios=1${alcance}`);
         if (!vigente) return;
         setDatos(rapida); setEstado('listo');
       } catch (err) {
@@ -763,7 +767,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
         return;
       }
       try {
-        const completa = await api<MisClientesRespuesta>('/api/avancys/mis-clientes');
+        const completa = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?${alcance.slice(1)}`);
         if (vigente) setDatos(completa);
       } catch {
         // La lista ya está en pantalla; si esto falla, sólo faltan dos filtros y se declara abajo.
@@ -771,7 +775,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
       }
     })();
     return () => { vigente = false; };
-  }, []);
+  }, [verTodo]);
   const [comercial, setComercial] = useState('');
   const [departamento, setDepartamento] = useState('');
   const [producto, setProducto] = useState('');
@@ -802,6 +806,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   });
   return <Panel title={mios ? 'Mis clientes' : 'Clientes'}>
     <p className="muted">Los clientes que la empresa ya tiene. Se leen de Avancys en vivo; no se copian al CRM.</p>
+    {datos?.puede_ver_todo && <label className="check-filter"><input type="checkbox" checked={verTodo} onChange={e => setVerTodo(e.target.checked)} /> Ver todos los clientes de la compañía</label>}
     {estado === 'cargando' && <p className="muted">Consultando Avancys…</p>}
     {estado === 'error' && <p className="muted">No fue posible consultar Avancys: {error}</p>}
     {estado === 'listo' && datos && <>
