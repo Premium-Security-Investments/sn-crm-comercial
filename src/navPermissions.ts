@@ -18,6 +18,7 @@ export type NavViewMode = 'admin' | 'comercial';
 
 export type NavRoutePage =
   | 'home'
+  | 'clients'
   | 'opportunities'
   | 'tenders'
   | 'detail'
@@ -67,6 +68,9 @@ const navGroups: readonly NavGroupDefinition[] = [
       // El comercial empieza su día aquí (su lista de hoy y las oportunidades por decidir); sólo lo ve el rol comercial.
       { href: '#/home', label: 'Mi día', page: 'home' },
       { href: '#/dashboard2', label: 'Dashboard', page: 'dashboard2' },
+      // La misma pantalla con dos alcances: el comercial ve los suyos, la dirección ve todos. Por
+      // eso el rótulo cambia con quien mira, y es lo único del menú que lo hace.
+      { href: '#/clients', label: 'Clientes', page: 'clients' },
       // Prioridades Comerciales (#/alerts) salió del menú: su motor alimenta el Dashboard comercial y el orden
       // "por urgencia" de Oportunidades. La ruta sigue abierta para enlaces directos.
       { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },
@@ -113,6 +117,9 @@ const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   dashboard2: 'modulo_dashboard_comercial',
   consultant: 'modulo_dashboard_comercial',
   alerts: 'modulo_alertas_comerciales',
+  // Clientes usa el mismo permiso que Oportunidades a propósito: quien trabaja oportunidades
+  // trabaja clientes. No agrega una casilla nueva al formulario de permisos.
+  clients: 'modulo_oportunidades',
   opportunities: 'modulo_oportunidades',
   detail: 'modulo_oportunidades',
   new: 'modulo_oportunidades',
@@ -227,7 +234,10 @@ export function getVisibleNavGroups(profile?: NavProfile): NavGroup[] {
       items: group.items
         .filter(item => canAccessRoute(profile, item.page))
         .filter(item => isNavItemVisible(profile, item.page))
-        .map(({ href, label, page, external }): NavItem => (external ? { href, label, page, external } : { href, label, page })),
+        .map(({ href, label, page, external }): NavItem => {
+          const rotulo = page === 'clients' && profile?.role === 'comercial' ? 'Mis clientes' : label;
+          return external ? { href, label: rotulo, page, external } : { href, label: rotulo, page };
+        }),
     }))
     .filter((group): group is NavGroup => group.items.length > 0);
 }

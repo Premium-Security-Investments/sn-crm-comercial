@@ -65,6 +65,7 @@ import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-a
 import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../verticales/comercial/agt003-copilot-runtime.js';
 import { resolverParaLector } from '../catalogo-fuentes.js';
 import { crearLectorAvancys } from '../avancys-odoo-lectura.js';
+import { veTodaLaCarteraComercial } from '../access-control.js';
 
 // Lo que el copiloto comercial recibe resuelto antes de cada corrida. Crece una línea por entrada.
 // Lo que el copiloto comercial recibe del catálogo antes de redactar. `operacion.puestos_del_cliente`
@@ -4005,25 +4006,30 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
       .eq('profile_id', currentProfile.id);
     if (error) throw error;
     const asignaciones = Array.isArray(data) ? data : [];
+    // Dos alcances, la misma pantalla: la dirección ve la cartera entera; el comercial, la suya.
+    // Es la frontera que separa "Clientes" de "Mis clientes" en el menú.
+    const todos = veTodaLaCarteraComercial(currentProfile);
     res.set('Cache-Control', 'private, no-store');
-    if (asignaciones.length === 0) {
+    if (!todos && asignaciones.length === 0) {
       return res.json({
-        total: 0, clientes: [], as_of: null, recortada: false,
+        total: 0, clientes: [], as_of: null, recortada: false, alcance: 'propios',
         motivo: 'Este perfil no tiene comercial equivalente en Avancys.',
       });
     }
     const lector = crearLectorAvancys();
     if (!lector) {
       return res.json({
-        total: 0, clientes: [], as_of: null, recortada: false,
+        total: 0, clientes: [], as_of: null, recortada: false, alcance: todos ? 'todos' : 'propios',
         motivo: 'Avancys no esta configurado en este ambiente.',
       });
     }
     const leido = await lector.clientesDelComercial({
       odooUserIds: asignaciones.map(fila => fila.odoo_user_id),
+      todos,
     });
     return res.json({
       ...leido,
+      alcance: todos ? 'todos' : 'propios',
       // Quien ve clientes de otro comercial debe saber por qué, no deducirlo.
       heredados: asignaciones.filter(fila => fila.nota).map(fila => ({
         comercial: fila.odoo_user_name, motivo: fila.nota,
@@ -4032,7 +4038,7 @@ app.get('/api/avancys/mis-clientes', async (req, res) => {
   } catch (error) {
     if (error?.codigo) {
       // Avancys no respondió. Se declara y la pantalla queda vacía con su razón.
-      return res.json({ total: 0, clientes: [], as_of: null, recortada: false, motivo: `Avancys no respondio: ${error.codigo}` });
+      return res.json({ total: 0, clientes: [], as_of: null, recortada: false, alcance: null, motivo: `Avancys no respondio: ${error.codigo}` });
     }
     sendError(res, error, error?.status || 400);
   }

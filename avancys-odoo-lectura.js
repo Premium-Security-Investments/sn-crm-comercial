@@ -33,9 +33,9 @@ const MODELO = Object.freeze({
 // viaja al modelo por `minimizarFuentes`, que recorta a 6 kB: se entrega el total completo y una
 // porción nombrada de los puestos, nunca la lista entera recortada a la mitad de un nombre.
 export const MAX_PUESTOS_LISTADOS = 25;
-// Tope de la bandeja de un comercial. El gerente comercial sostiene 564 clientes propios más los
-// de quienes salieron de la empresa, así que esto no es un número decorativo.
-export const MAX_CLIENTES_LISTADOS = 1000;
+// Tope de la lista. El gerente comercial sostiene 877 clientes y la dirección ve los 1.439, así
+// que esto no es un número decorativo.
+export const MAX_CLIENTES_LISTADOS = 2000;
 const MAX_FILAS = 2000;
 const MAX_BYTES = 8388608;
 const TIMEOUT_MS = 20000;
@@ -339,11 +339,16 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
    * Devuelve la lista sin contratos ni puestos: son 564 clientes en el peor caso y contarlos uno
    * por uno serían mil consultas. Para el detalle de uno está `puestosDelCliente`.
    */
-  async function clientesDelComercial({ odooUserIds }) {
+  async function clientesDelComercial({ odooUserIds, todos = false }) {
     const ids = [...new Set((Array.isArray(odooUserIds) ? odooUserIds : [])
       .filter(valor => Number.isSafeInteger(valor) && valor > 0))];
-    if (ids.length === 0) falla('AVANCYS_COMERCIAL_SIN_USUARIO');
-    const filas = await leer('cliente', [['customer_rank', '>', 0], ['user_id', 'in', ids]],
+    // `todos` es para la dirección, que ve la cartera entera. Sin él, una lista de ids vacía NO
+    // se convierte en "sin filtro": eso le mostraría a un comercial los clientes de todos.
+    if (!todos && ids.length === 0) falla('AVANCYS_COMERCIAL_SIN_USUARIO');
+    const dominio = todos
+      ? [['customer_rank', '>', 0]]
+      : [['customer_rank', '>', 0], ['user_id', 'in', ids]];
+    const filas = await leer('cliente', dominio,
       { limite: MAX_CLIENTES_LISTADOS, orden: 'name asc' });
     const clientes = filas.map(fila => Object.freeze({
       ...clientePublico(fila),

@@ -224,6 +224,22 @@ test('un comercial sin usuario de Odoo no pide una cartera vacía: falla y se de
   await assert.rejects(() => lector.clientesDelComercial({ odooUserIds: [0, -1, null, 'x'] }), AvancysLecturaError);
 });
 
+test('sin ids y sin ser dirección, la cartera no se abre entera', async () => {
+  const tablas = baseCoherente();
+  tablas['res.partner'] = [
+    { ...CIDE, customer_rank: 10, user_id: [67, 'JOHN ESCOBAR'] },
+    { ...OTRO, customer_rank: 5, user_id: [64, 'CARLOS BEDOYA'] },
+  ];
+  const { fetchImpl } = odooDeMentira(tablas);
+  const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
+  // El caso peligroso: ids vacíos. Sin la guarda, el dominio quedaría sin filtro de usuario y un
+  // comercial vería los clientes de todos.
+  await assert.rejects(() => lector.clientesDelComercial({ odooUserIds: [] }), AvancysLecturaError);
+  // Con `todos` —y eso sólo lo decide el servidor por el rol— sí se abre.
+  const completa = await lector.clientesDelComercial({ odooUserIds: [], todos: true });
+  assert.equal(completa.total, 2);
+});
+
 test('el tope de la cartera existe y la respuesta avisa cuando recorta', () => {
   assert.ok(Number.isSafeInteger(MAX_CLIENTES_LISTADOS) && MAX_CLIENTES_LISTADOS >= 900,
     'el gerente comercial sostiene 877 clientes: el tope no puede quedar por debajo');
@@ -436,6 +452,9 @@ test('el endpoint de la cartera existe en los dos backends y falla blando', () =
     assert.match(cuerpo, /Avancys no respondio/, archivo);
     // Nunca se pide la cartera con los ids de otro perfil.
     assert.match(cuerpo, /odooUserIds: asignaciones\.map\(fila => fila\.odoo_user_id\)/, archivo);
+    // El alcance lo decide el servidor por el rol del perfil, nunca algo que mande el navegador.
+    assert.match(cuerpo, /const todos = veTodaLaCarteraComercial\(currentProfile\);/, archivo);
+    assert.ok(!/req\.query\.(todos|alcance|scope)/.test(cuerpo), `${archivo}: el alcance no puede venir en la URL`);
   }
 });
 
