@@ -42,7 +42,9 @@ import {
   callSeedTenderDossier,
   callSeedTenderDossierRequirements,
 } from '../verticales/licitaciones/tender-dossier-rpc.js';
+import { buildRequirementRows } from '../verticales/licitaciones/agt002-requirements-model.js';
 import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/tender-company-document-bridge.js';
+import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
 import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../verticales/licitaciones/tender-analysis-foundation.js';
 import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
@@ -489,6 +491,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Puente ficha de empresa → expediente: proyección de sólo lectura de lo que la pantalla de Empresa ya muestra.
   'GET /api/tender-dossier-company-documents': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Matriz de cumplimiento: una fila por requisito del pliego, con su soporte y su estado al cierre. Sólo lectura.
+  'GET /api/tender-compliance-matrix': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Crear a mano un proceso que no está en SECOP: traerlo al CRM es el mismo acto que convertirlo desde el Radar.
   'POST /api/tenders/manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
   'POST /api/tender-manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
@@ -6648,6 +6652,44 @@ app.get('/api/tender-dossier-company-documents', async (req, res) => {
     const opportunityId = String(req.query.id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     res.json(await readTenderCompanyDocumentBridge(database, opportunityId, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/**
+ * La matriz de cumplimiento (punto 2 del encargo del 2026-10-30): una fila por requisito del pliego, con el soporte
+ * corporativo relacionado, su estado el día del cierre y quién responde. Sólo lectura, y como el puente no depende
+ * del expediente ni del GO.
+ *
+ * Los requisitos salen del MISMO modelo con el que se siembra el expediente (`buildRequirementRows` sobre el reporte
+ * canónico), así que la matriz y el expediente no pueden discrepar. Sin análisis terminado devuelve
+ * `available: false` en vez de una matriz vacía que se leería como "no hay requisitos".
+ */
+async function readTenderComplianceMatrix(database, opportunityId, currentProfile) {
+  const bridge = await readTenderCompanyDocumentBridge(database, opportunityId, currentProfile);
+  const report = await readAgt002InitialAnalysisReport(database, opportunityId);
+  if (!report?.available || !report.report) {
+    return { opportunity_id: opportunityId, available: false, reason: 'sin_analisis_terminado', close_date: bridge.close_date, headers: TENDER_COMPLIANCE_MATRIX_HEADERS, rows: [], table: [], summary: null };
+  }
+  const matrix = buildTenderComplianceMatrix({ requirementRows: buildRequirementRows(report.report), bridge });
+  return {
+    opportunity_id: opportunityId,
+    available: true,
+    tender_ref: bridge.tender_ref,
+    close_date_source: bridge.close_date_source,
+    headers: TENDER_COMPLIANCE_MATRIX_HEADERS,
+    table: tenderComplianceMatrixTable(matrix),
+    ...matrix,
+  };
+}
+
+app.get('/api/tender-compliance-matrix', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    res.json(await readTenderComplianceMatrix(database, opportunityId, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
