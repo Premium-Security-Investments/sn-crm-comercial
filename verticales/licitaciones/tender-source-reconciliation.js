@@ -17,7 +17,7 @@
 import { isInactiveConvertedTender } from './tender-opportunity-stage.js';
 
 const SECOP_II_RESOURCE = 'https://www.datos.gov.co/resource/p6dx-8zbt.json';
-const SECOP_II_SELECT = 'id_del_proceso,entidad,fase,estado_del_procedimiento,estado_resumen,fecha_de_recepcion_de,fecha_de_ultima_publicaci,modalidad_de_contratacion,nombre_del_proveedor,adjudicado';
+const SECOP_II_SELECT = 'id_del_proceso,entidad,fase,estado_del_procedimiento,estado_resumen,fecha_de_recepcion_de,fecha_de_ultima_publicaci,fecha_adjudicacion,modalidad_de_contratacion,nombre_del_proveedor,adjudicado';
 const STATUS_FIELD_PRECEDENCE = ['estado_resumen', 'fase', 'estado_del_procedimiento'];
 
 function isBlank(value) {
@@ -128,12 +128,15 @@ function publicationInstant(row) {
   return instant === null ? Number.NEGATIVE_INFINITY : instant;
 }
 
+function adjudicationInstant(row) {
+  return toInstant(row?.fecha_adjudicacion);
+}
+
 // Socrata can return more than one row for the same id_del_proceso (a correction, a republish).
 // Among duplicates, the row with the latest fecha_de_ultima_publicaci is authoritative. A tie on
-// that latest publication date is only safe to resolve arbitrarily when the tied rows actually
-// agree on the facts this module acts on; if they disagree on resolved status or on
-// fecha_de_recepcion_de, Socrata is self-contradictory for this id and guessing would silently
-// pick a side -- so this throws instead, and the caller must leave that process unpatched.
+// that latest publication date can use a unique latest valid fecha_adjudicacion as secondary event
+// recency; without that unique later event, the tied rows must still agree on the facts this module
+// acts on or the caller leaves the process unpatched rather than guessing.
 export function selectAuthoritativeSocrataRecord(rows) {
   if (!Array.isArray(rows) || !rows.length) {
     throw new Error('selectAuthoritativeSocrataRecord requires a non-empty row list');
@@ -143,6 +146,13 @@ export function selectAuthoritativeSocrataRecord(rows) {
   const maxInstant = Math.max(...rows.map(publicationInstant));
   const winners = rows.filter(row => publicationInstant(row) === maxInstant);
   if (winners.length === 1) return winners[0];
+
+  const validAdjudications = winners.map(adjudicationInstant).filter(instant => instant !== null);
+  if (validAdjudications.length) {
+    const maxAdjudication = Math.max(...validAdjudications);
+    const adjudicationWinners = winners.filter(row => adjudicationInstant(row) === maxAdjudication);
+    if (adjudicationWinners.length === 1) return adjudicationWinners[0];
+  }
 
   const statuses = new Set(winners.map(resolveStatus));
   const dates = new Set(winners.map(row => parseCalendarDate(row?.fecha_de_recepcion_de)));

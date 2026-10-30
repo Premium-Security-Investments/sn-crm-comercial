@@ -19,6 +19,7 @@ import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderPro
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../verticales/licitaciones/tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../verticales/licitaciones/tender-competibility-policy.js';
 import { fetchTenderRadarSourceRows } from '../verticales/licitaciones/tender-radar-source-fetch.js';
+import { fetchTvecAggregations } from '../tvec-radar-fetch.js';
 import { DIRECT_SERVICE_REASON as RADAR_DEEP_DIRECT_SERVICE_REASON, RADAR_DEEP_CATEGORY_FIELD, RADAR_DEEP_CHUNK_DAYS, RADAR_DEEP_MAX_ROWS_PER_WINDOW, RADAR_DEEP_PAGE_LIMIT, evaluateElectronicSecurityPath, isHighValueVigilanceTender, radarDeepKeywordWhere, radarDeepUnspscFamilyWhere, radarDeepWindows } from '../verticales/licitaciones/tender-radar-deep-search.js';
 import { createTenderProcessingWorker } from '../verticales/licitaciones/tender-processing-worker.js';
 import { TENDER_DOCUMENTS_NOT_PUBLISHED_CODE, TENDER_EMPTY_DISCOVERY_EXHAUSTED_CODE } from '../verticales/licitaciones/tender-empty-discovery.js';
@@ -1828,13 +1829,19 @@ function normalizeTvecEvent(cells, aggregation, baseScore, url) {
   return { ...withId, id: stableTenderKey(withId), stable_key: stableTenderKey(withId), internal_status: 'nueva', converted_opportunity_id: null };
 }
 async function fetchTvecEvents() {
+  const aggregationResults = await fetchTvecAggregations(TVEC_RELEVANT_AGGREGATIONS, { baseUrl: TVEC_EVENTS_URL });
   const candidates = [];
   const seen = new Set();
-  for (const [aggregation, baseScore] of Object.entries(TVEC_RELEVANT_AGGREGATIONS)) {
-    const url = `${TVEC_EVENTS_URL}?${new URLSearchParams({ Agregacion: aggregation }).toString()}`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'SN-CRM-TVEC-Radar/1.0' } });
-    if (!response.ok) throw new Error(`TVEC respondió ${response.status}`);
-    const rows = parseTenderTableRows(await response.text());
+  let recordsRead = 0;
+  const failedAggregations = [];
+  for (const result of aggregationResults) {
+    if (!result.ok) {
+      failedAggregations.push({ aggregation: result.aggregation, attempts: result.attempts, status: result.status });
+      continue;
+    }
+    const { aggregation, baseScore, url } = result;
+    const rows = parseTenderTableRows(result.text);
+    recordsRead += Math.max(0, rows.length - 1);
     for (const cells of rows.slice(1)) {
       if (cells.length < 10) continue;
       const [ref, title, entity, _start, _end, status] = cells;
@@ -1848,7 +1855,30 @@ async function fetchTvecEvents() {
       candidates.push(tender);
     }
   }
-  return candidates.sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+  const successfulAggregations = aggregationResults.length - failedAggregations.length;
+  const status = failedAggregations.length === 0
+    ? 'ok'
+    : successfulAggregations === 0
+      ? 'error'
+      : 'partial';
+  const failedSummary = failedAggregations.map(({ aggregation, attempts, status: responseStatus }) => `${aggregation} (${attempts} intento(s), ${responseStatus == null ? 'sin respuesta' : `HTTP ${responseStatus}`})`).join(' · ');
+  const sortedCandidates = candidates.sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+  Object.defineProperty(sortedCandidates, 'diagnostics', {
+    enumerable: false,
+    value: {
+      status,
+      pages_read: successfulAggregations,
+      records_read: recordsRead,
+      aggregations_attempted: aggregationResults.length,
+      aggregations_succeeded: successfulAggregations,
+      aggregations_failed: failedAggregations.length,
+      failed_aggregations: failedAggregations,
+      message: status === 'ok'
+        ? `${sortedCandidates.length} candidato(s)`
+        : `TVEC ${status === 'partial' ? 'parcial' : 'no disponible'}: fallaron ${failedSummary}`,
+    },
+  });
+  return sortedCandidates;
 }
 async function fetchEsuDatosGovProcesses() {
   const start = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10) + 'T00:00:00';
@@ -1886,13 +1916,17 @@ export async function fetchPublicTenderRadar({ deep = false } = {}) {
   settled.forEach((result, index) => {
     const source = tasks[index].source;
     if (result.status === 'fulfilled') {
-      batches.push(result.value);
-      const visibleCount = result.value.filter(t => !isExpiredRadarProcess(t) && isTenderTrackable(t)).length;
+      const batch = result.value;
+      batches.push(batch);
+      const visibleCount = batch.filter(t => !isExpiredRadarProcess(t) && isTenderTrackable(t)).length;
+      const sourceDiagnostics = source === 'TVEC' ? batch.diagnostics : null;
       // pages_read: un ciclo de lectura real por fuente intentada en esta orquestación (no cuenta
       // la paginación interna de cada fetcher). records_read: tamaño real del lote que esa fuente
       // devolvió al orquestador en esta corrida, antes de la deduplicación entre fuentes. Ambos
       // alimentan el recibo de corrida (agt002-radar-run-receipt.js); nunca son inventados.
-      diagnostics.push({ source, status: 'ok', count: visibleCount, pages_read: 1, records_read: result.value.length, message: visibleCount ? `${visibleCount} candidato(s)` : 'Sin candidatos relevantes hoy' });
+      diagnostics.push(sourceDiagnostics
+        ? { source, ...sourceDiagnostics, count: visibleCount }
+        : { source, status: 'ok', count: visibleCount, pages_read: 1, records_read: batch.length, message: visibleCount ? `${visibleCount} candidato(s)` : 'Sin candidatos relevantes hoy' });
     } else {
       const message = source === 'TVEC'
         ? `TVEC no disponible temporalmente: ${result.reason?.message || result.reason}`
@@ -2115,8 +2149,9 @@ function withPhaseIdentityRaw(baseRaw, { identityReview = false, knownPhases = [
 function radarRunReceiptSourcesFromDiagnostics(diagnostics) {
   return (diagnostics || []).map(d => ({
     name: d.source, attempted: true, succeeded: d.status === 'ok',
+    status: d.status === 'partial' ? 'partial' : d.status === 'ok' ? 'ok' : 'error',
     pages_read: d.pages_read || 0, records_read: d.records_read || 0, candidates_found: d.count || 0,
-    error: d.status === 'error' ? d.message : null,
+    error: d.status !== 'ok' ? d.message : null,
   }));
 }
 // Fecha de cierre canónica (YYYY-MM-DD) o `null` si el valor crudo de `deadline_at` no es una fecha

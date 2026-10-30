@@ -38,6 +38,7 @@ export const RADAR_MONOLITH_MODULES = Object.freeze([
   'verticales/licitaciones/agt002-radar-run-delta-persistence.js',
   'verticales/licitaciones/tender-process-family.js',
   'verticales/licitaciones/agt002-phase-change-followup.js',
+  'tvec-radar-fetch.js',
 ]);
 
 // Paths every pinned surface depends on regardless of its import graph: the lockfile pins the
