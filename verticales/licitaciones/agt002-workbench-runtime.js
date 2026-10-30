@@ -5,10 +5,21 @@ import { resolverParaLector } from '../../catalogo-fuentes.js';
 // Entrada 1 del catálogo de fuentes: lo que el servidor resuelve y estampa antes de llamar al
 // modelo. Son las tres que faltaban el 23-oct, cuando la Mesa inventó el nombre de la empresa
 // porque su contrato sólo llevaba el mensaje y unos punteros. Crece una línea por entrada.
+/**
+ * Lo que el servidor resuelve y le estampa a la Mesa antes de llamar al modelo.
+ *
+ * Las tres primeras estaban desde la entrega 1 del catálogo. Las tres últimas entraron el 2026-10-30, porque sin
+ * ellas la Mesa no podía responder lo que más le preguntan: "¿tenemos la experiencia para este pliego?" y "¿el BASC
+ * llega vigente al cierre?". `empresa.sedes` ya estaba declarada legible para la Mesa en el catálogo y nadie la
+ * pedía; `empresa.evidencia_al_cierre` y `empresa.experiencia` son nuevas.
+ */
 export const AGT002_MESA_FUENTES = Object.freeze([
   'empresa.identidad',
   'empresa.codigos_rup',
   'analisis.canonico.company_fit',
+  'empresa.sedes',
+  'empresa.evidencia_al_cierre',
+  'empresa.experiencia',
 ]);
 import {
   claimAgt002WorkbenchJob,
@@ -185,10 +196,13 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
         model: config.model,
         timeoutMs: config.timeoutMs,
         checkGate: () => isAgt002WorkbenchDrainEnabled(environment),
-        resolveSources: ({ tenderId }) => resolverParaLector(database, {
+        // La pregunta viaja al catálogo para que la selección sea pertinente: 20 bloques de evidencia y más de cien
+        // experiencias no caben en una respuesta, y un volcado tapa justo lo que se preguntó.
+        resolveSources: ({ tenderId, message }) => resolverParaLector(database, {
           lector: 'agt002.mesa',
           nombres: AGT002_MESA_FUENTES,
           tenderId,
+          pregunta: message,
         }),
       });
 

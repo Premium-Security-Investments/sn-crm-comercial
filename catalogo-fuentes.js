@@ -15,6 +15,8 @@
 // no el contrato de la Mesa.
 
 import { crearLectorAvancys } from './avancys-odoo-lectura.js';
+import { buildTenderCompanyDocumentBridge } from './verticales/licitaciones/tender-company-document-bridge.js';
+import { matchCompanyDocumentClasses } from './verticales/licitaciones/tender-compliance-matrix.js';
 
 export const ESTADOS = Object.freeze({
   VIGENTE: 'vigente',
@@ -142,6 +144,28 @@ export const DATOS = Object.freeze({
     responsable: 'Juan',
     fuentes: Object.freeze(['psi_company_sites']),
     lectores: Object.freeze(['agt002.mesa', 'agt002.analisis', 'agt003.copiloto']),
+  }),
+  // La evidencia de la empresa CONTRA LA FECHA DE CIERRE del proceso. Es el dato que la Mesa no tenía y que hace
+  // la diferencia entre "el BASC vence el 2027-06-17" —cierto y useless— y "el BASC llega vigente al cierre del
+  // 4-nov", que es lo que alguien necesita para responder.
+  //
+  // Dos bloques quedan FUERA a propósito: `legal_representative_vault` y `personnel_credentials_vault` traen datos
+  // de personas identificadas (Ley 1581 de 2012) y no viajan a una respuesta de la Mesa ni como metadato. Si una
+  // pregunta los necesita, la respuesta tiene que declararlo faltante y que una persona los mire.
+  'empresa.evidencia_al_cierre': Object.freeze({
+    dominio: 'empresa',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    sensibilidad: SENSIBILIDADES.INTERNA,
+    fuentes: Object.freeze(['psi_agt002_company_evidence_registry', 'psi_company_procurement_documents']),
+    lectores: Object.freeze(['agt002.mesa', 'agt002.analisis']),
+  }),
+  'empresa.experiencia': Object.freeze({
+    dominio: 'empresa',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_company_experience']),
+    lectores: Object.freeze(['agt002.mesa', 'agt002.analisis']),
   }),
   'analisis.canonico.company_fit': Object.freeze({
     dominio: 'comercial',
@@ -539,6 +563,160 @@ export async function resolverPuestosDelCliente(_database, { avancys, clienteIde
 // Una fuente resuelta sólo sostiene una afirmación si está vigente y viene tipada. En prosa, o
 // sin verificar, viaja igual —quien la lea debe saber que existe— pero marcada como insuficiente,
 // de modo que la salida honesta sea declararla faltante en vez de afirmar sobre ella.
+// Los bloques de evidencia que NO viajan a una respuesta: datos de personas identificadas.
+const BLOQUES_PERSONALES = Object.freeze(new Set(['legal_representative_vault', 'personnel_credentials_vault']));
+const MAX_BLOQUES_EN_RESPUESTA = 6;
+
+/** La fecha de cierre que manda para una licitación: `raw.deadline` primero, que es la autoridad del Radar. */
+async function fechaDeCierreDeLaLicitacion(database, tenderId) {
+  if (!tenderId) return null;
+  const { data, error } = await database
+    .from('psi_public_tenders')
+    .select('deadline_at,raw')
+    .eq('id', tenderId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const deLaRaw = typeof data.raw?.deadline === 'string' ? data.raw.deadline.slice(0, 10) : null;
+  if (deLaRaw && /^\d{4}-\d{2}-\d{2}$/.test(deLaRaw)) return deLaRaw;
+  return soloFecha(data.deadline_at);
+}
+
+/**
+ * Resolvedor de `empresa.evidencia_al_cierre`. Reusa el puente ficha de empresa → expediente, que es donde vive el
+ * cálculo de la vigencia contra el cierre, en vez de repetirlo aquí.
+ *
+ * El estado es lo importante, porque de él depende `sostiene_afirmacion`:
+ *   - `vigente` sólo si TODO lo pertinente llega vigente al cierre **y** una persona confirmó el bloque;
+ *   - `vencido` si algo no alcanza el cierre;
+ *   - `no_verificado` si falta el soporte o el bloque está pendiente de confirmación.
+ *
+ * Y la forma es `prosa` en cuanto alguna vigencia dependa del texto del registro: una vigencia que hay que
+ * interpretar no sostiene una afirmación habilitante.
+ */
+export async function resolverEvidenciaAlCierre(database, { tenderId = null, pregunta = null } = {}) {
+  const nombre = 'empresa.evidencia_al_cierre';
+  const procedenciaBase = Object.freeze({
+    tablas: Object.freeze(['psi_agt002_company_evidence_registry', 'psi_company_procurement_documents']),
+    nota: 'Bloques de personas excluidos (Ley 1581 de 2012).',
+  });
+  const cierre = await fechaDeCierreDeLaLicitacion(database, tenderId);
+  const registro = await database.from('psi_agt002_company_evidence_registry')
+    .select('entry_id,document_class,existence_status,human_review_status,vigencia_text,expiry')
+    .eq('current', true).eq('integration_active', true);
+  const documentos = await database.from('psi_company_procurement_documents')
+    .select('id,document_type,display_name,issued_at,expires_at,current,version')
+    .eq('current', true);
+  if (registro.error || documentos.error || !cierre) {
+    return respuesta({
+      nombre,
+      valor: null,
+      estado: ESTADOS.NO_VERIFICADO,
+      frescura: FRESCURAS.VIVA,
+      forma: FORMAS.TIPADO,
+      asOf: null,
+      procedencia: Object.freeze({ ...procedenciaBase, nota: cierre ? 'No fue posible leer la ficha de empresa.' : 'La licitación no tiene fecha de cierre declarada.' }),
+    });
+  }
+
+  const puente = buildTenderCompanyDocumentBridge({
+    registry: registro.data || [],
+    documents: documentos.data || [],
+    closeDate: cierre,
+  });
+  const visibles = puente.rows.filter(fila => !BLOQUES_PERSONALES.has(fila.key));
+  // Pertinencia, no volcado: si la pregunta nombra documentos, se responden esos; si no, los que están en riesgo,
+  // que es lo que alguien necesita saber sin preguntarlo.
+  const nombrados = new Set(matchCompanyDocumentClasses(pregunta || ''));
+  const pertinentes = nombrados.size > 0
+    ? visibles.filter(fila => nombrados.has(fila.key))
+    : visibles.filter(fila => fila.state !== 'listo_al_cierre');
+  const seleccion = (pertinentes.length ? pertinentes : visibles).slice(0, MAX_BLOQUES_EN_RESPUESTA);
+
+  const confirmado = fila => fila.human_review_status === 'approved';
+  const estado = seleccion.some(fila => fila.state === 'vencido' || fila.state === 'vence_antes_del_cierre')
+    ? ESTADOS.VENCIDO
+    : seleccion.length > 0 && seleccion.every(fila => fila.state === 'listo_al_cierre' && confirmado(fila))
+      ? ESTADOS.VIGENTE
+      : ESTADOS.NO_VERIFICADO;
+  const forma = seleccion.some(fila => fila.state === 'vigencia_por_confirmar') ? FORMAS.PROSA : FORMAS.TIPADO;
+  const vencimientos = seleccion.map(fila => fila.expires_at).filter(Boolean).sort();
+
+  return respuesta({
+    nombre,
+    valor: Object.freeze({
+      cierre_del_proceso: cierre,
+      bloques_mirados: seleccion.length,
+      bloques_de_la_ficha: visibles.length,
+      listos_al_cierre: visibles.filter(fila => fila.state === 'listo_al_cierre').length,
+      sin_soporte: visibles.filter(fila => fila.state === 'sin_archivo').length,
+      bloques: Object.freeze(seleccion.map(fila => Object.freeze({
+        bloque: fila.key,
+        etiqueta: fila.label,
+        estado_al_cierre: fila.state,
+        clase: fila.kind,
+        vence_el: fila.expires_at,
+        dias_de_expedido_al_cierre: fila.age_at_close_days,
+        confirmado_por_una_persona: confirmado(fila),
+        responsable: fila.owner,
+        vigencia_declarada: fila.expires_at ? null : fila.vigencia_text,
+      }))),
+    }),
+    estado,
+    frescura: FRESCURAS.CONGELADA_CON_VENCIMIENTO,
+    forma,
+    asOf: soloFecha(new Date()),
+    venceEl: vencimientos[0] || null,
+    procedencia: procedenciaBase,
+  });
+}
+
+/**
+ * Resolvedor de `empresa.experiencia`. Son más de cien contratos inscritos: no caben en una respuesta, así que se
+ * seleccionan los que la pregunta nombra y, si no nombra ninguno, los de mayor valor. El total siempre viaja, para
+ * que nadie lea la muestra como si fuera todo.
+ */
+export async function resolverExperiencia(database, { pregunta = null } = {}) {
+  const nombre = 'empresa.experiencia';
+  const procedencia = Object.freeze({ tabla: 'psi_company_experience' });
+  const { data, error } = await database
+    .from('psi_company_experience')
+    .select('rup_number,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,updated_at')
+    .order('value_smmlv', { ascending: false, nullsFirst: false });
+  if (error || !Array.isArray(data) || data.length === 0) {
+    return respuesta({
+      nombre, valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA,
+      forma: FORMAS.TIPADO, asOf: null, procedencia,
+    });
+  }
+  const terminos = String(pregunta || '')
+    .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .match(/[a-z]{5,}/g) || [];
+  const texto = fila => `${fila.contracting_party || ''} ${fila.contract_object || ''}`
+    .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const nombrados = terminos.length ? data.filter(fila => terminos.some(termino => texto(fila).includes(termino))) : [];
+  const seleccion = (nombrados.length ? nombrados : data).slice(0, 8);
+  return respuesta({
+    nombre,
+    valor: Object.freeze({
+      total_inscritas_en_el_crm: data.length,
+      mostradas: seleccion.length,
+      seleccionadas_por_la_pregunta: nombrados.length > 0,
+      experiencias: Object.freeze(seleccion.map(fila => Object.freeze({
+        contratante: fila.contracting_party,
+        objeto: fila.contract_object,
+        valor_smmlv: fila.value_smmlv,
+        anio: fila.contract_year,
+        numero_rup: fila.rup_number,
+      }))),
+    }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: soloFecha(data.map(fila => fila.updated_at).filter(Boolean).sort().pop()),
+    procedencia,
+  });
+}
+
 export function sostieneAfirmacion(fuente) {
   return fuente?.estado === ESTADOS.VIGENTE && fuente?.forma === FORMAS.TIPADO;
 }
@@ -568,6 +746,8 @@ const RESOLVEDORES = Object.freeze({
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),
+  'empresa.evidencia_al_cierre': (database, contexto) => resolverEvidenciaAlCierre(database, contexto),
+  'empresa.experiencia': (database, contexto) => resolverExperiencia(database, contexto),
   'analisis.canonico.company_fit': (database, contexto) => resolverCompanyFit(database, contexto),
   'operacion.cliente_del_puesto': (database, contexto) => resolverClienteDelPuesto(database, contexto),
   'operacion.puestos_del_cliente': (database, contexto) => resolverPuestosDelCliente(database, contexto),
@@ -582,6 +762,10 @@ export async function resolverParaLector(database, {
   lector,
   nombres,
   tenderId = null,
+  // La pregunta que se está respondiendo. Sirve para la PERTINENCIA: con 20 bloques de evidencia y más de cien
+  // experiencias inscritas, un volcado no cabe en una respuesta y además tapa lo que importa. Un resolvedor que no
+  // la necesite simplemente la ignora.
+  pregunta = null,
   puestoCodigo = null,
   clienteIdentificacion = null,
   avancys,
@@ -597,7 +781,7 @@ export async function resolverParaLector(database, {
     if (!puedeLeer(nombre, lector)) continue;
     const resolvedor = RESOLVEDORES[nombre];
     if (!resolvedor) continue;
-    const resuelto = await resolvedor(database, { tenderId, puestoCodigo, clienteIdentificacion, avancys: lectorAvancys });
+    const resuelto = await resolvedor(database, { tenderId, pregunta, puestoCodigo, clienteIdentificacion, avancys: lectorAvancys });
     const declarado = datoDeclarado(nombre);
     resueltos.push(Object.freeze({
       ...resuelto,
