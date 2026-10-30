@@ -231,7 +231,9 @@ export function createAgt002WorkbenchResponder({
   async function resolverFuentes(input) {
     if (!resolveSources) return [];
     try {
-      const resueltas = await resolveSources({ tenderId: input.tender_id, capabilityId: input.capability_id });
+      // `message` va para la pertinencia; el catálogo decide qué mirar con ella. Un resolvedor que no la use la
+      // ignora, y la Mesa sigue funcionando igual que antes.
+      const resueltas = await resolveSources({ tenderId: input.tender_id, capabilityId: input.capability_id, message: input.message });
       return Array.isArray(resueltas) ? resueltas.filter(isRecord) : [];
     } catch (error) {
       console.warn('agt002_workbench_sources_unresolved', {
