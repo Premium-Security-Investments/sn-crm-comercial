@@ -1,4 +1,4 @@
-import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -68,6 +68,11 @@ export async function loadTenderOpportunities<T>(request: TenderRequest, page: T
   const offset = Math.min(10000, Math.max(0, Math.trunc(page.offset ?? 0)));
   const filter = page.filter || 'all';
   return request<T>(`/api/tender-opportunities?filter=${encodeURIComponent(filter)}&limit=${limit}&offset=${offset}`);
+}
+
+/** El puente ficha de empresa → expediente de una licitación: sólo lectura, sirve antes y después del GO. */
+export async function loadTenderCompanyDocumentBridge(request: TenderRequest, opportunityId: string): Promise<TenderCompanyDocumentBridge> {
+  return request<TenderCompanyDocumentBridge>(`/api/tender-dossier-company-documents?id=${encodeURIComponent(opportunityId)}`);
 }
 
 /**

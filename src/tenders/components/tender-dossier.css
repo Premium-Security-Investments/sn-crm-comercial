@@ -21,3 +21,14 @@
 .tender-dossier-group>summary,.tender-dossier-missing>summary{cursor:pointer;font-weight:800;color:#40516b;padding:6px 0}
 .tender-dossier-group>.tender-dossier-list{margin-top:6px}
 @media(max-width:700px){.tender-dossier-row-summary,.tender-dossier-artifact .tender-dossier-row-summary{grid-template-columns:1fr auto;grid-template-areas:"title title" "status date" "owner owner"}.tender-dossier-row-title{grid-area:title}.tender-dossier-row-status{grid-area:status}.tender-dossier-row-date{grid-area:date}.tender-dossier-row-owner{grid-area:owner}}
+
+/* Puente ficha de empresa → expediente (2026-10-30): una fila por requisito corporativo, lo urgente arriba. */
+.tender-company-bridge{margin-top:16px}
+.tender-company-bridge h3{margin:4px 0;color:#10213d}
+.tender-company-bridge>div>p{margin:4px 0 0;color:#526173}
+.tender-company-bridge-rows{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.tender-company-bridge-row{display:grid;gap:5px;padding:11px 12px;border:1px solid #e2eaf5;border-radius:12px;background:#fff;min-width:0}
+.tender-company-bridge-row strong{color:#10213d;overflow-wrap:anywhere}
+.tender-company-bridge-row p{margin:0;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.tender-company-bridge-row p.muted{color:#526173}
+.tender-company-bridge>details>summary{cursor:pointer;font-weight:800;color:#40516b;padding:6px 0}
