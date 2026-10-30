@@ -42,6 +42,7 @@ import {
   callSeedTenderDossier,
   callSeedTenderDossierRequirements,
 } from '../verticales/licitaciones/tender-dossier-rpc.js';
+import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/tender-company-document-bridge.js';
 import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../verticales/licitaciones/tender-analysis-foundation.js';
 import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
@@ -486,6 +487,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/agt003/meeting-brief': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Puente ficha de empresa → expediente: proyección de sólo lectura de lo que la pantalla de Empresa ya muestra.
+  'GET /api/tender-dossier-company-documents': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Crear a mano un proceso que no está en SECOP: traerlo al CRM es el mismo acto que convertirlo desde el Radar.
   'POST /api/tenders/manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
   'POST /api/tender-manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
@@ -6601,6 +6604,50 @@ app.post('/api/tender-closure-acta/reopen', async (req, res) => {
     const database = requireDb();
     await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
     res.status(201).json(await callReopenTenderClosureActa(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/**
+ * El puente ficha de empresa → expediente, por licitación (encargo del 2026-10-30). Proyección de SÓLO LECTURA: cruza
+ * los documentos corporativos vigentes y el registro de evidencia con la fecha de cierre de ESTA licitación, para que
+ * la encargada no tenga que buscarlos a mano ni decidir a ojo si llegan vigentes.
+ *
+ * No depende del expediente ni, por tanto, del GO: sirve para saber qué falta ANTES de decidir, que es justo cuando
+ * más se necesita. Nada se inventa: sin archivo sale como faltante con su dueño y sin fecha de vencimiento declarada
+ * sale como `vigencia_por_confirmar`.
+ */
+async function readTenderCompanyDocumentBridge(database, opportunityId, currentProfile) {
+  const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+  const { data: tender, error } = await database.from('psi_public_tenders')
+    .select('id,ref,deadline_at,raw')
+    .eq('converted_opportunity_id', opportunityId)
+    .maybeSingle();
+  if (error) throw error;
+  // La fecha de cierre se declara con su fuente (regla de la casa: fuente por dato). La canónica de la licitación
+  // manda —es la que el Radar y el fit muestran— y la de la oportunidad queda como respaldo.
+  const tenderDeadline = tender ? resolveCanonicalTenderDeadline(tender) : null;
+  const closeDate = tenderDeadline || opportunity.expected_close_date || null;
+  const [companyBase, documents] = await Promise.all([
+    loadCompanyBase(database),
+    listCompanyProcurementDocuments(database),
+  ]);
+  return {
+    opportunity_id: opportunityId,
+    tender_id: tender?.id || null,
+    tender_ref: tender?.ref || null,
+    close_date_source: tenderDeadline ? 'licitacion' : opportunity.expected_close_date ? 'oportunidad' : null,
+    ...buildTenderCompanyDocumentBridge({ registry: companyBase.registry, documents, closeDate }),
+  };
+}
+
+app.get('/api/tender-dossier-company-documents', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    res.json(await readTenderCompanyDocumentBridge(database, opportunityId, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

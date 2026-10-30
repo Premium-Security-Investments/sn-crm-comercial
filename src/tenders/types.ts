@@ -918,3 +918,61 @@ export type TenderManualProcessInput = {
   description?: string;
 };
 export type TenderManualProcessCreated = { id: string; opportunity_id: string; tender_id: string; stable_key: string };
+
+/**
+ * Puente ficha de empresa → expediente (encargo del 2026-10-30): los documentos corporativos cruzados con la fecha de
+ * cierre de ESTA licitación. Proyección de sólo lectura; la calcula `tender-company-document-bridge.js`.
+ */
+export type TenderCompanyDocumentState = 'listo_al_cierre' | 'vence_antes_del_cierre' | 'vencido' | 'vigencia_por_confirmar' | 'sin_archivo' | 'sin_fecha_de_cierre';
+export type TenderCompanyDocumentKind = 'tramite' | 'hecho_inscrito' | 'mixto';
+export type TenderCompanyDocumentFile = {
+  id: string;
+  display_name: string;
+  document_type: string;
+  issued_at: string | null;
+  expires_at: string | null;
+  version: number | null;
+  storage_path?: string | null;
+};
+export type TenderCompanyDocumentRow = {
+  key: string;
+  label: string;
+  owner: string;
+  folder: string;
+  kind: TenderCompanyDocumentKind;
+  kind_label: string;
+  registry_entry: string | null;
+  vigencia_text: string | null;
+  human_review_status: string | null;
+  existence_status: string | null;
+  document: TenderCompanyDocumentFile | null;
+  supporting_documents: TenderCompanyDocumentFile[];
+  state: TenderCompanyDocumentState;
+  expires_at: string | null;
+  expiry_source: 'documento' | 'registro_de_evidencia' | null;
+  days_to_close: number | null;
+  age_at_close_days: number | null;
+  age_note: string | null;
+  action: string | null;
+};
+export type TenderCompanyDocumentBridge = {
+  opportunity_id: string;
+  tender_id: string | null;
+  tender_ref: string | null;
+  close_date: string | null;
+  close_date_source: 'licitacion' | 'oportunidad' | null;
+  rows: TenderCompanyDocumentRow[];
+  summary: {
+    total: number;
+    listo_al_cierre: number;
+    vence_antes_del_cierre: number;
+    vencido: number;
+    vigencia_por_confirmar: number;
+    sin_archivo: number;
+    sin_fecha_de_cierre: number;
+    hechos_inscritos_en_riesgo: number;
+    tramites_por_hacer: number;
+  };
+  unmatched_documents: TenderCompanyDocumentFile[];
+  gaps: { kind: string; key?: string; entry_id?: string }[];
+};
