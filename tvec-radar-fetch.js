@@ -8,6 +8,18 @@ export function isRetryableTvecStatus(status) {
   return status === 429 || (Number.isInteger(status) && status >= 500 && status <= 599);
 }
 
+const RETRYABLE_TVEC_NETWORK_CODES = new Set([
+  'ECONNABORTED', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ENETDOWN', 'ENETRESET',
+  'ENETUNREACH', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
+]);
+
+export function isRetryableTvecNetworkError(error) {
+  const code = error?.code || error?.cause?.code;
+  if (RETRYABLE_TVEC_NETWORK_CODES.has(code)) return true;
+  return error?.name === 'TypeError'
+    && /fetch failed|network|socket|connection|timed? ?out/i.test(error?.message || '');
+}
+
 function defaultSleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -56,10 +68,13 @@ export async function fetchTvecAggregation(aggregation, {
       if (!isRetryableTvecStatus(status) || attempts >= boundedAttempts) throw error;
       lastError = error;
     } catch (error) {
-      if (error instanceof TvecAggregationFetchError && !isRetryableTvecStatus(error.status)) throw error;
-      lastError = error instanceof TvecAggregationFetchError
-        ? error
-        : new TvecAggregationFetchError(error?.message || "TVEC network error", { aggregation, url, attempts, cause: error });
+      if (error instanceof TvecAggregationFetchError) {
+        if (!isRetryableTvecStatus(error.status)) throw error;
+        lastError = error;
+      } else {
+        lastError = new TvecAggregationFetchError(error?.message || "TVEC network error", { aggregation, url, attempts, cause: error });
+        if (!isRetryableTvecNetworkError(error)) throw lastError;
+      }
       if (attempts >= boundedAttempts) throw lastError;
     }
     await sleep(baseDelayMs * 2 ** (attempts - 1));

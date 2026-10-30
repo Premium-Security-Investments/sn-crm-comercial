@@ -11,7 +11,7 @@ import {
   computeAgt002Phase01ArtifactSetHash,
   validateAgt002Phase01GateTransition,
   validateAgt002Phase01Gate,
-} from '../agt002-phase01-executable-controls.js';
+} from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 // Loading throws (named export not found) until Task 3 Step 3 adds
 // computeAgt002Phase01ArtifactSetHash / validateAgt002Phase01GateTransition /

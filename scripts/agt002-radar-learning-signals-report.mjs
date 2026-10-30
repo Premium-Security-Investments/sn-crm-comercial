@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { projectAgt002RadarLearningObservations } from '../agt002-radar-learning-projection.js';
-import { buildAgt002RadarLearningSignals } from '../agt002-radar-learning-retrieval.js';
-import { buildAgt002RadarLearningProposals } from '../agt002-radar-learning-proposals.js';
-import { extractTenderCoreServiceTerms } from '../tender-relevance-terms.js';
+import { projectAgt002RadarLearningObservations } from '../verticales/licitaciones/agt002-radar-learning-projection.js';
+import { buildAgt002RadarLearningSignals } from '../verticales/licitaciones/agt002-radar-learning-retrieval.js';
+import { buildAgt002RadarLearningProposals } from '../verticales/licitaciones/agt002-radar-learning-proposals.js';
+import { extractTenderCoreServiceTerms } from '../verticales/licitaciones/tender-relevance-terms.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 

@@ -26,12 +26,12 @@ import {
   AGT002_SEMANTIC_FRONTIER_SUMMARY_KEY,
   createAgt002PreviewEngine,
   runAgt002BatchedV3Analysis,
-} from '../agt002-preview-engine.js';
-import { buildTenderSemanticManifest } from '../tender-semantic-manifest.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { estimateAgt002V3RequestTokens } from '../agt002-v3-prompt-budget.js';
-import { projectAgt002IntegralAnalysisBatch } from '../agt002-integral-analysis-batches.js';
+} from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildTenderSemanticManifest } from '../verticales/licitaciones/tender-semantic-manifest.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { estimateAgt002V3RequestTokens } from '../verticales/licitaciones/agt002-v3-prompt-budget.js';
+import { projectAgt002IntegralAnalysisBatch } from '../verticales/licitaciones/agt002-integral-analysis-batches.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 

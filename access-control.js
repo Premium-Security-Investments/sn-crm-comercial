@@ -35,6 +35,7 @@ export const ACTIONS = Object.freeze({
   LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_COMPANY_PROFILE_UPDATE: 'licitaciones.company_profile.update',
+  LICITACIONES_COMPANY_EVIDENCE_DECIDE: 'licitaciones.company_evidence.decide',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -73,6 +74,12 @@ const TENDER_CUSTODY_PERMISSION = 'licitaciones_custodia';
 const TENDER_COMPANY_PERMISSION = 'licitaciones_empresa';
 const HUMAN_TENDER_ROLES = new Set(['admin', 'gerencia', 'director', 'comercial']);
 const PRIVILEGED_ROLES = new Set(['admin', 'gerencia']);
+
+// Quién ve la cartera entera y no sólo la suya. Es la misma frontera que ya separa "Clientes" de
+// "Mis clientes" en el menú: el comercial ve los que atiende, la dirección ve todos.
+export function veTodaLaCarteraComercial(profile) {
+  return profile?.active === true && PRIVILEGED_ROLES.has(profile.role);
+}
 const EXPLICIT_SCOPE_ROLES = new Set(['director', 'comercial', 'colaborador']);
 const DIRECTOR_ROLE = new Set(['director']);
 const COMMERCIAL_ROLES = new Set(['comercial']);
@@ -242,15 +249,28 @@ function canActionableReviewContributeOrPropose(profile, resource) {
   if (!hasPermission(profile, TENDER_PERMISSION)) return false;
   if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
   if (canDirectorCommercialResource(profile, resource)) return true;
-  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return ownsResource(profile, resource, 'owner_id');
+  // Juan, 2026-10-29: la encargada de Licitaciones es `comercial`, y con el permiso de Licitaciones trabaja todas las
+  // licitaciones, no sólo las que figuran a su nombre. El `director` sigue acotado a su área y el `colaborador` a lo
+  // que le asignaron.
+  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return true;
   if (hasHumanRole(profile, COLLABORATOR_ROLES)) return ownsResource(profile, resource, 'assigned_profile_id');
   return false;
 }
 
-function canActionableReviewResolveOrKnowledgeGovern(profile, resource) {
+// Gobierno del aprendizaje institucional (revisar y publicar una versión de conocimiento): se deja como estaba. No es
+// una limitación de rol sobre el trabajo de una licitación, sino el segundo par de ojos del catálogo: quien propone no
+// aprueba lo suyo. Si el dueño quiere también abrirlo, es una decisión aparte.
+function canKnowledgeGovern(profile, resource) {
   if (!hasPermission(profile, TENDER_PERMISSION)) return false;
   if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
   return canDirectorCommercialResource(profile, resource);
+}
+
+// Resolver una ficha del registro accionable sí es trabajar la licitación (Juan, 2026-10-29).
+function canActionableReviewResolve(profile, resource) {
+  if (!hasPermission(profile, TENDER_PERMISSION)) return false;
+  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return true;
+  return canKnowledgeGovern(profile, resource);
 }
 
 function canSiioAssignedAction(profile, resource) {
@@ -363,10 +383,16 @@ export function can(profile, action, resource = {}) {
       return canHumanTenderAction(profile);
     case ACTIONS.LICITACIONES_DISCARD_APPROVE:
     case ACTIONS.LICITACIONES_GO_NO_GO_APPROVE:
-      return canHumanTenderAction(profile) && hasHumanRole(profile, new Set(['admin', 'gerencia', 'director']));
+      // Juan, 2026-10-29: el acceso a Licitaciones ES el permiso. Quien lo tiene opera Licitaciones completo, porque
+      // la encargada del área es `comercial` y aprobar ya no puede depender del rol. Siguen afuera el rol de solo
+      // consulta (no está en HUMAN_TENDER_ROLES), cualquier identidad que no sea humana, y quien no tenga el permiso.
+      return canHumanTenderAction(profile);
     case ACTIONS.LICITACIONES_CONVERT:
     case ACTIONS.LICITACIONES_CONFIGURE:
     case ACTIONS.LICITACIONES_WORKBENCH_CUSTODY:
+    // Decidir una ficha del registro de evidencia promueve un hecho de empresa a verificado:
+    // misma custodia que configurar, con acción propia para que quede auditable por separado.
+    case ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE:
       return canTenderCustodyAction(profile);
     case ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE:
       return canTenderCompanyProfileAction(profile);
@@ -420,9 +446,10 @@ export function can(profile, action, resource = {}) {
     case ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE:
       return canActionableReviewContributeOrPropose(profile, resource);
     case ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE:
+      return canActionableReviewResolve(profile, resource);
     case ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW:
     case ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH:
-      return canActionableReviewResolveOrKnowledgeGovern(profile, resource);
+      return canKnowledgeGovern(profile, resource);
     default:
       return false;
   }

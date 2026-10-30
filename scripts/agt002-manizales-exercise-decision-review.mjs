@@ -2,13 +2,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-import { deriveAgt002ManizalesExerciseDecisionReview } from '../agt002-manizales-exercise-decision-review.js';
-import { deriveAgt002ManizalesUnresolvedManifestEntries } from '../agt002-manizales-manifest-wiring.js';
-import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
+import { deriveAgt002ManizalesExerciseDecisionReview } from '../verticales/licitaciones/agt002-manizales-exercise-decision-review.js';
+import { deriveAgt002ManizalesUnresolvedManifestEntries } from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
+import { selectAgt002ManizalesManifestSource } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 import {
   AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID,
   AGT002_INTEGRAL_MANIFEST_PROCESO,
-} from '../agt002-manizales-integral-manifest.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
 import { runAgt002ManizalesV3LocalRun } from './agt002-manizales-v3-local-run.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

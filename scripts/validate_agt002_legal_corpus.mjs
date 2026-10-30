@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { buildAgt002LegalSource, AGT002_LEGAL_RESOLUTION_STATUSES } from '../agt002-legal-corpus.js';
+import { buildAgt002LegalSource, AGT002_LEGAL_RESOLUTION_STATUSES } from '../verticales/licitaciones/agt002-legal-corpus.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_MANIFEST_PATH = path.join(__dirname, '..', 'data', 'agt002', 'legal-corpus-v1.1.json');

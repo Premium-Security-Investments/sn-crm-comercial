@@ -18,17 +18,17 @@
 // below the server (runtime, frozen input, executor) is driven for real.
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { createAgt002PreviewRuntime } from '../agt002-preview-runtime.js';
-import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
-import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { createAgt002PreviewRuntime } from '../verticales/licitaciones/agt002-preview-runtime.js';
+import { buildAgt002FrozenEngineInput } from '../verticales/licitaciones/agt002-reanalysis-input.js';
+import { createAgt002ReanalysisExecutor } from '../verticales/licitaciones/agt002-reanalysis-executor.js';
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const runtimeSource = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
-const engineSource = readFileSync(new URL('../agt002-preview-engine.js', import.meta.url), 'utf8');
-const executorSource = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
-const inputSource = readFileSync(new URL('../agt002-reanalysis-input.js', import.meta.url), 'utf8');
+const runtimeSource = readFileSync(new URL('../verticales/licitaciones/agt002-preview-runtime.js', import.meta.url), 'utf8');
+const engineSource = readFileSync(new URL('../verticales/licitaciones/agt002-preview-engine.js', import.meta.url), 'utf8');
+const executorSource = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+const inputSource = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-input.js', import.meta.url), 'utf8');
 
 function count(source, token) {
   return source.split(token).length - 1;
@@ -84,7 +84,7 @@ assert.equal(server, api, 'server/index.js y api/[...path].js deben permanecer b
 // ===========================================================================
 assert.match(
   server,
-  /import \{[^}]*loadAgt002CompanyEvidenceInventorySnapshot[^}]*\} from '\.\.\/agt002-company-evidence-sharepoint-catalog\.js';/,
+  /import \{[^}]*loadAgt002CompanyEvidenceInventorySnapshot[^}]*\} from '\.\.\/verticales\/licitaciones\/agt002-company-evidence-sharepoint-catalog\.js';/,
   'the server must load the inventory snapshot through the governed catalog module',
 );
 assert.equal(

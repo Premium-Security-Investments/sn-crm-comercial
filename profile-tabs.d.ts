@@ -1,0 +1,32 @@
+export type ProfileTabCode = 'torre' | 'dashboard' | 'oportunidades' | 'metas' | 'licitaciones' | 'programacion' | 'usuarios';
+export type ProfileTab = Readonly<{ code: ProfileTabCode; group: string; label: string }>;
+export type TabsAccess = {
+  tabs: ProfileTabCode[];
+  opportunity_scope: 'propias' | 'todas';
+  owns_opportunities: boolean;
+  copilot: boolean;
+  edit_segment: boolean;
+  delete_opportunities: boolean;
+  tender_custody: boolean;
+  tender_company: boolean;
+  read_only: boolean;
+};
+export type AreaAssignment = { area_code: string; subarea_code: string | null };
+export type DerivedAccess = {
+  role: string;
+  permissions: string[];
+  areas: AreaAssignment[];
+  can_edit_customer_segment: boolean;
+  can_own_opportunities: boolean;
+  access: TabsAccess;
+};
+export const PROGRAMACION_PERMISSION: string;
+export const PROFILE_TABS: readonly ProfileTab[];
+export const EMPTY_TABS_ACCESS: Readonly<TabsAccess>;
+export const PROFILE_TEMPLATES: readonly Readonly<{ code: string; label: string; access: Partial<TabsAccess> & { tabs: ProfileTabCode[] } }>[];
+export function templateAccess(code: string): TabsAccess | null;
+export function normalizeTabsAccess(input: unknown): TabsAccess;
+export function deriveRole(access: TabsAccess): string;
+export function accessFromTabs(input: unknown, existingAreas?: AreaAssignment[]): DerivedAccess;
+export function tabsFromProfile(profile: { role?: string | null; permissions?: string[] | null; can_own_opportunities?: boolean | null; can_edit_customer_segment?: boolean | null } | null | undefined): TabsAccess;
+export function tabsSummary(access: TabsAccess): string[];

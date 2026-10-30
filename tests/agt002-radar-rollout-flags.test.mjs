@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { ANALYSIS_FLAG_NAMES, buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
+import { ANALYSIS_FLAG_NAMES, buildAgt002AnalysisConfig } from '../verticales/licitaciones/agt002-analysis-config.js';
 
 // The AGT-002 Radar scan is now deterministic and always active when invoked: it no longer reads
 // any rollout flag, so AGT002_RADAR_GATE / AGT002_RADAR_VISIBILITY and the dependency between them

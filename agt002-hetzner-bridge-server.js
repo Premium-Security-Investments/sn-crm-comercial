@@ -4,8 +4,8 @@ import { authenticateBridgeRequest } from './agt002-hetzner-bridge-auth.js';
 import { logBridgeEvent } from './agt002-hetzner-bridge-log.js';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
-import { buildAgt002ControlPlaneIdentity } from './agt002-control-plane-identity.js';
-import { AGT002_HOST_SURFACE_UNITS } from './agt002-host-surface-observer.js';
+import { buildAgt002ControlPlaneIdentity } from './verticales/licitaciones/agt002-control-plane-identity.js';
+import { AGT002_HOST_SURFACE_UNITS } from './verticales/licitaciones/agt002-host-surface-observer.js';
 
 const BRIDGE_PATH = '/v1/agt002-preview/run';
 const CONTROL_PLANE_PATH = '/v1/agt002/control-plane';

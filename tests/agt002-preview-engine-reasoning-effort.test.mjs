@@ -13,9 +13,9 @@
 // No real provider, bridge, network or subprocess is used anywhere below.
 
 import assert from 'node:assert/strict';
-import { createAgt002PreviewEngine, AGT002_INTEGRAL_V3_POLICY } from '../agt002-preview-engine.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { createAgt002PreviewEngine, AGT002_INTEGRAL_V3_POLICY } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 
 function fakeClient(handler) {

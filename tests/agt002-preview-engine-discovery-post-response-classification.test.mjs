@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
+import { createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
 
 // RED (TDD): pins how agt002-preview-engine.js's V4 discovery frontier (usesSemanticDiscovery)
 // must now handle a rejection thrown by its injected `semanticDiscoveryProvider`

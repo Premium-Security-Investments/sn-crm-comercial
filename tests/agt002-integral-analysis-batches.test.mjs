@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
-import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
-import { estimateAgt002V3RequestTokens } from '../agt002-v3-prompt-budget.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { estimateAgt002V3RequestTokens } from '../verticales/licitaciones/agt002-v3-prompt-budget.js';
 import {
   AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION,
   AGT002_INTEGRAL_ANALYSIS_BATCH_MAX_REQUIREMENTS,
@@ -9,7 +9,7 @@ import {
   computeAgt002IntegralAnalysisBatchHash,
   planAgt002IntegralAnalysisBatches,
   projectAgt002IntegralAnalysisBatch,
-} from '../agt002-integral-analysis-batches.js';
+} from '../verticales/licitaciones/agt002-integral-analysis-batches.js';
 
 // AGT-002 durable batched analysis — Task 4 (docs/plans/2026-09-03-agt002-durable-batched-analysis.md).
 //

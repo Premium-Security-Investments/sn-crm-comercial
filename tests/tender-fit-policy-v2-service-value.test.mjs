@@ -7,7 +7,7 @@
 // `tender-fit-policy.js` reporta TENDER_FIT_POLICY_VERSION 'tender-fit-v2' en
 // producción, sin ningún campo `shadow` aditivo (ver sección 0 más abajo).
 import assert from 'node:assert/strict';
-import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit } from '../tender-fit-policy.js';
+import { TENDER_FIT_POLICY_VERSION, evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
 import {
   SMMLV_2026,
   VALUE_FAMILY_FLOORS_SMMLV,
@@ -17,7 +17,7 @@ import {
   CAPACITY_FINANCIAL_ASSUMED_PERCENTAGE,
   CORPORATE_MAX_DEBT_RATIO,
   CORPORATE_EXPERIENCE_CAPACITY_SMMLV,
-} from '../tender-fit-v2-parameters.js';
+} from '../verticales/licitaciones/tender-fit-v2-parameters.js';
 
 const NOW = '2026-09-20T15:00:00.000Z';
 

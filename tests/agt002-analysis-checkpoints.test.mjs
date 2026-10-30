@@ -20,7 +20,7 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { classifyAgt002ReanalysisWorkerError } from '../agt002-reanalysis-worker.js';
+import { classifyAgt002ReanalysisWorkerError } from '../verticales/licitaciones/agt002-reanalysis-worker.js';
 import {
   AGT002_CHECKPOINT_STAGES,
   AGT002_CHECKPOINT_ERROR_CODES,
@@ -33,7 +33,7 @@ import {
   storeAgt002AnalysisCheckpoint,
   finalizeAgt002DurableBatchedAnalysis,
   createAgt002AnalysisCheckpointAdapter,
-} from '../agt002-analysis-checkpoints.js';
+} from '../verticales/licitaciones/agt002-analysis-checkpoints.js';
 
 const IDS = Object.freeze({
   opportunity: '22222222-2222-4222-8222-222222222222',

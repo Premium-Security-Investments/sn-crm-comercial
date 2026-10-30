@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
-import { requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
+import { requireTenderAnalysisFoundation } from '../verticales/licitaciones/tender-analysis-foundation-availability.js';
 
 const backendPaths = [
   new URL('../server/index.js', import.meta.url),
@@ -75,7 +75,7 @@ function routeBlock(source, method, route) {
 
 for (const path of backendPaths) {
   const source = readFileSync(path, 'utf8');
-  assert.match(source, /import \{ isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation \} from '\.\.\/tender-analysis-foundation-availability\.js';/, `${path.pathname} debe importar el guard reusable.`);
+  assert.match(source, /import \{ isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation \} from '\.\.\/verticales\/licitaciones\/tender-analysis-foundation-availability\.js';/, `${path.pathname} debe importar el guard reusable.`);
   for (const [method, route] of [
     ['get', '/api/tender-documents'],
     ['post', '/api/tender-documents-upload'],
@@ -86,7 +86,12 @@ for (const path of backendPaths) {
     ['post', '/api/tender-dossier-agt002-sync'],
   ]) assert.match(routeBlock(source, method, route), /await requireTenderAnalysisFoundation\(database\);/, `${method.toUpperCase()} ${route} debe cerrar antes de continuar.`);
 
-  const upload = routeBlock(source, 'post', '/api/tender-documents-upload');
+  // La secuencia de la carga vive en `ingestTenderDossierDocuments`, que la comparten la ruta web y el runner del
+  // servidor de tareas (Supersalud, 2026-10-25: un documento aportado no tenía cómo entrar sin navegador). El
+  // guard viaja con el trabajo, así que se exige DENTRO de la función: ahí es donde se toca Storage, y así ningún
+  // llamador nuevo puede saltárselo.
+  const upload = source.match(/export async function ingestTenderDossierDocuments\([\s\S]*?\n}\n/)?.[0] || '';
+  assert.ok(upload, `${path.pathname}: la secuencia de carga debe existir`);
   assert.match(upload, /await requireTenderAnalysisFoundation\(database\);[\s\S]*await ensureTenderBucket\(database\)/, 'carga debe verificar antes de Storage');
   const importRoute = routeBlock(source, 'post', '/api/tender-documents-import');
   assert.match(importRoute, /await requireTenderAnalysisFoundation\(database\);[\s\S]*refreshTenderDocumentsFromOfficialSource/, 'actualización debe verificar antes de importar');

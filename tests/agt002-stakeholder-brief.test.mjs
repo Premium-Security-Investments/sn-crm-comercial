@@ -37,8 +37,8 @@ import {
   AGT002_STAKEHOLDER_BRIEF_VALIDITY_STATES,
   validateAgt002StakeholderBrief,
   buildAgt002StakeholderBrief,
-} from '../agt002-stakeholder-brief.js';
-import * as Agt002StakeholderBrief from '../agt002-stakeholder-brief.js';
+} from '../verticales/licitaciones/agt002-stakeholder-brief.js';
+import * as Agt002StakeholderBrief from '../verticales/licitaciones/agt002-stakeholder-brief.js';
 // Real governed V3 constants — the stakeholder brief's lineage checks (Case 12) must be
 // pinned to these, never to a parallel/duplicated enum of its own.
 import {
@@ -48,7 +48,7 @@ import {
   AGT002_INTEGRAL_SUGGESTED_ROLES,
   AGT002_INTEGRAL_ACTION_PRIORITIES,
   AGT002_INTEGRAL_VALIDITY_STATES,
-} from '../agt002-integral-analysis-v3.js';
+} from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
 
 // ---------------------------------------------------------------------------
 // Synthetic fixture: one governed opportunity, one requirement per checklist category

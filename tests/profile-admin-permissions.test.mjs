@@ -242,7 +242,7 @@ assert.deepEqual(
 assert.deepEqual(rpcCalls, [{
   name: 'psi_admin_persist_profile_access',
   params: {
-    p_mode: 'patch', p_target_id: oldProfile.id, p_expected_profile: oldProfile,
+    p_mode: 'patch', p_target_id: oldProfile.id, p_expected_profile: { ...oldProfile, whatsapp_phone: null },
     p_profile: changedProfile, p_areas: afterAccess.areas, p_permissions: afterAccess.permissions, p_actor_profile_id: 'admin', p_operation_id: 'operation',
   },
 }], 'el helper envía un único comando transaccional con snapshot optimista');
@@ -359,13 +359,14 @@ assert.match(src, /type AccessAssignment/);
 assert.match(src, /areas\?: AccessAssignment\[\]/);
 assert.match(src, /permissions\?: string\[\]/);
 assert.match(src, /api<AccessCatalog>\('\/api\/access-catalog'\)/);
-assert.match(src, /Toda el área/);
+// 2026-10-15: el formulario es por pestañas; el rol y las áreas se calculan con profile-tabs.js.
+assert.doesNotMatch(src, /Toda el área/);
 assert.match(src, /<fieldset/);
 assert.match(src, /<legend/);
-assert.match(src, /'licitaciones'/);
-assert.match(src, /\['colaborador','Colaborador'\]/);
-assert.match(src, /\['junta','Junta'\]/);
-assert.match(src, /Permisos/);
+assert.match(src, /Pestañas que puede abrir/);
+assert.match(src, /accessFromTabs\(access, form\.existing_areas\)/);
+assert.match(src, /role: derived\.role, areas: derived\.areas, permissions: derived\.permissions/);
+assert.match(src, /Usuarios y permisos/);
 assert.doesNotMatch(src.slice(src.indexOf('function UsersAdmin'), src.indexOf('createRoot')), /<label>Área comercial/);
 
 execFileSync('corepack', ['pnpm', 'run', 'build'], { stdio: 'inherit', cwd: new URL('..', import.meta.url) });

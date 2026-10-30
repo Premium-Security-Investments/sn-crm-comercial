@@ -8,9 +8,9 @@ import {
   AGT002_RETRIEVAL_MAX_CHARS,
   AGT002_RETRIEVAL_MAX_TOKENS,
   buildAgt002PreviewInput,
-} from '../agt002-preview-input.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
+} from '../verticales/licitaciones/agt002-preview-input.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 
 const longText = 'A'.repeat(4000);
 const documents = Array.from({ length: 13 }, (_, index) => ({

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
 import { ACTIONS, can } from '../access-control.js';
-import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
+import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
 
 const human = (role, permissions = []) => ({
   id: `user-${role}`,
@@ -65,7 +65,7 @@ assert.match(migration, /revoke all on function public\.psi_upsert_company_procu
 assert.equal((migration.match(/revoke all on function %s from anon/g) || []).length, 2, 'Conversión y documentos deben revocar EXECUTE a anon.');
 assert.doesNotMatch(migration, /directora\.licitaciones@seguridadnacional\.co/, 'La autorización no puede depender de un correo hardcodeado.');
 const mainSrc = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-assert.ok(mainSrc.includes('Capacidades operativas exclusivas'), 'Admin debe poder asignar custodia como capacidad, no como módulo.');
+assert.ok(mainSrc.includes('Custodia: convierte detecciones y aprueba reglas'), 'Admin debe poder asignar custodia como opción de Licitaciones, no como módulo.');
 
 const preparation = buildTenderOfferPreparation(
   { id: 'opportunity-1', company_name: 'Entidad pública' },

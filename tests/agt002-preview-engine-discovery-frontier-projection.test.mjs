@@ -40,20 +40,20 @@ import {
   buildAgt002SemanticFrontierSummary,
   createAgt002PreviewEngine,
   projectAgt002DiscoveredModelInput,
-} from '../agt002-preview-engine.js';
-import { buildAgt002PreviewInput, buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
-import { buildTenderSemanticManifest } from '../tender-semantic-manifest.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
+} from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002PreviewInput, buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
+import { buildTenderSemanticManifest } from '../verticales/licitaciones/tender-semantic-manifest.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
 import {
   AGT002_V3_PROMPT_BUDGET_EXCEEDED_CODE,
   AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
   budgetAgt002V3PromptRequest,
   estimateAgt002V3RequestTokens,
-} from '../agt002-v3-prompt-budget.js';
-import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
-import { classifyAgt002ReanalysisWorkerError } from '../agt002-reanalysis-worker.js';
+} from '../verticales/licitaciones/agt002-v3-prompt-budget.js';
+import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
+import { classifyAgt002ReanalysisWorkerError } from '../verticales/licitaciones/agt002-reanalysis-worker.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const clone = value => JSON.parse(JSON.stringify(value));

@@ -6,8 +6,8 @@ import {
   AGT002_PEREIRA_LESSON_BUCKETS,
   AGT002_PEREIRA_LESSONS,
   buildAgt002PereiraTouchpointIndex,
-} from '../agt002-pereira-lessons.js';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-pereira-lessons.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 test('Pereira is a pattern, never proof of Manizales compliance', () => {
   assert.equal(AGT002_PEREIRA_CASE.applies_to_manizales, 'patron_no_prueba');

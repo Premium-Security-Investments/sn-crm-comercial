@@ -18,6 +18,7 @@ export type NavViewMode = 'admin' | 'comercial';
 
 export type NavRoutePage =
   | 'home'
+  | 'clients'
   | 'opportunities'
   | 'tenders'
   | 'detail'
@@ -31,10 +32,11 @@ export type NavRoutePage =
   | 'centinel'
   | 'users'
   | 'siio'
+  | 'programacion'
   | 'agents';
 
-export type NavItem = { href: string; label: string; page: NavRoutePage };
-export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'IT' | 'Administración'; items: NavItem[] };
+export type NavItem = { href: string; label: string; page: NavRoutePage; external?: boolean };
+export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Programación' | 'IT' | 'Administración'; items: NavItem[] };
 
 type NavGroupDefinition = {
   title: NavGroup['title'];
@@ -51,6 +53,8 @@ const goalWriterRoles = new Set(['admin', 'gerencia']);
 // IT → Agentes administra la Plataforma de Agentes: nunca se abre en solo consulta, aunque hoy la vista sea de lectura.
 const writeOnlyPages = new Set<NavRoutePage>(['new', 'edit', 'users', 'goals', 'agents']);
 
+export const PROGRAMACION_APP_URL = 'https://main.dud08epu9vf89.amplifyapp.com';
+
 const navGroups: readonly NavGroupDefinition[] = [
   {
     title: 'Gerencia',
@@ -64,6 +68,9 @@ const navGroups: readonly NavGroupDefinition[] = [
       // El comercial empieza su día aquí (su lista de hoy y las oportunidades por decidir); sólo lo ve el rol comercial.
       { href: '#/home', label: 'Mi día', page: 'home' },
       { href: '#/dashboard2', label: 'Dashboard', page: 'dashboard2' },
+      // La misma pantalla con dos alcances: el comercial ve los suyos, la dirección ve todos. Por
+      // eso el rótulo cambia con quien mira, y es lo único del menú que lo hace.
+      { href: '#/clients', label: 'Clientes', page: 'clients' },
       // Prioridades Comerciales (#/alerts) salió del menú: su motor alimenta el Dashboard comercial y el orden
       // "por urgencia" de Oportunidades. La ruta sigue abierta para enlaces directos.
       { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },
@@ -76,6 +83,15 @@ const navGroups: readonly NavGroupDefinition[] = [
     title: 'Licitaciones',
     items: [
       { href: '#/tenders?view=radar', label: 'Radar', page: 'tenders' },
+      { href: '#/tenders?view=seguimiento', label: 'Seguimiento', page: 'tenders' },
+      { href: '#/tenders?view=oportunidades', label: 'Oportunidades', page: 'tenders' },
+    ],
+  },
+  {
+    // Aplicación aparte (AGT-006): se abre en otra pestaña. El SIIO sólo decide quién entra (Juan, 2026-10-15).
+    title: 'Programación',
+    items: [
+      { href: PROGRAMACION_APP_URL, label: 'Programación de turnos', page: 'programacion', external: true },
     ],
   },
   {
@@ -101,6 +117,9 @@ const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   dashboard2: 'modulo_dashboard_comercial',
   consultant: 'modulo_dashboard_comercial',
   alerts: 'modulo_alertas_comerciales',
+  // Clientes usa el mismo permiso que Oportunidades a propósito: quien trabaja oportunidades
+  // trabaja clientes. No agrega una casilla nueva al formulario de permisos.
+  clients: 'modulo_oportunidades',
   opportunities: 'modulo_oportunidades',
   detail: 'modulo_oportunidades',
   new: 'modulo_oportunidades',
@@ -109,6 +128,7 @@ const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   tenders: 'licitaciones',
   users: 'modulo_usuarios',
   agents: 'modulo_usuarios',
+  programacion: 'modulo_programacion',
 };
 
 export function isManagementRole(role?: string | null) {
@@ -195,14 +215,14 @@ export function isInitialAppHash(hash: string) {
 }
 
 export function preferredLandingRoute(profile: NavProfile): NavRoutePage {
-  if (profile?.active === true && profile.role === 'comercial') return 'home';
+  if (profile?.active === true && profile.role === 'comercial' && hasModuleAccess(profile, 'modulo_oportunidades')) return 'home';
   return LANDING_PRIORITY.find(route => canAccessRoute(profile, route)) || 'home';
 }
 
 // "Mi día" es la entrada del comercial; los directivos trabajan desde el Dashboard comercial.
 // "Cargar metas" sólo aparece para quien puede escribirlas; la ruta #/goals sigue abierta para enlaces (Ver mi meta).
 function isNavItemVisible(profile: NavProfile, page: NavRoutePage) {
-  if (page === 'home') return profile?.active === true && profile.role === 'comercial';
+  if (page === 'home') return profile?.active === true && profile.role === 'comercial' && hasModuleAccess(profile, 'modulo_oportunidades');
   if (page === 'goals') return canWriteGoals(profile);
   return true;
 }
@@ -214,7 +234,10 @@ export function getVisibleNavGroups(profile?: NavProfile): NavGroup[] {
       items: group.items
         .filter(item => canAccessRoute(profile, item.page))
         .filter(item => isNavItemVisible(profile, item.page))
-        .map(({ href, label, page }) => ({ href, label, page })),
+        .map(({ href, label, page, external }): NavItem => {
+          const rotulo = page === 'clients' && profile?.role === 'comercial' ? 'Mis clientes' : label;
+          return external ? { href, label: rotulo, page, external } : { href, label: rotulo, page };
+        }),
     }))
     .filter((group): group is NavGroup => group.items.length > 0);
 }

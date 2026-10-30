@@ -272,10 +272,53 @@ test('runner: argumentos, escritura atómica y punteros separados por modo', () 
   }
 });
 
+// Estancadas en el correo (Juan, 2026-10-23): la misma regla de Mi día y del Dashboard, importada, no copiada.
+// Toda estancada es también "por decidir", así que no se lista aparte: se marca en la fila.
+const conEtapas = () => {
+  const { opportunities } = weeklyDigestFixture();
+  return opportunities.map(o => {
+    // o-a1: gestión vencida y 71 días medidos en Prospecto (umbral 30) → estancada, con número exacto.
+    if (o.id === 'o-a1') return { ...o, stage_name: 'Prospecto', staleness_days: 30, stage_entered_at: '2026-08-01T12:00:00Z', stage_entered_at_measured: true };
+    // o-a2: sin próxima gestión y 40 días SEMBRADOS → estancada, pero sólo se puede afirmar "al menos".
+    if (o.id === 'o-a2') return { ...o, stage_name: 'Prospecto', staleness_days: 30, stage_entered_at: '2026-09-01T12:00:00Z', stage_entered_at_measured: false };
+    // o-a3: 93 días en la etapa, pero con próxima gestión el 14 → NO es estancada: ya hay compromiso vigente.
+    if (o.id === 'o-a3') return { ...o, stage_name: 'Prospecto', staleness_days: 30, stage_entered_at: '2026-07-10T12:00:00Z', stage_entered_at_measured: true };
+    return o;
+  });
+};
+
+test('estancadas: se marcan en la fila, con "al menos" cuando la fecha viene sembrada', () => {
+  const ana = salespersonFor(live({ opportunities: conEtapas() }), 'p-ana');
+  assert.match(ana.text, /De ellas, 2 llevan demasiado tiempo en su etapa/);
+  assert.match(ana.text, /— 71 días$/m, 'fecha medida: el número exacto');
+  assert.match(ana.text, /— al menos 40 días$/m, 'fecha sembrada: cota inferior, nunca un exacto que no se puede sostener');
+  assert.ok(ana.html.includes('En la etapa'), 'la columna aparece en el correo HTML');
+  assert.ok(ana.html.includes('al menos 40 días'));
+  // La que tiene próxima gestión futura no aparece marcada ni cuenta, aunque lleve 93 días en la etapa.
+  assert.doesNotMatch(ana.text, /93 días/);
+  assert.doesNotMatch(ana.text, /Conjunto Torres del Parque — [^\n]*— (al menos )?\d+ días$/m);
+});
+
+test('estancadas: ninguna marca cuando la cartera no las tiene, y el texto no cambia de forma', () => {
+  const ana = salespersonFor(live(), 'p-ana');
+  assert.doesNotMatch(ana.text, /demasiado tiempo en su etapa/);
+  assert.doesNotMatch(ana.text, /al menos \d+ días/);
+  assert.ok(ana.html.includes('En la etapa'), 'la columna existe igual, aunque venga vacía');
+});
+
+test('estancadas: el resumen del gerente las cuenta por comercial', () => {
+  const manager = byKind(live({ opportunities: conEtapas() }), 'manager')[0];
+  assert.match(manager.text, /Estancadas: 2/);
+  assert.equal((manager.text.match(/Estancadas: 0/g) || []).length, 2, 'Beto y Caro en cero');
+  assert.ok(manager.html.includes('Estancadas'));
+});
+
 test('frontera: el módulo es puro, de AGT-003, sin AGT-002, red ni envío', () => {
   const src = readFileSync(new URL('../src/vigia/weekly-digest.js', import.meta.url), 'utf8');
   const imports = [...src.matchAll(/^import\s.*?from\s+'([^']+)';/gm)].map(m => m[1]);
-  assert.deepEqual(imports.sort(), ['./client-profile.js', './commercial-behavior.js', './commercial-scope.js', './opportunity-decision-rules.js', 'node:crypto']);
+  // Lista blanca: cada import nuevo se decide, no se cuela. `./stage-staleness.js` entró el 2026-10-23 con la marca
+  // de estancamiento, y es un módulo puro hermano (misma carpeta, sin red ni base), igual que los otros cuatro.
+  assert.deepEqual(imports.sort(), ['./client-profile.js', './commercial-behavior.js', './commercial-scope.js', './opportunity-decision-rules.js', './stage-staleness.js', 'node:crypto']);
   assert.ok(!imports.some(spec => /agt002|tender-|hermes/i.test(spec)), 'sin imports de AGT-002');
   assert.doesNotMatch(src, /import\(/, 'sin imports dinámicos');
   assert.doesNotMatch(src, /fetch\(|process\.env|Date\.now\(|new Date\(\)|readFileSync|writeFileSync|nodemailer|smtp/i);

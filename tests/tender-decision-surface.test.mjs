@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { buildSync } from 'esbuild';
 
-import { presentCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
+import { presentCurrentTenderAnalysis } from '../verticales/licitaciones/tender-analysis-foundation.js';
 import { runAgt002ManizalesV3LocalRun } from '../scripts/agt002-manizales-v3-local-run.mjs';
-import { deriveAgt002ManizalesManifestScope } from '../agt002-manizales-manifest-wiring.js';
-import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../agt002-manizales-manifest-source.js';
+import { deriveAgt002ManizalesManifestScope } from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
+import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 
 // AGT-002 Task 2 · pure selectors over the governed decision_review projection, generic across
 // fixture sizes (never hardcoding the pilot's 25/20/5/2 shape). No I/O, no mutation.

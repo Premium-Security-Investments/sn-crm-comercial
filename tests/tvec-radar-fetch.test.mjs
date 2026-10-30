@@ -35,6 +35,17 @@ test("does not retry a permanent 4xx response", async () => {
   assert.equal(sleeps, 0);
 });
 
+test("does not retry non-transient thrown errors", async () => {
+  let calls = 0; let sleeps = 0;
+  await assert.rejects(fetchTvecAggregation("Conectividad IV", {
+    url: "https://example.test/tvec?Agregacion=Conectividad",
+    fetchImpl: async () => { calls += 1; throw new Error("invalid response"); },
+    sleep: async () => { sleeps += 1; }, maxAttempts: 3,
+  }), error => error.attempts === 1 && error.cause?.message === "invalid response");
+  assert.equal(calls, 1);
+  assert.equal(sleeps, 0);
+});
+
 test("isolates aggregation failures so successful aggregations still resolve", async () => {
   const calls = new Map();
   const results = await fetchTvecAggregations({ healthy: 90, broken: 80 }, {

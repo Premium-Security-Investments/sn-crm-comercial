@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
-import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
-import { buildAgt002DocumentRetrieval } from '../agt002-document-retrieval.js';
+import { buildAgt002DocumentChunks } from '../verticales/licitaciones/agt002-document-chunks.js';
+import { buildAgt002DocumentRetrieval } from '../verticales/licitaciones/agt002-document-retrieval.js';
 
 function hash(text) {
   return createHash('sha256').update(text).digest('hex');

@@ -8,7 +8,7 @@ import {
   createCodexAppServerClient,
   requestAgt002CodexDeviceCodeLogin,
 } from '../agt002-preview-codex-client.js';
-import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../agt002-preview-contract.js';
+import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../verticales/licitaciones/agt002-preview-contract.js';
 
 const source = readFileSync(new URL('../agt002-preview-codex-client.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the Codex App Server client must never manage an API key or Bearer token; auth is the subprocess\'s own OAuth ChatGPT session');
@@ -594,7 +594,7 @@ function fakeSpawnCapturingProcessArgs(captureArgs) {
 
 // --- Separate, human-gated ChatGPT device-code login flow -----------------
 // This flow must never be reachable from the AGT-002 Preview analysis path.
-for (const file of ['../agt002-preview-engine.js', '../agt002-preview-runtime.js', '../server/index.js', '../api/[...path].js']) {
+for (const file of ['../verticales/licitaciones/agt002-preview-engine.js', '../verticales/licitaciones/agt002-preview-runtime.js', '../server/index.js', '../api/[...path].js']) {
   const guarded = readFileSync(new URL(file, import.meta.url), 'utf8');
   assert.doesNotMatch(guarded, /requestAgt002CodexDeviceCodeLogin|chatgptDeviceCode/, `${file} must never trigger the human-gated login flow automatically`);
 }

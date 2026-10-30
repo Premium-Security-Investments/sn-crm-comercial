@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 
-import { presentCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
+import { presentCurrentTenderAnalysis } from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 function genericIntegralAnalysis() {
   return {

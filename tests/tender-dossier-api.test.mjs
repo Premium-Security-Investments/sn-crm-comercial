@@ -30,7 +30,7 @@ function fakeDb(reply = () => ({}), failure = null) {
 
 let adapter;
 try {
-  adapter = await import('../tender-dossier-rpc.js');
+  adapter = await import('../verticales/licitaciones/tender-dossier-rpc.js');
 } catch (error) {
   assert.fail(`RED esperado: falta adapter tender-dossier-rpc.js: ${error.message}`);
 }
@@ -85,9 +85,15 @@ await (async function readsWorkspaceAndComputesManagerGate() {
   assert.equal(workspace.can_mark_ready, true);
   assert.equal(workspace.workbench_enabled, false);
 
+  // Juan, 2026-10-29: la encargada de Licitaciones es `comercial` y con el permiso marca listo igual que un director.
   const dbCommercial = fakeDb(() => ({ checklist: [], artifacts: [], readiness: { ready: true } }));
   const commercialWorkspace = await getTenderDossierWorkspace(dbCommercial, OPP, commercial);
-  assert.equal(commercialWorkspace.can_mark_ready, false);
+  assert.equal(commercialWorkspace.can_mark_ready, true);
+
+  // Sin el permiso de Licitaciones no se marca listo.
+  const dbSinPermiso = fakeDb(() => ({ checklist: [], artifacts: [], readiness: { ready: true } }));
+  const sinPermiso = await getTenderDossierWorkspace(dbSinPermiso, OPP, { ...commercial, permissions: ['licitaciones'], role: 'consulta' });
+  assert.equal(sinPermiso.can_mark_ready, false, 'el directivo de solo consulta nunca marca listo');
 })();
 
 await (async function workbenchEnabledIsFailClosedServerOption() {
@@ -125,7 +131,7 @@ await (async function workbenchEnabledIsFailClosedServerOption() {
 
   // Encender la mesa no altera permisos ni la revisión humana existente.
   const commercialWorkspace = await getTenderDossierWorkspace(fakeDb(ok), OPP, commercial, { workbenchEnabled: true });
-  assert.equal(commercialWorkspace.can_mark_ready, false, 'el gate de la mesa no debe alterar can_mark_ready');
+  assert.equal(commercialWorkspace.can_mark_ready, true, 'el gate de la mesa no debe alterar can_mark_ready');
   const denied = fakeDb(ok);
   await assert.rejects(
     () => getTenderDossierWorkspace(denied, OPP, outsider, { workbenchEnabled: true }),
@@ -135,15 +141,22 @@ await (async function workbenchEnabledIsFailClosedServerOption() {
   assert.equal(denied.calls.length, 0, 'el permiso se verifica antes de tocar la BD');
 })();
 
-await (async function noAplicaRequiresManagerBeforeDb() {
+// Juan, 2026-10-29: marcar "no aplica" pide autoridad de Licitaciones, que ahora da el permiso y no el rol. Lo que
+// sigue cerrado es quien no tiene acceso a Licitaciones.
+await (async function noAplicaRequiresTenderAccessBeforeDb() {
   const input = {
     opportunity_id: OPP, item_id: ITEM, action_type: 'marked_not_applicable',
     justification: 'No corresponde al objeto contractual.',
   };
   const db = fakeDb();
-  await assert.rejects(() => callAppendTenderDossierItemAction(db, input, commercial), error => error?.status === 403);
+  await assert.rejects(() => callAppendTenderDossierItemAction(db, input, outsider), error => error?.status === 403);
   assert.equal(db.calls.length, 0);
 
+  await callAppendTenderDossierItemAction(db, input, commercial);
+  assert.equal(db.calls[0].name, 'psi_append_tender_dossier_item_action');
+  assert.equal(db.calls[0].args.p_actor_id, commercial.id);
+
+  db.calls.length = 0;
   await callAppendTenderDossierItemAction(db, input, director);
   assert.equal(db.calls[0].name, 'psi_append_tender_dossier_item_action');
   assert.equal(db.calls[0].args.p_actor_id, director.id);
@@ -178,18 +191,27 @@ await (async function artifactVersionAndReviewUseAuthenticatedActor() {
   assert.equal(db.calls[2].args.p_actor_id, director.id);
 })();
 
-await (async function managerOnlyReviewAndSeed() {
+// Revisar una versión y sembrar el expediente piden autoridad de Licitaciones: desde el 2026-10-29 la da el permiso.
+await (async function reviewAndSeedNeedTenderAccess() {
   const reviewDb = fakeDb();
   await assert.rejects(
-    () => callRecordTenderDossierArtifactReview(reviewDb, { version_id: VERSION, decision: 'aprobado' }, commercial),
+    () => callRecordTenderDossierArtifactReview(reviewDb, { version_id: VERSION, decision: 'aprobado' }, outsider),
     error => error?.status === 403,
   );
   const seedDb = fakeDb();
   await assert.rejects(
-    () => callSeedTenderDossier(seedDb, { opportunity_id: OPP }, commercial),
+    () => callSeedTenderDossier(seedDb, { opportunity_id: OPP }, outsider),
     error => error?.status === 403,
   );
-  assert.equal(reviewDb.calls.length + seedDb.calls.length, 0);
+  assert.equal(reviewDb.calls.length + seedDb.calls.length, 0, 'el permiso se verifica antes de tocar la BD');
+
+  // La encargada sí pasa.
+  const reviewOk = fakeDb();
+  await callRecordTenderDossierArtifactReview(reviewOk, { version_id: VERSION, decision: 'aprobado' }, commercial);
+  assert.equal(reviewOk.calls[0].args.p_actor_id, commercial.id);
+  const seedOk = fakeDb();
+  await callSeedTenderDossier(seedOk, { opportunity_id: OPP }, commercial);
+  assert.equal(seedOk.calls[0].args.p_actor_id, commercial.id);
 })();
 
 await (async function mapsDatabaseErrors() {
@@ -206,7 +228,7 @@ await (async function backendsRegisterSevenRoutesWithParity() {
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
   const vercel = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
   assert.equal(vercel, server, 'server/index.js y api/[...path].js deben ser byte-idénticos');
-  assert.match(server, /from '\.\.\/tender-dossier-rpc\.js'/);
+  assert.match(server, /from '\.\.\/verticales\/licitaciones\/tender-dossier-rpc\.js'/);
   const routes = [
     "app.get('/api/tender-dossier-workspace'",
     "app.post('/api/tender-dossier-item'",

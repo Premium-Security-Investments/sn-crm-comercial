@@ -10,9 +10,9 @@ import {
   classifySecurityDefiner,
   AGT002_F0B_INCIDENT_LANGUAGE,
   AGT002_F0B_ALLOWLIST,
-} from '../agt002-f0b-chat-query.js';
+} from '../verticales/licitaciones/agt002-f0b-chat-query.js';
 
-const MODULE_SPECIFIER = '../agt002-f0b-chat-query.js';
+const MODULE_SPECIFIER = '../verticales/licitaciones/agt002-f0b-chat-query.js';
 
 const MIGRATION_SQL = readFileSync(
   new URL('../supabase/migrations/092_agt002_f0b_chat_query_revoke.sql', import.meta.url),

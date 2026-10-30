@@ -5,7 +5,7 @@ import {
   AGT002_M1_RADAR_RELIABILITY_REASON_CATALOG,
   validateAgt002M1RadarReliabilityBundle,
   resolveAgt002M1RadarReliabilityPromotion,
-} from '../agt002-m1-radar-reliability-contract.js';
+} from '../verticales/licitaciones/agt002-m1-radar-reliability-contract.js';
 
 // FASE RED: este import falla hasta que exista `agt002-m1-radar-reliability-contract.js`
 // (FASE GREEN, ver docs/superpowers/plans/2026-09-24-agt002-m1-radar-reliability-contracts.md).

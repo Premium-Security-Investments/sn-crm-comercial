@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
-import { discoverTenderSemanticManifest, TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES } from '../tender-semantic-discovery.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
+import { discoverTenderSemanticManifest, TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES } from '../verticales/licitaciones/tender-semantic-discovery.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
 
 // RED (TDD) companion to tests/tender-semantic-discovery-local-invariants.test.mjs and
 // tests/agt002-post-bridge-observability.test.mjs: the real job f7f3dbcc symptom this fix targets

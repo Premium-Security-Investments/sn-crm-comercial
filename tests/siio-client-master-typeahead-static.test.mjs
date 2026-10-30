@@ -10,10 +10,25 @@ const read = (rel) => readFileSync(resolve(root, rel), 'utf8');
 const sha = (rel) => createHash('sha256').update(readFileSync(resolve(root, rel))).digest('hex');
 
 const FROZEN = {
-  'agt003-copilot-runtime.js': '5239702fa83820069aa83a5785cb5564c3f24686b628843d7a4d2847737fbf83',
-  'agt003-preflight-runtime.js': '48e761d6badba31ae8f15bf563df0be05d5180410c3c48a806bda955ccdc34af',
-  'agt002-workbench-runtime.js': 'ee1a0815f0954617370ee909e2ce33c679426e85e82f4a1bcea1bb9c59742d39',
-  'agt002-preview-runtime.js': 'd2834ae9df2e8146553e0a056949d0ded9c8a27094541976d7075c2c179072cb',
+  // Actualizado a propósito (2026-10-09): el runtime del copiloto envuelve el cliente del puente con la puerta única de modelos
+  // y, desde el Paso 2 (parte 3), acepta el modelo aprobado en la Plataforma de Agentes (opción `model`). Paso 3: pasa
+  // el clasificador de fallas (`classifyFailure`) a la puerta; cupos, engine y puente no cambian.
+  // Actualizado a propósito (2026-10-24): el copiloto comercial resuelve las entradas declaradas del
+  // catálogo de fuentes antes de llamar al modelo (`resolveSources`), igual que la Mesa. Cupos, motor y
+  // puente no cambian: la puerta de modelos, el cliente del puente, el modelo y los cupos siguen igual.
+  // Actualizado a propósito (2026-10-24): la vertical comercial pasó a verticales/comercial/ y el
+  // runtime sólo cambió sus rutas de importación. Cupos, motor, puente, modelo y puerta de
+  // modelos quedan exactamente como estaban.
+  'verticales/comercial/agt003-copilot-runtime.js': '7615d3e5d456858e675541879e65dd4a4f5e8caf6f458d075f648c1796c2dd4c',
+  'verticales/comercial/agt003-preflight-runtime.js': '48e761d6badba31ae8f15bf563df0be05d5180410c3c48a806bda955ccdc34af',
+  // Actualizado a propósito (2026-10-23): el drain de la Mesa resuelve las entradas declaradas del catálogo de
+  // fuentes antes de llamar al modelo (`resolveSources`). Cupos, motor y puente no cambian: la construcción del
+  // cliente del puente, el modelo, el timeout y el interruptor quedan exactamente como estaban.
+  // Actualizado a propósito (2026-10-25): la vertical de licitaciones pasó a verticales/licitaciones/.
+  // Los dos runtimes sólo cambiaron sus rutas de importación: cupos, motor, puente, modelo, timeout e
+  // interruptor quedan exactamente como estaban.
+  'verticales/licitaciones/agt002-workbench-runtime.js': '99cda7af5d44ac00c20a85393eca7e45f34fd62e4b39d7967f4fdcb26f15fef9',
+  'verticales/licitaciones/agt002-preview-runtime.js': 'ad4b2af766cdc5d4feccd6a660a1a4a9bedc185605d3d44af8542797097566ac',
   'ops/agt003-claude-bridge/run-server.mjs': '13c6ca09fcbc6f5db880fa3dfff4cea01430897728c9a8d6434afb235cc05bf1',
   'ops/agt003-claude-bridge/env.example': '168cb44d29fea92b6d3592a903d83ce9935837bfb13bdfd02cd9700baae86b0d',
   'ops/agt003-claude-bridge/agt003-bridge.service': '0847b3a05bcb751e0e8989d96ef2aeb7a447521f7a1c9a0213447a93a95fecfd',
@@ -120,5 +135,12 @@ test('UI #/new typeahead en Cliente/empresa rellena los 8 campos al elegir', () 
     assert.match(form, new RegExp(field));
   }
   assert.match(form, /setForm|client_id/);
-  assert.match(form, /customer_segment:\s*client\.customer_segment\s*\|\|\s*''/, 'seleccionar un cliente reemplaza el segmento previo incluso cuando el maestro está vacío');
+  // La intención no cambió: elegir un cliente REEMPLAZA el segmento anterior y nunca lo arrastra
+  // desde `prev`. Lo que cambió es que ahora hay dos orígenes (2026-10-29): un cliente del CRM trae
+  // su segmento o vacío, y uno de Avancys es `cliente_actual` por construcción —está allá porque se
+  // le factura—. Si alguna rama volviera a leer de `prev`, esto debe caer.
+  assert.match(form, /customer_segment: deAvancys \? 'cliente_actual' : \(client\.customer_segment \|\| ''\)/,
+    'seleccionar un cliente reemplaza el segmento previo incluso cuando el maestro está vacío');
+  assert.ok(!/customer_segment:\s*prev\.customer_segment/.test(form),
+    'el segmento nunca se arrastra del formulario anterior al elegir un cliente');
 });

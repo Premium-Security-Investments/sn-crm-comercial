@@ -17,14 +17,15 @@ function stageOf(processing: TenderProcessingStatus | null | undefined): Stage {
  * the authorization: documents download and the analysis starts on their own, so this block reports where that stands
  * (downloading, preparing, or what failed) instead of the retired legacy engine's controls. It starts nothing itself.
  */
-export function TenderPreAnalysisPanel({ documentsCount, processing = null, statusText = '', statusTone = 'status' }: {
+export function TenderPreAnalysisPanel({ documentsCount, processing = null, statusText = '', statusTone = 'status', onRetry, busy = false }: {
   documentsCount: number; processing?: TenderProcessingStatus | null; statusText?: string; statusTone?: 'status' | 'error';
+  onRetry?: () => void; busy?: boolean;
 }) {
   const stage = stageOf(processing);
   const hasDocuments = documentsCount > 0;
   const headline = stage.failed
     ? 'Se detuvo antes de empezar'
-    : stage.downloading ? 'Bajando los documentos de SECOP'
+    : stage.downloading ? 'Bajando los documentos de la fuente oficial'
       : stage.preparing ? 'Documentos listos: el análisis arranca en unos minutos'
         : 'Todavía no se ha hecho';
   return <section className="tender-pre-analysis" aria-label="Antes del análisis">
@@ -46,7 +47,10 @@ export function TenderPreAnalysisPanel({ documentsCount, processing = null, stat
       </li>
     </ol>
     {stage.failed && <div className="error" role="alert">
-      No se pudieron traer todos los documentos de SECOP{processing?.last_error_message ? ` (${processing.last_error_message})` : ''}. Pulse "Actualizar documentos" en el Resumen o avise a Licitaciones.
+      No se pudieron traer los documentos de la fuente oficial{processing?.last_error_message ? ` (${processing.last_error_message})` : ''}.
+      {onRetry
+        ? <> Pulse "Reintentar la descarga": se vuelven a buscar y, si llegan, el análisis arranca solo. <button type="button" disabled={busy} onClick={onRetry}>Reintentar la descarga</button></>
+        : ' Avise a Licitaciones.'}
     </div>}
     {!stage.downloading && !stage.preparing && !stage.failed && !hasDocuments
       && <p className="initial-report-meta">Si los documentos no aparecen en unos minutos, pulse "Actualizar documentos" en el Resumen.</p>}

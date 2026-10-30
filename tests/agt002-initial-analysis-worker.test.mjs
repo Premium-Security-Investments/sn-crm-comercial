@@ -7,7 +7,7 @@
 // is the RED signal below.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createAgt002InitialAnalysisWorker } from '../agt002-initial-analysis-worker.js';
+import { createAgt002InitialAnalysisWorker } from '../verticales/licitaciones/agt002-initial-analysis-worker.js';
 
 const JOB = Object.freeze({
   jobId: 'job-1', leaseId: 'lease-1', fenceVersion: 1,

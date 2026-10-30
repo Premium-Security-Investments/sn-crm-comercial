@@ -1,0 +1,339 @@
+import { randomUUID } from 'node:crypto';
+import { ACTIONS, requireAction } from '../../access-control.js';
+import { buildAgt003CopilotRequest } from './agt003-copilot-input.js';
+import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, copilotQuotaMessage } from './agt003-ai-quota.js';
+import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../../src/vigia/model-failures.js';
+import {
+  computeAgt003CopilotIdempotencyKey,
+  computeAgt003CopilotRetryKey,
+} from './agt003-copilot-persistence.js';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const FEEDBACK_RATINGS = new Set(['useful', 'needs_change', 'discarded']);
+const MAX_ATTEMPTS = 4;
+const SAFE_FAILURE_CODES = new Set([
+  'AGT003_CLAUDE_SESSION_LIMIT',
+  'AGT003_CLAUDE_LOGIN_REQUIRED',
+  'AGT003_CLAUDE_PROVIDER_ERROR',
+  'AGT003_CLAUDE_TRANSPORT_ERROR',
+  'AGT003_CLAUDE_TIMEOUT',
+  'AGT003_CLAUDE_CANCELLED',
+  'AGT003_CLAUDE_INVALID_RESPONSE',
+  'AGT003_CLAUDE_OUTPUT_TOO_LARGE',
+  'AGT003_CLAUDE_SCHEMA_TOO_LARGE',
+  'AGT003_COPILOT_TRANSPORT_ERROR',
+  'AGT003_COPILOT_INVALID_RESPONSE',
+  'AGT003_COPILOT_CANCELLED',
+]);
+// Rechazos del puente anteriores al turno del proveedor. No hubo ejecución que
+// registrar: no se persiste un run fallido, no consumen la cadena de retry ni
+// la cuota terminal, y el claim se libera para que el siguiente click pueda
+// reclamar la misma clave. Todo código fuera de esta lista sigue fallando
+// cerrado y se persiste como `COPILOT_UNAVAILABLE`.
+const RECOVERABLE_FAILURE_CODES = new Set([
+  'AGT003_BRIDGE_BUSY',
+  'AGT003_BRIDGE_AUTH_INVALID',
+]);
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function exactKeys(value, required, optional = []) {
+  if (!isRecord(value)) return false;
+  const allowed = new Set([...required, ...optional]);
+  const keys = Object.keys(value);
+  return required.every(key => Object.hasOwn(value, key))
+    && keys.every(key => allowed.has(key));
+}
+
+function publicError(message, status, code) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  return error;
+}
+
+function requireUuid(value, label) {
+  if (typeof value !== 'string' || value.trim() !== value || !UUID.test(value)) {
+    throw publicError(`${label} no es válido.`, 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  return value;
+}
+
+const CONTACT_CHANNELS = new Set(['email', 'whatsapp']);
+const MAX_COMMERCIAL_INTENT_LENGTH = 500;
+
+function parseGenerateBody(body) {
+  if (!exactKeys(body, ['opportunity_id', 'contact_channel'], ['commercial_intent'])) {
+    throw publicError('El cuerpo de generación Vig-IA debe incluir opportunity_id y contact_channel (canal).', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  if (!CONTACT_CHANNELS.has(body.contact_channel)) {
+    throw publicError('El contact_channel (canal) de generación Vig-IA no es válido.', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  if (body.commercial_intent !== undefined
+    && (typeof body.commercial_intent !== 'string' || body.commercial_intent.length > MAX_COMMERCIAL_INTENT_LENGTH)) {
+    throw publicError('El commercial_intent (intención comercial) de generación Vig-IA no es válido.', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  const trimmedIntent = typeof body.commercial_intent === 'string' ? body.commercial_intent.trim() : '';
+  return {
+    opportunityId: requireUuid(body.opportunity_id, 'La oportunidad'),
+    contactChannel: body.contact_channel,
+    commercialIntent: trimmedIntent || undefined,
+  };
+}
+
+function parseFeedbackBody(body) {
+  if (!exactKeys(body, ['run_id', 'opportunity_id', 'rating'], ['comment'])) {
+    throw publicError('El cuerpo de feedback Vig-IA contiene campos faltantes o inesperados.', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  if (!FEEDBACK_RATINGS.has(body.rating)) {
+    throw publicError('El rating de feedback Vig-IA no es válido.', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  if (body.comment !== undefined && body.comment !== null
+    && (typeof body.comment !== 'string' || body.comment.length > 2000)) {
+    throw publicError('El comentario de feedback Vig-IA no es válido.', 400, 'VIGIA_COPILOT_BAD_REQUEST');
+  }
+  return {
+    runId: requireUuid(body.run_id, 'La ejecución Vig-IA'),
+    opportunityId: requireUuid(body.opportunity_id, 'La oportunidad'),
+    rating: body.rating,
+    comment: body.comment ?? null,
+  };
+}
+
+function requireCommercialDraft(profile, resource) {
+  return requireAction(profile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, resource);
+}
+
+function resultPayload(run, reused) {
+  if (!run || run.status !== 'completed' || !isRecord(run.output)) {
+    throw publicError('La ejecución Vig-IA no está disponible.', 502, 'VIGIA_COPILOT_UNAVAILABLE');
+  }
+  return {
+    run_id: run.run_id,
+    status: 'completed',
+    reused,
+    output: run.output,
+    human_review_required: true,
+  };
+}
+
+function claimError(status, scope = 'team', quota = null) {
+  if (status === 'in_progress') return publicError('Vig-IA ya está procesando este snapshot.', 409, 'VIGIA_COPILOT_IN_PROGRESS');
+  if (status === 'quota' && scope === 'actor') {
+    return publicError(copilotQuotaMessage('actor', quota?.actor?.per || 'day'), 429, 'VIGIA_COPILOT_PERSONAL_QUOTA');
+  }
+  if (status === 'quota') return publicError(copilotQuotaMessage('team', quota?.team?.per || 'day'), 429, 'VIGIA_COPILOT_QUOTA');
+  if (status === 'saturated') return publicError('Vig-IA no tiene capacidad disponible.', 503, 'VIGIA_COPILOT_SATURATED');
+  return publicError('No fue posible reservar la ejecución Vig-IA.', 503, 'VIGIA_COPILOT_UNAVAILABLE');
+}
+
+function failureCode(error) {
+  const candidate = typeof error?.code === 'string' ? error.code.trim().toUpperCase() : '';
+  return SAFE_FAILURE_CODES.has(candidate) ? candidate : 'COPILOT_UNAVAILABLE';
+}
+
+function recoverableCode(error) {
+  const candidate = typeof error?.code === 'string' ? error.code.trim().toUpperCase() : '';
+  return RECOVERABLE_FAILURE_CODES.has(candidate) ? candidate : null;
+}
+
+// Ninguna de las dos ramas revela el detalle del puente: `BUSY` se presenta como
+// saturación transitoria y `AUTH_INVALID` (el puente no acepta la conexión del
+// CRM) como "sin conexión con el servicio de IA", sin secreto, cabecera firmada
+// ni mensaje upstream.
+function recoverablePublicError(code) {
+  if (code === 'AGT003_BRIDGE_BUSY') {
+    return publicError('Vig-IA no tiene capacidad disponible.', 503, 'VIGIA_COPILOT_SATURATED');
+  }
+  return publicError(agt003ModelFailureMessage(AGT003_MODEL_FAILURE.BRIDGE_UNAVAILABLE, 'copilot'), 503, 'VIGIA_COPILOT_NOT_CONFIGURED');
+}
+
+// Plan B "avisar" (Paso 3): mensaje en lenguaje común y distinto por categoría de falla; nunca cambia de modelo ni de
+// proveedor. Los códigos públicos (`VIGIA_COPILOT_SESSION_LIMIT`, `VIGIA_COPILOT_UNAVAILABLE`) no cambian.
+function providerPublicError(code, failureCategory) {
+  const category = classifyAgt003ModelFailure(failureCategory || code) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+  const message = agt003ModelFailureMessage(category, 'copilot');
+  if (category === AGT003_MODEL_FAILURE.SESSION_LIMIT) return publicError(message, 503, 'VIGIA_COPILOT_SESSION_LIMIT');
+  return publicError(message, 502, 'VIGIA_COPILOT_UNAVAILABLE');
+}
+
+function failureUsage(error, model) {
+  const usage = error?.usage;
+  if (isRecord(usage)
+    && typeof usage.provider === 'string' && usage.provider.trim()
+    && usage.model === model
+    && Number.isInteger(usage.input_tokens) && usage.input_tokens >= 0
+    && Number.isInteger(usage.output_tokens) && usage.output_tokens >= 0
+    && Object.hasOwn(usage, 'rate_limit')) {
+    return {
+      provider: usage.provider,
+      model,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      rate_limit: usage.rate_limit,
+    };
+  }
+  return { provider: 'agent_bridge', model, input_tokens: 0, output_tokens: 0, rate_limit: null };
+}
+
+function assertDependencies(dependencies) {
+  const required = [
+    'isConfigured', 'getConfig', 'resolveOpportunityResource', 'loadOpportunityContext',
+    'loadApprovedAssets', 'claimRun', 'findRunByKey', 'findRunById', 'createRuntime',
+    'recordRun', 'recordFailure', 'releaseClaim', 'recordFeedback',
+  ];
+  if (!isRecord(dependencies) || required.some(name => typeof dependencies[name] !== 'function')) {
+    throw new Error('Las dependencias de la API Vig-IA no están completas.');
+  }
+}
+
+export function createAgt003CopilotApi(dependencies) {
+  assertDependencies(dependencies);
+  const correlationId = typeof dependencies.correlationId === 'function'
+    ? dependencies.correlationId
+    : randomUUID;
+
+  return Object.freeze({
+    async generate({ profile, body }) {
+      const { opportunityId, contactChannel, commercialIntent } = parseGenerateBody(body);
+      const resource = await dependencies.resolveOpportunityResource(opportunityId, profile);
+      requireCommercialDraft(profile, resource);
+      if (!dependencies.isConfigured()) {
+        throw publicError('Vig-IA no está configurado.', 503, 'VIGIA_COPILOT_NOT_CONFIGURED');
+      }
+
+      // Configuración vigente de la plataforma (modelo, encendida/apagada, cupos del equipo y de la persona). Sin
+      // `resolvePolicy` (o si devuelve null) se conserva el comportamiento anterior: modelo y tope diario del entorno.
+      const policy = typeof dependencies.resolvePolicy === 'function' ? await dependencies.resolvePolicy({ profile }) : null;
+      const baseConfig = dependencies.getConfig();
+      const config = policy?.model ? { ...baseConfig, model: policy.model } : baseConfig;
+      if (policy && policy.enabled === false) {
+        if (typeof dependencies.recordRejection === 'function') {
+          try { await dependencies.recordRejection({ failureCode: AGT003_CAPABILITY_DISABLED_CODE, model: config.model, correlationId: correlationId() }); } catch { /* mejor esfuerzo */ }
+        }
+        throw publicError(AGT003_CAPABILITY_DISABLED_MESSAGE, 503, AGT003_CAPABILITY_DISABLED_CODE);
+      }
+      const [context, approvedAssets] = await Promise.all([
+        dependencies.loadOpportunityContext(opportunityId),
+        dependencies.loadApprovedAssets(),
+      ]);
+      if (!context || context.opportunity?.id !== opportunityId || !context.snapshotId) {
+        throw publicError('El contexto de la oportunidad no está disponible.', 503, 'VIGIA_COPILOT_CONTEXT_UNAVAILABLE');
+      }
+      const request = buildAgt003CopilotRequest({
+        opportunity: context.opportunity,
+        interactions: context.interactions || [],
+        approvedAssets,
+        correlationId: correlationId(),
+        snapshotId: context.snapshotId,
+        contactChannel,
+        commercialIntent,
+      });
+      const intentPresent = Object.hasOwn(request, 'commercial_intent');
+      const { commercial_intent: _commercialIntent, ...persistableRequest } = request;
+      console.info('agt003_copilot_generate', { event: 'agt003_copilot_generate', contact_channel: request.contact_channel, intent_present: intentPresent });
+      let idempotencyKey = computeAgt003CopilotIdempotencyKey({
+        snapshotId: request.snapshot_id,
+        policyVersion: config.policyVersion,
+        model: config.model,
+        contactChannel: request.contact_channel,
+        intentPresent,
+      });
+      let claim;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+        claim = await dependencies.claimRun({
+          idempotencyKey,
+          dailyMaxRuns: config.dailyMaxRuns,
+          maxConcurrent: config.maxConcurrent,
+          leaseSeconds: config.leaseSeconds,
+          ...(policy?.quota ? { actorId: profile.id, quota: policy.quota } : {}),
+        });
+        if (claim.status !== 'existing') break;
+
+        const existing = await dependencies.findRunByKey(idempotencyKey);
+        if (existing?.status === 'completed') return resultPayload(existing, true);
+        if (existing?.status !== 'failed' || typeof existing.run_id !== 'string' || !UUID.test(existing.run_id)) {
+          throw publicError('La ejecución Vig-IA no está disponible.', 502, 'VIGIA_COPILOT_UNAVAILABLE');
+        }
+        if (attempt === MAX_ATTEMPTS - 1) {
+          throw publicError('Vig-IA agotó el límite seguro de reintentos para este contexto.', 503, 'VIGIA_COPILOT_RETRY_LIMIT');
+        }
+        idempotencyKey = computeAgt003CopilotRetryKey({ previousKey: idempotencyKey, failedRunId: existing.run_id });
+      }
+      if (claim?.status !== 'claimed') {
+        const rejection = claimError(claim?.status, claim?.scope, policy?.quota);
+        // Puerta única de modelos: los cupos (equipo o persona) y la saturación quedan como `rejected`, sin llamar al modelo.
+        if (typeof dependencies.recordRejection === 'function'
+          && ['VIGIA_COPILOT_QUOTA', 'VIGIA_COPILOT_PERSONAL_QUOTA', 'VIGIA_COPILOT_SATURATED'].includes(rejection.code)) {
+          try { await dependencies.recordRejection({ failureCode: rejection.code, model: config.model, correlationId: idempotencyKey }); } catch { /* mejor esfuerzo */ }
+        }
+        throw rejection;
+      }
+
+      let terminalRecorded = false;
+      try {
+        const generated = await dependencies.createRuntime({ model: config.model }).draft(request, { idempotencyKey });
+        const run = await dependencies.recordRun({
+          opportunityId,
+          actorId: profile.id,
+          claimId: claim.claim_id,
+          idempotencyKey,
+          request: persistableRequest,
+          response: generated.response,
+          usage: generated.usage,
+        });
+        terminalRecorded = true;
+        return resultPayload(run, false);
+      } catch (error) {
+        // Recuperable: se sale sin `recordFailure`, de modo que `terminalRecorded`
+        // sigue en false y el `finally` libera exactamente este claim.
+        const recoverable = recoverableCode(error);
+        if (recoverable) throw recoverablePublicError(recoverable);
+        const code = failureCode(error);
+        try {
+          await dependencies.recordFailure({
+            opportunityId,
+            actorId: profile.id,
+            claimId: claim.claim_id,
+            idempotencyKey,
+            request: persistableRequest,
+            policyVersion: config.policyVersion,
+            model: config.model,
+            usage: failureUsage(error, config.model),
+            failureCode: code,
+          });
+          terminalRecorded = true;
+        } catch {
+          // The finally block releases a claim when no terminal row could be recorded.
+        }
+        throw providerPublicError(code, error?.failureCategory);
+      } finally {
+        if (!terminalRecorded) {
+          try { await dependencies.releaseClaim({ idempotencyKey, claimId: claim.claim_id }); } catch { /* lease expiry is the final fallback */ }
+        }
+      }
+    },
+
+    async feedback({ profile, body }) {
+      const parsed = parseFeedbackBody(body);
+      const run = await dependencies.findRunById(parsed.runId);
+      if (!run || run.opportunity_id !== parsed.opportunityId) {
+        throw publicError('La ejecución Vig-IA no existe.', 404, 'VIGIA_COPILOT_RUN_NOT_FOUND');
+      }
+      if (run.status !== 'completed' || !isRecord(run.output)) {
+        throw publicError('Sólo una ejecución completada admite feedback.', 409, 'VIGIA_COPILOT_RUN_NOT_COMPLETED');
+      }
+      const resource = await dependencies.resolveOpportunityResource(parsed.opportunityId, profile);
+      requireCommercialDraft(profile, resource);
+      return dependencies.recordFeedback({
+        runId: parsed.runId,
+        opportunityId: parsed.opportunityId,
+        actorId: profile.id,
+        rating: parsed.rating,
+        comment: parsed.comment,
+      });
+    },
+  });
+}

@@ -24,12 +24,12 @@ import {
   buildAgt002PreGoAnalysis,
   validateAgt002PreGoAnalysis,
   AGT002_PRE_GO_CROSS_STATES,
-} from '../agt002-pre-go-analysis.js';
+} from '../verticales/licitaciones/agt002-pre-go-analysis.js';
 import {
   buildAgt002PreGoSectionProposals,
   buildAgt002SectionProposalOverlayIndex,
-} from '../agt002-pre-go-section-proposals.js';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-pre-go-section-proposals.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY_JSON = resolve(PROJECT_ROOT, 'docs/governance/registro/manizales-sa-24-2026.registry.json');

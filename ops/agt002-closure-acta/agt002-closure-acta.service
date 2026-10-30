@@ -1,0 +1,34 @@
+[Unit]
+Description=AGT-002 closure minutes (acta de cierre): weekly safety net; the draft is normally written at closing time
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Misma identidad y mismo archivo de entorno que el scheduler de la Mesa: este servicio
+# sólo llama a un endpoint con el secreto compartido. No conoce la configuración del
+# modelo ni toca la base de datos, así que no necesita las credenciales de Supabase.
+User=agt002-workbench-scheduler
+Group=agt002-workbench-scheduler
+EnvironmentFile=/etc/agt002-workbench-scheduler/env
+ExecStart=/opt/agt002-workbench-scheduler/run-agt002-closure-acta.sh
+TimeoutStartSec=310s
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

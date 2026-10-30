@@ -3,7 +3,7 @@
 // hash to put in an INITIAL A_PLUS_B manifest (profile_snapshot_id / profile_snapshot_hash). Idempotent by hash.
 // Usage: node scripts/agt002-company-profile-freeze.mjs --actor <psi_sales_profiles.id>
 import { createClient } from '@supabase/supabase-js';
-import { freezeAgt002CompanyProfileSnapshot } from '../agt002-company-profile-snapshot.js';
+import { freezeAgt002CompanyProfileSnapshot } from '../verticales/licitaciones/agt002-company-profile-snapshot.js';
 
 const index = process.argv.indexOf('--actor');
 const actorProfileId = index > 0 ? process.argv[index + 1] : '';

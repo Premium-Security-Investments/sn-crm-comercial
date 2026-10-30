@@ -15,7 +15,7 @@ import {
   evaluateAgt002LegalSourceStatus,
   buildAgt002LegalCitation,
   validateAgt002LegalConclusion,
-} from '../agt002-legal-corpus.js';
+} from '../verticales/licitaciones/agt002-legal-corpus.js';
 
 function makeSource(overrides = {}) {
   return {

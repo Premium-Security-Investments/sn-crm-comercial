@@ -11,12 +11,10 @@ assert.match(executive, /deriveSiioExecutiveSnapshot/, 'Dashboard must derive a 
 assert.match(executive, /Resumen ejecutivo/, 'Dashboard must expose a permanent executive summary');
 assert.match(executive, /Periodo financiero/, 'Dashboard must label the financial period');
 assert.match(executive, /Nómina agregada/, 'Dashboard must show aggregate payroll only');
-assert.match(executive, /Vigencia de fuentes/, 'Dashboard must expose source freshness');
-assert.match(executive, /Recomendaciones principales/, 'Dashboard must show derived management recommendations');
+assert.match(executive, /Alertas automáticas/, 'Dashboard must show derived management alerts, labelled as fixed rules');
 assert.match(executive, /navigateSiioView\('seguimiento'/, 'Actionable executive controls must drill into tracking');
-assert.match(executive, /navigateSiioView\('inteligencia'/, 'Source controls must drill into intelligence');
 assert.equal((executive.match(/financialRows\.map/g) || []).length, 1, 'Each financial KPI must have one presentation, not cards plus a duplicate detail panel');
-assert.match(executive, /Alertas y riesgos<\/span><strong>\{count\('riesgos'\)\}<\/strong>/, 'The risk drill-down count must exactly equal its tracking filter');
+assert.match(executive, /useFollowups\(\)/, 'The Torre reads the follow-up register (Seguimiento gerencial) instead of the legacy tracking counters');
 assert.match(executive, /<div className="siio-management-signal-static"><span>Alertas de nómina agregadas<\/span><strong>\{payrollTotals\.alerts\}<\/strong><\/div>/, 'Payroll alerts must be a separate, non-clickable aggregate indicator');
 assert.equal((executive.match(/payrollTotals\.alerts/g) || []).length, 1, 'The aggregate payroll alert metric must not be duplicated');
 assert.match(tracking, /deriveTrackingItems/, 'Tracking must derive deduplicated records and decisions');
@@ -27,7 +25,7 @@ assert.match(tracking, /Histórico/, 'Tracking must label terminal items as hist
 assert.match(tracking, /Vigencia no confirmada/, 'Tracking must label undated non-terminal items as unconfirmed');
 assert.match(tracking, /activityState/, 'Tracking badges must be driven by the derived activity state');
 assert.match(dashboard, /SiioExecutiveView/, 'SIIO dashboard must compose the extracted executive view');
-assert.match(dashboard, /SiioManagementTrackingView/, 'SIIO dashboard must compose the extracted tracking view');
+assert.match(dashboard, /SiioFollowupsView/, 'SIIO dashboard must compose the follow-up view');
 assert.doesNotMatch(executive, /payroll.*cedula|nomina.*cedula/i, 'Dashboard must never render payroll IDs');
 assert.doesNotMatch(executive, /salary|salario individual/i, 'Dashboard must never render individual salaries');
 assert.match(executive, /siio-preliminary-notice/, 'Dashboard must expose a distinct preliminary notice element');
@@ -44,7 +42,7 @@ assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.siio-payroll-table\{disp
 assert.match(styles, /\.siio-payroll-cards\{display:none\}/, 'Payroll cards must be hidden by default on desktop');
 assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.siio-payroll-cards\{display:grid[^}]*\}/, 'Mobile must show the payroll cards');
 
-assert.match(executive, /const count = \(kind: SiioTrackingKind\) => trackingItems\.filter\(item => item\.kind === kind && item\.activityState === 'active'\)\.length;/, 'Management-attention counters must count only active items, never unconfirmed or historical ones');
+assert.match(executive, /openFollowups\.filter\(item => isOverdue\(item, today\)\)/, 'Overdue counts come only from open follow-ups');
 
 assert.match(executive, /siio-payroll-total-card/, 'Mobile payroll cards must retain the hidden desktop total via a dedicated total card');
 const totalCard = executive.match(/<article className="siio-payroll-card siio-payroll-total-card">[\s\S]*?<\/article>/)?.[0] || '';

@@ -19,6 +19,12 @@ a historial porque quedaron obsoletos (proyecto de pliego, anexo técnico o form
 automático y su resultado, y lo que falló o requiere revisión humana. Cada licitación se identifica por **entidad y
 valor**, con el enlace a la oportunidad en el CRM. Sólo hay correo si hubo novedad.
 
+Hay una excepción, y es el único aviso de una oportunidad **no activa**: si un proceso que se **descartó** publica una
+fase nueva con un cierre **posterior** al que se usó para decidir y que todavía está por venir, el correo lo dice una
+vez (clave `reopen:…`). Es sólo el aviso: la oportunidad sigue descartada, no se bajan documentos y no se reanaliza
+nada. Lo pidió Juan el 2026-10-22 por `SME-LP-163-2026`, que se descartó contra un cierre del 8-sep cuando la fase de
+oferta, publicada el 7-sep en otro aviso, cerraba el 22-sep.
+
 ## Horario (hora Bogotá, America/Bogota)
 
 | Revisión del CRM (`agt002-phase-change-review.timer`) | Envío de Hermes |
@@ -55,7 +61,7 @@ no escribe nada.
   "generated_day_bogota": "2026-10-13",
   "slot": "09:00",
   "sender": "juanbotero@premiumsecurity.ai",
-  "item_keys": ["docs:…", "link:…"],
+  "item_keys": ["reopen:…", "docs:…", "link:…"],
   "messages": [
     {
       "id": "64 caracteres hexadecimales (clave de idempotencia)",

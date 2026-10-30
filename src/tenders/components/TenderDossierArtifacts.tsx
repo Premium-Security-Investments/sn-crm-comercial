@@ -64,30 +64,32 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
   };
 
   return <section className="document-analysis-card tender-dossier-section">
-    <div className="tender-dossier-section-head"><div><small>Documentos del expediente</small><h3>Versiones y aprobación humana</h3></div><span className="badge badge-neutral">{artifacts.length} documentos</span></div>
+    <div className="tender-dossier-section-head"><div><small>Documentos de la oferta</small><h3>Borradores y aprobación</h3></div><span className="badge badge-neutral">{artifacts.filter(artifact => artifact.review_status === 'aprobado').length} de {artifacts.length} aprobados</span></div>
     {error && <div className="notice" role="alert">{error}</div>}
     <div className="timeline tender-dossier-list">
       {artifacts.map(artifact => {
         const draft = draftFor(artifact);
         const disabled = busyId === artifact.id;
-        return <article className="card tender-dossier-artifact" key={artifact.id}>
-          <div className="tender-card-kickers">
-            <TenderStatusBadge label={artifact.review_status === 'aprobado' ? 'Aprobado' : artifact.review_status === 'rechazado' ? 'Rechazado' : 'Pendiente de revisión'} tone={REVIEW_TONES[artifact.review_status]} />
-            {artifact.required && <TenderStatusBadge label="Obligatorio" tone="neutral" />}
-            <TenderStatusBadge label={`v${artifact.current_version?.version ?? 0}`} tone="neutral" />
-          </div>
-          <h3>{artifact.title}</h3>
+        // Fila compacta (estado, documento, versión); se abre para escribir o revisar la versión.
+        return <details className="card tender-dossier-artifact tender-dossier-row" key={artifact.id}>
+          <summary className="tender-dossier-row-summary">
+            <span className="tender-dossier-row-status"><TenderStatusBadge label={artifact.review_status === 'aprobado' ? 'Aprobado' : artifact.review_status === 'rechazado' ? 'Rechazado' : artifact.current_version ? 'Por revisar' : 'Sin borrador'} tone={REVIEW_TONES[artifact.review_status]} /></span>
+            <span className="tender-dossier-row-title"><strong>{artifact.title}</strong>{artifact.required && <span className="tender-dossier-row-required">Obligatorio</span>}</span>
+            <span className="tender-dossier-row-owner">{artifact.current_version ? `Versión ${artifact.current_version.version}` : 'Sin versión'}</span>
+          </summary>
+          <div className="tender-dossier-row-body">
           <p className="muted">{artifact.version_count ? `${artifact.version_count} versión(es) registradas` : 'Sin versión registrada'}</p>
           {artifact.current_version?.content_text && <pre className="artifact-preview tender-dossier-preview">{artifact.current_version.content_text}</pre>}
 
           <label className="tender-dossier-field"><span>Nueva versión</span><textarea value={draft.content} disabled={disabled} onChange={event => setDraft(artifact, { content: event.target.value })} placeholder="Contenido verificable del documento" /></label>
-          <div className="row-actions"><button type="button" disabled={disabled || !draft.content.trim()} onClick={() => void saveVersion(artifact)}>Guardar nueva versión</button></div>
+          <div className="row-actions"><button type="button" disabled={disabled || !draft.content.trim()} title={draft.content.trim() ? undefined : 'Escriba el contenido para poder guardarlo'} onClick={() => void saveVersion(artifact)}>Guardar nueva versión</button></div>
 
           {canApprove && artifact.current_version && <div className="tender-dossier-review">
             <label className="tender-dossier-field"><span>Comentario de revisión</span><textarea value={draft.comment} disabled={disabled} onChange={event => setDraft(artifact, { comment: event.target.value })} placeholder="Obligatorio al rechazar; opcional al aprobar" /></label>
             <div className="row-actions"><button type="button" className="secondary" disabled={disabled} onClick={() => void review(artifact, 'aprobado')}>Aprobar versión vigente</button><button type="button" className="danger" disabled={disabled || !draft.comment.trim()} onClick={() => void review(artifact, 'rechazado')}>Rechazar versión vigente</button></div>
           </div>}
-        </article>;
+          </div>
+        </details>;
       })}
       {!artifacts.length && <p className="muted">El expediente todavía no tiene documentos.</p>}
     </div>

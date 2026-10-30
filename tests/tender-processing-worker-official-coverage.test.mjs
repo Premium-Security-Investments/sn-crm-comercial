@@ -27,8 +27,8 @@
 // Ejecutar: node tests/tender-processing-worker-official-coverage.test.mjs
 
 import { strict as assert } from 'node:assert';
-import { createTenderProcessingWorker } from '../tender-processing-worker.js';
-import { isCriticalTenderDocument } from '../tender-critical-documents.js';
+import { createTenderProcessingWorker } from '../verticales/licitaciones/tender-processing-worker.js';
+import { isCriticalTenderDocument } from '../verticales/licitaciones/tender-critical-documents.js';
 
 const OMITTED_REASON = 'official_document_omitted_by_selection_cap';
 const OMITTED_ERROR_CODE = 'TENDER_DOC_COVERAGE_OMITTED';

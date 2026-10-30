@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
-import { AGT002_POST_BRIDGE_ERROR_CODES } from '../agt002-post-bridge-observability.js';
+import { createAgt002ReanalysisExecutor } from '../verticales/licitaciones/agt002-reanalysis-executor.js';
+import { AGT002_POST_BRIDGE_ERROR_CODES } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
-import { computeAgt002GovernedWorksetIdempotencyKey } from '../agt002-governed-document-workset-api.js';
-import { computeAgt002WorksetSelectionHash, freezeAgt002WorksetEvidence } from '../agt002-governed-document-worksets.js';
-import { classifyAgt002ReanalysisWorkerError } from '../agt002-reanalysis-worker.js';
-import { computeAgt002CheckpointGenerationRecoveryKey } from '../agt002-checkpoint-generation-recovery.js';
+import { computeAgt002GovernedWorksetIdempotencyKey } from '../verticales/licitaciones/agt002-governed-document-workset-api.js';
+import { computeAgt002WorksetSelectionHash, freezeAgt002WorksetEvidence } from '../verticales/licitaciones/agt002-governed-document-worksets.js';
+import { classifyAgt002ReanalysisWorkerError } from '../verticales/licitaciones/agt002-reanalysis-worker.js';
+import { computeAgt002CheckpointGenerationRecoveryKey } from '../verticales/licitaciones/agt002-checkpoint-generation-recovery.js';
 
 function sha256Hex(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex');

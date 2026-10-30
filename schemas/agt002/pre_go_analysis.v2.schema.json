@@ -782,7 +782,16 @@
             "OBSERVATIONS",
             "ADDENDA",
             "SUBMISSION",
-            "OTHER"
+            "OTHER",
+            "PUBLICATION",
+            "PROJECT_OBSERVATIONS",
+            "RISK_HEARING",
+            "OBSERVATION_RESPONSES",
+            "SITE_VISIT",
+            "EVALUATION_REPORT",
+            "EVALUATION_OBSERVATIONS",
+            "AWARD",
+            "CONTRACT_SIGNING"
           ]
         },
         "value": {
@@ -813,6 +822,11 @@
             "CLOSED",
             "UNKNOWN"
           ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         }
       }
     },

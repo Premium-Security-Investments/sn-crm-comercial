@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { AGT003_PREFLIGHT_POLICY, createAgt003PreflightEngine } from '../agt003-preflight-engine.js';
+import { AGT003_PREFLIGHT_POLICY, createAgt003PreflightEngine } from '../verticales/comercial/agt003-preflight-engine.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const request = JSON.parse(readFileSync(path.join(root, 'contracts/agents/AGT-003/v2-draft/fixtures/valid-opportunity-preflight-request.json'), 'utf8'));

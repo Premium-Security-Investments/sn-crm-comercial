@@ -36,6 +36,58 @@ export function tenderFitReasonDetails(fit?: TenderFitProjection | null): string
   return details;
 }
 
+// Motivo del encaje en lenguaje de negocio para las tarjetas: el `detail` de la política es técnico (montos crudos,
+// familia, piso, supuestos) y sigue intacto para el Top 5 y la trazabilidad. `null` = el motivo no aporta en la tarjeta.
+const FIT_PLAIN_BY_CODE: Record<string, string | null> = {
+  servicio_hibrida: 'Vigilancia con seguridad electrónica',
+  servicio_electronica: 'Seguridad electrónica',
+  servicio_fisica: 'Vigilancia física',
+  servicio_suministro: 'Suministro o instalación de seguridad electrónica',
+  servicio_ambiguo: 'Servicio poco claro: confirmar si es vigilancia',
+  servicio_fuera_de_alcance: 'Servicio fuera de lo que ofrecemos',
+  valor_ausente: 'Sin valor publicado',
+  valor_bajo_piso: 'Valor por debajo del mínimo para este servicio',
+  valor_banda_1: null, valor_banda_2: null, valor_banda_3: null, valor_banda_4: null,
+  capacidad_financiera_por_validar: 'Valor alto: confirmar capacidad financiera',
+  endeudamiento_por_validar: 'Exige un endeudamiento más bajo que el nuestro',
+  experiencia_por_validar: 'Exige más experiencia de la que acreditamos',
+  territorio_ciudad_foco_alta: 'Ciudad prioritaria',
+  territorio_ciudad_foco_media: 'Ciudad de interés',
+  territorio_departamento_foco: 'Departamento de interés',
+  territorio_fuera_de_foco: 'Fuera de nuestras zonas',
+  territorio_indeterminado: 'Sin ciudad clara',
+  cobertura_por_validar: 'Cobertura nacional: confirmar sedes',
+  plazo_ausente: 'Sin fecha de cierre clara',
+  plazo_vencido: 'Cierre vencido',
+  plazo_insuficiente: 'Poco tiempo para preparar la oferta',
+  plazo_disponible: null,
+};
+
+export function tenderFitPlainReasons(fit?: TenderFitProjection | null, limit = 2): string[] {
+  if (!fit) return ['Sin datos de encaje: no fue posible calcular el fit del proceso'];
+  // Misma selección que tenderFitReasonDetails (brechas si está por validar; prioridad de impacto); sólo cambia el texto.
+  const pool: Array<{ code: string; detail?: string; impact_priority?: number }> = fit.band === 'por_validar'
+    ? (fit.data_gaps || []).map(gap => ({ code: gap.gap_id, detail: gap.detail, impact_priority: gap.impact_priority }))
+    : [...(fit.reasons || [])];
+  pool.sort(compareByImpactPriority);
+  const plain: string[] = [];
+  for (const item of pool) {
+    const mapped = Object.prototype.hasOwnProperty.call(FIT_PLAIN_BY_CODE, item.code) ? FIT_PLAIN_BY_CODE[item.code] : item.detail?.trim();
+    if (mapped && !plain.includes(mapped)) plain.push(mapped);
+    if (plain.length === limit) break;
+  }
+  return plain;
+}
+
+// Objetos publicados en MAYÚSCULAS: se muestran en tipo oración para que la tarjeta se pueda leer.
+export function readableTenderTitle(value?: string | null): string {
+  const text = String(value || '').trim();
+  const letters = text.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g, '');
+  if (!letters || letters.replace(/[^A-ZÁÉÍÓÚÑ]/g, '').length / letters.length < 0.7) return text;
+  const lower = text.toLocaleLowerCase('es-CO');
+  return lower.charAt(0).toLocaleUpperCase('es-CO') + lower.slice(1);
+}
+
 export const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
 
 export const TENDER_SN_REGIONS: Array<{ key: TenderRegionKey; label: string; aliases: string[] }> = [

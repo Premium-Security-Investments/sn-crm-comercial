@@ -4,7 +4,7 @@ import { api } from '../apiClient';
 import type { LeadAnalysisOutput } from './lead-analysis.js';
 
 type LeadAnalysis = { id: string; status: string; website_url: string | null; website_status: string | null; output: LeadAnalysisOutput; usage: { cost_usd_estimate?: number } | null; created_at: string; message_event?: { action: 'used' | 'dismissed'; created_at: string } | null };
-type LeadAnalysisState = { available: boolean; analysis: LeadAnalysis | null; profile_changed?: boolean; used?: number; max?: number };
+type LeadAnalysisState = { available: boolean; analysis: LeadAnalysis | null; profile_changed?: boolean; used?: number; max?: number; period?: 'day' | 'month' };
 
 const WEBSITE_NOTE: Record<string, string> = {
   leida: 'Se leyó la página web del cliente.',
@@ -62,7 +62,7 @@ export function LeadAnalysisPanel({ opportunityId, profile, canRun, showCost, on
   return <section className="panel lead-analysis-panel" aria-label="Análisis profundo">
     <header>
       <div><span className="eyebrow">Premio · Vig-IA Comercial</span><h2>Análisis profundo del cliente</h2></div>
-      {quotaLeft !== null && <small className="lead-analysis-quota">Quedan {quotaLeft} de {state.max} este mes</small>}
+      {quotaLeft !== null && <small className="lead-analysis-quota">Quedan {quotaLeft} de {state.max} {state.period === 'day' ? 'hoy' : 'este mes'}</small>}
     </header>
     {!a && !profile.complete && <p className="lead-analysis-teaser">Complete el perfil del cliente ({profile.done} de {profile.total}) y gane un análisis profundo con IA: qué hace la empresa, riesgos de su sector, qué servicio le encaja y un mensaje listo para revisar.</p>}
     {!a && profile.complete && <p className="lead-analysis-teaser is-won"><strong>¡Ganó su análisis profundo!</strong> Vig-IA lee la página web del cliente y su ficha, y le prepara un informe de una página.</p>}

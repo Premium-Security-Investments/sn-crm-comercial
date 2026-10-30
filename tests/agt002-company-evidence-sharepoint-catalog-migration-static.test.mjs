@@ -10,8 +10,8 @@
 // is proven against a real Postgres in the PGlite integration test alongside this one.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { validateAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { validateAgt002CompanyEvidenceInventorySnapshot } from '../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js';
 
 const migration = readFileSync(
   new URL('../supabase/migrations/080_agt002_company_evidence_sharepoint_catalog.sql', import.meta.url), 'utf8',

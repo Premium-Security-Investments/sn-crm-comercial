@@ -1,4 +1,7 @@
 import type { SiioFinancialMetric, SiioManagementInsight, SiioPayrollAggregate } from '../siioExecutive';
+import type { SiioOperationsMetric } from './operationsSummary';
+import type { SiioRevenueLine } from './revenueByClient';
+import type { SiioProgramacionHoras } from './horasPorCliente';
 
 export const SIIO_VIEWS = ['resumen', 'seguimiento', 'inteligencia', 'agentes'] as const;
 export type SiioView = typeof SIIO_VIEWS[number];
@@ -22,4 +25,28 @@ export type SiioRecommendation = SiioManagementInsight & { sourceIds: string[]; 
 export type SiioTrackingActivityState = 'active' | 'history' | 'unconfirmed';
 export type SiioTrackingItem = { id: string; kind: Exclude<SiioTrackingKind, 'todos'>; title: string; owner: string | null; status: string; semaphore: string; nextAction: string | null; frontId: string | null; sourceIds: string[]; dueDate: string | null; activityState: SiioTrackingActivityState };
 export type SiioCurrentProfile = { role: string; full_name?: string | null };
-export type SiioBootstrapPayload = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: SiioBoardSection[]; financialMetrics: SiioFinancialMetric[]; commercialSignals: unknown[]; payrollAggregates: SiioPayrollAggregate[]; strategicOpportunities: unknown[]; currentProfile: SiioCurrentProfile };
+export type SiioFinancialValidation = { rule: string; severity: 'bloqueante' | 'advertencia' | 'info'; ok: boolean; expected?: string | null; obtained?: string | null; difference?: number | null; detail: string };
+export type SiioFinancialImport = {
+  id: string;
+  file_name: string;
+  file_sha256: string;
+  file_size_bytes: number;
+  version_label?: string | null;
+  period_month: string;
+  cutoff_date: string;
+  import_type: 'cierre_mensual' | 'parcial_diario' | 'reproceso';
+  status: 'recibido' | 'con_errores' | 'listo_revision' | 'validado' | 'publicado' | 'reemplazado';
+  parser_version: string;
+  structure_signature: string;
+  structure_diff?: { baseline?: boolean; changed?: boolean; changes?: unknown[] };
+  import_summary?: { balance_sheets?: number; balance_lines?: number; metrics?: number; blocking_failures?: number; warnings?: number; private_sheets_excluded?: number };
+  uploaded_at: string;
+  validated_at?: string | null;
+  published_at?: string | null;
+  uploaded_by_name?: string | null;
+  validated_by_name?: string | null;
+  published_by_name?: string | null;
+  validated_by_uploader?: boolean;
+  validations: SiioFinancialValidation[];
+};
+export type SiioBootstrapPayload = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: SiioBoardSection[]; financialMetrics: SiioFinancialMetric[]; commercialSignals: unknown[]; payrollAggregates: SiioPayrollAggregate[]; strategicOpportunities: unknown[]; operationsMetrics?: SiioOperationsMetric[]; revenueLines?: SiioRevenueLine[]; programacionHoras?: SiioProgramacionHoras[]; currentProfile: SiioCurrentProfile };

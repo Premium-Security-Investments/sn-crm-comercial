@@ -18,7 +18,7 @@ import {
   evaluateTenderCompetibility,
   filterActiveTenderCompetibilityRows,
   requireTenderCompetibleForConversion,
-} from '../tender-competibility-policy.js';
+} from '../verticales/licitaciones/tender-competibility-policy.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -426,4 +426,131 @@ const especialConOfertasSinPlazo = baseTender({
 
 test('régimen especial con ofertas sin plazo ni CTO/proveedor clasifica como competible', () => {
   assert.equal(evaluateTenderCompetibility(especialConOfertasSinPlazo, { nowIso: NOW }).status, 'competible');
+});
+
+// Titular 2026-10-17: el proveedor llega "No Definido" y el contratista va en el título, así que
+// estas filas se escapaban. Se ocultan por estado Seleccionado o por publicación de hace más de
+// 30 días sin plazo; lo publicado en los últimos 30 días sigue visible. Contratación directa
+// exacta se oculta siempre.
+const OCT17 = '2026-10-17T13:00:00.000Z';
+
+const estatalUniCartagena = baseTender({
+  id: 'UC-IP-023-2026',
+  title: 'ESTATAL DE SEGURIDAD LTDA',
+  ref: 'UC-IP-023-2026',
+  deadline_at: null,
+  raw: {
+    modalidad_de_contratacion: 'Contratación régimen especial',
+    nombre_del_proveedor: 'No Definido',
+    estado_del_procedimiento: 'Publicado',
+    fecha_de_ultima_publicaci: '2026-07-17T00:00:00.000',
+  },
+});
+
+test('especial sin plazo, proveedor No Definido, publicado hace más de 30 días → no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(estatalUniCartagena, { nowIso: OCT17 }).status, 'no_competible');
+});
+
+const especialSeleccionadoReciente = baseTender({
+  id: 'SA-392-2026',
+  ref: 'SA-392-2026',
+  deadline_at: null,
+  raw: {
+    modalidad_de_contratacion: 'Contratación régimen especial',
+    nombre_del_proveedor: 'No Definido',
+    estado_del_procedimiento: 'Seleccionado',
+    fecha_de_ultima_publicaci: '2026-10-10T00:00:00.000',
+  },
+});
+
+test('especial sin plazo en estado Seleccionado, aunque sea reciente → no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(especialSeleccionadoReciente, { nowIso: OCT17 }).status, 'no_competible');
+});
+
+const especialPublicadoReciente = baseTender({
+  id: 'CONVOCATORIA-RECIENTE',
+  ref: 'CONVOCATORIA PUBLICA 030 DE 2026',
+  deadline_at: null,
+  raw: {
+    modalidad_de_contratacion: 'Contratación régimen especial',
+    nombre_del_proveedor: 'No Definido',
+    estado_del_procedimiento: 'Publicado',
+    fecha_de_publicacion_del: '2026-10-05T00:00:00.000',
+  },
+});
+
+test('especial sin plazo publicado en los últimos 30 días (convocatoria viva tipo SINCHI) → competible', () => {
+  assert.equal(evaluateTenderCompetibility(especialPublicadoReciente, { nowIso: OCT17 }).status, 'competible');
+});
+
+test('especial antiguo con plazo futuro verificable sigue competible', () => {
+  const conPlazo = { ...estatalUniCartagena, id: 'ESP-PLAZO', deadline_at: '2026-11-05T17:00:00.000Z' };
+  assert.equal(evaluateTenderCompetibility(conPlazo, { nowIso: OCT17 }).status, 'competible');
+});
+
+test('especial con ofertas antiguo y Seleccionado no cae en la regla exacta → competible', () => {
+  const conOfertas = { ...especialSeleccionadoReciente, id: 'ESP-CON-OFERTAS', raw: { ...especialSeleccionadoReciente.raw, modalidad_de_contratacion: 'Contratación régimen especial (con ofertas)' } };
+  assert.equal(evaluateTenderCompetibility(conOfertas, { nowIso: OCT17 }).status, 'competible');
+});
+
+const directaSeleccionada = baseTender({
+  id: 'SDM-CPS-3540-2026',
+  title: 'MAYRA YORELI BECERRA CARDENAS',
+  ref: 'SDM-CPS-3540-2026',
+  deadline_at: null,
+  raw: { modalidad_de_contratacion: 'Contratación directa', estado_del_procedimiento: 'Seleccionado' },
+});
+
+test('contratación directa exacta → no_competible y fuera del Radar activo', () => {
+  assert.equal(evaluateTenderCompetibility(directaSeleccionada, { nowIso: OCT17 }).status, 'no_competible');
+  assert.deepEqual(filterActiveTenderCompetibilityRows([directaSeleccionada], { nowIso: OCT17 }), []);
+});
+
+test('contratación directa (con ofertas) con plazo → competible', () => {
+  const conOfertas = { ...directaSeleccionada, id: 'CD-CON-OFERTAS', deadline_at: '2026-10-30T17:00:00.000Z', raw: { modalidad_de_contratacion: 'Contratación Directa (con ofertas)' } };
+  assert.equal(evaluateTenderCompetibility(conOfertas, { nowIso: OCT17 }).status, 'competible');
+});
+
+test('contratación directa convertida en oportunidad sigue visible', () => {
+  const convertida = { ...directaSeleccionada, id: 'CD-CONVERTIDA', internal_status: 'convertida_oportunidad' };
+  assert.equal(evaluateTenderCompetibility(convertida, { nowIso: OCT17 }).status, 'competible');
+});
+
+// ESU (decisión de Juan, 17-oct): sólo la convocatoria de aliados proveedores es competible;
+// el resto de publicaciones de ESU son asignaciones a aliados ya elegidos.
+const esuUnicaOferta = baseTender({
+  id: 'ESU-2026-144',
+  source: 'ESU Contratación',
+  title: 'Contrato de prestación de servicios para el apoyo a la gestión en los procesos y trámites presupuestales',
+  ref: '2026-144',
+  deadline_at: null,
+  raw: { numero: '2026-144', tipoProceso: 'Única Oferta', estado: 'Celebrado' },
+});
+
+test('ESU: publicación que no es convocatoria de aliados → no_competible', () => {
+  assert.equal(evaluateTenderCompetibility(esuUnicaOferta, { nowIso: OCT17 }).status, 'no_competible');
+  const spva = { ...esuUnicaOferta, id: 'ESU-2026-27', title: 'Adquisición de vehículos especiales (camioneta para patrullaje canino)', raw: { tipoProceso: 'SPVA', estado: 'Convocado' }, deadline_at: '2026-11-01T17:00:00.000Z' };
+  assert.equal(evaluateTenderCompetibility(spva, { nowIso: OCT17 }).status, 'no_competible');
+});
+
+test('ESU: convocatoria SPO del portal con plazo → competible', () => {
+  const spo = { ...esuUnicaOferta, id: 'ESU-SPO-2026-5', title: 'Selección de empresas comercializadoras e integradoras de sistemas integrales de seguridad', deadline_at: '2026-11-05T16:00:00.000Z', raw: { tipoProceso: 'SPO', estado: 'Convocado' } };
+  assert.equal(evaluateTenderCompetibility(spo, { nowIso: OCT17 }).status, 'competible');
+});
+
+test('ESU vía SECOP: "aliados proveedores" en régimen especial reciente → competible; vieja → no_competible', () => {
+  const reciente = { ...esuUnicaOferta, id: 'ESU-SECOP-ALIADOS', title: 'SELECCIONAR EMPRESAS COMO ALIADOS PROVEEDORES PARA LA FIRMA DE ACUERDOS MARCO CON LA ESU', raw: { modalidad_de_contratacion: 'Contratación régimen especial', estado_del_procedimiento: 'Publicado', fecha_de_publicacion_del: '2026-10-10T00:00:00.000' } };
+  assert.equal(evaluateTenderCompetibility(reciente, { nowIso: OCT17 }).status, 'competible');
+  const vieja = { ...reciente, id: 'ESU-SECOP-ALIADOS-VIEJA', raw: { ...reciente.raw, fecha_de_publicacion_del: '2026-09-01T00:00:00.000' } };
+  assert.equal(evaluateTenderCompetibility(vieja, { nowIso: OCT17 }).status, 'no_competible');
+});
+
+test('ESU convertida en oportunidad sigue visible', () => {
+  const convertida = { ...esuUnicaOferta, id: 'ESU-CONVERTIDA', internal_status: 'convertida_oportunidad' };
+  assert.equal(evaluateTenderCompetibility(convertida, { nowIso: OCT17 }).status, 'competible');
+});
+
+test('ESU: contrato "el ALIADO PROVEEDOR se obliga…" es asignación, no convocatoria → no_competible', () => {
+  const asignado = { ...esuUnicaOferta, id: 'ESU-ASIGNADO', title: 'El ALIADO PROVEEDOR se obliga con la ESU a la prestación integral de servicios de operación logística', raw: { modalidad_de_contratacion: 'Contratación régimen especial', estado_del_procedimiento: 'Publicado', fecha_de_publicacion_del: '2026-10-10T00:00:00.000' } };
+  assert.equal(evaluateTenderCompetibility(asignado, { nowIso: OCT17 }).status, 'no_competible');
 });

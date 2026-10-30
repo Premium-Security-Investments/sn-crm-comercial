@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { buildTenderSnapshotInput } from '../tender-analysis-foundation.js';
+import { buildTenderSnapshotInput } from '../verticales/licitaciones/tender-analysis-foundation.js';
 import {
   runAgt002FixedSnapshotReanalysis,
   sanitizeAgt002FixedSnapshotError,
-} from '../agt002-fixed-snapshot-reanalysis.js';
+} from '../verticales/licitaciones/agt002-fixed-snapshot-reanalysis.js';
 
 const ids = {
   opportunity: '54190e51-15fb-46af-b0aa-8f13461a3110',

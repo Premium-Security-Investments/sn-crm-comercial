@@ -9,8 +9,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
-import { createAgt002InitialAnalysisRuntime } from '../agt002-initial-analysis-runtime.js';
-import { completeAgt002InitialAnalysisJob } from '../agt002-initial-analysis-persistence.js';
+import { createAgt002InitialAnalysisRuntime } from '../verticales/licitaciones/agt002-initial-analysis-runtime.js';
+import { completeAgt002InitialAnalysisJob } from '../verticales/licitaciones/agt002-initial-analysis-persistence.js';
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 const MODEL = process.env.AGT002_SIM_MODEL || 'sonnet';

@@ -5,9 +5,9 @@ import test from 'node:test';
 import {
   deriveAgt002ManizalesManifestScope,
   deriveAgt002ManizalesUnresolvedManifestEntries,
-} from '../agt002-manizales-manifest-wiring.js';
-import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../agt002-manizales-manifest-source.js';
-import { presentCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
+} from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
+import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
+import { presentCurrentTenderAnalysis } from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 // AGT-002 V3 visibility defect: the canonical Manizales SA-24-2026 manifest_scope carries 25
 // atomized entries, 20 analyzable and 5 unresolved_visible — but nothing surfaced the identities

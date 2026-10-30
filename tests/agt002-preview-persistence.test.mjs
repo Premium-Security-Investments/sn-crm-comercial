@@ -1,12 +1,12 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
+import { buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
 import {
   assembleTenderSemanticManifest,
   buildTenderSemanticManifest,
   toAgt002RequirementManifest,
-} from '../tender-semantic-manifest.js';
+} from '../verticales/licitaciones/tender-semantic-manifest.js';
 import {
   appendAgt002AnalysisAttempt,
   claimAgt002PreviewRun,
@@ -15,9 +15,9 @@ import {
   findAgt002PreviewRun,
   registerAgt002PreviewAnalysis,
   releaseAgt002PreviewClaim,
-} from '../agt002-preview-persistence.js';
-import { computeAgt002IntegralV3CriticalOpenCount, projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
-import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
+} from '../verticales/licitaciones/agt002-preview-persistence.js';
+import { computeAgt002IntegralV3CriticalOpenCount, projectAgt002IntegralV3ToV2 } from '../verticales/licitaciones/agt002-v3-compatibility.js';
+import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 const ids = {
   opportunity: '22222222-2222-4222-8222-222222222222',
@@ -772,7 +772,7 @@ const semanticContext = envelopeValue => ({
   await assert.rejects(() => countAgt002PreviewRunsToday(quotaDatabase({ count: 1 }), { now: () => new Date('not-a-date') }), /reloj/i);
 }
 
-const source = readFileSync(new URL('../agt002-preview-persistence.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../verticales/licitaciones/agt002-preview-persistence.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|console\.log/i, 'persistence must never log or reference provider secrets');
 
 // ---------------------------------------------------------------------------

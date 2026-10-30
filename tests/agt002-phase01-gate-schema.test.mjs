@@ -10,7 +10,7 @@ import {
   AGT002_PHASE01_GATE_OUTCOMES,
   AGT002_PHASE01_GATE_TYPES,
   validateAgt002Phase01Schema,
-} from '../agt002-phase01-executable-controls.js';
+} from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 const SCHEMA_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

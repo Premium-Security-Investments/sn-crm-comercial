@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
+import { readAgt002InitialAnalysisStatus } from '../verticales/licitaciones/agt002-initial-analysis-status.js';
 
 function query(result, selects) {
   const chain = {};

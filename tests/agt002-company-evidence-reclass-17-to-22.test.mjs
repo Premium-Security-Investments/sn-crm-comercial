@@ -11,7 +11,7 @@ import {
   validateAgt002Reclass17To22RepositoryInputs,
   buildAgt002Reclass17To22DryRunReport,
   computeAgt002Reclass17To22Hash,
-} from '../agt002-company-evidence-reclass-17-to-22.js';
+} from '../verticales/licitaciones/agt002-company-evidence-reclass-17-to-22.js';
 
 // F2 read-only slice. This suite proves the module fails closed on the actual, incomplete
 // state of this repository (no 22-class target manifest, no matching approval record exist

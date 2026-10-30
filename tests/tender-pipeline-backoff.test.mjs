@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { classifyPipelineError, computeBackoffMs, MAX_ATTEMPTS } from '../tender-pipeline-backoff.js';
+import { classifyPipelineError, computeBackoffMs, MAX_ATTEMPTS } from '../verticales/licitaciones/tender-pipeline-backoff.js';
 
 // Clasificación de errores (spec §8.4).
 assert.equal(classifyPipelineError({ code: 'AGT002_CODEX_TIMEOUT' }), 'retryable');

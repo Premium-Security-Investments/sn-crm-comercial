@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createAgt002InitialAnalysisRuntime, hashAgt002InitialAnalysisOutput } from '../agt002-initial-analysis-runtime.js';
+import { createAgt002InitialAnalysisRuntime, hashAgt002InitialAnalysisOutput } from '../verticales/licitaciones/agt002-initial-analysis-runtime.js';
 
 const text = 'texto gobernado';
 const textHash = createHash('sha256').update(text).digest('hex');
@@ -163,7 +163,7 @@ test('an A_PLUS_B synthesis without a verifiable company profile fails closed be
   assert.equal(called, false);
 });
 
-import { planAgt002InitialMemberCalls } from '../agt002-initial-analysis-runtime.js';
+import { planAgt002InitialMemberCalls } from '../verticales/licitaciones/agt002-initial-analysis-runtime.js';
 
 test('member documents are planned into calls by size: big documents split into ordered parts, nothing truncated', () => {
   const big = Array.from({ length: 30 }, (_, i) => `línea ${i} ${'x'.repeat(90)}`).join('\n');

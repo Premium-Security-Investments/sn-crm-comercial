@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { getAgt002WorkbenchApi } from '../agt002-workbench-api.js';
-import { buildAgt002WorkbenchInitialReference } from '../agt002-workbench-context.js';
+import { getAgt002WorkbenchApi } from '../verticales/licitaciones/agt002-workbench-api.js';
+import { buildAgt002WorkbenchInitialReference } from '../verticales/licitaciones/agt002-workbench-context.js';
 import {
   getLatestCanonicalAgt002AnalysisRun,
   getOrCreateAgt002WorkbenchThread,
-} from '../agt002-workbench-persistence.js';
+} from '../verticales/licitaciones/agt002-workbench-persistence.js';
 
 // Arranque de la Mesa post-GO: un GET habilitado debe crear/obtener el hilo de forma
 // idempotente y derivar en el servidor la referencia canónica inicial, de modo que un

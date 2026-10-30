@@ -1,4 +1,4 @@
-import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -48,6 +48,16 @@ export async function enterTrackingFromRadar<T = Record<string, unknown>>(reques
   });
 }
 
+/** Sacar de Seguimiento: vuelve al Radar como "nueva" (RPC 058: en_revision → nueva, evento returned_to_radar). */
+export async function returnTrackingToRadar<T = Record<string, unknown>>(request: TenderRequest, tenderId: string, expectedTrackingUpdatedAt: string | null, note: string | null = null): Promise<T> {
+  const id = String(tenderId || '').trim();
+  if (!id) throw new Error('Debe indicar la licitación.');
+  return request<T>('/api/tender-tracking-transition', {
+    method: 'POST',
+    body: JSON.stringify({ id, internal_status: 'nueva', note, expected_tracking_updated_at: expectedTrackingUpdatedAt }),
+  });
+}
+
 export type TenderDossierPage = { limit?: number; offset?: number; filter?: import('./types').TenderOpportunityFilter };
 export async function loadDossiers<T>(request: TenderRequest, page: TenderDossierPage = {}): Promise<T> {
   return loadTenderOpportunities(request, page);
@@ -60,12 +70,34 @@ export async function loadTenderOpportunities<T>(request: TenderRequest, page: T
   return request<T>(`/api/tender-opportunities?filter=${encodeURIComponent(filter)}&limit=${limit}&offset=${offset}`);
 }
 
+/** La matriz de cumplimiento de una licitación: sólo lectura. `available:false` mientras no haya análisis terminado. */
+export async function loadTenderComplianceMatrix(request: TenderRequest, opportunityId: string): Promise<TenderComplianceMatrix> {
+  return request<TenderComplianceMatrix>(`/api/tender-compliance-matrix?id=${encodeURIComponent(opportunityId)}`);
+}
+
+/** El puente ficha de empresa → expediente de una licitación: sólo lectura, sirve antes y después del GO. */
+export async function loadTenderCompanyDocumentBridge(request: TenderRequest, opportunityId: string): Promise<TenderCompanyDocumentBridge> {
+  return request<TenderCompanyDocumentBridge>(`/api/tender-dossier-company-documents?id=${encodeURIComponent(opportunityId)}`);
+}
+
+/**
+ * Crear a mano un proceso que no está en SECOP. El servidor crea la pareja licitación + oportunidad y devuelve la
+ * oportunidad, que es por donde se sigue trabajando (expediente, análisis, documentos, decisión y cierre).
+ */
+export async function createManualTenderProcess(request: TenderRequest, input: TenderManualProcessInput): Promise<TenderManualProcessCreated> {
+  return request<TenderManualProcessCreated>('/api/tenders/manual', { method: 'POST', body: JSON.stringify(input) });
+}
+
 export async function loadProfiles<T>(request: TenderRequest): Promise<T> {
   return request<T>('/api/tender-search-profiles');
 }
 
 export async function loadCompanyProfile<T>(request: TenderRequest): Promise<T> {
   return request<T>('/api/tender-company-profile');
+}
+
+export async function loadCompanyBase(request: TenderRequest): Promise<import('./companyBase').CompanyBasePayload> {
+  return request<import('./companyBase').CompanyBasePayload>('/api/tender-company-base');
 }
 
 export async function loadCompanyProcurementDocuments(request: TenderRequest): Promise<import('./types').TenderCompanyDocument[]> {
@@ -142,4 +174,21 @@ export async function retryTenderDossierWorkbenchJob(request: TenderRequest, inp
 
 export async function reviewTenderDossierWorkbenchLearning(request: TenderRequest, input: TenderDossierWorkbenchLearningReviewInput): Promise<unknown> {
   return request('/api/tender-dossier-workbench/learning/review', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** Acta de cierre. `acta` en `null` significa que todavía no se ha abierto para esta licitación. */
+export async function loadTenderClosureActa(request: TenderRequest, opportunityId: string): Promise<TenderClosureActaView> {
+  return request<TenderClosureActaView>(`/api/tender-closure-acta?id=${encodeURIComponent(opportunityId)}`);
+}
+
+export async function saveTenderClosureActa(request: TenderRequest, input: TenderClosureActaInput): Promise<TenderClosureActa> {
+  return request<TenderClosureActa>('/api/tender-closure-acta', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function confirmTenderClosureActa(request: TenderRequest, opportunityId: string, expectedUpdatedAt: string): Promise<TenderClosureActa> {
+  return request<TenderClosureActa>('/api/tender-closure-acta/confirm', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunityId, expected_updated_at: expectedUpdatedAt }) });
+}
+
+export async function reopenTenderClosureActa(request: TenderRequest, opportunityId: string, expectedUpdatedAt: string): Promise<TenderClosureActa> {
+  return request<TenderClosureActa>('/api/tender-closure-acta/reopen', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunityId, expected_updated_at: expectedUpdatedAt }) });
 }

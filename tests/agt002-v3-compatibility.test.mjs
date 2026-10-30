@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import {
   projectAgt002IntegralV3ToV2,
   computeAgt002IntegralV3CriticalOpenCount,
-} from '../agt002-v3-compatibility.js';
+} from '../verticales/licitaciones/agt002-v3-compatibility.js';
 
 // ---------------------------------------------------------------------------
 // Synthetic fixture covering every projection category: a not-curable blocker, a

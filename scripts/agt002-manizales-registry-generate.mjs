@@ -14,8 +14,8 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildContractualRegistry } from '../agt002-contractual-registry.js';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+import { buildContractualRegistry } from '../verticales/licitaciones/agt002-contractual-registry.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_INPUT_DIR = '/tmp/agt002-rama-originals';

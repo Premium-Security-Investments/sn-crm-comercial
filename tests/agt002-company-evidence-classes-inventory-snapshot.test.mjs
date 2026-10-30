@@ -19,7 +19,7 @@
 //   - a malformed inventorySnapshot (wrong version, bad hash, incomplete catalog, corrupted
 //     counts) fails closed, the same way every other malformed input in this module does.
 import { strict as assert } from 'node:assert';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, buildAgt002CompanyEvidenceClasses } from '../agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, buildAgt002CompanyEvidenceClasses } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
 
 const ASOF = new Date('2026-09-02T00:00:00.000Z');
 const INVENTORY_VERSION = 'agt002-company-evidence-sharepoint-catalog-v1';

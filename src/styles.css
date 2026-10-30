@@ -614,38 +614,28 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .v2-tender-aside:hover,.v2-tender-aside:focus-visible{border-color:#94a3b8;outline:none}
 @media(max-width:760px){.v2-tender-aside{flex-direction:column;align-items:flex-start}}
 /* CRM comercial — decisión obligatoria por oportunidad (Mi día, detalle y tablero). */
-.decision-queue{padding:18px;border:1px solid #fcd9a8;border-radius:20px;background:linear-gradient(180deg,#fffaf2,#fff);box-shadow:0 14px 32px rgba(21,38,69,.07)}
-.decision-queue .eyebrow{background:#fef3c7;color:#92400e}
 .topbar-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}.topbar-blocked-note{color:#92400e;font-size:12px;font-weight:700}.topbar-blocked-note a{color:inherit}
-.decision-queue-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-.decision-queue-header h3{margin:4px 0 6px;color:#10213d;font-size:clamp(20px,2vw,26px)}
-.decision-queue-header p{margin:0;color:#526173;font-size:14px;line-height:1.4;max-width:70ch}
-.decision-queue-count{flex:none;min-width:64px;padding:10px 14px;border-radius:16px;background:#fff1dc;color:#b45309;font-size:30px;text-align:center}
 .decision-list{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
 .decision-list>li{border:1px solid #e2eaf5;border-radius:14px;background:#fff}
-.decision-list>li.is-open{border-color:#93c5fd;box-shadow:0 8px 20px rgba(29,78,216,.08)}
-.decision-row{display:flex;align-items:center;gap:10px;padding:10px 12px}
-.decision-row input[type=checkbox]{width:20px;height:20px;flex:none}
-.decision-row-main{flex:1;display:grid;gap:2px;min-width:0;padding:6px 10px;border:0;border-radius:10px;background:none;box-shadow:none;text-align:left;cursor:pointer;color:inherit;white-space:normal}
-.decision-row-main:hover{background:#f1f5fb}
-.decision-open{flex:none;padding:9px 18px}
-.today-queue{border-color:#bfdbfe;background:#f5f9ff}
-.today-queue .eyebrow{background:#dbeafe;color:#1e40af}
-.today-queue .decision-queue-count{background:#dbeafe;color:#1e40af}
-.upcoming-list h3{margin:0 0 8px}
-.upcoming-list ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.upcoming-list li{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:8px 10px;border-radius:10px;background:#f8fbff}
-.upcoming-day{min-width:150px;color:#1e40af;font-weight:800;font-size:13px;text-transform:capitalize}
-.upcoming-list a{color:#10213d;text-decoration:none}
-.upcoming-list small{color:#526173}
-.my-day-prospect{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
-.my-day-prospect p{margin:0}
-.decision-queue-header .decision-quota{margin-top:8px;padding:8px 12px;border-radius:10px;background:#fff1dc;color:#7c2d12;font-weight:700}
-.decision-queue-header .decision-quota.is-done{background:#dcfce7;color:#14532d}
+td.numeric-value{white-space:nowrap}
+.meeting-brief summary{cursor:pointer;font-weight:800;color:#10213d}
+.brief-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:10px}
+.brief-block h4{margin:0 0 6px;font-size:13px;color:#526173}
+.brief-block ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.brief-block li{font-size:13px;color:#10213d;overflow-wrap:anywhere}
+.brief-label{color:#526173}
+.brief-block.is-suggestion li{padding:6px 8px;border-radius:8px;background:#f8fbff}
+.brief-block.is-missing li{color:#7c2d12}
+.brief-ai{margin-top:12px;border-top:1px solid #e4ebf5;padding-top:12px}
+.brief-ai button{font-size:13px;padding:8px 12px}
+.brief-ai-error{margin:6px 0 0;color:#b91c1c;font-size:13px}
+.brief-ai-pending{margin:0 0 6px;font-size:13px;color:#10213d}
+.client-profile-suggested{margin:4px 0 0;color:#526173;font-size:13px}
+.loss-report summary{cursor:pointer;font-weight:800;color:#10213d}
+.loss-report-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:10px}
+.loss-report-table h4{margin:0 0 6px;font-size:13px;color:#526173}
+.my-day-card.is-estancada{border-left:3px solid #f59e0b}
 .decision-full-link{display:inline-block;margin:0 14px 14px;color:#1b4fd0;font-size:13px;font-weight:700}
-.decision-row-main strong{color:#10213d;font-size:15px;overflow-wrap:anywhere}
-.decision-row-main span{color:#526173;font-size:13px}
-.decision-row-main em{color:#b45309;font-style:normal;font-size:13px;font-weight:800}
 .decision-form{padding:4px 14px 14px}
 .decision-choices{display:flex;flex-wrap:wrap;gap:6px}
 .decision-choice{padding:8px 12px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#10213d;font-weight:800;font-size:13px;cursor:pointer}
@@ -679,10 +669,6 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .delete-request-row em{color:#b91c1c;font-style:normal;font-size:13px;font-weight:800}
 .delete-request-row input{min-width:200px}
 @media(max-width:760px){
-  .decision-queue{padding:14px}
-  .decision-queue-header{flex-direction:column}
-  .decision-row{flex-wrap:wrap}
-  .decision-row .decision-open{margin-left:30px}
   .decision-choice{flex:1 1 calc(50% - 6px);text-align:center}
   .decision-actions button{width:100%}
 }
@@ -691,8 +677,154 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 /* Dashboard comercial: tres preguntas */
 .dashboard-three-questions{gap:22px}.dashboard-question .v2-deal-row{grid-template-columns:minmax(0,1fr) minmax(130px,.34fr) auto}.dashboard-details>summary{cursor:pointer;font-weight:900;color:#10213d}.dashboard-details[open]>summary{margin-bottom:12px}.dashboard-footnote{margin:0;font-size:12.5px}.dashboard-simple-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}.dashboard-simple-list li{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}.dashboard-simple-list span{color:#526173;font-size:13px}
 .behavior-table table{min-width:980px}.behavior-table td small{color:#64748b}.behavior-explanation{font-size:12.5px;line-height:1.45;margin:0}
-/* Mi día del comercial */
-.my-day-home{gap:16px}.my-day-goal-line{margin:0;padding:12px 16px;border:1px solid #dbe7f4;border-radius:16px;background:#f8fbff;color:#10213d;font-weight:750}.my-day-goal-line a{font-weight:900}.my-day-more>summary{cursor:pointer;font-weight:900;color:#10213d}.my-day-more h3{margin:14px 0 8px;font-size:15px}.my-day-personal-banner{grid-template-columns:1fr}.my-day-first{display:grid;gap:12px;justify-items:start}
+/* ===== Mi día del comercial (rediseño del 2026-10-22) =====
+   Juan: "todo es como lo mismo, no hay jerarquías de nada, no hay divisiones". La respuesta es una sola
+   superficie elevada —"Ahora"— y todo lo demás en filas planas sobre el fondo, con separadores reales.
+   Celular primero: el orden de lectura es estado → Ahora → Vig-IA → Esta semana → Meta. */
+.my-day-home{gap:18px;container-type:inline-size;max-width:1060px}
+.my-day-first{display:grid;gap:12px;justify-items:start}
+.my-day-personal-banner{grid-template-columns:1fr}
+.my-day-head{display:flex;flex-direction:column;gap:6px}
+.my-day-dayline{margin:0;font-size:13px;font-weight:600;color:#5d6b82}
+.my-day-dayline strong{color:#40516b;font-weight:800}
+.my-day-headline{margin:0;font-size:21px;line-height:1.26;letter-spacing:-.021em;color:#172033;max-width:34ch;text-wrap:balance}
+.my-day-subline{margin:0;font-size:13.5px;line-height:1.5;color:#5d6b82;max-width:52ch}
+.my-day-subline strong{color:#b45309}
+/* En celular los envoltorios desaparecen y cada bloque fija su orden; en computador vuelven a ser dos columnas. */
+.my-day-grid{display:flex;flex-direction:column;gap:18px}
+.my-day-col,.my-day-side{display:contents}
+.now-queue{order:1}.vchat{order:2}.week-list{order:3}.my-day-goal{order:4}.my-day-pending-data{order:5}
+/* En el día despejado el celular lee: próxima conversación, lo que ya hizo, la semana, el chat y el mes. */
+.my-day-grid.is-calm .next-talk{order:1}
+.my-day-grid.is-calm .today-done{order:2}
+.my-day-grid.is-calm .week-list{order:3}
+.my-day-grid.is-calm .vchat{order:4}
+.my-day-grid.is-calm .my-day-goal{order:5}
+.my-day-grid.is-calm .my-day-book{order:6}
+
+/* "Ahora": lo único con fondo, borde y sombra en toda la pantalla. */
+.now-queue{background:#fff;border:1px solid #dfe6f1;border-radius:18px;box-shadow:0 10px 30px rgba(21,38,69,.1);overflow:hidden}
+.now-head{padding:15px 16px 13px;border-bottom:1px solid #dfe6f1}
+.now-head h3{margin:0;display:flex;align-items:baseline;gap:8px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.now-count{font-size:13px;font-weight:700;color:#5d6b82}
+.now-group{margin:0;padding:12px 16px 4px;font-size:11.5px;font-weight:800;letter-spacing:.055em;text-transform:uppercase;color:#5d6b82}
+.now-list{list-style:none;margin:0;padding:0}
+.now-item{border-top:1px solid #dfe6f1}
+.now-group+.now-list>.now-item:first-child{border-top:0}
+.now-item.is-open{background:#f7faff}
+.now-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:9px;padding:12px 16px 14px}
+.now-pick{flex:none;width:20px;height:20px;margin-top:5px}
+.now-dot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:7px;background:#b45309}
+.now-row.is-hoy .now-dot{background:#1b64f2}
+.now-body{flex:1 1 200px;min-width:0}
+.now-name{display:block;font-size:16px;font-weight:650;line-height:1.3;color:#172033;overflow-wrap:anywhere}
+.now-fact{margin:3px 0 0;font-size:13px;line-height:1.45;color:#5d6b82}
+.now-fact em{font-style:normal;font-weight:800;color:#b45309}
+.now-row.is-hoy .now-fact em{color:#1b4fd0}
+/* El estancamiento es una marca de la fila, no una sección aparte: toda estancada ya está esperando decisión. */
+.now-stall{display:inline-block;margin:6px 0 0;padding:2px 8px;border:1px solid #e7cfa6;border-radius:999px;background:#fdf6e9;color:#b45309;font-size:12px;font-weight:800}
+.now-acts{flex:1 1 100%;display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:2px;padding-left:16px}
+.now-main{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:11px 15px;border:0;border-radius:11px;background:linear-gradient(135deg,#1b64f2,#174ea6);color:#fff;font:inherit;font-size:14px;font-weight:800;text-decoration:none;cursor:pointer;box-shadow:0 8px 18px rgba(27,100,242,.2)}
+.now-main:hover{background:linear-gradient(135deg,#0d4fd0,#123f8e)}
+.now-link{display:inline-flex;align-items:center;min-height:44px;padding:11px 10px;border:0;border-radius:9px;background:transparent;color:#1b4fd0;font:inherit;font-size:13.5px;font-weight:800;text-decoration:none;cursor:pointer;box-shadow:none}
+.now-link:hover{background:#eaf2ff}
+.now-more,.now-bulk-toggle{display:block;width:100%;min-height:48px;padding:14px 16px;border:0;border-top:1px solid #dfe6f1;background:transparent;color:#1b4fd0;font:inherit;font-size:13.5px;font-weight:800;text-align:left;cursor:pointer;box-shadow:none}
+.now-more:hover,.now-bulk-toggle:hover{background:#eaf2ff}
+.now-bulk-toggle{color:#5d6b82;font-weight:700}
+.now-bulk-toggle[aria-pressed=true]{color:#1b4fd0;background:#eaf2ff}
+.now-queue .decision-bulk{margin:8px 16px 0}
+/* El vacío es el caso normal a media mañana y se diseña como tal. */
+.now-empty{padding:15px 16px 16px}
+.now-empty-title{margin:0;font-size:16px;font-weight:650;color:#172033}
+.now-empty-text{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:#5d6b82}
+.now-empty .now-acts{flex:none;margin-top:12px;padding-left:0}
+.now-item .decision-form,.now-item .decision-full-link{margin:0 16px 14px}
+
+/* El día despejado: la próxima conversación como objeto. Aquí sí hay algo, así que aquí sí va una tarjeta. */
+.next-talk{background:#fff;border:1px solid #dfe6f1;border-radius:18px;box-shadow:0 10px 30px rgba(21,38,69,.1);overflow:hidden}
+.next-when{margin:0;padding:14px 16px 0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:800;color:#174ea6;font-variant-numeric:tabular-nums}
+.next-when::first-letter{text-transform:uppercase}
+.next-when em{font-style:normal;font-weight:600;color:#5d6b82}
+.next-name{margin:6px 0 0;padding:0 16px;font-size:20px;line-height:1.22;letter-spacing:-.02em;color:#172033;overflow-wrap:anywhere}
+.next-meta{margin:5px 0 0;padding:0 16px 14px;font-size:13px;line-height:1.5;color:#5d6b82;font-variant-numeric:tabular-nums}
+.next-facts{display:grid;border-top:1px solid #dfe6f1}
+.next-fact{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;align-items:start;padding:11px 16px;border-top:1px solid #dfe6f1}
+.next-fact:first-child{border-top:0}
+.next-fact>svg{margin-top:2px;color:#93a3bb}
+.next-fact strong{display:block;font-size:14px;font-weight:650;color:#172033;overflow-wrap:anywhere}
+.next-fact span{display:block;margin-top:1px;font-size:12.5px;color:#5d6b82;font-variant-numeric:tabular-nums}
+.next-acts{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:13px 16px 15px;border-top:1px solid #dfe6f1}
+
+/* "Hoy ya hizo": un día sin pendientes no es un día vacío. */
+.today-done h3{margin:0 0 2px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.done-row{display:grid;grid-template-columns:78px minmax(0,1fr);gap:12px;align-items:baseline;padding:10px 2px;border-top:1px solid #cbd7e8}
+.done-row time{font-size:12.5px;font-weight:700;color:#5d6b82;white-space:nowrap;font-variant-numeric:tabular-nums}
+.done-row p{margin:0;font-size:14px;line-height:1.45;color:#172033}
+.done-row p strong{font-weight:650}
+
+/* "Su cartera": el tamaño de lo que tiene entre manos, en una línea. */
+.my-day-book h3{margin:0 0 9px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.book-fig{margin:0;font-size:14px;line-height:1.5;color:#172033}
+.book-fig strong{font-weight:700}
+
+/* Foco de teclado en los controles de Mi día: la app no tiene una regla global, así que estos quedaban con el
+   anillo que ponga el navegador. Criterio del plan del 22 de octubre: foco visible. */
+.now-main:focus-visible,.now-link:focus-visible,.now-more:focus-visible,.now-bulk-toggle:focus-visible,
+.next-talk a:focus-visible,.my-day-goal a:focus-visible,.my-day-book a:focus-visible,.goal-note a:focus-visible{
+  outline:3px solid #1b64f2;outline-offset:2px;border-radius:9px}
+.now-main:focus-visible{outline-color:#0b3ea8}
+
+/* "Esta semana": filas planas agrupadas por día; la fila entera es el enlace a la ficha. */
+.week-list h3{margin:0 0 4px;display:flex;align-items:baseline;gap:8px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.week-count{font-size:13px;font-weight:700;color:#5d6b82}
+.week-day{margin:0;padding:12px 0 6px;font-size:11.5px;font-weight:800;letter-spacing:.055em;color:#5d6b82}
+.week-day::first-letter{text-transform:uppercase}
+.week-row{display:grid;grid-template-columns:minmax(0,1fr) 20px;grid-template-rows:auto auto;align-items:center;gap:3px 12px;min-height:58px;padding:13px 8px;border-top:1px solid #cbd7e8;border-radius:8px;color:inherit;text-decoration:none;transition:background .16s ease}
+.week-row:hover,.week-row:focus-visible{background:rgba(255,255,255,.75);outline:none}
+.week-row:focus-visible{box-shadow:0 0 0 3px rgba(27,100,242,.3)}
+.week-row strong{grid-column:1;grid-row:1;min-width:0;font-size:15px;font-weight:650;line-height:1.3;color:#172033;overflow-wrap:anywhere}
+.week-row small{grid-column:1;grid-row:2;min-width:0;font-size:12.5px;color:#5d6b82}
+.week-row .row-chevron{grid-column:2;grid-row:1/3;justify-self:end;color:#9aa9c0}
+.week-row:hover .row-chevron,.week-row:focus-visible .row-chevron{color:#1b64f2}
+
+/* "Meta del mes": una medida, plana, sin tarjeta ni cifra gigante. */
+.my-day-goal h3{margin:0 0 9px;font-size:15px;color:#172033;letter-spacing:-.008em}
+.my-day-goal .goal-fig{margin:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:7px}
+.my-day-goal .goal-fig strong{font-size:22px;font-weight:800;letter-spacing:-.02em;color:#172033}
+.my-day-goal .goal-fig span{font-size:13.5px;font-weight:700;color:#5d6b82}
+.goal-track{margin-top:9px;height:6px;border-radius:999px;background:#dae3f0;overflow:hidden}
+.goal-track i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#1b64f2,#4d8bff)}
+.goal-note{margin:8px 0 0;font-size:12.5px;line-height:1.5;color:#5d6b82}
+.goal-note a{color:#1b4fd0;font-weight:800;text-decoration:none}
+.goal-note a:hover{text-decoration:underline}
+
+/* Preparar y depurar bajan de peso: quedan plegados al final, sin competir con "Ahora". */
+.my-day-pending-data>summary{cursor:pointer;padding:12px 14px;border:1px solid #dbe7f4;border-radius:14px;background:#f8fbff;color:#40516b;font-size:13.5px;font-weight:800}
+.my-day-pending-data[open]>summary{border-radius:14px 14px 0 0}
+.my-day-pending-data .my-day-personal-banner{border-radius:0 0 14px 14px}
+
+@container (min-width:880px){
+  .my-day-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px 24px;align-items:start}
+  /* El encabezado no compite con el de la aplicación: la fecha es un pie de la frase, no un título. */
+  .my-day-head{gap:4px}
+  /* El día despejado conserva las dos columnas: la derecha responde "¿cómo voy?" con el mes y la
+     cartera, en vez de quedarse con el chat, que es lo que antes invertía la jerarquía. */
+  .my-day-grid.is-calm{grid-template-columns:minmax(0,1fr) 300px}
+  .my-day-col,.my-day-side{display:flex;flex-direction:column;gap:18px;min-width:0}
+  .my-day-col{grid-column:1}
+  .my-day-side{grid-column:2}
+  .my-day-pending-data{grid-column:1/-1}
+  .now-queue,.vchat,.week-list,.my-day-goal,.my-day-pending-data,.next-talk,.today-done,.my-day-book{order:0}
+  .my-day-headline{font-size:25px;max-width:42ch}
+  .next-when,.next-name,.next-meta,.next-fact,.next-acts{padding-left:18px;padding-right:18px}
+  .next-facts{grid-template-columns:1fr 1fr}
+  .next-fact:nth-child(2){border-left:1px solid #dfe6f1}
+  .next-fact:nth-child(-n+2){border-top:0}
+  .now-row{flex-wrap:nowrap;align-items:center;padding:14px 18px}
+  .now-acts{flex:none;margin-top:0;padding-left:0}
+  .now-head,.now-group,.now-more,.now-bulk-toggle{padding-left:18px;padding-right:18px}
+  .now-queue .decision-bulk{margin-left:18px;margin-right:18px}
+}
 
 /* AGT-003 — perfil del cliente en el formulario */
 .client-profile-intro{border-top:1px solid #e2eaf5;padding-top:12px}.client-profile-intro h3{margin:0 0 4px;color:#10213d}.client-profile-intro p{margin:0;color:#526173;font-size:13px;font-weight:400}
@@ -725,3 +857,133 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .lead-analysis-message-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .lead-analysis-message-done{margin:4px 0 0;color:#526173;font-size:13px}
 .link-button{padding:0;border:0;background:none;box-shadow:none;color:#1b4fd0;font-weight:700;text-decoration:underline;cursor:pointer}.link-button:hover{background:none;color:#123f8e}
+
+/* Licitaciones — ajustes de Juan 2026-10-12: cabeceras compactas, tarjetas con orden fijo y sin desborde lateral. */
+.tender-compact-header{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;padding:12px 16px;border:1px solid #dbe6f4;border-radius:18px;background:#f8fbff}.tender-compact-title{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap;min-width:0}.tender-compact-title h2{margin:0;font-size:20px;letter-spacing:-.02em;color:#10213d}.tender-compact-meta{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;font-size:13px;color:#526173}.tender-compact-meta strong{color:#10213d}.tender-compact-header .row-actions{margin-top:0}.tender-run-details>summary{cursor:pointer;color:#174ea6;font-weight:800}.tender-run-details ul,.tender-run-details ol{margin:6px 0;padding-left:18px;display:grid;gap:4px}
+.tender-delta-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:10px}.tender-chip{all:unset;box-sizing:border-box;cursor:pointer;padding:6px 11px;border-radius:999px;border:1px solid #cbdcf2;background:#fff;color:#174174;font-size:12px;font-weight:800}.tender-chip.active{background:#174ea6;border-color:#174ea6;color:#fff}.tender-chip:focus-visible{outline:3px solid rgba(96,165,250,.6);outline-offset:2px}
+.tender-cards>.tender-card,.tracking-row,.tracking-row-head>div{min-width:0}.tender-card{gap:10px}.tender-card-tags{display:flex;flex-wrap:wrap;gap:6px;min-width:0}.tenders-page .tender-card-tags .badge{white-space:normal;max-width:100%;overflow-wrap:anywhere}.tender-card h3,.tracking-row h3{margin:0;font-size:17px;line-height:1.25;color:#101a2b;overflow-wrap:anywhere}.tenders-page .tender-card-object{margin:0;color:#334155;font-size:14px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.tender-card-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}.tender-card-facts>div{min-width:0;padding:8px 10px;border-radius:10px;background:#f8fbff}.tender-card-facts dt{color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.tender-card-facts dd{margin:3px 0 0;color:#10213d;font-size:13px;font-weight:800;overflow-wrap:anywhere}.tenders-page .tender-card-why{display:block;margin:0;color:#526173;font-size:13px;line-height:1.4}
+.tenders-page .row-actions>.button,.tenders-page .row-actions>button{font-size:14px;line-height:1.2;min-height:40px;padding:9px 14px;font-weight:800}
+.tender-fit-alto{background:#dcfce7;color:#166534}.tender-fit-medio{background:#e0f2fe;color:#075985}.tender-fit-por_validar{background:#fef3c7;color:#92400e}.tender-fit-bajo{background:#f1f5f9;color:#475569}.badge-state{background:#ede9fe;color:#5b21b6}
+.tracking-semaphore{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}.tracking-semaphore:before{content:"";width:9px;height:9px;border-radius:999px;background:currentColor}.tracking-semaphore-verde{background:#dcfce7;color:#166534}.tracking-semaphore-amarillo{background:#fef3c7;color:#92400e}.tracking-semaphore-rojo{background:#fee2e2;color:#991b1b}.tracking-note{margin:0;color:#334155;font-size:13px}.tracking-dates{margin:0;font-size:12px}
+.opportunity-facts{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}.opportunity-facts dd small{display:block;margin-top:2px;color:#64748b;font-weight:700}.opportunity-vigia{display:grid;gap:4px;padding:10px 12px;border-radius:12px;border:1px solid #dbe6f4;background:#fff}.opportunity-vigia strong{color:#10213d;font-size:14px}.opportunity-vigia strong small{color:#64748b;font-weight:700}.opportunity-vigia p{margin:0;color:#334155;font-size:13px;line-height:1.45}.opportunity-next{margin:0;color:#334155;font-size:13px}.opportunity-footnote{margin:0;font-size:12px}
+@media(max-width:900px){.tender-card-facts{grid-template-columns:1fr 1fr}.tender-compact-header{align-items:flex-start}}
+.tenders-page .row-actions>.button,.tenders-page .row-actions>button{font-family:inherit;justify-content:center;text-align:center}.tender-card-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.tender-card-facts>div:nth-child(3){grid-column:1/-1}.tender-card-facts>div:nth-child(-n+2) dd{white-space:nowrap}.tenders-page .tender-card-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}.tenders-page .tender-card-actions>*{width:100%;white-space:normal}.tenders-page .tender-card-actions>:last-child:nth-child(odd){grid-column:1/-1}
+/* Detalle de licitación por pestañas (2026-10-12): la cabecera queda fija y solo se ve la sección elegida. */
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-summary"]) .tender-opportunity-summary-panel,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-document-review"]) #tender-document-review,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-analysis"]) #tender-analysis,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-decision"]) #tender-decision,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-preparation"]) #tender-preparation,
+.tender-opportunity-detail[data-tender-tab]:not([data-tender-tab="tender-follow-up"]) #tender-follow-up{display:none}
+.tender-phase-change-notice details summary{cursor:pointer;font-weight:700;margin-top:4px}
+/* Menú lateral con íconos y perfil arriba a la derecha (Juan, 2026-10-13): mismo estilo de SIIO Programación. */
+.nav-domain-groups a{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;padding:8px 12px;border-radius:10px}
+.nav-domain-groups .nav-icon{flex:0 0 18px;width:18px;height:18px;opacity:.9}
+.nav-section-title{font-size:10px;padding:10px 10px 4px}
+.nav-section+.nav-section{border-top:0;padding-top:4px}
+.topbar-right{display:flex;align-items:center;gap:12px;margin-left:auto}
+.user-menu{position:relative}
+.user-menu-trigger{display:inline-flex;align-items:center;gap:8px;background:#fff;color:#10213d;border:1px solid #e2e8f0;box-shadow:0 4px 12px rgba(15,27,45,.06);padding:5px 10px 5px 5px;border-radius:999px;font-weight:600;font-size:14px}
+.user-menu-trigger:hover{background:#f8fafc}
+.user-avatar{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:999px;background:linear-gradient(135deg,#1b64f2,#174ea6);color:#fff;font-size:13px;font-weight:800;letter-spacing:.02em}
+.user-menu-name{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-menu-panel{position:absolute;right:0;top:calc(100% + 8px);z-index:60;min-width:260px;display:grid;gap:6px;padding:12px;border-radius:14px;background:#fff;border:1px solid #e2e8f0;box-shadow:0 18px 40px rgba(15,27,45,.16)}
+.user-menu-identity{display:grid;gap:2px;padding:4px 6px 10px;border-bottom:1px solid #eef2f7}
+.user-menu-identity strong{color:#10213d;font-size:14px}
+.user-menu-identity span{color:#64748b;font-size:12px;overflow-wrap:anywhere}
+.user-menu-view{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 0}
+.user-menu-view button{background:#e9eef7;color:#1b355f;box-shadow:none;padding:7px 8px;font-size:13px;font-weight:600}
+.user-menu-view button.active{background:linear-gradient(135deg,#1b64f2,#174ea6);color:#fff}
+.user-menu-item{display:flex;align-items:center;gap:8px;background:none;color:#10213d;box-shadow:none;padding:8px 6px;border-radius:8px;font-weight:500;font-size:14px;text-align:left}
+.user-menu-item:hover{background:#f1f5f9}
+.user-menu-item.is-exit{color:#a12622}
+@media(max-width:900px){.user-menu-name{display:none}.topbar-right{margin-left:0}}
+/* Archivadas: consulta, no paso del proceso. */
+.opportunity-filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.opportunity-filter-row .opportunity-archived-link{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:none;box-shadow:none;border:0;color:#64748b;font-weight:600;font-size:13px;padding:6px 10px}
+.opportunity-filter-row .opportunity-archived-link:hover{background:#f1f5f9;color:#10213d}
+.opportunity-filter-row .opportunity-archived-link.is-active{color:#1d4ed8}
+/* Las entradas de Licitaciones (nav-parent) heredaban justify-content:space-between y el texto quedaba a la derecha. */
+.nav-domain-groups a.nav-parent{justify-content:flex-start}
+/* Botón Empresa junto a las pestañas de Licitaciones. */
+.tender-module-navigation .tender-company-button{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;font-weight:700;font-size:14px;border:1px solid #cbd5e1;background:#fff;color:#10213d;box-shadow:none}
+.tender-module-navigation .tender-company-button:hover{background:#f1f5f9}
+.tender-module-navigation .tender-company-button.is-active{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+/* Empresa (AGT-002, fase 1): estado, bloques, sedes, experiencia e indicadores con la paleta clara del CRM. */
+.company-base-view .panel{display:grid;gap:14px}
+.company-base-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.company-base-count{display:grid;gap:2px;justify-items:start;padding:12px 14px;border:1px solid #e2eaf5;border-radius:14px;background:#fff;color:#10213d;text-align:left;box-shadow:none;cursor:pointer}
+.company-base-count strong{font-size:28px;line-height:1.05}
+.company-base-count span{color:#526173;font-size:12px;font-weight:800}
+.company-base-count[aria-pressed="true"]{border-color:#174ea6;background:#f2f7ff;box-shadow:inset 0 0 0 1px #174ea6}
+.company-base-count.state-al_dia strong{color:#166534}.company-base-count.state-vence_pronto strong{color:#92400e}.company-base-count.state-vencido strong{color:#991b1b}.company-base-count.state-sin_verificar strong{color:#5b21b6}
+.company-base-facts{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0;color:#526173;font-size:13px}.company-base-facts strong{color:#10213d}
+.company-base-table table{min-width:760px;table-layout:auto}
+.company-base-table td strong{color:#10213d}
+.company-base-table td small{display:block;margin-top:3px;color:#64748b;line-height:1.35}
+.company-base-table .numeric{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.company-base-area th{position:static;background:#eef3fa;color:#40516b;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.company-block-state{display:inline-flex;align-items:center;padding:4px 8px;border-radius:8px;font-size:11px;font-weight:900;white-space:nowrap}
+.company-block-state.state-al_dia{background:#dcfce7;color:#166534}.company-block-state.state-vence_pronto{background:#fef3c7;color:#92400e}.company-block-state.state-vencido{background:#fee2e2;color:#991b1b}.company-block-state.state-sin_verificar{background:#ede9fe;color:#5b21b6}
+.company-block-expiry{display:block;font-size:13px}
+.company-review-cell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.company-support-cell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.company-review-row>td{background:#f8fbff;border-top:0}
+.company-review-form{display:grid;gap:8px;max-width:620px}
+.company-review-form label{color:#40516b;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.company-review-form textarea{width:100%;min-height:62px;resize:vertical;font-family:inherit;font-size:14px;line-height:1.4;padding:9px 11px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#10213d}
+.company-review-form textarea:focus{outline:2px solid #174ea6;outline-offset:1px;border-color:#174ea6}
+.company-review-form label{margin:0;padding:0}
+.company-review-form .row-actions{justify-content:flex-start;gap:8px;flex-wrap:wrap;margin-top:0}
+.company-review-form .row-actions{flex-direction:row;align-items:center}
+.company-review-form .row-actions>button{width:auto;flex:0 0 auto}
+.company-base-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.company-base-indicators{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0}
+.company-base-indicators>div{padding:10px;border-radius:12px;background:#f8fbff}
+.company-base-indicators dt{color:#64748b;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.company-base-indicators dd{margin:4px 0 0;color:#10213d;font-size:16px;font-weight:900;font-variant-numeric:tabular-nums}
+.company-base-codes{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.company-base-codes li{display:flex;gap:10px;align-items:baseline;color:#40516b;font-size:13px}
+.company-base-codes code{color:#174ea6;font-weight:800}
+.company-profile-panel>summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;cursor:pointer;list-style:none}
+.company-profile-panel>summary::-webkit-details-marker{display:none}
+.company-profile-panel>summary h3{margin:0;color:#10213d;font-size:19px}
+.company-record-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.company-record-grid label{display:grid;gap:6px;color:#40516b;font-size:12px;font-weight:900}
+.company-record-grid label.wide{grid-column:1/-1}
+.company-record-grid .company-record-check{display:flex;align-items:center;gap:8px}
+.company-record-grid .company-record-check input{width:auto;min-height:0}
+@media(max-width:768px){.company-base-counts,.company-base-pair,.company-base-indicators,.company-record-grid{grid-template-columns:repeat(1,minmax(0,1fr))}.company-base-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.company-record-grid label.wide{grid-column:auto}}
+/* AGT-002 cobertura territorial (Juan, 2026-10-13): marca del Radar y veredicto de participación del análisis. */
+.initial-participation{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;border-radius:10px;padding:8px 12px;margin:6px 0;font-size:14px}
+.initial-participation-sola{background:#dcfce7;color:#166534}.initial-participation-union_temporal{background:#fef3c7;color:#92400e}.initial-participation-no_puede{background:#fee2e2;color:#b91c1c}
+/* AGT-003 formulario de cierre (GGC-FO-001; Juan, 2026-10-23): el Word que iba por correo, dentro de la ficha. */
+.closure-form-panel header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.closure-form-badge{border-radius:999px;padding:3px 10px;background:#fffaeb;color:#b54708;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+.closure-form-badge.is-complete{background:#ecfdf3;color:#067647}
+.closure-form-intro{margin:6px 0 0;color:var(--muted);font-size:13px}
+.closure-form-missing{display:grid;gap:4px;margin:10px 0 0;padding-left:18px;color:#b54708;font-size:13px}
+.closure-form-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
+.closure-form-body{display:grid;gap:14px;margin-top:14px}
+.closure-form-section{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0}
+.closure-form-section legend{padding:0 6px;color:var(--text);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.closure-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
+.closure-form-field{display:grid;gap:4px;color:var(--muted);font-size:12px;font-weight:700}
+.closure-form-field.is-required>small{color:var(--text)}
+.closure-form-auto{margin-left:6px;border-radius:999px;padding:1px 6px;background:#eef4ff;color:#174ea6;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}
+.closure-form-row{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin-bottom:8px}
+.closure-form-row input{flex:1 1 140px;min-width:0}
+.closure-form-row label{display:grid;gap:4px;color:var(--muted);font-size:11px;font-weight:800}
+.closure-form-check{flex-direction:row;align-items:center;gap:6px}
+.closure-form-check input{width:auto;min-height:0}
+.closure-form-post{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
+.closure-form-post:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.closure-form-money{display:grid;gap:6px;margin:12px 0 0}
+.closure-form-money>div{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:13px}
+.closure-form-money dt{font-weight:700}
+.closure-form-money dd{margin:0;font-variant-numeric:tabular-nums;font-weight:800}
+.closure-form-money .closure-form-total{border-top:1px solid var(--line);padding-top:6px;color:var(--text);font-size:15px}
+.closure-form-note{margin:8px 0 0;color:var(--muted);font-size:12px}
+.closure-form-error{margin:10px 0 0;color:#b42318;font-size:13px;font-weight:700}
+.closure-form-warnings{display:grid;gap:4px;margin:10px 0 0;padding-left:18px;color:#b54708;font-size:12px}
+@media(max-width:768px){.closure-form-grid{grid-template-columns:repeat(1,minmax(0,1fr))}}

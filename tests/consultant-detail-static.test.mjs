@@ -8,7 +8,9 @@ assert.match(source, /#\/consultant\//, 'Dashboard gerencial debe navegar a #/co
 assert.match(source, /function ConsultantDetail/, 'Debe existir una vista ConsultantDetail');
 assert.match(source, /Detalle por etapa/, 'La vista del consultor debe mostrar detalle por etapa');
 assert.match(source, /Oportunidades del consultor/, 'La vista del consultor debe mostrar tabla de oportunidades');
-assert.match(source, /import \{ buildMyDayQueue, type MyDayAlert \} from '\.\/vigia\/my-day-presentation';/, 'ConsultantDetail debe importar buildMyDayQueue del módulo puro de Mi día');
+// Lo que importa es de dónde sale buildMyDayQueue, no qué más se importe en la misma línea: el módulo puro de
+// Mi día fue creciendo (futureDayPhrase, closeDateLine, clockTime) y la afirmación literal se rompía con cada uno.
+assert.match(source, /import \{[^}]*\bbuildMyDayQueue\b[^}]*\} from '\.\/vigia\/my-day-presentation';/, 'ConsultantDetail debe importar buildMyDayQueue del módulo puro de Mi día');
 assert.match(source, /const myDay = useMemo\(\(\) => buildMyDayQueue\(opportunities\.filter\(o => isAgt003CommercialOpportunity\(o\) && !isOutOfActivePipeline\(o\)\), new Date\(\)\), \[opportunities\]\);/, 'ConsultantDetail debe derivar myDay de sus oportunidades comerciales vigentes con buildMyDayQueue');
 assert.match(source, /buildMyDayQueue\(opportunities\.filter\(o => isAgt003CommercialOpportunity\(o\) && !isOutOfActivePipeline\(o, now\) && !pendingIds\.has\(o\.id\)\), now\)/, 'MyDayHome deriva la misma cola de Mi día, sin repetir lo pendiente de decisión');
 assert.match(source, /const pendingIds = new Set\(pendingDecisionRows\.map\(o => o\.id\)\);/, 'MyDayHome excluye de Hacer hoy lo que ya está en "Decida esta oportunidad"');

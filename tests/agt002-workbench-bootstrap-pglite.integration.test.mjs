@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { getAgt002WorkbenchApi, postAgt002MessageApi } from '../agt002-workbench-api.js';
-import { AGT002_WORKBENCH_CAPABILITIES } from '../agt002-workbench-contract.js';
+import { getAgt002WorkbenchApi, postAgt002MessageApi } from '../verticales/licitaciones/agt002-workbench-api.js';
+import { AGT002_WORKBENCH_CAPABILITIES } from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 // Arranque real de la Mesa post-GO contra PostgreSQL (PGlite) con las migraciones
 // productivas 040 + 045: un primer GET crea el hilo de forma idempotente y deriva la
@@ -10,6 +10,11 @@ import { AGT002_WORKBENCH_CAPABILITIES } from '../agt002-workbench-contract.js';
 // recién abierto (jobs=[]) encola trabajo sin bloqueo, sin hilos ni trabajos duplicados.
 const dossierMigration = readFileSync(new URL('../supabase/migrations/040_tender_dossier_workspace.sql', import.meta.url), 'utf8');
 const workbenchMigration = readFileSync(new URL('../supabase/migrations/045_agt002_dossier_workbench.sql', import.meta.url), 'utf8');
+// La Mesa de producción no es solo 045: 140 trae el flujo previo al GO y 154 abre la política a
+// la versión vigente y la anterior. Sin encadenarlas, esta prueba corría contra una base que ya
+// no se parece a la real y daba verde por el motivo equivocado.
+const beforeGoMigration = readFileSync(new URL('../supabase/migrations/140_agt002_workbench_before_go.sql', import.meta.url), 'utf8');
+const politicaV2Migration = readFileSync(new URL('../supabase/migrations/156_agt002_workbench_politica_v2.sql', import.meta.url), 'utf8');
 
 const ids = Object.freeze({
   operator: '11111111-1111-4111-8111-111111111111',
@@ -98,6 +103,8 @@ async function freshDb() {
   );
   await db.exec(dossierMigration);
   await db.exec(workbenchMigration);
+  await db.exec(beforeGoMigration);
+  await db.exec(politicaV2Migration);
   return db;
 }
 

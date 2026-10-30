@@ -5,7 +5,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
-import { classifyTenderOpportunityStage, isActiveTenderOpportunityStage, latestTenderGoNoGoDecision, TENDER_OPPORTUNITY_TERMINAL_OFFER_STATUSES } from '../tender-opportunity-stage.js';
+import { classifyTenderOpportunityStage, isActiveTenderOpportunityStage, latestTenderGoNoGoDecision, TENDER_OPPORTUNITY_TERMINAL_OFFER_STATUSES } from '../verticales/licitaciones/tender-opportunity-stage.js';
 
 async function loadModule(relativePath) {
   const bundle = buildSync({ entryPoints: [new URL(relativePath, import.meta.url).pathname], bundle: true, platform: 'node', format: 'esm', write: false });

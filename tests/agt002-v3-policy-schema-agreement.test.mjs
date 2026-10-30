@@ -2,11 +2,11 @@ import { strict as assert } from 'node:assert';
 import {
   buildAgt002IntegralAnalysisV3OutputJsonSchema,
   validateAgt002PreviewModelOutputV3,
-} from '../agt002-preview-contract.js';
-import { AGT002_INTEGRAL_V3_POLICY } from '../agt002-preview-engine.js';
-import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+} from '../verticales/licitaciones/agt002-preview-contract.js';
+import { AGT002_INTEGRAL_V3_POLICY } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
 
 // Phase 5 remediation (v3_model_output_shape_mismatch).
 //

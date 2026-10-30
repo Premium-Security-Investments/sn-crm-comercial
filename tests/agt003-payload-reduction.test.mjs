@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { AGT003_COPILOT_POLICY } from '../agt003-copilot-engine.js';
+import { AGT003_COPILOT_POLICY } from '../verticales/comercial/agt003-copilot-engine.js';
 
-const MODULE_SPECIFIER = '../agt003-payload-reduction.js';
+const MODULE_SPECIFIER = '../verticales/comercial/agt003-payload-reduction.js';
 const MODULE_FILE_PATH = fileURLToPath(new URL(MODULE_SPECIFIER, import.meta.url));
 const FULL_POLICY_SHA256 = '3d29b35d4672912a2831c8509e54d15f6367434d9e88d8a8223588c9cba2b4d8';
 const VIOLATION_CODE = 'AGT003_PAYLOAD_REDUCTION_CONTRACT_VIOLATION';

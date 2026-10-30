@@ -4,6 +4,7 @@ import {
   initialReportRecommendationText, initialReportRequirementGroups, initialReportTasks, initialReportVerdict,
   type Agt002InitialReport, type Agt002InitialReportClaim,
 } from '../agt002InitialReportProjection';
+import { participationVerdict } from '../companyCoverage';
 
 type Finding = Agt002InitialReport['findings'][number];
 
@@ -107,6 +108,7 @@ export function TenderInitialReport({ report, officialCloseDate = null }: { repo
     <header className={`initial-report-verdict tone-${verdict.tone}`}>
       <small>Análisis inicial · para decidir</small>
       <strong>{verdict.label}</strong>
+      {(() => { const participation = participationVerdict(recommendation.label); return participation && <p className={`initial-participation initial-participation-${participation.kind}`} role="status"><b>Participación: {participation.title}</b></p>; })()}
       <p>{initialReportRecommendationText(recommendation.label)}</p>
       <div className="initial-report-verdict-meta">
         <span><b>Empresa:</b> {initialReportCompanyFit(report)}</span>

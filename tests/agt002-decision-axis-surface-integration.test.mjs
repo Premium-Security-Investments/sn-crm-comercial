@@ -239,7 +239,7 @@ test('E4.4/E6 — main propaga flag+saver, no duplica acciones y navega a la pre
   assert.ok(main.includes('onQuestionResponseSaverReady'));
   assert.ok(main.includes('data.decision_axis_surface_enabled === true'));
   assert.equal(count(main, 'createTenderQuestionResponseActions({'), 1);
-  assert.ok(main.includes("focusTenderDetailSection(document.getElementById('tender-preparation'))"));
+  assert.ok(main.includes("requestTenderDetailSection('tender-preparation')"));
   assert.equal(main.includes('import.meta.env.VITE_AGT002_DECISION_AXIS_SURFACE'), false);
 
   // El congelamiento gobernado nunca resuelve un análisis inmediato: sondea el job de reanálisis

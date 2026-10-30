@@ -47,3 +47,12 @@ assert.match(executive, /Lectura preliminar/, 'the executive view must disclose 
 assert.match(executive, /financialValidationStatus !== 'validado'/, 'the preliminary notice must be conditioned on the real validation status');
 
 console.log('SIIO executive preliminary-copy contract OK');
+
+const improvedMargin = deriveSiioExecutiveSnapshot({ financialMetrics: [
+  { period_month: '2026-04-01', category: 'ingresos', concept: 'INGRESOS', value_current: 100, value_comparison: 64, variation_pct: 0.5625, validated_by: 'persona', source_id: 'FIN-1' },
+  { period_month: '2026-04-01', category: 'costos_gastos', concept: 'COSTOS', value_current: 80, value_comparison: 50, variation_pct: 0.6, validated_by: 'persona', source_id: 'FIN-1' },
+  { period_month: '2026-04-01', category: 'margen', concept: 'MARGEN OPERACIONAL', value_current: 0.054, value_comparison: 0.029, variation_pct: 0.86, validated_by: 'persona', source_id: 'FIN-1' },
+], payrollAggregates: [], sources: [] }).managementInsights.find(i => i.id === 'cost-growth-pressure');
+assert.match(improvedMargin.finding, /margen operacional mejoró/, 'the insight must not claim margin erosion when the operating margin improved');
+assert.match(improvedMargin.finding, /78,1%|78\.1%/, 'the insight shows the cost share of income in the comparison period');
+assert.equal(improvedMargin.priority, 'media');

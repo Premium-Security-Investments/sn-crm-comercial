@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { logPipelineEvent, deriveJobMetrics, pipelineAlerts } from '../tender-pipeline-observability.js';
+import { logPipelineEvent, deriveJobMetrics, pipelineAlerts } from '../verticales/licitaciones/tender-pipeline-observability.js';
 
 function captureLog(fn) {
   const original = console.log;

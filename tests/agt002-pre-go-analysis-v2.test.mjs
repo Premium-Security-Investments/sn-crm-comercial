@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   deriveAgt002PreGoSchemaV2, PRE_GO_SCHEMA_V2, validatePreGoAnalysisV2, AGT002_PRE_GO_ANALYSIS_V2,
-} from '../agt002-pre-go-analysis-v2.js';
-import { validatePreGoAnalysisV1 } from '../agt002-pre-go-analysis-v1.js';
+} from '../verticales/licitaciones/agt002-pre-go-analysis-v2.js';
+import { validatePreGoAnalysisV1 } from '../verticales/licitaciones/agt002-pre-go-analysis-v1.js';
 import { buildBaselineScopeA } from './fixtures/agt002-pre-go-analysis-v1.mjs';
 
 const V1_SCHEMA = JSON.parse(readFileSync(new URL('../schemas/agt002/pre_go_analysis.v1.schema.json', import.meta.url), 'utf8'));

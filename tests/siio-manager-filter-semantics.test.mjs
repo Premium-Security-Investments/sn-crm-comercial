@@ -51,7 +51,7 @@ const aprilRecommendations = deriveRecommendations(april);
 const costPressure = aprilRecommendations.find(item => item.id === 'cost-growth-pressure');
 assert.ok(costPressure, 'the selected period must derive its own recommendations');
 assert.equal(costPressure.period, '2026-04-01', 'recommendation evidence must disclose the selected origin period');
-assert.match(costPressure.evidence, /Costos 20\.0% vs\. ingresos 10\.0%/, 'recommendation evidence must be calculated from selected-period indicators');
+assert.match(costPressure.evidence, /Costos 20,0% vs\. ingresos 10,0%/, 'recommendation evidence must be calculated from selected-period indicators');
 assert.deepEqual(costPressure.sourceIds, ['SRC-011'], 'recommendation evidence must use the selected rows real source IDs, not infer a fixed ID from prose');
 assert.ok(!aprilRecommendations.some(item => item.id === 'financial-validation-pending'), 'recommendations from the latest period must not leak into a historical selection');
 
@@ -89,7 +89,6 @@ assert.match(globalFilters, />Periodo financiero\s*</, 'the financial selector m
 assert.doesNotMatch(globalFilters, />Área(?: de nómina)?\s*</, 'the payroll area selector must not appear as a global executive filter');
 const payrollPanel = executiveSource.slice(executiveSource.indexOf('<Panel title="Nómina agregada">'));
 assert.match(payrollPanel, />Área de nómina\s*</, 'the area selector must live inside the aggregate payroll panel');
-assert.match(executiveSource, /navigateSiioView\('inteligencia', \{ period: selectedPeriod \}\)/, 'drilling into evidence must preserve the selected financial period');
 assert.match(intelligenceSource, /routeState\.filters\.period/, 'the evidence view must derive recommendations for the carried financial period');
 assert.match(intelligenceSource, /snapshot\.evidenceSourceIds/, 'the evidence catalogue must be constrained to sources supporting the periods shown');
 assert.match(dashboardSource, /routeState\.filters\.period/, 'the Board draft snapshot must follow the selected financial period');

@@ -20,12 +20,18 @@
 //     sólo los registros anteriores al lunes actual (así no se reimplementa qué cuenta como seguimiento o decisión).
 //   Por decidir: pendingDecisions() de opportunity-decision-rules.js. "Estancadas grandes" del equipo = pendientes de
 //     decidir ordenadas por valor.
+//   Estancada (Juan, 2026-10-23): stalledInStage() de stage-staleness.js, la MISMA regla que marca el estancamiento en
+//     Mi día y en el Dashboard — días en la etapa contra el umbral de esa etapa, y el aviso se apaga si hay próxima
+//     gestión futura. No se reimplementa aquí: por eso esa regla pasó de TypeScript a JavaScript, para que este correo
+//     pueda importarla sin compilar. Toda estancada es también "por decidir" (no tiene gestión futura), así que no se
+//     lista aparte: se marca en la fila con cuánto lleva parada.
 //   Meta del mes: monthlyGoalCompliance() de commercial-behavior.js (el helper puro equivalente del Dashboard vive en
 //     commercial-dashboard-model.ts, que es TypeScript y no se puede importar desde Node sin compilar).
 //   Sin cartera (Juan, 2026-10-08): quien queda "al día" sólo porque no tiene oportunidades activas se muestra como
 //     "Sin cartera" (no como "Al día"), para no confundir al gerente.
-//   Premio (Juan, 2026-10-08): la ficha de cada comercial en el resumen del gerente muestra perfiles completos (8/8,
-//     profileCompleteness de client-profile.js) sobre sus oportunidades activas y análisis profundos ganados en el mes
+//   Premio (Juan, 2026-10-08): la ficha de cada comercial en el resumen del gerente muestra perfiles completos (el
+//     total lo fija profileCompleteness de client-profile.js y hoy son 7 campos, no 8: el LinkedIn del decisor pasó
+//     a opcional el 2026-10-22) sobre sus oportunidades activas y análisis profundos ganados en el mes
 //     (psi_agt003_lead_analyses completados por el comercial desde el inicio del mes de Bogotá).
 //   Sólo oportunidades comerciales privadas de AGT-003 (commercial-scope.js). Nunca se lee ni se muestra el texto de
 //   los seguimientos (notas), ni observaciones, ni ids internos en el contenido.
@@ -34,6 +40,7 @@ import { createHash } from 'node:crypto';
 import { profileCompleteness } from './client-profile.js';
 import { isAgt003CommercialOpportunity } from './commercial-scope.js';
 import { bogotaDay, isOutOfActivePipeline, isTerminalStage, pendingDecisions } from './opportunity-decision-rules.js';
+import { stalledInStage } from './stage-staleness.js';
 import { BEHAVIOR_RULES, bogotaDaysSince, bogotaMonth, bogotaWeekStart, buildCommercialBehavior, monthlyGoalCompliance } from './commercial-behavior.js';
 
 export const WEEKLY_DIGEST_CONTRACT = 'agt003-weekly-digest-v1';
@@ -122,6 +129,16 @@ function formatSince(instant, now) {
   return `${formatShortDay(day)} (hace ${days} ${days === 1 ? 'día' : 'días'})`;
 }
 
+/**
+ * La celda "En la etapa": vacía si la oportunidad no está estancada. Respeta la distinción de stage-staleness entre
+ * una fecha medida y una sembrada — con la sembrada se dice "al menos", porque el número exacto no se puede sostener.
+ */
+function stageStallCell(stall) {
+  if (!stall?.stale || stall.days === null) return '';
+  const days = `${stall.days} ${stall.days === 1 ? 'día' : 'días'}`;
+  return stall.atLeast ? `al menos ${days}` : days;
+}
+
 function formatDaysWithoutFollowUp(opportunity, now) {
   const days = bogotaDaysSince(opportunity.last_interaction_at || null, now);
   if (days === null) return 'sin seguimientos registrados';
@@ -144,7 +161,7 @@ export function withPortfolioStatus(row) {
   return row;
 }
 
-/** Perfiles completos (8/8) sobre las oportunidades activas de un comercial y análisis ganados en el mes. */
+/** Perfiles completos (el total lo fija profileCompleteness, hoy 7 campos) sobre las oportunidades activas y análisis ganados en el mes. */
 export function premiumStats({ ownerId, opportunities = [], leadAnalyses = [], now }) {
   const active = list(opportunities).filter(o => o.owner_id === ownerId && !isTerminalStage(o.stage_code) && !isOutOfActivePipeline(o, now));
   const complete = active.filter(o => profileCompleteness(o).complete).length;
@@ -316,7 +333,14 @@ function salespersonContent({ person, row, lastWeekRow, week, now, opportunities
   const pendingIntro = pending.length
     ? 'Son oportunidades sin próxima gestión o con la gestión vencida. Decida qué sigue con cada una en Mi día.'
     : 'Todas sus oportunidades tienen una próxima gestión vigente. Gracias por mantenerlas al día.';
-  const pendingRows = pending.slice(0, LIST_LIMIT).map(o => [opportunityLabel(o), formatCop(o.offer_value), formatDaysWithoutFollowUp(o, now)]);
+  // La marca de estancamiento se calcula sobre TODA la cartera del comercial y se cruza por id con lo que se lista:
+  // así el conteo de la bajada no depende de las cinco filas que alcanzan a salir.
+  const stalls = new Map(stalledInStage(own, now).map(({ opportunity, stall }) => [opportunity.id, stall]));
+  const pendingRows = pending.slice(0, LIST_LIMIT).map(o => [opportunityLabel(o), formatCop(o.offer_value), formatDaysWithoutFollowUp(o, now), stageStallCell(stalls.get(o.id))]);
+  const stalledCount = pending.reduce((total, o) => total + (stalls.has(o.id) ? 1 : 0), 0);
+  const stalledLine = stalledCount
+    ? `De ellas, ${stalledCount} ${stalledCount === 1 ? 'lleva' : 'llevan'} demasiado tiempo en su etapa: esas son las que primero hay que mover.`
+    : '';
   const pendingMore = pending.length > LIST_LIMIT ? `Y ${pending.length - LIST_LIMIT} más en Mi día.` : '';
   const weekRange = formatDayRange(week.this_week_start, week.this_week_end);
   const weekRows = thisWeek.slice(0, LIST_LIMIT).map(({ o, day }) => [formatLongDay(day), opportunityLabel(o), formatCop(o.offer_value)]);
@@ -338,7 +362,8 @@ function salespersonContent({ person, row, lastWeekRow, week, now, opportunities
     '',
     `${pendingTitle}.`,
     pendingIntro,
-    ...pendingRows.map(([label, value, days], i) => `  ${i + 1}. ${label} — ${value} — ${days}`),
+    ...(stalledLine ? [stalledLine] : []),
+    ...pendingRows.map(([label, value, days, stall], i) => `  ${i + 1}. ${label} — ${value} — ${days}${stall ? ` — ${stall}` : ''}`),
     ...(pendingMore ? [pendingMore] : []),
     '',
     `Para esta semana (del ${weekRange}):`,
@@ -362,7 +387,8 @@ function salespersonContent({ person, row, lastWeekRow, week, now, opportunities
     `<p style="${P}">${escapeHtml(lastWeekText)}</p>`,
     `<p style="${H2}">${escapeHtml(pendingTitle)}</p>`,
     `<p style="${P}">${escapeHtml(pendingIntro)}</p>`,
-    pendingRows.length ? htmlTable([['Cliente', 'Valor', 'Seguimiento'], ...pendingRows]) : '',
+    stalledLine ? `<p style="${P}">${escapeHtml(stalledLine)}</p>` : '',
+    pendingRows.length ? htmlTable([['Cliente', 'Valor', 'Seguimiento', 'En la etapa'], ...pendingRows]) : '',
     pendingMore ? `<p style="${P}">${escapeHtml(pendingMore)}</p>` : '',
     `<p style="${H2}">Para esta semana <span style="font-weight:normal;color:#667085;">(del ${escapeHtml(weekRange)})</span></p>`,
     weekRows.length ? htmlTable([['Día', 'Cliente', 'Valor'], ...weekRows]) : `<p style="${P}">${escapeHtml(weekEmpty)}</p>`,
@@ -386,6 +412,11 @@ function managerContent({ manager, team, week, now, opportunities, leadAnalyses,
     ['al_dia', 'Al día'], ['atrasado', 'Atrasados'], ['inactivo', 'Inactivos'], ['sin_cartera', 'Sin cartera'],
   ].filter(([status]) => status !== 'sin_cartera' || groups[status].length)
     .map(([status, label]) => `${label}: ${groups[status].length}${groups[status].length ? ` (${groups[status].join(', ')})` : ''}`);
+  // Las estancadas de todo el equipo, contadas una vez y repartidas por dueño.
+  const stalledByOwner = new Map();
+  for (const { opportunity } of stalledInStage(opportunities, now)) {
+    stalledByOwner.set(opportunity.owner_id, (stalledByOwner.get(opportunity.owner_id) || 0) + 1);
+  }
   const stalled = pendingDecisions(opportunities, now)
     .slice()
     .sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0) || String(a.last_interaction_at || '').localeCompare(String(b.last_interaction_at || '')) || String(a.id).localeCompare(String(b.id)))
@@ -402,6 +433,7 @@ function managerContent({ manager, team, week, now, opportunities, leadAnalyses,
       ['Seguimientos semana pasada', String(lastWeekRow?.followUpsWeek ?? 0)],
       ['Decisiones semana pasada', String(lastWeekRow?.decisionsWeek ?? 0)],
       ['Pendientes de decidir', String(row.pendingDecisions)],
+      ['Estancadas', String(stalledByOwner.get(row.profileId) || 0)],
       ['Agenda al día', row.agendaPct === null ? 'sin oportunidades activas' : `${row.agendaPct}%`],
       ['Último ingreso al CRM', formatSince(row.lastSeenAt, now)],
       ['Perfiles de cliente completos', premium.active ? `${premium.complete} de ${premium.active}` : 'sin oportunidades activas'],

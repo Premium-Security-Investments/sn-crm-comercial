@@ -19,7 +19,7 @@ import {
   createTenderSourceReconciliation,
   socrataWhereForProcessIds,
   selectAuthoritativeSocrataRecord,
-} from '../tender-source-reconciliation.js';
+} from '../verticales/licitaciones/tender-source-reconciliation.js';
 
 function existingRow(overrides = {}) {
   return {

@@ -1,0 +1,11 @@
+-- Rollback de 137: para volver a las funciones sin límites de espera hay que
+-- reaplicar la 134 (ya corregida) y, sobre una base que tenga la 136, también la 136.
+-- No se duplican aquí los tres cuerpos completos para no dejar dos copias que se
+-- desincronicen: la fuente es la migración, no el rollback.
+--
+--   psql ... -f supabase/migrations/134_tender_closure_acta.sql
+--   psql ... -f supabase/migrations/136_tender_closure_acta_pending_title.sql
+--
+-- Quitar los límites deja las funciones esperando indefinidamente detrás de la
+-- pasarela, que es justo el problema que la 137 vino a resolver.
+select 1;

@@ -66,7 +66,11 @@ assert.ok(!analysisSection.includes('Generar análisis preliminar'), 'El detalle
 assert.doesNotMatch(analysisSection, /brief de decisión/i, 'La validación humana no debe reintroducir la copia obsoleta "brief de decisión".');
 assert.doesNotMatch(decisionBrief, /brief de decisión/i, 'El brief de decisión no debe reintroducir la copia obsoleta "brief de decisión".');
 for (const handler of [server, api]) {
-  assert.ok(handler.includes("if (!process.env.VERCEL)") && handler.includes('app.listen(port'), 'El handler debe arrancar localmente sin abrir un puerto dentro de Vercel.');
+  // El guardia se comprueba por su efecto, no por su texto: desde CRM_SKIP_LISTEN (los trabajos del host
+  // importan este módulo por sus funciones) la condición tiene más de un término.
+  assert.equal(handler.split('app.listen(').length - 1, 1, 'El handler debe abrir un solo puerto, y sólo fuera de Vercel.');
+  const listenGuard = handler.slice(handler.lastIndexOf('if (', handler.indexOf('app.listen(')), handler.indexOf('app.listen('));
+  assert.match(listenGuard, /!process\.env\.VERCEL\b/, 'El handler debe arrancar localmente sin abrir un puerto dentro de Vercel.');
   assert.ok(handler.includes("app.post('/api/tender-convert'"), 'Backend debe conservar conversión protegida.');
   assert.ok(handler.includes("app.post('/api/tender-refresh'"), 'Backend debe conservar sincronización oficial.');
   assert.ok(handler.includes("app.get('/api/tender-dossiers'"), 'Backend debe exponer expedientes protegidos.');

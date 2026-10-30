@@ -6,7 +6,7 @@ import {
   agt002RadarRunDeltaCategoryLabel,
   buildAgt002RadarRunSnapshot,
   computeAgt002RadarRunDelta,
-} from '../agt002-radar-run-delta.js';
+} from '../verticales/licitaciones/agt002-radar-run-delta.js';
 
 const CANDIDATE_KEYS_SORTED = ['deadline', 'entity', 'fit_band', 'fit_reasons', 'known_phases', 'source', 'stable_key', 'title'];
 

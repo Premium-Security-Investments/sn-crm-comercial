@@ -6,12 +6,12 @@ import { isDirectiveViewerRole } from '../navPermissions';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, deriveTrackingItems, navigateSiioView, parseSiioRouteState, toSiioHash } from './selectors';
 import { SiioExecutiveView } from './SiioExecutiveView';
-import { SiioAgentsView } from './SiioAgentsView';
+import { SiioFinancialImportPanel } from './SiioFinancialImportPanel';
 import { SiioBoardDraftAction } from './SiioBoardDraftAction';
 import { SiioBoardReadonlyView } from './SiioBoardReadonlyView';
-import { SiioManagementTrackingView } from './SiioManagementTrackingView';
+import { SiioFollowupsView } from './SiioFollowups';
+import { useFollowups } from './followups';
 import { SiioNavigation } from './SiioNavigation';
-import { SiioSourcesIntelligenceView } from './SiioSourcesIntelligenceView';
 import type { SiioBootstrapPayload, SiioCurrentProfile, SiioRouteState, SiioView } from './types';
 
 // Etiqueta legible del perfil en el encabezado de la Torre de Control (antes salía el código interno, p. ej. "admin").
@@ -72,19 +72,21 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   }
 
   return <section className="stack siio-dashboard">
-    <section className="executive-hero">
-      <div><span className="eyebrow">SIIO — Sistema Interno de Inteligencia Operativa</span><h2>Información para la dirección</h2><p>Resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad en un solo lugar.</p></div>
-      <div className="hero-facts"><div><small>Perfil</small><strong>{SIIO_ROLE_LABELS[currentProfile.role] || currentProfile.role}</strong></div>{!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}</div>
-    </section>
+    <div className="siio-header-bar">
+      <span className="siio-header-profile">SIIO — Sistema Interno de Inteligencia Operativa · Perfil: <strong>{SIIO_ROLE_LABELS[currentProfile.role] || currentProfile.role}</strong></span>
+      {!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}
+    </div>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
-    <SiioNavigation activeView={routeState.view} onSelect={selectView} />
-    {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'resumen'
-      ? <SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} />
-      : routeState.view === 'seguimiento'
-        ? <SiioManagementTrackingView payload={payload} routeState={routeState} onNavigate={onNavigate} />
-        : routeState.view === 'inteligencia'
-          ? <SiioSourcesIntelligenceView payload={payload} routeState={routeState} onNavigate={onNavigate} />
-          : <SiioAgentsView payload={payload} routeState={routeState} onNavigate={onNavigate} />}
+    <SiioNavigation activeView={routeState.view === 'seguimiento' ? 'seguimiento' : 'resumen'} onSelect={selectView} />
+    {/* Only the Torre and Seguimiento are offered; old links to Fuentes or Agentes fall back to the Torre. */}
+    {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'seguimiento'
+      ? <SiioFollowupsTab />
+      : <><SiioExecutiveView payload={payload} routeState={routeState.view === 'resumen' ? routeState : navigateSiioView('resumen') as Extract<SiioRouteState, { view: 'resumen' }>} onNavigate={onNavigate} /><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /></>}
     {payload && snapshot && !readOnly ? <SiioBoardDraftAction open={boardDraftOpen} onClose={() => setBoardDraftOpen(false)} payload={payload} snapshot={snapshot} trackingItems={trackingItems} recommendations={recommendations} /> : null}
   </section>;
+}
+
+function SiioFollowupsTab() {
+  const followups = useFollowups();
+  return <SiioFollowupsView list={followups.data} state={followups.state} reload={() => void followups.reload()} />;
 }

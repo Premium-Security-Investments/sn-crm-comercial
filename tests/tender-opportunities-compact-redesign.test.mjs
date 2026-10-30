@@ -203,13 +203,14 @@ test('3 — cada fila muestra su etapa; las cerradas llevan la etiqueta "Cerrada
       'Entidad Cerrada Uno': 'Cerrada',
       'Entidad Cerrada Dos': 'Cerrada',
     };
+    // Rediseño 2026-10-12: la etapa es la primera etiqueta de la tarjeta.
+    const stageBadge = article => article.querySelector('.tender-card-tags .badge');
     for (const [entity, stageLabel] of Object.entries(expectedStage)) {
-      const map = metadataMap(byEntity[entity]);
-      assert.ok(map['Etapa'], `${entity} debe mostrar un dato de Etapa`);
-      assert.equal(map['Etapa'].textContent.trim(), stageLabel, `${entity} debe mostrar la etapa ${stageLabel}`);
+      assert.ok(stageBadge(byEntity[entity]), `${entity} debe mostrar su etapa`);
+      assert.equal(stageBadge(byEntity[entity]).textContent.trim(), stageLabel, `${entity} debe mostrar la etapa ${stageLabel}`);
     }
     for (const entity of ['Entidad Cerrada Uno', 'Entidad Cerrada Dos']) {
-      const badge = metadataMap(byEntity[entity])['Etapa'].querySelector('.badge');
+      const badge = stageBadge(byEntity[entity]);
       assert.ok(badge, `${entity} debe mostrar su etapa como badge`);
       assert.equal(badge.className, 'badge badge-neutral', `${entity} debe mostrar "Cerrada" en menor énfasis (tono neutral)`);
     }
@@ -280,20 +281,20 @@ test('4 — sin fecha de cierre no debe inventarse un conteo de días restantes'
   try {
     await settle(view);
     const map = metadataMap(view.container.querySelector('.tracking-row'));
-    assert.equal(map['Cierre'].textContent.trim(), 'Cierre por definir');
+    assert.equal(map['Cierre'].textContent.trim(), 'Por definir');
   } finally {
     await view.unmount();
   }
 });
 
-test('4 — muestra el encaje determinístico junto a la prioridad, sin que el score legado los sustituya', async () => {
+test('4 — muestra el encaje determinístico como etiqueta, sin score legado ni prioridad antigua', async () => {
   const { view } = mountOpportunities([FULL_ROW]);
   try {
     await settle(view);
-    const map = metadataMap(view.container.querySelector('.tracking-row'));
-    assert.ok(map['Encaje'], 'debe existir un dato de Encaje derivado de dossier.fit');
-    assert.equal(map['Encaje'].textContent.trim(), 'bajo', 'el encaje debe reflejar dossier.fit.band, no el score legado (95, que sería "alto")');
-    assert.equal(map['Prioridad'].textContent.trim(), 'Baja', 'la prioridad debe seguir viniendo de section, no del score legado');
+    const article = view.container.querySelector('.tracking-row');
+    const tags = [...article.querySelectorAll('.tender-card-tags .badge')].map(node => node.textContent.trim());
+    assert.ok(tags.includes('Encaje bajo'), 'el encaje debe reflejar dossier.fit.band, no el score legado (95, que sería "alto")');
+    assert.equal(metadataMap(article)['Prioridad'], undefined, 'la prioridad antigua (section) ya no se muestra: se habla de encaje');
   } finally {
     await view.unmount();
   }
@@ -303,9 +304,8 @@ test('4 — la siguiente acción se acompaña de responsable y vencimiento', asy
   const { view } = mountOpportunities([FULL_ROW]);
   try {
     await settle(view);
-    const map = metadataMap(view.container.querySelector('.tracking-row'));
-    const dd = map['Siguiente acción'];
-    assert.ok(dd, 'debe existir el dato de Siguiente acción');
+    const dd = view.container.querySelector('.tracking-row .opportunity-next');
+    assert.ok(dd, 'debe existir la línea de Siguiente paso');
     assert.match(dd.textContent, /Laura Gómez/, 'debe indicar el responsable de la siguiente acción');
     assert.match(dd.textContent, new RegExp(`Vence.*${escapeRegExp(formatDateOnly(DUE_IN_5_DAYS))}`), 'debe indicar el vencimiento de la siguiente acción');
   } finally {
@@ -315,15 +315,21 @@ test('4 — la siguiente acción se acompaña de responsable y vencimiento', asy
 
 // --- (5) razones y riesgos del Radar se conservan; score legado sólo como trazabilidad ---
 
-test('5 — conserva razones y riesgos del Radar; el score legado se marca como trazabilidad, nunca autoridad', async () => {
-  const { view } = mountOpportunities([FULL_ROW]);
+test('5 — sin score histórico ni razones legadas; el bloque de Vig-IA dice si hay análisis (Juan, 2026-10-12)', async () => {
+  const { view } = mountOpportunities([FULL_ROW, { ...FULL_ROW, opportunity_id: 'opp-vigia', entity: 'Entidad Analizada', decision: null, tender_offer_status: 'pendiente_decision', document_import_status: 'documentos_cargados', vigia_analysis: { run_id: 'run-1', analysis_kind: 'REANALYSIS', completed_at: '2026-10-12T14:12:26.000Z', recommendation_kind: 'CONTINUE_CONDITIONAL_RECOMMENDED', recommendation_label: 'Seguir con condiciones: faltan soportes.', confidence: 'MEDIUM', in_progress: false } }]);
   try {
     await settle(view);
-    const article = view.container.querySelector('.tracking-row');
-    assert.match(article.textContent, /Alta afinidad sectorial/, 'debe conservar las razones del Radar');
-    assert.match(article.textContent, /Cliente recurrente/, 'debe conservar las razones del Radar');
-    assert.match(article.textContent, /Riesgos:\s*Plazo de entrega ajustado/, 'debe conservar los riesgos del Radar');
-    assert.match(article.textContent, /Score histórico \(solo trazabilidad\): 95/, 'el score legado debe mostrarse marcado explícitamente como trazabilidad, no como autoridad');
+    await clickByText(view, 'Todas');
+    await settle(view);
+    const articles = [...view.container.querySelectorAll('.tracking-row')];
+    const article = articles.find(node => node.textContent.includes('Alcaldía de Prueba'));
+    assert.doesNotMatch(article.textContent, /Score histórico/, 'el score legado ya no se muestra');
+    assert.doesNotMatch(article.textContent, /Alta afinidad sectorial/, 'las razones legadas ya no se muestran; el encaje explica');
+    assert.match(article.textContent, /Sin análisis de Vig-IA todavía/);
+    const analyzed = articles.find(node => node.textContent.includes('Entidad Analizada'));
+    assert.match(analyzed.textContent, /Seguir con condiciones · confianza media/);
+    assert.match(analyzed.textContent, /Revisar el análisis y decidir GO \/ NO GO/, 'con análisis de Vig-IA no debe pedir "generar el preanálisis"');
+    assert.doesNotMatch(analyzed.textContent, /Generar o actualizar el preanálisis/);
   } finally {
     await view.unmount();
   }

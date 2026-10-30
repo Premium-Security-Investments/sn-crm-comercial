@@ -53,6 +53,7 @@ assert.deepEqual(ACTIONS, {
   LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_COMPANY_PROFILE_UPDATE: 'licitaciones.company_profile.update',
+  LICITACIONES_COMPANY_EVIDENCE_DECIDE: 'licitaciones.company_evidence.decide',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -83,8 +84,8 @@ assert.deepEqual(ACTIONS, {
   LICITACIONES_KNOWLEDGE_PROPOSE: 'licitaciones.knowledge.propose',
   LICITACIONES_KNOWLEDGE_REVIEW: 'licitaciones.knowledge.review',
   LICITACIONES_KNOWLEDGE_PUBLISH: 'licitaciones.knowledge.publish',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 45 acciones');
-assert.equal(actionValues.length, 45, 'ACTIONS debe exponer exactamente 45 códigos estables');
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 46 acciones');
+assert.equal(actionValues.length, 46, 'ACTIONS debe exponer exactamente 46 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -196,7 +197,12 @@ runCases('licitaciones', [
   { name: 'colaborador no usa la Mesa aunque aparente permiso', profile: tenderUser('colaborador'), action: ACTIONS.LICITACIONES_WORKBENCH_USE, resource: {}, expected: false },
   { name: 'encargada comercial con custodia revisa documentos y aprendizaje', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_WORKBENCH_CUSTODY, resource: {}, expected: true },
   { name: 'operador sin custodia no revisa documentos ni aprendizaje', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_WORKBENCH_CUSTODY, resource: {}, expected: false },
-  { name: 'custodia comercial no recibe autoridad go-no-go', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: false },
+  // Juan, 2026-10-29: el acceso a Licitaciones es el permiso; la encargada es `comercial` y aprueba.
+  { name: 'la encargada comercial aprueba go-no-go', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: true },
+  { name: 'comercial con solo el permiso base aprueba go-no-go', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: true },
+  { name: 'comercial sin el permiso de licitaciones no aprueba', profile: human('comercial'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: false },
+  { name: 'solo consulta no aprueba go-no-go', profile: tenderUser('consulta'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: false },
+  { name: 'colaborador con permiso no aprueba go-no-go', profile: tenderUser('colaborador'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: false },
   { name: 'agente no puede usar ni custodiar la Mesa', profile: agent(), action: ACTIONS.LICITACIONES_WORKBENCH_USE, resource: { technical_authorized: true }, expected: false },
   { name: 'gerencia con permiso sincroniza', profile: tenderUser('gerencia'), action: ACTIONS.LICITACIONES_SYNC, resource: {}, expected: true },
   { name: 'director con permiso propone descarte', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_DISCARD_PROPOSE, resource: {}, expected: true },
@@ -210,10 +216,16 @@ runCases('licitaciones', [
   { name: 'permiso empresarial sin licitaciones falla cerrado', profile: human('comercial', { permissions: ['licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE, resource: {}, expected: false },
   { name: 'permiso empresarial no concede custodia', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
   { name: 'agente con permiso empresarial no edita ficha', profile: agent({ permissions: ['licitaciones', 'licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE, resource: {}, expected: false },
+  // Decidir una ficha del registro de evidencia exige custodia: el permiso de ficha empresarial no alcanza.
+  { name: 'custodia decide una ficha del registro de evidencia', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE, resource: {}, expected: true },
+  { name: 'ficha empresarial sin custodia no decide evidencia', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE, resource: {}, expected: false },
+  { name: 'solo consulta no decide evidencia', profile: tenderUser('consulta', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE, resource: {}, expected: false },
+  { name: 'agente no decide evidencia', profile: agent({ permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE, resource: {}, expected: false },
   { name: 'director sin permiso no configura', profile: human('director'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
   { name: 'admin sin custodia no convierte', profile: tenderUser('admin'), action: ACTIONS.LICITACIONES_CONVERT, resource: {}, expected: false },
   { name: 'encargada con custodia convierte', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_CONVERT, resource: {}, expected: true },
-  { name: 'comercial con permiso no aprueba descarte', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_DISCARD_APPROVE, resource: {}, expected: false },
+  { name: 'la encargada comercial aprueba el descarte', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_DISCARD_APPROVE, resource: {}, expected: true },
+  { name: 'solo consulta no aprueba descarte', profile: tenderUser('consulta'), action: ACTIONS.LICITACIONES_DISCARD_APPROVE, resource: {}, expected: false },
   { name: 'director con permiso aprueba go-no-go', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: true },
   { name: 'director sin permiso no aprueba', profile: human('director'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: false },
   { name: 'no existe fallback por correo', profile: human('admin', { microsoft_email: 'directora.licitaciones@seguridadnacional.co' }), action: ACTIONS.LICITACIONES_VIEW, resource: {}, expected: false },

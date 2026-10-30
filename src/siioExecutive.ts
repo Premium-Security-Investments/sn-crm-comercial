@@ -6,6 +6,7 @@ export type SiioFinancialMetric = {
   value_comparison?: number | null;
   variation_abs?: number | null;
   variation_pct?: number | null;
+  base_value?: string | null;
   source_id?: string | null;
   validated_by?: string | null;
   notes?: string | null;
@@ -66,7 +67,7 @@ function numeric(value: number | null | undefined): number {
 }
 
 function percent(value: number | null | undefined): string {
-  return `${(numeric(value) * 100).toFixed(1)}%`;
+  return `${(numeric(value) * 100).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
 function qualifiedTitle(title: string, validated: boolean): string {
@@ -106,10 +107,24 @@ function deriveManagementInsights(
     });
   }
   if (income && costs && numeric(costs.variation_pct) > numeric(income.variation_pct)) {
+    const operatingMargin = financialByConcept['MARGEN OPERACIONAL'];
+    const marginImproved = operatingMargin
+      && operatingMargin.value_current !== null && operatingMargin.value_current !== undefined
+      && operatingMargin.value_comparison !== null && operatingMargin.value_comparison !== undefined
+      && numeric(operatingMargin.value_current) > numeric(operatingMargin.value_comparison);
+    const grossShare = (metricCosts: SiioFinancialMetric, metricIncome: SiioFinancialMetric, key: 'value_current' | 'value_comparison') =>
+      numeric(metricIncome[key]) ? numeric(metricCosts[key]) / numeric(metricIncome[key]) : null;
+    const shareNow = grossShare(costs, income, 'value_current');
+    const shareBefore = grossShare(costs, income, 'value_comparison');
+    const shareDetail = shareNow !== null && shareBefore !== null
+      ? ` Los costos pasaron de ${percent(shareBefore)} a ${percent(shareNow)} de los ingresos.`
+      : '';
     insights.push({
-      id: 'cost-growth-pressure', front: 'F5', tone: 'amber', priority: 'alta',
+      id: 'cost-growth-pressure', front: 'F5', tone: 'amber', priority: marginImproved ? 'media' : 'alta',
       title: qualifiedTitle('Los costos crecen más rápido que los ingresos', financialValidated),
-      finding: qualifiedFinding('El crecimiento comercial no se está convirtiendo íntegramente en expansión del margen.', financialValidated),
+      finding: qualifiedFinding(marginImproved
+        ? `El margen operacional mejoró gracias a gastos más contenidos, pero el margen bruto se está reduciendo.${shareDetail}`
+        : `El crecimiento comercial no se está convirtiendo en expansión del margen.${shareDetail}`, financialValidated),
       evidence: `Costos ${percent(costs.variation_pct)} vs. ingresos ${percent(income.variation_pct)} frente al comparativo.`,
       action: 'Abrir el detalle de costos y asignar responsables a los rubros con mayor variación absoluta.',
       sourceIds: lineage.financialSourceIds, period: lineage.financialPeriod,
@@ -120,7 +135,7 @@ function deriveManagementInsights(
       id: 'non-operating-drag', front: 'F5', tone: 'red', priority: 'alta',
       title: qualifiedTitle('El resultado no operacional deteriora la utilidad', financialValidated),
       finding: qualifiedFinding('El componente no operacional es negativo y empeoró frente al periodo comparativo.', financialValidated),
-      evidence: `Variación no operacional ${percent(nonOperating.variation_pct)}; cambio absoluto negativo registrado en la fuente.`,
+      evidence: `El resultado no operacional empeoró en ${Math.abs(numeric(nonOperating.variation_abs)).toLocaleString('es-CO', { maximumFractionDigits: 0 })} pesos frente al comparativo.`,
       action: 'Desagregar gastos e ingresos no operacionales y definir una explicación ejecutiva del deterioro.',
       sourceIds: lineage.financialSourceIds, period: lineage.financialPeriod,
     });

@@ -7,7 +7,7 @@ import {
   AGT003_COPILOT_CONTRACT_VERSION,
   validateAgt003CopilotRequest,
   validateAgt003CopilotResponse,
-} from '../agt003-copilot-contract.js';
+} from '../verticales/comercial/agt003-copilot-contract.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const contractDir = path.join(root, 'contracts/agents/AGT-003/v2-draft');

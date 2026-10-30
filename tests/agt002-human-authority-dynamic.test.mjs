@@ -1,14 +1,14 @@
 import { strict as assert } from 'node:assert';
 import { ACTIONS, can, requireAction } from '../access-control.js';
-import { callTenderGoNoGoDecision } from '../tender-go-no-go-rpc.js';
-import { callTenderOfferStatusTransition } from '../tender-offer-status-rpc.js';
+import { callTenderGoNoGoDecision } from '../verticales/licitaciones/tender-go-no-go-rpc.js';
+import { callTenderOfferStatusTransition } from '../verticales/licitaciones/tender-offer-status-rpc.js';
 import {
   getAgt002WorkbenchApi,
   postAgt002MessageApi,
   postAgt002RetryApi,
   postAgt002LearningReviewApi,
-} from '../agt002-workbench-api.js';
-import { validateAgt002WorkbenchResult } from '../agt002-workbench-contract.js';
+} from '../verticales/licitaciones/agt002-workbench-api.js';
+import { validateAgt002WorkbenchResult } from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const AI_ONLY_ACTIONS = new Set([ACTIONS.AI_ANALYSIS_RUN, ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND]);
@@ -63,16 +63,26 @@ assert.equal(can(authorizedHumanProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, 
 assert.equal(can(authorizedHumanProfile, ACTIONS.LICITACIONES_WORKBENCH_USE, {}), true);
 assert.equal(can(authorizedHumanProfile, ACTIONS.LICITACIONES_WORKBENCH_CUSTODY, {}), true);
 
-// Un humano real sin el rol elevado sigue sin poder aprobar GO/NO-GO: la
-// identidad humana es necesaria, pero no suficiente.
-const unprivilegedHumanProfile = Object.freeze({
+// Juan, 2026-10-29: la encargada de Licitaciones es `comercial`, así que el acceso a Licitaciones —no el rol— es lo
+// que habilita aprobar. La identidad humana sigue siendo necesaria, y el permiso también.
+const tenderOperatorProfile = Object.freeze({
   id: '44444444-4444-4444-8444-444444444444',
   active: true,
   identity_type: 'human',
   role: 'comercial',
   permissions: Object.freeze(['licitaciones']),
 });
-assert.equal(can(unprivilegedHumanProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, {}), false);
+assert.equal(can(tenderOperatorProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, {}), true);
+
+// Sin el permiso de Licitaciones no hay aprobación, por humano que sea el perfil.
+const humanWithoutTenderAccess = Object.freeze({
+  id: '55555555-5555-4555-8555-555555555555',
+  active: true,
+  identity_type: 'human',
+  role: 'comercial',
+  permissions: Object.freeze([]),
+});
+assert.equal(can(humanWithoutTenderAccess, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, {}), false);
 
 // 3) RPC humanas reales: identidad de agente debe ser rechazada ANTES de tocar
 // la base de datos. Un stub que lanza ante cualquier acceso prueba que no hay

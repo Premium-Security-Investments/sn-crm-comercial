@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { startSyntheticAgt002HetznerBridge } from './fixtures/agt002-hetzner-bridge-synthetic-server.mjs';
-import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
+import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
 import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
-import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../agt002-preview-contract.js';
+import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../verticales/licitaciones/agt002-preview-contract.js';
 
 // Regression for the V3 model-output boundary. The closed schema must survive
 // the real signed HTTP hop unchanged and reach Claude as --json-schema with

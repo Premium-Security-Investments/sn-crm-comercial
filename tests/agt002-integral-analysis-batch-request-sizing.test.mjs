@@ -27,13 +27,13 @@
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 
-import { estimateAgt002V3RequestTokens } from '../agt002-v3-prompt-budget.js';
+import { estimateAgt002V3RequestTokens } from '../verticales/licitaciones/agt002-v3-prompt-budget.js';
 import {
   AGT002_INTEGRAL_ANALYSIS_BATCH_SINGLETON_TOO_LARGE_CODE,
   planAgt002IntegralAnalysisBatches,
   projectAgt002IntegralAnalysisBatch,
-} from '../agt002-integral-analysis-batches.js';
-import { projectAgt002DiscoveredModelInput } from '../agt002-preview-engine.js';
+} from '../verticales/licitaciones/agt002-integral-analysis-batches.js';
+import { projectAgt002DiscoveredModelInput } from '../verticales/licitaciones/agt002-preview-engine.js';
 
 const MODEL = 'synthetic-batch-model';
 const POLICY = 'Politica sintetica de prueba para el planificador de lotes de analisis integral.';

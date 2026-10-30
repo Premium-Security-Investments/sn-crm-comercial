@@ -1,0 +1,697 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
+import { createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
+import { AGT002_POST_BRIDGE_ERROR_CODES, runAgt002PostBridgeAnalysis } from './agt002-post-bridge-observability.js';
+import {
+  claimAgt002PreviewRun,
+  countAgt002PreviewRunsToday,
+  findAgt002PreviewRun,
+  registerAgt002PreviewAnalysis,
+  releaseAgt002PreviewClaim,
+} from './agt002-preview-persistence.js';
+import { createAgt002PreviewRuntime } from './agt002-preview-runtime.js';
+import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLeaseSeconds, validateAgt002GovernedWorksetExtension } from './agt002-reanalysis-input.js';
+import { computeAgt002GovernedWorksetIdempotencyKey, computeAgt002WorksetSelectionHash } from './agt002-governed-document-worksets.js';
+import { validateAgt002CheckpointGenerationRecoveryIdentity } from './agt002-checkpoint-generation-recovery.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../../agt002-preview-allowed-models.js';
+import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from '../../agt002-preview-reasoning-effort.js';
+import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import {
+  createAgt002AnalysisCheckpointAdapter,
+  computeAgt002FrozenEngineInputHash,
+  deriveAgt002AnalysisWorksetIdentity,
+  getOrCreateAgt002AnalysisWorkset,
+  finalizeAgt002DurableBatchedAnalysis,
+} from './agt002-analysis-checkpoints.js';
+import { TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION } from './tender-semantic-discovery.js';
+import { TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION } from './tender-semantic-discovery-batches.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
+import { AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION } from './agt002-integral-analysis-batches.js';
+import { computeAgt002StableContentHash } from './tender-analysis-foundation.js';
+
+function isObject(value) {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function sha256HexUtf8(text) {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+// The governed document resolver seam is never trusted verbatim: its reported identity must
+// equal the frozen governed_workset_members evidence it was called with, byte-for-byte, its
+// opportunity_id/tender_id must equal the frozen document_workset_identity scope it was called
+// with, its own text must re-derive the extraction_text_hash it reports, and its remaining
+// engine-bound metadata (name/document_type/version/current) must be well-formed. Any divergence
+// throws with a `code` classifyAgt002ReanalysisWorkerError maps onto invalid_output.
+function validateAgt002GovernedResolvedDocument(resolved, member, identityScope) {
+  if (!isObject(resolved)
+    || !isNonEmptyString(resolved.document_id)
+    || !isNonEmptyString(resolved.name)
+    || !isNonEmptyString(resolved.document_type)
+    || !isNonEmptyString(resolved.text)
+    || resolved.document_version_id !== member.document_version_id
+    || resolved.content_hash !== member.content_hash
+    || resolved.extraction_id !== member.extraction_id
+    || resolved.extraction_text_hash !== member.extraction_text_hash
+    || resolved.opportunity_id !== identityScope.opportunity_id
+    || resolved.tender_id !== identityScope.tender_id
+    || !Number.isInteger(resolved.version) || resolved.version <= 0
+    || typeof resolved.current !== 'boolean'
+    || sha256HexUtf8(resolved.text) !== resolved.extraction_text_hash) {
+    const error = new Error('AGT-002 governed document resolver: invalid resolved document output.');
+    error.code = 'AGT002_GOVERNED_DOCUMENT_RESOLVER_INVALID_OUTPUT';
+    throw error;
+  }
+}
+
+const CONTEXT_V2_REQUIRED_SECTION_KEYS = Object.freeze(['opportunity', 'company_dossier', 'commercial_context', 'human_evidence']);
+const HEX64_LOWER_RE = /^[0-9a-f]{64}$/;
+
+function hasCompleteContextV2Sections(sections) {
+  return isObject(sections) && CONTEXT_V2_REQUIRED_SECTION_KEYS.every(key => Object.hasOwn(sections, key));
+}
+
+function throwContextVersionRehydrationFailed(message) {
+  const error = new Error(message);
+  error.code = 'AGT002_CONTEXT_VERSION_REHYDRATION_FAILED';
+  throw error;
+}
+
+// The governed context-version resolver seam is never trusted verbatim either: its reported
+// identity must equal the job's own immutable opportunity/tender/snapshot scope, its own context
+// blob must re-derive its claimed content_hash byte-for-byte (the same stable-key-sorted-JSON
+// sha256 scheme registerAgt002ContextVersion used to write it), the blob's own embedded
+// snapshot_id must agree with that same scope, and the blob must carry all four required
+// contextV2Sections. Any divergence throws AGT002_CONTEXT_VERSION_REHYDRATION_FAILED.
+function validateAgt002ResolvedContextVersion(resolved, job) {
+  if (!isObject(resolved)
+    || resolved.opportunity_id !== job.opportunityId
+    || resolved.tender_id !== job.tenderId
+    || resolved.snapshot_id !== job.snapshotId
+    || !isObject(resolved.context)
+    || resolved.context.snapshot_id !== job.snapshotId
+    || typeof resolved.content_hash !== 'string'
+    || !HEX64_LOWER_RE.test(resolved.content_hash)
+    || computeAgt002StableContentHash(resolved.context) !== resolved.content_hash
+    || !hasCompleteContextV2Sections(resolved.context)) {
+    throwContextVersionRehydrationFailed('AGT-002 context version resolver: invalid resolved context version output.');
+  }
+}
+
+/** The frozen job's own identity always wins; a legacy input with no `effort` gets the current safe default. */
+function resolveAgt002FrozenEffort(identity) {
+  return isAgt002PreviewReasoningEffort(identity.effort) ? identity.effort : AGT002_PREVIEW_DEFAULT_REASONING_EFFORT;
+}
+
+function validFrozenInput(job) {
+  const input = job?.frozenEngineInput;
+  const identity = input?.engine_identity;
+  const flags = input?.analysis_flags;
+  const context = input?.analysis_context;
+  if (!isObject(input) || (input.schema_version !== 1 && input.schema_version !== 2) || !isObject(identity) || !isObject(flags) || !isObject(context)) return null;
+  if (!AGT002_PREVIEW_ALLOWED_MODELS.includes(identity.model)
+    || typeof identity.policy_version !== 'string' || !identity.policy_version.trim()
+    || !Number.isInteger(identity.timeout_ms) || identity.timeout_ms <= 0 || identity.timeout_ms > 480_000
+    || !Number.isInteger(identity.daily_max_runs) || identity.daily_max_runs <= 0
+    || !Number.isInteger(identity.max_concurrent) || identity.max_concurrent <= 0) return null;
+  // AGT-002 root-cause fix: `effort` is optional here (never rejected merely for being absent) so
+  // a job frozen before this field existed keeps executing exactly as it did before — see
+  // frozenEnvironment below for the safe default applied at reconstruction. A PRESENT value must
+  // still be a real allowlisted reasoning effort, or a corrupted/hostile frozen input could push
+  // an unsupported value all the way to the provider.
+  if (identity.effort !== undefined && !isAgt002PreviewReasoningEffort(identity.effort)) return null;
+  // A timeout whose two-turn lease the reservation ceiling cannot fund is a frozen-config error,
+  // not a capacity state: reject it here — before any claim, runtime construction or post-bridge
+  // call — exactly like the other pre-claim validation failures. 285_000ms is the largest fundable
+  // timeout (2*285+30 = 600 exactly); 285_001ms needs 602s and is rejected.
+  if (agt002RequiredPreviewClaimLeaseSeconds(identity.timeout_ms) > AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS) return null;
+  if (identity.idempotency_key != null && identity.idempotency_key !== job.idempotencyKey) return null;
+  const recoveryKey = validateAgt002CheckpointGenerationRecoveryIdentity(input.checkpoint_generation_recovery);
+  if (recoveryKey === undefined || (recoveryKey !== null && recoveryKey !== job.idempotencyKey)) return null;
+  if (context?.opportunity?.id !== job.opportunityId
+    || context.snapshotId !== job.snapshotId
+    || context.canonicalOnly !== true
+    || flags.AGT002_CANONICAL_ONLY !== true) return null;
+  if (flags.AGT002_INTEGRAL_CONTRACT_V3 === true && !validAgt002FrozenGovernance(input.integral_v3_governance)) return null;
+  if (flags.AGT002_LEGAL_CORPUS === true && !isObject(input.legal_corpus_context)) return null;
+  // Governed document worksets are a schema_version 2-only extension: a frozen input carrying
+  // either governed field always requires schema_version === 2 and re-validates BOTH fields
+  // through the same shared validator the enqueue side used to freeze them — never trusted
+  // verbatim here either. Legacy/non-governed schema_version 1 input is untouched.
+  if (Object.hasOwn(input, 'document_workset_identity') || Object.hasOwn(input, 'governed_workset_members')) {
+    if (input.schema_version !== 2) return null;
+    let validatedExtension;
+    try {
+      validatedExtension = validateAgt002GovernedWorksetExtension({
+        document_workset_identity: input.document_workset_identity,
+        governed_workset_members: input.governed_workset_members,
+      });
+    } catch {
+      return null;
+    }
+    // Defense in depth: the frozen identity must be exactly the job it rides on, and the engine's
+    // own analysis_context.documents must be an exact ordered three-field projection of the
+    // governed members — never a superset, subset, reordering or per-field divergence.
+    const identityScope = validatedExtension.document_workset_identity;
+    if (identityScope.opportunity_id !== job.opportunityId
+      || identityScope.tender_id !== job.tenderId
+      || identityScope.snapshot_id !== job.snapshotId
+      || identityScope.context_version_id !== job.contextVersionId) return null;
+    // A governed job's engine_identity.idempotency_key is REQUIRED (never merely
+    // present-if-supplied like the legacy check above) and must equal exactly the job's own
+    // idempotencyKey — a governed extension can never ride on a job whose frozen identity is
+    // silent about which job it belongs to.
+    if (typeof identity.idempotency_key !== 'string' || !identity.idempotency_key.trim()
+      || identity.idempotency_key !== job.idempotencyKey) return null;
+    // Governed jobs' idempotency is re-derived from the validated document_workset_identity
+    // scope fields plus selection_hash (never recomputed from the 3-field members projection —
+    // the stored selection_hash also binds content/extraction hashes this frozen input does not
+    // carry) and must equal exactly the job's own idempotencyKey — never merely present/absent
+    // like the legacy engine_identity.idempotency_key check above.
+    const expectedGovernedIdempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
+      opportunityId: identityScope.opportunity_id,
+      tenderId: identityScope.tender_id,
+      snapshotId: identityScope.snapshot_id,
+      contextVersionId: identityScope.context_version_id,
+      selectionHash: identityScope.selection_hash,
+    });
+    if (recoveryKey === null) {
+      if (expectedGovernedIdempotencyKey !== job.idempotencyKey) return null;
+    } else if (expectedGovernedIdempotencyKey !== input.checkpoint_generation_recovery.root_idempotency_key) {
+      return null;
+    }
+    const members = validatedExtension.governed_workset_members;
+    // The identity's own selection_hash is never trusted verbatim either: it is re-derived here
+    // from the re-validated six-field members, byte-for-byte via the same canonical hash
+    // freezeAgt002WorksetEvidence() computed at freeze time, and must match exactly — a durable
+    // job whose selection_hash was altered after freezing (even if every other field stays
+    // internally consistent) is rejected here, before any claim.
+    const recomputedSelectionHash = computeAgt002WorksetSelectionHash({
+      opportunityId: identityScope.opportunity_id,
+      tenderId: identityScope.tender_id,
+      members,
+    });
+    if (recomputedSelectionHash !== identityScope.selection_hash) return null;
+    const documents = context.documents;
+    if (!Array.isArray(documents) || documents.length !== members.length) return null;
+    for (let i = 0; i < members.length; i += 1) {
+      const member = members[i];
+      const document = documents[i];
+      if (!isObject(document) || Object.keys(document).length !== 3
+        || document.document_version_id !== member.document_version_id
+        || document.source_classification !== member.source_classification
+        || document.inclusion_reason !== member.inclusion_reason) return null;
+    }
+  } else if (recoveryKey !== null) {
+    // Generation recovery is intentionally limited to a governed freeze. It must never
+    // become a general bypass for a legacy/non-governed first canonical analysis.
+    return null;
+  }
+  return input;
+}
+
+// C: a NEW job (agt002-reanalysis-input.js's buildAgt002FrozenEngineInput) always freezes
+// evidenceIdentity and evidenceAsOf together — re-validated here, shape and all, rather than
+// merely accepted. A job durably queued before evidenceAsOf existed carries neither field at
+// all; that legacy shape is the only accepted exception, so an already-queued pre-F3 job is not
+// rejected before even attempting execution. Either field present without the other can never
+// come from any real builder (current or legacy) and is rejected as a corrupted/hostile frozen
+// input.
+function validAgt002FrozenGovernance(governance) {
+  if (!isObject(governance)) return false;
+  const hasIdentity = governance.evidenceIdentity != null;
+  const hasAsOf = governance.evidenceAsOf != null;
+  if (hasIdentity !== hasAsOf) return false;
+  if (hasIdentity) {
+    try { validateAgt002CompanyEvidenceIdentity(governance.evidenceIdentity); } catch { return false; }
+  }
+  if (hasAsOf) {
+    // Canonical format only — never merely Date-parseable — so a corrupted/hostile frozen
+    // job can never carry an offset, a non-midnight time or a calendar-impossible date.
+    try { validateAgt002CompanyEvidenceAsOf(governance.evidenceAsOf); } catch { return false; }
+  }
+  return true;
+}
+
+function frozenEnvironment(base, input) {
+  const identity = input.engine_identity;
+  const environment = {
+    ...base,
+    TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
+    AGT002_PREVIEW_MODEL: identity.model,
+    AGT002_PREVIEW_POLICY_VERSION: identity.policy_version,
+    AGT002_PREVIEW_TIMEOUT_MS: String(identity.timeout_ms),
+    AGT002_PREVIEW_DAILY_MAX_RUNS: String(identity.daily_max_runs),
+    AGT002_PREVIEW_MAX_CONCURRENT: String(identity.max_concurrent),
+    // A legacy frozen input (no `effort` field) reconstructs with the current safe default,
+    // never the worker host's own ambient env var — the frozen job's own identity always wins.
+    AGT002_PREVIEW_REASONING_EFFORT: resolveAgt002FrozenEffort(identity),
+  };
+  for (const name of ANALYSIS_FLAG_NAMES) {
+    if (Object.hasOwn(input.analysis_flags, name)) environment[name] = input.analysis_flags[name] === true ? 'true' : 'false';
+  }
+  return environment;
+}
+
+/**
+ * Explicit, exhaustive, closed projection of the post-bridge error catalog
+ * (AGT002_POST_BRIDGE_ERROR_CODES) onto the queue's own closed catalog
+ * (AGT002_REANALYSIS_QUEUE_ERROR_CODES, enforced by migration 068's CHECK constraint and by
+ * psi_fail_agt002_reanalysis_job — so no new queue code may be minted here without a migration).
+ *
+ * This used to be substring matching with `provider_error` as the DEFAULT arm, which is how the real
+ * Procuraduria reanalysis reported provider_error after 18 successful semantic-discovery bridge
+ * turns (timeout_ms=285000, max observed turn latency ~89s, no 19th bridge call) and then ended
+ * unavailable with no analysis_run. The durable evidence for that run proves only: stage=unexpected,
+ * bridge_response_received latched true, persistence_attempts=0. It does NOT prove which local,
+ * pre-provider-call frontier actually failed — a lost preview lease at the analysis-turn boundary is
+ * one hypothesis consistent with that signature (and the one this module now classifies correctly,
+ * see AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST below), but so is any other untagged local failure
+ * between the discovery turns and the analysis bridge call (e.g. discovered-input assembly or
+ * validation-context construction — see agt002-preview-engine.js). Whatever the real cause,
+ * AGT002_UNEXPECTED_ERROR contains none of the matched substrings, so it fell through to the default
+ * and blamed a provider that was never even called. Three distinct closed codes (UNEXPECTED_ERROR,
+ * ATTEMPT_UPDATE_FAILED, RESPONSE_SERIALIZATION_FAILED) collapsed the same way.
+ *
+ * Every entry below is now deliberate, and `provider_error` is reachable from EXACTLY ONE code —
+ * AGT002_PROVIDER_ERROR, which is only ever minted when the bridge call itself failed and the
+ * provider reported the failure. An unknown/absent code is NOT the provider's fault either: it fails
+ * closed onto `invalid_output`, the same fail-closed bucket the worker's own closedOutcomeCode
+ * already uses for an unrecognized value.
+ */
+const POST_BRIDGE_TO_QUEUE_ERROR_CODE = new Map([
+  // The bridge never produced a usable response (timeout, cancel, transport, session). `timeout` is
+  // the queue's closest member and the code this frontier has always mapped to.
+  [AGT002_POST_BRIDGE_ERROR_CODES.TRANSPORT_ERROR, 'timeout'],
+  // The one and only source of provider_error.
+  [AGT002_POST_BRIDGE_ERROR_CODES.PROVIDER_ERROR, 'provider_error'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.CONTENT_EXTRACTION_FAILED, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.JSON_PARSE_FAILED, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.MODEL_OUTPUT_INVALID, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.ENVELOPE_INVALID, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.INTEGRAL_V3_INVALID, 'invalid_output'],
+  // The run's fenced lease was already gone at a stage boundary: the queue has always had a code
+  // for exactly this, it was simply unreachable through the post-bridge path.
+  [AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST, 'lease_lost'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED, 'persistence_failure'],
+  // Failing to write the durable attempt row is a persistence failure, not a provider failure.
+  [AGT002_POST_BRIDGE_ERROR_CODES.ATTEMPT_UPDATE_FAILED, 'persistence_failure'],
+  // The run persisted but could not be shaped into a presentable payload: a server-side output
+  // problem, never the provider's.
+  [AGT002_POST_BRIDGE_ERROR_CODES.RESPONSE_SERIALIZATION_FAILED, 'invalid_output'],
+  // Genuinely unknown. Not attributable to the provider, so it must not say provider_error; the
+  // durable attempt event and the reanalysis_post_bridge_outcome event still carry the real
+  // 'unexpected' stage, which is where an operator reads WHERE it stopped.
+  [AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR, 'invalid_output'],
+]);
+
+function mapPostBridgeOutcomeCode(value) {
+  return POST_BRIDGE_TO_QUEUE_ERROR_CODE.get(value) ?? 'invalid_output';
+}
+
+/**
+ * Wall-clock reserve at the tail of the claim lease that a bounded persistence retry may never
+ * eat into: the durable 'unavailable'/'completed' attempt write, the claim release and the queue's
+ * own terminal transition all still have to happen after persistence returns.
+ */
+export const AGT002_PERSISTENCE_RETRY_LEASE_RESERVE_MS = 10_000;
+
+/**
+ * Canonical derivation input for a durable_batched_v1 job's stable workset identity: the job's
+ * own opportunity/tender/snapshot/context/idempotency, the frozen engine's own model/effort/
+ * policy, and the CURRENT production semantic-discovery and integral-analysis-batch constants —
+ * never a duplicated literal version string. Per design, the semantic policy version doubles as
+ * the semantic schema/stage-contract identity, the integral contract version is the integral
+ * batch schema identity, and the frozen engine's own policyVersion is the integral batch policy
+ * identity. Company evidence / legal corpus identity and the inventory/snapshot hash pair are
+ * included only when safely present in the frozen input; otherwise they stay null.
+ */
+function buildAgt002DurableWorksetDerivationInput({ job, input, frozenEngineInputHash }) {
+  const identity = input.engine_identity;
+  const governance = input.integral_v3_governance;
+  const legalCorpusContext = input.legal_corpus_context;
+  const inventory = isObject(input.analysis_context) && isObject(input.analysis_context.document_evidence)
+    ? input.analysis_context.document_evidence.tender_requirement_inventory
+    : null;
+  const hasInventoryHashPair = isObject(inventory)
+    && typeof inventory.inventory_hash === 'string'
+    && typeof inventory.snapshot_hash === 'string';
+  return {
+    opportunityId: job.opportunityId,
+    tenderId: job.tenderId,
+    snapshotId: job.snapshotId,
+    contextVersionId: job.contextVersionId,
+    idempotencyKey: job.idempotencyKey,
+    model: identity.model,
+    effort: resolveAgt002FrozenEffort(identity),
+    policyVersion: identity.policy_version,
+    semanticDiscoveryPolicyVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+    semanticDiscoverySchemaVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+    semanticDiscoveryPlannerVersion: TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION,
+    integralAnalysisBatchPolicyVersion: identity.policy_version,
+    integralAnalysisBatchSchemaVersion: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+    integralAnalysisBatchPlannerVersion: AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION,
+    frozenEngineInputHash,
+    companyEvidenceIdentity: governance?.evidenceIdentity ?? null,
+    legalCorpusIdentity: isObject(legalCorpusContext)
+      ? { legal_corpus_version_id: legalCorpusContext.legal_corpus_version_id, content_sha256: legalCorpusContext.content_sha256 }
+      : null,
+    inventoryHash: hasInventoryHashPair ? inventory.inventory_hash : null,
+    snapshotHash: hasInventoryHashPair ? inventory.snapshot_hash : null,
+  };
+}
+
+/**
+ * Builds the `persistAnalysis` function the durable_batched_v1 path hands to
+ * runPostBridgeAnalysis. It calls the injected `registerPreviewAnalysis` unchanged — every
+ * existing envelope/idempotency validation it performs still runs — against a proxy database
+ * that intercepts ONLY the legacy canonical-run RPC name and replaces it with exactly one atomic
+ * `finalizeDurableAnalysis` call, fenced by this claimed job's own {jobId, leaseId, worksetId}.
+ * Any other RPC reaches the real, supplied database untouched. The finalizer's response is
+ * validated (nonempty analysisRunId, matching worksetId/jobId) before being reshaped into the
+ * Supabase-shaped `{data, error}` row `registerPreviewAnalysis` expects back.
+ */
+function createAgt002DurablePersistAnalysis({ database, job, worksetId, finalizeDurableAnalysis, registerPreviewAnalysis, jobLeaseHeartbeat }) {
+  const proxyDatabase = {
+    ...database,
+    async rpc(name, params) {
+      if (name !== 'psi_record_agt002_canonical_analysis_run') return database.rpc(name, params);
+      if (jobLeaseHeartbeat) await jobLeaseHeartbeat({ stage: 'final_persistence' });
+      const finalized = await finalizeDurableAnalysis(database, {
+        jobId: job.jobId,
+        leaseId: job.leaseId,
+        worksetId,
+        snapshotId: params.p_snapshot_id,
+        opportunityId: params.p_opportunity_id,
+        tenderId: params.p_tender_id,
+        result: params.p_result,
+        criticalOpenCount: params.p_critical_open_count,
+        idempotencyKey: params.p_idempotency_key,
+        schemaVersion: params.p_schema_version,
+        policyVersion: params.p_policy_version,
+        model: params.p_model,
+        usage: params.p_usage,
+        contextVersionId: params.p_context_version_id,
+        legalCorpusVersionId: params.p_legal_corpus_version_id ?? null,
+      });
+      if (!isNonEmptyString(finalized?.analysisRunId) || finalized.worksetId !== worksetId || finalized.jobId !== job.jobId) {
+        throw new Error('AGT-002 durable batched analysis: respuesta de finalización inválida.');
+      }
+      return {
+        data: {
+          id: finalized.analysisRunId,
+          snapshot_id: params.p_snapshot_id,
+          canonical: true,
+          producer: 'AGT-002',
+          method: 'agent_ai',
+          status: 'completed',
+          critical_open_count: params.p_critical_open_count,
+          context_version_id: params.p_context_version_id ?? null,
+          legal_corpus_version_id: params.p_legal_corpus_version_id ?? null,
+        },
+        error: null,
+      };
+    },
+  };
+  // runAgt002PostBridgeAnalysis invokes persistAnalysis as (trackedDatabase, persistenceParams);
+  // trackedDatabase is intentionally ignored — the durable wrapper must force proxyDatabase (the
+  // one that intercepts the canonical RPC and routes it through atomic finalize), never whatever
+  // database instance the post-bridge caller happens to be tracking.
+  return (trackedDatabase, persistenceParams) => registerPreviewAnalysis(proxyDatabase, persistenceParams);
+}
+
+/**
+ * Builds the direct-host executor. The legacy preview claim is acquired only
+ * immediately before engine construction. runAgt002PostBridgeAnalysis owns
+ * that claim once invoked; any earlier failure releases it exactly once.
+ */
+export function createAgt002ReanalysisExecutor({
+  environment = process.env,
+  now = Date.now,
+  claimPreviewRun = claimAgt002PreviewRun,
+  findPreviewRun = findAgt002PreviewRun,
+  releasePreviewClaim = releaseAgt002PreviewClaim,
+  countDailyRuns = countAgt002PreviewRunsToday,
+  createRuntime = createAgt002PreviewRuntime,
+  runPostBridgeAnalysis = runAgt002PostBridgeAnalysis,
+  createCorrelationId = randomUUID,
+  observability = createAgt002AnalysisObservability(),
+  // AGT-002 durable batched analysis, Task 2: constructed ONLY for a claimed job whose own
+  // executionMode is exactly 'durable_batched_v1' — never for a missing mode, 'single_turn_v1',
+  // or any direct/Manizales/legacy path. Kept as an injectable seam (defaulting to the real
+  // Supabase RPC adapter) purely so this dependency never touches a database in unit tests.
+  createCheckpointAdapter = createAgt002AnalysisCheckpointAdapter,
+  // HIGH remediation 1+2: stable workset identity + persistence-boundary seams. Constructed/
+  // invoked ONLY for a claimed job whose own executionMode is exactly 'durable_batched_v1' —
+  // defaulting to the real hash/derive/get-or-create/finalize/register functions so no unit test
+  // ever touches a database.
+  computeFrozenInputHash = computeAgt002FrozenEngineInputHash,
+  deriveWorksetIdentity = deriveAgt002AnalysisWorksetIdentity,
+  getOrCreateWorkset = getOrCreateAgt002AnalysisWorkset,
+  finalizeDurableAnalysis = finalizeAgt002DurableBatchedAnalysis,
+  registerPreviewAnalysis = registerAgt002PreviewAnalysis,
+  // Governed document-workset content rehydration seam: invoked ONLY for a frozen input that
+  // carries a validated document_workset_identity + governed_workset_members (validFrozenInput
+  // already re-validated both), once per exact frozen member, before runPostBridgeAnalysis. A
+  // frozen input with no governed workset never calls this, byte-for-byte unchanged from before.
+  governedDocumentResolver,
+  // Governed context-version rehydration seam: invoked ONLY for a contextV2 job (analysis_flags.
+  // AGT002_CONTEXT_V2 === true) whose frozen analysis_context lacks a structurally complete
+  // contextV2Sections (all four of opportunity/company_dossier/commercial_context/human_evidence
+  // present). A job whose frozen sections are already complete, or whose contextV2 flag is off,
+  // never calls this, byte-for-byte unchanged from before.
+  governedContextVersionResolver,
+} = {}) {
+  return async function executeAgt002Reanalysis(database, job, { beforeProviderCall: jobLeaseHeartbeat } = {}) {
+    const input = validFrozenInput(job);
+    if (!input) return { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false };
+
+    const identity = input.engine_identity;
+    // Never clamped — validFrozenInput already rejected anything the ceiling cannot fund.
+    const leaseSeconds = agt002RequiredPreviewClaimLeaseSeconds(identity.timeout_ms);
+    let previewClaimId = null;
+    // Stamped BEFORE the claim RPC (never after), so the derived deadline can only ever be
+    // earlier than the real lease start — a bounded persistence retry must be conservative about
+    // the lease it is spending, never optimistic.
+    const leaseStartedAt = now();
+    try {
+      const claim = await claimPreviewRun(database, {
+        idempotencyKey: job.idempotencyKey,
+        dailyMaxRuns: identity.daily_max_runs,
+        maxConcurrent: identity.max_concurrent,
+        leaseSeconds,
+      });
+      if (claim?.status === 'existing') {
+        const existing = await findPreviewRun(database, job.idempotencyKey, { canonicalOnly: true });
+        if (!existing?.run_id) return { status: 'unavailable', analysis_run_id: null, error_code: 'persistence_failure', reused: false };
+        return { status: 'completed', analysis_run_id: existing.run_id, reused: true };
+      }
+      if (claim?.status !== 'claimed' || typeof claim?.claim_id !== 'string' || !claim.claim_id) {
+        return { status: 'unavailable', analysis_run_id: null, error_code: 'capacity_unavailable', reused: false };
+      }
+      previewClaimId = claim.claim_id;
+
+      // The two booleans are the historical, latched run-level signals (kept verbatim: the
+      // observability event still emits exactly them). The two counters are what make the signal
+      // usable on the V7/V8 discovered-frontier path, where semantic discovery takes N provider
+      // turns before the analysis turn: once any batch answers, `responseReceived` is permanently
+      // true and can no longer tell an outstanding call apart from a finished one. `invocationCount
+      // > responseCount` means, and only means, "a bridge call is in flight right now".
+      const bridgeTelemetry = { invocationStarted: false, responseReceived: false, invocationCount: 0, responseCount: 0 };
+      const governance = input.integral_v3_governance;
+      // Durable batched checkpoint hooks + persistence wiring: constructed exactly once, only for
+      // a claimed job whose own executionMode is exactly 'durable_batched_v1'. A missing
+      // executionMode (every existing legacy/direct/Manizales job) or an explicit 'single_turn_v1'
+      // never derives a workset, never constructs an adapter, and never builds persistAnalysis, so
+      // createRuntime/runPostBridgeAnalysis stay byte-identical to today on those paths.
+      const isDurableBatched = job.executionMode === 'durable_batched_v1';
+      let checkpointHooks = null;
+      let persistAnalysis;
+      if (isDurableBatched) {
+        const frozenEngineInputHash = computeFrozenInputHash(job.frozenEngineInput);
+        const derivedIdentity = deriveWorksetIdentity(buildAgt002DurableWorksetDerivationInput({ job, input, frozenEngineInputHash }));
+        const worksetResult = await getOrCreateWorkset(database, derivedIdentity);
+        if (!isNonEmptyString(worksetResult?.worksetId)) {
+          return { status: 'unavailable', analysis_run_id: null, error_code: 'persistence_failure', reused: false };
+        }
+        const worksetId = worksetResult.worksetId;
+        // Fenced by the CONCRETE, get-or-created workset id — never the job's raw idempotencyKey.
+        checkpointHooks = createCheckpointAdapter(database, { jobId: job.jobId, leaseId: job.leaseId, worksetId });
+        persistAnalysis = createAgt002DurablePersistAnalysis({ database, job, worksetId, finalizeDurableAnalysis, registerPreviewAnalysis, jobLeaseHeartbeat });
+      }
+
+      // Transient rehydration of governed document content: never mutates job.frozenEngineInput
+      // or input.analysis_context — a brand-new analysisContext object is built for this one
+      // execution only, and its resolved text never flows back into anything persisted as
+      // frozen_engine_input.
+      let effectiveAnalysisContext = input.analysis_context;
+      const isGovernedWorkset = Object.hasOwn(input, 'document_workset_identity') && Object.hasOwn(input, 'governed_workset_members');
+      if (isGovernedWorkset) {
+        if (typeof governedDocumentResolver !== 'function') {
+          const error = new Error('AGT-002 governed document resolver: no resolver available for a governed workset job.');
+          error.code = 'AGT002_GOVERNED_DOCUMENT_RESOLVER_INVALID_OUTPUT';
+          throw error;
+        }
+        const identityScope = input.document_workset_identity;
+        const members = input.governed_workset_members;
+        const resolvedDocuments = await Promise.all(members.map(async member => {
+          const resolved = await governedDocumentResolver({
+            opportunityId: identityScope.opportunity_id,
+            tenderId: identityScope.tender_id,
+            snapshotId: identityScope.snapshot_id,
+            contextVersionId: identityScope.context_version_id,
+            documentVersionId: member.document_version_id,
+            member,
+          });
+          validateAgt002GovernedResolvedDocument(resolved, member, identityScope);
+          // Projected into EXACTLY the 10 keys agt002-document-chunks.js accepts — never
+          // source_classification/inclusion_reason, which remain governed evidence in the frozen
+          // members/workset only, never reaching the engine.
+          return {
+            document_id: resolved.document_id,
+            document_version_id: resolved.document_version_id,
+            opportunity_id: identityScope.opportunity_id,
+            snapshot_id: identityScope.snapshot_id,
+            document_type: resolved.document_type,
+            name: resolved.name,
+            version: resolved.version,
+            content_hash: resolved.content_hash,
+            current: resolved.current,
+            extracted_text: resolved.text,
+          };
+        }));
+        effectiveAnalysisContext = { ...input.analysis_context, documents: resolvedDocuments };
+      }
+
+      // Fail-closed rehydration of a contextV2 job's contextV2Sections: never mutates
+      // job.frozenEngineInput or input.analysis_context — a brand-new analysisContext object is
+      // built for this one execution only, injecting ONLY contextV2Sections. A job whose frozen
+      // sections are already structurally complete never calls the resolver at all.
+      if (input.analysis_flags.AGT002_CONTEXT_V2 === true && !hasCompleteContextV2Sections(effectiveAnalysisContext?.contextV2Sections)) {
+        if (typeof governedContextVersionResolver !== 'function') {
+          throwContextVersionRehydrationFailed('AGT-002 context version resolver: no resolver available for a contextV2 job needing rehydration.');
+        }
+        const resolvedContextVersion = await governedContextVersionResolver({
+          database,
+          contextVersionId: job.contextVersionId,
+          opportunityId: job.opportunityId,
+          tenderId: job.tenderId,
+          snapshotId: job.snapshotId,
+        });
+        validateAgt002ResolvedContextVersion(resolvedContextVersion, job);
+        const { opportunity, company_dossier, commercial_context, human_evidence } = resolvedContextVersion.context;
+        effectiveAnalysisContext = {
+          ...effectiveAnalysisContext,
+          contextV2Sections: { opportunity, company_dossier, commercial_context, human_evidence },
+        };
+      }
+
+      const engine = createRuntime({
+        environment: frozenEnvironment(environment, input),
+        countDailyRuns: () => countDailyRuns(database),
+        legalCorpusContext: input.legal_corpus_context,
+        manizalesManifestSource: input.manizales_manifest_source,
+        onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; bridgeTelemetry.invocationCount += 1; },
+        onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; bridgeTelemetry.responseCount += 1; },
+        // Both live leases renew at every provider boundary: the runtime's own preview-claim
+        // renewal (fenced by job.idempotencyKey + this claim) composes with the durable worker's
+        // outer job-lease renewal (fenced by job.jobId + job.leaseId), never skipping either.
+        database,
+        previewClaim: { idempotencyKey: job.idempotencyKey, claimId: previewClaimId },
+        ...(jobLeaseHeartbeat ? { beforeProviderCall: jobLeaseHeartbeat } : {}),
+        ...(checkpointHooks ? { checkpointHooks } : {}),
+        ...(governance ? {
+          companyEvidenceRegistryEntries: governance.companyEvidenceRegistryEntries,
+          // F4: the SAME frozen catalog snapshot the run identity was computed from — never
+          // re-loaded or re-derived here.
+          companyEvidenceInventorySnapshot: governance.companyEvidenceInventorySnapshot,
+          // F4/A5: the SAME deterministic instant the frozen governance already carries — never
+          // the wall clock, never re-derived here — so the durable engine's classes/identity bind
+          // to it too.
+          companyEvidenceAsOf: governance.evidenceAsOf,
+          categoryOverrides: governance.categoryOverrides,
+          evidenceClassLinkByRequirementId: governance.evidenceClassLinkByRequirementId,
+          governanceProvenance: governance.governanceProvenance,
+          contextVersionId: job.contextVersionId,
+        } : {}),
+      });
+
+      const outcome = await runPostBridgeAnalysis(database, {
+        opportunityId: job.opportunityId,
+        tenderId: job.tenderId,
+        snapshotId: job.snapshotId,
+        contextVersionId: job.contextVersionId,
+        attemptKey: job.idempotencyKey,
+        resumeCount: job.resumeCount,
+        correlationId: createCorrelationId(),
+        claimId: previewClaimId,
+        idempotencyKey: job.idempotencyKey,
+        expectedIdempotencyKey: job.idempotencyKey,
+        // Persistence is its own stage boundary (agt002-post-bridge-observability.js): the SAME
+        // preview claim renews once more, fenced, immediately before the canonical persistence RPC.
+        leaseSeconds,
+        canonicalOnly: true,
+        // F3: the SAME company evidence identity the frozen governance already carries — never
+        // reloaded/re-derived here — so the durable persistence call binds to it too.
+        evidenceIdentity: governance?.evidenceIdentity ?? null,
+        // The frozen flags are the run's own governed truth: the enqueue that reserved
+        // job.idempotencyKey bound the tender inventory into that identity if and only if
+        // AGT002_DOCUMENT_RETRIEVAL was on. Requiring the inventory at persistence with
+        // retrieval off would reject an envelope that legitimately has no evidence_coverage.
+        requireTenderRequirementInventory: input.analysis_flags.AGT002_DOCUMENT_RETRIEVAL === true,
+      }, {
+        engine,
+        observability,
+        analysisContext: effectiveAnalysisContext,
+        bridgeTelemetry,
+        integralContractV3: input.analysis_flags.AGT002_INTEGRAL_CONTRACT_V3 === true,
+        // Hard lease guard for the bounded in-memory persistence retry: no re-attempt may START
+        // after this instant. The reserve keeps the durable attempt write, the claim release and
+        // the queue's own terminal transition inside the very lease this claim funded, so a retry
+        // can never be the reason a run is reclaimed mid-flight. A durable_batched_v1 job omits
+        // this stale, pre-claim absolute deadline: each final-persistence attempt is instead
+        // lease-gated by the outer queue heartbeat immediately before its atomic finalize write.
+        persistenceRetry: {
+          ...(isDurableBatched ? {} : { deadlineAt: leaseStartedAt + (leaseSeconds * 1000) - AGT002_PERSISTENCE_RETRY_LEASE_RESERVE_MS }),
+          now,
+        },
+        // Durable-only persistence boundary: routes the canonical persistence RPC through the
+        // atomic finalizer instead of the legacy standalone canonical-run RPC.
+        ...(isDurableBatched ? { persistAnalysis } : {}),
+      });
+      previewClaimId = null;
+      if (typeof outcome?.analysis_run_id === 'string' && outcome.analysis_run_id) {
+        return {
+          status: 'completed', analysis_run_id: outcome.analysis_run_id, error_code: null, reused: false,
+          // Tells the worker the queue job is already terminally completed by the atomic
+          // finalizer, so it can skip its own legacy completion RPC. Never set for a failure,
+          // a reused run, or a legacy/single_turn outcome.
+          ...(isDurableBatched ? { queue_finalized: true } : {}),
+        };
+      }
+      return {
+        status: 'unavailable',
+        analysis_run_id: null,
+        error_code: mapPostBridgeOutcomeCode(outcome?.error_code),
+        reused: false,
+      };
+    } catch (error) {
+      return {
+        status: 'unavailable',
+        analysis_run_id: null,
+        error_code: classifyAgt002ReanalysisWorkerError(error),
+        reused: false,
+      };
+    } finally {
+      if (previewClaimId) {
+        try { await releasePreviewClaim(database, { idempotencyKey: job.idempotencyKey, claimId: previewClaimId }); }
+        catch { /* lease is bounded; queue lease expiry closes the outer job */ }
+      }
+    }
+  };
+}

@@ -9,12 +9,12 @@ import {
   getAgt002Workbench,
   reviewAgt002LearningProposal,
   sweepExpiredLeases,
-} from '../agt002-workbench-persistence.js';
+} from '../verticales/licitaciones/agt002-workbench-persistence.js';
 import {
   AGT002_WORKBENCH_CAPABILITIES,
   AGT002_WORKBENCH_CONTRACT_VERSION,
   AGT002_WORKBENCH_POLICY_VERSION,
-} from '../agt002-workbench-contract.js';
+} from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 const ids = Object.freeze({
   actor: '10000000-0000-4000-8000-000000000001',

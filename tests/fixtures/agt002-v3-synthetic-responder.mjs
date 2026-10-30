@@ -1,5 +1,5 @@
-import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../../agt002-integral-analysis-v3.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../../agt002-company-evidence-classes.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../../verticales/licitaciones/agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../../verticales/licitaciones/agt002-company-evidence-classes.js';
 
 // Fully synthetic AGT-002 integral v3 case (Task 9 of the implementation plan): one
 // requirement per formal category plus a strategic consideration, exercising every

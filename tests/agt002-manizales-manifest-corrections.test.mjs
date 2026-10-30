@@ -7,14 +7,14 @@ import { fileURLToPath } from 'node:url';
 import {
   buildAgt002ManizalesIntegralManifest,
   validateAgt002ManizalesIntegralManifest,
-} from '../agt002-manizales-integral-manifest.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { REGISTRO_FASE_POR_CAPITULO } from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { REGISTRO_FASE_POR_CAPITULO } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 import {
   applyManizalesManifestCorrections,
   buildManizalesManifestCorrectionsArtifact,
   AGT002_MANIFEST_CORRECTION_RULES,
-} from '../agt002-manizales-manifest-corrections.js';
+} from '../verticales/licitaciones/agt002-manizales-manifest-corrections.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = (rel) => JSON.parse(readFileSync(resolve(PROJECT_ROOT, rel), 'utf8'));

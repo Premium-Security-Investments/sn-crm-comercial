@@ -7,6 +7,220 @@
   margin:0;
 }
 
+.siio-financial-import-panel{
+  display:grid;
+  gap:14px;
+  padding:18px;
+  border:1px solid #cbdcf2;
+  border-radius:18px;
+  background:linear-gradient(180deg,#fff,#f8fbff);
+}
+
+.siio-financial-import-panel > header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+}
+
+.siio-financial-import-panel .eyebrow{
+  background:#eaf2ff;
+  color:#174ea6;
+}
+
+.siio-financial-summary{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  width:100%;
+  padding:0;
+  border:0;
+  background:none;
+  color:inherit;
+  font:inherit;
+  text-align:left;
+  white-space:normal;
+  cursor:pointer;
+  box-shadow:none;
+}
+
+.siio-financial-summary:hover{
+  background:none;
+}
+
+.siio-financial-summary:hover .siio-financial-summary-action{
+  background:#eaf2ff;
+}
+
+.siio-financial-summary:focus-visible{
+  outline:3px solid rgba(27,100,242,.35);
+  outline-offset:4px;
+  border-radius:12px;
+}
+
+.siio-financial-summary-text{
+  display:grid;
+  gap:4px;
+  min-width:0;
+}
+
+.siio-financial-summary-text .eyebrow{
+  justify-self:start;
+}
+
+.siio-financial-summary-text strong{
+  color:#10213d;
+  font-size:17px;
+}
+
+.siio-financial-summary-text small{
+  color:#526173;
+  font-weight:700;
+  overflow-wrap:anywhere;
+}
+
+.siio-financial-summary-action{
+  flex:none;
+  padding:8px 14px;
+  border:1px solid #cbdcf2;
+  border-radius:999px;
+  background:#fff;
+  color:#174ea6;
+  font-weight:800;
+}
+
+.siio-financial-body{
+  display:grid;
+  gap:14px;
+  padding-top:14px;
+  border-top:1px solid #dbe6f4;
+}
+
+.siio-financial-section{
+  display:grid;
+  gap:10px;
+}
+
+.siio-financial-section + .siio-financial-section{
+  padding-top:14px;
+  border-top:1px solid #dbe6f4;
+}
+
+.siio-financial-section h4{
+  margin:0;
+  color:#10213d;
+  font-size:16px;
+}
+
+.siio-financial-latest .siio-financial-status{
+  justify-self:start;
+}
+
+.siio-financial-import-panel .siio-financial-trail{
+  grid-column:1 / -1;
+  font-size:13px;
+}
+
+.siio-financial-import-panel h3{
+  margin:5px 0;
+  color:#10213d;
+  font-size:21px;
+}
+
+.siio-financial-import-panel p{
+  margin:0;
+  color:#526173;
+  line-height:1.42;
+}
+
+.siio-financial-import-form{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(160px,1fr));
+  gap:12px;
+  align-items:end;
+}
+
+.siio-financial-import-form label{
+  display:grid;
+  gap:6px;
+  color:#40516b;
+  font-size:12px;
+  font-weight:900;
+}
+
+.siio-financial-import-form input,
+.siio-financial-import-form select{
+  box-sizing:border-box;
+  width:100%;
+  min-height:42px;
+  padding:8px 10px;
+  border:1px solid #cbd5e1;
+  border-radius:10px;
+  background:#fff;
+  color:#10213d;
+  font:inherit;
+}
+
+.siio-financial-import-form .siio-financial-file{
+  grid-column:1 / span 2;
+}
+
+.siio-financial-import-form small{
+  color:#64748b;
+  font-weight:700;
+}
+
+.siio-financial-latest{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  padding:12px;
+  border:1px solid #dbe6f4;
+  border-radius:14px;
+}
+
+.siio-financial-latest > div{
+  display:grid;
+  gap:4px;
+  min-width:0;
+  padding:10px;
+  border-radius:12px;
+  background:#fff;
+}
+
+.siio-financial-latest small{
+  color:#64748b;
+  font-size:10px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.siio-financial-latest strong{
+  color:#10213d;
+  overflow-wrap:anywhere;
+}
+
+.siio-financial-latest ul,
+.siio-financial-latest > button{
+  grid-column:1 / -1;
+}
+
+.siio-financial-latest ul{
+  margin:0;
+  padding:12px 12px 12px 32px;
+  border-radius:12px;
+  background:#fff7ed;
+  color:#854d0e;
+}
+
+.siio-financial-status.status-publicado{background:#dcfce7;color:#166534}
+.siio-financial-status.status-validado{background:#dbeafe;color:#174174}
+.siio-financial-status.status-listo_revision{background:#fef3c7;color:#92400e}
+.siio-financial-status.status-con_errores{background:#fee2e2;color:#991b1b}
+.siio-financial-status.status-reemplazado{background:#f1f5f9;color:#475569}
+
 .siio-dashboard .siio-navigation button:hover{
   background:#dceaff;
   color:#123f8e;
@@ -144,6 +358,23 @@
 }
 
 @media(max-width:760px){
+  .siio-financial-import-panel > header,
+  .siio-financial-summary{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .siio-financial-import-form,
+  .siio-financial-latest{
+    grid-template-columns:1fr;
+  }
+
+  .siio-financial-import-form .siio-financial-file,
+  .siio-financial-latest ul,
+  .siio-financial-latest > button{
+    grid-column:auto;
+  }
+
   .siio-dashboard .siio-view-filters{
     display:grid;
     grid-template-columns:1fr;
@@ -201,3 +432,789 @@
     animation-iteration-count:1 !important;
   }
 }
+
+.siio-pulse-source{
+  margin:0 0 12px;
+  color:#526173;
+  font-size:13px;
+}
+
+.siio-pulse-cards{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:10px;
+}
+
+.siio-pulse-card{
+  display:grid;
+  gap:4px;
+  align-content:start;
+  min-width:0;
+  padding:12px;
+  border:1px solid #dbe6f4;
+  border-radius:14px;
+  background:#fff;
+}
+
+.siio-pulse-card small{
+  color:#526173;
+  font-size:11px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.siio-pulse-card strong{
+  color:#10213d;
+  font-size:22px;
+}
+
+.siio-pulse-card span{
+  color:#40516b;
+  font-size:12px;
+  overflow-wrap:anywhere;
+}
+
+.siio-pulse-readings,
+.siio-pulse-block{
+  display:grid;
+  gap:8px;
+  margin-top:16px;
+}
+
+.siio-pulse-readings h4,
+.siio-pulse-block h4{
+  margin:0;
+  color:#10213d;
+  font-size:16px;
+}
+
+.siio-pulse-readings ul{
+  margin:0;
+  padding:12px 12px 12px 30px;
+  border-radius:12px;
+  background:#f1f6ff;
+  color:#1e2f4d;
+  line-height:1.5;
+}
+
+.siio-pulse-table td,
+.siio-pulse-table th{
+  text-align:right;
+  white-space:nowrap;
+}
+
+.siio-pulse-table th[scope="row"],
+.siio-pulse-table thead th:first-child{
+  text-align:left;
+}
+
+.siio-pulse-table td small{
+  display:block;
+  color:#64748b;
+  font-size:11px;
+}
+
+.siio-pulse-table em{
+  color:#92400e;
+  font-style:normal;
+  font-size:12px;
+}
+
+.siio-pulse-highlight{
+  background:#fff7ed;
+}
+
+.siio-pulse-note{
+  margin:14px 0 0;
+  padding:10px 12px;
+  border-radius:12px;
+  background:#f8fafc;
+  color:#40516b;
+  font-size:13px;
+  line-height:1.45;
+}
+
+@media(max-width:1100px){
+  .siio-pulse-cards{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media(max-width:600px){
+  .siio-pulse-cards{
+    grid-template-columns:1fr;
+  }
+}
+
+.siio-pulse-footnote{
+  margin:0;
+  color:#526173;
+  font-size:12px;
+}
+
+.siio-header-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.siio-header-profile{
+  color:#526173;
+  font-size:13px;
+}
+
+.siio-header-profile strong{
+  color:#10213d;
+}
+
+.siio-dashboard .siio-view-filters[aria-label="Filtros del resumen ejecutivo"] .siio-eyebrow{
+  align-self:center;
+}
+
+.siio-dashboard .siio-view-filters[aria-label="Filtros del resumen ejecutivo"]{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.siio-pulse-table th[scope="row"]{
+  width:1%;
+  white-space:nowrap;
+  padding-right:24px;
+  vertical-align:middle;
+}
+
+.siio-pulse-table td{
+  vertical-align:middle;
+}
+
+.siio-goal-bar{
+  position:relative;
+  height:8px;
+  margin-top:4px;
+  border-radius:999px;
+  background:#e2e8f0;
+  overflow:hidden;
+}
+
+.siio-goal-bar i{
+  position:absolute;
+  inset:0 auto 0 0;
+  border-radius:999px;
+  background:#475569;
+}
+
+.siio-goal-bar i.below{
+  background:#b45309;
+}
+
+.siio-pulse-card.siio-card-alert{
+  border-color:#f59e0b;
+  background:#fffbeb;
+}
+
+.siio-commercial-table th[scope="row"]{
+  white-space:normal;
+  min-width:220px;
+}
+
+.siio-commercial-pending-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+
+.siio-commercial-pending{
+  display:grid;
+  gap:4px;
+  padding:12px;
+  border:1px dashed #cbd5e1;
+  border-radius:14px;
+  background:#f8fafc;
+}
+
+.siio-commercial-pending strong{
+  color:#10213d;
+  font-size:14px;
+}
+
+.siio-commercial-pending span{
+  color:#526173;
+  font-size:12px;
+  line-height:1.4;
+}
+
+@media(max-width:1100px){
+  .siio-commercial-pending-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media(max-width:600px){
+  .siio-commercial-pending-grid{
+    grid-template-columns:1fr;
+  }
+}
+
+.siio-key-figures{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:14px;
+}
+
+.siio-key-group{
+  display:grid;
+  gap:8px;
+  align-content:start;
+  min-width:0;
+}
+
+.siio-key-group h3{
+  margin:0;
+  color:#334155;
+  font-size:13px;
+  font-weight:800;
+}
+
+.siio-key-grid{
+  display:grid;
+  gap:10px;
+}
+
+.siio-key-grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.siio-key-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+.siio-key-figure{
+  display:grid;
+  gap:4px;
+  align-content:start;
+  min-width:0;
+  padding:12px;
+  border:1px solid #dbe6f4;
+  border-radius:14px;
+  background:#fff;
+}
+
+.siio-key-figure small{
+  color:#526173;
+  font-size:11px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.siio-key-figure strong{
+  color:#10213d;
+  font-size:22px;
+  white-space:nowrap;
+}
+
+.siio-key-figure span{
+  color:#40516b;
+  font-size:12px;
+  overflow-wrap:anywhere;
+}
+
+.siio-key-figure.siio-card-alert{
+  border-color:#f59e0b;
+  background:#fffbeb;
+}
+
+
+.siio-attention-readings{margin-top:0}
+
+.siio-attention-signals{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px 16px;
+  margin-top:12px;
+  font-size:13px;
+}
+
+.siio-detail{
+  padding:0;
+  border:1px solid #dbe6f4;
+  border-radius:14px;
+  box-shadow:none;
+}
+
+.siio-detail > summary{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:4px 12px;
+  padding:16px 20px;
+  cursor:pointer;
+  list-style:none;
+}
+
+.siio-detail > summary::-webkit-details-marker{display:none}
+
+.siio-detail > summary::before{
+  content:'▸';
+  color:#10213d;
+  font-size:14px;
+}
+
+.siio-detail > summary:hover{background:#f8fafc;border-radius:14px}
+
+.siio-detail[open] > summary::before{content:'▾'}
+
+.siio-detail > summary:focus-visible{
+  outline:3px solid #1b64f2;
+  outline-offset:2px;
+  border-radius:12px;
+}
+
+.siio-detail-title{
+  color:#10213d;
+  font-size:17px;
+  font-weight:800;
+}
+
+.siio-detail-hint{
+  color:#526173;
+  font-size:13px;
+}
+
+.siio-detail[open] > :not(summary){
+  margin:0 20px 20px;
+}
+
+.siio-detail-body > :first-child{margin-top:0}
+
+.siio-commercial-pending-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+@media(min-width:1700px){
+  .siio-key-figures{grid-template-columns:4fr 3fr}
+}
+
+@media(max-width:900px){
+  .siio-key-grid-4,
+  .siio-key-grid-3{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .siio-commercial-pending-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media(max-width:600px){
+  .siio-key-grid-4,
+  .siio-key-grid-3,
+  .siio-commercial-pending-grid{grid-template-columns:1fr}
+}
+
+.siio-detail .panel{
+  padding:0;
+  overflow:visible;
+  border:0;
+  box-shadow:none;
+  background:transparent;
+}
+
+.siio-detail .panel + .panel{margin-top:20px}
+
+.siio-detail .panel h2{font-size:16px}
+
+/* Design pass (Impeccable critique): tables read as text, color only for alerts, figures align. */
+.siio-key-figure strong,
+.siio-pulse-table td,
+.siio-pulse-table td strong{
+  font-variant-numeric:tabular-nums lining-nums;
+}
+
+.siio-key-figure .siio-key-comparison{
+  color:#40516b;
+  font-size:13px;
+}
+
+.siio-key-group h3{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:4px 14px;
+}
+
+
+.siio-pulse-table th[scope="row"]{
+  text-transform:none;
+  letter-spacing:0;
+  font-size:14px;
+  font-weight:600;
+  color:#10213d;
+  background:transparent;
+}
+
+.siio-pulse-table th[scope="row"] small{
+  display:block;
+  margin-bottom:2px;
+  color:#526173;
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.siio-commercial-table th:nth-child(n+3),
+.siio-commercial-table td:nth-child(n+3){
+  text-align:left;
+  white-space:normal;
+}
+
+.siio-row-alert,
+.siio-row-alert th[scope="row"]{
+  background:#fffbeb;
+}
+
+.siio-alert-text{
+  color:#92400e;
+  font-weight:600;
+}
+
+.siio-pulse-table em{color:#526173}
+
+.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static){
+  background:#fff;
+  border:1px solid #dbe6f4;
+  box-shadow:none;
+  color:#10213d;
+}
+
+.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static) span{color:#526173}
+.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static) strong{color:#10213d}
+.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static):hover{background:#f8fafc}
+
+.siio-quiet-empty{margin:8px 0 0}
+.siio-quiet-empty strong{color:#10213d}
+
+.siio-dashboard .siio-view-filters[aria-label="Filtros del resumen ejecutivo"]{align-items:center}
+
+.siio-key-figures,
+.siio-key-group,
+.siio-key-grid > *{min-width:0}
+
+
+.siio-dashboard .stack > *{min-width:0}
+
+.siio-commercial-table th[scope="row"]{
+  width:34%;
+  min-width:240px;
+}
+
+.siio-commercial-table th[scope="row"],
+.siio-commercial-table td{vertical-align:top}
+
+/* Narrow screens: each row becomes a stacked entry instead of a squeezed table. */
+@media(max-width:600px){
+  .siio-dashboard .siio-table-wrap table.siio-commercial-table{min-width:0}
+  .siio-commercial-table thead{display:none}
+  .siio-commercial-table tr{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:4px;
+    padding:12px;
+    border-bottom:1px solid #e7edf5;
+  }
+  .siio-commercial-table th[scope="row"],
+  .siio-commercial-table td{
+    display:block;
+    width:auto;
+    min-width:0;
+    padding:0;
+    border:0;
+    text-align:left;
+    white-space:normal;
+  }
+  .siio-commercial-table td:last-child{text-align:left}
+}
+
+/* Trend charts: accent blue for the current period, grey for the reference, hairline grid. */
+.siio-chart-grid-layout{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:20px 28px;
+}
+
+.siio-chart{margin:0;min-width:0}
+
+.siio-chart figcaption{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:2px 10px;
+}
+
+.siio-chart figcaption strong{color:#10213d;font-size:15px}
+.siio-chart figcaption span{color:#526173;font-size:12px}
+
+.siio-chart-legend{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px 14px;
+  margin:6px 0 2px;
+  color:#40516b;
+  font-size:12px;
+}
+
+.siio-chart-legend span{display:inline-flex;align-items:center;gap:6px}
+.siio-chart-key{display:inline-block;width:12px;height:12px;border-radius:3px}
+.siio-chart-key-accent{background:#1b64f2}
+.siio-chart-key-reference{background:#94a3b8}
+.siio-chart-key-goal{height:0;width:16px;border-radius:0;border-top:2px dashed #475569}
+
+.siio-chart-frame{position:relative}
+.siio-chart-frame svg{display:block;width:100%;height:auto;overflow:visible}
+
+.siio-chart-grid{stroke:#e8eef6;stroke-width:1}
+.siio-chart-baseline{stroke:#94a3b8;stroke-width:1}
+.siio-chart-goal{stroke:#475569;stroke-width:1.5;stroke-dasharray:5 4}
+.siio-chart-crosshair{stroke:#cbd5e1;stroke-width:1}
+.siio-chart-axis{fill:#526173;font-size:12px;font-variant-numeric:tabular-nums}
+.siio-chart-value{fill:#10213d;font-size:12px;font-weight:700}
+.siio-chart-bar.siio-chart-accent{fill:#1b64f2}
+.siio-chart-bar.siio-chart-reference{fill:#94a3b8}
+.siio-chart-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.siio-chart-line.siio-chart-accent{stroke:#1b64f2}
+.siio-chart-line.siio-chart-reference{stroke:#94a3b8}
+.siio-chart-dot{stroke:#fff;stroke-width:2}
+.siio-chart-dot.siio-chart-accent{fill:#1b64f2}
+.siio-chart-dot.siio-chart-reference{fill:#94a3b8}
+.siio-chart-hit{fill:transparent}
+.siio-chart-active .siio-chart-hit{fill:#f1f5fb}
+.siio-chart-frame g[tabindex]:focus{outline:none}
+.siio-chart-frame g[tabindex]:focus-visible .siio-chart-hit{fill:#e8effc}
+
+.siio-chart-tooltip{
+  position:absolute;
+  top:-6px;
+  transform:translate(-50%,-100%);
+  width:max-content;
+  max-width:280px;
+  padding:6px 9px;
+  border-radius:8px;
+  background:#10213d;
+  color:#fff;
+  font-size:12px;
+  line-height:1.35;
+  pointer-events:none;
+  white-space:normal;
+  box-shadow:0 4px 12px rgba(16,33,61,.18);
+}
+
+@media(max-width:900px){
+  .siio-chart-grid-layout{grid-template-columns:1fr}
+}
+
+@media(max-width:600px){
+  .siio-chart-axis,
+  .siio-chart-value{font-size:14px}
+}
+
+/* Collapsible sections: an explicit button instead of a tiny disclosure triangle. */
+.siio-detail > summary{
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:nowrap;
+  gap:16px;
+}
+
+.siio-detail > summary::before{content:none}
+.siio-detail[open] > summary::before{content:none}
+
+.siio-detail-text{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:2px 12px;
+  min-width:0;
+}
+
+.siio-detail-action{
+  flex:none;
+  padding:8px 14px;
+  border:1px solid #cbdcf2;
+  border-radius:999px;
+  background:#fff;
+  color:#174ea6;
+  font-size:14px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.siio-detail > summary:hover .siio-detail-action{background:#eef4ff;border-color:#9dbbe8}
+.siio-detail-close{display:none}
+.siio-detail[open] .siio-detail-open{display:none}
+.siio-detail[open] .siio-detail-close{display:inline}
+
+@media(max-width:600px){
+  .siio-detail > summary{flex-wrap:wrap}
+}
+
+/* Private sales and public tenders sit side by side as separate groups. */
+.siio-key-row{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px 20px;
+}
+
+.siio-key-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+.siio-attention-section{display:grid;gap:8px}
+.siio-attention-section + .siio-attention-section{margin-top:20px;padding-top:16px;border-top:1px solid #e7edf5}
+.siio-attention-section h3{margin:0;color:#10213d;font-size:16px}
+.siio-attention-section .siio-pulse-readings{margin-top:0}
+
+.siio-alert-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.siio-alert-list li{display:grid;gap:2px;padding:10px 12px;border:1px solid #e7edf5;border-radius:12px;background:#fff}
+.siio-alert-list strong{color:#10213d}
+.siio-alert-list span{color:#40516b;font-size:14px}
+.siio-alert-list small{color:#526173;font-size:12px}
+.siio-alert-list button{justify-self:start;margin-top:4px}
+
+.siio-more-links{display:flex;flex-wrap:wrap;gap:10px}
+
+.siio-detail > summary:focus-visible{outline:2px solid #9dbbe8;outline-offset:-2px}
+
+@media(max-width:900px){
+  .siio-key-row{grid-template-columns:1fr}
+}
+
+@media(max-width:600px){
+  .siio-key-grid-2{grid-template-columns:1fr}
+}
+
+.siio-alerts-title{margin:8px 0 0;color:#10213d;font-size:14px}
+
+/* The app shell's .panel rules load after this sheet in production; scope overrides to the Torre. */
+.siio-dashboard details.siio-detail{
+  padding:0;
+  border:1px solid #dbe6f4;
+  border-radius:14px;
+  box-shadow:none;
+}
+
+.siio-dashboard .siio-detail > summary{padding:14px 20px}
+
+.siio-dashboard .siio-alert-list button{
+  padding:4px 0;
+  border:0;
+  background:none;
+  box-shadow:none;
+  color:#174ea6;
+  font-size:13px;
+  font-weight:700;
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
+
+/* Seguimiento gerencial */
+.siio-link-button,
+.siio-dashboard .siio-link-button{
+  padding:0;
+  border:0;
+  background:none;
+  box-shadow:none;
+  color:#174ea6;
+  font-size:13px;
+  font-weight:700;
+  text-decoration:underline;
+  text-underline-offset:3px;
+  cursor:pointer;
+}
+
+.siio-followup-chip{color:#40516b;font-size:13px}
+.siio-followup-chip-late{color:#92400e;font-weight:700}
+
+.siio-followup-composer{
+  display:grid;
+  gap:10px;
+  margin:0 0 16px;
+  padding:14px 16px;
+  border:1px solid #9dbbe8;
+  border-radius:14px;
+  background:#f6f9ff;
+}
+
+.siio-followup-composer-head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+.siio-followup-composer-head strong{color:#10213d}
+.siio-followup-composer-head span{color:#526173;font-size:13px}
+.siio-followup-composer label{display:grid;gap:4px;color:#40516b;font-size:12px;font-weight:700}
+.siio-followup-composer input,
+.siio-followup-composer select{font-size:14px;font-weight:400}
+.siio-followup-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
+.siio-followup-actions{display:flex;flex-wrap:wrap;gap:8px}
+.siio-followup-error{margin:0;color:#a20f2c;font-size:13px}
+
+.siio-followups-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.siio-followups-head h2{margin:0 0 4px}
+.siio-followup-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.siio-followup-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 14px;border:1px solid #e2eaf5;border-radius:14px;background:#fff}
+.siio-followup-late{border-color:#f5c27a;background:#fffbeb}
+.siio-followup-main{display:grid;gap:3px;min-width:0}
+.siio-followup-main strong{color:#10213d}
+.siio-followup-main span{color:#40516b;font-size:14px}
+.siio-followup-main small{color:#526173;font-size:12px}
+.siio-followup-notes{margin:4px 0 0;padding-left:16px;color:#40516b;font-size:13px}
+.siio-followup-notes time{color:#526173;font-variant-numeric:tabular-nums}
+.siio-followup-controls{display:flex;flex-wrap:wrap;align-content:flex-start;justify-content:flex-end;gap:6px;max-width:420px}
+.siio-followup-note{display:flex;gap:6px;width:100%}
+.siio-followup-note input{flex:1;min-width:0}
+.siio-followup-closed .siio-followup-item{opacity:.85}
+
+.siio-payroll-signal{margin-bottom:16px}
+
+@media(max-width:760px){
+  .siio-followup-row{grid-template-columns:1fr}
+  .siio-followup-item{grid-template-columns:1fr}
+  .siio-followup-controls{justify-content:flex-start;max-width:none}
+}
+
+.siio-followup-main .siio-alert-text{color:#92400e}
+
+/* Recomendaciones de Vig-IA Gerencia (AGT-001). Naranja sólo para prioridad alta, como lo urgente en la Torre. */
+.siio-dashboard .siio-recommendations{display:grid;gap:12px;padding:18px 20px;border:1px solid #dbe6f4;border-radius:14px;box-shadow:none}
+.siio-recommendations-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px}
+.siio-recommendations-head h2{margin:2px 0 4px;color:#10213d;font-size:18px}
+.siio-recommendations-head .siio-secondary{margin:0;text-transform:none}
+.siio-recommendations-action{display:grid;gap:4px;justify-items:end}
+.siio-recommendations-action small{color:#526173;font-size:12px}
+.siio-recommendations-summary{margin:0;color:#10213d;font-size:15px;line-height:1.5}
+.siio-recommendation-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.siio-recommendation{display:grid;gap:6px;padding:12px 14px;border:1px solid #e7edf5;border-left:4px solid #9fb3cc;border-radius:12px;background:#fff}
+.siio-recommendation-alta{border-left-color:#ea580c}
+.siio-recommendation-media{border-left-color:#174ea6}
+.siio-recommendation strong{color:#10213d;font-size:15px}
+.siio-recommendation p{margin:0;color:#24344d;font-size:14px;line-height:1.5}
+.siio-recommendation-why{color:#40516b}
+.siio-recommendation-why span{font-weight:700}
+.siio-recommendation small{color:#526173;font-size:12px}
+.siio-recommendation-tags{display:flex;flex-wrap:wrap;gap:6px}
+.siio-recommendation-area,.siio-recommendation-priority{padding:2px 8px;border-radius:999px;background:#eef3fa;color:#24344d;font-size:12px;font-weight:600}
+.siio-recommendation-alta .siio-recommendation-priority{background:#fff1e6;color:#9a3412}
+.siio-recommendation-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.siio-recommendation-actions [role=group]{display:inline-flex;gap:6px}
+.siio-dashboard .siio-recommendation-actions [role=group] button{padding:4px 10px;font-size:13px}
+.siio-dashboard .siio-recommendation-actions button.is-selected{border-color:#174ea6;background:#e8f0fe;color:#174ea6}
+.siio-recommendations-missing h4{margin:4px 0;color:#10213d;font-size:14px}
+.siio-recommendations-missing ul{margin:0;padding-left:18px;color:#40516b;font-size:13px}
+@media (max-width:640px){.siio-recommendations-action{justify-items:start}}
+
+/* Provisión de ingresos por tercero: la fila que el archivo deja fuera de su propio total se ve,
+   pero se lee como secundaria, y los ajustes de meses anteriores van bajo su propio rótulo. */
+.siio-row-muted td{color:#526173;background:#fbfcfe}
+.siio-row-section td{padding-top:14px;color:#526173;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+
+/* Decisiones con fecha: lo primero de la pantalla. Una línea por asunto, el plazo primero,
+   porque es lo que decide si se mira ahora o después. */
+.siio-semana-list{display:grid;gap:8px;margin:10px 0 0;padding:0;list-style:none}
+.siio-semana-item{display:grid;grid-template-columns:200px 1fr auto;gap:14px;align-items:center;padding:12px 14px;border:1px solid #e7edf5;border-left:4px solid #9fb3cc;border-radius:12px;background:#fff}
+.siio-semana-vencido{border-left-color:#ea580c;background:#fffaf5}
+.siio-semana-cuando{display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:#24344d;font-size:14px}
+.siio-semana-que{display:grid;gap:2px;min-width:0}
+.siio-semana-que strong{color:#10213d;font-size:15px}
+.siio-semana-que span{color:#40516b;font-size:13px}
+.siio-semana-accion{justify-self:end}
+@media (max-width:720px){.siio-semana-item{grid-template-columns:1fr;gap:6px}.siio-semana-accion{justify-self:start}}

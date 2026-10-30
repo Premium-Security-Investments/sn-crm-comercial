@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { syncTenderDossierFromAgt002 } from '../tender-go-no-go-rpc.js';
-import { AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION } from '../agt002-preview-contract.js';
-import { AGT002_INTEGRAL_V3_POLICY_VERSION } from '../agt002-preview-runtime.js';
+import { syncTenderDossierFromAgt002 } from '../verticales/licitaciones/tender-go-no-go-rpc.js';
+import { AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION } from '../verticales/licitaciones/agt002-preview-contract.js';
+import { AGT002_INTEGRAL_V3_POLICY_VERSION } from '../verticales/licitaciones/agt002-preview-runtime.js';
 
 // Fase 3B: recovery server-owned de psi_sync_agt002_post_go_checklist para una decisión GO ya
 // registrada. A diferencia de deriveAgt002ItemsForGoDecision (que devuelve null como no-op
@@ -715,7 +715,7 @@ function legacyRun(result, overrides = {}) {
 // así que esta garantía se prueba a nivel de fuente contra la única función que arma esa lista de
 // columnas para la lectura de la corrida vigente.
 {
-  const source = readFileSync(new URL('../tender-analysis-foundation.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/tender-analysis-foundation.js', import.meta.url), 'utf8');
   const columns = source.match(/function currentAnalysisRunColumns\([\s\S]*?\n\}/)?.[0] || '';
   assert.ok(columns, 'currentAnalysisRunColumns debe seguir declarada en tender-analysis-foundation.js');
   for (const column of ['schema_version', 'policy_version', 'completed_at']) {
@@ -728,7 +728,7 @@ function legacyRun(result, overrides = {}) {
 // de una copia local, que puede desincronizarse en silencio de la versión vigente real. ---
 
 {
-  const source = readFileSync(new URL('../tender-go-no-go-rpc.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../verticales/licitaciones/tender-go-no-go-rpc.js', import.meta.url), 'utf8');
   assert.match(
     source,
     /import\s*\{[^}]*\bAGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION\b[^}]*\}\s*from\s*['"]\.\/agt002-preview-contract\.js['"]/,
@@ -775,7 +775,7 @@ function legacyRun(result, overrides = {}) {
 
 for (const path of ['../server/index.js', '../api/[...path].js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 \} from '\.\.\/tender-go-no-go-rpc\.js';/);
+  assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 \} from '\.\.\/verticales\/licitaciones\/tender-go-no-go-rpc\.js';/);
   assert.match(source, /app\.post\('\/api\/tender-dossier-agt002-sync'/);
   assert.doesNotMatch(source, /app\.get\('\/api\/tender-dossier-agt002-sync'/, 'esta ruta de recovery no puede exponer un GET');
   const route = source.match(/app\.post\('\/api\/tender-dossier-agt002-sync'[\s\S]*?\n}\);/);

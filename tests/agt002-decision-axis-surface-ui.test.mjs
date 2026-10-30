@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES } from '../agt002-pre-go-analysis.js';
+import { AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES } from '../verticales/licitaciones/agt002-pre-go-analysis.js';
 import { loadReactComponent, renderReactComponent } from './helpers/bundle-react-component.mjs';
 import { mountWithJsdom } from './helpers/render-react-dom.mjs';
 

@@ -5,8 +5,8 @@ import {
   AGT002_RADAR_GATE_CONTEXT_VERSION,
   AGT002_RADAR_GATE_POLICY_VERSION,
   evaluateAgt002RadarGate,
-} from '../agt002-radar-gate.js';
-import { isAgt002RadarDerivedDayOnlyChurn } from '../agt002-radar-derived-day-churn.js';
+} from '../verticales/licitaciones/agt002-radar-gate.js';
+import { isAgt002RadarDerivedDayOnlyChurn } from '../verticales/licitaciones/agt002-radar-derived-day-churn.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 

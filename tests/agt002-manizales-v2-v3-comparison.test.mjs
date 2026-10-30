@@ -3,11 +3,11 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 
 import { runAgt002ManizalesV3LocalRun } from '../scripts/agt002-manizales-v3-local-run.mjs';
-import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../agt002-manizales-manifest-source.js';
+import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
 import {
   AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID,
   AGT002_INTEGRAL_MANIFEST_PROCESO,
-} from '../agt002-manizales-integral-manifest.js';
+} from '../verticales/licitaciones/agt002-manizales-integral-manifest.js';
 
 // =================================================================================================
 // Phase 6 · Manizales SA-24-2026 · V2 vs V3 comparative gate (V3 must NOT lose, MUST gain).

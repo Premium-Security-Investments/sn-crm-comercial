@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { VIGIA_CONFIG, prioritizeVigiaOpportunities } from '../vigia-engine.js';
+import { VIGIA_CONFIG, prioritizeVigiaOpportunities } from '../verticales/comercial/vigia-engine.js';
 
 const now = '2026-07-18T12:00:00.000Z';
 const base = {

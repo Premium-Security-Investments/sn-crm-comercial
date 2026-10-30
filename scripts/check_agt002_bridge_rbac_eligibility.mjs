@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { diffEligibility, findEligibleProfiles } from '../agt002-hetzner-bridge-rbac-audit.js';
+import { diffEligibility, findEligibleProfiles } from '../verticales/licitaciones/agt002-hetzner-bridge-rbac-audit.js';
 
 function main() {
   const profilesPath = process.argv[2];

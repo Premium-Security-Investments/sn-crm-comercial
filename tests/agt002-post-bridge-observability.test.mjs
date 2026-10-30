@@ -14,18 +14,18 @@
 // FRONTIERS only; none of them reproduces the historical incident mechanically, and none uses
 // its real correlation_id, timings, or payload — every fixture below is synthetic.
 //
-// Expected to fail at import time ("Cannot find module '../agt002-post-bridge-observability.js'")
+// Expected to fail at import time ("Cannot find module '../verticales/licitaciones/agt002-post-bridge-observability.js'")
 // until that module exists. That is the RED signal for this whole file — absence of
 // functionality, not a syntax defect in the test.
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { AGT002_V3_SAFE_VALIDATION_CODES, createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
-import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
+import { AGT002_V3_SAFE_VALIDATION_CODES, createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
+import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
 
 const IDS = Object.freeze({
   // Deliberately NOT the real historical correlation id (a23833ff-3672-4ca5-9c5d-084627b430e7);
@@ -1009,7 +1009,7 @@ test('reanalyzeAgt002AfterHumanAnswer delegates provider execution to the durabl
   assert.match(body, /enqueueAgt002CanonicalReanalysis\(database,/);
   assert.doesNotMatch(body, /AGT002_POST_BRIDGE_STAGES|runAgt002PostBridgeAnalysis|engine\.analyze/,
     'the HTTP helper must not classify or execute provider work; the direct-host executor owns that frontier');
-  const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+  const executor = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-executor.js', import.meta.url), 'utf8');
   assert.match(executor, /runPostBridgeAnalysis\(database,/);
   assert.match(executor, /mapPostBridgeOutcomeCode/);
 });

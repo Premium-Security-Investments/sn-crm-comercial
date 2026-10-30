@@ -15,7 +15,7 @@ import * as esbuild from 'esbuild';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { deriveAgt002ManizalesManifestScope } from '../agt002-manizales-manifest-wiring.js';
+import { deriveAgt002ManizalesManifestScope } from '../verticales/licitaciones/agt002-manizales-manifest-wiring.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(readFileSync(resolve(root, 'data/agt002/manizales-sa-24-2026.integral-manifest.v1.json'), 'utf8'));

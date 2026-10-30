@@ -94,7 +94,7 @@ export type TenderProcessingStatus = { job_id: string | null; superseded: boolea
 export type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 export type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
 export type TenderCompanyDocument = { id: string; document_type: string; display_name: string; issued_at?: string | null; expires_at?: string | null; version: number; current: boolean; state: 'vigente' | 'vence_pronto' | 'vencido' | 'sin_vencimiento'; mime_type?: string | null; size_bytes: number; created_at: string; uploaded_by_name?: string | null; url?: string | null };
-export type TenderDossier = { tender_id?: string; opportunity_id: string; entity?: string; title?: string; source?: string; url?: string | null; document_count: number; missing_document_count: number; document_import_status: string; document_import_error?: string | null; go_no_go?: string | null; risk?: string | null; checklist_progress?: { total?: number; auto_generated?: number; human_required?: number } | null; preparation_status?: string | null; human_pending_count?: number; sharepoint_status?: string | null; sharepoint_url?: string | null; dossier_error?: string | null };
+export type TenderDossier = { tender_id?: string; opportunity_id: string; entity?: string; title?: string; source?: string; url?: string | null; document_count: number; missing_document_count: number; document_import_status: string; document_import_error?: string | null; go_no_go?: string | null; risk?: string | null; checklist_progress?: { total?: number; auto_generated?: number; human_required?: number } | null; preparation_status?: string | null; human_pending_count?: number; sharepoint_status?: string | null; sharepoint_url?: string | null; dossier_error?: string | null; documents_pending_source?: { reason_code: string; reason?: string | null; next_check_at?: string | null; attempt?: number; parked?: boolean } | null };
 export type TenderOpportunityFilter = 'all' | 'por_decidir' | 'en_curso' | 'cerradas' | 'archivadas' | 'pending_decision' | 'go_authorized' | 'in_preparation' | 'submitted' | 'closed';
 export type TenderOfferStatus = 'pendiente_decision' | 'en_preparacion' | 'lista_para_presentar' | 'presentada' | 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go';
 export type TenderOpportunitySummary = TenderDossier & {
@@ -121,6 +121,11 @@ export type TenderOpportunitySummary = TenderDossier & {
   archived_at?: string | null;
   archived_by?: string | null;
   archive_note?: string | null;
+  vigia_analysis?: TenderOpportunityVigiaAnalysis | null;
+};
+export type TenderOpportunityVigiaAnalysis = {
+  run_id: string | null; analysis_kind: string | null; completed_at: string | null;
+  recommendation_kind: string | null; recommendation_label: string | null; confidence: string | null; in_progress: boolean;
 };
 export type TenderDossierAssignee = { id: string; full_name: string; role: string; active?: boolean; identity_type?: 'human' | 'agent' | null };
 export type TenderDossierItemStatus = 'pendiente' | 'en_progreso' | 'listo' | 'bloqueado';
@@ -655,6 +660,9 @@ export type TenderDocumentAnalysis = {
   weaknesses?: TenderAnalysisFinding[];
   blockers?: TenderAnalysisFinding[];
   questions?: TenderAnalysisFinding[];
+  // `pre_go_analysis.v2` guarda sus pendientes aquí, no en `questions`. Sólo los campos que el
+  // conteo de pendientes abiertos necesita; el resto del objeto sigue siendo libre.
+  open_items?: Array<{ open_item_id?: string | null; status?: string | null; critical?: boolean | null }> | null;
   unverified?: TenderAnalysisFinding[];
   company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: TenderAnalysisFinding[]; profile_source?: string };
   next_action?: string;
@@ -700,6 +708,17 @@ export type TenderDocumentRecord = {
   extraction_status?: string | null;
   extraction_gap_reason?: string | null;
   analysis_suggestion?: Agt002DocumentRelevanceSuggestion | null;
+  // Quién produjo el documento (migración 150). `null` = sin declarar, y el análisis lo trata como de un
+  // tercero. Es ortogonal a `document_type`, que dice qué es.
+  origin?: TenderDocumentOrigin | null;
+};
+/** El mismo vocabulario cerrado que acepta la base y traduce `tender-document-origin.js`. */
+export type TenderDocumentOrigin = 'entidad' | 'tercero' | 'propio' | 'borrador';
+export const TENDER_DOCUMENT_ORIGIN_LABELS: Record<TenderDocumentOrigin, string> = {
+  entidad: 'De la entidad',
+  tercero: 'De un tercero',
+  propio: 'Nuestro',
+  borrador: 'Borrador',
 };
 export type TenderAnalysisAttempt = {
   event_id: string;
@@ -755,6 +774,9 @@ export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   analysis_attempt?: TenderAnalysisAttempt | null;
   reanalysis_job?: Agt002ReanalysisJob | null;
   decision_axis_surface_enabled?: boolean;
+  // Carga manual (2026-10-20): resultado por archivo y el análisis incremental pedido.
+  upload_results?: { name: string; status: 'new' | 'updated' | 'unchanged' | 'failed'; error: string | null }[];
+  analysis_request?: { requested: boolean; already_open?: boolean; state?: string | null; reason?: string | null; message?: string } | null;
   analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1' | null; fallback: boolean; state?: Agt002ReanalysisJob['status']; job_id?: string; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {
@@ -831,3 +853,178 @@ export type TenderGoNoGoPostPayload = {
 };
 export type TenderModuleData = { currentProfile: TenderCurrentProfile; profiles: Array<{ id: string; full_name: string; role: string }> };
 export type TendersModuleProps = { view: TenderModuleView; data: TenderModuleData; refresh: () => Promise<void>; request: TenderRequest; navigate: (hash: string) => void; children?: ReactNode };
+
+/** Acta de cierre: arranca de la nota que escribió la persona al cerrar y Vig-IA la profundiza. */
+export type TenderClosureActaEntry = { titulo?: string | null; detalle?: string | null; fuente?: string | null };
+export type TenderClosureActaStatus = 'borrador' | 'confirmada';
+export type TenderClosureKind = 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go' | 'archivada';
+export type TenderClosureNoteSource = 'archive_note' | 'status_transition' | 'no_go_justification' | 'manual';
+export type TenderClosureActa = {
+  acta: {
+    id: string;
+    opportunity_id: string;
+    tender_id: string;
+    status: TenderClosureActaStatus;
+    closure_kind: TenderClosureKind;
+    closing_note: string | null;
+    closing_note_source: TenderClosureNoteSource | null;
+    decision_summary: string | null;
+    decision_quote: string | null;
+    requirements_unmet: TenderClosureActaEntry[];
+    factors_against: TenderClosureActaEntry[];
+    gaps_to_compete: TenderClosureActaEntry[];
+    recommendation: string | null;
+    system_lesson: string | null;
+    proposed_by: string;
+    proposed_at: string;
+    confirmed_by: string | null;
+    confirmed_at: string | null;
+    updated_at: string;
+  };
+  reasons: string[];
+  proposed_by_name: string | null;
+  confirmed_by_name: string | null;
+  events: Array<{ action: 'propuesta' | 'editada' | 'confirmada' | 'reabierta'; actor_name: string | null; created_at: string }>;
+};
+/** Respuesta del GET: cómo se cerró la licitación y el acta, si ya se abrió. */
+export type TenderClosureActaView = { closure_kind: TenderClosureKind | null; acta: TenderClosureActa | null };
+export type TenderClosureActaInput = {
+  opportunity_id: string;
+  expected_updated_at?: string | null;
+  closing_note?: string | null;
+  decision_summary?: string | null;
+  decision_quote?: string | null;
+  requirements_unmet?: TenderClosureActaEntry[];
+  factors_against?: TenderClosureActaEntry[];
+  gaps_to_compete?: TenderClosureActaEntry[];
+  recommendation?: string | null;
+  system_lesson?: string | null;
+  reasons?: string[];
+};
+
+/**
+ * Crear a mano un proceso que no está en SECOP (Juan, 2026-10-29). Lo que una persona declara; el servidor calcula la
+ * llave, el origen externo y las observaciones (`tender-manual-process.js`).
+ */
+export type TenderManualProcessInput = {
+  source: string;
+  entity: string;
+  title: string;
+  ref?: string;
+  url?: string;
+  city?: string;
+  dept?: string;
+  value?: string;
+  close_date?: string;
+  description?: string;
+};
+export type TenderManualProcessCreated = { id: string; opportunity_id: string; tender_id: string; stable_key: string };
+
+/**
+ * Puente ficha de empresa → expediente (encargo del 2026-10-30): los documentos corporativos cruzados con la fecha de
+ * cierre de ESTA licitación. Proyección de sólo lectura; la calcula `tender-company-document-bridge.js`.
+ */
+export type TenderCompanyDocumentState = 'listo_al_cierre' | 'vence_antes_del_cierre' | 'vencido' | 'vigencia_por_confirmar' | 'sin_archivo' | 'sin_fecha_de_cierre';
+export type TenderCompanyDocumentKind = 'tramite' | 'hecho_inscrito' | 'mixto';
+export type TenderCompanyDocumentFile = {
+  id: string;
+  display_name: string;
+  document_type: string;
+  issued_at: string | null;
+  expires_at: string | null;
+  version: number | null;
+  storage_path?: string | null;
+};
+export type TenderCompanyDocumentRow = {
+  key: string;
+  label: string;
+  owner: string;
+  folder: string;
+  kind: TenderCompanyDocumentKind;
+  kind_label: string;
+  registry_entry: string | null;
+  vigencia_text: string | null;
+  human_review_status: string | null;
+  existence_status: string | null;
+  document: TenderCompanyDocumentFile | null;
+  supporting_documents: TenderCompanyDocumentFile[];
+  state: TenderCompanyDocumentState;
+  expires_at: string | null;
+  expiry_source: 'documento' | 'registro_de_evidencia' | null;
+  days_to_close: number | null;
+  age_at_close_days: number | null;
+  age_note: string | null;
+  action: string | null;
+};
+export type TenderCompanyDocumentBridge = {
+  opportunity_id: string;
+  tender_id: string | null;
+  tender_ref: string | null;
+  close_date: string | null;
+  close_date_source: 'licitacion' | 'oportunidad' | null;
+  rows: TenderCompanyDocumentRow[];
+  summary: {
+    total: number;
+    listo_al_cierre: number;
+    vence_antes_del_cierre: number;
+    vencido: number;
+    vigencia_por_confirmar: number;
+    sin_archivo: number;
+    sin_fecha_de_cierre: number;
+    hechos_inscritos_en_riesgo: number;
+    tramites_por_hacer: number;
+  };
+  unmatched_documents: TenderCompanyDocumentFile[];
+  gaps: { kind: string; key?: string; entry_id?: string }[];
+};
+
+/**
+ * Matriz de cumplimiento (punto 2 del encargo del 2026-10-30): una fila por requisito del pliego, con el soporte
+ * corporativo relacionado, su estado al cierre y quién responde. La calcula `tender-compliance-matrix.js`.
+ */
+export type TenderComplianceSupport = {
+  key: string;
+  label: string;
+  owner: string | null;
+  kind: TenderCompanyDocumentKind | null;
+  folder: string | null;
+  state: TenderCompanyDocumentState | null;
+  document_name: string | null;
+  expires_at: string | null;
+  age_at_close_days: number | null;
+  ready: boolean | null;
+};
+export type TenderComplianceRow = {
+  key: string;
+  area: string;
+  title: string;
+  demand: string | null;
+  status: 'falta' | 'por_confirmar' | 'declarado' | 'cumple' | 'no_aplica';
+  rejection: boolean;
+  actions: string[];
+  sources: { document_name: string | null; locator: string | null }[];
+  company_support: TenderComplianceSupport[];
+  support_kind: 'corporativo' | 'especifico_del_proceso';
+  support_pending: string[];
+  owner: string;
+  support_owners: string[];
+};
+export type TenderComplianceMatrix = {
+  opportunity_id: string;
+  available: boolean;
+  reason?: string;
+  tender_ref?: string | null;
+  close_date: string | null;
+  close_date_source?: 'licitacion' | 'oportunidad' | null;
+  headers: string[];
+  table: string[][];
+  rows: TenderComplianceRow[];
+  summary: {
+    total: number;
+    causas_de_rechazo: number;
+    con_soporte_corporativo: number;
+    soporte_corporativo_pendiente: number;
+    especificos_del_proceso: number;
+    requisitos_abiertos: number;
+  } | null;
+};

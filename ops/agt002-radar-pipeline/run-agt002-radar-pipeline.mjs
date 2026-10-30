@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
-import { buildRadarPipelineIdentity } from '../../agt002-control-plane-surface-builders.js';
-import { resolveAgt002ReleaseArtifactEvidence } from '../../agt002-control-plane-runtime-evidence.js';
+import { buildRadarPipelineIdentity } from '../../verticales/licitaciones/agt002-control-plane-surface-builders.js';
+import { resolveAgt002ReleaseArtifactEvidence } from '../../verticales/licitaciones/agt002-control-plane-runtime-evidence.js';
 
 const RADAR_PIPELINE_RELATIVE_PATH = 'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs';
 

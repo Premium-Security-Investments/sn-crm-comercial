@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
-import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
+import { buildAgt002DocumentChunks } from '../verticales/licitaciones/agt002-document-chunks.js';
+import { adaptAgt002RetrievalDocuments } from '../verticales/licitaciones/agt002-retrieval-document-adapter.js';
 
 const opportunityId = '11111111-1111-4111-8111-111111111111';
 const snapshotId = '22222222-2222-4222-8222-222222222222';

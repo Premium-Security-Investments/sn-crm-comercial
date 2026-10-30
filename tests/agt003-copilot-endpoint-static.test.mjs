@@ -8,10 +8,10 @@ const files = [
 
 for (const [name, url] of files) {
   const source = readFileSync(url, 'utf8');
-  assert.ok(source.includes("from '../agt003-copilot-api.js'"), `${name} imports the shared API orchestrator`);
-  assert.ok(source.includes("from '../agt003-copilot-runtime.js'"), `${name} imports the governed runtime`);
-  assert.ok(source.includes("from '../agt003-copilot-persistence.js'"), `${name} imports append-only persistence`);
-  assert.ok(source.includes("from '../vigia-approved-assets.js'"), `${name} imports the approved asset loader`);
+  assert.ok(source.includes("from '../verticales/comercial/agt003-copilot-api.js'"), `${name} imports the shared API orchestrator`);
+  assert.ok(source.includes("from '../verticales/comercial/agt003-copilot-runtime.js'"), `${name} imports the governed runtime`);
+  assert.ok(source.includes("from '../verticales/comercial/agt003-copilot-persistence.js'"), `${name} imports append-only persistence`);
+  assert.ok(source.includes("from '../verticales/comercial/vigia-approved-assets.js'"), `${name} imports the approved asset loader`);
   assert.ok(source.includes("'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN]"), `${name} inventories generation`);
   assert.ok(source.includes("'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN]"), `${name} inventories feedback`);
   assert.ok(source.includes("app.post('/api/vigia/copilot/generate'"), `${name} exposes generation endpoint`);

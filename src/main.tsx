@@ -1,38 +1,47 @@
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { formatDateOnly } from './dateOnly';
 import { bogotaToday, followUpDateToIso } from './followUpDate';
-import { canAccessRoute, canManageUsers as navCanManageUsers, canUseCommercialView, canViewTenders as navCanViewTenders, canWriteGoals, effectiveNavProfile, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, isReadOnlyProfile, preferredLandingRoute, type NavViewMode } from './navPermissions';
+import { canAccessRoute, canManageUsers as navCanManageUsers, canUseCommercialView, canViewTenders as navCanViewTenders, canWriteGoals, effectiveNavProfile, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, isReadOnlyProfile, preferredLandingRoute, PROGRAMACION_APP_URL, type NavViewMode } from './navPermissions';
 import { api, apiDownload, exitTenderOpportunity, setApiAccessToken } from './apiClient';
-import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
-import { agt002UnavailableMessage } from '../agt002-reanalysis-error-message.js';
+import { isModulePermissionEligible } from '../module-access.js';
+import { agt002UnavailableMessage } from '../verticales/licitaciones/agt002-reanalysis-error-message.js';
 import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { AgentsView } from './platform/AgentsView';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
-import { TenderDetailNavigation, focusTenderDetailSection, resolveTenderPhaseChangeNotices, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
+import { TenderDetailNavigation, requestTenderDetailSection, resolveInitialTenderDetailSection, resolveTenderPhaseChangeNotices, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
 import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
 import { TenderDecisionExperience } from './tenders/components/TenderDecisionExperience';
+import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalysis';
+import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
+import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
+import { TenderComplianceMatrixPanel } from './tenders/components/TenderComplianceMatrixPanel';
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
+import { TenderDecideView, TenderNextStep, TenderPrepareView, TenderWorkspaceHeader, TenderWorkspaceTabs, tenderWorkspaceMoment, useTenderOfferStatus, type TenderWorkspaceTab } from './tenders/workspace/TenderWorkspace';
+import { TenderClosureActa } from './tenders/workspace/TenderClosureActa';
+import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
+import { NavIcon, UserMenu } from './shell/UserMenu';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
-import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
+import type { TenderDetailSectionId, TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { isTenderProcessingActive, shouldReloadTenderArtifacts, tenderAnalysisCompletionMessage } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
 import { parseAgt002InitialAnalysisProjection, type Agt002InitialAnalysisProjection } from './tenders/agt002InitialAnalysisProjection';
 import { parseAgt002InitialReportResponse, type Agt002InitialReport } from './tenders/agt002InitialReportProjection';
 import { useAgt002InitialReport } from './tenders/useAgt002InitialReport';
 import { agt002GovernedRunStateFromReanalysisJob, type Agt002GovernedAnalysisRunState } from './tenders/governedWorksetSelection';
-import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
+import type { Agt002GovernedDocumentWorksetFreezeResponse, Agt002GovernedWorksetMemberInput, Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentOrigin, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
-import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
+import { type AccessAssignment } from './profileAccessState';
+import { EMPTY_TABS_ACCESS, PROFILE_TEMPLATES, PROGRAMACION_PERMISSION, accessFromTabs, tabsFromProfile, tabsSummary, templateAccess, type DerivedAccess, type ProfileTabCode, type TabsAccess } from '../profile-tabs.js';
 import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
 import { VigiaOpportunityCopilot } from './vigia/VigiaOpportunityCopilot';
@@ -40,7 +49,12 @@ import { PSI_AGENT_ROUTER_NAME, VIGIA_VISIBLE_NAMES } from './vigia/agentIdentit
 import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
 import { buildFollowUpHistory } from './opportunity-followup-presentation.js';
 import { decisionMakerCardState, expectedCloseCardState, followUpAgeLabel, nextActionCardState, presentFollowUpEntry } from './vigia/opportunity-ficha-presentation';
-import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
+import { buildMyDayQueue, futureDayPhrase, type MyDayAlert } from './vigia/my-day-presentation';
+import { stageStaleness, stalledInStage } from './vigia/stage-staleness.js';
+import { ClosureFormPanel } from './vigia/ClosureFormPanel';
+import { hasLiveNextAction } from './vigia/next-action-rule.js';
+import { lossBreakdown } from './vigia/loss-report';
+import { meetingBrief } from './vigia/meeting-brief';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
@@ -48,7 +62,8 @@ import { profileCompleteness } from './vigia/client-profile.js';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
-import { DecisionQueue, DeleteRequestsPanel, OpportunityDecisionForm, TodayQueue, UpcomingList } from './vigia/OpportunityDecision';
+import { VigiaChatRegistro } from './vigia/VigiaChatRegistro';
+import { DeleteRequestsPanel, NextConversation, NowQueue, OpportunityDecisionForm, TodayDone, WeekList } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
 
@@ -56,7 +71,7 @@ type Stage = { code: string; name: string; stage_order: number; close_probabilit
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
 type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
 type AccessCatalog = { areas: Array<{ code: string; name: string }>; subareas: Array<{ code: string; area_code: string; name: string }>; permissions: Array<{ code: string; name: string; description: string }> };
-type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; can_own_opportunities?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
+type Profile = { id: string; full_name: string; microsoft_email: string; whatsapp_phone?: string | null; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; can_own_opportunities?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[]; ai_usage_profile?: string | null; last_seen_at?: string | null };
 type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
@@ -72,12 +87,18 @@ type Opportunity = {
   customer_segment?: CustomerSegment | null; owner_commercial_area?: CommercialArea | null; owner_can_edit_customer_segment?: boolean | null; source_url?: string | null; tender_offer_status?: TenderOfferStatus | null;
   frozen_until?: string | null; frozen_reason?: string | null; delete_requested_at?: string | null; delete_request_reason?: string | null;
   lost_at?: string | null; discarded_at?: string | null;
+  stage_entered_at?: string | null; stage_entered_at_measured?: boolean | null; staleness_days?: number | null;
+  competitor_id?: string | null; competitor_name?: string | null;
 };
+type Competitor = { id: string; name: string };
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
-type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number; leadAnalysesToday?: string[] };
-type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; areas: AccessAssignment[]; permissions: string[]; can_edit_customer_segment?: boolean; can_own_opportunities?: boolean };
+type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; competitors?: Competitor[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile; decisionsToday?: number; leadAnalysesToday?: string[] };
+type ProgramacionAccessValue = { rol: string; ciudad_id: string | null };
+type ProgramacionAccessState = { status: 'loading' | 'ready' | 'error'; ciudades: { id: string; nombre: string }[]; byProfile: Record<string, ProgramacionAccessValue> };
+const PROGRAMACION_ROLE_LABELS: Record<string, string> = { coordinador: 'Coordinador', nomina: 'Nómina', consulta: 'Consulta', admin: 'Administrador' };
+type AiUsageProfileOption = { profile_id: string; display_name: string };
 type TenderSection = 'hacer' | 'revisar' | 'prioridad_baja';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
 type TenderQuickFilter = 'hacer' | 'en_revision' | 'high_value' | 'convertidas' | null;
@@ -96,11 +117,11 @@ type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string;
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'invalid'; id?: string };
+type Route = { page: 'home' | 'clients' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'invalid'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
-type ClientSuggestion = { id: string; company_name: string; customer_segment: CustomerSegment | null; regional_nombre: string | null; sede: string | null; quote_city: string | null; economic_sector: string | null; decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null };
+type ClientSuggestion = { id: string; company_name: string; origen?: 'crm' | 'avancys'; company_nit?: string | null; atendido_por?: string | null; customer_segment: CustomerSegment | null; regional_nombre: string | null; sede: string | null; quote_city: string | null; economic_sector: string | null; decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
@@ -112,7 +133,6 @@ function canManageUsers(profile?: Profile | null) { return navCanManageUsers(pro
 function canManageGoals(profile?: Profile | null) { return canWriteGoals(profile); }
 function canViewTenders(profile?: Profile | null) { return navCanViewTenders(profile); }
 // "Puede tener oportunidades propias (vista comercial)" sólo aplica a roles humanos no comerciales y nunca a solo consulta.
-function canOwnOpportunitiesApplies(role: string) { return role !== 'comercial' && !isReadOnlyRole(role); }
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
 const PRODUCT_OPERATIONAL_UNITS: Record<string, string> = {
@@ -245,7 +265,6 @@ function bootstrapForViewMode(data: Bootstrap, viewMode: NavViewMode): Bootstrap
     ...data,
     currentProfile: effective,
     opportunities: data.opportunities.filter(own),
-    stalled: data.stalled.filter(own),
     topClosing: data.topClosing.filter(own),
     monthlyKpis: data.monthlyKpis.filter(k => k.owner_id === selfId),
     goals: data.goals.filter(g => g.user_id === selfId),
@@ -258,6 +277,7 @@ function parseRoute(): Route {
   const [page, id] = path.split('/');
   if (!page) return { page: 'dashboard' };
   if (page === 'home') return { page: 'home' };
+  if (page === 'clients') return { page: 'clients' };
   if (page === 'opportunities') return { page: 'opportunities' };
   if (page === 'tenders') return { page: 'tenders' };
   if (page === 'detail') return id ? { page: 'detail', id: decodeURIComponent(id) } : { page: 'invalid' };
@@ -271,12 +291,23 @@ function parseRoute(): Route {
   if (page === 'alerts') return { page: 'alerts' };
   if (page === 'centinel' || page === 'vig-ia') return { page: 'alerts' };
   if (page === 'users') return { page: 'users' };
-  if (page === 'agents') return { page: 'agents' };
+  if (page === 'agents') return id ? { page: 'agents', id: decodeURIComponent(id) } : { page: 'agents' };
   return { page: 'invalid' };
 }
 function go(hash: string) { window.location.hash = hash; }
 
 function fmtMoney(n: number | null | undefined) { return money.format(Number(n || 0)); }
+// Mi día: la fecha del encabezado, el día de una gestión próxima y el mes de la meta, todos en Bogotá.
+const MY_DAY_DATE = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
+const MY_DAY_WEEKDAY = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', timeZone: 'America/Bogota' });
+const MY_DAY_TIME = new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+const MY_DAY_MONTH = new Intl.DateTimeFormat('es-CO', { month: 'long', timeZone: 'America/Bogota' });
+/** Días que quedan del mes en curso, contados en Bogotá y sin incluir hoy. */
+function daysLeftInMonth(now: Date): number {
+  const [year, month, day] = String(bogotaDay(now) || '').split('-').map(Number);
+  if (!year || !month || !day) return 0;
+  return Math.max(0, new Date(Date.UTC(year, month, 0)).getUTCDate() - day);
+}
 function fmtMoneyCompact(n: number | null | undefined) {
   const value = Number(n || 0);
   if (Math.abs(value) >= 1_000_000) return `$ ${(value / 1_000_000).toLocaleString('es-CO', { maximumFractionDigits: 0 })} M`;
@@ -431,21 +462,18 @@ function App() {
     <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="Navegación principal">
       <div className="brand"><small>Seguridad Nacional</small><em>Sistema Interno de Inteligencia Operativa</em></div>
       <div className="sidebar-nav-scroll"><Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} /></div>
-      <div className="sidebar-footer-compact">
-        <div className="session-card"><small>Sesión activa</small><strong>{realProfile?.full_name || session.user.email}</strong><span>{realProfile ? roleLabel(realProfile.role) : 'perfil'}</span>
-          {realProfile && canUseCommercialView(realProfile) && <div className="view-mode-toggle" role="group" aria-label="Modo de vista">
-            <button type="button" className={viewMode === 'admin' ? 'active' : 'secondary'} aria-pressed={viewMode === 'admin'} onClick={() => changeViewMode('admin')}>Vista Admin</button>
-            <button type="button" className={viewMode === 'comercial' ? 'active' : 'secondary'} aria-pressed={viewMode === 'comercial'} onClick={() => changeViewMode('comercial')}>Vista Comercial</button>
-          </div>}
-        </div>
-        <div className="sidebar-footer-actions"><button className="secondary full" onClick={refresh}>Actualizar</button><button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Salir</button></div>
-      </div>
+      {/* Sesión, cambio de vista, Actualizar y Salir viven en el menú de perfil de arriba a la derecha (Juan, 2026-10-13). */}
     </aside>
     <main>
       <header className="topbar">
         <button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}>☰</button>
         <div><h1>{titleFor(route, currentProfile)}</h1><p>SIIO · {areaFor(route)}</p></div>
-        {areaFor(route) === 'Comercial' && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
+        <div className="topbar-right">
+          {areaFor(route) === 'Comercial' && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
+          <UserMenu name={realProfile?.full_name || ''} email={session.user.email || ''} role={realProfile ? roleLabel(realProfile.role) : 'perfil'}
+            viewMode={realProfile && canUseCommercialView(realProfile) ? viewMode : undefined} onChangeViewMode={changeViewMode}
+            onRefresh={() => void refresh()} onSignOut={() => void supabaseBrowser.auth.signOut()} />
+        </div>
       </header>
       {loading && <div className="notice">{siioShell ? 'Cargando Torre de Control…' : 'Cargando información comercial…'}</div>}
       {error && <div className="error">{error}</div>}
@@ -523,6 +551,7 @@ function areaFor(route: Route) {
 function titleFor(route: Route, profile?: Profile | null) {
   if (route.page === 'opportunities') return 'Oportunidades';
   if (route.page === 'tenders') return 'Licitaciones';
+  if (route.page === 'clients') return profile?.role === 'comercial' ? 'Mis clientes' : 'Clientes';
   if (route.page === 'detail') return 'Detalle de oportunidad';
   if (route.page === 'new') return 'Crear oportunidad';
   if (route.page === 'edit') return 'Editar oportunidad';
@@ -538,15 +567,24 @@ function titleFor(route: Route, profile?: Profile | null) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
-  const isActiveHref = (href: string) => href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
+  // Licitaciones tiene una entrada por vista: sólo se marca la vista abierta (Configuración se marca como Radar).
+  const isActiveHref = (href: string) => {
+    if (href.startsWith('#/tenders?view=')) {
+      if (route.page !== 'tenders') return false;
+      const view = tenderViewFromHash();
+      return href === `#/tenders?view=${view === 'configuracion' ? 'radar' : view}`;
+    }
+    return href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
+  };
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
-    {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}>{item.label}</a>)}</div>)}
+    {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => item.external ? <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer"><NavIcon href={item.href} /><span>{item.label}</span></a> : <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}><NavIcon href={item.href} /><span>{item.label}</span></a>)}</div>)}
   </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (route.page === 'invalid') return <div className="error">URL inválida o sección no encontrada.</div>;
   if (!canAccessRoute(data.currentProfile, route.page)) return <div className="error">No tienes permiso para ver esta sección.</div>;
+  if (route.page === 'clients') return <ClientsView currentProfile={data.currentProfile} />;
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
   if (route.page === 'tenders') return <TendersModule view={tenderViewFromHash()} data={data} refresh={refresh} request={api} navigate={go} />;
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
@@ -561,9 +599,26 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
     canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
   />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
-  if (route.page === 'agents') return <AgentsView />;
+  if (route.page === 'agents') return <AgentsView key={route.id || 'agents'} agentId={route.id} />;
+  const hasOpportunities = isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'));
+  // Quien sólo entra a Programación (u otra pestaña sin Oportunidades) no ve el tablero comercial.
+  if (!hasOpportunities) return <NoCommercialHome profile={data.currentProfile} />;
   if (data.currentProfile.role === 'comercial') return <CommercialPersonalDashboard data={data} refresh={refresh} />;
   return <Home data={data} />;
+}
+function NoCommercialHome({ profile }: { profile: Profile }) {
+  const programacion = isModulePermissionEligible(profile.role, 'modulo_programacion') && Boolean(profile.permissions?.includes('modulo_programacion'));
+  return <section className="stack">
+    <Panel title={`Hola, ${profile.full_name.split(' ')[0] || profile.full_name}`}>
+      {programacion
+        ? <p>Su trabajo está en Programación de turnos. <a href={PROGRAMACION_APP_URL} target="_blank" rel="noopener noreferrer">Abrir Programación</a></p>
+        : profile.role === 'comercial'
+          // Un comercial sin el módulo de oportunidades no ve "Mi día" en el menú (navPermissions, isNavItemVisible)
+          // y llega aquí. Decirle cuál acceso le falta le ahorra la adivinanza, a él y a quien se lo tiene que dar.
+          ? <p>Para entrar a <strong>Mi día</strong> y a su cartera le falta el acceso a <strong>Oportunidades</strong>. Pídaselo a su administrador del SIIO.</p>
+          : <p>Use el menú de la izquierda para entrar a sus secciones. Si no ve ninguna, pida acceso a quien administra el SIIO.</p>}
+    </Panel>
+  </section>;
 }
 function stageTone(stageCode?: string | null) {
   if (stageCode === 'aprobado') return 'success';
@@ -575,6 +630,8 @@ function stageTone(stageCode?: string | null) {
 function Home({ data }: { data: Bootstrap }) {
   const active = data.opportunities.filter(o => !['aprobado','perdido','descartado'].includes(o.stage_code)).length;
   const largestStage = [...data.summary].sort((a,b)=>Number(b.total_offer_value)-Number(a.total_offer_value))[0];
+  // Una sola definición de "estancada" en todo el producto: días en la etapa, la misma regla que usa Mi día.
+  const stalled = stalledInStage(data.opportunities.filter(o => !isTerminalStage(o.stage_code)));
   return <section className="stack dashboard-home">
     <ExecutiveSummary data={data} active={active} largestStage={largestStage} />
     <div className="grid kpis">
@@ -582,12 +639,12 @@ function Home({ data }: { data: Bootstrap }) {
       <Kpi icon="$" tone="purple" label="Valor total pipeline" value={fmtMoneyCompact(data.totals.pipeline)} hint="Todas las etapas" meta={fmtMoney(data.totals.pipeline)} />
       <Kpi icon="≈" tone="indigo" label="Valor ponderado" value={fmtMoneyCompact(data.totals.weighted)} hint="Probabilidad por etapa" meta={fmtMoney(data.totals.weighted)} />
       <Kpi icon="✓" tone="green" label="Aprobado / ganado" value={fmtMoneyCompact(data.totals.approved)} hint="Ventas aprobadas" meta={fmtMoney(data.totals.approved)} />
-      <Kpi icon={data.stalled.length ? '!' : '✓'} tone={data.stalled.length ? 'amber' : 'green'} label="Sustentación estancada" value={data.stalled.length.toString()} hint="Más de 5 días sin gestión" meta={data.stalled.length ? 'Requiere atención' : 'Todo al día'} />
+      <Kpi icon={stalled.length ? '!' : '✓'} tone={stalled.length ? 'amber' : 'green'} label="Estancadas" value={stalled.length.toString()} hint="Llevan demasiado en su etapa y sin próxima gestión" meta={stalled.length ? 'Requiere atención' : 'Todo al día'} />
     </div>
     <Panel title="Pipeline por etapa"><StageBars summary={data.summary} /></Panel>
     <div className="grid two dashboard-panels">
       <Panel title="Top oportunidades próximas a cierre"><MiniTable rows={data.topClosing.slice(0, 9)} /></Panel>
-      <Panel title="Alertas de sustentación">{data.stalled.length ? <MiniTable rows={data.stalled.slice(0, 9)} /> : <EmptyState title="Todo al día" text="No hay oportunidades en sustentación con más de 5 días sin gestión." />}</Panel>
+      <Panel title="Se están enfriando">{stalled.length ? <MiniTable rows={stalled.slice(0, 9).map(row => row.opportunity)} /> : <EmptyState title="Ninguna estancada" text="Ninguna oportunidad lleva más días en su etapa de los que admite, sin una próxima gestión agendada." />}</Panel>
     </div>
   </section>;
 }
@@ -672,8 +729,262 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
   return [...rows].sort((a, b) => compareSortValues(tenderSortValue(a), tenderSortValue(b), tenderSortDirection));
 }
 
+type ClienteActual = { nombre: string | null; identificacion: { tipo: string | null; numero: string; digito_de_verificacion: string | null } | null; atendido_por: string | null; departamento: string | null; productos: string[]; tipos_de_servicio: string[] };
+// Los productos de Avancys vienen como "[MO001] GPRS VIGILANCIA ELECTRONICA + REACCIÓN CON
+// VIGILANCIA HUMANA". En una tabla sólo cabe el código; el nombre completo va en el `title`.
+function codigoDeProducto(nombre: string) {
+  return /^\[([^\]]+)\]/.exec(nombre)?.[1] || nombre.slice(0, 18);
+}
+type MisClientesRespuesta = { total: number; clientes: ClienteActual[]; as_of: string | null; recortada: boolean; con_servicios?: boolean; alcance?: 'propios' | 'todos' | null; puede_ver_todo?: boolean; motivo?: string; heredados?: { comercial: string; motivo: string }[] };
+
+type OportunidadDelCliente = { id: string; company_name: string; stage_name: string | null; service_type_name: string | null; offer_value: number | null; owner_name: string | null; expected_close_date: string | null; last_interaction_at: string | null };
+type ClienteDetalle = {
+  avancys: { cliente: { nombre: string | null } | null; total_contratos: number; total_puestos: number; puestos_listados: number; as_of: string | null; contratos: { nombre: string | null; inicia: string | null; vence: string | null; total_puestos: number; puestos: { codigo: string | null; nombre: string | null }[] }[] } | null;
+  motivo: string | null;
+  oportunidades: OportunidadDelCliente[];
+  emparejamiento: 'enlace_confirmado' | 'nombre_aproximado' | 'sin_coincidencias';
+  candidato_enlace: { client_id: string; veces: number } | null;
+  se_provisiona: boolean | null;
+};
+
+/**
+ * Un cliente abierto: lo que tiene con nosotros y lo que el CRM sabe de él.
+ *
+ * El cliente es lo primero y la oportunidad cuelga de él (Juan, 2026-10-29). Hasta ahora la lista
+ * se miraba y ya; esto es lo que la vuelve un punto de partida para el seguimiento.
+ *
+ * Se consulta al abrir la fila, no al cargar la lista: son 1.439 clientes y nadie abre más de unos
+ * pocos.
+ */
+function ClienteAbierto({ cliente }: { cliente: ClienteActual }) {
+  const [estado, setEstado] = useState<'cargando'|'listo'|'error'>('cargando');
+  const [datos, setDatos] = useState<ClienteDetalle | null>(null);
+  const [error, setError] = useState('');
+  const [enlazando, setEnlazando] = useState(false);
+  const [marcando, setMarcando] = useState(false);
+  const [marcaError, setMarcaError] = useState('');
+  const [enlaceError, setEnlaceError] = useState('');
+  const [recargar, setRecargar] = useState(0);
+  const nit = cliente.identificacion?.numero || '';
+  const nombre = cliente.nombre || '';
+  useEffect(() => {
+    let vigente = true;
+    (async () => {
+      setEstado('cargando'); setError('');
+      try {
+        const r = await api<ClienteDetalle>(`/api/avancys/cliente?nit=${encodeURIComponent(nit)}&nombre=${encodeURIComponent(nombre)}`);
+        if (vigente) { setDatos(r); setEstado('listo'); }
+      } catch (err) {
+        if (!vigente) return;
+        setError(err instanceof Error ? err.message : String(err)); setEstado('error');
+      }
+    })();
+    return () => { vigente = false; };
+  }, [nit, nombre, recargar]);
+  if (estado === 'cargando') return <p className="muted">Consultando…</p>;
+  if (estado === 'error') return <p className="muted">No fue posible abrir el cliente: {error}</p>;
+  if (!datos) return null;
+  const av = datos.avancys;
+  return <div className="stack">
+    <div>
+      {/* Si a este cliente se le provisiona el mes. Lo declara una persona porque Avancys no
+          distingue al cliente público, y de esa marca depende en qué mes cuenta la plata: los de
+          mes vencido prestan el servicio en agosto y se factura en septiembre. */}
+      <label className="check-filter">
+        <input type="checkbox" checked={datos.se_provisiona === true} disabled={marcando} onChange={async e => {
+          const activo = e.target.checked;
+          setMarcando(true); setMarcaError('');
+          try {
+            await api('/api/avancys/cliente-provision', { method: 'PUT', body: JSON.stringify({ avancys_ref_num: nit, avancys_nombre: nombre, activo }) });
+            setRecargar(n => n + 1);
+          } catch (err) { setMarcaError(err instanceof Error ? err.message : String(err)); }
+          finally { setMarcando(false); }
+        }} /> Se le provisiona el mes (facturación mes vencido)
+      </label>
+      {datos.se_provisiona === null && <small className="muted"> · nadie lo ha declarado todavía</small>}
+      {marcaError && <><br/><small className="muted">{marcaError}</small></>}
+    </div>
+    <div>
+      <strong>Lo que tiene con nosotros</strong>
+      {datos.motivo && <p className="muted">{datos.motivo}</p>}
+      {av && <>
+        <p className="muted">{av.total_contratos} {av.total_contratos === 1 ? 'contrato' : 'contratos'} · {av.total_puestos} {av.total_puestos === 1 ? 'puesto' : 'puestos'}{av.as_of ? ` · datos de Avancys al ${av.as_of.slice(0, 10)}` : ''}</p>
+        <ul className="dashboard-simple-list">
+          {av.contratos.slice(0, 10).map(c => <li key={c.nombre || ''}>
+            <strong>{c.nombre || 'Sin nombre'}</strong>
+            <span>{c.total_puestos} {c.total_puestos === 1 ? 'puesto' : 'puestos'}{c.vence ? ` · vence ${c.vence}` : ''}</span>
+          </li>)}
+        </ul>
+        {av.contratos.length > 10 && <p className="muted">y {av.contratos.length - 10} contratos más.</p>}
+      </>}
+    </div>
+    <div>
+      <strong>Oportunidades en el CRM</strong>
+      {/* Emparejadas por nombre, no por NIT: lo tienen 2 de 411 oportunidades. Se dice en pantalla
+          para que nadie lea esta lista como una verdad del sistema. */}
+      {datos.oportunidades.length === 0
+        ? <p className="muted">Ninguna oportunidad coincide con este nombre.</p>
+        : <>
+          {datos.emparejamiento === 'enlace_confirmado'
+            ? <p className="muted">Son sus oportunidades: alguien confirmó que este es el mismo cliente.</p>
+            : <p className="muted">{datos.oportunidades.length} {datos.oportunidades.length === 1 ? 'coincidencia' : 'coincidencias'} por nombre, no por identificación: revísela antes de darla por suya.</p>}
+          {/* El sistema propone; confirma una persona. A partir de ahí deja de adivinarse por nombre. */}
+          {datos.candidato_enlace && nit && <p>
+            <button type="button" className="secondary" disabled={enlazando} onClick={async () => {
+              setEnlazando(true); setEnlaceError('');
+              try {
+                await api('/api/avancys/cliente-enlace', { method: 'PUT', body: JSON.stringify({ client_id: datos.candidato_enlace!.client_id, avancys_ref_num: nit, avancys_nombre: nombre }) });
+                setRecargar(n => n + 1);
+              } catch (err) { setEnlaceError(err instanceof Error ? err.message : String(err)); }
+              finally { setEnlazando(false); }
+            }}>{enlazando ? 'Guardando…' : 'Sí, es el mismo cliente'}</button>
+            {enlaceError && <><br/><small className="muted">{enlaceError}</small></>}
+          </p>}
+          <table className="mini-table"><tbody>
+            {datos.oportunidades.slice(0, 10).map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}>
+              <td><strong>{o.company_name}</strong><br/><small>{o.owner_name || 'Sin comercial'}{o.stage_name ? ` · ${o.stage_name}` : ''}</small></td>
+              <td className="numeric-value">{fmtMoney(o.offer_value)}</td>
+            </tr>)}
+          </tbody></table>
+        </>}
+      <p><a className="button secondary" href="#/new">Crear oportunidad</a></p>
+    </div>
+  </div>;
+}
+
+// Los clientes que la empresa ya tiene. Pantalla propia, al lado de Oportunidades.
+//
+// El CRM sólo mostraba el embudo de lo nuevo; los clientes actuales viven en Avancys y aquí se leen
+// en vivo. No se copian: lo que se ve es lo que hay allá en este momento, con su fecha de corte.
+//
+// El cliente es lo primero y la oportunidad cuelga de él, no al revés (Juan, 2026-10-29). Las
+// oportunidades de cada cliente todavía no se muestran aquí: es el siguiente paso.
+//
+// Dos alcances en la misma pantalla: el comercial ve los que atiende, la dirección ve todos. Quien
+// decide es el servidor, por el perfil; aquí sólo se rotula.
+function ClientsView({ currentProfile }: { currentProfile: Profile }) {
+  const [estado, setEstado] = useState<'cargando'|'listo'|'error'>('cargando');
+  // Los servicios llegan después que la lista, así que tienen su propio estado. Sin esto la
+  // pantalla decía "no están disponibles" mientras simplemente no habían llegado: dos cosas
+  // distintas contadas igual, y Juan lo vio en producción el 2026-10-29.
+  const [servicios, setServicios] = useState<'cargando'|'listos'|'fallaron'>('cargando');
+  const [datos, setDatos] = useState<MisClientesRespuesta | null>(null);
+  const [error, setError] = useState('');
+  const [filtro, setFiltro] = useState('');
+  const mios = currentProfile?.role === 'comercial';
+  // En dos tiempos, y por una medición: la lista sola tarda 1,5 s y con los productos de cada
+  // cliente, 8 s con los 1.439 de la compañía. Primero la lista —con la que ya se busca y se
+  // llama— y los productos después, que sólo alimentan dos filtros.
+  useEffect(() => {
+    let vigente = true;
+    (async () => {
+      // El alcance lo manda la Vista Admin / Vista Comercial que ya tiene el CRM: en Vista
+      // Comercial `currentProfile` llega con rol comercial, así que `mios` ya lo refleja. Pedir
+      // menos siempre se concede; pedir más lo comprueba el servidor contra el rol real.
+      const alcance = mios ? '&alcance=propios' : '';
+      setEstado('cargando'); setServicios('cargando'); setError('');
+      try {
+        const rapida = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?sin_servicios=1${alcance}`);
+        if (!vigente) return;
+        setDatos(rapida); setEstado('listo');
+      } catch (err) {
+        if (!vigente) return;
+        setError(err instanceof Error ? err.message : String(err)); setEstado('error');
+        return;
+      }
+      try {
+        const completa = await api<MisClientesRespuesta>(`/api/avancys/mis-clientes?${alcance.slice(1)}`);
+        if (vigente) { setDatos(completa); setServicios('listos'); }
+      } catch {
+        // La lista ya está en pantalla; si esto falla, sólo faltan dos filtros y se declara abajo.
+        if (vigente) setServicios('fallaron');
+      }
+    })();
+    return () => { vigente = false; };
+  }, [mios]);
+  const [comercial, setComercial] = useState('');
+  const [departamento, setDepartamento] = useState('');
+  const [producto, setProducto] = useState('');
+  const [tipoServicio, setTipoServicio] = useState('');
+  // Cada filtro se arma con lo que de verdad trajo la lista, no con un catálogo fijo: si ningún
+  // cliente tiene cierto producto, ese producto no debe aparecer para filtrar por él.
+  const valoresDe = (saca: (c: ClienteActual) => (string | null)[]) => {
+    const vistos = new Set((datos?.clientes || []).flatMap(saca).filter((v): v is string => Boolean(v)));
+    return Array.from(vistos).sort((a, b) => a.localeCompare(b));
+  };
+  const comerciales = useMemo(() => valoresDe(c => [c.atendido_por]), [datos]);
+  const departamentos = useMemo(() => valoresDe(c => [c.departamento]), [datos]);
+  const productos = useMemo(() => valoresDe(c => c.productos), [datos]);
+  const tiposServicio = useMemo(() => valoresDe(c => c.tipos_de_servicio), [datos]);
+  const hayFiltro = Boolean(filtro || comercial || departamento || producto || tipoServicio);
+  const [pagina, setPagina] = useState(1);
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const POR_PAGINA = 50;
+  useEffect(() => { setPagina(1); }, [filtro, comercial, departamento, producto, tipoServicio]);
+  const limpiar = () => { setFiltro(''); setComercial(''); setDepartamento(''); setProducto(''); setTipoServicio(''); };
+  const visibles = (datos?.clientes || []).filter(c => {
+    if (comercial && c.atendido_por !== comercial) return false;
+    if (departamento && c.departamento !== departamento) return false;
+    if (producto && !c.productos.includes(producto)) return false;
+    if (tipoServicio && !c.tipos_de_servicio.includes(tipoServicio)) return false;
+    if (!filtro.trim()) return true;
+    const texto = `${c.nombre || ''} ${c.identificacion?.numero || ''}`.toLowerCase();
+    return texto.includes(filtro.trim().toLowerCase());
+  });
+  // Sin título: la pantalla ya se llama "Clientes" en el encabezado, y repetirlo era ruido.
+  return <section className="panel">
+    <p className="muted">Los clientes que la empresa ya tiene. Se leen de Avancys en vivo; no se copian al CRM.</p>
+    {estado === 'cargando' && <p className="muted">Consultando Avancys…</p>}
+    {estado === 'error' && <p className="muted">No fue posible consultar Avancys: {error}</p>}
+    {estado === 'listo' && datos && <>
+      {datos.motivo && <p className="muted">{datos.motivo}</p>}
+      {(datos.heredados || []).map(h => <p className="muted" key={h.comercial}>Incluye los clientes de {h.comercial}. {h.motivo}</p>)}
+      {datos.total > 0 && <>
+        <div className="filters opportunity-filters compact-dashboard-filters">
+          <input placeholder="Buscar cliente o NIT…" value={filtro} onChange={e => setFiltro(e.target.value)} />
+          {comerciales.length > 1 && <Select value={comercial} onChange={setComercial} options={comerciales.map(n => [n, n])} empty="Comerciales" />}
+          {departamentos.length > 1 && <Select value={departamento} onChange={setDepartamento} options={departamentos.map(n => [n, n])} empty="Departamentos" />}
+          {productos.length > 1 && <Select value={producto} onChange={setProducto} options={productos.map(n => [n, n])} empty="Productos" />}
+          {tiposServicio.length > 1 && <Select value={tipoServicio} onChange={setTipoServicio} options={tiposServicio.map(n => [n, n])} empty="Tipo de servicio" />}
+          {hayFiltro && <button className="secondary" onClick={limpiar}>Limpiar</button>}
+        </div>
+        <p className="muted filter-summary">
+          <strong>{visibles.length}</strong>{visibles.length === datos.total ? '' : ` de ${datos.total}`} {visibles.length === 1 ? 'cliente' : 'clientes'}{datos.alcance === 'todos' ? ' en la compañía' : ' a su cargo'}{datos.as_of ? ` · datos de Avancys al ${datos.as_of.slice(0, 10)}` : ''}{datos.recortada ? ' · lista recortada' : ''}
+          {servicios === 'cargando' && <> · <span className="muted">consultando qué le prestamos a cada uno…</span></>}
+        </p>
+        {servicios === 'fallaron' && <p className="muted">No se pudo leer qué le prestamos a cada cliente, así que los filtros de producto y tipo de servicio no están disponibles.</p>}
+        <div className="tablewrap"><table>
+          <thead><tr>
+            <th>Cliente</th><th>NIT</th><th>Departamento</th><th>Servicios</th>
+            {comerciales.length > 1 && <th>Comercial</th>}
+          </tr></thead>
+          <tbody>
+            {visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA).map((c, i) => { const clave = `${c.identificacion?.numero || c.nombre || ''}-${i}`; return <Fragment key={clave}>
+            <tr className="clickable" onClick={() => setAbierto(actual => actual === clave ? null : clave)}>
+              <td><strong>{c.nombre || 'Sin nombre'}</strong></td>
+              <td>{c.identificacion ? `${c.identificacion.numero}${c.identificacion.digito_de_verificacion ? `-${c.identificacion.digito_de_verificacion}` : ''}` : <span className="muted">Sin identificación</span>}</td>
+              <td>{c.departamento || <span className="muted">—</span>}</td>
+              {/* El código, no el nombre: "[MO001] GPRS VIGILANCIA ELECTRONICA + REACCIÓN CON
+                  VIGILANCIA HUMANA" ocupaba dos renglones por fila. El nombre completo queda en
+                  el `title`, al pasar el mouse. */}
+              <td>{c.productos.length
+                ? c.productos.map(nombre => <span key={nombre} title={nombre}><Badge>{codigoDeProducto(nombre)}</Badge></span>)
+                : servicios === 'cargando' ? <span className="muted">…</span> : <span className="muted">—</span>}</td>
+              {comerciales.length > 1 && <td>{c.atendido_por || <span className="muted">—</span>}</td>}
+            </tr>
+            {abierto === clave && <tr><td colSpan={comerciales.length > 1 ? 5 : 4}><ClienteAbierto cliente={c} /></td></tr>}
+          </Fragment>; })}
+          </tbody>
+        </table></div>
+        {visibles.length > POR_PAGINA && <Pagination page={pagina} total={visibles.length} pageSize={POR_PAGINA} onChange={setPagina} label="Páginas de clientes" />}
+        {visibles.length === 0 && <p className="muted">Ningún cliente coincide con los filtros.</p>}
+      </>}
+    </>}
+  </section>;
+}
+
 function OpportunityList({ data }: { data: Bootstrap }) {
-  const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [customerSegmentFilter, setCustomerSegmentFilter] = useState(hashQueryParam('segment')); const [period, setPeriod] = useState<DashboardPeriodFilter>(hashQueryParam('period') as DashboardPeriodFilter); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all');
+  const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [customerSegmentFilter, setCustomerSegmentFilter] = useState(hashQueryParam('segment')); const [period, setPeriod] = useState<DashboardPeriodFilter>(hashQueryParam('period') as DashboardPeriodFilter); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all'); const [onlyWithoutNextAction, setOnlyWithoutNextAction] = useState(hashQueryParam('sin_gestion') === '1');
   const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'regional'|'stage'|'product'|'segment'|'value'|'close'|'last'>>({ key: 'client', direction: 'asc' });
   const [opportunitiesPage, setOpportunitiesPage] = useState(1);
   // "Ordenar por urgencia": usa el motor de prioridades de AGT-003 (antes la pantalla Prioridades Comerciales).
@@ -689,8 +1000,8 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   const showTenders = service === AGT002_TENDER_SERVICE_TYPE;
   const listBase = showTenders ? data.opportunities : data.opportunities.filter(isAgt003CommercialOpportunity);
   const hiddenTenderCount = showTenders ? 0 : data.opportunities.length - listBase.length;
-  const filtered = listBase.filter(o => matchesDashboardPeriod(o, period) && (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!owner || o.owner_id===owner) && (!regional || normalizeRegion(o.regional_nombre) === regional) && (!stage || o.stage_code===stage) && (!service || o.service_type_code===service) && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter) && (!onlyActive || !isTerminalStage(o.stage_code)));
-  useEffect(() => { setOpportunitiesPage(1); }, [q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, sortConfig.key, sortConfig.direction, urgencySort]);
+  const filtered = listBase.filter(o => matchesDashboardPeriod(o, period) && (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!owner || o.owner_id===owner) && (!regional || normalizeRegion(o.regional_nombre) === regional) && (!stage || o.stage_code===stage) && (!service || o.service_type_code===service) && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter) && (!onlyActive || !isTerminalStage(o.stage_code)) && (!onlyWithoutNextAction || (!isTerminalStage(o.stage_code) && !hasLiveNextAction({ nextActionAt: o.next_action_at }))));
+  useEffect(() => { setOpportunitiesPage(1); }, [q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, onlyWithoutNextAction, sortConfig.key, sortConfig.direction, urgencySort]);
   const filteredTotals = filtered.reduce((acc, o) => {
     const value = Number(o.offer_value || 0);
     acc.pipeline += value;
@@ -731,12 +1042,13 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   const showUrgency = urgencySort && priorities.status === 'ready';
   const pagedOpportunities = sortedOpportunities.slice((opportunitiesPage - 1) * OPPORTUNITIES_PAGE_SIZE, opportunitiesPage * OPPORTUNITIES_PAGE_SIZE);
   return <section className="stack">
-    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Periodo"/> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button type="button" className={urgencySort ? '' : 'secondary'} aria-pressed={urgencySort} onClick={() => setUrgencySort(current => !current)}>Ordenar por urgencia</button><button className="secondary" onClick={()=>{ setQ(''); setPeriod(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
+    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Periodo"/> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><label className="check-filter"><input type="checkbox" checked={onlyWithoutNextAction} onChange={e=>setOnlyWithoutNextAction(e.target.checked)} /> Sin próxima gestión</label><button type="button" className={urgencySort ? '' : 'secondary'} aria-pressed={urgencySort} onClick={() => setUrgencySort(current => !current)}>Ordenar por urgencia</button><button className="secondary" onClick={()=>{ setQ(''); setPeriod(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); setOnlyWithoutNextAction(false); }}>Limpiar</button></div>
     {urgencySort && priorities.status === 'loading' && <p className="muted">Calculando urgencia…</p>}
     {urgencySort && priorities.status === 'error' && <p className="muted">La urgencia no está disponible en este momento; se mantiene el orden actual.</p>}
     <p className="muted filter-summary"><strong>{filtered.length}</strong> de {listBase.length} oportunidades {showTenders ? 'de licitación' : 'comerciales'} visibles.{hiddenTenderCount ? <> Las {hiddenTenderCount} licitaciones públicas se trabajan en <a href="#/tenders?view=oportunidades">Licitaciones</a>.</> : null}</p>
     <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>La mayor: {topFilteredOpportunity.company_name} · {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
-    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/>{showUrgency && <th>Urgencia</th>}</tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDateOnly(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td>{showUrgency && <td>{(() => { const priority = priorities.byId.get(o.id); return priority ? <><Badge tone={priority.level === 'alto' ? 'danger' : priority.level === 'medio' ? 'amber' : 'blue'}>{priorityReason(priority)}</Badge><br/><small>{priority.recommendation}</small></> : <small className="muted">Sin alerta</small>; })()}</td>}</tr>)}</tbody></table></div>
+    <LossReportPanel rows={filtered} />
+    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/>{showUrgency && <th>Urgencia</th>}</tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge><StageStallBadge opportunity={o} /></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td className="numeric-value">{fmtMoney(o.offer_value)}</td><td>{fmtDateOnly(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td>{showUrgency && <td>{(() => { const priority = priorities.byId.get(o.id); return priority ? <><Badge tone={priority.level === 'alto' ? 'danger' : priority.level === 'medio' ? 'amber' : 'blue'}>{priorityReason(priority)}</Badge><br/><small>{priority.recommendation}</small></> : <small className="muted">Sin alerta</small>; })()}</td>}</tr>)}</tbody></table></div>
     <Pagination page={opportunitiesPage} pageSize={OPPORTUNITIES_PAGE_SIZE} total={filtered.length} onChange={setOpportunitiesPage} label="Paginación de oportunidades" />
   </section>;
 }
@@ -862,12 +1174,22 @@ function NewOpportunityButton({ data }: { data: Bootstrap | null }) {
     <small id="new-opportunity-blocked" className="topbar-blocked-note">Decida {blocking === 1 ? '1 oportunidad más' : `${blocking} oportunidades más`} hoy en <a href="#/home">Mi día</a></small>
   </div>;
 }
+// Insignia de estancamiento (migración 145). Sólo aparece cuando la etapa tiene umbral y la oportunidad lo pasó;
+// con fecha sembrada el texto dice "al menos", porque ese número es una cota inferior y no un dato exacto.
+function StageStallBadge({ opportunity }: { opportunity: Opportunity }) {
+  const stall = stageStaleness({
+    stageEnteredAt: opportunity.stage_entered_at, measured: opportunity.stage_entered_at_measured,
+    stalenessDays: opportunity.staleness_days, nextActionAt: opportunity.next_action_at, stageName: null,
+  });
+  if (!stall.stale) return null;
+  return <><br/><Badge tone="amber">{stall.atLeast ? `≥ ${stall.days} días en la etapa` : `${stall.days} días en la etapa`}</Badge></>;
+}
 function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; alerts: MyDayAlert[]; total: number; tone: string; empty: string }) {
   return <div className={`my-day-group my-day-${tone}`}>
     {title && <h4>{title}{total > alerts.length ? ` · mostrando ${alerts.length} de ${total}` : ''}</h4>}
     {alerts.length
-      ? <div className="my-day-list">{alerts.map(a => <article className="my-day-card" key={a.id}>
-          <strong>{a.companyName}</strong>
+      ? <div className="my-day-list">{alerts.map(a => <article className={`my-day-card${a.stale ? ' is-estancada' : ''}`} key={a.id}>
+          <strong>{a.companyName}</strong>{a.stale && <Badge tone="amber">Estancada</Badge>}
           <p className="my-day-fact"><em>Qué pasó:</em> {a.fact}</p>
           <p className="my-day-gap"><em>Falta:</em> {a.gap}</p>
           <p className="my-day-goal"><em>Objetivo:</em> {a.goal}</p>
@@ -875,6 +1197,25 @@ function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; aler
         </article>)}</div>
       : (empty && <p className="my-day-empty">{empty}</p>)}
   </div>;
+}
+// F5: pérdidas por motivo y por competidor, sobre el mismo filtro que ya está aplicado al listado. Si no hay
+// pérdidas en lo filtrado, no se muestra nada en vez de una tabla vacía.
+function LossReportPanel({ rows }: { rows: Opportunity[] }) {
+  const report = lossBreakdown(rows);
+  if (!report.total) return null;
+  const table = (title: string, groups: { label: string; count: number; value: number }[]) => <div className="loss-report-table">
+    <h4>{title}</h4>
+    <table className="mini-table"><tbody>{groups.map(group => <tr key={group.label}>
+      <td>{group.label}</td><td className="numeric-value">{group.count}</td><td className="numeric-value">{fmtMoneyCompact(group.value)}</td>
+    </tr>)}</tbody></table>
+  </div>;
+  return <details className="panel loss-report">
+    <summary>Pérdidas en lo filtrado: {report.total} · {fmtMoneyCompact(report.value)}</summary>
+    <div className="loss-report-grid">
+      {table('Por motivo', report.byReason)}
+      {table('Frente a quién', report.byCompetitor)}
+    </div>
+  </details>;
 }
 function Pagination({ page, pageSize, total, onChange, label }: { page: number; pageSize: number; total: number; onChange: (page: number) => void; label?: string }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize)); const current = Math.min(Math.max(1, page), totalPages);
@@ -894,8 +1235,59 @@ function OpportunityDecisionPanel({ opportunity, data, onChanged }: { opportunit
   return <details className="panel decision-panel" open aria-label="Decisión">
     <summary><h2>{pending ? 'Esta oportunidad necesita una decisión' : frozen ? `Congelada hasta ${fmtDateOnly(opportunity.frozen_until)}` : 'Actualizar oportunidad'}</h2>
       <span className="v2-panel-note">{pending ? 'Su gestión se venció o no tiene agenda.' : frozen ? `Motivo: ${opportunity.frozen_reason || '—'}. Puede reactivarla o decidir otra cosa.` : 'Registre qué pasó y qué sigue: sigue viva, avanza, congelar, descartar o pedir eliminar.'}</span></summary>
-    <OpportunityDecisionForm opportunity={opportunity} stages={data.stages} lossReasons={data.lossReasons} onDone={onChanged} />
+    <OpportunityDecisionForm opportunity={opportunity} stages={data.stages} lossReasons={data.lossReasons} competitors={data.competitors || []} onDone={onChanged} />
   </details>;
+}
+
+const TENDER_POST_GO_HERO_LABELS: Record<string, string> = {
+  en_preparacion: 'GO · Preparando oferta',
+  lista_para_presentar: 'GO · Lista para presentar',
+  presentada: 'Oferta presentada',
+  adjudicada: 'Adjudicada',
+  no_adjudicada: 'No adjudicada',
+};
+/**
+ * Avisos de SECOP en lenguaje del equipo (Juan, 2026-10-13): sin listas de archivos ni notas internas del
+ * proceso de descarga, y sin repetir el mismo aviso con otras palabras. Del más reciente al más antiguo.
+ */
+function plainSecopNotices(lines: string[]): string[] {
+  const clean = (line: string) => line
+    .replace(/:\s[^;]*\.(?:pdf|docx?|xlsx?|zip)\b[^;]*/gi, '')
+    .replace(/;?\s*por duda NO se archiv[óo]:?[^;]*?\.(?:pdf|docx?|xlsx?|zip)\b(?:\s*\(revisar\))?/gi, '')
+    .replace(/\s*\(no entran al análisis\)/gi, '')
+    .replace(/\s*\(revisar\)/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([;.,])/g, '$1')
+    .trim();
+  const key = (line: string) => line.toLowerCase().replace(/[^a-z0-9ñáéíóú]+/g, ' ').split(' ').slice(0, 8).join(' ');
+  const seen = new Set<string>();
+  return [...lines].reverse().map(clean).filter(line => line && !seen.has(key(line)) && Boolean(seen.add(key(line))));
+}
+function initialWorkspaceTab(): TenderWorkspaceTab {
+  if (typeof window === 'undefined') return 'principal';
+  const query = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const section = query.get('section') || '';
+  // "Abrir expediente" (section=tender-document-review) entra a la pestaña de trabajo; solo focus=documents abre Documentos.
+  if (query.get('focus') === 'documents') return 'documentos';
+  if (section === 'tender-follow-up' || query.get('focus') === 'interaction') return 'historial';
+  if (section === 'tender-analysis') return 'analisis';
+  return 'principal';
+}
+// Qué pasó con cada archivo cargado a mano y con el análisis incremental (Juan, 2026-10-20: "no tengo idea si subieron").
+function tenderUploadSummary(data: TenderDocumentsPayload): string {
+  const results = data.upload_results || [];
+  if (!results.length) return 'Documentos guardados y texto extraído.';
+  const added = results.filter(item => item.status === 'new' || item.status === 'updated');
+  const same = results.filter(item => item.status === 'unchanged');
+  const failed = results.filter(item => item.status === 'failed');
+  const parts = [];
+  if (added.length) parts.push(`✓ ${added.length === 1 ? 'Se agregó al expediente' : `Se agregaron ${added.length} documentos al expediente`}: ${added.map(item => item.name).join(', ')}.`);
+  if (same.length) parts.push(`${same.length === 1 ? 'Ya estaba en el expediente' : `${same.length} ya estaban en el expediente`}: ${same.map(item => item.name).join(', ')}.`);
+  if (failed.length) parts.push(`✗ No se pudo cargar: ${failed.map(item => `${item.name} (${item.error || 'error'})`).join('; ')}.`);
+  const request = data.analysis_request;
+  if (request?.requested || request?.already_open) parts.push(`${VIGIA_VISIBLE_NAMES.tenders} va a revisar lo nuevo y actualizar su análisis en unos minutos; el resultado aparece en Decidir.`);
+  else if (request && request.message) parts.push(`El análisis de lo nuevo no se lanzó: ${request.message}`);
+  return parts.join(' ');
 }
 
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
@@ -910,6 +1302,10 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const [tenderDecisionNavigationState, setTenderDecisionNavigationState] = useState<TenderPanelState<TenderGoNoGoDecision | null>>({ phase: 'loading' });
   const [tenderPreparationNavigationState, setTenderPreparationNavigationState] = useState<TenderPanelState<TenderPreparationNavigationValue>>({ phase: 'loading' });
   const [tenderRevision, setTenderRevision] = useState(0);
+  // Licitación por momentos (Juan, 2026-10-13): tres pestañas; la principal es Decidir o Preparar según el GO.
+  const [workspaceTab, setWorkspaceTab] = useState<TenderWorkspaceTab>(() => initialWorkspaceTab());
+  // Pestaña visible del detalle de licitación: cada pestaña muestra solo su sección (Juan, 2026-10-12).
+  const [tenderTab, setTenderTab] = useState<TenderDetailSectionId>(() => typeof window === 'undefined' ? 'tender-summary' : resolveInitialTenderDetailSection(window.location.hash));
   // Canal de refresco de disponibilidad SIN remontaje: una mutación confirmada del expediente sólo
   // debe hacer que el gate canónico de "Marcar lista para presentar" se relea. Va aparte de
   // `tenderRevision` (que sí remonta) para no destruir borradores locales — nota interna de
@@ -920,10 +1316,12 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   activeDetailIdRef.current = id;
   const documentReviewRef = useRef<HTMLDivElement>(null);
   const followUpRef = useRef<HTMLDivElement>(null);
+  const briefRef = useRef<HTMLDivElement>(null);
   const tenderQuestionResponseSaveRef = useRef<((input: TenderQuestionResponseInput, files: File[]) => Promise<void>) | null>(null);
   const focusTarget = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus');
   const documentFocusRequested = focusTarget === 'documents';
   const interactionFocusRequested = focusTarget === 'interaction';
+  const briefFocusRequested = focusTarget === 'brief';
   const load = async () => {
     const requestedId = id; const version = ++detailRequestRef.current;
     try {
@@ -936,6 +1334,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   useEffect(() => {
     activeDetailIdRef.current = id; detailRequestRef.current += 1;
     setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderQuestionResponses([]); setTenderDecisionAxisSurfaceEnabled(false); setTenderRevision(0); setTenderDossierReadinessRevision(0);
+    setTenderTab(resolveInitialTenderDetailSection(window.location.hash));
+    setWorkspaceTab(initialWorkspaceTab());
     tenderQuestionResponseSaveRef.current = null;
     setTenderDocumentNavigationState({ phase: 'loading' });
     setTenderAnalysisNavigationState({ phase: 'loading' });
@@ -946,7 +1346,12 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   }, [id]);
   useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
-  const tenderInitialReport = useAgt002InitialReport(id, api, detail?.opportunity.service_type_code === 'licitacion_publica');
+  useEffect(() => { if (briefFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(briefRef.current); }, [briefFocusRequested, detail?.opportunity.id]);
+  const [tenderReportRevision, setTenderReportRevision] = useState(0);
+  const tenderInitialReport = useAgt002InitialReport(id, api, detail?.opportunity.service_type_code === 'licitacion_publica', tenderReportRevision);
+  const tenderOfferStatus = useTenderOfferStatus(id, api, tenderRevision, detail?.opportunity.service_type_code === 'licitacion_publica');
+  // Terminó un análisis pedido con "Volver a analizar": se recargan el reporte y el estado de la ficha.
+  const onTenderReanalysisCompleted = useCallback(() => { setTenderReportRevision(revision => revision + 1); setTenderRevision(revision => revision + 1); }, []);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
   const followUpHistory = buildFollowUpHistory(o, detail.interactions);
@@ -993,13 +1398,62 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     window.alert(destination === 'radar' ? 'La licitación salió de oportunidades y volvió al Radar.' : 'La licitación pasó a Seguimiento.');
     go(destination === 'seguimiento' ? '#/tenders?view=seguimiento' : '#/tenders?view=radar');
   };
-  return <section className={o.service_type_code === 'licitacion_publica' ? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'}>
+  // Licitaciones (Juan, 2026-10-13): una sola lista de requisitos y la pantalla según el momento. Antes del GO
+  // la pregunta es "¿nos presentamos?"; después, "¿llegamos a tiempo?". El resto de esta función es la ficha comercial.
+  if (o.service_type_code === 'licitacion_publica') {
+    const moment = tenderWorkspaceMoment(tenderOfferStatus);
+    const canDecide = can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const reloadAll = async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); };
+    const secopNotices = plainSecopNotices(resolveTenderPhaseChangeNotices(o.observaciones));
+    // "Volver a analizar" (Juan, 2026-10-20): sólo quien puede lanzar análisis y no es de solo consulta. Sin análisis
+    // todavía es el mismo botón, pidiendo el primero (Juan, 2026-10-29); el servidor dice si se puede.
+    const reanalysis = !readOnly && can(data.currentProfile, ACTIONS.AI_ANALYSIS_RUN)
+      ? <TenderManualReanalysis key={`tender-reanalysis-${o.id}`} opportunityId={o.id} request={api} analyzedAt={tenderInitialReport?.createdAt || null} firstAnalysis={!tenderInitialReport} onCompleted={onTenderReanalysisCompleted} />
+      : null;
+    const decisionPanel = <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
+      <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}-${tenderRevision}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} questionResponses={tenderQuestionResponses} onChanged={reloadAll} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} />
+    </div>;
+    return <section className="stack tender-opportunity-detail tw-workspace" data-tab={workspaceTab} data-has-report={tenderInitialReport ? 'true' : 'false'}>
+      <TenderWorkspaceHeader entity={o.company_name} owner={o.owner_name || 'Sin comercial'} city={o.quote_city || o.regional_nombre || ''} amountLabel={Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus} report={tenderInitialReport} actions={<>
+        {canAccessRoute(data.currentProfile, 'edit') && <button type="button" className="secondary" onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}
+        {/* Salir de la oportunidad solo tiene sentido antes del GO; después, se cambia la decisión a NO GO en Historial. */}
+        {!readOnly && tenderOfferStatus === 'pendiente_decision' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}
+      </>} />
+      {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
+      <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />
+      <TenderWorkspaceTabs tab={workspaceTab} moment={moment} onChange={setWorkspaceTab} onBack={() => go('#/tenders?view=oportunidades')} sourceUrl={resolveTenderSourceUrl(o.source_url, o.observaciones)} />
+      <TenderNextStep tab={workspaceTab} moment={moment} offerStatus={tenderOfferStatus} onGo={setWorkspaceTab} />
+      <div className="tw-panel tw-panel-principal">
+        {moment === 'preparar'
+          ? <TenderPrepareView key={`tender-prepare-${o.id}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={canDecide} report={tenderInitialReport} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus}
+              onOfferStatusChanged={reloadAll}
+              onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })} />
+          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} channel={!readOnly && tenderInitialReport ? <TenderVigiaChannel key={`tender-channel-${o.id}`} opportunityId={o.id} request={api} /> : null} />}
+      </div>
+      {moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report={tenderInitialReport} reanalysis={reanalysis} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} /></div>}
+      <div className="tw-panel tw-panel-documentos">
+        <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async () => { await load(); await refresh(); }} />
+      </div>
+      <div className="tw-panel tw-panel-historial">
+        {secopNotices.length > 0 && <section className="tw-card"><small>Avisos de SECOP</small>{secopNotices.map(line => <p key={line}>{line}</p>)}</section>}
+        {/* El acta de cierre se muestra sola cuando la licitación ya está cerrada; el servidor dice cómo se cerró. */}
+        <TenderClosureActa key={`tender-closure-acta-${o.id}`} opportunityId={o.id} request={api} currentProfile={data.currentProfile} />
+        <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}><PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /></div>
+        {/* La decisión ya está en la línea de tiempo; cambiarla a NO GO es raro y queda al final, plegado. */}
+        {moment === 'preparar' && <details className="tw-fold tw-change-decision"><summary>Cambiar la decisión</summary>{decisionPanel}</details>}
+      </div>
+    </section>;
+  }
+  // Después del GO la etiqueta comercial ("Prospecto") no dice nada: manda el estado de la oferta, y salir
+  // de la oportunidad ya no es "pasar a seguimiento" sino cambiar la decisión a NO GO.
+  const tenderPostGoLabel = o.service_type_code === 'licitacion_publica' ? TENDER_POST_GO_HERO_LABELS[o.tender_offer_status || ''] : undefined;
+  return <section className={o.service_type_code === 'licitacion_publica' ? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'} data-tender-tab={o.service_type_code === 'licitacion_publica' ? tenderTab : undefined}>
     <div id="tender-summary" className="tender-summary-anchor tender-detail-anchor" tabIndex={-1}>
-      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
+      <div className="hero"><div><Badge>{tenderPostGoLabel || o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && !tenderPostGoLabel && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
-    {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} expectedCloseDate={o.expected_close_date} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} expectedCloseDate={o.expected_close_date} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} tabbed onActiveSectionChange={setTenderTab} />}
     {o.service_type_code === 'licitacion_publica' ? <>
       <Panel title="Resumen de la oportunidad" className="tender-opportunity-summary-panel">
         {/* Entity, amount and owner already head the page: the summary only adds the closing date and the process facts. */}
@@ -1007,7 +1461,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           <div className="tender-summary-close"><small>Cierre oficial</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{tenderCloseCountdown(o.expected_close_date)}</span></div>
           <p className="tender-summary-facts">{[o.service_type_name || o.tipo_producto_original, o.economic_sector, o.quote_city || 'Ciudad por confirmar'].filter(Boolean).join(' · ')}</p>
         </div>
-        {resolveTenderPhaseChangeNotices(o.observaciones).length > 0 && <div className="notice tender-phase-change-notice" role="status">{resolveTenderPhaseChangeNotices(o.observaciones).map(line => <p key={line}>{line}</p>)}</div>}
+        {/* Solo el aviso más reciente de SECOP; los anteriores quedan plegados para no repetir lo mismo varias veces. */}
+        {resolveTenderPhaseChangeNotices(o.observaciones).length > 0 && <div className="notice tender-phase-change-notice" role="status"><p>{resolveTenderPhaseChangeNotices(o.observaciones).slice(-1)[0]}</p>{resolveTenderPhaseChangeNotices(o.observaciones).length > 1 && <details><summary>Avisos anteriores ({resolveTenderPhaseChangeNotices(o.observaciones).length - 1})</summary>{resolveTenderPhaseChangeNotices(o.observaciones).slice(0, -1).map(line => <p key={line}>{line}</p>)}</details>}</div>}
       </Panel>
     </> : <section className="opportunity-insight-grid opportunity-priority-grid" aria-label="Resumen prioritario de la oportunidad"><div className={`opportunity-insight-card ${priorityNextAction.className}`}><small>Próxima gestión</small><strong>{fmtDate(o.next_action_at)}</strong><span>{priorityNextAction.detail}</span></div><div className="opportunity-insight-card"><small>Último seguimiento</small><strong>{fmtDate(o.last_interaction_at)}</strong><span>{followUpAgeLabel(o.last_interaction_at)}</span></div><div className={`opportunity-insight-card ${priorityClose.className}`}><small>Cierre estimado</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{priorityClose.detail}</span></div><div className={`opportunity-insight-card ${priorityDecisionMaker.className}`}><small>Contacto decisor</small><strong>{decisionMakerLines}</strong><span>{priorityDecisionMaker.detail}</span></div></section>}
     {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async()=>{await load(); await refresh();}} />}
@@ -1029,20 +1484,28 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         decisionState={tenderDecisionNavigationState}
         onDecisionNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }}
         onDecisionChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }}
-        onOpenHelpDesk={() => focusTenderDetailSection(document.getElementById('tender-preparation'))}
+        onOpenHelpDesk={() => requestTenderDetailSection('tender-preparation')}
         commercialContext={{ amountLabel: fmtMoney(o.offer_value), closeLabel: fmtDateOnly(o.expected_close_date), city: o.quote_city, sector: o.economic_sector, commercialFitPositives: tenderAnalysis?.commercial_fit?.positives || [] }}
       />
     </div>}
-    {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} readinessRevision={tenderDossierReadinessRevision} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} onChanged={() => { if (activeDetailIdRef.current === o.id) setTenderDossierReadinessRevision(revision => revision + 1); }} /></div>}
+    {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} readinessRevision={tenderDossierReadinessRevision} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderCompanyDocumentBridgePanel key={`tender-company-bridge-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} /><TenderComplianceMatrixPanel key={`tender-compliance-matrix-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} onChanged={() => { if (activeDetailIdRef.current === o.id) setTenderDossierReadinessRevision(revision => revision + 1); }} /></div>}
     {/* Ficha comercial en dos columnas (Juan, 2026-10-08): a la izquierda lo que el comercial hace; a la derecha lo que lo ayuda. */}
     <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-grid' : undefined}>
     <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-main' : undefined}>
     {!readOnly && o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code) && <OpportunityDecisionPanel opportunity={o} data={data} onChanged={async () => { await load(); await refresh(); }} />}
+    {/* El formulario de cierre (GGC-FO-001): va junto a la decisión, porque es lo que habrá que tener completo para
+        poder marcar el negocio como ganado (Juan, 2026-10-23). Se ve también cuando ya está ganado, para leerlo. */}
+    {o.service_type_code !== 'licitacion_publica' && <ClosureFormPanel
+      opportunityId={o.id}
+      company={o.company_name}
+      canEdit={!readOnly && canAccessRoute(data.currentProfile, 'edit')}
+      onSaved={async () => { await load(); await refresh(); }}
+    />}
     <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
       <h2 className="followup-section-title">Seguimiento comercial</h2>
       <div className="followup-section-grid">
         {!readOnly && !decisionPending && <div id="opportunity-follow-up" className="opportunity-follow-up-anchor followup-form-slot" tabIndex={-1} ref={followUpRef}>
-          <FollowUpForm opportunityId={id} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} />
+          <FollowUpForm opportunityId={id} opportunity={o} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} />
         </div>}
         <Panel title="Historial de seguimiento" className="followup-history">
           <div className="timeline followup-timeline">{followUpHistory.length
@@ -1063,6 +1526,13 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       opportunityId={o.id}
       request={api}
       preflight={{ nextAction: priorityNextAction, expectedClose: priorityClose, decisionMaker: priorityDecisionMaker }}
+    />}
+    {o.service_type_code !== 'licitacion_publica' && <MeetingBriefPanel
+      opportunity={o}
+      interactions={detail?.interactions || []}
+      siblings={data.opportunities.filter(row => row.client_id && row.client_id === o.client_id)}
+      focusRef={briefRef}
+      canAskVigia={canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && !readOnly}
     />}
     {o.service_type_code !== 'licitacion_publica' && <LeadAnalysisPanel opportunityId={o.id} profile={profileCompleteness(o as unknown as Record<string, unknown>)} canRun={canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && !readOnly} showCost={data.currentProfile.role === 'admin'} onMessageUsed={() => { void load(); void refresh(); }} />}
     </div>
@@ -1091,14 +1561,6 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
 const tenderDocumentTypeOptions = [
   ['pliego','Pliego'], ['estudios_previos','Estudios previos'], ['anexo_tecnico','Anexo técnico'], ['adenda','Adenda'], ['formatos','Formatos'], ['otro','Otro']
 ];
-function fileToBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
-    reader.onerror = () => reject(reader.error || new Error('No fue posible leer el archivo.'));
-    reader.readAsDataURL(file);
-  });
-}
 function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onQuestionResponsesChanged, onDecisionSurfaceFlagChanged, onQuestionResponseSaverReady, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onQuestionResponsesChanged?: (responses: TenderQuestionResponse[]) => void; onDecisionSurfaceFlagChanged?: (enabled: boolean) => void; onQuestionResponseSaverReady?: (saver: ((input: TenderQuestionResponseInput, files: File[]) => Promise<void>) | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
@@ -1215,28 +1677,55 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       window.clearInterval(processingTimer);
     };
   }, [opportunity.id]);
-  const uploadTenderDocumentFiles = async (selected: File[]) => {
+  const uploadTenderDocumentFiles = async (selected: File[], origin?: TenderDocumentOrigin) => {
     if (!selected.length) return;
     setBusy(true); setStatusText('Subiendo y extrayendo texto…');
     onNavigationStateChanged?.({ phase: 'pending', label: 'Carga documental en curso' }, { phase: 'ready', value: payload.analysis || null });
     try {
-      const files = await Promise.all(selected.slice(0, 8).map(async file => ({
-        name: file.name,
-        mime_type: file.type || 'application/octet-stream',
-        document_type: inferTenderDocumentType(file.name),
-        current: true,
-        content_base64: await fileToBase64(file)
-      })));
+      // Cada archivo sube directo al almacenamiento con una URL firmada; a la API sólo le llega la ruta. Antes iba
+      // todo en base64 dentro del JSON y Vercel rechazaba el lote con 413 pasados los ~3 MB (Supersalud, 2026-10-23).
+      const files = await Promise.all(selected.slice(0, 8).map(async file => {
+        const ticket = await api<{ storage_path: string; token: string }>('/api/tender-documents-upload-url', {
+          method: 'POST',
+          body: JSON.stringify({ opportunity_id: opportunity.id, name: file.name, size: file.size })
+        });
+        const uploaded = await supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(ticket.storage_path, ticket.token, file);
+        if (uploaded.error) throw new Error(`No fue posible subir ${file.name}: ${uploaded.error.message}`);
+        return {
+          name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          document_type: inferTenderDocumentType(file.name),
+          current: true,
+          storage_path: ticket.storage_path,
+          // Quién produjo el documento, declarado por quien carga. Sin declarar va vacío y el análisis lo
+          // trata como de un tercero, nunca como de la entidad.
+          origin: origin || null
+        };
+      }));
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText(tenderUploadSummary(data));
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
-  const addFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const addFiles = (event: React.ChangeEvent<HTMLInputElement>, origin?: TenderDocumentOrigin) => {
     const selected = Array.from(event.currentTarget.files || []);
     event.currentTarget.value = '';
     if (!selected.length) return;
-    void uploadTenderDocumentFiles(selected);
+    void uploadTenderDocumentFiles(selected, origin);
+  };
+
+  // Corregir el origen de un documento ya cargado, sin recargarlo: el origen es una declaración de la
+  // persona, no parte del contenido.
+  const setDocumentOrigin = async (documentId: string, origin: TenderDocumentOrigin) => {
+    setBusy(true); setStatusText('Declarando el origen…');
+    try {
+      const data = await api<TenderDocumentsPayload>('/api/tender-document-origin', {
+        method: 'POST',
+        body: JSON.stringify({ opportunity_id: opportunity.id, document_version_id: documentId, origin })
+      });
+      setPayload(data); emitNavigationPayload(data); setStatusText('Origen declarado.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
 
   async function pollAgt002Reanalysis(jobId: string, requestedOpportunityId: string) {
@@ -1391,7 +1880,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   // ancla documental para poder ser la superficie completa de condiciones e impedimentos.
   return <>
     <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
-      <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
+      <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={(event, origin) => void addFiles(event, origin)} onSetOrigin={(documentId, origin) => void setDocumentOrigin(documentId, origin)} documentTypeLabel={tenderDocumentTypeLabel} />
     </div>
     <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
       <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onFreezeGovernedWorkset={members => void freezeAndAnalyzeGovernedWorkset(members)} onUploadGovernedFiles={files => uploadTenderDocumentFiles(files)} statusText={analysisStatus.message} statusTone={analysisStatus.tone} runState={runState} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} initialAnalysis={initialAnalysis} initialReport={initialReport} officialCloseDate={opportunity.expected_close_date} />
@@ -1456,6 +1945,7 @@ function ClientProfilePanel({ o, canEdit }: { o: Opportunity; canEdit: boolean }
     <header><h2>Perfil del cliente</h2><span className={profile.complete ? 'client-profile-score is-complete' : 'client-profile-score'}>{profile.complete ? 'Perfil completo' : `${profile.done} de ${profile.total}`}</span></header>
     <div className="client-profile-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profile.pct}><span style={{ width: `${profile.pct}%` }} /></div>
     {!profile.complete && <p className="client-profile-missing">Falta: {profile.missing.join(', ')}.{canEdit && <> <a href={`#/edit/${o.id}`}>Completar perfil</a></>}</p>}
+    {profile.suggested.length > 0 && <p className="client-profile-suggested">Opcional: {profile.suggested.join(', ')}. Suma al análisis, pero no hace falta para ganarlo.</p>}
     <dl className="client-profile-fields">
       <div><dt>Página web</dt><dd>{link(o.company_website)}</dd></div>
       <div><dt>Cargo del decisor</dt><dd>{o.decision_maker_title || '—'}</dd></div>
@@ -1480,11 +1970,63 @@ function FollowUpContent({ content }: { content: string }) {
   </>;
 }
 
-function FollowUpForm({ opportunityId, currentProfile, onSaved }: { opportunityId: string; currentProfile: Profile; onSaved: () => Promise<void> }) {
+// F12 — brief antes de la reunión. Todo sale de datos del CRM; lo que es sugerencia va rotulado y lo que no se sabe
+// se nombra. Sin llamada a un modelo: nada que leer aquí puede ser inventado.
+function MeetingBriefPanel({ opportunity, interactions, siblings, focusRef, canAskVigia }: {
+  opportunity: Opportunity; interactions: Interaction[]; siblings: Opportunity[];
+  focusRef: React.RefObject<HTMLDivElement | null>; canAskVigia: boolean;
+}) {
+  const brief = meetingBrief({ opportunity, interactions, siblings });
+  // El bloque con IA se pide con el botón y no se guarda: vive mientras la ficha esté abierta (Juan, 2026-10-22).
+  const [summary, setSummary] = useState<{ pendiente: string; proponer: string[]; notes_used?: number } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
+  const askVigia = async () => {
+    setAsking(true); setSummaryError('');
+    try {
+      setSummary(await api(`/api/agt003/meeting-brief?id=${encodeURIComponent(opportunity.id)}`, { method: 'POST' }));
+    } catch (error) { setSummaryError(error instanceof Error ? error.message : String(error)); }
+    finally { setAsking(false); }
+  };
+  const list = (title: string, items: string[], className = '') => items.length > 0 && <div className={`brief-block ${className}`}>
+    <h4>{title}</h4><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul>
+  </div>;
+  return <div ref={focusRef} id="brief" tabIndex={-1}>
+    <details className="panel meeting-brief" open>
+      <summary>Antes de la reunión</summary>
+      <div className="brief-grid">
+        {brief.contexto.length > 0 && <div className="brief-block">
+          <ul>{brief.contexto.map(item => <li key={item.label}><span className="brief-label">{item.label}:</span> {item.value}</li>)}</ul></div>}
+        {list('Desde la última vez', brief.desdeLaUltimaVez)}
+        {list('Otras oportunidades abiertas de este cliente', brief.otrasOportunidades)}
+        {list('Se perdió antes', brief.perdidasPrevias)}
+        {list('Para tener en cuenta', brief.sugerencias, 'is-suggestion')}
+        {list('Pregunte en la reunión', brief.faltaEnElCrm, 'is-missing')}
+      </div>
+      {canAskVigia && <div className="brief-ai">
+        {!summary && <button type="button" className="secondary" disabled={asking} onClick={() => void askVigia()}>
+          {asking ? 'Leyendo las notas…' : `Preguntar a ${VIGIA_VISIBLE_NAMES.commercial}: qué quedó pendiente`}
+        </button>}
+        {summaryError && <p className="brief-ai-error" role="alert">{summaryError}</p>}
+        {summary && <div className="brief-block is-suggestion">
+          <h4>{VIGIA_VISIBLE_NAMES.commercial} leyó {summary.notes_used === 1 ? 'la nota' : `las ${summary.notes_used ?? ''} notas`} de este cliente (es una sugerencia, no un dato)</h4>
+          <p className="brief-ai-pending"><span className="brief-label">Quedó pendiente:</span> {summary.pendiente}</p>
+          {summary.proponer.length > 0 && <ul>{summary.proponer.map((item, index) => <li key={index}>{item}</li>)}</ul>}
+          <button type="button" className="secondary" disabled={asking} onClick={() => void askVigia()}>{asking ? 'Leyendo…' : 'Volver a preparar'}</button>
+        </div>}
+      </div>}
+    </details>
+  </div>;
+}
+function FollowUpForm({ opportunityId, opportunity, currentProfile, onSaved }: { opportunityId: string; opportunity: Opportunity; currentProfile: Profile; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: bogotaToday(), next_action_at: '' }); const [status, setStatus] = useState('');
+  // F4: una oportunidad abierta no puede quedar sin próxima gestión. No se pide si el negocio ya se cerró, si es
+  // licitación (su cronograma lo maneja Licitaciones) o si ya hay una fecha futura vigente, que el servidor acepta.
+  const liveNextAction = hasLiveNextAction({ nextActionAt: opportunity.next_action_at });
+  const nextActionRequired = !isTerminalStage(opportunity.stage_code) && opportunity.service_type_code !== 'licitacion_publica' && !liveNextAction;
   const interactionTypeLabels: Record<string, string> = { llamada:'Llamada', correo:'Correo', reunion:'Reunión', whatsapp:'WhatsApp', nota:'Nota', cambio_estado:'Cambio de estado', documento:'Documento' };
   const save = async (e: React.FormEvent) => { e.preventDefault(); setStatus('Guardando…'); try { await api(`/api/opportunity-interactions?id=${encodeURIComponent(opportunityId)}`, { method:'POST', body: JSON.stringify({ interaction_type: form.interaction_type, notes: form.notes, occurred_at: followUpDateToIso(form.occurred_at), next_action_at: form.next_action_at ? new Date(form.next_action_at).toISOString() : null }) }); setForm({...form, notes:''}); setStatus(form.next_action_at ? 'Seguimiento registrado.' : 'Seguimiento registrado. Falta agendar la próxima gestión.'); await onSaved(); } catch(err) { setStatus(err instanceof Error ? err.message : String(err)); } };
-  return <Panel title="Registrar seguimiento"><p className="followup-form-hint">Este registro alimenta el historial comercial y las recomendaciones de {VIGIA_VISIBLE_NAMES.commercial}. Describa hechos, acuerdos, responsables y el siguiente paso.</p><form onSubmit={save} className="form followup-form followup-form-compact"><label>Tipo de seguimiento<Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t, interactionTypeLabels[t]])} empty=""/></label><label>Registrado por<input value={currentProfile.full_name} readOnly/></label><label>Fecha del seguimiento<input type="date" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Próxima gestión (opcional)<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><label>Detalle del seguimiento<textarea required placeholder={FOLLOW_UP_NOTES_PLACEHOLDER} value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/></label><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
+  return <Panel title="Registrar seguimiento"><p className="followup-form-hint">Este registro alimenta el historial comercial y las recomendaciones de {VIGIA_VISIBLE_NAMES.commercial}. Describa hechos, acuerdos, responsables y el siguiente paso.</p><form onSubmit={save} className="form followup-form followup-form-compact"><label>Tipo de seguimiento<Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t, interactionTypeLabels[t]])} empty=""/></label><label>Registrado por<input value={currentProfile.full_name} readOnly/></label><label>Fecha del seguimiento<input type="date" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>{nextActionRequired ? 'Próxima gestión' : 'Próxima gestión (opcional)'}<input type="datetime-local" required={nextActionRequired} value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/>{nextActionRequired ? <small>Obligatoria: diga cuándo es el siguiente contacto. Si el negocio ya se cerró, use "Decidir" para registrarlo como aprobado, perdido o descartado.</small> : liveNextAction ? <small>Ya está agendada para {fmtDate(opportunity.next_action_at)}. Si cambió, ponga la fecha nueva.</small> : null}</label><label>Detalle del seguimiento<textarea required placeholder={FOLLOW_UP_NOTES_PLACEHOLDER} value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/></label><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
 }
 const publicActuationOptions = [['requirement_pending','Requerimiento pendiente'],['information_requested','Información solicitada'],['addendum_reviewed','Adenda revisada'],['observation_recorded','Observación registrada'],['internal_meeting','Reunión interna'],['case_note','Nota del caso']];
 const businessEventLabels: Record<string, string> = {
@@ -1541,15 +2083,20 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
   const processHistory = useMemo<TenderProcessHistoryItem[]>(() => [
     ...events.filter(event => {
       if (decisions.length && ['go_decided', 'no_go_decided'].includes(event.event_type)) return false;
-      if (offerHistory.length && event.event_type === 'offer_preparation_started') return false;
+      // "Preparación de oferta iniciada" la produce el propio GO: con el GO en la lista, repetirla no dice nada.
+      if ((offerHistory.length || decisions.some(decision => decision.decision === 'go')) && event.event_type === 'offer_preparation_started') return false;
+      // Evento interno del sistema: repite el GO con palabras de sistema ("Expediente operativo sembrado").
+      if (event.event_type === 'dossier_seeded') return false;
       return true;
     }).map(event => ({ id: `tracking-${event.id}`, title: publicActuationLabel(event.event_type), createdAt: event.created_at, actor: actorLabel(event), note: event.note, sourceUrl: eventLink(event) })),
     ...decisions.map(decision => ({ id: `decision-${decision.id}`, title: decision.decision === 'go' ? 'GO registrado' : 'NO GO registrado', createdAt: decision.decided_at, actor: decision.psi_sales_profiles?.full_name || decision.decided_by || 'Persona autorizada', note: decision.justification })),
     ...offerHistory.map(event => ({ id: `offer-${event.id}`, title: `${offerStatusLabels[event.from_status] || event.from_status} → ${offerStatusLabels[event.to_status] || event.to_status}`, createdAt: event.changed_at, actor: event.psi_sales_profiles?.full_name || event.actor_id || 'Persona autorizada', note: event.note })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [events, decisions, offerHistory, profiles]);
   return <div className="stack">
-    {!isReadOnlyProfile(currentProfile) && <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required aria-describedby={!note.trim() ? 'tender-follow-up-note-help' : undefined} placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/>{!note.trim() && <small id="tender-follow-up-note-help" className="form-helper">Escriba una descripción para habilitar Guardar actuación.</small>}<small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>}
-    <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline tender-business-timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
+    <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y novedades del proceso, de lo más reciente a lo más antiguo.</p>
+      {/* Registrar actuación o novedad: plegado detrás de un botón para que el historial se lea primero (Juan, 2026-10-13). */}
+      {!isReadOnlyProfile(currentProfile) && <details className="tw-fold tender-follow-up-add"><summary>Agregar una nota o novedad</summary><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required aria-describedby={!note.trim() ? 'tender-follow-up-note-help' : undefined} placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/>{!note.trim() && <small id="tender-follow-up-note-help" className="form-helper">Escriba una descripción para habilitar Guardar actuación.</small>}<small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></details>}
+<div className="timeline tender-business-timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
   </div>;
 }
 function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; refresh: () => Promise<void> }) {
@@ -1603,11 +2150,16 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   };
   const selectClientSuggestion = (client: ClientSuggestion) => {
     selectedClientNameRef.current = client.company_name;
+    // Un cliente de Avancys todavía no existe en el CRM, así que no tiene `client_id` que mandar.
+    // Lo que sí trae es su NIT —sin que nadie lo escriba— y el hecho de que ya es cliente nuestro,
+    // que es cierto por construcción: está en Avancys porque se le factura.
+    const deAvancys = client.origen === 'avancys';
     setForm(prev => ({
       ...prev,
-      client_id: client.id,
+      client_id: deAvancys ? '' : client.id,
+      company_nit: deAvancys ? (client.company_nit || '') : (prev.company_nit || ''),
+      customer_segment: deAvancys ? 'cliente_actual' : (client.customer_segment || ''),
       company_name: client.company_name,
-      customer_segment: client.customer_segment || '',
       regional_nombre: client.regional_nombre || '',
       sede: client.sede || '',
       quote_city: client.quote_city || '',
@@ -1693,7 +2245,10 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
           <ul id="client-typeahead-listbox" role="listbox" className="client-typeahead-list">
             {clientSuggestions.map(client => (
               <li key={client.id} role="option" aria-selected={form.client_id === client.id}>
-                <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>selectClientSuggestion(client)}>{client.company_name}</button>
+                <button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>selectClientSuggestion(client)}>
+                  {client.company_name}
+                  {client.origen === 'avancys' && <small className="muted"> · ya es cliente{client.company_nit ? ` · NIT ${client.company_nit}` : ''}{client.atendido_por ? ` · atiende ${client.atendido_por}` : ''}</small>}
+                </button>
               </li>
             ))}
           </ul>
@@ -1819,7 +2374,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     (!onlyActive || !isTerminalStage(o.stage_code))
   ), [data.opportunities, period, q, owner, regional, stage, service, onlyActive]);
   const scopedIds = useMemo(() => new Set(scopedOpportunities.map(o => o.id)), [scopedOpportunities]);
-  const filteredStalled = data.stalled.filter(o => scopedIds.has(o.id));
+  const filteredStalled = stalledInStage(scopedOpportunities.filter(o => !isTerminalStage(o.stage_code))).map(row => row.opportunity);
   const activeOpportunities = scopedOpportunities.filter(o => !isTerminalStage(o.stage_code));
   const active = activeOpportunities.length;
   const actionRows = activeOpportunities.map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }));
@@ -2346,7 +2901,8 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
     const pendingIds = new Set(pendingDecisionRows.map(o => o.id));
     return buildMyDayQueue(opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !pendingIds.has(o.id)), now);
   }, [opportunities, pendingDecisionRows, now]);
-  // Tres casos de Mi día (Juan, 2026-10-08): atrasado → decidir; al día con agenda hoy → hacer hoy; al día sin agenda → próximas + prospectar.
+  // "Ahora" junta lo que espera decisión con lo agendado para hoy, en ese orden (Juan, 2026-10-07). "Esta semana"
+  // son los siguientes 7 días, y se muestra siempre: responde "¿qué viene?" aunque el día esté cargado.
   const activeRows = useMemo(() => {
     const pendingIds = new Set(pendingDecisionRows.map(o => o.id));
     return opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !isTerminalStage(o.stage_code) && !pendingIds.has(o.id) && o.next_action_at);
@@ -2355,41 +2911,107 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   const weekKey = bogotaDay(new Date(now.getTime() + 7 * 86_400_000)) || '';
   const todayRows = activeRows.filter(o => bogotaDay(o.next_action_at as string) === todayKey).sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
   const upcomingRows = activeRows.filter(o => { const day = bogotaDay(o.next_action_at as string) || ''; return day > todayKey && day <= weekKey; }).sort((a, b) => String(a.next_action_at).localeCompare(String(b.next_action_at)));
-  const hasPending = pendingDecisionRows.length > 0;
   const goal = monthlyGoalCompliance({ opportunities, goals: data.goals, month: bogotaMonth(now), ownerId: selfId });
-  const firstName = (data.currentProfile.full_name || '').split(' ')[0] || 'comercial';
   const canCreate = canAccessRoute(data.currentProfile, 'new');
 
+  const pendingCount = pendingDecisionRows.length;
+  const todayCount = todayRows.length;
+  const quota = commercialDecisionQuota(data);
+  const daysLeft = daysLeftInMonth(now);
+  const pendingDataTotal = myDay.prepararTotal + myDay.depurarCrmTotal;
+  // Día despejado (Juan, 2026-10-22): sin nada vencido ni agendado para hoy, la pantalla deja de anunciar que no
+  // hay nada y pasa a ser la próxima conversación. La siguiente gestión se busca en toda la cartera, no sólo en
+  // los 7 días: el vacío de la semana no debe dejar la pantalla muda.
+  const isCalm = !pendingCount && !todayCount;
+  const nextTalk = useMemo(() => activeRows
+    .filter(o => (bogotaDay(o.next_action_at as string) || '') > todayKey)
+    .sort((a, b) => String(a.next_action_at).localeCompare(String(b.next_action_at)))[0] || null, [activeRows, todayKey]);
+  const nextUp = nextTalk;
+  const sameClientCount = nextTalk ? opportunities.filter(o => o.client_id && o.client_id === nextTalk.client_id).length : 0;
+  const openRows = opportunities.filter(o => isAgt003CommercialOpportunity(o) && !isOutOfActivePipeline(o, now) && !isTerminalStage(o.stage_code));
+  const openValue = openRows.reduce((total, o) => total + (Number(o.offer_value) || 0), 0);
+  // "Esta semana" no repite lo que ya está arriba como la próxima conversación.
+  const weekRows = isCalm && nextTalk ? upcomingRows.filter(o => o.id !== nextTalk.id) : upcomingRows;
+  // Una sola frase de estado, en el orden de las tres preguntas: qué hago ahora, qué viene, cómo voy (Juan, 2026-10-22).
+  const headline = pendingCount && todayCount
+    ? `Hoy tiene ${todayCount === 1 ? 'una gestión' : `${todayCount} gestiones`} y ${pendingCount === 1 ? '1 oportunidad' : `${pendingCount} oportunidades`} esperando decisión.`
+    : pendingCount
+      ? `Tiene ${pendingCount === 1 ? '1 oportunidad' : `${pendingCount} oportunidades`} esperando decisión.`
+      : todayCount
+        ? `No tiene nada vencido. Hoy tiene ${todayCount === 1 ? 'una gestión' : `${todayCount} gestiones`}.`
+        : nextTalk
+          ? `Hoy está despejado. Su próxima conversación es ${futureDayPhrase(nextTalk.next_action_at, now)}.`
+          : 'Hoy está despejado. No tiene ninguna conversación agendada.';
+  // La cuota diaria de decisiones (regla del 2026-10-08) deja de vivir dentro de la cola y pasa a la línea de estado.
+  const subline = quota && quota.required > 0
+    ? (quota.blocked
+      ? <>Decida <strong>{quota.required} hoy</strong> para poder crear oportunidades nuevas. Va en {quota.done}.</>
+      : <>Cumplió las {quota.required} de hoy: ya puede crear oportunidades nuevas.</>)
+    : null;
+  // El vacío es el caso normal a media mañana: dice qué sigue y ofrece la acción natural, en vez de callarse.
+  const nowEmpty = <>
+    <p className="now-empty-title">Nada pendiente hoy.</p>
+    <p className="now-empty-text">{nextUp
+      ? `Lo próximo es el ${MY_DAY_WEEKDAY.format(new Date(nextUp.next_action_at as string))} a las ${MY_DAY_TIME.format(new Date(nextUp.next_action_at as string))} con ${nextUp.company_name.replace(/\.$/, '')}.`
+      : 'No tiene ninguna conversación agendada.'}</p>
+    <div className="now-acts">
+      {nextUp && <a className="now-main" href={`#/detail/${nextUp.id}?focus=brief`}>Preparar la reunión</a>}
+      {canCreate && <button type="button" className={nextUp ? 'now-link' : 'now-main'} onClick={() => go('#/new')}>Registrar un cliente nuevo</button>}
+    </div>
+  </>;
+
   return <section className="stack my-day-home" aria-label="Mi día">
-    <section className="executive-hero consultant-hero">
-      <div><span className="eyebrow">Mi día</span><h2>Hola, {formatDisplayName(firstName)}</h2><p>{hasPending
-        ? 'Primero decida lo pendiente; luego haga las gestiones de hoy.'
-        : todayRows.length
-          ? `No tiene nada atrasado. Hoy tiene ${todayRows.length === 1 ? '1 gestión' : `${todayRows.length} gestiones`}.`
-          : 'Está al día: no tiene oportunidades pendientes ni gestiones para hoy.'}</p></div>
-    </section>
+    <div className="my-day-head">
+      <p className="my-day-dayline">{MY_DAY_DATE.format(now).replace(',', '')}</p>
+      <h2 className="my-day-headline">{headline}</h2>
+      {subline && <p className="my-day-subline">{subline}</p>}
+    </div>
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}
-    <DecisionQueue pending={pendingDecisionRows} quota={commercialDecisionQuota(data)} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />
-    {opportunities.length > 0 && <TodayQueue today={todayRows} stages={data.stages} lossReasons={data.lossReasons} onChanged={refresh} />}
-    {opportunities.length > 0 && !hasPending && <UpcomingList upcoming={upcomingRows} />}
-    {opportunities.length > 0 && !hasPending && !todayRows.length && canCreate && <section className="panel my-day-prospect">
-      <p><strong>Buen momento para prospectar.</strong> Registre los clientes nuevos con los que está hablando.</p>
-      <button type="button" onClick={() => go('#/new')}>Nueva oportunidad</button>
-    </section>}
-    {!opportunities.length ? <section className="panel my-day-first">
-      <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
-      {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
-    </section> : (myDay.preparar.length > 0 || myDay.depurarCrm.length > 0) && <section className="commercial-followup-banner my-day-personal-banner" aria-label="Preparar y depurar">
-      <div className="my-day">
-        {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
-        {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
-          <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
+    {!opportunities.length
+      ? <section className="panel my-day-first">
+        <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
+        {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
+      </section>
+      : <div className={`my-day-grid${isCalm ? ' is-calm' : ''}`}>
+        <div className="my-day-col">
+          {isCalm && nextTalk
+            ? <NextConversation opportunity={nextTalk} sameClient={sameClientCount} now={now} />
+            : <NowQueue pending={pendingDecisionRows} today={todayRows} stages={data.stages} lossReasons={data.lossReasons}
+              competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />}
+          {isCalm && <TodayDone opportunities={opportunities.filter(o => isAgt003CommercialOpportunity(o))} now={now} />}
+          <WeekList upcoming={weekRows} />
+          {isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
+        </div>
+        <div className="my-day-side">
+          {!isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
+          <section className="my-day-goal" aria-label="Meta del mes">
+            <h3>Meta del mes</h3>
+            {goal.budget ? <>
+              <p className="goal-fig"><strong className="numeric-value">{fmtMoneyCompact(goal.approved)}</strong> <span>de {fmtMoneyCompact(goal.budget)}</span> <span className="numeric-value">· {goal.pct}%</span></p>
+              <div className="goal-track"><i style={{ width: `${Math.max(0, Math.min(100, goal.pct || 0))}%` }} /></div>
+              <p className="goal-note">{daysLeft === 0 ? 'Hoy es el último día del mes.' : `${daysLeft === 1 ? 'Queda 1 día' : `Quedan ${daysLeft} días`} de ${MY_DAY_MONTH.format(now)}.`} <a href="#/goals">Ver mi meta</a></p>
+            </> : <p className="goal-note">Su gerente todavía no le cargó la meta de {MY_DAY_MONTH.format(now)}. <a href="#/goals">Ver mi meta</a></p>}
+          </section>
+          {isCalm && <section className="my-day-book" aria-label="Su cartera">
+            <h3>Su cartera</h3>
+            <p className="book-fig"><strong>{openRows.length === 1 ? '1 oportunidad abierta' : `${openRows.length} oportunidades abiertas`}</strong> · <span className="numeric-value">{fmtMoneyCompact(openValue)}</span> en juego</p>
+            <p className="goal-note">Ninguna vencida, ninguna sin fecha. <a href="#/opportunities">Ver todas</a></p>
+          </section>}
+        </div>
+        {pendingDataTotal > 0 && <details className="my-day-pending-data">
+          <summary>Datos por completar ({pendingDataTotal})</summary>
+          <section className="commercial-followup-banner my-day-personal-banner" aria-label="Preparar y depurar">
+            <div className="my-day">
+              {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
+              {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
+                <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
+              </details>}
+            </div>
+          </section>
         </details>}
-      </div>
-    </section>}
-    <p className="my-day-goal-line">Meta del mes: {goal.budget ? <><strong>{fmtMoneyCompact(goal.approved)}</strong> de <strong>{fmtMoneyCompact(goal.budget)}</strong> ({goal.pct}%)</> : <>todavía no tiene meta cargada para este mes (la carga su gerente) · {fmtMoneyCompact(goal.approved)} aprobado</>} · <a href="#/goals">Ver mi meta →</a></p>
+      </div>}
   </section>;
 }
 
@@ -2721,12 +3343,28 @@ function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPa
     ] };
   }
 
-  if (q.includes('sustentación') || q.includes('sustentacion') || q.includes('estancad')) {
-    const rows = active.filter(o => o.stage_code === 'sustentacion').sort((a,b) => Number(daysSince(b.last_interaction_at || b.updated_at || b.created_at)||0) - Number(daysSince(a.last_interaction_at || a.updated_at || a.created_at)||0));
-    return { mode: 'stalled', title: 'Clientes en sustentación', summary: 'Oportunidades en sustentación priorizadas por días sin seguimiento y valor comercial.', rows, cards: [
+  // "Estancada" tiene una sola definición (Juan, 2026-10-22): días en la etapa por encima de su umbral y sin
+  // próxima gestión agendada. Antes esta respuesta usaba la regla vieja —sustentación con más de 5 días sin
+  // contacto—, así que Prioridades podía contradecir a Mi día sobre la misma oportunidad.
+  if (q.includes('estancad') || q.includes('enfri')) {
+    const stalledRows = stalledInStage(active);
+    const rows = stalledRows.map(row => row.opportunity);
+    const worst = stalledRows[0];
+    return { mode: 'stalled', title: 'Oportunidades estancadas', summary: 'Llevan más días en su etapa de los que admite esa etapa y no tienen una próxima gestión agendada.', rows, cards: [
+      { label: 'Estancadas', value: String(rows.length), detail: 'En todas las etapas, no sólo sustentación' },
+      { label: 'La más parada', value: worst ? `${worst.stall.days} días` : '—', detail: worst ? worst.opportunity.company_name : 'Ninguna' },
+      { label: 'Valor detenido', value: fmtMoneyCompact(rows.reduce((total, o) => total + Number(o.offer_value || 0), 0)), detail: 'Pipeline sin movimiento' },
+    ] };
+  }
+
+  // Preguntar por una etapa sigue siendo una pregunta válida, pero es un listado, no un diagnóstico de estancamiento.
+  if (q.includes('sustentación') || q.includes('sustentacion')) {
+    const rows = active.filter(o => o.stage_code === 'sustentacion').sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
+    const stalledHere = stalledInStage(rows).length;
+    return { mode: 'stalled', title: 'Clientes en sustentación', summary: 'Oportunidades en la etapa de sustentación, de mayor a menor valor.', rows, cards: [
       { label: 'En sustentación', value: String(rows.length), detail: 'Oportunidades activas' },
-      { label: 'Más de 5 días', value: String(rows.filter(o => Number(daysSince(o.last_interaction_at || o.updated_at || o.created_at)||0) > 5).length), detail: 'Requieren revisión gerencial' },
-      { label: 'Valor asociado', value: fmtMoneyCompact(rows.reduce((s,o)=>s+Number(o.offer_value||0),0)), detail: 'Pipeline en sustentación' },
+      { label: 'Estancadas', value: String(stalledHere), detail: 'Con la misma regla de todo el producto' },
+      { label: 'Valor asociado', value: fmtMoneyCompact(rows.reduce((total, o) => total + Number(o.offer_value || 0), 0)), detail: 'Pipeline en sustentación' },
     ] };
   }
 
@@ -2994,97 +3632,147 @@ function monthName(month: number) {
 }
 
 
+// Usuarios y permisos por pestañas (Juan Botero, 2026-10-15): se marcan las pestañas del menú que la persona abre y las
+// opciones dentro de ellas. El rol, los permisos y las áreas se calculan con profile-tabs.js; el servidor valida igual.
+/** WhatsApp del perfil en formato internacional (E.164). Vacío → null; 10 dígitos que empiezan por 3 → celular de Colombia (+57); inválido → undefined. */
+export function normalizarWhatsapp(valor: string): string | null | undefined {
+  const limpio = valor.replace(/[\s().-]/g, '');
+  if (!limpio) return null;
+  const numero = /^3\d{9}$/.test(limpio) ? `+57${limpio}` : /^57\d{10}$/.test(limpio) ? `+${limpio}` : limpio;
+  return /^\+[1-9]\d{7,14}$/.test(numero) ? numero : undefined;
+}
+type UserForm = { full_name: string; microsoft_email: string; whatsapp_phone: string; active: boolean; password: string; send_invite: boolean; access: TabsAccess; ai_usage_profile: string | null; legacy_role: string | null; existing_areas: AccessAssignment[] };
+const LEGACY_ROLE_NOTE: Record<string, string> = { director: 'Directivo', junta: 'Junta', colaborador: 'Colaborador' };
 function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
-  const [catalog, setCatalog] = useState<AccessCatalog>({ areas: [], subareas: [], permissions: [] });
   const [catalogStatus, setCatalogStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement | null>(null);
-  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, areas: [], permissions: [], can_edit_customer_segment: false, can_own_opportunities: false };
-  const [form, setForm] = useState<UserPayload>(emptyUserForm);
-  const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'role'|'area'|'permission'|'segment'|'status'>>({ key: 'name', direction: 'asc' });
+  const emptyUserForm: UserForm = { full_name: '', microsoft_email: '', whatsapp_phone: '', active: true, password: '', send_invite: true, access: { ...EMPTY_TABS_ACCESS, tabs: [] }, ai_usage_profile: null, legacy_role: null, existing_areas: [] };
+  // "Perfil de uso de IA": perfiles no archivados de la Plataforma de Agentes. Si la plataforma no responde, el campo se
+  // deshabilita y no se envía (el servidor conserva el valor guardado).
+  const [aiProfiles, setAiProfiles] = useState<{ status: 'loading' | 'ready' | 'error'; profiles: AiUsageProfileOption[] }>({ status: 'loading', profiles: [] });
+  // Estado en Programación (solo lectura aquí): qué rol y ciudad le dio Programación en su pestaña Usuarios.
+  const [progAccess, setProgAccess] = useState<ProgramacionAccessState>({ status: 'loading', ciudades: [], byProfile: {} });
+  const [form, setForm] = useState<UserForm>(emptyUserForm);
+  const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'tabs'|'seen'|'status'>>({ key: 'name', direction: 'asc' });
   const load = async () => {
     setCatalogStatus('loading');
     try {
-      const [nextUsers, nextCatalog] = await Promise.all([api<Profile[]>('/api/users'), api<AccessCatalog>('/api/access-catalog')]);
+      api<{ profiles: AiUsageProfileOption[] }>('/api/platform/ai-usage-profiles')
+        .then(result => setAiProfiles({ status: 'ready', profiles: Array.isArray(result?.profiles) ? result.profiles : [] }))
+        .catch(() => setAiProfiles({ status: 'error', profiles: [] }));
+      api<{ ciudades: { id: string; nombre: string }[]; accesos: (ProgramacionAccessValue & { profile_id: string; activo: boolean })[] }>('/api/programacion-access')
+        .then(result => setProgAccess({ status: 'ready', ciudades: Array.isArray(result?.ciudades) ? result.ciudades : [], byProfile: Object.fromEntries((Array.isArray(result?.accesos) ? result.accesos : []).filter(item => item.activo).map(item => [item.profile_id, { rol: item.rol, ciudad_id: item.ciudad_id ?? null }])) }))
+        .catch(() => setProgAccess({ status: 'error', ciudades: [], byProfile: {} }));
+      const [nextUsers] = await Promise.all([api<Profile[]>('/api/users'), api<AccessCatalog>('/api/access-catalog')]);
       setUsers(nextUsers);
-      setCatalog(nextCatalog);
       setCatalogStatus('ready');
     } catch (error) {
       setCatalogStatus('error');
       throw error;
     }
   };
-  const areaLabel = (code: string) => catalog.areas.find(area => area.code === code)?.name || formatDisplayName(code);
-  const scopeLabel = (assignment: AccessAssignment) => assignment.subarea_code ? `${areaLabel(assignment.area_code)} · ${catalog.subareas.find(subarea => subarea.code === assignment.subarea_code)?.name || formatDisplayName(assignment.subarea_code)}` : `Toda ${areaLabel(assignment.area_code)}`;
-  const scopesLabel = (user: Profile) => user.areas?.length ? user.areas.map(scopeLabel).join(', ') : 'Sin alcance asignado';
-  const permissionsLabel = (user: Profile) => user.permissions?.length ? user.permissions.map(permission => catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission)).join(', ') : 'Sin permisos';
-  const moduleNamesByCode = new Map(MODULE_PERMISSIONS.map(module => [module.code, module.name]));
-  const modulePermissions = catalog.permissions
-    .filter(permission => MODULE_PERMISSION_CODES.includes(permission.code))
-    .map(permission => ({ ...permission, name: moduleNamesByCode.get(permission.code) || permission.name }));
-  const eligibleModuleCodes = new Set(eligibleModulePermissions(form.role));
-  const eligibleModules = modulePermissions.filter(permission => eligibleModuleCodes.has(permission.code));
-  const selectedModuleNames = form.permissions
-    .filter(permission => MODULE_PERMISSION_CODES.includes(permission))
-    .map(permission => moduleNamesByCode.get(permission) || catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission));
-  const capabilityNamesByCode = new Map(CAPABILITY_PERMISSIONS.map(capability => [capability.code, capability.name]));
-  const capabilityPermissions = catalog.permissions
-    .filter(permission => CAPABILITY_PERMISSION_CODES.includes(permission.code))
-    .map(permission => ({ ...permission, name: capabilityNamesByCode.get(permission.code) || permission.name }));
-  const selectedCapabilityNames = form.permissions
-    .filter(permission => CAPABILITY_PERMISSION_CODES.includes(permission))
-    .map(permission => capabilityNamesByCode.get(permission) || catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission));
+  const access = form.access;
+  const has = (tab: ProfileTabCode) => access.tabs.includes(tab);
+  const setAccess = (patch: Partial<TabsAccess>) => setForm(current => ({ ...current, access: { ...current.access, ...patch } }));
+  const toggleTab = (tab: ProfileTabCode, checked: boolean) => setForm(current => {
+    const tabs = checked ? [...new Set([...current.access.tabs, tab])] : current.access.tabs.filter(item => item !== tab);
+    return { ...current, access: { ...current.access, tabs } };
+  });
+  const applyTemplate = (code: string) => { const next = templateAccess(code); if (next) setForm(current => ({ ...current, access: next })); };
+  let derived: DerivedAccess | null = null;
+  let derivedError = '';
+  try { derived = accessFromTabs(access, form.existing_areas); } catch (error) { derivedError = error instanceof Error ? error.message : String(error); }
+  const programacionLabel = (user: Profile) => {
+    if (!user.permissions?.includes(PROGRAMACION_PERMISSION)) return '—';
+    const value = progAccess.byProfile[user.id];
+    if (!value) return progAccess.status === 'ready' ? 'Pendiente de configurar en Programación' : 'Sí';
+    const rol = PROGRAMACION_ROLE_LABELS[value.rol] || value.rol;
+    const ciudad = value.ciudad_id ? (progAccess.ciudades.find(item => item.id === value.ciudad_id)?.nombre || value.ciudad_id) : 'todas las ciudades';
+    return `${rol} · ${ciudad}`;
+  };
+  const tabsLabel = (user: Profile) => { const names = tabsSummary(tabsFromProfile(user)); const readOnly = isReadOnlyRole(user.role) || user.role === 'junta'; return (names.length ? names.join(', ') : 'Ninguna') + (readOnly ? ' · solo consulta' : ''); };
+  const seenLabel = (user: Profile) => user.last_seen_at ? formatDateOnly(user.last_seen_at.slice(0, 10)) : 'Nunca';
   const sortedUsers = [...users].sort((a,b) => {
-    const value = (u: Profile) => usersSortConfig.key === 'name' ? u.full_name : usersSortConfig.key === 'email' ? u.microsoft_email : usersSortConfig.key === 'role' ? u.role : usersSortConfig.key === 'area' ? scopesLabel(u) : usersSortConfig.key === 'permission' ? permissionsLabel(u) : usersSortConfig.key === 'segment' ? (u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado') : (u.active ? 'Activo' : 'Inactivo');
+    const value = (u: Profile) => usersSortConfig.key === 'name' ? u.full_name : usersSortConfig.key === 'email' ? u.microsoft_email : usersSortConfig.key === 'tabs' ? tabsLabel(u) : usersSortConfig.key === 'seen' ? (u.last_seen_at || '') : (u.active ? 'Activo' : 'Inactivo');
     return compareSortValues(value(a), value(b), usersSortConfig.direction);
   });
   const sortUsersBy = (key: typeof usersSortConfig.key) => setUsersSortConfig(current => nextSort(current, key));
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">No tiene autorización para administrar usuarios.</div>;
-  const setAreaScope = (areaCode: string, subareaCode: string | null, checked: boolean) =>
-    setForm(current => ({ ...current, areas: setAreaScopeSelection(current.areas, areaCode, subareaCode, checked) }));
-  const changeRole = (role: string) => setForm(current => ({ ...current, role, can_own_opportunities: canOwnOpportunitiesApplies(role) && !!current.can_own_opportunities, permissions: current.permissions.filter(permission => (!MODULE_PERMISSION_CODES.includes(permission) || isModulePermissionEligible(role, permission)) && (!isReadOnlyRole(role) || MODULE_PERMISSION_CODES.includes(permission))) }));
-  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, areas: user.areas || [], permissions: user.permissions || [], can_edit_customer_segment: !!user.can_edit_customer_segment, can_own_opportunities: !!user.can_own_opportunities }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
+  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, whatsapp_phone: user.whatsapp_phone ?? '', active: user.active, password: '', send_invite: false, access: tabsFromProfile(user), ai_usage_profile: user.ai_usage_profile ?? null, legacy_role: LEGACY_ROLE_NOTE[user.role] ? user.role : null, existing_areas: user.areas || [] }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
   const cancelEdit = () => { setEditingUserId(null); setForm(emptyUserForm); setStatus(''); };
-  const submit = async (e: React.FormEvent) => { e.preventDefault(); if (catalogStatus !== 'ready') { setStatus('El catálogo de acceso no está disponible. Espera a que cargue o actualiza la página.'); return; } setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…'); try { const saved = await api<(Profile & { invited?: boolean; access_link?: string | null; auth_warning?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) }); const wasEditing = !!editingUserId; setForm(emptyUserForm); setEditingUserId(null); await load(); const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Correo de acceso enviado.' : ''); const warning = saved.auth_warning ? ` ${saved.auth_warning}` : ''; setStatus(wasEditing ? `Usuario actualizado.${mailStatus}${warning}` : `Usuario/perfil guardado.${mailStatus}${warning}`); } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); } };
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (catalogStatus !== 'ready') { setStatus('El catálogo de acceso no está disponible. Espera a que cargue o actualiza la página.'); return; }
+    if (!derived) { setStatus(derivedError || 'Revise las pestañas marcadas.'); return; }
+    const whatsapp = normalizarWhatsapp(form.whatsapp_phone);
+    if (whatsapp === undefined) { setStatus('El número de WhatsApp no es válido. Escríbalo con indicativo, por ejemplo +57 300 123 4567.'); return; }
+    setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…');
+    try {
+      const payload = {
+        full_name: form.full_name, microsoft_email: form.microsoft_email, whatsapp_phone: whatsapp, active: form.active, password: form.password, send_invite: form.send_invite,
+        role: derived.role, areas: derived.areas, permissions: derived.permissions,
+        can_edit_customer_segment: derived.can_edit_customer_segment, can_own_opportunities: derived.can_own_opportunities,
+        ...(aiProfiles.status === 'ready' ? { ai_usage_profile: form.ai_usage_profile ?? null } : {}),
+      };
+      const saved = await api<(Profile & { invited?: boolean; access_link?: string | null; auth_warning?: string | null; ai_usage_profile_warning?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+      const wasEditing = !!editingUserId;
+      setForm(emptyUserForm); setEditingUserId(null); await load();
+      const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Correo de acceso enviado.' : '');
+      const warning = `${saved.auth_warning ? ` ${saved.auth_warning}` : ''}${saved.ai_usage_profile_warning ? ` ${saved.ai_usage_profile_warning}` : ''}`;
+      setStatus(wasEditing ? `Usuario actualizado.${mailStatus}${warning}` : `Usuario guardado.${mailStatus}${warning}`);
+    } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); }
+  };
+  const tabBox = (tab: ProfileTabCode, label: string, disabled = false) => <label className="checkline"><input type="checkbox" disabled={disabled} checked={has(tab)} onChange={e => toggleTab(tab, e.target.checked)}/> {label}</label>;
+  const readOnly = access.read_only;
+  const menuSummary = derived ? tabsSummary(derived.access) : [];
   return <section className="stack">
-    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Quién entra y qué puede ver</h2><p>Admin y Gerencia tienen alcance global. Las asignaciones se conservan como contexto administrativo y el servidor siempre valida el acceso efectivo.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
+    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Quién entra y qué puede abrir</h2><p>Marque las pestañas del menú que la persona puede abrir. Lo que no marque no le aparece.</p></div><div className="hero-facts"><div><small>Personas</small><strong>{users.length}</strong></div><div><small>Activas</small><strong>{users.filter(user => user.active).length}</strong></div></div></section>
     <div ref={editFormRef} className="users-edit-anchor"><Panel title={editingUserId ? `Editar usuario · ${form.full_name || form.microsoft_email}` : 'Crear usuario'}><form className="form gridform" onSubmit={submit}>
-      <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Correo electrónico<input type="email" required disabled={Boolean(editingUserId)} title={editingUserId ? 'El email identifica de forma inmutable al usuario; cree un perfil nuevo para otra identidad.' : undefined} value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
-      <label>Rol<Select value={form.role} onChange={changeRole} options={[['comercial','Comercial'],['colaborador','Colaborador'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin'],['junta','Junta'],['consulta','Directivo de solo consulta']]} empty="Rol"/></label>{isReadOnlyRole(form.role) && <p className="muted wide">Solo consulta: ve Dashboard comercial, oportunidades, SIIO y Licitaciones, sin poder crear, editar, decidir ni administrar nada.</p>}
-      <fieldset className="access-scope wide"><legend>Alcance por áreas y subáreas</legend><p>Selecciona toda un área o subáreas específicas. Puedes combinar varias áreas.</p><div className="access-scope-grid">{catalog.areas.map(area => { const whole = form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === null); const subareas = catalog.subareas.filter(subarea => subarea.area_code === area.code); return <fieldset className="access-area-card" key={area.code}><legend>{area.name}</legend><label className="checkline"><input type="checkbox" checked={whole} onChange={e => setAreaScope(area.code, null, e.target.checked)}/> Toda el área</label>{subareas.map(subarea => <label className="checkline access-subarea" key={subarea.code}><input type="checkbox" disabled={whole} checked={form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === subarea.code)} onChange={e => setAreaScope(area.code, subarea.code, e.target.checked)}/>{subarea.name}</label>)}</fieldset>; })}</div></fieldset>
-      <fieldset className="access-permission wide">
-        <legend>Módulos y pestañas</legend>
-        <p>Selecciona solo los módulos que esta persona debe ver y abrir. El rol define el techo, pero no asigna módulos automáticamente.</p>
-        {catalogStatus === 'loading' && <p className="muted">Cargando catálogo de módulos…</p>}
-        {catalogStatus === 'error' && <p className="error">No fue posible cargar el catálogo de módulos. Actualiza la página antes de guardar.</p>}
-        {catalogStatus === 'ready' && eligibleModules.map(permission => <label className="checkline" key={permission.code}>
-          <input type="checkbox" checked={form.permissions.includes(permission.code)} onChange={e => setForm(current => ({
-            ...current,
-            permissions: e.target.checked ? [...new Set([...current.permissions, permission.code])] : current.permissions.filter(item => item !== permission.code),
-          }))}/>
-          {permission.name}<small>{permission.description}</small>
-        </label>)}
-        {catalogStatus === 'ready' && eligibleModules.length === 0 && <p className="muted">Este rol no tiene módulos elegibles.</p>}
-      </fieldset>
-      <fieldset className="access-permission wide">
-        <legend>Capacidades operativas exclusivas</legend>
-        <p>Asigna solo a la persona responsable. Estas capacidades no crean módulos ni navegación adicional.</p>
-        {catalogStatus === 'ready' && isReadOnlyRole(form.role) && <p className="muted">El perfil de solo consulta no recibe capacidades operativas.</p>}
-        {catalogStatus === 'ready' && !isReadOnlyRole(form.role) && capabilityPermissions.map(permission => <label className="checkline" key={permission.code}>
-          <input type="checkbox" checked={form.permissions.includes(permission.code)} onChange={e => setForm(current => ({
-            ...current,
-            permissions: e.target.checked ? [...new Set([...current.permissions, permission.code])] : current.permissions.filter(item => item !== permission.code),
-          }))}/>
-          {permission.name}<small>{permission.description}</small>
-        </label>)}
-      </fieldset>
-      <aside className="access-permission wide"><strong>Resumen antes de guardar</strong><small>Módulos seleccionados: {selectedModuleNames.length ? selectedModuleNames.join(', ') : 'Ninguno'}</small><small>Capacidades exclusivas: {selectedCapabilityNames.length ? selectedCapabilityNames.join(', ') : 'Ninguna'}</small><small>Áreas asignadas: {form.areas.length ? form.areas.map(scopeLabel).join(', ') : 'Sin alcance asignado'}</small></aside>
-      <label className="checkline"><input type="checkbox" checked={!!form.can_edit_customer_segment} onChange={e=>setForm({...form, can_edit_customer_segment:e.target.checked})}/> Habilitar edición posterior de Cliente Nuevo / Cliente Actual</label>{canOwnOpportunitiesApplies(form.role) && <label className="checkline"><input type="checkbox" checked={!!form.can_own_opportunities} onChange={e=>setForm({...form, can_own_opportunities:e.target.checked})}/> Puede tener oportunidades propias (vista comercial)</label>}{!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}<label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label><label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> {editingUserId ? 'Enviar correo seguro para definir o restablecer acceso' : 'Enviar correo de invitación para activar el acceso'}</label><div className="formactions"><button disabled={catalogStatus !== 'ready'}>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
+      <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Correo electrónico<input type="email" required disabled={Boolean(editingUserId)} title={editingUserId ? 'El correo identifica de forma inmutable al usuario; cree un perfil nuevo para otra identidad.' : undefined} value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
+      <label>WhatsApp<input type="tel" inputMode="tel" placeholder="+57 300 123 4567" value={form.whatsapp_phone} onChange={e=>setForm({...form, whatsapp_phone:e.target.value})}/><small>Opcional. Celular con indicativo del país; si es de Colombia basta con los 10 dígitos.</small></label>
+      <label className="wide">Empezar desde una plantilla<select value="" onChange={e => { applyTemplate(e.target.value); }}><option value="">Elegir plantilla (opcional)…</option>{PROFILE_TEMPLATES.map(template => <option key={template.code} value={template.code}>{template.label}</option>)}</select><small className="muted">La plantilla solo marca casillas; después puede ajustarlas.</small></label>
+      {form.legacy_role && <p className="muted wide">Esta persona tiene un perfil antiguo ({LEGACY_ROLE_NOTE[form.legacy_role]}). Al guardar queda exactamente con lo que esté marcado abajo.</p>}
+      <fieldset className="access-scope wide"><legend>Pestañas que puede abrir</legend><p>Al marcar una pestaña con opciones, estas aparecen debajo.</p>{catalogStatus === 'loading' && <p className="muted">Cargando catálogo de accesos…</p>}{catalogStatus === 'error' && <p className="error">No fue posible cargar el catálogo de accesos. Actualiza la página antes de guardar.</p>}<div className="access-scope-grid">
+        <fieldset className="access-area-card"><legend>Gerencia</legend>{tabBox('torre', 'Torre de Control')}</fieldset>
+        <fieldset className="access-area-card"><legend>Comercial</legend>
+          {tabBox('dashboard', 'Dashboard')}
+          {tabBox('oportunidades', 'Oportunidades')}
+          {has('oportunidades') && <div className="access-subarea">
+            <label className="checkline"><input type="radio" name="opportunity_scope" disabled={readOnly} checked={access.opportunity_scope === 'propias' && !readOnly} onChange={() => setAccess({ opportunity_scope: 'propias' })}/> Ve solo las suyas (con Mi día)</label>
+            <label className="checkline"><input type="radio" name="opportunity_scope" checked={access.opportunity_scope === 'todas' || readOnly} onChange={() => setAccess({ opportunity_scope: 'todas' })}/> Ve todas las de la empresa</label>
+            {access.opportunity_scope === 'todas' && !readOnly && <label className="checkline"><input type="checkbox" checked={access.owns_opportunities} onChange={e => setAccess({ owns_opportunities: e.target.checked })}/> También vende: puede tener oportunidades a su nombre</label>}
+            {!readOnly && <label className="checkline"><input type="checkbox" checked={access.copilot} onChange={e => setAccess({ copilot: e.target.checked })}/> Vig-IA Comercial · Próximo seguimiento</label>}
+            {!readOnly && <label className="checkline"><input type="checkbox" checked={access.edit_segment} onChange={e => setAccess({ edit_segment: e.target.checked })}/> Puede cambiar Cliente Nuevo / Cliente Actual</label>}
+            {!readOnly && <label className="checkline"><input type="checkbox" checked={access.delete_opportunities} onChange={e => setAccess({ delete_opportunities: e.target.checked })}/> Aprueba eliminar oportunidades</label>}
+          </div>}
+          {tabBox('metas', 'Cargar metas', readOnly)}
+        </fieldset>
+        <fieldset className="access-area-card"><legend>Licitaciones</legend>
+          {tabBox('licitaciones', 'Licitaciones (Radar, Seguimiento y Oportunidades)')}
+          {has('licitaciones') && !readOnly && <div className="access-subarea">
+            <label className="checkline"><input type="checkbox" checked={access.tender_custody} onChange={e => setAccess({ tender_custody: e.target.checked })}/> Custodia: convierte detecciones y aprueba reglas</label>
+            <label className="checkline"><input type="checkbox" checked={access.tender_company} onChange={e => setAccess({ tender_company: e.target.checked })}/> Mantiene la información de la empresa</label>
+          </div>}
+        </fieldset>
+        <fieldset className="access-area-card"><legend>Programación</legend>
+          {tabBox('programacion', 'Programación de turnos')}
+          <small className="muted">Da la entrada. Qué hace y en qué ciudades se define dentro de Programación, en su pestaña Usuarios.</small>
+        </fieldset>
+        <fieldset className="access-area-card"><legend>IT · Administración</legend>{tabBox('usuarios', 'Usuarios y permisos · Agentes', readOnly)}<small className="muted">Administra el SIIO: da accesos a otras personas.</small></fieldset>
+      </div></fieldset>
+      <label className="checkline wide"><input type="checkbox" checked={readOnly} onChange={e => setAccess(e.target.checked ? { read_only: true, tabs: access.tabs.filter(tab => tab !== 'metas' && tab !== 'usuarios'), copilot: false, edit_segment: false, delete_opportunities: false, tender_custody: false, tender_company: false, owns_opportunities: false, opportunity_scope: 'todas' } : { read_only: false })}/> Solo consulta: ve, pero no cambia nada</label>
+      <label>Perfil de uso de IA<select value={form.ai_usage_profile || ''} disabled={aiProfiles.status !== 'ready'} onChange={e=>setForm({...form, ai_usage_profile: e.target.value || null})}><option value="">Sin perfil</option>{form.ai_usage_profile && !aiProfiles.profiles.some(profile => profile.profile_id === form.ai_usage_profile) && <option value={form.ai_usage_profile}>{aiProfiles.status === 'ready' ? `${form.ai_usage_profile} (archivado o inexistente)` : form.ai_usage_profile}</option>}{aiProfiles.profiles.map(profile => <option key={profile.profile_id} value={profile.profile_id}>{profile.display_name}</option>)}</select><small className="muted">{aiProfiles.status === 'error' ? 'La plataforma de agentes no responde: el campo queda deshabilitado y se conserva el perfil guardado.' : aiProfiles.status === 'loading' ? 'Cargando perfiles de uso…' : 'Define el cupo de IA por persona. Los perfiles se crean en IT → Agentes → Perfiles de uso.'}</small></label>
+      <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
+      {!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}
+      <label className="checkline"><input type="checkbox" checked={form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> {editingUserId ? 'Enviar correo seguro para definir o restablecer acceso' : 'Enviar correo de invitación para activar el acceso'}</label>
+      <aside className="access-permission wide"><strong>Verá en su menú</strong><small>{derivedError || (menuSummary.length ? menuSummary.join(' · ') : 'Ninguna pestaña')}{readOnly ? ' — solo consulta' : ''}</small></aside>
+      <div className="formactions"><button disabled={catalogStatus !== 'ready'}>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
     </form></Panel></div>
-    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Áreas" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Permisos" sortKey="permission" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td><Badge>{roleLabel(p.role)}</Badge></td><td>{scopesLabel(p)}</td><td>{permissionsLabel(p)}</td><td>{p.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
+    <Panel title="Personas"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Correo" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Pestañas" sortKey="tabs" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Programación</th><SortableTh label="Último ingreso" sortKey="seen" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}{p.whatsapp_phone ? <div className="muted">WhatsApp {p.whatsapp_phone}</div> : null}</td><td>{tabsLabel(p)}</td><td>{programacionLabel(p)}</td><td>{seenLabel(p)}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }
 

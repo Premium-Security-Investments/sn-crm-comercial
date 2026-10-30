@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAgt003CopilotRequest } from '../agt003-copilot-input.js';
-import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
-import { AGT003_COPILOT_POLICY } from '../agt003-copilot-engine.js';
-import { computeAgt003CopilotIdempotencyKey } from '../agt003-copilot-persistence.js';
+import { buildAgt003CopilotRequest } from '../verticales/comercial/agt003-copilot-input.js';
+import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-api.js';
+import { AGT003_COPILOT_POLICY } from '../verticales/comercial/agt003-copilot-engine.js';
+import { computeAgt003CopilotIdempotencyKey } from '../verticales/comercial/agt003-copilot-persistence.js';
 
 const opportunity = {
   id: 'opp-channel-001',

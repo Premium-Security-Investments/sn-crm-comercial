@@ -12,8 +12,8 @@
 // are deterministic rather than timing-dependent. No production file is touched by this test.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
-import { discoverTenderSemanticManifest } from '../tender-semantic-discovery.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
+import { discoverTenderSemanticManifest } from '../verticales/licitaciones/tender-semantic-discovery.js';
 
 function hash(value) { return createHash('sha256').update(value).digest('hex'); }
 function document(id, text) {

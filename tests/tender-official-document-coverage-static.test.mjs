@@ -47,12 +47,12 @@ for (const [label, source] of backends) {
   // --- 2. Una sola pieza compartida, en los tres puntos de uso -------------
   assert.match(
     source,
-    /import \{[^}]*selectTenderOfficialDocuments[^}]*\} from '\.\.\/tender-official-document-coverage\.js'/,
+    /import \{[^}]*selectTenderOfficialDocuments[^}]*\} from '\.\.\/verticales\/licitaciones\/tender-official-document-coverage\.js'/,
     `${label}: la cobertura documental oficial debe venir del modulo compartido`,
   );
   assert.match(
     source,
-    /import \{[^}]*tenderOfficialCoverageGaps[^}]*\} from '\.\.\/tender-official-document-coverage\.js'/,
+    /import \{[^}]*tenderOfficialCoverageGaps[^}]*\} from '\.\.\/verticales\/licitaciones\/tender-official-document-coverage\.js'/,
     `${label}: los gaps de cobertura deben derivarse del mismo modulo, no reimplementarse`,
   );
   assert.ok(

@@ -23,7 +23,7 @@ import {
   isAgt002AnalysisAuthorizationActive,
   assertAgt002AnalysisAuthorizationBinding,
   publicAgt002AnalysisAuthorizationSummary,
-} from '../agt002-analysis-authorizations.js';
+} from '../verticales/licitaciones/agt002-analysis-authorizations.js';
 
 const UUID_A = '10000000-4000-4000-8000-000000000001';
 const UUID_B = '10000000-4000-4000-8000-000000000002';

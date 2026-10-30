@@ -4,8 +4,8 @@ import {
   callTenderGoNoGoDecision,
   getTenderGoNoGoDecision,
   requireTenderGoForPreparation,
-} from '../tender-go-no-go-rpc.js';
-import { buildTenderSnapshotInput } from '../tender-analysis-foundation.js';
+} from '../verticales/licitaciones/tender-go-no-go-rpc.js';
+import { buildTenderSnapshotInput } from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const TENDER_ID = '22222222-2222-4222-8222-222222222222';
@@ -565,7 +565,7 @@ for (const profile of [
 
 for (const path of ['../server/index.js', '../api/[...path].js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 \} from '\.\.\/tender-go-no-go-rpc\.js';/);
+  assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 \} from '\.\.\/verticales\/licitaciones\/tender-go-no-go-rpc\.js';/);
   assert.match(source, /app\.get\('\/api\/tender-go-no-go-decision'/);
   assert.match(source, /app\.post\('\/api\/tender-go-no-go-decision'/);
   const decisionRoute = source.match(/app\.post\('\/api\/tender-go-no-go-decision'[\s\S]*?\n}\);/);

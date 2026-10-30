@@ -6,8 +6,8 @@ import {
   AGT002_DOSSIER_HANDOFF_ORIGIN,
   AGT002_DOSSIER_HANDOFF_ITEM_TYPE,
 } from '../server/agt002-dossier-handoff.js';
-import { buildActionableReviewIntegralUnitSource } from '../agt002-actionable-review-canonical.js';
-import { deriveAgt002GenericDecisionReview } from '../agt002-generic-decision-review.js';
+import { buildActionableReviewIntegralUnitSource } from '../verticales/licitaciones/agt002-actionable-review-canonical.js';
+import { deriveAgt002GenericDecisionReview } from '../verticales/licitaciones/agt002-generic-decision-review.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures

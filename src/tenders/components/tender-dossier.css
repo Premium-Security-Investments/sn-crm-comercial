@@ -1,2 +1,34 @@
 .tender-dossier-panel{display:grid;gap:16px;margin-top:16px}.tender-dossier-header,.tender-dossier-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.tender-dossier-header h2,.tender-dossier-section-head h3{margin:4px 0;color:#10213d}.tender-dossier-header p{margin:4px 0 0;color:#526173}.tender-dossier-header small,.tender-dossier-section-head small{font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#64748b}.tender-dossier-readiness{min-height:0;align-items:flex-start}.tender-dossier-readiness.is-ready{border-color:#86efac;background:#f0fdf4}.tender-dossier-readiness ul{margin:4px 0 0;padding-left:20px;color:#40516b}.tender-dossier-grid{grid-template-columns:minmax(0,1fr)!important;align-items:start}.tender-dossier-section{display:grid;gap:14px;min-width:0}.tender-dossier-list{gap:10px}.tender-dossier-item,.tender-dossier-artifact{min-width:0;padding:14px}.tender-dossier-controls{display:grid;grid-template-columns:minmax(135px,.7fr) minmax(190px,1.3fr) minmax(145px,.7fr);gap:10px}.tender-dossier-controls label,.tender-dossier-field,.tender-dossier-inline-decision label{display:grid;gap:5px;color:#40516b;font-size:11px;font-weight:900}.tender-dossier-controls select,.tender-dossier-controls input,.tender-dossier-field textarea,.tender-dossier-inline-decision textarea,.tender-dossier-evidence-form input,.tender-dossier-evidence-form select{box-sizing:border-box;width:100%;border:1px solid #d5e0ef;border-radius:10px;background:#fff;padding:9px;color:#10213d}.tender-dossier-field textarea,.tender-dossier-inline-decision textarea{min-height:86px;resize:vertical}.tender-dossier-evidence-form{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:8px;align-items:center}.tender-dossier-evidence{display:grid;gap:4px;padding:9px 11px;border-radius:10px;background:#f8fbff;color:#40516b;font-size:12px;overflow-wrap:anywhere}.tender-dossier-inline-decision,.tender-dossier-review{display:grid;gap:10px;padding:12px;border:1px solid #fde68a;border-radius:12px;background:#fffbeb}.tender-dossier-review{border-color:#dbe7f5;background:#f8fbff}.tender-dossier-preview{max-height:210px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #e2eaf5;border-radius:10px;background:#f8fafc;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.tender-dossier-empty{display:flex;align-items:center;justify-content:space-between;gap:12px}.tender-dossier-empty p{margin:0}@media(max-width:900px){.tender-dossier-controls{grid-template-columns:1fr}.tender-dossier-evidence-form{grid-template-columns:1fr}.tender-dossier-header,.tender-dossier-section-head,.tender-dossier-empty{align-items:stretch;flex-direction:column}}
 .tender-dossier-panel>.agent-workbench{width:100%;box-sizing:border-box}
+/* Lista de trabajo compacta (2026-10-12): una fila por tarea o documento; se abre para editar. */
+.tender-dossier-panel .tender-dossier-list{display:grid;gap:6px}
+.tender-dossier-row{padding:0!important;overflow:hidden}
+.tender-dossier-row-summary{display:grid;grid-template-columns:110px minmax(0,1fr) minmax(120px,170px) 110px;gap:10px;align-items:center;padding:9px 12px;cursor:pointer;list-style:none}
+.tender-dossier-row-summary::-webkit-details-marker{display:none}
+.tender-dossier-row[open]>.tender-dossier-row-summary{background:#f8fbff;border-bottom:1px solid #e2eaf5}
+.tender-dossier-row-title{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;color:#10213d}
+.tender-dossier-row-title strong{font-size:14px;overflow-wrap:anywhere}
+.tender-dossier-row-area{font-size:11px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:#64748b}
+.tender-dossier-row-rejection{font-size:11px;padding:2px 7px}
+.tender-dossier-row-required{font-size:11px;font-weight:800;color:#64748b}
+.tender-dossier-row-owner{font-size:12px;color:#526173;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tender-dossier-row-date{font-size:12px;font-weight:800;color:#40516b;text-align:right;white-space:nowrap}
+.tender-dossier-row-date.due-overdue{color:#b91c1c}.tender-dossier-row-date.due-today,.tender-dossier-row-date.due-soon{color:#c2410c}
+.tender-dossier-row.due-overdue{border-left:4px solid #ef4444}.tender-dossier-row.due-today,.tender-dossier-row.due-soon{border-left:4px solid #f59e0b}
+.tender-dossier-row-body{display:grid;gap:12px;padding:12px}
+.tender-dossier-row-body .tender-dossier-instruction{margin:0;white-space:pre-line;color:#40516b}
+.tender-dossier-artifact .tender-dossier-row-summary{grid-template-columns:110px minmax(0,1fr) minmax(90px,130px)}
+.tender-dossier-group>summary,.tender-dossier-missing>summary{cursor:pointer;font-weight:800;color:#40516b;padding:6px 0}
+.tender-dossier-group>.tender-dossier-list{margin-top:6px}
+@media(max-width:700px){.tender-dossier-row-summary,.tender-dossier-artifact .tender-dossier-row-summary{grid-template-columns:1fr auto;grid-template-areas:"title title" "status date" "owner owner"}.tender-dossier-row-title{grid-area:title}.tender-dossier-row-status{grid-area:status}.tender-dossier-row-date{grid-area:date}.tender-dossier-row-owner{grid-area:owner}}
+
+/* Puente ficha de empresa → expediente (2026-10-30): una fila por requisito corporativo, lo urgente arriba. */
+.tender-company-bridge{margin-top:16px}
+.tender-company-bridge h3{margin:4px 0;color:#10213d}
+.tender-company-bridge>div>p{margin:4px 0 0;color:#526173}
+.tender-company-bridge-rows{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.tender-company-bridge-row{display:grid;gap:5px;padding:11px 12px;border:1px solid #e2eaf5;border-radius:12px;background:#fff;min-width:0}
+.tender-company-bridge-row strong{color:#10213d;overflow-wrap:anywhere}
+.tender-company-bridge-row p{margin:0;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.tender-company-bridge-row p.muted{color:#526173}
+.tender-company-bridge>details>summary{cursor:pointer;font-weight:800;color:#40516b;padding:6px 0}

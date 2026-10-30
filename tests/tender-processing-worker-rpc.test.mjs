@@ -6,7 +6,7 @@ import {
   recordTenderDocumentChunk,
   appendTenderProcessingEvent,
   getTenderProcessingJobActor,
-} from '../tender-processing-worker-rpc.js';
+} from '../verticales/licitaciones/tender-processing-worker-rpc.js';
 
 function fakeDb({ rpcResults = {}, tables = {} } = {}) {
   const rpcCalls = [];

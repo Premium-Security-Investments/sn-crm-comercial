@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { agt002UnavailableMessage } from '../agt002-reanalysis-error-message.js';
+import { agt002UnavailableMessage } from '../verticales/licitaciones/agt002-reanalysis-error-message.js';
 
 const CLASSIFIED_CODES = {
   timeout: /tiempo máximo/i,

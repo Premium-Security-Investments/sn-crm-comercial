@@ -26,7 +26,7 @@ assert.match(runner, /status\s*===?\s*'unavailable'/);
 assert.match(runner, /createSupabaseEsuDirectRefresher/);
 assert.match(runner, /fetchEsuProcesses\(\s*\{\s*includeHistorical\s*:\s*true/);
 assert.equal((runner.match(/\brefresher\.runOnce\(\)/g) || []).length, 1);
-assert.match(runner, /import\s*\{\s*createAgt002RadarScan\s*\}\s*from\s*'\.\.\/\.\.\/agt002-radar-scan\.js'/);
+assert.match(runner, /import\s*\{\s*createAgt002RadarScan\s*\}\s*from\s*'\.\.\/\.\.\/verticales\/licitaciones\/agt002-radar-scan\.js'/);
 // The scan is now deterministic and always active when invoked: the runner stops threading
 // `environment` through to createAgt002RadarScan (it has nothing left to gate), and never
 // references the two rollout flags retired from ANALYSIS_FLAG_NAMES.

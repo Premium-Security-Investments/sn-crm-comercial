@@ -21,8 +21,26 @@ import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effor
  * nunca inicia sesión por su cuenta ni cae hacia una API key.
  */
 
-/** Techo duro de stdout: por encima se aborta el turno sin citar la salida. */
-export const AGT002_CLAUDE_MAX_STDOUT_BYTES = 262_144;
+/**
+ * Techo duro de stdout: por encima se aborta el turno sin citar la salida.
+ *
+ * Medido el 2026-10-26 en Supersalud `SNS-LP-2-2026`, cuyo JSON de resultado crece con cada documento
+ * del expediente (`length(result::text)` de las seis corridas guardadas, y sus claims):
+ *
+ *   v1  98.471 (51 claims) · v2 103.522 (52) · v3 111.716 (54)
+ *   v4 125.937 (59)        · v5 143.540 (65) · v6 193.867 (77)
+ *
+ * Con el techo anterior de 262.144 bytes, la v6 ya iba al 74%, y los dos reanálisis siguientes —el de
+ * las 00:58Z, con el pliego definitivo de 199 páginas, y el de las 03:45Z, con cinco documentos más—
+ * murieron los dos en la fase de síntesis con AGT002_CLAUDE_OUTPUT_TOO_LARGE. No era una salida
+ * anómala: era un expediente legítimo que dejó de caber, y el proceso quedó sin poder reanalizarse a
+ * diez días del cierre.
+ *
+ * El techo acota la memoria del proceso, no defiende de nada concreto, y 262.144 era un número redondo.
+ * 1 MiB deja margen para unas cuatro veces el tamaño actual y sigue acotando. Si vuelve a tocarlo, el
+ * arreglo ya no es subirlo otra vez: es que la síntesis salga por partes.
+ */
+export const AGT002_CLAUDE_MAX_STDOUT_BYTES = 1_048_576;
 
 /**
  * Techo seguro del `--json-schema` inline en argv, medido en bytes UTF-8.
@@ -69,6 +87,28 @@ const LOGIN_SUBTYPES = new Set([
 const KILL_GRACE_MS = 200;
 const FLUSH_GRACE_MS = 250;
 const SESSION_LIMIT_PHRASE = "you've hit your session limit";
+/**
+ * Frases del `result` que significan «no hay sesión utilizable» cuando el envelope llega con
+ * `subtype: success` y sin `error.type`, el único camino por el que el CLI reporta hoy una sesión OAuth
+ * inservible. Sin esta lista el caso cae en el genérico `AGT002_CLAUDE_PROVIDER_ERROR` y quien usa el chat de
+ * Licitaciones lee "el servicio devolvió un error" en vez de que su acceso necesita renovarse, mientras
+ * IT → Agentes muestra "La IA respondió con un error" en lugar de "La sesión de Claude venció", que es la
+ * tarjeta que dice qué hacer.
+ *
+ * Observado en producción el 2026-10-23 en el puente de AGT-003, con el `result` literal "Failed to
+ * authenticate: OAuth session expired and could not be refreshed"
+ * (`/root/handoffs/2026-10-23-AGT-003-sesion-oauth-vencida-chat-caido.md`). AGT-002 tiene su propia copia de
+ * este cliente y arrastraba el mismo defecto; la sesión de su puente vence el 2026-11-01, así que el caso
+ * llega solo. **Que existan dos copias del mismo cliente es la causa de arreglar esto dos veces, y eso sigue
+ * pendiente.**
+ *
+ * Lista cerrada, en minúsculas y comparada por inclusión: igual que con el límite de sesión, ninguna otra
+ * parte de `result` cruza esta frontera.
+ */
+const LOGIN_REQUIRED_PHRASES = Object.freeze([
+  'failed to authenticate',
+  'oauth session expired',
+]);
 /** Único subtype/error.type del proveedor que obtiene su propio código nativo. */
 const STRUCTURED_OUTPUT_RETRY_EXHAUSTED_ATOM = 'error_max_structured_output_retries';
 
@@ -96,7 +136,8 @@ function safeProviderAtom(value) {
 
 function providerFailure(parsed) {
   // Claude CLI puede marcar el envelope como `subtype: success` y a la vez
-  // `is_error: true`. Sólo la frase operativa conocida se clasifica; ninguna
+  // `is_error: true`. Sólo las dos frases operativas conocidas se clasifican
+  // (límite de sesión y sesión sin autenticar); ninguna
   // otra parte de `result` cruza esta frontera.
   if (typeof parsed?.result === 'string' && parsed.result.toLowerCase().includes(SESSION_LIMIT_PHRASE)) {
     return failure('La sesión de Claude Code alcanzó temporalmente su límite.', 'AGT002_CLAUDE_SESSION_LIMIT');
@@ -107,6 +148,13 @@ function providerFailure(parsed) {
     : safeProviderAtom(parsed?.error?.type);
   if (atom && LOGIN_SUBTYPES.has(atom)) {
     return failure('AGT-002 requiere una sesión de Claude Code iniciada; no se inició sesión automáticamente.', 'AGT002_CLAUDE_LOGIN_REQUIRED');
+  }
+  // El camino que faltaba: el CLI marca el envelope como `success` y el motivo real sólo viaja como texto.
+  if (typeof parsed?.result === 'string') {
+    const text = parsed.result.toLowerCase();
+    if (LOGIN_REQUIRED_PHRASES.some(phrase => text.includes(phrase))) {
+      return failure('AGT-002 requiere una sesión de Claude Code iniciada; no se inició sesión automáticamente.', 'AGT002_CLAUDE_LOGIN_REQUIRED');
+    }
   }
   if (atom === STRUCTURED_OUTPUT_RETRY_EXHAUSTED_ATOM) {
     return failure('AGT-002 agotó los reintentos de salida estructurada del proveedor.', 'AGT002_CLAUDE_STRUCTURED_OUTPUT_RETRY_EXHAUSTED', atom);

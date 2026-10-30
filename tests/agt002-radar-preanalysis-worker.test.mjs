@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AGT002_RADAR_QUEUE_ERROR_CODES, classifyAgt002RadarPreanalysisError, createAgt002RadarPreanalysisWorker } from '../agt002-radar-preanalysis-worker.js';
+import { AGT002_RADAR_QUEUE_ERROR_CODES, classifyAgt002RadarPreanalysisError, createAgt002RadarPreanalysisWorker } from '../verticales/licitaciones/agt002-radar-preanalysis-worker.js';
 for (const [code,expected] of [['AGT002_RADAR_PREANALYSIS_TIMEOUT','timeout'],['AGT002_RADAR_PREANALYSIS_INVALID_OUTPUT','invalid_output'],['AGT002_RADAR_PERSISTENCE_FAILURE','persistence_failure'],['AGT002_RADAR_LEASE_LOST','lease_lost'],['AGT002_RADAR_CAPACITY_UNAVAILABLE','capacity_unavailable'],['AGT002_RADAR_STALE_INPUT','stale_input']]) assert.equal(classifyAgt002RadarPreanalysisError({runtime_boundary_code:code}),expected);
 assert.equal(classifyAgt002RadarPreanalysisError(new Error('boom')),'provider_error');
 // El conjunto de codigos terminales es acotado y explicito: la migracion 072 debe aceptar los mismos.

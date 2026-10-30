@@ -18,7 +18,7 @@ const api = read('api/[...path].js');
 
 assert.doesNotMatch(tabs, />Configuración</, 'Configuración debe quedar fuera de tabs operativos.');
 assert.match(moduleSource, /TenderModuleNavigation/, 'El módulo debe reutilizar la navegación compacta compartida.');
-assert.match(moduleNavigation, />Configuración</, 'Configuración debe ser un botón secundario fuera de tabs.');
+assert.match(moduleNavigation, /tender-configuration-link[\s\S]{0,900}Empresa\s*<\/button>/, 'La base empresarial es un botón secundario "Empresa" fuera de tabs (Juan, 2026-10-13).');
 assert.match(configuration, /Base empresarial de licitaciones/);
 assert.match(configuration, /Actualizar RUP/);
 assert.doesNotMatch(configuration, /Guardar búsqueda|Búsquedas guardadas/);

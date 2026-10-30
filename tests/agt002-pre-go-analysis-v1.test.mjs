@@ -27,7 +27,7 @@ import path from 'node:path';
 import {
   validatePreGoAnalysisV1,
   AGT002_PRE_GO_ANALYSIS_V1_ERROR_CODES,
-} from '../agt002-pre-go-analysis-v1.js';
+} from '../verticales/licitaciones/agt002-pre-go-analysis-v1.js';
 
 import {
   T0,

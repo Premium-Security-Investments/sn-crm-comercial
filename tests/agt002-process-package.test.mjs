@@ -4,7 +4,7 @@ import {
   AGT002_PROCESS_PACKAGE_SCHEMA_VERSION,
   AGT002_PROCESS_PACKAGE_KEYS,
   validateAgt002ProcessPackage,
-} from '../agt002-process-package.js';
+} from '../verticales/licitaciones/agt002-process-package.js';
 
 // Phase 9 (T3): the process package is the closed, human-authored descriptor that binds a
 // tender process (opportunity_id + proceso) to its checked-in manifest and records the human

@@ -1,4 +1,5 @@
 import type { TenderCompanyProfile, TenderRequest } from './types';
+import type { CompanyEvidenceDecision, CompanyExperience, CompanyRegistryEntry, CompanySite } from './companyBase';
 
 const RUP_MAX_BYTES = 50 * 1024 * 1024;
 
@@ -8,12 +9,13 @@ export type CompanyDocumentUploadResponse = { profile: TenderCompanyProfile; doc
 type UploadResult = { error: unknown | null };
 type TenderConfigurationActionsDeps = {
   canConfigure: boolean;
+  canDecideEvidence?: boolean;
   request: TenderRequest;
   uploadToSignedUrl: (path: string, token: string, file: File) => Promise<UploadResult>;
 };
 
 /** Mutations retain their authorization guard even when invoked outside disabled UI controls. */
-export function createTenderConfigurationActions({ canConfigure, request, uploadToSignedUrl }: TenderConfigurationActionsDeps) {
+export function createTenderConfigurationActions({ canConfigure, canDecideEvidence = false, request, uploadToSignedUrl }: TenderConfigurationActionsDeps) {
   return {
     async saveCompany(company: TenderCompanyProfile): Promise<TenderCompanyProfile | null> {
       if (!canConfigure) return null;
@@ -26,6 +28,18 @@ export function createTenderConfigurationActions({ canConfigure, request, upload
       const uploaded = await uploadToSignedUrl(ticket.path, ticket.token, file);
       if (uploaded.error) throw uploaded.error;
       return request<TenderCompanyProfile>('/api/tender-company-profile-process-upload', { method: 'POST', body: JSON.stringify({ storage_path: ticket.path, name: file.name, mime_type: file.type }) });
+    },
+    async saveCompanySite(site: Partial<CompanySite>): Promise<CompanySite | null> {
+      if (!canConfigure) return null;
+      return request<CompanySite>('/api/tender-company-sites', { method: 'POST', body: JSON.stringify(site) });
+    },
+    async decideCompanyEvidence(decision: CompanyEvidenceDecision): Promise<CompanyRegistryEntry | null> {
+      if (!canDecideEvidence) return null;
+      return request<CompanyRegistryEntry>('/api/tender-company-evidence-decision', { method: 'POST', body: JSON.stringify(decision) });
+    },
+    async saveCompanyExperience(experience: Partial<CompanyExperience>): Promise<CompanyExperience | null> {
+      if (!canConfigure) return null;
+      return request<CompanyExperience>('/api/tender-company-experience', { method: 'POST', body: JSON.stringify(experience) });
     },
     async uploadCompanyDocument(file: File | undefined, metadata: CompanyDocumentMetadata): Promise<CompanyDocumentUploadResponse | null> {
       if (!canConfigure || !file) return null;

@@ -1,9 +1,9 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js';
+import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { registerAgt002PreviewAnalysis } from '../verticales/licitaciones/agt002-preview-persistence.js';
 
 // ---------------------------------------------------------------------------
 // AGT-002 company evidence identity (F3) — production wiring. Builds on the governed-data
@@ -27,8 +27,8 @@ import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js'
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
-const postBridge = readFileSync(new URL('../agt002-post-bridge-observability.js', import.meta.url), 'utf8');
+const executor = readFileSync(new URL('../verticales/licitaciones/agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+const postBridge = readFileSync(new URL('../verticales/licitaciones/agt002-post-bridge-observability.js', import.meta.url), 'utf8');
 
 function count(source, token) {
   return source.split(token).length - 1;
@@ -59,7 +59,7 @@ assert.equal(server, api, 'server/index.js y api/[...path].js deben permanecer b
 // evidenceAsOf is the deterministic instant deriveAgt002CompanyEvidenceAsOf derives from those
 // same rows' own updated_at, and buildAgt002CompanyEvidenceIdentity is built with exactly that
 // derived instant.
-assert.match(server, /import \{ buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf \} from '\.\.\/agt002-company-evidence-identity\.js';/);
+assert.match(server, /import \{ buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf \} from '\.\.\/verticales\/licitaciones\/agt002-company-evidence-identity\.js';/);
 assert.match(server, /evidenceAsOf = deriveAgt002CompanyEvidenceAsOf\(companyEvidenceRegistryEntries\);/);
 assert.match(
   server,

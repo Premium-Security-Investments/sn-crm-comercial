@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
+import { resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
 import {
   discoverTenderSemanticManifest,
   TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS,
   TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-} from '../tender-semantic-discovery.js';
+} from '../verticales/licitaciones/tender-semantic-discovery.js';
 import {
   planTenderSemanticDiscoveryBatches,
   computeTenderSemanticDiscoveryBatchHash,
   tenderSemanticDiscoveryBatchIdempotencyKey,
   TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION,
-} from '../tender-semantic-discovery-batches.js';
-import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
+} from '../verticales/licitaciones/tender-semantic-discovery-batches.js';
+import { buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
 
 // AGT-002 V3 semantic discovery, policy v9 — batch-size remediation for two observed real
 // Procuraduria timeout attempts. Offline replay of the exact frozen 13-document snapshot from

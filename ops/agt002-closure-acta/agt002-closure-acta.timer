@@ -1,0 +1,13 @@
+[Unit]
+Description=AGT-002 closure minutes: weekly safety net (the draft is normally written at closing time)
+
+[Timer]
+# El acta se redacta en el momento del cierre, dentro del pedido HTTP. Esta corrida
+# semanal es sólo la red de seguridad para las que fallaron o se cerraron con la Mesa
+# apagada. Juan, 2026-10-19: son pocos cierres y no es urgente.
+OnCalendar=Mon *-*-* 07:40:00 America/Bogota
+Persistent=true
+RandomizedDelaySec=300s
+
+[Install]
+WantedBy=timers.target

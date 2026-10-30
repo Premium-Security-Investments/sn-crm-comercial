@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildTenderDocumentExtractionRpcParams } from '../tender-document-extraction-persistence.js';
+import { buildTenderDocumentExtractionRpcParams } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 import { loadEnvFile, createSupabaseRestClient } from './agt002-backfill-document-extractions.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));

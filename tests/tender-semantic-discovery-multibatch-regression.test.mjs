@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
-import { discoverTenderSemanticManifest, TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION } from '../tender-semantic-discovery.js';
-import { TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION } from '../tender-semantic-discovery-batches.js';
-import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
+import { buildTenderRequirementInventory, resolveTenderInventorySourceTexts } from '../verticales/licitaciones/tender-requirement-inventory.js';
+import { discoverTenderSemanticManifest, TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION } from '../verticales/licitaciones/tender-semantic-discovery.js';
+import { TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION } from '../verticales/licitaciones/tender-semantic-discovery-batches.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../verticales/licitaciones/agt002-analysis-observability.js';
 
 // AGT-002 V3 multi-batch semantic discovery — REGRESSION (RED, no production fix yet).
 //

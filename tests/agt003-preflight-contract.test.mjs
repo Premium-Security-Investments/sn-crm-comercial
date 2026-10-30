@@ -8,7 +8,7 @@ import {
   PREFLIGHT_ISSUE_CODES,
   validateAgt003PreflightRequest,
   validateAgt003PreflightResponse,
-} from '../agt003-preflight-contract.js';
+} from '../verticales/comercial/agt003-preflight-contract.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const contractDir = path.join(root, 'contracts/agents/AGT-003/v2-draft');

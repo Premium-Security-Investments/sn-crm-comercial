@@ -1,16 +1,16 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY, createAgt002PreviewEngine } from '../agt002-preview-engine.js';
-import { AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, AGT002_PREVIEW_OUTPUT_JSON_SCHEMA } from '../agt002-preview-contract.js';
-import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, buildAgt002CompanyEvidenceClasses } from '../agt002-company-evidence-classes.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, buildAgt002EvidenceStateManifest } from '../agt002-evidence-state-manifest.js';
-import { deriveAgt002IntegralCategoryManifest } from '../agt002-integral-category-manifest.js';
-import { validateAgt002TenderAnalysisEnvelopeV3, adaptAgt002TenderAnalysisV3 } from '../agt002-tender-adapter.js';
-import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js';
+import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY, createAgt002PreviewEngine } from '../verticales/licitaciones/agt002-preview-engine.js';
+import { AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, AGT002_PREVIEW_OUTPUT_JSON_SCHEMA } from '../verticales/licitaciones/agt002-preview-contract.js';
+import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+import { retrieveAgt002LegalEvidence } from '../verticales/licitaciones/agt002-legal-retrieval.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, buildAgt002CompanyEvidenceClasses } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, buildAgt002EvidenceStateManifest } from '../verticales/licitaciones/agt002-evidence-state-manifest.js';
+import { deriveAgt002IntegralCategoryManifest } from '../verticales/licitaciones/agt002-integral-category-manifest.js';
+import { validateAgt002TenderAnalysisEnvelopeV3, adaptAgt002TenderAnalysisV3 } from '../verticales/licitaciones/agt002-tender-adapter.js';
+import { registerAgt002PreviewAnalysis } from '../verticales/licitaciones/agt002-preview-persistence.js';
 
 const context = {
   opportunity: { id: 'opp-1', company_name: 'Entidad de prueba', title: 'Vigilancia' },

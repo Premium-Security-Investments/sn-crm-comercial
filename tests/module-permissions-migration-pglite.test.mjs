@@ -87,8 +87,10 @@ await db.exec(readFileSync(migrationPath, 'utf8'));
 
 await db.exec(`drop trigger insert_future_profile_during_backfill on public.psi_profile_permissions;`);
 
-const catalog = await db.query(`select code, active from public.psi_access_permissions where code = any($1::text[]) order by code`, [MODULE_PERMISSION_CODES]);
-assert.deepEqual(catalog.rows.map(row => row.code), [...MODULE_PERMISSION_CODES].sort(), '021 registra todos los módulos del catálogo compartido');
+// modulo_programacion llega después, con la migración 130.
+const MODULES_021 = MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_programacion');
+const catalog = await db.query(`select code, active from public.psi_access_permissions where code = any($1::text[]) order by code`, [MODULES_021]);
+assert.deepEqual(catalog.rows.map(row => row.code), [...MODULES_021].sort(), '021 registra todos los módulos del catálogo compartido de entonces');
 assert.ok(catalog.rows.every(row => row.active === true), 'todos los módulos quedan activos');
 
 const permissionsFor = async profileId => (await db.query(
@@ -99,12 +101,14 @@ assert.equal((await permissionsFor(ids.director)).includes('modulo_siio_gerencia
 await db.exec(readFileSync(cleanupMigrationPath, 'utf8'));
 await db.exec(readFileSync(cleanupMigrationPath, 'utf8'));
 
-assert.deepEqual(await permissionsFor(ids.admin), [...eligibleModulePermissions('admin')].sort(), 'admin histórico conserva todos los módulos elegibles incluido Usuarios');
-assert.deepEqual(await permissionsFor(ids.gerencia), [...eligibleModulePermissions('gerencia')].filter(code => code !== 'licitaciones').sort(), 'gerencia recibe solo visibilidad legacy dentro de su techo');
-assert.deepEqual(await permissionsFor(ids.director), [...eligibleModulePermissions('director')].filter(code => code !== 'licitaciones').sort(), '069 elimina el grant SIIO legado incompatible con el ceiling de director');
+// Techos de entonces: modulo_programacion (130) no existía al correr 021/069.
+const eligibleModulesThen = role => eligibleModulePermissions(role).filter(code => code !== 'modulo_programacion');
+assert.deepEqual(await permissionsFor(ids.admin), [...eligibleModulesThen('admin')].sort(), 'admin histórico conserva todos los módulos elegibles incluido Usuarios');
+assert.deepEqual(await permissionsFor(ids.gerencia), [...eligibleModulesThen('gerencia')].filter(code => code !== 'licitaciones').sort(), 'gerencia recibe solo visibilidad legacy dentro de su techo');
+assert.deepEqual(await permissionsFor(ids.director), [...eligibleModulesThen('director')].filter(code => code !== 'licitaciones').sort(), '069 elimina el grant SIIO legado incompatible con el ceiling de director');
 assert.equal(eligibleModulePermissions('director').includes('modulo_siio_gerencial'), false, 'el ceiling runtime y la persistencia quedan alineados para director');
-assert.deepEqual(await permissionsFor(ids.comercial), [...eligibleModulePermissions('comercial')].filter(code => code !== 'modulo_vig_ia').sort(), 'comercial conserva Licitaciones y módulos legacy; Vig-IA requiere concesión explícita posterior');
-assert.deepEqual(await permissionsFor(ids.colaborador), [...eligibleModulePermissions('colaborador')].sort(), 'colaborador recibe únicamente módulos legacy compatibles');
+assert.deepEqual(await permissionsFor(ids.comercial), [...eligibleModulesThen('comercial')].filter(code => code !== 'modulo_vig_ia').sort(), 'comercial conserva Licitaciones y módulos legacy; Vig-IA requiere concesión explícita posterior');
+assert.deepEqual(await permissionsFor(ids.colaborador), [...eligibleModulesThen('colaborador')].sort(), 'colaborador recibe únicamente módulos legacy compatibles');
 assert.deepEqual(await permissionsFor(ids.junta), ['modulo_siio_gerencial'], 'junta recibe únicamente SIIO ejecutivo; el email no concede Licitaciones ni otros módulos');
 
 assert.deepEqual(await permissionsFor(ids.future), [], 'un perfil creado después del snapshot inicial y durante el backfill no recibe módulos');

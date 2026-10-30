@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
+import { createAgt002ReanalysisExecutor } from '../verticales/licitaciones/agt002-reanalysis-executor.js';
 import {
   computeAgt002GovernedWorksetIdempotencyKey,
   computeAgt002WorksetSelectionHash,
-} from '../agt002-governed-document-worksets.js';
-import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
+} from '../verticales/licitaciones/agt002-governed-document-worksets.js';
+import { buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
 
 // GREEN slice for the governed document-workset EXECUTION gap: a claimed durable_batched_v1 job's
 // frozen_engine_input.analysis_context.documents (and its governed_workset_members) carry only

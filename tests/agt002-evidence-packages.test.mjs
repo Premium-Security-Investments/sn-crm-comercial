@@ -28,7 +28,7 @@ import {
   computeAgt002EvidencePackageHash,
   computeAgt002EvidencePackageIdempotencyKey,
   publicAgt002EvidencePackageSummary,
-} from '../agt002-evidence-packages.js';
+} from '../verticales/licitaciones/agt002-evidence-packages.js';
 
 function hex64(label) {
   const base = Buffer.from(String(label)).toString('hex');

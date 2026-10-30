@@ -13,9 +13,9 @@ import {
   recordAgt002PhaseChangeDetected,
   runAgt002PhaseChangeAnalysisAdmissions,
   runAgt002PhaseChangeDocumentRefresh,
-} from '../agt002-phase-change-followup.js';
-import { countAgt002AutomaticAnalysesToday, listAgt002PhaseChangeAdmissionsToday } from '../agt002-auto-initial.js';
-import { planRadarPhaseIdentitySync, tenderSourceChangeFollowUpBlocker } from '../tender-phase-identity.js';
+} from '../verticales/licitaciones/agt002-phase-change-followup.js';
+import { countAgt002AutomaticAnalysesToday, listAgt002PhaseChangeAdmissionsToday } from '../verticales/licitaciones/agt002-auto-initial.js';
+import { planRadarPhaseIdentitySync, tenderSourceChangeFollowUpBlocker } from '../verticales/licitaciones/tender-phase-identity.js';
 
 process.env.NEXT_PUBLIC_SUPABASE_URL ||= 'http://127.0.0.1:9';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';
@@ -127,7 +127,11 @@ test('disparador: Fondo Único pasa al pliego definitivo → un cambio de fase s
   assert.equal(change.previousUrl, OLD_URL);
   assert.equal(change.blocker, null, 'proceso vivo y cierre futuro: se sigue');
   const line = phaseChangeDetectedLine({ change: change.change, newPhase: change.newPhase, ref: change.ref, url: change.url, detectedAt: change.detectedAt, noticeUid: NOTICE });
-  assert.equal(line, `SECOP publicó el pliego definitivo (fase de oferta) (visto el 10-oct); el enlace de la oportunidad se actualizó (${NEW_URL}) y Vig-IA bajará sus documentos y lanzará el reanálisis.`);
+  // El aviso anuncia un intento, no una importación hecha: la fase se ve en el dataset de procesos y los
+  // archivos están en otro dataset, con otro atraso. Prometerlo se leyó como que el agente no corrió
+  // (Supersalud, 2026-10-25).
+  assert.equal(line, `SECOP publicó el pliego definitivo (fase de oferta) (visto el 10-oct); el enlace de la oportunidad se actualizó (${NEW_URL}). Vig-IA va a buscar sus documentos en datos abiertos y, si están, lanza el reanálisis.`);
+  assert.ok(!/bajará sus documentos/.test(line), 'el aviso no promete la descarga');
   assert.doesNotMatch(line.replace(NEW_URL, ''), /CO1\./, 'el aviso no muestra códigos internos; sólo el enlace');
   // Corrida siguiente: el enlace ya cambió (histórico) → nada que seguir, aunque la fila siga llegando.
   const next = planRadarPhaseIdentitySync({ fetched: [draftRow(), offerRow()], existing: [draftConverted({ url: NEW_URL, status: 'Publicado', process_id: 'CO1.REQ.11160001' })], now: '2026-10-11T11:00:00.000Z' });
@@ -299,8 +303,26 @@ test('documentos: si datos.gov.co no los publica en ~3 días, aviso visible para
   assert.deepEqual(db.appended, [], 'el segundo día aún no avisa');
   await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: missing, importDocuments, now: at('2026-10-11T12:00:00.000Z') });
   assert.deepEqual(db.appended, [`${HEAD}, pero datos.gov.co aún no publica sus documentos nuevos; revisar e importar a mano.`]);
+  // En cuanto la consulta responde (ya no falla, pero no trae archivos nuevos), el aviso lo dice con
+  // nombre y dice qué cargar a mano. El de revisión humana no se repite.
   await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probeOf('none', 0), importDocuments, now: at('2026-10-12T12:00:00.000Z') });
-  assert.equal(db.appended.length, 1, 'el aviso no se repite');
+  assert.deepEqual(db.appended, [
+    `${HEAD}, pero datos.gov.co aún no publica sus documentos nuevos; revisar e importar a mano.`,
+    `${HEAD}, pero sus archivos todavía no están en datos abiertos (allí siguen los 24 de siempre): ese dataset va 1 a 3 días atrás. Para no esperar, cargar a mano el pliego definitivo y la impresión de «Información del procedimiento», que es la única que trae el cronograma.`,
+  ]);
+  await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probeOf('none', 0), importDocuments, now: at('2026-10-13T12:00:00.000Z') });
+  assert.equal(db.appended.length, 2, 'ninguno de los dos avisos se repite');
+});
+
+test('documentos: la primera revisión sin archivos nuevos ya lo dice, sin esperar los 3 días', async () => {
+  const db = fakeDb(world());
+  const importDocuments = async () => { throw new Error('no debe importar'); };
+  // Misma mañana de la detección: la consulta responde con los documentos de siempre y ninguno nuevo.
+  await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probeOf('none', 0), importDocuments, now: at('2026-10-08T15:00:00.000Z') });
+  assert.equal(db.appended.length, 1, 'un solo aviso, el que nombra lo que falta');
+  assert.match(db.appended[0], /sus archivos todavía no están en datos abiertos/);
+  assert.match(db.appended[0], /Información del procedimiento/, 'nombra la impresión, que es la única que trae el cronograma');
+  assert.ok(!/revisar e importar a mano\.$/.test(db.appended[0]), 'el aviso de revisión humana sigue siendo el de los 3 días');
 });
 
 test('I5: un conjunto que no se estabiliza en ~3 días deja aviso visible (una vez)', async () => {
@@ -377,12 +399,12 @@ test('I2: sólo oportunidades activas (Por decidir / En curso); proceso terminal
   const awarded = world();
   awarded.psi_sales_opportunities[0].tender_offer_status = 'no_adjudicada';
   for (const [tables, reason] of [[closedProcess, 'terminal_status'], [lost, 'opportunity_closed'], [noGo, 'opportunity_closed'], [awarded, 'opportunity_closed']]) {
-    const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(tables), { probeDocuments: async () => { throw new Error('no debe llamarse'); }, importDocuments: async () => { throw new Error('no'); } });
+    const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(tables), { probeDocuments: async () => { throw new Error('no debe llamarse'); }, importDocuments: async () => { throw new Error('no'); }, now: NOW });
     assert.deepEqual(events.map(e => [e.event, e.reason]), [['agt002_phase_change_documents_skipped', reason]]);
   }
   const goInPreparation = world({ psi_tender_go_no_go_decisions: [{ id: 'g1', opportunity_id: 'opp-ftic', tender_id: 't-ftic', decision: 'go', decided_at: '2026-10-01T00:00:00Z' }] });
   goInPreparation.psi_sales_opportunities[0].tender_offer_status = 'en_preparacion';
-  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(goInPreparation), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); } });
+  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(goInPreparation), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); }, now: NOW });
   assert.deepEqual(events.map(e => e.event), ['agt002_phase_change_documents_waiting_new_documents'], 'En curso (GO, en preparación) sí se sigue');
 });
 
@@ -652,9 +674,9 @@ test('(e) fase nueva: sin 116 no se descarga nada; lo anterior pasa a historial 
 // Archivado de obsoletos, correo (outbox para Hermes) y revisión completa.
 // ---------------------------------------------------------------------------------------------------------------
 
-const { planObsoleteTenderDocuments } = await import('../tender-document-obsolescence.js');
-const alerts = await import('../agt002-licitaciones-alerts.js');
-const { runAgt002PhaseChangeReview } = await import('../agt002-phase-change-review.js');
+const { planObsoleteTenderDocuments } = await import('../verticales/licitaciones/tender-document-obsolescence.js');
+const alerts = await import('../verticales/licitaciones/agt002-licitaciones-alerts.js');
+const { runAgt002PhaseChangeReview } = await import('../verticales/licitaciones/agt002-phase-change-review.js');
 
 test('archivado (Fondo Único, nombres reales del borrador): proyecto de pliego, anexo técnico y anexos editables; nada protegido', () => {
   const draft = ['CAPACIDAD FINANCIERA SEG. PRIVADA.pdf', 'COTIZACIONES.zip', 'OFERTA ECONOMICA VIGILANCIA.xlsx', '1. Estudios_Previos_Vigilancia 2026 (1).pdf',
@@ -672,13 +694,15 @@ test('archivado (Fondo Único, nombres reales del borrador): proyecto de pliego,
   assert.deepEqual(onlyResolution.archive, [], 'sin pliego definitivo, el proyecto sigue vigente');
 });
 
-test('archivado (DANE LP-001-2026, nombres reales): por tanda; adendas, estudios previos y CDP nunca; dudas avisadas', () => {
+test('archivado (DANE LP-001-2026, nombres reales): por tanda; adendas y CDP nunca; estudio previo sólo ante su versión Definitiva; dudas avisadas', () => {
   const base = ['Aviso Convocatoria LP-001-2026 (Rev).pdf', 'Anexo N°. 1 Especificaciones Tecnicas.pdf', 'Anexo N°. 3 Matriz de Riesgos.xlsx', 'Anexo N° 4. Oferta Económica.xlsx',
     'Formatos LP-001-2026 Vigilancia VF.zip', 'Proyecto Pliego Condiciones LP-001-2026  Vigilancia V25-08-2026.pdf', 'Anexo N° 6. CDP 96426.pdf',
     'Estudios Previos Vigilancia 2026_VF En limpio (Firmado).pdf', 'Anexo N°. 2 Análisis del Sector Vigilancia 2026.pdf', 'Anexo N° 5. Consolidado_Costos_Vigilancia 2026-2029.xlsx'];
   const sep20 = ['Resolución Apertura LP-001-2026 (Suscrita).pdf', 'Pliego de Condiciones Definitivo LP-001-2026 Vigilancia (21-09-2026).pdf', 'Estudios Previos Vigilancia 2026_VF  Definitivo.pdf', 'Formatos Definitivos LP-001-2026.zip', 'Anexos al Estudio Previo LP-001-2026 Definitivos.zip'];
   const first = planObsoleteTenderDocuments({ currentNames: base, incomingNames: sep20 });
-  assert.deepEqual(first.archive.map(item => item.name).sort(), ['Formatos LP-001-2026 Vigilancia VF.zip', 'Proyecto Pliego Condiciones LP-001-2026  Vigilancia V25-08-2026.pdf']);
+  // 2026-10-20 (Juan, Cali): un estudio previo con su versión "Definitivo" explícita de la misma familia pasa a historial.
+  assert.deepEqual(first.archive.map(item => item.name).sort(), ['Estudios Previos Vigilancia 2026_VF En limpio (Firmado).pdf', 'Formatos LP-001-2026 Vigilancia VF.zip', 'Proyecto Pliego Condiciones LP-001-2026  Vigilancia V25-08-2026.pdf']);
+  assert.equal(first.archive.find(item => item.name.startsWith('Estudios Previos')).replacedBy, 'Estudios Previos Vigilancia 2026_VF  Definitivo.pdf');
   const current = [...base.filter(name => !first.archive.some(item => item.name === name)), ...sep20];
   const sep29 = ['Anexo N°. 1 Especificaciones Tecnicas Consolidado Adenda 03.pdf', 'Solicitud Adenda N° 03 Componente Tecnico.pdf', 'Anexo N°. 5 Consolidado_Costos_Vigilancia 2026-2029 Adenda 03.xlsx',
     'Anexo N°. 4 Oferta Economica Consolidado Adenda 03.xlsx', 'Adenda N° 03 LP-001-2026.pdf', 'Formato N° 4 Apoyo a la Industria Nacional Discapacidad Mujeres Consolidado Adenda 03.docx',
@@ -687,7 +711,8 @@ test('archivado (DANE LP-001-2026, nombres reales): por tanda; adendas, estudios
   const third = planObsoleteTenderDocuments({ currentNames: [...current, 'Adenda N° 01 LP-001-2026 (Suscrita).pdf'], incomingNames: sep29 });
   assert.deepEqual(third.archive.map(item => item.name).sort(), ['Anexo N° 4. Oferta Económica.xlsx', 'Anexo N° 5. Consolidado_Costos_Vigilancia 2026-2029.xlsx', 'Anexo N°. 1 Especificaciones Tecnicas.pdf', 'Anexo N°. 3 Matriz de Riesgos.xlsx']);
   assert.ok(third.doubts.some(item => item.name.startsWith('Pliego de Condiciones Definitivo LP-001-2026 Vigilancia')), 'un pliego definitivo reemplazado por el consolidado es duda: no se archiva');
-  const protectedNames = [...third.archive, ...first.archive].map(item => item.name).filter(name => /estudio|cdp|adenda n° 01|aviso|an[aá]lisis del sector/i.test(name));
+  const protectedNames = [...third.archive, ...first.archive].map(item => item.name).filter(name => /cdp|adenda n° 01|aviso|an[aá]lisis del sector/i.test(name));
+  assert.ok(!third.archive.some(item => /estudio/i.test(item.name)), 'el estudio previo "Consolidado Adenda 03" no es una versión definitiva: el definitivo sigue vigente');
   assert.deepEqual(protectedNames, []);
 });
 
@@ -811,7 +836,7 @@ for (const [label, server] of servers) {
 }
 
 test('I-B: el correo nunca informa una marca de una oportunidad que ya no está activa', async () => {
-  const { listRecentAgt002PhaseChangeDetections } = await import('../agt002-phase-change-review.js');
+  const { listRecentAgt002PhaseChangeDetections } = await import('../verticales/licitaciones/agt002-phase-change-review.js');
   const tables = world({ psi_sales_interactions: [{ ...DETECTED, created_at: '2026-10-09T10:00:00.000Z' }] });
   assert.equal((await listRecentAgt002PhaseChangeDetections(fakeDb(tables), { now: NOW })).length, 1);
   tables.psi_sales_opportunities[0].tender_offer_status = 'cerrada_no_go';
@@ -853,7 +878,7 @@ test('menor 2: sin reported-keys.json no se reinforman marcas viejas; se reconst
 });
 
 test('menor 4: un reanálisis en NEEDS_ATTENTION se informa una vez y su resultado final, otra vez', async () => {
-  const { collectAgt002PhaseChangeAnalysisResults } = await import('../agt002-phase-change-followup.js');
+  const { collectAgt002PhaseChangeAnalysisResults } = await import('../verticales/licitaciones/agt002-phase-change-followup.js');
   const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED, state('tender_phase_change_analysis', { new_set_hash: 'set-1', outcome: 'launched', job_id: 'job-9', analysis_kind: 'REANALYSIS' }, '2026-10-09T10:05:00.000Z')],
     psi_agt002_initial_analysis_jobs: [{ id: 'job-9', opportunity_id: 'opp-ftic', status: 'NEEDS_ATTENTION', analysis_kind: 'REANALYSIS', created_at: '2026-10-09T10:05:00.000Z' }] });
   const db = fakeDb(tables);
@@ -877,7 +902,7 @@ const NO_GO = [{ id: 'ng', opportunity_id: 'opp-ftic', tender_id: 't-ftic', deci
 const LAUNCHED = state('tender_phase_change_analysis', { new_set_hash: 'set-1', outcome: 'launched', job_id: 'job-9', analysis_kind: 'REANALYSIS' }, '2026-10-09T10:05:00.000Z');
 
 test('no activa: el paso de análisis no registra, no avisa ni deja correo (ni siquiera "no se reanaliza")', async () => {
-  const { agt002ReviewFacts } = await import('../agt002-phase-change-review.js');
+  const { agt002ReviewFacts } = await import('../verticales/licitaciones/agt002-phase-change-review.js');
   for (const close of [
     tables => { tables.psi_tender_go_no_go_decisions = NO_GO; },
     tables => { tables.psi_sales_opportunities[0].tender_offer_status = 'no_adjudicada'; },
@@ -898,7 +923,7 @@ test('no activa: el paso de análisis no registra, no avisa ni deja correo (ni s
 });
 
 test('no activa: el resultado de un reanálisis lanzado antes de cerrarla no se registra ni se avisa', async () => {
-  const { collectAgt002PhaseChangeAnalysisResults } = await import('../agt002-phase-change-followup.js');
+  const { collectAgt002PhaseChangeAnalysisResults } = await import('../verticales/licitaciones/agt002-phase-change-followup.js');
   const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED, LAUNCHED], psi_tender_go_no_go_decisions: NO_GO,
     psi_agt002_initial_analysis_jobs: [{ id: 'job-9', opportunity_id: 'opp-ftic', status: 'COMPLETED', analysis_kind: 'REANALYSIS', created_at: '2026-10-09T10:05:00.000Z' }] });
   const db = fakeDb(tables);
@@ -969,7 +994,7 @@ test('revisión: una activa fuera de SECOP II queda en el log como no seguida (l
 });
 
 test('reactivada: el resultado de un reanálisis guardado mientras estaba NO GO se registra y avisa normalmente cuando un GO la reactiva', async () => {
-  const { collectAgt002PhaseChangeAnalysisResults } = await import('../agt002-phase-change-followup.js');
+  const { collectAgt002PhaseChangeAnalysisResults } = await import('../verticales/licitaciones/agt002-phase-change-followup.js');
   const tables = world({ psi_sales_interactions: [DETECTED, IMPORTED, LAUNCHED], psi_tender_go_no_go_decisions: [...NO_GO],
     psi_agt002_initial_analysis_jobs: [{ id: 'job-9', opportunity_id: 'opp-ftic', status: 'COMPLETED', analysis_kind: 'REANALYSIS', created_at: '2026-10-09T10:05:00.000Z' }] });
   const db = fakeDb(tables);
@@ -984,10 +1009,10 @@ test('activa = bandeja: "aprobado" con GO y oferta en preparación se sigue; la 
   const approved = world({ psi_tender_go_no_go_decisions: [{ id: 'g1', opportunity_id: 'opp-ftic', tender_id: 't-ftic', decision: 'go', decided_at: '2026-10-01T00:00:00Z' }] });
   approved.psi_sales_opportunities[0].stage_code = 'aprobado';
   approved.psi_sales_opportunities[0].tender_offer_status = 'en_preparacion';
-  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(approved), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); } });
+  const events = await runAgt002PhaseChangeDocumentRefresh(fakeDb(approved), { probeDocuments: probeOf('none', 0), importDocuments: async () => { throw new Error('no'); }, now: NOW });
   assert.deepEqual(events.map(e => e.event), ['agt002_phase_change_documents_waiting_new_documents']);
   const otherTender = world({ psi_tender_go_no_go_decisions: [{ id: 'x', opportunity_id: 'opp-ftic', tender_id: 't-otra', decision: 'no_go', decided_at: '2026-10-05T00:00:00Z' }] });
-  const { agt002PhaseChangeOpportunityBlocker } = await import('../agt002-phase-change-followup.js');
+  const { agt002PhaseChangeOpportunityBlocker } = await import('../verticales/licitaciones/agt002-phase-change-followup.js');
   assert.equal(await agt002PhaseChangeOpportunityBlocker(fakeDb(otherTender), 'opp-ftic', 't-ftic'), null, 'como la bandeja (088): decisión de esa licitación');
   assert.equal(await agt002PhaseChangeOpportunityBlocker(fakeDb(otherTender), 'opp-ftic', null), null, 'sin licitación se usa la convertida de la oportunidad');
 });

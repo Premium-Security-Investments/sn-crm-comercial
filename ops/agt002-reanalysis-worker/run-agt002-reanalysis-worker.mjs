@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { createClient } from '@supabase/supabase-js';
 import { fileURLToPath } from 'node:url';
-import { createAgt002ReanalysisExecutor } from '../../agt002-reanalysis-executor.js';
-import { createAgt002ReanalysisWorker } from '../../agt002-reanalysis-worker.js';
-import { claimAgt002ReanalysisJobById } from '../../agt002-reanalysis-jobs.js';
-import { resolveAgt002GovernedDocumentForExecution } from '../../agt002-governed-document-rehydration.js';
-import { resolveAgt002GovernedContextVersionForExecution } from '../../agt002-governed-context-version-rehydration.js';
-import { buildReanalysisWorkerIdentity } from '../../agt002-control-plane-surface-builders.js';
-import { resolveAgt002ReleaseArtifactEvidence } from '../../agt002-control-plane-runtime-evidence.js';
+import { createAgt002ReanalysisExecutor } from '../../verticales/licitaciones/agt002-reanalysis-executor.js';
+import { createAgt002ReanalysisWorker } from '../../verticales/licitaciones/agt002-reanalysis-worker.js';
+import { claimAgt002ReanalysisJobById } from '../../verticales/licitaciones/agt002-reanalysis-jobs.js';
+import { resolveAgt002GovernedDocumentForExecution } from '../../verticales/licitaciones/agt002-governed-document-rehydration.js';
+import { resolveAgt002GovernedContextVersionForExecution } from '../../verticales/licitaciones/agt002-governed-context-version-rehydration.js';
+import { buildReanalysisWorkerIdentity } from '../../verticales/licitaciones/agt002-control-plane-surface-builders.js';
+import { resolveAgt002ReleaseArtifactEvidence } from '../../verticales/licitaciones/agt002-control-plane-runtime-evidence.js';
 
 const REANALYSIS_WORKER_RELATIVE_PATH = 'ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs';
 

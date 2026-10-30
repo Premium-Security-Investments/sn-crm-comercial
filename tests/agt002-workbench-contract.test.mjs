@@ -5,7 +5,7 @@ import {
   AGT002_WORKBENCH_POLICY_VERSION,
   validateAgt002WorkbenchJobInput,
   validateAgt002WorkbenchResult,
-} from '../agt002-workbench-contract.js';
+} from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 const UUID = Object.freeze({
   job: '10000000-0000-4000-8000-000000000001',
@@ -22,7 +22,7 @@ const UUID = Object.freeze({
 
 assert.equal(Object.isFrozen(AGT002_WORKBENCH_CAPABILITIES), true);
 assert.equal(AGT002_WORKBENCH_CONTRACT_VERSION, 'agt002.dossier-workbench.v1');
-assert.equal(AGT002_WORKBENCH_POLICY_VERSION, 'agt002.dossier-workbench.policy.v1');
+assert.equal(AGT002_WORKBENCH_POLICY_VERSION, 'agt002.dossier-workbench.policy.v2');
 assert.deepEqual(AGT002_WORKBENCH_CAPABILITIES, {
   reply: 'agt002.dossier-workbench.reply.v1',
   draft: 'agt002.dossier-workbench.draft.v1',

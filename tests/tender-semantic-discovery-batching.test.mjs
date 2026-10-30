@@ -3,7 +3,7 @@ import {
   planTenderSemanticDiscoveryBatches,
   computeTenderSemanticDiscoveryBatchHash,
   tenderSemanticDiscoveryBatchIdempotencyKey,
-} from '../tender-semantic-discovery-batches.js';
+} from '../verticales/licitaciones/tender-semantic-discovery-batches.js';
 
 // AGT-002 V3 complete discovery — pure, deterministic unit tests of the batch planner and the
 // per-batch identity helpers in tender-semantic-discovery-batches.js, independent of the

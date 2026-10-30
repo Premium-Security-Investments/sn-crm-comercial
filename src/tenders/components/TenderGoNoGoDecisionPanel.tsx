@@ -7,6 +7,7 @@ import type { TenderPanelState } from '../detailNavigationState';
 import { tenderDecisionBlockers, tenderDecisionConditions } from '../tenderDecisionSurface';
 import type { TenderCurrentProfile, TenderDocumentAnalysis, TenderGoNoGoDecision, TenderGoNoGoPayload, TenderQuestionResponse, TenderRequest } from '../types';
 import { TenderGoNoGoDecisionSummary } from './TenderGoNoGoDecisionSummary';
+import { requestTenderDetailSection } from './TenderDetailNavigation';
 
 type Decision = 'go' | 'no_go';
 export type TenderGoNoGoDecisionPanelProps = {
@@ -112,6 +113,8 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     setSelectedDecision(decision);
   };
   const scrollToPreparation = useCallback(() => {
+    // Con pestañas, Preparación está oculta hasta que se abre su pestaña.
+    requestTenderDetailSection('tender-preparation');
     const target = document.getElementById('tender-preparation');
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const focusable = target?.querySelector<HTMLElement>('button, input, textarea, select, [tabindex]:not([tabindex="-1"])');

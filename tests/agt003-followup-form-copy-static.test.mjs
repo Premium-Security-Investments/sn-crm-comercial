@@ -46,14 +46,13 @@ assert.match(
 );
 assert.doesNotMatch(followUp, /profiles\.map|form\.created_by|<Select[^>]*created_by/, 'FollowUpForm must not expose an author selector');
 
-// 5) the optional next-action field copy must change from "Programar próxima gestión" to "Próxima gestión (opcional)".
+// 5) the next-action field copy: "Programar próxima gestión" is gone, and since F4 (2026-10-22) the label depends on
+// whether the next action is required for this opportunity — it is no longer always optional.
 assert.ok(!followUp.includes('Programar próxima gestión'), 'FollowUpForm must drop the old "Programar próxima gestión" copy');
-const nextActionLabelIndex = followUp.indexOf('Próxima gestión (opcional)');
-assert.notEqual(nextActionLabelIndex, -1, 'FollowUpForm must show "Próxima gestión (opcional)" for the optional next action field');
-const nextActionInputIndex = followUp.indexOf('value={form.next_action_at}');
-assert.ok(
-  nextActionInputIndex !== -1 && nextActionLabelIndex < nextActionInputIndex && nextActionInputIndex - nextActionLabelIndex < 80,
-  '"Próxima gestión (opcional)" must directly label the next_action_at input',
+assert.match(
+  followUp,
+  /\{nextActionRequired \? 'Próxima gestión' : 'Próxima gestión \(opcional\)'\}<input type="datetime-local" required=\{nextActionRequired\} value=\{form\.next_action_at\}/,
+  'the conditional label must directly label the next_action_at input, and the input must be required when the rule asks for it',
 );
 
 // 6) the required notes textarea must be wrapped directly by a visible "Detalle del seguimiento" label.

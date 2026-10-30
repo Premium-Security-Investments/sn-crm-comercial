@@ -40,6 +40,10 @@ for (const marker of cssMarkers) {
 }
 
 assert.ok(main.includes('value={String(form.next_action_at || \'\').slice(0,16)}'), 'OpportunityForm should expose next_action_at as editable datetime');
-assert.ok(main.includes('Próxima gestión (opcional)<input type="datetime-local"'), 'Follow-up form should label next action clearly');
+// La etiqueta dejó de ser fija cuando la próxima gestión pasó a ser obligatoria en los casos que lo exigen
+// (2026-10-22): ahora dice "(opcional)" sólo cuando de verdad lo es. La prueba vigila las dos ramas, no el literal.
+assert.ok(main.includes("{nextActionRequired ? 'Próxima gestión' : 'Próxima gestión (opcional)'}<input type=\"datetime-local\""),
+  'Follow-up form should label next action clearly, and say "(opcional)" only when it is');
+assert.ok(main.includes('required={nextActionRequired}'), 'y el campo se exige cuando la regla lo pide');
 
 console.log('next-action static checks passed');

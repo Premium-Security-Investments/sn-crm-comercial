@@ -16,9 +16,9 @@ import {
   validateAgt002PreGoSectionProposals,
   buildAgt002SectionProposalOverlayIndex,
   iterateProposalRequirements,
-} from '../agt002-pre-go-section-proposals.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
-import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+} from '../verticales/licitaciones/agt002-pre-go-section-proposals.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { assertNoOpenPii } from '../verticales/licitaciones/agt002-contractual-registry-taxonomy.js';
 
 const GENERATED_AT = '2026-08-12T00:00:00.000Z';
 const REGISTRY_PATH = resolve(process.cwd(), 'docs/governance/registro/manizales-sa-24-2026.registry.json');

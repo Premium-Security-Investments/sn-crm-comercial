@@ -5,8 +5,8 @@ import {
   AGT002_RADAR_PREANALYSIS_POLICY_VERSION,
   findAgt002RadarForbiddenVocabulary,
   validateAgt002RadarPreanalysis,
-} from '../agt002-radar-preanalysis-contract.js';
-import { buildAgt002RadarPreanalysisInput } from '../agt002-radar-preanalysis-input.js';
+} from '../verticales/licitaciones/agt002-radar-preanalysis-contract.js';
+import { buildAgt002RadarPreanalysisInput } from '../verticales/licitaciones/agt002-radar-preanalysis-input.js';
 
 const valid = {
   schema_version: 'agt002-radar-preanalysis-v1', agent_id: 'AGT-002', run_id: 'run-1',

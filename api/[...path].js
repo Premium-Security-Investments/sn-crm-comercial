@@ -3,28 +3,36 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
-import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
-import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
-import { suggestAgt002DocumentRelevance } from '../agt002-document-relevance-suggestion.js';
-import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
-import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../tender-phase-identity.js';
-import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../agt002-phase-change-followup.js';
-import { planObsoleteTenderDocuments } from '../tender-document-obsolescence.js';
-import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../tender-process-family.js';
-import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
-import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../tender-competibility-policy.js';
-import { fetchTenderRadarSourceRows } from '../tender-radar-source-fetch.js';
+import { cleanFinancialImportRequest, financialImportStoragePath, listFinancialImports, processFinancialWorkbookImport, publishFinancialImport, validateFinancialImport, SIIO_FINANCIAL_IMPORT_BUCKET } from '../verticales/gerencial/siio-financial-import-service.js';
+import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse.js';
+import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
+import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
+import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
+import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
+import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
+import { suggestAgt002DocumentRelevance } from '../verticales/licitaciones/agt002-document-relevance-suggestion.js';
+import { callCreateTenderProcessingJob, callManualTenderOpportunityCreation, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../verticales/licitaciones/tender-tracking-rpc.js';
+import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../verticales/licitaciones/tender-phase-identity.js';
+import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../verticales/licitaciones/agt002-phase-change-followup.js';
+import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../verticales/licitaciones/tender-document-obsolescence.js';
+import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../verticales/licitaciones/tender-process-family.js';
+import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../verticales/licitaciones/tender-durable-flags.js';
+import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../verticales/licitaciones/tender-competibility-policy.js';
+import { fetchTenderRadarSourceRows } from '../verticales/licitaciones/tender-radar-source-fetch.js';
 import { fetchTvecAggregations } from '../tvec-radar-fetch.js';
-import { DIRECT_SERVICE_REASON as RADAR_DEEP_DIRECT_SERVICE_REASON, RADAR_DEEP_CATEGORY_FIELD, RADAR_DEEP_CHUNK_DAYS, RADAR_DEEP_MAX_ROWS_PER_WINDOW, RADAR_DEEP_PAGE_LIMIT, evaluateElectronicSecurityPath, isHighValueVigilanceTender, radarDeepKeywordWhere, radarDeepUnspscFamilyWhere, radarDeepWindows } from '../tender-radar-deep-search.js';
-import { createTenderProcessingWorker } from '../tender-processing-worker.js';
-import { createTenderProcessingDrain } from '../tender-processing-drain.js';
-import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
-import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderDocumentChunk, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
-import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
-import { runInConcurrentChunks } from '../tender-concurrency.js';
-import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 } from '../tender-go-no-go-rpc.js';
-import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
-import { callTenderOpportunityArchive } from '../tender-offer-archive-rpc.js';
+import { DIRECT_SERVICE_REASON as RADAR_DEEP_DIRECT_SERVICE_REASON, RADAR_DEEP_CATEGORY_FIELD, RADAR_DEEP_CHUNK_DAYS, RADAR_DEEP_MAX_ROWS_PER_WINDOW, RADAR_DEEP_PAGE_LIMIT, evaluateElectronicSecurityPath, isHighValueVigilanceTender, radarDeepKeywordWhere, radarDeepUnspscFamilyWhere, radarDeepWindows } from '../verticales/licitaciones/tender-radar-deep-search.js';
+import { createTenderProcessingWorker } from '../verticales/licitaciones/tender-processing-worker.js';
+import { TENDER_DOCUMENTS_NOT_PUBLISHED_CODE, TENDER_EMPTY_DISCOVERY_EXHAUSTED_CODE } from '../verticales/licitaciones/tender-empty-discovery.js';
+import { createTenderProcessingDrain } from '../verticales/licitaciones/tender-processing-drain.js';
+import { dispatchTenderProcessingAfterConversion } from '../verticales/licitaciones/tender-processing-dispatch.js';
+import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderDocumentChunk, recordTenderImportItem, updateTenderProcessingJob } from '../verticales/licitaciones/tender-processing-worker-rpc.js';
+import { buildAgt002DocumentChunks } from '../verticales/licitaciones/agt002-document-chunks.js';
+import { runInConcurrentChunks } from '../verticales/licitaciones/tender-concurrency.js';
+import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 } from '../verticales/licitaciones/tender-go-no-go-rpc.js';
+import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../verticales/licitaciones/tender-offer-status-rpc.js';
+import { callTenderOpportunityArchive } from '../verticales/licitaciones/tender-offer-archive-rpc.js';
+import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClosureActa, callReopenTenderClosureActa } from '../verticales/licitaciones/tender-closure-acta-rpc.js';
+import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../verticales/licitaciones/agt002-closure-acta-live.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -33,12 +41,16 @@ import {
   callAddTenderDossierArtifactVersion,
   callRecordTenderDossierArtifactReview,
   callSeedTenderDossier,
-} from '../tender-dossier-rpc.js';
-import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
-import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../tender-analysis-foundation.js';
-import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
-import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
-import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
+  callSeedTenderDossierRequirements,
+} from '../verticales/licitaciones/tender-dossier-rpc.js';
+import { buildRequirementRows } from '../verticales/licitaciones/agt002-requirements-model.js';
+import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/tender-company-document-bridge.js';
+import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
+import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
+import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
+import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../verticales/licitaciones/tender-analysis-foundation-availability.js';
+import { buildTenderDeepAnalysis } from '../verticales/licitaciones/tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
 import { isReadOnlyRole } from '../access-control.js';
 import { hasPermission } from '../access-control.js';
@@ -47,66 +59,111 @@ import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
 import { CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
-import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../agt003-lead-analysis.js';
+import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
+import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../verticales/comercial/agt003-lead-analysis.js';
 import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
-import { normalizeClientName, typeaheadMatches } from '../siio-sales-clients.js';
+import { normalizeClientName, typeaheadMatches } from '../verticales/gerencial/siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
-import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
+import { buildAgt003PrioritiesData } from '../verticales/comercial/agt003-priorities-service.js';
 import { BEHAVIOR_FOLLOW_UP_TYPES, bogotaWeekStart, buildCommercialBehavior } from '../src/vigia/commercial-behavior.js';
-import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
-import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
-import { createAgt003PreflightApi } from '../agt003-preflight-api.js';
-import { createAgt003PreflightRuntime, getAgt003PreflightRuntimeConfig, isAgt003PreflightConfigured } from '../agt003-preflight-runtime.js';
-import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
-import { agt003PreparationDate } from '../agt003-copilot-input.js';
-import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
+import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-api.js';
+import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../verticales/comercial/agt003-copilot-runtime.js';
+import { resolverParaLector } from '../catalogo-fuentes.js';
+import { crearLectorAvancys } from '../avancys-odoo-lectura.js';
+import { veTodaLaCarteraComercial } from '../access-control.js';
+
+// Lo que el copiloto comercial recibe resuelto antes de cada corrida. Crece una línea por entrada.
+// Lo que el copiloto comercial recibe del catálogo antes de redactar. `operacion.puestos_del_cliente`
+// entró el 2026-10-28: lo que ese cliente ya tiene con nosotros en Avancys, para no escribirle como
+// si fuera el primer contacto a una empresa a la que ya le cuidamos puestos.
+const AGT003_COPILOTO_FUENTES = Object.freeze(['empresa.identidad', 'empresa.sedes', 'operacion.puestos_del_cliente']);
+import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../verticales/comercial/agt003-copilot-persistence.js';
+import { agt003PreparationDate } from '../verticales/comercial/agt003-copilot-input.js';
+import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
-import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
-import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
-import { isCriticalTenderDocument } from '../tender-critical-documents.js';
-import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../tender-official-document-coverage.js';
+import { loadCompanyBase, recordUploadAsVerification, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite } from '../company-base.js';
+import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
+import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
+import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../verticales/licitaciones/tender-document-origin.js';
+import { canonicalizeTenderDocuments } from '../verticales/licitaciones/tender-document-canonicalizer.js';
+import { isCriticalTenderDocument } from '../verticales/licitaciones/tender-critical-documents.js';
+import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../verticales/licitaciones/tender-official-document-coverage.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
-import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
-import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim, renewAgt002PreviewClaim } from '../agt002-preview-persistence.js';
-import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
-import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
-import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
-import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../tender-relevance-terms.js';
-import { evaluateTenderFit } from '../tender-fit-policy.js';
-import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
-import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
-import { getAgt002VercelControlPlaneIdentity } from '../agt002-vercel-control-plane-identity.js';
-import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
-import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
-import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
-import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
+import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim, renewAgt002PreviewClaim } from '../verticales/licitaciones/agt002-preview-persistence.js';
+import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
+import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../verticales/licitaciones/agt002-workbench-runtime.js';
+import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../verticales/licitaciones/tender-source-status.js';
+import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../verticales/licitaciones/tender-relevance-terms.js';
+import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
+import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../verticales/licitaciones/tender-actuation-types.js';
+import { buildAgt002AnalysisConfig } from '../verticales/licitaciones/agt002-analysis-config.js';
+import { getAgt002VercelControlPlaneIdentity } from '../verticales/licitaciones/agt002-vercel-control-plane-identity.js';
+import { createAgt002AnalysisObservability } from '../verticales/licitaciones/agt002-analysis-observability.js';
+import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
+import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
+import { loadAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
-import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
-import { loadAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
-import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
-import { buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf } from '../agt002-company-evidence-identity.js';
+import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
+import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
+import { codeDefaultEffectiveConfiguration, getEffectiveAgentConfiguration } from '../platform-agent-effective-configuration.js';
+import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, capabilityPolicy, claimLeadAnalysis, leadAnalysisQuotaMessage, readActorAiUsageProfile } from '../verticales/comercial/agt003-ai-quota.js';
+import {
+  actorNameFromProfile,
+  agentAiFunctions,
+  approveConfiguration,
+  archiveAiUsageProfile,
+  assertProfileReactivation,
+  assertVersionAction,
+  configurationInvalidError,
+  createAiUsageProfile,
+  hasPlatformAdminConnection,
+  isPlatformConfigurationPublicError,
+  isValidAgentId,
+  isValidProfileId,
+  normalizeProfileInput,
+  normalizeProposedConfiguration,
+  normalizeReason,
+  parseVersionId,
+  platformAdminUnavailableError,
+  presentAgentConfiguration,
+  proposeConfiguration,
+  reactivateAiUsageProfile,
+  reactivateConfiguration,
+  readActiveAiUsageProfiles,
+  readAgentConfigurationRows,
+  readAiUsageProfile,
+  rejectConfiguration,
+} from '../platform-agent-configuration.js';
+import { loadAgt002CompanyEvidenceRegistryEntries } from '../verticales/licitaciones/agt002-company-evidence-classes.js';
+import { loadAgt002CompanyEvidenceInventorySnapshot } from '../verticales/licitaciones/agt002-company-evidence-sharepoint-catalog.js';
+import { loadAgt002IntegralGovernanceOverrides } from '../verticales/licitaciones/agt002-integral-governance-overrides.js';
+import { buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf } from '../verticales/licitaciones/agt002-company-evidence-identity.js';
 import {
   runAgt002FixedSnapshotReanalysis,
   sanitizeAgt002FixedSnapshotError,
-} from '../agt002-fixed-snapshot-reanalysis.js';
-import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
-import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
-import { loadAgt002TenderRequirementDocumentGaps } from '../agt002-tender-requirement-gaps.js';
-import { tenderRequirementInventoryIdentity } from '../tender-requirement-inventory.js';
-import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
-import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
-import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
-import { agt002CanonicalEnqueueBlockCode } from '../agt002-canonical-enqueue-gate.js';
-import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../agt002-reanalysis-jobs.js';
-import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
-import { readAgt002InitialAnalysisStatus } from '../agt002-initial-analysis-status.js';
-import { readAgt002InitialAnalysisReport } from '../agt002-initial-analysis-report.js';
-import { rejectUngovernedAgt002Route } from '../agt002-governed-route-retirement.js';
-import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId } from '../esu-direct-crawl.js';
-import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
-import { buildAgt002RadarRunReceipt, readAgt002RadarRunReceiptHistory, readLatestAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../agt002-radar-run-receipt.js';
-import { buildAgt002RadarRunSnapshot, computeAgt002RadarRunDelta } from '../agt002-radar-run-delta.js';
-import { readAgt002RadarRunDeltaPair, recordAgt002RadarRunSnapshot } from '../agt002-radar-run-delta-persistence.js';
+} from '../verticales/licitaciones/agt002-fixed-snapshot-reanalysis.js';
+import { adaptAgt002RetrievalDocuments } from '../verticales/licitaciones/agt002-retrieval-document-adapter.js';
+import { buildAgt002TenderRequirementInventory } from '../verticales/licitaciones/agt002-preview-input.js';
+import { loadAgt002TenderRequirementDocumentGaps } from '../verticales/licitaciones/agt002-tender-requirement-gaps.js';
+import { tenderRequirementInventoryIdentity } from '../verticales/licitaciones/tender-requirement-inventory.js';
+import { loadPublishedAgt002LegalCorpus } from '../verticales/licitaciones/agt002-legal-corpus-store.js';
+import { selectAgt002ManizalesManifestSource } from '../verticales/licitaciones/agt002-manizales-manifest-source.js';
+import { buildAgt002FrozenEngineInput } from '../verticales/licitaciones/agt002-reanalysis-input.js';
+import { agt002CanonicalEnqueueBlockCode } from '../verticales/licitaciones/agt002-canonical-enqueue-gate.js';
+import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../verticales/licitaciones/agt002-reanalysis-jobs.js';
+import { presentAgt002ReanalysisStatus } from '../verticales/licitaciones/agt002-reanalysis-api.js';
+import { readAgt002InitialAnalysisStatus } from '../verticales/licitaciones/agt002-initial-analysis-status.js';
+import { readAgt002ManualReanalysisStatus, requestAgt002ManualReanalysis } from '../verticales/licitaciones/agt002-manual-reanalysis.js';
+import { listAgt002Clarifications, recordAgt002Clarification } from '../verticales/licitaciones/agt002-clarifications.js';
+import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
+import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
+import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
+import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId, withEsuAliadosPriority } from '../esu-direct-crawl.js';
+import { isTenderProcessingJobSuperseded } from '../verticales/licitaciones/tender-processing-status.js';
+import { buildAgt002RadarRunReceipt, readAgt002RadarRunReceiptHistory, readLatestAgt002RadarRunReceipt, recordAgt002RadarRunReceipt } from '../verticales/licitaciones/agt002-radar-run-receipt.js';
+import { buildAgt002RadarRunSnapshot, computeAgt002RadarRunDelta } from '../verticales/licitaciones/agt002-radar-run-delta.js';
+import { readAgt002RadarRunDeltaPair, recordAgt002RadarRunSnapshot } from '../verticales/licitaciones/agt002-radar-run-delta-persistence.js';
 import {
   ACTIONABLE_REVIEW_ATTACHMENT_DOWNLOAD_TTL_SECONDS,
   actionableReviewForbiddenError,
@@ -147,24 +204,32 @@ import {
   validateTenderKnowledgeRejectInput,
   validateTenderKnowledgeSubmitInput,
   validateTenderKnowledgeVersionInput,
-} from '../agt002-actionable-review-http.js';
+} from '../verticales/licitaciones/agt002-actionable-review-http.js';
 import {
   isActionableReviewAttachmentStoragePath,
   validateActionableReviewAttachmentBytes,
-} from '../agt002-actionable-review-attachment-validation.js';
-import { hashActionableReviewJson } from '../agt002-actionable-review-canonical.js';
-import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-generator.js';
-import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
-import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
+} from '../verticales/licitaciones/agt002-actionable-review-attachment-validation.js';
+import { hashActionableReviewJson } from '../verticales/licitaciones/agt002-actionable-review-canonical.js';
+import { generateTenderKnowledgeCandidate } from '../verticales/licitaciones/agt002-knowledge-candidate-generator.js';
+import { publishTenderKnowledgeVersion } from '../verticales/licitaciones/agt002-knowledge-sharepoint.js';
+import { createTenderKnowledgeSharePointGraphAdapter } from '../verticales/licitaciones/agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
-import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
+import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../verticales/comercial/agt003-chat-registro.js';
+import { nextActionRequirement } from '../src/vigia/next-action-rule.js';
+import { briefQuotaMessage, buildBriefInput, claimBriefRun, runBriefSummary } from '../verticales/comercial/agt003-brief-reunion.js';
+import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
+import {
+  CLOSURE_FORM_FIELD_KEYS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_VERSION, autofillClosureForm, autofillClosureSites,
+  cleanClosureFormInput, closureFormCatalog, closureFormCompleteness, closureFormDurationDays, closureFormMoney,
+} from '../src/vigia/closure-form.js';
+import { buildAgt002StakeholderBriefPreview } from '../verticales/licitaciones/agt002-stakeholder-brief-preview.js';
 import {
   AGT002_GOVERNED_WORKSET_CAPACITY_REJECTED_CODE,
   AGT002_GOVERNED_WORKSET_CAPACITY_UNAVAILABLE_CODE,
   freezeAgt002GovernedDocumentWorkset,
   projectAgt002GovernedWorksetFreezeResult,
   validateAgt002GovernedWorksetFreezeRequest,
-} from '../agt002-governed-document-workset-api.js';
+} from '../verticales/licitaciones/agt002-governed-document-workset-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -406,23 +471,60 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
+  'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'PUT /api/avancys/cliente-enlace': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'PUT /api/avancys/cliente-provision': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/agt003/lead-analysis': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'GET /api/agt003/lead-analysis': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/lead-analysis-message': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/agt003/closure-form': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'PUT /api/agt003/closure-form': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/agt003/chat': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/chat': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/chat/confirm': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/chat/discard': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/agt003/meeting-brief': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Puente ficha de empresa → expediente: proyección de sólo lectura de lo que la pantalla de Empresa ya muestra.
+  'GET /api/tender-dossier-company-documents': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Matriz de cumplimiento: una fila por requisito del pliego, con su soporte y su estado al cierre. Sólo lectura.
+  'GET /api/tender-compliance-matrix': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Crear a mano un proceso que no está en SECOP: traerlo al CRM es el mismo acto que convertirlo desde el Radar.
+  'POST /api/tenders/manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
+  'POST /api/tender-manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
   'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-reanalysis-status': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-initial-analysis-status': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-initial-analysis-report': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
+  'GET /api/agt002-manual-reanalysis': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
+  'POST /api/agt002-manual-reanalysis': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
+  'GET /api/agt002-clarifications': ['tenders', ACTIONS.LICITACIONES_WORKBENCH_USE],
+  'POST /api/agt002-clarifications': ['tenders', ACTIONS.LICITACIONES_WORKBENCH_USE],
+  // Punto 4 de las aclaraciones: guardar en la ficha de la empresa lo que es de la empresa. Escribe la ficha,
+  // así que pide el permiso de la ficha, no el de la Mesa.
+  'POST /api/tender-company-evidence-decision': ['tenders', ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE],
+  'POST /api/agt002-clarification-to-company-profile': ['tenders', ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
   // IT → Agentes: vista de sólo lectura de la Plataforma de Agentes, con la misma protección que Usuarios y permisos.
   'GET /api/platform/agents': ['users', ACTIONS.USERS_MANAGE],
+  'GET /api/platform/model-usage': ['users', ACTIONS.USERS_MANAGE],
+  // IT → Agentes → funciones, modelos y cupos: lectura y propuestas/aprobaciones (sólo funciones platform.*).
+  'GET /api/platform/agent-configuration': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/agent-configuration/proposals': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/agent-configuration/versions/:id/approve': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/agent-configuration/versions/:id/reject': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/agent-configuration/versions/:id/reactivate': ['users', ACTIONS.USERS_MANAGE],
+  'GET /api/platform/ai-usage-profiles': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/ai-usage-profiles': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/ai-usage-profiles/:id/archive': ['users', ACTIONS.USERS_MANAGE],
+  'POST /api/platform/ai-usage-profiles/:id/reactivate': ['users', ACTIONS.USERS_MANAGE],
 
   'GET /api/siio/bootstrap': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/fronts': ['siio', ACTIONS.SIIO_AREA_VIEW],
@@ -430,11 +532,23 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/siio/records': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'PATCH /api/siio/records/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
   'GET /api/siio/sources': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/avancys/facturacion-por-cliente': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/avancys/devengado': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/sources': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'GET /api/siio/decisions': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/decisions': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'PATCH /api/siio/decisions/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
   'GET /api/siio/board-reports': ['siio', ACTIONS.BOARD_PUBLICATION_VIEW],
+  'GET /api/siio/financial-imports': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/financial-pulse': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/commercial-summary': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/recommendations': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/recommendations/generate': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'POST /api/siio/recommendations/:id/feedback': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'POST /api/siio/financial-imports/upload-url': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'POST /api/siio/financial-imports/process-upload': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'POST /api/siio/financial-imports/:id/validate': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
+  'POST /api/siio/financial-imports/:id/publish': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
 });
 const SIIO_MANAGEMENT_RESOURCE = Object.freeze({ area_code: 'gerencia' });
 const SIIO_PUBLISHED_BOARD_RESOURCE = Object.freeze({ status: 'presentado' });
@@ -450,6 +564,16 @@ export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
   'POST /api/siio/decisions': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'PATCH /api/siio/decisions/:id': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'GET /api/siio/board-reports': Object.freeze({ action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: SIIO_PUBLISHED_BOARD_RESOURCE, policy: 'board-published' }),
+  'GET /api/siio/financial-imports': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/financial-pulse': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/commercial-summary': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/recommendations': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/recommendations/generate': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/recommendations/:id/feedback': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/financial-imports/upload-url': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/financial-imports/process-upload': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/financial-imports/:id/validate': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/financial-imports/:id/publish': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
 });
 export function requireModuleAction(profile, endpointModule) {
   return requireAction(profile, MODULE_ENDPOINT_ACTIONS[endpointModule], {});
@@ -490,6 +614,12 @@ function getBearerToken(req) {
 }
 function isExactNonblankString(value) {
   return typeof value === 'string' && value.length > 0 && value.trim() === value;
+}
+export function normalizeWhatsappPhone(value) {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return null;
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!/^\+[1-9][0-9]{7,14}$/.test(normalized)) throw accessValidationError('El número de WhatsApp debe usar formato internacional E.164, por ejemplo +573001234567.');
+  return normalized;
 }
 function normalizeAccessAssignments(rows) {
   if (!Array.isArray(rows)) throw new Error('Asignaciones de área inválidas.');
@@ -673,7 +803,7 @@ export async function replaceProfileAccess(database, { profileId, actorProfileId
     throw profileAccessWriteFailure(error);
   }
 }
-const profileAdminSelect = 'id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at';
+const profileAdminSelect = 'id,full_name,microsoft_email,whatsapp_phone,role,active,commercial_area,can_edit_customer_segment,created_at';
 function profileExpectedSnapshot(profile) {
   return {
     id: profile.id,
@@ -683,6 +813,7 @@ function profileExpectedSnapshot(profile) {
     active: profile.active,
     commercial_area: profile.commercial_area ?? null,
     can_edit_customer_segment: profile.can_edit_customer_segment === true,
+    whatsapp_phone: profile.whatsapp_phone ?? null,
   };
 }
 export async function acquireProfileAdministrationLock(database, actorProfileId) {
@@ -987,7 +1118,6 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const visibleOwnerIds = readableOwnerIds(currentProfile, humanProfiles, ownerAssignments, globalScope);
   const commercialData = capabilities.opportunities || capabilities.dashboard || capabilities.alerts || capabilities.vigia;
   const scopedOpportunities = globalScope ? payload.opportunities : payload.opportunities.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
-  const scopedStalled = globalScope ? payload.stalled : payload.stalled.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
   const scopedTopClosing = globalScope ? payload.topClosing : payload.topClosing.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
   const scopedMonthlyKpis = globalScope ? payload.monthlyKpis : payload.monthlyKpis.filter(k => visibleOwnerIds.has(k.owner_id));
   const scopedGoals = globalScope ? payload.goals : payload.goals.filter(g => !g.user_id || visibleOwnerIds.has(g.user_id));
@@ -996,10 +1126,10 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const stages = commercialData ? payload.stages : [];
   const services = commercialData || capabilities.goals ? payload.services : [];
   const lossReasons = capabilities.opportunities ? payload.lossReasons : [];
+  const competitors = capabilities.opportunities ? (payload.competitors || []) : [];
   const summary = capabilities.dashboard || capabilities.vigia
     ? (globalScope ? payload.summary : recomputeSummary(stages, opportunities))
     : [];
-  const stalled = capabilities.dashboard ? scopedStalled : [];
   const topClosing = capabilities.dashboard ? scopedTopClosing : [];
   const monthlyKpis = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedMonthlyKpis : [];
   const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
@@ -1017,7 +1147,7 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
+  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, competitors, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
 }
 function opportunityOwnerError(message, status) {
   const error = new Error(message);
@@ -1049,7 +1179,7 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,deleted_at').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,client_id,service_type_code,company_name,customer_segment,regional_nombre,sede,quote_city,economic_sector,decision_maker_name,decision_maker_email,decision_maker_phone,stage_code,next_action_at,last_interaction_at,deleted_at').eq('id', id).single());
   if (opportunity.deleted_at) { const error = new Error('Oportunidad no encontrada.'); error.status = 404; throw error; }
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
@@ -1100,6 +1230,14 @@ async function keepHiddenOpportunityFields(database, opportunityId, body, payloa
 async function logCustomerSegmentChange(database, opportunityId, actorId, oldValue, newValue) {
   if ((oldValue || null) === (newValue || null)) return;
   await database.from('psi_sales_opportunity_audit_logs').insert({ opportunity_id: opportunityId, changed_by: actorId, field_name: 'customer_segment', old_value: oldValue || null, new_value: newValue || null, notes: 'Cambio de Cliente Nuevo / Cliente Actual' });
+}
+// Quién movió la etapa y cuándo. La FECHA de entrada la pone el disparador de la migración 145 (pasa por ahí
+// cualquier camino, incluidas las rutas de licitaciones); esto agrega la persona, que el disparador no conoce.
+async function logStageChange(database, opportunityId, actorId, oldValue, newValue) {
+  if ((oldValue || null) === (newValue || null)) return;
+  const { error } = await database.from('psi_sales_opportunity_audit_logs').insert({ opportunity_id: opportunityId, changed_by: actorId, field_name: 'stage_code', old_value: oldValue || null, new_value: newValue || null, notes: 'Cambio de etapa' });
+  // Un fallo del registro no puede tumbar el cambio de etapa, que ya quedó guardado.
+  if (error) console.warn('psi_sales_opportunity_audit_logs stage_code falló', { code: error.code || null });
 }
 
 
@@ -1335,6 +1473,12 @@ function companyDocumentStoragePath(profile, name, size) {
   const id = createHash('sha256').update(`company-profile:${profile.id}:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
   return `company-profile/documents/${profile.id}/${id}-${name}`;
 }
+/** La ruta tiene que ser la que esta API firmó para ESTA oportunidad (tender-manual-upload-path.js). */
+function assertTenderManualUploadStoragePath(storagePath, opportunityId, name) {
+  if (!isTenderManualUploadStoragePath(storagePath, opportunityId)) {
+    throw clientInputError(`Ruta de documento inválida: ${name}`);
+  }
+}
 async function presentCompanyProcurementDocuments(database) {
   const documents = await listCompanyProcurementDocuments(database);
   return Promise.all(documents.map(async document => {
@@ -1525,7 +1669,7 @@ function normalizeEsuDatosGovProcess(row, originalSource) {
     crm_next_step: 'Validar fecha de cierre y documentos en SECOP/portal ESU; si encaja, marcar en revisión o convertir desde CRM.',
     raw: { ...(tender.raw || row), source_origin: originalSource, discovery: 'datos.gov.co' }
   };
-  return { ...withSource, id: stableTenderKey(withSource), stable_key: stableTenderKey(withSource), section: classifyTenderSection(withSource) };
+  return withEsuAliadosPriority({ ...withSource, id: stableTenderKey(withSource), stable_key: stableTenderKey(withSource), section: classifyTenderSection(withSource) });
 }
 function keywordWhere(fields) {
   const terms = ['vigilancia','seguridad privada','cctv','videovigilancia','control de acceso','alarma','monitoreo','camaras','cámaras','biometrico','biométrico'];
@@ -2427,7 +2571,13 @@ app.get('/api/tender-tracking', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireTenderTrackingAccess(currentProfile);
     const tenders = await must(requireDb().from('psi_public_tenders').select('*').eq('internal_status', 'en_revision').order('tracking_due_at', { ascending: true, nullsFirst: false }).order('tracking_updated_at', { ascending: false }));
-    res.json(tenders || []);
+    // La fila conserva su id (las transiciones lo usan); se agregan el cierre canónico y el encaje como en el Radar,
+    // y el payload crudo del proveedor nunca sale al cliente.
+    const nowIso = new Date().toISOString();
+    res.json((tenders || []).map(({ raw: _raw, ...row }) => {
+      const deadline = resolveCanonicalTenderDeadline({ ...row, raw: _raw });
+      return { ...row, deadline, fit: evaluateTenderFit({ ...row, raw: _raw, deadline_at: deadline }, { nowIso }) };
+    }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -2605,13 +2755,56 @@ app.post('/api/tender-company-document-process-upload', async (req, res) => {
     const buffer = Buffer.from(await data.arrayBuffer());
     if (!buffer.length) throw clientInputError('El documento empresarial cargado está vacío.');
     if (buffer.length > RUP_MAX_BYTES) throw clientInputError('El documento empresarial supera 50MB.');
-    await recordCompanyProcurementDocument(database, { ...metadata, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
+    const recorded = await recordCompanyProcurementDocument(database, { ...metadata, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
+    // Quien carga decide: una persona que escoge el bloque y sube el archivo ya verificó. La ficha
+    // queda aprobada en el mismo acto, amarrada a ESTE documento, así que una versión nueva no
+    // hereda la aprobación. Si falla, la carga no se pierde: el documento ya quedó registrado.
+    await recordUploadAsVerification(database, {
+      entryId: metadata.documentType,
+      documentId: recorded?.id,
+      actorId: currentProfile.id,
+      actorName: currentProfile.full_name,
+      displayName: metadata.displayName,
+      issuedAt: metadata.issuedAt,
+    });
     if (metadata.documentType === 'rup') {
       const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
       const existing = await getTenderCompanyProfile(database);
       await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile));
     }
     res.status(201).json({ profile: await getTenderCompanyProfile(database), documents: await presentCompanyProcurementDocuments(database) });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/tender-company-base', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.json(await loadCompanyBase(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-sites', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    res.status(req.body?.id ? 200 : 201).json(await saveCompanySite(requireDb(), req.body, currentProfile.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-evidence-decision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE);
+    res.json(await saveCompanyEvidenceDecision(requireDb(), req.body, currentProfile.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-experience', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    res.status(req.body?.id ? 200 : 201).json(await saveCompanyExperience(requireDb(), req.body, currentProfile.id));
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -2741,6 +2934,17 @@ app.post('/api/tenders/convert', async (req, res) => {
 });
 
 
+// Crear a mano un proceso que no está en SECOP. Misma autorización que convertir desde el Radar: traer un proceso al
+// CRM es el mismo acto, venga del Radar o de la mano de quien lo encontró en otra plataforma.
+app.post('/api/tenders/manual', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
+    const database = requireDb();
+    res.status(201).json(await createManualTenderProcess(database, req.body?.process || req.body, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.post('/api/tender-refresh', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -2820,6 +3024,16 @@ app.post('/api/tender-convert', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+// Alias plano de POST /api/tenders/manual, el mismo par que tienen convertir y el refresco del Radar.
+app.post('/api/tender-manual', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
+    const database = requireDb();
+    res.status(201).json(await createManualTenderProcess(database, req.body?.process || req.body, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 const siioTables = {
   fronts: 'siio_fronts',
   sources: 'siio_sources',
@@ -2827,10 +3041,13 @@ const siioTables = {
   decisions: 'siio_decisions_commitments',
   boardReports: 'siio_monthly_board_reports',
   boardSections: 'siio_board_sections',
-  financialMetrics: 'siio_financial_metrics',
+  financialMetrics: 'siio_financial_metrics_current',
   commercialSignals: 'siio_commercial_signals',
   payrollAggregates: 'siio_payroll_aggregates',
-  strategicOpportunities: 'siio_strategic_opportunities'
+  strategicOpportunities: 'siio_strategic_opportunities',
+  operationsMetrics: 'siio_operations_metrics_current',
+  revenueLines: 'siio_financial_revenue_lines_current',
+  programacionHoras: 'siio_programacion_horas_cliente'
 };
 function siioFoundationUnavailable(error) {
   const message = String(error?.message || '').toLowerCase();
@@ -2850,6 +3067,47 @@ async function requiredSiioList(database, table, select = '*', order = 'created_
       unavailable.code = 'SIIO_FOUNDATION_UNAVAILABLE';
       throw unavailable;
     }
+    throw error;
+  }
+  return data || [];
+}
+// AGT-004: Operaciones es una fuente nueva (migración 128). Mientras la vista no exista o esté
+// vacía, la Torre muestra el bloque como pendiente en vez de caerse entera.
+async function optionalSiioOperationsMetrics(database) {
+  const { data, error } = await database.from(siioTables.operationsMetrics)
+    .select('period_month,client_key,client_label,regional,metric,value,data_quality,extracted_at')
+    .order('period_month', { ascending: true })
+    .limit(5000);
+  if (error) {
+    if (siioFoundationUnavailable(error)) return [];
+    throw error;
+  }
+  return data || [];
+}
+// AGT-001: la provisión de ingresos por tercero sale de la hoja "Ingresos" del archivo contable
+// (migración 142). Mientras la vista no exista o el mes publicado no traiga esa hoja, la Torre
+// muestra el bloque como pendiente en vez de caerse entera.
+async function optionalSiioRevenueLines(database) {
+  const { data, error } = await database.from(siioTables.revenueLines)
+    .select('period_month,line_type,client_label,service_month,amount,excluded_from_total,source_sheet,source_row')
+    .order('period_month', { ascending: true })
+    .limit(2000);
+  if (error) {
+    if (siioFoundationUnavailable(error)) return [];
+    throw error;
+  }
+  return data || [];
+}
+// AGT-001: las horas de servicio por cliente vienen de SIIO Programación (esquema `programacion`
+// de esta misma base, vista de la migración 143). Programación sigue en construcción: si la vista
+// o el esquema no están, la Torre muestra el bloque como pendiente.
+async function optionalSiioProgramacionHoras(database) {
+  const { data, error } = await database.from(siioTables.programacionHoras)
+    .select('periodo_id,ciudad,periodo_inicio,periodo_fin,periodo_estado,cliente_id,cliente,nit,puestos,horas_programadas,horas_realizadas,turnos_programados,turnos_realizados,guardas')
+    .order('periodo_inicio', { ascending: true })
+    .limit(2000);
+  if (error) {
+    if (siioFoundationUnavailable(error)) return [];
     throw error;
   }
   return data || [];
@@ -2940,9 +3198,9 @@ app.get('/api/siio/bootstrap', async (req, res) => {
     const database = requireDb();
     if (profile.role === 'junta') {
       const boardReports = filterBoardReportsForProfile(profile, await requiredSiioList(database, siioTables.boardReports, '*', 'period_month'));
-      return res.json({ fronts: [], records: [], sources: [], decisions: [], boardReports, boardSections: [], financialMetrics: [], commercialSignals: [], payrollAggregates: [], strategicOpportunities: [], currentProfile: profile });
+      return res.json({ fronts: [], records: [], sources: [], decisions: [], boardReports, boardSections: [], financialMetrics: [], commercialSignals: [], payrollAggregates: [], strategicOpportunities: [], operationsMetrics: [], revenueLines: [], programacionHoras: [], currentProfile: profile });
     }
-    const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities] = await Promise.all([
+    const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities, operationsMetrics, revenueLines, programacionHoras] = await Promise.all([
       requiredSiioList(database, siioTables.fronts, '*', 'id'),
       requiredSiioList(database, siioTables.records, '*', 'updated_at'),
       requiredSiioList(database, siioTables.sources, '*', 'id'),
@@ -2952,10 +3210,13 @@ app.get('/api/siio/bootstrap', async (req, res) => {
       requiredSiioList(database, siioTables.financialMetrics, '*', 'period_month'),
       requiredSiioList(database, siioTables.commercialSignals, '*', 'period_month'),
       requiredSiioList(database, siioTables.payrollAggregates, 'id,period_month,area,total_people,total_accrued,total_deductions,net_total,variation_abs,alert,source_id,visibility_level', 'period_month'),
-      requiredSiioList(database, siioTables.strategicOpportunities, '*', 'id')
+      requiredSiioList(database, siioTables.strategicOpportunities, '*', 'id'),
+      optionalSiioOperationsMetrics(database),
+      optionalSiioRevenueLines(database),
+      optionalSiioProgramacionHoras(database)
     ]);
     const visiblePayrollAggregates = filterPayrollAggregatesForManagement(payrollAggregates);
-    res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates: visiblePayrollAggregates, strategicOpportunities, currentProfile: profile });
+    res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates: visiblePayrollAggregates, strategicOpportunities, operationsMetrics, revenueLines, programacionHoras, currentProfile: profile });
   } catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/fronts', async (req, res) => {
@@ -3016,6 +3277,123 @@ app.get('/api/siio/board-reports', async (req, res) => {
     const { profile } = await getAuthContext(req);
     requireSiioEndpointAccess(profile, 'GET /api/siio/board-reports');
     res.json(filterBoardReportsForProfile(profile, await requiredSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/siio/financial-imports', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/financial-imports');
+    res.json(await listFinancialImports(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/siio/financial-pulse', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/financial-pulse');
+    res.json(await loadFinancialPulse(requireDb(), req.query.period ? String(req.query.period) : null));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/siio/commercial-summary', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/commercial-summary');
+    res.json(await loadCommercialSummary(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+// Seguimiento gerencial: dueños y Junta crean; sólo dueños cierran; el directivo de consulta sólo lee.
+app.get('/api/siio/followups', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'siio');
+    res.json(await listFollowups(requireDb(), profile));
+  } catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/followups', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'siio');
+    res.json(await createFollowup(requireDb(), req.body || {}, profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.patch('/api/siio/followups/:id', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'siio');
+    res.json(await updateFollowup(requireDb(), req.params.id, req.body || {}, profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Recomendaciones de Vig-IA Gerencia: lunes automático (timer del servidor) y botón con tope diario.
+app.get('/api/siio/recommendations', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/recommendations');
+    res.json(await loadRecommendations(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/recommendations/generate', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/recommendations/generate');
+    res.json(await generateRecommendations(requireDb(), { trigger: 'boton', profile }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/siio/recommendations/:id/feedback', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/recommendations/:id/feedback');
+    res.json(await setRecommendationFeedback(requireDb(), req.params.id, req.body || {}, profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/siio/recommendations/weekly', async (req, res) => {
+  const authorization = String(req.headers.authorization || '');
+  // Lo llama el timer agt001-recommendations-weekly del servidor de puentes (ops/agt001-recommendations-weekly/).
+  if (!secretMatches(process.env.AGT001_WEEKLY_SECRET, authorization.startsWith('Bearer ') ? authorization.slice(7) : '')) return res.status(401).json({ error: 'No autorizado.' });
+  try {
+    const result = await generateRecommendations(requireDb(), { trigger: 'semanal' });
+    res.json({ ok: true, recommendations: result.recommendations.length });
+  } catch (error) { sendError(res, error, error?.status || 500); }
+});
+
+app.post('/api/siio/financial-imports/upload-url', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/financial-imports/upload-url');
+    const metadata = cleanFinancialImportRequest(req.body);
+    const storagePath = financialImportStoragePath(profile, metadata);
+    const { data, error } = await requireDb().storage.from(SIIO_FINANCIAL_IMPORT_BUCKET).createSignedUploadUrl(storagePath);
+    if (error) throw error;
+    res.json({ path: storagePath, token: data.token });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/siio/financial-imports/process-upload', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/financial-imports/process-upload');
+    const metadata = cleanFinancialImportRequest(req.body);
+    const result = await processFinancialWorkbookImport(requireDb(), profile, req.body?.storage_path, metadata);
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/siio/financial-imports/:id/publish', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/financial-imports/:id/publish');
+    res.json(await publishFinancialImport(requireDb(), profile, req.params.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/siio/financial-imports/:id/validate', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'POST /api/siio/financial-imports/:id/validate');
+    res.json(await validateFinancialImport(requireDb(), profile, req.params.id));
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -3088,6 +3466,31 @@ async function resolveAgt003OpportunityResource(database, opportunityId, profile
   return crmResource(opportunity.owner_id, authorized);
 }
 
+// El NIT del cliente de la oportunidad, para preguntarle a Avancys qué tiene ya con nosotros.
+//
+// Vive en `psi_sales_opportunities.company_nit` (migración 113) y es OPCIONAL: no cuenta para el
+// perfil completo, así que muchas oportunidades no lo tienen. Tampoco está en la vista enriquecida
+// —se lee aparte, como dice esa migración—, y por eso no viaja en el contexto del copiloto.
+//
+// Falla en silencio a `null` a propósito: sin NIT el catálogo sirve la fuente como `no_verificado`
+// y escribe por qué. Una oportunidad sin NIT, o un fallo de esta consulta, no deben impedir que el
+// comercial reciba su borrador.
+async function loadAgt003OpportunityClientNit(database, opportunityId) {
+  if (typeof opportunityId !== 'string' || opportunityId.trim() === '') return null;
+  try {
+    const { data, error } = await database
+      .from('psi_sales_opportunities')
+      .select('company_nit')
+      .eq('id', opportunityId)
+      .maybeSingle();
+    if (error) return null;
+    const nit = typeof data?.company_nit === 'string' ? data.company_nit.trim() : '';
+    return nit === '' ? null : nit;
+  } catch {
+    return null;
+  }
+}
+
 async function loadAgt003OpportunityContext(database, opportunityId, now = () => new Date()) {
   const row = await must(database.from('v_psi_sales_opportunity_enriched').select(VIGIA_COPILOT_OPPORTUNITY_SELECT).eq('id', opportunityId).single());
   const interactions = await must(database.from('psi_sales_interactions')
@@ -3130,10 +3533,31 @@ function createVigiaKnowledgeAssetsDbAdapter(database) {
   };
 }
 
+// Puerta única de modelos (Paso 2, parte 3): política vigente de una función de Vig-IA Comercial para quien pide —
+// encendida/apagada, modelo y cupos del equipo y de la persona (perfil de uso de IA + excepciones), en hora de Bogotá.
+// Falla abierta: sin plataforma usa la última configuración conocida o los valores del código.
+async function resolveAgt003CapabilityPolicy(database, capability, profile) {
+  const [effective, aiUsageProfile] = await Promise.all([
+    getEffectiveAgentConfiguration(AGT003_AGENT_ID),
+    readActorAiUsageProfile(database, profile.id),
+  ]);
+  let environmentModel = null;
+  try { environmentModel = getAgt003CopilotRuntimeConfig(process.env).model; } catch { environmentModel = null; }
+  return capabilityPolicy({
+    effective,
+    fallbackEffective: codeDefaultEffectiveConfiguration(AGT003_AGENT_ID),
+    capability,
+    aiUsageProfile,
+    personId: profile.id,
+    environmentModel,
+  });
+}
+
 function createBackendAgt003CopilotApi(database) {
   return createAgt003CopilotApi({
     isConfigured: () => isAgt003CopilotConfigured(process.env),
     getConfig: () => getAgt003CopilotRuntimeConfig(process.env),
+    resolvePolicy: ({ profile }) => resolveAgt003CapabilityPolicy(database, AGT003_COPILOT_CAPABILITY, profile),
     resolveOpportunityResource: (opportunityId, profile) => resolveAgt003OpportunityResource(database, opportunityId, profile),
     loadOpportunityContext: opportunityId => loadAgt003OpportunityContext(database, opportunityId),
     loadApprovedAssets: () => selectVigiaApprovedAssets({
@@ -3144,21 +3568,23 @@ function createBackendAgt003CopilotApi(database) {
     claimRun: options => claimAgt003CopilotRun(database, options),
     findRunByKey: idempotencyKey => findAgt003CopilotRunByKey(database, idempotencyKey),
     findRunById: runId => findAgt003CopilotRunById(database, runId),
-    createRuntime: () => createAgt003CopilotRuntime({ environment: process.env }),
+    createRuntime: ({ model } = {}) => createAgt003CopilotRuntime({
+      environment: process.env,
+      model,
+      // Catálogo de fuentes, segundo lector: el copiloto comercial recibe quiénes somos y dónde
+      // tenemos presencia autorizada. Antes su único campo de empresa era el nombre del CLIENTE.
+      resolveSources: async ({ opportunityId } = {}) => resolverParaLector(database, {
+        lector: 'agt003.copiloto',
+        nombres: AGT003_COPILOTO_FUENTES,
+        clienteIdentificacion: await loadAgt003OpportunityClientNit(database, opportunityId),
+      }),
+    }),
     recordRun: options => recordAgt003CopilotRun(database, options),
     recordFailure: options => recordAgt003CopilotFailure(database, options),
     releaseClaim: options => releaseAgt003CopilotClaim(database, options),
     recordFeedback: options => recordAgt003CopilotFeedback(database, options),
-  });
-}
-
-function createBackendAgt003PreflightApi(database) {
-  return createAgt003PreflightApi({
-    isConfigured: () => isAgt003PreflightConfigured(process.env),
-    getConfig: () => getAgt003PreflightRuntimeConfig(process.env),
-    resolveOpportunityResource: (opportunityId, profile) => resolveAgt003OpportunityResource(database, opportunityId, profile),
-    loadOpportunityContext: opportunityId => loadAgt003OpportunityContext(database, opportunityId),
-    createRuntime: () => createAgt003PreflightRuntime({ environment: process.env }),
+    // Puerta única de modelos: cupo (equipo o persona), función apagada o saturación → evento `rejected` (mejor esfuerzo, sin contenido).
+    recordRejection: ({ failureCode, model, correlationId }) => recordModelRejection({ capability: AGT003_COPILOT_CAPABILITY, model, failureCode, correlationId }),
   });
 }
 
@@ -3273,11 +3699,13 @@ app.get('/api/vigia/commercial-behavior', async (req, res) => {
 });
 app.all('/api/vigia/commercial-behavior', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
+// Revisión previa de Vig-IA retirada (puerta única de modelos, 2026-10-09): la interfaz nunca la llamaba. Responde 410
+// sin llamar al puente ni consumir cupo; el motor (agt003-preflight-*.js) se conserva con sus pruebas.
+const AGT003_PREFLIGHT_RETIRED_MESSAGE = 'La revisión previa de Vig-IA está retirada.';
 app.post('/api/vigia/copilot/preflight', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req);
-    const result = await createBackendAgt003PreflightApi(requireDb()).preflight({ profile, body: req.body });
-    res.status(200).json(result);
+    await getAuthContext(req);
+    res.status(410).json({ error: AGT003_PREFLIGHT_RETIRED_MESSAGE });
   } catch (error) {
     sendAuthError(res, error);
   }
@@ -3304,11 +3732,20 @@ app.all('/api/vigia/copilot/feedback', (_req, res) => res.status(405).json({ err
 // AGT-003 — premio "análisis profundo" (agt003.lead-deep-analysis, Juan 2026-10-08). Se gana con perfil completo;
 // tope mensual del equipo aparte del tope diario de Vig-IA; cada ejecución queda en psi_agt003_lead_analyses.
 const LEAD_ANALYSIS_PUBLIC_FIELDS = 'id,opportunity_id,actor_id,status,model,website_url,website_status,output,usage,created_at,finished_at';
+// Cupo del equipo que se muestra en la ficha: el de la configuración vigente (o los valores del código), en hora de Bogotá.
+async function leadAnalysisTeamQuota() {
+  const policy = capabilityPolicy({
+    effective: await getEffectiveAgentConfiguration(AGT003_AGENT_ID),
+    fallbackEffective: codeDefaultEffectiveConfiguration(AGT003_AGENT_ID),
+    capability: AGT003_LEAD_ANALYSIS_CAPABILITY,
+  });
+  return policy?.quota?.team || { per: 'month', max: monthlyMaxFrom(process.env), period_start: bogotaMonthStartIso(new Date()) };
+}
 async function leadAnalysisState(database, opportunityId, opportunity = null) {
-  const monthlyMax = monthlyMaxFrom(process.env);
+  const teamQuota = await leadAnalysisTeamQuota();
   const [latest, used] = await Promise.all([
     database.from('psi_agt003_lead_analyses').select(`${LEAD_ANALYSIS_PUBLIC_FIELDS},profile_hash`).eq('opportunity_id', opportunityId).eq('status', 'completed').order('created_at', { ascending: false }).limit(1),
-    database.from('psi_agt003_lead_analyses').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', bogotaMonthStartIso(new Date())),
+    database.from('psi_agt003_lead_analyses').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', teamQuota.period_start),
   ]);
   if (latest.error) { if (latest.error.code === '42P01') return { available: false }; throw latest.error; }
   if (used.error) throw used.error;
@@ -3325,7 +3762,8 @@ async function leadAnalysisState(database, opportunityId, opportunity = null) {
     analysis: analysis.id ? { ...analysis, message_event: messageEvent } : null,
     profile_changed: Boolean(analysis.id && current && current !== analysisHash),
     used: used.count || 0,
-    max: monthlyMax,
+    max: teamQuota.max,
+    period: teamQuota.per,
   };
 }
 async function loadLeadAnalysisOpportunity(database, opportunityId) {
@@ -3357,7 +3795,7 @@ app.post('/api/agt003/lead-analysis-message', async (req, res) => {
     const analysisId = String(req.body?.analysis_id || '');
     const action = req.body?.action;
     if (!id || !analysisId || !['used', 'dismissed'].includes(action)) { const error = new Error('Solicitud inválida.'); error.status = 400; throw error; }
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const target = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const analysis = await must(database.from('psi_agt003_lead_analyses').select('id,opportunity_id,status,output').eq('id', analysisId).maybeSingle());
     if (!analysis || analysis.opportunity_id !== id || analysis.status !== 'completed') { const error = new Error('Análisis no encontrado.'); error.status = 404; throw error; }
     const existing = await must(database.from('psi_agt003_lead_analysis_message_events').select('id').eq('analysis_id', analysisId).maybeSingle());
@@ -3372,7 +3810,8 @@ app.post('/api/agt003/lead-analysis-message', async (req, res) => {
         occurred_at: occurredAt,
       }).select('id').single());
       interactionId = interaction.id;
-      await must(database.from('psi_sales_opportunities').update({ last_interaction_at: occurredAt }).eq('id', id).select('id').single());
+      const advanced = advancedLastInteraction(target?.last_interaction_at, occurredAt);
+      if (advanced) await must(database.from('psi_sales_opportunities').update({ last_interaction_at: advanced }).eq('id', id).select('id').single());
     }
     const { error } = await database.from('psi_agt003_lead_analysis_message_events').insert({ analysis_id: analysisId, actor_id: currentProfile.id, action, interaction_id: interactionId });
     if (error && error.code !== '23505') throw error;
@@ -3391,20 +3830,31 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     const resource = await resolveAgt003OpportunityResource(database, id, currentProfile);
     requireAction(currentProfile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, resource);
     if (!isAgt003CopilotConfigured(process.env)) { const error = new Error('Vig-IA no está disponible en este momento.'); error.status = 503; throw error; }
+    // Configuración vigente de la plataforma: apagada → rechazo sin llamar al modelo; modelo y cupos aprobados.
+    const policy = await resolveAgt003CapabilityPolicy(database, AGT003_LEAD_ANALYSIS_CAPABILITY, currentProfile);
+    if (!policy) throw new Error('No se pudo leer la configuración de Vig-IA.');
+    if (!policy.enabled) {
+      await recordModelRejection({ capability: AGT003_LEAD_ANALYSIS_CAPABILITY, model: policy.model, failureCode: AGT003_CAPABILITY_DISABLED_CODE, correlationId: randomUUID() });
+      const error = new Error(AGT003_CAPABILITY_DISABLED_MESSAGE); error.status = 503; error.code = AGT003_CAPABILITY_DISABLED_CODE; throw error;
+    }
     const opportunity = await loadLeadAnalysisOpportunity(database, id);
     if (opportunity.service_type_code === 'licitacion_publica') { const error = new Error('El análisis profundo es sólo para oportunidades comerciales.'); error.status = 400; throw error; }
     const completeness = profileCompleteness(opportunity);
     if (!completeness.complete) { const error = new Error(`Complete el perfil del cliente para ganar el análisis. Falta: ${completeness.missing.join(', ')}.`); error.status = 409; error.code = 'AGT003_LEAD_ANALYSIS_PROFILE_INCOMPLETE'; throw error; }
     const hash = leadAnalysisProfileHash(opportunity);
-    const monthlyMax = monthlyMaxFrom(process.env);
-    const { data: claim, error: claimError } = await database.rpc('psi_claim_agt003_lead_analysis', {
-      p_opportunity_id: id, p_actor_id: currentProfile.id, p_profile_hash: hash, p_contract_version: LEAD_ANALYSIS_CONTRACT_VERSION,
-      p_monthly_max: monthlyMax, p_month_start: bogotaMonthStartIso(new Date()),
+    const claim = await claimLeadAnalysis(database, {
+      opportunityId: id, actorId: currentProfile.id, profileHash: hash, contractVersion: LEAD_ANALYSIS_CONTRACT_VERSION, quota: policy.quota,
     });
-    if (claimError) throw claimError;
     if (claim?.status === 'existing') return res.status(200).json(await leadAnalysisState(database, id, opportunity));
     if (claim?.status === 'in_progress') { const error = new Error('El análisis de esta oportunidad ya se está preparando. Espere un momento.'); error.status = 409; throw error; }
-    if (claim?.status === 'quota') { const error = new Error(`Se acabó el cupo de análisis profundos de este mes (${claim.used} de ${claim.max}). Vuelve el próximo mes.`); error.status = 429; error.code = 'AGT003_LEAD_ANALYSIS_QUOTA'; throw error; }
+    if (claim?.status === 'quota') {
+      // Puerta única de modelos: el cupo agotado (equipo o persona) queda como `rejected` sin llamar al modelo (mejor esfuerzo).
+      const personal = claim.scope === 'actor';
+      const code = personal ? 'AGT003_LEAD_ANALYSIS_PERSONAL_QUOTA' : 'AGT003_LEAD_ANALYSIS_QUOTA';
+      await recordModelRejection({ capability: AGT003_LEAD_ANALYSIS_CAPABILITY, model: policy.model, failureCode: code, correlationId: randomUUID() });
+      const per = personal ? policy.quota.actor?.per : policy.quota.team.per;
+      const error = new Error(leadAnalysisQuotaMessage(personal ? 'actor' : 'team', per || 'month', claim.used, claim.max)); error.status = 429; error.code = code; throw error;
+    }
     if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el análisis.');
     claimedId = claim.id;
     const [website, interactions, services, owner] = await Promise.all([
@@ -3416,12 +3866,15 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     const input = buildLeadAnalysisInput({ opportunity, ownerName: owner?.full_name, services, interactions, website, today: bogotaDay(new Date()) });
     let result;
     try {
-      result = await runLeadAnalysis({ input, idempotencyKey: claimedId, environment: process.env });
+      result = await runLeadAnalysis({ input, idempotencyKey: claimedId, environment: process.env, model: policy.model });
     } catch (runError) {
       await database.rpc('psi_finish_agt003_lead_analysis', { p_id: claimedId, p_status: 'failed', p_model: null, p_website_url: website.url || null, p_website_status: website.status, p_output: null, p_usage: null, p_failure_code: String(runError?.code || 'AGT003_LEAD_ANALYSIS_FAILED').slice(0, 64) });
       claimedId = null;
-      const error = new Error('No se pudo preparar el análisis. No se descontó del cupo; intente de nuevo en unos minutos.');
-      error.status = 502;
+      // Plan B "avisar" (Paso 3): mensaje en lenguaje común según la categoría de la falla; no cambia de modelo ni de
+      // proveedor. La falla ya quedó en el libro central con su categoría (puerta de modelos) y el fallido no consume cupo.
+      const category = classifyAgt003ModelFailure(runError) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+      const error = new Error(`${agt003ModelFailureMessage(category, 'lead_analysis')} No se descontó de tu cupo.`);
+      error.status = category === AGT003_MODEL_FAILURE.MODEL_ERROR ? 502 : 503;
       throw error;
     }
     const { error: finishError } = await database.rpc('psi_finish_agt003_lead_analysis', {
@@ -3435,8 +3888,960 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
     if (claimedId && database) {
       try { await database.rpc('psi_finish_agt003_lead_analysis', { p_id: claimedId, p_status: 'failed', p_model: null, p_website_url: null, p_website_status: null, p_output: null, p_usage: null, p_failure_code: 'AGT003_LEAD_ANALYSIS_INTERNAL' }); } catch { /* best effort */ }
     }
+    // Un error interno sin estado (base de datos, configuración) nunca se muestra como error técnico.
+    if (!error?.status) {
+      console.error(error);
+      return res.status(503).json({ error: 'Vig-IA no pudo preparar el análisis por ahora. Intenta de nuevo en unos minutos.' });
+    }
+    sendError(res, error, error.status);
+  }
+});
+
+// Chat de registro: al confirmar se guarda con los MISMOS pasos de las rutas del formulario y de la ficha
+// (POST /api/opportunities, PUT /api/opportunity, POST /api/opportunity-interactions). Si cambian esas rutas, cambiar
+// también estas funciones (tests/agt003-chat-registro.test.mjs vigila que conserven los mismos controles).
+// Crear oportunidad (igual que POST /api/opportunities).
+async function createOpportunityForProfile(database, currentProfile, body) {
+  const payload = cleanOpportunity(body);
+  if (hasClientProfileFields(body)) normalizeClientProfile(body);
+  if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+  await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
+  const isPublicTender = payload.service_type_code === 'licitacion_publica';
+  if (currentProfile.role === 'comercial' && !isPublicTender) await requireNoPendingDecisions(database, currentProfile.id);
+  const requestedClientId = isPublicTender ? null : (body.client_id || null);
+  const authorizedSiblingIds = isPublicTender ? null : await prepareClientForNewOpportunity(database, currentProfile, payload, requestedClientId);
+  const data = await persistSalesOpportunity(database, {
+    mode: 'create',
+    opportunityId: null,
+    actorProfileId: currentProfile.id,
+    requestedClientId,
+    opportunity: payload,
+    client: isPublicTender ? null : pickClientMasterFields(payload),
+    authorizedSiblingIds,
+  });
+  if (!isPublicTender) await saveClientProfile(database, data.id, body);
+  return data;
+}
+
+// Editar oportunidad (igual que PUT /api/opportunity).
+async function updateOpportunityForProfile(database, currentProfile, id, body) {
+  const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  const payload = cleanOpportunity(body, existing.regional_nombre);
+  if (hasClientProfileFields(body)) normalizeClientProfile(body);
+  await keepHiddenOpportunityFields(database, existing.id, body, payload, existing);
+  if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+  if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
+  const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
+  const clientPlan = isPublicTender
+    ? { kind: 'noop', clientId: null }
+    : await prepareClientForOpportunityUpdate(database, existing, payload, body.client_id || null, body);
+  if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
+  if (!isPublicTender && (payload.stage_code || null) !== (existing.stage_code || null)) {
+    requireNextAction({ stageCode: payload.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: payload.next_action_at || null });
+  }
+  const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
+    ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
+    : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, id);
+  const data = await persistSalesOpportunity(database, {
+    mode: 'update',
+    opportunityId: id,
+    actorProfileId: currentProfile.id,
+    requestedClientId,
+    opportunity: payload,
+    client,
+    authorizedSiblingIds,
+  });
+  await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+  await logStageChange(database, id, currentProfile.id, existing.stage_code, payload.stage_code);
+  if (!isPublicTender) await saveClientProfile(database, id, body);
+  return data;
+}
+
+// Registrar seguimiento (igual que POST /api/opportunity-interactions).
+// F4 (Juan, 2026-10-22): ninguna oportunidad abierta queda sin próxima gestión. Se exige al registrar un seguimiento
+// y al mover la etapa; no se exige si el negocio quedó cerrado o si ya hay una fecha futura vigente.
+/**
+ * "Última gestión" es la más reciente, no la última escrita (Juan, 2026-10-22). Las cuatro rutas que registran una
+ * gestión sobrescribían `last_interaction_at` a ciegas, así que registrar hoy una visita de la semana pasada hacía
+ * retroceder la fecha. Caso real en Frontier: la nota del 22 a mediodía se registró a las 7:33 y el WhatsApp de las
+ * 9:05, escrito después, la dejó en 9:05. Devuelve el valor nuevo sólo cuando de verdad avanza.
+ */
+function advancedLastInteraction(currentValue, occurredAt) {
+  const next = Date.parse(occurredAt || '');
+  if (!Number.isFinite(next)) return null;
+  const current = Date.parse(currentValue || '');
+  return Number.isFinite(current) && current >= next ? null : occurredAt;
+}
+
+function requireNextAction({ stageCode, currentNextActionAt, proposedNextActionAt }) {
+  const verdict = nextActionRequirement({ stageCode, currentNextActionAt, proposedNextActionAt });
+  if (verdict.ok) return;
+  const error = new Error(verdict.message);
+  error.status = 400;
+  error.code = verdict.code;
+  throw error;
+}
+async function addInteractionForProfile(database, currentProfile, id, body) {
+  const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  requireNextAction({ stageCode: existing.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: body.next_action_at || null });
+  if (body.created_by && body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
+  const notes = preparePublicInteractionNotes(body.notes);
+  const occurred_at = body.occurred_at || new Date().toISOString();
+  const interaction_type = body.interaction_type || 'nota';
+  const created_by = currentProfile.id;
+  const next_action_at = body.next_action_at || null;
+  const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
+  const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
+  const update = {};
+  const advanced = advancedLastInteraction(existing?.last_interaction_at, occurred_at);
+  if (advanced) update.last_interaction_at = advanced;
+  if (next_action_at) update.next_action_at = next_action_at;
+  if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+  return data;
+}
+
+// AGT-003 — Formulario de cierre, formato GGC-FO-001 (Juan, 2026-10-23). El comercial deja de mandarlo por correo en
+// un Word: vive aquí, se autocompleta con lo que el CRM ya sabe y él llena el resto. Las reglas —qué pide, cuándo está
+// completo, cuánto vale— viven en src/vigia/closure-form.js, no aquí: las comparten la pantalla, el chat y la puerta
+// que impedirá marcar ganado sin el formulario completo.
+const CLOSURE_FORM_SELECT = ['id', 'opportunity_id', 'status', ...CLOSURE_FORM_FIELD_KEYS, 'created_by', 'created_at', 'updated_by', 'updated_at', 'completed_by', 'completed_at'].join(',');
+const CLOSURE_SITE_SELECT = 'id,address,city,phone,contact_name,position';
+const CLOSURE_POST_SELECT = 'id,description,shift_start,shift_end,days_per_month,guards_required,armed,service_value,notes,position';
+// Lo que el formulario autocompleta. `ensureOpportunityAccess` no trae el NIT ni el cargo del decisor, así que se leen
+// aquí en vez de dejar al comercial escribiendo datos que el CRM ya tiene.
+const CLOSURE_OPPORTUNITY_SELECT = 'id,company_name,company_nit,economic_sector,quote_city,decision_maker_name,decision_maker_title,decision_maker_email,decision_maker_phone,service_type_code,stage_code,offer_value';
+
+async function closureFormOpportunity(database, id, profile, action) {
+  const access = await ensureOpportunityAccess(database, id, profile, action);
+  if (access.service_type_code === 'licitacion_publica') {
+    const error = new Error('Las licitaciones públicas no usan este formulario: su cierre se registra en Licitaciones.');
+    error.status = 400;
+    throw error;
+  }
+  return must(database.from('psi_sales_opportunities').select(CLOSURE_OPPORTUNITY_SELECT).eq('id', id).single());
+}
+
+async function closureFormChildren(database, formId) {
+  const [sites, posts] = await Promise.all([
+    must(database.from('psi_sales_closure_form_sites').select(CLOSURE_SITE_SELECT).eq('form_id', formId).order('position', { ascending: true })),
+    must(database.from('psi_sales_closure_form_posts').select(CLOSURE_POST_SELECT).eq('form_id', formId).order('position', { ascending: true })),
+  ]);
+  return { sites: sites || [], posts: posts || [] };
+}
+
+/**
+ * El estado que leen la pantalla y el chat. Si el formulario no existe todavía NO se guarda nada: se devuelve el
+ * borrador autocompletado, para que abrir la oportunidad no cree filas vacías en la base.
+ */
+async function closureFormState(database, opportunity) {
+  const stored = await must(database.from('psi_sales_closure_forms').select(CLOSURE_FORM_SELECT).eq('opportunity_id', opportunity.id).maybeSingle());
+  const children = stored ? await closureFormChildren(database, stored.id) : { sites: [], posts: [] };
+  const form = stored || { opportunity_id: opportunity.id, status: 'borrador', ...autofillClosureForm(opportunity) };
+  const sites = stored ? children.sites : autofillClosureSites(opportunity);
+  const posts = children.posts;
+  return {
+    saved: Boolean(stored),
+    format: { code: CLOSURE_FORM_FORMAT, version: CLOSURE_FORM_VERSION },
+    // `service_type_code` viaja porque de él depende si el valor que se escribe es mensual o el total del proyecto.
+    opportunity: { id: opportunity.id, company_name: opportunity.company_name, stage_code: opportunity.stage_code, offer_value: opportunity.offer_value, service_type_code: opportunity.service_type_code },
+    form,
+    sites,
+    posts,
+    money: closureFormMoney({ posts }),
+    completeness: closureFormCompleteness({ form, sites, posts }),
+    duration_days: closureFormDurationDays(form.service_start_date, form.service_end_date),
+    catalog: closureFormCatalog(form),
+  };
+}
+
+// La cartera del comercial: los clientes que Avancys le tiene asignados hoy.
+//
+// Hasta ahora el CRM sólo mostraba el embudo de lo nuevo —341 clientes, en su mayoría prospectos—
+// mientras los 1.411 clientes actuales de la empresa no aparecían por ninguna parte. Esto los trae,
+// sin copiarlos: el reparto vive en Avancys y se lee en vivo.
+//
+// La equivalencia entre el comercial de Odoo y el perfil del CRM sale de la base
+// (`psi_avancys_salesperson_map`), no de Avancys: incluye a quién se le muestran los clientes de
+// quienes ya no están en la empresa, que es una decisión de negocio y no un dato del ERP.
+//
+// Falla blanda en los dos puntos donde puede faltar algo: un comercial sin equivalencia y un
+// despliegue sin credenciales devuelven una lista vacía CON su razón escrita, nunca un error. Que
+// Avancys no conteste no puede tumbarle la pantalla a nadie.
+app.get('/api/avancys/mis-clientes', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const { data, error } = await database
+      .from('psi_avancys_salesperson_map')
+      .select('odoo_user_id,odoo_user_name,nota')
+      .eq('profile_id', currentProfile.id);
+    if (error) throw error;
+    const asignaciones = Array.isArray(data) ? data : [];
+    // El alcance lo manda la Vista Admin / Vista Comercial que ya existe en el CRM, no una casilla
+    // nueva. Juan la señaló el 2026-10-29: él entra en Vista Admin y ve todo, en Vista Comercial ve
+    // lo suyo, y el gerente comercial debe funcionar igual. La pantalla manda qué vista tiene.
+    //
+    // La primera versión leyó sólo el rol y le mostró a Luis Fernando los 1.439 clientes de la
+    // compañía, ignorándole sus 877 —los suyos más los de quienes salieron—.
+    //
+    // Pedir MENOS siempre se concede: estrechar nunca abre nada. Pedir MÁS se comprueba contra el
+    // rol, así que un comercial que mande `alcance=todos` sigue viendo sólo lo suyo.
+    const puedeVerTodo = veTodaLaCarteraComercial(currentProfile);
+    const pedido = String(req.query.alcance || '');
+    const todos = pedido === 'propios'
+      ? false
+      : puedeVerTodo && (pedido === 'todos' || asignaciones.length === 0);
+    res.set('Cache-Control', 'private, no-store');
+    if (!todos && asignaciones.length === 0) {
+      return res.json({
+        total: 0, clientes: [], as_of: null, recortada: false, alcance: 'propios',
+        motivo: 'Este perfil no tiene comercial equivalente en Avancys.',
+      });
+    }
+    const lector = crearLectorAvancys();
+    if (!lector) {
+      return res.json({
+        total: 0, clientes: [], as_of: null, recortada: false, alcance: todos ? 'todos' : 'propios',
+        puede_ver_todo: puedeVerTodo,
+        motivo: 'Avancys no esta configurado en este ambiente.',
+      });
+    }
+    const leido = await lector.clientesDelComercial({
+      odooUserIds: asignaciones.map(fila => fila.odoo_user_id),
+      todos,
+      // La pantalla pide la lista primero y los servicios después; ver `serviciosPorCliente`.
+      conServicios: req.query.sin_servicios !== '1',
+    });
+    return res.json({
+      ...leido,
+      alcance: todos ? 'todos' : 'propios',
+      // Para que la pantalla sepa si ofrecer el interruptor, sin adivinarlo por el rol.
+      puede_ver_todo: puedeVerTodo,
+      // Quien ve clientes de otro comercial debe saber por qué, no deducirlo.
+      heredados: asignaciones.filter(fila => fila.nota).map(fila => ({
+        comercial: fila.odoo_user_name, motivo: fila.nota,
+      })),
+    });
+  } catch (error) {
+    if (error?.codigo) {
+      // Avancys no respondió. Se declara y la pantalla queda vacía con su razón.
+      return res.json({ total: 0, clientes: [], as_of: null, recortada: false, alcance: null, motivo: `Avancys no respondio: ${error.codigo}` });
+    }
     sendError(res, error, error?.status || 400);
   }
+});
+
+// El núcleo del nombre de un cliente, para buscarlo en el CRM.
+//
+// Los nombres de Avancys son los largos y formales —"PAPELES NACIONALES S.A"— y los del CRM los
+// cortos —"PAPELES NACIONALES"—. La primera versión buscaba oportunidades que CONTUVIERAN el
+// nombre de Avancys, así que el corto nunca calzaba y Papeles Nacionales salía sin ninguna
+// coincidencia teniendo dos. Lo vio Juan en producción el 2026-10-29.
+//
+// Se quitan las formas societarias y se toman las dos primeras palabras con sustancia: es lo que
+// tienen en común los dos mundos. Deliberadamente tosco, porque de ahí en adelante decide una
+// persona con el enlace, no esta heurística.
+const FORMAS_SOCIETARIAS = new Set(['sa', 'sas', 'ltda', 'ph', 'esp', 'sca', 'bic', 'cia', 'eu', 'limitada', 'y', 'de', 'del', 'la', 'el', 'los', 'las', 'en']);
+function palabrasDelNombre(nombre) {
+  return String(nombre || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+    .filter(palabra => palabra.length > 1 && !FORMAS_SOCIETARIAS.has(palabra))
+    .slice(0, 2);
+}
+// La búsqueda va por la PRIMERA palabra y el filtro exige las dos, en cualquier orden. Buscar
+// "camara comercio" como texto seguido tampoco calzaba con "Cámara DE Comercio de Pereira": las
+// palabras que comparten los dos mundos casi nunca están pegadas.
+function nombreCoincide(nombreCrm, palabras) {
+  const texto = String(nombreCrm || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return palabras.every(palabra => texto.includes(palabra));
+}
+
+// Las oportunidades de la tabla base, con los nombres que la vista enriquecida les pone. Se lee de
+// la tabla y no de la vista porque la vista no expone `client_id`, que es lo que necesita el enlace.
+async function enriquecerOportunidades(database, filas) {
+  const base = Array.isArray(filas) ? filas : [];
+  if (base.length === 0) return [];
+  const { data } = await database.from('v_psi_sales_opportunity_enriched')
+    .select('id,company_name,stage_name,service_type_name,offer_value,owner_name,expected_close_date,last_interaction_at')
+    .in('id', base.map(fila => fila.id));
+  const porId = new Map((Array.isArray(data) ? data : []).map(fila => [fila.id, fila]));
+  return base.map(fila => {
+    const rica = porId.get(fila.id) || {};
+    return {
+      id: fila.id, client_id: fila.client_id || null,
+      company_name: rica.company_name || fila.company_name,
+      stage_name: rica.stage_name ?? null, service_type_name: rica.service_type_name ?? null,
+      offer_value: rica.offer_value ?? null, owner_name: rica.owner_name ?? null,
+      expected_close_date: rica.expected_close_date ?? null,
+      last_interaction_at: rica.last_interaction_at ?? null,
+    };
+  });
+}
+
+// El cliente del CRM que más veces aparece entre las coincidencias por nombre. Es un candidato a
+// proponer, no una conclusión: quien decide si son el mismo cliente es una persona.
+function clienteMasFrecuente(oportunidades) {
+  const cuenta = new Map();
+  for (const o of oportunidades) {
+    if (!o.client_id) continue;
+    cuenta.set(o.client_id, (cuenta.get(o.client_id) || 0) + 1);
+  }
+  let mejor = null;
+  for (const [clientId, veces] of cuenta) {
+    if (!mejor || veces > mejor.veces) mejor = { client_id: clientId, veces };
+  }
+  return mejor;
+}
+
+// Un cliente actual, abierto: lo que tiene con nosotros en Avancys y lo que el CRM sabe de él.
+//
+// Es el modelo que pidió Juan el 2026-10-29: el cliente es lo primero y la oportunidad cuelga de
+// él. Hasta ahora la lista de Clientes no hacía nada —se miraba y ya—, así que no servía para
+// hacer seguimiento, que era justo para lo que se pidió.
+//
+// Las oportunidades se emparejan por NOMBRE NORMALIZADO y no por NIT: el NIT lo tienen 2 de 411
+// oportunidades, así que emparejar por él no encontraría casi nada. Es un emparejamiento
+// aproximado y la respuesta lo dice, para que nadie lo lea como una verdad del sistema.
+app.get('/api/avancys/cliente', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const identificacion = String(req.query.nit || '').trim();
+    const nombre = String(req.query.nombre || '').trim();
+    if (!identificacion && !nombre) {
+      const error = new Error('Debe indicar el cliente.');
+      error.status = 400;
+      throw error;
+    }
+
+    // Lo del CRM primero: no depende de Avancys y es lo que sostiene la pantalla si el ERP falla.
+    //
+    // Si alguien ya confirmó que este cliente de Avancys es tal cliente del CRM, se usa ese enlace
+    // y el emparejamiento es EXACTO. Si no, se cae al parecido por nombre, que es lo que había.
+    const { data: enlace } = identificacion
+      ? await database.from('psi_cliente_avancys').select('client_id').eq('avancys_ref_num', identificacion).maybeSingle()
+      : { data: null };
+
+    // Si a este cliente se le provisiona el mes. Lo declara una persona: Avancys no distingue al
+    // cliente público, y de eso depende que el servicio de un mes cuente en ese mes o en el
+    // siguiente, cuando sale la factura.
+    const { data: provision } = identificacion
+      ? await database.from('psi_cliente_provision').select('activo,nota,marcado_at').eq('avancys_ref_num', identificacion).maybeSingle()
+      : { data: null };
+
+    let oportunidades = [];
+    let emparejamiento = 'sin_coincidencias';
+    if (enlace?.client_id) {
+      const { data } = await database.from('psi_sales_opportunities')
+        .select('id,company_name,client_id').eq('client_id', enlace.client_id).limit(50);
+      oportunidades = await enriquecerOportunidades(database, data);
+      emparejamiento = 'enlace_confirmado';
+    } else if (palabrasDelNombre(nombre).length > 0) {
+      const palabras = palabrasDelNombre(nombre);
+      const { data } = await database.from('psi_sales_opportunities')
+        .select('id,company_name,client_id').ilike('company_name', `%${palabras[0]}%`).limit(100);
+      const candidatas = (Array.isArray(data) ? data : []).filter(fila => nombreCoincide(fila.company_name, palabras));
+      oportunidades = await enriquecerOportunidades(database, candidatas);
+      if (oportunidades.length > 0) emparejamiento = 'nombre_aproximado';
+    }
+    // El candidato a enlazar: el cliente del CRM que más veces aparece entre las coincidencias.
+    // Se propone, no se guarda: lo confirma una persona.
+    const candidato = enlace?.client_id ? null : clienteMasFrecuente(oportunidades);
+
+    let avancys = null;
+    let motivo = null;
+    try {
+      const lector = crearLectorAvancys();
+      if (!lector) motivo = 'Avancys no esta configurado en este ambiente.';
+      else if (!identificacion) motivo = 'Este cliente no tiene identificacion en Avancys.';
+      else avancys = await lector.puestosDelCliente({ identificacion });
+    } catch (error) {
+      motivo = `Avancys no respondio: ${error?.codigo || 'error'}`;
+    }
+
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({
+      avancys,
+      motivo,
+      oportunidades,
+      // Que quien lea sepa de dónde salió esta lista: de un enlace que alguien confirmó, o de un
+      // parecido de nombres.
+      emparejamiento,
+      candidato_enlace: candidato,
+      // `null` es "nadie lo ha dicho", distinto de `false`, que es "alguien dijo que no".
+      se_provisiona: provision ? provision.activo === true : null,
+    });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// El devengado del mes: el servicio prestado a los clientes de mes vencido, esté facturado o no.
+//
+// Es lo que hoy se calcula a mano en un Excel después de bajar un archivo de Avancys. A quién se le
+// aplica no sale del ERP —Avancys no distingue al cliente público, medido el 2026-10-29— sino de la
+// lista declarada en `psi_cliente_provision`, que marca una persona.
+//
+// Se entrega como CÁLCULO PROPIO, no como "la provisión de Contabilidad". Contra la hoja de agosto
+// el total queda dentro del 4% y siete de diez clientes dentro del 8%, pero tres se separan y
+// todavía no se sabe por qué. Mientras no se sepa, decir que son el mismo número sería mentir.
+app.get('/api/siio/avancys/devengado', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'siio');
+    const database = requireDb();
+    const mes = String(req.query.mes || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(mes)) {
+      const error = new Error('Debe indicar el mes en formato AAAA-MM.');
+      error.status = 400;
+      throw error;
+    }
+    const { data: declarados } = await database.from('psi_cliente_provision')
+      .select('avancys_ref_num,avancys_nombre').eq('activo', true);
+    const lista = Array.isArray(declarados) ? declarados : [];
+    res.set('Cache-Control', 'private, no-store');
+    if (lista.length === 0) {
+      return res.json({ mes, total: 0, clientes: [], sin_encontrar: [], declarados: 0, as_of: null,
+        motivo: 'Nadie ha declarado todavia a que clientes se les provisiona el mes.' });
+    }
+    const lector = crearLectorAvancys();
+    if (!lector) {
+      return res.json({ mes, total: 0, clientes: [], sin_encontrar: [], declarados: lista.length, as_of: null,
+        motivo: 'Avancys no esta configurado en este ambiente.' });
+    }
+    const leido = await lector.devengadoDelMes({
+      mes, identificaciones: lista.map(fila => fila.avancys_ref_num),
+    });
+    return res.json({ ...leido, declarados: lista.length, motivo: null });
+  } catch (error) {
+    if (error?.codigo) {
+      return res.json({ mes: String(req.query.mes || ''), total: 0, clientes: [], sin_encontrar: [], declarados: 0, as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });
+    }
+    sendError(res, error, error?.status || 400);
+  }
+});
+
+// La facturación del mes por cliente, leída de Avancys.
+//
+// La Torre declaraba "Concentración de clientes" como pendiente, y el dato que faltaba era
+// literalmente "ingresos por cliente desde Avancys". Ya se puede: medido el 2026-10-29, dos
+// clientes son cerca de la mitad de la facturación, y eso hoy no aparece en ninguna pantalla.
+//
+// No reemplaza la hoja contable: esto es lo FACTURADO, y la hoja es la provisión de cierre. Son
+// dos números distintos y la pantalla dice cuál está mostrando.
+//
+// Tarda unos veinte segundos: son más de dos mil facturas leídas por páginas contra un ERP ajeno.
+// Por eso se pide cuando alguien abre la sección, no al cargar la Torre.
+app.get('/api/siio/avancys/facturacion-por-cliente', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'siio');
+    const mes = String(req.query.mes || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(mes)) {
+      const error = new Error('Debe indicar el mes en formato AAAA-MM.');
+      error.status = 400;
+      throw error;
+    }
+    const lector = crearLectorAvancys();
+    res.set('Cache-Control', 'private, no-store');
+    if (!lector) {
+      return res.json({ mes, total: 0, clientes: [], concentracion: null, as_of: null, motivo: 'Avancys no esta configurado en este ambiente.' });
+    }
+    const leido = await lector.facturacionPorCliente({ mes });
+    return res.json({ ...leido, motivo: null });
+  } catch (error) {
+    if (error?.codigo) {
+      return res.json({ mes: String(req.query.mes || ''), total: 0, clientes: [], concentracion: null, as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });
+    }
+    sendError(res, error, error?.status || 400);
+  }
+});
+
+// Declarar si a un cliente se le provisiona el servicio del mes.
+//
+// Contabilidad lo explicó el 2026-10-29: sólo los clientes públicos se facturan mes vencido, así
+// que su servicio de agosto se registra en agosto aunque la factura salga en septiembre. A los
+// demás se les factura actualizado y no hay nada que provisionar.
+//
+// Avancys no distingue al cliente público —medido, sus etiquetas son ciclos de facturación— así
+// que esto se declara, no se deduce. Y queda escrito quién lo declaró: de esta marca depende en
+// qué mes cuenta la plata.
+//
+// Quitar no borra la fila: deja `activo = false`, para que quede el rastro de que alguien lo quitó.
+app.put('/api/avancys/cliente-provision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const refNum = String(req.body?.avancys_ref_num || '').trim();
+    if (!refNum) {
+      const error = new Error('Debe indicar la identificacion del cliente en Avancys.');
+      error.status = 400;
+      throw error;
+    }
+    const activo = req.body?.activo !== false;
+    const { error } = await database.from('psi_cliente_provision').upsert({
+      avancys_ref_num: refNum,
+      avancys_nombre: String(req.body?.avancys_nombre || '').trim() || null,
+      activo,
+      nota: String(req.body?.nota || '').trim() || null,
+      marcado_por: currentProfile.id,
+      marcado_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'avancys_ref_num' });
+    if (error) {
+      const fallo = new Error('No fue posible guardar la marca.');
+      fallo.status = 500;
+      throw fallo;
+    }
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ avancys_ref_num: refNum, activo });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Confirmar que un cliente del CRM y uno de Avancys son el mismo.
+//
+// Lo guarda una persona, no un algoritmo de parecido: el sistema propone el candidato y alguien
+// dice que sí. A partir de ahí el emparejamiento deja de ser aproximado.
+//
+// Pide permiso de edición, no de lectura: esto afirma algo sobre los datos de la empresa.
+app.put('/api/avancys/cliente-enlace', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const clientId = String(req.body?.client_id || '').trim();
+    const refNum = String(req.body?.avancys_ref_num || '').trim();
+    if (!clientId || !refNum) {
+      const error = new Error('Debe indicar el cliente del CRM y la identificacion de Avancys.');
+      error.status = 400;
+      throw error;
+    }
+    // Que el cliente exista de verdad: un enlace a un id inventado no vale nada.
+    const { data: cliente } = await database.from('psi_sales_clients').select('id,company_name').eq('id', clientId).maybeSingle();
+    if (!cliente) {
+      const error = new Error('El cliente del CRM no existe.');
+      error.status = 404;
+      throw error;
+    }
+    const { error } = await database.from('psi_cliente_avancys').upsert({
+      client_id: clientId,
+      avancys_ref_num: refNum,
+      avancys_nombre: String(req.body?.avancys_nombre || '').trim() || null,
+      confirmado_por: currentProfile.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'client_id' });
+    // 23505: ese cliente de Avancys ya está enlazado a OTRO cliente del CRM. Son dos registros del
+    // CRM para el mismo cliente; eso se arregla allá, no duplicando el enlace.
+    if (error) {
+      const conflicto = new Error(error.code === '23505'
+        ? 'Ese cliente de Avancys ya esta enlazado a otro cliente del CRM.'
+        : 'No fue posible guardar el enlace.');
+      conflicto.status = error.code === '23505' ? 409 : 500;
+      throw conflicto;
+    }
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ client_id: clientId, avancys_ref_num: refNum, company_name: cliente.company_name });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/agt003/closure-form', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const id = String(req.query.opportunity_id || req.query.id || '');
+    if (!id) { const error = new Error('Debe indicar la oportunidad.'); error.status = 400; throw error; }
+    const opportunity = await closureFormOpportunity(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await closureFormState(database, opportunity));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.put('/api/agt003/closure-form', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const id = String(req.query.opportunity_id || req.query.id || '');
+    if (!id) { const error = new Error('Debe indicar la oportunidad.'); error.status = 400; throw error; }
+    const opportunity = await closureFormOpportunity(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const { form: patch, sites: cleanSites, posts: cleanPosts, avisos } = cleanClosureFormInput(req.body);
+    // Semántica de parche: la cabecera se mezcla con lo guardado, y las listas se reemplazan SÓLO si vienen en el
+    // cuerpo. Así el chat puede llenar dos campos sin borrar los puestos que el comercial ya escribió.
+    const sendsSites = Array.isArray(req.body?.sites);
+    const sendsPosts = Array.isArray(req.body?.posts);
+    const stored = await must(database.from('psi_sales_closure_forms').select(CLOSURE_FORM_SELECT).eq('opportunity_id', id).maybeSingle());
+    const previous = stored ? await closureFormChildren(database, stored.id) : { sites: [], posts: [] };
+    const base = stored || autofillClosureForm(opportunity);
+    const merged = Object.fromEntries(CLOSURE_FORM_FIELD_KEYS.map(key => [key, Object.prototype.hasOwnProperty.call(patch, key) ? patch[key] : (base?.[key] ?? null)]));
+    const sites = sendsSites ? cleanSites : previous.sites;
+    const posts = sendsPosts ? cleanPosts : previous.posts;
+    const completeness = closureFormCompleteness({ form: merged, sites, posts });
+    const now = new Date().toISOString();
+    const row = {
+      ...merged,
+      opportunity_id: id,
+      status: completeness.complete ? 'completo' : 'borrador',
+      updated_by: currentProfile.id,
+      updated_at: now,
+      // Queda la primera vez que estuvo completo: si después se le quita un dato, no se borra ese hecho.
+      completed_at: stored?.completed_at || (completeness.complete ? now : null),
+      completed_by: stored?.completed_by || (completeness.complete ? currentProfile.id : null),
+      ...(stored ? {} : { created_by: currentProfile.id }),
+    };
+    const saved = stored
+      ? await must(database.from('psi_sales_closure_forms').update(row).eq('id', stored.id).select('id').single())
+      : await must(database.from('psi_sales_closure_forms').insert(row).select('id').single());
+    if (sendsSites) {
+      await must(database.from('psi_sales_closure_form_sites').delete().eq('form_id', saved.id).select('id'));
+      if (sites.length) await must(database.from('psi_sales_closure_form_sites').insert(sites.map(site => ({ ...site, form_id: saved.id }))).select('id'));
+    }
+    if (sendsPosts) {
+      await must(database.from('psi_sales_closure_form_posts').delete().eq('form_id', saved.id).select('id'));
+      if (posts.length) await must(database.from('psi_sales_closure_form_posts').insert(posts.map(post => ({ ...post, form_id: saved.id }))).select('id'));
+    }
+    const state = await closureFormState(database, opportunity);
+    res.json(avisos.length ? { ...state, avisos } : state);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// AGT-003 — Chat de registro en Mi día (agt003.chat-registro; decisión del 2026-10-15). El comercial cuenta lo que hizo;
+// Vig-IA propone cambios sobre SUS oportunidades y nada se guarda hasta que pulsa "Confirmar". Al confirmar se usan las
+// mismas reglas del formulario y de la ficha (createOpportunityForProfile, updateOpportunityForProfile,
+// addInteractionForProfile). Cupo propio de 100 mensajes al día para el equipo (configurable en IT → Agentes).
+const CHAT_TURN_PUBLIC_FIELDS = 'id,user_text,status,reply_text,proposal,proposal_status,applied,decided_at,created_at,finished_at';
+const CHAT_CLOSED_STAGES = new Set(['aprobado', 'descartado', 'perdido']);
+const CHAT_FORM_KEYS = [
+  'company_name', 'client_id', 'owner_id', 'stage_code', 'service_type_code', 'offer_value', 'expected_close_date', 'next_action_at',
+  'quote_city', 'regional_nombre', 'sede', 'economic_sector', 'decision_maker_name', 'decision_maker_email', 'decision_maker_phone',
+  'loss_reason_code', 'loss_notes', 'observaciones', 'commission_rate', 'customer_segment', ...CLIENT_PROFILE_FIELDS,
+];
+function chatError(message, status, code) { const error = new Error(message); error.status = status; if (code) error.code = code; return error; }
+async function requireChatAccess(database, profile) {
+  requireModuleAction(profile, 'opportunities');
+  const assignments = await must(database.from('psi_profile_area_assignments').select('area_code,subarea_code').eq('profile_id', profile.id));
+  const allowed = [{}, ...(assignments || [])].some(assignment => can(profile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, crmResource(profile.id, assignment)));
+  if (!allowed) throw chatError('No tiene acceso al chat de Vig-IA.', 403);
+}
+async function chatTeamQuota() {
+  const policy = capabilityPolicy({
+    effective: await getEffectiveAgentConfiguration(AGT003_AGENT_ID),
+    fallbackEffective: codeDefaultEffectiveConfiguration(AGT003_AGENT_ID),
+    capability: AGT003_CHAT_CAPABILITY,
+  });
+  return policy?.quota?.team || { per: 'day', max: CHAT_REGISTRO_DEFAULT_DAILY_MAX, period_start: bogotaDayStartIso(new Date()) };
+}
+async function chatState(database, profile) {
+  const teamQuota = await chatTeamQuota();
+  const [turns, used] = await Promise.all([
+    database.from('psi_agt003_chat_turns').select(CHAT_TURN_PUBLIC_FIELDS).eq('actor_id', profile.id).gte('created_at', bogotaDayStartIso(new Date())).order('created_at', { ascending: true }).limit(60),
+    database.from('psi_agt003_chat_turns').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('created_at', teamQuota.period_start),
+  ]);
+  if (turns.error) { if (turns.error.code === '42P01') return { available: false, turns: [] }; throw turns.error; }
+  if (used.error) throw used.error;
+  return { available: isAgt003CopilotConfigured(process.env), turns: turns.data || [], used: used.count || 0, max: teamQuota.max };
+}
+// Oportunidades comerciales abiertas del propio comercial (más recientes primero), con los datos del perfil.
+async function loadChatOpportunities(database, profile) {
+  const rows = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('owner_id', profile.id).order('updated_at', { ascending: false }).limit(400));
+  const open = (rows || []).filter(row => row.service_type_code !== 'licitacion_publica' && !CHAT_CLOSED_STAGES.has(row.stage_code));
+  return open.length ? attachCommercialMetadata(database, open) : [];
+}
+// Una propuesta vieja sin confirmar deja de ser confirmable cuando Vig-IA propone algo nuevo: el comercial veía dos
+// tarjetas con "Confirmar" y podía guardar la vieja encima de la nueva. Queda como reemplazada, no como descartada por
+// él. Nunca rompe el turno: si no se puede marcar, se avisa en el log y la tarjeta vieja sigue como estaba.
+async function supersedeOlderChatProposals(database, { actorId, turnId, now = new Date() }) {
+  try {
+    const { data, error } = await database.from('psi_agt003_chat_turns').select('id,proposal,proposal_status')
+      .eq('actor_id', actorId).eq('proposal_status', 'pendiente').neq('id', turnId).order('created_at', { ascending: true }).limit(60);
+    if (error) throw error;
+    const plan = planSupersededChatProposals(data, { turnId, now });
+    for (const { id, patch } of plan) {
+      const { error: patchError } = await database.from('psi_agt003_chat_turns').update(patch).eq('id', id).eq('proposal_status', 'pendiente');
+      if (patchError) throw patchError;
+    }
+    return plan.length;
+  } catch (error) {
+    console.warn('agt003 chat: no se pudo reemplazar la propuesta anterior', { code: error?.code || null });
+    return 0;
+  }
+}
+async function chatCanCreate(database, profile) {
+  if (profile.role !== 'comercial') return true;
+  try { await requireNoPendingDecisions(database, profile.id); return true; }
+  catch (error) { if (error?.code === 'CRM_PENDING_DECISIONS') return false; throw error; }
+}
+// Traduce las referencias a oportunidades reales, revisa duplicados y la regla de pendientes, y deja cada acción con su
+// descripción para la tarjeta.
+async function resolveChatProposal(database, { output, refs, services, canCreate }) {
+  const serviceName = code => services.find(service => service.code === code)?.name || code;
+  const avisos = [...output.avisos];
+  const acciones = [];
+  let clients = null;
+  for (const action of output.acciones) {
+    if (action.tipo === 'crear_oportunidad') {
+      if (!canCreate) { avisos.push(`No incluí el cliente nuevo ${action.nueva.company_name}: primero decida sus pendientes en Mi día.`); continue; }
+      clients ||= await must(database.from('psi_sales_clients').select('id,company_name'));
+      const normalized = normalizeClientName(action.nueva.company_name);
+      if (clients.some(client => normalizeClientName(client.company_name) === normalized)) {
+        avisos.push(`${action.nueva.company_name} ya existe en el CRM, así que no lo creé de nuevo. Si es suyo, cuénteme sobre esa oportunidad; si es de otro comercial, hable con su gerente.`);
+        continue;
+      }
+      const parecidos = typeaheadMatches(clients, action.nueva.company_name).map(client => client.company_name).slice(0, 3);
+      const { cliente, lineas } = describeChatAction(action, { serviceName });
+      acciones.push({ ...action, cliente, lineas, ...(parecidos.length ? { parecidos } : {}) });
+      continue;
+    }
+    const target = refs.get(action.ref);
+    if (!target) continue;
+    const { ref, ...rest } = action;
+    void ref;
+    const { lineas } = describeChatAction(action, { labelFor: () => target.label });
+    acciones.push({ ...rest, opportunity_id: target.id, cliente: target.city ? `${target.label} · ${target.city}` : target.label, lineas });
+  }
+  return { acciones, avisos };
+}
+async function applyChatAction(database, profile, action) {
+  if (action.tipo === 'registrar_seguimiento') {
+    await addInteractionForProfile(database, profile, action.opportunity_id, { notes: action.nota, occurred_at: chatDayToIso(action.fecha), interaction_type: action.canal });
+    return { opportunity_id: action.opportunity_id };
+  }
+  if (action.tipo === 'proximo_seguimiento') {
+    await ensureOpportunityAccess(database, action.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    await must(database.from('psi_sales_opportunities').update({ next_action_at: chatDayToIso(action.fecha) }).eq('id', action.opportunity_id).select('id').single());
+    return { opportunity_id: action.opportunity_id };
+  }
+  if (action.tipo === 'actualizar_datos') {
+    const current = await loadLeadAnalysisOpportunity(database, action.opportunity_id);
+    const body = Object.fromEntries(CHAT_FORM_KEYS.map(key => [key, current[key] ?? (key === 'current_security_provider_none' ? false : '')]));
+    Object.assign(body, action.datos);
+    if (action.datos.current_security_provider) body.current_security_provider_none = false;
+    await updateOpportunityForProfile(database, profile, action.opportunity_id, body);
+    return { opportunity_id: action.opportunity_id };
+  }
+  if (action.tipo === 'mover_etapa') {
+    // El chat sólo propone; aquí se aplica por la MISMA puerta que el botón "Decidir" de la ficha, incluidas la nota
+    // obligatoria, la próxima gestión de una etapa que no cierra y el competidor opcional de la pérdida.
+    const body = action.decision === 'avanzar'
+      ? { decision: 'advance', stage_code: action.etapa, notes: action.nota, next_action_at: chatDayToIso(action.proxima_fecha) || null }
+      : { decision: 'lose', loss_reason_code: action.motivo, notes: action.nota, ...(action.competidor ? { competitor_name: action.competidor } : {}) };
+    await recordOpportunityDecision(database, profile, action.opportunity_id, body);
+    return { opportunity_id: action.opportunity_id };
+  }
+  if (action.tipo === 'crear_oportunidad') {
+    const created = await createOpportunityForProfile(database, profile, {
+      ...action.nueva, owner_id: profile.id, stage_code: 'prospecto', customer_segment: 'cliente_nuevo', offer_value: 0,
+      next_action_at: chatDayToIso(action.proxima_fecha) || null,
+    });
+    if (action.nota) await addInteractionForProfile(database, profile, created.id, { notes: action.nota, occurred_at: chatDayToIso(action.fecha), interaction_type: action.canal || 'nota' });
+    return { opportunity_id: created.id };
+  }
+  throw chatError('Acción no reconocida.', 400);
+}
+
+app.get('/api/agt003/chat', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await chatState(database, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/agt003/chat', async (req, res) => {
+  let turnId = null;
+  let database = null;
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    const mensaje = typeof req.body?.mensaje === 'string' ? req.body.mensaje.trim() : '';
+    if (!mensaje) throw chatError('Escriba un mensaje.', 400);
+    if (mensaje.length > CHAT_MESSAGE_MAX_CHARS) throw chatError(`El mensaje es muy largo (máximo ${CHAT_MESSAGE_MAX_CHARS} caracteres). Divídalo en dos.`, 400);
+    if (!isAgt003CopilotConfigured(process.env)) throw chatError('Vig-IA no está disponible en este momento.', 503);
+    const policy = await resolveAgt003CapabilityPolicy(database, AGT003_CHAT_CAPABILITY, currentProfile);
+    if (!policy) throw new Error('No se pudo leer la configuración de Vig-IA.');
+    if (!policy.enabled) {
+      await recordModelRejection({ capability: AGT003_CHAT_CAPABILITY, model: policy.model, failureCode: AGT003_CAPABILITY_DISABLED_CODE, correlationId: randomUUID() });
+      throw chatError(AGT003_CAPABILITY_DISABLED_MESSAGE, 503, AGT003_CAPABILITY_DISABLED_CODE);
+    }
+    const claim = await claimChatTurn(database, { actorId: currentProfile.id, userText: mensaje, quota: policy.quota });
+    if (claim?.status === 'in_progress') throw chatError('Vig-IA todavía está respondiendo su mensaje anterior. Espere un momento.', 409);
+    if (claim?.status === 'quota') {
+      const personal = claim.scope === 'actor';
+      const code = personal ? 'AGT003_CHAT_PERSONAL_QUOTA' : 'AGT003_CHAT_QUOTA';
+      await recordModelRejection({ capability: AGT003_CHAT_CAPABILITY, model: policy.model, failureCode: code, correlationId: randomUUID() });
+      throw chatError(chatQuotaMessage(personal ? 'actor' : 'team', claim.used, claim.max), 429, code);
+    }
+    if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el mensaje.');
+    turnId = claim.id;
+    const today = bogotaDay(new Date());
+    const [opportunities, services, stages, lossReasons, competitors, history, canCreate] = await Promise.all([
+      loadChatOpportunities(database, currentProfile),
+      must(database.from('psi_sales_service_types').select('code,name').eq('active', true).order('name')),
+      // Las etapas, los motivos y los competidores salen de la base en cada turno: el chat no puede proponer un valor
+      // que no exista, y un motivo que se desactive deja de ofrecerse sin tocar código.
+      must(database.from('psi_sales_pipeline_stages').select('code,name,stage_order,is_terminal').order('stage_order')),
+      must(database.from('psi_sales_loss_reasons').select('code,name').eq('active', true).order('name')),
+      must(database.from('psi_sales_competitors').select('name').order('name').limit(60)),
+      must(database.from('psi_agt003_chat_turns').select('user_text,reply_text,proposal_status').eq('actor_id', currentProfile.id).eq('status', 'completed').gte('created_at', bogotaDayStartIso(new Date())).order('created_at', { ascending: false }).limit(CHAT_HISTORY_TURNS)),
+      chatCanCreate(database, currentProfile),
+    ]);
+    const { refs, rows } = assignChatRefs(opportunities);
+    const commercialServices = (services || []).filter(service => service.code !== 'licitacion_publica');
+    const input = buildChatInput({ today, comercial: currentProfile.full_name, canCreate, rows, services: commercialServices, stages: stages || [], lossReasons: lossReasons || [], competitors: competitors || [], history: [...(history || [])].reverse(), mensaje });
+    let result;
+    try {
+      result = await runChatTurn({ input, refs, today, serviceCodes: commercialServices.map(service => service.code), stages: stages || [], lossReasons: lossReasons || [], idempotencyKey: turnId, environment: process.env, model: policy.model });
+    } catch (runError) {
+      await database.from('psi_agt003_chat_turns').update({ status: 'failed', failure_code: String(runError?.code || 'AGT003_CHAT_FAILED').toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 96), finished_at: new Date().toISOString() }).eq('id', turnId);
+      turnId = null;
+      const category = classifyAgt003ModelFailure(runError) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+      throw chatError(`${agt003ModelFailureMessage(category, 'chat')} No se descontó de su cupo.`, category === AGT003_MODEL_FAILURE.MODEL_ERROR ? 502 : 503);
+    }
+    const proposal = await resolveChatProposal(database, { output: result.output, refs, services: commercialServices, canCreate });
+    const hasProposal = proposal.acciones.length > 0 || proposal.avisos.length > 0;
+    const { error: finishError } = await database.from('psi_agt003_chat_turns').update({
+      status: 'completed', reply_text: result.output.respuesta.slice(0, 2000), proposal: hasProposal ? proposal : null,
+      proposal_status: proposal.acciones.length ? 'pendiente' : null, model: result.model,
+      input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens, finished_at: new Date().toISOString(),
+    }).eq('id', turnId);
+    if (finishError) throw finishError;
+    if (proposal.acciones.length) await supersedeOlderChatProposals(database, { actorId: currentProfile.id, turnId });
+    turnId = null;
+    res.status(201).json(await chatState(database, currentProfile));
+  } catch (error) {
+    if (turnId && database) {
+      try { await database.from('psi_agt003_chat_turns').update({ status: 'failed', failure_code: 'AGT003_CHAT_INTERNAL', finished_at: new Date().toISOString() }).eq('id', turnId); } catch { /* best effort */ }
+    }
+    if (!error?.status) {
+      console.error(error);
+      return res.status(503).json({ error: 'Vig-IA no pudo responder por ahora. Intente de nuevo en unos minutos.' });
+    }
+    sendError(res, error, error.status);
+  }
+});
+// "Confirmar": aplica la propuesta con las reglas del CRM. Una propuesta se aplica una sola vez (paso atómico
+// pendiente → aplicando). Si ninguna acción se pudo guardar, vuelve a quedar pendiente con el motivo.
+app.post('/api/agt003/chat/confirm', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    const turnId = String(req.body?.turn_id || '');
+    if (!turnId) throw chatError('Solicitud inválida.', 400);
+    const { data: claimed, error: claimError } = await database.from('psi_agt003_chat_turns').update({ proposal_status: 'aplicando' })
+      .eq('id', turnId).eq('actor_id', currentProfile.id).eq('proposal_status', 'pendiente').select('id,proposal').maybeSingle();
+    if (claimError) throw claimError;
+    if (!claimed) {
+      const { data: current } = await database.from('psi_agt003_chat_turns').select('proposal').eq('id', turnId).eq('actor_id', currentProfile.id).maybeSingle();
+      throw chatError(current?.proposal?.[CHAT_SUPERSEDED_BY_KEY]
+        ? 'Esta propuesta quedó reemplazada por lo que contó después. Confirme la tarjeta más reciente.'
+        : 'Esta propuesta ya fue confirmada o descartada.', 409);
+    }
+    const applied = [];
+    // La próxima gestión se guarda ANTES del seguimiento: desde F4 un seguimiento sobre una oportunidad abierta exige
+    // fecha futura, y la propuesta del chat trae las dos cosas como acciones separadas. El índice original se conserva
+    // porque la tarjeta muestra el resultado por índice.
+    const chatActionsInOrder = [...(claimed.proposal?.acciones || []).entries()]
+      .sort(([, a], [, b]) => Number(b?.tipo === 'proximo_seguimiento') - Number(a?.tipo === 'proximo_seguimiento'));
+    for (const [index, action] of chatActionsInOrder) {
+      try {
+        applied.push({ index, ok: true, ...(await applyChatAction(database, currentProfile, action)) });
+      } catch (error) {
+        if (!error?.status) console.error(error);
+        applied.push({ index, ok: false, error: error?.status ? String(error.message || 'No se pudo guardar.').slice(0, 300) : 'No se pudo guardar este cambio.' });
+      }
+    }
+    const anyOk = applied.some(item => item.ok);
+    const { error: finishError } = await database.from('psi_agt003_chat_turns').update({
+      proposal_status: anyOk ? 'confirmada' : 'pendiente', applied, decided_at: anyOk ? new Date().toISOString() : null,
+    }).eq('id', turnId);
+    if (finishError) throw finishError;
+    res.json(await chatState(database, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// F12 con IA (Juan, 2026-10-22): el bloque "qué quedó pendiente y qué proponer" del brief. Lee SÓLO las notas de esa
+// oportunidad y no guarda el resultado: la fila de `psi_agt003_brief_runs` existe para contar el cupo, nada más.
+app.post('/api/agt003/meeting-brief', async (req, res) => {
+  let runId = null;
+  let database = null;
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    const id = String(req.query.id || '');
+    if (!id) throw chatError('Falta la oportunidad.', 400);
+    const access = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    if (access.service_type_code === 'licitacion_publica') throw chatError('El brief es sólo para oportunidades comerciales.', 400);
+    if (!isAgt003CopilotConfigured(process.env)) throw chatError('Vig-IA no está disponible en este momento.', 503);
+    const policy = await resolveAgt003CapabilityPolicy(database, AGT003_BRIEF_CAPABILITY, currentProfile);
+    if (!policy) throw new Error('No se pudo leer la configuración de Vig-IA.');
+    if (!policy.enabled) {
+      await recordModelRejection({ capability: AGT003_BRIEF_CAPABILITY, model: policy.model, failureCode: AGT003_CAPABILITY_DISABLED_CODE, correlationId: randomUUID() });
+      throw chatError(AGT003_CAPABILITY_DISABLED_MESSAGE, 503, AGT003_CAPABILITY_DISABLED_CODE);
+    }
+    const claim = await claimBriefRun(database, { actorId: currentProfile.id, opportunityId: id, quota: policy.quota });
+    if (claim?.status === 'in_progress') throw chatError('Ya hay un resumen preparándose. Espere un momento.', 409);
+    if (claim?.status === 'quota') {
+      const personal = claim.scope === 'actor';
+      const code = personal ? 'AGT003_BRIEF_PERSONAL_QUOTA' : 'AGT003_BRIEF_QUOTA';
+      await recordModelRejection({ capability: AGT003_BRIEF_CAPABILITY, model: policy.model, failureCode: code, correlationId: randomUUID() });
+      throw chatError(briefQuotaMessage(personal ? 'actor' : 'team', claim.used, claim.max), 429, code);
+    }
+    if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar el resumen.');
+    runId = claim.id;
+    const [opportunity, interactions] = await Promise.all([
+      loadLeadAnalysisOpportunity(database, id),
+      must(database.from('psi_sales_interactions').select('interaction_type,notes,occurred_at').eq('opportunity_id', id).order('occurred_at', { ascending: false }).limit(30)),
+    ]);
+    const input = buildBriefInput({
+      cliente: opportunity.company_name, etapa: opportunity.stage_name, servicio: opportunity.service_type_name,
+      hoy: bogotaDay(new Date()), interactions: interactions || [],
+    });
+    let result;
+    try {
+      result = await runBriefSummary({ input, idempotencyKey: runId, environment: process.env, model: policy.model });
+    } catch (runError) {
+      await database.from('psi_agt003_brief_runs').update({ status: 'failed', failure_code: String(runError?.code || 'AGT003_BRIEF_FAILED').toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 96), finished_at: new Date().toISOString() }).eq('id', runId);
+      runId = null;
+      const category = classifyAgt003ModelFailure(runError) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+      throw chatError(`${agt003ModelFailureMessage(category, 'brief')} No se descontó de su cupo.`, category === AGT003_MODEL_FAILURE.MODEL_ERROR ? 502 : 503);
+    }
+    const { error: finishError } = await database.from('psi_agt003_brief_runs').update({
+      status: 'completed', model: result.model, input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens, finished_at: new Date().toISOString(),
+    }).eq('id', runId);
+    if (finishError) throw finishError;
+    runId = null;
+    res.json({ ...result.output, prepared_at: new Date().toISOString(), notes_used: input.notas.length });
+  } catch (error) {
+    if (runId && database) {
+      try { await database.from('psi_agt003_brief_runs').update({ status: 'failed', failure_code: 'AGT003_BRIEF_INTERNAL', finished_at: new Date().toISOString() }).eq('id', runId); } catch { /* best effort */ }
+    }
+    if (!error?.status) {
+      console.error(error);
+      return res.status(503).json({ error: 'Vig-IA no pudo preparar el resumen por ahora. Intente de nuevo en unos minutos.' });
+    }
+    sendError(res, error, error.status);
+  }
+});
+
+app.post('/api/agt003/chat/discard', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireChatAccess(database, currentProfile);
+    const turnId = String(req.body?.turn_id || '');
+    if (!turnId) throw chatError('Solicitud inválida.', 400);
+    const { error } = await database.from('psi_agt003_chat_turns').update({ proposal_status: 'descartada', decided_at: new Date().toISOString() })
+      .eq('id', turnId).eq('actor_id', currentProfile.id).eq('proposal_status', 'pendiente');
+    if (error) throw error;
+    res.json(await chatState(database, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 // Último ingreso al CRM: una marca por día de Bogotá vía psi_touch_profile_last_seen (migración 111). Se dispara sin
@@ -3460,7 +4865,7 @@ app.get('/api/bootstrap', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
     touchProfileLastSeen(database, currentProfile.id);
-    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
+    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, topClosing, monthlyKpis, goals] = await Promise.all([
       must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
       must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
       must(database.from('psi_sales_profiles').select(BOOTSTRAP_PROFILE_SELECT).eq('active', true).order('full_name')),
@@ -3468,13 +4873,12 @@ app.get('/api/bootstrap', async (req, res) => {
       must(database.from('psi_sales_pipeline_stages').select('*').order('stage_order')),
       must(database.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
-      must(database.from('v_psi_sales_stalled_sustentacion').select(opportunitySelect).order('prioritization_date')),
+      must(database.from('psi_sales_competitors').select('id,name').eq('active', true).order('name')),
       must(database.from('v_psi_sales_top3_closing').select(opportunitySelect).order('owner_name')),
       must(database.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
       must(database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500)),
     ]);
     const enrichedOpportunities = await attachCommercialMetadata(database, opportunities);
-    const enrichedStalled = await attachCommercialMetadata(database, stalled);
     const enrichedTopClosing = await attachCommercialMetadata(database, topClosing);
     const totals = enrichedOpportunities.reduce((acc, o) => {
       acc.count += 1;
@@ -3485,7 +4889,7 @@ app.get('/api/bootstrap', async (req, res) => {
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
     const decisionsToday = currentProfile.role === 'comercial' ? await countDecisionsToday(database, currentProfile.id) : 0;
     const leadAnalysesToday = await listLeadAnalysesToday(database, currentProfile.id);
-    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
+    res.json({ ...filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, competitors, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile), decisionsToday, leadAnalysesToday });
   } catch (error) { sendAuthError(res, error); }
 });
 app.all('/api/bootstrap', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
@@ -3796,7 +5200,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeExtrac
   await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const typedVersionsResponse = await database.from('psi_tender_document_versions')
-    .select('id,opportunity_id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,version,extracted_text,created_at')
+    .select('id,opportunity_id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,version,extracted_text,created_at,origin')
     .eq('opportunity_id', opportunityId)
     .eq('current', true);
   if (typedVersionsResponse.error) throw typedVersionsResponse.error;
@@ -3809,6 +5213,9 @@ async function getTenderDocumentRecords(database, opportunityId, { includeExtrac
     uploaded_at: version.created_at, auto_import: true,
     source: version.source, source_url: version.source_url, source_document_id: version.source_document_id,
     opportunity_id: version.opportunity_id, version: version.version, content_hash: version.content_hash,
+    // Quién produjo el documento (migración 150). `null` = sin declarar, y la pantalla lo muestra como tal:
+    // es lo que hay que corregir para que el análisis deje de tratarlo como de un tercero.
+    origin: version.origin || null,
   }, canonicalExtractions.get(version.id), version.extracted_text));
   const documents = [];
   const analyses = [];
@@ -4125,6 +5532,10 @@ async function downloadSecopDocument(doc, referer) {
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
+// ESU publica la descarga como /procesos/descargar/<id> o, desde octubre de 2026, con el nombre del archivo al final
+// (/procesos/descargar/23640/.PLIEGO%20DE%20CONDICIONES....pdf). Con la regla vieja (sólo el id) se descartaban todos los
+// documentos y la conversión de ESU 2026-5 quedó sin documentos (2026-10-20). Un solo segmento extra, nunca subrutas.
+export const ESU_DOCUMENT_DOWNLOAD_PATH = /^\/procesos\/descargar\/\d+(?:\/[^/]+)?\/?$/i;
 async function listEsuDocumentsFromProcessUrl(sourceUrl) {
   const processUrl = String(sourceUrl || '');
   if (!/^https:\/\/esucontratacion\.com\/procesos\/view\/\d+/i.test(processUrl)) throw new Error('La oportunidad no tiene enlace ESU /procesos/view/<id> para importar documentos automáticamente.');
@@ -4133,12 +5544,12 @@ async function listEsuDocumentsFromProcessUrl(sourceUrl) {
   const detail = parseEsuProcessDetail(html, processUrl);
   return (detail.documents || []).filter(d => {
     if (!d.url || !/\/procesos\/descargar\//i.test(d.url)) return false;
-    try { validateOfficialHttpsUrl(d.url, { ...ESU_FETCH_POLICY, allowedPath: /^\/procesos\/descargar\/\d+\/?$/i }); return true; }
+    try { validateOfficialHttpsUrl(d.url, { ...ESU_FETCH_POLICY, allowedPath: ESU_DOCUMENT_DOWNLOAD_PATH }); return true; }
     catch { return false; }
   });
 }
 async function downloadEsuDocument(doc, referer) {
-  const response = await safeOfficialFetch(doc.url, { ...ESU_FETCH_POLICY, allowedPath: /^\/procesos\/descargar\/\d+\/?$/i }, { headers: { 'User-Agent': 'SN-CRM-ESU-Documents/1.0', 'Accept': 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/octet-stream,*/*', 'Referer': referer } });
+  const response = await safeOfficialFetch(doc.url, { ...ESU_FETCH_POLICY, allowedPath: ESU_DOCUMENT_DOWNLOAD_PATH }, { headers: { 'User-Agent': 'SN-CRM-ESU-Documents/1.0', 'Accept': 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/octet-stream,*/*', 'Referer': referer } });
   if (!response.ok) throw new Error(`Documento ${doc.name} respondió ${response.status}`);
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
@@ -4147,19 +5558,9 @@ function esuDocumentId(doc) {
   const match = String(doc?.url || '').match(/\/procesos\/descargar\/(\d+)/i);
   return match ? `esu-${match[1]}` : deterministicDocumentFallbackId({ name: doc?.name, url: doc?.url }).slice(0, 16);
 }
-async function saveTenderDocumentBuffer(database, opportunityId, file, currentProfile, sourceMeta = {}) {
-  const name = cleanFileName(file.name);
-  const buffer = file.buffer;
-  if (!buffer?.length) throw new Error(`Archivo vacío: ${name}`);
-  if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
-  const id = createHash('sha256').update(`${opportunityId}:${sourceMeta.source_document_id || ''}:${name}:${buffer.length}`).digest('hex').slice(0, 24);
-  const storagePath = `${opportunityId}/${id}-${name}`;
-  const documentType = normalizeDocumentType(file.document_type, name);
-  const extractedText = await extractTextFromTenderFile(buffer, name, file.mime_type || '');
-  const { error: uploadError } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: file.mime_type || 'application/octet-stream', upsert: true });
-  if (uploadError) throw uploadError;
-  return { id, name, size: buffer.length, mime_type: file.mime_type || null, document_type: documentType, current: file.current !== false, storage_path: storagePath, uploaded_at: new Date().toISOString(), extracted_text: extractedText, auto_import: !!sourceMeta.auto_import, source_url: sourceMeta.source_url || null, source_document_id: sourceMeta.source_document_id || null };
-}
+// Fuente e identidad de los documentos que una persona carga a mano en el expediente (no vienen de SECOP ni de ESU).
+const TENDER_MANUAL_UPLOAD_SOURCE = 'carga manual';
+const tenderManualUploadDocumentId = buffer => `manual-${createHash('sha256').update(buffer).digest('hex').slice(0, 32)}`;
 async function getCurrentTenderDocumentVersion(database, opportunityId, source, sourceDocumentId) {
   const normalizedSource = String(source || '').trim().toLowerCase();
   const normalizedSourceDocumentId = normalizeTenderSourceDocumentId(sourceDocumentId);
@@ -4310,6 +5711,8 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
   // catálogo de nombres) y lo que el tope deje fuera queda enumerado con
   // identidad y motivo, nunca con la URL firmada de descarga.
   let officialCoverage = null;
+  // Proyecto y definitivo en el mismo portafolio (sin aviso nuevo): qué versiones viejas pasan a historial.
+  let samePortfolioPlan = null;
   if (/community\.secop\.gov\.co/i.test(officialUrl)) {
     const process = await resolveSecopProcessByExactUrl(officialUrl);
     const docs = phaseChange ? phaseChange.docs : await listSecopDocumentsByPortfolio(process.id_del_portafolio);
@@ -4317,6 +5720,7 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     sourceLabel = 'SECOP II';
     sourceContext = { source: 'SECOP II', process_id: process.id_del_proceso, portfolio_id: process.id_del_portafolio, notice_uid: noticeUidFromSecopUrl(officialUrl) };
     const officialDocs = phaseChange ? phaseChange.ordered.documents : docs;
+    if (!phaseChange) samePortfolioPlan = planSamePortfolioObsoleteTenderDocuments(docs.map(doc => ({ name: cleanFileName(doc.nombre_archivo), loadedAt: doc.fecha_carga })));
     const secopSelection = secopOfficialDocumentSelection(officialDocs);
     officialCoverage = secopSelection.coverage;
     // Fase nueva: sólo se bajan los documentos nuevos; los demás ya están vigentes en la oportunidad.
@@ -4386,6 +5790,8 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
           p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
           p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
           p_source_url: version.source_url || null, p_actor_id: currentProfile.id,
+          // Importación oficial (SECOP II / ESU): el origen no se declara, se sabe de dónde se bajó.
+          p_origin: 'entidad',
         });
         if (response.error) throw response.error;
         return response.data;
@@ -4403,9 +5809,25 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
   // fallida (republicación con portafolio nuevo) nunca deja el expediente sin sus documentos vigentes.
   const archivedNames = new Set((phaseChange?.obsolete?.archive || []).map(item => secopDocumentNameKey(item.name)));
   const retiredCount = phaseChange ? await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: phaseChange.ordered.documents.map(doc => cleanFileName(doc.nombre_archivo)).filter(name => !archivedNames.has(secopDocumentNameKey(name))), actorId: currentProfile.id }) : 0;
+  // Mismo portafolio: un documento viejo pasa a historial sólo si su reemplazo ya está vigente en el expediente. Una
+  // descarga fallida de otro documento no lo impide (Cali, 2026-10-20: un tiempo de espera al re-bajar el análisis del
+  // sector, que ya estaba desde el 19-oct, bloqueaba todo); nunca se retira algo cuyo reemplazo falte.
+  let samePortfolioRetired = 0;
+  let samePortfolioReady = [];
+  if (samePortfolioPlan?.archive.length) {
+    await requireTenderDocumentRetirement(database);
+    const currentSecop = await must(database.from('psi_tender_document_versions').select('name').eq('opportunity_id', opportunityId).eq('source', 'secop ii').eq('current', true));
+    const currentKeys = new Set((currentSecop || []).map(row => secopDocumentNameKey(row.name)));
+    samePortfolioReady = samePortfolioPlan.archive.filter(item => currentKeys.has(secopDocumentNameKey(item.replacedBy)));
+    const superseded = new Set(samePortfolioReady.map(item => secopDocumentNameKey(item.name)));
+    if (superseded.size) samePortfolioRetired = await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel, keepNames: [...new Set((currentSecop || []).map(row => row.name))].filter(name => !superseded.has(secopDocumentNameKey(name))), actorId: currentProfile.id });
+  }
+  const samePortfolioOutcome = samePortfolioPlan?.archive.length || samePortfolioPlan?.doubts.length
+    ? { retired_count: samePortfolioRetired, archived: samePortfolioReady, archive_waiting: samePortfolioPlan.archive.filter(item => !samePortfolioReady.includes(item)), archive_doubts: samePortfolioPlan.doubts }
+    : {};
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
   const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
-  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
+  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, ...samePortfolioOutcome, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
   const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
   if (beginRefresh.error) throw beginRefresh.error;
   const refreshToken = String(beginRefresh.data || '').trim();
@@ -4443,7 +5865,7 @@ async function importOfficialTenderDocuments(database, opportunityId, opportunit
     ...refreshSummary,
     imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     official_document_coverage: officialCoverage,
-    ...(phaseChange ? { changed_count: refreshSummary.new_count + refreshSummary.updated_count, retired_count: retiredCount, incoming_names: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, archive_doubts: phaseChange.obsolete.doubts } : {}),
+    ...(phaseChange ? { changed_count: refreshSummary.new_count + refreshSummary.updated_count, retired_count: retiredCount, incoming_names: phaseChange.incomingNames, archived: phaseChange.obsolete.archive, archive_doubts: phaseChange.obsolete.doubts } : samePortfolioOutcome),
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }
@@ -4526,6 +5948,43 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
     }
   }
   return { id: opportunityId, duplicate: !!conversion.duplicate, document_import_status, document_import_error };
+}
+/**
+ * Crear a mano un proceso que no está en SECOP (Juan, 2026-10-29). Mismo destino que una conversión del Radar —la
+ * pareja licitación + oportunidad de la que cuelga todo el seguimiento— con los datos que declara una persona.
+ *
+ * Qué NO hace, porque no hay fuente oficial de la cual importar: no crea trabajo de procesamiento ni importa
+ * documentos. Los documentos entran por la carga manual y el primer análisis lo pide el botón "Volver a analizar",
+ * que desde el 2026-10-29 también lanza el primero cuando no hay ninguno.
+ */
+async function createManualTenderProcess(database, body, currentProfile) {
+  if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para crear procesos a mano.');
+  // Mismo responsable por omisión que la conversión: la encargada de Licitaciones, salvo que quien registra sea
+  // comercial, en cuyo caso el proceso queda a su nombre.
+  const owner = currentProfile.role === 'comercial' ? currentProfile : await findTenderOwner(database, currentProfile);
+  try {
+    const created = await callManualTenderOpportunityCreation(database, { ...(body || {}), owner_id: owner.id }, currentProfile);
+    return { id: created.opportunity_id, opportunity_id: created.opportunity_id, tender_id: created.tender_id, stable_key: created.stable_key };
+  } catch (error) {
+    throw manualTenderProcessFailure(error);
+  }
+}
+/**
+ * El error que ve quien registra. La función de la 165 puede no estar todavía —el código tolera que la migración no
+ * haya corrido— y ese caso no es un 400 de datos: es una capacidad que falta.
+ */
+function manualTenderProcessFailure(error) {
+  if (error?.status) return error;
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  if (code === 'PGRST202' || code === '42883' || message.includes('psi_create_manual_tender_opportunity')) {
+    const unavailable = new Error('Crear procesos a mano todavía no está habilitado en la base de datos (falta aplicar la migración 165).');
+    unavailable.status = 503;
+    return unavailable;
+  }
+  const mapped = new Error(message || 'No fue posible crear el proceso.');
+  mapped.status = code === '23505' ? 409 : code === '42501' ? 403 : 400;
+  return mapped;
 }
 async function markTenderOpportunityDiscarded(database, opportunityId, currentProfile, reason) {
   await ensureTenderOpportunity(database, opportunityId, currentProfile);
@@ -4665,6 +6124,8 @@ function buildTenderProcessingWorkerDeps(database) {
             p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
             p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
             p_source_url: version.source_url || null, p_actor_id: actor.requested_by,
+            // Importación oficial por el trabajador de procesamiento: mismo caso que arriba.
+            p_origin: 'entidad',
           });
           if (response.error) throw response.error;
           return response.data;
@@ -4916,10 +6377,36 @@ function buildTenderProcessingWorkerDeps(database) {
   };
 }
 
+// Una licitación sin documentos no siempre es un expediente que alguien deba completar: casi siempre
+// la entidad todavía no los publicó y el pipeline ya tiene cita para volver a mirar
+// (tender-empty-discovery.js). Hasta el 2026-10-29 esa razón quedaba escrita en el trabajo y la bandeja
+// igual mostraba "Completar o importar documentos", pidiéndole a una persona algo que no tenía cómo
+// resolver. Esto la trae para que la tarjeta pueda decir lo que de verdad está pasando. Nunca lanza:
+// si la lectura falla, la tarjeta se comporta como antes.
+async function readTenderDocumentsPendingSource(database, opportunityId) {
+  if (!opportunityId) return null;
+  try {
+    const { data } = await database.from('psi_tender_processing_jobs')
+      .select('status,last_error_code,last_error_message,next_attempt_at,attempt_count')
+      .eq('opportunity_id', opportunityId)
+      .in('last_error_code', [TENDER_DOCUMENTS_NOT_PUBLISHED_CODE, TENDER_EMPTY_DISCOVERY_EXHAUSTED_CODE])
+      .order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    if (!data?.last_error_code) return null;
+    return {
+      reason_code: data.last_error_code,
+      reason: data.last_error_message || null,
+      next_check_at: data.next_attempt_at || null,
+      attempt: Number(data.attempt_count || 0),
+      parked: data.status === 'needs_attention',
+    };
+  } catch (_error) { return null; }
+}
+
 export async function buildTenderOpportunitySummary(database, tender, { opportunity = null, latestDecision = null } = {}) {
   const fallback = {
     ...dbTenderToPublic(tender), opportunity_id: tender.converted_opportunity_id,
     document_count: 0, missing_document_count: 0, document_import_status: 'error', document_import_error: null,
+    documents_pending_source: null,
     go_no_go: 'Pendiente', recommendation: 'Pendiente', decision: latestDecision?.decision || null,
     decided_by_name: latestDecision?.psi_sales_profiles?.full_name || null, decided_at: latestDecision?.decided_at || null,
     tender_offer_status: opportunity?.tender_offer_status || 'pendiente_decision', risk: 'Pendiente', checklist_progress: null,
@@ -4935,6 +6422,7 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     archived_at: opportunity?.archived_at || null,
     archived_by: opportunity?.archived_by || null,
     archive_note: opportunity?.archive_note || null,
+    vigia_analysis: await readTenderOpportunityVigiaAnalysis(database, tender.converted_opportunity_id),
   };
   try {
     const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id);
@@ -4944,8 +6432,13 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     const importFailureIsCurrent = records.import_error && (!analysis || !analysis.created_at || !records.import_error.created_at || Date.parse(records.import_error.created_at) >= Date.parse(analysis.created_at));
     const preparation = preparationRecords.preparation;
     const recommendation = importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente';
+    // Sólo cuando no hay ni un documento vigente: con documentos cargados el expediente ya avanzó y
+    // la espera de la fuente dejó de ser lo que explica la tarjeta.
+    const documentsPendingSource = currentDocuments.length || importFailureIsCurrent
+      ? null
+      : await readTenderDocumentsPendingSource(database, tender.converted_opportunity_id);
     return {
-      ...fallback, document_count: currentDocuments.length,
+      ...fallback, document_count: currentDocuments.length, documents_pending_source: documentsPendingSource,
       missing_document_count: (analysis?.checklist || []).filter(item => /pendiente|falta/i.test(String(item))).length,
       document_import_status: importFailureIsCurrent ? 'fallo_importacion' : analysis ? 'analisis_generado' : currentDocuments.length ? 'documentos_cargados' : 'pendiente_documentos',
       document_import_error: importFailureIsCurrent ? 'La importación automática de documentos falló. Reintente o cargue los documentos manualmente.' : null,
@@ -4957,6 +6450,31 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
   } catch (_error) { return fallback; }
 }
 export const buildTenderDossierSummary = buildTenderOpportunitySummary;
+// Último análisis oficial de Vig-IA (AGT-002, corrida canónica) y si hay uno en cola o corriendo. La tarjeta de la
+// bandeja lo muestra en vez del estado del preanálisis antiguo; si la lectura falla, la tarjeta sigue sin él.
+const TENDER_VIGIA_ACTIVE_JOB_STATUSES = ['QUEUED', 'CLAIMED', 'RUNNING', 'NEEDS_ATTENTION'];
+async function readTenderOpportunityVigiaAnalysis(database, opportunityId) {
+  if (!opportunityId) return null;
+  try {
+    const [runs, jobs] = await Promise.all([
+      must(database.from('psi_tender_analysis_runs').select('id,analysis_kind,completed_at,recommendation:result->recommendation')
+        .eq('opportunity_id', opportunityId).eq('canonical', true).eq('status', 'completed').order('completed_at', { ascending: false }).limit(1)),
+      must(database.from('psi_agt002_initial_analysis_jobs').select('status').eq('opportunity_id', opportunityId)
+        .in('status', TENDER_VIGIA_ACTIVE_JOB_STATUSES).limit(1)),
+    ]);
+    const run = runs?.[0] || null;
+    const recommendation = run?.recommendation && typeof run.recommendation === 'object' ? run.recommendation : null;
+    return {
+      run_id: run?.id || null,
+      analysis_kind: run?.analysis_kind || null,
+      completed_at: run?.completed_at || null,
+      recommendation_kind: typeof recommendation?.kind === 'string' ? recommendation.kind : null,
+      recommendation_label: typeof recommendation?.label === 'string' ? recommendation.label : null,
+      confidence: typeof recommendation?.confidence === 'string' ? recommendation.confidence : null,
+      in_progress: Boolean(jobs?.length),
+    };
+  } catch (_error) { return null; }
+}
 
 const tenderDossierDefaultLimit = 50;
 const tenderDossierMaxLimit = 50;
@@ -5040,7 +6558,12 @@ app.post('/api/tender-go-no-go-decision', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
     await requireTenderAnalysisFoundation(database);
-    res.status(201).json(await callTenderGoNoGoDecision(database, req.body || {}, currentProfile));
+    const decided = await callTenderGoNoGoDecision(database, req.body || {}, currentProfile);
+    // Un NO-GO deja la oferta en cerrada_no_go: ahí nace el acta.
+    if (decided?.decision?.tender_offer_status === 'cerrada_no_go') {
+      await draftClosureActaAfterClosure(database, req.body?.opportunity_id);
+    }
+    res.status(201).json(decided);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -5064,14 +6587,144 @@ app.post('/api/tender-offer-status', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
-    res.status(201).json(await callTenderOfferStatusTransition(requireDb(), req.body || {}, currentProfile));
+    const database = requireDb();
+    const transition = await callTenderOfferStatusTransition(database, req.body || {}, currentProfile);
+    // Sólo los estados finales cierran la licitación; los demás no abren acta.
+    if (['adjudicada', 'no_adjudicada'].includes(String(req.body?.to_status || ''))) {
+      await draftClosureActaAfterClosure(database, req.body?.opportunity_id);
+    }
+    res.status(201).json(transition);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 app.post('/api/tender-offer-archive', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    res.status(201).json(await callTenderOpportunityArchive(requireDb(), req.body || {}, currentProfile));
+    const database = requireDb();
+    const archived = await callTenderOpportunityArchive(database, req.body || {}, currentProfile);
+    // El cierre ya está guardado: si el acta falla, se registra y la toma la revisión semanal.
+    await draftClosureActaAfterClosure(database, req.body?.opportunity_id);
+    res.status(201).json(archived);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-closure-acta', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.json(await getTenderClosureActa(database, opportunityId, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-closure-acta', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callUpsertTenderClosureActa(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-closure-acta/confirm', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callConfirmTenderClosureActa(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-closure-acta/reopen', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callReopenTenderClosureActa(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/**
+ * El puente ficha de empresa → expediente, por licitación (encargo del 2026-10-30). Proyección de SÓLO LECTURA: cruza
+ * los documentos corporativos vigentes y el registro de evidencia con la fecha de cierre de ESTA licitación, para que
+ * la encargada no tenga que buscarlos a mano ni decidir a ojo si llegan vigentes.
+ *
+ * No depende del expediente ni, por tanto, del GO: sirve para saber qué falta ANTES de decidir, que es justo cuando
+ * más se necesita. Nada se inventa: sin archivo sale como faltante con su dueño y sin fecha de vencimiento declarada
+ * sale como `vigencia_por_confirmar`.
+ */
+async function readTenderCompanyDocumentBridge(database, opportunityId, currentProfile) {
+  const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+  const { data: tender, error } = await database.from('psi_public_tenders')
+    .select('id,ref,deadline_at,raw')
+    .eq('converted_opportunity_id', opportunityId)
+    .maybeSingle();
+  if (error) throw error;
+  // La fecha de cierre se declara con su fuente (regla de la casa: fuente por dato). La canónica de la licitación
+  // manda —es la que el Radar y el fit muestran— y la de la oportunidad queda como respaldo.
+  const tenderDeadline = tender ? resolveCanonicalTenderDeadline(tender) : null;
+  const closeDate = tenderDeadline || opportunity.expected_close_date || null;
+  const [companyBase, documents] = await Promise.all([
+    loadCompanyBase(database),
+    listCompanyProcurementDocuments(database),
+  ]);
+  return {
+    opportunity_id: opportunityId,
+    tender_id: tender?.id || null,
+    tender_ref: tender?.ref || null,
+    close_date_source: tenderDeadline ? 'licitacion' : opportunity.expected_close_date ? 'oportunidad' : null,
+    ...buildTenderCompanyDocumentBridge({ registry: companyBase.registry, documents, closeDate }),
+  };
+}
+
+app.get('/api/tender-dossier-company-documents', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    res.json(await readTenderCompanyDocumentBridge(database, opportunityId, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/**
+ * La matriz de cumplimiento (punto 2 del encargo del 2026-10-30): una fila por requisito del pliego, con el soporte
+ * corporativo relacionado, su estado el día del cierre y quién responde. Sólo lectura, y como el puente no depende
+ * del expediente ni del GO.
+ *
+ * Los requisitos salen del MISMO modelo con el que se siembra el expediente (`buildRequirementRows` sobre el reporte
+ * canónico), así que la matriz y el expediente no pueden discrepar. Sin análisis terminado devuelve
+ * `available: false` en vez de una matriz vacía que se leería como "no hay requisitos".
+ */
+async function readTenderComplianceMatrix(database, opportunityId, currentProfile) {
+  const bridge = await readTenderCompanyDocumentBridge(database, opportunityId, currentProfile);
+  const report = await readAgt002InitialAnalysisReport(database, opportunityId);
+  if (!report?.available || !report.report) {
+    return { opportunity_id: opportunityId, available: false, reason: 'sin_analisis_terminado', close_date: bridge.close_date, headers: TENDER_COMPLIANCE_MATRIX_HEADERS, rows: [], table: [], summary: null };
+  }
+  const matrix = buildTenderComplianceMatrix({ requirementRows: buildRequirementRows(report.report), bridge });
+  return {
+    opportunity_id: opportunityId,
+    available: true,
+    tender_ref: bridge.tender_ref,
+    close_date_source: bridge.close_date_source,
+    headers: TENDER_COMPLIANCE_MATRIX_HEADERS,
+    table: tenderComplianceMatrixTable(matrix),
+    ...matrix,
+  };
+}
+
+app.get('/api/tender-compliance-matrix', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    res.json(await readTenderComplianceMatrix(database, opportunityId, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -5140,11 +6793,20 @@ app.post('/api/tender-dossier-seed', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+app.post('/api/tender-dossier-requirements-seed', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callSeedTenderDossierRequirements(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.get('/api/tender-dossier-workbench', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    res.json(await getAgt002WorkbenchApi(database, String(req.query.id || ''), currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
+    res.json(await getAgt002WorkbenchApi(database, String(req.query.id || ''), currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env), dossierContext: true }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.all('/api/tender-dossier-workbench', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
@@ -5153,9 +6815,28 @@ app.post('/api/tender-dossier-workbench/messages', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    res.status(201).json(await postAgt002MessageApi(database, req.body || {}, currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
+    const queued = await postAgt002MessageApi(database, req.body || {}, currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env), dossierContext: true });
+    // Canal directo (Juan, 2026-10-13): Vig-IA responde en el momento. El programador del host está
+    // apagado, así que el mismo pedido drena un trabajo con los topes de siempre (diario, concurrencia,
+    // interruptor). Si el drain no está habilitado o falla, el mensaje queda en cola como antes.
+    await drainAgt002WorkbenchAfterMessage(database);
+    res.status(201).json(queued);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
+async function drainAgt002WorkbenchAfterMessage(database) {
+  if (!isAgt002WorkbenchDrainEnabled(process.env)) return null;
+  try {
+    const drain = createAgt002WorkbenchDrain({
+      database,
+      environment: process.env,
+      ...(agt002WorkbenchWorkerTestBridgeClient ? { bridgeClient: agt002WorkbenchWorkerTestBridgeClient } : {}),
+    });
+    return await drain.runOnce();
+  } catch {
+    console.warn('agt002_workbench_inline_drain_failed', { event: 'agt002_workbench_inline_drain_failed' });
+    return null;
+  }
+}
 app.all('/api/tender-dossier-workbench/messages', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
 
 app.post('/api/tender-dossier-workbench/jobs/retry', async (req, res) => {
@@ -5211,6 +6892,26 @@ async function runAgt002WorkbenchDrainOnce(req, res) {
 }
 app.post('/api/tender-dossier-workbench/worker/run', runAgt002WorkbenchDrainOnce);
 app.all('/api/tender-dossier-workbench/worker/run', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
+
+// Red de seguridad semanal del acta de cierre. El servidor no tiene -- ni debe tener --
+// la configuración del modelo: sólo llama aquí con el mismo secreto de la Mesa, igual
+// que el scheduler del workbench. Lo normal es que el acta ya se haya redactado en el
+// momento del cierre; esto sólo recoge las que fallaron o se cerraron con la Mesa apagada.
+async function runAgt002ClosureActaSweepOnce(req, res) {
+  try {
+    if (!isAgt002WorkbenchDrainEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
+    if (!isAgt002WorkbenchWorkerAuthorized(req)) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
+  } catch (error) { return sendError(res, error, error.status || 400); }
+  try {
+    res.json(await sweepTenderClosureActas(requireDb(), { environment: process.env }));
+  } catch (error) {
+    const cause = String(error?.code || '').slice(0, 40) || null;
+    console.warn('agt002_closure_acta_sweep_failed', { event: 'agt002_closure_acta_sweep_failed', cause });
+    res.status(503).json({ error: 'El acta de cierre no está disponible en este momento.', code: 'AGT002_CLOSURE_ACTA_UNAVAILABLE', cause });
+  }
+}
+app.post('/api/tender-closure-acta/worker/run', runAgt002ClosureActaSweepOnce);
+app.all('/api/tender-closure-acta/worker/run', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
 
 app.post('/api/tender-offer-preparation-approve', async (req, res) => {
   try {
@@ -5388,6 +7089,154 @@ app.get('/api/tender-documents/:documentId/download', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+// URL firmada para la carga manual de un documento de licitación. Misma autorización que la carga
+// (`ensureTenderOpportunity`) y el mismo techo de 50 MB, que por este camino sí se puede alcanzar porque los bytes
+// nunca pasan por la API. Ver `tenderManualUploadStoragePath` para el 413 que lo motivó.
+app.post('/api/tender-documents-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.body.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const name = cleanFileName(req.body?.name || '');
+    if (!name) throw clientInputError('Debe indicar el nombre del documento.');
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError(`Archivo vacío: ${name}`);
+    if (size > RUP_MAX_BYTES) throw clientInputError(`Archivo supera 50MB: ${name}`);
+    await ensureTenderBucket(database);
+    const storagePath = tenderManualUploadStoragePath({ opportunityId, profileId: currentProfile.id, name, size });
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(storagePath);
+    if (error) throw error;
+    res.json({ storage_path: storagePath, token: data.token });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Carga al expediente de documentos APORTADOS: los bytes ya están en la mano de quien llama. Es la secuencia
+// gobernada completa —versionado por contenido, extracción tipada, nota en la línea de tiempo, snapshot y
+// reanálisis incremental— y existe como función para que la use tanto la ruta web (con el perfil de la persona)
+// como el runner del servidor de tareas (con la identidad técnica de Vig-IA). Antes vivía sólo dentro de la ruta,
+// así que un documento que una persona ya tenía en la mano no podía entrar sin que alguien abriera el navegador:
+// el 2026-10-25, en Supersalud `SNS-LP-2-2026`, la impresión de «Información del procedimiento» —la única copia
+// del cronograma vigente— se quedó fuera del expediente por eso, mientras el análisis canónico seguía con las
+// fechas de la fase anterior.
+//
+// `origin` NO se adivina: lo declara quien aporta el documento (migración 150). Sin declararlo viaja null y la
+// cadena lo trata como `third_party`, que es lo prudente.
+export async function ingestTenderDossierDocuments(database, { opportunityId, opportunity, actorProfileId, files: incomingFiles } = {}) {
+  // El guard viaja con el trabajo, no con la ruta: así ningún llamador —tampoco el runner del servidor de tareas—
+  // puede tocar Storage ni el expediente antes de que la fundación de análisis documental esté disponible.
+  await requireTenderAnalysisFoundation(database);
+  const files = Array.isArray(incomingFiles) ? incomingFiles : [];
+  if (!files.length) throw new Error('Debe adjuntar al menos un documento.');
+  // Dos caminos para los bytes. `storage_path`: el navegador ya subió el archivo con una URL firmada, así que la
+  // petición no lleva contenido y el límite de cuerpo de Vercel deja de importar. `content_base64`: el camino
+  // viejo, que se conserva porque sigue sirviendo para lo pequeño y para cualquier otro llamador.
+  const preparedFiles = await Promise.all(files.slice(0, 8).map(async file => {
+    const name = cleanFileName(file.name);
+    const storagePath = String(file.storage_path || '');
+    let buffer;
+    if (storagePath) {
+      assertTenderManualUploadStoragePath(storagePath, opportunityId, name);
+      const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+      if (error) throw error;
+      buffer = Buffer.from(await data.arrayBuffer());
+    } else {
+      buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
+    }
+    if (!buffer.length) throw new Error(`Archivo vacío: ${name}`);
+    if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
+    return { file, name, buffer };
+  }));
+  const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+  // Los complementarios cargados a mano entran al expediente versionado (psi_tender_document_versions), igual que los
+  // oficiales: es de ahí que Vig-IA elige qué leer. Antes sólo quedaban en la nota de la interacción y ningún análisis
+  // los veía (Juan, 2026-10-20, respuestas a observaciones de Cali). La identidad es el contenido: volver a cargar el
+  // mismo archivo no crea otra versión.
+  await ensureTenderBucket(database);
+  const results = await refreshTenderDocumentBatch(preparedFiles.map(({ file, name, buffer }) => ({
+    name,
+    buffer,
+    mime_type: file.mime_type || 'application/octet-stream',
+    document_type: file.document_type,
+    // Quién produjo el documento, declarado por quien lo carga. Ortogonal al tipo: una carta de un tercero
+    // con la palabra "pliego" en el nombre es `tercero`, aunque el tipo quede `pliego`.
+    origin: normalizeTenderDocumentOrigin(file.origin),
+    source_document_id: tenderManualUploadDocumentId(buffer),
+    errorPrefix: name,
+  })), async doc => refreshOfficialTenderDocument({
+    opportunityId,
+    source: TENDER_MANUAL_UPLOAD_SOURCE,
+    document: doc,
+    currentVersion: await getCurrentTenderDocumentVersion(database, opportunityId, TENDER_MANUAL_UPLOAD_SOURCE, doc.source_document_id),
+    download: item => item.buffer,
+    cleanName: cleanFileName,
+    extractText: extractTypedTextFromTenderFile,
+    ensureStorage: () => ensureTenderBucket(database),
+    upload: async (storagePath, buffer, mimeType) => {
+      const { error } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+      if (error) throw error;
+    },
+    recordVersion: async version => {
+      const response = await database.rpc('psi_record_tender_document_version', {
+        p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: TENDER_MANUAL_UPLOAD_SOURCE, p_source_document_id: version.source_document_id,
+        p_name: version.name, p_content_hash: version.content_hash, p_storage_path: version.storage_path,
+        p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
+        p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
+        p_source_url: null, p_actor_id: actorProfileId,
+        // Carga manual: el origen lo declara la persona. Sin declarar va null, y la cadena lo trata como
+        // `third_party` (tender-document-origin.js). Nunca se asume `entidad` por el nombre del archivo.
+        p_origin: normalizeTenderDocumentOrigin(version.origin),
+      });
+      if (response.error) throw response.error;
+      return response.data;
+    },
+    recordExtraction: ({ extraction, version }) => recordTenderDocumentExtraction(database, extraction, {
+      opportunityId, tenderId, documentVersionId: version.id, actorId: actorProfileId,
+    }),
+  }));
+  const failed = results.filter(result => result?.status === 'failed');
+  if (failed.length === results.length) throw new Error(failed.map(result => result.error).join(' · '));
+  // La nota se conserva (línea de tiempo, migración 027), sin el texto extraído y con el mismo id de origen que la
+  // versión, para que la lista no muestre el documento dos veces (mergeTenderDocumentRecords).
+  const uploaded = preparedFiles.map(({ file, name, buffer }, index) => ({
+    name, size: buffer.length, mime_type: file.mime_type || null, document_type: normalizeDocumentType(file.document_type, name),
+    current: true, uploaded_at: new Date().toISOString(), auto_import: false,
+    source: TENDER_MANUAL_UPLOAD_SOURCE, source_document_id: tenderManualUploadDocumentId(buffer),
+    status: results[index]?.status || 'failed', error: results[index]?.error || null,
+  }));
+  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: actorProfileId, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
+  const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
+  if (beginRefresh.error) throw beginRefresh.error;
+  const refreshToken = String(beginRefresh.data || '').trim();
+  if (!refreshToken) throw new Error('No fue posible abrir la actualización documental manual.');
+  const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
+  await registerTenderDocumentSnapshot(database, {
+    opportunity_id: opportunityId,
+    tender_id: tenderId,
+    actor_id: actorProfileId,
+    documents: records.documents.filter(document => document.current !== false),
+    company_profile: await getTenderCompanyProfile(database),
+    refresh_token: refreshToken,
+  });
+  // Lo nuevo se analiza solo, sobre el análisis vigente (Juan, 2026-10-20): se pide un reanálisis INCREMENTAL a nombre
+  // de quien cargó; el job del host lo lanza (o espera a que termine el análisis en curso). Nunca hace fallar la carga.
+  let analysisRequest = null;
+  if (uploaded.some(item => item.status === 'new' || item.status === 'updated')) {
+    try {
+      const requested = await requestAgt002ManualReanalysis(database, { opportunityId, requestedBy: actorProfileId, mode: 'incremental' });
+      analysisRequest = { requested: requested.requested, already_open: requested.alreadyOpen, state: requested.status?.state || null };
+    } catch (requestError) {
+      analysisRequest = { requested: false, reason: requestError?.reason || null, message: String(requestError?.message || 'No fue posible pedir el análisis.').slice(0, 300) };
+    }
+  }
+  return {
+    ...(await getTenderDocumentRecords(database, opportunityId)),
+    upload_results: uploaded.map(({ name, status, error }) => ({ name, status, error })),
+    analysis_request: analysisRequest,
+  };
+}
+
 app.post('/api/tender-documents-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -5395,36 +7244,35 @@ app.post('/api/tender-documents-upload', async (req, res) => {
     await requireTenderAnalysisFoundation(database);
     const opportunityId = String(req.body.opportunity_id || '');
     const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
-    const files = Array.isArray(req.body.files) ? req.body.files : [];
-    if (!files.length) throw new Error('Debe adjuntar al menos un documento.');
-    const preparedFiles = files.slice(0, 8).map(file => {
-      const name = cleanFileName(file.name);
-      const buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
-      if (!buffer.length) throw new Error(`Archivo vacío: ${name}`);
-      if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
-      return { file, name, buffer };
+    res.status(201).json(await ingestTenderDossierDocuments(database, {
+      opportunityId, opportunity, actorProfileId: currentProfile.id, files: req.body.files,
+    }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Declarar o corregir el ORIGEN de un documento ya cargado, sin volver a subirlo (migración 150). El origen es
+// una declaración de la persona, no parte del contenido: corregir una mala clasificación no debe obligar a
+// recargar un PDF de 3 MB. Es la ruta que deja arreglar lo que entró antes de que el campo existiera.
+app.post('/api/tender-document-origin', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.body.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const documentVersionId = String(req.body.document_version_id || '');
+    if (!documentVersionId) throw clientInputError('Debe indicar el documento.');
+    const origin = normalizeTenderDocumentOrigin(req.body.origin);
+    if (!origin) throw clientInputError(`El origen debe ser uno de: ${Object.keys(TENDER_DOCUMENT_ORIGINS).join(', ')}.`);
+    // El documento tiene que ser de ESTA oportunidad: el id solo no autoriza nada.
+    const owned = await must(database.from('psi_tender_document_versions')
+      .select('id').eq('id', documentVersionId).eq('opportunity_id', opportunityId).maybeSingle(), 'documento');
+    if (!owned) throw clientInputError('El documento no pertenece a esta oportunidad.');
+    const response = await database.rpc('psi_set_tender_document_origin', {
+      p_document_version_id: documentVersionId, p_origin: origin, p_actor_id: currentProfile.id,
     });
-    const tenderId = await getTenderIdForOpportunity(database, opportunityId);
-    await ensureTenderBucket(database);
-    const uploaded = [];
-    for (const { file, name, buffer } of preparedFiles) {
-      uploaded.push(await saveTenderDocumentBuffer(database, opportunityId, { name, buffer, mime_type: file.mime_type || '', document_type: file.document_type, current: file.current }, currentProfile));
-    }
-    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
-    const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
-    if (beginRefresh.error) throw beginRefresh.error;
-    const refreshToken = String(beginRefresh.data || '').trim();
-    if (!refreshToken) throw new Error('No fue posible abrir la actualización documental manual.');
-    const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
-    await registerTenderDocumentSnapshot(database, {
-      opportunity_id: opportunityId,
-      tender_id: tenderId,
-      actor_id: currentProfile.id,
-      documents: records.documents.filter(document => document.current !== false),
-      company_profile: await getTenderCompanyProfile(database),
-      refresh_token: refreshToken,
-    });
-    res.status(201).json(await getTenderDocumentRecords(database, opportunityId));
+    if (response.error) throw response.error;
+    res.json({ ...(await getTenderDocumentRecords(database, opportunityId)), origin_set: response.data || null });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -5566,6 +7414,109 @@ app.get('/api/agt002-initial-analysis-report', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+// "Volver a analizar" (decisión del dueño, 2026-10-20): la petición sólo deja la solicitud; el job del host la admite
+// (agt002-manual-reanalysis.js). GET informa el estado para el botón.
+app.get('/api/agt002-manual-reanalysis', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json(await readAgt002ManualReanalysisStatus(database, opportunityId));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/agt002-manual-reanalysis', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json(await requestAgt002ManualReanalysis(database, { opportunityId, requestedBy: currentProfile?.id || '' }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Aclaraciones del encargado (Juan, 2026-10-21): quedan con autor y fecha y piden el reanálisis incremental.
+app.get('/api/agt002-clarifications', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ clarifications: await listAgt002Clarifications(database, opportunityId) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/agt002-clarifications', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    const recorded = await recordAgt002Clarification(database, { opportunityId, actorId: currentProfile?.id || '', body: req.body || {} });
+    // Punto 4: si la aclaración es un dato de la empresa, Vig-IA lo propone para la ficha. Sólo propone.
+    const suggestion = agt002CompanyClarificationSuggestion(
+      { ...(recorded.clarification || {}), author_name: currentProfile?.full_name || null },
+      { tenderLabel: await tenderLabelForOpportunity(database, opportunityId) },
+    );
+    return res.status(201).json({ ...recorded, company_profile_suggestion: suggestion });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/** Referencia de la licitación convertida, para dejar la procedencia del dato en la ficha. Nunca falla el flujo. */
+async function tenderLabelForOpportunity(database, opportunityId) {
+  try {
+    const { data } = await database.from('psi_public_tenders').select('ref,entity').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
+    return [data?.ref, data?.entity].filter(Boolean).join(' · ').slice(0, 200);
+  } catch { return ''; }
+}
+
+/**
+ * Guarda en la ficha de la empresa el dato de una aclaración, con la línea que la persona aprobó (puede haberla
+ * editado). Vig-IA propone y la persona autoriza: esta ruta exige el permiso de la ficha. Sólo agrega a
+ * `useful_company_info`, nunca reescribe el resto del perfil, y no duplica una línea que ya esté.
+ */
+app.post('/api/agt002-clarification-to-company-profile', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    const clarificationId = String(req.body?.clarification_id || '');
+    if (!opportunityId || !clarificationId) throw clientInputError('Debe indicar la oportunidad y la aclaración.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const clarification = (await listAgt002Clarifications(database, opportunityId)).find(row => row.id === clarificationId);
+    if (!clarification) throw clientInputError('La aclaración no pertenece a esta licitación.');
+    const suggestion = agt002CompanyClarificationSuggestion(clarification, { tenderLabel: await tenderLabelForOpportunity(database, opportunityId) });
+    const line = String(req.body?.line ?? suggestion.line ?? '').replace(/\s+/g, ' ').trim();
+    if (!line) throw clientInputError('No hay texto para guardar en la ficha.');
+    if (line.length > AGT002_COMPANY_CLARIFICATION_LINE_MAX) throw clientInputError('El texto para la ficha es demasiado largo.');
+    const current = await getTenderCompanyProfile(database);
+    const existing = String(current?.useful_company_info || '');
+    if (existing.split('\n').map(row => row.trim()).includes(line)) {
+      res.set('Cache-Control', 'private, no-store');
+      return res.json({ appended: false, profile: current });
+    }
+    const payload = cleanTenderCompanyProfile({ ...current, useful_company_info: [existing, line].filter(Boolean).join('\n') }, currentProfile);
+    if (can(currentProfile, ACTIONS.LICITACIONES_CONFIGURE)) await saveTenderCompanyProfile(database, payload);
+    else await saveTenderCompanyProfileDirect(database, payload);
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ appended: true, profile: await getTenderCompanyProfile(database) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 // AGT-002 governed document worksets — Phase 3 of
 // .hermes/plans/2026-09-17-agt002-governed-document-worksets.md. Body is closed to exactly
 // {opportunity_id, documents[]}; the browser has no reliable tender_id before the first AGT-002
@@ -5690,7 +7641,7 @@ app.post('/api/tender-processing-retry', async (req, res) => {
     if (!idempotencyKey) throw new Error('Debe indicar la clave de idempotencia del proceso.');
     const { data: job, error } = await database
       .from('psi_tender_processing_jobs')
-      .select('id,tender_id,status,current_step,lease_id')
+      .select('id,tender_id,status,current_step,lease_id,documents_discovered')
       .eq('opportunity_id', opportunityId)
       .eq('idempotency_key', idempotencyKey)
       .maybeSingle();
@@ -5706,7 +7657,10 @@ app.post('/api/tender-processing-retry', async (req, res) => {
       stateError.status = 409;
       throw stateError;
     }
-    const nextStatus = job.current_step === 'analysis' ? 'waiting_agent_capacity' : 'importing_documents';
+    // Si no se encontró ningún documento, reintentar la importación no sirve: se vuelve a buscar (ESU 2026-5, 2026-10-20:
+    // 0 documentos por una regla de enlaces ya corregida).
+    const nextStatus = job.current_step === 'analysis' ? 'waiting_agent_capacity'
+      : Number(job.documents_discovered || 0) === 0 ? 'queued' : 'importing_documents';
     const updateResult = await database.rpc('psi_update_tender_processing_job', {
       p_job_id: job.id,
       p_lease_id: job.lease_id,
@@ -5845,6 +7799,7 @@ function cleanOpportunity(body, existingRegional = null) {
     service_type_code: body.service_type_code || null,
     stage_code: body.stage_code || 'prospecto',
     loss_reason_code: body.stage_code === 'perdido' ? body.loss_reason_code : null,
+    competitor_id: body.stage_code === 'perdido' ? (body.competitor_id || null) : null,
     loss_notes: body.loss_notes || null,
     next_action_at: body.next_action_at || null,
     expected_close_date: body.expected_close_date || null,
@@ -5908,6 +7863,9 @@ app.put('/api/opportunities/:id', async (req, res) => {
       ? { kind: 'noop', clientId: null }
       : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
+    if (!isPublicTender && (payload.stage_code || null) !== (existing.stage_code || null)) {
+      requireNextAction({ stageCode: payload.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: payload.next_action_at || null });
+    }
     const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
       ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
       : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, req.params.id);
@@ -5921,6 +7879,7 @@ app.put('/api/opportunities/:id', async (req, res) => {
       authorizedSiblingIds,
     });
     await logCustomerSegmentChange(database, req.params.id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+    await logStageChange(database, req.params.id, currentProfile.id, existing.stage_code, payload.stage_code);
     if (!isPublicTender) await saveClientProfile(database, req.params.id, req.body);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -5986,7 +7945,7 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
-    await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const target = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     if (req.body.created_by && req.body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
     const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
@@ -5995,9 +7954,11 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: req.params.id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-    const update = { last_interaction_at: occurred_at };
+    const update = {};
+    const advanced = advancedLastInteraction(target?.last_interaction_at, occurred_at);
+    if (advanced) update.last_interaction_at = advanced;
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
+    if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -6054,6 +8015,50 @@ function decisionDatabaseError(error) {
   return error;
 }
 
+// F5 (Juan, 2026-10-22): contra quién se perdió el negocio. El catálogo se alimenta al registrar la pérdida: si el
+// comercial escribe un nombre que no está, se crea una vez y se reutiliza. La comparación es por nombre en minúsculas
+// y sin espacios de sobra, igual que el índice único de la migración 147, para no terminar con "Atlas" y "atlas ".
+async function resolveCompetitorId(database, profileId, body) {
+  if (body?.competitor_id) return String(body.competitor_id);
+  const name = typeof body?.competitor_name === 'string' ? body.competitor_name.trim().replace(/\s+/g, ' ').slice(0, 120) : '';
+  if (name.length < 2) return null;
+  const key = name.toLowerCase();
+  const match = async () => {
+    const { data } = await database.from('psi_sales_competitors').select('id,name');
+    return (data || []).find(row => String(row.name || '').trim().toLowerCase() === key)?.id || null;
+  };
+  const existing = await match();
+  if (existing) return existing;
+  const { data: created, error } = await database.from('psi_sales_competitors').insert({ name, created_by: profileId }).select('id').single();
+  if (!error) return created.id;
+  // Dos registros del mismo competidor a la vez: manda el índice único y se reutiliza el que quedó.
+  const afterRace = await match();
+  if (afterRace) return afterRace;
+  throw error;
+}
+
+// Una sola puerta para las decisiones de una oportunidad: la usan el botón "Decidir" de la ficha y el chat de Mi día
+// (acción `mover_etapa`). Las reglas no viven aquí: las valida `normalizeDecisionRequest` y, de forma atómica,
+// `psi_record_opportunity_decision`. Si el chat trajera su propia copia de esas reglas, el día que cambie una la
+// pantalla y el chat dirían cosas distintas.
+async function recordOpportunityDecision(database, currentProfile, id, body) {
+  await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  const params = normalizeDecisionRequest(body);
+  const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
+  if (error) throw decisionDatabaseError(error);
+  // El competidor se guarda después de la decisión y nunca la tumba: es un dato opcional y la pérdida ya quedó
+  // registrada. Si falla, queda el aviso en el log y el competidor se puede poner desde la ficha.
+  if (params.p_decision === 'lose' && (body?.competitor_id || body?.competitor_name)) {
+    try {
+      const competitorId = await resolveCompetitorId(database, currentProfile.id, body);
+      if (competitorId) await must(database.from('psi_sales_opportunities').update({ competitor_id: competitorId }).eq('id', id).select('id').single());
+    } catch (competitorError) {
+      console.warn('psi_sales_competitors no se pudo registrar', { code: competitorError?.code || null });
+    }
+  }
+  return data;
+}
+
 app.post('/api/opportunity-decision', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -6061,11 +8066,7 @@ app.post('/api/opportunity-decision', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) { const error = new Error('Falta la oportunidad.'); error.status = 400; throw error; }
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    const params = normalizeDecisionRequest(req.body);
-    const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
-    if (error) throw decisionDatabaseError(error);
-    res.status(201).json(data);
+    res.status(201).json(await recordOpportunityDecision(database, currentProfile, id, req.body));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -6121,6 +8122,9 @@ app.put('/api/opportunity', async (req, res) => {
       ? { kind: 'noop', clientId: null }
       : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
+    if (!isPublicTender && (payload.stage_code || null) !== (existing.stage_code || null)) {
+      requireNextAction({ stageCode: payload.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: payload.next_action_at || null });
+    }
     const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
       ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
       : await resolveClientArgsForOpportunityUpdate(database, currentProfile, clientPlan, payload, id);
@@ -6134,6 +8138,7 @@ app.put('/api/opportunity', async (req, res) => {
       authorizedSiblingIds,
     });
     await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
+    await logStageChange(database, id, currentProfile.id, existing.stage_code, payload.stage_code);
     if (!isPublicTender) await saveClientProfile(database, id, req.body);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -6146,8 +8151,9 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    const existingOpportunity = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     if (req.body.created_by && req.body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
+    requireNextAction({ stageCode: existingOpportunity.stage_code, currentNextActionAt: existingOpportunity.next_action_at, proposedNextActionAt: req.body.next_action_at || null });
     const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
@@ -6155,9 +8161,11 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
-    const update = { last_interaction_at: occurred_at };
+    const update = {};
+    const advanced = advancedLastInteraction(existingOpportunity?.last_interaction_at, occurred_at);
+    if (advanced) update.last_interaction_at = advanced;
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+    if (Object.keys(update).length) await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -6240,6 +8248,24 @@ app.get('/api/access-catalog', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+// Usuarios y permisos → "Acceso a Programación": ciudades y accesos actuales (migración 129). Si la función no existe
+// o la base no responde → 503 neutro y la pantalla deshabilita el campo sin perder lo guardado.
+app.get('/api/programacion-access', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+    res.set('Cache-Control', 'no-store');
+    const { data, error } = await requireDb().rpc('psi_admin_programacion_access_list');
+    if (error || !data || !Array.isArray(data.ciudades) || !Array.isArray(data.accesos)) {
+      if (error) console.warn('programacion_access_list_unavailable', { code: error.code || null });
+      return res.status(503).json({ error: 'El acceso a Programación no está disponible.' });
+    }
+    res.json({ ciudades: data.ciudades, accesos: data.accesos });
+  } catch (error) { sendAuthError(res, error); }
+});
+app.all('/api/programacion-access', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
 app.get('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -6248,7 +8274,12 @@ app.get('/api/users', async (req, res) => {
     const database = requireDb();
     let profiles;
     try {
-      profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities,created_at,identity_type').order('full_name'));
+      // "Perfil de uso de IA" (migración 119). Si la columna aún no existe, se lee sin ella y el valor queda en null.
+      const userColumns = 'id,full_name,microsoft_email,whatsapp_phone,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities,created_at,identity_type';
+      const withAiProfile = await database.from('psi_sales_profiles').select(`${userColumns},ai_usage_profile`).order('full_name');
+      profiles = withAiProfile.error && withAiProfile.error.code === '42703'
+        ? (await must(database.from('psi_sales_profiles').select(userColumns).order('full_name'))).map(profile => ({ ...profile, ai_usage_profile: null }))
+        : await must(withAiProfile);
       if (!Array.isArray(profiles)) throw new Error('Perfiles inválidos.');
       // Las identidades técnicas (agentes) no se administran como usuarios.
       profiles = profiles.filter(profile => !isAgentIdentity(profile)).map(({ identity_type: _identityType, ...profile }) => profile);
@@ -6262,7 +8293,10 @@ app.get('/api/users', async (req, res) => {
         must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code').in('profile_id', ids)),
         must(database.from('psi_profile_permissions').select('profile_id,permission_code').in('profile_id', ids)),
       ]);
-      res.json(enrichProfilesWithAccess(profiles, assignmentRows, permissionRows));
+      // "Último ingreso" (psi_profile_last_seen, migración 111). Si no se puede leer, la lista sale igual sin la fecha.
+      const { data: seenRows } = await database.from('psi_profile_last_seen').select('profile_id,last_seen_at').in('profile_id', ids);
+      const seenById = new Map((Array.isArray(seenRows) ? seenRows : []).map(row => [row.profile_id, row.last_seen_at]));
+      res.json(enrichProfilesWithAccess(profiles, assignmentRows, permissionRows).map(profile => ({ ...profile, last_seen_at: seenById.get(profile.id) ?? null })));
     } catch (error) { throw profileAccessReadFailure(error); }
   } catch (error) { sendAuthError(res, error); }
 });
@@ -6282,6 +8316,221 @@ app.get('/api/platform/agents', async (req, res) => {
 });
 app.all('/api/platform/agents', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
+// IT → Agentes → Uso de IA: libro de uso de modelos de la plataforma. Misma protección que /api/platform/agents,
+// sólo lectura (PLATFORM_DATABASE_URL) y falla cerrada con 503.
+app.get('/api/platform/model-usage', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+    res.set('Cache-Control', 'no-store');
+    // "Tope actual": el de la configuración vigente (o los valores del código si no hay versión aprobada).
+    res.json(await listPlatformModelUsage({ limits: limitsFromEffectiveConfiguration(await getEffectiveAgentConfiguration(AGT003_AGENT_ID)) }));
+  } catch (error) {
+    if (isPlatformAgentsUnavailable(error)) return res.status(503).json({ error: PLATFORM_AGENTS_UNAVAILABLE_MESSAGE });
+    sendAuthError(res, error);
+  }
+});
+app.all('/api/platform/model-usage', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+// IT → Agentes → funciones, modelos y cupos (puerta única de modelos, Paso 2). Misma protección que
+// /api/platform/agents. Lectura con PLATFORM_DATABASE_URL; escritura SÓLO por funciones platform.* con
+// PLATFORM_ADMIN_DATABASE_URL. Quien firma (propone, aprueba, rechaza, reactiva, crea o archiva) es siempre el
+// nombre completo del perfil autenticado, nunca un dato del cuerpo de la petición. Errores → mensajes neutros.
+async function requirePlatformConfigurationAdmin(req) {
+  const { profile: currentProfile } = await getAuthContext(req);
+  requireModuleAction(currentProfile, 'users');
+  requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+  return currentProfile;
+}
+async function readSiioPeopleForAgentConfiguration() {
+  try {
+    const rows = await must(requireDb().from('psi_sales_profiles').select('id,full_name,active,identity_type').eq('active', true).order('full_name'));
+    if (!Array.isArray(rows)) throw new Error('Perfiles inválidos.');
+    return rows.filter(row => row.active === true && !isAgentIdentity(row)).map(row => ({ id: String(row.id), full_name: String(row.full_name || 'Sin nombre') }));
+  } catch (error) {
+    console.warn('platform_agent_configuration_people_unavailable', { code: error?.code || null });
+    const failure = new Error('No se pudo leer la lista de personas del SIIO.');
+    failure.status = 503;
+    failure.code = 'PLATFORM_CONFIGURATION_INVALID';
+    throw failure;
+  }
+}
+async function loadPlatformAgentConfiguration() {
+  const environment = gatewayEnvironment();
+  const [rows, people] = await Promise.all([readAgentConfigurationRows({ environment }), readSiioPeopleForAgentConfiguration()]);
+  return presentAgentConfiguration({ ...rows, people, environment, limits: knownModelLimits(), adminConnected: hasPlatformAdminConnection() });
+}
+function sendPlatformConfigurationError(res, error) {
+  if (isPlatformAgentsUnavailable(error)) return res.status(503).json({ error: PLATFORM_AGENTS_UNAVAILABLE_MESSAGE });
+  if (isPlatformConfigurationPublicError(error)) return res.status(error.status || 400).json({ error: error.message, code: error.code, ...(error.problems ? { problems: error.problems } : {}) });
+  if (error?.status === 401 || error?.status === 403) return sendAuthError(res, error);
+  console.warn('platform_agent_configuration_failed', { code: error?.code || null });
+  return res.status(500).json({ error: 'No se pudo completar la operación.' });
+}
+async function platformConfigurationVersionFor(versionId) {
+  const configuration = await loadPlatformAgentConfiguration();
+  return { configuration, version: configuration.versions.find(item => item.id === versionId) || null };
+}
+
+app.get('/api/platform/agent-configuration', async (req, res) => {
+  try {
+    await requirePlatformConfigurationAdmin(req);
+    res.set('Cache-Control', 'no-store');
+    res.json(await loadPlatformAgentConfiguration());
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/agent-configuration', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/platform/agent-configuration/proposals', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const agentId = req.body?.agent_id;
+    if (!isValidAgentId(agentId) || !agentAiFunctions(agentId).length) throw configurationInvalidError('Ese agente no tiene funciones con IA configurables.');
+    const reason = normalizeReason(req.body?.reason);
+    const current = await loadPlatformAgentConfiguration();
+    const configuration = normalizeProposedConfiguration(req.body?.configuration, {
+      agentId,
+      profileIds: new Set(current.profiles.filter(profile => !profile.archived_at).map(profile => profile.profile_id)),
+      personIds: new Set(current.people.map(person => person.id)),
+      today: current.today,
+    });
+    const versionId = await proposeConfiguration({ agentId, environment: current.environment, configuration, actor: actorNameFromProfile(currentProfile), reason });
+    res.status(201).json({ ok: true, version_id: versionId == null ? null : String(versionId) });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/agent-configuration/proposals', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/platform/agent-configuration/versions/:id/:action', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const action = req.params.action;
+    if (!['approve', 'reject', 'reactivate'].includes(action)) return res.status(404).json({ error: 'Acción no encontrada.' });
+    const versionId = parseVersionId(req.params.id);
+    if (!versionId) throw configurationInvalidError('La versión no es válida.');
+    const reason = action === 'reject' ? normalizeReason(req.body?.reason) : null;
+    const { version } = await platformConfigurationVersionFor(versionId);
+    assertVersionAction(version, action);
+    const actor = actorNameFromProfile(currentProfile);
+    if (action === 'approve') await approveConfiguration({ versionId, actor });
+    else if (action === 'reject') await rejectConfiguration({ versionId, actor, reason });
+    else await reactivateConfiguration({ versionId, actor });
+    res.json({ ok: true, version_id: versionId });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/agent-configuration/versions/:id/:action', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/platform/ai-usage-profiles', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const profile = normalizeProfileInput(req.body);
+    const profileId = await createAiUsageProfile({ profile, actor: actorNameFromProfile(currentProfile) });
+    res.status(201).json({ ok: true, profile_id: profileId == null ? profile.profile_id : String(profileId) });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+// Usuarios y permisos → "Perfil de uso de IA": perfiles NO archivados de la plataforma (sólo lectura). Si la plataforma
+// no responde → 503 neutro y la pantalla deshabilita el campo sin perder el valor guardado.
+app.get('/api/platform/ai-usage-profiles', async (req, res) => {
+  try {
+    await requirePlatformConfigurationAdmin(req);
+    res.set('Cache-Control', 'no-store');
+    res.json({ profiles: await readActiveAiUsageProfiles() });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/ai-usage-profiles', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/platform/ai-usage-profiles/:id/archive', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const profileId = req.params.id;
+    if (!isValidProfileId(profileId)) throw configurationInvalidError('El perfil no es válido.');
+    await archiveAiUsageProfile({ profileId, actor: actorNameFromProfile(currentProfile) });
+    res.json({ ok: true, profile_id: profileId });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/ai-usage-profiles/:id/archive', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+// Reactivar un perfil archivado: vuelve a estar disponible para nuevas configuraciones. Exige administración
+// conectada y que el perfil exista y esté archivado; firma la persona con sesión iniciada.
+app.post('/api/platform/ai-usage-profiles/:id/reactivate', async (req, res) => {
+  try {
+    const currentProfile = await requirePlatformConfigurationAdmin(req);
+    const profileId = req.params.id;
+    if (!isValidProfileId(profileId)) throw configurationInvalidError('El perfil no es válido.');
+    if (!hasPlatformAdminConnection()) throw platformAdminUnavailableError();
+    assertProfileReactivation(await readAiUsageProfile(profileId));
+    await reactivateAiUsageProfile({ profileId, actor: actorNameFromProfile(currentProfile) });
+    res.json({ ok: true, profile_id: profileId });
+  } catch (error) { sendPlatformConfigurationError(res, error); }
+});
+app.all('/api/platform/ai-usage-profiles/:id/reactivate', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+// "Perfil de uso de IA" de cada persona (migración 119). Sólo se toca si el cuerpo trae `ai_usage_profile` (la pantalla
+// no lo envía cuando la plataforma no responde: así no se pierde el valor guardado). Un valor nuevo debe existir en la
+// plataforma y no estar archivado; si es el mismo ya guardado no se vuelve a validar.
+const AI_USAGE_PROFILE_SLUG = /^[a-z][a-z0-9_]{1,40}$/;
+function aiUsageProfileFromBody(body) {
+  if (!body || !Object.hasOwn(body, 'ai_usage_profile')) return { present: false, value: null };
+  const raw = body.ai_usage_profile;
+  if (raw === null || raw === '') return { present: true, value: null };
+  if (typeof raw !== 'string' || !AI_USAGE_PROFILE_SLUG.test(raw)) {
+    const error = new Error('El perfil de uso de IA no es válido.'); error.status = 400; error.code = 'AI_USAGE_PROFILE_INVALID'; throw error;
+  }
+  return { present: true, value: raw };
+}
+async function assertAiUsageProfileSelectable(value, currentValue) {
+  if (value === null || value === currentValue) return;
+  let profiles;
+  try { profiles = await readActiveAiUsageProfiles(); } catch {
+    const error = new Error('No se pudo validar el perfil de uso de IA: la plataforma de agentes no responde. Guarde sin cambiar ese campo o intente más tarde.');
+    error.status = 503; error.code = 'AI_USAGE_PROFILE_UNVERIFIED'; throw error;
+  }
+  if (!profiles.some(profile => profile.profile_id === value)) {
+    const error = new Error('Ese perfil de uso de IA no existe o está archivado.'); error.status = 400; error.code = 'AI_USAGE_PROFILE_INVALID'; throw error;
+  }
+}
+async function readStoredAiUsageProfile(database, profileId) {
+  if (!profileId) return null;
+  const { data, error } = await database.from('psi_sales_profiles').select('ai_usage_profile').eq('id', profileId).maybeSingle();
+  if (error) return null;
+  return typeof data?.ai_usage_profile === 'string' ? data.ai_usage_profile : null;
+}
+// Devuelve un aviso (texto) si no se pudo guardar; nunca deshace el resto del guardado del usuario.
+async function persistAiUsageProfile(database, { profileId, value, currentValue, actorProfileId }) {
+  if (value === currentValue) return null;
+  const { error } = await database.rpc('psi_admin_set_profile_ai_usage_profile', { p_profile_id: profileId, p_ai_usage_profile: value, p_actor_profile_id: actorProfileId });
+  if (!error) return null;
+  console.warn('profile_ai_usage_profile_not_saved', { code: error.code || null });
+  return error.code === 'PGRST202' || error.code === '42883'
+    ? 'El perfil de uso de IA todavía no se puede guardar (falta habilitarlo en la base de datos).'
+    : 'No se pudo guardar el perfil de uso de IA; el resto del usuario sí quedó guardado.';
+}
+
+// "Acceso a Programación" de cada persona (migración 129; AGT-006): rol y ciudad en la aplicación de Programación
+// (esquema `programacion`). Sólo se toca si el cuerpo trae `programacion_access` ({ rol, ciudad_id } o null = sin
+// acceso); la pantalla no lo envía si la lista no cargó, y así no se pierde lo guardado.
+const PROGRAMACION_ROLES = new Set(['admin', 'coordinador', 'nomina', 'consulta']);
+function programacionAccessFromBody(body) {
+  if (!body || !Object.hasOwn(body, 'programacion_access')) return { present: false, value: null };
+  const raw = body.programacion_access;
+  if (raw === null) return { present: true, value: null };
+  const rol = typeof raw?.rol === 'string' ? raw.rol : '';
+  const ciudad = raw?.ciudad_id == null || raw.ciudad_id === '' ? null : raw.ciudad_id;
+  if (!PROGRAMACION_ROLES.has(rol) || (ciudad !== null && (typeof ciudad !== 'string' || !/^[a-z][a-z0-9_-]{0,40}$/.test(ciudad)))) {
+    const error = new Error('El acceso a Programación no es válido.'); error.status = 400; error.code = 'PROGRAMACION_ACCESS_INVALID'; throw error;
+  }
+  return { present: true, value: { rol, ciudad_id: ciudad } };
+}
+// Devuelve un aviso (texto) si no se pudo guardar; nunca deshace el resto del guardado del usuario.
+async function persistProgramacionAccess(database, { profileId, value, actorProfileId }) {
+  const { error } = await database.rpc('psi_admin_set_programacion_access', { p_profile_id: profileId, p_rol: value?.rol ?? null, p_ciudad_id: value?.ciudad_id ?? null, p_actor_profile_id: actorProfileId });
+  if (!error) return null;
+  console.warn('profile_programacion_access_not_saved', { code: error.code || null });
+  if (error.code === 'PGRST202' || error.code === '42883') return 'El acceso a Programación todavía no se puede guardar (falta habilitarlo en la base de datos).';
+  if (error.code === '42501' && /último administrador/.test(error.message || '')) return 'No se cambió el acceso a Programación: es el último administrador de Programación.';
+  return 'No se pudo guardar el acceso a Programación; el resto del usuario sí quedó guardado.';
+}
+
 app.post('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -6290,6 +8539,7 @@ app.post('/api/users', async (req, res) => {
     const database = requireDb();
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
+    const whatsapp_phone = normalizeWhatsappPhone(req.body.whatsapp_phone);
     const role = normalizeUserRole(req.body.role);
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
@@ -6301,6 +8551,8 @@ app.post('/api/users', async (req, res) => {
     if (!PROFILE_ROLES.has(role)) throw new Error('Rol no válido.');
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
     const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
+    const aiUsageProfile = aiUsageProfileFromBody(req.body);
+    const programacionAccess = programacionAccessFromBody(req.body);
     const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
     const userMetadata = { full_name, role };
     let beforeProfile;
@@ -6310,15 +8562,19 @@ app.post('/api/users', async (req, res) => {
     if (beforeProfile?.id) assertEditableHumanProfile(await must(database.from('psi_sales_profiles').select('id,identity_type').eq('id', beforeProfile.id).single()));
     assertNoAdminSelfLockout(currentProfile, { profileId: beforeProfile?.id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
     const beforeAccess = beforeProfile ? await readProfileAccess(database, beforeProfile.id) : { areas: [], permissions: [], areaRows: [], permissionRows: [] };
+    const storedAiUsageProfile = aiUsageProfile.present ? await readStoredAiUsageProfile(database, beforeProfile?.id) : null;
+    if (aiUsageProfile.present) await assertAiUsageProfileSelectable(aiUsageProfile.value, storedAiUsageProfile);
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
     try {
-      row = await persistProfileAccessChange(database, { mode: 'post', targetId: beforeProfile?.id || null, beforeProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
+      row = await persistProfileAccessChange(database, { mode: 'post', targetId: beforeProfile?.id || null, beforeProfile, profileValues: { full_name, microsoft_email, whatsapp_phone, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
+    const aiUsageProfileWarning = aiUsageProfile.present ? await persistAiUsageProfile(database, { profileId: row.id, value: aiUsageProfile.value, currentValue: storedAiUsageProfile, actorProfileId: currentProfile.id }) : null;
+    const programacionAccessWarning = programacionAccess.present ? await persistProgramacionAccess(database, { profileId: row.id, value: programacionAccess.value, actorProfileId: currentProfile.id }) : null;
     const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
-    res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
+    res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning, ai_usage_profile_warning: aiUsageProfileWarning, programacion_access_warning: programacionAccessWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -6329,12 +8585,14 @@ app.patch('/api/users', async (req, res) => {
     requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
     const id = String(req.query.id || '').trim();
-    const existingRow = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,identity_type').eq('id', id).single());
+    const existingRow = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,whatsapp_phone,role,active,commercial_area,can_edit_customer_segment,identity_type').eq('id', id).single());
     if (!existingRow) { const error = new Error('Usuario no encontrado.'); error.status = 404; throw error; }
     assertEditableHumanProfile(existingRow);
     const { identity_type: _existingIdentityType, ...existingProfile } = existingRow;
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
+    // Si la pantalla no envía el campo (versión anterior en caché), se conserva el número guardado.
+    const whatsapp_phone = req.body.whatsapp_phone === undefined ? (existingProfile.whatsapp_phone ?? null) : normalizeWhatsappPhone(req.body.whatsapp_phone);
     const role = normalizeUserRole(req.body.role);
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
@@ -6353,18 +8611,24 @@ app.patch('/api/users', async (req, res) => {
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
     const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
     assertNoAdminSelfLockout(currentProfile, { profileId: id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
+    const aiUsageProfile = aiUsageProfileFromBody(req.body);
+    const programacionAccess = programacionAccessFromBody(req.body);
+    const storedAiUsageProfile = aiUsageProfile.present ? await readStoredAiUsageProfile(database, id) : null;
+    if (aiUsageProfile.present) await assertAiUsageProfileSelectable(aiUsageProfile.value, storedAiUsageProfile);
     const beforeAccess = await readProfileAccess(database, id);
     const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
     const userMetadata = { full_name, role };
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
     try {
-      row = await persistProfileAccessChange(database, { mode: 'patch', targetId: id, beforeProfile: existingProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
+      row = await persistProfileAccessChange(database, { mode: 'patch', targetId: id, beforeProfile: existingProfile, profileValues: { full_name, microsoft_email, whatsapp_phone, role, active, commercial_area, can_edit_customer_segment, ...can_own_opportunities }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
+    const aiUsageProfileWarning = aiUsageProfile.present ? await persistAiUsageProfile(database, { profileId: row.id, value: aiUsageProfile.value, currentValue: storedAiUsageProfile, actorProfileId: currentProfile.id }) : null;
+    const programacionAccessWarning = programacionAccess.present ? await persistProgramacionAccess(database, { profileId: row.id, value: programacionAccess.value, actorProfileId: currentProfile.id }) : null;
     const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
-    res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
+    res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning, ai_usage_profile_warning: aiUsageProfileWarning, programacion_access_warning: programacionAccessWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -7162,9 +9426,46 @@ app.get('/api/client-typeahead', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
+    const consulta = String(req.query.q || '');
     const clients = await must(database.from('psi_sales_clients').select(CLIENT_MASTER_SELECT).order('company_name', { ascending: true }));
-    const matches = typeaheadMatches(clients, String(req.query.q || ''));
-    res.json(matches.slice(0, 20));
+    const delCrm = typeaheadMatches(clients, consulta).slice(0, 20)
+      .map(cliente => ({ ...cliente, origen: 'crm', company_nit: null, atendido_por: null }));
+
+    // Y los clientes que la empresa ya tiene, que no están en el CRM. Es lo que evita que un
+    // comercial cree por segunda vez un cliente de hace años, y trae su NIT sin escribirlo.
+    //
+    // Busca en toda la compañía y no sólo en la cartera de quien escribe: para no duplicar hay que
+    // ver también lo que atiende otro. Por eso cada sugerencia dice quién lo atiende.
+    //
+    // Si Avancys no responde, el selector sigue funcionando con lo del CRM. Un ERP caído no puede
+    // impedir crear una oportunidad.
+    let deAvancys = [];
+    try {
+      const lector = crearLectorAvancys();
+      if (lector) {
+        const yaEstan = new Set(delCrm.map(cliente => normalizeClientName(cliente.company_name)));
+        const { clientes } = await lector.buscarClientes({ texto: consulta, limite: 10 });
+        deAvancys = clientes
+          .filter(cliente => cliente.nombre && !yaEstan.has(normalizeClientName(cliente.nombre)))
+          .map(cliente => ({
+            // No es un cliente del CRM y no tiene su id: el formulario no debe mandarlo como tal.
+            id: `avancys:${cliente.identificacion?.numero || cliente.nombre}`,
+            company_name: cliente.nombre,
+            company_nit: cliente.identificacion?.numero || null,
+            atendido_por: cliente.atendido_por,
+            origen: 'avancys',
+            customer_segment: null, regional_nombre: null, sede: null,
+            quote_city: null, economic_sector: null,
+            decision_maker_name: null, decision_maker_email: null, decision_maker_phone: null,
+          }));
+      }
+    } catch (error) {
+      console.warn('client_typeahead_avancys_unavailable', {
+        event: 'client_typeahead_avancys_unavailable',
+        code: error?.codigo || 'desconocido',
+      });
+    }
+    res.json([...delCrm, ...deAvancys].slice(0, 25));
   } catch (error) { sendAuthError(res, error); }
 });
 

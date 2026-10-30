@@ -5,7 +5,7 @@ import {
   getCurrentTenderAnalysis,
   presentCurrentTenderAnalysis,
   registerSiioRulesAnalysis,
-} from '../tender-analysis-foundation.js';
+} from '../verticales/licitaciones/tender-analysis-foundation.js';
 
 const ids = {
   opportunity: '22222222-2222-4222-8222-222222222222',
@@ -293,7 +293,7 @@ assert.equal(presentedCanonical.method, 'agent_ai');
 
 for (const path of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot \} from '\.\.\/tender-analysis-foundation\.js';/);
+  assert.match(source, /import \{ getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot \} from '\.\.\/verticales\/licitaciones\/tender-analysis-foundation\.js';/);
   const officialRefresh = source.match(/async function refreshTenderDocumentsFromOfficialSource[\s\S]*?\n}\nasync function convertTenderToOpportunity/);
   assert.ok(officialRefresh, `${path} must retain the governed official-document refresh`);
   const officialWriteIndex = officialRefresh[0].indexOf('refreshTenderDocumentBatch');
@@ -319,9 +319,15 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
   assert.match(records[0], /question_responses:\s*questionResponses/, `${path} must include traceable human question responses without mutating the analysis`);
   assert.match(records[0], /analyses,/, `${path} must preserve legacy timeline history for compatibility`);
 
-  const manualUpload = source.match(/app\.post\('\/api\/tender-documents-upload'[\s\S]*?\n}\);/);
-  assert.ok(manualUpload, `${path} must retain the manual tender-document upload endpoint`);
-  const manualWriteIndex = manualUpload[0].indexOf('saveTenderDocumentBuffer');
+  // The governed sequence moved out of the route into `ingestTenderDossierDocuments`, shared by the web route and
+  // the task-server runner (Supersalud, 2026-10-25: a contributed document had no way in without a browser).
+  // The ordering invariants below still hold; they are now checked where the work lives.
+  const manualUpload = source.match(/export async function ingestTenderDossierDocuments\([\s\S]*?\n}\n/);
+  assert.ok(manualUpload, `${path} must retain the governed tender-document ingestion sequence`);
+  const manualUploadRoute = source.match(/app\.post\('\/api\/tender-documents-upload'[\s\S]*?\n}\);/);
+  assert.ok(manualUploadRoute, `${path} must retain the manual tender-document upload endpoint`);
+  assert.match(manualUploadRoute[0], /ingestTenderDossierDocuments\(database, \{/, `${path} must delegate the manual upload to the shared sequence`);
+  const manualWriteIndex = manualUpload[0].indexOf('refreshOfficialTenderDocument');
   const manualTokenIndex = manualUpload[0].indexOf('psi_begin_tender_document_refresh');
   const manualSnapshotIndex = manualUpload[0].indexOf('registerTenderDocumentSnapshot');
   assert.ok(manualWriteIndex >= 0 && manualTokenIndex > manualWriteIndex && manualSnapshotIndex > manualTokenIndex, `${path} must open the manual publication token after its own writes and before publishing the snapshot`);

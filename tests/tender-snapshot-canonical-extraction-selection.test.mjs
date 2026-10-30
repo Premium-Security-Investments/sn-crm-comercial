@@ -26,8 +26,8 @@ import {
   mergeCanonicalExtractionIntoDocument,
   deriveTenderDocumentExtractionGaps,
   selectCanonicalExtractionsByDocumentVersion,
-} from '../tender-document-extraction-persistence.js';
-import { buildTenderRequirementInventory } from '../tender-requirement-inventory.js';
+} from '../verticales/licitaciones/tender-document-extraction-persistence.js';
+import { buildTenderRequirementInventory } from '../verticales/licitaciones/tender-requirement-inventory.js';
 
 const hash = text => createHash('sha256').update(text, 'utf8').digest('hex');
 const VERSION_ID = '66666666-6666-4666-8666-666666666666';

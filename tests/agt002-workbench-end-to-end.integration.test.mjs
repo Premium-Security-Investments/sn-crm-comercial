@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { runAgt002WorkbenchWorker } from '../agt002-workbench-worker.js';
+import { runAgt002WorkbenchWorker } from '../verticales/licitaciones/agt002-workbench-worker.js';
 import {
   claimAgt002WorkbenchJob,
   appendAgt002WorkbenchJobEvent,
   completeAgt002WorkbenchJob,
-} from '../agt002-workbench-persistence.js';
+} from '../verticales/licitaciones/agt002-workbench-persistence.js';
 import { createSyntheticAgt002Responder } from './fixtures/agt002-workbench-synthetic-responder.mjs';
 import { ACTIONS, can } from '../access-control.js';
 
@@ -204,10 +204,12 @@ projection = (await db.query(`select public.psi_project_tender_dossier_artifact(
 assert.equal(projection.review_status, 'aprobado');
 assert.equal(projection.has_approved_version, true);
 
-// (7) la custodia sigue sin poder ejecutar GO/NO-GO (matrix de autoridad).
+// (7) la matriz de autoridad: la custodia es lo que separa revisar documentos de sólo operar, y desde el 2026-10-29
+// el acceso a Licitaciones alcanza para GO/NO-GO (la encargada es `comercial`), que sigue siendo humano.
 assert.equal(can(custodianProfile, ACTIONS.LICITACIONES_WORKBENCH_CUSTODY, {}), true);
-assert.equal(can(custodianProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, {}), false);
+assert.equal(can(custodianProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, {}), true);
 assert.equal(can(operatorProfile, ACTIONS.LICITACIONES_WORKBENCH_CUSTODY, {}), false);
+assert.equal(can({ ...operatorProfile, permissions: [] }, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, {}), false);
 
 // (8) un nuevo job con base versión 1 queda stale y no crea la versión 3.
 const staleJob = await postMessage(db, {

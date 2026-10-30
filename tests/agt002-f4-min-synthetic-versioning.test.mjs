@@ -18,7 +18,7 @@ import {
   recomputeAgt002F4MinVersionRecordHash,
   computeAgt002F4MinCanonicalSourceBytes,
   createAgt002F4MinSyntheticVersioning,
-} from '../agt002-f4-min-synthetic-versioning.js';
+} from '../verticales/licitaciones/agt002-f4-min-synthetic-versioning.js';
 
 // AGT-002 F4-min: focused tests for the isolated in-memory synthetic versioning slice. All
 // ids/locators below are synthetic-prefixed / fixture:// only. No IO, no network, no DB, no
@@ -26,7 +26,7 @@ import {
 
 const SENTINEL = AGT002_F4MIN_RECONSTRUCTION_SENTINEL;
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const MODULE_PATH = path.join(REPO_ROOT, 'agt002-f4-min-synthetic-versioning.js');
+const MODULE_PATH = path.join(REPO_ROOT, 'verticales/licitaciones/agt002-f4-min-synthetic-versioning.js');
 
 function sha256Hex(bytes) {
   return createHash('sha256').update(bytes).digest('hex');

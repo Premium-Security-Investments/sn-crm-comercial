@@ -8,19 +8,19 @@ import { join, dirname } from 'node:path';
 import {
   SURFACE_NAMES,
   buildAgt002ControlPlaneIdentity,
-} from '../agt002-control-plane-identity.js';
-import { observeAgt002Surfaces } from '../agt002-control-plane-observe.js';
-import { getAgt002VercelControlPlaneIdentity } from '../agt002-vercel-control-plane-identity.js';
+} from '../verticales/licitaciones/agt002-control-plane-identity.js';
+import { observeAgt002Surfaces } from '../verticales/licitaciones/agt002-control-plane-observe.js';
+import { getAgt002VercelControlPlaneIdentity } from '../verticales/licitaciones/agt002-vercel-control-plane-identity.js';
 import {
   buildRadarPipelineIdentity,
   buildReanalysisWorkerIdentity,
   buildWorkbenchSchedulerIdentity,
-} from '../agt002-control-plane-surface-builders.js';
+} from '../verticales/licitaciones/agt002-control-plane-surface-builders.js';
 import {
   AGT002_RELEASES_ROOT,
   AGT002_RELEASE_VERSION_FILE_NAME,
   resolveAgt002ReleaseArtifactEvidence,
-} from '../agt002-control-plane-runtime-evidence.js';
+} from '../verticales/licitaciones/agt002-control-plane-runtime-evidence.js';
 import { createAgt002BridgeServer } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 import { generateAgt002ReleaseReceipt } from '../scripts/agt002-generate-release-receipt.mjs';
@@ -551,8 +551,8 @@ test('radar pipeline runner: --control-plane is gated by the shared builder + sh
   const source = readFileSync(RADAR_RUNNER, 'utf8');
   assert.match(source, /buildRadarPipelineIdentity/);
   assert.match(source, /resolveAgt002ReleaseArtifactEvidence/);
-  assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-surface-builders\.js'/);
-  assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-runtime-evidence\.js'/);
+  assert.match(source, /from\s+'\.\.\/\.\.\/verticales\/licitaciones\/agt002-control-plane-surface-builders\.js'/);
+  assert.match(source, /from\s+'\.\.\/\.\.\/verticales\/licitaciones\/agt002-control-plane-runtime-evidence\.js'/);
   assert.ok(source.indexOf("'--control-plane'") >= 0, '--control-plane check must be present');
   assert.doesNotMatch(source, /createClient\(/, 'the retired radar pipeline runner must never construct a Supabase client');
   assert.doesNotMatch(source, /@supabase\/supabase-js/, 'the retired radar pipeline runner must never import the Supabase client');
@@ -597,8 +597,8 @@ test('reanalysis worker runner: --control-plane is gated by the shared builder +
   const source = readFileSync(REANALYSIS_RUNNER, 'utf8');
   assert.match(source, /buildReanalysisWorkerIdentity/);
   assert.match(source, /resolveAgt002ReleaseArtifactEvidence/);
-  assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-surface-builders\.js'/);
-  assert.match(source, /from\s+'\.\.\/\.\.\/agt002-control-plane-runtime-evidence\.js'/);
+  assert.match(source, /from\s+'\.\.\/\.\.\/verticales\/licitaciones\/agt002-control-plane-surface-builders\.js'/);
+  assert.match(source, /from\s+'\.\.\/\.\.\/verticales\/licitaciones\/agt002-control-plane-runtime-evidence\.js'/);
   const controlPlaneIndex = source.indexOf("'--control-plane'");
   const clientIndex = source.indexOf('createClient(');
   assert.ok(controlPlaneIndex >= 0, '--control-plane check must be present');

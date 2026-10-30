@@ -12,11 +12,11 @@ import {
   resolveAgt002Phase01Authority,
   validateAgt002Phase01ValidLink,
   evaluateAgt002Phase01Fixture,
-} from '../agt002-phase01-executable-controls.js';
+} from '../verticales/licitaciones/agt002-phase01-executable-controls.js';
 
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONTRACTS_DIR = path.join(REPO_ROOT, 'contracts', 'agt002-phase01', 'v1');
-const EXECUTABLE_CONTROLS_PATH = path.join(REPO_ROOT, 'agt002-phase01-executable-controls.js');
+const EXECUTABLE_CONTROLS_PATH = path.join(REPO_ROOT, 'verticales/licitaciones/agt002-phase01-executable-controls.js');
 const FIXTURES_DIR = path.join(CONTRACTS_DIR, 'fixtures');
 const EXPECTATIONS_PATH = path.join(FIXTURES_DIR, 'expectations.json');
 const BINDING_REGISTRY_DATA_PATH = path.join(CONTRACTS_DIR, 'binding-registry.json');

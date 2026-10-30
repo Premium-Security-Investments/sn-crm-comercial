@@ -14,6 +14,13 @@ const separatelyGovernedP3b2Files = new Set([
   'contracts/agents/siio-adapter/v1/manifest.json',
   'tests/agent-agt003-synthetic-parity-p3b2.test.mjs',
 ]);
+// Documentación de gobierno que nombra el repositorio productor porque describe el ecosistema, no porque
+// copie el pin: el mapa autoritativo (2026-10-03) y la integración con Plataforma Agentes. La excepción es
+// sólo para el nombre del repositorio; el commit, la ruta, el id y el sha256 siguen prohibidos aquí también.
+const governedDocsNamingProducerRepo = new Set([
+  'docs/architecture/agent-ecosystem-map.md',
+  'docs/agt002/platform-agents-integration.md',
+]);
 
 assert.ok(existsSync(pinPath), 'P2B must add the sole machine-readable run-envelope pin');
 
@@ -123,9 +130,10 @@ function auditRepository(root) {
     if (!isExactInstitutionalPin && /\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
       violations.add('producer-owner');
     }
+    const mayNameProducerRepo = isExactInstitutionalPin || governedDocsNamingProducerRepo.has(filePath);
     if (
       exactContractAnchors.some(anchor =>
-        text.includes(anchor) && !(isExactInstitutionalPin && anchor === expectedPin.producer_repo)
+        text.includes(anchor) && !(mayNameProducerRepo && anchor === expectedPin.producer_repo)
       )
     ) {
       violations.add('canonical-anchor');

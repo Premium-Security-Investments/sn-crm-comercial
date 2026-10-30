@@ -30,7 +30,8 @@ assert.doesNotMatch(followUp, /loadTrackingEvents\(api,\s*opportunity\.id,\s*nul
 assert.match(followUp, /<Panel title="Historial del proceso">/, 'Debe conservar el historial comercial.');
 assert.doesNotMatch(followUp, /Auditoría técnica|tender-technical-audit|technicalEvents/, 'La auditoría técnica no debe formar parte del render operativo.');
 assert.match(followUp, /decisions\.length\s*&&\s*\['go_decided',\s*'no_go_decided'\]\.includes\(event\.event_type\)/, 'La decisión canónica debe evitar GO/NO GO duplicados desde tracking.');
-assert.match(followUp, /offerHistory\.length\s*&&\s*event\.event_type\s*===\s*'offer_preparation_started'/, 'El cambio de estado canónico debe evitar duplicar el inicio de preparación.');
+// El filtro se amplió: además del historial de oferta, un GO registrado ya cuenta el inicio de preparación.
+assert.match(followUp, /offerHistory\.length[\s\S]{0,160}event\.event_type\s*===\s*'offer_preparation_started'/, 'El cambio de estado canónico debe evitar duplicar el inicio de preparación.');
 assert.match(api, /loadTrackingEvents/, 'El contrato frontend para consultar tracking se conserva.');
 
 assert.match(panel, /Siguiente paso/, 'La decisión vigente debe comunicar una próxima acción.');

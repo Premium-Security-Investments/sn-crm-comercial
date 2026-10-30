@@ -3,8 +3,8 @@ import test from 'node:test';
 import {
   agt002ImportItemGapReason,
   loadAgt002TenderRequirementDocumentGaps,
-} from '../agt002-tender-requirement-gaps.js';
-import { buildTenderRequirementInventory } from '../tender-requirement-inventory.js';
+} from '../verticales/licitaciones/agt002-tender-requirement-gaps.js';
+import { buildTenderRequirementInventory } from '../verticales/licitaciones/tender-requirement-inventory.js';
 
 const SNAPSHOTS_TABLE = 'psi_tender_document_snapshots';
 

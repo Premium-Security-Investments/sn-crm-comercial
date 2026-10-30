@@ -5,7 +5,7 @@ import {
   resolveAgt002DeepAnalysisMatrix,
   validateAgt002RequirementManifest,
   AGT002_REQUIREMENT_MANIFEST_UNRESOLVED_REASON,
-} from '../agt002-deep-analysis-matrix.js';
+} from '../verticales/licitaciones/agt002-deep-analysis-matrix.js';
 
 function hash(text) { return createHash('sha256').update(text).digest('hex'); }
 
