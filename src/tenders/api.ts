@@ -1,4 +1,4 @@
-import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -68,6 +68,11 @@ export async function loadTenderOpportunities<T>(request: TenderRequest, page: T
   const offset = Math.min(10000, Math.max(0, Math.trunc(page.offset ?? 0)));
   const filter = page.filter || 'all';
   return request<T>(`/api/tender-opportunities?filter=${encodeURIComponent(filter)}&limit=${limit}&offset=${offset}`);
+}
+
+/** El paquete de la oferta: la lista de lo que va, el índice y la matriz. Sin bytes: los baja el navegador. */
+export async function loadTenderOfferPackage(request: TenderRequest, opportunityId: string): Promise<TenderOfferPackage> {
+  return request<TenderOfferPackage>(`/api/tender-offer-package?id=${encodeURIComponent(opportunityId)}`);
 }
 
 /** La matriz de cumplimiento de una licitación: sólo lectura. `available:false` mientras no haya análisis terminado. */

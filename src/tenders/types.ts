@@ -1027,3 +1027,49 @@ export type TenderComplianceMatrix = {
     requisitos_abiertos: number;
   } | null;
 };
+
+/**
+ * Paquete de la oferta (punto 3 del encargo del 2026-10-30). El servidor manda la lista y los dos archivos que el
+ * paquete produce; el navegador baja cada documento por su propia ruta y arma el ZIP.
+ */
+export type TenderOfferPackageFile = {
+  kind: 'expediente' | 'empresa';
+  path: string;
+  document_id: string;
+  source_name: string | null;
+  origin?: string | null;
+  document_type?: string | null;
+  block?: string;
+  block_label?: string;
+  state?: TenderCompanyDocumentState;
+  expires_at?: string | null;
+  age_at_close_days?: number | null;
+  confirmed: boolean | null;
+};
+export type TenderOfferPackage = {
+  manifest: {
+    opportunity_id: string | null;
+    entity: string | null;
+    tender_ref: string | null;
+    close_date: string | null;
+    generated_at: string;
+    folders: string[];
+    files: TenderOfferPackageFile[];
+    generated: string[];
+    missing_blocks: { block: string; label: string; owner: string; kind: string; folder: string }[];
+    summary: {
+      total_files: number;
+      del_expediente: number;
+      de_empresa: number;
+      sin_confirmar: number;
+      bloques_sin_archivo: number;
+      requisitos: number | null;
+      requisitos_abiertos: number | null;
+      causas_de_rechazo: number | null;
+    };
+  };
+  index: string;
+  matrix_csv: string | null;
+  matrix_name: string;
+  dossier_download_path: string;
+};

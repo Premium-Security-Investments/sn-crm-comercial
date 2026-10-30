@@ -44,7 +44,8 @@ import {
 } from '../verticales/licitaciones/tender-dossier-rpc.js';
 import { buildRequirementRows } from '../verticales/licitaciones/agt002-requirements-model.js';
 import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/tender-company-document-bridge.js';
-import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
+import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixCsv, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
+import { TENDER_OFFER_PACKAGE_MATRIX_NAME, buildTenderOfferPackageManifest, tenderOfferPackageIndex } from '../verticales/licitaciones/tender-offer-package.js';
 import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../verticales/licitaciones/tender-analysis-foundation.js';
 import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
@@ -493,6 +494,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tender-dossier-company-documents': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Matriz de cumplimiento: una fila por requisito del pliego, con su soporte y su estado al cierre. Sólo lectura.
   'GET /api/tender-compliance-matrix': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Paquete de la oferta: la lista de lo que va y el índice. Sin bytes y sin URLs firmadas en el cuerpo.
+  'GET /api/tender-offer-package': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Crear a mano un proceso que no está en SECOP: traerlo al CRM es el mismo acto que convertirlo desde el Radar.
   'POST /api/tenders/manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
   'POST /api/tender-manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
@@ -6690,6 +6693,52 @@ app.get('/api/tender-compliance-matrix', async (req, res) => {
     const opportunityId = String(req.query.id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     res.json(await readTenderComplianceMatrix(database, opportunityId, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/**
+ * El paquete de la oferta (punto 3 del encargo del 2026-10-30): la lista de lo que va, en qué carpeta va, más el
+ * índice y la matriz ya escritos. **No devuelve bytes ni URLs firmadas**: el navegador baja cada archivo por su
+ * propia ruta —con su propia autorización— y arma el ZIP con `zip-store.js`. Dos razones: una función sin servidor
+ * no puede devolver 30 MB, y la capacidad de bajar un documento no viaja en un cuerpo JSON (ver
+ * `/api/tender-documents/:documentId/download`).
+ */
+async function readTenderOfferPackage(database, opportunityId, currentProfile) {
+  const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+  const bridge = await readTenderCompanyDocumentBridge(database, opportunityId, currentProfile);
+  const matrix = await readTenderComplianceMatrix(database, opportunityId, currentProfile);
+  const dossierDocuments = await must(database.from('psi_tender_document_versions')
+    .select('id,name,document_type,origin')
+    .eq('opportunity_id', opportunityId).eq('current', true)
+    .order('name', { ascending: true }));
+  const manifest = buildTenderOfferPackageManifest({
+    opportunity: { id: opportunityId, company_name: opportunity.company_name },
+    tenderRef: bridge.tender_ref,
+    closeDate: bridge.close_date,
+    bridge,
+    dossierDocuments: dossierDocuments || [],
+    matrix: matrix.available ? matrix : null,
+  });
+  return {
+    manifest,
+    index: tenderOfferPackageIndex(manifest),
+    // La matriz entra al paquete como el mismo CSV que se descarga aparte: una sola matriz, no dos.
+    matrix_csv: matrix.available ? tenderComplianceMatrixCsv(matrix.headers, matrix.table) : null,
+    matrix_name: TENDER_OFFER_PACKAGE_MATRIX_NAME,
+    // Cada archivo del expediente se baja por esta ruta, que vuelve a autorizar y firma por 15 minutos.
+    dossier_download_path: `/api/tender-documents/:id/download?opportunity_id=${encodeURIComponent(opportunityId)}`,
+  };
+}
+
+app.get('/api/tender-offer-package', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await readTenderOfferPackage(database, opportunityId, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
