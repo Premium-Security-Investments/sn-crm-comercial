@@ -15,7 +15,7 @@ assert.doesNotMatch(shared, /trackingRollbackPatch/);
 
 for (const path of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate \} from '\.\.\/verticales\/licitaciones\/tender-tracking-rpc\.js';/);
+  assert.match(source, /import \{ callCreateTenderProcessingJob, callManualTenderOpportunityCreation, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate \} from '\.\.\/verticales\/licitaciones\/tender-tracking-rpc\.js';/);
   assert.match(source, /app\.get\('\/api\/tender-tracking'/);
   assert.match(source, /app\.get\('\/api\/tender-tracking-events'/);
   assert.match(source, /app\.post\('\/api\/tender-tracking-update'/);

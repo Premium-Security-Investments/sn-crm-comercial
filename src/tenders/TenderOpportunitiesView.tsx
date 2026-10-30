@@ -94,7 +94,7 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
   const [creatingManual, setCreatingManual] = useState(false);
   const requestVersionRef = useRef(0);
   // Crear a mano un proceso que no está en SECOP: misma custodia que convertir desde el Radar.
-  const canCreateManual = canCreateManualTenderProcess(data.currentProfile);
+  const canCreateManual = canCreateManualTenderProcess(data?.currentProfile);
 
   // El backend sigue hablando su vocabulario (RPC 023, intacto): el filtro primario sólo se traduce
   // al bajar. Cada predicado SQL es igual o más estrecho que su estado primario, así que acotar en
