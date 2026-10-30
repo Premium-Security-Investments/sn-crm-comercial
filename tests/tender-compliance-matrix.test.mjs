@@ -112,13 +112,18 @@ test('el requisito cuyo soporte se produce para este proceso no queda vacío: lo
 });
 
 test('el cruce reconoce cómo los pliegos nombran cada documento, con tildes o sin ellas', () => {
-  assert.deepEqual(matchCompanyDocumentClasses('pedir certificado nuevo a la Cámara de Comercio de Pereira'), ['camara_comercio']);
+  assert.deepEqual(matchCompanyDocumentClasses('pedir certificado nuevo a la Cámara de Comercio de Pereira'), ['chamber_of_commerce']);
   assert.deepEqual(matchCompanyDocumentClasses('certificacion de sanciones y multas de la Supervigilancia'), ['no_fines_sanctions_certificate']);
   assert.deepEqual(matchCompanyDocumentClasses('la resolución de prórroga y la que fija las modalidades'), ['supervigilancia_operating_license']);
   assert.deepEqual(matchCompanyDocumentClasses('autorización de uniformes y distintivos'), ['uniforms_resolution']);
   assert.deepEqual(matchCompanyDocumentClasses('licencia de espectro y el registro de comunicaciones'), ['communications_license']);
   // Un requisito puede nombrar varios documentos, y salen todos en el orden del catálogo.
-  assert.deepEqual(matchCompanyDocumentClasses('Revisa existencia y representación, RUT, carta de presentación'), ['camara_comercio', 'rut']);
+  assert.deepEqual(matchCompanyDocumentClasses('Revisa existencia y representación, RUT, carta de presentación'), ['chamber_of_commerce', 'rut']);
+  // Bloques abiertos por la 166: la agencia por ciudad dejó de apuntar a la licencia de funcionamiento, que habla de
+  // modalidades y prórroga, y las certificaciones de calidad tienen sus propias palabras.
+  assert.deepEqual(matchCompanyDocumentClasses('conseguir copia de la resolución de la agencia de Bogotá'), ['agency_authorizations']);
+  assert.deepEqual(matchCompanyDocumentClasses('anexar certificaciones BASC e ISO 9001'), ['quality_certifications']);
+  assert.deepEqual(matchCompanyDocumentClasses('la resolución de prórroga vigente y las modalidades de la licencia de funcionamiento'), ['supervigilancia_operating_license']);
   assert.deepEqual(matchCompanyDocumentClasses('nada que ver con documentos'), []);
 });
 

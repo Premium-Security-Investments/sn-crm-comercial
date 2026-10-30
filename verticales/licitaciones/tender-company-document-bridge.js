@@ -43,9 +43,11 @@ export const TENDER_COMPANY_DOCUMENT_KINDS = Object.freeze({
  * anteriores a esa convención.
  */
 export const TENDER_COMPANY_DOCUMENT_CLASSES = Object.freeze([
-  // El certificado de existencia y representación no tiene entrada en el registro de evidencia (hueco conocido, ver
-  // `bridgeGaps`), pero lo piden todos los pliegos y está cargado como tipo legado `certificado`.
-  { key: 'camara_comercio', label: 'Certificado de Cámara de Comercio', owner: 'Jurídico', folder: '02_Juridico', kind: 'tramite', registry_entry: null, document_types: ['camara_comercio', 'certificado'] },
+  // El certificado de existencia y representación ya tiene su bloque (migración 166, autorizada por Juan el
+  // 2026-10-30). El tipo legado `certificado` se conserva porque los dos soportes cargados antes de que el bloque
+  // existiera —2026-09-01 y 2026-10-06— entraron por ahí y siguen acreditando: migrarlos sería mover datos de
+  // producción sin ganar nada, y el más reciente gana igual.
+  { key: 'chamber_of_commerce', label: 'Certificado de Cámara de Comercio', owner: 'Jurídico', folder: '02_Juridico', kind: 'tramite', registry_entry: 'chamber_of_commerce', document_types: ['chamber_of_commerce', 'certificado'] },
   { key: 'rup', label: 'Registro Único de Proponentes (RUP)', owner: 'Licitaciones', folder: '05_Experiencia', kind: 'mixto', registry_entry: 'rup', document_types: ['rup'] },
   { key: 'rut', label: 'Registro Único Tributario (RUT)', owner: 'Jurídico', folder: '02_Juridico', kind: 'tramite', registry_entry: 'rut', document_types: ['rut'] },
   { key: 'supervigilancia_operating_license', label: 'Licencia de funcionamiento SuperVigilancia', owner: 'Jurídico', folder: '02_Juridico', kind: 'hecho_inscrito', registry_entry: 'supervigilancia_operating_license', document_types: ['supervigilancia_operating_license'] },
@@ -63,6 +65,14 @@ export const TENDER_COMPANY_DOCUMENT_CLASSES = Object.freeze([
   { key: 'personnel_credentials_vault', label: 'Credenciales y afiliaciones del personal', owner: 'Operaciones', folder: '04_Tecnico', kind: 'mixto', registry_entry: 'personnel_credentials_vault', document_types: ['personnel_credentials_vault'] },
   { key: 'differential_scoring_support', label: 'Soportes de criterios diferenciales', owner: 'Jurídico', folder: '04_Tecnico', kind: 'mixto', registry_entry: 'differential_scoring_support', document_types: ['differential_scoring_support'] },
   { key: 'accredited_experience', label: 'Experiencia acreditada', owner: 'Licitaciones', folder: '05_Experiencia', kind: 'hecho_inscrito', registry_entry: 'accredited_experience', document_types: ['accredited_experience'] },
+  // Bloques abiertos el 2026-10-30 (migración 166). Los dos son `hecho_inscrito` y no trámite: renovar una ISO o un
+  // BASC exige una auditoría, y la antigüedad de una agencia no la cambia ningún papel nuevo —fue lo que decidió el
+  // NO-GO de Cali—. Tratarlos como trámite haría que un vencimiento se leyera como "una llamada y listo".
+  { key: 'quality_certifications', label: 'Certificaciones de calidad (BASC e ISO)', owner: 'Licitaciones', folder: '04_Tecnico', kind: 'hecho_inscrito', registry_entry: 'quality_certifications', document_types: ['quality_certifications'] },
+  // Una ciudad puede estar acreditada por resolución propia (Bogotá, Medellín, Cali) o por la tabla de agencias de la
+  // licencia de funcionamiento (Pereira, Cartago, Manizales). Las dos valen, así que un hueco aquí no significa que
+  // la ciudad no esté acreditada: la fila muestra la prosa del registro, que lo explica.
+  { key: 'agency_authorizations', label: 'Autorizaciones de agencia por ciudad', owner: 'Jurídico', folder: '02_Juridico', kind: 'hecho_inscrito', registry_entry: 'agency_authorizations', document_types: ['agency_authorizations'] },
 ]);
 
 const CLASS_BY_DOCUMENT_TYPE = new Map();

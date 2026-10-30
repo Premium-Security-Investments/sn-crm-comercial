@@ -127,18 +127,18 @@ test('una carga más nueva que la ventana del registro no se declara vencida', (
 });
 
 test('los tipos legados siguen acreditando su clase, y gana el documento más reciente', () => {
-  assert.equal(tenderCompanyDocumentClassForType('certificado'), 'camara_comercio');
+  assert.equal(tenderCompanyDocumentClassForType('certificado'), 'chamber_of_commerce');
   assert.equal(tenderCompanyDocumentClassForType('procuraduria_empresa'), 'corporate_background_checks');
   assert.equal(tenderCompanyDocumentClassForType('inventado'), null);
-  assert.equal(rowOf('camara_comercio').document.id, 'doc-cc-1', 'el del 2026-10-06, no el del 2026-09-01');
-  assert.deepEqual(rowOf('camara_comercio').supporting_documents.map(document => document.id), ['doc-cc-1', 'doc-cc-2']);
+  assert.equal(rowOf('chamber_of_commerce').document.id, 'doc-cc-1', 'el del 2026-10-06, no el del 2026-09-01');
+  assert.deepEqual(rowOf('chamber_of_commerce').supporting_documents.map(document => document.id), ['doc-cc-1', 'doc-cc-2']);
 });
 
 test('la cuenta que ningún tablero tenía: la edad del papel el día del cierre', () => {
   assert.equal(companyDocumentAgeAtClose('2026-10-06', '2026-11-04'), 29);
   assert.equal(companyDocumentAgeAtClose(null, '2026-11-04'), null);
   assert.equal(companyDocumentAgeAtClose('2026-10-06', null), null);
-  const camara = rowOf('camara_comercio');
+  const camara = rowOf('chamber_of_commerce');
   assert.equal(camara.age_at_close_days, 29);
   assert.match(camara.age_note, /Al cierre tendrá 29 días de expedido/);
   assert.equal(camara.days_to_close, 5, 'del 2026-10-30 al cierre');
@@ -174,8 +174,11 @@ test('nada se esconde: documentos sin clase y huecos del catálogo se reportan',
     now: NOW,
   });
   assert.deepEqual(conExtra.unmatched_documents.map(document => document.id), ['doc-x']);
-  // La Cámara de Comercio no tiene entrada en el registro de evidencia: es un hueco conocido y se declara.
-  assert.ok(bridge.gaps.some(gap => gap.kind === 'clase_fuera_del_registro' && gap.key === 'camara_comercio'));
+  // Desde la migración 166 ninguna clase vive fuera del registro: la Cámara de Comercio ya tiene su bloque.
+  assert.deepEqual(bridge.gaps.filter(gap => gap.kind === 'clase_fuera_del_registro'), []);
+  // Y las clases cuyo bloque no está en esta ficha de prueba se declaran, en vez de desaparecer de la lista.
+  assert.ok(bridge.gaps.some(gap => gap.kind === 'clase_sin_registro' && gap.key === 'chamber_of_commerce'));
+  assert.ok(bridge.gaps.some(gap => gap.kind === 'clase_sin_registro' && gap.key === 'quality_certifications'));
   // Y una clase cuyo registro no está vigente también se declara, en vez de desaparecer de la lista.
   assert.ok(bridge.gaps.some(gap => gap.kind === 'clase_sin_registro' && gap.key === 'rut'));
 });

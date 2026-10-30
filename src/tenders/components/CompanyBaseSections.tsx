@@ -3,7 +3,7 @@ import {
   COMPANY_BLOCK_STATE_LABELS, COMPANY_BLOCK_STATES, groupCompanyBlocks, parseFinancialIndicators, parseUnspscCodes,
   type CompanyBlock, type CompanyBlockState, type CompanyEvidenceDecision, type CompanyExperience, type CompanySite,
 } from '../companyBase';
-import type { TenderCompanyProfile } from '../types';
+import type { TenderCompanyDocument, TenderCompanyProfile } from '../types';
 
 const dateFormatter = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const moneyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -127,12 +127,31 @@ export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = 
   </section>;
 }
 
-type Field = { key: string; label: string; type?: 'text' | 'number' | 'checkbox'; required?: boolean; wide?: boolean };
-const SITE_FIELDS: Field[] = [
-  { key: 'department', label: 'Departamento', required: true }, { key: 'city', label: 'Ciudad' },
-  { key: 'address', label: 'Dirección', wide: true }, { key: 'supervigilancia_authorization', label: 'Autorización SuperVigilancia (resolución)', wide: true },
-  { key: 'is_main', label: 'Sede principal', type: 'checkbox' }, { key: 'source', label: 'Fuente del dato' }, { key: 'notes', label: 'Notas', wide: true },
-];
+type Field = { key: string; label: string; type?: 'text' | 'number' | 'checkbox' | 'select'; required?: boolean; wide?: boolean; options?: { value: string; label: string }[]; hint?: string };
+
+/**
+ * Los bloques que acreditan una ciudad: la resolución propia de la agencia o la licencia de funcionamiento, que trae
+ * su tabla de agencias (Pereira, Cartago y Manizales están amparadas ahí y no tienen resolución propia). Las dos
+ * valen, así que la sede puede enlazarse a cualquiera de los dos soportes.
+ */
+const SITE_SUPPORT_DOCUMENT_TYPES = ['agency_authorizations', 'supervigilancia_operating_license'];
+
+function siteFields(documents: TenderCompanyDocument[]): Field[] {
+  const options = documents
+    .filter(document => document.current !== false && SITE_SUPPORT_DOCUMENT_TYPES.includes(document.document_type))
+    .map(document => ({ value: document.id, label: `${document.display_name}${document.issued_at ? ` · ${document.issued_at}` : ''}` }));
+  return [
+    { key: 'department', label: 'Departamento', required: true }, { key: 'city', label: 'Ciudad' },
+    { key: 'address', label: 'Dirección', wide: true }, { key: 'supervigilancia_authorization', label: 'Autorización SuperVigilancia (resolución)', wide: true },
+    {
+      key: 'support_document_id', label: 'Documento que respalda la sede', type: 'select', wide: true, options,
+      hint: options.length
+        ? 'La resolución de la agencia o la licencia de funcionamiento, que ampara las ciudades sin resolución propia.'
+        : 'Todavía no hay resoluciones de agencia ni licencia cargadas en la ficha de empresa.',
+    },
+    { key: 'is_main', label: 'Sede principal', type: 'checkbox' }, { key: 'source', label: 'Fuente del dato' }, { key: 'notes', label: 'Notas', wide: true },
+  ];
+}
 const EXPERIENCE_FIELDS: Field[] = [
   { key: 'contracting_party', label: 'Contratante', required: true, wide: true }, { key: 'rup_number', label: 'N.º en el RUP', type: 'number' },
   { key: 'contract_year', label: 'Año', type: 'number' }, { key: 'contract_object', label: 'Objeto o servicio', wide: true },
@@ -166,7 +185,9 @@ function CompanyRecordDialog({ title, fields, initial, onCancel, onSave }: {
       <header><div><span className="eyebrow">Empresa</span><h3 id="company-record-title">{title}</h3></div><button type="button" className="secondary" onClick={onCancel} disabled={saving}>Cerrar</button></header>
       <div className="company-record-grid">{fields.map((field, index) => field.type === 'checkbox'
         ? <label key={field.key} className="company-record-check"><input type="checkbox" checked={values[field.key] === true} onChange={event => setValues(current => ({ ...current, [field.key]: event.target.checked }))} /><span>{field.label}</span></label>
-        : <label key={field.key} className={field.wide ? 'wide' : ''}><span>{field.label}{field.required ? ' *' : ''}</span><input ref={index === 0 ? firstFieldRef : undefined} type={field.type === 'number' ? 'number' : 'text'} step="any" value={String(values[field.key] ?? '')} onChange={event => setValues(current => ({ ...current, [field.key]: event.target.value }))} /></label>)}</div>
+        : field.type === 'select'
+          ? <label key={field.key} className={field.wide ? 'wide' : ''}><span>{field.label}</span><select value={String(values[field.key] ?? '')} onChange={event => setValues(current => ({ ...current, [field.key]: event.target.value }))}><option value="">Sin documento enlazado</option>{(field.options || []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{field.hint && <small>{field.hint}</small>}</label>
+          : <label key={field.key} className={field.wide ? 'wide' : ''}><span>{field.label}{field.required ? ' *' : ''}</span><input ref={index === 0 ? firstFieldRef : undefined} type={field.type === 'number' ? 'number' : 'text'} step="any" value={String(values[field.key] ?? '')} onChange={event => setValues(current => ({ ...current, [field.key]: event.target.value }))} />{field.hint && <small>{field.hint}</small>}</label>)}</div>
       {error && <div className="notice" role="alert">{error}</div>}
       <footer><button type="button" className="secondary" onClick={onCancel} disabled={saving}>Cancelar</button><button type="button" onClick={() => void submit()} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button></footer>
     </div>
@@ -175,23 +196,27 @@ function CompanyRecordDialog({ title, fields, initial, onCancel, onSave }: {
 
 type Editing<T> = { record: Partial<T> } | null;
 
-export function CompanySitesSection({ sites, available, canEdit, onSave }: { sites: CompanySite[]; available: boolean; canEdit: boolean; onSave: (site: Partial<CompanySite>) => Promise<void> }) {
+export function CompanySitesSection({ sites, documents = [], available, canEdit, onSave }: { sites: CompanySite[]; documents?: TenderCompanyDocument[]; available: boolean; canEdit: boolean; onSave: (site: Partial<CompanySite>) => Promise<void> }) {
   const [editing, setEditing] = useState<Editing<CompanySite>>(null);
+  const documentNameById = new Map(documents.map(document => [document.id, document.display_name]));
   return <section className="panel company-base-sites" aria-labelledby="company-sites-heading">
     <header className="company-base-section-head"><div><span className="eyebrow">Bloque nuevo</span><h3 id="company-sites-heading">Sedes por departamento</h3><p>Muchos pliegos exigen sede en los departamentos donde se presta el servicio.</p></div>{canEdit && available && <button type="button" className="secondary" onClick={() => setEditing({ record: { is_main: false } })}>Agregar sede</button>}</header>
     {!available ? <div className="notice" role="status">Sedes y experiencia se habilitan al aplicar la migración 127.</div>
       : sites.length === 0 ? <div className="company-document-empty"><strong>No hay sedes registradas.</strong><span>Agregue cada sede con su dirección y la autorización de SuperVigilancia.</span></div>
       : <div className="tablewrap crm-readable-table company-base-table"><table>
-        <thead><tr><th>Departamento</th><th>Ciudad y dirección</th><th>Autorización SuperVigilancia</th><th>Fuente</th>{canEdit && <th><span className="sr-only">Acciones</span></th>}</tr></thead>
+        <thead><tr><th>Departamento</th><th>Ciudad y dirección</th><th>Autorización SuperVigilancia</th><th>Documento</th><th>Fuente</th>{canEdit && <th><span className="sr-only">Acciones</span></th>}</tr></thead>
         <tbody>{sites.map(site => <tr key={site.id}>
           <td><strong>{site.department}</strong>{site.is_main && <small>Sede principal</small>}</td>
           <td>{[site.city, site.address].filter(Boolean).join(' · ') || <span className="muted">Sin dato</span>}</td>
           <td>{site.supervigilancia_authorization || <span className="company-block-state state-sin_verificar">Por confirmar</span>}</td>
+          <td>{site.support_document_id
+            ? <small>{documentNameById.get(site.support_document_id) || 'Documento enlazado'}</small>
+            : <span className="company-block-state state-sin_verificar">Sin enlazar</span>}</td>
           <td><small>{site.source || 'Sin fuente'}</small>{site.notes && <small>{site.notes}</small>}</td>
           {canEdit && <td><button type="button" className="secondary" onClick={() => setEditing({ record: site })}>Editar<span className="sr-only">: sede {site.department}</span></button></td>}
         </tr>)}</tbody>
       </table></div>}
-    {editing && <CompanyRecordDialog title={editing.record.id ? 'Editar sede' : 'Agregar sede'} fields={SITE_FIELDS} initial={editing.record as Record<string, unknown>} onCancel={() => setEditing(null)} onSave={async values => { await onSave(values as Partial<CompanySite>); setEditing(null); }} />}
+    {editing && <CompanyRecordDialog title={editing.record.id ? 'Editar sede' : 'Agregar sede'} fields={siteFields(documents)} initial={editing.record as Record<string, unknown>} onCancel={() => setEditing(null)} onSave={async values => { await onSave(values as Partial<CompanySite>); setEditing(null); }} />}
   </section>;
 }
 
