@@ -149,7 +149,12 @@ export function deriveCompanyBlock(entry: CompanyRegistryEntry, documents: Tende
   const decided = entry.human_review_status === 'approved' || entry.human_review_status === 'rejected';
   const decidedFor = entry.decision_support_document_id || null;
   const currentSupportId = supportDocument?.id || null;
-  const decisionIsStale = decided && Boolean(currentSupportId) && Boolean(decidedFor) && decidedFor !== currentSupportId;
+  // Una decisión que no nombra su documento tampoco se puede dar por buena: es el caso de las aprobaciones
+  // anteriores a la migración 159 (la póliza RCE, aprobada el 2026-10-27, quedó `approved` sin ancla). Antes
+  // `decidedFor` nulo se leía como "Aprobado" y nadie podía saber qué documento se había mirado; ahora pide
+  // confirmación, que es lo único honesto. Un bloque aprobado SIN soporte cargado no cambia: no hay nada contra
+  // qué confirmar.
+  const decisionIsStale = decided && Boolean(currentSupportId) && decidedFor !== currentSupportId;
   const awaitingConfirmation = Boolean(currentSupportId) && (!decided || decisionIsStale);
   const review: CompanyBlock['review'] = awaitingConfirmation ? 'Falta confirmar'
     : entry.human_review_status === 'approved' ? 'Aprobado'

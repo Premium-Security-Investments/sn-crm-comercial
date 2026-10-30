@@ -42,7 +42,10 @@ test('el estado sale de la fecha registrada, del soporte cargado o de un cálcul
   assert.equal(blocks.collective_life_policy.expiry, '2027-05-26');
   assert.equal(blocks.collective_life_policy.expirySource, 'documento');
   assert.equal(blocks.collective_life_policy.supportLoaded, true);
-  assert.equal(blocks.collective_life_policy.review, 'Aprobado');
+  // Aprobada sin `decision_support_document_id` —como quedaron las decisiones anteriores a la migración 159— y con
+  // un soporte vigente cargado: nadie puede saber qué documento se miró, así que pide confirmación en vez de
+  // afirmar que está aprobada.
+  assert.equal(blocks.collective_life_policy.review, 'Falta confirmar');
   assert.equal(blocks.overtime_authorization.state, 'sin_verificar', 'no verificado nunca cuenta como al día aunque tenga fecha');
   assert.equal(blocks.rut.state, 'sin_verificar');
   assert.equal(blocks.rut.supportLoaded, false, 'una versión no vigente no cuenta como soporte');
@@ -65,7 +68,8 @@ test('resumen, agrupación por área y filtro', () => {
   assert.deepEqual(summary.counts, { al_dia: 2, vence_pronto: 1, vencido: 2, sin_verificar: 3 });
   assert.equal(summary.total, 8);
   assert.equal(summary.withSupport, 1);
-  assert.equal(summary.reviewed, 2);
+  // Una sola decisión queda en pie: la póliza de vida está aprobada sin ancla y vuelve a "Falta confirmar".
+  assert.equal(summary.reviewed, 1);
   assert.deepEqual(base.groupCompanyBlocks(blocks).map(group => group.area), ['Identidad y registro', 'Jurídico', 'Financiero', 'Operaciones', 'Otros']);
   const expired = base.groupCompanyBlocks(blocks, 'vencido');
   assert.deepEqual(expired.flatMap(group => group.blocks.map(block => block.entryId)).sort(), ['authorized_weapons_list', 'corporate_background_checks']);
