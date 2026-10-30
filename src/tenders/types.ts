@@ -976,3 +976,54 @@ export type TenderCompanyDocumentBridge = {
   unmatched_documents: TenderCompanyDocumentFile[];
   gaps: { kind: string; key?: string; entry_id?: string }[];
 };
+
+/**
+ * Matriz de cumplimiento (punto 2 del encargo del 2026-10-30): una fila por requisito del pliego, con el soporte
+ * corporativo relacionado, su estado al cierre y quién responde. La calcula `tender-compliance-matrix.js`.
+ */
+export type TenderComplianceSupport = {
+  key: string;
+  label: string;
+  owner: string | null;
+  kind: TenderCompanyDocumentKind | null;
+  folder: string | null;
+  state: TenderCompanyDocumentState | null;
+  document_name: string | null;
+  expires_at: string | null;
+  age_at_close_days: number | null;
+  ready: boolean | null;
+};
+export type TenderComplianceRow = {
+  key: string;
+  area: string;
+  title: string;
+  demand: string | null;
+  status: 'falta' | 'por_confirmar' | 'declarado' | 'cumple' | 'no_aplica';
+  rejection: boolean;
+  actions: string[];
+  sources: { document_name: string | null; locator: string | null }[];
+  company_support: TenderComplianceSupport[];
+  support_kind: 'corporativo' | 'especifico_del_proceso';
+  support_pending: string[];
+  owner: string;
+  support_owners: string[];
+};
+export type TenderComplianceMatrix = {
+  opportunity_id: string;
+  available: boolean;
+  reason?: string;
+  tender_ref?: string | null;
+  close_date: string | null;
+  close_date_source?: 'licitacion' | 'oportunidad' | null;
+  headers: string[];
+  table: string[][];
+  rows: TenderComplianceRow[];
+  summary: {
+    total: number;
+    causas_de_rechazo: number;
+    con_soporte_corporativo: number;
+    soporte_corporativo_pendiente: number;
+    especificos_del_proceso: number;
+    requisitos_abiertos: number;
+  } | null;
+};
