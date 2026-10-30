@@ -67,6 +67,27 @@ assert.equal(AGT002_RADAR_RUN_RECEIPT_SCHEMA_VERSION, 'agt002-radar-run-receipt-
   assert.equal(tvec.candidates_found, 0);
 }
 
+// 2b. Una fuente parcial conserva las agregaciones exitosas, pero no cuenta como plenamente
+//    exitosa y el recibo completo sigue siendo 'partial'.
+{
+  const receipt = buildAgt002RadarRunReceipt({
+    runId: RUN_ID, startedAt: STARTED, finishedAt: FINISHED,
+    sources: [
+      { name: 'SECOP II', attempted: true, succeeded: true, pages_read: 1, records_read: 40, candidates_found: 6 },
+      { name: 'TVEC', attempted: true, succeeded: true, status: 'partial', pages_read: 1, records_read: 10, candidates_found: 2, error: 'TVEC respondió 503 ?token=abc123' },
+    ],
+  });
+  assert.equal(receipt.status, 'partial');
+  assert.deepEqual(receipt.sources_succeeded, ['SECOP II']);
+  const tvec = receipt.sources.find(source => source.name === 'TVEC');
+  assert.equal(tvec.status, 'partial');
+  assert.equal(tvec.succeeded, false);
+  assert.equal(tvec.records_read, 10);
+  assert.equal(tvec.candidates_found, 2);
+  assert.equal(tvec.error, 'TVEC respondió 503 ?[REDACTED]');
+  assert.deepEqual(receipt.totals, { pages_read: 2, records_read: 50, candidates_found: 8 });
+}
+
 // 3. Todas las intentadas fallan -> 'failed'.
 {
   const receipt = buildAgt002RadarRunReceipt({

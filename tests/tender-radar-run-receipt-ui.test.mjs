@@ -27,6 +27,7 @@ const radarUtilsUrl = `data:text/javascript;base64,${Buffer.from(radarUtilsBundl
 const {
   tenderRadarRunReceiptTimeLabel,
   tenderRadarRunReceiptStatusLabel,
+  tenderRadarRunReceiptSourceStatusLabel,
   tenderRadarRunReceiptCoverageRatio,
 } = await import(radarUtilsUrl);
 
@@ -166,6 +167,13 @@ test('cobertura de fuentes expandible muestra estado, páginas/ciclos, registros
   } finally {
     await view.unmount();
   }
+});
+
+test('fuente parcial muestra etiqueta Parcial', () => {
+  assert.equal(tenderRadarRunReceiptSourceStatusLabel({
+    name: 'TVEC', attempted: true, succeeded: false, status: 'partial',
+    pages_read: 1, records_read: 10, candidates_found: 2, error: null,
+  }), 'Parcial');
 });
 
 test('sin recibo (null) y sin historial: no bloquea la lista de licitaciones', async () => {

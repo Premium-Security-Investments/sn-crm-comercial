@@ -195,6 +195,7 @@ export function tenderRadarRunReceiptTimeLabel(value?: string | null): string {
 
 export function tenderRadarRunReceiptSourceStatusLabel(source: TenderRadarRunReceiptSource): string {
   if (!source.attempted) return 'No intentada';
+  if (source.status === 'partial') return 'Parcial';
   return source.succeeded ? 'Exitosa' : 'Fallida';
 }
 

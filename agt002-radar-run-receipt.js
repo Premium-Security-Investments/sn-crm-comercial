@@ -46,24 +46,27 @@ function nonNegativeInt(value) {
   return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
-// Una fuente no exitosa nunca puede aportar records_read/candidates_found: no hay dato parcial
-// confiable que reportar más allá de haber sido intentada, así que esos contadores se fuerzan a 0
-// sin importar lo que el llamador haya pasado. pages_read sí se conserva tal como lo reporta el
-// llamador porque mide intentos de lectura (siempre 1 por fuente intentada en la orquestación
-// actual), no resultado.
+// Una fuente con error nunca puede aportar records_read/candidates_found: no hay dato confiable que
+// reportar más allá de haber sido intentada, así que esos contadores se fuerzan a 0. Una fuente
+// parcial sí puede conservar los contadores de agregaciones exitosas que el llamador reportó.
+// pages_read se conserva tal como lo reporta el llamador porque mide intentos de lectura (siempre 1
+// por fuente intentada en la orquestación actual), no resultado.
 function normalizeAgt002RadarRunReceiptSource(source) {
   if (!source || typeof source !== 'object' || typeof source.name !== 'string' || !source.name.trim()) {
     throw new Error('AGT002_RADAR_RUN_RECEIPT_SOURCE_NAME_REQUIRED');
   }
   const attempted = source.attempted !== false;
-  const succeeded = attempted && source.succeeded === true;
+  const fullySucceeded = attempted && source.succeeded === true;
+  const status = attempted && source.status === 'partial' ? 'partial' : fullySucceeded ? 'ok' : 'error';
+  const succeeded = status === 'ok';
   return Object.freeze({
     name: source.name,
     attempted,
     succeeded,
+    status,
     pages_read: attempted ? nonNegativeInt(source.pages_read) : 0,
-    records_read: succeeded ? nonNegativeInt(source.records_read) : 0,
-    candidates_found: succeeded ? nonNegativeInt(source.candidates_found) : 0,
+    records_read: status === 'error' ? 0 : nonNegativeInt(source.records_read),
+    candidates_found: status === 'error' ? 0 : nonNegativeInt(source.candidates_found),
     error: attempted && !succeeded ? sanitizeAgt002RadarRunReceiptErrorMessage(source.error) : null,
   });
 }
@@ -97,7 +100,7 @@ export function buildAgt002RadarRunReceipt({ runId, startedAt, finishedAt, sourc
   if (fatalError) status = 'failed';
   else if (attempted.length === 0) status = 'failed';
   else if (failed.length === 0) status = 'complete';
-  else if (succeeded.length === 0) status = 'failed';
+  else if (succeeded.length === 0 && !attempted.some(source => source.status === 'partial')) status = 'failed';
   else status = 'partial';
 
   const totals = attempted.reduce((acc, source) => {
