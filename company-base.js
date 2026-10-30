@@ -175,14 +175,24 @@ export function saveCompanySite(database, input, actorId) {
   return upsertRow(database, 'psi_company_sites', COMPANY_SITE_SELECT, text(input?.id, 36), cleanCompanySite(input), actorId);
 }
 
+/**
+ * El documento vigente que sustenta la decisión de un bloque. **Un bloque puede tener varios soportes vigentes a la
+ * vez**: `psi_record_company_procurement_document` sólo supersede automáticamente el `rup`, así que las cuatro
+ * certificaciones de calidad o las tres resoluciones de agencia (bloques abiertos por la 166) conviven como
+ * `current`. Con `.maybeSingle()` eso devolvía el error de "más de una fila" y la decisión humana se caía justo en
+ * los bloques que más soportes tienen. Se ancla al más reciente por expedición —la misma regla que usa el puente
+ * ficha de empresa → expediente— y el desempate termina en el id para que no dependa del orden de llegada.
+ */
 async function currentSupportDocumentId(database, entryId) {
   const { data, error } = await database.from('psi_company_procurement_documents')
-    .select('id').eq('document_type', entryId).eq('current', true).maybeSingle();
+    .select('id,issued_at,version').eq('document_type', entryId).eq('current', true)
+    .order('issued_at', { ascending: false }).order('version', { ascending: false }).order('id', { ascending: true })
+    .limit(1);
   if (error) {
     if (TABLE_ABSENT_ERROR_CODES.includes(error.code)) return null;
     throw error;
   }
-  return data?.id || null;
+  return data?.[0]?.id || null;
 }
 
 export async function saveCompanyEvidenceDecision(database, input, actorId, now = new Date()) {

@@ -32,10 +32,15 @@ import { TENDER_COMPANY_DOCUMENT_CLASSES } from './tender-company-document-bridg
  * apunta a su clase y no compiten.
  */
 export const TENDER_COMPLIANCE_DOCUMENT_HINTS = Object.freeze({
-  camara_comercio: ['camara de comercio', 'existencia y representacion', 'certificado de existencia'],
+  chamber_of_commerce: ['camara de comercio', 'existencia y representacion', 'certificado de existencia'],
   rup: ['rup', 'registro unico de proponentes'],
   rut: ['rut', 'registro unico tributario'],
-  supervigilancia_operating_license: ['licencia de funcionamiento', 'modalidades', 'prorroga', 'agencia de bogota', 'agencia de medellin', 'agencia de cali'],
+  // Las agencias por ciudad salieron de aquí al abrirse su propio bloque (166): la licencia habla de modalidades y
+  // prórroga; la resolución de agencia, de la ciudad. Mezclarlas hacía que un requisito de sede apuntara al documento
+  // equivocado.
+  supervigilancia_operating_license: ['licencia de funcionamiento', 'modalidades', 'prorroga'],
+  agency_authorizations: ['agencia de bogota', 'agencia de medellin', 'agencia de cali', 'autorizacion de agencia', 'resolucion de la agencia', 'sucursal'],
+  quality_certifications: ['basc', 'iso 9001', 'iso 14001', 'iso 45001', 'certificaciones de calidad', 'certificaciones iso', 'sistema de gestion'],
   uniforms_resolution: ['uniformes', 'distintivos'],
   communications_license: ['espectro', 'comunicaciones', 'registro tic'],
   no_fines_sanctions_certificate: ['sanciones', 'multas'],

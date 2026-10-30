@@ -207,7 +207,7 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
     <CompanyBlocksTable blocks={blocks} filter={blockFilter} onClearFilter={() => setBlockFilter(null)}
       canDecide={canManageDocuments} onDecide={decideEvidence}
       onUploadSupport={canManageDocuments && !editing ? openUploadDialog : undefined} />
-    <CompanySitesSection sites={companyBase.sites} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveSite} />
+    <CompanySitesSection sites={companyBase.sites} documents={documents} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveSite} />
     <CompanyExperienceSection experience={companyBase.experience} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveExperience} />
     <CompanyFinancialSection profile={persistedCompany} />
 
