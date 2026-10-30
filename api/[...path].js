@@ -11,7 +11,7 @@ import { generateRecommendations, loadRecommendations, setRecommendationFeedback
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 import { suggestAgt002DocumentRelevance } from '../verticales/licitaciones/agt002-document-relevance-suggestion.js';
-import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../verticales/licitaciones/tender-tracking-rpc.js';
+import { callCreateTenderProcessingJob, callManualTenderOpportunityCreation, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../verticales/licitaciones/tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../verticales/licitaciones/tender-phase-identity.js';
 import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../verticales/licitaciones/agt002-phase-change-followup.js';
 import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../verticales/licitaciones/tender-document-obsolescence.js';
@@ -486,6 +486,9 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/agt003/meeting-brief': ['opportunities', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Crear a mano un proceso que no está en SECOP: traerlo al CRM es el mismo acto que convertirlo desde el Radar.
+  'POST /api/tenders/manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
+  'POST /api/tender-manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
   'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-reanalysis-status': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-initial-analysis-status': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
@@ -2889,6 +2892,17 @@ app.post('/api/tenders/convert', async (req, res) => {
 });
 
 
+// Crear a mano un proceso que no está en SECOP. Misma autorización que convertir desde el Radar: traer un proceso al
+// CRM es el mismo acto, venga del Radar o de la mano de quien lo encontró en otra plataforma.
+app.post('/api/tenders/manual', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
+    const database = requireDb();
+    res.status(201).json(await createManualTenderProcess(database, req.body?.process || req.body, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.post('/api/tender-refresh', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -2965,6 +2979,16 @@ app.post('/api/tender-convert', async (req, res) => {
     const tender = req.body?.tender || req.body;
     const result = await convertTenderToOpportunity(database, tender, currentProfile);
     res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Alias plano de POST /api/tenders/manual, el mismo par que tienen convertir y el refresco del Radar.
+app.post('/api/tender-manual', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
+    const database = requireDb();
+    res.status(201).json(await createManualTenderProcess(database, req.body?.process || req.body, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -5882,6 +5906,43 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
     }
   }
   return { id: opportunityId, duplicate: !!conversion.duplicate, document_import_status, document_import_error };
+}
+/**
+ * Crear a mano un proceso que no está en SECOP (Juan, 2026-10-29). Mismo destino que una conversión del Radar —la
+ * pareja licitación + oportunidad de la que cuelga todo el seguimiento— con los datos que declara una persona.
+ *
+ * Qué NO hace, porque no hay fuente oficial de la cual importar: no crea trabajo de procesamiento ni importa
+ * documentos. Los documentos entran por la carga manual y el primer análisis lo pide el botón "Volver a analizar",
+ * que desde el 2026-10-29 también lanza el primero cuando no hay ninguno.
+ */
+async function createManualTenderProcess(database, body, currentProfile) {
+  if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para crear procesos a mano.');
+  // Mismo responsable por omisión que la conversión: la encargada de Licitaciones, salvo que quien registra sea
+  // comercial, en cuyo caso el proceso queda a su nombre.
+  const owner = currentProfile.role === 'comercial' ? currentProfile : await findTenderOwner(database, currentProfile);
+  try {
+    const created = await callManualTenderOpportunityCreation(database, { ...(body || {}), owner_id: owner.id }, currentProfile);
+    return { id: created.opportunity_id, opportunity_id: created.opportunity_id, tender_id: created.tender_id, stable_key: created.stable_key };
+  } catch (error) {
+    throw manualTenderProcessFailure(error);
+  }
+}
+/**
+ * El error que ve quien registra. La función de la 165 puede no estar todavía —el código tolera que la migración no
+ * haya corrido— y ese caso no es un 400 de datos: es una capacidad que falta.
+ */
+function manualTenderProcessFailure(error) {
+  if (error?.status) return error;
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  if (code === 'PGRST202' || code === '42883' || message.includes('psi_create_manual_tender_opportunity')) {
+    const unavailable = new Error('Crear procesos a mano todavía no está habilitado en la base de datos (falta aplicar la migración 165).');
+    unavailable.status = 503;
+    return unavailable;
+  }
+  const mapped = new Error(message || 'No fue posible crear el proceso.');
+  mapped.status = code === '23505' ? 409 : code === '42501' ? 403 : 400;
+  return mapped;
 }
 async function markTenderOpportunityDiscarded(database, opportunityId, currentProfile, reason) {
   await ensureTenderOpportunity(database, opportunityId, currentProfile);

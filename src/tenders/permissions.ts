@@ -31,6 +31,14 @@ export function canManageTenderCompanyDocuments(profile: TenderPermissionProfile
 }
 
 /**
+ * Mirrors LICITACIONES_CONVERT: crear a mano un proceso que no está en SECOP es traerlo al CRM, el mismo acto que
+ * convertirlo desde el Radar, así que pide la misma custodia.
+ */
+export function canCreateManualTenderProcess(profile: TenderPermissionProfile): boolean {
+  return canManageTenderCompanyDocuments(profile);
+}
+
+/**
  * Mirrors LICITACIONES_GO_NO_GO_APPROVE: todo humano activo con acceso a Licitaciones. Juan, 2026-10-29: el acceso a
  * Licitaciones es el permiso, así que aprobar no depende del rol; el directivo de solo consulta nunca opera.
  */
