@@ -265,3 +265,22 @@ test('sin la columna de la 159, la base empresarial se carga igual', async () =>
   assert.deepEqual(base.registry, [{ entry_id: 'rup' }], 'los bloques se muestran como antes');
   assert.ok(COMPANY_BASE_REGISTRY_SELECT.includes('decision_support_document_id'));
 });
+
+test('una aprobación que no nombra su documento pide confirmación, no dice "Aprobado"', () => {
+  const ahora = new Date('2026-10-30T00:00:00Z');
+  // Caso real: la póliza RCE quedó `approved` el 2026-10-27, antes de aplicar la 159, así que su decisión no
+  // apunta a ningún documento. La pantalla decía "Aprobado" sobre un documento que nadie puede identificar.
+  const sinAncla = deriveCompanyBlock(
+    { entry_id: 'rce_policy', document_class: 'RCE', existence_status: 'verified', human_review_status: 'approved', vigencia_text: 'Póliza', expiry: '2027-02-06', decision_support_document_id: null },
+    [{ current: true, document_type: 'rce_policy', id: 'doc-rce', issued_at: '2026-02-10', expires_at: '2027-02-06', url: 'x' }],
+    ahora,
+  );
+  assert.equal(sinAncla.review, 'Falta confirmar');
+  assert.equal(sinAncla.reviewPending, true);
+  // Y un bloque aprobado sin ningún soporte cargado se queda como estaba: no hay nada contra qué confirmar.
+  const sinSoporte = deriveCompanyBlock(
+    { entry_id: 'rce_policy', document_class: 'RCE', existence_status: 'verified', human_review_status: 'approved', vigencia_text: 'Póliza', expiry: '2027-02-06', decision_support_document_id: null },
+    [], ahora,
+  );
+  assert.equal(sinSoporte.review, 'Aprobado');
+});
