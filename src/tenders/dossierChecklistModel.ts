@@ -45,12 +45,18 @@ export function dossierDueTone(targetDate: string | null, today: Date): DossierD
 
 const STATUS_ORDER: Record<TenderDossierItem['status'], number> = { bloqueado: 0, en_progreso: 1, pendiente: 2, listo: 3 };
 
+/**
+ * La consecuencia manda sobre el calendario. Antes ordenaba por fecha primero, y eso ponía de
+ * primera —y en "Lo más urgente"— la tarea más vencida aunque ya no exigiera nada, mientras una
+ * causa de rechazo con fecha posterior quedaba abajo. Una fecha la ponemos nosotros; el rechazo
+ * lo pone el pliego.
+ */
 function compareOpen(a: TenderDossierItem, b: TenderDossierItem): number {
   const rejection = Number(parseDossierItemTitle(b.title).rejection) - Number(parseDossierItemTitle(a.title).rejection);
   const dateA = a.target_date || '9999-12-31';
   const dateB = b.target_date || '9999-12-31';
-  return (dateA < dateB ? -1 : dateA > dateB ? 1 : 0)
-    || rejection
+  return rejection
+    || (dateA < dateB ? -1 : dateA > dateB ? 1 : 0)
     || STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
     || Number(b.required) - Number(a.required)
     || a.title.localeCompare(b.title, 'es');

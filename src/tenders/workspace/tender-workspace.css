@@ -65,8 +65,8 @@
 .tw-req-detail-body{display:grid;gap:10px}
 .tw-req-detail-body section{display:grid;gap:4px}
 .tw-req-detail-body h4,.tw-evidence h4{margin:0;font-size:13px;font-weight:700;color:#10213d}
-.tw-req-detail-body p{margin:0;font-size:14px;line-height:1.5;color:#334155}
-.tw-req-detail-body ul{margin:0;padding-left:18px;font-size:14px;color:#334155}
+.tw-req-detail-body p{margin:0;max-width:72ch;font-size:14px;line-height:1.5;color:#334155}
+.tw-req-detail-body ul{margin:0;padding-left:18px;display:grid;gap:4px;max-width:72ch;font-size:14px;line-height:1.45;color:#334155}
 .tw-source-line{font-size:12px!important;color:#64748b!important}
 .tw-note{display:grid;gap:2px;padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e2e8f0}
 .tw-note strong{font-size:13px;font-weight:600}
@@ -82,11 +82,17 @@
 .tw-reject{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#dc2626;color:#fff}
 
 .tw-progress-figures{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.tw-progress-figures>div{display:grid;gap:2px;padding:10px 12px;border-radius:10px;background:#f8fafc}
-.tw-progress-figures strong{font-size:20px;color:#10213d}
+.tw-progress-figures>div{display:grid;gap:2px;padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid transparent}
+.tw-progress-figures strong{font-size:20px;color:#10213d;font-variant-numeric:tabular-nums}
 .tw-progress-figures span{font-size:13px;color:#475569}
-.tw-progress-figures .is-alert{background:#fef2f2}
-.tw-progress-figures .is-alert strong{color:#b91c1c}
+/* Causar rechazo y tener la fecha vencida no son del mismo mundo: una tumba la oferta, la otra
+   es un plazo que nos pusimos nosotros. Antes se pintaban igual de rojo. */
+.tw-progress-figures .is-alert{background:#fef2f2;border-color:#fca5a5}
+.tw-progress-figures .is-alert strong{font-size:26px;color:#b91c1c}
+.tw-progress-figures .is-alert span{color:#991b1b;font-weight:600}
+.tw-progress-figures .is-warn{background:#fffbeb;border-color:#fcd34d}
+.tw-progress-figures .is-warn strong{color:#b45309}
+.tw-progress-figures .is-warn span{color:#92400e}
 .tw-progress-next{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .tw-progress-next input{flex:1 1 220px}
 .tw-seed{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
@@ -94,6 +100,12 @@
 .tw-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0}
 .tw-controls label,.tw-inline-form label{display:grid;gap:4px;font-size:12px;color:#475569}
 .tw-evidence{display:grid;gap:6px;margin-top:10px}
+/* El soporte es texto largo escrito por una persona o por Vig-IA: se respeta la estructura que
+   traiga en vez de aplanarla en un solo párrafo. */
+.tw-evidence-text{display:grid;gap:8px;max-width:72ch;font-size:14px;line-height:1.55;color:#334155}
+.tw-evidence-text p{margin:0}
+.tw-evidence-text strong{color:#10213d}
+.tw-evidence-text ul{margin:0;padding-left:18px;display:grid;gap:4px}
 .tw-evidence-form{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:6px}
 .tw-inline-form{display:grid;gap:6px;margin-top:6px}
 .tw-fold{margin-top:6px}
