@@ -299,13 +299,49 @@ function itemDueClass(item: TenderDossierItem, today: string) {
   return '';
 }
 
+/** "Dónde" llega como fuentes unidas por " · ": se lee como lista, no como frase corrida. */
+function SourceList({ value }: { value: string }) {
+  const parts = value.split(' · ').map(part => part.trim()).filter(Boolean);
+  if (parts.length < 2) return <p>{value}</p>;
+  return <ul>{parts.map(part => <li key={part}>{part}</li>)}</ul>;
+}
+
+/**
+ * Texto largo con la estructura que traiga: viñetas con "- ", apartados con "Etiqueta: valor" y
+ * párrafos sueltos. Un texto de una sola línea sale igual que antes, así que nada se degrada.
+ */
+function StructuredText({ text }: { text: string }) {
+  const lines = text.split('\n').map(line => line.trim());
+  const blocks: ReactNode[] = [];
+  let bullets: string[] = [];
+  const flush = () => {
+    if (!bullets.length) return;
+    blocks.push(<ul key={`l${blocks.length}`}>{bullets.map(item => <li key={item}>{item}</li>)}</ul>);
+    bullets = [];
+  };
+  for (const line of lines) {
+    if (!line) { flush(); continue; }
+    const bullet = line.match(/^[-•*]\s+(.*)$/);
+    if (bullet) { bullets.push(bullet[1]); continue; }
+    flush();
+    const labelled = line.match(/^([A-ZÁÉÍÓÚÑ][^:]{2,46}):\s+(.+)$/);
+    if (labelled) blocks.push(<p key={`p${blocks.length}`}><strong>{labelled[1]}</strong> {labelled[2]}</p>);
+    else blocks.push(<p key={`p${blocks.length}`}>{line}</p>);
+  }
+  flush();
+  return <>{blocks}</>;
+}
+
 /** Instrucción guardada como líneas "Qué hacer: …"; se muestra por partes, sin la nota de origen. */
 function InstructionBlock({ text }: { text: string }) {
   const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
   return <div className="tw-req-detail-body">{lines.map(line => {
     const match = line.match(/^(Qué hacer|Qué exige el pliego|Dónde|Estado según el análisis):\s*(.*)$/);
     if (/^Cargado por Vig-IA/.test(line)) return <p className="tw-footnote" key={line}>{line}</p>;
-    return match ? <section key={line}><h4>{match[1]}</h4><p>{match[2]}</p></section> : <p key={line}>{line}</p>;
+    if (!match) return <p key={line}>{line}</p>;
+    return <section key={line}><h4>{match[1]}</h4>
+      {match[1] === 'Dónde' ? <SourceList value={match[2]} /> : <p>{match[2]}</p>}
+    </section>;
   })}</div>;
 }
 
@@ -413,13 +449,15 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
   const urgentTitle = urgent ? parseDossierItemTitle(urgent.title) : null;
   return <div className="tw-prepare">
     {urgent && urgentTitle && <div className="tw-next" role="note">
-      <span>Lo más urgente: <strong>{urgentTitle.label}</strong>{urgentTitle.rejection ? ' (causa rechazo)' : ''} · {formatDay(urgent.target_date)}{urgent.assignee_name ? ` · ${urgent.assignee_name}` : ' · sin responsable'}</span>
+      <span>Lo más urgente: <strong>{urgentTitle.label}</strong>
+        {urgentTitle.rejection && <span className="tw-reject">Causa rechazo</span>}
+        {' · '}{formatDay(urgent.target_date)}{urgent.assignee_name ? ` · ${urgent.assignee_name}` : ' · sin responsable'}</span>
       <button type="button" onClick={() => select(urgent)}>Abrir la tarea →</button></div>}
     <section className="tw-card tw-progress">
       <div className="tw-progress-figures">
         <div><strong>{readyCount} de {requiredItems.length}</strong><span>tareas listas</span></div>
         <div className={rejectionOpen ? 'is-alert' : ''}><strong>{rejectionOpen}</strong><span>causan rechazo y siguen abiertas</span></div>
-        <div className={overdue ? 'is-alert' : ''}><strong>{overdue}</strong><span>con la fecha vencida</span></div>
+        <div className={overdue ? 'is-warn' : ''}><strong>{overdue}</strong><span>con la fecha vencida</span></div>
         <div><strong>{requiredArtifacts.length - unapproved} de {requiredArtifacts.length}</strong><span>documentos aprobados</span></div>
       </div>
       {next.length > 0 && <div className="tw-progress-next">
@@ -463,7 +501,11 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
             {linkedRow && (linkedRow.notes.length > 0 || linkedRow.company.length > 0) && <details className="tw-fold"><summary>Ver lo que dice el análisis</summary><RequirementAnalysisDetail row={linkedRow} compact /></details>}
             <section className="tw-evidence">
               <h4>Soporte</h4>
-              {selected.latest_evidence ? <p>{selected.latest_evidence.kind === 'url' ? <a href={selected.latest_evidence.url || '#'} target="_blank" rel="noreferrer">{selected.latest_evidence.url}</a> : selected.latest_evidence.text}</p> : <p className="tw-muted">Todavía no hay soporte registrado.</p>}
+              {selected.latest_evidence
+                ? (selected.latest_evidence.kind === 'url'
+                  ? <p><a href={selected.latest_evidence.url || '#'} target="_blank" rel="noreferrer">{selected.latest_evidence.url}</a></p>
+                  : <div className="tw-evidence-text"><StructuredText text={selected.latest_evidence.text || ''} /></div>)
+                : <p className="tw-muted">Todavía no hay soporte registrado.</p>}
               <div className="tw-evidence-form">
                 <select aria-label="Tipo de soporte" value={draft.evidenceKind} onChange={event => setDraft(current => ({ ...current, evidenceKind: event.target.value as ItemDraft['evidenceKind'] }))}><option value="texto">Texto</option><option value="url">Enlace</option></select>
                 <input aria-label="Soporte" value={draft.evidence} placeholder={draft.evidenceKind === 'url' ? 'https://…' : 'Qué se hizo o dónde está el soporte'} onChange={event => setDraft(current => ({ ...current, evidence: event.target.value }))} />
