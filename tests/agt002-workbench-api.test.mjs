@@ -193,7 +193,9 @@ function workspaceResponse(longContent = false) {
             id: draftIds.version,
             version: 1,
             content_kind: 'markdown',
-            content_text: longContent ? 'dato '.repeat(600) : 'Relación de contratos de vigilancia ejecutados.',
+            content_text: typeof longContent === 'number'
+              ? 'x'.repeat(longContent)
+              : longContent ? 'dato '.repeat(600) : 'Relación de contratos de vigilancia ejecutados.',
             author_kind: 'human',
             origin_agent_job_id: null,
           },
@@ -331,6 +333,17 @@ const firstLink = firstDraftCall.p_context_links.find(link => link.kind === 'art
 assert.equal(firstLink.id, draftIds.empty);
 assert.match(firstLink.source_ref, /sin versión registrada/);
 assert.match(firstLink.source_ref, /sin contenido que tomar como base/);
+
+// El peor caso real de Terminal: el Anexo 7, 940 caracteres compactados (medido por select el
+// 2026-10-31, el más largo de las once versiones puestas a mano). Tiene que llegar entero: el
+// encabezado de la procedencia no puede crecer hasta comerse el presupuesto del contenido.
+const worstRealDb = fakeDb(workspaceResponse(940));
+await postAgt002MessageApi(worstRealDb, draftBody(), operator, enabled);
+const worstRealLink = worstRealDb.calls.find(call => call.name === 'psi_append_agt002_workbench_message').args
+  .p_context_links.find(link => link.kind === 'artifact');
+assert.ok(worstRealLink.source_ref.length <= 1000, `la procedencia excede el contrato: ${worstRealLink.source_ref.length}`);
+assert.doesNotMatch(worstRealLink.source_ref, /contenido recortado/, 'el peor caso real de Terminal debe llegar sin recorte');
+assert.ok(worstRealLink.source_ref.endsWith('x'.repeat(40)), 'el contenido debe llegar hasta el final');
 
 // Un contenido vigente más largo que el tope del contrato se recorta y lo declara.
 const longDb = fakeDb(workspaceResponse(true));

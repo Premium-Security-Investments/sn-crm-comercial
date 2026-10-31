@@ -241,12 +241,16 @@ export async function dossierArtifactLink(database, opportunityId, artifactId) {
   }
   const current = artifact.current_version;
   const currentVersionId = typeof current?.id === 'string' ? current.id.toLowerCase() : null;
+  // El tope de 1000 caracteres de `source_ref` es el presupuesto con el que Vig-IA ve el documento,
+  // así que la procedencia no repite lo que ya dice la etiqueta: cada carácter gastado en el
+  // encabezado es un carácter menos del contenido real. Con el encabezado corto, el Anexo 7 de
+  // Terminal —940 caracteres compactados, el más largo de los once puestos a mano— llega entero.
   const head = compact([
-    `Documento de la oferta · ${ARTIFACT_REVIEW[artifact.review_status] || artifact.review_status}`,
+    `estado ${ARTIFACT_REVIEW[artifact.review_status] || artifact.review_status}`,
     currentVersionId ? `versión vigente ${current.version}` : 'sin versión registrada',
   ].join(' · '), 300);
   const content = compact(current?.content_text || '', MAX_SOURCE_REF);
-  const prefix = `${head} · contenido vigente: `;
+  const prefix = `${head} · contenido: `;
   const room = MAX_SOURCE_REF - prefix.length;
   return {
     currentVersionId,
