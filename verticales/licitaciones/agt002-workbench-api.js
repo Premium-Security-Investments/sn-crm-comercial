@@ -1,5 +1,6 @@
 import { ACTIONS, requireAction } from '../../access-control.js';
 import {
+  AGT002_WORKBENCH_CAPABILITIES,
   AGT002_WORKBENCH_CONTRACT_VERSION,
   AGT002_WORKBENCH_POLICY_VERSION,
 } from './agt002-workbench-contract.js';
@@ -25,6 +26,13 @@ const MESSAGE_KEYS = Object.freeze([
   'opportunity_id', 'thread_id', 'client_message_id', 'content', 'context_links',
   'capability_id', 'snapshot_id', 'base_version_id',
 ]);
+/**
+ * Claves del mensaje que llegaron después del primer cliente. `artifact_id` nombra el documento del
+ * expediente que un borrador va a escribir, y sólo la capacidad `draft` lo usa. Es opcional porque
+ * una pestaña ya abierta sigue enviando el body de ocho claves de siempre y debe seguir
+ * funcionando; una clave que no esté en ninguna de las dos listas se sigue rechazando.
+ */
+const MESSAGE_OPTIONAL_KEYS = Object.freeze(['artifact_id']);
 const RETRY_KEYS = Object.freeze(['opportunity_id', 'job_id']);
 const REVIEW_KEYS = Object.freeze(['opportunity_id', 'proposal_id', 'decision', 'scope', 'comment']);
 
@@ -41,12 +49,24 @@ function assertEnabled(options) {
   }
 }
 
-function exactBody(value, expected) {
+function exactBody(value, expected, optional = []) {
+  const admitted = new Set([...expected, ...optional]);
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.keys(value).length !== expected.length
-    || !expected.every(key => Object.hasOwn(value, key))) {
+    || !expected.every(key => Object.hasOwn(value, key))
+    || !Object.keys(value).every(key => admitted.has(key))) {
     throw apiError('El body contiene claves inesperadas; actor_id no está permitido.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
   }
+}
+
+/**
+ * Capacidad del contrato, rechazada en la puerta. El RPC la vuelve a validar con la misma lista,
+ * pero sin este paso no se puede decidir qué exige cada capacidad antes de leer nada.
+ */
+function capability(value) {
+  if (!Object.values(AGT002_WORKBENCH_CAPABILITIES).includes(value)) {
+    throw apiError('capability_id no pertenece al contrato de la Mesa.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
+  }
+  return value;
 }
 
 function uuid(value, label, nullable = false) {
@@ -109,7 +129,7 @@ async function mapped(operation) {
  * filters by it) so no reference can ever carry another dossier's provenance. The mapped
  * error carries no identifiers.
  */
-async function resolveCanonicalReference(database, opportunityId, { dossierContext = false, question = null } = {}) {
+async function resolveCanonicalReference(database, opportunityId, { dossierContext = false, question = null, artifactLink = null } = {}) {
   const run = await getLatestCanonicalAgt002AnalysisRun(database, { opportunityId });
   if (!run) {
     throw apiError(
@@ -132,11 +152,17 @@ async function resolveCanonicalReference(database, opportunityId, { dossierConte
       409, 'AGT002_WORKBENCH_NO_CANONICAL_ANALYSIS',
     );
   }
-  if (!dossierContext) return reference;
+  // El artefacto del borrador va inmediatamente después de las referencias de origen, antes de
+  // fragmentos y tareas: es la única referencia sin la cual el trabajo no puede ejecutarse, así que
+  // nunca puede quedar fuera por el tope de 20 — lo que se recorta son las tareas, que rellenan.
+  const anchored = artifactLink
+    ? { ...reference, context_links: [...reference.context_links, artifactLink] }
+    : reference;
+  if (!dossierContext) return anchored;
   // Con pregunta, primero los fragmentos de los documentos que la responden; después las tareas.
   const passages = question ? await documentPassageLinks(database, opportunityId, question, MAX_PASSAGE_LINKS) : [];
-  const base = [...reference.context_links, ...passages];
-  return { ...reference, context_links: [...base, ...await dossierTaskLinks(database, opportunityId, MAX_CONTEXT_LINKS - base.length)] };
+  const base = [...anchored.context_links, ...passages];
+  return { ...anchored, context_links: [...base, ...await dossierTaskLinks(database, opportunityId, MAX_CONTEXT_LINKS - base.length)] };
 }
 
 // El contrato admite hasta 20 referencias por trabajo; las de origen (paquete, análisis) van primero.
@@ -186,6 +212,61 @@ export async function documentPassageLinks(database, opportunityId, question, ro
       source_ref: compact(`Fragmento: ${row.excerpt || ''}`, 1000),
     }));
 }
+const ARTIFACT_REVIEW = { pendiente: 'por revisar', aprobado: 'aprobado', rechazado: 'rechazado' };
+const MAX_SOURCE_REF = 1000;
+const CONTENT_TRUNCATED = ' […contenido recortado]';
+
+/**
+ * Vínculo del documento sobre el que se pide un borrador, derivado en el servidor desde el
+ * expediente de la oportunidad —nunca del body— junto con la versión vigente que la RPC terminal va
+ * a comparar. El responder exige exactamente un vínculo `artifact` para la capacidad `draft` y de
+ * ahí saca el `artifact_id` del resultado, así que aquí falla cerrado: un documento que no está en
+ * este expediente no produce vínculo y el mensaje se rechaza antes de encolar nada, en vez de
+ * encolar un trabajo que reventaría después del claim sin contexto de artefacto. La lectura es la
+ * del expediente, filtrada por oportunidad en el propio RPC, así que no hay forma de anclar un
+ * borrador a un documento de otra licitación.
+ *
+ * `source_ref` lleva el contenido vigente dentro del tope de 1000 caracteres del contrato y marca
+ * el recorte cuando no cabe, para que Vig-IA redacte sobre lo que hay y pueda declarar lo que no
+ * alcanzó a ver en vez de rellenarlo.
+ */
+export async function dossierArtifactLink(database, opportunityId, artifactId) {
+  if (typeof database?.rpc !== 'function') throw new TypeError('database.rpc es obligatorio.');
+  const { data, error } = await database.rpc('psi_get_tender_dossier_workspace', { p_opportunity_id: opportunityId });
+  if (error) throw error;
+  const artifacts = Array.isArray(data?.artifacts) ? data.artifacts : [];
+  const artifact = artifacts.find(row => typeof row?.id === 'string' && row.id.toLowerCase() === artifactId);
+  if (!artifact) {
+    throw apiError('El documento del borrador no pertenece a este expediente.', 404, 'AGT002_WORKBENCH_NOT_FOUND');
+  }
+  const current = artifact.current_version;
+  const currentVersionId = typeof current?.id === 'string' ? current.id.toLowerCase() : null;
+  // El tope de 1000 caracteres de `source_ref` es el presupuesto con el que Vig-IA ve el documento,
+  // así que la procedencia no repite lo que ya dice la etiqueta: cada carácter gastado en el
+  // encabezado es un carácter menos del contenido real. Con el encabezado corto, el Anexo 7 de
+  // Terminal —940 caracteres compactados, el más largo de los once puestos a mano— llega entero.
+  const head = compact([
+    `estado ${ARTIFACT_REVIEW[artifact.review_status] || artifact.review_status}`,
+    currentVersionId ? `versión vigente ${current.version}` : 'sin versión registrada',
+  ].join(' · '), 300);
+  const content = compact(current?.content_text || '', MAX_SOURCE_REF);
+  const prefix = `${head} · contenido: `;
+  const room = MAX_SOURCE_REF - prefix.length;
+  return {
+    currentVersionId,
+    link: {
+      kind: 'artifact',
+      id: artifactId,
+      label: compact(`Documento de la oferta: ${artifact.title || 'sin título'}`, 300),
+      source_ref: !content
+        ? `${head} · sin contenido que tomar como base`
+        : content.length <= room
+          ? `${prefix}${content}`
+          : `${prefix}${content.slice(0, room - CONTENT_TRUNCATED.length).trimEnd()}${CONTENT_TRUNCATED}`,
+    },
+  };
+}
+
 const REJECTION_MARK = /\s*[—-]\s*CAUSA RECHAZO\s*$/i;
 const TASK_STATUS = { pendiente: 'pendiente', en_progreso: 'en progreso', bloqueado: 'bloqueada', listo: 'lista' };
 const compact = (value, max) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -313,27 +394,59 @@ export async function getAgt002WorkbenchApi(database, opportunityId, currentProf
  * The reference is resolved exactly once per request, so if the canonical analysis was promoted
  * between the GET the operator saw and this POST, the job is frozen on ONE internally coherent
  * current reference — snapshot, canonical run and links all from the same run — never a mix.
+ *
+ * Un borrador (`draft.v1`) nombra además el documento del expediente que va a escribir. El cliente
+ * sólo manda su identificador: la etiqueta, la procedencia y el contenido vigente del vínculo los
+ * deriva el servidor del expediente, igual que el resto de la referencia, y el pedido se rechaza si
+ * ese documento no es de esta oportunidad o si la versión que el cliente vio ya no es la vigente.
  */
 export async function postAgt002MessageApi(database, body, currentProfile, options = {}) {
   assertEnabled(options);
   const actorId = actor(currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
-  exactBody(body, MESSAGE_KEYS);
+  exactBody(body, MESSAGE_KEYS, MESSAGE_OPTIONAL_KEYS);
   const opportunityId = uuid(body.opportunity_id, 'opportunity_id');
   const threadId = uuid(body.thread_id, 'thread_id');
   const messageId = uuid(body.client_message_id, 'client_message_id');
   // Validated for shape, then discarded: the server-derived reference replaces it below.
   uuid(body.snapshot_id, 'snapshot_id');
   const baseVersionId = uuid(body.base_version_id, 'base_version_id', true);
+  const capabilityId = capability(body.capability_id);
+  const artifactId = uuid(Object.hasOwn(body, 'artifact_id') ? body.artifact_id : null, 'artifact_id', true);
   if (typeof body.content !== 'string' || !body.content.trim() || body.content.length > 12000 || !Array.isArray(body.context_links)) {
     throw apiError('content o context_links no es válido.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
   }
+  // Un borrador tiene que decir sobre qué documento se escribe; cualquier otra capacidad que lo
+  // mande está equivocada y se rechaza en vez de ignorarlo en silencio.
+  if (capabilityId === AGT002_WORKBENCH_CAPABILITIES.draft) {
+    if (!artifactId) {
+      throw apiError('Un borrador requiere el documento del expediente que va a escribir.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
+    }
+  } else if (artifactId) {
+    throw apiError('artifact_id sólo aplica a la capacidad de borrador.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
+  }
   return mapped(async () => {
-    const reference = await resolveCanonicalReference(database, opportunityId, { dossierContext: options.dossierContext === true, question: body.content });
+    const anchor = artifactId ? await dossierArtifactLink(database, opportunityId, artifactId) : null;
+    // El control optimista de la versión vive en la RPC terminal, que ante un desajuste registra
+    // `stale` y no escribe. Se comprueba además aquí, con la versión vigente del momento, para que
+    // una pantalla desactualizada reciba una respuesta que se puede leer en vez de un trabajo que
+    // nace condenado y gasta una llamada al modelo. La guarda de la RPC sigue intacta: cubre lo que
+    // cambie entre este POST y el final del trabajo.
+    if (anchor && anchor.currentVersionId !== baseVersionId) {
+      throw apiError(
+        'El documento cambió de versión mientras se pedía el borrador; vuelva a abrir el expediente.',
+        409, 'AGT002_WORKBENCH_STALE_ARTIFACT',
+      );
+    }
+    const reference = await resolveCanonicalReference(database, opportunityId, {
+      dossierContext: options.dossierContext === true,
+      question: body.content,
+      artifactLink: anchor?.link ?? null,
+    });
     const idempotencyKey = computeAgt002WorkbenchIdempotencyKey({
       threadId,
       originMessageId: messageId,
       snapshotId: reference.snapshot_id,
-      capabilityId: body.capability_id,
+      capabilityId,
       contractVersion: AGT002_WORKBENCH_CONTRACT_VERSION,
       policyVersion: AGT002_WORKBENCH_POLICY_VERSION,
       baseVersionId,
@@ -348,7 +461,7 @@ export async function postAgt002MessageApi(database, body, currentProfile, optio
       idempotencyKey,
       contractVersion: AGT002_WORKBENCH_CONTRACT_VERSION,
       policyVersion: AGT002_WORKBENCH_POLICY_VERSION,
-      capabilityId: body.capability_id,
+      capabilityId,
       snapshotId: reference.snapshot_id,
       baseVersionId,
     });

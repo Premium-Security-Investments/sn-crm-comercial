@@ -32,6 +32,18 @@ assert.match(artifacts, /aprobado/);
 assert.match(artifacts, /rechazado/);
 assert.match(artifacts, /Comentario de revisi[oó]n/);
 
+// Pedir borrador: un botón por documento, bajo el mismo interruptor con que se monta la Mesa, y
+// nunca sobre una versión aprobada (la reemplazaría y el documento volvería a quedar por revisar).
+assert.match(artifacts, /postTenderDossierWorkbenchMessage/);
+assert.match(artifacts, /loadTenderDossierWorkbench/);
+assert.match(artifacts, /agt002\.dossier-workbench\.draft\.v1/);
+assert.match(artifacts, /base_version_id: artifact\.current_version\?\.id \?\? null/);
+assert.match(artifacts, /artifact_id: artifact\.id/);
+assert.match(artifacts, /workbenchEnabled && \(artifact\.review_status === 'aprobado'/);
+assert.match(artifacts, /Pedir borrador a \{VIGIA_VISIBLE_NAMES\.tenders\}/);
+assert.doesNotMatch(artifacts, /capability_id: '?agt002\.dossier-workbench\.reply/, 'el panel de documentos no postea respuestas');
+assert.match(panel, /workbenchEnabled=\{workspace\.workbench_enabled\}/);
+
 assert.match(all, /className="(?:panel|card|badge|timeline|tracking-row|document-analysis)/);
 assert.match(main, /TenderDossierWorkspacePanel/);
 assert.match(main, /profiles=\{data\.profiles\}/);

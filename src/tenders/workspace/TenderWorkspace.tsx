@@ -490,7 +490,7 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
 
     {requiredArtifacts.length > 0 && <section className="tw-card">
       <small>Documentos que se firman y aprueban</small>
-      <TenderDossierArtifacts opportunityId={opportunityId} artifacts={requiredArtifacts} request={request} canApprove={canApprove} onChanged={reload} />
+      <TenderDossierArtifacts opportunityId={opportunityId} artifacts={requiredArtifacts} request={request} canApprove={canApprove} workbenchEnabled={workspace.workbench_enabled} onChanged={reload} />
     </section>}
   </div>;
 }

@@ -162,6 +162,14 @@ export type TenderDossierArtifactVersion = {
   content_text: string | null;
   content_metadata: Record<string, unknown> | null;
   author_id: string;
+  /**
+   * Procedencia que ya proyecta `psi_project_tender_dossier_artifact`: una versión de Vig-IA nace
+   * `agent` con su trabajo de origen y nunca hereda aprobación, así que la pantalla tiene que poder
+   * decir de quién es el borrador que alguien va a revisar. Opcionales porque una lectura servida
+   * por una base sin esa proyección no los trae.
+   */
+  author_kind?: 'human' | 'agent' | null;
+  origin_agent_job_id?: string | null;
   created_at: string;
 };
 export type TenderDossierArtifact = {
@@ -305,6 +313,11 @@ export type TenderDossierWorkbenchMessageInput = {
   capability_id: string;
   snapshot_id: string;
   base_version_id: string | null;
+  /**
+   * Documento del expediente que un borrador va a escribir. Sólo lo lleva la capacidad de borrador;
+   * el servidor deriva de él la etiqueta, la procedencia y el contenido vigente del vínculo.
+   */
+  artifact_id?: string;
 };
 export type TenderDossierWorkbenchRetryInput = { opportunity_id: string; job_id: string };
 export type TenderDossierWorkbenchLearningReviewInput = {

@@ -10,6 +10,7 @@ import {
   AGT002_WORKBENCH_CAPABILITIES,
   AGT002_WORKBENCH_CONTRACT_VERSION,
   AGT002_WORKBENCH_POLICY_VERSION,
+  validateAgt002WorkbenchJobInput,
 } from '../verticales/licitaciones/agt002-workbench-contract.js';
 
 const ids = Object.freeze({
@@ -161,6 +162,198 @@ await assert.rejects(
   () => postAgt002RetryApi(conflictDb, { opportunity_id: ids.opportunity, job_id: ids.job }, operator, enabled),
   error => error.status === 409 && error.code === 'AGT002_WORKBENCH_IN_PROGRESS',
 );
+
+// ---------------------------------------------------------------------------
+// Borradores: el pedido nombra el documento, el servidor deriva el vínculo.
+// ---------------------------------------------------------------------------
+const draftIds = Object.freeze({
+  artifact: '10000000-0000-4000-8000-000000000040',
+  version: '10000000-0000-4000-8000-000000000041',
+  empty: '10000000-0000-4000-8000-000000000042',
+  foreign: '10000000-0000-4000-8000-000000000043',
+});
+
+// El expediente tal como lo proyecta psi_get_tender_dossier_workspace: un documento con versión
+// humana vigente (el caso real de Terminal) y otro sin ninguna versión.
+function workspaceResponse(longContent = false) {
+  return (name, args) => {
+    if (name !== 'psi_get_tender_dossier_workspace') return { status: 'queued', job_id: ids.job };
+    assert.equal(args.p_opportunity_id, ids.opportunity);
+    return {
+      opportunity_id: ids.opportunity,
+      checklist: [],
+      artifacts: [
+        {
+          id: draftIds.artifact,
+          title: 'Anexo 7 · Certificaciones de experiencia',
+          required: true,
+          review_status: 'pendiente',
+          version_count: 1,
+          current_version: {
+            id: draftIds.version,
+            version: 1,
+            content_kind: 'markdown',
+            content_text: typeof longContent === 'number'
+              ? 'x'.repeat(longContent)
+              : longContent ? 'dato '.repeat(600) : 'Relación de contratos de vigilancia ejecutados.',
+            author_kind: 'human',
+            origin_agent_job_id: null,
+          },
+        },
+        {
+          id: draftIds.empty,
+          title: 'Propuesta técnica base',
+          required: true,
+          review_status: 'pendiente',
+          version_count: 0,
+          current_version: null,
+        },
+      ],
+    };
+  };
+}
+
+function draftBody(overrides = {}) {
+  return {
+    opportunity_id: ids.opportunity,
+    thread_id: ids.thread,
+    client_message_id: ids.message,
+    content: 'Redacta una nueva versión del Anexo 7.',
+    context_links: [],
+    capability_id: AGT002_WORKBENCH_CAPABILITIES.draft,
+    snapshot_id: ids.snapshot,
+    base_version_id: draftIds.version,
+    artifact_id: draftIds.artifact,
+    ...overrides,
+  };
+}
+
+// Una capacidad fuera del contrato se rechaza en la puerta, sin tocar la base.
+const badCapabilityDb = fakeDb(workspaceResponse());
+await assert.rejects(
+  () => postAgt002MessageApi(badCapabilityDb, draftBody({ capability_id: 'agt002.dossier-workbench.aprobar.v1' }), operator, enabled),
+  error => error.status === 400 && error.code === 'AGT002_WORKBENCH_BAD_REQUEST',
+);
+assert.equal(badCapabilityDb.calls.length, 0);
+
+// Un borrador sin documento no se encola: el responder lo rechazaría después del claim.
+const noArtifactDb = fakeDb(workspaceResponse());
+await assert.rejects(
+  () => postAgt002MessageApi(noArtifactDb, { ...draftBody(), artifact_id: null }, operator, enabled),
+  error => error.status === 400 && error.code === 'AGT002_WORKBENCH_BAD_REQUEST',
+);
+assert.equal(noArtifactDb.calls.length, 0);
+
+// Una respuesta no escribe documentos, así que mandar artifact_id es un cliente equivocado.
+const replyWithArtifactDb = fakeDb(workspaceResponse());
+await assert.rejects(
+  () => postAgt002MessageApi(replyWithArtifactDb, draftBody({
+    capability_id: AGT002_WORKBENCH_CAPABILITIES.reply, artifact_id: draftIds.artifact,
+  }), operator, enabled),
+  error => error.status === 400 && error.code === 'AGT002_WORKBENCH_BAD_REQUEST',
+);
+assert.equal(replyWithArtifactDb.calls.length, 0);
+
+// El body sigue cerrado: una clave que no está en ninguna de las dos listas se rechaza igual.
+const forgedActorDb = fakeDb(workspaceResponse());
+await assert.rejects(
+  () => postAgt002MessageApi(forgedActorDb, { ...draftBody(), actor_id: ids.forged }, operator, enabled),
+  error => error.status === 400 && error.code === 'AGT002_WORKBENCH_BAD_REQUEST',
+);
+assert.equal(forgedActorDb.calls.length, 0);
+
+// Un documento que no está en este expediente no produce vínculo ni trabajo.
+const foreignDb = fakeDb(workspaceResponse());
+await assert.rejects(
+  () => postAgt002MessageApi(foreignDb, draftBody({ artifact_id: draftIds.foreign, base_version_id: null }), operator, enabled),
+  error => error.status === 404 && error.code === 'AGT002_WORKBENCH_NOT_FOUND',
+);
+assert.ok(!foreignDb.calls.some(call => call.name === 'psi_append_agt002_workbench_message'));
+
+// La trampa real: pedir el borrador con base_version_id en blanco sobre un documento que ya tiene
+// versión vigente. La RPC respondería `stale` y no escribiría; aquí se rechaza antes de gastar el
+// trabajo, con un mensaje que la pantalla puede mostrar.
+const staleDb = fakeDb(workspaceResponse());
+await assert.rejects(
+  () => postAgt002MessageApi(staleDb, draftBody({ base_version_id: null }), operator, enabled),
+  error => error.status === 409 && error.code === 'AGT002_WORKBENCH_STALE_ARTIFACT',
+);
+assert.ok(!staleDb.calls.some(call => call.name === 'psi_append_agt002_workbench_message'));
+
+// Camino feliz sobre la versión humana vigente: un único vínculo `artifact`, derivado del
+// expediente, con la versión congelada que la RPC terminal va a comparar.
+const draftDb = fakeDb(workspaceResponse());
+assert.equal((await postAgt002MessageApi(draftDb, draftBody(), operator, enabled)).status, 'queued');
+const draftCall = draftDb.calls.find(call => call.name === 'psi_append_agt002_workbench_message').args;
+assert.equal(draftCall.p_capability_id, AGT002_WORKBENCH_CAPABILITIES.draft);
+assert.equal(draftCall.p_base_version_id, draftIds.version);
+assert.equal(draftCall.p_snapshot_id, canonicalRun.snapshot_id);
+const artifactLinks = draftCall.p_context_links.filter(link => link.kind === 'artifact');
+assert.equal(artifactLinks.length, 1, 'el responder toma el primer vínculo artifact: debe haber exactamente uno');
+assert.equal(artifactLinks[0].id, draftIds.artifact);
+assert.match(artifactLinks[0].label, /Anexo 7/);
+assert.match(artifactLinks[0].source_ref, /versión vigente 1/);
+assert.match(artifactLinks[0].source_ref, /Relación de contratos de vigilancia ejecutados\./);
+// Las referencias de origen siguen primero y el artefacto va antes de cualquier relleno.
+assert.deepEqual(draftCall.p_context_links.map(link => link.kind), ['snapshot', 'source', 'artifact']);
+// Lo que se encola tiene que ser admisible para el contrato tal como lo lee el worker: si el
+// vínculo derivado no pasara este validador, el trabajo moriría con AGT002_INVALID_JOB_INPUT
+// después del claim, no en el POST.
+const frozenJobInput = {
+  job_id: ids.job,
+  thread_id: ids.thread,
+  origin_message_id: ids.message,
+  opportunity_id: ids.opportunity,
+  tender_id: canonicalRun.tender_id,
+  snapshot_id: draftCall.p_snapshot_id,
+  base_version_id: draftCall.p_base_version_id,
+  capability_id: draftCall.p_capability_id,
+  contract_version: draftCall.p_contract_version,
+  policy_version: draftCall.p_policy_version,
+  context_links: draftCall.p_context_links,
+  message: draftCall.p_content,
+};
+validateAgt002WorkbenchJobInput(frozenJobInput);
+// Misma pregunta, otra capacidad: la idempotencia no las confunde.
+const sameQuestionDb = fakeDb(workspaceResponse());
+const replyBody = draftBody({ capability_id: AGT002_WORKBENCH_CAPABILITIES.reply, base_version_id: null });
+delete replyBody.artifact_id;
+await postAgt002MessageApi(sameQuestionDb, replyBody, operator, enabled);
+assert.notEqual(
+  sameQuestionDb.calls.find(call => call.name === 'psi_append_agt002_workbench_message').args.p_idempotency_key,
+  draftCall.p_idempotency_key,
+);
+
+// Primer borrador de un documento sin versión: base en null, y la procedencia lo dice.
+const firstDraftDb = fakeDb(workspaceResponse());
+await postAgt002MessageApi(firstDraftDb, draftBody({ artifact_id: draftIds.empty, base_version_id: null }), operator, enabled);
+const firstDraftCall = firstDraftDb.calls.find(call => call.name === 'psi_append_agt002_workbench_message').args;
+assert.equal(firstDraftCall.p_base_version_id, null);
+const firstLink = firstDraftCall.p_context_links.find(link => link.kind === 'artifact');
+assert.equal(firstLink.id, draftIds.empty);
+assert.match(firstLink.source_ref, /sin versión registrada/);
+assert.match(firstLink.source_ref, /sin contenido que tomar como base/);
+
+// El peor caso real de Terminal: el Anexo 7, 940 caracteres compactados (medido por select el
+// 2026-10-31, el más largo de las once versiones puestas a mano). Tiene que llegar entero: el
+// encabezado de la procedencia no puede crecer hasta comerse el presupuesto del contenido.
+const worstRealDb = fakeDb(workspaceResponse(940));
+await postAgt002MessageApi(worstRealDb, draftBody(), operator, enabled);
+const worstRealLink = worstRealDb.calls.find(call => call.name === 'psi_append_agt002_workbench_message').args
+  .p_context_links.find(link => link.kind === 'artifact');
+assert.ok(worstRealLink.source_ref.length <= 1000, `la procedencia excede el contrato: ${worstRealLink.source_ref.length}`);
+assert.doesNotMatch(worstRealLink.source_ref, /contenido recortado/, 'el peor caso real de Terminal debe llegar sin recorte');
+assert.ok(worstRealLink.source_ref.endsWith('x'.repeat(40)), 'el contenido debe llegar hasta el final');
+
+// Un contenido vigente más largo que el tope del contrato se recorta y lo declara.
+const longDb = fakeDb(workspaceResponse(true));
+await postAgt002MessageApi(longDb, draftBody(), operator, enabled);
+const longLink = longDb.calls.find(call => call.name === 'psi_append_agt002_workbench_message').args
+  .p_context_links.find(link => link.kind === 'artifact');
+assert.ok(longLink.source_ref.length <= 1000);
+assert.match(longLink.source_ref, /contenido recortado/);
+validateAgt002WorkbenchJobInput({ ...frozenJobInput, context_links: longDb.calls
+  .find(call => call.name === 'psi_append_agt002_workbench_message').args.p_context_links });
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const vercel = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
