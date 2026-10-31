@@ -145,7 +145,7 @@ export function TenderDossierWorkspacePanel({ opportunityId, request, profiles, 
 
       {!emptyWorkspace && <div className="document-analysis-grid tender-dossier-grid">
         <TenderDossierChecklist opportunityId={opportunityId} workspace={workspace} request={request} profiles={profiles} canApprove={canApprove} onChanged={handleCommittedMutation} />
-        <TenderDossierArtifacts opportunityId={opportunityId} artifacts={workspace.artifacts} request={request} canApprove={canApprove} onChanged={handleCommittedMutation} />
+        <TenderDossierArtifacts opportunityId={opportunityId} artifacts={workspace.artifacts} request={request} canApprove={canApprove} workbenchEnabled={workspace.workbench_enabled} onChanged={handleCommittedMutation} />
       </div>}
 
       {workspace.workbench_enabled && <TenderDossierVigiaWorkbench opportunityId={opportunityId} request={request} />}
