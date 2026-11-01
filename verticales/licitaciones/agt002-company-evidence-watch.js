@@ -21,9 +21,11 @@
 //   - `sin_archivo` NO avisa. Hoy 9 de 20 bloques no tienen documento cargado: es el estado normal de
 //     una ficha que se está llenando, lo muestra el panel, y repetirlo a diario por cada licitación
 //     abierta son catorce líneas de ruido que enseñan a ignorar el aviso.
-//   - `vigencia_por_confirmar` NO avisa. Es un desconocido por diseño —el registro guarda muchas
-//     vigencias en prosa—, y alarmar sobre lo que no se sabe es la forma más rápida de gastar la
-//     credibilidad del canal.
+//   - `vigencia_por_confirmar` NO avisa como vencimiento. Es un desconocido por diseño —el registro
+//     guarda muchas vigencias en prosa—, y alarmar sobre lo que no se sabe es la forma más rápida de
+//     gastar la credibilidad del canal. **Pero sí se avisa de la ceguera misma** cuando esa prosa
+//     declara un plazo en días: entonces no es un desconocido, es un dato que existe y no está
+//     registrado como fecha, y el silencio es nuestro. Se dice sin calcular la fecha.
 //   - Lo que sí avisa es lo que es cierto y decide: un documento **vencido**, uno que **no llega
 //     vigente al cierre**, y una **aprobación que no nombra su documento**.
 //
@@ -58,6 +60,14 @@ const day = value => {
 };
 
 const list = items => items.map(item => `«${item}»`).join(', ');
+
+/**
+ * Prosa que declara una vida finita: una fecha de expedición y un plazo en días. No se intenta
+ * calcular la fecha —«60 días» desde el 19 de junio puede ser corridos o hábiles, y una fecha
+ * adivinada es peor que un hueco visible—, sólo se detecta que el documento SÍ caduca y que su
+ * caducidad no está registrada como fecha.
+ */
+const DECLARED_FINITE_LIFE = /\b\d{1,4}\s*d[íi]as?\b/i;
 
 /**
  * Una aprobación vale para el documento contra el que se tomó. Misma regla que la pantalla de Empresa
@@ -118,6 +128,26 @@ export function agt002CompanyEvidenceNotices({
       code: 'ficha_vencida',
       severity: 'alta',
       text: `Vig-IA, vigilancia de la ficha: ${expired.length === 1 ? 'un documento corporativo está vencido' : `${expired.length} documentos corporativos están vencidos`} hoy, con el cierre el ${close}: ${list(expired.map(row => `${row.label}, venció ${row.expires_at}`))}.`,
+    });
+  }
+
+  // La ceguera, dicha en voz alta. Este aviso existe porque la primera versión de esta vigilancia NO
+  // detectaba el caso que la pidió: el listado de armas venció el 2026-08-18 y su vigencia vive sólo
+  // como prosa en el registro —«Expedido 2026-06-19; vigencia declarada de 60 días»—, sin fecha y sin
+  // documento cargado. Las reglas no pueden vigilar lo que no es una fecha, y derivarla de la prosa
+  // sería exactamente la fecha adivinada que la casa prohíbe. Lo que sí se puede afirmar sin adivinar
+  // nada es que ese bloque declara una vida finita y nadie la está vigilando. Eso se dice, para que una
+  // persona registre la fecha y el bloque entre al radar de los dos avisos de arriba.
+  const unwatchable = rows.filter(row => {
+    if (row.expires_at) return false;
+    const prose = String(row.vigencia_text || '');
+    return DECLARED_FINITE_LIFE.test(prose);
+  });
+  if (unwatchable.length) {
+    notices.push({
+      code: 'vigencia_solo_en_prosa',
+      severity: 'media',
+      text: `Vig-IA, vigilancia de la ficha: ${unwatchable.length === 1 ? 'un bloque declara' : `${unwatchable.length} bloques declaran`} una vigencia con plazo pero sin fecha registrada, así que nadie la puede vigilar —ni esta revisión—: ${list(unwatchable.map(row => `${row.label}: ${row.vigencia_text}`))}. Mientras siga en prosa, un vencimiento como el del listado de armas (expedido el 2026-06-19 con 60 días declarados) no lo detecta nadie. Registrar la fecha en la pantalla de Empresa para que entre a los avisos de vencimiento.`,
     });
   }
 
