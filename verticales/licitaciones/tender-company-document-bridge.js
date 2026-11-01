@@ -80,6 +80,19 @@ for (const entry of TENDER_COMPANY_DOCUMENT_CLASSES) {
   for (const type of entry.document_types) if (!CLASS_BY_DOCUMENT_TYPE.has(type)) CLASS_BY_DOCUMENT_TYPE.set(type, entry.key);
 }
 
+/**
+ * `document_type` del CRM → `entry_id` del registro de evidencia, resolviendo los **alias legados**.
+ * Vive aquí porque este módulo ya es la fuente de verdad de esos alias (`document_types` por clase):
+ * repetirlos en cada consumidor es cómo la Cámara de Comercio —cargada dos veces bajo el tipo
+ * `certificado`— se reportaba como "el CRM no tiene ningún documento", que es falso.
+ */
+export function tenderCompanyRegistryEntryForDocumentType(documentType) {
+  const type = String(documentType || '');
+  if (!type) return null;
+  const entry = TENDER_COMPANY_DOCUMENT_CLASSES.find(item => (item.document_types || []).includes(type));
+  return entry?.registry_entry || null;
+}
+
 export function tenderCompanyDocumentClassForType(documentType) {
   return CLASS_BY_DOCUMENT_TYPE.get(String(documentType || '').trim().toLowerCase()) || null;
 }

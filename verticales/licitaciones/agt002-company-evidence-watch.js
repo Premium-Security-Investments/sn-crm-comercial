@@ -31,7 +31,10 @@
 //
 // Módulo puro en su parte de reglas: sin red, sin base de datos, sin express.
 
-import { buildTenderCompanyDocumentBridge } from './tender-company-document-bridge.js';
+import {
+  buildTenderCompanyDocumentBridge,
+  tenderCompanyRegistryEntryForDocumentType,
+} from './tender-company-document-bridge.js';
 
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -76,10 +79,12 @@ const DECLARED_FINITE_LIFE = /\b\d{1,4}\s*d[íi]as?\b/i;
  * el 2026-10-27 sin ancla, que es por lo que nadie había leído el monto asegurado.
  */
 export function agt002EvidenceDecisionsWithoutAnchor({ registry = [], documents = [] } = {}) {
+  // Con el alias resuelto: un soporte cargado bajo un tipo legado acredita su bloque igual que el
+  // canónico. Sin esto, un bloque decidido cuyo soporte entró como `certificado` no se revisaba.
   const currentByType = new Map();
   for (const document of documents || []) {
     if (document?.current === false) continue;
-    const type = String(document?.document_type || '');
+    const type = tenderCompanyRegistryEntryForDocumentType(document?.document_type) || String(document?.document_type || '');
     if (type && !currentByType.has(type)) currentByType.set(type, document);
   }
   return (registry || [])
@@ -94,6 +99,55 @@ export function agt002EvidenceDecisionsWithoutAnchor({ registry = [], documents 
       decidedAt: entry.decision_humana_fecha || null,
       supportId: support.id || null,
     }));
+}
+
+/**
+ * La tercera regla que pidió Juan: una fecha de vencimiento registrada en la ficha que **contradice
+ * el documento cargado**. Dos formas, y las dos son del mismo tipo: el registro describe lo que una
+ * persona observó en su momento, y el documento es el hecho.
+ *
+ *  - el registro declara una fecha y el documento declara otra → la del documento manda, la del
+ *    registro quedó atrás;
+ *  - el registro declara una fecha anterior a la expedición del documento cargado → la observación
+ *    es más vieja que el papel que describe.
+ *
+ * El puente ya evita el daño de la segunda —`resolveExpiry` no declara vencido un papel más nuevo que
+ * la fecha observada, y por eso el bloque sale `por_confirmar`—, pero **evitar el daño no es avisar**,
+ * y nadie se enteraba de que la ficha tenía una fecha mentirosa.
+ *
+ * Hoy en producción esto NO dispara con nada: el caso real que lo pidió —antecedentes con `expiry`
+ * 2026-08-29 y paquetes del 2026-09-02 y del 2026-10-17— se corrigió a mano en los datos el
+ * 2026-10-30, dejando la fecha en nulo y la prosa con los paquetes. Esta regla es la guarda de que no
+ * vuelva a pasar en silencio, no el arreglo de algo que esté roto ahora.
+ */
+export function agt002EvidenceDatesContradictingDocument({ registry = [], documents = [] } = {}) {
+  const byEntry = new Map();
+  for (const document of documents || []) {
+    if (document?.current === false) continue;
+    const entryId = tenderCompanyRegistryEntryForDocumentType(document?.document_type) || String(document?.document_type || '');
+    const issued = day(document?.issued_at);
+    const previous = byEntry.get(entryId);
+    // Gana el documento más nuevo de la clase: es el que el puente toma como vigente.
+    if (!previous || (issued && (!previous.issued || issued > previous.issued))) {
+      byEntry.set(entryId, { issued, expires: day(document?.expires_at), name: document?.display_name || null });
+    }
+  }
+  const found = [];
+  for (const entry of (registry || []).filter(item => item?.current !== false)) {
+    const entryId = String(entry?.entry_id || '');
+    const registered = day(entry?.expiry);
+    if (!registered) continue;
+    const document = byEntry.get(entryId);
+    if (!document) continue;
+    if (document.expires && document.expires !== registered) {
+      found.push({ entryId, label: String(entry.document_class || entryId), kind: 'otra_fecha', registered, documentDate: document.expires });
+      continue;
+    }
+    if (!document.expires && document.issued && registered < document.issued) {
+      found.push({ entryId, label: String(entry.document_class || entryId), kind: 'anterior_al_documento', registered, documentDate: document.issued });
+    }
+  }
+  return found;
 }
 
 /**
@@ -148,6 +202,17 @@ export function agt002CompanyEvidenceNotices({
       code: 'vigencia_solo_en_prosa',
       severity: 'media',
       text: `Vig-IA, vigilancia de la ficha: ${unwatchable.length === 1 ? 'un bloque declara' : `${unwatchable.length} bloques declaran`} una vigencia con plazo pero sin fecha registrada, así que nadie la puede vigilar —ni esta revisión—: ${list(unwatchable.map(row => `${row.label}: ${row.vigencia_text}`))}. Mientras siga en prosa, un vencimiento como el del listado de armas (expedido el 2026-06-19 con 60 días declarados) no lo detecta nadie. Registrar la fecha en la pantalla de Empresa para que entre a los avisos de vencimiento.`,
+    });
+  }
+
+  const contradicting = agt002EvidenceDatesContradictingDocument({ registry, documents });
+  if (contradicting.length) {
+    notices.push({
+      code: 'fecha_registrada_contradice_el_documento',
+      severity: 'alta',
+      text: `Vig-IA, vigilancia de la ficha: ${contradicting.length === 1 ? 'una fecha registrada contradice' : `${contradicting.length} fechas registradas contradicen`} el documento cargado: ${list(contradicting.map(item => item.kind === 'otra_fecha'
+        ? `${item.label}: la ficha dice que vence el ${item.registered} y el documento dice el ${item.documentDate}`
+        : `${item.label}: la ficha dice que venció el ${item.registered}, anterior a la expedición del documento cargado (${item.documentDate})`))}. Manda el documento; la fecha de la ficha quedó atrás. Corregirla en la pantalla de Empresa para que los avisos de vencimiento midan contra la fecha real.`,
     });
   }
 
