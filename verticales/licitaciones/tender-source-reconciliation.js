@@ -266,6 +266,10 @@ export function createTenderSourceReconciliation({
     const uniqueIds = [...new Set(strippedRows.map(row => row.process_id))];
     const sourceByProcessId = new Map();
     const errors = [];
+    // Los ids cuyo grupo de duplicados en la fuente se contradice. Se separan de `missing` porque
+    // son hechos distintos: aquí la fuente SÍ trajo el proceso y somos nosotros los que nos
+    // negamos a escoger entre dos filas que se contradicen. Ver el cálculo de `status` abajo.
+    const ambiguousIds = new Set();
 
     for (const chunk of chunkArray(uniqueIds, chunkSize)) {
       if (!chunk.length) continue;
@@ -287,19 +291,23 @@ export function createTenderSourceReconciliation({
         try {
           sourceByProcessId.set(id, selectAuthoritativeSocrataRecord(group));
         } catch (error) {
-          // A self-contradictory duplicate set for this id is left out of the map entirely,
-          // which surfaces as `missing` below and fails runOnce closed -- never an arbitrary
-          // guess at which duplicate row to trust.
+          // A self-contradictory duplicate set for this id is left out of the map entirely --
+          // never an arbitrary guess at which duplicate row to trust. Se cuenta como `ambiguous`,
+          // no como `missing`: la distinción está razonada en el `status` de abajo.
+          ambiguousIds.add(id);
           errors.push({ process_id: id, message: error.message });
         }
       }
     }
 
-    let matched = 0, patched = 0, missing = 0, conflicts = 0, failed = 0;
+    let matched = 0, patched = 0, missing = 0, conflicts = 0, failed = 0, ambiguous = 0;
 
     for (const row of strippedRows) {
       const sourceRow = sourceByProcessId.get(row.process_id);
-      if (!sourceRow) { missing += 1; continue; }
+      if (!sourceRow) {
+        if (ambiguousIds.has(row.process_id)) ambiguous += 1; else missing += 1;
+        continue;
+      }
       matched += 1;
 
       const previousConflicts = Array.isArray(row?.raw?.deadline_conflicts) ? row.raw.deadline_conflicts.length : 0;
@@ -326,6 +334,19 @@ export function createTenderSourceReconciliation({
       // An unmatched durable process_id (missing > 0) is just as much an unexpected acquisition
       // gap as a failed patch -- it must never report `success`, or a silent drop of a durable
       // row's source lookup would look like a good day forever.
+      //
+      // `ambiguous` NO entra en esa cuenta, y la diferencia no es de severidad sino de hecho: un
+      // `missing` es que la fuente dejó de darnos un proceso que nosotros tenemos —un hueco de
+      // adquisición, y es nuestro problema—, mientras que un `ambiguous` es que la fuente sí lo
+      // trajo pero publicó dos filas que se contradicen entre sí, y nosotros nos negamos a
+      // adivinar a cuál creerle. Lo segundo es un defecto del dato de SECOP que se repite en cada
+      // corrida hasta que ellos lo corrijan, así que contarlo como fracaso deja el trabajo en rojo
+      // permanente — y un rojo permanente no se distingue de un rojo nuevo. Eso ya costó: el
+      // 2026-10-30 el proceso CO1.REQ.11235114 llegó con dos filas empatadas y contradictorias, la
+      // corrida salió con 2.175 de 2.176 actualizados y `exit 1`, y como la cadena diaria es un
+      // `oneshot` de cuatro pasos, systemd no ejecutó el cuarto: **el Top 5 de Discord no se envió
+      // ese día ni los siguientes**, en la semana de dos cierres. La excepción sigue siendo
+      // visible —en `ambiguous` y en `errors`—, pero ya no apaga el resto.
       status: (failed || missing) ? 'partial' : 'success',
       checked: scanned,
       scanned,
@@ -334,6 +355,7 @@ export function createTenderSourceReconciliation({
       updated: patched,
       conflicts,
       missing,
+      ambiguous,
       errors,
       failed,
       skipped_inactive_converted: skippedInactiveConverted,

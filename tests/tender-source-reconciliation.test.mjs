@@ -631,6 +631,87 @@ test('an unmatched durable process_id makes runOnce status not success, with mis
   assert.notEqual(result.status, 'success', 'runOnce must not report success while a durable process_id went unmatched');
 });
 
+// --- 11b. Dato sucio de la fuente: visible, contado aparte, y NO apaga la corrida -----------
+//
+// El caso medido en producción el 2026-10-30 y el 2026-10-31: el proceso CO1.REQ.11235114 llega
+// con dos filas empatadas en la última publicación que se contradicen, `selectAuthoritativeSocrataRecord`
+// se niega a escoger, y la corrida salía `partial` con `exit 1` teniendo 2.175 de 2.176 al día.
+// Como la cadena diaria es un `oneshot` de cuatro pasos, systemd no ejecutaba el cuarto y el Top 5
+// de Discord dejó de enviarse. Esta prueba fija la distinción que arregla eso, sin tocar el
+// fail-closed de lo que sí es nuestro (ver la prueba 11, que sigue exigiendo `missing` → no éxito).
+
+test('un empate contradictorio de la fuente se cuenta como ambiguous, deja la corrida en éxito y no se confunde con un hueco de adquisición', async () => {
+  const rows = [durableRow('a-1', 'P-AMB'), durableRow('a-2', 'P-OK')];
+  const { database, calls } = fakeDatabase({ rows });
+  const shared = '2026-09-20T00:00:00.000';
+  const fetch = {
+    async run() {
+      return [
+        // Dos filas del mismo proceso, empatadas en la última publicación y en desacuerdo.
+        sourceRow({ id_del_proceso: 'P-AMB', fecha_de_ultima_publicaci: shared, estado_resumen: 'Publicado' }),
+        sourceRow({ id_del_proceso: 'P-AMB', fecha_de_ultima_publicaci: shared, estado_resumen: 'Adjudicado' }),
+        sourceRow({ id_del_proceso: 'P-OK', fecha_de_recepcion_de: '2026-11-20T00:00:00.000' }),
+      ];
+    },
+  };
+
+  const reconciliation = createTenderSourceReconciliation({
+    database, fetchSource: fetch.run, now: () => '2026-09-25T12:00:00.000Z', pageSize: 10, chunkSize: 10,
+  });
+  const result = await reconciliation.runOnce();
+
+  assert.equal(result.ambiguous, 1, 'el empate contradictorio se cuenta aparte');
+  assert.equal(result.missing, 0, 'no es un hueco de adquisición: la fuente sí trajo el proceso');
+  assert.equal(result.status, 'success', 'un dato sucio de la fuente no puede dejar el trabajo en rojo permanente');
+  assert.equal(result.failed, 0);
+  // Sigue siendo visible, que es la otra mitad del asunto.
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].process_id, 'P-AMB');
+  assert.match(result.errors[0].message, /tied|conflict/i);
+  // Y el proceso ambiguo nunca se parchea con una adivinanza.
+  const updatedIds = calls.filter(call => call.op === 'update').map(call => call.value);
+  assert.deepEqual(updatedIds, ['a-2'], 'sólo el proceso sano se actualiza; el ambiguo se deja intacto');
+});
+
+test('un hueco de adquisición y un empate contradictorio en la misma corrida no se mezclan: sigue fallando cerrado por el hueco', async () => {
+  const rows = [durableRow('x-1', 'P-AMB'), durableRow('x-2', 'P-GONE')];
+  const { database } = fakeDatabase({ rows });
+  const shared = '2026-09-20T00:00:00.000';
+  const fetch = {
+    async run() {
+      return [
+        sourceRow({ id_del_proceso: 'P-AMB', fecha_de_ultima_publicaci: shared, fecha_de_recepcion_de: '2026-11-01T00:00:00.000' }),
+        sourceRow({ id_del_proceso: 'P-AMB', fecha_de_ultima_publicaci: shared, fecha_de_recepcion_de: '2026-11-02T00:00:00.000' }),
+        // P-GONE no vuelve: la fuente dejó de traer un proceso que nosotros tenemos.
+      ];
+    },
+  };
+
+  const reconciliation = createTenderSourceReconciliation({
+    database, fetchSource: fetch.run, now: () => '2026-09-25T12:00:00.000Z', pageSize: 10, chunkSize: 10,
+  });
+  const result = await reconciliation.runOnce();
+
+  assert.equal(result.ambiguous, 1);
+  assert.equal(result.missing, 1, 'el proceso que la fuente dejó de traer sigue siendo un hueco');
+  assert.notEqual(result.status, 'success', 'un hueco de adquisición debe seguir fallando cerrado, aunque haya ambigüedad al lado');
+});
+
+test('una corrida limpia reporta ambiguous en cero, para que el campo sea legible siempre', async () => {
+  const rows = [durableRow('c-1', 'P-1')];
+  const { database } = fakeDatabase({ rows });
+  const fetch = fakeFetchSource({ 'P-1': sourceRow({ id_del_proceso: 'P-1', fecha_de_recepcion_de: '2026-11-20T00:00:00.000' }) });
+
+  const reconciliation = createTenderSourceReconciliation({
+    database, fetchSource: fetch.run, now: () => '2026-09-25T12:00:00.000Z', pageSize: 10, chunkSize: 10,
+  });
+  const result = await reconciliation.runOnce();
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.ambiguous, 0);
+  assert.equal(result.missing, 0);
+});
+
 // --- 12. Deadline writes are compare-and-swap, not unconditional .eq('id') --------------------
 
 test('a later-source deadline write includes a compare-and-swap on the observed current deadline_at', async () => {
