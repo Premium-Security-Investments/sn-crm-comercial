@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   agt002CompanyEvidenceNotices,
+  agt002EvidenceDatesContradictingDocument,
   agt002EvidenceDecisionsWithoutAnchor,
   agt002WatchCloseDate,
   runAgt002CompanyEvidenceWatch,
@@ -106,6 +107,68 @@ test('un bloque aprobado SIN documento cargado no es este defecto: no hay nada c
 test('sin fecha de cierre no se concluye nada sobre llegar vigente al cierre', () => {
   const notices = agt002CompanyEvidenceNotices({ registry: REGISTRY, documents: DOCUMENTS, tender: { id: 't-2', raw: {}, deadline_at: null }, now: NOW });
   assert.deepEqual(notices, [], 'un proceso sin fecha es un problema del Radar, no de la ficha');
+});
+
+// --- La tercera regla: la fecha de la ficha contra el documento -------------------------------
+//
+// Hoy NO dispara en producción: el caso real —antecedentes con `expiry` 2026-08-29 y paquetes del
+// 2026-09-02 y del 2026-10-17— se corrigió a mano en los datos el 2026-10-30. Es la guarda de que no
+// vuelva a pasar en silencio.
+
+test('una fecha registrada distinta a la del documento se denuncia, y manda el documento', () => {
+  const registry = [{ entry_id: 'rce_policy', document_class: 'Póliza RCE', expiry: '2026-12-31', current: true, human_review_status: 'pending_human_review', existence_status: 'verified', vigencia_text: 'Póliza observada' }];
+  const documents = [{ id: 'd1', document_type: 'rce_policy', display_name: 'RCE.pdf', issued_at: '2026-02-10', expires_at: '2027-02-06', current: true }];
+  const found = agt002EvidenceDatesContradictingDocument({ registry, documents });
+  assert.equal(found.length, 1);
+  assert.equal(found[0].kind, 'otra_fecha');
+  assert.equal(found[0].registered, '2026-12-31');
+  assert.equal(found[0].documentDate, '2027-02-06');
+
+  const notices = agt002CompanyEvidenceNotices({ registry, documents, tender: TERMINAL, now: NOW });
+  const aviso = notices.find(notice => notice.code === 'fecha_registrada_contradice_el_documento');
+  assert.ok(aviso);
+  assert.match(aviso.text, /la ficha dice que vence el 2026-12-31 y el documento dice el 2027-02-06/);
+  assert.match(aviso.text, /Manda el documento/);
+});
+
+test('el caso real: una fecha observada anterior a la expedición del documento cargado', () => {
+  // Antecedentes con ventana observada hasta el 2026-08-29 y un paquete del 2026-10-17.
+  const registry = [{ entry_id: 'corporate_background_checks', document_class: 'Antecedentes de la persona jurídica', expiry: '2026-08-29', current: true, human_review_status: 'pending_human_review', existence_status: 'reported', vigencia_text: 'Ventana observada de 89 días' }];
+  const documents = [{ id: 'd2', document_type: 'procuraduria_empresa', display_name: '05_Procuraduria_Empresa_2026-10-17.pdf', issued_at: '2026-10-17', expires_at: null, current: true }];
+  const found = agt002EvidenceDatesContradictingDocument({ registry, documents });
+  assert.equal(found.length, 1, 'el tipo legado tiene que resolverse al bloque, o el caso no se ve');
+  assert.equal(found[0].kind, 'anterior_al_documento');
+  assert.equal(found[0].registered, '2026-08-29');
+  assert.equal(found[0].documentDate, '2026-10-17');
+});
+
+test('una ficha coherente con su documento no se denuncia', () => {
+  // Los cuatro bloques de producción que tienen fecha y documento son coherentes (medido 2026-11-01).
+  const registry = [
+    { entry_id: 'rce_policy', document_class: 'Póliza RCE', expiry: '2027-02-06', current: true },
+    { entry_id: 'supervigilancia_operating_license', document_class: 'Licencia SuperVigilancia', expiry: '2029-05-10', current: true },
+  ];
+  const documents = [
+    { id: 'd1', document_type: 'rce_policy', issued_at: '2026-02-10', expires_at: '2027-02-06', current: true },
+    { id: 'd2', document_type: 'supervigilancia_operating_license', issued_at: '2021-02-11', expires_at: '2029-05-10', current: true },
+  ];
+  assert.deepEqual(agt002EvidenceDatesContradictingDocument({ registry, documents }), []);
+});
+
+test('sin fecha registrada no hay contradicción posible: no se alarma sobre la prosa', () => {
+  const registry = [{ entry_id: 'corporate_background_checks', document_class: 'Antecedentes', expiry: null, current: true, vigencia_text: 'Paquetes posteriores localizados el 2026-10-30' }];
+  const documents = [{ id: 'd1', document_type: 'procuraduria_empresa', issued_at: '2026-10-17', expires_at: null, current: true }];
+  assert.deepEqual(agt002EvidenceDatesContradictingDocument({ registry, documents }), [],
+    'así quedó el caso real tras corregirse a mano: fecha en nulo y prosa');
+});
+
+test('un bloque decidido con soporte bajo tipo legado también se revisa el ancla', () => {
+  // Antes el ancla comparaba el tipo de forma exacta, así que un soporte cargado como `certificado`
+  // no se revisaba: el bloque podía figurar aprobado sin ancla y nadie lo veía.
+  const registry = [{ entry_id: 'chamber_of_commerce', document_class: 'Cámara de Comercio', expiry: null, current: true, human_review_status: 'approved', decision_support_document_id: null, existence_status: 'verified', vigencia_text: 'No vence por sí mismo' }];
+  const documents = [{ id: 'cc-1', document_type: 'certificado', display_name: 'CC.pdf', issued_at: '2026-10-06', expires_at: null, current: true }];
+  const unanchored = agt002EvidenceDecisionsWithoutAnchor({ registry, documents });
+  assert.deepEqual(unanchored.map(item => item.entryId), ['chamber_of_commerce']);
 });
 
 // --- La ceguera dicha en voz alta: el caso que la primera versión NO detectaba ----------------
