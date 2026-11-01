@@ -108,6 +108,46 @@ test('sin fecha de cierre no se concluye nada sobre llegar vigente al cierre', (
   assert.deepEqual(notices, [], 'un proceso sin fecha es un problema del Radar, no de la ficha');
 });
 
+// --- La ceguera dicha en voz alta: el caso que la primera versión NO detectaba ----------------
+//
+// El listado de armas venció el 2026-08-18 y la vigilancia no lo vio, porque en producción su
+// vigencia vive sólo como prosa —«Expedido 2026-06-19; vigencia declarada de 60 días»— sin fecha y
+// sin documento cargado. Derivar la fecha de la prosa es la fecha adivinada que la casa prohíbe. Lo
+// que sí se puede afirmar es que el bloque declara una vida finita y nadie la vigila.
+
+test('un bloque con plazo declarado en prosa y sin fecha se denuncia como no vigilable', () => {
+  const registry = [
+    { entry_id: 'authorized_weapons_list', document_class: 'Listado de armas autorizadas', existence_status: 'reported', human_review_status: 'pending_human_review', vigencia_text: 'Expedido 2026-06-19; vigencia declarada de 60 días', expiry: null, current: true },
+    { entry_id: 'no_fines_sanctions_certificate', document_class: 'Certificado de multas y sanciones', existence_status: 'reported', human_review_status: 'pending_human_review', vigencia_text: 'Expedido 2026-06-18; vigencia declarada de 90 días hábiles', expiry: null, current: true },
+  ];
+  const notices = agt002CompanyEvidenceNotices({ registry, documents: [], tender: TERMINAL, now: NOW });
+  const ciego = notices.find(notice => notice.code === 'vigencia_solo_en_prosa');
+  assert.ok(ciego, 'la ceguera se dice, no se calla');
+  assert.equal(ciego.severity, 'media', 'es un hueco de dato, no un vencimiento comprobado');
+  assert.match(ciego.text, /Listado de armas/);
+  assert.match(ciego.text, /multas y sanciones/);
+  assert.match(ciego.text, /60 días/, 'se cita la prosa tal cual, sin interpretarla');
+  // Y no se inventa ninguna fecha de vencimiento.
+  assert.doesNotMatch(ciego.text, /2026-08-18|vence el/, 'no se calcula la fecha que la prosa no da');
+  assert.ok(!notices.some(notice => notice.code === 'ficha_vencida'), 'sin fecha no se afirma un vencimiento');
+});
+
+test('una prosa sin plazo en días sigue siendo un desconocido y no se denuncia', () => {
+  const registry = [
+    { entry_id: 'accredited_experience', document_class: 'Experiencia acreditada', existence_status: 'reported', human_review_status: 'pending_human_review', vigencia_text: 'Sin caducidad general; correspondencia contractual por requisito', expiry: null, current: true },
+    { entry_id: 'bank_certificate', document_class: 'Certificación bancaria', existence_status: 'reported', human_review_status: 'pending_human_review', vigencia_text: 'Expedida 2026-06-22; vigencia práctica dependiente del pliego', expiry: null, current: true },
+  ];
+  const notices = agt002CompanyEvidenceNotices({ registry, documents: [], tender: TERMINAL, now: NOW });
+  assert.deepEqual(notices, [], 'una vigencia que de verdad nadie sabe no es una ceguera nuestra');
+});
+
+test('un bloque con fecha registrada no se denuncia como no vigilable: ya está vigilado', () => {
+  const registry = [{ entry_id: 'rce_policy', document_class: 'Póliza RCE', existence_status: 'verified', human_review_status: 'pending_human_review', vigencia_text: 'Póliza observada: 2026-02-06 a 2027-02-06, con 365 días de cobertura', expiry: '2027-02-06', current: true }];
+  const documents = [{ id: 'doc-rce', document_type: 'rce_policy', issued_at: '2026-02-10', expires_at: '2027-02-06', current: true, version: 1 }];
+  const notices = agt002CompanyEvidenceNotices({ registry, documents, tender: TERMINAL, now: NOW });
+  assert.ok(!notices.some(notice => notice.code === 'vigencia_solo_en_prosa'));
+});
+
 // --- La revisión programada -------------------------------------------------------------------
 
 function fakeDatabase({ registry = REGISTRY, documents = DOCUMENTS, tenders = [TERMINAL] } = {}) {
