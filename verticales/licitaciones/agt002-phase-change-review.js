@@ -25,6 +25,7 @@ import {
   appendAgt002ObservationLine,
 } from './agt002-phase-change-followup.js';
 import { runAgt002ScheduleFreshnessReview } from './agt002-schedule-freshness.js';
+import { runAgt002CompanyEvidenceWatch } from './agt002-company-evidence-watch.js';
 import { runAgt002DiscardedPhaseWatch } from './agt002-discarded-phase-watch.js';
 import { agt002AlertItems, agt002AlertsOutboxSummary, bogotaDay, bogotaTime, buildAgt002AlertsOutbox } from './agt002-licitaciones-alerts.js';
 
@@ -130,6 +131,8 @@ export async function runAgt002PhaseChangeReview(database, {
   freshnessReview = runAgt002ScheduleFreshnessReview,
   // Vigilancia de lo descartado (pedido de Juan, 2026-10-22): igual de inyectable, y por la misma razón.
   discardedWatch = runAgt002DiscardedPhaseWatch,
+  // Vigilancia de la ficha de empresa contra los cierres abiertos (mejora 2 del encargo del 2026-10-31).
+  companyEvidenceWatch = runAgt002CompanyEvidenceWatch,
 } = {}) {
   const runId = `${bogotaDay(now.toISOString())}-${bogotaTime(now.toISOString()).replace(':', '')}-${now.toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`;
   const step = async (name, fn, fallback) => { try { return await fn(); } catch (error) { log({ event: `agt002_phase_change_review_${name}_failed`, message: String(error?.message || error).slice(0, 200) }); return fallback; } };
@@ -150,6 +153,14 @@ export async function runAgt002PhaseChangeReview(database, {
   // Frescura: una fecha clave del cronograma que pasó sin que SECOP se mueva. Deja el aviso en la oportunidad
   // (línea que no se duplica) y no interrumpe el resto de la revisión si falla.
   await step('freshness', () => freshnessReview(database, {
+    now, log,
+    inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
+    appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
+  }), []);
+  // Ficha de empresa contra el cierre: un documento vencido, uno que no llega vigente al cierre, o una
+  // decisión de evidencia que no nombra su documento. Las reglas ya existían y sólo se veían si alguien
+  // abría la pantalla; esto las dice sin que se lo pregunten. Mismo canal y misma línea que no se duplica.
+  await step('company_evidence_watch', () => companyEvidenceWatch(database, {
     now, log,
     inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
     appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
