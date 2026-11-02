@@ -207,19 +207,25 @@ export function agt002SharepointEvidenceDifferences({ files = [], registry = [],
       });
       continue;
     }
-    if (bucket.newest && loaded.issued && bucket.newest > loaded.issued) {
-      differences.push({
-        code: 'sharepoint_tiene_algo_mas_nuevo',
-        entryId: bucket.entryId,
-        label: String(entry.document_class || bucket.entryId),
-        severity: 'media',
-        count: bucket.count,
-        newest: bucket.newest,
-        newestName: bucket.newestName,
-        loadedIssued: loaded.issued,
-        personal: bucket.personal,
-      });
-    }
+    // AQUÍ HABÍA UNA REGLA Y SE QUITÓ, a propósito y con el motivo escrito para que no vuelva.
+    //
+    // Comparaba la fecha más nueva de SharePoint contra `issued_at` del documento cargado y, si la
+    // primera era posterior, avisaba "SharePoint tiene algo más nuevo". **Las cuatro veces que
+    // disparó contra datos reales fue un falso positivo**, porque son cosas distintas:
+    // `lastModifiedDateTime` es cuándo se tocó el archivo en SharePoint, e `issued_at` es la fecha
+    // del documento. El RUP lo demostró sin lugar a dudas: el archivo que SharePoint tenía "más
+    // nuevo" se llama `20_RUP_SEGURIDAD_NACIONAL_2026-09-28_VIGENTE_EN_FIRME.pdf`, el MISMO que el
+    // CRM ya tiene cargado con `issued_at` 2026-09-28. Sólo se había vuelto a tocar el 2026-10-17.
+    // Igual la Cámara de Comercio (mismo nombre de archivo), la licencia de SuperVigilancia (la
+    // resolución es de 2021) y la póliza de vida (la misma renovación 2026-2027).
+    //
+    // No tiene arreglo con los datos que hay: SharePoint no expone la fecha del documento, sólo la
+    // del archivo. Detectarlo de verdad exige leer el documento, y adivinarlo por el nombre es la
+    // fecha inventada que la casa prohíbe. Así que el puente reporta **presencia**, que sí es un
+    // hecho —hay archivos de esta clase y el CRM no tiene ninguno—, y no antigüedad.
+    //
+    // Si alguien la vuelve a necesitar: el camino es comparar nombres de archivo contra
+    // `display_name`, o leer la fecha del documento, no restar fechas de modificación.
   }
   if (unclassified.length) {
     differences.push({
