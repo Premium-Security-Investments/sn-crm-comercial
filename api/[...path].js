@@ -215,7 +215,7 @@ import { publishTenderKnowledgeVersion } from '../verticales/licitaciones/agt002
 import { createTenderKnowledgeSharePointGraphAdapter } from '../verticales/licitaciones/agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
 import { CHAT_HISTORY_TURNS, CHAT_SUPERSEDED_BY_KEY, assignChatRefs, buildChatInput, chatDayToIso, chatQuotaMessage, claimChatTurn, planSupersededChatProposals, runChatTurn } from '../verticales/comercial/agt003-chat-registro.js';
-import { nextActionRequirement } from '../src/vigia/next-action-rule.js';
+import { followUpDateRequirement, nextActionRequirement } from '../src/vigia/next-action-rule.js';
 import { briefQuotaMessage, buildBriefInput, claimBriefRun, runBriefSummary } from '../verticales/comercial/agt003-brief-reunion.js';
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import {
@@ -3906,6 +3906,10 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
   if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
   if (!isPublicTender && (payload.stage_code || null) !== (existing.stage_code || null)) {
     requireNextAction({ stageCode: payload.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: payload.next_action_at || null });
+  } else if (!isPublicTender && payload.next_action_at && payload.next_action_at !== existing.next_action_at) {
+    // Aunque la etapa no cambie, una próxima gestión nueva pasa por la misma regla: antes, guardar la ficha con la
+    // fecha a dos años no tocaba ninguna validación.
+    requireNextAction({ stageCode: payload.stage_code || existing.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: payload.next_action_at });
   }
   const { requestedClientId, client, authorizedSiblingIds } = isPublicTender
     ? { requestedClientId: null, client: null, authorizedSiblingIds: null }
@@ -3949,11 +3953,23 @@ function requireNextAction({ stageCode, currentNextActionAt, proposedNextActionA
   error.code = verdict.code;
   throw error;
 }
+// Hermano del anterior, para la fecha del seguimiento. Las dos reglas viven en `next-action-rule.js` y las comparten
+// la pantalla y el servidor: por no tener esta, entraron seguimientos fechados en 2027 y 2030 que dejaron una
+// oportunidad activa invisible para Mi día.
+function requireFollowUpDate(occurredAt) {
+  const verdict = followUpDateRequirement({ occurredAt });
+  if (verdict.ok) return;
+  const error = new Error(verdict.message);
+  error.status = 400;
+  error.code = verdict.code;
+  throw error;
+}
 async function addInteractionForProfile(database, currentProfile, id, body) {
   const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
   requireNextAction({ stageCode: existing.stage_code, currentNextActionAt: existing.next_action_at, proposedNextActionAt: body.next_action_at || null });
   if (body.created_by && body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
   const notes = preparePublicInteractionNotes(body.notes);
+  requireFollowUpDate(body.occurred_at || null);
   const occurred_at = body.occurred_at || new Date().toISOString();
   const interaction_type = body.interaction_type || 'nota';
   const created_by = currentProfile.id;

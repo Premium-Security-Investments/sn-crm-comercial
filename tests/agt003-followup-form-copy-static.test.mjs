@@ -51,7 +51,8 @@ assert.doesNotMatch(followUp, /profiles\.map|form\.created_by|<Select[^>]*create
 assert.ok(!followUp.includes('Programar próxima gestión'), 'FollowUpForm must drop the old "Programar próxima gestión" copy');
 assert.match(
   followUp,
-  /\{nextActionRequired \? 'Próxima gestión' : 'Próxima gestión \(opcional\)'\}<input type="datetime-local" required=\{nextActionRequired\} value=\{form\.next_action_at\}/,
+  // El `max` del tope de 90 días entró el 2026-11-02.
+  /\{nextActionRequired \? 'Próxima gestión' : 'Próxima gestión \(opcional\)'\}<input type="datetime-local" required=\{nextActionRequired\} max=\{topeProximaGestion\} value=\{form\.next_action_at\}/,
   'the conditional label must directly label the next_action_at input, and the input must be required when the rule asks for it',
 );
 

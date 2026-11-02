@@ -15,6 +15,24 @@ export const NEXT_ACTION_REQUIRED_MESSAGE = 'Falta la próxima gestión: indique
 export const NEXT_ACTION_PAST_MESSAGE = 'La próxima gestión tiene que quedar con fecha futura.';
 export const NEXT_ACTION_TERMINAL_STAGES = Object.freeze(['aprobado', 'perdido', 'descartado']);
 
+/**
+ * Tope de la próxima gestión: 90 días (Juan, 2026-11-02), el mismo que ya exigía la base al decidir
+ * (`psi_record_opportunity_decision`) y el mismo que el chat aplicaba desde el 15 de octubre. Lo que no lo tenía era
+ * el formulario de seguimiento de la ficha, y por ahí se colaron fechas de 2027 y 2030.
+ *
+ * Una próxima gestión a dos años **esconde la oportunidad**: Mi día, los pendientes por decidir y el estancamiento
+ * miran si hay compromiso vigente, y un compromiso en 2027 los deja a todos tranquilos. Medido el 2026-11-02: nueve
+ * oportunidades abiertas con fecha a más de 90 días, cinco de ellas a más de un año, y una activa —Central
+ * Mayorista— con su próxima gestión en octubre de 2027 y su último seguimiento fechado en noviembre de 2027.
+ */
+export const NEXT_ACTION_MAX_DAYS = 90;
+export const NEXT_ACTION_TOO_FAR_CODE = 'CRM_NEXT_ACTION_TOO_FAR';
+export const NEXT_ACTION_TOO_FAR_MESSAGE = `La próxima gestión no puede quedar a más de ${NEXT_ACTION_MAX_DAYS} días. Si el cliente le pidió volver mucho más adelante, congele la oportunidad; y si lo que quiere recordar es cuándo vence el contrato que tiene hoy con otro proveedor, eso va en "Vence el contrato actual", en el perfil del cliente.`;
+
+/** La fecha de un seguimiento es la de algo que YA pasó: no puede ser futura. */
+export const FOLLOW_UP_DATE_CODE = 'CRM_FOLLOW_UP_DATE_FUTURE';
+export const FOLLOW_UP_DATE_FUTURE_MESSAGE = 'La fecha del seguimiento no puede ser futura: es algo que ya pasó. Si quiere agendar algo, use la próxima gestión.';
+
 const ms = value => {
   const text = String(value ?? '').trim();
   if (!text) return null;
@@ -32,11 +50,18 @@ export function nextActionRequirement({ stageCode, currentNextActionAt = null, p
   const nowMs = now instanceof Date ? now.getTime() : ms(now);
   if (!Number.isFinite(nowMs)) return { ok: true };
 
+  const limit = nowMs + NEXT_ACTION_MAX_DAYS * 86_400_000;
   const proposed = ms(proposedNextActionAt);
   if (proposed !== null) {
-    return proposed > nowMs ? { ok: true } : { ok: false, code: NEXT_ACTION_REQUIRED_CODE, message: NEXT_ACTION_PAST_MESSAGE };
+    if (proposed <= nowMs) return { ok: false, code: NEXT_ACTION_REQUIRED_CODE, message: NEXT_ACTION_PAST_MESSAGE };
+    // El tope se revisa aquí y no sólo en la base: la base lo exige al decidir, y el seguimiento de la ficha no pasa
+    // por ahí.
+    if (proposed > limit) return { ok: false, code: NEXT_ACTION_TOO_FAR_CODE, message: NEXT_ACTION_TOO_FAR_MESSAGE };
+    return { ok: true };
   }
-  // Sin fecha nueva: sirve la que ya estaba, siempre que siga por delante.
+  // Sin fecha nueva: sirve la que ya estaba, siempre que siga por delante. El tope NO se le aplica a lo ya guardado:
+  // una fecha absurda puesta antes de esta regla no puede impedirle a nadie registrar un seguimiento hoy; lo que se
+  // bloquea es escribir una nueva.
   const current = ms(currentNextActionAt);
   if (current !== null && current > nowMs) return { ok: true };
   return { ok: false, code: NEXT_ACTION_REQUIRED_CODE, message: NEXT_ACTION_REQUIRED_MESSAGE };
@@ -47,4 +72,17 @@ export function hasLiveNextAction({ nextActionAt = null, now = new Date() } = {}
   const nowMs = now instanceof Date ? now.getTime() : ms(now);
   const next = ms(nextActionAt);
   return next !== null && Number.isFinite(nowMs) && next > nowMs;
+}
+
+/**
+ * ¿Se puede guardar la fecha de un seguimiento? Sólo se rechaza el futuro. El pasado queda libre a propósito: un
+ * comercial que registra hoy la llamada de la semana pasada está haciendo lo correcto, y el chat ya tiene su propia
+ * ventana de 30 días para lo que dicta.
+ */
+export function followUpDateRequirement({ occurredAt = null, now = new Date() } = {}) {
+  const nowMs = now instanceof Date ? now.getTime() : ms(now);
+  const occurred = ms(occurredAt);
+  if (occurred === null || !Number.isFinite(nowMs)) return { ok: true };
+  // Un minuto de holgura: el reloj del navegador y el del servidor no siempre coinciden al segundo.
+  return occurred <= nowMs + 60_000 ? { ok: true } : { ok: false, code: FOLLOW_UP_DATE_CODE, message: FOLLOW_UP_DATE_FUTURE_MESSAGE };
 }
