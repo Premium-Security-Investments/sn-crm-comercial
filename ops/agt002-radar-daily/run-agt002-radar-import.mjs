@@ -34,49 +34,15 @@ function summarize(result) {
 // Revisión programada de fases nuevas de SECOP (agt002-phase-change-review.js): lun–vie 9:00, 14:00, 19:00 y sáb–dom
 // 14:00 (Bogotá), en su propio servicio. Enlace nuevo, documentos nuevos, archivado de obsoletos, reanálisis y outbox de
 // correo para Hermes. Cada paso falla por separado sin cortar los demás.
-/**
- * Listado de la biblioteca corporativa de SharePoint para el puente (mejora 1 del encargo del
- * 2026-10-31). Vive aquí y no en un módulo vertical porque el acceso a Graph es del servidor de
- * tareas: la sesión delegada y su refresco están en `inventario.py`, y duplicar ese flujo en Node
- * sería tener dos cosas que se pueden desalinear. El módulo de reglas recibe el listado ya leído,
- * así que se prueba sin red y sin credenciales.
- *
- * Devuelve `[]` si no se puede leer, y la revisión trata un listado vacío como "no se pudo
- * concluir", nunca como "SharePoint está vacío".
- */
-async function listSharepointLibraryFiles() {
-  const script = process.env.AGT002_SHAREPOINT_INVENTORY_SCRIPT;
-  const drive = process.env.AGT002_SHAREPOINT_DRIVE_ID;
-  const folder = process.env.AGT002_SHAREPOINT_LIBRARY_PATH;
-  if (!script || !drive || !folder) {
-    log({ event: 'agt002_sharepoint_inventory_no_configurado' });
-    return [];
-  }
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  try {
-    const { stdout } = await promisify(execFile)('/usr/bin/python3', [script, drive, folder], {
-      timeout: Number(process.env.AGT002_SHAREPOINT_INVENTORY_TIMEOUT_MS || 180_000),
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    const payload = JSON.parse(stdout);
-    const files = Array.isArray(payload?.archivos) ? payload.archivos : [];
-    log({ event: 'agt002_sharepoint_inventory_leido', archivos: files.length });
-    return files;
-  } catch (error) {
-    // Nunca el stdout ni el stderr crudos: pueden traer rutas y nombres de archivos personales.
-    log({ event: 'agt002_sharepoint_inventory_failed', code: error?.code || 'desconocido' });
-    return [];
-  }
-}
-
 async function runPhaseChangeReview() {
   const { runAgt002PhaseChangeReview } = await import('../../verticales/licitaciones/agt002-phase-change-review.js');
   const budgetMs = Number(process.env.AGT002_PHASE_CHANGE_DOCUMENTS_BUDGET_MS || 15 * 60 * 1000);
   await runAgt002PhaseChangeReview(database, {
     api, budgetMs, environment: process.env, log,
     stateDir: process.env.AGT002_LICITACIONES_ALERTS_DIR || '/var/lib/agt002-licitaciones-alerts',
-    listSharepointFiles: listSharepointLibraryFiles,
+    // El puente SharePoint NO va aquí: esta unidad corre como `psi-agt002` con ProtectHome, así que
+    // no puede —ni debe— leer la sesión delegada de Graph, que es de root. Tiene su propia unidad:
+    // ops/agt002-sharepoint-bridge/.
   });
 }
 
