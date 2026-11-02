@@ -21,6 +21,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
+import { agt002PhaseChangeOpportunityBlocker } from '../../verticales/licitaciones/agt002-phase-change-followup.js';
 import { runAgt002SharepointEvidenceWatch } from '../../verticales/licitaciones/agt002-sharepoint-evidence-diff.js';
 
 const log = event => console.log(JSON.stringify(event));
@@ -53,6 +54,10 @@ if (!supabaseUrl || !serviceRoleKey || !script || !drive || !folder) {
     const events = await runAgt002SharepointEvidenceWatch(database, {
       files,
       log,
+      // El mismo filtro que las otras dos vigilancias, y se me había olvidado: la primera corrida
+      // real escribió en 18 expedientes, 4 de ellos ARCHIVADOS. Un aviso en un expediente donde
+      // nadie trabaja es ruido puro, y el ruido es lo que hace que nadie lea los avisos.
+      inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
       appendLine: async (db, opportunityId, line) => {
         const { error } = await db.rpc('psi_append_opportunity_observation_line', { p_opportunity_id: opportunityId, p_line: line });
         if (error) throw new Error(error.message || 'no se pudo escribir el aviso');

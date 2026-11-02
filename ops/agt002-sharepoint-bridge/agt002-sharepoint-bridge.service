@@ -24,12 +24,19 @@ Environment=AGT002_SHAREPOINT_LIBRARY_PATH=06_Productos_PSI/Licitaciones/02_Bibl
 # actuar como Juan Botero en Microsoft 365. Entre las dos, se escoge una unidad endurecida que lee
 # una credencial que ya estaba restringida, y se deja el motivo escrito aquí.
 #
-# `ProtectHome=read-only` y no `off`: este trabajo necesita LEER esa credencial y nada más.
+# `ProtectHome=tmpfs` + `BindPaths` de una sola carpeta, que es lo más estrecho posible: el trabajo
+# ve de la casa de root **únicamente** `/root/.vigia-graph`, y nada más de `/root`.
 #
-# **Este trabajo NO escribe en SharePoint.** Sólo lee la biblioteca y escribe líneas de aviso en
-# nuestra propia base. El sentido CRM -> SharePoint, que sí escribiría a nombre de Juan sin nadie
-# delante, es otra decisión y otra unidad.
-ProtectHome=read-only
+# Y tiene que ser con escritura, no de sólo lectura: **el token de Graph rota al usarse** y `graph.py`
+# reescribe `token.json` con la llave nueva. Primero lo puse `read-only` y el listador falló con
+# código 1 por eso. Si se deja sin escritura, la llave rotada se pierde y la sesión se muere sola
+# —en silencio, que es el peor modo—.
+#
+# **Este trabajo NO escribe en SharePoint.** Sólo lee la biblioteca, reescribe su propio token y
+# escribe líneas de aviso en nuestra base. El sentido CRM -> SharePoint, que sí escribiría a nombre
+# de Juan sin nadie delante, es otra decisión y otra unidad.
+ProtectHome=tmpfs
+BindPaths=/root/.vigia-graph
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -41,6 +48,13 @@ RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 RestrictNamespaces=true
-MemoryDenyWriteExecute=true
+# Mismo perfil que `agt002-radar-reconciliation`, que es la unidad hermana que corre Node a diario.
+#
+# Y **sin `MemoryDenyWriteExecute`**, que es un error que ya cometí aquí: lo puse en la primera
+# versión y la unidad se cayó con un SIGTRAP y core dump dentro del compilador baseline de V8. Node
+# necesita memoria ejecutable para su JIT, así que esa restricción y Node son incompatibles. Las tres
+# unidades del repositorio que sí la declaran apuntan a scripts de shell, no a Node directo, y están
+# desactivadas. Si alguien la vuelve a agregar, la unidad deja de arrancar.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
 SystemCallArchitectures=native
 TimeoutStartSec=600
