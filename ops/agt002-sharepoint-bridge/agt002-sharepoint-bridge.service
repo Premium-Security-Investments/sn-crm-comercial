@@ -1,0 +1,46 @@
+[Unit]
+Description=AGT-002 puente SharePoint -> CRM: diferencias de la biblioteca corporativa (sólo lectura de SharePoint)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Mismas credenciales de base que la reconciliación del radar: es la misma clase de trabajo
+# programado, el mismo proyecto y la misma variable. Se reutiliza a propósito en vez de duplicar un
+# archivo de secretos para un valor idéntico.
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-sharepoint-bridge/run-agt002-sharepoint-bridge.mjs
+
+# Puente: ninguno de estos tres es secreto. El listador sólo lee y resuelve la sesión de Graph él
+# mismo; el drive y la carpeta son la biblioteca corporativa del sitio de Innovación.
+Environment=AGT002_SHAREPOINT_INVENTORY_SCRIPT=/root/.vigia-graph/inventario.py
+Environment=AGT002_SHAREPOINT_DRIVE_ID=b!BoXt-GqsJ0SDAdUp0lzrM9Jsb0XFlulNsE6Mldp9S65CwtkHrpg5RqCEQSc-EerT
+Environment=AGT002_SHAREPOINT_LIBRARY_PATH=06_Productos_PSI/Licitaciones/02_Biblioteca_Corporativa_SN
+
+# Corre como root, y hay que decir por qué en vez de dejarlo pasar: la sesión delegada de Microsoft
+# Graph es de root (`/root/.vigia-graph`, permisos 700, decisión del 2026-10-21). La alternativa era
+# copiarla a un usuario de servicio, y eso le daría a un servicio sin privilegios la capacidad de
+# actuar como Juan Botero en Microsoft 365. Entre las dos, se escoge una unidad endurecida que lee
+# una credencial que ya estaba restringida, y se deja el motivo escrito aquí.
+#
+# `ProtectHome=read-only` y no `off`: este trabajo necesita LEER esa credencial y nada más.
+#
+# **Este trabajo NO escribe en SharePoint.** Sólo lee la biblioteca y escribe líneas de aviso en
+# nuestra propia base. El sentido CRM -> SharePoint, que sí escribiría a nombre de Juan sin nadie
+# delante, es otra decisión y otra unidad.
+ProtectHome=read-only
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+TimeoutStartSec=600
