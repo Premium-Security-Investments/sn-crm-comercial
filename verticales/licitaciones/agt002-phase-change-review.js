@@ -26,6 +26,7 @@ import {
 } from './agt002-phase-change-followup.js';
 import { runAgt002ScheduleFreshnessReview } from './agt002-schedule-freshness.js';
 import { runAgt002CompanyEvidenceWatch } from './agt002-company-evidence-watch.js';
+import { runAgt002SharepointEvidenceWatch } from './agt002-sharepoint-evidence-diff.js';
 import { runAgt002DiscardedPhaseWatch } from './agt002-discarded-phase-watch.js';
 import { agt002AlertItems, agt002AlertsOutboxSummary, bogotaDay, bogotaTime, buildAgt002AlertsOutbox } from './agt002-licitaciones-alerts.js';
 
@@ -133,6 +134,11 @@ export async function runAgt002PhaseChangeReview(database, {
   discardedWatch = runAgt002DiscardedPhaseWatch,
   // Vigilancia de la ficha de empresa contra los cierres abiertos (mejora 2 del encargo del 2026-10-31).
   companyEvidenceWatch = runAgt002CompanyEvidenceWatch,
+  // Puente SharePoint ↔ CRM (mejora 1). `listSharepointFiles` lo inyecta el ejecutor del servidor de
+  // tareas, que es el único con acceso a Graph: sin él el paso se salta en silencio, que es lo correcto
+  // para cualquier entorno que no sea ese servidor (CI, pruebas, un despliegue web).
+  sharepointWatch = runAgt002SharepointEvidenceWatch,
+  listSharepointFiles = null,
 } = {}) {
   const runId = `${bogotaDay(now.toISOString())}-${bogotaTime(now.toISOString()).replace(':', '')}-${now.toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`;
   const step = async (name, fn, fallback) => { try { return await fn(); } catch (error) { log({ event: `agt002_phase_change_review_${name}_failed`, message: String(error?.message || error).slice(0, 200) }); return fallback; } };
@@ -165,6 +171,19 @@ export async function runAgt002PhaseChangeReview(database, {
     inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
     appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
   }), []);
+  // Puente SharePoint: lo que hay en la biblioteca corporativa y el CRM no sabe. Una sola línea por
+  // expediente, porque son hechos de la empresa y no de la licitación. Si el listado no se puede leer,
+  // la revisión no concluye nada: un SharePoint ilegible no es un SharePoint vacío.
+  if (listSharepointFiles) {
+    await step('sharepoint_watch', async () => {
+      const files = await listSharepointFiles();
+      return sharepointWatch(database, {
+        files, now, log,
+        inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
+        appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
+      });
+    }, []);
+  }
   // Descartados cuya fase nueva corre con otro cierre: sólo el aviso. No baja documentos, no reanaliza y no cambia la
   // etapa de la oportunidad, así que no contradice la decisión del #335 de no tocar las no activas.
   const reopenEvents = await step('discarded_watch', () => discardedWatch(database, {
