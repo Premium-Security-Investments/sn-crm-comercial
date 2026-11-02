@@ -29,7 +29,9 @@
 //     se cuenta, nunca se nombra un archivo. La regla vive en la tabla de abajo, no en el criterio de
 //     quien llame.
 //
-// Módulo puro: sin red, sin base de datos, sin express.
+// Módulo puro en sus reglas. `runAgt002SharepointEvidenceWatch`, al final, es la revisión programada:
+// recibe el listado ya leído (quien lo lee es el trabajo, que es el único con acceso a Graph) y deja
+// una sola línea por expediente abierto.
 
 import { TENDER_COMPANY_DOCUMENT_CLASSES } from './tender-company-document-bridge.js';
 
@@ -100,6 +102,7 @@ export const AGT002_LIBRARY_CLASS_RULES = Object.freeze([
 ]);
 
 const relative = path => String(path || '').replace(`${LIBRARY_ROOT}/`, '').replace(LIBRARY_ROOT, '');
+const list = items => items.map(item => `«${item}»`).join(', ');
 const day = value => {
   const text = String(value ?? '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
@@ -229,6 +232,33 @@ export function agt002SharepointEvidenceDifferences({ files = [], registry = [],
   return differences;
 }
 
+/**
+ * **Una sola línea** que resume todas las diferencias, para dejarla en cada expediente abierto.
+ *
+ * Es deliberado que sea una y no una por diferencia: hoy hay 15 diferencias y 8 procesos abiertos, y
+ * una línea por diferencia serían 120 líneas repitiendo hechos de la empresa dentro de expedientes de
+ * licitaciones distintas. Eso es la clase de ruido que hace que nadie vuelva a leer las observaciones
+ * —el mismo criterio con que la vigilancia de la ficha calla lo que no es certeza—.
+ *
+ * El sitio bueno para el detalle es la pantalla de Empresa, al lado de la ficha, una sola vez. Esta
+ * línea es el aviso de que hay que ir a mirar, no el informe.
+ */
+export function agt002SharepointDifferenceSummaryLine(differences = []) {
+  const faltan = differences.filter(item => item.code === 'existe_en_sharepoint_y_no_en_el_crm');
+  const nuevos = differences.filter(item => item.code === 'sharepoint_tiene_algo_mas_nuevo');
+  const huecos = differences.filter(item => item.code === 'sin_clasificar' || item.code === 'clase_sin_bloque');
+  if (!faltan.length && !nuevos.length) return null;
+  const partes = [];
+  if (faltan.length) {
+    partes.push(`${faltan.length === 1 ? 'un bloque tiene' : `${faltan.length} bloques tienen`} documentos en SharePoint y ninguno cargado en el CRM (${list(faltan.map(item => item.label))})`);
+  }
+  if (nuevos.length) {
+    partes.push(`${nuevos.length === 1 ? 'en un bloque' : `en ${nuevos.length} bloques`} SharePoint tiene algo más nuevo que lo cargado (${list(nuevos.map(item => `${item.label}: ${item.newest} contra ${item.loadedIssued}`))})`);
+  }
+  const cola = huecos.length ? ` Además, ${huecos.length} archivo(s) no los ubica ninguna regla del puente.` : '';
+  return `Vig-IA, puente SharePoint: ${partes.join('; y ')}. Antes de tramitar cualquiera de estos de nuevo, revisar lo que ya existe en la biblioteca corporativa.${cola}`;
+}
+
 /** Una línea legible por diferencia, para dejarla donde la encargada trabaja. */
 export function agt002SharepointDifferenceLine(difference) {
   const where = 'la biblioteca corporativa de SharePoint';
@@ -249,4 +279,68 @@ export function agt002SharepointDifferenceLine(difference) {
     return `Vig-IA, puente SharePoint: las reglas del puente apuntan «${difference.entryId}» a un bloque que no está vigente en el registro de evidencia, con ${difference.count} archivo(s) detrás. Revisar la regla o el registro.`;
   }
   return `Vig-IA, puente SharePoint: diferencia sin texto declarado (${difference.code}).`;
+}
+
+/**
+ * Revisión programada del puente. **No lee SharePoint**: recibe el listado ya leído, porque el acceso
+ * a Graph vive en el servidor de tareas y no en este módulo; así las reglas se prueban sin red y sin
+ * credenciales. Misma forma que las otras dos revisiones: cada licitación falla por separado, sólo lee
+ * y agrega líneas, y nunca marca evidencia como verificada.
+ */
+export async function runAgt002SharepointEvidenceWatch(database, {
+  files = [], now = new Date(), log = () => {}, inactiveReason, appendLine, limit = 50,
+} = {}) {
+  const events = [];
+  if (!Array.isArray(files) || files.length === 0) {
+    // Sin listado no se concluye nada. Un SharePoint que no se pudo leer NO es un SharePoint vacío, y
+    // tratarlo así reportaría que todos los bloques les falta todo.
+    log({ event: 'agt002_sharepoint_watch_sin_listado' });
+    return events;
+  }
+  const reads = [
+    ['psi_agt002_company_evidence_registry', 'entry_id,document_class,current', 'registry'],
+    ['psi_company_procurement_documents', 'id,document_type,display_name,issued_at,expires_at,current', 'documents'],
+  ];
+  const data = {};
+  for (const [table, columns, key] of reads) {
+    const { data: rows, error } = await database.from(table).select(columns).eq('current', true);
+    if (error) {
+      log({ event: 'agt002_sharepoint_watch_unavailable', message: String(error.message || error).slice(0, 200) });
+      return events;
+    }
+    data[key] = rows || [];
+  }
+  const differences = agt002SharepointEvidenceDifferences({ files, registry: data.registry, documents: data.documents });
+  const line = agt002SharepointDifferenceSummaryLine(differences);
+  for (const difference of differences) {
+    events.push({ event: 'agt002_sharepoint_watch_difference', code: difference.code, entry_id: difference.entryId || null, count: difference.count || null, severity: difference.severity });
+  }
+  if (!line) {
+    log({ event: 'agt002_sharepoint_watch_sin_diferencias', archivos: files.length });
+    for (const event of events) log(event);
+    return events;
+  }
+
+  const { data: tenders, error } = await database
+    .from('psi_public_tenders')
+    .select('id,ref,converted_opportunity_id,internal_status')
+    .eq('internal_status', 'convertida_oportunidad')
+    .limit(limit);
+  if (error) {
+    log({ event: 'agt002_sharepoint_watch_unavailable', message: String(error.message || error).slice(0, 200) });
+    return events;
+  }
+  for (const tender of tenders || []) {
+    const opportunityId = tender?.converted_opportunity_id;
+    if (!opportunityId) continue;
+    try {
+      if (inactiveReason && await inactiveReason(database, opportunityId, tender.id)) continue;
+      if (appendLine) await appendLine(database, opportunityId, line);
+      events.push({ event: 'agt002_sharepoint_watch_notice', opportunityId, ref: tender.ref || null });
+    } catch (cause) {
+      events.push({ event: 'agt002_sharepoint_watch_failed', opportunityId, message: String(cause?.message || cause).slice(0, 200) });
+    }
+  }
+  for (const event of events) log(event);
+  return events;
 }

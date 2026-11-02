@@ -9,7 +9,9 @@ import assert from 'node:assert/strict';
 import {
   agt002ClassifyLibraryFile,
   agt002SharepointDifferenceLine,
+  agt002SharepointDifferenceSummaryLine,
   agt002SharepointEvidenceDifferences,
+  runAgt002SharepointEvidenceWatch,
 } from '../verticales/licitaciones/agt002-sharepoint-evidence-diff.js';
 
 const ROOT = '06_Productos_PSI/Licitaciones/02_Biblioteca_Corporativa_SN';
@@ -157,4 +159,91 @@ test('no se afirma nada sobre vigencia ni se marca evidencia como verificada', (
     const linea = agt002SharepointDifferenceLine(difference);
     assert.doesNotMatch(linea, /vigente al cierre|aprobad|verificad/i, `el puente no decide evidencia: ${linea}`);
   }
+});
+
+// --- La revisión programada: una sola línea por expediente ------------------------------------
+
+const FILES = [
+  { ruta: `${CALIDAD}/BASC 2026.pdf`, modificado_en: '2026-10-29T12:00:00Z' },
+  { ruta: `${CALIDAD}/ISO 9001.pdf`, modificado_en: '2026-10-29T12:00:00Z' },
+  { ruta: `${ROOT}/03_RUP_y_Capacidad_Financiera/Vigente/20_RUP_2026-10-17.pdf`, modificado_en: '2026-10-17T12:00:00Z' },
+];
+
+function fakeDatabase({ registry = REGISTRY, documents = DOCUMENTS, tenders = [{ id: 't1', ref: 'TT-SPO-07-2026', converted_opportunity_id: 'opp-1', internal_status: 'convertida_oportunidad' }, { id: 't2', ref: 'SNS-LP-2-2026', converted_opportunity_id: 'opp-2', internal_status: 'convertida_oportunidad' }] } = {}) {
+  return {
+    from(table) {
+      const rows = table === 'psi_agt002_company_evidence_registry' ? registry
+        : table === 'psi_company_procurement_documents' ? documents
+        : tenders;
+      const builder = { select: () => builder, eq: () => builder, limit: () => Promise.resolve({ data: rows, error: null }) };
+      builder.then = resolve => resolve({ data: rows, error: null });
+      return builder;
+    },
+  };
+}
+
+test('una sola línea por expediente, no una por diferencia', () => {
+  const differences = agt002SharepointEvidenceDifferences({ files: FILES, registry: REGISTRY, documents: DOCUMENTS });
+  assert.ok(differences.length >= 2, 'hay varias diferencias');
+  const line = agt002SharepointDifferenceSummaryLine(differences);
+  assert.equal(typeof line, 'string');
+  assert.match(line, /Certificaciones de calidad/);
+  assert.match(line, /Registro Único de Proponentes/);
+  assert.match(line, /revisar lo que ya existe/);
+  // 15 diferencias en 8 expedientes serían 120 líneas: por eso es una.
+  assert.equal(line.split('\n').length, 1);
+});
+
+test('sin diferencias de documentos no hay línea, aunque haya huecos de reglas', () => {
+  const soloHueco = agt002SharepointEvidenceDifferences({
+    files: [{ ruta: `${ROOT}/01_Legal_y_Societario/00_CONTROL.md`, modificado_en: '2026-10-17T12:00:00Z' }],
+    registry: REGISTRY, documents: DOCUMENTS,
+  });
+  assert.ok(soloHueco.some(item => item.code === 'sin_clasificar'));
+  assert.equal(agt002SharepointDifferenceSummaryLine(soloHueco), null,
+    'un hueco de las reglas no justifica molestar en cada expediente');
+});
+
+test('la revisión deja la misma línea en cada expediente abierto', async () => {
+  const lines = [];
+  const events = await runAgt002SharepointEvidenceWatch(fakeDatabase(), {
+    files: FILES, appendLine: async (_db, opportunityId, line) => { lines.push({ opportunityId, line }); },
+  });
+  assert.deepEqual(lines.map(entry => entry.opportunityId), ['opp-1', 'opp-2']);
+  assert.equal(new Set(lines.map(entry => entry.line)).size, 1, 'es un hecho de la empresa: la misma línea');
+  assert.ok(events.some(event => event.event === 'agt002_sharepoint_watch_difference'));
+  assert.equal(events.filter(event => event.event === 'agt002_sharepoint_watch_notice').length, 2);
+});
+
+test('un SharePoint que no se pudo leer NO es un SharePoint vacío', async () => {
+  // Tratarlo así reportaría que a todos los bloques les falta todo: la peor falsa alarma posible.
+  const lines = [];
+  const logged = [];
+  const events = await runAgt002SharepointEvidenceWatch(fakeDatabase(), {
+    files: [], log: event => logged.push(event.event), appendLine: async (_db, _id, line) => { lines.push(line); },
+  });
+  assert.deepEqual(lines, []);
+  assert.deepEqual(events, []);
+  assert.ok(logged.includes('agt002_sharepoint_watch_sin_listado'));
+});
+
+test('una oportunidad inactiva se salta, y una que falla no corta las demás', async () => {
+  const lines = [];
+  const events = await runAgt002SharepointEvidenceWatch(fakeDatabase(), {
+    files: FILES,
+    inactiveReason: async (_db, opportunityId) => opportunityId === 'opp-1',
+    appendLine: async (_db, opportunityId, line) => { lines.push({ opportunityId, line }); },
+  });
+  assert.deepEqual(lines.map(entry => entry.opportunityId), ['opp-2']);
+
+  const otros = [];
+  const conFallo = await runAgt002SharepointEvidenceWatch(fakeDatabase(), {
+    files: FILES,
+    appendLine: async (_db, opportunityId, line) => {
+      if (opportunityId === 'opp-1') throw new Error('escritura rota');
+      otros.push(opportunityId);
+    },
+  });
+  assert.ok(conFallo.some(event => event.event === 'agt002_sharepoint_watch_failed'));
+  assert.deepEqual(otros, ['opp-2']);
 });
