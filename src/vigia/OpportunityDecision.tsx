@@ -442,6 +442,23 @@ export function WeekList({ upcoming }: { upcoming: DecisionOpportunity[] }) {
   </section>;
 }
 
+/**
+ * Renovaciones por vencer (Juan, 2026-11-03): el contrato de un cliente actual vence dentro de 90 días o ya venció y
+ * la renovación sigue abierta. Va en Mi día aunque la oportunidad esté al día o congelada: la fecha del contrato no
+ * espera a la próxima gestión.
+ */
+export function RenewalsDue({ items }: { items: { opportunity: DecisionOpportunity; daysLeft: number; phrase: string }[] }) {
+  if (!items.length) return null;
+  return <section className="week-list renewals-due" aria-label="Renovaciones por vencer">
+    <h3>Renovaciones por vencer<span className="week-count numeric-value">{items.length}</span></h3>
+    {items.map(({ opportunity, daysLeft, phrase }) => <a key={opportunity.id} className={`week-row${daysLeft <= 30 ? ' is-urgent' : ''}`} href={`#/detail/${opportunity.id}`}>
+      <strong>{opportunity.company_name}</strong>
+      <small>{phrase} · {opportunity.stage_name}</small>
+      {CHEVRON}
+    </a>)}
+  </section>;
+}
+
 export function DeleteRequestsPanel({ requests, onChanged }: { requests: DecisionOpportunity[]; onChanged: () => Promise<void> }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<Record<string, string>>({});

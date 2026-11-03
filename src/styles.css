@@ -786,6 +786,9 @@ td.numeric-value{white-space:nowrap}
 .week-row small{grid-column:1;grid-row:2;min-width:0;font-size:12.5px;color:#5d6b82}
 .week-row .row-chevron{grid-column:2;grid-row:1/3;justify-self:end;color:#9aa9c0}
 .week-row:hover .row-chevron,.week-row:focus-visible .row-chevron{color:#1b64f2}
+/* "Renovaciones por vencer": mismas filas que la semana; a 30 días o menos la frase toma el ámbar de lo urgente.
+   Comparte el orden de .week-list en celular y va antes por estar antes en el documento. */
+.renewals-due .week-row.is-urgent small{color:#b45309;font-weight:650}
 
 /* "Meta del mes": una medida, plana, sin tarjeta ni cifra gigante. */
 .my-day-goal h3{margin:0 0 9px;font-size:15px;color:#172033;letter-spacing:-.008em}
