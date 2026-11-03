@@ -9,6 +9,19 @@ import { isAgt003CommercialOpportunity } from './commercial-scope.js';
 export const TERMINAL_STAGES = Object.freeze(['aprobado', 'descartado', 'perdido']);
 export const DECISIONS = Object.freeze(['continue', 'advance', 'freeze', 'discard', 'lose', 'request_delete']);
 export const FREEZE_DAYS = Object.freeze([30, 60, 90]);
+/**
+ * El congelamiento también acepta una FECHA, no sólo 30, 60 o 90 días (Juan, 2026-11-03).
+ *
+ * Por qué: medido el 2026-11-02, nueve oportunidades abiertas tenían la próxima gestión entre 2027 y 2028 — un
+ * comercial estaba parqueando prospectos cuyo contrato con su proveedor actual vence lejos, y usaba la próxima
+ * gestión como recordatorio porque no había otra forma de decir "vuelva en año y medio". El efecto era que Mi día,
+ * los pendientes y el estancamiento las daban por al día: quedaban invisibles. El congelamiento ya hace exactamente
+ * lo que hacía falta —la oportunidad queda dicha como congelada y vuelve a pedir decisión cuando llega la fecha—; lo
+ * único que le faltaba era poder llegar más allá de 90 días.
+ *
+ * El tope son 24 meses: más allá de eso no es un congelamiento, es un descarte con otro nombre.
+ */
+export const FREEZE_MAX_DAYS = 730;
 export const FOLLOW_UP_TYPES = Object.freeze(['llamada', 'correo', 'reunion', 'whatsapp', 'nota']);
 export const DELETE_PERMISSION = 'crm_eliminar_oportunidades';
 
@@ -18,6 +31,13 @@ const BOGOTA_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota'
 export function bogotaDay(value) {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : BOGOTA_DAY.format(date);
+}
+
+/** Suma días a un día ISO (`AAAA-MM-DD`) sin pasar por la hora local. */
+export function addBogotaDays(day, days) {
+  const date = new Date(`${day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 export function isTerminalStage(stageCode) {
@@ -83,7 +103,7 @@ function fail(message) {
  * Valida y normaliza una decisión que llega por HTTP. Esquema cerrado: sólo se leen los campos conocidos y cada uno
  * con su tipo; la base de datos vuelve a validar las reglas de negocio de forma atómica.
  */
-export function normalizeDecisionRequest(body) {
+export function normalizeDecisionRequest(body, now = new Date()) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) fail('Decisión inválida.');
   const decision = body.decision;
   if (!DECISIONS.includes(decision)) fail('Decisión no reconocida.');
@@ -98,6 +118,7 @@ export function normalizeDecisionRequest(body) {
     p_stage_code: null,
     p_offer_value: null,
     p_freeze_days: null,
+    p_frozen_until: null,
     p_loss_reason_code: null,
   };
   if (body.next_action_at !== undefined && body.next_action_at !== null && body.next_action_at !== '') {
@@ -121,9 +142,24 @@ export function normalizeDecisionRequest(body) {
     params.p_stage_code = body.stage_code;
   }
   if (decision === 'freeze') {
-    const days = Number(body.freeze_days);
-    if (!FREEZE_DAYS.includes(days)) fail('Se puede congelar 30, 60 o 90 días.');
-    params.p_freeze_days = days;
+    // Dos formas de congelar, y exactamente una: los atajos de 30/60/90 días, o una fecha.
+    const hasDays = body.freeze_days !== undefined && body.freeze_days !== null && body.freeze_days !== '';
+    const hasDate = typeof body.frozen_until === 'string' && body.frozen_until.trim() !== '';
+    if (hasDays && hasDate) fail('Escoja los días o una fecha, no las dos cosas.');
+    if (!hasDays && !hasDate) fail('Diga hasta cuándo se congela: 30, 60 o 90 días, o una fecha.');
+    if (hasDays) {
+      const days = Number(body.freeze_days);
+      if (!FREEZE_DAYS.includes(days)) fail('Se puede congelar 30, 60 o 90 días.');
+      params.p_freeze_days = days;
+    } else {
+      // Por día de Bogotá, igual que la base: desde mañana y hasta hoy + 730.
+      const day = String(body.frozen_until).trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || bogotaDay(`${day}T12:00:00-05:00`) !== day) fail('La fecha del congelamiento no es válida.');
+      const today = bogotaDay(now);
+      if (day <= today) fail('La fecha del congelamiento tiene que ser futura.');
+      if (day > addBogotaDays(today, FREEZE_MAX_DAYS)) fail(`No se puede congelar a más de ${Math.round(FREEZE_MAX_DAYS / 365)} años. Si la oportunidad no se va a trabajar en ese plazo, descártela y vuelva a crearla cuando tenga sentido.`);
+      params.p_frozen_until = day;
+    }
   }
   if (decision === 'discard' || decision === 'lose') {
     if (typeof body.loss_reason_code !== 'string' || !body.loss_reason_code) fail('Escoja el motivo.');

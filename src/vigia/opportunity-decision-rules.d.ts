@@ -9,6 +9,8 @@ type DecidableOpportunity = {
 export const TERMINAL_STAGES: readonly string[];
 export const DECISIONS: readonly DecisionCode[];
 export const FREEZE_DAYS: readonly number[];
+export const FREEZE_MAX_DAYS: number;
+export function addBogotaDays(day: string, days: number): string;
 export const FOLLOW_UP_TYPES: readonly string[];
 export const DELETE_PERMISSION: 'crm_eliminar_oportunidades';
 export function bogotaDay(value: Date | string): string | null;
@@ -18,7 +20,7 @@ export function isDeleteRequested(opportunity?: DecidableOpportunity | null): bo
 export function isOutOfActivePipeline(opportunity?: DecidableOpportunity | null, now?: Date): boolean;
 export function isPendingDecision(opportunity?: DecidableOpportunity | null, now?: Date): boolean;
 export function pendingDecisions<T extends DecidableOpportunity>(opportunities?: T[], now?: Date): T[];
-export function normalizeDecisionRequest(body: unknown): Record<string, string | number | null>;
+export function normalizeDecisionRequest(body: unknown, now?: Date): Record<string, string | number | null>;
 export const DAILY_DECISION_QUOTA: number;
 export type DecisionQuota = { pending: number; required: number; done: number; remaining: number; blocked: boolean };
 export function decisionQuota(pendingCount: number, decidedToday: number): DecisionQuota;
