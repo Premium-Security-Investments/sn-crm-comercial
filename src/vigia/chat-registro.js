@@ -5,6 +5,7 @@
 // hasta que el comercial pulsa "Confirmar" (lo aplica el servidor con las mismas reglas del formulario).
 
 import { REGIONAL_OPTIONS } from '../regional-options.js';
+import { CLOSURE_FORM_FIELDS, cleanClosureFormInput, closureFieldText } from './closure-form.js';
 
 export const CHAT_REGISTRO_CAPABILITY_ID = 'agt003.chat-registro';
 export const CHAT_REGISTRO_CONTRACT_VERSION = '1.0';
@@ -15,7 +16,15 @@ export const CHAT_MAX_ACTIONS = 12;
 export const CHAT_PAST_DAYS = 30;
 export const CHAT_NEXT_MAX_DAYS = 90;
 
-export const CHAT_ACTION_TYPES = Object.freeze(['registrar_seguimiento', 'proximo_seguimiento', 'actualizar_datos', 'crear_oportunidad', 'mover_etapa']);
+export const CHAT_ACTION_TYPES = Object.freeze(['registrar_seguimiento', 'proximo_seguimiento', 'actualizar_datos', 'crear_oportunidad', 'mover_etapa', 'formulario_cierre']);
+/**
+ * Formulario de cierre dictado al chat (etapa 3, Juan 2026-10-23): el comercial cuenta los datos del GGC-FO-001
+ * ("el representante legal es…, son dos puestos de 24 horas con arma…") y Vig-IA los propone. Se guardan por la misma
+ * puerta que la pantalla del formulario, con su semántica de parche: los campos dictados se mezclan con lo guardado y
+ * los puestos y direcciones dictados SE AGREGAN a los que ya hay; nunca los reemplazan.
+ */
+export const CHAT_CLOSURE_MAX_POSTS = 10;
+export const CHAT_CLOSURE_MAX_SITES = 5;
 /**
  * Decisiones de etapa que el chat puede PROPONER (Juan, 2026-10-23): avanzar —incluido ganar, que es avanzar a
  * `aprobado`— y perder con motivo. Congelar y descartar siguen siendo del botón "Decidir" de la ficha: son decisiones
@@ -47,6 +56,24 @@ const NEW_OPPORTUNITY_FIELDS = Object.freeze(['company_name', 'service_type_code
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const REF = /^o\d{1,4}$/;
 const str = (max) => ({ type: 'string', minLength: 1, maxLength: max });
+const closureFieldSchema = field => field.kind === 'si_no' ? { type: 'boolean' }
+  : field.kind === 'fecha' ? { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }
+    : field.kind === 'opcion' ? { type: 'string', enum: [...field.options] }
+      : str(field.max || 400);
+const closureFormProperties = () => Object.fromEntries(CLOSURE_FORM_FIELDS.map(field => [field.key, closureFieldSchema(field)]));
+const TIME_PATTERN = '^([01][0-9]|2[0-3]):[0-5][0-9]$';
+const closurePostSchema = () => ({
+  type: 'object', additionalProperties: false,
+  properties: {
+    description: str(500), shift_start: { type: 'string', pattern: TIME_PATTERN }, shift_end: { type: 'string', pattern: TIME_PATTERN },
+    days_per_month: { type: 'integer', minimum: 1, maximum: 31 }, guards_required: { type: 'integer', minimum: 1, maximum: 50 },
+    armed: { type: 'boolean' }, service_value: { type: 'number', minimum: 0 }, notes: str(1000),
+  },
+});
+const closureSiteSchema = () => ({
+  type: 'object', additionalProperties: false,
+  properties: { address: str(400), city: str(80), phone: str(120), contact_name: str(160) },
+});
 const dataProperties = () => Object.fromEntries([
   ...Object.entries(CHAT_DATA_FIELDS).map(([key, field]) => [key, str(field.max)]),
   ['current_security_provider_none', { type: 'boolean' }],
@@ -85,6 +112,9 @@ export function chatRegistroOutputSchema(serviceCodes = [], { stageCodes = [], l
             motivo: reasons.length ? { type: 'string', enum: reasons } : str(60),
             competidor: str(120),
             datos: { type: 'object', additionalProperties: false, properties: dataProperties() },
+            formulario: { type: 'object', additionalProperties: false, properties: closureFormProperties() },
+            puestos: { type: 'array', maxItems: CHAT_CLOSURE_MAX_POSTS, items: closurePostSchema() },
+            sedes: { type: 'array', maxItems: CHAT_CLOSURE_MAX_SITES, items: closureSiteSchema() },
             nueva: {
               type: 'object',
               additionalProperties: false,
@@ -266,6 +296,31 @@ export function normalizeChatOutput(raw, { refs = new Map(), today, serviceCodes
       }
       byKey.set(key, action);
       acciones.push(action);
+    } else if (item.tipo === 'formulario_cierre') {
+      // Lo limpia la misma función que limpia la pantalla del formulario: sólo pasan las claves del catálogo, cada una
+      // con su tipo. Un puesto o una dirección sin nada útil no se propone.
+      const cleaned = cleanClosureFormInput({
+        form: isPlain(item.formulario) ? item.formulario : {},
+        posts: Array.isArray(item.puestos) ? item.puestos.slice(0, CHAT_CLOSURE_MAX_POSTS) : [],
+        sites: Array.isArray(item.sedes) ? item.sedes.slice(0, CHAT_CLOSURE_MAX_SITES) : [],
+      });
+      for (const aviso of cleaned.avisos) avisos.push(`Formulario de cierre de ${label}: ${aviso}`);
+      const formulario = Object.fromEntries(Object.entries(cleaned.form).filter(([, value]) => value !== null));
+      const filledPost = post => ['description', 'shift_start', 'shift_end', 'guards_required', 'service_value', 'days_per_month', 'notes'].some(key => post[key] !== null) || post.armed;
+      const puestos = cleaned.posts.filter(filledPost).map(({ position: _position, ...post }) => post);
+      const sedes = cleaned.sites.filter(site => site.address || site.city || site.phone || site.contact_name).map(({ position: _position, ...site }) => site);
+      if (!Object.keys(formulario).length && !puestos.length && !sedes.length) continue;
+      const key = `closure:${item.ref}`;
+      if (byKey.has(key)) {
+        const action = byKey.get(key);
+        Object.assign(action.formulario, formulario);
+        action.puestos.push(...puestos);
+        action.sedes.push(...sedes);
+      } else {
+        const action = { tipo: 'formulario_cierre', ref: item.ref, formulario, puestos, sedes };
+        byKey.set(key, action);
+        acciones.push(action);
+      }
     } else if (item.tipo === 'actualizar_datos') {
       const datos = cleanData(item.datos, { avisos, label });
       if (!Object.keys(datos).length) continue;
@@ -336,7 +391,26 @@ export function describeChatAction(action, { labelFor = () => 'Cliente', service
     lineas.push(`Qué pasó: ${action.nota}`);
     return { cliente, lineas };
   }
+  if (action.tipo === 'formulario_cierre') return { cliente, lineas: describeClosure(action) };
   return { cliente, lineas: describeData(action.datos) };
+}
+
+const CLOSURE_LABEL = new Map(CLOSURE_FORM_FIELDS.map(field => [field.key, field.label]));
+const closureValue = (key, value) => (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? humanDay(value) : closureFieldText(key, value));
+const peso = value => `$ ${Math.round(Number(value) || 0).toLocaleString('es-CO')}`;
+function describeClosure(action) {
+  const lineas = ['Formulario de cierre:'];
+  for (const [key, value] of Object.entries(action.formulario || {})) lineas.push(`${CLOSURE_LABEL.get(key) || key}: ${closureValue(key, value)}`);
+  for (const post of action.puestos || []) {
+    const parts = [post.description || 'Puesto'];
+    if (post.shift_start && post.shift_end) parts.push(`${post.shift_start} a ${post.shift_end}`);
+    if (post.guards_required) parts.push(`${post.guards_required} ${post.guards_required === 1 ? 'vigilante' : 'vigilantes'}`);
+    parts.push(post.armed ? 'con arma' : 'sin arma');
+    if (post.service_value !== null && post.service_value !== undefined) parts.push(`${peso(post.service_value)} sin IVA`);
+    lineas.push(`Agrega el puesto: ${parts.join(' · ')}`);
+  }
+  for (const site of action.sedes || []) lineas.push(`Agrega la dirección: ${[site.address, site.city].filter(Boolean).join(', ') || site.contact_name || site.phone}`);
+  return lineas;
 }
 
 export { NEW_OPPORTUNITY_FIELDS };

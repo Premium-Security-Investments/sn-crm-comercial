@@ -4447,6 +4447,49 @@ app.put('/api/avancys/cliente-enlace', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+// Guardar el formulario: la misma puerta para la pantalla y para el chat (etapa 3). Semántica de parche: la cabecera
+// se mezcla con lo guardado, y las listas se reemplazan SÓLO si vienen en el cuerpo. Con `append` (el chat), los
+// puestos y direcciones que llegan se AGREGAN a los guardados: dictar un puesto no puede borrar los que ya estaban.
+async function saveClosureFormForProfile(database, currentProfile, id, body, { append = false } = {}) {
+  const opportunity = await closureFormOpportunity(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+  const { form: patch, sites: cleanSites, posts: cleanPosts, avisos } = cleanClosureFormInput(body);
+  const sendsSites = Array.isArray(body?.sites) && (!append || cleanSites.length > 0);
+  const sendsPosts = Array.isArray(body?.posts) && (!append || cleanPosts.length > 0);
+  const stored = await must(database.from('psi_sales_closure_forms').select(CLOSURE_FORM_SELECT).eq('opportunity_id', id).maybeSingle());
+  const previous = stored ? await closureFormChildren(database, stored.id) : { sites: [], posts: [] };
+  const base = stored || autofillClosureForm(opportunity);
+  const merged = Object.fromEntries(CLOSURE_FORM_FIELD_KEYS.map(key => [key, Object.prototype.hasOwnProperty.call(patch, key) ? patch[key] : (base?.[key] ?? null)]));
+  const renumber = list => list.map(({ id: _id, ...item }, index) => ({ ...item, position: index + 1 }));
+  const sites = sendsSites ? (append ? renumber([...previous.sites, ...cleanSites]) : cleanSites) : previous.sites;
+  const posts = sendsPosts ? (append ? renumber([...previous.posts, ...cleanPosts]) : cleanPosts) : previous.posts;
+  const completeness = closureFormCompleteness({ form: merged, sites, posts });
+  const now = new Date().toISOString();
+  const row = {
+    ...merged,
+    opportunity_id: id,
+    status: completeness.complete ? 'completo' : 'borrador',
+    updated_by: currentProfile.id,
+    updated_at: now,
+    // Queda la primera vez que estuvo completo: si después se le quita un dato, no se borra ese hecho.
+    completed_at: stored?.completed_at || (completeness.complete ? now : null),
+    completed_by: stored?.completed_by || (completeness.complete ? currentProfile.id : null),
+    ...(stored ? {} : { created_by: currentProfile.id }),
+  };
+  const saved = stored
+    ? await must(database.from('psi_sales_closure_forms').update(row).eq('id', stored.id).select('id').single())
+    : await must(database.from('psi_sales_closure_forms').insert(row).select('id').single());
+  if (sendsSites) {
+    await must(database.from('psi_sales_closure_form_sites').delete().eq('form_id', saved.id).select('id'));
+    if (sites.length) await must(database.from('psi_sales_closure_form_sites').insert(sites.map(site => ({ ...site, form_id: saved.id }))).select('id'));
+  }
+  if (sendsPosts) {
+    await must(database.from('psi_sales_closure_form_posts').delete().eq('form_id', saved.id).select('id'));
+    if (posts.length) await must(database.from('psi_sales_closure_form_posts').insert(posts.map(post => ({ ...post, form_id: saved.id }))).select('id'));
+  }
+  const state = await closureFormState(database, opportunity);
+  return avisos.length ? { ...state, avisos } : state;
+}
+
 app.get('/api/agt003/closure-form', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -4467,44 +4510,7 @@ app.put('/api/agt003/closure-form', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.opportunity_id || req.query.id || '');
     if (!id) { const error = new Error('Debe indicar la oportunidad.'); error.status = 400; throw error; }
-    const opportunity = await closureFormOpportunity(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    const { form: patch, sites: cleanSites, posts: cleanPosts, avisos } = cleanClosureFormInput(req.body);
-    // Semántica de parche: la cabecera se mezcla con lo guardado, y las listas se reemplazan SÓLO si vienen en el
-    // cuerpo. Así el chat puede llenar dos campos sin borrar los puestos que el comercial ya escribió.
-    const sendsSites = Array.isArray(req.body?.sites);
-    const sendsPosts = Array.isArray(req.body?.posts);
-    const stored = await must(database.from('psi_sales_closure_forms').select(CLOSURE_FORM_SELECT).eq('opportunity_id', id).maybeSingle());
-    const previous = stored ? await closureFormChildren(database, stored.id) : { sites: [], posts: [] };
-    const base = stored || autofillClosureForm(opportunity);
-    const merged = Object.fromEntries(CLOSURE_FORM_FIELD_KEYS.map(key => [key, Object.prototype.hasOwnProperty.call(patch, key) ? patch[key] : (base?.[key] ?? null)]));
-    const sites = sendsSites ? cleanSites : previous.sites;
-    const posts = sendsPosts ? cleanPosts : previous.posts;
-    const completeness = closureFormCompleteness({ form: merged, sites, posts });
-    const now = new Date().toISOString();
-    const row = {
-      ...merged,
-      opportunity_id: id,
-      status: completeness.complete ? 'completo' : 'borrador',
-      updated_by: currentProfile.id,
-      updated_at: now,
-      // Queda la primera vez que estuvo completo: si después se le quita un dato, no se borra ese hecho.
-      completed_at: stored?.completed_at || (completeness.complete ? now : null),
-      completed_by: stored?.completed_by || (completeness.complete ? currentProfile.id : null),
-      ...(stored ? {} : { created_by: currentProfile.id }),
-    };
-    const saved = stored
-      ? await must(database.from('psi_sales_closure_forms').update(row).eq('id', stored.id).select('id').single())
-      : await must(database.from('psi_sales_closure_forms').insert(row).select('id').single());
-    if (sendsSites) {
-      await must(database.from('psi_sales_closure_form_sites').delete().eq('form_id', saved.id).select('id'));
-      if (sites.length) await must(database.from('psi_sales_closure_form_sites').insert(sites.map(site => ({ ...site, form_id: saved.id }))).select('id'));
-    }
-    if (sendsPosts) {
-      await must(database.from('psi_sales_closure_form_posts').delete().eq('form_id', saved.id).select('id'));
-      if (posts.length) await must(database.from('psi_sales_closure_form_posts').insert(posts.map(post => ({ ...post, form_id: saved.id }))).select('id'));
-    }
-    const state = await closureFormState(database, opportunity);
-    res.json(avisos.length ? { ...state, avisos } : state);
+    res.json(await saveClosureFormForProfile(database, currentProfile, id, req.body));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -4629,6 +4635,11 @@ async function applyChatAction(database, profile, action) {
       ? { decision: 'advance', stage_code: action.etapa, notes: action.nota, next_action_at: chatDayToIso(action.proxima_fecha) || null }
       : { decision: 'lose', loss_reason_code: action.motivo, notes: action.nota, ...(action.competidor ? { competitor_name: action.competidor } : {}) };
     await recordOpportunityDecision(database, profile, action.opportunity_id, body);
+    return { opportunity_id: action.opportunity_id };
+  }
+  if (action.tipo === 'formulario_cierre') {
+    // La misma puerta que la pantalla del formulario, con los puestos y direcciones dictados agregados a los que había.
+    await saveClosureFormForProfile(database, profile, action.opportunity_id, { form: action.formulario || {}, posts: action.puestos || [], sites: action.sedes || [] }, { append: true });
     return { opportunity_id: action.opportunity_id };
   }
   if (action.tipo === 'crear_oportunidad') {
