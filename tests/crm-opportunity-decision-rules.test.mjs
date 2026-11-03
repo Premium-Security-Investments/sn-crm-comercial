@@ -35,7 +35,7 @@ test('la decisión que llega por HTTP se valida con esquema cerrado', () => {
   const params = normalizeDecisionRequest({ decision: 'continue', notes: ' Llamé al cliente ', next_action_at: '2026-10-14T14:00:00Z', offer_value: '80000000', interaction_type: 'llamada', owner_id: 'otro' });
   assert.deepEqual(params, {
     p_decision: 'continue', p_notes: 'Llamé al cliente', p_interaction_type: 'llamada', p_next_action_at: '2026-10-14T14:00:00.000Z',
-    p_stage_code: null, p_offer_value: 80_000_000, p_freeze_days: null, p_loss_reason_code: null,
+    p_stage_code: null, p_offer_value: 80_000_000, p_freeze_days: null, p_frozen_until: null, p_loss_reason_code: null,
   });
 });
 

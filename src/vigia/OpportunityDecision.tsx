@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { api } from '../apiClient';
-import { bogotaDay, FREEZE_DAYS, type DecisionCode } from './opportunity-decision-rules.js';
+import { bogotaDay, FREEZE_DAYS, FREEZE_MAX_DAYS, type DecisionCode } from './opportunity-decision-rules.js';
 import { stageStaleness } from './stage-staleness.js';
 import { closeDateLine, clockTime, futureDayPhrase, pastDayPhrase, readablePhone, sentenceName } from './my-day-presentation';
 
@@ -77,7 +77,11 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, comp
   const [followUpType, setFollowUpType] = useState('llamada');
   const [stageCode, setStageCode] = useState('');
   const [value, setValue] = useState('');
-  const [freezeDays, setFreezeDays] = useState(30);
+  // Congelar: los atajos de 30/60/90 días o "hasta una fecha" (hasta 24 meses). Si la próxima gestión ya está más
+  // allá de 90 días, es casi seguro un prospecto parqueado a mano: se propone congelarlo hasta esa misma fecha.
+  const parkedDay = scheduledDay && scheduledDay > addDays(today, 90) && scheduledDay <= addDays(today, FREEZE_MAX_DAYS) ? scheduledDay : null;
+  const [freezeChoice, setFreezeChoice] = useState<string>(parkedDay ? 'fecha' : '30');
+  const [frozenUntil, setFrozenUntil] = useState(parkedDay || addDays(today, 180));
   const [reason, setReason] = useState('');
   const [deleteReason, setDeleteReason] = useState(DELETE_REASONS[0]);
   const [status, setStatus] = useState('');
@@ -96,7 +100,7 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, comp
       if (decision === 'continue') body.interaction_type = followUpType;
       if (decision === 'advance') body.stage_code = stageCode;
       if (askValue && value) body.offer_value = Number(value.replace(/[^\d]/g, ''));
-      if (decision === 'freeze') body.freeze_days = freezeDays;
+      if (decision === 'freeze') { if (freezeChoice === 'fecha') body.frozen_until = frozenUntil; else body.freeze_days = Number(freezeChoice); }
       if (decision === 'discard' || decision === 'lose') body.loss_reason_code = reason;
       if (decision === 'lose') {
         if (competitor && competitor !== OTHER_COMPETITOR) body.competitor_id = competitor;
@@ -128,9 +132,12 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, comp
       {needsDate && <label>Próxima gestión<input type="date" required min={today} max={addDays(today, 90)} value={nextDay} onChange={e => setNextDay(e.target.value)} />
         <span className="decision-quick-dates">{[2, 7, 15, 30].map(days => <button type="button" key={days} onClick={() => setNextDay(addDays(today, days))}>{days === 2 ? 'En 2 días' : days === 7 ? '1 semana' : days === 15 ? '15 días' : '1 mes'}</button>)}</span></label>}
       {askValue && <label>Valor estimado (COP)<input inputMode="numeric" placeholder="Ej. 80000000" value={value} onChange={e => setValue(e.target.value)} /></label>}
-      {decision === 'freeze' && <label>Congelar por<select value={freezeDays} onChange={e => setFreezeDays(Number(e.target.value))}>
-        {FREEZE_DAYS.map(days => <option key={days} value={days}>{days} días (hasta {addDays(today, days).split('-').reverse().join('/')})</option>)}
+      {decision === 'freeze' && <label>Congelar por<select value={freezeChoice} onChange={e => setFreezeChoice(e.target.value)}>
+        {FREEZE_DAYS.map(days => <option key={days} value={String(days)}>{days} días (hasta {addDays(today, days).split('-').reverse().join('/')})</option>)}
+        <option value="fecha">Hasta una fecha…</option>
       </select></label>}
+      {decision === 'freeze' && freezeChoice === 'fecha' && <label>Congelada hasta<input type="date" required min={addDays(today, 1)} max={addDays(today, FREEZE_MAX_DAYS)} value={frozenUntil} onChange={e => setFrozenUntil(e.target.value)} />
+        <small className="decision-hint">Hasta 2 años. Ese día vuelve a pedir decisión.</small></label>}
       {(decision === 'discard' || decision === 'lose') && <label>Motivo<select required value={reason} onChange={e => setReason(e.target.value)}>
         <option value="">Seleccionar</option>{lossReasons.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
       </select></label>}
@@ -305,7 +312,8 @@ export function NowQueue({ pending, today, stages, lossReasons, competitors = []
   const [showAll, setShowAll] = useState(false);
   const [picking, setPicking] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulk, setBulk] = useState<{ decision: 'discard' | 'freeze'; reason: string; days: number; notes: string }>({ decision: 'discard', reason: '', days: 30, notes: '' });
+  const [bulk, setBulk] = useState<{ decision: 'discard' | 'freeze'; reason: string; days: string; until: string; notes: string }>({ decision: 'discard', reason: '', days: '30', until: '', notes: '' });
+  const todayIso = todayDay();
   const [bulkStatus, setBulkStatus] = useState('');
   const [running, setRunning] = useState(false);
 
@@ -323,6 +331,7 @@ export function NowQueue({ pending, today, stages, lossReasons, competitors = []
   const runBulk = async () => {
     if (bulk.notes.trim().length < 5) { setBulkStatus('Escriba en una frase por qué (aplica a todas las seleccionadas).'); return; }
     if (bulk.decision === 'discard' && !bulk.reason) { setBulkStatus('Escoja el motivo.'); return; }
+    if (bulk.decision === 'freeze' && bulk.days === 'fecha' && !bulk.until) { setBulkStatus('Escoja hasta qué fecha.'); return; }
     setRunning(true);
     let done = 0; const failed: string[] = [];
     for (const id of selected) {
@@ -330,7 +339,9 @@ export function NowQueue({ pending, today, stages, lossReasons, competitors = []
       try {
         await sendDecision(id, bulk.decision === 'discard'
           ? { decision: 'discard', notes: bulk.notes, loss_reason_code: bulk.reason }
-          : { decision: 'freeze', notes: bulk.notes, freeze_days: bulk.days });
+          : bulk.days === 'fecha'
+            ? { decision: 'freeze', notes: bulk.notes, frozen_until: bulk.until }
+            : { decision: 'freeze', notes: bulk.notes, freeze_days: Number(bulk.days) });
         done += 1;
       } catch { failed.push(id); }
     }
@@ -381,7 +392,10 @@ export function NowQueue({ pending, today, stages, lossReasons, competitors = []
             <select value={bulk.decision} onChange={e => setBulk({ ...bulk, decision: e.target.value as 'discard' | 'freeze' })}><option value="discard">Descartar</option><option value="freeze">Congelar</option></select>
             {bulk.decision === 'discard'
               ? <select value={bulk.reason} onChange={e => setBulk({ ...bulk, reason: e.target.value })}><option value="">Motivo</option>{lossReasons.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select>
-              : <select value={bulk.days} onChange={e => setBulk({ ...bulk, days: Number(e.target.value) })}>{FREEZE_DAYS.map(days => <option key={days} value={days}>{days} días</option>)}</select>}
+              : <>
+                <select value={bulk.days} onChange={e => setBulk({ ...bulk, days: e.target.value })}>{FREEZE_DAYS.map(days => <option key={days} value={String(days)}>{days} días</option>)}<option value="fecha">Hasta una fecha…</option></select>
+                {bulk.days === 'fecha' && <input type="date" aria-label="Congelada hasta" min={addDays(todayIso, 1)} max={addDays(todayIso, FREEZE_MAX_DAYS)} value={bulk.until} onChange={e => setBulk({ ...bulk, until: e.target.value })} />}
+              </>}
             <input placeholder="Por qué (aplica a todas)" value={bulk.notes} onChange={e => setBulk({ ...bulk, notes: e.target.value })} />
             <button type="button" disabled={running} onClick={() => void runBulk()}>Aplicar</button>
             <button type="button" className="secondary" disabled={running} onClick={() => setSelected(new Set())}>Quitar selección</button>
