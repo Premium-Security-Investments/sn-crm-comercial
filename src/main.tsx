@@ -60,11 +60,12 @@ import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
 import { CLIENT_DEAL_TYPES, clientDealLabel, profileCompleteness, type ClientDealType } from './vigia/client-profile.js';
+import { renewalsDue } from './vigia/renewal-alerts.js';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
 import { VigiaChatRegistro } from './vigia/VigiaChatRegistro';
-import { DeleteRequestsPanel, NextConversation, NowQueue, OpportunityDecisionForm, TodayDone, WeekList } from './vigia/OpportunityDecision';
+import { DeleteRequestsPanel, NextConversation, NowQueue, OpportunityDecisionForm, TodayDone, WeekList, RenewalsDue } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
 
@@ -2937,6 +2938,8 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   const todayRows = activeRows.filter(o => bogotaDay(o.next_action_at as string) === todayKey).sort((a, b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
   const upcomingRows = activeRows.filter(o => { const day = bogotaDay(o.next_action_at as string) || ''; return day > todayKey && day <= weekKey; }).sort((a, b) => String(a.next_action_at).localeCompare(String(b.next_action_at)));
   const goal = monthlyGoalCompliance({ opportunities, goals: data.goals, month: bogotaMonth(now), ownerId: selfId });
+  // Aviso de renovación (Juan, 2026-11-03): contratos de clientes actuales que vencen en 90 días o ya vencieron.
+  const renewals = useMemo(() => renewalsDue(opportunities, now), [opportunities, now]);
   const canCreate = canAccessRoute(data.currentProfile, 'new');
 
   const pendingCount = pendingDecisionRows.length;
@@ -3006,6 +3009,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
             : <NowQueue pending={pendingDecisionRows} today={todayRows} stages={data.stages} lossReasons={data.lossReasons}
               competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />}
           {isCalm && <TodayDone opportunities={opportunities.filter(o => isAgt003CommercialOpportunity(o))} now={now} />}
+          <RenewalsDue items={renewals} />
           <WeekList upcoming={weekRows} />
           {isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
         </div>
