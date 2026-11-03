@@ -1086,3 +1086,26 @@ export type TenderOfferPackage = {
   matrix_name: string;
   dossier_download_path: string;
 };
+
+/**
+ * Tablero de procesos abiertos (mejora 4 del encargo del 2026-10-31): el cruce de los expedientes con cierre por
+ * delante. Lo calcula `tender-open-board.js`; sólo lectura.
+ */
+export type TenderOpenBoardProcessRef = { opportunity_id: string; ref: string; entity: string | null; close_date: string | null };
+export type TenderOpenBoard = {
+  today: string;
+  without_access: number;
+  processes: (TenderOpenBoardProcessRef & { offer_status: string | null; has_analysis: boolean; required_company_documents: number })[];
+  tramites: {
+    key: string; label: string; owner: string; kind: string; kind_label: string; document_name: string | null; issued_at: string | null; expires_at: string | null;
+    processes: (TenderOpenBoardProcessRef & { state: string | null; age_at_close_days: number | null })[];
+    pending_count: number; first_close: string | null; note: string;
+  }[];
+  vencimientos: { key: string; label: string; owner: string; kind: string; expires_at: string | null; already_expired: boolean; processes: (TenderOpenBoardProcessRef & { state: string })[]; note: string }[];
+  por_proceso: {
+    kind: string; label: string;
+    items: (TenderOpenBoardProcessRef & { requirement_key: string; title: string; demand: string | null; amount_text: string | null; percent_text: string | null; status: string })[];
+    clusters: { processes: string[]; span_days: number; note: string }[];
+  };
+  summary: { procesos: number; sin_analisis: number; tramites_compartidos: number; tramites_por_hacer: number; documentos_que_vencen: number; garantias_simultaneas: number };
+};

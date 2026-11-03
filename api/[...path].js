@@ -45,6 +45,7 @@ import {
 import { buildRequirementRows } from '../verticales/licitaciones/agt002-requirements-model.js';
 import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/tender-company-document-bridge.js';
 import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixCsv, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
+import { buildTenderOpenBoard } from '../verticales/licitaciones/tender-open-board.js';
 import { TENDER_OFFER_PACKAGE_MATRIX_NAME, buildTenderOfferPackageManifest, tenderOfferPackageIndex } from '../verticales/licitaciones/tender-offer-package.js';
 import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../verticales/licitaciones/tender-analysis-foundation.js';
@@ -494,6 +495,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tender-dossier-company-documents': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Matriz de cumplimiento: una fila por requisito del pliego, con su soporte y su estado al cierre. Sólo lectura.
   'GET /api/tender-compliance-matrix': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Tablero de procesos abiertos: el cruce de todos los expedientes con cierre por delante. Sólo lectura.
+  'GET /api/tender-open-board': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Paquete de la oferta: la lista de lo que va y el índice. Sin bytes y sin URLs firmadas en el cuerpo.
   'GET /api/tender-offer-package': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Crear a mano un proceso que no está en SECOP: traerlo al CRM es el mismo acto que convertirlo desde el Radar.
@@ -6706,6 +6709,56 @@ app.get('/api/tender-compliance-matrix', async (req, res) => {
     const opportunityId = String(req.query.id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     res.json(await readTenderComplianceMatrix(database, opportunityId, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/**
+ * El tablero de procesos abiertos (mejora 4 del encargo del 2026-10-31): cruza los procesos con cierre de hoy en
+ * adelante —antes y después del GO— para contestar qué trámite sirve para varias, qué vence antes de qué cierre y qué
+ * se pide una vez por proceso. Sólo lectura. Cada proceso pasa por la misma verificación de acceso que su expediente;
+ * el que no se puede ver no entra, y se cuenta.
+ */
+async function readTenderOpenBoard(database, currentProfile, now = new Date()) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(now);
+  const opportunities = await must(database.from('psi_sales_opportunities')
+    .select('id,sede,company_name,tender_offer_status,expected_close_date,archive_note')
+    .eq('service_type_code', 'licitacion_publica')
+    .is('archive_note', null));
+  const ids = opportunities.map(row => row.id);
+  const tenders = ids.length ? await must(database.from('psi_public_tenders')
+    .select('id,ref,deadline_at,raw,converted_opportunity_id')
+    .in('converted_opportunity_id', ids)) : [];
+  const tenderByOpportunity = new Map(tenders.map(row => [row.converted_opportunity_id, row]));
+  const open = opportunities.map(row => {
+    const tender = tenderByOpportunity.get(row.id) || null;
+    const closeDate = (tender ? resolveCanonicalTenderDeadline(tender) : null) || row.expected_close_date || null;
+    return { row, tender, closeDate: closeDate ? String(closeDate).slice(0, 10) : null };
+  }).filter(item => item.closeDate && item.closeDate >= today && !['cerrada_no_go', 'presentada', 'adjudicada', 'no_adjudicada'].includes(item.row.tender_offer_status));
+
+  const [companyBase, documents] = await Promise.all([loadCompanyBase(database), listCompanyProcurementDocuments(database)]);
+  let withoutAccess = 0;
+  const processes = [];
+  for (const { row, tender, closeDate } of open) {
+    try { await ensureTenderOpportunity(database, row.id, currentProfile); }
+    catch (error) { if (error?.status === 403 || error?.status === 404) { withoutAccess += 1; continue; } throw error; }
+    const bridge = buildTenderCompanyDocumentBridge({ registry: companyBase.registry, documents, closeDate, now });
+    const report = await readAgt002InitialAnalysisReport(database, row.id);
+    const matrix = report?.available && report.report
+      ? buildTenderComplianceMatrix({ requirementRows: buildRequirementRows(report.report), bridge })
+      : null;
+    processes.push({
+      opportunity_id: row.id, ref: tender?.ref || row.sede || null, entity: row.company_name || null,
+      offer_status: row.tender_offer_status || null, close_date: closeDate, bridge, matrix,
+    });
+  }
+  return { today, without_access: withoutAccess, ...buildTenderOpenBoard({ processes }) };
+}
+
+app.get('/api/tender-open-board', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.json(await readTenderOpenBoard(requireDb(), currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
