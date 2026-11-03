@@ -102,6 +102,29 @@ export function normalizeClientDeal(body = {}) {
   return { client_deal_type: deal };
 }
 
+/**
+ * Filtro "Tipo de cliente" de la lista de oportunidades y de Vig-IA: la misma regla en las dos pantallas.
+ * "cliente_actual" solo trae todas las de cliente actual; "cliente_actual:<tipo>" una de las dos, y
+ * "cliente_actual:sin_clasificar" las que todavía no lo dicen.
+ */
+export const CUSTOMER_SEGMENT_FILTER_OPTIONS = Object.freeze([
+  ['cliente_nuevo', 'Cliente Nuevo'], ['cliente_actual', 'Cliente Actual (todas)'],
+  ...CLIENT_DEAL_TYPES.map(([code, label]) => [`cliente_actual:${code}`, `Cliente Actual · ${label}`]),
+  ['cliente_actual:sin_clasificar', 'Cliente Actual · Sin clasificar'],
+]);
+
+export function isCustomerSegmentFilter(value) {
+  return CUSTOMER_SEGMENT_FILTER_OPTIONS.some(([code]) => code === value);
+}
+
+export function matchesCustomerSegmentFilter(row, filter) {
+  if (!filter) return true;
+  const [segment, deal] = String(filter).split(':');
+  if (row?.customer_segment !== segment) return false;
+  if (!deal) return true;
+  return deal === 'sin_clasificar' ? !row?.client_deal_type : row?.client_deal_type === deal;
+}
+
 const filled = value => typeof value === 'string' ? value.trim().length > 0 : Boolean(value);
 
 /**

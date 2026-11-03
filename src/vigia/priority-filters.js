@@ -1,3 +1,5 @@
+import { isCustomerSegmentFilter, matchesCustomerSegmentFilter } from './client-profile.js';
+
 function normalized(value) {
   return String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
@@ -31,7 +33,6 @@ const LEGACY_ALERT_CATEGORY_MAP = Object.freeze({
   stalled: 'stalled_sustentacion',
 });
 
-const VALID_CUSTOMER_SEGMENTS = new Set(['cliente_nuevo', 'cliente_actual']);
 const VALID_CATEGORIES = new Set(Object.values(LEGACY_ALERT_CATEGORY_MAP));
 const ALLOWED_HASH_FILTERS = new Set(['status', 'owner', 'regional', 'stage', 'service', 'segment']);
 const INVALID_FILTER = '__invalid__';
@@ -74,7 +75,7 @@ export function filtersFromAlertsHash(hash) {
   const segment = params.get('segment') || '';
   const invalidStructure = [...params.keys()].some(key => !ALLOWED_HASH_FILTERS.has(key) || params.getAll(key).length !== 1);
   const invalidStatus = Boolean(status && !LEGACY_ALERT_CATEGORY_MAP[status]);
-  const invalidSegment = Boolean(segment && !VALID_CUSTOMER_SEGMENTS.has(segment));
+  const invalidSegment = Boolean(segment && !isCustomerSegmentFilter(segment));
   const invalid = invalidStructure || invalidStatus || invalidSegment;
   return {
     category: invalid ? INVALID_FILTER : (status ? LEGACY_ALERT_CATEGORY_MAP[status] : ''),
@@ -99,7 +100,7 @@ export function priorityHashFiltersAreValid(rows, filters = {}) {
     && (!filters.regional || rows.some(row => normalizedRegional(row?.regional_nombre) === normalizedRegional(filters.regional)))
     && matches(filters.stage, 'stage_code')
     && matches(filters.service, 'service_type_code')
-    && matches(filters.customerSegment, 'customer_segment');
+    && (!filters.customerSegment || rows.some(row => matchesCustomerSegmentFilter(row, filters.customerSegment)));
 }
 
 export function priorityCategory(row, category) {
@@ -125,7 +126,7 @@ export function filterCommercialPriorities(rows, filters = {}) {
     if (filters.regional && normalizedRegional(row?.regional_nombre) !== normalizedRegional(filters.regional)) return false;
     if (filters.stage && row?.stage_code !== filters.stage) return false;
     if (filters.service && row?.service_type_code !== filters.service) return false;
-    if (filters.customerSegment && row?.customer_segment !== filters.customerSegment) return false;
+    if (filters.customerSegment && !matchesCustomerSegmentFilter(row, filters.customerSegment)) return false;
     if (filters.level && row?.level !== filters.level) return false;
     if (query) {
       const haystack = normalized([row?.company_name, row?.owner_name, row?.stage_name, row?.service_type_name, row?.regional_nombre].join(' '));
