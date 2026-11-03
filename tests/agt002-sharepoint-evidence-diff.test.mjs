@@ -85,9 +85,10 @@ test('un tipo legado acredita su clase: la Cámara de Comercio no está vacía',
     files: [{ ruta: `${ROOT}/01_Legal_y_Societario/Documentos_Corporativos/15_CAMARA_COMERCIO.pdf`, modificado_en: '2026-10-20T12:00:00Z' }],
     registry: REGISTRY, documents: DOCUMENTS,
   });
-  const camara = differences.find(item => item.entryId === 'chamber_of_commerce');
-  assert.equal(camara?.code, 'sharepoint_tiene_algo_mas_nuevo', 'hay soporte cargado: la diferencia es de fecha, no de ausencia');
-  assert.ok(!differences.some(item => item.entryId === 'chamber_of_commerce' && item.code === 'existe_en_sharepoint_y_no_en_el_crm'));
+  // Con el alias resuelto el bloque tiene soporte, así que NO hay diferencia de presencia. Y ya no
+  // hay diferencia de fecha: esa regla se retiró por producir falsos positivos (ver abajo).
+  assert.ok(!differences.some(item => item.entryId === 'chamber_of_commerce'),
+    'un bloque con soporte cargado bajo tipo legado no produce ninguna diferencia');
 });
 
 // --- Las reglas donde la señal es la carpeta --------------------------------------------------
@@ -147,7 +148,22 @@ test('una biblioteca que calza con el CRM no produce diferencias', () => {
     files: [{ ruta: `${ROOT}/03_RUP_y_Capacidad_Financiera/Vigente/20_RUP_2026-09-28.pdf`, modificado_en: '2026-09-28T12:00:00Z' }],
     registry: REGISTRY, documents: DOCUMENTS,
   });
-  assert.deepEqual(differences, [], 'el RUP cargado es del 2026-09-28: no hay nada más nuevo');
+  assert.deepEqual(differences, [], 'el RUP está cargado: el bloque no tiene hueco de presencia');
+});
+
+test('el puente NO avisa por antigüedad: una fecha de modificación no es una fecha de documento', () => {
+  // El caso real que lo probó: el archivo que SharePoint tenía "más nuevo" (modificado el
+  // 2026-10-17) es el MISMO documento que el CRM ya tiene cargado con `issued_at` 2026-09-28 —se
+  // llama igual—. Comparar `lastModifiedDateTime` contra `issued_at` dio cuatro falsos positivos de
+  // cuatro. SharePoint no expone la fecha del documento, sólo la del archivo.
+  const differences = agt002SharepointEvidenceDifferences({
+    files: [{ ruta: `${ROOT}/03_RUP_y_Capacidad_Financiera/Vigente/20_RUP_SEGURIDAD_NACIONAL_2026-09-28_VIGENTE_EN_FIRME.pdf`, modificado_en: '2026-10-17T12:00:00Z' }],
+    registry: REGISTRY, documents: DOCUMENTS,
+  });
+  assert.deepEqual(differences, [], 'tocar un archivo en SharePoint no lo vuelve un documento nuevo');
+  for (const code of differences.map(item => item.code)) {
+    assert.notEqual(code, 'sharepoint_tiene_algo_mas_nuevo');
+  }
 });
 
 test('no se afirma nada sobre vigencia ni se marca evidencia como verificada', () => {
@@ -163,10 +179,13 @@ test('no se afirma nada sobre vigencia ni se marca evidencia como verificada', (
 
 // --- La revisión programada: una sola línea por expediente ------------------------------------
 
+// Dos bloques con archivos en SharePoint y nada cargado en el CRM, más el RUP que SÍ está cargado y
+// por tanto no produce diferencia. Ya no se usa el RUP como "más nuevo": esa regla se retiró.
 const FILES = [
   { ruta: `${CALIDAD}/BASC 2026.pdf`, modificado_en: '2026-10-29T12:00:00Z' },
   { ruta: `${CALIDAD}/ISO 9001.pdf`, modificado_en: '2026-10-29T12:00:00Z' },
-  { ruta: `${ROOT}/03_RUP_y_Capacidad_Financiera/Vigente/20_RUP_2026-10-17.pdf`, modificado_en: '2026-10-17T12:00:00Z' },
+  { ruta: `${VIGENTES}/Licencia Agencia Cali.pdf`, modificado_en: '2026-10-29T12:00:00Z' },
+  { ruta: `${ROOT}/03_RUP_y_Capacidad_Financiera/Vigente/20_RUP_2026-09-28.pdf`, modificado_en: '2026-10-17T12:00:00Z' },
 ];
 
 function fakeDatabase({ registry = REGISTRY, documents = DOCUMENTS, tenders = [{ id: 't1', ref: 'TT-SPO-07-2026', converted_opportunity_id: 'opp-1', internal_status: 'convertida_oportunidad' }, { id: 't2', ref: 'SNS-LP-2-2026', converted_opportunity_id: 'opp-2', internal_status: 'convertida_oportunidad' }] } = {}) {
@@ -188,8 +207,10 @@ test('una sola línea por expediente, no una por diferencia', () => {
   const line = agt002SharepointDifferenceSummaryLine(differences);
   assert.equal(typeof line, 'string');
   assert.match(line, /Certificaciones de calidad/);
-  assert.match(line, /Registro Único de Proponentes/);
+  assert.match(line, /Autorizaciones de agencia/);
+  assert.doesNotMatch(line, /Registro Único de Proponentes/, 'el RUP está cargado: no es una diferencia');
   assert.match(line, /revisar lo que ya existe/);
+  assert.doesNotMatch(line, /más nuevo que lo cargado/, 'la regla de antigüedad se retiró');
   // 15 diferencias en 8 expedientes serían 120 líneas: por eso es una.
   assert.equal(line.split('\n').length, 1);
 });

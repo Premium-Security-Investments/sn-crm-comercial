@@ -1,0 +1,60 @@
+[Unit]
+Description=AGT-002 puente SharePoint -> CRM: diferencias de la biblioteca corporativa (sólo lectura de SharePoint)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Mismas credenciales de base que la reconciliación del radar: es la misma clase de trabajo
+# programado, el mismo proyecto y la misma variable. Se reutiliza a propósito en vez de duplicar un
+# archivo de secretos para un valor idéntico.
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-sharepoint-bridge/run-agt002-sharepoint-bridge.mjs
+
+# Puente: ninguno de estos tres es secreto. El listador sólo lee y resuelve la sesión de Graph él
+# mismo; el drive y la carpeta son la biblioteca corporativa del sitio de Innovación.
+Environment=AGT002_SHAREPOINT_INVENTORY_SCRIPT=/root/.vigia-graph/inventario.py
+Environment=AGT002_SHAREPOINT_DRIVE_ID=b!BoXt-GqsJ0SDAdUp0lzrM9Jsb0XFlulNsE6Mldp9S65CwtkHrpg5RqCEQSc-EerT
+Environment=AGT002_SHAREPOINT_LIBRARY_PATH=06_Productos_PSI/Licitaciones/02_Biblioteca_Corporativa_SN
+
+# Corre como root, y hay que decir por qué en vez de dejarlo pasar: la sesión delegada de Microsoft
+# Graph es de root (`/root/.vigia-graph`, permisos 700, decisión del 2026-10-21). La alternativa era
+# copiarla a un usuario de servicio, y eso le daría a un servicio sin privilegios la capacidad de
+# actuar como Juan Botero en Microsoft 365. Entre las dos, se escoge una unidad endurecida que lee
+# una credencial que ya estaba restringida, y se deja el motivo escrito aquí.
+#
+# `ProtectHome=tmpfs` + `BindPaths` de una sola carpeta, que es lo más estrecho posible: el trabajo
+# ve de la casa de root **únicamente** `/root/.vigia-graph`, y nada más de `/root`.
+#
+# Y tiene que ser con escritura, no de sólo lectura: **el token de Graph rota al usarse** y `graph.py`
+# reescribe `token.json` con la llave nueva. Primero lo puse `read-only` y el listador falló con
+# código 1 por eso. Si se deja sin escritura, la llave rotada se pierde y la sesión se muere sola
+# —en silencio, que es el peor modo—.
+#
+# **Este trabajo NO escribe en SharePoint.** Sólo lee la biblioteca, reescribe su propio token y
+# escribe líneas de aviso en nuestra base. El sentido CRM -> SharePoint, que sí escribiría a nombre
+# de Juan sin nadie delante, es otra decisión y otra unidad.
+ProtectHome=tmpfs
+BindPaths=/root/.vigia-graph
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+# Mismo perfil que `agt002-radar-reconciliation`, que es la unidad hermana que corre Node a diario.
+#
+# Y **sin `MemoryDenyWriteExecute`**, que es un error que ya cometí aquí: lo puse en la primera
+# versión y la unidad se cayó con un SIGTRAP y core dump dentro del compilador baseline de V8. Node
+# necesita memoria ejecutable para su JIT, así que esa restricción y Node son incompatibles. Las tres
+# unidades del repositorio que sí la declaran apuntan a scripts de shell, no a Node directo, y están
+# desactivadas. Si alguien la vuelve a agregar, la unidad deja de arrancar.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+TimeoutStartSec=600

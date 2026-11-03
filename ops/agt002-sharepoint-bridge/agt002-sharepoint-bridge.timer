@@ -1,0 +1,12 @@
+[Unit]
+Description=AGT-002 puente SharePoint: una vez al día, 7:40 a.m. Bogotá (12:40 UTC)
+
+[Timer]
+# Antes de la cadena del radar (13:00 UTC) y de la primera revisión de fases (14:00 UTC), para que
+# las diferencias ya estén escritas cuando alguien abra un expediente en la mañana.
+OnCalendar=*-*-* 12:40:00 UTC
+Persistent=true
+Unit=agt002-sharepoint-bridge.service
+
+[Install]
+WantedBy=timers.target
