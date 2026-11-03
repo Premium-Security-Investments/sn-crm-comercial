@@ -55,6 +55,8 @@ function dateOnlyDaysFromToday(days) {
 function makeOpportunitiesRequest(rows) {
   const calls = [];
   const fn = async (path, options) => {
+    // El tablero de procesos abiertos (mejora 4) es otra carga, con su propia ruta: no cuenta como carga de la lista.
+    if (path === '/api/tender-open-board') return { summary: { procesos: 0 } };
     calls.push(path);
     if (path.startsWith('/api/tender-opportunities')) return rows;
     throw new Error(`ruta no esperada en la prueba: ${options?.method || 'GET'} ${path}`);
