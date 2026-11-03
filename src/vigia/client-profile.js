@@ -63,8 +63,43 @@ export function normalizeClientProfile(body = {}) {
     decision_maker_linkedin: normalizeLinkedin(body.decision_maker_linkedin),
     current_security_provider: none ? null : text(body.current_security_provider, 160),
     current_security_provider_none: none,
-    current_contract_end_date: none ? null : normalizeDate(body.current_contract_end_date),
+    // En una renovación el contrato que vence es el nuestro: la fecha se guarda aunque esté marcado "No tiene".
+    current_contract_end_date: none && body.client_deal_type !== 'renovacion' ? null : normalizeDate(body.current_contract_end_date),
   };
+}
+
+/**
+ * Cliente actual: ¿renovación o servicio nuevo? (Juan, 2026-11-03). Con un cliente que ya tenemos pasan dos cosas
+ * distintas —se renueva el contrato que existe, o se le vende un servicio o solución nueva— y el CRM las revolvía.
+ *
+ * Va aparte de `CLIENT_PROFILE_FIELDS` (migración 173, no 113) y se lee y escribe con su propia tolerancia: si la
+ * columna todavía no existe, el resto del perfil sigue funcionando.
+ */
+export const CLIENT_DEAL_FIELD = 'client_deal_type';
+export const CLIENT_DEAL_TYPES = Object.freeze([['renovacion', 'Renovación'], ['servicio_nuevo', 'Servicio nuevo']]);
+
+export function clientDealLabel(value) {
+  return CLIENT_DEAL_TYPES.find(([code]) => code === value)?.[1] || null;
+}
+
+/**
+ * Valida la clasificación contra el tipo de cliente que viene en la misma petición. Con Cliente Actual es
+ * obligatoria, y en una renovación también la fecha en que vence el contrato: es lo que permite avisar a tiempo. Con
+ * Cliente Nuevo queda en nulo.
+ *
+ * Devuelve `undefined` —no se valida ni se toca lo guardado— si la petición no trae los dos campos. El formulario
+ * siempre los manda; el chat ("actualizar datos") reenvía el tipo de cliente que ya tiene la oportunidad y no conoce
+ * este campo, y no puede quedar bloqueado por una clasificación que nadie le pidió.
+ */
+export function normalizeClientDeal(body = {}) {
+  const has = key => Boolean(body) && Object.prototype.hasOwnProperty.call(body, key);
+  if (!has('customer_segment') || !has(CLIENT_DEAL_FIELD)) return undefined;
+  if (body.customer_segment !== 'cliente_actual') return { client_deal_type: null };
+  const deal = typeof body.client_deal_type === 'string' ? body.client_deal_type : '';
+  if (!deal) fail('Con un cliente actual, diga si es renovación del contrato o un servicio nuevo.');
+  if (!CLIENT_DEAL_TYPES.some(([code]) => code === deal)) fail('Renovación o servicio nuevo: valor no válido.');
+  if (deal === 'renovacion' && !normalizeDate(body.current_contract_end_date)) fail('En una renovación, diga cuándo vence el contrato actual.');
+  return { client_deal_type: deal };
 }
 
 const filled = value => typeof value === 'string' ? value.trim().length > 0 : Boolean(value);

@@ -8,7 +8,7 @@ const requiredMainMarkers = [
   'customerSegmentFilter',
   'setCustomerSegmentFilter',
   'empty="Clientes"',
-  'o.customer_segment === customerSegmentFilter',
+  'matchesCustomerSegmentFilter(o, customerSegmentFilter)',
   'setCustomerSegmentFilter(\'\')',
   'opportunityInsightCards',
   'opportunity-insight-grid',
