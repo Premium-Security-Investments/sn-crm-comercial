@@ -17,6 +17,8 @@ export type RequirementRow = {
   severityLabel: string | null;
   company: string[];
   actions: string[];
+  /** Un documento posterior al pliego (adenda, respuestas) eliminó el requisito: queda `no_aplica` y lo cita. */
+  withdrawn: boolean;
   notes: RequirementNote[];
   findingIds: string[];
   openItems: { text: string; dueAt: string | null; critical: boolean }[];
