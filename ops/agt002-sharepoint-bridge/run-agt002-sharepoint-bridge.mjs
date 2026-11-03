@@ -18,11 +18,25 @@
 // El listado trae rutas y nombres de archivo, y 76 de los 122 son de las dos bóvedas de datos
 // personales. Las reglas cuentan esas clases y nunca las nombran, y este ejecutor **no registra el
 // stdout ni el stderr** del listador: sólo cuántos archivos leyó, o un código de error.
+//
+// ## El segundo paso: las sesiones de los puentes
+//
+// Corre aquí porque es el único trabajo diario que ya es root, y leer las sesiones de Claude de los
+// puentes (archivos 600 de cada usuario de puente) exige root. Autorizado por Juan el 2026-11-03.
+// Del archivo sólo se toma el vencimiento; ver `agt002-bridge-session-watch.js`. Es independiente: si
+// uno de los dos pasos falla, el otro corre igual.
 import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
 import { agt002PhaseChangeOpportunityBlocker } from '../../verticales/licitaciones/agt002-phase-change-followup.js';
 import { runAgt002SharepointEvidenceWatch } from '../../verticales/licitaciones/agt002-sharepoint-evidence-diff.js';
+import { runAgt002BridgeSessionWatch } from '../../verticales/licitaciones/agt002-bridge-session-watch.js';
+
+const BRIDGE_SESSIONS = ['AGT-001', 'AGT-002', 'AGT-003'].map(agent => ({
+  agent,
+  path: `/opt/${agent.toLowerCase().replace('-', '')}-bridge/.claude/.credentials.json`,
+}));
 
 const log = event => console.log(JSON.stringify(event));
 
@@ -39,6 +53,19 @@ if (!supabaseUrl || !serviceRoleKey || !script || !drive || !folder) {
 } else {
   try {
     const database = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const appendLine = async (db, opportunityId, line) => {
+      const { error } = await db.rpc('psi_append_opportunity_observation_line', { p_opportunity_id: opportunityId, p_line: line });
+      if (error) throw new Error(error.message || 'no se pudo escribir el aviso');
+    };
+    const inactiveReason = (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId);
+    let sessionFailures = 0;
+    try {
+      const sessionEvents = await runAgt002BridgeSessionWatch(database, { sessions: BRIDGE_SESSIONS, readFile, log, inactiveReason, appendLine });
+      sessionFailures = sessionEvents.filter(event => ['agt002_bridge_session_watch_failed', 'agt002_bridge_session_watch_unavailable'].includes(event.event)).length;
+    } catch {
+      log({ event: 'agt002_bridge_session_watch_failed' });
+      sessionFailures = 1;
+    }
     let files = [];
     try {
       const { stdout } = await promisify(execFile)('/usr/bin/python3', [script, drive, folder], {
@@ -57,18 +84,15 @@ if (!supabaseUrl || !serviceRoleKey || !script || !drive || !folder) {
       // El mismo filtro que las otras dos vigilancias, y se me había olvidado: la primera corrida
       // real escribió en 18 expedientes, 4 de ellos ARCHIVADOS. Un aviso en un expediente donde
       // nadie trabaja es ruido puro, y el ruido es lo que hace que nadie lea los avisos.
-      inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
-      appendLine: async (db, opportunityId, line) => {
-        const { error } = await db.rpc('psi_append_opportunity_observation_line', { p_opportunity_id: opportunityId, p_line: line });
-        if (error) throw new Error(error.message || 'no se pudo escribir el aviso');
-      },
+      inactiveReason,
+      appendLine,
     });
     const avisos = events.filter(event => event.event === 'agt002_sharepoint_watch_notice').length;
     const fallos = events.filter(event => event.event === 'agt002_sharepoint_watch_failed').length;
     log({ event: 'agt002_sharepoint_bridge_fin', archivos: files.length, avisos, fallos });
     // Sin listado no se concluye nada, y eso ES un fallo del trabajo: que se vea en rojo, en vez de
     // parecer un día tranquilo. Un aviso que no se pudo escribir también.
-    if (files.length === 0 || fallos > 0) process.exitCode = 1;
+    if (files.length === 0 || fallos > 0 || sessionFailures > 0) process.exitCode = 1;
   } catch {
     log({ event: 'agt002_sharepoint_bridge_failed' });
     process.exitCode = 1;
