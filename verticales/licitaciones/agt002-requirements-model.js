@@ -74,6 +74,28 @@ function similar(a, b) {
   return shared / Math.max(1, Math.min(left.size, right.size)) >= 0.5;
 }
 
+// Lo que vino después del pliego (mejora 3, encargo de Juan del 2026-10-31). El análisis sí lee las adendas
+// y las respuestas, pero cuando una de ellas elimina un requisito lo deja abierto con un "confirmar si…; si
+// no, tramitar…". Caso real, Supersalud SNS-LP-2-2026: la entidad suprimió el numeral 4.2.7 (permiso de
+// horas extras, que la Ley 2466 de 2025 derogó) y el expediente siguió mandando a tramitarlo. Si el texto
+// exigido es un hecho citado de un documento del proceso y dice que el requisito se eliminó, el requisito
+// queda resuelto y lo dice citando dónde. Si el texto niega la eliminación, la regla no toca nada.
+const WITHDRAWN_TEXT = [
+  /\b(?:elimin|suprim|retir)\p{L}*\s+(?:del (?:proyecto de )?pliego(?: de condiciones)?(?: definitivo)?\s+)?(?:el |la )?(?:requisito|exigencia|numeral)\b/iu,
+  /\b(?:requisito|exigencia|numeral)\b[^.]{0,80}?\b(?:fue|queda|quedó|será|se)\s+(?:eliminad|suprimid|retirad|elimin|suprim)/iu,
+];
+const NOT_WITHDRAWN_TEXT = /\bno (?:acog|elimin|suprim|retir)|\brechaz|\bmantien|\bmantendr|\bse conserva|\bsigue (?:vigente|exigi)/i;
+
+/** Si el texto exigido dice que un documento del proceso eliminó el requisito: con qué texto y dónde. */
+function withdrawnBy(textClaim) {
+  if (!textClaim || textClaim.type !== 'cited_fact' || textClaim.evidenceStatus !== 'SUPPORTED') return null;
+  const sources = (textClaim.sources || []).filter(source => source.documentName || source.locator);
+  if (!sources.length) return null;
+  const body = textClaim.text || '';
+  if (NOT_WITHDRAWN_TEXT.test(body) || !WITHDRAWN_TEXT.some(pattern => pattern.test(body))) return null;
+  return sources;
+}
+
 const byId = list => new Map((list || []).map(item => [item.id, item]));
 const intersects = (ids, set) => (ids || []).some(id => set.has(id));
 const uniq = values => [...new Set(values.filter(value => typeof value === 'string' && value.trim()))];
@@ -97,7 +119,8 @@ export function buildRequirementRows(report) {
     const textClaim = claims.get(points[0].textClaimId);
     const worst = points.reduce((current, point) => ((EVALUATION_RANK[point.companyEvaluation] ?? 2) < (EVALUATION_RANK[current] ?? 2) ? point.companyEvaluation : current), 'NOT_APPLICABLE');
     const applicable = points.some(point => point.applicability !== 'NOT_APPLICABLE');
-    const status = applicable ? statusFromEvaluation(worst) : 'no_aplica';
+    const withdrawn = applicable ? withdrawnBy(textClaim) : null;
+    const status = applicable && !withdrawn ? statusFromEvaluation(worst) : 'no_aplica';
     const findings = (report.findings || []).filter(finding => intersects(finding.claimIds, new Set([points[0].textClaimId])) || intersects(finding.claimIds, claimIds));
     const openItems = (report.openItems || []).filter(item => (item.status === 'OPEN' || !item.status) && intersects(item.claimIds, claimIds));
     const severity = findings.reduce((current, finding) => ((SEVERITY_RANK[finding.severity] ?? 9) < (SEVERITY_RANK[current] ?? 9) ? finding.severity : current), null);
@@ -126,7 +149,10 @@ export function buildRequirementRows(report) {
       severity,
       severityLabel: severity ? SEVERITY_LABEL[severity] || null : null,
       company,
-      actions: uniq(points.filter(point => point.companyEvaluation !== 'VERIFIED').map(point => point.requiredAction).filter(Boolean).map(cleanRequirementText)),
+      actions: withdrawn
+        ? [`No hay que tramitarlo: un documento del proceso eliminó este requisito (${withdrawn.map(source => [source.documentName, source.locator].filter(Boolean).join(' · ')).join('; ')}).`]
+        : uniq(points.filter(point => point.companyEvaluation !== 'VERIFIED').map(point => point.requiredAction).filter(Boolean).map(cleanRequirementText)),
+      withdrawn: Boolean(withdrawn),
       notes: findings.map(finding => ({ title: cleanRequirementText(finding.title), impact: cleanRequirementText(finding.impact), severity: finding.severity, severityLabel: SEVERITY_LABEL[finding.severity] || '' })),
       findingIds: findings.map(finding => finding.id),
       openItems: openItems.map(item => ({ text: cleanRequirementText(item.description), dueAt: item.dueAt || null, critical: item.critical === true })),

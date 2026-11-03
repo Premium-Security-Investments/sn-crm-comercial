@@ -133,3 +133,35 @@ test('la instrucción de cada requisito cabe en la nota de la base (2000): un re
   assert.equal(item.instruction.length, 2000);
   assert.ok(item.instruction.endsWith('…'));
 });
+
+// Mejora 3 (encargo del 2026-10-31). Caso real, Supersalud SNS-LP-2-2026, análisis del 2026-10-30: el texto
+// exigido ya decía que la entidad eliminó el requisito y el expediente seguía mandando a tramitarlo.
+test('lo que una respuesta o adenda eliminó queda resuelto, citando dónde, y no se siembra', () => {
+  const eliminated = 'La entidad acogió las observaciones y eliminará del pliego definitivo el requisito de resolución del Ministerio del Trabajo para laborar horas extras (numeral 4.2.7), con base en la Ley 2466 de 2025. No exigirá un documento sustituto. El cuerpo del documento complementario del pliego definitivo ya no lo desarrolla.';
+  const base = {
+    ...report,
+    claims: [{ ...claim('CLM-HORAS-ELIMINADAS', eliminated, 'Respuestas, numeral 4.2.7'), sources: [{ documentId: 'd2', documentName: 'Informe consolidado de respuestas.pdf', locator: 'Respuestas, numeral 4.2.7' }] }],
+    requirements: [{ id: 'REQ-HORAS-EXTRAS', category: 'PERSONNEL', textClaimId: 'CLM-HORAS-ELIMINADAS', applicability: 'APPLICABLE', companyEvaluation: 'PENDING', blocker: false, requiredAction: 'Confirmar si la exigencia queda eliminada; si no, gestionar la autorización del Ministerio del Trabajo.', evidenceClaimIds: [] }],
+    findings: [], openItems: [],
+  };
+  const [row] = buildRequirementRows(base);
+  assert.equal(row.status, 'no_aplica');
+  assert.equal(row.withdrawn, true);
+  assert.equal(row.rejection, false);
+  assert.deepEqual(row.actions, ['No hay que tramitarlo: un documento del proceso eliminó este requisito (Informe consolidado de respuestas.pdf · Respuestas, numeral 4.2.7).']);
+  assert.deepEqual(requirementSeedItems([row], '2026-11-05', '2026-11-03'), [], 'no va al expediente como pendiente');
+
+  const unchanged = text => buildRequirementRows({ ...base, claims: [claim('CLM-HORAS-ELIMINADAS', text)] })[0];
+  for (const text of [
+    'La entidad no acogió la observación y no eliminará el requisito de resolución de horas extras.',
+    'La entidad rechazó suprimir el numeral 4.2.7: se mantiene la exigencia.',
+    'El pliego exige la resolución del Ministerio del Trabajo para laborar horas extras (numeral 4.2.7).',
+    'Si el oferente no presenta la garantía, la entidad eliminará la oferta del proceso.',
+  ]) {
+    const kept = unchanged(text);
+    assert.equal(kept.withdrawn, false, text);
+    assert.equal(kept.status, 'por_confirmar', text);
+  }
+  const inferred = buildRequirementRows({ ...base, claims: [{ ...base.claims[0], type: 'marked_inference', evidenceStatus: 'INFERRED' }] })[0];
+  assert.equal(inferred.withdrawn, false, 'una inferencia del modelo no basta: tiene que ser un hecho citado');
+});
