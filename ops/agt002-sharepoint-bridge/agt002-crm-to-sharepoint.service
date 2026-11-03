@@ -1,0 +1,56 @@
+[Unit]
+Description=AGT-002 puente CRM -> SharePoint: sube los documentos del proceso que faltan en la carpeta
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-sharepoint-bridge/run-agt002-crm-to-sharepoint.mjs
+
+# Este trabajo SÍ escribe en SharePoint, y lo hace **a nombre de Juan Botero**, porque la sesión de
+# Microsoft Graph es su sesión delegada. Autorizado por él el 2026-11-02, con tres guardas que puso y
+# que están implementadas, no sólo escritas:
+#
+#   1. Nunca sobreescribe: `subir.py` se niega si el destino existe y NUNCA se le pasa `--reemplazar`.
+#   2. Relee y compara por sha256 después de cada escritura. Para `.docx` la comparación no coincide
+#      nunca —SharePoint los reescribe al subirlos— y eso se reporta como `readback: distinto`, no
+#      como éxito ni como fallo callado.
+#   3. Nunca toca un documento canónico de otro dueño: todo va a `99_Del_CRM`, jamás a las carpetas
+#      numeradas del expediente, que son trabajo curado de una persona.
+#
+# Empieza EN SECO. La primera corrida con escritura se hace a mano y se le muestra a Juan antes de
+# dejar el timer puesto. Para activar la escritura se quita esta línea.
+Environment=AGT002_CRM_TO_SHAREPOINT_DRY_RUN=true
+
+Environment=AGT002_SHAREPOINT_INVENTORY_SCRIPT=/root/.vigia-graph/inventario.py
+Environment=AGT002_SHAREPOINT_UPLOAD_SCRIPT=/root/.vigia-graph/subir.py
+Environment=AGT002_SHAREPOINT_DRIVE_ID=b!BoXt-GqsJ0SDAdUp0lzrM9Jsb0XFlulNsE6Mldp9S65CwtkHrpg5RqCEQSc-EerT
+Environment=AGT002_SHAREPOINT_PROCESSES_PATH=06_Productos_PSI/Licitaciones/03_Procesos_Activos
+
+# Mismo razonamiento que la unidad hermana de sólo lectura: corre como root porque la sesión de Graph
+# es de root (`/root/.vigia-graph`, permisos 700), y la alternativa —copiarla a un usuario de
+# servicio— le daría a un servicio sin privilegios la capacidad de actuar como Juan en Microsoft 365.
+#
+# `ProtectHome=tmpfs` + `BindPaths` de una sola carpeta: ve de la casa de root ÚNICAMENTE
+# `/root/.vigia-graph`. Con escritura, porque el token rota al usarse y hay que guardar la llave nueva.
+#
+# Y **sin `MemoryDenyWriteExecute`**: Node necesita memoria ejecutable para su JIT y con esa
+# restricción la unidad se cae con SIGTRAP y core dump. Ya pasó aquí una vez.
+ProtectHome=tmpfs
+BindPaths=/root/.vigia-graph
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+TimeoutStartSec=1800
