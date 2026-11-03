@@ -14,7 +14,7 @@ assert.ok(!main.includes("const visibleInteractions = detail.interactions.filter
 // 2) chips del banner, sólo en la rama no licitatoria
 assert.match(main, /\{o\.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row">/);
 assert.match(main, /<Badge>Servicio: \{o\.service_type_name \|\| o\.tipo_producto_original \|\| 'Sin servicio'\}<\/Badge>/);
-assert.match(main, /<Badge>Tipo de cliente: \{customerSegmentLabel\(o\.customer_segment\)\}<\/Badge>/);
+assert.match(main, /<Badge>Tipo de cliente: \{customerSegmentDealLabel\(o\)\}<\/Badge>/);
 assert.match(main, /\{locationChip && <Badge>Ubicación: \{locationChip\}<\/Badge>\}/);
 assert.ok(!/hero-chip-row[\s\S]{0,600}Área comercial/.test(main), 'no debe existir chip de Área comercial');
 

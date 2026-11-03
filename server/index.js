@@ -57,7 +57,7 @@ import { hasPermission } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
-import { CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
+import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
 import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../verticales/comercial/agt003-lead-analysis.js';
@@ -1213,13 +1213,24 @@ async function attachCommercialMetadata(database, rows) {
 // opcionales de enriquecimiento. Si la migración aún no está aplicada (columna inexistente, 42703) se ignoran.
 async function readClientProfiles(database, ids) {
   if (!ids.length) return new Map();
-  const { data, error } = await database.from('psi_sales_opportunities').select(['id', ...CLIENT_PROFILE_FIELDS].join(',')).in('id', ids);
-  if (error) { if (error.code === '42703') return new Map(); throw error; }
-  return new Map((data || []).map(({ id, ...profile }) => [id, profile]));
+  const [profiles, deals] = await Promise.all([
+    database.from('psi_sales_opportunities').select(['id', ...CLIENT_PROFILE_FIELDS].join(',')).in('id', ids),
+    database.from('psi_sales_opportunities').select(`id,${CLIENT_DEAL_FIELD}`).in('id', ids),
+  ]);
+  if (profiles.error && profiles.error.code !== '42703') throw profiles.error;
+  // Renovación / servicio nuevo (migración 173): con su propia tolerancia, para no perder el perfil si falta la columna.
+  if (deals.error && deals.error.code !== '42703') throw deals.error;
+  const byId = new Map((profiles.error ? [] : profiles.data || []).map(({ id, ...profile }) => [id, profile]));
+  for (const row of deals.error ? [] : deals.data || []) byId.set(row.id, { ...(byId.get(row.id) || {}), [CLIENT_DEAL_FIELD]: row[CLIENT_DEAL_FIELD] ?? null });
+  return byId;
 }
 async function saveClientProfile(database, opportunityId, body) {
-  if (!opportunityId || !hasClientProfileFields(body)) return;
-  await must(database.from('psi_sales_opportunities').update(normalizeClientProfile(body)).eq('id', opportunityId).select('id').single());
+  if (!opportunityId) return;
+  if (hasClientProfileFields(body)) await must(database.from('psi_sales_opportunities').update(normalizeClientProfile(body)).eq('id', opportunityId).select('id').single());
+  const deal = normalizeClientDeal(body);
+  if (!deal) return;
+  const { error } = await database.from('psi_sales_opportunities').update(deal).eq('id', opportunityId).select('id').single();
+  if (error && error.code !== '42703') throw error;
 }
 // Sede y Comisión % salieron del formulario (Juan, 2026-10-08): si la edición no los envía, se conserva lo guardado.
 async function keepHiddenOpportunityFields(database, opportunityId, body, payload, existing) {
@@ -3872,6 +3883,7 @@ app.post('/api/agt003/lead-analysis', async (req, res) => {
 async function createOpportunityForProfile(database, currentProfile, body) {
   const payload = cleanOpportunity(body);
   if (hasClientProfileFields(body)) normalizeClientProfile(body);
+  if (payload.service_type_code !== 'licitacion_publica') normalizeClientDeal(body);
   if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
   await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
   const isPublicTender = payload.service_type_code === 'licitacion_publica';
@@ -3896,6 +3908,7 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
   const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
   const payload = cleanOpportunity(body, existing.regional_nombre);
   if (hasClientProfileFields(body)) normalizeClientProfile(body);
+  if (payload.service_type_code !== 'licitacion_publica') normalizeClientDeal(body);
   await keepHiddenOpportunityFields(database, existing.id, body, payload, existing);
   if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
   if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
@@ -7841,6 +7854,7 @@ app.post('/api/opportunities', async (req, res) => {
     const database = requireDb();
     const payload = cleanOpportunity(req.body);
     if (hasClientProfileFields(req.body)) normalizeClientProfile(req.body);
+    if (payload.service_type_code !== 'licitacion_publica') normalizeClientDeal(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
     const isPublicTender = payload.service_type_code === 'licitacion_publica';
@@ -7869,6 +7883,7 @@ app.put('/api/opportunities/:id', async (req, res) => {
     const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const payload = cleanOpportunity(req.body, existing.regional_nombre);
     if (hasClientProfileFields(req.body)) normalizeClientProfile(req.body);
+    if (payload.service_type_code !== 'licitacion_publica') normalizeClientDeal(req.body);
     await keepHiddenOpportunityFields(database, existing.id, req.body, payload, existing);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
@@ -8128,6 +8143,7 @@ app.put('/api/opportunity', async (req, res) => {
     const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const payload = cleanOpportunity(req.body, existing.regional_nombre);
     if (hasClientProfileFields(req.body)) normalizeClientProfile(req.body);
+    if (payload.service_type_code !== 'licitacion_publica') normalizeClientDeal(req.body);
     await keepHiddenOpportunityFields(database, existing.id, req.body, payload, existing);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
