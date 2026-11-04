@@ -26,6 +26,8 @@ const MAX_LINK_SOURCE_REF_CHARS = 1000;
 const MAX_RESOLVED_SOURCES = 10;
 const MAX_SOURCE_VALUE_CHARS = 6000;
 const MAX_SOURCE_PROVENANCE_CHARS = 500;
+// El texto oficial de un formato (mejora 5) entra completo: el JSON del valor más los escapes de 10.000 caracteres.
+const MAX_FORMATO_VALUE_CHARS = 12_000;
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -75,6 +77,7 @@ function buildMinimizedInput(input, fuentesResueltas = []) {
       maxFuentes: MAX_RESOLVED_SOURCES,
       maxValor: MAX_SOURCE_VALUE_CHARS,
       maxProcedencia: MAX_SOURCE_PROVENANCE_CHARS,
+      maxValorPorNombre: { 'proceso.formato_oficial': MAX_FORMATO_VALUE_CHARS },
     });
   }
   return Object.freeze(minimizado);
@@ -100,7 +103,7 @@ const DOCUMENT_LINES = { type: 'array', maxItems: 8, items: DOCUMENT_TEXT };
 export const AGT002_DRAFT_DOCUMENT_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  description: 'El documento listo para revisar, en el formato real que pide el pliego. Escribe entre [[ ]] todo dato que requiera una decisión humana o que no venga en fuentes_resueltas ni en context_links (p. ej. [[valor de la oferta]]); nunca lo inventes. **texto** es negrilla.',
+  description: 'El documento listo para revisar, en el formato real que pide el pliego. Si fuentes_resueltas trae proceso.formato_oficial, ese texto ES el documento: reprodúcelo completo, en su mismo orden, con todos sus literales, tablas y notas, sin resumir ni omitir, y llena sus espacios en blanco con los datos de fuentes_resueltas (empresa.identidad, proceso.datos_oficiales). Escribe entre [[ ]] todo espacio o dato que requiera una decisión humana o que no venga en fuentes_resueltas ni en context_links (p. ej. [[valor de la oferta]]); nunca lo inventes. Si no hay proceso.formato_oficial, dilo en missing_information. **texto** es negrilla.',
   required: ['title', 'blocks'],
   properties: {
     title: DOCUMENT_TEXT,
@@ -261,6 +264,8 @@ export function createAgt002WorkbenchResponder({
   model,
   policyText = AGT002_WORKBENCH_POLICY,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  // Mejora 5: el borrador con Word tiene su propio tope; sin él, el de siempre.
+  draftTimeoutMs = timeoutMs,
   checkGate = () => true,
   resolveSources = null,
   // Mejora 5: ({ input, document, missingInformation }) => metadata del archivo. La inyecta el drain, que tiene
@@ -289,7 +294,10 @@ export function createAgt002WorkbenchResponder({
     try {
       // `message` va para la pertinencia; el catálogo decide qué mirar con ella. Un resolvedor que no la use la
       // ignora, y la Mesa sigue funcionando igual que antes.
-      const resueltas = await resolveSources({ tenderId: input.tender_id, capabilityId: input.capability_id, message: input.message });
+      // En un borrador viaja también el documento que se va a escribir: con él se localiza su formato oficial.
+      const artifactLink = input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft ? input.context_links.find(link => link.kind === 'artifact') : null;
+      const documento = artifactLink ? String(artifactLink.label || '').replace(/^Documento de la oferta:\s*/, '') : null;
+      const resueltas = await resolveSources({ tenderId: input.tender_id, capabilityId: input.capability_id, message: input.message, documento });
       return Array.isArray(resueltas) ? resueltas.filter(isRecord) : [];
     } catch (error) {
       console.warn('agt002_workbench_sources_unresolved', {
@@ -355,7 +363,8 @@ export function createAgt002WorkbenchResponder({
         policy: policyText,
         input: minimizedInput,
         outputSchema,
-        timeoutMs,
+        // Al modelo se le deja el tope del borrador menos 15 s, que son para armar y guardar el Word.
+        timeoutMs: input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft ? Math.max(timeoutMs, draftTimeoutMs - 15_000) : timeoutMs,
         idempotencyKey: input.job_id,
       });
 

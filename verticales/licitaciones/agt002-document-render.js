@@ -88,6 +88,15 @@ const EXTRA_STYLES = `
   <style:style style:name="AgtSubtitulo" style:family="paragraph" style:parent-style-name="Standard">
    <style:paragraph-properties fo:margin-top="0.12in" fo:margin-bottom="0.06in" fo:keep-with-next="always"/>
   </style:style>
+  <style:style style:name="AgtFirma" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0in" fo:margin-bottom="0in" fo:keep-with-next="always"/>
+  </style:style>
+  <style:style style:name="AgtCuerpoFin" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0in" fo:margin-bottom="0.0866in" fo:line-height="115%" fo:text-align="justify" fo:keep-with-next="always"/>
+  </style:style>
+  <style:style style:name="AgtFirmaFin" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-top="0in" fo:margin-bottom="0in"/>
+  </style:style>
   <style:style style:name="AgtCelda" style:family="paragraph" style:parent-style-name="Standard">
    <style:paragraph-properties fo:margin-top="0in" fo:margin-bottom="0in"/>
   </style:style>
@@ -146,11 +155,21 @@ export function buildAgt002DocumentFodt(skeleton, document) {
   parts.push(...blocks.map(block));
   const closing = text(document.closing, 'closing', { optional: true });
   const signature = lines(document.signature, 'signature');
-  if (closing || signature.length) parts.push(blank);
-  if (closing) parts.push(paragraph('P9', closing), blank, blank);
+  // El cierre y la firma van juntos: cada línea queda pegada a la siguiente, así que si no caben, pasan los dos a la
+  // página nueva y la firma nunca queda sola (la carta de Supersalud del 2026-11-04 dejó la firma sola en la página 2).
+  // El último párrafo del cuerpo también se pega al cierre, para que la página nueva no empiece con "Atentamente".
+  const tail = [];
+  if (closing) tail.push(['AgtFirma', closing, 'T5'], ['AgtFirma', '', 'T5'], ['AgtFirma', '', 'T5']);
   if (signature.length) {
-    parts.push(paragraph('P9', '______________________________________'));
-    signature.forEach((line, index) => parts.push(paragraph('P9', line, index === 0 ? 'T7' : 'T5')));
+    tail.push(['AgtFirma', '______________________________________', 'T5']);
+    signature.forEach((line, index) => tail.push(['AgtFirma', line, index === 0 ? 'T7' : 'T5']));
+  }
+  if (tail.length) {
+    tail[tail.length - 1][0] = 'AgtFirmaFin';
+    const last = parts.length - 1;
+    if (last > 0 && parts[last].startsWith('<text:p text:style-name="P11"')) parts[last] = parts[last].replace('<text:p text:style-name="P11"', '<text:p text:style-name="AgtCuerpoFin"');
+    parts.push('<text:p text:style-name="AgtFirma"/>');
+    for (const [style, value, base] of tail) parts.push(value ? paragraph(style, value, base) : `<text:p text:style-name="${style}"/>`);
   }
   return skeleton
     .replace('<!--AGT002_ESTILOS-->', EXTRA_STYLES)

@@ -89,7 +89,9 @@ assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_TIMEOUT_MS
 // --- lease is derived, never independently configurable, and stays within bounds ---
 {
   const config = getAgt002WorkbenchRuntimeConfig(baseEnv({ AGT002_WORKBENCH_TIMEOUT_MS: '5000' }));
-  assert.equal(config.leaseSeconds, Math.ceil(5000 / 1000) + 15);
+  // El lease cubre el más largo de los dos topes: un borrador con Word (mejora 5) tiene el suyo, 90 s por omisión.
+  assert.equal(config.draftTimeoutMs, 90_000);
+  assert.equal(config.leaseSeconds, Math.ceil(90_000 / 1000) + 15);
   assert.ok(config.leaseSeconds <= 600);
 }
 

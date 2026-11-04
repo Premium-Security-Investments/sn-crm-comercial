@@ -21,11 +21,15 @@ export const AGT002_MESA_FUENTES = Object.freeze([
   'empresa.sedes',
   'empresa.evidencia_al_cierre',
   'empresa.experiencia',
+  // Mejora 5 (2026-11-04): para que un documento salga con los datos del proceso y siguiendo su formato oficial.
+  'proceso.datos_oficiales',
+  'proceso.formato_oficial',
 ]);
 import {
   claimAgt002WorkbenchJob,
   appendAgt002WorkbenchJobEvent,
   completeAgt002WorkbenchJob,
+  postAgt002WorkbenchFailureNotice,
   sweepExpiredLeases,
 } from './agt002-workbench-persistence.js';
 import { runAgt002WorkbenchWorker } from './agt002-workbench-worker.js';
@@ -37,6 +41,10 @@ export const AGT002_WORKBENCH_ENGINE_ID = 'agt002_workbench_bridge_v1';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 45_000;
+// Mejora 5: un borrador con Word tardó 26,3 s en Supersalud contra un tope de 30 (2026-11-04). Un anexo largo con su
+// formato oficial completo no cabe en eso. La función de Vercel admite 180 s.
+const DEFAULT_DRAFT_TIMEOUT_MS = 90_000;
+const MAX_DRAFT_TIMEOUT_MS = 120_000;
 const DEFAULT_DAILY_MAX_JOBS = 0;
 const MAX_OPTIONAL_CAP = 2_147_483_647;
 const DEFAULT_SWEEP_MAX = 25;
@@ -117,16 +125,19 @@ export function getAgt002WorkbenchRuntimeConfig(environment = process.env) {
   const timeoutMs = boundedIntFromEnv(environment.AGT002_WORKBENCH_TIMEOUT_MS, {
     min: 1, max: MAX_TIMEOUT_MS, fallback: DEFAULT_TIMEOUT_MS,
   });
+  const draftTimeoutMs = boundedIntFromEnv(environment.AGT002_WORKBENCH_DRAFT_TIMEOUT_MS, {
+    min: 1, max: MAX_DRAFT_TIMEOUT_MS, fallback: DEFAULT_DRAFT_TIMEOUT_MS,
+  });
   const sweepMax = boundedIntFromEnv(environment.AGT002_WORKBENCH_SWEEP_MAX, {
     min: 1, max: MAX_SWEEP_MAX, fallback: DEFAULT_SWEEP_MAX,
   });
 
   if (!Number.isInteger(dailyMaxJobs) || !Number.isInteger(maxConcurrent)
-    || !Number.isInteger(timeoutMs) || !Number.isInteger(sweepMax)) {
+    || !Number.isInteger(timeoutMs) || !Number.isInteger(draftTimeoutMs) || !Number.isInteger(sweepMax)) {
     throw new Error('La Mesa Vig-IA no está configurada: un valor numérico es inválido o está fuera de rango.');
   }
 
-  const leaseSeconds = Math.ceil(timeoutMs / 1000) + 15;
+  const leaseSeconds = Math.ceil(Math.max(timeoutMs, draftTimeoutMs) / 1000) + 15;
   if (leaseSeconds > MAX_LEASE_SECONDS) throw new Error('La Mesa Vig-IA no está configurada: el lease derivado excede el máximo permitido.');
 
   return {
@@ -138,6 +149,7 @@ export function getAgt002WorkbenchRuntimeConfig(environment = process.env) {
     dailyMaxJobs,
     maxConcurrent,
     timeoutMs,
+    draftTimeoutMs,
     leaseSeconds,
     sweepMax,
   };
@@ -165,6 +177,7 @@ function createDatabasePersistenceAdapter(database) {
     claimAgt002WorkbenchJob: args => claimAgt002WorkbenchJob(database, args),
     appendAgt002WorkbenchJobEvent: args => appendAgt002WorkbenchJobEvent(database, args),
     completeAgt002WorkbenchJob: args => completeAgt002WorkbenchJob(database, args),
+    postAgt002WorkbenchFailureNotice: args => postAgt002WorkbenchFailureNotice(database, args),
   };
 }
 
@@ -196,6 +209,7 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
         client,
         model: config.model,
         timeoutMs: config.timeoutMs,
+        draftTimeoutMs: config.draftTimeoutMs,
         checkGate: () => isAgt002WorkbenchDrainEnabled(environment),
         // Mejora 5: si el puente sabe armar documentos, el borrador sale también como Word guardado en el CRM.
         produceDocument: typeof client.renderDocument === 'function' && database.storage
@@ -203,11 +217,13 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
           : null,
         // La pregunta viaja al catálogo para que la selección sea pertinente: 20 bloques de evidencia y más de cien
         // experiencias no caben en una respuesta, y un volcado tapa justo lo que se preguntó.
-        resolveSources: ({ tenderId, message }) => resolverParaLector(database, {
+        resolveSources: ({ tenderId, message, documento }) => resolverParaLector(database, {
           lector: 'agt002.mesa',
-          nombres: AGT002_MESA_FUENTES,
+          // El formato sólo se busca cuando hay un documento que escribir.
+          nombres: documento ? AGT002_MESA_FUENTES : AGT002_MESA_FUENTES.filter(nombre => nombre !== 'proceso.formato_oficial'),
           tenderId,
           pregunta: message,
+          documento,
         }),
       });
 
@@ -220,6 +236,7 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
           maxConcurrent: config.maxConcurrent,
           leaseSeconds: config.leaseSeconds,
           responderTimeoutMs: config.timeoutMs,
+          draftResponderTimeoutMs: config.draftTimeoutMs,
           agentId: config.agentId,
         },
       });
