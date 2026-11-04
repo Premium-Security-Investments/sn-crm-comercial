@@ -399,9 +399,12 @@ export function createAgt002WorkbenchResponder({
 
       try {
         validateAgt002WorkbenchResult(envelope, { input });
-      } catch {
-        console.warn('agt002_workbench_responder_output_rejected', { event: 'agt002_workbench_responder_output_rejected', code: 'invalid_result' });
-        throw responderError('Vig-IA no produjo un resultado válido para el contrato de la Mesa.', 'AGT002_RESPONDER_INVALID_RESULT');
+      } catch (error) {
+        // El motivo del contrato es un texto fijo, sin contenido del modelo: va al registro técnico para que el próximo
+        // rechazo no haya que reconstruirlo a mano (2026-11-04, la regla de autoridad contra la carta de Supersalud).
+        const reason = String(error?.message || '').slice(0, 200);
+        console.warn('agt002_workbench_responder_output_rejected', { event: 'agt002_workbench_responder_output_rejected', code: 'invalid_result', reason });
+        throw responderError(`Vig-IA no produjo un resultado válido para el contrato de la Mesa: ${reason}`, 'AGT002_RESPONDER_INVALID_RESULT');
       }
 
       return envelope;
