@@ -43,6 +43,7 @@ test('con la herramienta, el modelo debe entregar el documento y la metadata la 
   assert.deepEqual(calls[0].document, documento);
   assert.deepEqual(envelope.content_metadata, { archivo: { storage_path: 'x' } }, 'la URL que inventó el modelo no pasa');
   assert.deepEqual(envelope.missing_information, ['Valor de la oferta']);
+  assert.match(envelope.content_text, /^Word listo: «Carta de presentación» quedó en el expediente.*\(1 punto\) requiere su decisión antes de firmar\.\n\n# Carta de presentación$/s);
 });
 
 test('si el Word falla, el borrador de texto se guarda igual y lo dice en lo que falta', async () => {

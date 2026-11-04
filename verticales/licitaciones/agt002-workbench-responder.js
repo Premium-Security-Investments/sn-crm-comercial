@@ -182,6 +182,12 @@ function buildOutputSchema(capabilityId, { allowedSourceIds, withDocument = fals
   throw responderError('capability_id no pertenece al contrato de la Mesa.', 'AGT002_RESPONDER_UNKNOWN_CAPABILITY');
 }
 
+function draftWordNotice(label, missingCount) {
+  const title = String(label || '').replace(/^Documento de la oferta:\s*/, '') || 'el documento';
+  return `Word listo: «${title}» quedó en el expediente, en Documentos de la oferta, con el botón «Descargar Word».`
+    + (missingCount ? ` Lo que va en amarillo (${missingCount} ${missingCount === 1 ? 'punto' : 'puntos'}) requiere su decisión antes de firmar.` : ' Revíselo antes de firmar.');
+}
+
 function buildEnvelope(capabilityId, input, modelOutput, sourceLinks, serverDraft = null) {
   const missingInformation = serverDraft?.missingInformation
     || (isStringArray(modelOutput.missing_information) ? modelOutput.missing_information : []);
@@ -212,7 +218,10 @@ function buildEnvelope(capabilityId, input, modelOutput, sourceLinks, serverDraf
       ...common,
       artifact_id: artifactLink.id,
       content_kind: modelOutput.content_kind,
-      content_text: modelOutput.content_text,
+      // Lo primero que lee Katherine en el chat: que el Word existe y dónde está. El texto del borrador sigue debajo.
+      content_text: serverDraft?.metadata?.archivo
+        ? `${draftWordNotice(artifactLink.label, serverDraft.missingInformation.length)}\n\n${modelOutput.content_text}`.slice(0, 50_000)
+        : modelOutput.content_text,
       // Con Word, la metadata la escribe el servidor (dónde quedó el archivo y qué falta), nunca el modelo.
       content_metadata: serverDraft ? serverDraft.metadata : (isRecord(modelOutput.content_metadata) ? modelOutput.content_metadata : {}),
       source_links: sourceLinks,
