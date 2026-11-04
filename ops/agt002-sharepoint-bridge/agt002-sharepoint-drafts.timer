@@ -1,0 +1,11 @@
+[Unit]
+Description=AGT-002 borradores -> SharePoint, cada minuto (sin pedidos no hace nada)
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=60s
+AccuracySec=10s
+Unit=agt002-sharepoint-drafts.service
+
+[Install]
+WantedBy=timers.target

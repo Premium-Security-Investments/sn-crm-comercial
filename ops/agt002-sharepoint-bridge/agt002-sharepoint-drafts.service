@@ -1,0 +1,50 @@
+[Unit]
+Description=AGT-002 borradores -> SharePoint: sube la copia de trabajo de los borradores que una persona pidió con el botón
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-sharepoint-bridge/run-agt002-sharepoint-drafts.mjs
+
+# Este trabajo SÍ escribe en SharePoint, y lo hace **a nombre de Juan Botero**, porque la sesión de
+# Microsoft Graph es su sesión delegada. Pero sólo sube lo que una persona pidió con el botón "Subir a
+# SharePoint" del expediente (migración 177): sin pedidos no lista SharePoint ni toca Microsoft.
+# Autorizado por Juan el 2026-11-04 ("vamos con eso"), con las mismas tres guardas del puente:
+#
+#   1. Nunca sobreescribe: `subir.py` sin `--reemplazar`; si el nombre existe, el pedido falla y lo dice.
+#   2. Relee después de escribir; con `.docx` el readback no coincide nunca y se registra como `distinto`.
+#   3. Todo va a `99_Del_CRM/Borradores_Vig-IA/`, jamás a las carpetas numeradas del expediente.
+
+Environment=AGT002_SHAREPOINT_INVENTORY_SCRIPT=/root/.vigia-graph/inventario.py
+Environment=AGT002_SHAREPOINT_UPLOAD_SCRIPT=/root/.vigia-graph/subir.py
+Environment=AGT002_SHAREPOINT_DRIVE_ID=b!BoXt-GqsJ0SDAdUp0lzrM9Jsb0XFlulNsE6Mldp9S65CwtkHrpg5RqCEQSc-EerT
+Environment=AGT002_SHAREPOINT_PROCESSES_PATH=06_Productos_PSI/Licitaciones/03_Procesos_Activos
+
+# Mismo razonamiento que la unidad hermana de sólo lectura: corre como root porque la sesión de Graph
+# es de root (`/root/.vigia-graph`, permisos 700), y la alternativa —copiarla a un usuario de
+# servicio— le daría a un servicio sin privilegios la capacidad de actuar como Juan en Microsoft 365.
+#
+# `ProtectHome=tmpfs` + `BindPaths` de una sola carpeta: ve de la casa de root ÚNICAMENTE
+# `/root/.vigia-graph`. Con escritura, porque el token rota al usarse y hay que guardar la llave nueva.
+#
+# Y **sin `MemoryDenyWriteExecute`**: Node necesita memoria ejecutable para su JIT y con esa
+# restricción la unidad se cae con SIGTRAP y core dump. Ya pasó aquí una vez.
+ProtectHome=tmpfs
+BindPaths=/root/.vigia-graph
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+TimeoutStartSec=600
