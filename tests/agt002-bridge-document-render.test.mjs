@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createServer } from 'node:http';
+import { access } from 'node:fs/promises';
 import { createAgt002BridgeServer } from '../agt002-hetzner-bridge-server.js';
 import { createAgt002HetznerBridgeClient } from '../verticales/licitaciones/agt002-hetzner-bridge-client.js';
 import { Agt002DocumentError, renderAgt002Docx } from '../verticales/licitaciones/agt002-document-render.js';
 
 const secret = 'x'.repeat(40);
+// La máquina de CI no tiene LibreOffice: la prueba con Word real corre donde esté (el servidor de tareas sí lo tiene).
+const sinSoffice = await access('/usr/bin/soffice').then(() => false, () => 'sin soffice');
 const codexClient = { run: async () => { throw new Error('no se usa'); } };
 const documento = { title: 'Carta', blocks: [{ kind: 'paragraph', text: 'Vigencia de [[90 días]].' }] };
 
@@ -16,7 +19,7 @@ async function withBridge(documentRenderer, fn) {
   try { return await fn(base); } finally { await new Promise(resolve => server.close(resolve)); }
 }
 
-test('el cliente firmado recibe el Word del puente y comprueba su sha256', async () => {
+test('el cliente firmado recibe el Word del puente y comprueba su sha256', { skip: sinSoffice }, async () => {
   await withBridge(document => renderAgt002Docx(document), async base => {
     const client = createAgt002HetznerBridgeClient({ url: base, hmacSecret: secret });
     const { bytes, sha256 } = await client.renderDocument({ document: documento });
