@@ -1,5 +1,6 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { createAgt002WorkbenchResponder } from './agt002-workbench-responder.js';
+import { createAgt002DraftDocumentProducer } from './agt002-workbench-document.js';
 import { resolverParaLector } from '../../catalogo-fuentes.js';
 
 // Entrada 1 del catálogo de fuentes: lo que el servidor resuelve y estampa antes de llamar al
@@ -196,6 +197,10 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
         model: config.model,
         timeoutMs: config.timeoutMs,
         checkGate: () => isAgt002WorkbenchDrainEnabled(environment),
+        // Mejora 5: si el puente sabe armar documentos, el borrador sale también como Word guardado en el CRM.
+        produceDocument: typeof client.renderDocument === 'function' && database.storage
+          ? createAgt002DraftDocumentProducer({ database, bridgeClient: client })
+          : null,
         // La pregunta viaja al catálogo para que la selección sea pertinente: 20 bloques de evidencia y más de cien
         // experiencias no caben en una respuesta, y un volcado tapa justo lo que se preguntó.
         resolveSources: ({ tenderId, message }) => resolverParaLector(database, {

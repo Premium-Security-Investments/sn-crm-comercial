@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiDownload } from '../../apiClient';
 import { addTenderDossierArtifactVersion, loadTenderDossierWorkbench, postTenderDossierWorkbenchMessage, recordTenderDossierArtifactReview } from '../api';
 import type { TenderDossierArtifact, TenderRequest } from '../types';
 import { VIGIA_VISIBLE_NAMES } from '../../vigia/agentIdentity';
@@ -13,6 +14,25 @@ const VIGIA_DRAFT_CAPABILITY_ID = 'agt002.dossier-workbench.draft.v1';
 type ArtifactDraft = { content: string; comment: string };
 /** Pedido ya enviado: guarda la versión que había para poder decir si el borrador llegó o no. */
 type DraftRequest = { artifactId: string; previousVersionId: string | null };
+
+/**
+ * Mejora 5: lo que una versión dice de su Word. `archivo` es el original que guardó el CRM (lo armó Vig-IA y no se
+ * modifica); `sharepoint.url` o `url` es la copia de trabajo, la que se corrige y se firma. `falta` es lo que Vig-IA
+ * marcó en amarillo o no encontró.
+ */
+type VersionFiles = { archivo: { nombre: string } | null; sharepointUrl: string | null; falta: string[]; error: boolean };
+const httpsUrl = (value: unknown) => (typeof value === 'string' && /^https:\/\//.test(value) ? value : null);
+function versionFiles(metadata: Record<string, unknown> | null | undefined): VersionFiles {
+  const record = metadata || {};
+  const archivo = record.archivo && typeof record.archivo === 'object' ? record.archivo as Record<string, unknown> : null;
+  const sharepoint = record.sharepoint && typeof record.sharepoint === 'object' ? record.sharepoint as Record<string, unknown> : null;
+  return {
+    archivo: archivo && typeof archivo.storage_path === 'string' ? { nombre: typeof archivo.nombre === 'string' ? archivo.nombre : 'Borrador.docx' } : null,
+    sharepointUrl: httpsUrl(sharepoint?.url) || httpsUrl(record.url),
+    falta: Array.isArray(record.falta) ? record.falta.filter((item): item is string => typeof item === 'string') : [],
+    error: typeof record.documento_error === 'string',
+  };
+}
 
 /**
  * El texto del pedido es el mensaje humano que queda en el hilo, así que dice lo mismo que la
@@ -43,6 +63,24 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
   const [error, setError] = useState('');
   const draftFor = (artifact: TenderDossierArtifact): ArtifactDraft => drafts[artifact.id] || { content: '', comment: '' };
   const setDraft = (artifact: TenderDossierArtifact, patch: Partial<ArtifactDraft>) => setDrafts(current => ({ ...current, [artifact.id]: { ...draftFor(artifact), ...patch } }));
+
+  const downloadWord = async (artifact: TenderDossierArtifact, fileName: string) => {
+    const version = artifact.current_version;
+    if (!version) return;
+    setBusyId(artifact.id); setError('');
+    try {
+      const blob = await apiDownload(`/api/tender-dossier-artifact-versions/${encodeURIComponent(version.id)}/download?opportunity_id=${encodeURIComponent(opportunityId)}`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = fileName;
+      document.body.appendChild(link); link.click(); link.remove();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const saveVersion = async (artifact: TenderDossierArtifact) => {
     const content = draftFor(artifact).content.trim();
@@ -133,6 +171,18 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
           </summary>
           <div className="tender-dossier-row-body">
           <p className="muted">{artifact.version_count ? `${artifact.version_count} versión(es) registradas` : 'Sin versión registrada'}{artifact.current_version?.author_kind === 'agent' && ` · la vigente la redactó ${VIGIA_VISIBLE_NAMES.tenders} y está pendiente de revisión humana`}</p>
+          {(() => {
+            const files = versionFiles(artifact.current_version?.content_metadata);
+            if (!files.archivo && !files.sharepointUrl && !files.falta.length && !files.error) return null;
+            return <div className="stack">
+              <div className="row-actions">
+                {files.sharepointUrl && <a className="button" href={files.sharepointUrl} target="_blank" rel="noreferrer">Abrir en SharePoint</a>}
+                {files.archivo && <button type="button" className={files.sharepointUrl ? 'secondary' : undefined} disabled={disabled} onClick={() => void downloadWord(artifact, files.archivo!.nombre)}>Descargar Word</button>}
+              </div>
+              {files.archivo && !files.sharepointUrl && <p className="muted">La copia de trabajo en SharePoint todavía no está; el Word de aquí es el original que armó {VIGIA_VISIBLE_NAMES.tenders}.</p>}
+              {files.falta.length > 0 && <div><strong>Lo que falta decidir o diligenciar</strong> (va en amarillo en el Word)<ul>{files.falta.map(item => <li key={item}>{item}</li>)}</ul></div>}
+            </div>;
+          })()}
           {artifact.current_version?.content_text && <pre className="artifact-preview tender-dossier-preview">{artifact.current_version.content_text}</pre>}
 
           {workbenchEnabled && (artifact.review_status === 'aprobado'

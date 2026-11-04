@@ -3,6 +3,7 @@ import { bridgeRunUrl, resolveAgt002BridgeHost, resolveAgt002BridgeListenHost } 
 import { createAgt002BridgeServer } from '../../agt002-hetzner-bridge-server.js';
 import { createAgt002ClaudeClient } from '../../agt002-claude-client.js';
 import { createAgt002HostSurfaceObserver } from '../../verticales/licitaciones/agt002-host-surface-observer.js';
+import { renderAgt002Docx } from '../../verticales/licitaciones/agt002-document-render.js';
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -39,7 +40,7 @@ const claudeClient = createAgt002ClaudeClient({ command, cwd: '/opt/agt002-bridg
 // La allowlist de modelos nunca se construye desde el entorno ni se inyecta aquí: el puente
 // (agt002-hetzner-bridge-server.js) siempre usa el contrato frozen compartido.
 const hostSurfaceObserver = createAgt002HostSurfaceObserver();
-const server = createServer(createAgt002BridgeServer({ hmacSecret, codexClient: claudeClient, controlPlaneIdentity, hostSurfaceObserver }));
+const server = createServer(createAgt002BridgeServer({ hmacSecret, codexClient: claudeClient, controlPlaneIdentity, hostSurfaceObserver, documentRenderer: document => renderAgt002Docx(document) }));
 server.listen(port, listenHost, () => {
   console.log(JSON.stringify({ event: 'agt002_bridge_listening', port, listen_host: listenHost, host: bridgeHost, run_url: bridgeRunUrl(bridgeHost) }));
 });

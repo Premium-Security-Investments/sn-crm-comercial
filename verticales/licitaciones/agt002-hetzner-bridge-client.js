@@ -15,6 +15,9 @@ function isPlainObject(value) {
 }
 
 const MAX_RESPONSE_BYTES = 262_144;
+// Un Word con el membrete pesa ~330 KB; en base64, ~440 KB. Tope holgado pero cerrado.
+const MAX_DOCUMENT_RESPONSE_BYTES = 4 * 1024 * 1024;
+export const AGT002_DOCUMENT_RENDER_PATH = '/v1/agt002/document/render';
 
 /**
  * Reads and JSON-parses the bridge response bounded to MAX_RESPONSE_BYTES,
@@ -135,6 +138,48 @@ export function createAgt002HetznerBridgeClient({ url = bridgeRunUrl(resolveAgt0
         throw transportError('El puente AGT-002 Preview no confirmó el nivel de esfuerzo de razonamiento solicitado.', 'AGT002_BRIDGE_STALE_EFFORT_ACK');
       }
       return { content: payload.content, usage: payload.usage, rate_limit: payload.rate_limit ?? null };
+    },
+
+    /**
+     * Mejora 5: pide al puente el Word de un borrador. Misma firma que `run`, ruta propia. Devuelve los bytes y
+     * comprueba el sha256 que declara el puente contra los bytes recibidos.
+     */
+    async renderDocument({ document, timeoutMs = 60_000 } = {}) {
+      if (!isPlainObject(document)) throw new Error('El documento a armar no es válido.');
+      const documentUrl = new URL(AGT002_DOCUMENT_RENDER_PATH, url).toString();
+      const body = JSON.stringify({ document });
+      const timestamp = String(now());
+      const nonce = randomNonce();
+      const canonical = buildCanonicalString({ method: 'POST', path: AGT002_DOCUMENT_RENDER_PATH, bodySha256Hex: sha256Hex(body), timestamp, nonce });
+      const signature = signCanonicalString(hmacSecret, canonical);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      timer.unref?.();
+      let response;
+      try {
+        response = await fetchImpl(documentUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-AGT002-Timestamp': timestamp, 'X-AGT002-Nonce': nonce, 'X-AGT002-Signature': signature },
+          body,
+          signal: controller.signal,
+        });
+      } catch {
+        throw transportError('El servicio de documentos de Vig-IA no está disponible.', 'AGT002_DOCUMENT_TRANSPORT_ERROR');
+      } finally {
+        clearTimeout(timer);
+      }
+      let payload;
+      try { payload = await readBoundedJson(response, MAX_DOCUMENT_RESPONSE_BYTES); }
+      catch { throw transportError('La respuesta del servicio de documentos no tiene una estructura segura.', 'AGT002_DOCUMENT_INVALID_RESPONSE'); }
+      if (!response.ok) throw transportError('El servicio de documentos devolvió un error.', payload?.error?.code || 'AGT002_DOCUMENT_FAILED');
+      if (typeof payload?.docx_base64 !== 'string' || typeof payload.sha256 !== 'string') {
+        throw transportError('La respuesta del servicio de documentos no tiene una estructura segura.', 'AGT002_DOCUMENT_INVALID_RESPONSE');
+      }
+      const bytes = Buffer.from(payload.docx_base64, 'base64');
+      if (sha256Hex(bytes) !== payload.sha256 || bytes.subarray(0, 2).toString('latin1') !== 'PK') {
+        throw transportError('El Word recibido no coincide con el que armó el puente.', 'AGT002_DOCUMENT_INVALID_RESPONSE');
+      }
+      return { bytes, sha256: payload.sha256 };
     },
   };
 }

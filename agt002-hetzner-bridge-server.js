@@ -2,12 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { createNonceStore } from './agt002-hetzner-bridge-nonce-store.js';
 import { authenticateBridgeRequest } from './agt002-hetzner-bridge-auth.js';
 import { logBridgeEvent } from './agt002-hetzner-bridge-log.js';
+import { sha256Hex } from './agt002-hetzner-bridge-signing.js';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 import { buildAgt002ControlPlaneIdentity } from './verticales/licitaciones/agt002-control-plane-identity.js';
 import { AGT002_HOST_SURFACE_UNITS } from './verticales/licitaciones/agt002-host-surface-observer.js';
 
 const BRIDGE_PATH = '/v1/agt002-preview/run';
+// Mejora 5 (2026-11-03): la única herramienta de producción que tiene Vig-IA. Recibe un documento como datos y
+// devuelve el Word; no escribe en disco fuera de su temporal, no toca SharePoint ni la base. Misma firma HMAC y
+// misma protección contra repetición que la ruta del modelo.
+const DOCUMENT_PATH = '/v1/agt002/document/render';
+const MAX_CONCURRENT_RENDERS = 2;
 const CONTROL_PLANE_PATH = '/v1/agt002/control-plane';
 const HOST_SURFACE_PATH_PREFIX = `${CONTROL_PLANE_PATH}/`;
 const HOST_SURFACE_NAMES = new Set(Object.keys(AGT002_HOST_SURFACE_UNITS));
@@ -85,6 +91,8 @@ export function createAgt002BridgeServer({
   // (rejects) by default so a deployment that forgets to wire one up gets a fixed 503, never a
   // crash or a silently-empty observation.
   hostSurfaceObserver = defaultHostSurfaceObserver,
+  // Inyectado por run-server.mjs (renderAgt002Docx). Sin él, la ruta de documentos responde 503.
+  documentRenderer = null,
   // Deliberately not a constructor option: the allowlist is never a caller/environment value.
   // The bridge decides which model aliases exist at all, and the only allowlist it may ever
   // enforce is the shared frozen contract re-exported as AGT002_BRIDGE_ALLOWED_MODELS above —
@@ -94,6 +102,33 @@ export function createAgt002BridgeServer({
   if (!codexClient || typeof codexClient.run !== 'function') throw new Error('El puente AGT-002 requiere un cliente inyectado con un método run().');
   // Coincidencia exacta: ni recorte de espacios ni normalización de mayúsculas.
   const allowedModelSet = new Set(AGT002_BRIDGE_ALLOWED_MODELS);
+  let rendersInFlight = 0;
+
+  // El cuerpo ya pasó la firma. Sólo `document` cruza: ni rutas, ni plantilla, ni conversor vienen de la petición.
+  function renderDocument(res, body) {
+    const correlationId = randomUUID();
+    if (!documentRenderer) return sendError(res, 503, 'AGT002_BRIDGE_DOCUMENT_UNAVAILABLE', correlationId);
+    const keys = Object.keys(body);
+    if (keys.length !== 1 || keys[0] !== 'document' || body.document === null || typeof body.document !== 'object' || Array.isArray(body.document)) {
+      return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST', correlationId);
+    }
+    if (rendersInFlight >= MAX_CONCURRENT_RENDERS) return sendError(res, 503, 'AGT002_BRIDGE_DOCUMENT_BUSY', correlationId);
+    rendersInFlight += 1;
+    const startedAt = Date.now();
+    Promise.resolve()
+      .then(() => documentRenderer(body.document))
+      .then(bytes => {
+        const buffer = Buffer.from(bytes);
+        logBridgeEvent('agt002_bridge_document_rendered', { correlation_id: correlationId, code: 'OK', bytes: buffer.length, latency_ms: Date.now() - startedAt });
+        sendJson(res, 200, { docx_base64: buffer.toString('base64'), bytes: buffer.length, sha256: sha256Hex(buffer) });
+      })
+      .catch(error => {
+        const code = error?.code === 'AGT002_DOCUMENT_INVALID' ? 'AGT002_BRIDGE_DOCUMENT_INVALID' : 'AGT002_BRIDGE_DOCUMENT_FAILED';
+        logBridgeEvent('agt002_bridge_error', { correlation_id: correlationId, code, latency_ms: Date.now() - startedAt });
+        sendError(res, code === 'AGT002_BRIDGE_DOCUMENT_INVALID' ? 422 : 502, code, correlationId);
+      })
+      .finally(() => { rendersInFlight -= 1; });
+  }
 
   return function requestListener(req, res) {
     const url = new URL(req.url, 'http://127.0.0.1');
@@ -129,7 +164,7 @@ export function createAgt002BridgeServer({
       return;
     }
     if (req.method !== 'POST') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
-    if (url.pathname !== BRIDGE_PATH) return sendError(res, 404, 'AGT002_BRIDGE_BAD_REQUEST');
+    if (url.pathname !== BRIDGE_PATH && url.pathname !== DOCUMENT_PATH) return sendError(res, 404, 'AGT002_BRIDGE_BAD_REQUEST');
     if (String(req.headers['content-type'] || '').split(';')[0].trim() !== 'application/json') {
       return sendError(res, 415, 'AGT002_BRIDGE_UNSUPPORTED_MEDIA_TYPE');
     }
@@ -163,6 +198,7 @@ export function createAgt002BridgeServer({
       catch { return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST'); }
       if (body === null || typeof body !== 'object' || Array.isArray(body)) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
       if (Object.hasOwn(body, 'cwd')) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
+      if (url.pathname === DOCUMENT_PATH) return renderDocument(res, body);
 
       const { model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort } = body;
       // El modelo lo propone el cuerpo firmado, pero lo decide el puente: sólo

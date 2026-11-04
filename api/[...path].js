@@ -47,6 +47,7 @@ import { buildRequirementRows } from '../verticales/licitaciones/agt002-requirem
 import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/tender-company-document-bridge.js';
 import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixCsv, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
 import { buildTenderOpenBoard } from '../verticales/licitaciones/tender-open-board.js';
+import { AGT002_DRAFT_BUCKET, isAgt002DraftStoragePath } from '../verticales/licitaciones/agt002-workbench-document.js';
 import { TENDER_OFFER_PACKAGE_MATRIX_NAME, buildTenderOfferPackageManifest, tenderOfferPackageIndex } from '../verticales/licitaciones/tender-offer-package.js';
 import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../verticales/licitaciones/tender-analysis-foundation.js';
@@ -7252,6 +7253,33 @@ app.get('/api/tender-documents/:documentId/download', async (req, res) => {
     if (error || !data?.signedUrl) throw new Error('No fue posible preparar la descarga del documento.');
     // La capacidad viaja solo en el Location de esta respuesta: sin cuerpo, sin
     // JSON y sin quedarse en ninguna caché, ni compartida ni la del navegador.
+    res.set({ 'Cache-Control': 'private, no-store', Location: data.signedUrl });
+    res.status(302).end();
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Mejora 5: el Word que Vig-IA armó para una versión de un documento del expediente. Misma forma que la descarga
+// de documentos del pliego: la oportunidad se autoriza antes de mirar nada, la versión se busca SÓLO dentro de esa
+// oportunidad, y sólo se firma una ruta de `borradores-vigia/` de esa misma oportunidad (nunca otra del bucket).
+app.get('/api/tender-dossier-artifact-versions/:versionId/download', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw clientInputError('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const versionId = String(req.params.versionId || '');
+    const version = /^[0-9a-f-]{36}$/i.test(versionId) ? await must(database.from('psi_tender_dossier_artifact_versions')
+      .select('id,content_metadata,psi_tender_dossier_artifacts!inner(opportunity_id)')
+      .eq('id', versionId)
+      .eq('psi_tender_dossier_artifacts.opportunity_id', opportunityId)
+      .maybeSingle()) : null;
+    const archivo = version?.content_metadata?.archivo;
+    if (!archivo || !isAgt002DraftStoragePath(archivo.storage_path, opportunityId)) throw tenderDocumentDownloadNotFound();
+    const { data, error } = await database.storage.from(AGT002_DRAFT_BUCKET)
+      .createSignedUrl(archivo.storage_path, TENDER_DOCUMENT_DOWNLOAD_TTL_SECONDS, { download: cleanFileName(archivo.nombre || 'Borrador.docx') });
+    if (error || !data?.signedUrl) throw new Error('No fue posible preparar la descarga del documento.');
     res.set({ 'Cache-Control': 'private, no-store', Location: data.signedUrl });
     res.status(302).end();
   } catch (error) { sendError(res, error, error?.status || 400); }

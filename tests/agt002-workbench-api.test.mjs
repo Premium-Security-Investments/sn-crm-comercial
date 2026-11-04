@@ -318,11 +318,21 @@ validateAgt002WorkbenchJobInput(frozenJobInput);
 const sameQuestionDb = fakeDb(workspaceResponse());
 const replyBody = draftBody({ capability_id: AGT002_WORKBENCH_CAPABILITIES.reply, base_version_id: null });
 delete replyBody.artifact_id;
-await postAgt002MessageApi(sameQuestionDb, replyBody, operator, enabled);
+// Sin la conversión del chat (mejora 5): aquí sólo importa que dos capacidades no compartan llave.
+await postAgt002MessageApi(sameQuestionDb, replyBody, operator, { ...enabled, documentRequests: false });
 assert.notEqual(
   sameQuestionDb.calls.find(call => call.name === 'psi_append_agt002_workbench_message').args.p_idempotency_key,
   draftCall.p_idempotency_key,
 );
+// Mejora 5: ese mismo texto escrito en el chat es un pedido de borrador del Anexo 7, sobre su versión vigente, aunque
+// la pantalla no haya mandado ni el documento ni la versión.
+const chatDb = fakeDb(workspaceResponse());
+await postAgt002MessageApi(chatDb, replyBody, operator, enabled);
+const chatCall = chatDb.calls.find(call => call.name === 'psi_append_agt002_workbench_message').args;
+assert.equal(chatCall.p_capability_id, AGT002_WORKBENCH_CAPABILITIES.draft);
+assert.equal(chatCall.p_base_version_id, draftIds.version);
+assert.deepEqual(chatCall.p_context_links.filter(link => link.kind === 'artifact').map(link => link.id), [draftIds.artifact]);
+assert.equal(chatDb.calls.some(call => call.name === 'psi_create_tender_dossier_artifact'), false, 'el Anexo 7 ya existe: no se crea otro');
 
 // Primer borrador de un documento sin versión: base en null, y la procedencia lo dice.
 const firstDraftDb = fakeDb(workspaceResponse());

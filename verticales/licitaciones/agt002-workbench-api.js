@@ -5,6 +5,7 @@ import {
   AGT002_WORKBENCH_POLICY_VERSION,
 } from './agt002-workbench-contract.js';
 import { buildAgt002WorkbenchInitialReference } from './agt002-workbench-context.js';
+import { agt002DocumentRequestIntent, agt002ResolveRequestedDocument } from './agt002-mesa-document-intent.js';
 import {
   appendAgt002HumanMessage,
   computeAgt002WorkbenchIdempotencyKey,
@@ -382,6 +383,31 @@ export async function getAgt002WorkbenchApi(database, opportunityId, currentProf
 }
 
 /**
+ * Mejora 5: ¿el mensaje pide un documento del expediente? Devuelve el id del documento —el que nombra, o uno nuevo
+ * con ese nombre si el expediente no lo tiene— o null para contestar como siempre. Cualquier fallo (sin GO, sin
+ * expediente) también devuelve null: un pedido que no se pudo entender sigue siendo un mensaje que se contesta.
+ */
+async function resolveDocumentRequest(database, { opportunityId, actorId, message }) {
+  const intent = agt002DocumentRequestIntent(message);
+  if (!intent) return null;
+  try {
+    const { data, error } = await database.rpc('psi_get_tender_dossier_workspace', { p_opportunity_id: opportunityId });
+    if (error) return null;
+    const artifacts = (Array.isArray(data?.artifacts) ? data.artifacts : []).filter(row => typeof row?.id === 'string');
+    const decision = agt002ResolveRequestedDocument(intent, artifacts);
+    if (!decision) return null;
+    if (decision.action === 'match') return decision.artifact.id.toLowerCase();
+    const created = await database.rpc('psi_create_tender_dossier_artifact', {
+      p_opportunity_id: opportunityId, p_actor_id: actorId, p_artifact_key: decision.key, p_title: decision.title, p_required: false,
+    });
+    const id = created?.data?.artifact?.id;
+    return !created?.error && typeof id === 'string' ? id.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Queues one human message. The provenance the job freezes — `snapshot_id` and
  * `context_links` — is derived server-side on EVERY post, from the same canonical loader and
  * context builder the GET uses, and it overwrites whatever the body carried: a client that
@@ -409,9 +435,9 @@ export async function postAgt002MessageApi(database, body, currentProfile, optio
   const messageId = uuid(body.client_message_id, 'client_message_id');
   // Validated for shape, then discarded: the server-derived reference replaces it below.
   uuid(body.snapshot_id, 'snapshot_id');
-  const baseVersionId = uuid(body.base_version_id, 'base_version_id', true);
-  const capabilityId = capability(body.capability_id);
-  const artifactId = uuid(Object.hasOwn(body, 'artifact_id') ? body.artifact_id : null, 'artifact_id', true);
+  let baseVersionId = uuid(body.base_version_id, 'base_version_id', true);
+  let capabilityId = capability(body.capability_id);
+  let artifactId = uuid(Object.hasOwn(body, 'artifact_id') ? body.artifact_id : null, 'artifact_id', true);
   if (typeof body.content !== 'string' || !body.content.trim() || body.content.length > 12000 || !Array.isArray(body.context_links)) {
     throw apiError('content o context_links no es válido.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
   }
@@ -425,7 +451,19 @@ export async function postAgt002MessageApi(database, body, currentProfile, optio
     throw apiError('artifact_id sólo aplica a la capacidad de borrador.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
   }
   return mapped(async () => {
+    // Mejora 5: "necesito la carta de presentación" escrito en el chat es un pedido de borrador de ese documento.
+    // La pantalla no sabe qué versión hay, así que la base la pone el servidor: la vigente del momento.
+    let requestedDocument = false;
+    if (capabilityId === AGT002_WORKBENCH_CAPABILITIES.reply && !artifactId && options.documentRequests !== false) {
+      const resolved = await resolveDocumentRequest(database, { opportunityId, actorId, message: body.content });
+      if (resolved) {
+        capabilityId = AGT002_WORKBENCH_CAPABILITIES.draft;
+        artifactId = resolved;
+        requestedDocument = true;
+      }
+    }
     const anchor = artifactId ? await dossierArtifactLink(database, opportunityId, artifactId) : null;
+    if (requestedDocument) baseVersionId = anchor?.currentVersionId ?? null;
     // El control optimista de la versión vive en la RPC terminal, que ante un desajuste registra
     // `stale` y no escribe. Se comprueba además aquí, con la versión vigente del momento, para que
     // una pantalla desactualizada reciba una respuesta que se puede leer en vez de un trabajo que
