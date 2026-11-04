@@ -48,6 +48,7 @@ export type TenderRadarFilters = { query: string; source: string; region: Tender
 export type TenderRadarRunReceiptStatus = 'complete' | 'partial' | 'failed';
 export type TenderRadarRunReceiptSource = {
   name: string; attempted: boolean; succeeded: boolean;
+  status?: 'ok' | 'partial' | 'error';
   pages_read: number; records_read: number; candidates_found: number; error: string | null;
 };
 export type TenderRadarRunReceipt = {

@@ -539,6 +539,28 @@ test('selectAuthoritativeSocrataRecord keeps the row with the unique latest fech
   assert.equal(selectAuthoritativeSocrataRecord([newer, older]), newer, 'order of the input rows must not matter');
 });
 
+test('selectAuthoritativeSocrataRecord uses the unique latest fecha_adjudicacion for the CO1.REQ.11235114 publication tie', () => {
+  const sharedPublication = '2026-10-20T00:00:00.000';
+  const presented = sourceRow({
+    id_del_proceso: 'CO1.REQ.11235114',
+    fecha_de_ultima_publicaci: sharedPublication,
+    fecha_de_recepcion_de: '2026-10-23T00:00:00.000',
+    estado_resumen: 'Presentación de oferta',
+    id_adjudicacion: 'CO1.AWD.2734524',
+  });
+  const awarded = sourceRow({
+    id_del_proceso: 'CO1.REQ.11235114',
+    fecha_de_ultima_publicaci: sharedPublication,
+    fecha_de_recepcion_de: '2026-10-23T00:00:00.000',
+    estado_resumen: 'Adjudicado',
+    id_adjudicacion: 'CO1.AWD.2734602',
+    fecha_adjudicacion: '2026-10-28T00:00:00.000',
+  });
+
+  assert.equal(selectAuthoritativeSocrataRecord([presented, awarded]), awarded);
+  assert.equal(selectAuthoritativeSocrataRecord([awarded, presented]), awarded, 'order of the input rows must not matter');
+});
+
 test('selectAuthoritativeSocrataRecord throws a deterministic conflict when a publication-date tie disagrees on resolved status', () => {
   const sharedPublication = '2026-09-20T00:00:00.000';
   const a = sourceRow({ fecha_de_ultima_publicaci: sharedPublication, estado_resumen: 'Publicado' });
@@ -581,6 +603,7 @@ test("createTenderSourceReconciliation's default Socrata fetch requests fecha_de
   assert.equal(seenUrls.length, 1);
   const url = new URL(seenUrls[0]);
   assert.match(url.searchParams.get('$select'), /fecha_de_ultima_publicaci/, '$select must include fecha_de_ultima_publicaci');
+  assert.match(url.searchParams.get('$select'), /fecha_adjudicacion/, '$select must include fecha_adjudicacion');
   assert.equal(url.searchParams.get('$order'), 'fecha_de_ultima_publicaci DESC');
   assert.equal(url.searchParams.get('$limit'), String(7 * 20), 'the limit must be sized at chunkSize * 20 so one duplicate-heavy id cannot starve the rest of the chunk');
 });
