@@ -74,3 +74,29 @@ test('migración 126: búsqueda solo lectura y solo para service_role', () => {
   for (const role of ['public', 'anon', 'authenticated']) assert.match(sql, new RegExp(`revoke all on function public\\.psi_search_tender_document_passages\\(uuid, text\\[\\]\\) from ${role};`));
   assert.match(sql, /grant execute on function public\.psi_search_tender_document_passages\(uuid, text\[\]\) to service_role;/);
 });
+
+// Supersalud, 2026-11-04: siete tareas del expediente, cortadas a 1000 caracteres, quedaban terminando en espacio. El
+// contrato de la Mesa rechaza un source_ref con espacios en los bordes, y como TODO mensaje lleva las tareas abiertas,
+// ningún mensaje de ese expediente se procesaba (AGT002_INVALID_JOB_INPUT). Lo que se corta se limpia después del corte.
+test('una tarea larga cortada a 1000 caracteres no deja espacio al final', async () => {
+  const { validateAgt002WorkbenchJobInput } = await import('../verticales/licitaciones/agt002-workbench-contract.js');
+  // Palabras de una letra: con tres desplazamientos distintos, alguno de los cortes cae justo en un espacio.
+  const checklist = [0, 1, 2].map(shift => ({
+    id: `1111111${shift}-1111-4111-8111-111111111111`, title: 'Financiero · Garantía de seriedad', status: 'pendiente', applicability: 'requerido',
+    instruction: `${'a'.repeat(shift)}${' x'.repeat(700)}`,
+  }));
+  const database = { rpc: async () => ({ data: { checklist }, error: null }) };
+  const links = await dossierTaskLinks(database, 'o', 5);
+  assert.equal(links.length, 3);
+  for (const each of links) {
+    assert.equal(each.source_ref.length <= 1000, true);
+    assert.equal(each.source_ref, each.source_ref.trim());
+  }
+  const [link] = links;
+  validateAgt002WorkbenchJobInput({
+    job_id: '20000000-0000-4000-8000-000000000001', thread_id: '20000000-0000-4000-8000-000000000002', origin_message_id: '20000000-0000-4000-8000-000000000003',
+    opportunity_id: '20000000-0000-4000-8000-000000000004', tender_id: '20000000-0000-4000-8000-000000000005', snapshot_id: '20000000-0000-4000-8000-000000000006',
+    base_version_id: null, capability_id: 'agt002.dossier-workbench.reply.v1', contract_version: 'agt002.dossier-workbench.v1', policy_version: 'agt002.dossier-workbench.policy.v2',
+    context_links: [{ kind: 'snapshot', id: '20000000-0000-4000-8000-000000000006', label: 'Paquete', source_ref: 'psi:1' }, link], message: 'hola',
+  });
+});
