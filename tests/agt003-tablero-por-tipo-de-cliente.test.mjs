@@ -21,7 +21,7 @@ test('ventas del año por fecha de aprobación, pipeline de las abiertas; sin li
     o({ customer_segment: 'cliente_actual', client_deal_type: 'renovacion', stage_code: 'aprobado', approved_at: '2026-03-10T00:00:00Z', offer_value: 40 }),
     o({ customer_segment: 'cliente_actual', client_deal_type: 'renovacion', stage_code: 'aprobado', approved_at: '2025-12-30T00:00:00Z', offer_value: 99 }),
     o({ customer_segment: 'cliente_actual', client_deal_type: 'renovacion', stage_code: 'envio_oferta', offer_value: 10 }),
-    o({ customer_segment: 'cliente_nuevo', stage_code: 'aprobado', approved_at: null, updated_at: '2026-07-01T00:00:00Z', offer_value: 25 }),
+    o({ customer_segment: 'cliente_nuevo', stage_code: 'aprobado', approved_at: null, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-11-03T00:00:00Z', offer_value: 25 }),
     o({ customer_segment: 'cliente_nuevo', stage_code: 'perdido', offer_value: 500 }),
     o({ customer_segment: 'cliente_nuevo', service_type_code: 'licitacion_publica', stage_code: 'prospecto', offer_value: 700 }),
     o({ stage_code: 'prospecto', offer_value: 3 }),
