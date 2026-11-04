@@ -78,7 +78,7 @@ export function monthlyGoalCompliance({ opportunities = [], goals = [], month, o
   const ownersWithGoal = new Set(monthGoals.map(g => g.user_id));
   const approved = list(opportunities)
     .filter(o => isAgt003CommercialOpportunity(o) && o.stage_code === 'aprobado' && (ownerId ? o.owner_id === ownerId : ownersWithGoal.has(o.owner_id)))
-    .filter(o => String(bogotaDay(o.approved_at || o.updated_at || '') || '').slice(0, 7) === month)
+    .filter(o => String(bogotaDay(o.approved_at || o.created_at || '') || '').slice(0, 7) === month)
     .reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const budget = monthGoals
     .reduce((sum, g) => sum + Number(g.sales_budget || 0), 0);

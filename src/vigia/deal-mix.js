@@ -2,7 +2,7 @@
 //
 // Tablero de gerencia, pregunta 1: renovar lo que ya tenemos y vender algo nuevo a un cliente actual son esfuerzos
 // distintos, y sumarlos juntos esconde si el crecimiento viene de clientes nuevos o de no perder los que hay.
-// Ventas = ganadas en el año (por la fecha de aprobación); pipeline = abiertas. Sin licitaciones.
+// Ventas = ganadas en el año (por la fecha de aprobación; si falta, la de registro); pipeline = abiertas. Sin licitaciones.
 import { isAgt003CommercialOpportunity } from './commercial-scope.js';
 import { isTerminalStage } from './opportunity-decision-rules.js';
 
@@ -29,7 +29,7 @@ export function dealMix(opportunities = [], year) {
     if (!o || !isAgt003CommercialOpportunity(o) || o.deleted_at) continue;
     const row = rows.get(dealMixKey(o));
     const value = Number(o.offer_value || 0) || 0;
-    if (o.stage_code === 'aprobado' && String(o.approved_at || o.updated_at || '').slice(0, 4) === String(year)) {
+    if (o.stage_code === 'aprobado' && String(o.approved_at || o.created_at || '').slice(0, 4) === String(year)) {
       row.sales += value; row.salesCount += 1;
     } else if (!isTerminalStage(o.stage_code)) {
       row.pipeline += value; row.pipelineCount += 1;

@@ -2805,7 +2805,7 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
   const salesRows = data.profiles.filter(isCommercialProfile).map(profile => {
     const approved = allCommercialOpportunities.filter(o => ownerKey(o) === profile.id && isApprovedSale(o));
     const quarters = salesQuarters.map(quarter => approved.filter(o => {
-      const day = String(o.approved_at || o.updated_at || '').slice(0, 10);
+      const day = String(o.approved_at || o.created_at || '').slice(0, 10);
       return day.slice(0, 4) === year && Math.floor((Number(day.slice(5, 7)) - 1) / 3) === quarter;
     }).reduce((sum, o) => sum + Number(o.offer_value || 0), 0));
     const budget = data.goals.filter(goal => goal.user_id === profile.id && String(goal.period_month).slice(0, 4) === year && goal.service_type_code !== AGT002_TENDER_SERVICE_TYPE).reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
