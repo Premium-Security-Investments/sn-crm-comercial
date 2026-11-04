@@ -82,6 +82,13 @@ Con el mismo riesgo salen resultados distintos. El R21 (hurto de implementos, P4
 **El sistema no puede tener dos fórmulas sin dueño.** La metodología se guarda como un dato versionado,
 y cada estudio queda amarrado a la versión con la que se calculó.
 
+**Decidido el 2026-11-04:** la metodología oficial es `instalaciones-fisicas-v1`. Mezcla las dos fuentes:
+
+- del maestro, el impacto doble y los cuatro niveles;
+- de la matriz, la calificación del control (con tope de 0,9) y que el control baje la probabilidad.
+
+Ver `docs/decisions/2026-11-04-estudios-seguridad-metodologia-v1.md`.
+
 ## 2. Principios
 
 1. **SIIO es la fuente de verdad** de los datos estructurados y de los estados. SharePoint guarda los
@@ -206,8 +213,8 @@ Cada fase es un PR con pruebas y su propio handoff.
 
 | Fase | Entrega | Prueba de cierre |
 |---|---|---|
-| F0 | Decisiones: metodología oficial, quiénes revisan y aprueban, carpeta de SharePoint. | Decisión escrita en `docs/decisions/`. |
-| F1 | Migración del modelo, función de cálculo y semilla de la plantilla "Instalaciones físicas v1" con su catálogo. | Prueba dorada: los 25 riesgos de Cancha Horizontes recalculados = valores del Excel (ya verificado fuera del código el 2026-11-04). Pruebas de RLS con pglite. |
+| F0 | Decisiones: metodología oficial (**hecha el 2026-11-04**), quiénes revisan y aprueban, carpeta de SharePoint. | Decisión escrita en `docs/decisions/`. |
+| F1 | Migración del modelo, función de cálculo (**escrita el 2026-11-04**: `verticales/estudios-seguridad/metodologia.js`) y semilla de la plantilla "Instalaciones físicas v1" con su catálogo. | Prueba dorada: los 25 riesgos de Cancha Horizontes recalculados = valores del Excel (ya verificado fuera del código el 2026-11-04). Pruebas de RLS con pglite. |
 | F2 | Importador y pantalla de revisión. | Importar Cancha Horizontes da 25 riesgos, 15 filas descartadas y las advertencias de identidad. |
 | F3 | Edición del estudio: sede, zonas, riesgos, controles y acciones, más subida de evidencias. | Prueba de punta a punta en local. |
 | F4 | Revisión, aprobación y versiones congeladas. | El preparador no puede aprobar, una versión aprobada no se edita y reabrir crea la N+1. |
@@ -231,7 +238,7 @@ punta a punta en SIIO, aprobado y archivado, sin editar ningún Excel en el cami
 - **La sesión de Graph es delegada (de Juan).** Para que SIIO archive en SharePoint sin nadie presente
   hace falta una identidad de aplicación con consentimiento de administrador del tenant. Mientras no
   exista, el archivo se puede hacer con la sesión actual en piloto, pero no en producción. `por confirmar`
-- **Metodología sin decidir:** bloquea F1.
+- **Metodología:** decidida (v1). Falta que la valide un revisor técnico de seguridad. `por confirmar`
 - **El maestro es específico del contrato ESU.** Sus tipologías T1 a T5 sirven de semilla, pero la
   plantilla "Instalaciones físicas" necesita su propia tipología genérica. `por confirmar`
 - **Evidencias con personas o menores (P16/R25):** antes de guardar fotos hay que definir retención y
