@@ -174,6 +174,16 @@ export function appendAgt002WorkbenchJobEvent(database, input) {
   });
 }
 
+/** Mejora 5 (migración 176): el aviso en el chat de un trabajo fallido. */
+export function postAgt002WorkbenchFailureNotice(database, input) {
+  assertExactKeys(input, ['jobId', 'agentId', 'content'], 'aviso de fallo');
+  return rpc(database, 'psi_post_agt002_workbench_failure_notice', {
+    p_job_id: input.jobId,
+    p_agent_id: input.agentId,
+    p_content: input.content,
+  });
+}
+
 export function appendAgt002AgentResult(database, { jobId, claimId, agentId, input, result }) {
   validateAgt002WorkbenchJobInput(input);
   validateAgt002WorkbenchResult(result, { input });

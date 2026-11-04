@@ -92,3 +92,46 @@ test('la metadata cabe en el tope del contrato aunque falten muchas cosas', () =
   assert.ok(JSON.stringify(metadata).length <= 8000);
   assert.ok(metadata.falta.length > 0);
 });
+
+// Juan, 2026-11-04: el pedido de las 20:35Z falló y nadie vio nada en 16 minutos. Todo fallo deja un aviso en el chat;
+// el código técnico va sólo al registro.
+test('un trabajo fallido deja un aviso en el chat, en palabras simples', async () => {
+  const { runAgt002WorkbenchWorker, agt002WorkbenchFailureNoticeText } = await import('../verticales/licitaciones/agt002-workbench-worker.js');
+  const events = []; const notices = [];
+  const persistence = {
+    claimAgt002WorkbenchJob: async () => ({ status: 'claimed', claim_id: '30000000-0000-4000-8000-000000000001', job: { ...input, id: JOB, context_links: [{ kind: 'artifact', id: ARTIFACT, label: 'x', source_ref: 'termina en espacio ' }] } }),
+    appendAgt002WorkbenchJobEvent: async event => { events.push(event); },
+    completeAgt002WorkbenchJob: async () => { throw new Error('no debe llegar'); },
+    postAgt002WorkbenchFailureNotice: async notice => { notices.push(notice); },
+  };
+  const outcome = await runAgt002WorkbenchWorker({ persistence, responder: { respond: async () => ({}) }, limits: { workerId: 'w', agentId: '40000000-0000-4000-8000-000000000001', responderTimeoutMs: 1000 } });
+  assert.equal(outcome.status, 'failed');
+  assert.equal(events[0].metadata.code, 'AGT002_INVALID_JOB_INPUT', 'el código técnico va al registro');
+  assert.deepEqual(notices, [{ jobId: JOB, agentId: '40000000-0000-4000-8000-000000000001', content: 'No pude preparar esto: el pedido llegó con datos del expediente que no pude leer. Vuelva a pedirlo o avise a soporte.' }]);
+  assert.equal(notices[0].content.includes('AGT002'), false, 'el código no va al chat');
+  assert.match(agt002WorkbenchFailureNoticeText('ALGO_RARO'), /^No pude preparar esto: hubo un error técnico\./);
+});
+
+test('si el aviso no se puede publicar (migración 176 sin correr), el fallo igual queda registrado', async () => {
+  const { runAgt002WorkbenchWorker } = await import('../verticales/licitaciones/agt002-workbench-worker.js');
+  const events = [];
+  const persistence = {
+    claimAgt002WorkbenchJob: async () => ({ status: 'claimed', claim_id: '30000000-0000-4000-8000-000000000001', job: { ...input, id: JOB } }),
+    appendAgt002WorkbenchJobEvent: async event => { events.push(event); },
+    completeAgt002WorkbenchJob: async () => ({}),
+    postAgt002WorkbenchFailureNotice: async () => { throw new Error('function does not exist'); },
+  };
+  const outcome = await runAgt002WorkbenchWorker({ persistence, responder: { respond: async () => { throw Object.assign(new Error('t'), { code: 'AGT002_RESPONDER_TIMEOUT' }); } }, limits: { workerId: 'w', agentId: '40000000-0000-4000-8000-000000000001', responderTimeoutMs: 1000 } });
+  assert.equal(outcome.status, 'failed');
+  assert.equal(events.length, 1);
+});
+
+test('el borrador le pasa al catálogo el documento que va a escribir, y la respuesta normal no', async () => {
+  const seen = [];
+  const make = () => createAgt002WorkbenchResponder({
+    client: { run: async () => ({ content: JSON.stringify(modelOutput()), usage: { input_tokens: 1, output_tokens: 1 } }) },
+    model: 'modelo', timeoutMs: 1000, checkGate: () => true, resolveSources: args => { seen.push(args); return []; },
+  });
+  await make().respond(input);
+  assert.equal(seen[0].documento, 'Carta de presentación');
+});

@@ -387,6 +387,9 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
   const rejectionOpen = groups.open.filter(item => parseDossierItemTitle(item.title).rejection).length;
   const overdue = groups.open.filter(item => item.target_date && item.target_date < today).length;
   const requiredArtifacts = workspace.artifacts.filter(artifact => artifact.required);
+  // Lo que se muestra: los obligatorios, y cualquier otro que ya tenga una versión. Un documento que alguien pidió en
+  // la Mesa nace no obligatorio, y sin esto existía pero no se veía (mejora 5, 2026-11-04).
+  const shownArtifacts = workspace.artifacts.filter(artifact => artifact.required || (artifact.version_count ?? 0) > 0);
   const unapproved = requiredArtifacts.filter(artifact => !artifact.has_approved_version).length;
   const hasRequirementItems = workspace.checklist.some(item => item.item_key.startsWith(REQUIREMENT_ITEM_KEY_PREFIX) || item.item_key.startsWith('matriz:'));
   const selected = workspace.checklist.find(item => item.id === selectedId) || groups.open[0] || tasks[0] || null;
@@ -530,9 +533,9 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
     {channel}
     {!channel && workspace.workbench_enabled && <TenderVigiaChannel opportunityId={opportunityId} request={request} />}
 
-    {requiredArtifacts.length > 0 && <section className="tw-card">
+    {shownArtifacts.length > 0 && <section className="tw-card">
       <small>Documentos que se firman y aprueban</small>
-      <TenderDossierArtifacts opportunityId={opportunityId} artifacts={requiredArtifacts} request={request} canApprove={canApprove} workbenchEnabled={workspace.workbench_enabled} onChanged={reload} />
+      <TenderDossierArtifacts opportunityId={opportunityId} artifacts={shownArtifacts} request={request} canApprove={canApprove} workbenchEnabled={workspace.workbench_enabled} onChanged={reload} />
     </section>}
   </div>;
 }
