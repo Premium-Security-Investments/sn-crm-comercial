@@ -56,9 +56,35 @@ La v1 descuenta el control una sola vez. Por eso, para la misma calificación, d
 alto que el que se les entregó a esos clientes; el residual no cambia. En HADA, el Excel marca 2 riesgos
 inaceptables y con la v1 quedan 3 críticos: R5, R12 y R18.
 
-**Recomendación: mantener la v1** (pendiente de que Juan la confirme). Descontar dos veces el mismo control subestima el riesgo: una sede se ve más segura de
+**Se mantiene la v1** (confirmado por Juan el 2026-11-04, ver abajo). Descontar dos veces el mismo control subestima el riesgo: una sede se ve más segura de
 lo que está. Los estudios nuevos no son comparables uno a uno con los entregados antes de la v1.
 
 El riesgo de EXCO que no coincide es el R3: su probabilidad actual (5) se tecleó encima de la fórmula y quedó
 por encima de la inherente (4). Un control no puede subir la probabilidad: con la fórmula del propio Excel da
 13 tolerable y no 16 inaceptable.
+
+## Una sola forma de trabajar (Juan, 2026-11-04)
+
+> "La idea de esto es que tengamos una versión flexible pero que se vuelva la regla, es decir que ya poco a poco
+> dejemos de tener 3 versiones de estudio y que cada persona cree su matriz y tengamos una sola forma de trabajar."
+
+Hoy hay tres variantes de la misma plantilla (Cancha Horizontes, HADA y EXCO), cada una con su propia fórmula.
+La v1 es la única regla de aquí en adelante. Esto se traduce en límites del sistema:
+
+- **Fijo, nadie lo cambia en un estudio:**
+  - la fórmula, las escalas y los niveles;
+  - los campos obligatorios;
+  - los estados y quién aprueba;
+  - la estructura del informe.
+  
+  En SIIO no hay celdas con fórmula que se puedan sobrescribir: el cálculo lo hace el servidor.
+- **Flexible, cada estudio lo adapta:**
+  - las zonas y los activos de la sede;
+  - qué riesgos del catálogo aplican;
+  - los riesgos propios que no estén en el catálogo, que quedan marcados para que el revisor decida si pasan al catálogo;
+  - los controles, las acciones, la narrativa y las evidencias.
+- **La regla cambia solo por versión:** una v2 la propone el revisor técnico, la aprueba Juan y se aplica a los
+  estudios nuevos. Los aprobados no se recalculan.
+- **Lo histórico se lee, no se copia:** al importar un Excel viejo se guarda lo que se le entregó al cliente, con
+  su variante (`matriz-historica-2026` o `matriz-historica-control-doble-2026`), y al lado su valor con la v1. Un
+  estudio nuevo nunca nace de copiar un Excel: nace de la plantilla.
