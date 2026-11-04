@@ -408,6 +408,12 @@ function fieldText(field, value) {
   return String(value);
 }
 
+/** Un valor del formulario como lo lee una persona ("Común", "Sí"), por su clave. Lo usa la tarjeta del chat. */
+export function closureFieldText(key, value) {
+  const field = FIELD_BY_KEY.get(key);
+  return field ? fieldText(field, value) : String(value ?? '');
+}
+
 /**
  * El formulario en texto plano, para copiarlo y enviarlo mientras la entrega a Avancys no exista. Es la misma
  * información que la pantalla, con las etiquetas del formato, y dice "sin registrar" donde falta algo en vez de

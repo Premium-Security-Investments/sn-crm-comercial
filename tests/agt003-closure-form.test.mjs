@@ -348,11 +348,14 @@ test('servidor: los dos endpoints, con sus permisos y la semántica de parche', 
   const getHandler = server.slice(server.indexOf("app.get('/api/agt003/closure-form'"), server.indexOf("app.put('/api/agt003/closure-form'"));
   assert.doesNotMatch(getHandler, /\.insert\(|\.upsert\(|\.delete\(/, 'el GET no escribe nada');
 
+  // El guardado vive en una función que comparten la pantalla (PUT) y el chat (etapa 3): se revisa ahí.
   const putHandler = server.slice(server.indexOf("app.put('/api/agt003/closure-form'"));
-  const put = putHandler.slice(0, putHandler.indexOf('\n});'));
+  assert.match(putHandler.slice(0, putHandler.indexOf('\n});')), /res\.json\(await saveClosureFormForProfile\(database, currentProfile, id, req\.body\)\);/);
+  const saveFn = server.slice(server.indexOf('async function saveClosureFormForProfile('));
+  const put = saveFn.slice(0, saveFn.indexOf('\n}\n'));
   // Las listas se reemplazan sólo si vienen: así el chat puede llenar dos campos sin borrar los puestos.
-  assert.match(put, /const sendsSites = Array\.isArray\(req\.body\?\.sites\)/);
-  assert.match(put, /const sendsPosts = Array\.isArray\(req\.body\?\.posts\)/);
+  assert.match(put, /const sendsSites = Array\.isArray\(body\?\.sites\)/);
+  assert.match(put, /const sendsPosts = Array\.isArray\(body\?\.posts\)/);
   assert.match(put, /if \(sendsSites\) \{/);
   assert.match(put, /if \(sendsPosts\) \{/);
   // El estado lo decide la regla, no el cuerpo de la petición.

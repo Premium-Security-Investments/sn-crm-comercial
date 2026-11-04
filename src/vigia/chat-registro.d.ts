@@ -8,7 +8,13 @@ export type ChatAction =
   | { tipo: 'proximo_seguimiento'; ref: string; fecha: string }
   | { tipo: 'actualizar_datos'; ref: string; datos: ChatData }
   | { tipo: 'crear_oportunidad'; nueva: ChatData & { company_name: string; service_type_code: string; regional_nombre: string }; nota?: string; canal?: ChatChannel; fecha?: string; proxima_fecha?: string }
-  | { tipo: 'mover_etapa'; ref: string; decision: ChatStageDecision; nota: string; etapa?: string; etapa_nombre?: string; proxima_fecha?: string; motivo?: string; motivo_nombre?: string; competidor?: string };
+  | { tipo: 'mover_etapa'; ref: string; decision: ChatStageDecision; nota: string; etapa?: string; etapa_nombre?: string; proxima_fecha?: string; motivo?: string; motivo_nombre?: string; competidor?: string }
+  | { tipo: 'formulario_cierre'; ref: string; formulario: Record<string, string | boolean>; puestos: ChatClosurePost[]; sedes: ChatClosureSite[] };
+
+export type ChatClosurePost = { description: string | null; shift_start: string | null; shift_end: string | null; days_per_month: number | null; guards_required: number | null; armed: boolean; service_value: number | null; notes: string | null };
+export type ChatClosureSite = { address: string | null; city: string | null; phone: string | null; contact_name: string | null };
+export const CHAT_CLOSURE_MAX_POSTS: number;
+export const CHAT_CLOSURE_MAX_SITES: number;
 
 export type ChatStageDecision = 'avanzar' | 'perder';
 export type ChatStage = { code: string; name?: string; stage_order?: number; is_terminal?: boolean };
