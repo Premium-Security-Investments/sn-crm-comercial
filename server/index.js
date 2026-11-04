@@ -221,7 +221,7 @@ import { briefQuotaMessage, buildBriefInput, claimBriefRun, runBriefSummary } fr
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import {
   CLOSURE_FORM_FIELD_KEYS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_VERSION, autofillClosureForm, autofillClosureSites,
-  cleanClosureFormInput, closureFormCatalog, closureFormCompleteness, closureFormDurationDays, closureFormMoney,
+  cleanClosureFormInput, closureFormCatalog, closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormWinVerdict,
 } from '../src/vigia/closure-form.js';
 import { buildAgt002StakeholderBriefPreview } from '../verticales/licitaciones/agt002-stakeholder-brief-preview.js';
 import {
@@ -3890,6 +3890,7 @@ async function createOpportunityForProfile(database, currentProfile, body) {
   if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
   await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
   const isPublicTender = payload.service_type_code === 'licitacion_publica';
+  rejectWinOnCreate(payload, isPublicTender);
   if (currentProfile.role === 'comercial' && !isPublicTender) await requireNoPendingDecisions(database, currentProfile.id);
   const requestedClientId = isPublicTender ? null : (body.client_id || null);
   const authorizedSiblingIds = isPublicTender ? null : await prepareClientForNewOpportunity(database, currentProfile, payload, requestedClientId);
@@ -3916,6 +3917,7 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
   if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
   if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
   const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
+  if (!isPublicTender && payload.stage_code === 'aprobado' && existing.stage_code !== 'aprobado') await requireClosureFormForWin(database, existing.id);
   const clientPlan = isPublicTender
     ? { kind: 'noop', clientId: null }
     : await prepareClientForOpportunityUpdate(database, existing, payload, body.client_id || null, body);
@@ -4003,7 +4005,7 @@ async function addInteractionForProfile(database, currentProfile, id, body) {
 // AGT-003 — Formulario de cierre, formato GGC-FO-001 (Juan, 2026-10-23). El comercial deja de mandarlo por correo en
 // un Word: vive aquí, se autocompleta con lo que el CRM ya sabe y él llena el resto. Las reglas —qué pide, cuándo está
 // completo, cuánto vale— viven en src/vigia/closure-form.js, no aquí: las comparten la pantalla, el chat y la puerta
-// que impedirá marcar ganado sin el formulario completo.
+// que impide marcar ganado sin el formulario completo (`requireClosureFormForWin`).
 const CLOSURE_FORM_SELECT = ['id', 'opportunity_id', 'status', ...CLOSURE_FORM_FIELD_KEYS, 'created_by', 'created_at', 'updated_by', 'updated_at', 'completed_by', 'completed_at'].join(',');
 const CLOSURE_SITE_SELECT = 'id,address,city,phone,contact_name,position';
 const CLOSURE_POST_SELECT = 'id,description,shift_start,shift_end,days_per_month,guards_required,armed,service_value,notes,position';
@@ -4446,6 +4448,30 @@ app.put('/api/avancys/cliente-enlace', async (req, res) => {
     return res.json({ client_id: clientId, avancys_ref_num: refNum, company_name: cliente.company_name });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
+
+// El bloqueo al ganar (etapa 3; Juan, 2026-11-04: "encienda sin probar"). Un negocio sólo se marca ganado con el
+// formulario de cierre completo, porque ese formulario es lo que operaciones y facturación necesitan para montar los
+// puestos y facturar. Lo consultan TODAS las puertas que llevan una oportunidad a `aprobado`: la decisión (botón
+// "Decidir" y chat) y la edición de la ficha. El mensaje dice qué falta, no un "no se puede" a secas.
+async function requireClosureFormForWin(database, opportunityId) {
+  const stored = await must(database.from('psi_sales_closure_forms').select(CLOSURE_FORM_SELECT).eq('opportunity_id', opportunityId).maybeSingle());
+  const children = stored ? await closureFormChildren(database, stored.id) : { sites: [], posts: [] };
+  const verdict = closureFormWinVerdict({ form: stored, sites: children.sites, posts: children.posts });
+  if (verdict.ok) return;
+  const error = new Error(verdict.message);
+  error.status = 409;
+  error.code = verdict.code;
+  throw error;
+}
+// Crear una oportunidad ya ganada no se permite (Juan, 2026-11-04): el formulario de cierre sólo existe cuando la
+// oportunidad existe, así que nacer ganada sería ganar sin formulario.
+function rejectWinOnCreate(payload, isPublicTender) {
+  if (isPublicTender || payload.stage_code !== 'aprobado') return;
+  const error = new Error('Una oportunidad no se puede crear ya ganada: créela en otra etapa, llene el formulario de cierre y después márquela como ganada.');
+  error.status = 400;
+  error.code = 'AGT003_WIN_ON_CREATE';
+  throw error;
+}
 
 // Guardar el formulario: la misma puerta para la pantalla y para el chat (etapa 3). Semántica de parche: la cabecera
 // se mezcla con lo guardado, y las listas se reemplazan SÓLO si vienen en el cuerpo. Con `append` (el chat), los
@@ -7938,6 +7964,7 @@ app.post('/api/opportunities', async (req, res) => {
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
     const isPublicTender = payload.service_type_code === 'licitacion_publica';
+    rejectWinOnCreate(payload, isPublicTender);
     if (currentProfile.role === 'comercial' && !isPublicTender) await requireNoPendingDecisions(database, currentProfile.id);
     const requestedClientId = isPublicTender ? null : (req.body.client_id || null);
     const authorizedSiblingIds = isPublicTender ? null : await prepareClientForNewOpportunity(database, currentProfile, payload, requestedClientId);
@@ -7968,6 +7995,7 @@ app.put('/api/opportunities/:id', async (req, res) => {
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
+    if (!isPublicTender && payload.stage_code === 'aprobado' && existing.stage_code !== 'aprobado') await requireClosureFormForWin(database, existing.id);
     const clientPlan = isPublicTender
       ? { kind: 'noop', clientId: null }
       : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
@@ -8153,6 +8181,7 @@ async function resolveCompetitorId(database, profileId, body) {
 async function recordOpportunityDecision(database, currentProfile, id, body) {
   await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
   const params = normalizeDecisionRequest(body);
+  if (params.p_decision === 'advance' && params.p_stage_code === 'aprobado') await requireClosureFormForWin(database, id);
   const { data, error } = await database.rpc('psi_record_opportunity_decision', { p_opportunity_id: id, p_actor_profile_id: currentProfile.id, ...params });
   if (error) throw decisionDatabaseError(error);
   // El competidor se guarda después de la decisión y nunca la tumba: es un dato opcional y la pérdida ya quedó
@@ -8228,6 +8257,7 @@ app.put('/api/opportunity', async (req, res) => {
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
+    if (!isPublicTender && payload.stage_code === 'aprobado' && existing.stage_code !== 'aprobado') await requireClosureFormForWin(database, existing.id);
     const clientPlan = isPublicTender
       ? { kind: 'noop', clientId: null }
       : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
