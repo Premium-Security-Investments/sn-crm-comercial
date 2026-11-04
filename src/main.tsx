@@ -61,6 +61,7 @@ import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
 import { CLIENT_DEAL_TYPES, clientDealLabel, CUSTOMER_SEGMENT_FILTER_OPTIONS, matchesCustomerSegmentFilter, profileCompleteness, type ClientDealType } from './vigia/client-profile.js';
 import { competitorContractsDue, renewalsDue } from './vigia/renewal-alerts.js';
+import { dealMix } from './vigia/deal-mix.js';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
@@ -2811,6 +2812,9 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
     return { ownerId: profile.id, owner: profile.full_name, quarters, accumulated, budget, compliance: ownerCompliancePct(accumulated, budget) };
   }).filter(row => row.accumulated || row.budget).sort((a, b) => b.accumulated - a.accumulated || b.budget - a.budget);
   const dataQuality = dataQualitySummary(activeRows, normalizeRegion);
+  // De dónde viene la venta: cliente nuevo, renovación o servicio nuevo (Juan, 2026-11-03). Las congeladas cuentan
+  // en su fila de pipeline como en el resto del tablero: no.
+  const dealMixRows = dealMix([...allCommercialOpportunities.filter(isApprovedSale), ...activeRows], year);
   const complianceTone = (pct: number | null) => pct === null ? 'amber' : pct >= 80 ? 'green' : pct >= 40 ? 'amber' : 'red';
 
   // 3. ¿Qué negocios empujar esta semana?
@@ -2836,6 +2840,8 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
       return map;
     }, new Map<string, { key: string; label: string; count: number; value: number }>()).values()).sort((a, b) => b.count - a.count || b.value - a.value);
   const urgentRows = priorities.list.slice(0, 5);
+  // Renovaciones de todo el equipo cuyo contrato vence en 90 días o ya venció: la misma regla de Mi día.
+  const teamRenewals = renewalsDue(allCommercialOpportunities, now);
 
   return <section className="stack manager-dashboard dashboard-v2 dashboard-three-questions">
     {canResolveDelete && <DeleteRequestsPanel requests={deleteRequestRows} onChanged={refresh} />}
@@ -2864,6 +2870,15 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
         </tr>)}</tbody></table></div>
         {!salesRows.length && <p className="muted">Sin ventas aprobadas ni metas cargadas este año.</p>}
       </details>
+      <details className="panel dashboard-details">
+        <summary>Ventas y pipeline por tipo de cliente {year}</summary>
+        <div className="tablewrap crm-readable-table dashboard-sales-table"><table><thead><tr><th>Tipo</th><th>Ventas {year}</th><th>Pipeline activo</th></tr></thead><tbody>{dealMixRows.map(row => <tr key={row.key}>
+          <td><strong>{row.label}</strong></td>
+          <td className="money-cell">{row.salesCount ? <>{fmtMoneyCompact(row.sales)} <small className="muted">· {row.salesCount}</small></> : '—'}</td>
+          <td className="money-cell">{row.pipelineCount ? <>{fmtMoneyCompact(row.pipeline)} <small className="muted">· {row.pipelineCount}</small></> : '—'}</td>
+        </tr>)}</tbody></table></div>
+        {!dealMixRows.length && <p className="muted">Sin ventas este año ni oportunidades activas.</p>}
+      </details>
       <p className="muted dashboard-footnote">Calidad de datos: {dataQuality.complete ? 'las oportunidades activas tienen valor, tipo de cliente y regional.' : `${dataQuality.summary}. El pipeline y el valor esperado no incluyen lo que no tiene valor.`} El total del equipo sólo cuenta a quien tiene meta cargada.</p>
     </section>
 
@@ -2887,6 +2902,10 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
             <div><strong>{formatDisplayName(item.company_name)}</strong><small>{priorityReason(item)} · {item.recommendation}</small></div>
             <div className="v2-deal-value"><strong>{fmtMoneyCompact(item.offer_value)}</strong><small>{formatDisplayName(item.owner_name || 'Sin comercial')}</small></div>
           </a>)}{!urgentRows.length && <EmptyState title="Sin urgencias" text="Vig-IA Comercial no encontró oportunidades urgentes." />}</div>}
+        </Panel>
+        <Panel title="Renovaciones por vencer (90 días)">
+          {teamRenewals.length ? <ul className="dashboard-simple-list">{teamRenewals.map(({ opportunity: o, phrase }) => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>{phrase} · {formatDisplayName(o.owner_name || 'Sin comercial')}</span></li>)}</ul>
+            : <p className="muted">Ninguna renovación abierta vence en los próximos 90 días.</p>}
         </Panel>
         <Panel title="Congeladas que vuelven en 14 días">
           {returningFrozenRows.length ? <ul className="dashboard-simple-list">{returningFrozenRows.map(o => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>vuelve el {fmtDateOnly(o.frozen_until)} · {formatDisplayName(o.owner_name || 'Sin comercial')} · {fmtMoneyCompact(o.offer_value)}</span></li>)}</ul> : <p className="muted">Ninguna congelada vuelve en los próximos 14 días.</p>}
