@@ -32,7 +32,10 @@ const FROZEN = {
   // pregunta viaja al catálogo para que la selección sea pertinente. Cupos, motor y puente no cambian: la
   // construcción del cliente del puente, el modelo, el timeout, el interruptor y los límites del worker quedan
   // exactamente como estaban.
-  'verticales/licitaciones/agt002-workbench-runtime.js': '3acc99c8588133055f41866912f5e18e67df72945914f95ac2e8e54c5e47b21d',
+  // Actualizado a propósito (2026-11-04, mejora 5): el drain le pasa al responder un productor de documentos
+  // (`produceDocument`) que pide el Word al MISMO cliente del puente y lo guarda en el almacenamiento del CRM. Cupos,
+  // motor, puente, modelo, timeout, interruptor y límites del worker quedan exactamente como estaban.
+  'verticales/licitaciones/agt002-workbench-runtime.js': '3a9c74c3d58d5a1a2746f92f316a29de9184ac5f1bd08fc999e1a40918b3d4a8',
   'verticales/licitaciones/agt002-preview-runtime.js': 'ad4b2af766cdc5d4feccd6a660a1a4a9bedc185605d3d44af8542797097566ac',
   'ops/agt003-claude-bridge/run-server.mjs': '13c6ca09fcbc6f5db880fa3dfff4cea01430897728c9a8d6434afb235cc05bf1',
   'ops/agt003-claude-bridge/env.example': '168cb44d29fea92b6d3592a903d83ce9935837bfb13bdfd02cd9700baae86b0d',

@@ -93,10 +93,42 @@ function textArraySchema(maxChars) {
   return { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: maxChars } };
 }
 
+// Mejora 5: el documento con el formato real, como DATOS para la herramienta de render del puente
+// (agt002-document-render.js). El modelo no elige plantilla, ni rutas, ni nombre de archivo final.
+const DOCUMENT_TEXT = { type: 'string', minLength: 1, maxLength: 4000 };
+const DOCUMENT_LINES = { type: 'array', maxItems: 8, items: DOCUMENT_TEXT };
+export const AGT002_DRAFT_DOCUMENT_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  description: 'El documento listo para revisar, en el formato real que pide el pliego. Escribe entre [[ ]] todo dato que requiera una decisión humana o que no venga en fuentes_resueltas ni en context_links (p. ej. [[valor de la oferta]]); nunca lo inventes. **texto** es negrilla.',
+  required: ['title', 'blocks'],
+  properties: {
+    title: DOCUMENT_TEXT,
+    city_date: DOCUMENT_TEXT,
+    recipient: DOCUMENT_LINES,
+    subject: DOCUMENT_TEXT,
+    blocks: {
+      type: 'array', minItems: 1, maxItems: 200,
+      items: {
+        type: 'object', additionalProperties: false, required: ['kind'],
+        properties: {
+          kind: { type: 'string', enum: ['paragraph', 'heading', 'list', 'table'] },
+          text: DOCUMENT_TEXT,
+          items: { type: 'array', maxItems: 60, items: DOCUMENT_TEXT },
+          header: { type: 'array', maxItems: 8, items: { type: 'string', maxLength: 4000 } },
+          rows: { type: 'array', maxItems: 80, items: { type: 'array', maxItems: 8, items: { type: 'string', maxLength: 4000 } } },
+        },
+      },
+    },
+    closing: DOCUMENT_TEXT,
+    signature: DOCUMENT_LINES,
+  },
+});
+
 // Esquema de salida cerrado por capacidad: sólo pide al modelo el contenido
 // genuinamente generativo. Identidad, snapshot, base_version y política nunca se le
 // piden al modelo porque el servidor los estampa siempre desde el trabajo congelado.
-function buildOutputSchema(capabilityId, { allowedSourceIds }) {
+function buildOutputSchema(capabilityId, { allowedSourceIds, withDocument = false }) {
   if (capabilityId === AGT002_WORKBENCH_CAPABILITIES.reply) {
     return {
       type: 'object',
@@ -111,7 +143,7 @@ function buildOutputSchema(capabilityId, { allowedSourceIds }) {
     };
   }
   if (capabilityId === AGT002_WORKBENCH_CAPABILITIES.draft) {
-    return {
+    const schema = {
       type: 'object',
       additionalProperties: false,
       required: ['content_kind', 'content_text', 'content_metadata', 'source_links', 'missing_information', 'required_actions'],
@@ -124,6 +156,13 @@ function buildOutputSchema(capabilityId, { allowedSourceIds }) {
         required_actions: textArraySchema(2000),
       },
     };
+    // Sólo cuando el servidor puede armar el Word se le pide el documento estructurado: sin la herramienta, el
+    // borrador sigue siendo el de texto de siempre.
+    if (withDocument) {
+      schema.required.push('document');
+      schema.properties.document = AGT002_DRAFT_DOCUMENT_SCHEMA;
+    }
+    return schema;
   }
   if (capabilityId === AGT002_WORKBENCH_CAPABILITIES.learningProposal) {
     return {
@@ -143,8 +182,9 @@ function buildOutputSchema(capabilityId, { allowedSourceIds }) {
   throw responderError('capability_id no pertenece al contrato de la Mesa.', 'AGT002_RESPONDER_UNKNOWN_CAPABILITY');
 }
 
-function buildEnvelope(capabilityId, input, modelOutput, sourceLinks) {
-  const missingInformation = isStringArray(modelOutput.missing_information) ? modelOutput.missing_information : [];
+function buildEnvelope(capabilityId, input, modelOutput, sourceLinks, serverDraft = null) {
+  const missingInformation = serverDraft?.missingInformation
+    || (isStringArray(modelOutput.missing_information) ? modelOutput.missing_information : []);
   const requiredActions = isStringArray(modelOutput.required_actions) ? modelOutput.required_actions : [];
   const common = {
     visible_agent_name: 'Vig-IA',
@@ -173,7 +213,8 @@ function buildEnvelope(capabilityId, input, modelOutput, sourceLinks) {
       artifact_id: artifactLink.id,
       content_kind: modelOutput.content_kind,
       content_text: modelOutput.content_text,
-      content_metadata: isRecord(modelOutput.content_metadata) ? modelOutput.content_metadata : {},
+      // Con Word, la metadata la escribe el servidor (dónde quedó el archivo y qué falta), nunca el modelo.
+      content_metadata: serverDraft ? serverDraft.metadata : (isRecord(modelOutput.content_metadata) ? modelOutput.content_metadata : {}),
       source_links: sourceLinks,
       missing_information: missingInformation,
       required_actions: requiredActions,
@@ -213,6 +254,9 @@ export function createAgt002WorkbenchResponder({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   checkGate = () => true,
   resolveSources = null,
+  // Mejora 5: ({ input, document, missingInformation }) => metadata del archivo. La inyecta el drain, que tiene
+  // el cliente del puente y la base; sin ella, los borradores siguen siendo sólo texto.
+  produceDocument = null,
 } = {}) {
   if (!client || typeof client.run !== 'function') {
     throw new Error('La Mesa Vig-IA requiere un cliente de puente configurado.');
@@ -221,6 +265,9 @@ export function createAgt002WorkbenchResponder({
   if (!nonEmpty(policyText)) throw new Error('La Mesa Vig-IA requiere una política configurada.');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('La Mesa Vig-IA requiere un timeout configurado.');
   if (typeof checkGate !== 'function') throw new Error('La Mesa Vig-IA requiere una función de verificación del interruptor.');
+  if (produceDocument !== null && typeof produceDocument !== 'function') {
+    throw new Error('La Mesa Vig-IA requiere que el productor de documentos sea una función.');
+  }
   if (resolveSources !== null && typeof resolveSources !== 'function') {
     throw new Error('La Mesa Vig-IA requiere que el resolvedor de fuentes sea una función.');
   }
@@ -245,6 +292,25 @@ export function createAgt002WorkbenchResponder({
     }
   }
 
+  // El Word es un extra del borrador, no una condición: si no se puede armar, el borrador de texto se guarda
+  // igual y lo que falló se dice en missing_information, que es donde Katherine lo va a leer.
+  async function produceDraftDocument(input, modelOutput) {
+    const missing = isStringArray(modelOutput.missing_information) ? [...modelOutput.missing_information] : [];
+    if (!isRecord(modelOutput.document)) {
+      missing.push('No se armó el Word: Vig-IA no entregó el documento estructurado. El borrador queda sólo como texto.');
+      return { missingInformation: missing.slice(0, 20), metadata: { documento_error: 'sin_documento' } };
+    }
+    try {
+      const metadata = await produceDocument({ input, document: modelOutput.document, missingInformation: missing });
+      return { missingInformation: missing.slice(0, 20), metadata: isRecord(metadata) ? metadata : {} };
+    } catch (error) {
+      const code = String(error?.code || 'documento_fallido').slice(0, 80);
+      console.warn('agt002_workbench_document_failed', { event: 'agt002_workbench_document_failed', job_id: input.job_id, code });
+      missing.push('No se pudo armar el Word de este borrador; el texto queda abajo. Pídalo de nuevo o avise a Innovación.');
+      return { missingInformation: missing.slice(0, 20), metadata: { documento_error: code } };
+    }
+  }
+
   return Object.freeze({
     async respond(input) {
       if (!Object.values(AGT002_WORKBENCH_CAPABILITIES).includes(input?.capability_id)) {
@@ -264,7 +330,8 @@ export function createAgt002WorkbenchResponder({
       // empresa porque nunca recibió ninguna.
       const fuentesResueltas = await resolverFuentes(input);
       const allowedSourceIds = input.context_links.map(link => link.id);
-      const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds });
+      const withDocument = Boolean(produceDocument) && input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft;
+      const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds, withDocument });
       const minimizedInput = buildMinimizedInput(input, fuentesResueltas);
 
       // Re-chequeo del interruptor inmediatamente antes de invocar al puente: un
@@ -309,7 +376,8 @@ export function createAgt002WorkbenchResponder({
         throw responderError('Vig-IA citó una fuente fuera del contexto autorizado.', 'AGT002_RESPONDER_FORGED_SOURCE');
       }
 
-      const envelope = buildEnvelope(input.capability_id, input, modelOutput, sourceLinks);
+      const serverDraft = withDocument ? await produceDraftDocument(input, modelOutput) : null;
+      const envelope = buildEnvelope(input.capability_id, input, modelOutput, sourceLinks, serverDraft);
 
       try {
         validateAgt002WorkbenchResult(envelope, { input });
