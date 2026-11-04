@@ -1,3 +1,4 @@
+import { CUSTOMER_SEGMENT_FILTER_OPTIONS } from './client-profile.js';
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import { formatDateOnly } from '../dateOnly';
@@ -19,6 +20,7 @@ type VigiaPriority = {
   service_type_name: string | null;
   regional_nombre: string | null;
   customer_segment: string | null;
+  client_deal_type?: string | null;
   offer_value: number;
   score: number;
   level: VigiaLevel;
@@ -41,7 +43,8 @@ const PRIORITY_INBOX_LIMIT = 20;
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
 const levelLabel: Record<VigiaLevel, string> = { alto: 'Alto', medio: 'Medio', bajo: 'Bajo', sin_prioridad: 'Sin prioridad' };
-const customerSegmentOptions = [['cliente_nuevo', 'Cliente Nuevo'], ['cliente_actual', 'Cliente Actual']] as const;
+// Renovación / servicio nuevo también aquí (Juan, 2026-11-03): mismas opciones y misma regla que la lista.
+const customerSegmentOptions = CUSTOMER_SEGMENT_FILTER_OPTIONS;
 
 function displayDate(value: string | null) {
   if (!value) return 'Sin datos';
@@ -64,7 +67,9 @@ function uniqueOptions(rows: VigiaPriority[], value: (row: VigiaPriority) => str
   return [...options.entries()].sort((a, b) => a[1].localeCompare(b[1], 'es'));
 }
 
-export function VigiaCommercial({ canOpenOpportunity, commercialOwners }: { canOpenOpportunity: boolean; commercialOwners: CommercialOwnerOption[] }) {
+// `dealTypeById`: renovación / servicio nuevo de cada oportunidad, tomado de las oportunidades que la aplicación ya
+// cargó. Se cruza aquí y no en la respuesta de prioridades, que es un contrato versionado del agente.
+export function VigiaCommercial({ canOpenOpportunity, commercialOwners, dealTypeById }: { canOpenOpportunity: boolean; commercialOwners: CommercialOwnerOption[]; dealTypeById?: Map<string, string | null> }) {
   const initialHashFilters = useMemo(() => filtersFromAlertsHash(window.location.hash), []);
   const [payload, setPayload] = useState<VigiaPayload | null>(null);
   const [status, setStatus] = useState('Cargando prioridades del CRM…');
@@ -107,7 +112,7 @@ export function VigiaCommercial({ canOpenOpportunity, commercialOwners }: { canO
     return () => window.removeEventListener('hashchange', syncFiltersFromHash);
   }, []);
 
-  const priorities = payload?.priorities || [];
+  const priorities = useMemo(() => (payload?.priorities || []).map(row => ({ ...row, client_deal_type: dealTypeById?.get(row.id) ?? null })), [payload, dealTypeById]);
   const summary = payload ? summarizeCommercialPriorities(payload.priorities) : null;
   const invalidLink = useMemo(() => Boolean(payload && !priorityHashFiltersAreValid(priorities, {
     category,
@@ -118,7 +123,7 @@ export function VigiaCommercial({ canOpenOpportunity, commercialOwners }: { canO
     customerSegment,
     invalid: hashInvalid,
   })), [payload, priorities, category, owner, regional, stage, service, customerSegment, hashInvalid]);
-  const filtered = useMemo(() => filterCommercialPriorities(payload?.priorities || [], {
+  const filtered = useMemo(() => filterCommercialPriorities(priorities, {
     query,
     category: invalidLink ? '__invalid__' : category,
     owner,
@@ -127,7 +132,7 @@ export function VigiaCommercial({ canOpenOpportunity, commercialOwners }: { canO
     service,
     customerSegment,
     level,
-  }), [payload, query, category, invalidLink, owner, regional, stage, service, customerSegment, level]);
+  }), [priorities, query, category, invalidLink, owner, regional, stage, service, customerSegment, level]);
   const visible = filtered.slice(0, PRIORITY_INBOX_LIMIT);
   const ownerOptions = useMemo(() => mergeCommercialOwnerOptions(commercialOwners, priorities), [commercialOwners, priorities]);
   const regionalOptions = useMemo(() => uniqueOptions(priorities, row => row.regional_nombre, row => row.regional_nombre), [priorities]);

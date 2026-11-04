@@ -45,9 +45,9 @@ test('entran las renovaciones abiertas que vencen en 90 días o ya vencieron, la
 test('Mi día muestra el aviso antes de "Esta semana"', () => {
   const ui = read('../src/main.tsx');
   assert.match(ui, /const renewals = useMemo\(\(\) => renewalsDue\(opportunities, now\), \[opportunities, now\]\);/);
-  assert.match(ui, /<RenewalsDue items=\{renewals\} \/>\n {10}<WeekList upcoming=\{weekRows\} \/>/);
+  assert.match(ui, /<RenewalsDue items=\{renewals\} \/>\n {10}<RenewalsDue items=\{competitorContracts\} title="Contratos de la competencia por vencer" \/>\n {10}<WeekList upcoming=\{weekRows\} \/>/);
   const card = read('../src/vigia/OpportunityDecision.tsx');
-  assert.match(card, /aria-label="Renovaciones por vencer"/);
+  assert.match(card, /title = 'Renovaciones por vencer'/);
   assert.match(card, /daysLeft <= 30 \? ' is-urgent' : ''/);
 });
 

@@ -14,3 +14,6 @@ export type ClientDealType = 'renovacion' | 'servicio_nuevo';
 export const CLIENT_DEAL_TYPES: readonly (readonly [ClientDealType, string])[];
 export function clientDealLabel(value: unknown): string | null;
 export function normalizeClientDeal(body?: Record<string, unknown>): { client_deal_type: ClientDealType | null } | undefined;
+export const CUSTOMER_SEGMENT_FILTER_OPTIONS: readonly (readonly [string, string])[];
+export function isCustomerSegmentFilter(value: unknown): boolean;
+export function matchesCustomerSegmentFilter(row: { customer_segment?: string | null; client_deal_type?: string | null } | null | undefined, filter: string): boolean;

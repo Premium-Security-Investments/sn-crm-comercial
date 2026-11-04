@@ -9,7 +9,7 @@ const ui = `${main}\n${component}\n${copilotComponent}`;
 const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 const markers = [
-  'function VigiaCommercial({ canOpenOpportunity, commercialOwners }',
+  'function VigiaCommercial({ canOpenOpportunity, commercialOwners, dealTypeById }',
   "api<VigiaPayload>('/api/vigia/priorities')",
   'Prioridades Comerciales',
   'Prioridades explicables del CRM',

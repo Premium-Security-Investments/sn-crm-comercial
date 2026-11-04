@@ -32,7 +32,7 @@ for (const marker of [
   'Fuente de datos',
   'Ver oportunidad',
   'Requiere validación humana; no ejecuta acciones.',
-  "filterCommercialPriorities(payload?.priorities || []",
+  "filterCommercialPriorities(priorities, {",
   'summarizeCommercialPriorities(payload.priorities)',
   '.slice(0, PRIORITY_INBOX_LIMIT)',
 ]) assert.ok(component.includes(marker), `Prioridades Comerciales missing marker: ${marker}`);

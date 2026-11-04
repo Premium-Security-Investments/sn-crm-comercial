@@ -52,7 +52,7 @@ test('formulario, ficha, tabla y filtro de la lista', () => {
   assert.match(ui, /<Badge>Tipo de cliente: \{customerSegmentDealLabel\(o\)\}<\/Badge>/);
   assert.match(ui, /options=\{customerSegmentFilterOptions\} empty="Clientes"/);
   assert.match(ui, /matchesCustomerSegmentFilter\(o, customerSegmentFilter\)/);
-  assert.match(ui, /\['cliente_actual:sin_clasificar', 'Cliente Actual · Sin clasificar'\]/);
+  assert.match(read('../src/vigia/client-profile.js'), /\['cliente_actual:sin_clasificar', 'Cliente Actual · Sin clasificar'\]/);
 });
 
 test('migración 173 aditiva, con check de valores y rollback', () => {

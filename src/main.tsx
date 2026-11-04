@@ -59,8 +59,8 @@ import { meetingBrief } from './vigia/meeting-brief';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
-import { CLIENT_DEAL_TYPES, clientDealLabel, profileCompleteness, type ClientDealType } from './vigia/client-profile.js';
-import { renewalsDue } from './vigia/renewal-alerts.js';
+import { CLIENT_DEAL_TYPES, clientDealLabel, CUSTOMER_SEGMENT_FILTER_OPTIONS, matchesCustomerSegmentFilter, profileCompleteness, type ClientDealType } from './vigia/client-profile.js';
+import { competitorContractsDue, renewalsDue } from './vigia/renewal-alerts.js';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
@@ -136,20 +136,8 @@ function canManageGoals(profile?: Profile | null) { return canWriteGoals(profile
 function canViewTenders(profile?: Profile | null) { return navCanViewTenders(profile); }
 // "Puede tener oportunidades propias (vista comercial)" sólo aplica a roles humanos no comerciales y nunca a solo consulta.
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
-// Filtro de la lista: Cliente Actual se abre en renovación / servicio nuevo (Juan, 2026-11-03). "cliente_actual" solo
-// sigue trayendo todas las de cliente actual; "sin_clasificar" son las de cliente actual que todavía no lo dicen.
-const customerSegmentFilterOptions: string[][] = [
-  ['cliente_nuevo', 'Cliente Nuevo'], ['cliente_actual', 'Cliente Actual (todas)'],
-  ...CLIENT_DEAL_TYPES.map(([code, label]) => [`cliente_actual:${code}`, `Cliente Actual · ${label}`]),
-  ['cliente_actual:sin_clasificar', 'Cliente Actual · Sin clasificar'],
-];
-function matchesCustomerSegmentFilter(o: Pick<Opportunity, 'customer_segment' | 'client_deal_type'>, filter: string) {
-  if (!filter) return true;
-  const [segment, deal] = filter.split(':');
-  if (o.customer_segment !== segment) return false;
-  if (!deal) return true;
-  return deal === 'sin_clasificar' ? !o.client_deal_type : o.client_deal_type === deal;
-}
+// Filtro de la lista: la regla y las opciones viven en client-profile.js, compartidas con Vig-IA Comercial.
+const customerSegmentFilterOptions = CUSTOMER_SEGMENT_FILTER_OPTIONS.map(([code, label]) => [code, label]);
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
 const PRODUCT_OPERATIONAL_UNITS: Record<string, string> = {
   escoltas: 'Servicios / contratos',
@@ -618,6 +606,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'alerts') return <VigiaCommercial
     commercialOwners={data.profiles.filter(isCommercialProfile).map(profile => ({ id: profile.id, full_name: profile.full_name }))}
     canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
+    dealTypeById={new Map(data.opportunities.map(o => [o.id, o.client_deal_type ?? null]))}
   />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
   if (route.page === 'agents') return <AgentsView key={route.id || 'agents'} agentId={route.id} />;
@@ -2945,6 +2934,8 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   const goal = monthlyGoalCompliance({ opportunities, goals: data.goals, month: bogotaMonth(now), ownerId: selfId });
   // Aviso de renovación (Juan, 2026-11-03): contratos de clientes actuales que vencen en 90 días o ya vencieron.
   const renewals = useMemo(() => renewalsDue(opportunities, now), [opportunities, now]);
+  // Y el contrato de la competencia en los prospectos: vence en seis meses, es el momento de entrar.
+  const competitorContracts = useMemo(() => competitorContractsDue(opportunities, now), [opportunities, now]);
   const canCreate = canAccessRoute(data.currentProfile, 'new');
 
   const pendingCount = pendingDecisionRows.length;
@@ -3015,6 +3006,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
               competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />}
           {isCalm && <TodayDone opportunities={opportunities.filter(o => isAgt003CommercialOpportunity(o))} now={now} />}
           <RenewalsDue items={renewals} />
+          <RenewalsDue items={competitorContracts} title="Contratos de la competencia por vencer" />
           <WeekList upcoming={weekRows} />
           {isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
         </div>
