@@ -202,3 +202,16 @@ export async function reopenTenderClosureActa(request: TenderRequest, opportunit
 export async function loadTenderOpenBoard(request: TenderRequest): Promise<TenderOpenBoard> {
   return request<TenderOpenBoard>('/api/tender-open-board');
 }
+
+/** Mejora 5: estado de las copias de trabajo en SharePoint de los borradores del expediente. */
+export type TenderDraftSharepointCopy = {
+  artifact_version_id: string; status: 'pendiente' | 'subiendo' | 'subido' | 'fallido';
+  sharepoint_url: string | null; requested_at: string; uploaded_at: string | null; error_text: string | null;
+};
+export async function loadTenderDraftSharepointCopies(request: TenderRequest, opportunityId: string): Promise<{ copies: TenderDraftSharepointCopy[] }> {
+  return request(`/api/tender-dossier-sharepoint-copies?id=${encodeURIComponent(opportunityId)}`);
+}
+/** Pide la copia; la sube el servidor de tareas en uno o dos minutos. */
+export async function requestTenderDraftSharepointCopy(request: TenderRequest, input: { opportunity_id: string; version_id: string }): Promise<{ copy: TenderDraftSharepointCopy }> {
+  return request('/api/tender-dossier-sharepoint-copies', { method: 'POST', body: JSON.stringify(input) });
+}

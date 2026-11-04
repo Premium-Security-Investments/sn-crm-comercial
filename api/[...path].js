@@ -39,6 +39,8 @@ import {
   callAppendTenderDossierItemAction,
   callCreateTenderDossierArtifact,
   callAddTenderDossierArtifactVersion,
+  callRequestTenderDraftSharepointCopy,
+  listTenderDraftSharepointCopies,
   callRecordTenderDossierArtifactReview,
   callSeedTenderDossier,
   callSeedTenderDossierRequirements,
@@ -6941,6 +6943,25 @@ app.post('/api/tender-dossier-artifact-version', async (req, res) => {
     const database = requireDb();
     await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
     res.status(201).json(await callAddTenderDossierArtifactVersion(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Mejora 5: copia de trabajo del borrador en SharePoint, pedida con un botón. Misma autorización que agregar una versión.
+app.get('/api/tender-dossier-sharepoint-copies', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.json(await listTenderDraftSharepointCopies(database, opportunityId, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/tender-dossier-sharepoint-copies', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callRequestTenderDraftSharepointCopy(database, req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
