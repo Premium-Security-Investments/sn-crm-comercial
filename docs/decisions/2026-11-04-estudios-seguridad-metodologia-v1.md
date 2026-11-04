@@ -36,3 +36,29 @@ casilla del mapa de calor 5×5.
   de 16 inaceptable → 8 tolerable a 16 crítico → 8 moderado.
 - La fórmula histórica queda en el código como `matriz-historica-2026`. No es oficial: el importador la usa
   para avisar cuando un Excel no coincide con sus propias fórmulas.
+
+## Hallazgo posterior (2026-11-04): los estudios reales cuentan el control dos veces
+
+Juan compartió dos estudios reales entregados:
+
+- `MATRIZ_HADA_COMPLETA_7.0.xlsx`: HADA International, enero de 2026, 23 riesgos y una foto de visita por riesgo.
+- `EXCO_COLOMBIANA_SEPT._2026_2.0.xls`: EXCO Colombiana, enero de 2026, 7 riesgos.
+
+Usan otra variante de la plantilla:
+
+- probabilidad actual = ⌈P × (1 − control)⌉, igual que la v1;
+- magnitud actual = ⌈probabilidad actual × (1 − control) × I⌉, es decir, **el mismo control se descuenta dos
+  veces**.
+
+En el código queda como `matriz-historica-control-doble-2026` y reproduce HADA (23 de 23) y EXCO (6 de 7).
+
+La v1 descuenta el control una sola vez. Por eso, para la misma calificación, da un riesgo actual igual o más
+alto que el que se les entregó a esos clientes; el residual no cambia. En HADA, el Excel marca 2 riesgos
+inaceptables y con la v1 quedan 3 críticos: R5, R12 y R18.
+
+**Recomendación: mantener la v1** (pendiente de que Juan la confirme). Descontar dos veces el mismo control subestima el riesgo: una sede se ve más segura de
+lo que está. Los estudios nuevos no son comparables uno a uno con los entregados antes de la v1.
+
+El riesgo de EXCO que no coincide es el R3: su probabilidad actual (5) se tecleó encima de la fórmula y quedó
+por encima de la inherente (4). Un control no puede subir la probabilidad: con la fórmula del propio Excel da
+13 tolerable y no 16 inaceptable.

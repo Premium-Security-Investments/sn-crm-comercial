@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   METODOLOGIA_V1,
   MATRIZ_HISTORICA,
+  MATRIZ_HISTORICA_CONTROL_DOBLE,
   efectividadControl,
   nivelDeMagnitud,
   riesgoDesdeMatrizHistorica,
@@ -91,6 +92,74 @@ test('los cuatro niveles de la v1 tienen sus límites en 5, 10, 15 y 25', () => 
     ['bajo', 'bajo', 'moderado', 'moderado', 'alto', 'alto', 'critico', 'critico']);
   assert.equal(METODOLOGIA_V1.niveles.length, 4);
   assert.ok(Object.isFrozen(METODOLOGIA_V1) && Object.isFrozen(METODOLOGIA_V1.niveles[0]));
+});
+
+// Los dos estudios reales que Juan compartió el 2026-11-04 (MATRIZ_HADA_COMPLETA_7.0.xlsx, sha256 50f6e03f…603f, y
+// EXCO_COLOMBIANA_SEPT._2026_2.0.xls, sha256 4d945977…bb7). [código, P, I, control actual, control propuesto,
+// P actual, magnitud actual, nivel actual, P residual, magnitud residual, nivel residual], de HOJA DE TRABAJO.
+const HADA = [
+  ['R1', 3, 4, [3, 3, 3], [5, 5, 4], 3, 10, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R2', 3, 3, [3, 3, 3], [5, 4, 4], 3, 8, 'TOLERABLE', 2, 6, 'ACEPTABLE'],
+  ['R3', 3, 3, [3, 3, 3], [5, 4, 4], 3, 8, 'TOLERABLE', 2, 6, 'ACEPTABLE'],
+  ['R4', 4, 4, [3, 4, 3], [4, 4, 4], 3, 9, 'TOLERABLE', 2, 8, 'TOLERABLE'],
+  ['R5', 4, 5, [3, 3, 3], [5, 5, 4], 4, 16, 'INACEPTABLE', 1, 5, 'ACEPTABLE'],
+  ['R6', 4, 4, [3, 3, 4], [4, 5, 5], 3, 9, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R7', 4, 3, [3, 3, 3], [5, 4, 4], 4, 10, 'TOLERABLE', 2, 6, 'ACEPTABLE'],
+  ['R8', 2, 5, [3, 4, 4], [5, 5, 4], 2, 7, 'TOLERABLE', 1, 5, 'ACEPTABLE'],
+  ['R9', 2, 5, [4, 3, 4], [5, 5, 4], 2, 7, 'TOLERABLE', 1, 5, 'ACEPTABLE'],
+  ['R10', 3, 3, [4, 4, 4], [5, 5, 4], 2, 3, 'ACEPTABLE', 1, 3, 'ACEPTABLE'],
+  ['R11', 3, 2, [4, 4, 4], [5, 5, 4], 2, 2, 'ACEPTABLE', 1, 2, 'ACEPTABLE'],
+  ['R12', 4, 5, [3, 3, 3], [5, 5, 4], 4, 16, 'INACEPTABLE', 1, 5, 'ACEPTABLE'],
+  ['R13', 4, 4, [3, 3, 4], [5, 5, 4], 3, 9, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R14', 3, 4, [3, 3, 3], [5, 5, 4], 3, 10, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R15', 4, 3, [4, 4, 4], [4, 4, 4], 2, 3, 'ACEPTABLE', 1, 3, 'ACEPTABLE'],
+  ['R16', 4, 3, [4, 4, 4], [5, 5, 4], 2, 3, 'ACEPTABLE', 1, 3, 'ACEPTABLE'],
+  ['R17', 3, 4, [3, 3, 3], [5, 4, 5], 3, 10, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R18', 4, 4, [3, 3, 3], [5, 5, 4], 4, 13, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R19', 4, 3, [3, 3, 3], [4, 5, 5], 4, 10, 'TOLERABLE', 1, 3, 'ACEPTABLE'],
+  ['R20', 3, 4, [4, 3, 3], [4, 5, 5], 3, 9, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R21', 3, 5, [3, 4, 4], [5, 5, 4], 2, 7, 'TOLERABLE', 1, 5, 'ACEPTABLE'],
+  ['R22', 5, 3, [3, 3, 3], [4, 4, 4], 4, 10, 'TOLERABLE', 2, 6, 'ACEPTABLE'],
+  ['R23', 3, 3, [4, 4, 4], [5, 5, 4], 2, 3, 'ACEPTABLE', 1, 3, 'ACEPTABLE'],
+];
+// R3 queda fuera a propósito: ver la prueba de abajo.
+const EXCO = [
+  ['R1', 4, 4, [4, 4, 3], [5, 5, 4], 3, 8, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R2', 4, 4, [4, 4, 4], [5, 5, 4], 2, 4, 'ACEPTABLE', 1, 4, 'ACEPTABLE'],
+  ['R4', 4, 4, [4, 3, 3], [5, 5, 4], 3, 9, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R5', 4, 4, [1, 1, 1], [4, 4, 4], 4, 16, 'INACEPTABLE', 2, 8, 'TOLERABLE'],
+  ['R6', 4, 4, [4, 4, 3], [5, 5, 4], 3, 8, 'TOLERABLE', 1, 4, 'ACEPTABLE'],
+  ['R7', 4, 5, [4, 4, 3], [5, 5, 4], 3, 10, 'TOLERABLE', 1, 5, 'ACEPTABLE'],
+];
+const control = ([calidad, eficacia, eficiencia]) => ({ calidad, eficacia, eficiencia });
+
+test('la variante con control doble reproduce los estudios reales de HADA (23) y EXCO (6)', () => {
+  for (const [codigo, p, i, ca, cp, pActual, mActual, nActual, pResidual, mResidual, nResidual] of [...HADA, ...EXCO]) {
+    const v = valorarRiesgo(riesgoDesdeMatrizHistorica({ probabilidad: p, impacto: i, controlActual: control(ca), controlPropuesto: control(cp) }), MATRIZ_HISTORICA_CONTROL_DOBLE);
+    assert.deepEqual(
+      [v.actual.probabilidad, v.actual.magnitud, v.actual.nivel, v.residual.probabilidad, v.residual.magnitud, v.residual.nivel],
+      [pActual, mActual, nActual.toLowerCase(), pResidual, mResidual, nResidual.toLowerCase()],
+      codigo,
+    );
+  }
+});
+
+test('EXCO R3: la probabilidad actual se tecleó encima de la fórmula y sube por encima de la inherente', () => {
+  // El Excel trae P 4 → P actual 5 y magnitud 16 inaceptable. Un control no puede subir la probabilidad: con su
+  // propia fórmula da 4 y 13 tolerable. Es justo lo que el importador tiene que avisar.
+  const v = valorarRiesgo(riesgoDesdeMatrizHistorica({ probabilidad: 4, impacto: 4, controlActual: control([3, 3, 3]), controlPropuesto: control([5, 4, 4]) }), MATRIZ_HISTORICA_CONTROL_DOBLE);
+  assert.deepEqual([v.actual.probabilidad, v.actual.magnitud, v.actual.nivel], [4, 13, 'tolerable']);
+});
+
+test('la v1 no descuenta el control dos veces: el riesgo actual de HADA sube y el residual no cambia', () => {
+  let criticos = 0;
+  for (const [codigo, p, i, ca, cp, , mActual, , , mResidual] of HADA) {
+    const v1 = valorarRiesgo(riesgoDesdeMatrizHistorica({ probabilidad: p, impacto: i, controlActual: control(ca), controlPropuesto: control(cp) }));
+    assert.ok(v1.actual.magnitud >= mActual, codigo);
+    assert.equal(v1.residual.magnitud, mResidual, codigo);
+    if (v1.actual.nivel === 'critico') criticos += 1;
+  }
+  assert.equal(criticos, 3, 'R5, R12 y R18; el Excel sólo marca inaceptables R5 y R12');
 });
 
 test('rechaza calificaciones fuera de la escala de 1 a 5', () => {

@@ -32,6 +32,15 @@ export const MATRIZ_HISTORICA = Object.freeze({
   ]),
 });
 
+// La variante de los estudios reales entregados (HADA International y EXCO Colombiana, enero de 2026): el control
+// baja la probabilidad y DESPUÉS vuelve a descontarse de la magnitud, ⌈P actual × (1 − control) × I⌉. Cuenta el
+// mismo control dos veces y por eso da un riesgo actual menor que la v1. Tampoco es oficial: sólo para recalcular.
+export const MATRIZ_HISTORICA_CONTROL_DOBLE = Object.freeze({
+  ...MATRIZ_HISTORICA,
+  id: 'matriz-historica-control-doble-2026',
+  controlTambienEnMagnitud: true,
+});
+
 function escala(valor, campo) {
   if (!Number.isInteger(valor) || valor < 1 || valor > 5) throw new RangeError(`${campo} debe ser un entero de 1 a 5`);
   return valor;
@@ -66,7 +75,7 @@ export function valorarRiesgo(riesgo, metodologia = METODOLOGIA_V1) {
   const probabilidadActual = probabilidadTrasControl(probabilidad, efectividadActual);
   const probabilidadResidual = probabilidadTrasControl(probabilidadActual, efectividadPropuesta);
   const inherente = probabilidad * impacto;
-  const actual = probabilidadActual * impacto;
+  const actual = metodologia.controlTambienEnMagnitud ? techo(probabilidadActual * (1 - efectividadActual) * impacto) : probabilidadActual * impacto;
   const residual = probabilidadResidual * impacto;
 
   return {

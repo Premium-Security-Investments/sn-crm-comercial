@@ -89,6 +89,30 @@ y cada estudio queda amarrado a la versión con la que se calculó.
 
 Ver `docs/decisions/2026-11-04-estudios-seguridad-metodologia-v1.md`.
 
+### 1.3 Dos estudios reales: HADA International y EXCO Colombiana
+
+Los compartió Juan el 2026-11-04 por adjunto, no por SharePoint. Usan la misma plantilla de 31 hojas, pero
+son trabajo real, no plantilla:
+
+- las calificaciones de los controles varían de un riesgo a otro;
+- los procesos son de la empresa (gestión humana, TI, comercio exterior, producción);
+- HADA trae una foto de la visita por cada ficha de riesgo;
+- los planes de acción tienen fechas (de diciembre de 2026 a febrero de 2027).
+
+Lo que cambian para el diseño:
+
+- **Otra variante de fórmula, que cuenta el control dos veces.** Ver la decisión v1, sección "Hallazgo
+  posterior".
+- **Contaminación también en estudios reales.** El plan de acción de EXCO se titula "…PLAN ESTRATÉGICO
+  PANASA". EXCO tiene 28 filas vacías (R8 a R35) con el código `R1R` y fechas de "octubre de 2032"; el
+  archivo se llama "SEPT 2026", pero su encabezado dice "ENERO 2026".
+- **Un dato tecleado encima de la fórmula:** en EXCO R3 la probabilidad actual quedó mayor que la inherente.
+- **El alcance va más allá de la seguridad física.** HADA incluye riesgos de TI, comercio exterior y
+  seguridad y salud en el trabajo. La plantilla "Instalaciones físicas v1" los admite como procesos del
+  catálogo, pero conviene marcarlos como fuera del núcleo físico. `por confirmar`
+- **Las fotos son evidencia de verdad.** El importador debe extraer la imagen de cada ficha `R<n>` y vincularla
+  a su riesgo.
+
 ## 2. Principios
 
 1. **SIIO es la fuente de verdad** de los datos estructurados y de los estados. SharePoint guarda los
