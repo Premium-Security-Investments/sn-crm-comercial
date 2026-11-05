@@ -39,7 +39,9 @@ const FROZEN = {
   // oficial del documento que se redacta, el borrador tiene su propio tope de tiempo y el adaptador publica el aviso
   // de un fallo en el chat. Cupos, motor, puente, modelo y el tope de las respuestas quedan como estaban.
   'verticales/licitaciones/agt002-workbench-runtime.js': '1a665e85f740f86b7d44064373e5240578079e7bb82293f1366c0e6deef7214e',
-  'verticales/licitaciones/agt002-preview-runtime.js': 'ad4b2af766cdc5d4feccd6a660a1a4a9bedc185605d3d44af8542797097566ac',
+  // Actualizado a propósito (2026-11-05, F3 de la auditoría Fiscalía): el corte de vigencia de las normas
+  // (`legalAsOf`) toma el día de Colombia en vez del de UTC. Cupos, motor, puente, modelo y timeout no cambian.
+  'verticales/licitaciones/agt002-preview-runtime.js': '7d6f6f6b41af98b2b0b3081846565389f07c2bdb7e8766f3ff6570385fce33ae',
   'ops/agt003-claude-bridge/run-server.mjs': '13c6ca09fcbc6f5db880fa3dfff4cea01430897728c9a8d6434afb235cc05bf1',
   'ops/agt003-claude-bridge/env.example': '168cb44d29fea92b6d3592a903d83ce9935837bfb13bdfd02cd9700baae86b0d',
   'ops/agt003-claude-bridge/agt003-bridge.service': '0847b3a05bcb751e0e8989d96ef2aeb7a447521f7a1c9a0213447a93a95fecfd',
