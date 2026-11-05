@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadTenderDossierWorkbench, postTenderDossierWorkbenchMessage, retryTenderDossierWorkbenchJob } from '../api';
 import type { TenderDossierWorkbench, TenderRequest } from '../types';
+import { lastFailedVigiaJob } from './vigiaChannelFailure';
 import { clarificationSentText, loadTenderClarifications, sendTenderClarification, type TenderClarification } from './TenderClarify';
 
 const REPLY_CAPABILITY_ID = 'agt002.dossier-workbench.reply.v1';
@@ -41,7 +42,7 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
   useEffect(() => { void reload(); }, [reload]);
 
   const pending = (data?.jobs || []).some(job => job.status === 'queued' || job.status === 'in_progress');
-  const failed = (data?.jobs || []).filter(job => job.status === 'failed');
+  const failed = lastFailedVigiaJob(data?.jobs);
   // Si la respuesta no llegó con el envío (cola ocupada o demora), se consulta un rato más.
   useEffect(() => {
     if (!pending) { pollsRef.current = 0; return; }
@@ -113,7 +114,7 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
         <p>{message.content}</p>
       </div>)}
       {(pending || sending) && <p className="tw-muted tw-typing">Vig-IA está respondiendo…</p>}
-      {failed.length > 0 && !pending && <div className="notice">Vig-IA no pudo responder el último mensaje. <button type="button" className="secondary" disabled={sending} onClick={() => void retry(failed[0].id)}>Reintentar</button></div>}
+      {failed && !pending && <div className="notice">Vig-IA no pudo responder el último mensaje. <button type="button" className="secondary" disabled={sending} onClick={() => void retry(failed.id)}>Reintentar</button></div>}
       <div ref={endRef} />
     </div>
     {actions.length > 0 && <details className="tw-fold"><summary>Lo que Vig-IA sugiere hacer ({actions.length})</summary>
