@@ -180,6 +180,8 @@ export function buildTenderOpenBoard({ processes = [] } = {}) {
       offer_status: process.offer_status || null,
       has_analysis: Boolean(process.matrix),
       required_company_documents: requiredClasses(process).size,
+      // Mejora 1: vencidos del expediente por consecuencia (null si no se pudo leer).
+      vencidos: process.vencidos || null,
     })),
     tramites,
     vencimientos,
@@ -191,6 +193,8 @@ export function buildTenderOpenBoard({ processes = [] } = {}) {
       tramites_por_hacer: tramites.length,
       documentos_que_vencen: vencimientos.length,
       garantias_simultaneas: porProceso.clusters.length,
+      vencidos_que_tumban: list.reduce((total, process) => total + (process.vencidos?.vencidos_que_tumban || 0), 0),
+      no_subsanables_abiertos: list.reduce((total, process) => total + (process.vencidos?.no_subsanables_abiertos || 0), 0),
     },
   };
 }

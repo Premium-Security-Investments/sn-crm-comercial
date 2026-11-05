@@ -32,3 +32,6 @@
 .tender-company-bridge-row p{margin:0;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
 .tender-company-bridge-row p.muted{color:#526173}
 .tender-company-bridge>details>summary{cursor:pointer;font-weight:800;color:#40516b;padding:6px 0}
+
+/* Mejora 1: cuenta regresiva y vencidos que tumban la oferta, en el tablero de procesos abiertos */
+.tender-badge-urgent{background:#fee2e2;color:#991b1b}

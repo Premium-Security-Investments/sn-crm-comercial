@@ -67,7 +67,6 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
   // Mejora 5: la copia de trabajo en SharePoint, pedida con el botón. Mientras haya una en curso, se vuelve a mirar cada
   // 15 s; la sube el servidor de tareas en uno o dos minutos.
   const [copies, setCopies] = useState<Record<string, TenderDraftSharepointCopy>>({});
-  const [uploading, setUploading] = useState(false);
   const loadCopies = useCallback(async () => {
     try {
       const { copies: list } = await loadTenderDraftSharepointCopies(request, opportunityId);
@@ -81,24 +80,19 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
     const timer = window.setInterval(() => { void loadCopies(); }, 15_000);
     return () => window.clearInterval(timer);
   }, [inFlight, loadCopies]);
-  // Lo que el botón sube: la versión vigente de cada documento que tenga Word y todavía no esté (o haya fallado).
-  const toUpload = artifacts.filter(artifact => {
-    const version = artifact.current_version;
-    if (!version || !versionFiles(version.content_metadata).archivo) return false;
-    const copy = copies[version.id];
-    return !copy || copy.status === 'fallido';
-  });
-  const uploadToSharepoint = async () => {
-    setUploading(true); setError('');
+  // Juan, 2026-11-05: el botón va frente a cada documento, no uno arriba que suba todo. Cada documento se revisa por
+  // separado; con el general se subía también un borrador que nadie había mirado. Sube la versión vigente con Word.
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const uploadToSharepoint = async (artifact: TenderDossierArtifact) => {
+    if (!artifact.current_version) return;
+    setUploadingId(artifact.id); setError('');
     try {
-      for (const artifact of toUpload) {
-        await requestTenderDraftSharepointCopy(request, { opportunity_id: opportunityId, version_id: artifact.current_version!.id });
-      }
+      await requestTenderDraftSharepointCopy(request, { opportunity_id: opportunityId, version_id: artifact.current_version.id });
       await loadCopies();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setUploading(false);
+      setUploadingId(null);
     }
   };
 
@@ -190,7 +184,7 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
   };
 
   return <section className="document-analysis-card tender-dossier-section">
-    <div className="tender-dossier-section-head"><div><small>Documentos de la oferta</small><h3>Borradores y aprobación</h3></div><div className="row-actions"><span className="badge badge-neutral">{artifacts.filter(artifact => artifact.review_status === 'aprobado').length} de {artifacts.length} aprobados</span>{toUpload.length > 0 && <button type="button" className="secondary" disabled={uploading} onClick={() => void uploadToSharepoint()}>{uploading ? 'Pidiendo…' : `Subir a SharePoint (${toUpload.length})`}</button>}</div></div>
+    <div className="tender-dossier-section-head"><div><small>Documentos de la oferta</small><h3>Borradores y aprobación</h3></div><div className="row-actions"><span className="badge badge-neutral">{artifacts.filter(artifact => artifact.review_status === 'aprobado').length} de {artifacts.length} aprobados</span></div></div>
     {error && <div className="notice" role="alert">{error}</div>}
     <div className="timeline tender-dossier-list">
       {artifacts.map(artifact => {
@@ -218,12 +212,13 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
               <div className="row-actions">
                 {files.sharepointUrl && <a className="button" href={files.sharepointUrl} target="_blank" rel="noreferrer">Abrir en SharePoint</a>}
                 {files.archivo && <button type="button" className={files.sharepointUrl ? 'secondary' : undefined} disabled={disabled} onClick={() => void downloadWord(artifact, files.archivo!.nombre)}>Descargar Word</button>}
+                {files.archivo && !files.sharepointUrl && (!copy || copy.status === 'fallido') && <button type="button" className="secondary" disabled={uploadingId === artifact.id} onClick={() => void uploadToSharepoint(artifact)}>{uploadingId === artifact.id ? 'Pidiendo…' : 'Subir a SharePoint'}</button>}
               </div>
               {files.archivo && !files.sharepointUrl && (copy?.status === 'pendiente' || copy?.status === 'subiendo'
                 ? <p className="muted">Subiendo la copia de trabajo a SharePoint; tarda uno o dos minutos.</p>
                 : copy?.status === 'fallido'
-                  ? <p className="error" role="alert">No se pudo subir a SharePoint: {copy.error_text || 'error desconocido'}. Puede volver a intentarlo con «Subir a SharePoint».</p>
-                  : <p className="muted">El Word de aquí es el original que armó {VIGIA_VISIBLE_NAMES.tenders}. Para trabajarlo en SharePoint, use «Subir a SharePoint» arriba.</p>)}
+                  ? <p className="error" role="alert">No se pudo subir a SharePoint: {copy.error_text || 'error desconocido'}. Puede volver a intentarlo con «Subir a SharePoint», aquí.</p>
+                  : <p className="muted">El Word de aquí es el original que armó {VIGIA_VISIBLE_NAMES.tenders}. Para trabajarlo en SharePoint, use «Subir a SharePoint».</p>)}
               {files.falta.length > 0 && <div><strong>Lo que falta decidir o diligenciar</strong> (va en amarillo en el Word)<ul>{files.falta.map(item => <li key={item}>{item}</li>)}</ul></div>}
             </div>;
           })()}
