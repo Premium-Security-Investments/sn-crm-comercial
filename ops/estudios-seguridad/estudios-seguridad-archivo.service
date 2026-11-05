@@ -1,0 +1,42 @@
+[Unit]
+Description=Estudios de Seguridad -> SharePoint: archiva el informe y las evidencias de cada versión aprobada
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/estudios-seguridad/run-estudios-seguridad-archivo.mjs
+
+# Este trabajo escribe en SharePoint **a nombre de Juan Botero**: la sesión de Microsoft Graph es su sesión delegada.
+# Sólo sube lo que una persona pidió aprobando una versión (migración 186; decisión de Juan del 2026-11-05: "vamos
+# con su recomendación"). Sin pedidos no arma documentos ni toca Microsoft. Las guardas del puente:
+#
+#   1. Nunca sobrescribe: `subir.py` sin `--reemplazar`.
+#   2. Relee después de escribir; con `.docx` el readback no coincide nunca y se registra como `distinto`.
+#   3. Todo va a `99_Del_CRM/Estudios_de_Seguridad/`, jamás a carpetas curadas.
+#
+# La ruta real (release) la pone el drop-in `10-release.conf`, como en los demás trabajos.
+
+Environment=ESTUDIOS_SHAREPOINT_UPLOAD_SCRIPT=/root/.vigia-graph/subir.py
+Environment=ESTUDIOS_SHAREPOINT_DRIVE_ID=b!BoXt-GqsJ0SDAdUp0lzrM9Jsb0XFlulNsE6Mldp9S65CwtkHrpg5RqCEQSc-EerT
+
+# Root por la sesión de Graph (`/root/.vigia-graph`, 700); de la casa de root sólo ve esa carpeta, con escritura
+# porque el token rota al usarse. Sin `MemoryDenyWriteExecute`: Node lo necesita para su JIT.
+ProtectHome=tmpfs
+BindPaths=/root/.vigia-graph
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+TimeoutStartSec=900

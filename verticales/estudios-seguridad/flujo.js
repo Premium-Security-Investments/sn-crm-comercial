@@ -143,12 +143,19 @@ export async function loadWorkflow(db, study, profile) {
   if (missingTable(events.error) || missingTable(versions.error)) return { available: false, events: [], versions: [], can: {}, names: {} };
   if (events.error) throw events.error;
   if (versions.error) throw versions.error;
+  // Archivo en SharePoint de cada versión (migración 186). Sin esa migración, las versiones se ven sin su archivo.
+  const archives = await db.from('psi_security_study_archives').select('version, status, attempts, report_url, folder_path, files, error, finished_at').eq('study_id', study.id);
+  if (archives.error && !missingTable(archives.error)) throw archives.error;
+  const archiveByVersion = new Map((archives.data || []).map(item => [item.version, {
+    status: item.status, report_url: item.report_url, error: item.error, finished_at: item.finished_at,
+    files: Array.isArray(item.files) ? item.files.map(file => ({ nombre: file.nombre, tipo: file.tipo, url: file.url })) : [],
+  }]));
   const ids = [...new Set([...(events.data || []).map(item => item.actor_id), ...(versions.data || []).map(item => item.approved_by), study.prepared_by])];
   const { data: people } = await db.from('psi_sales_profiles').select('id, full_name').in('id', ids);
   return {
     available: true,
     events: events.data || [],
-    versions: versions.data || [],
+    versions: (versions.data || []).map(version => ({ ...version, archive: archiveByVersion.get(version.version) || null })),
     can: workflowPermissions(profile, study),
     names: Object.fromEntries((people || []).map(person => [person.id, person.full_name])),
   };
