@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { ACTIONS, requireAction } from '../../access-control.js';
 import { readAgt002InitialAnalysisReport } from './agt002-initial-analysis-report.js';
 import { buildRequirementRows, requirementSeedItems } from './agt002-requirements-model.js';
+import { buildTenderCompanyDocumentBridge } from './tender-company-document-bridge.js';
+import { buildTenderComplianceMatrix } from './tender-compliance-matrix.js';
+import { tramitesConTercerosSeedItems } from './tender-tramites-con-terceros.js';
+import { loadCompanyBase } from '../../company-base.js';
+import { listCompanyProcurementDocuments } from '../../company-procurement-documents.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ITEM_TYPES = new Set(['documento', 'pendiente_humano', 'general']);
@@ -267,18 +272,42 @@ export async function callSeedTenderDossier(database, input, currentProfile) {
  * registrar el GO y desde el botón "Cargar los requisitos del análisis" del expediente. Idempotente.
  * Sin reporte inicial listo no hace nada: el expediente queda como esté.
  */
-export async function seedTenderDossierRequirements(database, opportunityId, actor, { readReport = readAgt002InitialAnalysisReport, today } = {}) {
+/**
+ * Mejora 3: los trámites con tercero del proceso, con el puente de documentos de la empresa y la matriz. Se leen aquí
+ * (no en el GO) para que el botón «Cargar los requisitos del análisis» también los cree si faltan.
+ */
+async function defaultReadTramites(database, { rows, closeDate, today }) {
+  const [companyBase, documents] = await Promise.all([loadCompanyBase(database), listCompanyProcurementDocuments(database)]);
+  const bridge = buildTenderCompanyDocumentBridge({ registry: companyBase.registry, documents, closeDate });
+  const matrix = buildTenderComplianceMatrix({ requirementRows: rows, bridge });
+  return tramitesConTercerosSeedItems({ matrix, bridge, requirementRows: rows, closeDate, today });
+}
+
+export async function seedTenderDossierRequirements(database, opportunityId, actor, { readReport = readAgt002InitialAnalysisReport, readTramites = defaultReadTramites, today } = {}) {
   const response = await readReport(database, opportunityId);
   if (!response?.available || !response.report) return { inserted: 0, available: false };
   const { data: opportunity } = await database.from('psi_sales_opportunities').select('expected_close_date').eq('id', opportunityId).maybeSingle();
-  const items = requirementSeedItems(buildRequirementRows(response.report), opportunity?.expected_close_date || null, today);
-  if (!items.length) return { inserted: 0, available: true };
-  const result = await rpc(database, 'psi_seed_tender_dossier_requirements', {
-    p_opportunity_id: opportunityId,
-    p_actor_id: actor,
-    p_items: items,
-  });
-  return { inserted: Number(result?.inserted || 0), available: true };
+  const closeDate = opportunity?.expected_close_date || null;
+  const rows = buildRequirementRows(response.report);
+  const items = requirementSeedItems(rows, closeDate, today);
+  let inserted = 0;
+  if (items.length) {
+    const result = await rpc(database, 'psi_seed_tender_dossier_requirements', { p_opportunity_id: opportunityId, p_actor_id: actor, p_items: items });
+    inserted += Number(result?.inserted || 0);
+  }
+  // Mejora 3 (encargo desde Terminal): los trámites con tercero, en su propia llamada. Si fallan, los requisitos ya
+  // quedaron y el error se registra; el botón «Cargar los requisitos del análisis» los vuelve a intentar.
+  let tramites = 0;
+  try {
+    const tramiteItems = await readTramites(database, { rows, closeDate, today: today || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date()) });
+    if (tramiteItems.length) {
+      const result = await rpc(database, 'psi_seed_tender_dossier_requirements', { p_opportunity_id: opportunityId, p_actor_id: actor, p_items: tramiteItems });
+      tramites = Number(result?.inserted || 0);
+    }
+  } catch (error) {
+    console.warn('tender_tramites_seed_failed', { event: 'tender_tramites_seed_failed', opportunity_id: opportunityId, code: String(error?.code || 'unknown').slice(0, 40) });
+  }
+  return { inserted: inserted + tramites, tramites, available: true };
 }
 
 export async function callSeedTenderDossierRequirements(database, input, currentProfile, options) {

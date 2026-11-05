@@ -47,6 +47,6 @@ test('lo que no se subsana y sigue abierto se recuerda aunque no esté vencido',
 
 test('la franja va arriba de Preparar, con la cuenta regresiva y los vencidos nombrados', () => {
   const workspace = readFileSync(new URL('../src/tenders/workspace/TenderWorkspace.tsx', import.meta.url), 'utf8');
-  assert.match(workspace, /return <div className="tw-prepare">\s*\n\s*<TenderOverdueStrip closeDate=\{closeDate\} overdue=\{overdueByConsequence\(workspace\.checklist, today\)\} notCurable=\{openNotCurable\(workspace\.checklist\)\} onOpen=\{select\} \/>/);
+  assert.match(workspace, /return <div className="tw-prepare">\s*\n\s*<TenderOverdueStrip closeDate=\{closeDate\} overdue=\{overdueByConsequence\(workspace\.checklist\.filter\(item => !item\.item_key\.startsWith\(TRAMITE_ITEM_KEY_PREFIX\)\), today\)\} notCurable=\{openNotCurable\(workspace\.checklist\)\}/);
   assert.match(workspace, /const urgent = days <= 2;/, 'en rojo cuando faltan 48 horas o menos');
 });

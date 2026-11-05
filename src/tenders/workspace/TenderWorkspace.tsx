@@ -12,6 +12,7 @@ import { DOSSIER_CONSEQUENCE_LABEL, groupDossierChecklist, openNotCurable, overd
 import { TenderDossierArtifacts } from '../components/TenderDossierArtifacts';
 import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderOfferStatus, TenderRequest } from '../types';
 import { TenderVigiaChannel } from './TenderVigiaChannel';
+import { TRAMITE_ITEM_KEY_PREFIX } from '../../../verticales/licitaciones/tender-tramites-con-terceros.js';
 import { TenderClarificationNotes, TenderClarificationsCard, TenderClarifyInline, TenderCompanyClarificationProposal, useTenderClarifications, type TenderClarification, type TenderClarificationPlacement } from './TenderClarify';
 import { OFFER_STATUS_LABEL, POST_GO_STATUSES, countdownLabel, daysUntil, formatDay, formatDeadline, todayInBogota } from './tenderWorkspaceFormat';
 
@@ -355,8 +356,8 @@ type ItemDraft = { evidenceKind: 'texto' | 'url'; evidence: string; justificatio
  * regresiva del cierre con lo que no se subsana y sigue abierto, y lo vencido ordenado por consecuencia. En Terminal
  * trece ítems vencidos llegaron al cierre en `pendiente` y nadie se enteró: aquí se nombran, no sólo se cuentan.
  */
-export function TenderOverdueStrip({ closeDate, overdue, notCurable, onOpen }: {
-  closeDate: string | null; overdue: DossierOverdueItem[]; notCurable: TenderDossierItem[]; onOpen: (item: TenderDossierItem) => void;
+export function TenderOverdueStrip({ closeDate, overdue, notCurable, tramites = [], onOpen }: {
+  closeDate: string | null; overdue: DossierOverdueItem[]; notCurable: TenderDossierItem[]; tramites?: TenderDossierItem[]; onOpen: (item: TenderDossierItem) => void;
 }) {
   const days = daysUntil(closeDate);
   if (days === null || days < 0) return null;
@@ -367,6 +368,17 @@ export function TenderOverdueStrip({ closeDate, overdue, notCurable, onOpen }: {
       {notCurable.length > 0
         ? <> · <strong>{notCurable.length} {notCurable.length === 1 ? 'cosa que no se subsana sigue abierta' : 'cosas que no se subsanan siguen abiertas'}</strong></>
         : ' · nada que no se subsane está abierto'}</p>
+    {/* Mejora 3: lo que depende de un tercero va primero, con la fecha límite para pedirlo (se siembra con el GO). */}
+    {tramites.length > 0 && <>
+      <p className="tw-overdue-sub">{tramites.length === 1 ? '1 trámite con un tercero por pedir' : `${tramites.length} trámites con terceros por pedir`}; tienen días de espera:</p>
+      <ul className="tw-overdue-list">
+        {tramites.slice(0, 5).map(item => <li key={item.id}>
+          <span className="tw-chip tw-chip-tramite">Tercero</span>
+          <button type="button" className="tw-link" onClick={() => onOpen(item)}>{parseDossierItemTitle(item.title).label.replace(/^Trámite con tercero:\s*/, '')}</button>
+          <span className="tw-muted">pedir a más tardar {formatDay(item.target_date)} · {item.assignee_name || 'sin responsable'}</span>
+        </li>)}
+      </ul>
+    </>}
     {shown.length > 0 && <>
       <p className="tw-overdue-sub">{overdue.length === 1 ? '1 tarea con la fecha vencida' : `${overdue.length} tareas con la fecha vencida`}, primero lo que no se subsana:</p>
       <ul className="tw-overdue-list">
@@ -485,7 +497,8 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
   const urgent = groups.open[0] || null;
   const urgentTitle = urgent ? parseDossierItemTitle(urgent.title) : null;
   return <div className="tw-prepare">
-    <TenderOverdueStrip closeDate={closeDate} overdue={overdueByConsequence(workspace.checklist, today)} notCurable={openNotCurable(workspace.checklist)} onOpen={select} />
+    <TenderOverdueStrip closeDate={closeDate} overdue={overdueByConsequence(workspace.checklist.filter(item => !item.item_key.startsWith(TRAMITE_ITEM_KEY_PREFIX)), today)} notCurable={openNotCurable(workspace.checklist)}
+      tramites={groups.open.filter(item => item.item_key.startsWith(TRAMITE_ITEM_KEY_PREFIX)).sort((a, b) => String(a.target_date || '9').localeCompare(String(b.target_date || '9')))} onOpen={select} />
     {urgent && urgentTitle && <div className="tw-next" role="note">
       <span>Lo más urgente: <strong>{urgentTitle.label}</strong>
         {urgentTitle.rejection && <span className="tw-reject">Causa rechazo</span>}
