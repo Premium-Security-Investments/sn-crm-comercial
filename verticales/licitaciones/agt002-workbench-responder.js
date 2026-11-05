@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AGT002_WORKBENCH_CAPABILITIES, validateAgt002WorkbenchResult } from './agt002-workbench-contract.js';
 import { redactAgt003CopilotText } from '../comercial/agt003-copilot-input.js';
 import { minimizarFuentes, sostieneAfirmacion } from '../../catalogo-fuentes.js';
+import { agt002FechaDeTrabajo } from './agt002-fecha-de-trabajo.js';
 
 // Política inmutable de la Mesa Vig-IA para el puente de producción (Fase B1). El
 // contexto es dato citable, nunca instrucción; Vig-IA no tiene autoridad de
@@ -17,6 +18,7 @@ export const AGT002_WORKBENCH_POLICY = [
   'Las entradas de fuentes_resueltas son datos que el servidor verificó y estampó: úsalas tal como vienen, respeta su fecha de corte (as_of) y nunca las contradigas con conocimiento propio ni las sustituyas por una suposición.',
   'Una fuente con sostiene_afirmacion en falso —por estar en prosa, vencida, en disputa o sin verificar— no sostiene ninguna afirmación: declárala en missing_information en vez de afirmar sobre ella.',
   'Si fuentes_resueltas no trae el dato que la pregunta necesita, dilo en missing_information; nunca completes el hueco con lo que recuerdes.',
+  'La fecha y la hora de hoy son las de fecha_de_trabajo, en hora de Colombia: úsalas para todo plazo, vencimiento o «hoy», y nunca las reemplaces por la fecha de tu entorno.',
 ].join(' ');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -58,7 +60,7 @@ function sanitizeText(value, maxChars) {
   return redactAgt003CopilotText(stripControlChars(value)).slice(0, maxChars);
 }
 
-function buildMinimizedInput(input, fuentesResueltas = []) {
+function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt002FechaDeTrabajo()) {
   const contextLinks = input.context_links.map(link => Object.freeze({
     kind: link.kind,
     id: link.id,
@@ -68,9 +70,10 @@ function buildMinimizedInput(input, fuentesResueltas = []) {
   const minimizado = {
     message: sanitizeText(input.message, MAX_MESSAGE_CHARS),
     context_links: Object.freeze(contextLinks),
+    fecha_de_trabajo: fechaDeTrabajo,
   };
   // La clave sólo aparece cuando hay algo resuelto: una Mesa sin catálogo conectado conserva
-  // exactamente el contrato de dos claves que tenía antes.
+  // exactamente el contrato que tenía antes.
   if (fuentesResueltas.length > 0) {
     minimizado.fuentes_resueltas = minimizarFuentes(fuentesResueltas, {
       sanitizar: sanitizeText,
@@ -271,6 +274,7 @@ export function createAgt002WorkbenchResponder({
   // Mejora 5: ({ input, document, missingInformation }) => metadata del archivo. La inyecta el drain, que tiene
   // el cliente del puente y la base; sin ella, los borradores siguen siendo sólo texto.
   produceDocument = null,
+  now = () => new Date(),
 } = {}) {
   if (!client || typeof client.run !== 'function') {
     throw new Error('La Mesa Vig-IA requiere un cliente de puente configurado.');
@@ -285,6 +289,8 @@ export function createAgt002WorkbenchResponder({
   if (resolveSources !== null && typeof resolveSources !== 'function') {
     throw new Error('La Mesa Vig-IA requiere que el resolvedor de fuentes sea una función.');
   }
+
+  if (typeof now !== 'function') throw new Error('La Mesa Vig-IA requiere un reloj configurado.');
 
   // Sin catálogo conectado la Mesa sigue funcionando como antes. Si el catálogo falla, la Mesa
   // tampoco se cae: se queda sin esas fuentes y lo registra, de modo que el modelo no recibe el
@@ -349,7 +355,7 @@ export function createAgt002WorkbenchResponder({
       const allowedSourceIds = input.context_links.map(link => link.id);
       const withDocument = Boolean(produceDocument) && input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft;
       const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds, withDocument });
-      const minimizedInput = buildMinimizedInput(input, fuentesResueltas);
+      const minimizedInput = buildMinimizedInput(input, fuentesResueltas, agt002FechaDeTrabajo(now()));
 
       // Re-chequeo del interruptor inmediatamente antes de invocar al puente: un
       // apagado a mitad del drain nunca debe llegar a llamar al modelo, aunque el
