@@ -20,6 +20,7 @@ import { TenderDocumentSection } from './tenders/components/TenderDocumentSectio
 import { TenderDecisionExperience } from './tenders/components/TenderDecisionExperience';
 import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalysis';
 import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
+import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
 import { TenderComplianceMatrixPanel } from './tenders/components/TenderComplianceMatrixPanel';
 import { TenderOfferPackagePanel } from './tenders/components/TenderOfferPackagePanel';
@@ -1365,6 +1366,9 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   useEffect(() => { if (briefFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(briefRef.current); }, [briefFocusRequested, detail?.opportunity.id]);
   const [tenderReportRevision, setTenderReportRevision] = useState(0);
   const tenderInitialReport = useAgt002InitialReport(id, api, detail?.opportunity.service_type_code === 'licitacion_publica', tenderReportRevision);
+  // F16: cuando la Mesa termina un pedido, «Nuestros documentos» (antes del GO) se vuelve a leer.
+  const [tenderOwnDocumentsVersion, setTenderOwnDocumentsVersion] = useState(0);
+  const bumpTenderOwnDocuments = useCallback(() => setTenderOwnDocumentsVersion(value => value + 1), []);
   const tenderOfferStatus = useTenderOfferStatus(id, api, tenderRevision, detail?.opportunity.service_type_code === 'licitacion_publica');
   // Terminó un análisis pedido con "Volver a analizar": se recargan el reporte y el estado de la ficha.
   const onTenderReanalysisCompleted = useCallback(() => { setTenderReportRevision(revision => revision + 1); setTenderRevision(revision => revision + 1); }, []);
@@ -1444,7 +1448,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           ? <TenderPrepareView key={`tender-prepare-${o.id}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={canDecide} report={tenderInitialReport} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus}
               onOfferStatusChanged={reloadAll}
               onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })} />
-          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} channel={!readOnly && tenderInitialReport ? <TenderVigiaChannel key={`tender-channel-${o.id}`} opportunityId={o.id} request={api} /> : null} />}
+          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} channel={!readOnly && tenderInitialReport ? <TenderVigiaChannel key={`tender-channel-${o.id}`} opportunityId={o.id} request={api} onJobsCompleted={bumpTenderOwnDocuments} /> : null}
+              documents={!readOnly ? <TenderOwnDocuments key={`tender-own-documents-${o.id}`} opportunityId={o.id} request={api} refreshKey={tenderOwnDocumentsVersion} /> : null} />}
       </div>
       {moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report={tenderInitialReport} reanalysis={reanalysis} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} /></div>}
       <div className="tw-panel tw-panel-documentos">
