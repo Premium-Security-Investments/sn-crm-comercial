@@ -184,6 +184,22 @@ export async function callAppendTenderDossierItemAction(database, input, current
   });
 }
 
+// Mejora 5 (migración 177): la copia de trabajo de un borrador en SharePoint, pedida con un botón. El CRM sólo anota el
+// pedido; lo sube el servidor de tareas, que es donde vive la sesión de Microsoft.
+export async function callRequestTenderDraftSharepointCopy(database, input, currentProfile) {
+  const opportunityId = requireUuid(input?.opportunity_id, 'una oportunidad válida');
+  const versionId = requireUuid(input?.version_id, 'una versión válida');
+  const actor = requireOperationalAccess(currentProfile);
+  return { copy: await rpc(database, 'psi_request_tender_draft_sharepoint_copy', { p_opportunity_id: opportunityId, p_version_id: versionId, p_actor_id: actor }) };
+}
+
+export async function listTenderDraftSharepointCopies(database, opportunityId, currentProfile) {
+  const id = requireUuid(opportunityId, 'una oportunidad válida');
+  requireOperationalAccess(currentProfile);
+  const data = await rpc(database, 'psi_list_tender_draft_sharepoint_copies', { p_opportunity_id: id });
+  return { copies: Array.isArray(data) ? data : [] };
+}
+
 export async function callCreateTenderDossierArtifact(database, input, currentProfile) {
   const opportunityId = requireUuid(input?.opportunity_id, 'una oportunidad válida');
   const actor = requireOperationalAccess(currentProfile);

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiDownload } from '../../apiClient';
-import { addTenderDossierArtifactVersion, loadTenderDossierWorkbench, postTenderDossierWorkbenchMessage, recordTenderDossierArtifactReview } from '../api';
+import { addTenderDossierArtifactVersion, loadTenderDossierWorkbench, loadTenderDraftSharepointCopies, postTenderDossierWorkbenchMessage, recordTenderDossierArtifactReview, requestTenderDraftSharepointCopy, type TenderDraftSharepointCopy } from '../api';
 import type { TenderDossierArtifact, TenderRequest } from '../types';
 import { VIGIA_VISIBLE_NAMES } from '../../vigia/agentIdentity';
 import { TenderStatusBadge } from './TenderStatusBadge';
@@ -63,6 +63,44 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
   const [error, setError] = useState('');
   const draftFor = (artifact: TenderDossierArtifact): ArtifactDraft => drafts[artifact.id] || { content: '', comment: '' };
   const setDraft = (artifact: TenderDossierArtifact, patch: Partial<ArtifactDraft>) => setDrafts(current => ({ ...current, [artifact.id]: { ...draftFor(artifact), ...patch } }));
+
+  // Mejora 5: la copia de trabajo en SharePoint, pedida con el botón. Mientras haya una en curso, se vuelve a mirar cada
+  // 15 s; la sube el servidor de tareas en uno o dos minutos.
+  const [copies, setCopies] = useState<Record<string, TenderDraftSharepointCopy>>({});
+  const [uploading, setUploading] = useState(false);
+  const loadCopies = useCallback(async () => {
+    try {
+      const { copies: list } = await loadTenderDraftSharepointCopies(request, opportunityId);
+      setCopies(Object.fromEntries(list.map(copy => [copy.artifact_version_id, copy])));
+    } catch { /* sin la migración 177 o sin permiso: la pantalla sigue como antes */ }
+  }, [request, opportunityId]);
+  useEffect(() => { void loadCopies(); }, [loadCopies, artifacts]);
+  const inFlight = Object.values(copies).some(copy => copy.status === 'pendiente' || copy.status === 'subiendo');
+  useEffect(() => {
+    if (!inFlight) return undefined;
+    const timer = window.setInterval(() => { void loadCopies(); }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [inFlight, loadCopies]);
+  // Lo que el botón sube: la versión vigente de cada documento que tenga Word y todavía no esté (o haya fallado).
+  const toUpload = artifacts.filter(artifact => {
+    const version = artifact.current_version;
+    if (!version || !versionFiles(version.content_metadata).archivo) return false;
+    const copy = copies[version.id];
+    return !copy || copy.status === 'fallido';
+  });
+  const uploadToSharepoint = async () => {
+    setUploading(true); setError('');
+    try {
+      for (const artifact of toUpload) {
+        await requestTenderDraftSharepointCopy(request, { opportunity_id: opportunityId, version_id: artifact.current_version!.id });
+      }
+      await loadCopies();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const downloadWord = async (artifact: TenderDossierArtifact, fileName: string) => {
     const version = artifact.current_version;
@@ -152,7 +190,7 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
   };
 
   return <section className="document-analysis-card tender-dossier-section">
-    <div className="tender-dossier-section-head"><div><small>Documentos de la oferta</small><h3>Borradores y aprobación</h3></div><span className="badge badge-neutral">{artifacts.filter(artifact => artifact.review_status === 'aprobado').length} de {artifacts.length} aprobados</span></div>
+    <div className="tender-dossier-section-head"><div><small>Documentos de la oferta</small><h3>Borradores y aprobación</h3></div><div className="row-actions"><span className="badge badge-neutral">{artifacts.filter(artifact => artifact.review_status === 'aprobado').length} de {artifacts.length} aprobados</span>{toUpload.length > 0 && <button type="button" className="secondary" disabled={uploading} onClick={() => void uploadToSharepoint()}>{uploading ? 'Pidiendo…' : `Subir a SharePoint (${toUpload.length})`}</button>}</div></div>
     {error && <div className="notice" role="alert">{error}</div>}
     <div className="timeline tender-dossier-list">
       {artifacts.map(artifact => {
@@ -173,13 +211,19 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
           <p className="muted">{artifact.version_count ? `${artifact.version_count} versión(es) registradas` : 'Sin versión registrada'}{artifact.current_version?.author_kind === 'agent' && ` · la vigente la redactó ${VIGIA_VISIBLE_NAMES.tenders} y está pendiente de revisión humana`}</p>
           {(() => {
             const files = versionFiles(artifact.current_version?.content_metadata);
+            const copy = artifact.current_version ? copies[artifact.current_version.id] : undefined;
+            if (copy?.status === 'subido' && copy.sharepoint_url) files.sharepointUrl = copy.sharepoint_url;
             if (!files.archivo && !files.sharepointUrl && !files.falta.length && !files.error) return null;
             return <div className="stack">
               <div className="row-actions">
                 {files.sharepointUrl && <a className="button" href={files.sharepointUrl} target="_blank" rel="noreferrer">Abrir en SharePoint</a>}
                 {files.archivo && <button type="button" className={files.sharepointUrl ? 'secondary' : undefined} disabled={disabled} onClick={() => void downloadWord(artifact, files.archivo!.nombre)}>Descargar Word</button>}
               </div>
-              {files.archivo && !files.sharepointUrl && <p className="muted">La copia de trabajo en SharePoint todavía no está; el Word de aquí es el original que armó {VIGIA_VISIBLE_NAMES.tenders}.</p>}
+              {files.archivo && !files.sharepointUrl && (copy?.status === 'pendiente' || copy?.status === 'subiendo'
+                ? <p className="muted">Subiendo la copia de trabajo a SharePoint; tarda uno o dos minutos.</p>
+                : copy?.status === 'fallido'
+                  ? <p className="error" role="alert">No se pudo subir a SharePoint: {copy.error_text || 'error desconocido'}. Puede volver a intentarlo con «Subir a SharePoint».</p>
+                  : <p className="muted">El Word de aquí es el original que armó {VIGIA_VISIBLE_NAMES.tenders}. Para trabajarlo en SharePoint, use «Subir a SharePoint» arriba.</p>)}
               {files.falta.length > 0 && <div><strong>Lo que falta decidir o diligenciar</strong> (va en amarillo en el Word)<ul>{files.falta.map(item => <li key={item}>{item}</li>)}</ul></div>}
             </div>;
           })()}

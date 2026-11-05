@@ -141,7 +141,8 @@ test('la identidad de la empresa viaja como porción, no como el perfil entero',
   }));
   assert.equal(resuelto.valor.razon_social, 'SEGURIDAD NACIONAL LIMITADA');
   assert.equal(resuelto.valor.nit, '891408256-4');
-  assert.equal(Object.keys(resuelto.valor).length, 3);
+  // 2026-11-04 (mejora 5): más el domicilio de la sede principal y el contacto del membrete; el perfil entero sigue sin viajar.
+  assert.deepEqual(Object.keys(resuelto.valor), ['razon_social', 'nit', 'licencia_supervigilancia', 'domicilio_principal', 'contacto_membrete']);
   assert.equal(resuelto.estado, ESTADOS.VIGENTE);
 });
 
@@ -277,4 +278,34 @@ test('la sensibilidad viaja con la respuesta resuelta', async () => {
   const [resuelto] = await resolverParaLector(database, { lector: 'agt002.mesa', nombres: ['empresa.identidad'] });
   assert.equal(resuelto.sensibilidad, SENSIBILIDADES.PUBLICA);
   assert.equal(resuelto.dominio, 'empresa');
+});
+
+// Mejora 5 (2026-11-04): lo que la carta de Supersalud dejó en amarillo teniéndolo el CRM.
+test('los datos oficiales del proceso viajan desde psi_public_tenders, con las columnas reales', async () => {
+  const { resolverDatosOficialesProceso } = await import('../catalogo-fuentes.js');
+  const resuelto = await resolverDatosOficialesProceso(baseDeDatos({
+    psi_public_tenders: [{
+      id: 't1', ref: 'SNS-LP-2-2026', entity: 'SUPERINTENDENCIA NACIONAL DE SALUD', title: 'Vigilancia', description: 'Vigilancia',
+      city: 'Bogotá', dept: 'Bogotá', value: 18019566677, deadline_at: '2026-11-05T00:00:00Z', url: 'https://community.secop.gov.co/x', updated_at: '2026-11-03T00:00:00Z',
+      raw: { deadline: '2026-11-05', modalidad_de_contratacion: 'Licitación pública', descripci_n_del_procedimiento: 'Prestar el servicio de vigilancia para la Superintendencia Nacional de Salud' },
+    }],
+  }), { tenderId: 't1' });
+  assert.equal(resuelto.valor.referencia, 'SNS-LP-2-2026');
+  assert.equal(resuelto.valor.objeto, 'Prestar el servicio de vigilancia para la Superintendencia Nacional de Salud');
+  assert.equal(resuelto.valor.cierre, '2026-11-05');
+  assert.equal(resuelto.estado, ESTADOS.VIGENTE);
+});
+
+test('el formato oficial se busca en los documentos vigentes del proceso, y si no está se dice dónde se buscó', async () => {
+  const { resolverFormatoOficial } = await import('../catalogo-fuentes.js');
+  const pliego = 'FORMATO No. 1. .......... 158\nTexto\nFORMATO No. 1.\nCARTA DE PRESENTACIÓN DE LA OFERTA\nEl suscrito ____\nFORMATO No. 2\nOtro';
+  const db = baseDeDatos({ psi_tender_document_versions: [{ id: 'd1', tender_id: 't1', current: true, name: 'pliego de condiciones definitivo.pdf', document_type: 'pliego', created_at: '2026-10-30', extracted_text: pliego }] });
+  const hallado = await resolverFormatoOficial(db, { tenderId: 't1', pregunta: 'necesito la carta de presentación', documento: 'Carta de presentación' });
+  assert.match(hallado.valor.texto, /^FORMATO No\. 1\.\nCARTA DE PRESENTACIÓN DE LA OFERTA\nEl suscrito ____$/);
+  assert.equal(hallado.procedencia.origen, 'pliego');
+  const ausente = await resolverFormatoOficial(db, { tenderId: 't1', pregunta: 'el anexo 9', documento: 'Anexo 9' });
+  assert.equal(ausente.valor, null);
+  assert.match(ausente.procedencia.nota, /se buscó "Anexo 9" en los documentos del proceso y en el pliego vigente/);
+  const sinPedido = await resolverFormatoOficial(db, { tenderId: 't1', pregunta: 'hola' });
+  assert.equal(sinPedido.valor, null);
 });

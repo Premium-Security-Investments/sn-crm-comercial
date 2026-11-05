@@ -77,6 +77,12 @@ const CONTENT_KINDS = new Set(['markdown', 'texto', 'metadata']);
 const LEARNING_TYPES = new Set(['pattern', 'preference', 'rule', 'source']);
 const LEARNING_SCOPES = new Set(['tender', 'entity', 'modality_sector', 'psi_rule']);
 const PROHIBITED_AGENT_AUTHORITY = /(?<![\p{L}\p{N}_])(?:he aprobado|ya aprobé|aprobaré|firmaré|enviaré|radicaré|presentaré)(?![\p{L}\p{N}_])/iu;
+// El texto de un borrador es el documento que firma el representante legal, y habla en SU primera persona: el
+// Formato No. 1 de Supersalud dice "presentaré dentro de los tres (3) primeros días hábiles… las hojas de vida", y la
+// regla de arriba rechazaba justo la carta que lo reproducía bien (2026-11-04). En ese texto sigue prohibido afirmar
+// que algo quedó aprobado; firmar, enviar, radicar o presentar es lo que dice el firmante, no Vig-IA. Las acciones
+// requeridas sí son la voz de Vig-IA y conservan la regla completa.
+const PROHIBITED_DRAFT_APPROVAL = /(?<![\p{L}\p{N}_])(?:he aprobado|ya aprobé|aprobaré)(?![\p{L}\p{N}_])/iu;
 
 function isRecord(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -205,7 +211,8 @@ export function validateAgt002WorkbenchResult(value, { input } = {}) {
     }
     requireStringArray(value.missing_information, 'missing_information', 20);
     requireStringArray(value.required_actions, 'required_actions', 20);
-    rejectAgentAuthority(value.content_text, ...value.required_actions);
+    rejectAgentAuthority(...value.required_actions);
+    if (PROHIBITED_DRAFT_APPROVAL.test(value.content_text)) throw new Error('El resultado atribuye al agente una autoridad prohibida.');
     return value;
   }
 

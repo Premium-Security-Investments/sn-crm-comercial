@@ -58,6 +58,8 @@ function makeRequest(routes) {
   const calls = [];
   const request = async (path, options) => {
     const method = options?.method || 'GET';
+    // El estado de las copias en SharePoint (mejora 5) es otra lectura del panel: se contesta vacía y no se cuenta.
+    if (method === 'GET' && path.startsWith('/api/tender-dossier-sharepoint-copies')) return { copies: [] };
     calls.push({ method, path, body: options?.body ? JSON.parse(options.body) : null });
     for (const route of routes) {
       if (path.startsWith(route.path) && (route.method || 'GET') === method) {

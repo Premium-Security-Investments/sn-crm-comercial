@@ -165,4 +165,31 @@ assert.throws(
   'el contrato de la Mesa debe rechazar una salida que se atribuya aprobar/presentar',
 );
 
+// Un borrador es el documento que firma el representante legal, en su primera persona. El Formato No. 1 de Supersalud
+// dice "presentaré… las hojas de vida": reproducirlo no es que Vig-IA se atribuya presentar (2026-11-04). Sigue
+// prohibido afirmar una aprobación en el documento, y las acciones requeridas —la voz de Vig-IA— conservan la regla.
+const draftInput = Object.freeze({
+  ...baseInput,
+  capability_id: 'agt002.dossier-workbench.draft.v1',
+  context_links: [{ kind: 'artifact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', label: 'Documento de la oferta: Carta de presentación', source_ref: 'sin versión registrada' }],
+});
+const draftResult = overrides => ({
+  kind: 'draft', visible_agent_name: 'Vig-IA', human_review_required: true,
+  snapshot_id: draftInput.snapshot_id, base_version_id: null, artifact_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  content_kind: 'markdown', content_metadata: {}, source_links: [], missing_information: [], required_actions: [],
+  content_text: 'e) Manifiesto que en caso de ser adjudicatario, presentaré dentro de los tres (3) primeros días hábiles las hojas de vida.',
+  ...overrides,
+});
+validateAgt002WorkbenchResult(draftResult(), { input: draftInput });
+assert.throws(
+  () => validateAgt002WorkbenchResult(draftResult({ content_text: 'Ya aprobé esta carta.' }), { input: draftInput }),
+  /autoridad prohibida/i,
+  'un borrador no puede afirmar una aprobación',
+);
+assert.throws(
+  () => validateAgt002WorkbenchResult(draftResult({ required_actions: ['Mañana radicaré la oferta en SECOP II.'] }), { input: draftInput }),
+  /autoridad prohibida/i,
+  'las acciones requeridas son la voz de Vig-IA: ahí sigue la regla completa',
+);
+
 console.log('AGT-002 human authority dynamic proof passed');

@@ -17,6 +17,7 @@
 import { crearLectorAvancys } from './avancys-odoo-lectura.js';
 import { buildTenderCompanyDocumentBridge } from './verticales/licitaciones/tender-company-document-bridge.js';
 import { matchCompanyDocumentClasses } from './verticales/licitaciones/tender-compliance-matrix.js';
+import { agt002LocateFormato } from './verticales/licitaciones/agt002-formato-oficial.js';
 
 export const ESTADOS = Object.freeze({
   VIGENTE: 'vigente',
@@ -166,6 +167,22 @@ export const DATOS = Object.freeze({
     responsable: 'Katherine',
     fuentes: Object.freeze(['psi_company_experience']),
     lectores: Object.freeze(['agt002.mesa', 'agt002.analisis']),
+  }),
+  // Mejora 5 (2026-11-04): lo que la Mesa necesita para que un documento salga con los datos del proceso puestos.
+  'proceso.datos_oficiales': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_public_tenders']),
+    lectores: Object.freeze(['agt002.mesa']),
+  }),
+  // El texto oficial del formato o anexo que se pide redactar: el archivo propio o la sección del pliego vigente.
+  'proceso.formato_oficial': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_tender_document_versions']),
+    lectores: Object.freeze(['agt002.mesa']),
   }),
   'analisis.canonico.company_fit': Object.freeze({
     dominio: 'comercial',
@@ -325,6 +342,9 @@ export async function resolverIdentidadEmpresa(database) {
     .select('legal_name,nit,supervigilancia_license,rup_updated_at,updated_at')
     .limit(1)
     .maybeSingle();
+  // El domicilio sale de la sede principal (mejora 5): la carta de Supersalud lo dejó en amarillo teniéndolo el CRM.
+  const sede = await database.from('psi_company_sites').select('city,department,address').eq('is_main', true).limit(1).maybeSingle()
+    .then(result => (result?.error ? null : result?.data || null), () => null);
   if (error || !data || !data.legal_name) {
     return respuesta({
       nombre: 'empresa.identidad',
@@ -342,6 +362,10 @@ export async function resolverIdentidadEmpresa(database) {
       razon_social: data.legal_name,
       nit: data.nit,
       licencia_supervigilancia: data.supervigilancia_license,
+      domicilio_principal: sede ? Object.freeze({ ciudad: sede.city || null, departamento: sede.department || null, direccion: sede.address || null }) : null,
+      // Contacto corporativo impreso en el membrete (PLANTILLA_MEMBRETE_SEGURIDAD_NACIONAL_V1_20261030). El correo
+      // para notificaciones de cada proceso no está en ninguna tabla: lo decide una persona.
+      contacto_membrete: Object.freeze({ telefono: '(57-6) 3170660 Ext. 120', celular: '316 409 4983', sitio_web: 'www.seguridadnacional.co' }),
     }),
     estado: ESTADOS.VIGENTE,
     frescura: FRESCURAS.VIVA,
@@ -726,7 +750,7 @@ export function sostieneAfirmacion(fuente) {
  * —la Mesa y el copiloto comercial—, porque si cada uno inventara la suya volveríamos al problema
  * del principio: el mismo hecho contado de dos maneras distintas.
  */
-export function minimizarFuentes(fuentes, { sanitizar, maxFuentes = 10, maxValor = 6000, maxProcedencia = 500 } = {}) {
+export function minimizarFuentes(fuentes, { sanitizar, maxFuentes = 10, maxValor = 6000, maxProcedencia = 500, maxValorPorNombre = {} } = {}) {
   const recorte = typeof sanitizar === 'function' ? sanitizar : ((texto, max) => String(texto ?? '').slice(0, max));
   return Object.freeze((Array.isArray(fuentes) ? fuentes : []).slice(0, maxFuentes).map(fuente => Object.freeze({
     nombre: fuente.nombre,
@@ -738,11 +762,75 @@ export function minimizarFuentes(fuentes, { sanitizar, maxFuentes = 10, maxValor
     sostiene_afirmacion: sostieneAfirmacion(fuente),
     responsable: fuente.responsable || null,
     procedencia: recorte(JSON.stringify(fuente.procedencia ?? null), maxProcedencia),
-    valor: recorte(JSON.stringify(fuente.valor ?? null), maxValor),
+    // Un formato oficial pesa más que un dato: el de Supersalud son ~6.500 caracteres ya limpios.
+    valor: recorte(JSON.stringify(fuente.valor ?? null), maxValorPorNombre[fuente.nombre] || maxValor),
   })));
 }
 
+// Resolvedor de proceso.datos_oficiales: lo que SECOP publicó del proceso y el CRM guardó al convertirlo. La carta
+// de Supersalud dejó en amarillo el número y el objeto del proceso porque la Mesa no los recibía.
+export async function resolverDatosOficialesProceso(database, { tenderId }) {
+  const vacio = nota => respuesta({
+    nombre: 'proceso.datos_oficiales', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA, forma: FORMAS.TIPADO,
+    asOf: null, procedencia: Object.freeze({ tabla: 'psi_public_tenders', nota }),
+  });
+  if (typeof tenderId !== 'string' || !tenderId.trim()) return vacio('sin proceso en el expediente');
+  const { data, error } = await database.from('psi_public_tenders')
+    .select('ref,entity,title,description,city,dept,value,deadline_at,url,raw,updated_at')
+    .eq('id', tenderId).maybeSingle();
+  if (error || !data) return vacio('proceso no encontrado');
+  const raw = data.raw && typeof data.raw === 'object' ? data.raw : {};
+  const texto = value => (typeof value === 'string' && value.trim() ? value.trim() : null);
+  return respuesta({
+    nombre: 'proceso.datos_oficiales',
+    valor: Object.freeze({
+      referencia: texto(data.ref) || texto(raw.referencia_del_proceso),
+      entidad: texto(data.entity) || texto(raw.entidad),
+      objeto: texto(raw.descripci_n_del_procedimiento) || texto(data.description) || texto(data.title),
+      nombre_del_procedimiento: texto(raw.nombre_del_procedimiento) || texto(data.title),
+      modalidad: texto(raw.modalidad_de_contratacion),
+      ciudad_entidad: texto(raw.ciudad_entidad) || texto(data.city),
+      presupuesto_oficial: raw.precio_base ?? data.value ?? null,
+      cierre: texto(raw.deadline) || (data.deadline_at ? String(data.deadline_at).slice(0, 10) : null),
+      enlace_secop: texto(data.url) || texto(raw.urlproceso?.url) || null,
+    }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: soloFecha(data.updated_at),
+    procedencia: Object.freeze({ tabla: 'psi_public_tenders', nota: 'datos oficiales capturados de SECOP' }),
+  });
+}
+
+// Resolvedor de proceso.formato_oficial (regla de Juan, 2026-11-04): cuando lo pedido es un formato o anexo, su
+// texto completo, para que el documento lo siga. Sin pedido de documento no se resuelve nada.
+export async function resolverFormatoOficial(database, { tenderId, pregunta, documento }) {
+  const vacio = nota => respuesta({
+    nombre: 'proceso.formato_oficial', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.CONGELADA, forma: FORMAS.PROSA,
+    asOf: null, procedencia: Object.freeze({ tabla: 'psi_tender_document_versions', nota }),
+  });
+  if (typeof tenderId !== 'string' || !tenderId.trim() || !documento) return vacio('sin documento pedido');
+  const { data, error } = await database.from('psi_tender_document_versions')
+    .select('id,name,document_type,created_at,extracted_text')
+    .eq('tender_id', tenderId).eq('current', true);
+  if (error || !Array.isArray(data)) return vacio('no se pudieron leer los documentos del proceso');
+  const encontrado = agt002LocateFormato({ documents: data, message: pregunta || '', title: documento });
+  if (!encontrado) return vacio(`se buscó "${String(documento).slice(0, 120)}" en los documentos del proceso y en el pliego vigente, y no aparece`);
+  return respuesta({
+    nombre: 'proceso.formato_oficial',
+    valor: Object.freeze({ titulo: encontrado.titulo, recortado: encontrado.recortado, texto: encontrado.texto }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.CONGELADA,
+    // Es texto del pliego, y así hay que tratarlo: se reproduce, no se interpreta.
+    forma: FORMAS.TIPADO,
+    asOf: soloFecha(data.find(row => row.id === encontrado.document_id)?.created_at),
+    procedencia: Object.freeze({ tabla: 'psi_tender_document_versions', documento: encontrado.documento, origen: encontrado.origen }),
+  });
+}
+
 const RESOLVEDORES = Object.freeze({
+  'proceso.datos_oficiales': (database, contexto) => resolverDatosOficialesProceso(database, contexto),
+  'proceso.formato_oficial': (database, contexto) => resolverFormatoOficial(database, contexto),
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),
@@ -766,6 +854,8 @@ export async function resolverParaLector(database, {
   // experiencias inscritas, un volcado no cabe en una respuesta y además tapa lo que importa. Un resolvedor que no
   // la necesite simplemente la ignora.
   pregunta = null,
+  // El documento del expediente que se pide redactar (mejora 5): con él se localiza su formato oficial.
+  documento = null,
   puestoCodigo = null,
   clienteIdentificacion = null,
   avancys,
@@ -781,7 +871,7 @@ export async function resolverParaLector(database, {
     if (!puedeLeer(nombre, lector)) continue;
     const resolvedor = RESOLVEDORES[nombre];
     if (!resolvedor) continue;
-    const resuelto = await resolvedor(database, { tenderId, pregunta, puestoCodigo, clienteIdentificacion, avancys: lectorAvancys });
+    const resuelto = await resolvedor(database, { tenderId, pregunta, documento, puestoCodigo, clienteIdentificacion, avancys: lectorAvancys });
     const declarado = datoDeclarado(nombre);
     resueltos.push(Object.freeze({
       ...resuelto,

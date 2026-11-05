@@ -270,7 +270,10 @@ export async function dossierArtifactLink(database, opportunityId, artifactId) {
 
 const REJECTION_MARK = /\s*[—-]\s*CAUSA RECHAZO\s*$/i;
 const TASK_STATUS = { pendiente: 'pendiente', en_progreso: 'en progreso', bloqueado: 'bloqueada', listo: 'lista' };
-const compact = (value, max) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+// Se corta y DESPUÉS se quita el espacio: cortar un texto ya limpio puede dejar un espacio al final, y el contrato de la
+// Mesa (requireText) rechaza todo el trabajo por eso. Pasó en Supersalud el 2026-11-04: las tareas del expediente se
+// cortan a 1000 caracteres y siete de ellas quedaban terminando en espacio, así que ningún mensaje se procesaba.
+const compact = (value, max) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max).trimEnd();
 
 /**
  * Sin contexto Vig-IA respondía a ciegas: solo veía el mensaje y dos identificadores. Las tareas
