@@ -9,6 +9,8 @@ export type TabsAccess = {
   delete_opportunities: boolean;
   tender_custody: boolean;
   tender_company: boolean;
+  study_review: boolean;
+  study_approve: boolean;
   read_only: boolean;
 };
 export type AreaAssignment = { area_code: string; subarea_code: string | null };

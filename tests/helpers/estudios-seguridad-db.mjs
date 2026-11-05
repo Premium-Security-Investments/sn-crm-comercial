@@ -3,18 +3,20 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
-export const PREPARER = { id: '11111111-1111-4111-8111-111111111111', role: 'colaborador' };
-const MIGRATIONS = ['178_estudios_seguridad_base.sql', '179_estudios_seguridad_evidencias.sql'];
+export const PREPARER = { id: '11111111-1111-4111-8111-111111111111', role: 'colaborador', permissions: ['estudios_seguridad'] };
+export const REVIEWER = { id: '44444444-4444-4444-8444-444444444444', role: 'colaborador', permissions: ['estudios_seguridad', 'estudios_seguridad_revisar'] };
+export const APPROVER = { id: '55555555-5555-4555-8555-555555555555', role: 'gerencia', permissions: ['estudios_seguridad', 'estudios_seguridad_aprobar'] };
+const MIGRATIONS = ['178_estudios_seguridad_base.sql', '179_estudios_seguridad_evidencias.sql', '180_estudios_seguridad_aprobacion.sql'];
 
 export async function database({ upTo = MIGRATIONS.length } = {}) {
   const pg = new PGlite();
   await pg.exec(`
     create role anon; create role authenticated; create role service_role;
-    create table public.psi_sales_profiles (id uuid primary key, role text not null);
+    create table public.psi_sales_profiles (id uuid primary key, role text not null, full_name text);
     create table public.psi_sales_opportunities (id uuid primary key);
     create table public.psi_access_permissions (code text primary key, name text, description text, active boolean);
     create table public.psi_profile_permissions (profile_id uuid, permission_code text);
-    insert into public.psi_sales_profiles values ('${PREPARER.id}', 'colaborador');
+    insert into public.psi_sales_profiles values ('${PREPARER.id}', 'colaborador', 'Ana Preparadora'), ('${REVIEWER.id}', 'colaborador', 'Rubén Revisor'), ('${APPROVER.id}', 'gerencia', 'Alba Aprobadora');
   `);
   for (const name of MIGRATIONS.slice(0, upTo)) await pg.exec(readFileSync(new URL(`../../supabase/migrations/${name}`, import.meta.url), 'utf8'));
   return pg;
@@ -37,9 +39,19 @@ export function supabaseOver(pg, objects = new Map()) {
   return {
     storage,
     objects,
+    // rpc con parámetros con nombre, como supabase-js.
+    async rpc(name, args = {}) {
+      const keys = Object.keys(args);
+      try {
+        const result = await pg.query(`select public.${name}(${keys.map((key, i) => `${key} => $${i + 1}`).join(', ')}) as r`, keys.map(key => (args[key] !== null && typeof args[key] === 'object' ? JSON.stringify(args[key]) : args[key])));
+        return { data: result.rows[0].r, error: null };
+      } catch (error) {
+        return { data: null, error };
+      }
+    },
     from(table) {
       const state = { op: 'select', columns: '*', filters: [], order: [], values: null, returning: false };
-      const where = params => state.filters.length ? ` where ${state.filters.map(([column, value]) => { params.push(value); return `"${column}" = $${params.length}`; }).join(' and ')}` : '';
+      const where = params => state.filters.length ? ` where ${state.filters.map(([column, value, op]) => { params.push(value); return op === 'in' ? `"${column}" = any($${params.length})` : `"${column}" = $${params.length}`; }).join(' and ')}` : '';
       const run = async () => {
         const params = [];
         let sql;
@@ -66,6 +78,7 @@ export function supabaseOver(pg, objects = new Map()) {
       const chain = {
         select(columns = '*') { if (state.op === 'select') state.columns = columns; return chain; },
         eq(column, value) { state.filters.push([column, value]); return chain; },
+        in(column, values) { state.filters.push([column, values, 'in']); return chain; },
         order(column, { ascending = true } = {}) { state.order.push([column, ascending]); return chain; },
         insert(values) { state.op = 'insert'; state.values = values; return chain; },
         update(values) { state.op = 'update'; state.values = values; return chain; },

@@ -13,7 +13,7 @@ export type StudySummaryRow = {
 export type Study = StudySummaryRow & {
   client_source: 'avancys' | 'crm'; client_ref: string; client_nit: string | null;
   site_source: 'avancys_puesto' | 'crm' | 'manual'; site_ref: string | null; site_address: string | null;
-  scope: string | null; methodology_id: string; template_id: string;
+  scope: string | null; methodology_id: string; template_id: string; prepared_by: string;
 };
 
 export type Zone = { id: string; name: string; description: string | null; position: number };
@@ -40,11 +40,20 @@ export type Evidence = {
   size_bytes: number; sha256: string; caption: string | null; taken_on: string | null; created_at: string;
 };
 
+export type WorkflowAction = 'enviar' | 'marcar_revisado' | 'devolver' | 'aprobar' | 'reabrir';
+export type Workflow = {
+  available: boolean;
+  can: Partial<Record<WorkflowAction, boolean>>;
+  names: Record<string, string>;
+  events: Array<{ id: string; action: WorkflowAction; from_status: StudyStatus; to_status: StudyStatus; note: string | null; version: number | null; actor_id: string; created_at: string }>;
+  versions: Array<{ id: string; version: number; methodology_id: string; snapshot_sha256: string; approved_by: string; approved_at: string }>;
+};
+
 export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; riesgos: Array<{ codigo: string; nombre: string; procesos: string[] }> };
 
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
-  evidence: Evidence[]; evidence_available: boolean;
+  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
@@ -82,6 +91,13 @@ export const completeEvidenceUpload = (studyId: string, body: { path: string; fi
   api<Evidence>(`${BASE}/${encodeURIComponent(studyId)}/evidencias`, json('POST', body));
 export const evidenceUrls = (studyId: string) => api<{ urls: Record<string, string | null>; expires_in: number }>(`${BASE}/${encodeURIComponent(studyId)}/evidencias/urls`);
 export const deleteEvidence = (studyId: string, evidenceId: string) => api(`${BASE}/${encodeURIComponent(studyId)}/evidencias/${encodeURIComponent(evidenceId)}`, { method: 'DELETE' });
+
+export const transitionStudy = (studyId: string, action: WorkflowAction, note?: string) =>
+  api<{ status: StudyStatus; version: number | null; sha256: string | null }>(`${BASE}/${encodeURIComponent(studyId)}/flujo`, json('POST', { action, note: note || null }));
+
+export const ACTION_LABELS: Record<WorkflowAction, string> = {
+  enviar: 'Enviado a revisión', marcar_revisado: 'Revisado', devolver: 'Devuelto con observaciones', aprobar: 'Aprobado', reabrir: 'Reabierto',
+};
 
 export const STATUS_LABELS: Record<StudyStatus, string> = {
   borrador: 'Borrador', en_revision: 'En revisión', devuelto: 'Devuelto', revisado: 'Revisado', aprobado: 'Aprobado', archivado: 'Archivado',

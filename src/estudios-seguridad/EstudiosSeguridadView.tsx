@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './estudios.css';
 import { EvidenceStrip } from './EvidenceStrip';
+import { WorkflowPanel } from './WorkflowPanel';
 import {
   CONTROL_SCALE, IMPACT_SCALE, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
@@ -195,6 +196,7 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
     </div>
     {study.scope ? <p className="es-scope">{study.scope}</p> : null}
     {error ? <p className="es-error" role="alert">{error}</p> : null}
+    {detail.workflow?.available ? <WorkflowPanel studyId={study.id} status={study.status} preparedBy={study.prepared_by} workflow={detail.workflow} onChanged={reload} /> : null}
 
     <div className="es-summary" aria-label="Resumen de la valoración">
       <SummaryRow label="Riesgo actual" counts={summary.levels.actual} />

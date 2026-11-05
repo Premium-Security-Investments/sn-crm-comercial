@@ -23,6 +23,9 @@ export const CAPABILITY_PERMISSIONS = Object.freeze([
   freezePermission('licitaciones_custodia', 'Custodia de Licitaciones', 'Autoridad exclusiva para convertir detecciones y aprobar perfiles, reglas y fuentes corporativas de Licitaciones.'),
   freezePermission('crm_eliminar_oportunidades', 'Eliminar oportunidades', 'Autoridad para confirmar o rechazar las solicitudes de eliminación de oportunidades comerciales.'),
   freezePermission('vigia_copilot_pilot', 'Vig-IA Comercial · Próximo seguimiento', 'Permite usar Próximo seguimiento de Vig-IA Comercial en la ficha de la oportunidad: propone el siguiente contacto y un borrador para revisar.'),
+  // Estudios de Seguridad, tramo 3 (migración 180): revisor técnico y aprobador. Nunca sobre un estudio propio.
+  freezePermission('estudios_seguridad_revisar', 'Revisa estudios de seguridad', 'Revisor técnico: devuelve con observaciones o da por revisado un estudio de seguridad que no preparó.'),
+  freezePermission('estudios_seguridad_aprobar', 'Aprueba estudios de seguridad', 'Aprueba la versión de un estudio de seguridad que no preparó, y puede reabrirlo.'),
 ]);
 
 export const CAPABILITY_PERMISSION_CODES = Object.freeze(CAPABILITY_PERMISSIONS.map(({ code }) => code));

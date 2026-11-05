@@ -8,6 +8,7 @@ import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse
 import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
 import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, addZone as addSecurityStudyZone, createStudy as createSecurityStudy, deleteAction as deleteSecurityStudyAction, deleteRisk as deleteSecurityStudyRisk, deleteZone as deleteSecurityStudyZone, getStudy as getSecurityStudy, listStudies as listSecurityStudies, updateAction as updateSecurityStudyAction, updateRisk as updateSecurityStudyRisk, updateStudy as updateSecurityStudy, updateZone as updateSecurityStudyZone } from '../verticales/estudios-seguridad/estudios.js';
+import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
@@ -3401,7 +3402,12 @@ securityStudyRoute('get', '/api/estudios-seguridad/puestos', async (_db, req) =>
     return { encontrado: false, contratos: [], avancys: 'no_disponible' };
   }
 });
-securityStudyRoute('get', '/api/estudios-seguridad/:id', (db, req) => getSecurityStudy(db, req.params.id));
+securityStudyRoute('get', '/api/estudios-seguridad/:id', async (db, req, profile) => {
+  const detail = await getSecurityStudy(db, req.params.id);
+  return { ...detail, workflow: await loadSecurityStudyWorkflow(db, detail.study, profile) };
+});
+// Tramo 3: enviar, devolver, marcar revisado, aprobar (congela la versión) y reabrir.
+securityStudyRoute('post', '/api/estudios-seguridad/:id/flujo', (db, req, profile) => transitionSecurityStudy(db, req.params.id, req.body || {}, profile));
 securityStudyRoute('patch', '/api/estudios-seguridad/:id', (db, req, profile) => updateSecurityStudy(db, req.params.id, req.body || {}, profile));
 securityStudyRoute('post', '/api/estudios-seguridad/:id/zonas', (db, req, profile) => addSecurityStudyZone(db, req.params.id, req.body || {}, profile));
 securityStudyRoute('patch', '/api/estudios-seguridad/:id/zonas/:zoneId', (db, req, profile) => updateSecurityStudyZone(db, req.params.id, req.params.zoneId, req.body || {}, profile));
