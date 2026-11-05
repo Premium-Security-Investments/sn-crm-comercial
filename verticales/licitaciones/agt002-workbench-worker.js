@@ -83,7 +83,7 @@ async function respondWithTimeout(responder, input, timeoutMs) {
 }
 
 export async function runAgt002WorkbenchWorker({
-  persistence, responder, now = () => new Date(), limits,
+  persistence, responder, now = () => new Date(), limits, preferredJobId = null,
 }) {
   if (!responder || typeof responder.respond !== 'function') {
     throw respondedNotConfiguredError();
@@ -94,6 +94,7 @@ export async function runAgt002WorkbenchWorker({
     dailyMaxJobs: limits.dailyMaxJobs,
     maxConcurrent: limits.maxConcurrent,
     leaseSeconds: limits.leaseSeconds,
+    ...(preferredJobId ? { preferredJobId } : {}),
   });
 
   if (claim.status === 'empty') return { status: 'idle' };
