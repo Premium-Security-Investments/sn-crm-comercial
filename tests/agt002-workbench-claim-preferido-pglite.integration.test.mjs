@@ -5,7 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 import { claimAgt002WorkbenchJob } from '../verticales/licitaciones/agt002-workbench-persistence.js';
 
-// F4 de la auditoría del piloto Fiscalía (migración 181): la pregunta de Fiscalía esperó 2 h 16 min porque el drain
+// F4 de la auditoría del piloto Fiscalía (migración 184; en el libro, 181): la pregunta de Fiscalía esperó 2 h 16 min porque el drain
 // del mensaje reclamaba el pedido más antiguo de todas las oportunidades (un pedido viejo de Supersalud). El drain
 // ahora reclama primero el pedido del propio mensaje.
 const migration = name => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
@@ -14,8 +14,8 @@ const pilotMigration = migration('044_agt003_copilot_pilot_permission.sql');
 const workbenchMigration = migration('045_agt002_dossier_workbench.sql');
 const hardeningMigration = migration('046_agt002_workbench_runtime_hardening.sql');
 const unlimitedMigration = migration('048_agt002_workbench_unlimited_production.sql');
-const preferredMigration = migration('181_agt002_workbench_claim_preferido.sql');
-const preferredRollback = readFileSync(new URL('../supabase/rollbacks/181_agt002_workbench_claim_preferido_rollback.sql', import.meta.url), 'utf8');
+const preferredMigration = migration('184_agt002_workbench_claim_preferido.sql');
+const preferredRollback = readFileSync(new URL('../supabase/rollbacks/184_agt002_workbench_claim_preferido_rollback.sql', import.meta.url), 'utf8');
 
 const ids = Object.freeze({
   operator: '11111111-1111-4111-8111-111111111111',
@@ -66,7 +66,7 @@ async function freshDb({ withPreferred = true } = {}) {
   await db.exec(workbenchMigration); // 045
   await db.exec(hardeningMigration); // 046
   await db.exec(unlimitedMigration); // 048
-  if (withPreferred) await db.exec(preferredMigration); // 181
+  if (withPreferred) await db.exec(preferredMigration); // 184
   return db;
 }
 

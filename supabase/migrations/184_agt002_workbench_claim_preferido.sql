@@ -1,3 +1,6 @@
+-- Número 184 en el repositorio; en el libro de migraciones quedó como `181_agt002_workbench_claim_preferido`
+-- (versión 20261105100004), aplicada antes del renumerado. Se renumeró porque `181_estudios_seguridad_agente` (#514)
+-- se fusionó con el mismo número el mismo día. El efecto en la base es el mismo; no se vuelve a aplicar.
 -- F4 (auditoría del piloto Fiscalía, 2026-11-05): un mensaje en la Mesa despierta al worker una vez y
 -- `psi_claim_agt002_workbench_job` toma el pedido más antiguo de TODAS las oportunidades. La pregunta de Fiscalía
 -- esperó 2 h 16 min detrás de un pedido viejo de Supersalud.
