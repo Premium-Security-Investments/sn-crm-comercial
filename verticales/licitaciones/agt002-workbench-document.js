@@ -11,6 +11,7 @@
 
 import { agt002DocumentFileName } from './agt002-document-render.js';
 import { agt002QuitarNotasInternas, agt002ValidarDocx } from './agt002-docx-validation.js';
+import { agt002LeerCiudadFechaDePresentacion, agt002PonerFechaDePresentacion } from './agt002-fecha-de-presentacion.js';
 
 export const AGT002_DRAFT_BUCKET = 'tender-documents';
 export const AGT002_DRAFT_FOLDER = 'borradores-vigia';
@@ -49,8 +50,12 @@ export function createAgt002DraftDocumentProducer({ database, bridgeClient, now 
   if (!bridgeClient || typeof bridgeClient.renderDocument !== 'function') throw new TypeError('El cliente del puente no sabe armar documentos.');
   return async function produceDocument({ input, document, missingInformation = [] }) {
     // Mejora 6: las notas para el equipo no van en el Word; lo que se saca se dice en «lo que falta».
-    const { document: limpio, quitadas } = agt002QuitarNotasInternas(document);
+    const { document: sinNotas, quitadas } = agt002QuitarNotasInternas(document);
     const avisos = quitadas.map(nota => `Se sacó del Word una nota interna: «${nota}». Si era parte del documento, agréguela a mano.`);
+    // Mejora 6: la línea «Ciudad, fecha» es la sede principal y el día del cierre; la pone el servidor, no el modelo.
+    const fecha = agt002PonerFechaDePresentacion(sinNotas, await agt002LeerCiudadFechaDePresentacion(database, { tenderId: input.tender_id }));
+    const limpio = fecha.document;
+    if (fecha.aviso) avisos.push(fecha.aviso);
     const { bytes, sha256 } = await bridgeClient.renderDocument({ document: limpio });
     // Mejora 6: el paquete se revisa como lo abre Word; uno que sólo abre en LibreOffice no llega al expediente.
     const revision = agt002ValidarDocx(bytes);

@@ -73,17 +73,22 @@ function storage() {
   const subidos = [];
   return { subidos, from: () => ({ upload: async (ruta, bytes) => { subidos.push({ ruta, bytes }); return { error: null }; } }) };
 }
-const input = { opportunity_id: '11111111-1111-4111-8111-111111111111', job_id: '22222222-2222-4222-8222-222222222222' };
+// Sede principal y cierre del proceso, para la línea «Ciudad, fecha» (mejora 6, parte B).
+function consultas() {
+  const fila = { psi_company_sites: { city: 'Pereira' }, psi_public_tenders: { deadline_at: '2026-11-04T15:00:00Z' } };
+  return tabla => { const q = { select: () => q, eq: () => q, limit: () => q, maybeSingle: async () => ({ data: fila[tabla], error: null }) }; return q; };
+}
+const input = { opportunity_id: '11111111-1111-4111-8111-111111111111', job_id: '22222222-2222-4222-8222-222222222222', tender_id: '33333333-3333-4333-8333-333333333333' };
 
 test('el productor no guarda un Word dañado: lo rechaza antes del expediente', async () => {
-  const database = { storage: storage() };
+  const database = { storage: storage(), from: consultas() };
   const producir = createAgt002DraftDocumentProducer({ database, bridgeClient: { renderDocument: async () => ({ bytes: docx({ 'word/styles.xml': null }), sha256: 'x' }) } });
   await assert.rejects(producir({ input, document: { title: 'Carta', blocks: [{ kind: 'paragraph', text: 'Hola' }] } }), { code: 'AGT002_DOCUMENT_INVALID_PACKAGE' });
   assert.equal(database.storage.subidos.length, 0);
 });
 
 test('el productor manda al puente el documento sin notas y deja el aviso primero en lo que falta', async () => {
-  const database = { storage: storage() };
+  const database = { storage: storage(), from: consultas() };
   let enviado;
   const producir = createAgt002DraftDocumentProducer({ database, bridgeClient: { renderDocument: async ({ document }) => { enviado = document; return { bytes: docx(), sha256: 'abc' }; } } });
   const metadata = await producir({ input, missingInformation: ['Falta el NIT del socio.'], document: {
