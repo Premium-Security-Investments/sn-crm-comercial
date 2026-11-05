@@ -11,8 +11,8 @@ const message = (reason: unknown) => (reason instanceof Error ? reason.message :
 // Los navegadores de escritorio no muestran HEIC (formato del iPhone): se ofrece como archivo.
 const showsInline = (item: Evidence) => item.kind === 'foto' && item.mime_type !== 'image/heic';
 
-export function EvidenceStrip({ studyId, items, urls, riskId = null, editable, label, onChanged }: {
-  studyId: string; items: Evidence[]; urls: Record<string, string | null>; riskId?: string | null; editable: boolean; label: string; onChanged: () => void;
+export function EvidenceStrip({ studyId, items, urls, riskId = null, purpose = 'evidencia', editable, label, onChanged }: {
+  studyId: string; items: Evidence[]; urls: Record<string, string | null>; riskId?: string | null; purpose?: 'evidencia' | 'mapa' | 'logo'; editable: boolean; label: string; onChanged: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState('');
@@ -29,10 +29,10 @@ export function EvidenceStrip({ studyId, items, urls, riskId = null, editable, l
         if (file.size > MAX_BYTES) throw new Error(`"${file.name}" pesa más de 15 MB.`);
         setStatus(`Subiendo ${done + 1} de ${files.length}…`);
         const mime = file.type || (/\.hei[cf]$/i.test(file.name) ? 'image/heic' : '');
-        const ticket = await requestEvidenceUpload(studyId, { file_name: file.name, mime_type: mime, size_bytes: file.size, risk_id: riskId });
+        const ticket = await requestEvidenceUpload(studyId, { file_name: file.name, mime_type: mime, size_bytes: file.size, risk_id: riskId, purpose });
         const sent = await supabaseBrowser.storage.from(ticket.bucket).uploadToSignedUrl(ticket.path, ticket.token, file, { contentType: mime });
         if (sent.error) throw sent.error;
-        await completeEvidenceUpload(studyId, { path: ticket.path, file_name: file.name, risk_id: riskId, taken_on: new Date(file.lastModified).toISOString().slice(0, 10) });
+        await completeEvidenceUpload(studyId, { path: ticket.path, file_name: file.name, risk_id: riskId, purpose, taken_on: new Date(file.lastModified).toISOString().slice(0, 10) });
         done += 1;
       }
       setStatus(done === 1 ? 'Archivo agregado.' : `${done} archivos agregados.`);
@@ -64,8 +64,8 @@ export function EvidenceStrip({ studyId, items, urls, riskId = null, editable, l
       </li>;
     })}</ul> : <small className="es-muted"> Sin fotos ni documentos.</small>}
     {editable ? <div className="es-actions">
-      <input ref={input} type="file" accept={ACCEPT} multiple hidden onChange={event => upload(event.target.files)} aria-label={`Adjuntar a ${label}`} />
-      <button type="button" className="secondary" onClick={() => input.current?.click()} disabled={busy}>{busy ? 'Subiendo…' : 'Adjuntar foto o PDF'}</button>
+      <input ref={input} type="file" accept={purpose === 'evidencia' ? ACCEPT : 'image/jpeg,image/png'} multiple={purpose === 'evidencia'} hidden onChange={event => upload(event.target.files)} aria-label={`Adjuntar a ${label}`} />
+      <button type="button" className="secondary" onClick={() => input.current?.click()} disabled={busy}>{busy ? 'Subiendo…' : purpose === 'logo' ? 'Subir logo (JPG o PNG)' : purpose === 'mapa' ? 'Subir mapa (JPG o PNG)' : 'Adjuntar foto o PDF'}</button>
       {status ? <small className="es-muted" role="status">{status}</small> : null}
     </div> : null}
     {error ? <p className="es-error" role="alert">{error}</p> : null}

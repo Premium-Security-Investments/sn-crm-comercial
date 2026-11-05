@@ -65,4 +65,24 @@ export const PLANTILLA_INSTALACIONES_FISICAS_V1 = Object.freeze({
   ].map(([codigo, nombre, procesos]) => Object.freeze({ codigo, nombre, procesos: Object.freeze(procesos) }))),
 });
 
+// Los nombres que ve el cliente (informe de HADA, 2026-11-05): los de la casa, no los del documento maestro. Cambian
+// sólo los nombres; los números y la fórmula de la metodología v1 son los mismos.
+export const ESCALAS = Object.freeze({
+  probabilidad: Object.freeze(['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta']),
+  impacto: Object.freeze(['Insignificante', 'Leve', 'Moderado', 'Grave', 'Catastrófico']),
+  // Calificación del control en palabras, verificada contra los Excel: 2 = "Poco…", 3 = "Medianamente…", 4 = pleno.
+  // Para 1 y 5 no hay ejemplo en ningún estudio: se muestra el número (por confirmar con el analista).
+  control: Object.freeze({
+    calidad: Object.freeze({ 2: 'Poco confiable', 3: 'Medianamente confiable', 4: 'Confiable' }),
+    eficacia: Object.freeze({ 2: 'Poco eficaz', 3: 'Medianamente eficaz', 4: 'Eficaz' }),
+    eficiencia: Object.freeze({ 2: 'Poco eficiente', 3: 'Medianamente eficiente', 4: 'Eficiente' }),
+  }),
+});
+
+/** "Medianamente confiable", o el número cuando la escala no tiene nombre para ese valor. */
+export function controlWord(dimension, value) {
+  if (value === null || value === undefined) return null;
+  return ESCALAS.control[dimension]?.[value] || `Calificación ${value}`;
+}
+
 export const PLANTILLAS = Object.freeze({ [PLANTILLA_INSTALACIONES_FISICAS_V1.id]: PLANTILLA_INSTALACIONES_FISICAS_V1 });

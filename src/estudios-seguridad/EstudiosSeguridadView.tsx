@@ -6,8 +6,9 @@ import './estudios.css';
 import { EvidenceStrip } from './EvidenceStrip';
 import { WorkflowPanel } from './WorkflowPanel';
 import { FieldNotePanel } from './FieldNotePanel';
+import { CharacterizationPanel } from './CharacterizationPanel';
 import {
-  CONTROL_SCALE, IMPACT_SCALE, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, STATUS_LABELS,
+  IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
   type Action, type Catalog, type ClientOption, type Evidence, type Nivel, type PostsResult, type Risk, type RiskDraft, type StudyDetail, type StudySummaryRow, type Zone,
 } from './api';
@@ -185,6 +186,7 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
   if (!detail) return <section className="panel es-panel"><p className="es-muted">Cargando estudio…</p></section>;
   const { study, zones, risks, actions, editable, catalog, summary, evidence } = detail;
   const zoneName = new Map(zones.map(zone => [zone.id, zone.name]));
+  const clientProcesses = [...new Set(risks.map(risk => risk.client_process).filter((item): item is string => Boolean(item)))];
   return <section className="panel es-panel" aria-label={`Estudio ${study.code}`}>
     <button type="button" className="es-link" onClick={onBack}>← Estudios</button>
     <div className="es-head">
@@ -204,10 +206,12 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
       <SummaryRow label="Riesgo residual" counts={summary.levels.residual} />
     </div>
 
+    <CharacterizationPanel study={study} characterization={detail.characterization} evidence={evidence} urls={urls} editable={editable} evidenceAvailable={detail.evidence_available} onChanged={reload} />
+
     <ZonesBlock studyId={study.id} zones={zones} editable={editable} onChanged={reload} onError={setError} />
 
     {detail.evidence_available
-      ? <EvidenceStrip studyId={study.id} items={evidence.filter(item => !item.risk_id)} urls={urls} editable={editable} label="Fotos y documentos generales de la visita" onChanged={reload} />
+      ? <EvidenceStrip studyId={study.id} items={evidence.filter(item => !item.risk_id && (item.purpose ?? 'evidencia') === 'evidencia')} urls={urls} editable={editable} label="Fotos y documentos generales de la visita" onChanged={reload} />
       : <p className="es-muted">Las fotos y documentos todavía no están habilitados en esta instalación.</p>}
 
     {editable ? <FieldNotePanel studyId={study.id} zones={zones} onSaved={reload} /> : null}
@@ -216,7 +220,7 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
       <h3>Riesgos ({risks.length})</h3>
       {editable && !addingRisk ? <button type="button" onClick={() => setAddingRisk(true)}>+ Agregar riesgo</button> : null}
     </div>
-    {addingRisk ? <RiskForm studyId={study.id} zones={zones} catalog={catalog} onCancel={() => setAddingRisk(false)} onSaved={() => { setAddingRisk(false); reload(); }} /> : null}
+    {addingRisk ? <RiskForm studyId={study.id} zones={zones} catalog={catalog} clientProcesses={clientProcesses} onCancel={() => setAddingRisk(false)} onSaved={() => { setAddingRisk(false); reload(); }} /> : null}
     {risks.length === 0 && !addingRisk ? <p className="es-muted">Sin riesgos todavía.</p> : null}
     <ul className="es-risks">{risks.map(risk => <RiskItem key={risk.id} studyId={study.id} risk={risk} zoneLabel={risk.zone_id ? zoneName.get(risk.zone_id) || '' : ''} zones={zones} catalog={catalog}
       actions={actions.filter(action => action.risk_id === risk.id)} editable={editable} onChanged={reload} onError={setError}
@@ -264,7 +268,7 @@ function ScaleSelect({ label, value, scale, onChange, required = false }: { labe
 
 const EMPTY_RISK: RiskDraft = { title: '', probability: undefined, impact_company: undefined, impact_people: undefined };
 
-function RiskForm({ studyId, zones, catalog, initial, riskId, onCancel, onSaved }: { studyId: string; zones: Zone[]; catalog: Catalog | null; initial?: RiskDraft; riskId?: string; onCancel: () => void; onSaved: (risk: Risk) => void }) {
+function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = [], onCancel, onSaved }: { studyId: string; zones: Zone[]; catalog: Catalog | null; initial?: RiskDraft; riskId?: string; clientProcesses?: string[]; onCancel: () => void; onSaved: (risk: Risk) => void }) {
   const [form, setForm] = useState<RiskDraft>(initial || EMPTY_RISK);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -315,6 +319,15 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, onCancel, onSaved 
       </label>
     </div>
     <div className="es-grid-2">
+      <label>Proceso del cliente
+        <input value={form.client_process || ''} onChange={event => set({ client_process: event.target.value })} maxLength={120} list="es-client-processes" placeholder="Ej.: Gestión Humana, Logística, Producción" />
+      </label>
+      <label>Factor de riesgo
+        <input value={form.risk_factor || ''} onChange={event => set({ risk_factor: event.target.value })} maxLength={200} placeholder="Ej.: Humano – Procedimental – Estratégico" />
+      </label>
+    </div>
+    <datalist id="es-client-processes">{clientProcesses.map(item => <option key={item} value={item} />)}</datalist>
+    <div className="es-grid-2">
       <label>Causas<textarea rows={2} value={form.causes || ''} onChange={event => set({ causes: event.target.value })} maxLength={4000} /></label>
       <label>Consecuencias<textarea rows={2} value={form.consequences || ''} onChange={event => set({ consequences: event.target.value })} maxLength={4000} /></label>
     </div>
@@ -327,18 +340,18 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, onCancel, onSaved 
       <legend>Control existente</legend>
       <label>Qué hay hoy<textarea rows={2} value={form.current_control || ''} onChange={event => set({ current_control: event.target.value })} maxLength={4000} /></label>
       <div className="es-grid-3">
-        <ScaleSelect label="Calidad" value={form.current_quality} scale={CONTROL_SCALE} onChange={value => set({ current_quality: value })} />
-        <ScaleSelect label="Eficacia" value={form.current_efficacy} scale={CONTROL_SCALE} onChange={value => set({ current_efficacy: value })} />
-        <ScaleSelect label="Eficiencia" value={form.current_efficiency} scale={CONTROL_SCALE} onChange={value => set({ current_efficiency: value })} />
+        <ScaleSelect label="Calidad" value={form.current_quality} scale={controlScale('calidad')} onChange={value => set({ current_quality: value })} />
+        <ScaleSelect label="Eficacia" value={form.current_efficacy} scale={controlScale('eficacia')} onChange={value => set({ current_efficacy: value })} />
+        <ScaleSelect label="Eficiencia" value={form.current_efficiency} scale={controlScale('eficiencia')} onChange={value => set({ current_efficiency: value })} />
       </div>
     </fieldset>
     <fieldset className="es-fieldset">
       <legend>Control propuesto</legend>
       <label>Qué se recomienda<textarea rows={2} value={form.proposed_control || ''} onChange={event => set({ proposed_control: event.target.value })} maxLength={4000} /></label>
       <div className="es-grid-3">
-        <ScaleSelect label="Calidad" value={form.proposed_quality} scale={CONTROL_SCALE} onChange={value => set({ proposed_quality: value })} />
-        <ScaleSelect label="Eficacia" value={form.proposed_efficacy} scale={CONTROL_SCALE} onChange={value => set({ proposed_efficacy: value })} />
-        <ScaleSelect label="Eficiencia" value={form.proposed_efficiency} scale={CONTROL_SCALE} onChange={value => set({ proposed_efficiency: value })} />
+        <ScaleSelect label="Calidad" value={form.proposed_quality} scale={controlScale('calidad')} onChange={value => set({ proposed_quality: value })} />
+        <ScaleSelect label="Eficacia" value={form.proposed_efficacy} scale={controlScale('eficacia')} onChange={value => set({ proposed_efficacy: value })} />
+        <ScaleSelect label="Eficiencia" value={form.proposed_efficiency} scale={controlScale('eficiencia')} onChange={value => set({ proposed_efficiency: value })} />
       </div>
     </fieldset>
     <small className="es-muted">Cada control se califica completo (calidad, eficacia y eficiencia) o se deja sin calificar. El nivel lo calcula SIIO.</small>
@@ -362,13 +375,13 @@ function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable,
   };
   if (editing) {
     const { id: _id, number: _number, valuation: _valuation, origin: _origin, ...draft } = risk;
-    return <li><RiskForm studyId={studyId} zones={zones} catalog={catalog} riskId={risk.id} initial={draft} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} /></li>;
+    return <li><RiskForm studyId={studyId} zones={zones} catalog={catalog} riskId={risk.id} initial={draft} clientProcesses={[]} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} /></li>;
   }
   return <li className="es-card es-risk">
     <div className="es-risk-head">
       <div>
         <strong>R{risk.number} · {risk.title}</strong>
-        <small className="es-muted">{[risk.catalog_risk_code, risk.process_code, zoneLabel].filter(Boolean).join(' · ') || 'Riesgo propio'}{risk.origin === 'agente' ? ' · registrado con el agente' : ''}</small>
+        <small className="es-muted">{[risk.client_process, risk.risk_factor, zoneLabel, risk.catalog_risk_code, risk.process_code].filter(Boolean).join(' · ') || 'Riesgo propio'}{risk.origin === 'agente' ? ' · registrado con el agente' : ''}</small>
       </div>
       {editable ? <div className="es-actions">
         <button type="button" className="secondary" onClick={() => setEditing(true)}>Editar</button>

@@ -11,6 +11,7 @@
 import { METODOLOGIA_V1, valorarRiesgo } from './metodologia.js';
 import { PLANTILLAS } from './plantilla.js';
 import { listEvidence } from './evidencias.js';
+import { cleanCharacterization, loadCharacterization } from './caracterizacion.js';
 
 export const STUDY_TABLE = 'psi_security_studies';
 export const ZONE_TABLE = 'psi_security_study_zones';
@@ -126,6 +127,7 @@ export async function updateStudy(db, id, body = {}, profile, now = new Date()) 
   if (body.title !== undefined) patch.title = text(body.title, { field: 'Título', min: 3, max: 200 });
   if (body.scope !== undefined) patch.scope = text(body.scope, { field: 'Alcance', max: 4000 });
   if (body.visit_date !== undefined) patch.visit_date = isoDate(body.visit_date, 'Fecha de visita');
+  Object.assign(patch, cleanCharacterization(body));
   if (body.client_source !== undefined || body.site_source !== undefined) {
     const merged = cleanStudyInput({ ...current, ...body });
     Object.assign(patch, {
@@ -168,11 +170,12 @@ export function valuateRisk(row, methodologyId = METODOLOGIA_V1.id) {
 
 export async function getStudy(db, id) {
   const study = await readStudy(db, id);
-  const [zones, risks, actions, evidence] = await Promise.all([
+  const [zones, risks, actions, evidence, characterization] = await Promise.all([
     must(db.from(ZONE_TABLE).select('*').eq('study_id', study.id).order('position', { ascending: true })),
     must(db.from(RISK_TABLE).select('*').eq('study_id', study.id).order('number', { ascending: true })),
     must(db.from(ACTION_TABLE).select('*').eq('study_id', study.id).order('created_at', { ascending: true })),
     listEvidence(db, study.id),
+    loadCharacterization(db, study.id),
   ]);
   const valued = (risks || []).map(risk => ({ ...risk, valuation: valuateRisk(risk, study.methodology_id) }));
   const levels = { actual: {}, residual: {} };
@@ -188,6 +191,7 @@ export async function getStudy(db, id) {
     actions: actions || [],
     evidence: evidence.evidence,
     evidence_available: evidence.available,
+    characterization,
     summary: { risks: valued.length, levels },
     editable: EDITABLE_STATUSES.has(study.status),
     methodology: METODOLOGIAS[study.methodology_id] || null,
@@ -250,6 +254,10 @@ export function cleanRiskInput(body = {}, catalog = null) {
     catalog_risk_code: catalogCode,
     process_code: processCode,
     title: text(body.title, { field: 'Riesgo', min: 3, max: 300 }),
+    // Del informe real (HADA): el proceso es del cliente (Gestión Humana, Producción…) y el factor, p. ej.
+    // "Humano – Procedimental – Estratégico". El proceso del catálogo queda como clasificación técnica.
+    client_process: text(body.client_process, { field: 'Proceso del cliente', max: 120 }),
+    risk_factor: text(body.risk_factor, { field: 'Factor de riesgo', max: 200 }),
     causes: text(body.causes, { field: 'Causas', max: 4000 }),
     consequences: text(body.consequences, { field: 'Consecuencias', max: 4000 }),
     probability: scale(body.probability, 'Probabilidad'),

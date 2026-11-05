@@ -14,6 +14,9 @@ export type Study = StudySummaryRow & {
   client_source: 'avancys' | 'crm'; client_ref: string; client_nit: string | null;
   site_source: 'avancys_puesto' | 'crm' | 'manual'; site_ref: string | null; site_address: string | null;
   scope: string | null; methodology_id: string; template_id: string; prepared_by: string;
+  client_description?: string | null; location_description?: string | null; latitude?: number | string | null; longitude?: number | string | null;
+  external_context?: string | null; criminal_groups?: string | null; internal_context?: string | null;
+  context_sources?: Array<{ nombre: string; url: string | null; fecha: string | null }>;
 };
 
 export type Zone = { id: string; name: string; description: string | null; position: number };
@@ -23,7 +26,7 @@ export type Valuation = { impacto: number; inherente: { magnitud: number; nivel:
 
 export type Risk = {
   id: string; number: number; zone_id: string | null; catalog_risk_code: string | null; process_code: string | null;
-  title: string; causes: string | null; consequences: string | null;
+  title: string; client_process?: string | null; risk_factor?: string | null; causes: string | null; consequences: string | null;
   probability: number; impact_company: number; impact_people: number;
   current_control: string | null; current_quality: number | null; current_efficacy: number | null; current_efficiency: number | null;
   proposed_control: string | null; proposed_quality: number | null; proposed_efficacy: number | null; proposed_efficiency: number | null;
@@ -36,7 +39,7 @@ export type Action = {
 };
 
 export type Evidence = {
-  id: string; zone_id: string | null; risk_id: string | null; kind: 'foto' | 'documento'; file_name: string; mime_type: string;
+  id: string; zone_id: string | null; risk_id: string | null; purpose?: 'evidencia' | 'mapa' | 'logo'; kind: 'foto' | 'documento'; file_name: string; mime_type: string;
   size_bytes: number; sha256: string; caption: string | null; taken_on: string | null; created_at: string;
 };
 
@@ -52,11 +55,17 @@ export type Workflow = {
   }>;
 };
 
+export type CrimeStat = { id: string; crime: string; count: number; source: string; cutoff_date: string | null };
+export type Contact = { id: string; kind: 'apoyo' | 'empresa' | 'interventor'; entity: string; detail: string | null; phone: string | null; email: string | null };
+export type Post = { id: string; source: 'avancys' | 'manual'; source_ref: string | null; name: string; modality: 'vigilancia' | 'guia_canino' | 'supervision' | 'monitoreo' | 'otro'; schedule: string | null; armed: boolean | null; quantity: number };
+export type Characterization = { available: boolean; estadisticas: CrimeStat[]; contactos: Contact[]; dispositivo: Post[] };
+export type CharacterizationSection = 'estadisticas' | 'contactos' | 'dispositivo';
+
 export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; riesgos: Array<{ codigo: string; nombre: string; procesos: string[] }> };
 
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
-  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow;
+  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
@@ -88,9 +97,9 @@ export const updateAction = (studyId: string, actionId: string, body: Partial<Ac
 export const deleteAction = (studyId: string, actionId: string) => api(child(studyId, 'acciones', actionId), { method: 'DELETE' });
 
 // Evidencias: el servidor da el permiso firmado, el navegador sube directo al depósito y el servidor verifica.
-export const requestEvidenceUpload = (studyId: string, body: { file_name: string; mime_type: string; size_bytes: number; risk_id?: string | null; zone_id?: string | null }) =>
+export const requestEvidenceUpload = (studyId: string, body: { file_name: string; mime_type: string; size_bytes: number; risk_id?: string | null; zone_id?: string | null; purpose?: 'evidencia' | 'mapa' | 'logo' }) =>
   api<{ bucket: string; path: string; token: string }>(`${BASE}/${encodeURIComponent(studyId)}/evidencias/upload-url`, json('POST', body));
-export const completeEvidenceUpload = (studyId: string, body: { path: string; file_name: string; risk_id?: string | null; zone_id?: string | null; caption?: string | null; taken_on?: string | null }) =>
+export const completeEvidenceUpload = (studyId: string, body: { path: string; file_name: string; risk_id?: string | null; zone_id?: string | null; caption?: string | null; taken_on?: string | null; purpose?: 'evidencia' | 'mapa' | 'logo' }) =>
   api<Evidence>(`${BASE}/${encodeURIComponent(studyId)}/evidencias`, json('POST', body));
 export const evidenceUrls = (studyId: string) => api<{ urls: Record<string, string | null>; expires_in: number }>(`${BASE}/${encodeURIComponent(studyId)}/evidencias/urls`);
 export const deleteEvidence = (studyId: string, evidenceId: string) => api(`${BASE}/${encodeURIComponent(studyId)}/evidencias/${encodeURIComponent(evidenceId)}`, { method: 'DELETE' });
@@ -112,14 +121,29 @@ export const proposeFromNote = (studyId: string, nota: string) => api<FieldNoteP
 export const confirmFromNote = (studyId: string, body: { zonas_nuevas: Array<{ ref: string; nombre: string }>; riesgos: Array<FieldNoteRisk & { probability: number; impact_company: number; impact_people: number }> }) =>
   api<{ zonas: Zone[]; riesgos: Risk[] }>(`${BASE}/${encodeURIComponent(studyId)}/agente/confirmar`, json('POST', body));
 
+// Caracterización de la sede (tramo 5).
+export const addCharacterizationRow = (studyId: string, section: CharacterizationSection, body: Record<string, unknown>) =>
+  api(`${BASE}/${encodeURIComponent(studyId)}/${section}`, json('POST', body));
+export const deleteCharacterizationRow = (studyId: string, section: CharacterizationSection, rowId: string) =>
+  api(`${BASE}/${encodeURIComponent(studyId)}/${section}/${encodeURIComponent(rowId)}`, { method: 'DELETE' });
+export const seedPostsFromAvancys = (studyId: string) =>
+  api<{ added: number; already: number; found: number }>(`${BASE}/${encodeURIComponent(studyId)}/dispositivo-desde-avancys`, { method: 'POST' });
+
 export const STATUS_LABELS: Record<StudyStatus, string> = {
   borrador: 'Borrador', en_revision: 'En revisión', devuelto: 'Devuelto', revisado: 'Revisado', aprobado: 'Aprobado', archivado: 'Archivado',
 };
 export const NIVEL_LABELS: Record<Nivel, string> = { bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico' };
 export const NIVEL_ORDER: Nivel[] = ['critico', 'alto', 'moderado', 'bajo'];
 
-// Escalas de la metodología v1 (documento maestro ESU 2026, tablas de probabilidad e impacto).
-export const PROBABILITY_SCALE = ['Rara', 'Baja', 'Media', 'Alta', 'Muy alta'];
-export const IMPACT_SCALE = ['Menor', 'Bajo', 'Moderado', 'Alto', 'Crítico'];
-// Los Excel de referencia califican el control de 1 a 5 sin nombrar cada valor; aquí tampoco se inventan nombres.
-export const CONTROL_SCALE = ['1', '2', '3', '4', '5'];
+// Escalas con los nombres que la casa usa con sus clientes (informe de HADA, 2026-11-05); los números no cambian.
+// Copia de ESCALAS en verticales/estudios-seguridad/plantilla.js (el servidor es el que manda).
+export const PROBABILITY_SCALE = ['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta'];
+export const IMPACT_SCALE = ['Insignificante', 'Leve', 'Moderado', 'Grave', 'Catastrófico'];
+// Calificación del control en palabras, verificada contra los Excel (2 = Poco, 3 = Medianamente, 4 = pleno). Para 1 y
+// 5 no hay ejemplo en ningún estudio: se muestra el número.
+const CONTROL_WORDS: Record<'calidad' | 'eficacia' | 'eficiencia', Record<number, string>> = {
+  calidad: { 2: 'Poco confiable', 3: 'Medianamente confiable', 4: 'Confiable' },
+  eficacia: { 2: 'Poco eficaz', 3: 'Medianamente eficaz', 4: 'Eficaz' },
+  eficiencia: { 2: 'Poco eficiente', 3: 'Medianamente eficiente', 4: 'Eficiente' },
+};
+export const controlScale = (dimension: 'calidad' | 'eficacia' | 'eficiencia') => [1, 2, 3, 4, 5].map(value => CONTROL_WORDS[dimension][value] || String(value));

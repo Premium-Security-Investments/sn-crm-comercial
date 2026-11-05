@@ -15,6 +15,16 @@ export const EVIDENCE_URL_TTL_SECONDS = 10 * 60;
 const EDITABLE_STATUSES = new Set(['borrador', 'devuelto']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+// Para qué sirve el archivo (migración 187). El mapa de la sede y el logo del cliente van impresos en el informe, por
+// eso sólo JPG o PNG, y no se amarran a un riesgo ni a una zona.
+const PURPOSES = new Set(['evidencia', 'mapa', 'logo']);
+const PRINTABLE = new Set(['image/jpeg', 'image/png']);
+function cleanPurpose(body) {
+  const purpose = body.purpose ?? 'evidencia';
+  if (!PURPOSES.has(purpose)) throw invalid('Propósito del archivo inválido.');
+  if (purpose !== 'evidencia' && (body.risk_id || body.zone_id)) throw invalid('El mapa y el logo son del estudio, no de un riesgo o una zona.');
+  return purpose;
+}
 const MIME_KIND = Object.freeze({
   'image/jpeg': 'foto', 'image/png': 'foto', 'image/webp': 'foto', 'image/heic': 'foto', 'application/pdf': 'documento',
 });
@@ -76,6 +86,7 @@ export async function requestEvidenceUpload(db, studyId, body = {}) {
   const study = await editableStudy(db, studyId);
   const mime = typeof body.mime_type === 'string' ? body.mime_type : '';
   if (!MIME_KIND[mime]) throw invalid('Solo se aceptan fotos (JPG, PNG, WEBP o HEIC) y PDF.');
+  if (cleanPurpose(body) !== 'evidencia' && !PRINTABLE.has(mime)) throw invalid('El mapa y el logo deben ser JPG o PNG.');
   const size = Number(body.size_bytes);
   if (!Number.isInteger(size) || size <= 0) throw invalid('Tamaño del archivo inválido.');
   if (size > MAX_EVIDENCE_BYTES) throw invalid('El archivo pesa más de 15 MB.');
@@ -90,6 +101,7 @@ export async function completeEvidenceUpload(db, studyId, body = {}, profile, no
   const study = await editableStudy(db, studyId);
   const path = typeof body.path === 'string' ? body.path : '';
   if (!path.startsWith(`${study.id}/`) || path.includes('..') || path.length > 400) throw invalid('Ruta de la evidencia inválida.');
+  const purpose = cleanPurpose(body);
   const target = await cleanTarget(db, study.id, body);
   const blob = await must(db.storage.from(EVIDENCE_BUCKET).download(path));
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -97,11 +109,12 @@ export async function completeEvidenceUpload(db, studyId, body = {}, profile, no
   if (bytes.length === 0 || bytes.length > MAX_EVIDENCE_BYTES) { await remove(); throw invalid('El archivo está vacío o pesa más de 15 MB.'); }
   const mime = sniffMime(bytes);
   if (!mime) { await remove(); throw invalid('El archivo no es una foto ni un PDF válido.'); }
+  if (purpose !== 'evidencia' && !PRINTABLE.has(mime)) { await remove(); throw invalid('El mapa y el logo deben ser JPG o PNG.'); }
   const caption = typeof body.caption === 'string' ? body.caption.replace(/\s+/g, ' ').trim().slice(0, 500) || null : null;
   const takenOn = typeof body.taken_on === 'string' && ISO_DATE.test(body.taken_on) ? body.taken_on : null;
   const fileName = String(body.file_name || '').split(/[\\/]/).pop().trim().slice(0, 200) || safeFileName(path);
   return must(db.from(EVIDENCE_TABLE).insert({
-    study_id: study.id, ...target, kind: MIME_KIND[mime], storage_path: path, file_name: fileName, mime_type: mime,
+    study_id: study.id, ...target, purpose, kind: MIME_KIND[mime], storage_path: path, file_name: fileName, mime_type: mime,
     size_bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), caption, taken_on: takenOn,
     uploaded_by: profile.id, created_at: now.toISOString(),
   }).select('*').single());
