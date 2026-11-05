@@ -35,10 +35,16 @@ export type Action = {
   priority: 'alta' | 'media' | 'baja'; status: 'pendiente' | 'en_curso' | 'cumplida' | 'descartada';
 };
 
+export type Evidence = {
+  id: string; zone_id: string | null; risk_id: string | null; kind: 'foto' | 'documento'; file_name: string; mime_type: string;
+  size_bytes: number; sha256: string; caption: string | null; taken_on: string | null; created_at: string;
+};
+
 export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; riesgos: Array<{ codigo: string; nombre: string; procesos: string[] }> };
 
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
+  evidence: Evidence[]; evidence_available: boolean;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
@@ -68,6 +74,14 @@ export const deleteRisk = (studyId: string, riskId: string) => api(child(studyId
 export const addAction = (studyId: string, body: ActionDraft) => api<Action>(child(studyId, 'acciones'), json('POST', body));
 export const updateAction = (studyId: string, actionId: string, body: Partial<Action>) => api<Action>(child(studyId, 'acciones', actionId), json('PATCH', body));
 export const deleteAction = (studyId: string, actionId: string) => api(child(studyId, 'acciones', actionId), { method: 'DELETE' });
+
+// Evidencias: el servidor da el permiso firmado, el navegador sube directo al depósito y el servidor verifica.
+export const requestEvidenceUpload = (studyId: string, body: { file_name: string; mime_type: string; size_bytes: number; risk_id?: string | null; zone_id?: string | null }) =>
+  api<{ bucket: string; path: string; token: string }>(`${BASE}/${encodeURIComponent(studyId)}/evidencias/upload-url`, json('POST', body));
+export const completeEvidenceUpload = (studyId: string, body: { path: string; file_name: string; risk_id?: string | null; zone_id?: string | null; caption?: string | null; taken_on?: string | null }) =>
+  api<Evidence>(`${BASE}/${encodeURIComponent(studyId)}/evidencias`, json('POST', body));
+export const evidenceUrls = (studyId: string) => api<{ urls: Record<string, string | null>; expires_in: number }>(`${BASE}/${encodeURIComponent(studyId)}/evidencias/urls`);
+export const deleteEvidence = (studyId: string, evidenceId: string) => api(`${BASE}/${encodeURIComponent(studyId)}/evidencias/${encodeURIComponent(evidenceId)}`, { method: 'DELETE' });
 
 export const STATUS_LABELS: Record<StudyStatus, string> = {
   borrador: 'Borrador', en_revision: 'En revisión', devuelto: 'Devuelto', revisado: 'Revisado', aprobado: 'Aprobado', archivado: 'Archivado',

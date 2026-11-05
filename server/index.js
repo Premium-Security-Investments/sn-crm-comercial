@@ -8,6 +8,7 @@ import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse
 import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
 import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, addZone as addSecurityStudyZone, createStudy as createSecurityStudy, deleteAction as deleteSecurityStudyAction, deleteRisk as deleteSecurityStudyRisk, deleteZone as deleteSecurityStudyZone, getStudy as getSecurityStudy, listStudies as listSecurityStudies, updateAction as updateSecurityStudyAction, updateRisk as updateSecurityStudyRisk, updateStudy as updateSecurityStudy, updateZone as updateSecurityStudyZone } from '../verticales/estudios-seguridad/estudios.js';
+import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
@@ -3411,6 +3412,11 @@ securityStudyRoute('delete', '/api/estudios-seguridad/:id/riesgos/:riskId', (db,
 securityStudyRoute('post', '/api/estudios-seguridad/:id/acciones', (db, req, profile) => addSecurityStudyAction(db, req.params.id, req.body || {}, profile));
 securityStudyRoute('patch', '/api/estudios-seguridad/:id/acciones/:actionId', (db, req, profile) => updateSecurityStudyAction(db, req.params.id, req.params.actionId, req.body || {}, profile));
 securityStudyRoute('delete', '/api/estudios-seguridad/:id/acciones/:actionId', (db, req, profile) => deleteSecurityStudyAction(db, req.params.id, req.params.actionId, profile));
+// Tramo 2: fotos y evidencias. Permiso firmado para subir → el navegador sube → el servidor verifica y registra.
+securityStudyRoute('post', '/api/estudios-seguridad/:id/evidencias/upload-url', (db, req) => requestSecurityStudyEvidenceUpload(db, req.params.id, req.body || {}));
+securityStudyRoute('post', '/api/estudios-seguridad/:id/evidencias', (db, req, profile) => completeSecurityStudyEvidence(db, req.params.id, req.body || {}, profile));
+securityStudyRoute('get', '/api/estudios-seguridad/:id/evidencias/urls', (db, req) => securityStudyEvidenceUrls(db, req.params.id));
+securityStudyRoute('delete', '/api/estudios-seguridad/:id/evidencias/:evidenceId', (db, req) => deleteSecurityStudyEvidence(db, req.params.id, req.params.evidenceId));
 
 // Recomendaciones de Vig-IA Gerencia: lunes automático (timer del servidor) y botón con tope diario.
 app.get('/api/siio/recommendations', async (req, res) => {

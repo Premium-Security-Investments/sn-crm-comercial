@@ -6,73 +6,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PGlite } from '@electric-sql/pglite';
 import {
   addAction, addRisk, addZone, cleanStudyInput, createStudy, deleteRisk, deleteZone, getStudy, listStudies, updateRisk, updateStudy,
 } from '../verticales/estudios-seguridad/estudios.js';
+import { PREPARER, database, supabaseOver } from './helpers/estudios-seguridad-db.mjs';
 
-const PREPARER = { id: '11111111-1111-4111-8111-111111111111', role: 'colaborador' };
-const migration = readFileSync(new URL('../supabase/migrations/178_estudios_seguridad_base.sql', import.meta.url), 'utf8');
 const rollback = readFileSync(new URL('../supabase/rollbacks/178_estudios_seguridad_base_rollback.sql', import.meta.url), 'utf8');
-
-async function database() {
-  const pg = new PGlite();
-  await pg.exec(`
-    create role anon; create role authenticated; create role service_role;
-    create table public.psi_sales_profiles (id uuid primary key, role text not null);
-    create table public.psi_sales_opportunities (id uuid primary key);
-    create table public.psi_access_permissions (code text primary key, name text, description text, active boolean);
-    create table public.psi_profile_permissions (profile_id uuid, permission_code text);
-    insert into public.psi_sales_profiles values ('${PREPARER.id}', 'colaborador');
-  `);
-  await pg.exec(migration);
-  return pg;
-}
-
-// Doble de supabase-js sobre PGlite: lo justo que usa el módulo (select/eq/order/single/maybeSingle/insert/update/delete).
-function supabaseOver(pg) {
-  return {
-    from(table) {
-      const state = { op: 'select', columns: '*', filters: [], order: [], values: null, returning: false };
-      const where = params => state.filters.length ? ` where ${state.filters.map(([column, value]) => { params.push(value); return `"${column}" = $${params.length}`; }).join(' and ')}` : '';
-      const run = async () => {
-        const params = [];
-        let sql;
-        if (state.op === 'insert') {
-          const keys = Object.keys(state.values);
-          sql = `insert into public.${table} (${keys.map(key => `"${key}"`).join(', ')}) values (${keys.map((key, i) => { params.push(state.values[key]); return `$${i + 1}`; }).join(', ')}) returning *`;
-        } else if (state.op === 'update') {
-          const keys = Object.keys(state.values);
-          const sets = keys.map(key => { params.push(state.values[key]); return `"${key}" = $${params.length}`; }).join(', ');
-          sql = `update public.${table} set ${sets}${where(params)} returning *`;
-        } else if (state.op === 'delete') {
-          sql = `delete from public.${table}${where(params)} returning *`;
-        } else {
-          const columns = state.columns === '*' ? '*' : state.columns.split(',').map(column => `"${column.trim()}"`).join(', ');
-          sql = `select ${columns} from public.${table}${where(params)}${state.order.length ? ` order by ${state.order.map(([column, asc]) => `"${column}" ${asc ? 'asc' : 'desc'}`).join(', ')}` : ''}`;
-        }
-        try {
-          const result = await pg.query(sql, params);
-          return { data: result.rows, error: null };
-        } catch (error) {
-          return { data: null, error };
-        }
-      };
-      const chain = {
-        select(columns = '*') { if (state.op === 'select') state.columns = columns; return chain; },
-        eq(column, value) { state.filters.push([column, value]); return chain; },
-        order(column, { ascending = true } = {}) { state.order.push([column, ascending]); return chain; },
-        insert(values) { state.op = 'insert'; state.values = values; return chain; },
-        update(values) { state.op = 'update'; state.values = values; return chain; },
-        delete() { state.op = 'delete'; return chain; },
-        async single() { const { data, error } = await run(); return error ? { data: null, error } : data.length === 1 ? { data: data[0], error: null } : { data: null, error: new Error(`single: ${data.length} filas`) }; },
-        async maybeSingle() { const { data, error } = await run(); return error ? { data: null, error } : { data: data[0] ?? null, error: null }; },
-        then(resolve, reject) { return run().then(resolve, reject); },
-      };
-      return chain;
-    },
-  };
-}
 
 const AVANCYS_STUDY = {
   title: 'Estudio de seguridad bodega principal',
@@ -82,7 +21,7 @@ const AVANCYS_STUDY = {
 };
 
 test('migración 178: permiso, restricciones, grants, RLS y reversa', async () => {
-  const pg = await database();
+  const pg = await database({ upTo: 1 });
   const permission = await pg.query(`select code, active from public.psi_access_permissions where code = 'estudios_seguridad'`);
   assert.deepEqual(permission.rows, [{ code: 'estudios_seguridad', active: true }]);
 

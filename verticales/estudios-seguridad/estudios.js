@@ -10,6 +10,7 @@
 
 import { METODOLOGIA_V1, valorarRiesgo } from './metodologia.js';
 import { PLANTILLAS } from './plantilla.js';
+import { listEvidence } from './evidencias.js';
 
 export const STUDY_TABLE = 'psi_security_studies';
 export const ZONE_TABLE = 'psi_security_study_zones';
@@ -167,10 +168,11 @@ export function valuateRisk(row, methodologyId = METODOLOGIA_V1.id) {
 
 export async function getStudy(db, id) {
   const study = await readStudy(db, id);
-  const [zones, risks, actions] = await Promise.all([
+  const [zones, risks, actions, evidence] = await Promise.all([
     must(db.from(ZONE_TABLE).select('*').eq('study_id', study.id).order('position', { ascending: true })),
     must(db.from(RISK_TABLE).select('*').eq('study_id', study.id).order('number', { ascending: true })),
     must(db.from(ACTION_TABLE).select('*').eq('study_id', study.id).order('created_at', { ascending: true })),
+    listEvidence(db, study.id),
   ]);
   const valued = (risks || []).map(risk => ({ ...risk, valuation: valuateRisk(risk, study.methodology_id) }));
   const levels = { actual: {}, residual: {} };
@@ -184,6 +186,8 @@ export async function getStudy(db, id) {
     zones: zones || [],
     risks: valued,
     actions: actions || [],
+    evidence: evidence.evidence,
+    evidence_available: evidence.available,
     summary: { risks: valued.length, levels },
     editable: EDITABLE_STATUSES.has(study.status),
     methodology: METODOLOGIAS[study.methodology_id] || null,
