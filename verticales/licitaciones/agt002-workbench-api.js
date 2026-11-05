@@ -13,6 +13,7 @@ import {
   getLatestCanonicalAgt002AnalysisRun,
   getOrCreateAgt002WorkbenchThread,
   retryAgt002WorkbenchJob,
+  cancelAgt002WorkbenchJob,
   reviewAgt002LearningProposal,
 } from './agt002-workbench-persistence.js';
 
@@ -35,6 +36,7 @@ const MESSAGE_KEYS = Object.freeze([
  */
 const MESSAGE_OPTIONAL_KEYS = Object.freeze(['artifact_id']);
 const RETRY_KEYS = Object.freeze(['opportunity_id', 'job_id']);
+const CANCEL_KEYS = Object.freeze(['opportunity_id', 'job_id', 'reason']);
 const REVIEW_KEYS = Object.freeze(['opportunity_id', 'proposal_id', 'decision', 'scope', 'comment']);
 
 function apiError(message, status, code) {
@@ -517,6 +519,21 @@ export async function postAgt002RetryApi(database, body, currentProfile, options
     opportunityId: uuid(body.opportunity_id, 'opportunity_id'),
     actorId,
     jobId: uuid(body.job_id, 'job_id'),
+  }));
+}
+
+export async function postAgt002CancelApi(database, body, currentProfile, options = {}) {
+  assertEnabled(options);
+  const actorId = actor(currentProfile, ACTIONS.LICITACIONES_WORKBENCH_USE);
+  exactBody(body, CANCEL_KEYS);
+  if (typeof body.reason !== 'string' || body.reason.trim().length < 3 || body.reason.length > 500) {
+    throw apiError('Indique el motivo de la cancelación.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
+  }
+  return mapped(() => cancelAgt002WorkbenchJob(database, {
+    opportunityId: uuid(body.opportunity_id, 'opportunity_id'),
+    actorId,
+    jobId: uuid(body.job_id, 'job_id'),
+    reason: body.reason.trim(),
   }));
 }
 

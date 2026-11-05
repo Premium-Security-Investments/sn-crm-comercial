@@ -177,6 +177,10 @@ export async function retryTenderDossierWorkbenchJob(request: TenderRequest, inp
   return request('/api/tender-dossier-workbench/jobs/retry', { method: 'POST', body: JSON.stringify(input) });
 }
 
+export async function cancelTenderDossierWorkbenchJob(request: TenderRequest, input: { opportunity_id: string; job_id: string; reason: string }): Promise<unknown> {
+  return request('/api/tender-dossier-workbench/jobs/cancel', { method: 'POST', body: JSON.stringify(input) });
+}
+
 export async function reviewTenderDossierWorkbenchLearning(request: TenderRequest, input: TenderDossierWorkbenchLearningReviewInput): Promise<unknown> {
   return request('/api/tender-dossier-workbench/learning/review', { method: 'POST', body: JSON.stringify(input) });
 }
