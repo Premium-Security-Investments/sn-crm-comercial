@@ -79,13 +79,14 @@ assert.deepEqual(ACTIONS, {
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
+  MODULE_SECURITY_STUDIES_VIEW: 'module.security_studies.view',
   LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE: 'licitaciones.actionable_review.contribute',
   LICITACIONES_ACTIONABLE_REVIEW_RESOLVE: 'licitaciones.actionable_review.resolve',
   LICITACIONES_KNOWLEDGE_PROPOSE: 'licitaciones.knowledge.propose',
   LICITACIONES_KNOWLEDGE_REVIEW: 'licitaciones.knowledge.review',
   LICITACIONES_KNOWLEDGE_PUBLISH: 'licitaciones.knowledge.publish',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 46 acciones');
-assert.equal(actionValues.length, 46, 'ACTIONS debe exponer exactamente 46 códigos estables');
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 47 acciones');
+assert.equal(actionValues.length, 47, 'ACTIONS debe exponer exactamente 47 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -148,6 +149,9 @@ runCases('usuarios y navegación', [
 runCases('entrada explícita a módulos', [
   { name: 'admin sin módulo Usuarios no entra', profile: human('admin', { permissions: [] }), action: ACTIONS.MODULE_USERS_VIEW, expected: false },
   { name: 'admin con módulo Usuarios entra', profile: human('admin', { permissions: ['modulo_usuarios'] }), action: ACTIONS.MODULE_USERS_VIEW, expected: true },
+  { name: 'colaborador con Estudios de Seguridad entra', profile: human('colaborador', { permissions: ['estudios_seguridad'] }), action: ACTIONS.MODULE_SECURITY_STUDIES_VIEW, expected: true },
+  { name: 'colaborador sin Estudios de Seguridad no entra', profile: human('colaborador', { permissions: [] }), action: ACTIONS.MODULE_SECURITY_STUDIES_VIEW, expected: false },
+  { name: 'junta no es elegible para Estudios de Seguridad', profile: human('junta', { permissions: ['estudios_seguridad'] }), action: ACTIONS.MODULE_SECURITY_STUDIES_VIEW, expected: false },
   { name: 'admin con SIIO entra', profile: human('admin', { permissions: ['modulo_siio_gerencial'] }), action: ACTIONS.MODULE_SIIO_VIEW, expected: true },
   { name: 'director con Vig-IA entra', profile: human('director', { permissions: ['modulo_vig_ia'] }), action: ACTIONS.MODULE_VIGIA_VIEW, expected: true },
   { name: 'gerencia con Dashboard entra', profile: human('gerencia', { permissions: ['modulo_dashboard_comercial'] }), action: ACTIONS.MODULE_DASHBOARD_VIEW, expected: true },

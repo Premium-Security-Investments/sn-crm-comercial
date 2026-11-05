@@ -61,6 +61,7 @@ export const ACTIONS = Object.freeze({
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
+  MODULE_SECURITY_STUDIES_VIEW: 'module.security_studies.view',
   LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE: 'licitaciones.actionable_review.contribute',
   LICITACIONES_ACTIONABLE_REVIEW_RESOLVE: 'licitaciones.actionable_review.resolve',
   LICITACIONES_KNOWLEDGE_PROPOSE: 'licitaciones.knowledge.propose',
@@ -351,6 +352,9 @@ export function can(profile, action, resource = {}) {
       return hasEligibleModule(profile, 'modulo_metas');
     case ACTIONS.MODULE_USERS_VIEW:
       return hasEligibleModule(profile, 'modulo_usuarios');
+
+    case ACTIONS.MODULE_SECURITY_STUDIES_VIEW:
+      return hasEligibleModule(profile, 'estudios_seguridad');
 
     // Pipeline summary is a collection-level action: privileged/commercial
     // roles may request `{}`; directors still need a scoped area resource.

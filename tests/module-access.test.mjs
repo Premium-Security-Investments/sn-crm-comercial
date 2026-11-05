@@ -16,6 +16,7 @@ assert.deepEqual(MODULE_PERMISSION_CODES, [
   'modulo_oportunidades',
   'modulo_metas',
   'licitaciones',
+  'estudios_seguridad',
   'modulo_programacion',
   'modulo_usuarios',
 ]);

@@ -7,6 +7,7 @@ import { cleanFinancialImportRequest, financialImportStoragePath, listFinancialI
 import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse.js';
 import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
+import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, addZone as addSecurityStudyZone, createStudy as createSecurityStudy, deleteAction as deleteSecurityStudyAction, deleteRisk as deleteSecurityStudyRisk, deleteZone as deleteSecurityStudyZone, getStudy as getSecurityStudy, listStudies as listSecurityStudies, updateAction as updateSecurityStudyAction, updateRisk as updateSecurityStudyRisk, updateStudy as updateSecurityStudy, updateZone as updateSecurityStudyZone } from '../verticales/estudios-seguridad/estudios.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
@@ -459,6 +460,7 @@ export const MODULE_ENDPOINT_ACTIONS = Object.freeze({
   siio: ACTIONS.MODULE_SIIO_VIEW,
   vigia: ACTIONS.MODULE_VIGIA_VIEW,
   tenders: ACTIONS.LICITACIONES_VIEW,
+  securityStudies: ACTIONS.MODULE_SECURITY_STUDIES_VIEW,
   users: ACTIONS.MODULE_USERS_VIEW,
 });
 // Canonical and Vercel-safe aliases share one auditable method+route inventory.
@@ -3344,6 +3346,69 @@ app.patch('/api/siio/followups/:id', async (req, res) => {
     res.json(await updateFollowup(requireDb(), req.params.id, req.body || {}, profile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
+
+// Estudios de Seguridad Física, tramo 1 (Juan, 2026-11-05): registrar el estudio en SIIO en vez de un Excel.
+// La lógica y las validaciones viven en verticales/estudios-seguridad/estudios.js; aquí sólo autenticación y permiso.
+function securityStudyRoute(method, route, handler) {
+  app[method](route, async (req, res) => {
+    try {
+      const { profile } = await getAuthContext(req);
+      requireModuleAction(profile, 'securityStudies');
+      res.set('Cache-Control', 'private, no-store');
+      res.json(await handler(requireDb(), req, profile));
+    } catch (error) { sendError(res, error, error?.status || 400); }
+  });
+}
+securityStudyRoute('get', '/api/estudios-seguridad', db => listSecurityStudies(db).then(studies => ({ studies })));
+securityStudyRoute('post', '/api/estudios-seguridad', (db, req, profile) => createSecurityStudy(db, req.body || {}, profile));
+// Clientes para elegir: los del CRM (prospectos y clientes con oportunidad) y los de Avancys, donde nace el NIT.
+// Si Avancys no responde se siguen ofreciendo los del CRM y se dice por qué.
+securityStudyRoute('get', '/api/estudios-seguridad/clientes', async (db, req) => {
+  const consulta = String(req.query.q || '');
+  const clients = await must(db.from('psi_sales_clients').select(CLIENT_MASTER_SELECT).order('company_name', { ascending: true }));
+  const delCrm = typeaheadMatches(clients, consulta).slice(0, 15)
+    .map(cliente => ({ source: 'crm', ref: cliente.id, name: cliente.company_name, nit: null, city: cliente.quote_city || null, site: cliente.sede || null }));
+  let deAvancys = [];
+  let avancys = 'ok';
+  try {
+    const lector = crearLectorAvancys();
+    if (!lector) avancys = 'sin_configurar';
+    else {
+      const yaEstan = new Set(delCrm.map(cliente => normalizeClientName(cliente.name)));
+      const { clientes } = await lector.buscarClientes({ texto: consulta, limite: 10 });
+      deAvancys = clientes
+        .filter(cliente => cliente.nombre && cliente.identificacion?.numero && !yaEstan.has(normalizeClientName(cliente.nombre)))
+        .map(cliente => ({ source: 'avancys', ref: cliente.identificacion.numero, name: cliente.nombre, nit: cliente.identificacion.numero, city: cliente.departamento || null, site: null }));
+    }
+  } catch (error) {
+    avancys = 'no_disponible';
+    console.warn('security_study_clients_avancys_unavailable', { event: 'security_study_clients_avancys_unavailable', code: error?.codigo || 'desconocido' });
+  }
+  return { clients: [...deAvancys, ...delCrm].slice(0, 25), avancys };
+});
+// Puestos de un cliente de Avancys, agrupados por contrato, para elegir la sede del estudio.
+securityStudyRoute('get', '/api/estudios-seguridad/puestos', async (_db, req) => {
+  const lector = crearLectorAvancys();
+  if (!lector) return { encontrado: false, contratos: [], avancys: 'sin_configurar' };
+  try {
+    const resultado = await lector.puestosDelCliente({ identificacion: String(req.query.nit || '') });
+    return { ...resultado, avancys: 'ok' };
+  } catch (error) {
+    console.warn('security_study_posts_avancys_unavailable', { event: 'security_study_posts_avancys_unavailable', code: error?.codigo || 'desconocido' });
+    return { encontrado: false, contratos: [], avancys: 'no_disponible' };
+  }
+});
+securityStudyRoute('get', '/api/estudios-seguridad/:id', (db, req) => getSecurityStudy(db, req.params.id));
+securityStudyRoute('patch', '/api/estudios-seguridad/:id', (db, req, profile) => updateSecurityStudy(db, req.params.id, req.body || {}, profile));
+securityStudyRoute('post', '/api/estudios-seguridad/:id/zonas', (db, req, profile) => addSecurityStudyZone(db, req.params.id, req.body || {}, profile));
+securityStudyRoute('patch', '/api/estudios-seguridad/:id/zonas/:zoneId', (db, req, profile) => updateSecurityStudyZone(db, req.params.id, req.params.zoneId, req.body || {}, profile));
+securityStudyRoute('delete', '/api/estudios-seguridad/:id/zonas/:zoneId', (db, req, profile) => deleteSecurityStudyZone(db, req.params.id, req.params.zoneId, profile));
+securityStudyRoute('post', '/api/estudios-seguridad/:id/riesgos', (db, req, profile) => addSecurityStudyRisk(db, req.params.id, req.body || {}, profile));
+securityStudyRoute('patch', '/api/estudios-seguridad/:id/riesgos/:riskId', (db, req, profile) => updateSecurityStudyRisk(db, req.params.id, req.params.riskId, req.body || {}, profile));
+securityStudyRoute('delete', '/api/estudios-seguridad/:id/riesgos/:riskId', (db, req, profile) => deleteSecurityStudyRisk(db, req.params.id, req.params.riskId, profile));
+securityStudyRoute('post', '/api/estudios-seguridad/:id/acciones', (db, req, profile) => addSecurityStudyAction(db, req.params.id, req.body || {}, profile));
+securityStudyRoute('patch', '/api/estudios-seguridad/:id/acciones/:actionId', (db, req, profile) => updateSecurityStudyAction(db, req.params.id, req.params.actionId, req.body || {}, profile));
+securityStudyRoute('delete', '/api/estudios-seguridad/:id/acciones/:actionId', (db, req, profile) => deleteSecurityStudyAction(db, req.params.id, req.params.actionId, profile));
 
 // Recomendaciones de Vig-IA Gerencia: lunes automático (timer del servidor) y botón con tope diario.
 app.get('/api/siio/recommendations', async (req, res) => {

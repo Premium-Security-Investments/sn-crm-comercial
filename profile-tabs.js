@@ -9,7 +9,7 @@
 //   Solo consulta                                    → consulta
 //   Torre, Dashboard, Cargar metas u oportunidades "todas" → gerencia
 //   Oportunidades o Licitaciones                      → comercial
-//   Sólo Programación (o nada)                        → colaborador (sin acceso a datos del SIIO)
+//   Sólo Programación o Estudios de seguridad (o nada) → colaborador (sin acceso a datos del SIIO)
 // Lo que antes eran módulos aparte (Alertas Comerciales, Vig-IA) ya no se muestra: va incluido con Oportunidades o
 // Dashboard porque su motor alimenta esas pantallas.
 
@@ -21,12 +21,13 @@ export const PROFILE_TABS = Object.freeze([
   { code: 'oportunidades', group: 'Comercial', label: 'Oportunidades' },
   { code: 'metas', group: 'Comercial', label: 'Cargar metas' },
   { code: 'licitaciones', group: 'Licitaciones', label: 'Licitaciones' },
+  { code: 'estudios', group: 'Seguridad', label: 'Estudios de seguridad' },
   { code: 'programacion', group: 'Programación', label: 'Programación de turnos' },
   { code: 'usuarios', group: 'Administración', label: 'Usuarios y permisos · Agentes' },
 ]);
 const TAB_CODES = new Set(PROFILE_TABS.map(tab => tab.code));
-// Pestañas que escriben: no aplican con "Solo consulta".
-const WRITE_TABS = new Set(['metas', 'usuarios']);
+// Pestañas que escriben: no aplican con "Solo consulta". Estudios de seguridad es trabajo de captura.
+const WRITE_TABS = new Set(['metas', 'estudios', 'usuarios']);
 
 export const EMPTY_TABS_ACCESS = Object.freeze({
   tabs: [],
@@ -85,7 +86,7 @@ export function normalizeTabsAccess(input) {
   if (!has('licitaciones')) Object.assign(access, { tender_custody: false, tender_company: false });
   if (access.read_only) {
     const blocked = tabs.filter(tab => WRITE_TABS.has(tab));
-    if (blocked.length) throw accessError('Con "Solo consulta" no se pueden dar Cargar metas ni Usuarios y permisos.');
+    if (blocked.length) throw accessError('Con "Solo consulta" no se pueden dar Cargar metas, Estudios de seguridad ni Usuarios y permisos.');
     if (access.copilot || access.edit_segment || access.delete_opportunities || access.tender_custody || access.tender_company || access.owns_opportunities) {
       throw accessError('Con "Solo consulta" no se pueden dar opciones que cambian información.');
     }
@@ -124,6 +125,7 @@ export function accessFromTabs(input, existingAreas = []) {
   }
   if (has('metas')) permissions.add('modulo_metas');
   if (has('licitaciones')) permissions.add('licitaciones');
+  if (has('estudios')) permissions.add('estudios_seguridad');
   if (has('programacion')) permissions.add(PROGRAMACION_PERMISSION);
   if (has('usuarios')) permissions.add('modulo_usuarios');
   if (access.copilot) permissions.add('vigia_copilot_pilot');
@@ -158,6 +160,7 @@ export function tabsFromProfile(profile) {
   if (permissions.has('modulo_oportunidades')) tabs.push('oportunidades');
   if (permissions.has('modulo_metas') && (role === 'admin' || role === 'gerencia')) tabs.push('metas');
   if (permissions.has('licitaciones')) tabs.push('licitaciones');
+  if (permissions.has('estudios_seguridad')) tabs.push('estudios');
   if (permissions.has(PROGRAMACION_PERMISSION)) tabs.push('programacion');
   if (permissions.has('modulo_usuarios') && role === 'admin') tabs.push('usuarios');
   const sees = role === 'comercial' || role === 'colaborador' ? 'propias' : 'todas';
