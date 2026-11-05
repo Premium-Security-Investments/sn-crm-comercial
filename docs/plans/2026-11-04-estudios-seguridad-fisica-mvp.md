@@ -6,6 +6,31 @@
 - **Objetivo:** que un estudio de seguridad física se haga de principio a fin en SIIO, y que el Excel
   quede solo como formato para importar lo histórico y para entregar copias.
 
+## 0. El objetivo, en palabras de Juan (2026-11-05)
+
+> "El objetivo es que quienes hacen estos estudios de ahora en adelante puedan capturar y registrar la información
+> desde la plataforma o incluso desde un agente de texto, y que la información vaya quedando registrada y se
+> genere el estudio de manera más automática."
+
+Consecuencias para el orden de trabajo:
+
+- **Lo primero es la captura, no la importación.** El tramo 1 es crear un estudio y registrar sede, zonas,
+  riesgos, controles y fotos desde la plataforma, para el estudio nuevo de la próxima visita.
+- **El agente de texto es otra puerta de entrada a los mismos datos.** El inspector escribe o dicta lo que vio
+  ("en la bodega 3 la malla está rota, no hay cámara"); el agente lo convierte en una propuesta de zona, riesgo,
+  control o evidencia; la persona la confirma y queda registrada. Es el patrón del chat de Vig-IA comercial
+  (AGT-003): el agente propone y no califica ni aprueba solo.
+- **El estudio se genera, no se escribe.** Matriz, plan de acción e informe salen de lo registrado.
+- **Importar Excel viejos pasa a ser secundario:** sirve para el historial de clientes, no para trabajar.
+
+Orden de tramos (sustituye al de las fases F2 a F7 en lo que choque):
+
+1. Captura en la plataforma: estudio, sede, zonas, riesgos, controles, acciones y fotos, con el cálculo de la v1.
+2. Captura por agente de texto, con confirmación humana.
+3. Revisión, aprobación y versión congelada.
+4. Generación de la matriz, el plan y el informe, archivo en SharePoint y seguimiento en SIIO.
+5. Importación de Excel históricos (Cancha Horizontes, HADA y EXCO como casos de prueba).
+
 ## 1. Lo que muestran los documentos de referencia
 
 Revisé los dos archivos de la carpeta de OneDrive "Estudios de Seguridad" (personal de Juan Botero),
