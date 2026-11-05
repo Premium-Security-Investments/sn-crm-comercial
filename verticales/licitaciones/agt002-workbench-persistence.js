@@ -154,14 +154,27 @@ export function appendAgt002HumanMessage(database, input) {
   });
 }
 
-export function claimAgt002WorkbenchJob(database, input) {
-  assertExactKeys(input, ['workerId', 'dailyMaxJobs', 'maxConcurrent', 'leaseSeconds'], 'claim');
-  return rpc(database, 'psi_claim_agt002_workbench_job', {
-    p_worker_id: input.workerId,
-    p_daily_max_jobs: input.dailyMaxJobs,
-    p_max_concurrent: input.maxConcurrent,
-    p_lease_seconds: input.leaseSeconds,
-  });
+const CLAIM_KEYS = ['workerId', 'dailyMaxJobs', 'maxConcurrent', 'leaseSeconds'];
+
+export async function claimAgt002WorkbenchJob(database, input) {
+  const { preferredJobId = null, ...limits } = input || {};
+  assertExactKeys(limits, CLAIM_KEYS, 'claim');
+  const args = {
+    p_worker_id: limits.workerId,
+    p_daily_max_jobs: limits.dailyMaxJobs,
+    p_max_concurrent: limits.maxConcurrent,
+    p_lease_seconds: limits.leaseSeconds,
+  };
+  // F4 (auditoría Fiscalía): el mensaje recién escrito se atiende antes que un pedido viejo de cualquier otra
+  // oportunidad. Si la 181 todavía no está aplicada, se reclama como antes: el más antiguo.
+  if (preferredJobId) {
+    try {
+      return await rpc(database, 'psi_claim_agt002_workbench_job_preferido', { p_preferred_job_id: preferredJobId, ...args });
+    } catch (error) {
+      if (error?.code !== 'PGRST202' && error?.code !== '42883') throw error;
+    }
+  }
+  return rpc(database, 'psi_claim_agt002_workbench_job', args);
 }
 
 export function appendAgt002WorkbenchJobEvent(database, input) {

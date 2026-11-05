@@ -39,8 +39,8 @@ test('las tareas abiertas viajan como contexto: rechazo primero, luego fecha; si
 
 test('el envío de un mensaje drena un trabajo en el mismo pedido, con los interruptores de siempre', () => {
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
-  assert.match(server, /await drainAgt002WorkbenchAfterMessage\(database\);\s*res\.status\(201\)\.json\(queued\)/);
-  assert.match(server, /async function drainAgt002WorkbenchAfterMessage\(database\) \{\s*if \(!isAgt002WorkbenchDrainEnabled\(process\.env\)\) return null;/);
+  assert.match(server, /await drainAgt002WorkbenchAfterMessage\(database, queued\?\.job_id\);\s*res\.status\(201\)\.json\(queued\)/);
+  assert.match(server, /async function drainAgt002WorkbenchAfterMessage\(database, jobId = null\) \{\s*if \(!isAgt002WorkbenchDrainEnabled\(process\.env\)\) return null;/);
   assert.equal((server.match(/dossierContext: true/g) || []).length, 2, 'el contexto del expediente solo lo pide el servidor, en la lectura y en el envío');
 });
 

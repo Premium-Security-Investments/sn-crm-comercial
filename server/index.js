@@ -7086,11 +7086,13 @@ app.post('/api/tender-dossier-workbench/messages', async (req, res) => {
     // Canal directo (Juan, 2026-10-13): Vig-IA responde en el momento. El programador del host está
     // apagado, así que el mismo pedido drena un trabajo con los topes de siempre (diario, concurrencia,
     // interruptor). Si el drain no está habilitado o falla, el mensaje queda en cola como antes.
-    await drainAgt002WorkbenchAfterMessage(database);
+    await drainAgt002WorkbenchAfterMessage(database, queued?.job_id);
     res.status(201).json(queued);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
-async function drainAgt002WorkbenchAfterMessage(database) {
+// F4 (auditoría Fiscalía): el drain reclama primero el pedido de este mensaje; uno viejo atascado en la cola ya no
+// se lleva su turno. Los viejos los atiende el barrido periódico.
+async function drainAgt002WorkbenchAfterMessage(database, jobId = null) {
   if (!isAgt002WorkbenchDrainEnabled(process.env)) return null;
   try {
     const drain = createAgt002WorkbenchDrain({
@@ -7098,7 +7100,7 @@ async function drainAgt002WorkbenchAfterMessage(database) {
       environment: process.env,
       ...(agt002WorkbenchWorkerTestBridgeClient ? { bridgeClient: agt002WorkbenchWorkerTestBridgeClient } : {}),
     });
-    return await drain.runOnce();
+    return await drain.runOnce({ preferredJobId: typeof jobId === 'string' ? jobId : null });
   } catch {
     console.warn('agt002_workbench_inline_drain_failed', { event: 'agt002_workbench_inline_drain_failed' });
     return null;

@@ -193,7 +193,8 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
   if (!database || typeof database.rpc !== 'function') throw new TypeError('database.rpc es obligatorio.');
 
   return Object.freeze({
-    async runOnce() {
+    // F4: `preferredJobId` es el pedido del mensaje que despertó al worker; se reclama primero si sigue en cola.
+    async runOnce({ preferredJobId = null } = {}) {
       if (!isAgt002WorkbenchDrainEnabled(environment)) {
         return { status: 'disabled' };
       }
@@ -228,6 +229,7 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
       });
 
       const outcome = await runAgt002WorkbenchWorker({
+        preferredJobId,
         persistence: createDatabasePersistenceAdapter(database),
         responder,
         limits: {
