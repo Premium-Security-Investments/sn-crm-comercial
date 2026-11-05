@@ -531,7 +531,7 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
     </section>
 
     {channel}
-    {!channel && workspace.workbench_enabled && <TenderVigiaChannel opportunityId={opportunityId} request={request} />}
+    {!channel && workspace.workbench_enabled && <TenderVigiaChannel opportunityId={opportunityId} request={request} onJobsCompleted={reload} />}
 
     {shownArtifacts.length > 0 && <section className="tw-card">
       <small>Documentos que se firman y aprueban</small>
