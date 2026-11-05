@@ -21,15 +21,19 @@ Consecuencias para el orden de trabajo:
   control o evidencia; la persona la confirma y queda registrada. Es el patrón del chat de Vig-IA comercial
   (AGT-003): el agente propone y no califica ni aprueba solo.
 - **El estudio se genera, no se escribe.** Matriz, plan de acción e informe salen de lo registrado.
-- **Importar Excel viejos pasa a ser secundario:** sirve para el historial de clientes, no para trabajar.
+- **Los Excel no se importan ni siguen existiendo** (Juan, 2026-11-05: "los Excel son la base para entender lo
+  que se busca con ellos, pero no es que los Excel sigan existiendo"). Cancha Horizontes, HADA y EXCO sirven
+  de referencia de diseño: qué campos lleva un estudio, cómo es la ficha por riesgo, qué fotos se toman y qué
+  trae el plan de acción. También sirven de casos de prueba del cálculo. No hay importador en el MVP, y las
+  secciones 5 y 9 (F2) de este plan quedan sin efecto. La matriz sale como parte del informe, no como un Excel
+  de trabajo.
 
 Orden de tramos (sustituye al de las fases F2 a F7 en lo que choque):
 
 1. Captura en la plataforma: estudio, sede, zonas, riesgos, controles, acciones y fotos, con el cálculo de la v1.
 2. Captura por agente de texto, con confirmación humana.
 3. Revisión, aprobación y versión congelada.
-4. Generación de la matriz, el plan y el informe, archivo en SharePoint y seguimiento en SIIO.
-5. Importación de Excel históricos (Cancha Horizontes, HADA y EXCO como casos de prueba).
+4. Generación del informe (con su matriz y su plan de acción), archivo en SharePoint y seguimiento en SIIO.
 
 ## 1. Lo que muestran los documentos de referencia
 
