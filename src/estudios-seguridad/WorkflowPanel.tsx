@@ -13,6 +13,21 @@ const BUTTONS: Array<{ action: WorkflowAction; label: string; tone?: 'secondary'
   { action: 'reabrir', label: 'Reabrir para corregir', tone: 'secondary', confirm: 'El estudio vuelve a borrador; la versión aprobada se conserva y la próxima aprobación será una versión nueva. ¿Reabrir?' },
 ];
 
+// Dónde quedó cada versión aprobada: el informe y las evidencias se suben solos a SharePoint al aprobar.
+function ArchiveLine({ archive }: { archive: Workflow['versions'][number]['archive'] }) {
+  if (!archive) return null;
+  if (archive.status === 'archivado') {
+    const word = archive.files.find(file => file.tipo === 'informe_word');
+    return <div className="es-archive">
+      {archive.report_url ? <a href={archive.report_url} target="_blank" rel="noopener noreferrer">Abrir el informe en SharePoint (PDF)</a> : <span>Archivado en SharePoint</span>}
+      {word?.url ? <a href={word.url} target="_blank" rel="noopener noreferrer">Word</a> : null}
+      <small className="es-muted">{archive.files.length} archivos</small>
+    </div>;
+  }
+  if (archive.status === 'fallido') return <div className="es-archive es-error">No se pudo archivar en SharePoint: {archive.error || 'error técnico'}. IT ya tiene el registro.</div>;
+  return <div className="es-archive es-muted">{archive.status === 'procesando' ? 'Subiendo el informe y las evidencias a SharePoint…' : 'El informe se está preparando para subir a SharePoint.'}{archive.error ? ` Último intento: ${archive.error}.` : ''}</div>;
+}
+
 export function WorkflowPanel({ studyId, status, preparedBy, workflow, onChanged }: { studyId: string; status: StudyStatus; preparedBy: string; workflow: Workflow; onChanged: () => void }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -51,6 +66,7 @@ export function WorkflowPanel({ studyId, status, preparedBy, workflow, onChanged
       <ul className="es-history">{workflow.versions.map(version => <li key={version.id}>
         <strong>Versión {version.version}</strong> · {when(version.approved_at)} · aprobó {name(version.approved_by)}
         <small className="es-muted"> · huella {version.snapshot_sha256.slice(0, 12)}…</small>
+        <ArchiveLine archive={version.archive} />
       </li>)}</ul>
     </div> : null}
     {workflow.events.length ? <div>

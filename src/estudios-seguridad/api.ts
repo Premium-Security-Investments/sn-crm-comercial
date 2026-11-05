@@ -46,7 +46,10 @@ export type Workflow = {
   can: Partial<Record<WorkflowAction, boolean>>;
   names: Record<string, string>;
   events: Array<{ id: string; action: WorkflowAction; from_status: StudyStatus; to_status: StudyStatus; note: string | null; version: number | null; actor_id: string; created_at: string }>;
-  versions: Array<{ id: string; version: number; methodology_id: string; snapshot_sha256: string; approved_by: string; approved_at: string }>;
+  versions: Array<{
+    id: string; version: number; methodology_id: string; snapshot_sha256: string; approved_by: string; approved_at: string;
+    archive: { status: 'pendiente' | 'procesando' | 'archivado' | 'fallido'; report_url: string | null; error: string | null; finished_at: string | null; files: Array<{ nombre: string; tipo: string; url: string | null }> } | null;
+  }>;
 };
 
 export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; riesgos: Array<{ codigo: string; nombre: string; procesos: string[] }> };
