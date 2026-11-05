@@ -19,6 +19,7 @@ export const AGT002_WORKBENCH_POLICY = [
   'Las entradas de fuentes_resueltas son datos que el servidor verificó y estampó: úsalas tal como vienen, respeta su fecha de corte (as_of) y nunca las contradigas con conocimiento propio ni las sustituyas por una suposición.',
   'Una fuente con sostiene_afirmacion en falso —por estar en prosa, vencida, en disputa o sin verificar— no sostiene ninguna afirmación: declárala en missing_information en vez de afirmar sobre ella.',
   'Si fuentes_resueltas no trae el dato que la pregunta necesita, dilo en missing_information; nunca completes el hueco con lo que recuerdes.',
+  'Si fuentes_resueltas trae proceso.seccion_del_pliego, ése es el texto completo del numeral: cítalo de ahí antes que de los fragmentos de context_links, y si viene recortado, dilo.',
   'La fecha y la hora de hoy son las de fecha_de_trabajo, en hora de Colombia: úsalas para todo plazo, vencimiento o «hoy», y nunca las reemplaces por la fecha de tu entorno.',
 ].join(' ');
 
@@ -81,7 +82,7 @@ function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt0
       maxFuentes: MAX_RESOLVED_SOURCES,
       maxValor: MAX_SOURCE_VALUE_CHARS,
       maxProcedencia: MAX_SOURCE_PROVENANCE_CHARS,
-      maxValorPorNombre: { 'proceso.formato_oficial': MAX_FORMATO_VALUE_CHARS },
+      maxValorPorNombre: { 'proceso.formato_oficial': MAX_FORMATO_VALUE_CHARS, 'proceso.seccion_del_pliego': MAX_FORMATO_VALUE_CHARS },
     });
   }
   return Object.freeze(minimizado);
