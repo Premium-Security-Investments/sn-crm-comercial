@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
-import { renderAgt002Docx } from '../../verticales/licitaciones/agt002-document-render.js';
+import { renderStudyReportDocx } from '../../verticales/estudios-seguridad/render-informe.js';
 import { runArchiveBatch } from '../../verticales/estudios-seguridad/archivo.js';
 
 const run = promisify(execFile);
@@ -23,6 +23,7 @@ const serviceRoleKey = env('SUPABASE_SERVICE_ROLE_KEY');
 const uploader = env('ESTUDIOS_SHAREPOINT_UPLOAD_SCRIPT');
 const drive = env('ESTUDIOS_SHAREPOINT_DRIVE_ID');
 const soffice = env('ESTUDIOS_SOFFICE') || '/usr/bin/soffice';
+const reducer = new URL('./reducir-imagen.py', import.meta.url).pathname;
 
 async function withTempDir(fn) {
   const dir = await mkdtemp(path.join(tmpdir(), 'estudios-archivo-'));
@@ -37,6 +38,15 @@ const toPdf = docx => withTempDir(async dir => {
   const pdf = await readFile(path.join(dir, 'informe.pdf'));
   if (pdf.length < 1000 || pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('pdf');
   return pdf;
+});
+
+// Foto → JPG reducido para el informe (Pillow del sistema, script fijo, `python3 -I`).
+const prepareImage = bytes => withTempDir(async dir => {
+  const source = path.join(dir, 'foto');
+  const target = path.join(dir, 'foto.jpg');
+  await writeFile(source, bytes);
+  await run('/usr/bin/python3', ['-I', reducer, source, target], { timeout: 60_000, maxBuffer: 1024 * 1024 });
+  return readFile(target);
 });
 
 // subir.py nunca sobrescribe y relee después de escribir. Se devuelve su salida para leerla en archivo.js.
@@ -57,7 +67,7 @@ if (!supabaseUrl || !serviceRoleKey || !uploader || !drive) {
 } else {
   const database = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
   try {
-    const result = await runArchiveBatch(database, { renderDocx: document => renderAgt002Docx(document, { soffice }), toPdf, upload }, log);
+    const result = await runArchiveBatch(database, { renderDocx: report => renderStudyReportDocx(report, { soffice }), toPdf, upload, prepareImage }, log);
     if (result.processed) log({ event: 'estudios_archivo_corrida', pedidos: result.processed, archivados: result.ok });
   } catch {
     log({ event: 'estudios_archivo_corrida_fallida' });

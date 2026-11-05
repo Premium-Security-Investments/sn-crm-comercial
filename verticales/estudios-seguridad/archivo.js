@@ -14,6 +14,9 @@ import { createHash } from 'node:crypto';
 import { canonicalJson } from './flujo.js';
 import { EVIDENCE_BUCKET } from './evidencias.js';
 import { archiveFileNames, archiveFolderPath, buildStudyReport } from './informe.js';
+import { imageSize } from './render-informe.js';
+
+const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export const ARCHIVE_ERRORS = Object.freeze({
   version: 'no encontré la versión aprobada',
@@ -39,7 +42,8 @@ class ArchiveFailure extends Error {
 }
 
 /**
- * Archiva un pedido. `deps`: { renderDocx(document) → bytes, toPdf(docxBytes) → bytes, upload(relativePath, bytes) → stdout }.
+ * Archiva un pedido. `deps`: { renderDocx(informe) → bytes, toPdf(docxBytes) → bytes, upload(relativePath, bytes) → stdout,
+ * prepareImage(bytes) → JPG reducido (opcional) }.
  * Devuelve lo que se registra con psi_finish_security_study_archive.
  */
 export async function archiveVersion(database, archive, deps, log = () => {}) {
@@ -51,25 +55,36 @@ export async function archiveVersion(database, archive, deps, log = () => {}) {
   const { data: people } = await database.from('psi_sales_profiles').select('id, full_name').in('id', ids);
   const name = id => (people || []).find(person => person.id === id)?.full_name || null;
 
-  let docx;
-  let pdf;
-  try {
-    docx = await deps.renderDocx(buildStudyReport(snapshot, {
-      version: version.version, sha256: version.snapshot_sha256, approvedAt: version.approved_at,
-      approverName: name(version.approved_by), preparerName: name(snapshot.estudio.preparado_por),
-    }));
-  } catch { throw new ArchiveFailure('informe'); }
-  try { pdf = await deps.toPdf(docx); } catch { throw new ArchiveFailure('pdf'); }
-
   const names = archiveFileNames(snapshot, version.version);
   const evidence = [];
+  const images = {};
   for (const [index, item] of snapshot.evidencias.entries()) {
     const { data: blob, error: downloadError } = await database.storage.from(EVIDENCE_BUCKET).download(item.ruta);
     if (downloadError || !blob) throw new ArchiveFailure('evidencia_descarga');
     const bytes = Buffer.from(await blob.arrayBuffer());
     if (sha256(bytes) !== item.sha256) throw new ArchiveFailure('evidencia_huella');
     evidence.push({ name: names.evidence[index].name, bytes, kind: item.tipo });
+    // Para el informe: las fotos se reducen a JPG antes de embeberlas (un estudio con 25 fotos de celular no puede
+    // dar un Word de cientos de MB). Si una no se puede preparar (HEIC, por ejemplo), el informe la cita por nombre y
+    // huella, y el original va igual a la carpeta de evidencias.
+    if (item.tipo === 'foto' && IMAGE_MIMES.has(item.mime) && deps.prepareImage) {
+      try {
+        const prepared = await deps.prepareImage(bytes);
+        const size = imageSize(prepared);
+        if (size && prepared.length <= 3 * 1024 * 1024) images[item.id] = { base64: prepared.toString('base64'), mime: 'image/jpeg', width: size.width, height: size.height };
+      } catch { log({ event: 'estudios_archivo_imagen_sin_preparar', archive_id: archive.id }); }
+    }
   }
+
+  let docx;
+  let pdf;
+  try {
+    docx = await deps.renderDocx(buildStudyReport(snapshot, {
+      version: version.version, sha256: version.snapshot_sha256, approvedAt: version.approved_at,
+      approverName: name(version.approved_by), preparerName: name(snapshot.estudio.preparado_por),
+    }, images));
+  } catch { throw new ArchiveFailure('informe'); }
+  try { pdf = await deps.toPdf(docx); } catch { throw new ArchiveFailure('pdf'); }
 
   const folder = archiveFolderPath(snapshot, version.version);
   const json = Buffer.from(canonicalJson(snapshot), 'utf8');

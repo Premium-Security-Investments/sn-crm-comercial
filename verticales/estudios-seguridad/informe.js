@@ -1,13 +1,17 @@
-// Estudios de Seguridad Física, tramo 4 — el informe de una versión aprobada (Juan, 2026-11-05).
+// Estudios de Seguridad Física — el informe de una versión aprobada, al nivel del real de HADA (tramos 4 a 6).
 //
-// Se arma SIEMPRE desde la foto congelada de la versión (psi_security_study_versions.snapshot), nunca desde el
-// estudio vivo: si el estudio se reabre y cambia, el informe de la versión 1 sigue diciendo lo que se aprobó. Es una
-// función pura que devuelve el documento como DATOS para el generador con membrete de la empresa
-// (verticales/licitaciones/agt002-document-render.js), que no acepta XML ni rutas.
+// Se arma SIEMPRE desde la foto congelada de la versión (psi_security_study_versions.snapshot), nunca desde el estudio
+// vivo. Sigue la estructura del informe que la empresa entrega hoy (ESTUDIO DE SEGURIDAD HADA 2026, docs/plans/
+// 2026-11-04-estudios-seguridad-fisica-mvp.md §2.1): portada, índice, introducción con marco legal y metodología,
+// caracterización de la sede, diagnóstico con evaluación general y medición comparativa, una ficha por riesgo con su
+// foto y su mapa de calor, plan estratégico, mapa de criticidad general, cadena de mando, seguimiento y firma del
+// analista. Cada sección sale sólo si hay datos; la evaluación general se calcula, no se escribe a mano (el PDF de
+// HADA la dejó cortada).
 //
-// Aquí también se decide dónde queda el paquete en SharePoint: siempre bajo 99_Del_CRM/Estudios_de_Seguridad/, con
-// nombres limpios de los caracteres que SharePoint no admite.
+// Devuelve el informe como DATOS para verticales/estudios-seguridad/render-informe.js. Aquí también se decide dónde
+// queda el paquete en SharePoint: siempre bajo 99_Del_CRM/Estudios_de_Seguridad/.
 
+import { nivelDeMagnitud } from './metodologia.js';
 import { ESCALAS, PLANTILLAS, controlWord } from './plantilla.js';
 
 export const ARCHIVE_BASE_PATH = '99_Del_CRM/Estudios_de_Seguridad';
@@ -15,6 +19,9 @@ const NIVEL = Object.freeze({ bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', 
 const NIVEL_ORDER = ['critico', 'alto', 'moderado', 'bajo'];
 const PRIORIDAD = Object.freeze({ alta: 'Alta', media: 'Media', baja: 'Baja' });
 const ESTADO_ACCION = Object.freeze({ pendiente: 'Pendiente', en_curso: 'En curso', cumplida: 'Cumplida', descartada: 'Descartada' });
+const MODALIDAD = Object.freeze({ vigilancia: 'Vigilancia', guia_canino: 'Guía canino', supervision: 'Supervisión', monitoreo: 'Monitoreo', otro: 'Otro' });
+const CONTACTO = Object.freeze({ apoyo: 'Entidad de apoyo', empresa: 'Seguridad Nacional', interventor: 'Interventor del contrato' });
+const PROPOSITO = Object.freeze({ mapa: 'Mapa', logo: 'Logo' });
 const MAX_CELL = 1500;
 
 const clip = (value, max = MAX_CELL) => {
@@ -22,16 +29,19 @@ const clip = (value, max = MAX_CELL) => {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 };
 const level = tramo => `${tramo.magnitud} · ${NIVEL[tramo.nivel] || tramo.nivel}`;
-const longDate = value => {
+const bogota = (value, options) => {
   if (!value) return 'sin fecha';
   const date = new Date(String(value).length === 10 ? `${value}T12:00:00Z` : value);
-  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeZone: 'America/Bogota' }).format(date);
+  return new Intl.DateTimeFormat('es-CO', { ...options, timeZone: 'America/Bogota' }).format(date);
 };
-// Calificación en las palabras que usa la casa con sus clientes ("Medianamente confiable · Eficaz · Eficiente").
-const rating = control => (control?.calidad ? ` (${[controlWord('calidad', control.calidad), controlWord('eficacia', control.eficacia), controlWord('eficiencia', control.eficiencia)].join(' · ')})` : '');
-const MODALIDAD = Object.freeze({ vigilancia: 'Vigilancia', guia_canino: 'Guía canino', supervision: 'Supervisión', monitoreo: 'Monitoreo', otro: 'Otro' });
-const CONTACTO = Object.freeze({ apoyo: 'Entidad de apoyo', empresa: 'Seguridad Nacional', interventor: 'Interventor del contrato' });
-const PROPOSITO = Object.freeze({ mapa: 'Mapa', logo: 'Logo' });
+const longDate = value => bogota(value, { dateStyle: 'long' });
+const monthYear = value => {
+  const text = bogota(value, { month: 'long', year: 'numeric' });
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+const ratingWords = control => (control?.calidad ? [controlWord('calidad', control.calidad), controlWord('eficacia', control.eficacia), controlWord('eficiencia', control.eficiencia)].join(' · ') : '');
+const rating = control => (control?.calidad ? ` (${ratingWords(control)})` : '');
+const percent = value => `${Math.round(value * 1000) / 10} %`.replace('.', ',');
 
 /** Nombre de carpeta o archivo apto para SharePoint: sin \ / : * ? " < > | # %, sin puntos ni espacios al final. */
 export function sharepointSafeName(value, max = 120) {
@@ -62,139 +72,244 @@ export function archiveFileNames(snapshot, version) {
 }
 
 /**
- * La foto de la versión → el documento con membrete. `meta`: { version, sha256, approvedAt, approverName, preparerName }.
- * Los límites del generador (bloques, filas, columnas) se respetan: con más de 80 riesgos la matriz se corta y lo dice.
+ * Mapa de calor 5×5 como tabla de colores: filas de probabilidad (Muy alta arriba), columnas de impacto. Cada celda
+ * se colorea con el nivel de la metodología v1 para probabilidad × impacto y lista los códigos que caen en ella.
  */
-export function buildStudyReport(snapshot, meta) {
+export function heatmapBlock(marks, { compact = true } = {}) {
+  const header = [{ text: 'Probabilidad / Impacto', axis: true }, ...ESCALAS.impacto.map(name => ({ text: name, axis: true }))];
+  const rows = [];
+  for (let probability = 5; probability >= 1; probability--) {
+    const row = [{ text: ESCALAS.probabilidad[probability - 1], axis: true }];
+    for (let impact = 1; impact <= 5; impact++) {
+      const codes = marks.filter(mark => mark.probabilidad === probability && mark.impacto === impact).map(mark => mark.code);
+      row.push({ text: codes.join(' '), level: nivelDeMagnitud(probability * impact), bold: true, center: true });
+    }
+    rows.push(row);
+  }
+  return { kind: 'table', compact, header, rows };
+}
+
+/** La evaluación general, calculada: nunca queda a medias. */
+export function generalEvaluation(risks) {
+  if (!risks.length) return 'El estudio no tiene riesgos valorados.';
+  const count = key => NIVEL_ORDER.map(nivel => [nivel, risks.filter(risk => risk.valoracion[key].nivel === nivel).length]).filter(([, n]) => n);
+  const phrase = key => count(key).map(([nivel, n]) => `${n} en nivel ${NIVEL[nivel].toLowerCase()}`).join(', ');
+  const actual = risks.reduce((sum, risk) => sum + risk.valoracion.actual.magnitud, 0);
+  const residual = risks.reduce((sum, risk) => sum + risk.valoracion.residual.magnitud, 0);
+  const worst = NIVEL_ORDER.find(nivel => risks.some(risk => risk.valoracion.residual.nivel === nivel));
+  return `Con el dispositivo y los controles existentes, de los ${risks.length} riesgos identificados ${phrase('actual')}. `
+    + `Al implementar los controles y acciones recomendados, el riesgo residual quedaría con ${phrase('residual')}; `
+    + `la magnitud total baja de ${actual} a ${residual} puntos (${percent(actual ? (actual - residual) / actual : 0)} menos) `
+    + `y el nivel residual más alto es ${NIVEL[worst].toLowerCase()}.`;
+}
+
+/**
+ * La foto de la versión → el informe como datos. `meta`: { version, sha256, approvedAt, approverName, preparerName }.
+ * `images`: { [evidenciaId]: { base64, mime, width, height } } — sólo las que el archivo pudo preparar (JPG/PNG
+ * reducidos); una evidencia sin imagen preparada se cita por nombre y huella.
+ */
+export function buildStudyReport(snapshot, meta, images = {}) {
   const study = snapshot.estudio;
   const template = PLANTILLAS[study.plantilla];
   const catalog = new Map((template?.riesgos || []).map(item => [item.codigo, item.nombre]));
-  const processes = new Map((template?.procesos || []).map(item => [item.codigo, item.nombre]));
   const zones = new Map(snapshot.zonas.map(zone => [zone.id, zone.nombre]));
   const risks = [...snapshot.riesgos].sort((a, b) => a.numero - b.numero);
   const riskNumber = new Map(risks.map(risk => [risk.id, risk.numero]));
-  const blocks = [];
-  const heading = text => blocks.push({ kind: 'heading', text });
-  const paragraph = text => blocks.push({ kind: 'paragraph', text });
-
-  heading('1. Datos del estudio');
-  blocks.push({ kind: 'table', header: ['Dato', 'Valor'], rows: [
-    ['Código', study.codigo],
-    ['Cliente', study.cliente.nombre + (study.cliente.nit ? ` · NIT ${study.cliente.nit}` : '')],
-    ['Sede', [study.sede.nombre, study.sede.ciudad, study.sede.direccion].filter(Boolean).join(' · ')],
-    ['Fecha de la visita', longDate(study.fecha_visita)],
-    ['Versión aprobada', `${meta.version} · ${longDate(meta.approvedAt)}`],
-    ['Preparó', meta.preparerName || 'Sin nombre registrado'],
-    ['Aprobó', meta.approverName || 'Sin nombre registrado'],
-    ['Huella de la versión (sha256)', meta.sha256],
-  ].map(row => row.map(cell => clip(cell))) });
-
-  // Capítulo de caracterización, como el I-A del informe real de HADA. Cada parte sale sólo si se capturó.
   const caracter = snapshot.caracterizacion || {};
   const stats = snapshot.estadistica || [];
   const contacts = snapshot.contactos || [];
   const posts = snapshot.dispositivo || [];
-  let section = 1;
-  const next = title => heading(`${++section}. ${title}`);
+  const evidence = snapshot.evidencias || [];
+  const imageOf = item => (item && images[item.id] ? { kind: 'image', ...images[item.id] } : null);
+  const logo = evidence.filter(item => item.proposito === 'logo').map(imageOf).filter(Boolean).pop();
+  const maps = evidence.filter(item => item.proposito === 'mapa');
+  const clientName = study.cliente.nombre;
+  const blocks = [];
+  const h1 = text => blocks.push({ kind: 'h1', text });
+  const h2 = text => blocks.push({ kind: 'h2', text });
+  const p = text => blocks.push({ kind: 'paragraph', text });
+  const list = items => { if (items.length) blocks.push({ kind: 'list', items: items.slice(0, 100) }); };
+  const contents = [];
+  const chapter = title => { contents.push(title); h1(title); };
 
-  next('Alcance');
-  paragraph(clip(study.alcance, 3800) || 'Sin alcance registrado.');
+  // Portada.
+  if (logo) blocks.push({ ...logo, maxWidthIn: 4.2, maxHeightIn: 2.8 });
+  blocks.push({ kind: 'center', text: monthYear(meta.approvedAt), cover: true });
+  blocks.push({ kind: 'center', text: 'ESTUDIO DE SEGURIDAD FÍSICA', large: true, bold: true });
+  blocks.push({ kind: 'center', text: 'Plan Estratégico de Seguridad y Gestión de Riesgos', cover: true, bold: true });
+  blocks.push({ kind: 'center', text: `Para la empresa ${clientName}`, cover: true, bold: true });
+  blocks.push({ kind: 'center', text: [study.sede.nombre, study.sede.ciudad].filter(Boolean).join(' · '), cover: true });
+  blocks.push({ kind: 'spacer' });
+  blocks.push({ kind: 'center', text: 'Elaborado por la Dirección Nacional de Operaciones y Gestión de Riesgos — Seguridad Nacional Ltda.', cover: true });
+  blocks.push({ kind: 'center', text: `${study.codigo} · versión ${meta.version} · aprobada el ${longDate(meta.approvedAt)}`, cover: true });
+  const indexAt = blocks.length;
+  blocks.push({ kind: 'page_break' });
 
-  if (caracter.descripcion_cliente || caracter.ubicacion || caracter.latitud != null) {
-    next('El cliente y la sede');
-    if (caracter.descripcion_cliente) paragraph(clip(caracter.descripcion_cliente, 3800));
-    if (caracter.ubicacion) { blocks.push({ kind: 'heading', text: 'Ubicación y vía de aproximación' }); paragraph(clip(caracter.ubicacion, 3800)); }
-    if (caracter.latitud != null && caracter.longitud != null) paragraph(`Coordenadas: ${caracter.latitud}, ${caracter.longitud}.`);
+  // Introducción.
+  chapter('Introducción');
+  if (caracter.descripcion_cliente) p(clip(caracter.descripcion_cliente, 5000));
+  h2('Objetivo');
+  p(`El presente estudio, realizado por Seguridad Nacional Ltda., tiene como objetivo definir las estrategias conjuntas necesarias para disminuir los riesgos a los que están expuestos el personal, los procesos y los activos de ${clientName}, a fin de apoyar las actividades de prevención y de gestión de riesgos que aseguren operaciones seguras, disminuyan la materialización de los riesgos y permitan la continuidad del negocio.`);
+  h2('Objetivos específicos');
+  list([
+    'Determinar la probabilidad de ocurrencia de cada riesgo, así como su impacto y sus consecuencias.',
+    'Identificar los riesgos que pueden afectar a las personas, las instalaciones, la información y los activos.',
+    'Valorar la efectividad de los controles existentes y proponer los controles y acciones que reduzcan el riesgo.',
+    'Facilitar el diseño de un plan de protección integral y de su seguimiento.',
+    'Identificar la respuesta ante las posibles amenazas con el apoyo de la Fuerza Pública y del esquema de seguridad privada.',
+  ]);
+  h2('Alcance');
+  p(clip(study.alcance, 5000) || `El estudio cubre las instalaciones de ${clientName} en ${study.sede.nombre}.`);
+  h2('Marco legal');
+  list([
+    'Decreto 356 de 1994, Estatuto de Vigilancia y Seguridad Privada.',
+    'Decreto 1072 de 2015, Sistema de Gestión de la Seguridad y Salud en el Trabajo.',
+    'Norma ISO 45001 de 2018, Seguridad y Salud en el Trabajo.',
+    'Norma NTC-ISO 31000 de 2018, Gestión del Riesgo.',
+    'Ley 1581 de 2012 y Decreto 1377 de 2013, protección de datos personales.',
+  ]);
+  h2('Metodología');
+  p(`Metodología ${study.metodologia}, basada en la NTC-ISO 31000 de 2018: matriz cruzada de probabilidad por impacto. Cada riesgo se califica con una probabilidad (${ESCALAS.probabilidad.join(', ')}) y dos impactos (${ESCALAS.impacto.join(', ')}), de 1 a 5: sobre la empresa o sede y sobre las personas; cuenta el mayor. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad (producto / 125, con tope del 90 %) reduce la probabilidad una sola vez. El riesgo actual considera los controles existentes; el residual, además, los controles propuestos. Niveles: 1 a 5 bajo, 6 a 10 moderado, 11 a 15 alto y 16 a 25 crítico.`);
+  blocks.push(heatmapBlock([]));
+  blocks.push({ kind: 'center', text: 'Niveles de riesgo según probabilidad e impacto.', cover: false });
+
+  // Capítulo I-A: caracterización.
+  chapter('Contexto externo e interno');
+  if (caracter.ubicacion) { h2('Ubicación y vía de aproximación'); p(clip(caracter.ubicacion, 5000)); }
+  if (caracter.latitud != null && caracter.longitud != null) p(`Coordenadas: ${caracter.latitud}, ${caracter.longitud}.`);
+  for (const item of maps) {
+    const img = imageOf(item);
+    if (img) blocks.push({ ...img, maxWidthIn: 6.2, maxHeightIn: 4.6, caption: clip(item.leyenda || 'Ubicación de las instalaciones.', 300) });
   }
-
-  if (caracter.contexto_externo || stats.length || caracter.grupos_delincuenciales) {
-    next('Contexto externo');
-    if (caracter.contexto_externo) paragraph(clip(caracter.contexto_externo, 3800));
-    if (stats.length) {
-      blocks.push({ kind: 'table', header: ['Delito', 'Cantidad', 'Fuente', 'Fecha de corte'], rows: stats.slice(0, 40).map(row => [clip(row.delito, 160), String(row.cantidad), clip(row.fuente, 300), row.fecha_corte ? longDate(row.fecha_corte) : '—']) });
-    }
-    if (caracter.grupos_delincuenciales) { blocks.push({ kind: 'heading', text: 'Grupos y organizaciones delincuenciales' }); paragraph(clip(caracter.grupos_delincuenciales, 3800)); }
-    if (caracter.fuentes?.length) blocks.push({ kind: 'list', items: caracter.fuentes.slice(0, 15).map(fuente => clip(`Fuente: ${fuente.nombre}${fuente.fecha ? ` (${longDate(fuente.fecha)})` : ''}${fuente.url ? ` · ${fuente.url}` : ''}`, 600)) });
+  if (caracter.contexto_externo) { h2('Contexto externo'); p(clip(caracter.contexto_externo, 5800)); }
+  if (stats.length) {
+    blocks.push({ kind: 'table', header: ['Delito', 'Cantidad', 'Fuente', 'Fecha de corte'], rows: stats.slice(0, 60).map(row => [clip(row.delito, 160), Number(row.cantidad).toLocaleString('es-CO'), clip(row.fuente, 300), row.fecha_corte ? longDate(row.fecha_corte) : '—']) });
   }
-
-  if (caracter.contexto_interno) { next('Contexto interno'); paragraph(clip(caracter.contexto_interno, 3800)); }
-
+  if (caracter.grupos_delincuenciales) { h2('Grupos y organizaciones delincuenciales'); p(clip(caracter.grupos_delincuenciales, 5000)); }
+  if (caracter.fuentes?.length) { h2('Fuentes'); list(caracter.fuentes.slice(0, 15).map(fuente => clip(`${fuente.nombre}${fuente.fecha ? ` (${longDate(fuente.fecha)})` : ''}${fuente.url ? ` · ${fuente.url}` : ''}`, 600))); }
+  if (caracter.contexto_interno) { h2('Contexto interno'); p(clip(caracter.contexto_interno, 5800)); }
+  const support = contacts.filter(row => row.tipo === 'apoyo');
+  if (support.length) {
+    h2('Entidades de apoyo');
+    blocks.push({ kind: 'table', header: ['Entidad', 'Detalle', 'Teléfono'], rows: support.slice(0, 60).map(row => [clip(row.entidad, 160), clip(row.detalle) || '—', clip(row.telefono) || '—']) });
+  }
   if (posts.length) {
-    next('Dispositivo de seguridad');
-    blocks.push({ kind: 'table', header: ['Servicio', 'Modalidad', 'Horario', 'Armado', 'Cantidad'], rows: posts.slice(0, 40).map(row => [
+    h2('Dispositivo de seguridad');
+    blocks.push({ kind: 'table', header: ['Servicio', 'Modalidad', 'Horario', 'Armado', 'Cantidad'], rows: posts.slice(0, 60).map(row => [
       clip(row.servicio, 200), MODALIDAD[row.modalidad] || row.modalidad, clip(row.horario) || '—', row.armado === true ? 'Sí' : row.armado === false ? 'No' : '—', String(row.cantidad),
     ]) });
   }
-
   const clientProcesses = [...new Set(risks.map(risk => risk.proceso_cliente).filter(Boolean))];
-  if (clientProcesses.length) {
-    next('Procesos analizados');
-    paragraph(`Se analizaron ${clientProcesses.length} procesos del cliente, con ${risks.length} riesgos identificados.`);
-    blocks.push({ kind: 'list', items: clientProcesses.slice(0, 40).map(item => clip(item, 120)) });
+  if (clientProcesses.length) { h2('Procesos internos analizados'); p(`Se analizaron ${clientProcesses.length} procesos de ${clientName}:`); list(clientProcesses.map(item => clip(item, 120))); }
+
+  // Capítulo I-B: diagnóstico.
+  chapter('Diagnóstico y evaluación de riesgos');
+  h2('Identificación de riesgos');
+  p(`Se identificaron ${risks.length} riesgos en ${new Set(risks.map(risk => risk.zona).filter(Boolean)).size || 'los'} escenarios físicos${clientProcesses.length ? ` y ${clientProcesses.length} procesos` : ''}.`);
+  list(risks.map(risk => clip(`R${risk.numero}. ${risk.riesgo}`, 300)));
+  h2('Evaluación general');
+  p(generalEvaluation(risks));
+  if (risks.length) {
+    h2('Medición comparativa del riesgo');
+    blocks.push({ kind: 'table', header: ['Código', 'Proceso', 'Riesgo', 'Actual', 'Residual', 'Reducción', 'Resultado'], rows: risks.slice(0, 120).map(risk => {
+      const actual = risk.valoracion.actual.magnitud;
+      const residual = risk.valoracion.residual.magnitud;
+      return [`R${risk.numero}`, clip(risk.proceso_cliente) || '—', clip(risk.riesgo, 200), { text: level(risk.valoracion.actual), level: risk.valoracion.actual.nivel }, { text: level(risk.valoracion.residual), level: risk.valoracion.residual.nivel },
+        `${actual - residual} (${percent(actual ? (actual - residual) / actual : 0)})`, residual < actual ? 'Disminuye' : 'Se mantiene'];
+    }) });
   }
 
-  next('Metodología');
-  paragraph(`Metodología ${study.metodologia}. Cada riesgo se califica con una probabilidad (${ESCALAS.probabilidad.join(', ')}) y dos impactos (${ESCALAS.impacto.join(', ')}), de 1 a 5: sobre la empresa o sede y sobre las personas; cuenta el mayor. El control se califica por calidad, eficacia y eficiencia, de 1 a 5 (efectividad = producto / 125, con tope de 0,9), y reduce la probabilidad una sola vez. Niveles: 1–5 bajo, 6–10 moderado, 11–15 alto, 16–25 crítico. El riesgo actual considera el control existente; el residual, además, el control propuesto.`);
-
-  next('Resumen de la valoración');
-  const count = (key, nivel) => risks.filter(risk => risk.valoracion[key].nivel === nivel).length;
-  blocks.push({ kind: 'table', header: ['Nivel', 'Riesgo actual', 'Riesgo residual'], rows: NIVEL_ORDER.map(nivel => [NIVEL[nivel], String(count('actual', nivel)), String(count('residual', nivel))]) });
-  paragraph(`Total de riesgos valorados: ${risks.length}.`);
-
-  next('Matriz de riesgos');
-  const matrix = risks.slice(0, 80);
-  if (matrix.length) {
-    blocks.push({ kind: 'table', header: ['N.º', 'Riesgo', 'Zona', 'Inherente', 'Actual', 'Residual'], rows: matrix.map(risk => [
-      `R${risk.numero}`, clip(risk.riesgo, 300), clip(zones.get(risk.zona) || '—', 120),
-      level(risk.valoracion.inherente), level(risk.valoracion.actual), level(risk.valoracion.residual),
-    ]) });
-  } else paragraph('El estudio no tiene riesgos registrados.');
-  if (risks.length > matrix.length) paragraph(`La matriz muestra los primeros ${matrix.length} riesgos; el detalle completo está en el archivo del estudio (JSON) de esta versión.`);
-
-  next('Detalle por riesgo');
-  for (const risk of risks.slice(0, 60)) {
-    blocks.push({ kind: 'heading', text: clip(`R${risk.numero} · ${risk.riesgo}`, 300) });
-    blocks.push({ kind: 'list', items: [
-      `Escenario físico: ${zones.get(risk.zona) || 'sin zona'}`,
-      `Proceso del cliente: ${risk.proceso_cliente || 'no registrado'}${risk.factor ? ` · Factor de riesgo: ${risk.factor}` : ''}`,
-      `Catálogo: ${risk.catalogo ? `${risk.catalogo} · ${catalog.get(risk.catalogo) || ''}` : 'riesgo propio'}${risk.proceso ? ` · proceso ${risk.proceso} · ${processes.get(risk.proceso) || ''}` : ''}`,
-      `Causas: ${clip(risk.causas) || 'no registradas'}`,
-      `Consecuencias: ${clip(risk.consecuencias) || 'no registradas'}`,
-      `Control existente: ${clip(risk.control_existente?.descripcion) || 'no registrado'}${rating(risk.control_existente)}`,
-      `Control propuesto: ${clip(risk.control_propuesto?.descripcion) || 'no registrado'}${rating(risk.control_propuesto)}`,
-      `Valoración: probabilidad ${risk.probabilidad}, impacto empresa ${risk.impacto_empresa}, impacto personas ${risk.impacto_personas} → inherente ${level(risk.valoracion.inherente)}, actual ${level(risk.valoracion.actual)}, residual ${level(risk.valoracion.residual)}.`,
-      ...(risk.origen === 'agente' ? ['Registrado a partir de la nota de campo, con apoyo de Vig-IA, y calificado por una persona.'] : []),
-    ].map(item => clip(item, 1600)) });
+  // Fichas: una por riesgo, como en el informe real.
+  for (const risk of risks) {
+    blocks.push({ kind: 'page_break' });
+    h1(clip(`R${risk.numero} · ${risk.riesgo}`, 300));
+    const ce = risk.control_existente || {};
+    blocks.push({ kind: 'table', header: ['Dato', 'Valor'], rows: [
+      ['Escenario físico', zones.get(risk.zona) || 'Sin zona'],
+      ['Proceso', risk.proceso_cliente || '—'],
+      ['Factor de riesgo', risk.factor || '—'],
+      ['Riesgo del catálogo', risk.catalogo ? `${risk.catalogo} · ${catalog.get(risk.catalogo) || ''}` : 'Riesgo propio'],
+      ['Calidad · eficacia · eficiencia del control', ratingWords(ce) || 'Sin calificar'],
+      ['Efectividad del control existente', percent(risk.valoracion.actual.efectividadControl)],
+      ['Magnitud del riesgo actual', { text: level(risk.valoracion.actual), level: risk.valoracion.actual.nivel }],
+      ['Magnitud del riesgo residual', { text: level(risk.valoracion.residual), level: risk.valoracion.residual.nivel }],
+    ].map(row => row.map(value => (typeof value === 'string' ? clip(value, 400) : value))) });
+    const photos = evidence.filter(item => item.riesgo === risk.id && item.tipo === 'foto');
+    const photo = photos.map(imageOf).find(Boolean);
+    if (photo) blocks.push({ ...photo, maxWidthIn: 3.8, maxHeightIn: 2.4, caption: clip(photos.find(item => images[item.id])?.leyenda || 'Foto de evidencia.', 300) });
+    const impact = risk.valoracion.impacto;
+    blocks.push(heatmapBlock([
+      { probabilidad: risk.valoracion.actual.probabilidad, impacto: impact, code: `R${risk.numero}` },
+      { probabilidad: risk.valoracion.residual.probabilidad, impacto: impact, code: `R${risk.numero}R` },
+    ]));
+    blocks.push({ kind: 'center', text: `Mapa del riesgo: R${risk.numero} actual y R${risk.numero}R residual.` });
+    h2('Controles actuales y existentes');
+    p(clip(ce.descripcion, 5000) || 'No se registraron controles existentes.');
+    h2('Causas de materialización del riesgo');
+    p(clip(risk.causas, 5000) || 'No registradas.');
+    if (risk.consecuencias) { h2('Consecuencias'); p(clip(risk.consecuencias, 5000)); }
+    h2('Recomendaciones de seguridad');
+    const actions = snapshot.acciones.filter(action => action.riesgo === risk.id && action.estado !== 'descartada');
+    const recommendations = [
+      ...(risk.control_propuesto?.descripcion ? [`${clip(risk.control_propuesto.descripcion, 1500)}${rating(risk.control_propuesto)}`] : []),
+      ...actions.map(action => clip(`${action.accion} — ${action.responsable || 'sin responsable'}, ${action.fecha_compromiso ? longDate(action.fecha_compromiso) : 'sin fecha'}`, 1600)),
+    ];
+    if (recommendations.length) list(recommendations); else p('Sin recomendaciones registradas.');
+    if (risk.origen === 'agente') blocks.push({ kind: 'center', text: 'Registrado a partir de la nota de campo, con apoyo de Vig-IA, y calificado por una persona.' });
   }
-  if (risks.length > 60) paragraph(`El detalle de los riesgos R${risks[60].numero} en adelante está en el archivo del estudio (JSON) de esta versión.`);
 
-  next('Plan de tratamiento');
-  const actions = snapshot.acciones.filter(action => action.estado !== 'descartada').slice(0, 80);
-  if (actions.length) {
-    blocks.push({ kind: 'table', header: ['Riesgo', 'Acción', 'Responsable', 'Fecha compromiso', 'Prioridad', 'Estado'], rows: actions.map(action => [
+  // Capítulo I-C: plan estratégico.
+  blocks.push({ kind: 'page_break' });
+  chapter('Diseño del plan estratégico de seguridad');
+  h2('1. Reducir la probabilidad del riesgo');
+  list(['Diseñar y adecuar las políticas para el control de personal propio, tercerizado y ocasional.', 'Implementar las mejoras humanas, físicas, tecnológicas y procedimentales recomendadas en cada riesgo.']);
+  h2('2. Mitigar las consecuencias del riesgo');
+  list(['Diseñar, socializar y verificar los protocolos de atención inmediata ante eventos indeseados o perturbadores.', 'Revisar y ajustar los planes de emergencia, contingencia y continuidad del negocio, con simulacros y pruebas de vulnerabilidad.', 'Coordinar y establecer alianzas con las autoridades y entidades de apoyo.']);
+  h2('3. Mantener y controlar el nivel de criticidad');
+  list(['Implementar indicadores de gestión para el control y seguimiento de la operación de seguridad.', 'Realizar comités de seguridad para evaluar los avances del plan.']);
+  const plan = snapshot.acciones.filter(action => action.estado !== 'descartada').slice(0, 120);
+  if (plan.length) {
+    h2('Plan de tratamiento');
+    blocks.push({ kind: 'table', header: ['Riesgo', 'Acción', 'Responsable', 'Fecha compromiso', 'Prioridad', 'Estado'], rows: plan.map(action => [
       riskNumber.has(action.riesgo) ? `R${riskNumber.get(action.riesgo)}` : '—', clip(action.accion, 600), clip(action.responsable) || 'Sin responsable',
       action.fecha_compromiso ? longDate(action.fecha_compromiso) : 'Sin fecha', PRIORIDAD[action.prioridad] || action.prioridad, ESTADO_ACCION[action.estado] || action.estado,
     ]) });
-  } else paragraph('No hay acciones registradas.');
-
-  if (contacts.length) {
-    next('Entidades de apoyo y contactos');
-    blocks.push({ kind: 'table', header: ['Tipo', 'Entidad', 'Detalle', 'Teléfono', 'Correo'], rows: contacts.slice(0, 60).map(row => [CONTACTO[row.tipo] || row.tipo, clip(row.entidad, 160), clip(row.detalle) || '—', clip(row.telefono) || '—', clip(row.correo) || '—']) });
   }
 
-  next('Evidencias');
-  if (snapshot.evidencias.length) {
-    blocks.push({ kind: 'table', header: ['Archivo', 'Riesgo', 'Tipo', 'Huella (sha256)'], rows: snapshot.evidencias.slice(0, 80).map(item => [
+  chapter('Mapa de criticidad general');
+  h2('Riesgo actual');
+  blocks.push(heatmapBlock(risks.map(risk => ({ probabilidad: risk.valoracion.actual.probabilidad, impacto: risk.valoracion.impacto, code: `${risk.numero}A` }))));
+  h2('Riesgo residual');
+  blocks.push(heatmapBlock(risks.map(risk => ({ probabilidad: risk.valoracion.residual.probabilidad, impacto: risk.valoracion.impacto, code: `${risk.numero}R` }))));
+  blocks.push({ kind: 'center', text: 'Los números corresponden al código de cada riesgo (A: actual, R: residual).' });
+
+  // Cadena de mando y seguimiento.
+  chapter('Escalonamiento o cadena de mando');
+  p(`El personal del servicio de vigilancia, o en su defecto quien detecte la novedad, informará de inmediato al responsable designado por ${clientName}, que reportará el hecho al área a cargo del esquema de seguridad y solicitará el apoyo pertinente; de ser necesario, se solicitará el acompañamiento de las autoridades competentes. El manejo de la situación lo hará el esquema de seguridad, a través del coordinador operativo del contrato por parte de Seguridad Nacional Ltda., con línea directa con el interventor del contrato por parte de ${clientName}, con manejo confidencial de la información.`);
+  const chain = contacts.filter(row => row.tipo !== 'apoyo');
+  if (chain.length) {
+    blocks.push({ kind: 'table', header: ['Quién', 'Cargo o detalle', 'Teléfono', 'Correo'], rows: chain.slice(0, 40).map(row => [`${CONTACTO[row.tipo]}: ${clip(row.entidad, 160)}`, clip(row.detalle) || '—', clip(row.telefono) || '—', clip(row.correo) || '—']) });
+  }
+  chapter('Informes, registro y seguimiento');
+  p(`Una vez socializado el estudio en comité de seguridad con las directivas de ${clientName}, se dispondrá de un plan de trabajo conjunto para su seguimiento. Los avances se revisarán de manera bimensual en comité de seguridad, con base en el plan de tratamiento y en los indicadores de gestión.`);
+
+  if (evidence.length) {
+    h2('Evidencias del estudio');
+    blocks.push({ kind: 'table', header: ['Archivo', 'Riesgo', 'Tipo', 'Huella (sha256)'], rows: evidence.slice(0, 120).map(item => [
       clip(item.archivo, 200), riskNumber.has(item.riesgo) ? `R${riskNumber.get(item.riesgo)}` : PROPOSITO[item.proposito] || 'General', item.tipo === 'documento' ? 'Documento' : 'Foto', String(item.sha256).slice(0, 16),
     ]) });
-    paragraph('Las fotos y documentos están en la carpeta "evidencias", junto a este informe, con la misma huella.');
-  } else paragraph('No se adjuntaron fotos ni documentos.');
+    p('Todas las fotos y documentos están en la carpeta "evidencias" junto a este informe, con la misma huella.');
+  }
 
-  return {
-    title: 'ESTUDIO DE SEGURIDAD FÍSICA',
-    city_date: `${study.sede.ciudad || 'Colombia'}, ${longDate(meta.approvedAt)}`,
-    subject: clip(`${study.codigo} · ${study.cliente.nombre} · ${study.sede.nombre} · versión ${meta.version}`, 400),
-    blocks,
-    signature: [meta.approverName || 'Aprobador', 'Aprobó la versión'],
-  };
+  p(`Se reitera la voluntad de servicio y el compromiso de Seguridad Nacional Ltda. con ${clientName}, como socios estratégicos en soluciones integrales de seguridad.`);
+  blocks.push({ kind: 'spacer' });
+  blocks.push({ kind: 'signature', text: 'Cordialmente,' });
+  blocks.push({ kind: 'spacer' });
+  blocks.push({ kind: 'signature', text: `**${meta.preparerName || 'Analista de seguridad'}**\nAnalista de seguridad — Seguridad Nacional Ltda.` });
+  blocks.push({ kind: 'signature', text: `Aprobó la versión ${meta.version}: ${meta.approverName || 'sin nombre registrado'}.\nHuella de la versión (sha256): ${meta.sha256}` });
+
+  // Índice después de la portada, con los capítulos que sí salieron.
+  blocks.splice(indexAt + 1, 0, { kind: 'h1', text: 'Contenido' }, { kind: 'list', items: [...contents.map((title, index) => `${index + 1}. ${title}`), ...(risks.length ? [`Fichas de riesgo: R1 a R${risks.length}`] : [])] }, { kind: 'page_break' });
+
+  return { blocks };
 }
