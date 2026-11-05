@@ -16,7 +16,7 @@ import {
   platformSslConfig,
   platformUnavailableError,
 } from './platform-agents.js';
-import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment } from './platform-model-gateway.js';
+import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_ESTUDIOS_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment } from './platform-model-gateway.js';
 
 export const PLATFORM_ADMIN_UNAVAILABLE_MESSAGE = 'La administración de la plataforma no está conectada.';
 export const PLATFORM_ADMIN_REJECTED_MESSAGE = 'La plataforma no aceptó el cambio. Actualice la página, revise el estado y vuelva a intentarlo.';
@@ -62,6 +62,12 @@ export const AGENT_AI_FUNCTIONS = Object.freeze({
       label: 'Brief de reunión',
       description: 'Lee las notas de seguimiento de un cliente y resume qué quedó pendiente y qué proponer. A pedido, en la ficha.',
       default_cap: Object.freeze({ per: 'day', max: 20 }),
+    }),
+    Object.freeze({
+      capability: AGT003_ESTUDIOS_CAPABILITY,
+      label: 'Estudios de seguridad · nota de campo',
+      description: 'El inspector cuenta lo que vio en la visita y Vig-IA propone zonas, riesgos y controles; se guardan al confirmar y la calificación la pone la persona.',
+      default_cap: Object.freeze({ per: 'day', max: 60 }),
     }),
   ]),
 });

@@ -8,6 +8,7 @@ import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse
 import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
 import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, addZone as addSecurityStudyZone, createStudy as createSecurityStudy, deleteAction as deleteSecurityStudyAction, deleteRisk as deleteSecurityStudyRisk, deleteZone as deleteSecurityStudyZone, getStudy as getSecurityStudy, listStudies as listSecurityStudies, updateAction as updateSecurityStudyAction, updateRisk as updateSecurityStudyRisk, updateStudy as updateSecurityStudy, updateZone as updateSecurityStudyZone } from '../verticales/estudios-seguridad/estudios.js';
+import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
@@ -113,7 +114,7 @@ import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } fro
 import { loadAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
 import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
-import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
+import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_ESTUDIOS_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
 import { codeDefaultEffectiveConfiguration, getEffectiveAgentConfiguration } from '../platform-agent-effective-configuration.js';
 import { AGT003_CAPABILITY_DISABLED_CODE, AGT003_CAPABILITY_DISABLED_MESSAGE, capabilityPolicy, claimLeadAnalysis, leadAnalysisQuotaMessage, readActorAiUsageProfile } from '../verticales/comercial/agt003-ai-quota.js';
 import {
@@ -3406,6 +3407,63 @@ securityStudyRoute('get', '/api/estudios-seguridad/:id', async (db, req, profile
   const detail = await getSecurityStudy(db, req.params.id);
   return { ...detail, workflow: await loadSecurityStudyWorkflow(db, detail.study, profile) };
 });
+// Nota de campo con Vig-IA (AGT-003, agt003.estudios-nota-campo; Juan, 2026-11-05). Propone; no guarda. El cupo y los
+// avisos de falla son los del brief de reunión: lo fallido no gasta cupo y nunca se cae a otra forma de llamar al modelo.
+app.post('/api/estudios-seguridad/:id/agente/proponer', async (req, res) => {
+  let runId = null;
+  let database = null;
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'securityStudies');
+    database = requireDb();
+    const detail = await getSecurityStudy(database, req.params.id);
+    if (!detail.editable) throw chatError('El estudio no está en borrador: no se puede modificar.', 409);
+    if (!isAgt003CopilotConfigured(process.env)) throw chatError('Vig-IA no está disponible en este momento.', 503);
+    const policy = await resolveAgt003CapabilityPolicy(database, AGT003_ESTUDIOS_CAPABILITY, profile);
+    if (!policy) throw new Error('No se pudo leer la configuración de Vig-IA.');
+    if (!policy.enabled) {
+      await recordModelRejection({ capability: AGT003_ESTUDIOS_CAPABILITY, model: policy.model, failureCode: AGT003_CAPABILITY_DISABLED_CODE, correlationId: randomUUID() });
+      throw chatError(AGT003_CAPABILITY_DISABLED_MESSAGE, 503, AGT003_CAPABILITY_DISABLED_CODE);
+    }
+    const claim = await claimFieldNoteRun(database, { actorId: profile.id, studyId: detail.study.id, quota: policy.quota });
+    if (claim?.status === 'in_progress') throw chatError('Vig-IA ya está preparando una propuesta. Espere un momento.', 409);
+    if (claim?.status === 'quota') {
+      const personal = claim.scope === 'actor';
+      const code = personal ? 'AGT003_ESTUDIOS_PERSONAL_QUOTA' : 'AGT003_ESTUDIOS_QUOTA';
+      await recordModelRejection({ capability: AGT003_ESTUDIOS_CAPABILITY, model: policy.model, failureCode: code, correlationId: randomUUID() });
+      throw chatError(`${personal ? 'Su cupo personal' : 'El cupo del equipo'} de notas de campo con Vig-IA por hoy está agotado (${claim.used} de ${claim.max}). Puede registrar los riesgos a mano.`, 429, code);
+    }
+    if (claim?.status !== 'claimed' || !claim.id) throw new Error('No se pudo reservar la propuesta.');
+    runId = claim.id;
+    let result;
+    try {
+      result = await runFieldNote({ detail, note: req.body?.nota, today: bogotaDay(new Date()), idempotencyKey: runId, environment: process.env, model: policy.model });
+    } catch (runError) {
+      await database.from('psi_security_study_agent_runs').update({ status: 'failed', failure_code: String(runError?.code || 'AGT003_ESTUDIOS_FAILED').toUpperCase().replace(/[^A-Z0-9_]/g, '_').slice(0, 96), finished_at: new Date().toISOString() }).eq('id', runId);
+      runId = null;
+      if (runError?.status === 400) throw runError;
+      const category = classifyAgt003ModelFailure(runError) || AGT003_MODEL_FAILURE.MODEL_ERROR;
+      throw chatError(`${agt003ModelFailureMessage(category, 'estudios')} No se descontó de su cupo.`, category === AGT003_MODEL_FAILURE.MODEL_ERROR ? 502 : 503);
+    }
+    const { error: finishError } = await database.from('psi_security_study_agent_runs').update({
+      status: 'completed', model: result.model, input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens, finished_at: new Date().toISOString(),
+    }).eq('id', runId);
+    if (finishError) throw finishError;
+    runId = null;
+    res.set('Cache-Control', 'private, no-store');
+    res.json(result.output);
+  } catch (error) {
+    if (runId && database) {
+      try { await database.from('psi_security_study_agent_runs').update({ status: 'failed', failure_code: 'AGT003_ESTUDIOS_INTERNAL', finished_at: new Date().toISOString() }).eq('id', runId); } catch { /* best effort */ }
+    }
+    if (!error?.status) {
+      console.error(error);
+      return res.status(503).json({ error: 'Vig-IA no pudo preparar la propuesta por ahora. Intente de nuevo en unos minutos o registre los riesgos a mano.' });
+    }
+    sendError(res, error, error.status);
+  }
+});
+securityStudyRoute('post', '/api/estudios-seguridad/:id/agente/confirmar', (db, req, profile) => confirmSecurityStudyFieldNote(db, req.params.id, req.body || {}, profile));
 // Tramo 3: enviar, devolver, marcar revisado, aprobar (congela la versión) y reabrir.
 securityStudyRoute('post', '/api/estudios-seguridad/:id/flujo', (db, req, profile) => transitionSecurityStudy(db, req.params.id, req.body || {}, profile));
 securityStudyRoute('patch', '/api/estudios-seguridad/:id', (db, req, profile) => updateSecurityStudy(db, req.params.id, req.body || {}, profile));
