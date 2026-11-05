@@ -77,7 +77,10 @@ function wordMinimo() {
 
 test('el productor guarda el Word en la carpeta de borradores del proceso, sin pisar nada', async () => {
   const uploads = [];
-  const database = { storage: { from: bucket => ({ upload: async (path, bytes, options) => { uploads.push({ bucket, path, bytes, options }); return { error: null }; } }) } };
+  // Mejora 6 (parte B): el productor lee la sede principal y el cierre para poner la línea «Ciudad, fecha».
+  const fila = { psi_company_sites: { city: 'Pereira' }, psi_public_tenders: { deadline_at: '2026-11-04T15:00:00Z' } };
+  const from = tabla => { const q = { select: () => q, eq: () => q, limit: () => q, maybeSingle: async () => ({ data: fila[tabla], error: null }) }; return q; };
+  const database = { from, storage: { from: bucket => ({ upload: async (path, bytes, options) => { uploads.push({ bucket, path, bytes, options }); return { error: null }; } }) } };
   // Mejora 6: el productor revisa el paquete como Word; ya no sirve un «Word» de mentira.
   const word = wordMinimo();
   const bridgeClient = { renderDocument: async () => ({ bytes: word, sha256: 'a'.repeat(64) }) };
