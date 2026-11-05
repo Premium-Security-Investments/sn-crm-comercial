@@ -12,7 +12,8 @@ import { completeEvidenceUpload, requestEvidenceUpload } from '../verticales/est
 import { loadWorkflow, transitionStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { ARCHIVE_BASE_PATH, archiveFolderPath, buildStudyReport, sharepointSafeName } from '../verticales/estudios-seguridad/informe.js';
 import { parseUploadOutput, runArchiveBatch } from '../verticales/estudios-seguridad/archivo.js';
-import { AGT002_DOCUMENT_TEMPLATE_PATH, buildAgt002DocumentFodt } from '../verticales/licitaciones/agt002-document-render.js';
+import { AGT002_DOCUMENT_TEMPLATE_PATH } from '../verticales/licitaciones/agt002-document-render.js';
+import { buildStudyReportFodt } from '../verticales/estudios-seguridad/render-informe.js';
 import { APPROVER, PREPARER, REVIEWER, database, supabaseOver } from './helpers/estudios-seguridad-db.mjs';
 
 const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x02]);
@@ -42,9 +43,12 @@ async function approvedStudy() {
 
 function fakeDeps({ existing = new Set(), failOn = null } = {}) {
   const uploads = [];
-  return {
+  const deps = {
     uploads,
-    renderDocx: async document => Buffer.from(`PK-docx ${document.subject}`),
+    reports: [],
+    renderDocx: async report => { deps.reports.push(report); return Buffer.from(`PK-docx ${report.blocks.length}`); },
+    // La foto reducida que embebería el informe: un PNG de 2×1 para la prueba.
+    prepareImage: async () => Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGP4z8DAwMDAwAAAD/4B/0vZ8a8AAAAASUVORK5CYII=', 'base64'),
     toPdf: async () => Buffer.from('%PDF-1.7 informe'),
     upload: async (relativePath, bytes) => {
       if (failOn && relativePath.includes(failOn)) return 'FALLÓ la escritura: 503';
@@ -53,6 +57,7 @@ function fakeDeps({ existing = new Set(), failOn = null } = {}) {
       return `escrito: x | ${bytes.length} bytes | 201\nreadback: IGUAL | sha256 enviado\nurl: https://sharepoint.test/${encodeURIComponent(relativePath)}\n`;
     },
   };
+  return deps;
 }
 
 test('migración 186: la aprobación deja el pedido; el trabajo lo toma, lo cierra y reintenta hasta 3 veces', async () => {
@@ -88,6 +93,8 @@ test('el trabajo arma el paquete desde la versión congelada y lo sube bajo 99_D
   const events = [];
   const result = await runArchiveBatch(db, deps, event => events.push(event));
   assert.deepEqual(result, { processed: 1, ok: 1 });
+  const photo = deps.reports[0].blocks.find(block => block.kind === 'image');
+  assert.deepEqual([photo?.mime, photo?.width, photo?.height], ['image/jpeg', 2, 1], 'la foto del riesgo va reducida dentro del informe');
 
   const folder = `${ARCHIVE_BASE_PATH}/EST-${new Date().getFullYear()}-0001 Cliente Prueba S.A.S. - Bodega 1 Zona Franca/v1`;
   assert.deepEqual(deps.uploads.map(item => item.relativePath), [
@@ -132,8 +139,10 @@ test('el informe cabe en el generador con membrete y dice lo que se aprobó', as
   const { data: [version] } = await db.from('psi_security_study_versions').select('version, snapshot, snapshot_sha256, approved_at').eq('study_id', study.id);
   const report = buildStudyReport(version.snapshot, { version: 1, sha256: version.snapshot_sha256, approvedAt: version.approved_at, approverName: 'Alba Aprobadora', preparerName: 'Ana Preparadora' });
   // Pasa la validación real del generador (bloques, filas, columnas, textos) sobre la plantilla corporativa.
-  const fodt = buildAgt002DocumentFodt(readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8'), report);
+  const fodt = buildStudyReportFodt(readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8'), report);
   assert.match(fodt, /ESTUDIO DE SEGURIDAD FÍSICA/);
+  assert.match(fodt, /Evaluación general/);
+  assert.match(fodt, /la magnitud total baja de 12 a 8 puntos/, 'la evaluación general se calcula y no queda cortada');
   assert.match(fodt, /12 · Alto/, 'riesgo actual de R1');
   assert.match(fodt, /8 · Moderado/, 'riesgo residual de R1');
   assert.match(fodt, /Reparar la malla del costado norte/);
