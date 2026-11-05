@@ -18,6 +18,7 @@ import { crearLectorAvancys } from './avancys-odoo-lectura.js';
 import { buildTenderCompanyDocumentBridge } from './verticales/licitaciones/tender-company-document-bridge.js';
 import { matchCompanyDocumentClasses } from './verticales/licitaciones/tender-compliance-matrix.js';
 import { agt002ListarFormatos, agt002LocateFormato } from './verticales/licitaciones/agt002-formato-oficial.js';
+import { agt002SeccionDelPedido } from './verticales/licitaciones/agt002-seccion-del-pliego.js';
 
 export const ESTADOS = Object.freeze({
   VIGENTE: 'vigente',
@@ -178,6 +179,14 @@ export const DATOS = Object.freeze({
   }),
   // El texto oficial del formato o anexo que se pide redactar: el archivo propio o la sección del pliego vigente.
   'proceso.formato_oficial': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_tender_document_versions']),
+    lectores: Object.freeze(['agt002.mesa']),
+  }),
+  // F1/F2 (auditoría Fiscalía): la sección completa del pliego que el pedido cita por numeral o por sus palabras.
+  'proceso.seccion_del_pliego': Object.freeze({
     dominio: 'licitacion',
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
@@ -813,6 +822,34 @@ export async function resolverDatosOficialesProceso(database, { tenderId }) {
 // Resolvedor de proceso.formato_oficial (regla de Juan, 2026-11-04): cuando lo pedido es un formato o anexo, su
 // texto completo, para que el documento lo siga. Sin pedido de documento no se resuelve nada.
 /**
+ * F1/F2 (auditoría del piloto Fiscalía): la sección del pliego vigente que el pedido cita —por numeral, o por sus
+ * palabras si no cita ninguno—, completa hasta 10.000 caracteres. Sin pliego o sin sección clara, no se manda nada.
+ */
+export async function resolverSeccionDelPliego(database, { tenderId, pregunta }) {
+  const vacio = nota => respuesta({
+    nombre: 'proceso.seccion_del_pliego', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.CONGELADA, forma: FORMAS.PROSA,
+    asOf: null, procedencia: Object.freeze({ tabla: 'psi_tender_document_versions', nota }),
+  });
+  if (typeof tenderId !== 'string' || !tenderId.trim() || !pregunta) return vacio('sin pedido');
+  const { data, error } = await database.from('psi_tender_document_versions')
+    .select('id,name,document_type,created_at,extracted_text')
+    .eq('tender_id', tenderId).eq('current', true);
+  if (error || !Array.isArray(data)) return vacio('no se pudieron leer los documentos del proceso');
+  const encontrada = agt002SeccionDelPedido({ documents: data, message: pregunta });
+  if (!encontrada) return vacio('el pedido no cita un numeral del pliego vigente ni coincide claro con una sección');
+  return respuesta({
+    nombre: 'proceso.seccion_del_pliego',
+    valor: Object.freeze({ numeral: encontrada.numeral, titulo: encontrada.titulo, recortado: encontrada.recortado, texto: encontrada.texto, como_se_encontro: encontrada.origen }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.CONGELADA,
+    // Es texto del pliego: se cita, no se interpreta.
+    forma: FORMAS.TIPADO,
+    asOf: soloFecha(data.find(row => row.id === encontrada.document_id)?.created_at),
+    procedencia: Object.freeze({ tabla: 'psi_tender_document_versions', documento: encontrada.documento }),
+  });
+}
+
+/**
  * Mejora 6 (encargo desde Terminal): la lista de formatos y anexos numerados del proceso —títulos del pliego vigente y
  * archivos propios con número—, para que la «relación de anexos que se presentan» de la carta salga de lo que el
  * proceso pide y no de memoria. Qué va de verdad lo decide una persona: la lista no lo afirma.
@@ -868,6 +905,7 @@ const RESOLVEDORES = Object.freeze({
   'proceso.datos_oficiales': (database, contexto) => resolverDatosOficialesProceso(database, contexto),
   'proceso.formato_oficial': (database, contexto) => resolverFormatoOficial(database, contexto),
   'proceso.formatos_del_pliego': (database, contexto) => resolverFormatosDelPliego(database, contexto),
+  'proceso.seccion_del_pliego': (database, contexto) => resolverSeccionDelPliego(database, contexto),
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),

@@ -26,6 +26,8 @@ export const AGT002_MESA_FUENTES = Object.freeze([
   'proceso.formato_oficial',
   // Mejora 6: para la «relación de anexos que se presentan» de la carta.
   'proceso.formatos_del_pliego',
+  // F1/F2 (auditoría Fiscalía): la sección completa del numeral que se pregunta, también antes del GO.
+  'proceso.seccion_del_pliego',
 ]);
 import {
   claimAgt002WorkbenchJob,

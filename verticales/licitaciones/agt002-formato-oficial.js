@@ -69,7 +69,7 @@ function sections(text) {
 }
 
 /** El pliego vigente: el definitivo más reciente; si no hay definitivo, el pliego más largo. */
-function currentPliego(documents) {
+export function agt002PliegoVigente(documents) {
   const pliegos = documents.filter(document => document.document_type === 'pliego' && typeof document.extracted_text === 'string');
   const definitivos = pliegos.filter(document => /definitivo/i.test(document.name || '') && !/respuesta|observaci|acta|informe/i.test(document.name || ''));
   const pool = definitivos.length ? definitivos : pliegos.filter(document => !/respuesta|observaci|acta|informe/i.test(document.name || ''));
@@ -108,7 +108,7 @@ export function agt002LocateFormato({ documents = [], message = '', title = '' }
     }
   }
   // 2. La sección del pliego vigente.
-  const pliego = currentPliego(usable);
+  const pliego = agt002PliegoVigente(usable);
   if (!pliego) return null;
   const all = sections(pliego.extracted_text).filter(entry => !/\.{5,}/.test(entry.head));
   const wanted = titleWords(title);
@@ -149,7 +149,7 @@ export function agt002ListarFormatos(documents = []) {
   const usable = documents.filter(document => typeof document?.extracted_text === 'string' && document.extracted_text.trim());
   const porClave = new Map();
   const clave = (word, number) => `${word}:${number}`;
-  const pliego = currentPliego(usable);
+  const pliego = agt002PliegoVigente(usable);
   if (pliego) {
     const text = pliego.extracted_text;
     for (const entry of sections(text)) {
