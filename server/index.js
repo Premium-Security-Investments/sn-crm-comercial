@@ -8,6 +8,7 @@ import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse
 import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
 import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, addZone as addSecurityStudyZone, createStudy as createSecurityStudy, deleteAction as deleteSecurityStudyAction, deleteRisk as deleteSecurityStudyRisk, deleteZone as deleteSecurityStudyZone, getStudy as getSecurityStudy, listStudies as listSecurityStudies, updateAction as updateSecurityStudyAction, updateRisk as updateSecurityStudyRisk, updateStudy as updateSecurityStudy, updateZone as updateSecurityStudyZone } from '../verticales/estudios-seguridad/estudios.js';
+import { addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys, updateCharacterizationRow } from '../verticales/estudios-seguridad/caracterizacion.js';
 import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
@@ -3476,6 +3477,13 @@ securityStudyRoute('delete', '/api/estudios-seguridad/:id/riesgos/:riskId', (db,
 securityStudyRoute('post', '/api/estudios-seguridad/:id/acciones', (db, req, profile) => addSecurityStudyAction(db, req.params.id, req.body || {}, profile));
 securityStudyRoute('patch', '/api/estudios-seguridad/:id/acciones/:actionId', (db, req, profile) => updateSecurityStudyAction(db, req.params.id, req.params.actionId, req.body || {}, profile));
 securityStudyRoute('delete', '/api/estudios-seguridad/:id/acciones/:actionId', (db, req, profile) => deleteSecurityStudyAction(db, req.params.id, req.params.actionId, profile));
+// Tramo 5: caracterización de la sede — estadística de delitos, contactos y dispositivo (este, sembrable desde Avancys).
+for (const section of ['estadisticas', 'contactos', 'dispositivo']) {
+  securityStudyRoute('post', `/api/estudios-seguridad/:id/${section}`, (db, req) => addCharacterizationRow(db, req.params.id, section, req.body || {}));
+  securityStudyRoute('patch', `/api/estudios-seguridad/:id/${section}/:rowId`, (db, req) => updateCharacterizationRow(db, req.params.id, section, req.params.rowId, req.body || {}));
+  securityStudyRoute('delete', `/api/estudios-seguridad/:id/${section}/:rowId`, (db, req) => deleteCharacterizationRow(db, req.params.id, section, req.params.rowId));
+}
+securityStudyRoute('post', '/api/estudios-seguridad/:id/dispositivo-desde-avancys', (db, req) => seedPostsFromAvancys(db, req.params.id, crearLectorAvancys()));
 // Tramo 2: fotos y evidencias. Permiso firmado para subir → el navegador sube → el servidor verifica y registra.
 securityStudyRoute('post', '/api/estudios-seguridad/:id/evidencias/upload-url', (db, req) => requestSecurityStudyEvidenceUpload(db, req.params.id, req.body || {}));
 securityStudyRoute('post', '/api/estudios-seguridad/:id/evidencias', (db, req, profile) => completeSecurityStudyEvidence(db, req.params.id, req.body || {}, profile));

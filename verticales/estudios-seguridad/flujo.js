@@ -70,10 +70,20 @@ export function buildSnapshot(detail) {
       sede: { fuente: study.site_source, referencia: study.site_ref, nombre: study.site_name, ciudad: study.site_city, direccion: study.site_address },
       alcance: study.scope, fecha_visita: study.visit_date, preparado_por: study.prepared_by,
     },
+    // Tramo 5 (migración 187): la caracterización de la sede, como la trae el capítulo I-A del informe real.
+    caracterizacion: {
+      descripcion_cliente: study.client_description ?? null, ubicacion: study.location_description ?? null,
+      latitud: study.latitude ?? null, longitud: study.longitude ?? null,
+      contexto_externo: study.external_context ?? null, grupos_delincuenciales: study.criminal_groups ?? null,
+      contexto_interno: study.internal_context ?? null, fuentes: Array.isArray(study.context_sources) ? study.context_sources : [],
+    },
+    estadistica: (detail.characterization?.estadisticas || []).map(row => ({ delito: row.crime, cantidad: row.count, fuente: row.source, fecha_corte: row.cutoff_date })),
+    contactos: (detail.characterization?.contactos || []).map(row => ({ tipo: row.kind, entidad: row.entity, detalle: row.detail, telefono: row.phone, correo: row.email })),
+    dispositivo: (detail.characterization?.dispositivo || []).map(row => ({ fuente: row.source, referencia: row.source_ref, servicio: row.name, modalidad: row.modality, horario: row.schedule, armado: row.armed, cantidad: row.quantity })),
     zonas: detail.zones.map(zone => ({ id: zone.id, nombre: zone.name, descripcion: zone.description, orden: zone.position })),
     riesgos: detail.risks.map(risk => ({
       id: risk.id, numero: risk.number, zona: risk.zone_id, catalogo: risk.catalog_risk_code, proceso: risk.process_code,
-      riesgo: risk.title, causas: risk.causes, consecuencias: risk.consequences,
+      riesgo: risk.title, proceso_cliente: risk.client_process ?? null, factor: risk.risk_factor ?? null, causas: risk.causes, consecuencias: risk.consequences,
       probabilidad: risk.probability, impacto_empresa: risk.impact_company, impacto_personas: risk.impact_people,
       control_existente: { descripcion: risk.current_control, calidad: risk.current_quality, eficacia: risk.current_efficacy, eficiencia: risk.current_efficiency },
       control_propuesto: { descripcion: risk.proposed_control, calidad: risk.proposed_quality, eficacia: risk.proposed_efficacy, eficiencia: risk.proposed_efficiency },
@@ -84,7 +94,7 @@ export function buildSnapshot(detail) {
       fecha_compromiso: action.due_date, prioridad: action.priority, estado: action.status,
     })),
     evidencias: (detail.evidence || []).map(item => ({
-      id: item.id, riesgo: item.risk_id, zona: item.zone_id, tipo: item.kind, archivo: item.file_name, mime: item.mime_type,
+      id: item.id, riesgo: item.risk_id, zona: item.zone_id, proposito: item.purpose || 'evidencia', tipo: item.kind, archivo: item.file_name, mime: item.mime_type,
       bytes: item.size_bytes, sha256: item.sha256, ruta: item.storage_path, leyenda: item.caption, fecha: item.taken_on,
     })),
   };

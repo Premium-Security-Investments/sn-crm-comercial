@@ -8,7 +8,7 @@
 // Aquí también se decide dónde queda el paquete en SharePoint: siempre bajo 99_Del_CRM/Estudios_de_Seguridad/, con
 // nombres limpios de los caracteres que SharePoint no admite.
 
-import { PLANTILLAS } from './plantilla.js';
+import { ESCALAS, PLANTILLAS, controlWord } from './plantilla.js';
 
 export const ARCHIVE_BASE_PATH = '99_Del_CRM/Estudios_de_Seguridad';
 const NIVEL = Object.freeze({ bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico' });
@@ -27,7 +27,11 @@ const longDate = value => {
   const date = new Date(String(value).length === 10 ? `${value}T12:00:00Z` : value);
   return new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeZone: 'America/Bogota' }).format(date);
 };
-const rating = control => (control?.calidad ? ` (calidad ${control.calidad}, eficacia ${control.eficacia}, eficiencia ${control.eficiencia})` : '');
+// Calificación en las palabras que usa la casa con sus clientes ("Medianamente confiable · Eficaz · Eficiente").
+const rating = control => (control?.calidad ? ` (${[controlWord('calidad', control.calidad), controlWord('eficacia', control.eficacia), controlWord('eficiencia', control.eficiencia)].join(' · ')})` : '');
+const MODALIDAD = Object.freeze({ vigilancia: 'Vigilancia', guia_canino: 'Guía canino', supervision: 'Supervisión', monitoreo: 'Monitoreo', otro: 'Otro' });
+const CONTACTO = Object.freeze({ apoyo: 'Entidad de apoyo', empresa: 'Seguridad Nacional', interventor: 'Interventor del contrato' });
+const PROPOSITO = Object.freeze({ mapa: 'Mapa', logo: 'Logo' });
 
 /** Nombre de carpeta o archivo apto para SharePoint: sin \ / : * ? " < > | # %, sin puntos ni espacios al final. */
 export function sharepointSafeName(value, max = 120) {
@@ -52,7 +56,7 @@ export function archiveFileNames(snapshot, version) {
     json: `Estudio_${code}_v${version}.json`,
     evidence: snapshot.evidencias.map((item, index) => ({
       id: item.id,
-      name: `evidencias/${String(index + 1).padStart(2, '0')}_${item.riesgo && riskNumber.has(item.riesgo) ? `R${riskNumber.get(item.riesgo)}` : 'General'}_${sharepointSafeName(item.archivo, 80)}`,
+      name: `evidencias/${String(index + 1).padStart(2, '0')}_${item.riesgo && riskNumber.has(item.riesgo) ? `R${riskNumber.get(item.riesgo)}` : PROPOSITO[item.proposito] || 'General'}_${sharepointSafeName(item.archivo, 80)}`,
     })),
   };
 }
@@ -85,18 +89,59 @@ export function buildStudyReport(snapshot, meta) {
     ['Huella de la versión (sha256)', meta.sha256],
   ].map(row => row.map(cell => clip(cell))) });
 
-  heading('2. Alcance');
+  // Capítulo de caracterización, como el I-A del informe real de HADA. Cada parte sale sólo si se capturó.
+  const caracter = snapshot.caracterizacion || {};
+  const stats = snapshot.estadistica || [];
+  const contacts = snapshot.contactos || [];
+  const posts = snapshot.dispositivo || [];
+  let section = 1;
+  const next = title => heading(`${++section}. ${title}`);
+
+  next('Alcance');
   paragraph(clip(study.alcance, 3800) || 'Sin alcance registrado.');
 
-  heading('3. Metodología');
-  paragraph(`Metodología ${study.metodologia}. Cada riesgo se califica con probabilidad de 1 a 5 y con dos impactos de 1 a 5 —sobre la empresa o sede y sobre las personas—, y cuenta el mayor. El control se califica por calidad, eficacia y eficiencia (de 1 a 5, efectividad = producto / 125, con tope de 0,9) y reduce la probabilidad una sola vez. Niveles: 1–5 bajo, 6–10 moderado, 11–15 alto, 16–25 crítico. El riesgo actual considera el control existente; el residual, además, el control propuesto.`);
+  if (caracter.descripcion_cliente || caracter.ubicacion || caracter.latitud != null) {
+    next('El cliente y la sede');
+    if (caracter.descripcion_cliente) paragraph(clip(caracter.descripcion_cliente, 3800));
+    if (caracter.ubicacion) { blocks.push({ kind: 'heading', text: 'Ubicación y vía de aproximación' }); paragraph(clip(caracter.ubicacion, 3800)); }
+    if (caracter.latitud != null && caracter.longitud != null) paragraph(`Coordenadas: ${caracter.latitud}, ${caracter.longitud}.`);
+  }
 
-  heading('4. Resumen de la valoración');
+  if (caracter.contexto_externo || stats.length || caracter.grupos_delincuenciales) {
+    next('Contexto externo');
+    if (caracter.contexto_externo) paragraph(clip(caracter.contexto_externo, 3800));
+    if (stats.length) {
+      blocks.push({ kind: 'table', header: ['Delito', 'Cantidad', 'Fuente', 'Fecha de corte'], rows: stats.slice(0, 40).map(row => [clip(row.delito, 160), String(row.cantidad), clip(row.fuente, 300), row.fecha_corte ? longDate(row.fecha_corte) : '—']) });
+    }
+    if (caracter.grupos_delincuenciales) { blocks.push({ kind: 'heading', text: 'Grupos y organizaciones delincuenciales' }); paragraph(clip(caracter.grupos_delincuenciales, 3800)); }
+    if (caracter.fuentes?.length) blocks.push({ kind: 'list', items: caracter.fuentes.slice(0, 15).map(fuente => clip(`Fuente: ${fuente.nombre}${fuente.fecha ? ` (${longDate(fuente.fecha)})` : ''}${fuente.url ? ` · ${fuente.url}` : ''}`, 600)) });
+  }
+
+  if (caracter.contexto_interno) { next('Contexto interno'); paragraph(clip(caracter.contexto_interno, 3800)); }
+
+  if (posts.length) {
+    next('Dispositivo de seguridad');
+    blocks.push({ kind: 'table', header: ['Servicio', 'Modalidad', 'Horario', 'Armado', 'Cantidad'], rows: posts.slice(0, 40).map(row => [
+      clip(row.servicio, 200), MODALIDAD[row.modalidad] || row.modalidad, clip(row.horario) || '—', row.armado === true ? 'Sí' : row.armado === false ? 'No' : '—', String(row.cantidad),
+    ]) });
+  }
+
+  const clientProcesses = [...new Set(risks.map(risk => risk.proceso_cliente).filter(Boolean))];
+  if (clientProcesses.length) {
+    next('Procesos analizados');
+    paragraph(`Se analizaron ${clientProcesses.length} procesos del cliente, con ${risks.length} riesgos identificados.`);
+    blocks.push({ kind: 'list', items: clientProcesses.slice(0, 40).map(item => clip(item, 120)) });
+  }
+
+  next('Metodología');
+  paragraph(`Metodología ${study.metodologia}. Cada riesgo se califica con una probabilidad (${ESCALAS.probabilidad.join(', ')}) y dos impactos (${ESCALAS.impacto.join(', ')}), de 1 a 5: sobre la empresa o sede y sobre las personas; cuenta el mayor. El control se califica por calidad, eficacia y eficiencia, de 1 a 5 (efectividad = producto / 125, con tope de 0,9), y reduce la probabilidad una sola vez. Niveles: 1–5 bajo, 6–10 moderado, 11–15 alto, 16–25 crítico. El riesgo actual considera el control existente; el residual, además, el control propuesto.`);
+
+  next('Resumen de la valoración');
   const count = (key, nivel) => risks.filter(risk => risk.valoracion[key].nivel === nivel).length;
   blocks.push({ kind: 'table', header: ['Nivel', 'Riesgo actual', 'Riesgo residual'], rows: NIVEL_ORDER.map(nivel => [NIVEL[nivel], String(count('actual', nivel)), String(count('residual', nivel))]) });
   paragraph(`Total de riesgos valorados: ${risks.length}.`);
 
-  heading('5. Matriz de riesgos');
+  next('Matriz de riesgos');
   const matrix = risks.slice(0, 80);
   if (matrix.length) {
     blocks.push({ kind: 'table', header: ['N.º', 'Riesgo', 'Zona', 'Inherente', 'Actual', 'Residual'], rows: matrix.map(risk => [
@@ -106,11 +151,12 @@ export function buildStudyReport(snapshot, meta) {
   } else paragraph('El estudio no tiene riesgos registrados.');
   if (risks.length > matrix.length) paragraph(`La matriz muestra los primeros ${matrix.length} riesgos; el detalle completo está en el archivo del estudio (JSON) de esta versión.`);
 
-  heading('6. Detalle por riesgo');
+  next('Detalle por riesgo');
   for (const risk of risks.slice(0, 60)) {
     blocks.push({ kind: 'heading', text: clip(`R${risk.numero} · ${risk.riesgo}`, 300) });
     blocks.push({ kind: 'list', items: [
-      `Zona: ${zones.get(risk.zona) || 'sin zona'}`,
+      `Escenario físico: ${zones.get(risk.zona) || 'sin zona'}`,
+      `Proceso del cliente: ${risk.proceso_cliente || 'no registrado'}${risk.factor ? ` · Factor de riesgo: ${risk.factor}` : ''}`,
       `Catálogo: ${risk.catalogo ? `${risk.catalogo} · ${catalog.get(risk.catalogo) || ''}` : 'riesgo propio'}${risk.proceso ? ` · proceso ${risk.proceso} · ${processes.get(risk.proceso) || ''}` : ''}`,
       `Causas: ${clip(risk.causas) || 'no registradas'}`,
       `Consecuencias: ${clip(risk.consecuencias) || 'no registradas'}`,
@@ -122,7 +168,7 @@ export function buildStudyReport(snapshot, meta) {
   }
   if (risks.length > 60) paragraph(`El detalle de los riesgos R${risks[60].numero} en adelante está en el archivo del estudio (JSON) de esta versión.`);
 
-  heading('7. Plan de tratamiento');
+  next('Plan de tratamiento');
   const actions = snapshot.acciones.filter(action => action.estado !== 'descartada').slice(0, 80);
   if (actions.length) {
     blocks.push({ kind: 'table', header: ['Riesgo', 'Acción', 'Responsable', 'Fecha compromiso', 'Prioridad', 'Estado'], rows: actions.map(action => [
@@ -131,10 +177,15 @@ export function buildStudyReport(snapshot, meta) {
     ]) });
   } else paragraph('No hay acciones registradas.');
 
-  heading('8. Evidencias');
+  if (contacts.length) {
+    next('Entidades de apoyo y contactos');
+    blocks.push({ kind: 'table', header: ['Tipo', 'Entidad', 'Detalle', 'Teléfono', 'Correo'], rows: contacts.slice(0, 60).map(row => [CONTACTO[row.tipo] || row.tipo, clip(row.entidad, 160), clip(row.detalle) || '—', clip(row.telefono) || '—', clip(row.correo) || '—']) });
+  }
+
+  next('Evidencias');
   if (snapshot.evidencias.length) {
     blocks.push({ kind: 'table', header: ['Archivo', 'Riesgo', 'Tipo', 'Huella (sha256)'], rows: snapshot.evidencias.slice(0, 80).map(item => [
-      clip(item.archivo, 200), riskNumber.has(item.riesgo) ? `R${riskNumber.get(item.riesgo)}` : 'General', item.tipo === 'documento' ? 'Documento' : 'Foto', String(item.sha256).slice(0, 16),
+      clip(item.archivo, 200), riskNumber.has(item.riesgo) ? `R${riskNumber.get(item.riesgo)}` : PROPOSITO[item.proposito] || 'General', item.tipo === 'documento' ? 'Documento' : 'Foto', String(item.sha256).slice(0, 16),
     ]) });
     paragraph('Las fotos y documentos están en la carpeta "evidencias", junto a este informe, con la misma huella.');
   } else paragraph('No se adjuntaron fotos ni documentos.');

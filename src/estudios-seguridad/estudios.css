@@ -69,6 +69,11 @@
 .es-proposal blockquote{margin:0;padding:6px 10px;border-left:3px solid #d8ccf5;color:#40516b;font-style:italic}
 .es-archive{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}
 .es-archive a{font-weight:700;color:#1b64f2}
+.es-characterization{display:flex;flex-direction:column;gap:10px}
+.es-toggle{font-size:16px;color:#172033}
+.es-toggle small{font-weight:500}
+.es-rows{display:flex;flex-direction:column;gap:8px;border-top:1px solid #e2e8f0;padding-top:10px}
+.es-rows td:last-child{text-align:left;white-space:normal}
 @media (max-width:720px){
   .es-grid-2,.es-grid-3,.es-grid-4{grid-template-columns:1fr}
   .es-inline{max-width:none}
