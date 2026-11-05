@@ -1,298 +1,211 @@
 # Estudios de Seguridad Física en SIIO — plan del MVP
 
-- **Fecha:** 2026-11-04
-- **Pedido por:** Juan Botero
-- **Estado:** propuesto. No hay código, migraciones ni despliegue. Este documento es solo el plan.
-- **Objetivo:** que un estudio de seguridad física se haga de principio a fin en SIIO, y que el Excel
-  quede solo como formato para importar lo histórico y para entregar copias.
+- **Creado:** 2026-11-04. **Replaneado:** 2026-11-05, con el informe real de HADA International (PDF de 39 páginas).
+- **Pedido por:** Juan Botero.
+- **Objetivo (Juan, 2026-11-05):** "que quienes hacen estos estudios de ahora en adelante puedan capturar y registrar la
+  información desde la plataforma o incluso desde un agente de texto, y que la información vaya quedando registrada y
+  se genere el estudio de manera más automática".
+  - Los Excel sirven para entender qué se busca; no se importan ni siguen existiendo.
+- **Criterio de salida del MVP:** un estudio real, de una sede nueva, hecho de punta a punta en SIIO, y cuyo informe el
+  analista entregaría al cliente sin rehacerlo en Word. "De punta a punta" es captura, revisión, aprobación, informe y
+  archivo.
 
-## 0. El objetivo, en palabras de Juan (2026-11-05)
+## 1. Lo construido (verificado al 2026-11-05)
 
-> "El objetivo es que quienes hacen estos estudios de ahora en adelante puedan capturar y registrar la información
-> desde la plataforma o incluso desde un agente de texto, y que la información vaya quedando registrada y se
-> genere el estudio de manera más automática."
+| Tramo | Qué hace | PR | Migración | Estado |
+|---|---|---|---|---|
+| Metodología v1 | Cálculo único en el servidor (detalle abajo). Las variantes históricas solo sirven para recalcular Excel viejos. | #507 | — | desplegado |
+| 1. Registrar | Estudio con su cliente, sede, zonas, riesgos, controles y plan de acción (detalle abajo). | #507, #511 | 178 | desplegado |
+| 2. Evidencias | Fotos (JPG, PNG, WEBP, HEIC) y PDF de hasta 15 MB, por riesgo o del estudio. El servidor reconoce el tipo por los bytes y guarda el sha256. | #509 | 179 | desplegado |
+| Nota de campo | Vig-IA (AGT-003, `agt003.estudios-nota-campo`, 60 al día) propone zonas y riesgos citando la nota. No califica: la persona califica y confirma. | #514 | 181 | desplegado |
+| 3. Revisión y aprobación | Preparador → revisor → aprobador. Nadie revisa ni aprueba lo suyo, y eso lo impiden el servidor y la base. La versión se congela con su foto JSON y sha256; reabrir da la versión N+1. | #512 | 180 | desplegado |
+| 4. Informe y archivo | Al aprobar se encola el archivo. El servidor de tareas arma el informe Word y PDF con membrete desde la versión congelada, y sube el informe, el JSON y las evidencias a `99_Del_CRM/Estudios_de_Seguridad/<estudio>/v<N>/`. | #526 | 186 | desplegado; el trabajo `estudios-seguridad-archivo` está instalado y corriendo |
 
-Consecuencias para el orden de trabajo:
+**Detalle de la metodología v1:**
+- impacto doble, sobre la empresa y sobre las personas; cuenta el mayor;
+- control = C·E·Ef/125, con tope de 0,9; baja la probabilidad una sola vez;
+- 4 niveles.
 
-- **Lo primero es la captura, no la importación.** El tramo 1 es crear un estudio y registrar sede, zonas,
-  riesgos, controles y fotos desde la plataforma, para el estudio nuevo de la próxima visita.
-- **El agente de texto es otra puerta de entrada a los mismos datos.** El inspector escribe o dicta lo que vio
-  ("en la bodega 3 la malla está rota, no hay cámara"); el agente lo convierte en una propuesta de zona, riesgo,
-  control o evidencia; la persona la confirma y queda registrada. Es el patrón del chat de Vig-IA comercial
-  (AGT-003): el agente propone y no califica ni aprueba solo.
-- **El estudio se genera, no se escribe.** Matriz, plan de acción e informe salen de lo registrado.
-- **Los Excel no se importan ni siguen existiendo** (Juan, 2026-11-05: "los Excel son la base para entender lo
-  que se busca con ellos, pero no es que los Excel sigan existiendo"). Cancha Horizontes, HADA y EXCO sirven
-  de referencia de diseño: qué campos lleva un estudio, cómo es la ficha por riesgo, qué fotos se toman y qué
-  trae el plan de acción. También sirven de casos de prueba del cálculo. No hay importador en el MVP, y las
-  secciones 5 y 9 (F2) de este plan quedan sin efecto. La matriz sale como parte del informe, no como un Excel
-  de trabajo.
+**Detalle del tramo 1:**
+- Permiso `estudios_seguridad`.
+- El cliente sale de Avancys o del CRM; no se escribe a mano.
+- La sede es un puesto de Avancys. Si no está, se escribe y queda marcada.
+- Los riesgos salen del catálogo del maestro o son propios.
 
-Orden de tramos (sustituye al de las fases F2 a F7 en lo que choque):
+**Operativo: todavía no.** Ningún usuario tiene el permiso y no se ha hecho ningún estudio real. Juan crea los usuarios
+(preparador, revisor y aprobador) el 2026-11-06.
 
-1. Captura en la plataforma: estudio, sede, zonas, riesgos, controles, acciones y fotos, con el cálculo de la v1.
-2. Captura por agente de texto, con confirmación humana.
-3. Revisión, aprobación y versión congelada.
-4. Generación del informe (con su matriz y su plan de acción), archivo en SharePoint y seguimiento en SIIO.
+## 2. Lo que enseña el informe real de HADA
 
-## 1. Lo que muestran los documentos de referencia
+`ESTUDIO_DE_SEGURIDAD_HADA_-_2026_-_2.0.pdf`, adjunto de Juan del 2026-11-05:
+- Título: "Plan Estratégico de Seguridad y Gestión de Riesgos", de octubre de 2026.
+- Lo firma el analista de seguridad.
+- Es **el producto que el cliente recibe**, y el informe que hoy genera SIIO se queda corto frente a él.
 
-Revisé los dos archivos de la carpeta de OneDrive "Estudios de Seguridad" (personal de Juan Botero),
-bajados por Graph el 2026-11-04:
+### 2.1 Estructura del informe que se entrega
 
-| Archivo | sha256 |
+1. **Portada:** logo del cliente, mes y año, "Plan Estratégico de Seguridad y Gestión de Riesgos", "elaborado por la
+   Dirección Nacional de Operaciones y Gestión de Riesgos" y el nombre de la empresa.
+2. **Índice.**
+3. **Introducción:**
+   - descripción del cliente;
+   - objetivo, objetivos específicos y alcance;
+   - marco legal: Decreto 356 de 1994, Decreto 1072 de 2015, ISO 45001:2018, ISO 31000:2018, Ley 1581 de 2012 y
+     Decreto 1377 de 2013;
+   - metodología "Management Risk": matriz cruzada de probabilidad × impacto.
+4. **Capítulo I-A, caracterización:**
+   - contexto externo e interno, con un **mapa satelital** que marca las instalaciones (bodegas, fases);
+   - ubicación y vía de aproximación: distancias a puertos, aeropuerto y ciudad, y coordenadas;
+   - situación delincuencial, con **fuentes** (INDEPAZ y alertas tempranas de la Defensoría);
+   - **estadística de delitos** de la Policía Nacional, con fecha de entrega;
+   - grupos delincuenciales del sector;
+   - **entidades de apoyo** con teléfonos: Policía, Gaula, Bomberos, Defensa Civil, Cruz Roja y ambulancias;
+   - **dispositivo de seguridad**: servicios, horario, si son armados y guía canino;
+   - procesos internos del cliente analizados.
+5. **Capítulo I-B, diagnóstico:**
+   - lista de los riesgos;
+   - gráfica del riesgo actual contra el residual, por riesgo;
+   - evaluación general;
+   - **una ficha por riesgo**, con:
+     - escenario físico, proceso y factor de riesgo;
+     - calidad, eficacia y eficiencia en palabras, y la efectividad;
+     - magnitud actual y residual, con su nivel;
+     - **foto de evidencia**;
+     - **mapa de calor 5×5 con la posición actual (Rn) y la residual (RnR)**;
+     - controles actuales, causas y recomendaciones.
+6. **Medición comparativa:** por cada riesgo, el actual, el residual, la reducción en puntos y en porcentaje, y el
+   resultado ("disminuye" o "se mantiene").
+7. **Capítulo I-C, plan estratégico** en tres ejes:
+   - reducir la probabilidad: políticas de control de personal y mejoras;
+   - mitigar las consecuencias: protocolos de atención; planes de emergencia, contingencia y continuidad;
+   - mantener y controlar la criticidad: indicadores y comités.
+8. **Mapa de criticidad general**, actual y residual: matriz 5×5 con todos los riesgos ubicados.
+9. **Escalonamiento o cadena de mando**, con los teléfonos de Seguridad Nacional y del interventor del contrato.
+10. **Capítulo II:** informes, registro y comunicación; comités bimensuales; cronograma de seguimiento.
+11. **Firma del analista de seguridad** que hizo el estudio.
+
+### 2.2 Lo que cambia en el diseño
+
+- **El proceso de cada riesgo es un proceso del cliente**, como Gestión Humana, Comercio Exterior o Producción. No es
+  el catálogo de procesos de vigilancia P01–P22 del documento maestro, y se necesitan los dos:
+  - el proceso del cliente se escribe en cada estudio;
+  - el del catálogo queda como clasificación técnica opcional.
+- **Falta el "factor de riesgo"**, por ejemplo "Humano – Procedimental – Estratégico".
+- **Las calificaciones se leen en palabras.** Verificado contra los Excel:
+  - 2 = "Poco confiable / eficaz / eficiente";
+  - 3 = "Medianamente…";
+  - 4 = "Confiable / Eficaz / Eficiente";
+  - para 1 y 5 no hay ejemplo: `por confirmar`.
+- **Las escalas que ve el cliente** son las de la casa:
+  - probabilidad: Muy baja, Baja, Media, Alta, Muy alta;
+  - impacto: Insignificante, Leve, Moderado, Grave, Catastrófico.
+
+  La v1 usa hoy los nombres del maestro (Rara…; Menor…Crítico). Se cambian **los nombres, no los números ni la
+  fórmula**.
+- **La caracterización de la sede es parte del estudio**, no un texto suelto. Incluye contexto, fuentes, estadística,
+  grupos, entidades de apoyo, dispositivo y mapa. Varias partes salen de fuentes que ya existen:
+  - el dispositivo, de los puestos del contrato en Avancys;
+  - los teléfonos de Seguridad Nacional, de un directorio de la empresa.
+- **El informe lleva las fotos y los mapas de calor dentro.** El generador con membrete de hoy no acepta imágenes, así
+  que hay que ampliarlo con imágenes embebidas y celdas de color, sin perder su seguridad: el documento sigue entrando
+  como datos, sin XML.
+- **Lo que no cambia:**
+  - la ficha por riesgo coincide con lo que ya se captura: zona = escenario físico; causas; controles;
+    recomendaciones = control propuesto + plan de acción; foto;
+  - la metodología v1.
+
+### 2.3 Errores del PDF que el sistema ya evita o debe evitar
+
+- La evaluación general quedó cortada: "la manifestación del riesgo actual es" y nada más.
+- Dice "Efectividad: Muy baja" en controles calificados como eficaces y eficientes (R10).
+- El residual de R23 está rotulado "R23", no "R23R". R22 tiene dos causas con el número 3.
+- La gráfica y la matriz usan la fórmula que cuenta el control dos veces (ver la decisión v1).
+
+## 3. Pendientes del plan anterior
+
+| Pendiente | Decisión |
 |---|---|
-| `CANCHA_HORIZONTES_MATRIZ_RIESGOS_2026.xlsx` (208.639 B) | `6f1ef67c443e2492fac7e0f9fab2448dbee718c218f5d00a6e704a4958fe206d` |
-| `DOCUMENTO MAESTRO DE RIESGOS ESU 2026.docx` (779.350 B) | `cff1ca17f8787c5040b0d1ad07c72e58ab5358c9840caead7335931e1275c887` |
+| Acciones aprobadas → Seguimiento gerencial (`siio_followups`) | Sigue. Es el tramo 8. |
+| IA que detecta inconsistencias | Sigue, ampliada con los errores de §2.3. Es el tramo 9. |
+| Metodología, plantillas y catálogo en tablas de la base | Se quedan en código versionado: cambiar la regla es una versión nueva con PR, no una edición suelta. |
+| Importador de Excel | Descartado por decisión de Juan (2026-11-05). |
+| Matriz en Excel como salida | Descartada: la matriz va dentro del informe y en el JSON de la versión. |
+| Validación de la v1 por un asesor externo | Sigue pendiente (Juan lo está pidiendo). No bloquea, porque la metodología tiene versión. |
+| Retención y acceso de fotos con personas o menores | Sigue `por confirmar` antes de hacer estudios en colegios o en escenarios con menores. |
 
-### 1.1 Matriz de Cancha Horizontes (31 hojas)
+## 4. Siguientes tramos
 
-Estructura: `HOJA DE TRABAJO` (25 riesgos), `Plan de acción`, `Estadisticas`, una ficha por riesgo
-(`R1`…`R25`), un mapa de calor (`Riesgo Act Cs Res`), unas listas sueltas (`Hoja1`) y
-`ALCANCE Y CRITERIOS`.
+Cada tramo es un PR con pruebas, con la migración aplicada antes de fusionar y con su handoff.
 
-**La metodología está en las fórmulas, y es consistente.** Volví a calcular los 25 riesgos fuera del
-Excel y coinciden todos:
+**5. Lo que falta capturar.**
+- **Entrega:**
+  - proceso del cliente y factor de riesgo en cada riesgo;
+  - caracterización de la sede: contexto externo e interno, fuentes, estadística de delitos (tabla), grupos, entidades
+    de apoyo (tabla de contactos), vía de aproximación, coordenadas y mapa (como evidencia "mapa");
+  - dispositivo de seguridad traído de los puestos del contrato en Avancys, con su fuente y editable;
+  - logo del cliente (evidencia "logo");
+  - escalas con los nombres de la casa y calificaciones en palabras.
+- **Prueba de cierre:** un estudio de prueba con todos los capítulos llenos, y el informe toma cada dato de su lugar.
 
-- Calificación del control = calidad × eficacia × eficiencia / 125 (cada factor de 1 a 5).
-- Probabilidad actual = ⌈P × (1 − control actual)⌉.
-- Magnitud = probabilidad × impacto.
-- Probabilidad residual = máx(1, ⌈P actual × (1 − control propuesto)⌉), con el impacto sin cambios.
-- Aceptabilidad: menos de 7 es aceptable, de 7 a 14 tolerable, 15 o más inaceptable.
+**6. Informe al nivel del de HADA.**
+- **Entrega:**
+  - generador con membrete ampliado: imágenes embebidas, celdas de color y saltos de página;
+  - portada, índice, introducción y marco legal (texto fijo de la plantilla);
+  - caracterización, lista de riesgos y gráfica actual/residual;
+  - fichas con foto y mapa 5×5;
+  - medición comparativa, plan estratégico en tres ejes y mapa de criticidad general;
+  - cadena de mando y firma del analista que preparó el estudio.
+- **Prueba de cierre:** el informe de un estudio de prueba con los 23 riesgos de HADA sale completo y sin las fallas de
+  §2.3, y lo revisa el analista.
 
-**La identidad del documento está contaminada:**
+**7. Piloto con un estudio real.**
+- **Entrega:** los usuarios que Juan crea el 2026-11-06 hacen un estudio real completo, en el celular y en el
+  computador. Se corrige lo que salga.
+- **Prueba de cierre:** el criterio de salida del MVP (arriba).
 
-- El título del plan de acción dice "CRONOGRAMA DE CUMPLIMIENTO AL PLAN ESTRATÉGICO **PANASA**".
-- `ALCANCE Y CRITERIOS` dice "Unidad Deportiva **Barrio Cristóbal**" y "Unidad Deportiva **La Floresta**".
-  Recién en la fila 35 nombra a Cancha Horizontes.
-- Las filas 28 a 43 del plan de acción tienen `#REF!`, ceros y fechas de "octubre de 2050" a "2065".
-- Las filas 28 a 42 de la hoja de trabajo son 15 filas fantasma: valen cero y todas tienen el código
-  `R17R`. El mapa de calor general solo muestra ese `R17R`.
-- En la columna "PROCESO" está el nombre de la sede, no un proceso.
-- Las fichas tienen `G2 = #REF!` y el recuadro "FOTO DE EVIDENCIA" vacío. El libro trae una sola imagen.
+**8. Seguimiento gerencial.**
+- **Entrega:** al aprobar, cada acción con responsable y fecha crea un seguimiento en `siio_followups`, con el origen
+  nuevo `estudio_seguridad`. Cerrar el seguimiento no cierra el riesgo.
+- **Prueba de cierre:** los seguimientos aparecen solo después de aprobar, y una sola vez.
 
-**El contenido es plantilla, no hallazgo.** La propia hoja de alcance lo advierte: las causas son
-"escenarios posibles, no hallazgos verificados", los controles son "medidas de referencia, no ejecución
-confirmada" y las valoraciones son "estimaciones de trabajo sujetas a contraste con inventario y visita
-técnica". Se nota en los datos:
+**9. Revisor IA de inconsistencias.**
+- **Entrega:**
+  - primero, reglas fijas: riesgo alto sin acción, calificaciones idénticas, nombre de otro cliente en los textos,
+    residual que no baja, foto faltante en riesgos altos, efectividad incoherente;
+  - después, redacción asistida del plan estratégico y de la evaluación general, siempre como propuesta.
+- **Prueba de cierre:** el revisor no cambia estados ni calificaciones (prueba de servidor).
 
-- Los 25 controles actuales tienen la misma calificación (2/2/2) y los 25 propuestos también (4/4/4).
-- Los textos siguen un molde repetido ("2. Asignar responsable de <control>. 3. Registrar la aplicación
-  de <control>…").
-- El seguimiento de los 25 riesgos dice "Pendiente de validación" y la fecha, "Por programar".
+**Orden:**
+- El 5 y el 6 van primero: sin ellos el analista tendría que rehacer el informe en Word, que es justo lo que se quiere
+  dejar.
+- El 7 arranca en cuanto existan los usuarios, sin esperar al 6. Lo que el piloto encuentre entra al 6.
 
-Consecuencia de diseño: al importar, todo entra como **propuesto, sin verificar**. Nada del Excel
-histórico entra como control existente comprobado.
+## 5. Principios (sin cambios)
 
-### 1.2 Documento maestro ESU 2026
+1. SIIO es la fuente de verdad de los datos. SharePoint guarda los originales, las evidencias y los informes. Word y
+   PDF son salidas.
+2. No se guardan resultados tecleados: se guardan los insumos y el servidor calcula.
+3. Se aprueba una versión, no el estudio vivo.
+4. Quien prepara no revisa ni aprueba lo suyo.
+5. La IA propone; no califica, no aprueba y no cierra riesgos.
+6. Una plantilla por tipo de estudio. ESU, CCTV y seguridad electrónica llegan después como plantillas nuevas.
+7. Clientes, sedes y puestos vienen de sus fuentes (Avancys, CRM). No se escriben a mano, salvo en un prospecto, y en
+   ese caso quedan marcados.
+8. Gerencia ve solo lo aprobado.
 
-Es la base técnica del contrato ESU (INDER, Plaza Mayor e instituciones educativas). Aporta lo que la
-matriz no tiene:
+## 6. Riesgos
 
-- marco normativo (NTC-ISO 31000:2018, IEC/ISO 31010, Decreto Ley 356 de 1994);
-- **22 procesos** (P01 a P22), cada uno con su objetivo de control y su tipología;
-- **26 riesgos de catálogo** (R01 a R26), cada uno asociado a procesos;
-- cinco tipologías (T1 a T5), con sus matrices priorizadas e indicadores de seguimiento;
-- la delimitación de lo que la vigilancia controla y lo que solo reporta;
-- la cadena que exige: proceso → punto crítico → riesgo → control → indicador → evidencia → riesgo
-  residual.
+- **Sesión de Microsoft delegada (de Juan).** El archivo en SharePoint depende de ella. Si vence, el pedido queda
+  fallido con su motivo y se reintenta. La salida definitiva es una identidad de aplicación con consentimiento de
+  administrador. `por confirmar`
+- **Puente de Vig-IA (AGT-003).** La nota de campo depende de su sesión de Claude, que vence. Si no responde, se
+  registra a mano.
+- **Metodología v1 sin validar por el asesor.** Si cambia, será una v2, y los estudios aprobados no se recalculan.
+- **Fotos con personas o menores:** la retención y el acceso están por definir.
 
-**Choca con la matriz en la metodología:**
+## 7. Historia
 
-| | Matriz Cancha Horizontes | Documento maestro |
-|---|---|---|
-| Riesgo inherente | P × I | P × máx(impacto A empresa, impacto B personas) |
-| Efecto del control | baja la **probabilidad**: ⌈P(1 − C·E·Ef/125)⌉ | baja la **magnitud**: inherente × (1 − eficacia de 0 a 0,9) |
-| Niveles | <7 / 7–14 / ≥15 (3 niveles) | 1–5 / 6–10 / 11–15 / 16–25 (4 niveles) |
-
-Con el mismo riesgo salen resultados distintos. El R21 (hurto de implementos, P4 × I4) da en la matriz
-16 inaceptable → 8 tolerable. Con el maestro y la misma eficacia (0,512) da 16 crítico → 7,8 moderado.
-
-**El sistema no puede tener dos fórmulas sin dueño.** La metodología se guarda como un dato versionado,
-y cada estudio queda amarrado a la versión con la que se calculó.
-
-**Decidido el 2026-11-04:** la metodología oficial es `instalaciones-fisicas-v1`. Mezcla las dos fuentes:
-
-- del maestro, el impacto doble y los cuatro niveles;
-- de la matriz, la calificación del control (con tope de 0,9) y que el control baje la probabilidad.
-
-Ver `docs/decisions/2026-11-04-estudios-seguridad-metodologia-v1.md`.
-
-### 1.3 Dos estudios reales: HADA International y EXCO Colombiana
-
-Los compartió Juan el 2026-11-04 por adjunto, no por SharePoint. Usan la misma plantilla de 31 hojas, pero
-son trabajo real, no plantilla:
-
-- las calificaciones de los controles varían de un riesgo a otro;
-- los procesos son de la empresa (gestión humana, TI, comercio exterior, producción);
-- HADA trae una foto de la visita por cada ficha de riesgo;
-- los planes de acción tienen fechas (de diciembre de 2026 a febrero de 2027).
-
-Lo que cambian para el diseño:
-
-- **Otra variante de fórmula, que cuenta el control dos veces.** Ver la decisión v1, sección "Hallazgo
-  posterior".
-- **Contaminación también en estudios reales.** El plan de acción de EXCO se titula "…PLAN ESTRATÉGICO
-  PANASA". EXCO tiene 28 filas vacías (R8 a R35) con el código `R1R` y fechas de "octubre de 2032"; el
-  archivo se llama "SEPT 2026", pero su encabezado dice "ENERO 2026".
-- **Un dato tecleado encima de la fórmula:** en EXCO R3 la probabilidad actual quedó mayor que la inherente.
-- **El alcance va más allá de la seguridad física.** HADA incluye riesgos de TI, comercio exterior y
-  seguridad y salud en el trabajo. La plantilla "Instalaciones físicas v1" los admite como procesos del
-  catálogo, pero conviene marcarlos como fuera del núcleo físico. `por confirmar`
-- **Las fotos son evidencia de verdad.** El importador debe extraer la imagen de cada ficha `R<n>` y vincularla
-  a su riesgo.
-
-## 2. Principios
-
-1. **SIIO es la fuente de verdad** de los datos estructurados y de los estados. SharePoint guarda los
-   originales, las evidencias y los informes finales. Word, PDF y Excel son salidas.
-2. **No se guardan resultados tecleados.** Se guardan los insumos (P, I, calificaciones). Magnitud,
-   nivel y residual se calculan con la versión de la metodología y quedan congelados en la versión
-   aprobada.
-3. **Se aprueba una versión, no el estudio vivo.** Una vez aprobada, la versión es inmutable. Corregir
-   algo abre la versión N+1.
-4. **Separación de funciones:** quien prepara no revisa ni aprueba su propio estudio.
-5. **La IA propone, no decide.** Redacta y señala inconsistencias. Lo que aporta queda marcado como
-   "propuesta IA". No cambia estados, no califica y no cierra riesgos.
-6. **Una plantilla por tipo de estudio.** El MVP trae solo "Instalaciones físicas v1". ESU, CCTV,
-   seguridad electrónica y las demás llegan después como plantillas nuevas, no como columnas nuevas.
-7. **Gerencia ve solo lo aprobado.** Al seguimiento SIIO pasan las acciones y los hallazgos de una
-   versión aprobada, no el estudio técnico.
-
-## 3. Modelo de datos
-
-Prefijo `psi_security_`, como las demás tablas del CRM. Todas con RLS.
-
-| Tabla | Para qué |
-|---|---|
-| `psi_security_methodologies` | Versión de la metodología: escalas de probabilidad e impacto con sus descripciones, fórmula del control, cómo se aplica el residual y umbrales de nivel. Inmutable cuando un estudio la usa. |
-| `psi_security_templates` | Plantilla, por ejemplo "Instalaciones físicas v1": secciones obligatorias, metodología por defecto y textos del informe. |
-| `psi_security_catalog_processes` / `psi_security_catalog_risks` | Catálogo de la plantilla (P01–P22 y R01–R26 del maestro como semilla, filtrados por tipología), con controles mínimos y evidencia mínima sugerida. |
-| *(sin tabla de clientes ni de sedes)* | **No se capturan clientes, sedes, puestos ni contratos** (Juan, 2026-11-05): ya están en las fuentes conectadas a SIIO. El estudio solo guarda referencias, con fuente declarada, según [[fuente-por-dato]]: el cliente y el contrato vienen de **Avancys**, donde nace el NIT; la sede o el puesto, de **SIIO Programación** (`programacion.puestos`, que tiene `cliente_id`), y si el estudio es para un prospecto que aún no es cliente, de la **oportunidad del CRM**. La única dirección o sede que se escribe a mano es la de un prospecto sin oportunidad, y queda marcada. Qué expone Avancys sobre contratos: `por confirmar`. |
-| `psi_security_studies` | El estudio: cliente, sede, plantilla, metodología, estado, preparador, revisor, aprobador, alcance, metodología aplicada y fechas de visita. |
-| `psi_security_study_zones` | Caracterización: activos y zonas críticas (el "escenario físico" del Excel). |
-| `psi_security_study_risks` | Riesgo del estudio: código local, riesgo de catálogo, zona, proceso, enunciado causal (causa → evento → consecuencia), causas, P e I, origen (`importado`, `manual`, `propuesta_ia`) y estado de verificación. |
-| `psi_security_study_controls` | Control existente de cada riesgo: descripción, calidad, eficacia, eficiencia, `verificado` y evidencia de soporte. |
-| `psi_security_study_actions` | Plan de tratamiento: acción, control propuesto con su calificación, responsable, fecha compromiso y estado. |
-| `psi_security_study_evidence` | Evidencia: archivo con id de SharePoint y sha256, tipo, vínculo a zona, riesgo o control, quién la tomó y cuándo. |
-| `psi_security_study_events` | Bitácora de solo inserción: creado, importado, enviado a revisión, observación, devuelto, revisado, aprobado y archivado, con actor y fecha. |
-| `psi_security_study_versions` | Versión congelada: snapshot JSON, sha256, metodología usada, archivos generados (matriz, plan, informe) y sus ids de SharePoint. |
-| `psi_security_import_runs` | Cada importación: Excel original con sha256, mapeo aplicado, filas aceptadas y descartadas, y advertencias. |
-
-El cálculo (control, magnitud, nivel y residual) vive en **una sola función pura del servidor**, con
-pruebas, más una función SQL equivalente para las vistas. El cliente nunca calcula.
-
-## 4. Estados, roles y permisos
-
-```
-borrador → en_revision → (devuelto → en_revision)* → revisado → aprobado (versión N) → archivado
-aprobado → reabierto → versión N+1 en borrador
-```
-
-- **Permiso nuevo `estudios_seguridad`**, como `licitaciones`: da acceso al módulo. El rol dentro del
-  estudio lo da la asignación al estudio (preparador, revisor o aprobador), no un rol global.
-- **Preparador / inspector:** crea, importa, edita, adjunta evidencias y envía a revisión.
-- **Revisor técnico:** comenta, devuelve o marca como revisado. Valida metodología, valoración y
-  controles. No puede ser el preparador.
-- **Aprobador:** aprueba una versión revisada y autoriza el informe. No puede ser el preparador.
-- **Gerencia / SIIO:** no entra al estudio. Recibe en `siio_followups` las acciones aprobadas.
-- Bloqueos de servidor, no solo de pantalla:
-  - no se envía a revisión si falta alcance, sede o metodología, o si hay riesgos sin P o I;
-  - no se aprueba con riesgos inaceptables sin acción con responsable y fecha;
-  - una versión aprobada no se edita.
-
-## 5. Importar un Excel histórico
-
-Cancha Horizontes es el caso de prueba, no el modelo.
-
-1. Se sube el `.xlsx`. Se guarda el original en SharePoint y se registra su sha256 en
-   `psi_security_import_runs`.
-2. Las columnas se reconocen **por encabezado**, no por posición: COD RIESGO, ESCENARIO, NOMBRE DEL
-   RIESGO, CAUSAS, PROB, IMP, DESCRIPCIÓN DEL CONTROL, CALIDAD, EFICACIA, EFICIENCIA, RECOMENDACIONES y
-   los controles propuestos.
-3. Se descartan con motivo las filas sin nombre de riesgo, con códigos repetidos o con todo en cero
-   (las 15 filas `R17R` de Cancha Horizontes).
-4. Advertencias que se muestran antes de aceptar:
-   - nombres de cliente o sede distintos entre hojas (PANASA, Barrio Cristóbal, La Floresta);
-   - `#REF!`;
-   - fechas fuera de rango;
-   - calificaciones idénticas en todos los riesgos;
-   - resultados del Excel que no coinciden con el recálculo.
-5. Todo lo importado entra como `importado`, con los controles en `verificado = false`.
-6. Pantalla de revisión: tabla de lo extraído con sus advertencias. Se acepta, se corrige o se descarta
-   fila por fila antes de crear el estudio.
-
-## 6. Salidas y archivo
-
-- **Matriz** `.xlsx` generada desde la versión, con los valores ya calculados. Es una copia, no se
-  vuelve a importar.
-- **Plan de acción** dentro de la matriz y en el informe.
-- **Informe Word y PDF** con el renderizador ya existente
-  (`agt002-document-render`: membrete corporativo, documento como datos y conversión con `soffice`).
-  Tiene ficha por riesgo, mapa de calor actual y residual, y fotos de evidencia.
-- **Archivo en SharePoint**, en `Estudios de Seguridad/<cliente>/<sede>/<código estudio>/v<N>/`: original
-  importado, evidencias, matriz, informe y `manifest.json` con los sha256. Se hace readback de cada
-  archivo y se falla cerrado si SharePoint no responde, como `agt002-knowledge-sharepoint`.
-
-## 7. Seguimiento en SIIO
-
-Al aprobar la versión N, cada acción aprobada crea un registro en `siio_followups` con:
-
-- origen nuevo `estudio_seguridad`;
-- `origin_ref` = id de la acción;
-- responsable, fecha y título.
-
-Cerrar ese seguimiento no cierra el riesgo. El riesgo solo se recalifica en una versión nueva del
-estudio, con evidencia.
-
-## 8. IA en el MVP
-
-Va en este orden y siempre como propuesta:
-
-1. **Inconsistencias**, con reglas deterministas primero y modelo después:
-   - riesgo sin control;
-   - control sin evidencia marcado como verificado;
-   - calificaciones idénticas en todo el estudio;
-   - nombre de otro cliente en los textos;
-   - acción sin responsable;
-   - residual que sube.
-2. **Sugerir riesgos del catálogo** según la tipología y las zonas.
-3. **Redactar** el enunciado causal y la narrativa del informe. Lo redactado queda marcado como
-   propuesta IA y lo acepta una persona.
-
-## 9. Fases
-
-Cada fase es un PR con pruebas y su propio handoff.
-
-| Fase | Entrega | Prueba de cierre |
-|---|---|---|
-| F0 | Decisiones: metodología oficial (**hecha el 2026-11-04**), quiénes revisan y aprueban, carpeta de SharePoint. | Decisión escrita en `docs/decisions/`. |
-| F1 | Migración del modelo, función de cálculo (**escrita el 2026-11-04**: `verticales/estudios-seguridad/metodologia.js`) y semilla de la plantilla "Instalaciones físicas v1" con su catálogo. | Prueba dorada: los 25 riesgos de Cancha Horizontes recalculados = valores del Excel (ya verificado fuera del código el 2026-11-04). Pruebas de RLS con pglite. |
-| F2 | Importador y pantalla de revisión. | Importar Cancha Horizontes da 25 riesgos, 15 filas descartadas y las advertencias de identidad. |
-| F3 | Edición del estudio: sede, zonas, riesgos, controles y acciones, más subida de evidencias. | Prueba de punta a punta en local. |
-| F4 | Revisión, aprobación y versiones congeladas. | El preparador no puede aprobar, una versión aprobada no se edita y reabrir crea la N+1. |
-| F5 | Matriz, informe Word/PDF y archivo en SharePoint con readback. | sha256 iguales al releer y Word válido. |
-| F6 | Acciones aprobadas → `siio_followups`. | Aparecen en Seguimiento gerencial solo después de aprobar. |
-| F7 | Asistente IA (inconsistencias y redacción). | No puede cambiar estado ni calificaciones (prueba de servidor). |
-
-**Criterio para decir que se dejó de depender de Excel:** un estudio real, en una sede nueva, hecho de
-punta a punta en SIIO, aprobado y archivado, sin editar ningún Excel en el camino.
-
-## 10. Fuera del MVP
-
-- Plantillas ESU, CCTV y seguridad electrónica.
-- Captura sin conexión en campo.
-- Firma digital.
-- Portal para el cliente.
-- Importación masiva de estudios históricos (por ahora, uno por uno).
-
-## 11. Riesgos
-
-- **La sesión de Graph es delegada (de Juan).** Para que SIIO archive en SharePoint sin nadie presente
-  hace falta una identidad de aplicación con consentimiento de administrador del tenant. Mientras no
-  exista, el archivo se puede hacer con la sesión actual en piloto, pero no en producción. `por confirmar`
-- **Metodología:** decidida (v1). Falta que la valide un revisor técnico de seguridad. `por confirmar`
-- **El maestro es específico del contrato ESU.** Sus tipologías T1 a T5 sirven de semilla, pero la
-  plantilla "Instalaciones físicas" necesita su propia tipología genérica. `por confirmar`
-- **Evidencias con personas o menores (P16/R25):** antes de guardar fotos hay que definir retención y
-  acceso. `por confirmar`
+Los hallazgos del 2026-11-04 sobre los Excel (Cancha Horizontes, HADA, EXCO), el documento maestro y el choque de
+fórmulas están en:
+- `docs/decisions/2026-11-04-estudios-seguridad-metodologia-v1.md`;
+- la versión anterior de este archivo en git: `git log -- docs/plans/2026-11-04-estudios-seguridad-fisica-mvp.md`.
