@@ -1,4 +1,4 @@
--- Rollback de 176: quita el módulo de Estudios de Seguridad.
+-- Rollback de 178: quita el módulo de Estudios de Seguridad.
 --
 -- PIERDE DATOS: se borran los estudios con sus zonas, riesgos y acciones. Antes de ejecutarlo, exportar lo que
 -- haya. El permiso queda inactivo y se retira de los perfiles, para que nadie conserve una pestaña sin tablas.

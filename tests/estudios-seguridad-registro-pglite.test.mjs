@@ -1,6 +1,6 @@
 // Estudios de Seguridad Física, tramo 1 — registrar un estudio (Juan, 2026-11-05).
 //
-// Corre la lógica de verticales/estudios-seguridad/estudios.js contra la migración 176 real en PGlite, con un doble
+// Corre la lógica de verticales/estudios-seguridad/estudios.js contra la migración 178 real en PGlite, con un doble
 // mínimo de supabase-js que traduce a SQL. Así las restricciones de la base (escalas, controles completos, sede con
 // referencia) y las del módulo se prueban juntas.
 import test from 'node:test';
@@ -12,8 +12,8 @@ import {
 } from '../verticales/estudios-seguridad/estudios.js';
 
 const PREPARER = { id: '11111111-1111-4111-8111-111111111111', role: 'colaborador' };
-const migration = readFileSync(new URL('../supabase/migrations/176_estudios_seguridad_base.sql', import.meta.url), 'utf8');
-const rollback = readFileSync(new URL('../supabase/rollbacks/176_estudios_seguridad_base_rollback.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../supabase/migrations/178_estudios_seguridad_base.sql', import.meta.url), 'utf8');
+const rollback = readFileSync(new URL('../supabase/rollbacks/178_estudios_seguridad_base_rollback.sql', import.meta.url), 'utf8');
 
 async function database() {
   const pg = new PGlite();
@@ -81,7 +81,7 @@ const AVANCYS_STUDY = {
   visit_date: '2026-11-10',
 };
 
-test('migración 176: permiso, restricciones, grants, RLS y reversa', async () => {
+test('migración 178: permiso, restricciones, grants, RLS y reversa', async () => {
   const pg = await database();
   const permission = await pg.query(`select code, active from public.psi_access_permissions where code = 'estudios_seguridad'`);
   assert.deepEqual(permission.rows, [{ code: 'estudios_seguridad', active: true }]);

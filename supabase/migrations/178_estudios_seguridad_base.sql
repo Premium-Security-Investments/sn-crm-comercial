@@ -59,7 +59,7 @@ create table if not exists public.psi_security_studies (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-comment on table public.psi_security_studies is 'Estudio de seguridad física. Cliente y sede son referencias a Avancys, Programación o el CRM; ver migración 176.';
+comment on table public.psi_security_studies is 'Estudio de seguridad física. Cliente y sede son referencias a Avancys, Programación o el CRM; ver migración 178.';
 
 create table if not exists public.psi_security_study_zones (
   id uuid primary key default gen_random_uuid(),

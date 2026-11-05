@@ -87,7 +87,7 @@ await db.exec(readFileSync(migrationPath, 'utf8'));
 
 await db.exec(`drop trigger insert_future_profile_during_backfill on public.psi_profile_permissions;`);
 
-// modulo_programacion llega después, con la migración 130; estudios_seguridad, con la 176.
+// modulo_programacion llega después, con la migración 130; estudios_seguridad, con la 178.
 const MODULES_021 = MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_programacion' && code !== 'estudios_seguridad');
 const catalog = await db.query(`select code, active from public.psi_access_permissions where code = any($1::text[]) order by code`, [MODULES_021]);
 assert.deepEqual(catalog.rows.map(row => row.code), [...MODULES_021].sort(), '021 registra todos los módulos del catálogo compartido de entonces');
@@ -101,7 +101,7 @@ assert.equal((await permissionsFor(ids.director)).includes('modulo_siio_gerencia
 await db.exec(readFileSync(cleanupMigrationPath, 'utf8'));
 await db.exec(readFileSync(cleanupMigrationPath, 'utf8'));
 
-// Techos de entonces: modulo_programacion (130) y estudios_seguridad (176) no existían al correr 021/069.
+// Techos de entonces: modulo_programacion (130) y estudios_seguridad (178) no existían al correr 021/069.
 const eligibleModulesThen = role => eligibleModulePermissions(role).filter(code => code !== 'modulo_programacion' && code !== 'estudios_seguridad');
 assert.deepEqual(await permissionsFor(ids.admin), [...eligibleModulesThen('admin')].sort(), 'admin histórico conserva todos los módulos elegibles incluido Usuarios');
 assert.deepEqual(await permissionsFor(ids.gerencia), [...eligibleModulesThen('gerencia')].filter(code => code !== 'licitaciones').sort(), 'gerencia recibe solo visibilidad legacy dentro de su techo');
