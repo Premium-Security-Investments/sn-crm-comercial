@@ -48,6 +48,7 @@ assert.deepEqual(MODULE_ENDPOINT_ACTIONS, {
   siio: ACTIONS.MODULE_SIIO_VIEW,
   vigia: ACTIONS.MODULE_VIGIA_VIEW,
   tenders: ACTIONS.LICITACIONES_VIEW,
+  securityStudies: ACTIONS.MODULE_SECURITY_STUDIES_VIEW,
   users: ACTIONS.MODULE_USERS_VIEW,
 }, 'la tabla auditable endpoint→módulo debe centralizar las familias protegidas');
 

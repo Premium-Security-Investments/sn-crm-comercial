@@ -8,6 +8,8 @@ export const MODULE_PERMISSIONS = Object.freeze([
   freezePermission('modulo_oportunidades', 'Oportunidades', 'Acceso al módulo de Oportunidades.'),
   freezePermission('modulo_metas', 'Metas y Cumplimiento', 'Acceso al módulo de Metas y Cumplimiento.'),
   freezePermission('licitaciones', 'Licitaciones', 'Acceso al módulo de Licitaciones.'),
+  // Estudios de Seguridad Física (decisión de Juan, 2026-11-05): quien hace los estudios los registra en SIIO.
+  freezePermission('estudios_seguridad', 'Estudios de Seguridad', 'Acceso al módulo de Estudios de Seguridad Física.'),
   // Entrada a la aplicación de Programación de turnos (migración 130). Aplica a todos los roles: el detalle lo decide
   // Programación en su pestaña Usuarios.
   freezePermission('modulo_programacion', 'Programación', 'Entrada a la aplicación de Programación de turnos.'),
@@ -30,8 +32,8 @@ const ROLE_MODULE_CEILINGS = new Map([
   ['admin', ALL_MODULES],
   ['gerencia', new Set(MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_usuarios'))],
   ['director', new Set(MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_usuarios' && code !== 'modulo_siio_gerencial'))],
-  ['comercial', new Set(['modulo_vig_ia', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones', 'modulo_programacion'])],
-  ['colaborador', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'modulo_programacion'])],
+  ['comercial', new Set(['modulo_vig_ia', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones', 'estudios_seguridad', 'modulo_programacion'])],
+  ['colaborador', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'estudios_seguridad', 'modulo_programacion'])],
   ['junta', new Set(['modulo_siio_gerencial', 'modulo_programacion'])],
   // Directivo de solo consulta (asesor externo de junta): ve todo lo directivo, nunca administra metas, usuarios ni Vig-IA.
   // modulo_alertas_comerciales sólo habilita el motor de prioridades que alimenta el Dashboard comercial.

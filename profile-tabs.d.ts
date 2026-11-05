@@ -1,4 +1,4 @@
-export type ProfileTabCode = 'torre' | 'dashboard' | 'oportunidades' | 'metas' | 'licitaciones' | 'programacion' | 'usuarios';
+export type ProfileTabCode = 'torre' | 'dashboard' | 'oportunidades' | 'metas' | 'licitaciones' | 'estudios' | 'programacion' | 'usuarios';
 export type ProfileTab = Readonly<{ code: ProfileTabCode; group: string; label: string }>;
 export type TabsAccess = {
   tabs: ProfileTabCode[];
