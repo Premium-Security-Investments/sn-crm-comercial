@@ -9,6 +9,7 @@ import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-ide
 import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 import { renewAgt002PreviewClaim } from './agt002-preview-persistence.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../../agt002-preview-allowed-models.js';
+import { agt002FechaDeTrabajo } from './agt002-fecha-de-trabajo.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -64,8 +65,9 @@ function withRuntimeBoundaryCode(code, operation) {
   }
 }
 
+// F3: el corte de vigencia de las normas es el día en Colombia, no en UTC (de 19:00 a 24:00 ya sería mañana).
 function legalAsOf(environment) {
-  const value = environment.AGT002_LEGAL_AS_OF || new Date().toISOString().slice(0, 10);
+  const value = environment.AGT002_LEGAL_AS_OF || agt002FechaDeTrabajo().fecha;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00.000Z`))) {
     throw new Error('AGT002_LEGAL_AS_OF no es una fecha ISO válida.');
   }

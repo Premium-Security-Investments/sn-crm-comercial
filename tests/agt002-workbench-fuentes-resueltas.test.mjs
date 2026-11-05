@@ -76,11 +76,11 @@ const PERFIL_EN_PROSA = Object.freeze({
   valor: { razon_social: 'SEGURIDAD NACIONAL LIMITADA' },
 });
 
-test('sin catálogo conectado la entrada conserva el contrato de dos claves', async () => {
+test('sin catálogo conectado la entrada conserva el contrato: mensaje, contexto y fecha de trabajo', async () => {
   const client = clienteDeMentira();
   const responder = createAgt002WorkbenchResponder({ client, model: 'modelo-x' });
   await responder.respond(entrada());
-  assert.deepEqual(Object.keys(client.visto.input).sort(), ['context_links', 'message']);
+  assert.deepEqual(Object.keys(client.visto.input).sort(), ['context_links', 'fecha_de_trabajo', 'message']);
 });
 
 test('con catálogo, el dato viaja estampado antes de llamar al modelo', async () => {

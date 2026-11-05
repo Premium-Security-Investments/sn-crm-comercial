@@ -112,7 +112,7 @@ function jsonClient(payload, usage = { input_tokens: 10, output_tokens: 20 }) {
   assert.equal(call.idempotencyKey, ids.job);
   assert.equal(typeof call.input, 'object');
   assert.equal(Object.hasOwn(call.input, 'job_id'), false, 'el input minimizado no debe incluir identificadores internos que el modelo no necesita');
-  assert.deepEqual(Object.keys(call.input).sort(), ['context_links', 'message']);
+  assert.deepEqual(Object.keys(call.input).sort(), ['context_links', 'fecha_de_trabajo', 'message']);
   assert.equal(typeof call.outputSchema, 'object');
   assert.equal(call.outputSchema.additionalProperties, false, 'el esquema de salida debe ser cerrado');
 }
