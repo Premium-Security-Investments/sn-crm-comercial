@@ -8,7 +8,7 @@ import {
 } from '../../../verticales/licitaciones/agt002-requirements-model.js';
 import { appendTenderDossierItemAction, loadTenderDossierWorkspace, loadTenderOfferStatus, recordTenderOfferStatusTransition } from '../api';
 import { initialReportCompanyFit, initialReportLabels, initialReportRecommendationText, initialReportVerdict, type Agt002InitialReport } from '../agt002InitialReportProjection';
-import { groupDossierChecklist, parseDossierItemTitle } from '../dossierChecklistModel';
+import { DOSSIER_CONSEQUENCE_LABEL, groupDossierChecklist, openNotCurable, overdueByConsequence, parseDossierItemTitle, type DossierOverdueItem } from '../dossierChecklistModel';
 import { TenderDossierArtifacts } from '../components/TenderDossierArtifacts';
 import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderOfferStatus, TenderRequest } from '../types';
 import { TenderVigiaChannel } from './TenderVigiaChannel';
@@ -350,6 +350,37 @@ function InstructionBlock({ text }: { text: string }) {
 
 type ItemDraft = { evidenceKind: 'texto' | 'url'; evidence: string; justification: string };
 
+/**
+ * Mejora 1 (encargo desde Terminal; Juan, 2026-11-05: «déjelo en la plataforma únicamente por ahora»): la cuenta
+ * regresiva del cierre con lo que no se subsana y sigue abierto, y lo vencido ordenado por consecuencia. En Terminal
+ * trece ítems vencidos llegaron al cierre en `pendiente` y nadie se enteró: aquí se nombran, no sólo se cuentan.
+ */
+export function TenderOverdueStrip({ closeDate, overdue, notCurable, onOpen }: {
+  closeDate: string | null; overdue: DossierOverdueItem[]; notCurable: TenderDossierItem[]; onOpen: (item: TenderDossierItem) => void;
+}) {
+  const days = daysUntil(closeDate);
+  if (days === null || days < 0) return null;
+  const urgent = days <= 2;
+  const shown = overdue.slice(0, 5);
+  return <section className={`tw-overdue ${urgent ? 'is-urgent' : ''}`} aria-label="Cuenta regresiva y vencidos">
+    <p className="tw-overdue-head"><strong>⏳ {countdownLabel(closeDate)}</strong> · cierre {formatDay(closeDate)}
+      {notCurable.length > 0
+        ? <> · <strong>{notCurable.length} {notCurable.length === 1 ? 'cosa que no se subsana sigue abierta' : 'cosas que no se subsanan siguen abiertas'}</strong></>
+        : ' · nada que no se subsane está abierto'}</p>
+    {shown.length > 0 && <>
+      <p className="tw-overdue-sub">{overdue.length === 1 ? '1 tarea con la fecha vencida' : `${overdue.length} tareas con la fecha vencida`}, primero lo que no se subsana:</p>
+      <ul className="tw-overdue-list">
+        {shown.map(({ item, consequence, daysLate }) => <li key={item.id}>
+          <span className={`tw-chip tw-chip-${consequence}`}>{DOSSIER_CONSEQUENCE_LABEL[consequence]}</span>
+          <button type="button" className="tw-link" onClick={() => onOpen(item)}>{parseDossierItemTitle(item.title).label}</button>
+          <span className="tw-muted">venció hace {daysLate} {daysLate === 1 ? 'día' : 'días'} · {item.assignee_name || 'sin responsable'}</span>
+        </li>)}
+      </ul>
+      {overdue.length > shown.length && <p className="tw-muted">y {overdue.length - shown.length} más en la lista de tareas.</p>}
+    </>}
+  </section>;
+}
+
 export function TenderPrepareView({ opportunityId, request, profiles, canApprove, report, closeDate, offerStatus, onOfferStatusChanged, channel, onSeedRequirements }: {
   opportunityId: string; request: TenderRequest; profiles: TenderDossierAssignee[]; canApprove: boolean;
   report: Agt002InitialReport | null; closeDate: string | null; offerStatus: TenderOfferStatus | null;
@@ -454,6 +485,7 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
   const urgent = groups.open[0] || null;
   const urgentTitle = urgent ? parseDossierItemTitle(urgent.title) : null;
   return <div className="tw-prepare">
+    <TenderOverdueStrip closeDate={closeDate} overdue={overdueByConsequence(workspace.checklist, today)} notCurable={openNotCurable(workspace.checklist)} onOpen={select} />
     {urgent && urgentTitle && <div className="tw-next" role="note">
       <span>Lo más urgente: <strong>{urgentTitle.label}</strong>
         {urgentTitle.rejection && <span className="tw-reject">Causa rechazo</span>}

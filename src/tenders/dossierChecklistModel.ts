@@ -84,3 +84,43 @@ export function formatDossierDate(isoDate: string | null): string {
   const month = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][date.getUTCMonth()];
   return `${weekday} ${date.getUTCDate()}-${month}`;
 }
+
+/**
+ * Mejora 1 (encargo desde Terminal, 2026-11-04): en TT-SPO-07 trece ítems llegaron al día del cierre en `pendiente`,
+ * con fechas meta vencidas, y nadie se enteró. Lo vencido se muestra ordenado por consecuencia: primero lo que no se
+ * subsana (sin eso no hay oferta), luego lo que causa rechazo, luego lo obligatorio.
+ */
+export type DossierConsequence = 'no_subsanable' | 'causa_rechazo' | 'obligatorio' | 'otro';
+export const DOSSIER_CONSEQUENCE_LABEL: Record<DossierConsequence, string> = {
+  no_subsanable: 'No se subsana',
+  causa_rechazo: 'Causa rechazo',
+  obligatorio: 'Obligatorio',
+  otro: 'Otro',
+};
+const CONSEQUENCE_RANK: Record<DossierConsequence, number> = { no_subsanable: 0, causa_rechazo: 1, obligatorio: 2, otro: 3 };
+const fold = (value: string | null | undefined) => String(value || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const NOT_CURABLE = /\bno (?:se )?(?:puede |es )?subsanab|\bno (?:se )?(?:puede )?subsana|\binsubsanable/;
+
+/** La consecuencia de no tener el ítem, leída del título y de lo que escribieron el análisis y las personas. */
+export function dossierItemConsequence(item: TenderDossierItem): DossierConsequence {
+  const text = fold([item.title, item.instruction, item.latest_evidence?.text].filter(Boolean).join(' \n '));
+  if (NOT_CURABLE.test(text)) return 'no_subsanable';
+  if (parseDossierItemTitle(item.title).rejection || /\bcausa(?:l)? (?:de )?rechazo\b/.test(text)) return 'causa_rechazo';
+  return item.required ? 'obligatorio' : 'otro';
+}
+
+export type DossierOverdueItem = { item: TenderDossierItem; consequence: DossierConsequence; daysLate: number };
+
+/** Los ítems abiertos con fecha meta antes de `today` (YYYY-MM-DD, Bogotá), por consecuencia y luego por atraso. */
+export function overdueByConsequence(items: TenderDossierItem[], today: string): DossierOverdueItem[] {
+  const todayNumber = dayNumber(today);
+  return groupDossierChecklist(items).open
+    .filter(item => item.target_date && item.target_date.slice(0, 10) < today)
+    .map(item => ({ item, consequence: dossierItemConsequence(item), daysLate: todayNumber !== null ? todayNumber - (dayNumber(item.target_date!) ?? todayNumber) : 0 }))
+    .sort((a, b) => CONSEQUENCE_RANK[a.consequence] - CONSEQUENCE_RANK[b.consequence] || b.daysLate - a.daysLate);
+}
+
+/** Lo que no se subsana y sigue abierto, venza o no: es lo que la cuenta regresiva tiene que recordar. */
+export function openNotCurable(items: TenderDossierItem[]): TenderDossierItem[] {
+  return groupDossierChecklist(items).open.filter(item => dossierItemConsequence(item) === 'no_subsanable');
+}

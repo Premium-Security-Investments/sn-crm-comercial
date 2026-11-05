@@ -202,3 +202,14 @@
 .tw-msg.is-clarification{border-left:3px solid #d97706;background:#fffbeb}
 .tw-channel-mode{display:flex;gap:6px;flex-wrap:wrap}
 .tw-channel-mode button[aria-pressed="true"]{background:#1d4ed8;color:#fff}
+
+/* Mejora 1: cuenta regresiva y vencidos por consecuencia */
+.tw-overdue{display:grid;gap:6px;padding:10px 14px;border-radius:12px;background:#fffbeb;border:1px solid #fcd34d;color:#422006;font-size:14px}
+.tw-overdue.is-urgent{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d}
+.tw-overdue p{margin:0}
+.tw-overdue-list{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+.tw-overdue-list li{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.tw-chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#e5e7eb;color:#111827}
+.tw-chip-no_subsanable{background:#7f1d1d;color:#fff}
+.tw-chip-causa_rechazo{background:#fee2e2;color:#991b1b}
+.tw-chip-obligatorio{background:#fef3c7;color:#92400e}
