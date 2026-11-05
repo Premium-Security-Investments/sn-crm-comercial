@@ -11,6 +11,8 @@
 //   - `create`: nombra un documento que no existe (p. ej. un anexo que el GO no sembró) → se crea con ese nombre.
 // Si nombra dos documentos que empatan, o no pide un documento, no se toca nada: la Mesa contesta como siempre.
 
+import { AGT002_WORKBENCH_CAPABILITIES } from './agt002-workbench-contract.js';
+
 const fold = value => String(value || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 // Verbo de pedido al principio de una frase: no es lo mismo "necesito la carta" que "¿la carta ya está?".
@@ -66,4 +68,26 @@ export function agt002ResolveRequestedDocument(intent, artifacts = []) {
   const title = intent.phrase.replace(/^\w/, letter => letter.toUpperCase());
   const key = `vigia_${fold(intent.phrase).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60)}`;
   return { action: 'create', title, key };
+}
+
+// F7 (auditoría del piloto Fiscalía, 2026-11-05): «Con eso, redacta las observaciones para radicar en SECOP… Texto
+// formal, listo para pegar» se cortó a los 30 s (`AGT002_RESPONDER_TIMEOUT`), porque antes del GO todo es respuesta y
+// sólo el borrador tiene 90 s. Esto NO crea documentos —para eso está `agt002DocumentRequestIntent`, que es estricto
+// a propósito—: sólo reconoce que el mensaje pide redactar un texto, para darle el tope del borrador. Equivocarse aquí
+// cuesta, a lo sumo, esperar más.
+const DRAFTING_VERB = /\b(redact[aeo]\w*|elabor[aeo]\w*|proyect[aeo]\w*|escrib[ae]\w*|prepar[aeo]\w*|arm[aeo]\w*|hazme|haz|haga|genera\w*|dame)\b/;
+const DRAFTING_OBJECT = /\b(observacion(es)?|carta|anexo|formato|oficio|comunicacion|solicitud|respuesta formal|texto (formal|listo)|derecho de peticion|subsanacion|aclaracion(es)?|declaracion|certificacion|compromiso|correo|documento|borrador|propuesta|manifestacion|poder)\b/;
+
+/** ¿El mensaje pide redactar un texto? Sólo decide el tope de tiempo de la respuesta. */
+export function agt002PideRedaccion(message) {
+  const text = fold(message);
+  if (!text.trim()) return false;
+  const verb = DRAFTING_VERB.exec(text);
+  return Boolean(verb && DRAFTING_OBJECT.test(text.slice(verb.index)));
+}
+
+/** El tope del borrador vale para un borrador y para una respuesta que pide redactar (F7). */
+export function agt002UsaTopeDeBorrador(input) {
+  if (input?.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft) return true;
+  return input?.capability_id === AGT002_WORKBENCH_CAPABILITIES.reply && agt002PideRedaccion(input.message);
 }
