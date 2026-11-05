@@ -53,6 +53,7 @@ import { buildRequirementRows } from '../verticales/licitaciones/agt002-requirem
 import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/tender-company-document-bridge.js';
 import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixCsv, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
 import { buildTenderOpenBoard } from '../verticales/licitaciones/tender-open-board.js';
+import { overdueSummary } from '../verticales/licitaciones/tender-dossier-vencidos.js';
 import { AGT002_DRAFT_BUCKET, isAgt002DraftStoragePath } from '../verticales/licitaciones/agt002-workbench-document.js';
 import { TENDER_OFFER_PACKAGE_MATRIX_NAME, buildTenderOfferPackageManifest, tenderOfferPackageIndex } from '../verticales/licitaciones/tender-offer-package.js';
 import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
@@ -6972,9 +6973,12 @@ async function readTenderOpenBoard(database, currentProfile, now = new Date()) {
     const matrix = report?.available && report.report
       ? buildTenderComplianceMatrix({ requirementRows: buildRequirementRows(report.report), bridge })
       : null;
+    // Mejora 1: lo vencido del expediente, por consecuencia, con la misma regla que Preparar.
+    const { data: workspace } = await database.rpc('psi_get_tender_dossier_workspace', { p_opportunity_id: row.id });
+    const vencidos = Array.isArray(workspace?.checklist) ? overdueSummary(workspace.checklist, today) : null;
     processes.push({
       opportunity_id: row.id, ref: tender?.ref || row.sede || null, entity: row.company_name || null,
-      offer_status: row.tender_offer_status || null, close_date: closeDate, bridge, matrix,
+      offer_status: row.tender_offer_status || null, close_date: closeDate, bridge, matrix, vencidos,
     });
   }
   return { today, without_access: withoutAccess, ...buildTenderOpenBoard({ processes }) };

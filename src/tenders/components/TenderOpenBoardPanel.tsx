@@ -3,6 +3,8 @@ import './tender-dossier.css';
 import { formatDateOnly } from '../../dateOnly';
 import { loadTenderOpenBoard } from '../api';
 import type { TenderOpenBoard, TenderRequest } from '../types';
+import { DOSSIER_CONSEQUENCE_LABEL } from '../dossierChecklistModel';
+import { countdownLabel, daysUntil } from '../workspace/tenderWorkspaceFormat';
 
 /**
  * El tablero de procesos abiertos (mejora 4 del encargo del 2026-10-31). Cada expediente sabe lo suyo; esto es el
@@ -41,8 +43,30 @@ export function TenderOpenBoardPanel({ request }: { request: TenderRequest }) {
         {summary.tramites_compartidos > 0 && ` · ${summary.tramites_compartidos} trámite${summary.tramites_compartidos === 1 ? '' : 's'} que sirve${summary.tramites_compartidos === 1 ? '' : 'n'} para varias`}
         {summary.documentos_que_vencen > 0 && ` · ${summary.documentos_que_vencen} documento${summary.documentos_que_vencen === 1 ? '' : 's'} que no llega${summary.documentos_que_vencen === 1 ? '' : 'n'} al cierre`}
         {summary.garantias_simultaneas > 0 && ' · garantías de seriedad casi simultáneas'}
+        {summary.vencidos_que_tumban > 0 && ` · ${summary.vencidos_que_tumban} vencido${summary.vencidos_que_tumban === 1 ? '' : 's'} que puede${summary.vencidos_que_tumban === 1 ? '' : 'n'} tumbar una oferta`}
       </span>
     </summary>
+
+    {/* Mejora 1 (Juan, 2026-11-05: sólo en la plataforma): cuenta regresiva y vencidos de cada proceso, misma regla que Preparar. */}
+    <section className="stack">
+      <h4>Cuenta regresiva y lo vencido, por proceso</h4>
+      <ul className="tender-company-bridge-rows">
+        {board.processes.map(process => {
+          const days = daysUntil(process.close_date);
+          const v = process.vencidos;
+          return <li key={process.opportunity_id} className="tender-company-bridge-row">
+            <div className="tender-card-tags">
+              <span className={`badge ${days !== null && days <= 2 ? 'tender-badge-urgent' : 'badge-muted'}`}>{countdownLabel(process.close_date)}</span>
+              {v && v.no_subsanables_abiertos > 0 && <span className="badge tender-badge-urgent">{v.no_subsanables_abiertos} que no se subsana{v.no_subsanables_abiertos === 1 ? '' : 'n'} abierto{v.no_subsanables_abiertos === 1 ? '' : 's'}</span>}
+              {v && v.vencidos > 0 && <span className="badge tender-fit-por_validar">{v.vencidos} vencido{v.vencidos === 1 ? '' : 's'}{v.vencidos_que_tumban ? ` · ${v.vencidos_que_tumban} tumba${v.vencidos_que_tumban === 1 ? '' : 'n'} la oferta` : ''}</span>}
+            </div>
+            <p><strong>{process.ref}</strong>{process.entity ? ` · ${process.entity}` : ''} · cierre {date(process.close_date)}</p>
+            {v && v.primeros.length > 0 && <p className="muted">{v.primeros.map(item => `${DOSSIER_CONSEQUENCE_LABEL[item.consecuencia]}: ${item.titulo} (hace ${item.dias_vencido} d)`).join(' · ')}</p>}
+            {!v && <p className="muted">Sin expediente leído.</p>}
+          </li>;
+        })}
+      </ul>
+    </section>
 
     {board.por_proceso.clusters.length > 0 && <section className="stack">
       <h4>Lo que se pide una vez por proceso</h4>
@@ -70,7 +94,7 @@ export function TenderOpenBoardPanel({ request }: { request: TenderRequest }) {
       <h4>Lo que vence antes de un cierre</h4>
       <ul className="tender-company-bridge-rows">
         {board.vencimientos.map(item => <li key={item.key} className="tender-company-bridge-row">
-          <div className="tender-card-tags"><span className="badge badge-muted">{item.owner}</span>{item.already_expired && <span className="badge tender-fit-bajo">Vencido</span>}</div>
+          <div className="tender-card-tags"><span className="badge badge-muted">{item.owner}</span>{item.already_expired && <span className="badge tender-badge-urgent">Vencido</span>}</div>
           <p>{item.note}</p>
         </li>)}
       </ul>
