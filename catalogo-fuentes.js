@@ -17,7 +17,7 @@
 import { crearLectorAvancys } from './avancys-odoo-lectura.js';
 import { buildTenderCompanyDocumentBridge } from './verticales/licitaciones/tender-company-document-bridge.js';
 import { matchCompanyDocumentClasses } from './verticales/licitaciones/tender-compliance-matrix.js';
-import { agt002LocateFormato } from './verticales/licitaciones/agt002-formato-oficial.js';
+import { agt002ListarFormatos, agt002LocateFormato } from './verticales/licitaciones/agt002-formato-oficial.js';
 
 export const ESTADOS = Object.freeze({
   VIGENTE: 'vigente',
@@ -178,6 +178,14 @@ export const DATOS = Object.freeze({
   }),
   // El texto oficial del formato o anexo que se pide redactar: el archivo propio o la sección del pliego vigente.
   'proceso.formato_oficial': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_tender_document_versions']),
+    lectores: Object.freeze(['agt002.mesa']),
+  }),
+  // Mejora 6: los formatos y anexos numerados que pide el proceso, para la «relación de anexos» de la carta.
+  'proceso.formatos_del_pliego': Object.freeze({
     dominio: 'licitacion',
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
@@ -804,6 +812,34 @@ export async function resolverDatosOficialesProceso(database, { tenderId }) {
 
 // Resolvedor de proceso.formato_oficial (regla de Juan, 2026-11-04): cuando lo pedido es un formato o anexo, su
 // texto completo, para que el documento lo siga. Sin pedido de documento no se resuelve nada.
+/**
+ * Mejora 6 (encargo desde Terminal): la lista de formatos y anexos numerados del proceso —títulos del pliego vigente y
+ * archivos propios con número—, para que la «relación de anexos que se presentan» de la carta salga de lo que el
+ * proceso pide y no de memoria. Qué va de verdad lo decide una persona: la lista no lo afirma.
+ */
+export async function resolverFormatosDelPliego(database, { tenderId, documento }) {
+  const vacio = nota => respuesta({
+    nombre: 'proceso.formatos_del_pliego', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.CONGELADA, forma: FORMAS.TIPADO,
+    asOf: null, procedencia: Object.freeze({ tabla: 'psi_tender_document_versions', nota }),
+  });
+  if (typeof tenderId !== 'string' || !tenderId.trim() || !documento) return vacio('sin documento pedido');
+  const { data, error } = await database.from('psi_tender_document_versions')
+    .select('id,name,document_type,created_at,extracted_text')
+    .eq('tender_id', tenderId).eq('current', true);
+  if (error || !Array.isArray(data)) return vacio('no se pudieron leer los documentos del proceso');
+  const formatos = agt002ListarFormatos(data);
+  if (!formatos.length) return vacio('el pliego vigente no trae formatos ni anexos numerados con título');
+  return respuesta({
+    nombre: 'proceso.formatos_del_pliego',
+    valor: Object.freeze({ formatos: Object.freeze(formatos.map(formato => Object.freeze({ titulo: formato.titulo, origen: formato.origen }))) }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.CONGELADA,
+    forma: FORMAS.TIPADO,
+    asOf: soloFecha(data.map(row => row.created_at).filter(Boolean).sort().at(-1)),
+    procedencia: Object.freeze({ tabla: 'psi_tender_document_versions', nota: 'títulos numerados del pliego vigente y archivos propios' }),
+  });
+}
+
 export async function resolverFormatoOficial(database, { tenderId, pregunta, documento }) {
   const vacio = nota => respuesta({
     nombre: 'proceso.formato_oficial', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.CONGELADA, forma: FORMAS.PROSA,
@@ -831,6 +867,7 @@ export async function resolverFormatoOficial(database, { tenderId, pregunta, doc
 const RESOLVEDORES = Object.freeze({
   'proceso.datos_oficiales': (database, contexto) => resolverDatosOficialesProceso(database, contexto),
   'proceso.formato_oficial': (database, contexto) => resolverFormatoOficial(database, contexto),
+  'proceso.formatos_del_pliego': (database, contexto) => resolverFormatosDelPliego(database, contexto),
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),
