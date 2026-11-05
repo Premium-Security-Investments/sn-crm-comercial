@@ -3809,13 +3809,17 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
             <label className="checkline"><input type="checkbox" checked={access.tender_company} onChange={e => setAccess({ tender_company: e.target.checked })}/> Mantiene la información de la empresa</label>
           </div>}
         </fieldset>
+        <fieldset className="access-area-card"><legend>Seguridad</legend>
+          {tabBox('estudios', 'Estudios de seguridad', readOnly)}
+          <small className="muted">Registra estudios de seguridad física: zonas, riesgos, controles, fotos y plan de acción.</small>
+        </fieldset>
         <fieldset className="access-area-card"><legend>Programación</legend>
           {tabBox('programacion', 'Programación de turnos')}
           <small className="muted">Da la entrada. Qué hace y en qué ciudades se define dentro de Programación, en su pestaña Usuarios.</small>
         </fieldset>
         <fieldset className="access-area-card"><legend>IT · Administración</legend>{tabBox('usuarios', 'Usuarios y permisos · Agentes', readOnly)}<small className="muted">Administra el SIIO: da accesos a otras personas.</small></fieldset>
       </div></fieldset>
-      <label className="checkline wide"><input type="checkbox" checked={readOnly} onChange={e => setAccess(e.target.checked ? { read_only: true, tabs: access.tabs.filter(tab => tab !== 'metas' && tab !== 'usuarios'), copilot: false, edit_segment: false, delete_opportunities: false, tender_custody: false, tender_company: false, owns_opportunities: false, opportunity_scope: 'todas' } : { read_only: false })}/> Solo consulta: ve, pero no cambia nada</label>
+      <label className="checkline wide"><input type="checkbox" checked={readOnly} onChange={e => setAccess(e.target.checked ? { read_only: true, tabs: access.tabs.filter(tab => tab !== 'metas' && tab !== 'estudios' && tab !== 'usuarios'), copilot: false, edit_segment: false, delete_opportunities: false, tender_custody: false, tender_company: false, owns_opportunities: false, opportunity_scope: 'todas' } : { read_only: false })}/> Solo consulta: ve, pero no cambia nada</label>
       <label>Perfil de uso de IA<select value={form.ai_usage_profile || ''} disabled={aiProfiles.status !== 'ready'} onChange={e=>setForm({...form, ai_usage_profile: e.target.value || null})}><option value="">Sin perfil</option>{form.ai_usage_profile && !aiProfiles.profiles.some(profile => profile.profile_id === form.ai_usage_profile) && <option value={form.ai_usage_profile}>{aiProfiles.status === 'ready' ? `${form.ai_usage_profile} (archivado o inexistente)` : form.ai_usage_profile}</option>}{aiProfiles.profiles.map(profile => <option key={profile.profile_id} value={profile.profile_id}>{profile.display_name}</option>)}</select><small className="muted">{aiProfiles.status === 'error' ? 'La plataforma de agentes no responde: el campo queda deshabilitado y se conserva el perfil guardado.' : aiProfiles.status === 'loading' ? 'Cargando perfiles de uso…' : 'Define el cupo de IA por persona. Los perfiles se crean en IT → Agentes → Perfiles de uso.'}</small></label>
       <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
       {!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}
