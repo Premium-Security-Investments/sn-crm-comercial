@@ -1,4 +1,5 @@
 import { AGT002_WORKBENCH_CAPABILITIES, validateAgt002WorkbenchJobInput, validateAgt002WorkbenchResult } from './agt002-workbench-contract.js';
+import { agt002UsaTopeDeBorrador } from './agt002-mesa-document-intent.js';
 
 const JOB_INPUT_KEYS = Object.freeze([
   'job_id', 'thread_id', 'origin_message_id', 'opportunity_id', 'tender_id',
@@ -113,8 +114,8 @@ export async function runAgt002WorkbenchWorker({
 
   let result;
   try {
-    // Un borrador arma además el Word: tiene su propio tope (mejora 5).
-    const timeoutMs = input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft && limits.draftResponderTimeoutMs
+    // Un borrador arma además el Word: tiene su propio tope (mejora 5). Una respuesta que pide redactar, también (F7).
+    const timeoutMs = agt002UsaTopeDeBorrador(input) && limits.draftResponderTimeoutMs
       ? limits.draftResponderTimeoutMs : limits.responderTimeoutMs;
     result = await respondWithTimeout(responder, input, timeoutMs);
   } catch (error) {
