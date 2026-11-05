@@ -138,3 +138,38 @@ export function agt002LocateFormato({ documents = [], message = '', title = '' }
   const firstLines = cleaned.split('\n').filter(Boolean).slice(0, 2).join(' — ');
   return result({ document: pliego, title: firstLines || chosen.head, text, origin: 'pliego', cleaned });
 }
+
+/**
+ * Mejora 6 (encargo desde Terminal): la «relación de anexos que se presentan» de la carta de presentación se arma con
+ * los formatos y anexos que el proceso de verdad pide, no de memoria. Devuelve la lista de títulos numerados del pliego
+ * vigente (sin índice ni citas: sólo renglones que son título) y de los archivos propios con número, sin repetir, en
+ * orden de número. Cada uno lleva su título corto (el renglón del número y el siguiente) y de dónde salió.
+ */
+export function agt002ListarFormatos(documents = []) {
+  const usable = documents.filter(document => typeof document?.extracted_text === 'string' && document.extracted_text.trim());
+  const porClave = new Map();
+  const clave = (word, number) => `${word}:${number}`;
+  const pliego = currentPliego(usable);
+  if (pliego) {
+    const text = pliego.extracted_text;
+    for (const entry of sections(text)) {
+      if (/\.{5,}/.test(entry.head)) continue; // renglón del índice
+      const rest = entry.head.replace(/^\S+\s+(?:No\.?|N[°º.]|Nro\.?)?\s*\d{1,2}[A-Za-z]?/, '').replace(/^[\s.:–-]+/, '').trim();
+      if (rest && !(rest.length <= 80 && rest === rest.toUpperCase())) continue; // una frase que lo cita, no su título
+      const titulo = text.slice(entry.start, entry.end).split('\n').map(line => line.trim()).filter(Boolean).slice(0, 2).join(' — ')
+        .replace(/\s+/g, ' ').slice(0, 160);
+      porClave.set(clave(entry.word, entry.number), { palabra: entry.word, numero: entry.number, titulo, origen: 'pliego' });
+    }
+  }
+  for (const document of usable) {
+    if (document.document_type === 'pliego') continue;
+    const named = agt002FormatoReference(document.name);
+    if (!named) continue;
+    const key = clave(named.word, named.number.toUpperCase());
+    if (!porClave.has(key)) {
+      porClave.set(key, { palabra: named.word, numero: named.number.toUpperCase(), titulo: String(document.name).replace(/\.[a-z0-9]+$/i, '').slice(0, 160), origen: 'archivo' });
+    }
+  }
+  const orden = value => { const match = /^(\d+)([A-Z]?)$/.exec(value); return match ? Number(match[1]) * 100 + (match[2] ? match[2].charCodeAt(0) : 0) : 9999; };
+  return [...porClave.values()].sort((a, b) => a.palabra.localeCompare(b.palabra) || orden(a.numero) - orden(b.numero));
+}

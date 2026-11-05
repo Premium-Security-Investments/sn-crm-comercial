@@ -40,7 +40,9 @@ const FROZEN = {
   // de un fallo en el chat. Cupos, motor, puente, modelo y el tope de las respuestas quedan como estaban.
   // Actualizado a propósito (2026-11-05, F4 de la auditoría Fiscalía): `runOnce` recibe el pedido del mensaje que
   // despertó al worker y lo reclama primero. Cupos, motor, puente, modelo, timeout e interruptor no cambian.
-  'verticales/licitaciones/agt002-workbench-runtime.js': '19a67c0836e039ade3b23222de684b534b74f0488d573cad80471392f4541578',
+  // Actualizado a propósito (2026-11-05, mejora 6): la Mesa pide además `proceso.formatos_del_pliego` cuando redacta
+  // un documento, para la relación de anexos de la carta. Cupos, motor, puente, modelo, timeout e interruptor no cambian.
+  'verticales/licitaciones/agt002-workbench-runtime.js': '8eb3dfa3ef1f60d5bbdf6e26fd25f59dbffe2fb05d6283a4180c117f8c187085',
   // Actualizado a propósito (2026-11-05, F3 de la auditoría Fiscalía): el corte de vigencia de las normas
   // (`legalAsOf`) toma el día de Colombia en vez del de UTC. Cupos, motor, puente, modelo y timeout no cambian.
   'verticales/licitaciones/agt002-preview-runtime.js': '7d6f6f6b41af98b2b0b3081846565389f07c2bdb7e8766f3ff6570385fce33ae',

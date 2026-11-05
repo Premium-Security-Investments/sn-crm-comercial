@@ -24,6 +24,8 @@ export const AGT002_MESA_FUENTES = Object.freeze([
   // Mejora 5 (2026-11-04): para que un documento salga con los datos del proceso y siguiendo su formato oficial.
   'proceso.datos_oficiales',
   'proceso.formato_oficial',
+  // Mejora 6: para la «relación de anexos que se presentan» de la carta.
+  'proceso.formatos_del_pliego',
 ]);
 import {
   claimAgt002WorkbenchJob,
@@ -221,7 +223,7 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
         resolveSources: ({ tenderId, message, documento }) => resolverParaLector(database, {
           lector: 'agt002.mesa',
           // El formato sólo se busca cuando hay un documento que escribir.
-          nombres: documento ? AGT002_MESA_FUENTES : AGT002_MESA_FUENTES.filter(nombre => nombre !== 'proceso.formato_oficial'),
+          nombres: documento ? AGT002_MESA_FUENTES : AGT002_MESA_FUENTES.filter(nombre => nombre !== 'proceso.formato_oficial' && nombre !== 'proceso.formatos_del_pliego'),
           tenderId,
           pregunta: message,
           documento,
