@@ -3,10 +3,11 @@
 // con zonas, riesgos, controles y acciones. La valoración la calcula el servidor; esta pantalla sólo la muestra.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './estudios.css';
+import { EvidenceStrip } from './EvidenceStrip';
 import {
   CONTROL_SCALE, IMPACT_SCALE, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, STATUS_LABELS,
-  addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, getStudy, listStudies, searchClients, updateRisk,
-  type Action, type Catalog, type ClientOption, type Nivel, type PostsResult, type Risk, type RiskDraft, type StudyDetail, type StudySummaryRow, type Zone,
+  addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
+  type Action, type Catalog, type ClientOption, type Evidence, type Nivel, type PostsResult, type Risk, type RiskDraft, type StudyDetail, type StudySummaryRow, type Zone,
 } from './api';
 
 const message = (reason: unknown) => (reason instanceof Error ? reason.message : 'No se pudo completar la operación.');
@@ -170,12 +171,17 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
   const [detail, setDetail] = useState<StudyDetail | null>(null);
   const [error, setError] = useState('');
   const [addingRisk, setAddingRisk] = useState(false);
-  const reload = useCallback(() => getStudy(studyId).then(setDetail).catch(reason => setError(message(reason))), [studyId]);
+  const [urls, setUrls] = useState<Record<string, string | null>>({});
+  // Los enlaces de las fotos son firmados y vencen a los 10 minutos: se piden de nuevo con cada recarga.
+  const reload = useCallback(() => getStudy(studyId).then(next => {
+    setDetail(next);
+    if (next.evidence.length) evidenceUrls(studyId).then(result => setUrls(result.urls)).catch(() => setUrls({}));
+  }).catch(reason => setError(message(reason))), [studyId]);
   useEffect(() => { reload(); }, [reload]);
 
   if (error && !detail) return <section className="panel es-panel"><div className="error" role="alert">{error}</div><button type="button" className="secondary" onClick={onBack}>Volver a la lista</button></section>;
   if (!detail) return <section className="panel es-panel"><p className="es-muted">Cargando estudio…</p></section>;
-  const { study, zones, risks, actions, editable, catalog, summary } = detail;
+  const { study, zones, risks, actions, editable, catalog, summary, evidence } = detail;
   const zoneName = new Map(zones.map(zone => [zone.id, zone.name]));
   return <section className="panel es-panel" aria-label={`Estudio ${study.code}`}>
     <button type="button" className="es-link" onClick={onBack}>← Estudios</button>
@@ -197,6 +203,10 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
 
     <ZonesBlock studyId={study.id} zones={zones} editable={editable} onChanged={reload} onError={setError} />
 
+    {detail.evidence_available
+      ? <EvidenceStrip studyId={study.id} items={evidence.filter(item => !item.risk_id)} urls={urls} editable={editable} label="Fotos y documentos generales de la visita" onChanged={reload} />
+      : <p className="es-muted">Las fotos y documentos todavía no están habilitados en esta instalación.</p>}
+
     <div className="es-section-head">
       <h3>Riesgos ({risks.length})</h3>
       {editable && !addingRisk ? <button type="button" onClick={() => setAddingRisk(true)}>+ Agregar riesgo</button> : null}
@@ -204,7 +214,8 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
     {addingRisk ? <RiskForm studyId={study.id} zones={zones} catalog={catalog} onCancel={() => setAddingRisk(false)} onSaved={() => { setAddingRisk(false); reload(); }} /> : null}
     {risks.length === 0 && !addingRisk ? <p className="es-muted">Sin riesgos todavía.</p> : null}
     <ul className="es-risks">{risks.map(risk => <RiskItem key={risk.id} studyId={study.id} risk={risk} zoneLabel={risk.zone_id ? zoneName.get(risk.zone_id) || '' : ''} zones={zones} catalog={catalog}
-      actions={actions.filter(action => action.risk_id === risk.id)} editable={editable} onChanged={reload} onError={setError} />)}</ul>
+      actions={actions.filter(action => action.risk_id === risk.id)} editable={editable} onChanged={reload} onError={setError}
+      evidence={detail.evidence_available ? evidence.filter(item => item.risk_id === risk.id) : null} urls={urls} />)}</ul>
     {!editable ? <p className="es-muted">El estudio no está en borrador: es de consulta.</p> : null}
   </section>;
 }
@@ -334,8 +345,9 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, onCancel, onSaved 
   </form>;
 }
 
-function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable, onChanged, onError }: {
+function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable, onChanged, onError, evidence, urls }: {
   studyId: string; risk: Risk; zoneLabel: string; zones: Zone[]; catalog: Catalog | null; actions: Action[]; editable: boolean; onChanged: () => void; onError: (text: string) => void;
+  evidence: Evidence[] | null; urls: Record<string, string | null>;
 }) {
   const [editing, setEditing] = useState(false);
   const v = risk.valuation;
@@ -366,6 +378,7 @@ function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable,
     </div>
     {risk.current_control ? <p><span className="es-label">Control existente:</span> {risk.current_control}</p> : null}
     {risk.proposed_control ? <p><span className="es-label">Control propuesto:</span> {risk.proposed_control}</p> : null}
+    {evidence ? <EvidenceStrip studyId={studyId} items={evidence} urls={urls} riskId={risk.id} editable={editable} label="Evidencia" onChanged={onChanged} /> : null}
     <ActionsBlock studyId={studyId} riskId={risk.id} actions={actions} editable={editable} onChanged={onChanged} onError={onError} />
   </li>;
 }
