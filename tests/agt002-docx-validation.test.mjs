@@ -92,6 +92,6 @@ test('el productor manda al puente el documento sin notas y deja el aviso primer
   assert.deepEqual(enviado.blocks, [{ kind: 'paragraph', text: 'Texto.' }]);
   assert.match(metadata.falta[0], /Se sacó del Word una nota interna: «Nota interna: revisar la póliza\.»/);
   assert.equal(metadata.falta[1], 'Falta el NIT del socio.');
-  assert.equal(metadata.notas_quitadas.length, 1);
+  assert.equal(metadata.avisos.length, 1);
   assert.equal(database.storage.subidos.length, 1);
 });

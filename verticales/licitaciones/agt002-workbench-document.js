@@ -63,6 +63,6 @@ export function createAgt002DraftDocumentProducer({ database, bridgeClient, now 
     const { error } = await database.storage.from(AGT002_DRAFT_BUCKET).upload(storagePath, bytes, { contentType: DOCX_MIME, upsert: false });
     if (error) throw Object.assign(new Error('No se pudo guardar el Word en el CRM.'), { code: 'AGT002_DOCUMENT_STORAGE_FAILED' });
     const metadata = agt002DraftMetadata({ storagePath, fileName, sha256, bytes: bytes.length, generatedAt: now().toISOString(), missingInformation: [...avisos, ...missingInformation] });
-    return avisos.length ? { ...metadata, notas_quitadas: avisos } : metadata;
+    return avisos.length ? { ...metadata, avisos: avisos } : metadata;
   };
 }

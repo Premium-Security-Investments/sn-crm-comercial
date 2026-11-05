@@ -325,8 +325,8 @@ export function createAgt002WorkbenchResponder({
     }
     try {
       const metadata = await produceDocument({ input, document: modelOutput.document, missingInformation: missing });
-      // Mejora 6: si se sacaron notas internas del Word, se dice primero, que es lo que Katherine tiene que revisar.
-      const avisos = isRecord(metadata) && isStringArray(metadata.notas_quitadas) ? metadata.notas_quitadas : [];
+      // Mejora 6: lo que el servidor cambió del borrador (notas internas sacadas, fecha) se dice primero.
+      const avisos = isRecord(metadata) && isStringArray(metadata.avisos) ? metadata.avisos : [];
       return { missingInformation: [...avisos, ...missing].slice(0, 20), metadata: isRecord(metadata) ? metadata : {} };
     } catch (error) {
       const code = String(error?.code || 'documento_fallido').slice(0, 80);
