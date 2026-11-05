@@ -990,3 +990,6 @@ td.numeric-value{white-space:nowrap}
 .closure-form-error{margin:10px 0 0;color:#b42318;font-size:13px;font-weight:700}
 .closure-form-warnings{display:grid;gap:4px;margin:10px 0 0;padding-left:18px;color:#b54708;font-size:12px}
 @media(max-width:768px){.closure-form-grid{grid-template-columns:repeat(1,minmax(0,1fr))}}
+
+/* Mejora 1: licitaciones con algo que puede tumbar la oferta, en Mi día */
+.my-day-tender-overdue ul{margin:4px 0 0;padding-left:18px;display:grid;gap:2px}

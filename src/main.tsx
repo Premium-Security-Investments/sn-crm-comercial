@@ -21,6 +21,7 @@ import { TenderDecisionExperience } from './tenders/components/TenderDecisionExp
 import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalysis';
 import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
+import { TenderMyDayOverdue } from './tenders/components/TenderMyDayOverdue';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
 import { TenderComplianceMatrixPanel } from './tenders/components/TenderComplianceMatrixPanel';
 import { TenderOfferPackagePanel } from './tenders/components/TenderOfferPackagePanel';
@@ -3020,6 +3021,8 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
       <h2 className="my-day-headline">{headline}</h2>
       {subline && <p className="my-day-subline">{subline}</p>}
     </div>
+    {/* Mejora 1: sólo quien trabaja licitaciones (hoy, Katherine) ve lo vencido que puede tumbar una oferta. */}
+    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOverdue request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}
