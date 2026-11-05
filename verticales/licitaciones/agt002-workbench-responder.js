@@ -106,7 +106,7 @@ const DOCUMENT_LINES = { type: 'array', maxItems: 8, items: DOCUMENT_TEXT };
 export const AGT002_DRAFT_DOCUMENT_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  description: 'El documento listo para revisar, en el formato real que pide el pliego. Si fuentes_resueltas trae proceso.formato_oficial, ese texto ES el documento: reprodúcelo completo, en su mismo orden, con todos sus literales, tablas y notas, sin resumir ni omitir, y llena sus espacios en blanco con los datos de fuentes_resueltas (empresa.identidad, proceso.datos_oficiales). Escribe entre [[ ]] todo espacio o dato que requiera una decisión humana o que no venga en fuentes_resueltas ni en context_links (p. ej. [[valor de la oferta]]); nunca lo inventes. Si no hay proceso.formato_oficial, dilo en missing_information. **texto** es negrilla.',
+  description: 'El documento listo para revisar, en el formato real que pide el pliego. Si fuentes_resueltas trae proceso.formato_oficial, ese texto ES el documento: reprodúcelo completo, en su mismo orden, con todos sus literales, tablas y notas, sin resumir ni omitir, y llena sus espacios en blanco con los datos de fuentes_resueltas (empresa.identidad, proceso.datos_oficiales). No escribas en el documento notas para el equipo (revisiones, dudas internas, «no radicar»): van en missing_information. Escribe entre [[ ]] todo espacio o dato que requiera una decisión humana o que no venga en fuentes_resueltas ni en context_links (p. ej. [[valor de la oferta]]); nunca lo inventes. Si no hay proceso.formato_oficial, dilo en missing_information. **texto** es negrilla.',
   required: ['title', 'blocks'],
   properties: {
     title: DOCUMENT_TEXT,
@@ -325,7 +325,9 @@ export function createAgt002WorkbenchResponder({
     }
     try {
       const metadata = await produceDocument({ input, document: modelOutput.document, missingInformation: missing });
-      return { missingInformation: missing.slice(0, 20), metadata: isRecord(metadata) ? metadata : {} };
+      // Mejora 6: si se sacaron notas internas del Word, se dice primero, que es lo que Katherine tiene que revisar.
+      const avisos = isRecord(metadata) && isStringArray(metadata.notas_quitadas) ? metadata.notas_quitadas : [];
+      return { missingInformation: [...avisos, ...missing].slice(0, 20), metadata: isRecord(metadata) ? metadata : {} };
     } catch (error) {
       const code = String(error?.code || 'documento_fallido').slice(0, 80);
       console.warn('agt002_workbench_document_failed', { event: 'agt002_workbench_document_failed', job_id: input.job_id, code });

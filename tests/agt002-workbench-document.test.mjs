@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createAgt002WorkbenchResponder } from '../verticales/licitaciones/agt002-workbench-responder.js';
+import AdmZip from 'adm-zip';
 import {
   agt002DraftMetadata, agt002DraftStoragePath, createAgt002DraftDocumentProducer, isAgt002DraftStoragePath,
 } from '../verticales/licitaciones/agt002-workbench-document.js';
@@ -65,16 +66,27 @@ test('sin la herramienta, el borrador es el de siempre: no se pide documento', a
   assert.deepEqual(envelope.content_metadata, { url: 'https://inventada.example/x.docx' });
 });
 
+function wordMinimo() {
+  const zip = new AdmZip();
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  zip.addFile('[Content_Types].xml', Buffer.from('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/></Types>'));
+  zip.addFile('_rels/.rels', Buffer.from('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'));
+  zip.addFile('word/document.xml', Buffer.from(`<?xml version="1.0"?><w:document xmlns:w="${W}"><w:body/></w:document>`));
+  return zip.toBuffer();
+}
+
 test('el productor guarda el Word en la carpeta de borradores del proceso, sin pisar nada', async () => {
   const uploads = [];
   const database = { storage: { from: bucket => ({ upload: async (path, bytes, options) => { uploads.push({ bucket, path, bytes, options }); return { error: null }; } }) } };
-  const bridgeClient = { renderDocument: async () => ({ bytes: Buffer.from('PK-word'), sha256: 'a'.repeat(64) }) };
+  // Mejora 6: el productor revisa el paquete como Word; ya no sirve un «Word» de mentira.
+  const word = wordMinimo();
+  const bridgeClient = { renderDocument: async () => ({ bytes: word, sha256: 'a'.repeat(64) }) };
   const produce = createAgt002DraftDocumentProducer({ database, bridgeClient, now: () => new Date('2026-11-04T10:00:00Z') });
   const metadata = await produce({ input, document: documento, missingInformation: ['Valor de la oferta'] });
   assert.equal(uploads[0].bucket, 'tender-documents');
   assert.equal(uploads[0].path, `tender-documents/${OPP}/borradores-vigia/${JOB}/ANEXO_1_CARTA_DE_PRESENTACION.docx`);
   assert.equal(uploads[0].options.upsert, false);
-  assert.deepEqual(metadata.archivo, { almacen: 'crm', storage_path: uploads[0].path, nombre: 'ANEXO_1_CARTA_DE_PRESENTACION.docx', sha256: 'a'.repeat(64), bytes: 7, generado_en: '2026-11-04T10:00:00.000Z' });
+  assert.deepEqual(metadata.archivo, { almacen: 'crm', storage_path: uploads[0].path, nombre: 'ANEXO_1_CARTA_DE_PRESENTACION.docx', sha256: 'a'.repeat(64), bytes: word.length, generado_en: '2026-11-04T10:00:00.000Z' });
   assert.deepEqual(metadata.sharepoint, { estado: 'pendiente' });
   assert.deepEqual(metadata.falta, ['Valor de la oferta']);
 });
