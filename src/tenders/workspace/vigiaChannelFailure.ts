@@ -12,3 +12,13 @@ export function lastFailedVigiaJob(jobs: readonly TenderDossierWorkbenchJob[] | 
     .reduce<TenderDossierWorkbenchJob | null>((last, job) => (!last || Date.parse(job.created_at) > Date.parse(last.created_at) ? job : last), null);
   return latest?.status === 'failed' ? latest : null;
 }
+
+/**
+ * F6: los pedidos que esperan turno (en cola o devueltos a la cola), del más antiguo al más reciente. Son los únicos
+ * que se pueden cancelar; uno que Vig-IA ya está atendiendo termina solo.
+ */
+export function waitingVigiaJobs(jobs: readonly TenderDossierWorkbenchJob[] | null | undefined): TenderDossierWorkbenchJob[] {
+  return (jobs || [])
+    .filter(job => job.status === 'queued')
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+}

@@ -100,7 +100,7 @@ import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../ve
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
 import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim, renewAgt002PreviewClaim } from '../verticales/licitaciones/agt002-preview-persistence.js';
-import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
+import { getAgt002WorkbenchApi, postAgt002CancelApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../verticales/licitaciones/agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../verticales/licitaciones/tender-source-status.js';
 import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../verticales/licitaciones/tender-relevance-terms.js';
@@ -7174,6 +7174,16 @@ app.post('/api/tender-dossier-workbench/jobs/retry', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.all('/api/tender-dossier-workbench/jobs/retry', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
+
+// F6 (auditoría Fiscalía): cancelar un pedido que espera turno, con motivo. Antes había que insertar el evento a mano.
+app.post('/api/tender-dossier-workbench/jobs/cancel', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    res.status(201).json(await postAgt002CancelApi(database, req.body || {}, currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.all('/api/tender-dossier-workbench/jobs/cancel', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
 
 app.post('/api/tender-dossier-workbench/learning/review', async (req, res) => {
   try {

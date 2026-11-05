@@ -133,6 +133,17 @@ export function retryAgt002WorkbenchJob(database, input) {
   });
 }
 
+// F6: cancelar un pedido que espera turno, con quién y por qué (antes había que insertar el evento a mano).
+export function cancelAgt002WorkbenchJob(database, input) {
+  assertExactKeys(input, ['opportunityId', 'actorId', 'jobId', 'reason'], 'cancelación');
+  return rpc(database, 'psi_cancel_agt002_workbench_job', {
+    p_opportunity_id: input.opportunityId,
+    p_actor_id: input.actorId,
+    p_job_id: input.jobId,
+    p_reason: input.reason,
+  });
+}
+
 export function appendAgt002HumanMessage(database, input) {
   assertExactKeys(input, [
     'opportunityId', 'actorId', 'threadId', 'messageId', 'content', 'contextLinks', 'idempotencyKey',

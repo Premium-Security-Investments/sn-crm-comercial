@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadTenderDossierWorkbench, postTenderDossierWorkbenchMessage, retryTenderDossierWorkbenchJob } from '../api';
+import { cancelTenderDossierWorkbenchJob, loadTenderDossierWorkbench, postTenderDossierWorkbenchMessage, retryTenderDossierWorkbenchJob } from '../api';
 import type { TenderDossierWorkbench, TenderRequest } from '../types';
-import { lastFailedVigiaJob } from './vigiaChannelFailure';
+import { lastFailedVigiaJob, waitingVigiaJobs } from './vigiaChannelFailure';
 import { clarificationSentText, loadTenderClarifications, sendTenderClarification, type TenderClarification } from './TenderClarify';
 
 const REPLY_CAPABILITY_ID = 'agt002.dossier-workbench.reply.v1';
@@ -43,6 +43,7 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
 
   const pending = (data?.jobs || []).some(job => job.status === 'queued' || job.status === 'in_progress');
   const failed = lastFailedVigiaJob(data?.jobs);
+  const waiting = waitingVigiaJobs(data?.jobs);
   // Si la respuesta no llegó con el envío (cola ocupada o demora), se consulta un rato más.
   useEffect(() => {
     if (!pending) { pollsRef.current = 0; return; }
@@ -83,6 +84,15 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setSending(false); }
   };
+  // F6: un pedido que espera turno se puede cancelar, con motivo; antes había que hacerlo a mano en la base.
+  const cancel = async (jobId: string) => {
+    const reason = window.prompt('¿Por qué cancela este pedido a Vig-IA?')?.trim();
+    if (!reason) return;
+    setSending(true); setError('');
+    try { await cancelTenderDossierWorkbenchJob(request, { opportunity_id: opportunityId, job_id: jobId, reason }); await reload(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setSending(false); }
+  };
   const retry = async (jobId: string) => {
     setSending(true); setError('');
     try { await retryTenderDossierWorkbenchJob(request, { opportunity_id: opportunityId, job_id: jobId }); await reload(); }
@@ -114,6 +124,7 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
         <p>{message.content}</p>
       </div>)}
       {(pending || sending) && <p className="tw-muted tw-typing">Vig-IA está respondiendo…</p>}
+      {waiting.map(job => <div key={job.id} className="notice">En espera: «{job.message.length > 80 ? `${job.message.slice(0, 80)}…` : job.message}». <button type="button" className="secondary" disabled={sending} onClick={() => void cancel(job.id)}>Cancelar pedido</button></div>)}
       {failed && !pending && <div className="notice">Vig-IA no pudo responder el último mensaje. <button type="button" className="secondary" disabled={sending} onClick={() => void retry(failed.id)}>Reintentar</button></div>}
       <div ref={endRef} />
     </div>

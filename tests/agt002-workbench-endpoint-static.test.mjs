@@ -28,6 +28,8 @@ const ROUTES = [
   { method: 'get', path: '/api/tender-dossier-workbench' },
   { method: 'post', path: '/api/tender-dossier-workbench/messages' },
   { method: 'post', path: '/api/tender-dossier-workbench/jobs/retry' },
+  // F6 (auditoría Fiscalía, 2026-11-05): cancelar un pedido que espera turno, con motivo.
+  { method: 'post', path: '/api/tender-dossier-workbench/jobs/cancel' },
   { method: 'post', path: '/api/tender-dossier-workbench/learning/review' },
 ];
 
@@ -39,12 +41,12 @@ for (const { method, path } of ROUTES) {
   assert.match(snippet, /status\(405\)/, `app.all de ${path} no responde 405`);
 }
 
-// El wiring de las 4 rutas humanas ya no es un literal apagado: usa el gate exacto
+// El wiring de las 5 rutas humanas ya no es un literal apagado: usa el gate exacto
 // de motor importado del runtime, evaluado en vivo por solicitud. No debe quedar
 // ningún rastro del antiguo literal `false` cableado a mano.
 assert.doesNotMatch(server, /AGT002_WORKBENCH_RUNTIME_ENABLED/, 'el antiguo literal apagado a mano debe eliminarse por completo');
 const wiringCount = (server.match(/enabled:\s*isAgt002WorkbenchApiEnabled\(process\.env\)/g) || []).length;
-assert.equal(wiringCount, 4, 'las 4 rutas humanas deben usar el gate exacto de motor evaluado en vivo, no otra fuente');
+assert.equal(wiringCount, 5, 'las 5 rutas humanas deben usar el gate exacto de motor evaluado en vivo, no otra fuente');
 
 // --- Fase B2: endpoint acotado y protegido por secreto para el drain ---
 const WORKER_ROUTE = '/api/tender-dossier-workbench/worker/run';
