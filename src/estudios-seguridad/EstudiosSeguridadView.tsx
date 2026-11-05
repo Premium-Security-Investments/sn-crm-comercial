@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import './estudios.css';
 import { EvidenceStrip } from './EvidenceStrip';
 import { WorkflowPanel } from './WorkflowPanel';
+import { FieldNotePanel } from './FieldNotePanel';
 import {
   CONTROL_SCALE, IMPACT_SCALE, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
@@ -208,6 +209,8 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
     {detail.evidence_available
       ? <EvidenceStrip studyId={study.id} items={evidence.filter(item => !item.risk_id)} urls={urls} editable={editable} label="Fotos y documentos generales de la visita" onChanged={reload} />
       : <p className="es-muted">Las fotos y documentos todavía no están habilitados en esta instalación.</p>}
+
+    {editable ? <FieldNotePanel studyId={study.id} zones={zones} onSaved={reload} /> : null}
 
     <div className="es-section-head">
       <h3>Riesgos ({risks.length})</h3>

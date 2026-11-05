@@ -99,6 +99,16 @@ export const ACTION_LABELS: Record<WorkflowAction, string> = {
   enviar: 'Enviado a revisión', marcar_revisado: 'Revisado', devolver: 'Devuelto con observaciones', aprobar: 'Aprobado', reabrir: 'Reabierto',
 };
 
+// Nota de campo con Vig-IA: propone (no guarda) y la persona confirma con su calificación.
+export type FieldNoteRisk = {
+  zone_id: string | null; zone_ref: string | null; catalog_risk_code: string | null; process_code: string | null; title: string;
+  causes: string | null; consequences: string | null; current_control: string | null; proposed_control: string | null; evidence_quote: string;
+};
+export type FieldNoteProposal = { respuesta: string; zonas_nuevas: Array<{ ref: string; nombre: string }>; riesgos: FieldNoteRisk[]; avisos: string[] };
+export const proposeFromNote = (studyId: string, nota: string) => api<FieldNoteProposal>(`${BASE}/${encodeURIComponent(studyId)}/agente/proponer`, json('POST', { nota }));
+export const confirmFromNote = (studyId: string, body: { zonas_nuevas: Array<{ ref: string; nombre: string }>; riesgos: Array<FieldNoteRisk & { probability: number; impact_company: number; impact_people: number }> }) =>
+  api<{ zonas: Zone[]; riesgos: Risk[] }>(`${BASE}/${encodeURIComponent(studyId)}/agente/confirmar`, json('POST', body));
+
 export const STATUS_LABELS: Record<StudyStatus, string> = {
   borrador: 'Borrador', en_revision: 'En revisión', devuelto: 'Devuelto', revisado: 'Revisado', aprobado: 'Aprobado', archivado: 'Archivado',
 };
