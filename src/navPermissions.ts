@@ -33,10 +33,11 @@ export type NavRoutePage =
   | 'users'
   | 'siio'
   | 'programacion'
+  | 'estudios'
   | 'agents';
 
 export type NavItem = { href: string; label: string; page: NavRoutePage; external?: boolean };
-export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Programación' | 'IT' | 'Administración'; items: NavItem[] };
+export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Seguridad' | 'Programación' | 'IT' | 'Administración'; items: NavItem[] };
 
 type NavGroupDefinition = {
   title: NavGroup['title'];
@@ -88,6 +89,13 @@ const navGroups: readonly NavGroupDefinition[] = [
     ],
   },
   {
+    // Estudios de Seguridad Física (Juan, 2026-11-05): quien hace el estudio lo registra en SIIO.
+    title: 'Seguridad',
+    items: [
+      { href: '#/estudios', label: 'Estudios de seguridad', page: 'estudios' },
+    ],
+  },
+  {
     // Aplicación aparte (AGT-006): se abre en otra pestaña. El SIIO sólo decide quién entra (Juan, 2026-10-15).
     title: 'Programación',
     items: [
@@ -129,6 +137,7 @@ const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   users: 'modulo_usuarios',
   agents: 'modulo_usuarios',
   programacion: 'modulo_programacion',
+  estudios: 'estudios_seguridad',
 };
 
 export function isManagementRole(role?: string | null) {

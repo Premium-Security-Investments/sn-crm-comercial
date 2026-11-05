@@ -1,0 +1,52 @@
+/* Estudios de Seguridad Física (tramo 1). Va dentro de .panel, que es claro sobre el fondo oscuro de la aplicación:
+   por eso usa la misma paleta clara fija de styles.css y siio.css, no los tokens oscuros de design-tokens.css. */
+.es-panel{display:flex;flex-direction:column;gap:16px;color:#172033}
+.es-panel h2,.es-panel h3{color:#172033}
+.es-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.es-head h2{margin:0 0 4px}
+.es-muted{color:#607089;font-weight:500}
+.es-error{color:#a20f2c;font-weight:600;margin:0}
+.es-card{border:1px solid #e2e8f0;border-radius:14px;background:#fbfdff;padding:16px;color:#172033}
+.es-form{display:flex;flex-direction:column;gap:12px}
+.es-fieldset{border:1px solid #e2e8f0;border-radius:11px;padding:12px;display:flex;flex-direction:column;gap:10px;margin:0}
+.es-fieldset legend{font-weight:700;color:#40516b;padding:0 6px}
+.es-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.es-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.es-grid-4{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;align-items:end;margin-top:8px}
+.es-grid-4 .es-actions{grid-column:1/-1}
+.es-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.es-link{background:none;border:0;box-shadow:none;color:#1b64f2;padding:0;font-weight:700;cursor:pointer;text-align:left}
+.es-link:hover{background:none;text-decoration:underline}
+.es-chosen{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.es-options{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow:auto}
+.es-options button{width:100%;text-align:left;white-space:normal}
+.es-options small{color:#607089;font-weight:600;margin-left:6px}
+.es-scope{margin:0;white-space:pre-wrap;color:#40516b}
+.es-summary{display:flex;flex-direction:column;gap:8px}
+.es-summary-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.es-summary-row>span:first-child{min-width:120px;font-weight:700;color:#40516b}
+.es-zones h3,.es-section-head h3{margin:0}
+.es-section-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.es-zone-list{list-style:none;display:flex;flex-wrap:wrap;gap:8px;padding:0;margin:8px 0}
+.es-zone-list li{display:flex;gap:8px;align-items:center;border:1px solid #cfd9e8;border-radius:999px;padding:4px 12px;background:#f8fafc}
+.es-inline{display:flex;gap:8px;max-width:520px}
+.es-risks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.es-risk{display:flex;flex-direction:column;gap:8px}
+.es-risk p{margin:0}
+.es-risk-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.es-risk-head>div:first-child{display:flex;flex-direction:column;gap:2px}
+.es-valuation{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.es-valuation>span{display:inline-flex;gap:6px;align-items:center;font-weight:600}
+.es-label{font-weight:700;color:#40516b}
+.es-plan ul{margin:6px 0;padding-left:18px}
+.es-plan li{margin-bottom:4px}
+.es-plan .es-link{margin-left:10px}
+.es-nivel{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-weight:800;font-size:12px;white-space:nowrap}
+.es-nivel-bajo{background:#dcfce7;color:#15803d}
+.es-nivel-moderado{background:#fef9c3;color:#854d0e}
+.es-nivel-alto{background:#ffedd5;color:#c2410c}
+.es-nivel-critico{background:#fee2e2;color:#b91c1c}
+@media (max-width:720px){
+  .es-grid-2,.es-grid-3,.es-grid-4{grid-template-columns:1fr}
+  .es-inline{max-width:none}
+}
