@@ -66,5 +66,30 @@ test('las garantías de seriedad con cierres casi simultáneos salen juntas, con
 
 test('sin procesos, un tablero vacío y no un error', () => {
   const board = buildTenderOpenBoard();
-  assert.deepEqual(board.summary, { procesos: 0, sin_analisis: 0, tramites_compartidos: 0, tramites_por_hacer: 0, documentos_que_vencen: 0, garantias_simultaneas: 0 });
+  assert.deepEqual(board.summary, { procesos: 0, sin_analisis: 0, tramites_compartidos: 0, tramites_por_hacer: 0, documentos_que_vencen: 0, garantias_simultaneas: 0, vencidos_que_tumban: 0, no_subsanables_abiertos: 0 });
+});
+
+// Mejora 1 (Juan, 2026-11-05: sólo en la plataforma): cada proceso del tablero trae sus vencidos por consecuencia, con
+// la misma regla que Preparar (`tender-dossier-vencidos.js`).
+import { overdueSummary } from '../verticales/licitaciones/tender-dossier-vencidos.js';
+import { buildTenderOpenBoard as buildBoardConVencidos } from '../verticales/licitaciones/tender-open-board.js';
+import { readFileSync as readSource } from 'node:fs';
+
+test('mejora 1: el tablero lleva los vencidos de cada proceso y el total de los que tumban una oferta', () => {
+  const items = [
+    { id: 'a', title: 'Financiero · Garantía de seriedad — CAUSA RECHAZO', instruction: 'No presentarla no se puede subsanar.', status: 'pendiente', required: true, applicability: 'requerido', item_type: 'pendiente_humano', target_date: '2026-10-31', assignee_name: 'Katherine' },
+    { id: 'b', title: 'Licitaciones · Experiencia', status: 'en_progreso', required: true, applicability: 'requerido', item_type: 'pendiente_humano', target_date: '2026-11-01', assignee_name: null },
+    { id: 'c', title: 'Jurídico · RUT — CAUSA RECHAZO', status: 'listo', required: true, applicability: 'requerido', item_type: 'pendiente_humano', target_date: '2026-10-30' },
+  ];
+  const vencidos = overdueSummary(items, '2026-11-03');
+  assert.deepEqual({ ...vencidos, primeros: vencidos.primeros.map(p => [p.consecuencia, p.dias_vencido]) },
+    { vencidos: 2, vencidos_que_tumban: 1, no_subsanables_abiertos: 1, primeros: [['no_subsanable', 3], ['obligatorio', 2]] });
+  assert.equal(vencidos.primeros[0].titulo, 'Financiero · Garantía de seriedad');
+  const board = buildBoardConVencidos({ processes: [{ opportunity_id: 'o1', ref: 'TT-SPO-07-2026', entity: 'Terminal', close_date: '2026-11-04', bridge: null, matrix: null, vencidos }] });
+  assert.equal(board.processes[0].vencidos.vencidos_que_tumban, 1);
+  assert.equal(board.summary.vencidos_que_tumban, 1);
+  assert.equal(board.summary.no_subsanables_abiertos, 1);
+  for (const file of ['../api/[...path].js', '../server/index.js']) {
+    assert.match(readSource(new URL(file, import.meta.url), 'utf8'), /const vencidos = Array\.isArray\(workspace\?\.checklist\) \? overdueSummary\(workspace\.checklist, today\) : null;/);
+  }
 });
