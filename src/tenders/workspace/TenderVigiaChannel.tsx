@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelTenderDossierWorkbenchJob, loadTenderDossierWorkbench, postTenderDossierWorkbenchMessage, retryTenderDossierWorkbenchJob } from '../api';
 import type { TenderDossierWorkbench, TenderRequest } from '../types';
-import { lastFailedVigiaJob, waitingVigiaJobs } from './vigiaChannelFailure';
+import { lastFailedVigiaJob, newlyCompletedVigiaJobIds, waitingVigiaJobs } from './vigiaChannelFailure';
 import { clarificationSentText, loadTenderClarifications, sendTenderClarification, type TenderClarification } from './TenderClarify';
 
 const REPLY_CAPABILITY_ID = 'agt002.dossier-workbench.reply.v1';
@@ -18,7 +18,7 @@ const timeLabel = (value: string) => {
  * (hilo, trabajos y respuestas gobernadas por el servidor) con una superficie de chat simple: el
  * servidor le pasa a Vig-IA las tareas abiertas del expediente y responde en el mismo pedido.
  */
-export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: string; request: TenderRequest }) {
+export function TenderVigiaChannel({ opportunityId, request, onJobsCompleted }: { opportunityId: string; request: TenderRequest; onJobsCompleted?: () => unknown }) {
   const [data, setData] = useState<TenderDossierWorkbench | null>(null);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState('');
@@ -44,6 +44,14 @@ export function TenderVigiaChannel({ opportunityId, request }: { opportunityId: 
   const pending = (data?.jobs || []).some(job => job.status === 'queued' || job.status === 'in_progress');
   const failed = lastFailedVigiaJob(data?.jobs);
   const waiting = waitingVigiaJobs(data?.jobs);
+  // Cuando un pedido termina (un Word nuevo, por ejemplo), quien muestra el expediente lo vuelve a leer.
+  const previousJobsRef = useRef<TenderDossierWorkbench['jobs'] | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const completed = newlyCompletedVigiaJobIds(previousJobsRef.current, data.jobs);
+    previousJobsRef.current = data.jobs;
+    if (completed.length > 0) onJobsCompleted?.();
+  }, [data, onJobsCompleted]);
   // Si la respuesta no llegó con el envío (cola ocupada o demora), se consulta un rato más.
   useEffect(() => {
     if (!pending) { pollsRef.current = 0; return; }

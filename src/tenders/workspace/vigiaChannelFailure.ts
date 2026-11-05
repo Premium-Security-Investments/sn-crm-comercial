@@ -22,3 +22,17 @@ export function waitingVigiaJobs(jobs: readonly TenderDossierWorkbenchJob[] | nu
     .filter(job => job.status === 'queued')
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 }
+
+/**
+ * Pedidos que terminaron entre una lectura y la siguiente. La primera lectura (`previous` nulo) no cuenta: lo que ya
+ * estaba completado al abrir la pantalla no es novedad. Con esto el expediente se recarga cuando la Mesa termina un
+ * Word (4-nov, Supersalud: Juan bajó la versión 1 porque la lista seguía en la anterior).
+ */
+export function newlyCompletedVigiaJobIds(
+  previous: readonly TenderDossierWorkbenchJob[] | null | undefined,
+  next: readonly TenderDossierWorkbenchJob[] | null | undefined,
+): string[] {
+  if (!previous) return [];
+  const before = new Set(previous.filter(job => job.status === 'completed').map(job => job.id));
+  return (next || []).filter(job => job.status === 'completed' && !before.has(job.id)).map(job => job.id);
+}
