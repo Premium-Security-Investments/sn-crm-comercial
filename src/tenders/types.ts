@@ -995,8 +995,12 @@ export type TenderCompanyDocumentBridge = {
  * Matriz de cumplimiento (punto 2 del encargo del 2026-10-30): una fila por requisito del pliego, con el soporte
  * corporativo relacionado, su estado al cierre y quién responde. La calcula `tender-compliance-matrix.js`.
  */
+/** Mejora 4: la vigencia de un documento medida contra la regla de ESTE pliego. */
+export type TenderVigenciaAlCierre = { estado: 'cumple' | 'no_alcanza' | 'por_confirmar'; detalle: string; expedir_desde?: string };
 export type TenderComplianceSupport = {
   key: string;
+  regla_del_pliego?: string | null;
+  vigencia_al_cierre?: TenderVigenciaAlCierre | null;
   label: string;
   owner: string | null;
   kind: TenderCompanyDocumentKind | null;
@@ -1037,6 +1041,7 @@ export type TenderComplianceMatrix = {
     causas_de_rechazo: number;
     con_soporte_corporativo: number;
     soporte_corporativo_pendiente: number;
+    vigencias_que_no_alcanzan?: number;
     especificos_del_proceso: number;
     requisitos_abiertos: number;
   } | null;

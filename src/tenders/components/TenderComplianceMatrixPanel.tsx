@@ -99,6 +99,7 @@ export function TenderComplianceMatrixPanel({ opportunityId, request }: { opport
       {summary.causas_de_rechazo > 0 && <span className="badge tender-fit-bajo">{summary.causas_de_rechazo} causan rechazo</span>}
       {summary.requisitos_abiertos > 0 && <span className="badge tender-fit-por_validar">{summary.requisitos_abiertos} abiertos</span>}
       {summary.soporte_corporativo_pendiente > 0 && <span className="badge tender-fit-bajo">{summary.soporte_corporativo_pendiente} con soporte pendiente</span>}
+      {(summary.vigencias_que_no_alcanzan ?? 0) > 0 && <span className="badge tender-badge-urgent">{summary.vigencias_que_no_alcanzan} no alcanza{summary.vigencias_que_no_alcanzan === 1 ? "" : "n"} la vigencia del pliego</span>}
       <span className="badge badge-muted">{summary.especificos_del_proceso} con soporte propio del proceso</span>
     </div>}
     <ul className="stack tender-company-bridge-rows">
@@ -116,6 +117,11 @@ export function TenderComplianceMatrixPanel({ opportunityId, request }: { opport
             ? <>Se acredita con: {row.company_support.map(item => `${item.label} (${SUPPORT_STATE_LABEL[item.state || ''] || 'sin dato'})`).join('; ')}</>
             : <>El soporte de este requisito se produce para este proceso.</>}
         </p>
+        {/* Mejora 4: la vigencia medida contra la regla de este pliego; en rojo lo que no alcanza. */}
+        {row.company_support.filter(item => item.vigencia_al_cierre && (item.regla_del_pliego || item.vigencia_al_cierre.estado !== 'por_confirmar')).map(item =>
+          <p key={item.key} className={item.vigencia_al_cierre!.estado === 'no_alcanza' ? 'error' : 'muted'}>
+            <strong>{item.label}:</strong> {item.vigencia_al_cierre!.detalle}{item.regla_del_pliego ? <> El pliego dice: «{item.regla_del_pliego}».</> : null}
+          </p>)}
         {row.actions.length > 0 && <p><strong>Qué hacer:</strong> {row.actions.join(' ')}</p>}
         <p className="muted">Responsable: {[row.owner, ...row.support_owners.filter(owner => owner !== row.owner)].join(' / ')}</p>
       </li>)}
