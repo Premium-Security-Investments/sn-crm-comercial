@@ -101,7 +101,7 @@ import { canonicalizeTenderDocuments } from '../verticales/licitaciones/tender-d
 import { isCriticalTenderDocument } from '../verticales/licitaciones/tender-critical-documents.js';
 import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../verticales/licitaciones/tender-official-document-coverage.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
-mport { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
+import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
 import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim, renewAgt002PreviewClaim } from '../verticales/licitaciones/agt002-preview-persistence.js';
 import { getAgt002WorkbenchApi, postAgt002CancelApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../verticales/licitaciones/agt002-workbench-runtime.js';
