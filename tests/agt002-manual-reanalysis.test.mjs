@@ -238,3 +238,37 @@ test('el incremental sigue necesitando un análisis vigente que comparar', async
     error => error.reason === 'sin_analisis_previo',
   );
 });
+
+// F11 de la auditoría del piloto Fiscalía: Manizales cargó 25 documentos el 4-nov y no se pidió ningún análisis,
+// porque la carga sólo pedía el incremental, que exige uno previo.
+import { requestAgt002AnalysisAfterUpload } from '../verticales/licitaciones/agt002-manual-reanalysis.js';
+import { readFileSync as readSourceF11 } from 'node:fs';
+
+test('F11: la primera carga, sin análisis previo, pide el análisis inicial completo', async () => {
+  const db = fakeDb(sinAnalisis());
+  const result = await requestAgt002AnalysisAfterUpload(db, { opportunityId: 'opp-fgn', requestedBy: 'katherine', now: NOW, inactiveReason: active });
+  assert.equal(result.mode, 'full');
+  assert.equal(result.requested, true);
+  assert.deepEqual(db.tables[REQUESTS].map(row => [row.mode, row.status]), [['full', 'pending']]);
+});
+
+test('F11: con análisis previo, la carga sigue pidiendo sólo el incremental', async () => {
+  const db = fakeDb(world());
+  const result = await requestAgt002AnalysisAfterUpload(db, { opportunityId: 'opp-fgn', requestedBy: 'katherine', now: NOW, inactiveReason: active });
+  assert.equal(result.mode, 'incremental');
+  assert.deepEqual(db.tables[REQUESTS].map(row => row.mode), ['incremental']);
+});
+
+test('F11: otro motivo de rechazo no se tapa con el completo', async () => {
+  const db = fakeDb(world());
+  await assert.rejects(
+    requestAgt002AnalysisAfterUpload(db, { opportunityId: 'opp-fgn', requestedBy: 'katherine', now: NOW, inactiveReason: async () => 'no_go' }),
+    error => error.reason === 'oportunidad_inactiva',
+  );
+});
+
+test('F11: la carga de documentos usa la función nueva (Vercel y servidor)', () => {
+  for (const file of ['../api/[...path].js', '../server/index.js']) {
+    assert.match(readSourceF11(new URL(file, import.meta.url), 'utf8'), /const requested = await requestAgt002AnalysisAfterUpload\(database, \{ opportunityId, requestedBy: actorProfileId \}\);/);
+  }
+});

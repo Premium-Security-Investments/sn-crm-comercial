@@ -86,7 +86,9 @@ test('la carga acepta la ruta firmada, la vuelve a verificar y conserva el camin
   assert.match(carga, /if \(!buffer\.length\) throw new Error\(`Archivo vacío/);
   // Y la cadena de siempre queda intacta: versionado, extracción y el reanálisis incremental.
   assert.match(carga, /source: TENDER_MANUAL_UPLOAD_SOURCE/);
-  assert.match(carga, /requestAgt002ManualReanalysis\(database, \{ opportunityId, requestedBy/);
+  // F11 (auditoría Fiscalía): el incremental va por `requestAgt002AnalysisAfterUpload`, que además pide el inicial
+  // completo cuando todavía no hay análisis.
+  assert.match(carga, /requestAgt002AnalysisAfterUpload\(database, \{ opportunityId, requestedBy/);
 });
 
 test('el navegador ya no manda el contenido en base64', () => {
