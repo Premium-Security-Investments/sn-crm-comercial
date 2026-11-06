@@ -168,7 +168,7 @@ import { agt002CanonicalEnqueueBlockCode } from '../verticales/licitaciones/agt0
 import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../verticales/licitaciones/agt002-reanalysis-jobs.js';
 import { presentAgt002ReanalysisStatus } from '../verticales/licitaciones/agt002-reanalysis-api.js';
 import { readAgt002InitialAnalysisStatus } from '../verticales/licitaciones/agt002-initial-analysis-status.js';
-import { readAgt002ManualReanalysisStatus, requestAgt002ManualReanalysis } from '../verticales/licitaciones/agt002-manual-reanalysis.js';
+import { readAgt002ManualReanalysisStatus, requestAgt002AnalysisAfterUpload, requestAgt002ManualReanalysis } from '../verticales/licitaciones/agt002-manual-reanalysis.js';
 import { listAgt002Clarifications, recordAgt002Clarification } from '../verticales/licitaciones/agt002-clarifications.js';
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
@@ -7635,7 +7635,8 @@ export async function ingestTenderDossierDocuments(database, { opportunityId, op
   let analysisRequest = null;
   if (uploaded.some(item => item.status === 'new' || item.status === 'updated')) {
     try {
-      const requested = await requestAgt002ManualReanalysis(database, { opportunityId, requestedBy: actorProfileId, mode: 'incremental' });
+      // F11 (auditoría Fiscalía): si todavía no hay análisis, la carga pide el inicial completo, no sólo el incremental.
+      const requested = await requestAgt002AnalysisAfterUpload(database, { opportunityId, requestedBy: actorProfileId });
       analysisRequest = { requested: requested.requested, already_open: requested.alreadyOpen, state: requested.status?.state || null };
     } catch (requestError) {
       analysisRequest = { requested: false, reason: requestError?.reason || null, message: String(requestError?.message || 'No fue posible pedir el análisis.').slice(0, 300) };

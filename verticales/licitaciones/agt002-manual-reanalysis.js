@@ -218,6 +218,20 @@ export async function requestAgt002ManualReanalysis(database, { opportunityId, r
   return { requested: !inserted.error, alreadyOpen: Boolean(inserted.error), status: await readAgt002ManualReanalysisStatus(database, opportunityId, { now, ...options }) };
 }
 
+/**
+ * Lo que pide una carga de documentos (F11 de la auditoría Fiscalía): el reanálisis incremental de lo nuevo; y si todavía
+ * no hay análisis previo —Manizales cargó 25 documentos el 4-nov y no se pidió ninguno—, el análisis inicial completo,
+ * como el botón «Analizar». Cualquier otro motivo de rechazo se devuelve igual.
+ */
+export async function requestAgt002AnalysisAfterUpload(database, { opportunityId, requestedBy, ...options }) {
+  try {
+    return { ...(await requestAgt002ManualReanalysis(database, { opportunityId, requestedBy, mode: 'incremental', ...options })), mode: 'incremental' };
+  } catch (error) {
+    if (error?.reason !== 'sin_analisis_previo') throw error;
+    return { ...(await requestAgt002ManualReanalysis(database, { opportunityId, requestedBy, mode: 'full', ...options })), mode: 'full' };
+  }
+}
+
 async function finish(database, id, patch, now) {
   const { error } = await database.from(TABLE).update({ ...patch, finished_at: now.toISOString() }).eq('id', id).eq('status', 'running');
   if (error) throw readFailure('cierre de la solicitud', error);
