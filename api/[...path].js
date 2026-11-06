@@ -54,6 +54,7 @@ import {
 import { buildRequirementRows } from '../verticales/licitaciones/agt002-requirements-model.js';
 import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/tender-company-document-bridge.js';
 import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixCsv, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
+import { checkEconomicOffer, ECONOMIC_OFFER_MAX_BYTES } from '../verticales/licitaciones/tender-economic-offer-check.js';
 import { buildTenderOpenBoard } from '../verticales/licitaciones/tender-open-board.js';
 import { overdueSummary } from '../verticales/licitaciones/tender-dossier-vencidos.js';
 import { AGT002_DRAFT_BUCKET, isAgt002DraftStoragePath } from '../verticales/licitaciones/agt002-workbench-document.js';
@@ -511,6 +512,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tender-open-board': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Paquete de la oferta: la lista de lo que va y el índice. Sin bytes y sin URLs firmadas en el cuerpo.
   'GET /api/tender-offer-package': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Mejora 5: revisar el Excel de la propuesta económica antes de radicar. Lee el archivo, no lo guarda.
+  'POST /api/tender-economic-offer-check': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Crear a mano un proceso que no está en SECOP: traerlo al CRM es el mismo acto que convertirlo desde el Radar.
   'POST /api/tenders/manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
   'POST /api/tender-manual': ['tenders', ACTIONS.LICITACIONES_CONVERT],
@@ -6994,6 +6997,24 @@ async function readTenderOpenBoard(database, currentProfile, now = new Date()) {
   }
   return { today, without_access: withoutAccess, ...buildTenderOpenBoard({ processes }) };
 }
+
+// Mejora 5 (encargo desde Terminal): el Excel de la propuesta económica, revisado antes de radicar. El archivo viaja en
+// base64, se lee y se descarta: no se guarda ni se registra como documento.
+app.post('/api/tender-economic-offer-check', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    const name = String(req.body?.file_name || '');
+    if (!/\.xlsx$/i.test(name)) throw clientInputError('Suba el Excel de la propuesta económica en formato .xlsx.');
+    const bytes = Buffer.from(String(req.body?.file_base64 || ''), 'base64');
+    if (!bytes.length || bytes.length > ECONOMIC_OFFER_MAX_BYTES) throw clientInputError('El archivo está vacío o pasa de 3 MB.');
+    res.json({ file_name: name.slice(0, 200), ...checkEconomicOffer(bytes) });
+  } catch (error) {
+    if (error?.code === 'ECONOMIC_OFFER_INVALID') return sendError(res, Object.assign(error, { status: 400 }), 400);
+    sendError(res, error, error?.status || 400);
+  }
+});
 
 app.get('/api/tender-open-board', async (req, res) => {
   try {

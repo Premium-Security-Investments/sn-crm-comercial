@@ -12,6 +12,7 @@ import { DOSSIER_CONSEQUENCE_LABEL, groupDossierChecklist, openNotCurable, overd
 import { TenderDossierArtifacts } from '../components/TenderDossierArtifacts';
 import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderOfferStatus, TenderRequest } from '../types';
 import { TenderVigiaChannel } from './TenderVigiaChannel';
+import { TenderEconomicOfferCheck } from './TenderEconomicOfferCheck';
 import { TRAMITE_ITEM_KEY_PREFIX } from '../../../verticales/licitaciones/tender-tramites-con-terceros.js';
 import { TenderClarificationNotes, TenderClarificationsCard, TenderClarifyInline, TenderCompanyClarificationProposal, useTenderClarifications, type TenderClarification, type TenderClarificationPlacement } from './TenderClarify';
 import { OFFER_STATUS_LABEL, POST_GO_STATUSES, countdownLabel, daysUntil, formatDay, formatDeadline, todayInBogota } from './tenderWorkspaceFormat';
@@ -520,6 +521,9 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
     {error && <div className="error" role="alert">{error}</div>}
 
     <TenderScheduleCard report={report} compact />
+
+    {/* Mejora 5: el Excel de la propuesta económica, revisado antes de radicar. */}
+    <TenderEconomicOfferCheck opportunityId={opportunityId} request={request} />
 
     {!hasRequirementItems && report && <div className="notice tw-seed">
       <span>Esta licitación todavía no tiene en su lista los requisitos del análisis.</span>
