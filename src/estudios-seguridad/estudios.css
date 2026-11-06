@@ -78,3 +78,9 @@
   .es-grid-2,.es-grid-3,.es-grid-4{grid-template-columns:1fr}
   .es-inline{max-width:none}
 }
+
+/* Tramo 9: revisión automática */
+.es-review{display:flex;flex-direction:column;gap:8px;border-color:#f1d9a6;background:#fffaf0}
+.es-review h3,.es-review p{margin:0}
+.es-review-list{margin:4px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.es-review-block li{color:#9b2c22;font-weight:600}

@@ -179,6 +179,15 @@ Cada tramo es un PR con pruebas, con la migración aplicada antes de fusionar y 
     residual que no baja, foto faltante en riesgos altos, efectividad incoherente;
   - después, redacción asistida del plan estratégico y de la evaluación general, siempre como propuesta.
 - **Prueba de cierre:** el revisor no cambia estados ni calificaciones (prueba de servidor).
+- **Hecho, primera parte (2026-11-06):**
+  - `verticales/estudios-seguridad/revisor.js` agrega a las reglas del plan otras cinco: causas con el número
+    repetido, riesgos con el mismo nombre, control propuesto más débil que el existente, control calificado sin
+    describir (o al revés) y acción que vence antes de la visita;
+  - la ficha muestra la "Revisión automática" a todos los que la ven;
+  - lo que bloquea es lo mismo que impide enviar a revisión; lo demás es "para revisar";
+  - no hay migración ni modelo.
+- **Sigue, segunda parte:** la redacción asistida del plan estratégico y de la evaluación general como propuesta de
+  Vig-IA (AGT-003). Se hace después del piloto, para escribirla con lo que pidan los analistas.
 
 **Orden:**
 - El 5 y el 6 van primero: sin ellos el analista tendría que rehacer el informe en Word, que es justo lo que se quiere

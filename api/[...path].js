@@ -11,6 +11,7 @@ import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, a
 import { addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys, updateCharacterizationRow } from '../verticales/estudios-seguridad/caracterizacion.js';
 import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
+import { reviewStudy as reviewSecurityStudy } from '../verticales/estudios-seguridad/revisor.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
@@ -3407,7 +3408,9 @@ securityStudyRoute('get', '/api/estudios-seguridad/puestos', async (_db, req) =>
 });
 securityStudyRoute('get', '/api/estudios-seguridad/:id', async (db, req, profile) => {
   const detail = await getSecurityStudy(db, req.params.id);
-  return { ...detail, workflow: await loadSecurityStudyWorkflow(db, detail.study, profile) };
+  // Tramo 9: el revisor de inconsistencias sólo lee; señala y no cambia nada.
+  const [workflow, review] = await Promise.all([loadSecurityStudyWorkflow(db, detail.study, profile), reviewSecurityStudy(db, detail)]);
+  return { ...detail, workflow, review };
 });
 // Nota de campo con Vig-IA (AGT-003, agt003.estudios-nota-campo; Juan, 2026-11-05). Propone; no guarda. El cupo y los
 // avisos de falla son los del brief de reunión: lo fallido no gasta cupo y nunca se cae a otra forma de llamar al modelo.

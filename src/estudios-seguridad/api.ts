@@ -44,6 +44,10 @@ export type Evidence = {
 };
 
 export type WorkflowAction = 'enviar' | 'marcar_revisado' | 'devolver' | 'aprobar' | 'reabrir';
+// Tramo 9: lo que señala el revisor de inconsistencias. Sólo lee; quien revisa decide.
+export type ReviewFinding = { code: string; severity: 'bloquea' | 'revisar'; risk?: number; message: string };
+export type Review = { findings: ReviewFinding[]; blocking: number; total: number };
+
 export type Workflow = {
   available: boolean;
   can: Partial<Record<WorkflowAction, boolean>>;
@@ -66,7 +70,7 @@ export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; rie
 
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
-  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization;
+  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
