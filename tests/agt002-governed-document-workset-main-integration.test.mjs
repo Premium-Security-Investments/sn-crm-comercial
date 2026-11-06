@@ -21,7 +21,10 @@ assert.notEqual(uploadStart, -1, 'main.tsx debe definir uploadTenderDocumentFile
 assert.match(main.slice(uploadStart, uploadStart + 160), /uploadTenderDocumentFiles = async \(selected: File\[\](, origin\?: TenderDocumentOrigin)? ?\) => \{/);
 const uploadEnd = main.indexOf('\n  };', uploadStart);
 const uploadBlock = main.slice(uploadStart, uploadEnd);
-assert.match(uploadBlock, /selected\.slice\(0, 8\)/, 'debe preservar el máximo de 8 documentos');
+// F10 (auditoría Fiscalía, 2026-11-05): el máximo de 8 era por envío y se cumplía botando el resto sin avisar (de 22
+// archivos entraban 8). Ahora se mandan todos, en tandas de 8.
+assert.doesNotMatch(uploadBlock, /selected\.slice\(0, 8\)/, 'no debe botar los archivos que pasan de 8');
+assert.match(uploadBlock, /const TANDA = 8;[\s\S]*for \(let start = 0; start < selected\.length; start \+= TANDA\)[\s\S]*selected\.slice\(start, start \+ TANDA\)/, 'debe mandar todos, en tandas de 8');
 // El transporte cambió el 2026-10-23: el contenido ya no va en base64 dentro del JSON, porque Vercel rechazaba el
 // lote con 413 pasados los ~3 MB (Supersalud). Ahora cada archivo sube con URL firmada y a la API le llega la ruta.
 // Lo que esta prueba cuida sigue siendo lo mismo: que la carga lleve el archivo de verdad y no se dé por buena sola.

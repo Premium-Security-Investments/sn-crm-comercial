@@ -7523,16 +7523,21 @@ app.post('/api/tender-documents-upload-url', async (req, res) => {
 //
 // `origin` NO se adivina: lo declara quien aporta el documento (migración 150). Sin declararlo viaja null y la
 // cadena lo trata como `third_party`, que es lo prudente.
+const TENDER_DOCUMENTS_PER_UPLOAD = 8;
+
 export async function ingestTenderDossierDocuments(database, { opportunityId, opportunity, actorProfileId, files: incomingFiles } = {}) {
   // El guard viaja con el trabajo, no con la ruta: así ningún llamador —tampoco el runner del servidor de tareas—
   // puede tocar Storage ni el expediente antes de que la fundación de análisis documental esté disponible.
   await requireTenderAnalysisFoundation(database);
   const files = Array.isArray(incomingFiles) ? incomingFiles : [];
   if (!files.length) throw new Error('Debe adjuntar al menos un documento.');
+  // F10 (auditoría Fiscalía): antes se tomaban los 8 primeros y el resto se perdía sin aviso. La pantalla manda tandas de
+  // 8; si llegan más, se dice en vez de botarlos.
+  if (files.length > TENDER_DOCUMENTS_PER_UPLOAD) throw clientInputError(`Se pueden cargar hasta ${TENDER_DOCUMENTS_PER_UPLOAD} archivos por envío; llegaron ${files.length}. Ninguno se cargó: vuelva a enviarlos en tandas.`);
   // Dos caminos para los bytes. `storage_path`: el navegador ya subió el archivo con una URL firmada, así que la
   // petición no lleva contenido y el límite de cuerpo de Vercel deja de importar. `content_base64`: el camino
   // viejo, que se conserva porque sigue sirviendo para lo pequeño y para cualquier otro llamador.
-  const preparedFiles = await Promise.all(files.slice(0, 8).map(async file => {
+  const preparedFiles = await Promise.all(files.map(async file => {
     const name = cleanFileName(file.name);
     const storagePath = String(file.storage_path || '');
     let buffer;
