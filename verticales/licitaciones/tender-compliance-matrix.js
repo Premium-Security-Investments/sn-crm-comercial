@@ -19,6 +19,7 @@
 //
 // Módulo puro: sin red, sin base de datos, sin express.
 
+import { evaluarVigencia, reglasPorDocumento } from './tender-vigencia-del-pliego.js';
 import { TENDER_COMPANY_DOCUMENT_CLASSES } from './tender-company-document-bridge.js';
 
 /**
@@ -49,7 +50,7 @@ export const TENDER_COMPLIANCE_DOCUMENT_HINTS = Object.freeze({
   bank_certificate: ['certificacion bancaria', 'certificado bancario'],
   rce_policy: ['responsabilidad civil'],
   collective_life_policy: ['vida colectivo', 'seguro de vida', 'poliza de vida'],
-  authorized_weapons_list: ['armas', 'municiones'],
+  authorized_weapons_list: ['armas', 'armamento', 'municiones'],
   // 'smlmv' quedó FUERA a propósito: la prueba lo pilló cruzando la póliza de responsabilidad civil "de 400 SMLMV"
   // con la experiencia acreditada. La unidad aparece en valores de todo tipo y no nombra un documento.
   accredited_experience: ['experiencia', 'certificaciones de contratos', 'contratos terminados'],
@@ -99,9 +100,12 @@ export function buildTenderComplianceMatrix({ requirementRows = [], bridge = nul
 
   const rows = (requirementRows || []).map(requirement => {
     const matched = matchCompanyDocumentClasses(requirementText(requirement));
+    // Mejora 4: la regla de vigencia de ESTE pliego para cada documento, leída del texto del requisito.
+    const reglas = reglasPorDocumento(requirementText(requirement), matchCompanyDocumentClasses);
     const support = matched.map(key => {
       const bridgeRow = bridgeRows.get(key);
       const entry = CLASS_BY_KEY.get(key);
+      const regla = reglas.get(key) || null;
       return {
         key,
         label: entry?.label || key,
@@ -113,6 +117,8 @@ export function buildTenderComplianceMatrix({ requirementRows = [], bridge = nul
         expires_at: bridgeRow?.expires_at || null,
         age_at_close_days: bridgeRow?.age_at_close_days ?? null,
         ready: bridgeRow ? !SUPPORT_NOT_READY.has(bridgeRow.state) : null,
+        regla_del_pliego: regla ? regla.cita : null,
+        vigencia_al_cierre: evaluarVigencia({ regla, issuedAt: bridgeRow?.document?.issued_at || null, expiresAt: bridgeRow?.expires_at || null, closeDate: bridge?.close_date || null }),
       };
     });
     const pending = support.filter(item => item.ready === false);
@@ -148,6 +154,8 @@ export function buildTenderComplianceMatrix({ requirementRows = [], bridge = nul
       especificos_del_proceso: counted(row => row.support_kind === 'especifico_del_proceso'),
       // Lo que el análisis dejó como falta o por confirmar: el trabajo de la oferta, requisito por requisito.
       requisitos_abiertos: counted(row => row.status === 'falta' || row.status === 'por_confirmar'),
+      // Mejora 4: documentos que no alcanzan la regla de vigencia de este pliego (van en rojo).
+      vigencias_que_no_alcanzan: rows.reduce((total, row) => total + row.company_support.filter(item => item.vigencia_al_cierre?.estado === 'no_alcanza').length, 0),
     },
   };
 }
@@ -188,7 +196,8 @@ export function tenderComplianceMatrixTable(matrix) {
     row.sources.map(source => [source.document_name, source.locator].filter(Boolean).join(' · ')).join('; '),
     STATUS_TEXT[row.status] || row.status || '',
     row.company_support.length ? row.company_support.map(item => item.label).join('; ') : 'Soporte específico de este proceso',
-    row.company_support.length ? row.company_support.map(item => SUPPORT_STATE_TEXT[item.state] || 'Sin dato').join('; ') : '',
+    // Mejora 4: cuando el pliego fija una regla de vigencia, la celda dice también cómo queda el documento frente a ella.
+    row.company_support.length ? row.company_support.map(item => [SUPPORT_STATE_TEXT[item.state] || 'Sin dato', item.regla_del_pliego ? item.vigencia_al_cierre?.detalle : null].filter(Boolean).join(' · ')).join('; ') : '',
     [row.owner, ...row.support_owners.filter(owner => owner !== row.owner)].filter(Boolean).join(' / '),
     row.actions.join(' '),
   ]);

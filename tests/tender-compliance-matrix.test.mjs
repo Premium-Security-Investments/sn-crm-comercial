@@ -138,7 +138,8 @@ test('la tabla plana sale con los encabezados en el orden en que se radica', () 
   assert.equal(camara[4], 'Pliego definitivo · Numeral 3.1.1');
   assert.equal(camara[5], 'Por confirmar');
   assert.equal(camara[6], 'Certificado de Cámara de Comercio');
-  assert.equal(camara[7], 'Vigencia por confirmar');
+  // Mejora 4: el pliego fija 30 días para la Cámara; la celda dice el estado del soporte y cómo queda frente a esa regla.
+  assert.equal(camara[7], 'Vigencia por confirmar · Expedido el 2026-10-06 (29 días al cierre): dentro de los 30 días calendario que pide el pliego.');
   // El requisito cuyo soporte es del proceso lo dice en la celda, no la deja vacía.
   assert.equal(tenderComplianceMatrixTable(matrix)[3][6], 'Soporte específico de este proceso');
 });
