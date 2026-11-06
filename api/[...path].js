@@ -115,7 +115,6 @@ import { createAgt002AnalysisObservability } from '../verticales/licitaciones/ag
 import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
- 34b01898 (fix(tenders): collapse duplicate SECOP rows before conversion)
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
 import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
 import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_ESTUDIOS_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
