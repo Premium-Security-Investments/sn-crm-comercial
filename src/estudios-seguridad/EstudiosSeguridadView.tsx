@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import './estudios.css';
 import { EvidenceStrip } from './EvidenceStrip';
 import { WorkflowPanel } from './WorkflowPanel';
+import { ReviewPanel } from './ReviewPanel';
 import { FieldNotePanel } from './FieldNotePanel';
 import { CharacterizationPanel } from './CharacterizationPanel';
 import {
@@ -199,6 +200,7 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
     </div>
     {study.scope ? <p className="es-scope">{study.scope}</p> : null}
     {error ? <p className="es-error" role="alert">{error}</p> : null}
+    {detail.review ? <ReviewPanel review={detail.review} /> : null}
     {detail.workflow?.available ? <WorkflowPanel studyId={study.id} status={study.status} preparedBy={study.prepared_by} workflow={detail.workflow} onChanged={reload} /> : null}
 
     <div className="es-summary" aria-label="Resumen de la valoración">
