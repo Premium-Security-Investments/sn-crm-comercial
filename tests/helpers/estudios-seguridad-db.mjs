@@ -6,7 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 export const PREPARER = { id: '11111111-1111-4111-8111-111111111111', role: 'colaborador', permissions: ['estudios_seguridad'] };
 export const REVIEWER = { id: '44444444-4444-4444-8444-444444444444', role: 'colaborador', permissions: ['estudios_seguridad', 'estudios_seguridad_revisar'] };
 export const APPROVER = { id: '55555555-5555-4555-8555-555555555555', role: 'gerencia', permissions: ['estudios_seguridad', 'estudios_seguridad_aprobar'] };
-const MIGRATIONS = ['178_estudios_seguridad_base.sql', '179_estudios_seguridad_evidencias.sql', '180_estudios_seguridad_aprobacion.sql', '181_estudios_seguridad_agente.sql', '186_estudios_seguridad_archivo.sql', '187_estudios_seguridad_caracterizacion.sql'];
+const MIGRATIONS = ['178_estudios_seguridad_base.sql', '179_estudios_seguridad_evidencias.sql', '180_estudios_seguridad_aprobacion.sql', '181_estudios_seguridad_agente.sql', '186_estudios_seguridad_archivo.sql', '187_estudios_seguridad_caracterizacion.sql', '188_estudios_seguridad_seguimiento.sql'];
 
 export async function database({ upTo = MIGRATIONS.length } = {}) {
   const pg = new PGlite();
@@ -18,6 +18,8 @@ export async function database({ upTo = MIGRATIONS.length } = {}) {
     create table public.psi_profile_permissions (profile_id uuid, permission_code text);
     insert into public.psi_sales_profiles values ('${PREPARER.id}', 'colaborador', 'Ana Preparadora'), ('${REVIEWER.id}', 'colaborador', 'Rubén Revisor'), ('${APPROVER.id}', 'gerencia', 'Alba Aprobadora');
   `);
+  // Seguimiento gerencial existe desde antes del módulo; la 188 lo amplía.
+  await pg.exec(readFileSync(new URL('../../supabase/migrations/123_siio_followups.sql', import.meta.url), 'utf8'));
   for (const name of MIGRATIONS.slice(0, upTo)) await pg.exec(readFileSync(new URL(`../../supabase/migrations/${name}`, import.meta.url), 'utf8'));
   return pg;
 }

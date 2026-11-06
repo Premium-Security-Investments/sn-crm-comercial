@@ -131,7 +131,7 @@
 | Importador de Excel | Descartado por decisión de Juan (2026-11-05). |
 | Matriz en Excel como salida | Descartada: la matriz va dentro del informe y en el JSON de la versión. |
 | Validación de la v1 por un asesor externo | Sigue pendiente (Juan lo está pidiendo). No bloquea, porque la metodología tiene versión. |
-| Retención y acceso de fotos con personas o menores | Sigue `por confirmar` antes de hacer estudios en colegios o en escenarios con menores. |
+| Retención y acceso de fotos con menores | Descartado: Juan confirmó (2026-11-06) que los estudios no tendrán fotos de menores. Era una precaución del plan, no un requisito de los documentos. |
 
 ## 4. Siguientes tramos
 
@@ -167,6 +167,11 @@ Cada tramo es un PR con pruebas, con la migración aplicada antes de fusionar y 
 - **Entrega:** al aprobar, cada acción con responsable y fecha crea un seguimiento en `siio_followups`, con el origen
   nuevo `estudio_seguridad`. Cerrar el seguimiento no cierra el riesgo.
 - **Prueba de cierre:** los seguimientos aparecen solo después de aprobar, y una sola vez.
+- **Hecho (2026-11-06, migración 188):**
+  - el seguimiento nace dentro de la transición de aprobar, con `created_role = 'sistema'` y `created_by` igual a quien aprobó;
+  - una acción entra una sola vez, por índice único: reaprobar solo agrega las nuevas y no reescribe responsable ni fecha;
+  - las acciones sin responsable o sin fecha, y las cumplidas o descartadas, no pasan;
+  - la ficha muestra cuántos compromisos hay y cuántos están abiertos.
 
 **9. Revisor IA de inconsistencias.**
 - **Entrega:**
@@ -201,7 +206,6 @@ Cada tramo es un PR con pruebas, con la migración aplicada antes de fusionar y 
 - **Puente de Vig-IA (AGT-003).** La nota de campo depende de su sesión de Claude, que vence. Si no responde, se
   registra a mano.
 - **Metodología v1 sin validar por el asesor.** Si cambia, será una v2, y los estudios aprobados no se recalculan.
-- **Fotos con personas o menores:** la retención y el acceso están por definir.
 
 ## 7. Historia
 

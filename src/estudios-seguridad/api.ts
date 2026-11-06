@@ -48,6 +48,7 @@ export type Workflow = {
   available: boolean;
   can: Partial<Record<WorkflowAction, boolean>>;
   names: Record<string, string>;
+  followups?: { total: number; abiertos: number; cumplidos: number } | null;
   events: Array<{ id: string; action: WorkflowAction; from_status: StudyStatus; to_status: StudyStatus; note: string | null; version: number | null; actor_id: string; created_at: string }>;
   versions: Array<{
     id: string; version: number; methodology_id: string; snapshot_sha256: string; approved_by: string; approved_at: string;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../apiClient';
 
-export type FollowupOrigin = 'licitacion' | 'oportunidad' | 'finanzas' | 'recomendacion_ia' | 'junta' | 'reunion' | 'otro';
+export type FollowupOrigin = 'licitacion' | 'oportunidad' | 'finanzas' | 'recomendacion_ia' | 'junta' | 'reunion' | 'otro' | 'estudio_seguridad';
 export type FollowupAutoRule = 'tender_decision' | 'tender_status' | 'opportunity_activity';
 
 export type Followup = {
@@ -42,6 +42,7 @@ export const ORIGIN_LABELS: Record<FollowupOrigin, string> = {
   junta: 'Junta',
   reunion: 'Reunión',
   otro: 'Otro',
+  estudio_seguridad: 'Estudio de seguridad',
 };
 
 export const AUTO_RULE_LABELS: Record<FollowupAutoRule, string> = {
