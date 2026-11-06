@@ -921,7 +921,19 @@ td.numeric-value{white-space:nowrap}
 .company-base-count[aria-pressed="true"]{border-color:#174ea6;background:#f2f7ff;box-shadow:inset 0 0 0 1px #174ea6}
 .company-base-count.state-al_dia strong{color:#166534}.company-base-count.state-vence_pronto strong{color:#92400e}.company-base-count.state-vencido strong{color:#991b1b}.company-base-count.state-sin_verificar strong{color:#5b21b6}
 .company-base-facts{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0;color:#526173;font-size:13px}.company-base-facts strong{color:#10213d}
-.company-base-table table{min-width:760px;table-layout:auto}
+.company-base-table table{width:100%;min-width:0;table-layout:fixed}
+.company-base-table th:nth-child(1),.company-base-table td:nth-child(1){width:20%}
+.company-base-table th:nth-child(2),.company-base-table td:nth-child(2){width:13%}
+.company-base-table th:nth-child(3),.company-base-table td:nth-child(3){width:35%}
+.company-base-table th:nth-child(4),.company-base-table td:nth-child(4){width:14%}
+.company-base-table th:nth-child(5),.company-base-table td:nth-child(5){width:18%}
+.company-base-table td{overflow-wrap:break-word;hyphens:manual;vertical-align:top}
+.company-base-table .company-base-area th,.company-base-table .company-review-row td{width:auto}
+.company-base-table .company-block-state{white-space:normal;display:inline-block;line-height:1.2}
+.company-base-table td:first-child strong{font-size:14px;line-height:1.25;overflow-wrap:normal;word-break:normal}
+.company-base-table .company-review-cell span{white-space:normal}
+.company-base-table td small.company-block-vigencia-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+@media(max-width:760px){.company-base-table table{min-width:760px}}
 .company-base-table td strong{color:#10213d}
 .company-base-table td small{display:block;margin-top:3px;color:#64748b;line-height:1.35}
 .company-base-table .numeric{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}

@@ -100,7 +100,7 @@ export function CompanyBlocksTable({ blocks, filter, onClearFilter, canDecide = 
           <tr>
             <td><strong>{block.name}</strong></td>
             <td><span className={`company-block-state state-${block.state}`}>{COMPANY_BLOCK_STATE_LABELS[block.state]}</span></td>
-            <td>{(expiryLabel(block) || issuedLabel(block)) && <strong className="company-block-expiry">{expiryLabel(block) || issuedLabel(block)}</strong>}<small>{block.vigenciaText || 'Sin vigencia registrada'}</small></td>
+            <td>{(expiryLabel(block) || issuedLabel(block)) && <strong className="company-block-expiry">{expiryLabel(block) || issuedLabel(block)}</strong>}<small className="company-block-vigencia-text" title={block.vigenciaText || undefined}>{block.vigenciaText || 'Sin vigencia registrada'}</small></td>
             <td><div className="company-support-cell">
               {block.supportDocument?.url ? <a href={block.supportDocument.url} target="_blank" rel="noreferrer">Ver soporte<span className="sr-only">: {block.name}</span></a>
                 : block.supportLoaded ? <span>Cargado</span>

@@ -284,3 +284,26 @@ test('una aprobación que no nombra su documento pide confirmación, no dice "Ap
   );
   assert.equal(sinSoporte.review, 'Aprobado');
 });
+
+// 2026-11-06: con dos pólizas RCE vigentes (la del expediente Pereira, expedida 2026-02-10, y la nueva, 2026-01-01,
+// versión más alta) Juan confirmó el bloque quince veces y seguía en "Falta confirmar": el servidor ancla la decisión
+// al soporte más reciente por expedición y la pantalla miraba el de versión más alta. Las dos reglas tienen que ser la
+// misma, y con varios soportes vigentes el orden de la lista no puede cambiar el resultado.
+test('con varios soportes vigentes, la pantalla mira el mismo documento que ancla el servidor', { skip: !deriveCompanyBlock }, () => {
+  const ahora = new Date('2026-11-06T00:00:00Z');
+  const pereira = { current: true, document_type: 'rce_policy', issued_at: '2026-02-10', expires_at: '2027-02-06', version: 1, id: 'doc-pereira', url: 'x' };
+  const nueva = { current: true, document_type: 'rce_policy', issued_at: '2026-01-01', expires_at: '2027-01-01', version: 2, id: 'doc-nueva', url: 'x' };
+  const entrada = { entry_id: 'rce_policy', document_class: 'RCE', existence_status: 'verified', human_review_status: 'approved', vigencia_text: 'Póliza', decision_support_document_id: 'doc-pereira' };
+  for (const orden of [[nueva, pereira], [pereira, nueva]]) {
+    const bloque = deriveCompanyBlock(entrada, orden, ahora);
+    assert.equal(bloque.supportDocument.id, 'doc-pereira', 'el más reciente por expedición, como currentSupportDocumentId');
+    assert.equal(bloque.review, 'Aprobado', 'la confirmación guardada no vuelve a pedirse');
+    assert.equal(bloque.reviewPending, false);
+  }
+  // Misma expedición: decide la versión, y al final el id; nunca el orden de llegada.
+  const a = { current: true, document_type: 'quality_certifications', issued_at: '2025-12-23', version: 3, id: 'iso-b' };
+  const b = { current: true, document_type: 'quality_certifications', issued_at: '2025-12-23', version: 4, id: 'iso-a' };
+  const calidad = { entry_id: 'quality_certifications', document_class: 'Calidad', existence_status: 'verified', human_review_status: 'approved', vigencia_text: 'x', decision_support_document_id: 'iso-a' };
+  assert.equal(deriveCompanyBlock(calidad, [a, b], ahora).supportDocument.id, 'iso-a');
+  assert.equal(deriveCompanyBlock(calidad, [b, a], ahora).supportDocument.id, 'iso-a');
+});

@@ -113,8 +113,27 @@ export type CompanyBlock = {
 /** Lo que la pantalla manda al decidir una ficha. `decision_humana` queda en la base y no se lee de vuelta. */
 export type CompanyEvidenceDecision = { entry_id: string; decision: 'approved' | 'rejected'; decision_humana: string };
 
+/**
+ * El soporte contra el que se lee y se decide un bloque. Tiene que ser EXACTAMENTE el mismo que ancla el servidor al
+ * guardar la decisión (`currentSupportDocumentId` en company-base.js): el más reciente por expedición, luego por
+ * versión, y el desempate por id. Si la pantalla escogía otro —antes tomaba el primero de la lista, ordenada por
+ * versión— un bloque con dos soportes vigentes (la póliza RCE del expediente Pereira y la nueva, el 2026-11-06)
+ * quedaba en "Falta confirmar" para siempre: cada confirmación se anclaba a un documento y la pantalla miraba otro.
+ */
+export function currentSupportDocument(documents: TenderCompanyDocument[], entryId: string): TenderCompanyDocument | null {
+  const candidates = documents.filter(document => document.current && document.document_type === entryId);
+  if (!candidates.length) return null;
+  return [...candidates].sort((a, b) => {
+    const issued = String(b.issued_at || '').localeCompare(String(a.issued_at || ''));
+    if (issued) return issued;
+    const version = (Number(b.version) || 0) - (Number(a.version) || 0);
+    if (version) return version;
+    return String(a.id).localeCompare(String(b.id));
+  })[0];
+}
+
 export function deriveCompanyBlock(entry: CompanyRegistryEntry, documents: TenderCompanyDocument[] = [], now = new Date()): CompanyBlock {
-  const supportDocument = documents.find(document => document.current && document.document_type === entry.entry_id) || null;
+  const supportDocument = currentSupportDocument(documents, entry.entry_id);
   let expiry: string | null = null;
   let expirySource: CompanyBlock['expirySource'] = null;
   if (parseDay(entry.expiry)) { expiry = String(entry.expiry).slice(0, 10); expirySource = 'registro'; }
