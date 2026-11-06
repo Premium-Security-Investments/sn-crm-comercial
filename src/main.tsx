@@ -1706,7 +1706,10 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     try {
       // Cada archivo sube directo al almacenamiento con una URL firmada; a la API sólo le llega la ruta. Antes iba
       // todo en base64 dentro del JSON y Vercel rechazaba el lote con 413 pasados los ~3 MB (Supersalud, 2026-10-23).
-      const files = await Promise.all(selected.slice(0, 8).map(async file => {
+      // F10 (auditoría Fiscalía, 2026-11-05): de 22 archivos elegidos entraban 8 y el resto se botaba sin avisar. Ahora
+      // van todos, en tandas de 8 (lo que la ruta procesa por envío), y el resumen cuenta todos.
+      const TANDA = 8;
+      const prepare = (batch: File[]) => Promise.all(batch.map(async file => {
         const ticket = await api<{ storage_path: string; token: string }>('/api/tender-documents-upload-url', {
           method: 'POST',
           body: JSON.stringify({ opportunity_id: opportunity.id, name: file.name, size: file.size })
@@ -1724,7 +1727,16 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
           origin: origin || null
         };
       }));
-      const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
+      let data: TenderDocumentsPayload | null = null;
+      const results: NonNullable<TenderDocumentsPayload['upload_results']> = [];
+      for (let start = 0; start < selected.length; start += TANDA) {
+        if (selected.length > TANDA) setStatusText(`Subiendo y extrayendo texto… (${Math.min(start + TANDA, selected.length)} de ${selected.length})`);
+        const files = await prepare(selected.slice(start, start + TANDA));
+        data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
+        results.push(...(data.upload_results || []));
+      }
+      if (!data) return;
+      data = { ...data, upload_results: results };
       setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText(tenderUploadSummary(data));
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }

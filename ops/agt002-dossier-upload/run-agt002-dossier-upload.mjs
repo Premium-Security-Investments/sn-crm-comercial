@@ -111,12 +111,19 @@ if (args.dryRun) {
 }
 
 try {
-  const result = await api.ingestTenderDossierDocuments(database, {
-    opportunityId: args.opportunityId,
-    opportunity,
-    actorProfileId: AGT002_VIGIA_AGENT_PROFILE_ID,
-    files,
-  });
+  // F10 (auditoría Fiscalía): la secuencia procesa hasta 8 por envío; antes el resto se perdía sin aviso. Van en tandas.
+  let result = null;
+  const results = [];
+  for (let start = 0; start < files.length; start += 8) {
+    result = await api.ingestTenderDossierDocuments(database, {
+      opportunityId: args.opportunityId,
+      opportunity,
+      actorProfileId: AGT002_VIGIA_AGENT_PROFILE_ID,
+      files: files.slice(start, start + 8),
+    });
+    results.push(...(result.upload_results || []));
+  }
+  result = { ...result, upload_results: results };
   log({
     event: 'agt002_dossier_upload_done',
     opportunityId: args.opportunityId,
