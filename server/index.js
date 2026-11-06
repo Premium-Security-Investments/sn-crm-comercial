@@ -5932,6 +5932,35 @@ async function retireSupersededOfficialTenderDocuments(database, { opportunityId
   if (retired.error) throw Object.assign(new Error(`retiro de documentos anteriores: ${retired.error.message || 'falló'} (¿migración 116 aplicada?)`), { code: 'AGT002_PHASE_CHANGE_RETIRE_FAILED' });
   return Number(retired.data || 0);
 }
+// F9 (auditoría Fiscalía): los definitivos de Fiscalía entraron por carga manual y el planificador de obsolescencia sólo
+// corría con las fases de SECOP, así que el proyecto siguió vigente junto al definitivo. Ahora una carga también pasa a
+// historial lo que reemplaza (nunca borra). Si el reemplazado es el único vigente de su fuente, no se retira: queda como
+// duda, porque la función de retiro no deja una fuente vacía.
+async function archiveVersionsReplacedByUpload(database, { opportunityId, tenderId, incomingNames, actorId }) {
+  if (!incomingNames.length) return { archived: [], doubts: [] };
+  const rows = await must(database.from('psi_tender_document_versions').select('name,source').eq('opportunity_id', opportunityId).eq('current', true));
+  const incomingKeys = new Set(incomingNames.map(secopDocumentNameKey));
+  const others = (rows || []).filter(row => !incomingKeys.has(secopDocumentNameKey(row.name)));
+  const plan = planObsoleteTenderDocuments({ currentNames: [...new Set(others.map(row => row.name))], incomingNames });
+  if (!plan.archive.length) return { archived: [], doubts: plan.doubts };
+  await requireTenderDocumentRetirement(database);
+  const archivedKeys = new Set(plan.archive.map(item => secopDocumentNameKey(item.name)));
+  const bySource = new Map();
+  for (const row of rows || []) bySource.set(row.source, [...(bySource.get(row.source) || []), row.name]);
+  const archived = [];
+  const doubts = [...plan.doubts];
+  for (const [source, names] of bySource) {
+    const leaving = names.filter(name => archivedKeys.has(secopDocumentNameKey(name)));
+    if (!leaving.length) continue;
+    const keep = names.filter(name => !archivedKeys.has(secopDocumentNameKey(name)));
+    const items = plan.archive.filter(item => leaving.some(name => secopDocumentNameKey(name) === secopDocumentNameKey(item.name)));
+    if (!keep.length) { doubts.push(...items.map(item => ({ name: item.name, candidate: item.replacedBy, reason: 'unico_vigente_de_su_fuente' }))); continue; }
+    await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel: source, keepNames: keep, actorId });
+    archived.push(...items);
+  }
+  return { archived, doubts };
+}
+
 async function importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze = true, phaseChange = null } = {}) {
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
@@ -7616,6 +7645,13 @@ export async function ingestTenderDossierDocuments(database, { opportunityId, op
     source: TENDER_MANUAL_UPLOAD_SOURCE, source_document_id: tenderManualUploadDocumentId(buffer),
     status: results[index]?.status || 'failed', error: results[index]?.error || null,
   }));
+  // F9: lo que esta carga reemplaza pasa a historial antes del corte del expediente, para que el análisis no lea lo viejo.
+  let replaced = { archived: [], doubts: [] };
+  try {
+    replaced = await archiveVersionsReplacedByUpload(database, { opportunityId, tenderId, incomingNames: uploaded.filter(item => item.status === 'new' || item.status === 'updated').map(item => item.name), actorId: actorProfileId });
+  } catch (archiveError) {
+    console.warn('tender_upload_archive_failed', { event: 'tender_upload_archive_failed', opportunity_id: opportunityId, code: String(archiveError?.code || 'unknown').slice(0, 40) });
+  }
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: actorProfileId, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
   const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
   if (beginRefresh.error) throw beginRefresh.error;
@@ -7646,6 +7682,9 @@ export async function ingestTenderDossierDocuments(database, { opportunityId, op
     ...(await getTenderDocumentRecords(database, opportunityId)),
     upload_results: uploaded.map(({ name, status, error }) => ({ name, status, error })),
     analysis_request: analysisRequest,
+    // F9: qué pasó a historial por esta carga y qué quedó en duda (no se archivó).
+    archived: replaced.archived,
+    archive_doubts: replaced.doubts,
   };
 }
 
