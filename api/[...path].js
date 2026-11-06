@@ -107,6 +107,7 @@ import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claim
 import { getAgt002WorkbenchApi, postAgt002CancelApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../verticales/licitaciones/agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../verticales/licitaciones/tender-source-status.js';
+import { collapseDuplicateTenderRows } from '../server/tender-official-rows.js';
 import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../verticales/licitaciones/tender-relevance-terms.js';
 import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../verticales/licitaciones/tender-actuation-types.js';
@@ -2548,8 +2549,13 @@ async function revalidateTenderOfficialStatus(tender) {
   if (!response) throw trackingError('SECOP no está disponible para verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
   if (!response.ok) throw trackingError('SECOP no pudo verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
   const rows = await response.json();
-  if (!Array.isArray(rows) || rows.length !== 1) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);
-  return { ...tender, status: officialTenderStatus(rows[0], tender.source), raw: rows[0] };
+  if (!Array.isArray(rows)) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);
+  const { rows: collapsedRows, duplicatesCollapsed } = collapseDuplicateTenderRows(rows);
+  if (duplicatesCollapsed > 0) {
+    console.warn(JSON.stringify({ event: 'tender_conversion_secop_duplicate_rows_collapsed', process: identityValue, originalCount: rows.length, duplicatesCollapsed }));
+  }
+  if (collapsedRows.length !== 1) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);
+  return { ...tender, status: officialTenderStatus(collapsedRows[0], tender.source), raw: collapsedRows[0] };
 }
 async function setTenderStatus(database, stableKey, internalStatus, currentProfile) {
   if (!tenderInternalStatuses.includes(internalStatus)) throw new Error('Estado interno de licitación inválido.');
