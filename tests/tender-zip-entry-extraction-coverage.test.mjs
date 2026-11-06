@@ -117,7 +117,7 @@ async function run() {
     // Metadatos del paquete: claves exactas, sin gaps internos.
     assert.deepEqual(
       Object.keys(supported.metadata).sort(),
-      ['entries', 'entry_count', 'internal_gaps'],
+      ['entries', 'entry_count', 'internal_gaps', 'skipped_system_entries'],
       'un paquete ok expone conteo, procedencia por entrada y la lista (vacia) de gaps internos',
     );
     assert.equal(supported.metadata.entry_count, SUPPORTED_ARCHIVE_ENTRY_NAMES.length);
@@ -188,7 +188,7 @@ async function run() {
 
     assert.deepEqual(
       Object.keys(mixed.metadata).sort(),
-      ['entries', 'entry_count', 'error', 'gap_reason', 'internal_gaps'],
+      ['entries', 'entry_count', 'error', 'gap_reason', 'internal_gaps', 'skipped_system_entries'],
       'un paquete con gaps internos conserva la procedencia completa junto al motivo del gap',
     );
     assert.equal(mixed.metadata.error, null, 'un gap de cobertura interna no es un error de parser del paquete');

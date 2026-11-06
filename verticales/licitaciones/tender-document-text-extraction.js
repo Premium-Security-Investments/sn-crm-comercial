@@ -539,6 +539,28 @@ const ARCHIVE_ENTRY_PARSER_BY_KIND = Object.freeze({
   unsupported: 'unsupported',
 });
 
+/** Entradas de sistema que no son documentos: carpetas y metadatos de macOS, miniaturas de Windows. */
+export function isArchiveSystemEntry(name) {
+  const path = String(name || '');
+  const base = path.split('/').pop() || '';
+  return path.startsWith('__MACOSX/') || base === '.DS_Store' || base.startsWith('._') || /^thumbs\.db$/i.test(base) || base === 'desktop.ini';
+}
+
+// CP437, la página de códigos de los zip que no traen la marca UTF-8 (bit 11): los nombres en español llegan rotos
+// («Formato N° 1» como «Formato N┬░ 1»). Sólo cambia el nombre que se muestra; la entrada se lee igual.
+const CP437_HIGH = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
+function decodeCp437(bytes) {
+  return Array.from(bytes, byte => (byte < 0x80 ? String.fromCharCode(byte) : CP437_HIGH[byte - 0x80])).join('');
+}
+export function archiveEntryDisplayName(entry) {
+  const raw = entry?.rawEntryName;
+  const utf8Flag = (Number(entry?.header?.flags) & 0x800) !== 0;
+  if (utf8Flag || !raw || !raw.some?.(byte => byte >= 0x80)) return entry?.entryName;
+  const asUtf8 = Buffer.from(raw).toString('utf8');
+  // Si los bytes son UTF-8 válido (aunque falte la marca), se respeta; si no, son CP437.
+  return asUtf8.includes('\uFFFD') ? decodeCp437(raw) : asUtf8;
+}
+
 function detectArchiveEntryKind(entryName) {
   const lower = String(entryName || '').toLowerCase();
   if (NESTED_ARCHIVE_ENTRY_PATTERN.test(lower)) return 'archive';
@@ -570,7 +592,7 @@ function compareEntryNames(left, right) {
 async function extractArchiveEntry(entry) {
   const kind = detectArchiveEntryKind(entry.entryName);
   const base = {
-    entry_name: entry.entryName,
+    entry_name: archiveEntryDisplayName(entry),
     kind,
     parser: ARCHIVE_ENTRY_PARSER_BY_KIND[kind],
     declared_size_bytes: declaredByteCount(entry.header?.size),
@@ -618,10 +640,16 @@ async function extractZipArchive(buffer) {
   const zip = new AdmZip(buffer);
   const allEntries = zip.getEntries();
   enforceArchiveEntryPathSafety(allEntries.map(entry => entry.entryName));
-  const entries = allEntries
-    .filter(entry => !entry.isDirectory)
-    .sort((left, right) => compareEntryNames(left.entryName, right.entryName));
-  enforceArchiveSafety(zip, entries);
+  // F8 (auditoría Fiscalía, 2026-11-05): «ANEXOS Y FORMATOS DEFINITIVOS.zip» quedó sin texto porque sus 21 documentos se
+  // leían bien pero el paquete traía 24 entradas de sistema de macOS (`.DS_Store`, `__MACOSX/._…`), que no son documentos
+  // y tumbaban todo el paquete. Esas entradas se saltan y se cuentan aparte; la seguridad de rutas y de tamaño se sigue
+  // midiendo sobre TODAS las entradas, y un documento de verdad que no se pueda leer sigue dejando el paquete incompleto.
+  const fileEntries = allEntries.filter(entry => !entry.isDirectory);
+  enforceArchiveSafety(zip, fileEntries);
+  const systemEntries = fileEntries.filter(entry => isArchiveSystemEntry(entry.entryName));
+  const entries = fileEntries
+    .filter(entry => !isArchiveSystemEntry(entry.entryName))
+    .sort((left, right) => compareEntryNames(archiveEntryDisplayName(left), archiveEntryDisplayName(right)));
 
   // A failing entry never aborts the package: the readable ones keep their real
   // provenance and the unreadable ones are enumerated instead of being hidden.
@@ -636,7 +664,7 @@ async function extractZipArchive(buffer) {
   const internalGaps = records
     .filter(record => record.status === 'gap')
     .map(record => ({ entry_name: record.entry_name, gap_reason: record.gap_reason }));
-  const metadata = { entry_count: records.length, entries: records, internal_gaps: internalGaps };
+  const metadata = { entry_count: records.length, entries: records, internal_gaps: internalGaps, skipped_system_entries: systemEntries.length };
   if (internalGaps.length) {
     return gapResult({ parser: 'zip-archive', gapReason: 'archive_incomplete_extraction', metadata });
   }
