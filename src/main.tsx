@@ -1302,6 +1302,9 @@ function tenderUploadSummary(data: TenderDocumentsPayload): string {
   if (added.length) parts.push(`✓ ${added.length === 1 ? 'Se agregó al expediente' : `Se agregaron ${added.length} documentos al expediente`}: ${added.map(item => item.name).join(', ')}.`);
   if (same.length) parts.push(`${same.length === 1 ? 'Ya estaba en el expediente' : `${same.length} ya estaban en el expediente`}: ${same.map(item => item.name).join(', ')}.`);
   if (failed.length) parts.push(`✗ No se pudo cargar: ${failed.map(item => `${item.name} (${item.error || 'error'})`).join('; ')}.`);
+  // F9: lo que la carga dejó atrás, dicho, para que nadie lea el proyecto creyendo que es el definitivo.
+  if (data.archived?.length) parts.push(`Pasaron a historial porque llegó su versión definitiva: ${data.archived.map(item => `${item.name} (por ${item.replacedBy})`).join('; ')}.`);
+  if (data.archive_doubts?.length) parts.push(`Revise si siguen vigentes: ${data.archive_doubts.map(item => `${item.name} (¿lo reemplaza ${item.candidate}?)`).join('; ')}.`);
   const request = data.analysis_request;
   if (request?.requested || request?.already_open) parts.push(`${VIGIA_VISIBLE_NAMES.tenders} va a revisar lo nuevo y actualizar su análisis en unos minutos; el resultado aparece en Decidir.`);
   else if (request && request.message) parts.push(`El análisis de lo nuevo no se lanzó: ${request.message}`);
@@ -1729,14 +1732,18 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       }));
       let data: TenderDocumentsPayload | null = null;
       const results: NonNullable<TenderDocumentsPayload['upload_results']> = [];
+      const archived: NonNullable<TenderDocumentsPayload['archived']> = [];
+      const archiveDoubts: NonNullable<TenderDocumentsPayload['archive_doubts']> = [];
       for (let start = 0; start < selected.length; start += TANDA) {
         if (selected.length > TANDA) setStatusText(`Subiendo y extrayendo texto… (${Math.min(start + TANDA, selected.length)} de ${selected.length})`);
         const files = await prepare(selected.slice(start, start + TANDA));
         data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
         results.push(...(data.upload_results || []));
+        archived.push(...(data.archived || []));
+        archiveDoubts.push(...(data.archive_doubts || []));
       }
       if (!data) return;
-      data = { ...data, upload_results: results };
+      data = { ...data, upload_results: results, archived, archive_doubts: archiveDoubts };
       setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText(tenderUploadSummary(data));
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }

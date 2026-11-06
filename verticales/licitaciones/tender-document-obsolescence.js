@@ -84,6 +84,20 @@ function overlaps(a, b) {
  * `currentNames`: nombres vigentes ANTES de la llegada (no incluye los nuevos).
  * Devuelve `{ archive: [{ name, reason, replacedBy }], doubts: [{ name, candidate, reason }] }`.
  */
+const sameExtension = (a, b) => extensionOf(a) === extensionOf(b);
+// Lo que puede sobrar en el nombre del vigente sin que sea otro documento: códigos cortos del proceso (FGN, REC, IPSE,
+// LP…) y palabras de alcance o de borrador. «Presupuesto oficial» sí identifica otro documento (Cali, 2026-10-20: el
+// «Formulario 1 … de Presupuesto Oficial (Oferta económica)» frente a «Formulario 1 Oferta económica Definitivo» queda
+// como duda, decisión de Juan).
+const NON_IDENTIFYING = new Set(['regional', 'seccional', 'proyecto', 'borrador', 'preliminar', 'inicial', 'version', 'v1', 'v2']);
+/** ¿Todas las palabras (dos o más) de `inner` están en `outer`, y lo que sobra en `outer` no identifica otro documento? */
+function familyContains(outer, inner) {
+  const words = String(outer || '').split(' ').filter(Boolean);
+  const needed = String(inner || '').split(' ').filter(Boolean);
+  if (needed.length < 2 || !needed.every(word => words.includes(word))) return false;
+  return words.filter(word => !needed.includes(word)).every(word => word.length <= 4 || NON_IDENTIFYING.has(word));
+}
+
 export function planObsoleteTenderDocuments({ currentNames = [], incomingNames = [] } = {}) {
   const incoming = incomingNames.map(name => ({ name, kind: tenderDocumentObsolescenceKind(name, { incoming: true }), family: tenderDocumentFamilyKey(name) }));
   const incomingSet = new Set(incomingNames.map(normalize));
@@ -104,9 +118,14 @@ export function planObsoleteTenderDocuments({ currentNames = [], incomingNames =
       continue;
     }
     const plain = normalize(name);
-    if ((kind === 'protected' || kind === 'other') && family && family.split(' ').length >= 2 && !DEFINITIVE.test(plain) && !NO_DEFINITIVE_REPLACEMENT.test(plain)) {
-      const definitive = incoming.find(doc => doc.family === family && DEFINITIVE.test(normalize(doc.name)));
-      if (definitive) {
+    if (family && family.split(' ').length >= 2 && !DEFINITIVE.test(plain) && !NO_DEFINITIVE_REPLACEMENT.test(plain)) {
+      // F9 (auditoría Fiscalía, 2026-11-05): «Estudio Previo Eje Cafetero final» no reemplazaba a «ESTUDIO PREVIO REGIONAL
+      // EJE CAFETERO», ni «ANEXOS Y FORMATOS DEFINITIVOS.zip» a «ANEXOS Y FORMATOS FGN-REC-IPSE-0058-2026.zip»: el
+      // definitivo suele llamarse más corto. Cuenta como la misma familia si TODAS sus palabras (dos o más) están en el
+      // nombre del vigente y es el mismo tipo de archivo; así un zip definitivo no saca de vigentes formatos sueltos.
+      const definitive = incoming.find(doc => DEFINITIVE.test(normalize(doc.name)) && doc.family
+        && (doc.family === family || (sameExtension(doc.name, name) && familyContains(family, doc.family))));
+      if (definitive && (kind === 'protected' || kind === 'other' || definitive.family !== family)) {
         archive.push({ name, reason: 'version_definitiva', replacedBy: definitive.name });
         continue;
       }

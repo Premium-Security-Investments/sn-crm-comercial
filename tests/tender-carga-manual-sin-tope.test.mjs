@@ -20,7 +20,7 @@ test('la pantalla manda todos los elegidos en tandas de 8 y el resumen cuenta to
   const block = main.slice(main.indexOf('const uploadTenderDocumentFiles = async'), main.indexOf('const addFiles = (event'));
   assert.match(block, /for \(let start = 0; start < selected\.length; start \+= TANDA\)/);
   assert.match(block, /results\.push\(\.\.\.\(data\.upload_results \|\| \[\]\)\);/);
-  assert.match(block, /data = \{ \.\.\.data, upload_results: results \};/);
+  assert.match(block, /data = \{ \.\.\.data, upload_results: results(, archived, archive_doubts: archiveDoubts)? \};/);
 });
 
 test('el programa del servidor de tareas también va en tandas', () => {
