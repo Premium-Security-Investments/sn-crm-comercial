@@ -248,22 +248,83 @@ function clipInstruction(text) {
   return text.length <= REQUIREMENT_SEED_INSTRUCTION_MAX ? text : `${text.slice(0, REQUIREMENT_SEED_INSTRUCTION_MAX - 1).trimEnd()}…`;
 }
 
+/**
+ * Mejora 2 (encargo desde Terminal; versión básica acordada con Juan, §8.6): una tarea por requisito, con su numeral y
+ * su página, y ninguna «otros». En TT-SPO-07 el análisis juntó espectro y registro TIC, uniformes, vehículos, multas y
+ * sanciones y tarifas mínimas en un solo ítem, «Otros habilitantes técnicos»: nadie lo abrió hasta la víspera y multas y
+ * sanciones estaba vencido. Un requisito que nombra varios documentos («Título: a; b; c; y d») se siembra como una
+ * tarea por documento. Un título «Otros…» nunca se siembra así: si no trae «;», se parte por comas.
+ */
+const OTHERS_TITLE = /^\s*otr[oa]s\b/i;
+const fold = value => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+function splitDemand(demand, title) {
+  const text = String(demand || '');
+  const colon = text.indexOf(':');
+  if (colon < 0 || colon > 140) return null;
+  const head = text.slice(0, colon).trim();
+  const body = text.slice(colon + 1).replace(/\.\s*(?:Durante|Además|Nota)\b[\s\S]*$/, '').replace(/\.\s*$/, '');
+  const others = OTHERS_TITLE.test(head) || OTHERS_TITLE.test(title || '');
+  let parts = body.split(/\s*;\s*(?:y\s+)?/);
+  // Por comas sólo cuando el título es «Otros…»; la «y» sólo parte si lo que sigue es otro documento («…TIC y
+  // certificación del SG-SST»), no dentro de un nombre («seguridad y salud en el trabajo»).
+  if (parts.length < 2 && others) parts = body.split(/\s*,\s*|\s+y\s+(?=(?:certific|autoriz|resoluci|p[oó]liza|licencia|registro|carta|permiso|copia|declaraci|antecedente|acta|formato|anexo|rut\b|consulta))/i);
+  parts = parts.map(part => part.trim()).filter(part => part.length > 3);
+  return parts.length >= 2 ? { head, parts } : null;
+}
+
+/** «Numeral 3.1», «Numerales 4.2.1-4.2.9», «§27.1.1», «págs. 92-102», «pp. 55-64» → «num. 3.1 · págs. 92-102». */
+export function requirementWhere(sources = []) {
+  const text = sources.map(source => source.locator || '').join(' ');
+  const numeral = /(?:numeral(?:es)?|num\.|§)\s*([\d]+(?:\.[\d]+)*(?:\s*[-–]\s*[\d]+(?:\.[\d]+)*)?)/i.exec(text)?.[1]?.replace(/\s+/g, '');
+  const pages = /(?:p[aá]gs?\.?|pp\.?|p[aá]ginas?)\s*([\d]+(?:\s*[-–]\s*[\d]+)?)/i.exec(text)?.[1]?.replace(/\s+/g, '');
+  return [numeral ? `num. ${numeral}` : null, pages ? `págs. ${pages}` : null].filter(Boolean).join(' · ');
+}
+
+const GENERIC_WORDS = new Set(['certificacion', 'certificado', 'autorizacion', 'resolucion', 'registro', 'documento', 'documentos', 'vigencia', 'expedida', 'expedido', 'oferta', 'proponente', 'confirmar', 'revisa', 'revisar', 'pedir', 'cumplimiento', 'ministerio', 'minimo', 'maximo', 'antes', 'cierre', 'anexo', 'formato']);
+const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1);
+const short = (value, max) => (value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`);
+const longWords = value => fold(value).replace(/[^a-z0-9ñ ]+/g, ' ').split(/\s+/).filter(word => word.length >= 5);
+
+function seedItem(row, { key, title, demand, actions, partOf }, closeDate, today) {
+  const lines = [];
+  if (actions.length) lines.push(`Qué hacer: ${actions.join(' ')}`);
+  if (demand) lines.push(`Qué exige el pliego: ${demand}`);
+  if (partOf) lines.push(`Parte de: ${partOf} (el análisis lo traía junto; aquí va solo).`);
+  const source = row.sources.map(item => [item.documentName, item.locator].filter(Boolean).join(' · ')).filter(Boolean).join('; ');
+  if (source) lines.push(`Dónde: ${source}`);
+  lines.push(`Estado según el análisis: ${REQUIREMENT_STATUS_LABEL[row.status].toLowerCase()}.`);
+  lines.push('Cargado por Vig-IA Licitaciones desde el análisis al registrar el GO. Verificar contra el pliego original.');
+  const where = requirementWhere(row.sources);
+  return {
+    item_key: key.slice(0, 200),
+    title: `${row.area} · ${short(title, 140)}${where ? ` (${where})` : ''}${row.rejection ? ' — CAUSA RECHAZO' : ''}`.slice(0, 400),
+    required: true,
+    target_date: requirementTargetDate(row, closeDate, today),
+    instruction: clipInstruction(lines.join('\n')),
+  };
+}
+
 export function requirementSeedItems(rows, closeDate, today) {
-  return rows.filter(row => row.status !== 'no_aplica').map(row => {
-    const lines = [];
-    if (row.actions.length) lines.push(`Qué hacer: ${row.actions.join(' ')}`);
-    if (row.demand) lines.push(`Qué exige el pliego: ${row.demand}`);
-    const source = row.sources.map(item => [item.documentName, item.locator].filter(Boolean).join(' · ')).filter(Boolean).join('; ');
-    if (source) lines.push(`Dónde: ${source}`);
-    lines.push(`Estado según el análisis: ${REQUIREMENT_STATUS_LABEL[row.status].toLowerCase()}.`);
-    lines.push('Cargado por Vig-IA Licitaciones desde el análisis al registrar el GO. Verificar contra el pliego original.');
-    return {
-      item_key: `${REQUIREMENT_ITEM_KEY_PREFIX}${row.key}`.slice(0, 200),
-      title: `${row.area} · ${row.title}${row.rejection ? ' — CAUSA RECHAZO' : ''}`.slice(0, 400),
-      required: true,
-      target_date: requirementTargetDate(row, closeDate, today),
-      instruction: clipInstruction(lines.join('\n')),
-    };
+  return rows.filter(row => row.status !== 'no_aplica').flatMap(row => {
+    const baseKey = `${REQUIREMENT_ITEM_KEY_PREFIX}${row.key}`;
+    const split = splitDemand(row.demand, row.title);
+    if (!split) return [seedItem(row, { key: baseKey, title: row.title, demand: row.demand, actions: row.actions }, closeDate, today)];
+    return split.parts.map((part, index) => {
+      // Las acciones que nombran este documento: las que más palabras propias comparten con él (sin las genéricas
+      // «certificación», «autorización»…). Si ninguna lo nombra, no se le copian las de los otros documentos.
+      const own = longWords(part).filter(word => !GENERIC_WORDS.has(word));
+      const scored = row.actions.map(action => ({ action, score: longWords(action).filter(word => own.includes(word)).length }));
+      const best = Math.max(0, ...scored.map(item => item.score));
+      const matched = best > 0 ? scored.filter(item => item.score === best).map(item => item.action) : [];
+      return seedItem(row, {
+        key: `${baseKey}#${index + 1}`,
+        title: capitalize(part),
+        demand: part,
+        actions: matched.length ? matched : ['Conseguirlo y revisarlo contra el pliego (el análisis no dio una acción propia para este documento).'],
+        partOf: split.head,
+      }, closeDate, today);
+    });
   });
 }
 

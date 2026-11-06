@@ -291,8 +291,9 @@ export async function seedTenderDossierRequirements(database, opportunityId, act
   const rows = buildRequirementRows(response.report);
   const items = requirementSeedItems(rows, closeDate, today);
   let inserted = 0;
-  if (items.length) {
-    const result = await rpc(database, 'psi_seed_tender_dossier_requirements', { p_opportunity_id: opportunityId, p_actor_id: actor, p_items: items });
+  // Mejora 2: con una tarea por documento salen más ítems; la función de la base acepta hasta 80 por llamada.
+  for (let start = 0; start < items.length; start += 80) {
+    const result = await rpc(database, 'psi_seed_tender_dossier_requirements', { p_opportunity_id: opportunityId, p_actor_id: actor, p_items: items.slice(start, start + 80) });
     inserted += Number(result?.inserted || 0);
   }
   // Mejora 3 (encargo desde Terminal): los trámites con tercero, en su propia llamada. Si fallan, los requisitos ya
