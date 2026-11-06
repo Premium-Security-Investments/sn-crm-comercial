@@ -145,6 +145,21 @@ export async function transitionStudy(db, studyId, body = {}, profile) {
 const missingTable = error => error && (error.code === '42P01' || error.code === 'PGRST205' || /does not exist|could not find the table/i.test(error.message || ''));
 
 // Bitácora, versiones y botones para la ficha. Sin la migración 180, la ficha se sigue viendo sin el flujo.
+// Tramo 8: lo que la aprobación dejó en Seguimiento gerencial (migración 188). Sin ella, o sin la tabla, no se muestra.
+async function studyFollowups(db, studyId) {
+  const actions = await db.from('psi_security_study_actions').select('id').eq('study_id', studyId);
+  if (actions.error) throw actions.error;
+  const refs = (actions.data || []).map(item => item.id);
+  if (!refs.length) return { total: 0, abiertos: 0, cumplidos: 0 };
+  const rows = await db.from('siio_followups').select('status').eq('origin_type', 'estudio_seguridad').in('origin_ref', refs);
+  if (rows.error) {
+    if (missingTable(rows.error)) return null;
+    throw rows.error;
+  }
+  const count = status => (rows.data || []).filter(item => item.status === status).length;
+  return { total: (rows.data || []).length, abiertos: count('abierto'), cumplidos: count('cumplido') };
+}
+
 export async function loadWorkflow(db, study, profile) {
   const [events, versions] = await Promise.all([
     db.from(EVENTS_TABLE).select('id, action, from_status, to_status, note, version, actor_id, created_at').eq('study_id', study.id).order('created_at', { ascending: true }),
@@ -163,6 +178,7 @@ export async function loadWorkflow(db, study, profile) {
   const ids = [...new Set([...(events.data || []).map(item => item.actor_id), ...(versions.data || []).map(item => item.approved_by), study.prepared_by])];
   const { data: people } = await db.from('psi_sales_profiles').select('id, full_name').in('id', ids);
   return {
+    followups: (versions.data || []).length ? await studyFollowups(db, study.id) : null,
     available: true,
     events: events.data || [],
     versions: (versions.data || []).map(version => ({ ...version, archive: archiveByVersion.get(version.version) || null })),

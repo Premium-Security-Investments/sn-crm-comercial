@@ -9,7 +9,7 @@ const when = (value: string) => new Intl.DateTimeFormat('es-CO', { dateStyle: 'm
 const BUTTONS: Array<{ action: WorkflowAction; label: string; tone?: 'secondary' | 'danger'; confirm?: string }> = [
   { action: 'enviar', label: 'Enviar a revisión', confirm: 'Mientras esté en revisión el estudio no se puede editar. ¿Enviar?' },
   { action: 'marcar_revisado', label: 'Marcar como revisado' },
-  { action: 'aprobar', label: 'Aprobar esta versión', confirm: 'Al aprobar, el estudio queda congelado como una versión que no se puede cambiar. ¿Aprobar?' },
+  { action: 'aprobar', label: 'Aprobar esta versión', confirm: 'Al aprobar, el estudio queda congelado como una versión que no se puede cambiar, y cada acción con responsable y fecha pasa a Seguimiento gerencial. ¿Aprobar?' },
   { action: 'reabrir', label: 'Reabrir para corregir', tone: 'secondary', confirm: 'El estudio vuelve a borrador; la versión aprobada se conserva y la próxima aprobación será una versión nueva. ¿Reabrir?' },
 ];
 
@@ -61,6 +61,9 @@ export function WorkflowPanel({ studyId, status, preparedBy, workflow, onChanged
       <button type="button" className="danger" disabled={busy || note.trim().length < 3} onClick={() => run('devolver')}>Devolver con observaciones</button>
     </div> : null}
     {error ? <p className="es-error" role="alert">{error}</p> : null}
+    {workflow.followups ? <p className="es-muted">{workflow.followups.total
+      ? `Seguimiento gerencial: ${workflow.followups.total} ${workflow.followups.total === 1 ? 'compromiso' : 'compromisos'} de este estudio, ${workflow.followups.abiertos} abiertos y ${workflow.followups.cumplidos} cumplidos. Cerrarlos allá no cierra los riesgos.`
+      : 'Ninguna acción del plan tenía responsable y fecha al aprobar, así que no pasó nada a Seguimiento gerencial.'}</p> : null}
     {workflow.versions.length ? <div>
       <span className="es-label">Versiones aprobadas</span>
       <ul className="es-history">{workflow.versions.map(version => <li key={version.id}>

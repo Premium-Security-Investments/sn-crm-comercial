@@ -46,7 +46,7 @@ test('el camino completo: enviar, devolver, corregir, revisar, aprobar, reabrir 
   // No se envía con un riesgo alto sin acción con responsable y fecha.
   await assert.rejects(go(db, study, 'enviar', PREPARER), error => error.status === 422 && /R1 está en nivel alto/.test(error.message));
   await addAction(db, study.id, { risk_id: risk.id, description: 'Reparar la malla', owner_label: 'Mantenimiento', due_date: '2026-12-15' }, PREPARER);
-  assert.deepEqual(await go(db, study, 'enviar', PREPARER), { status: 'en_revision', version: null, sha256: null });
+  assert.deepEqual(await go(db, study, 'enviar', PREPARER), { status: 'en_revision', version: null, followups: 0, sha256: null });
 
   // En revisión no se edita.
   await assert.rejects(updateRisk(db, study.id, risk.id, { probability: 3 }, PREPARER), error => error.status === 409);

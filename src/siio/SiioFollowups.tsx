@@ -88,7 +88,7 @@ function FollowupItem({ item, today, canEdit, onChanged }: { item: Followup; tod
     <div className="siio-followup-main">
       <strong>{item.title}</strong>
       <span>{item.owner_label} · <span className={late ? 'siio-alert-text' : undefined}>{dueLabel(item, today)}</span></span>
-      <small>{ORIGIN_LABELS[item.origin_type]}{item.origin_label ? ` · ${item.origin_label}` : ''}{item.created_role === 'junta' ? ' · creado por la Junta' : ''}</small>
+      <small>{ORIGIN_LABELS[item.origin_type]}{item.origin_label ? ` · ${item.origin_label}` : ''}{item.created_role === 'junta' ? ' · creado por la Junta' : item.created_role === 'sistema' ? ' · creado al aprobar' : ''}</small>
       {item.status === 'abierto' && item.auto_rule ? <small>{AUTO_RULE_LABELS[item.auto_rule]}</small> : null}
       {item.status !== 'abierto' ? <small>{item.status === 'cumplido' ? (item.close_reason === 'automatico' ? `Cumplido automáticamente. ${item.close_evidence || ''}` : 'Cumplido') : 'Cancelado'} · {item.closed_at ? item.closed_at.slice(0, 10) : ''}</small> : null}
       {item.notes?.length ? <ul className="siio-followup-notes">{item.notes.map(entry => <li key={entry.at}><time>{entry.at.slice(0, 10)}</time> {entry.text}</li>)}</ul> : null}
