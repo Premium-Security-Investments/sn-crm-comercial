@@ -101,12 +101,12 @@ import { canonicalizeTenderDocuments } from '../verticales/licitaciones/tender-d
 import { isCriticalTenderDocument } from '../verticales/licitaciones/tender-critical-documents.js';
 import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../verticales/licitaciones/tender-official-document-coverage.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
-import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
+mport { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../verticales/licitaciones/agt002-preview-runtime.js';
 import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim, renewAgt002PreviewClaim } from '../verticales/licitaciones/agt002-preview-persistence.js';
 import { getAgt002WorkbenchApi, postAgt002CancelApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../verticales/licitaciones/agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../verticales/licitaciones/tender-source-status.js';
-import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../verticales/licitaciones/tender-relevance-terms.js';
+import { collapseDuplicateTenderRows } from '../server/tender-official-rows.js';\nimport { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../verticales/licitaciones/tender-relevance-terms.js';
 import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../verticales/licitaciones/tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../verticales/licitaciones/agt002-analysis-config.js';
@@ -115,6 +115,7 @@ import { createAgt002AnalysisObservability } from '../verticales/licitaciones/ag
 import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../verticales/licitaciones/agt002-company-dossier.js';
+ 34b01898 (fix(tenders): collapse duplicate SECOP rows before conversion)
 import { PLATFORM_AGENTS_UNAVAILABLE_MESSAGE, isPlatformAgentsUnavailable, listPlatformAgents } from '../platform-agents.js';
 import { knownModelLimits, limitsFromEffectiveConfiguration, listPlatformModelUsage } from '../platform-model-usage.js';
 import { AGT003_AGENT_ID, AGT003_BRIEF_CAPABILITY, AGT003_CHAT_CAPABILITY, AGT003_ESTUDIOS_CAPABILITY, AGT003_COPILOT_CAPABILITY, AGT003_LEAD_ANALYSIS_CAPABILITY, gatewayEnvironment, recordModelRejection } from '../platform-model-gateway.js';
@@ -2545,8 +2546,13 @@ async function revalidateTenderOfficialStatus(tender) {
   if (!response) throw trackingError('SECOP no está disponible para verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
   if (!response.ok) throw trackingError('SECOP no pudo verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
   const rows = await response.json();
-  if (!Array.isArray(rows) || rows.length !== 1) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);
-  return { ...tender, status: officialTenderStatus(rows[0], tender.source), raw: rows[0] };
+  if (!Array.isArray(rows)) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);
+  const { rows: collapsedRows, duplicatesCollapsed } = collapseDuplicateTenderRows(rows);
+  if (duplicatesCollapsed > 0) {
+    console.warn(JSON.stringify({ event: 'tender_conversion_secop_duplicate_rows_collapsed', process: identityValue, originalCount: rows.length, duplicatesCollapsed }));
+  }
+  if (collapsedRows.length !== 1) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);
+  return { ...tender, status: officialTenderStatus(collapsedRows[0], tender.source), raw: collapsedRows[0] };
 }
 async function setTenderStatus(database, stableKey, internalStatus, currentProfile) {
   if (!tenderInternalStatuses.includes(internalStatus)) throw new Error('Estado interno de licitación inválido.');
