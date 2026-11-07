@@ -38,6 +38,7 @@ export const EMPTY_TABS_ACCESS = Object.freeze({
   delete_opportunities: false,
   tender_custody: false,
   tender_company: false,
+  tender_lessons: false,
   study_review: false,
   study_approve: false,
   read_only: false,
@@ -80,6 +81,7 @@ export function normalizeTabsAccess(input) {
     delete_opportunities: flag('delete_opportunities'),
     tender_custody: flag('tender_custody'),
     tender_company: flag('tender_company'),
+    tender_lessons: flag('tender_lessons'),
     study_review: flag('study_review'),
     study_approve: flag('study_approve'),
     read_only: flag('read_only'),
@@ -87,12 +89,12 @@ export function normalizeTabsAccess(input) {
   const has = code => tabs.includes(code);
   // Opciones que dependen de su pestaña: sin la pestaña no tienen efecto.
   if (!has('oportunidades')) Object.assign(access, { opportunity_scope: 'propias', owns_opportunities: false, copilot: false, edit_segment: false, delete_opportunities: false });
-  if (!has('licitaciones')) Object.assign(access, { tender_custody: false, tender_company: false });
+  if (!has('licitaciones')) Object.assign(access, { tender_custody: false, tender_company: false, tender_lessons: false });
   if (!has('estudios')) Object.assign(access, { study_review: false, study_approve: false });
   if (access.read_only) {
     const blocked = tabs.filter(tab => WRITE_TABS.has(tab));
     if (blocked.length) throw accessError('Con "Solo consulta" no se pueden dar Cargar metas, Estudios de seguridad ni Usuarios y permisos.');
-    if (access.copilot || access.edit_segment || access.delete_opportunities || access.tender_custody || access.tender_company || access.study_review || access.study_approve || access.owns_opportunities) {
+    if (access.copilot || access.edit_segment || access.delete_opportunities || access.tender_custody || access.tender_company || access.tender_lessons || access.study_review || access.study_approve || access.owns_opportunities) {
       throw accessError('Con "Solo consulta" no se pueden dar opciones que cambian información.');
     }
     if (has('oportunidades')) access.opportunity_scope = 'todas';
@@ -137,6 +139,7 @@ export function accessFromTabs(input, existingAreas = []) {
   if (access.delete_opportunities) permissions.add('crm_eliminar_oportunidades');
   if (access.tender_custody) permissions.add('licitaciones_custodia');
   if (access.tender_company) permissions.add('licitaciones_empresa');
+  if (access.tender_lessons) permissions.add('licitaciones_lecciones');
   if (access.study_review) permissions.add('estudios_seguridad_revisar');
   if (access.study_approve) permissions.add('estudios_seguridad_aprobar');
 
@@ -181,6 +184,7 @@ export function tabsFromProfile(profile) {
     delete_opportunities: permissions.has('crm_eliminar_oportunidades'),
     tender_custody: permissions.has('licitaciones_custodia'),
     tender_company: permissions.has('licitaciones_empresa'),
+    tender_lessons: permissions.has('licitaciones_lecciones'),
     study_review: permissions.has('estudios_seguridad_revisar'),
     study_approve: permissions.has('estudios_seguridad_aprobar'),
     read_only: role === 'consulta' || role === 'junta',
