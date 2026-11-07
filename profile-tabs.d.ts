@@ -9,6 +9,7 @@ export type TabsAccess = {
   delete_opportunities: boolean;
   tender_custody: boolean;
   tender_company: boolean;
+  tender_lessons: boolean;
   study_review: boolean;
   study_approve: boolean;
   read_only: boolean;

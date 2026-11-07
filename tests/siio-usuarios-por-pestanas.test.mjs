@@ -64,8 +64,8 @@ test('áreas: se conservan las del área comercial; quien es sólo de Licitacion
 
 test('ida y vuelta: los perfiles actuales se leen y se vuelven a guardar con los mismos permisos', () => {
   const people = [
-    { role: 'admin', can_own_opportunities: true, can_edit_customer_segment: true, permissions: ['licitaciones', 'licitaciones_custodia', 'modulo_alertas_comerciales', 'modulo_dashboard_comercial', 'modulo_metas', 'modulo_oportunidades', 'modulo_siio_gerencial', 'modulo_usuarios', 'modulo_vig_ia', 'vigia_copilot_pilot'] },
-    { role: 'comercial', can_own_opportunities: false, can_edit_customer_segment: true, permissions: ['licitaciones', 'licitaciones_custodia', 'licitaciones_empresa', 'modulo_alertas_comerciales', 'modulo_metas', 'modulo_oportunidades', 'modulo_vig_ia', 'vigia_copilot_pilot'] },
+    { role: 'admin', can_own_opportunities: true, can_edit_customer_segment: true, permissions: ['licitaciones', 'licitaciones_custodia', 'licitaciones_lecciones', 'modulo_alertas_comerciales', 'modulo_dashboard_comercial', 'modulo_metas', 'modulo_oportunidades', 'modulo_siio_gerencial', 'modulo_usuarios', 'modulo_vig_ia', 'vigia_copilot_pilot'] },
+    { role: 'comercial', can_own_opportunities: false, can_edit_customer_segment: true, permissions: ['licitaciones', 'licitaciones_custodia', 'licitaciones_empresa', 'licitaciones_lecciones', 'modulo_alertas_comerciales', 'modulo_metas', 'modulo_oportunidades', 'modulo_vig_ia', 'vigia_copilot_pilot'] },
     { role: 'comercial', can_own_opportunities: false, can_edit_customer_segment: true, permissions: ['modulo_alertas_comerciales', 'modulo_metas', 'modulo_oportunidades', 'modulo_vig_ia', 'vigia_copilot_pilot'] },
   ];
   for (const person of people) {
@@ -75,6 +75,14 @@ test('ida y vuelta: los perfiles actuales se leen y se vuelven a guardar con los
     assert.equal(result.can_edit_customer_segment, person.can_edit_customer_segment);
     assert.equal(result.can_own_opportunities, person.can_own_opportunities);
   }
+});
+
+// Lecciones (Juan, 2026-11-07): la casilla vive bajo Licitaciones; editar a Katherine no le quita el permiso.
+test('lecciones: casilla bajo Licitaciones, sin Licitaciones no tiene efecto', () => {
+  const con = accessFromTabs({ tabs: ['licitaciones'], tender_lessons: true });
+  assert.ok(con.permissions.includes('licitaciones_lecciones'));
+  assert.ok(!accessFromTabs({ tabs: ['oportunidades'], tender_lessons: true }).permissions.includes('licitaciones_lecciones'));
+  assert.match(ui, /checked=\{access\.tender_lessons\}/);
 });
 
 test('resumen de pestañas para la lista', () => {
