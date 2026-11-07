@@ -3834,7 +3834,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
           {has('licitaciones') && !readOnly && <div className="access-subarea">
             <label className="checkline"><input type="checkbox" checked={access.tender_custody} onChange={e => setAccess({ tender_custody: e.target.checked })}/> Custodia: convierte detecciones y aprueba reglas</label>
             <label className="checkline"><input type="checkbox" checked={access.tender_company} onChange={e => setAccess({ tender_company: e.target.checked })}/> Mantiene la información de la empresa</label>
-            <label className="checkline"><input type="checkbox" checked={access.tender_lessons} onChange={e => setAccess({ tender_lessons: e.target.checked })}/> Aprueba y retira las lecciones de la empresa que usa Vig-IA</label>
+            <label className="checkline"><input type="checkbox" checked={access.tender_lessons} onChange={e => setAccess({ tender_lessons: e.target.checked })}/> Lecciones: aprueba y retira las lecciones de la empresa</label>
           </div>}
         </fieldset>
         <fieldset className="access-area-card"><legend>Seguridad</legend>
