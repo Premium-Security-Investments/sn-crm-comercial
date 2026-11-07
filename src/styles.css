@@ -1005,3 +1005,9 @@ td.numeric-value{white-space:nowrap}
 
 /* Mejora 1: licitaciones con algo que puede tumbar la oferta, en Mi día */
 .my-day-tender-overdue ul{margin:4px 0 0;padding-left:18px;display:grid;gap:2px}
+/* Lecciones de la empresa (Licitaciones → Lecciones). */
+.tender-lesson-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.tender-lesson{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;background:#fff}
+.tender-lesson p{margin:0 0 6px}
+.tender-lesson-statement{font-size:15px;color:#10213d}
+.tender-lesson .row-actions input{flex:1 1 220px;min-width:0}

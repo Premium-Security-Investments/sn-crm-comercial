@@ -54,6 +54,7 @@ assert.deepEqual(ACTIONS, {
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_COMPANY_PROFILE_UPDATE: 'licitaciones.company_profile.update',
   LICITACIONES_COMPANY_EVIDENCE_DECIDE: 'licitaciones.company_evidence.decide',
+  LICITACIONES_LESSONS_MANAGE: 'licitaciones.lessons.manage',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -85,8 +86,8 @@ assert.deepEqual(ACTIONS, {
   LICITACIONES_KNOWLEDGE_PROPOSE: 'licitaciones.knowledge.propose',
   LICITACIONES_KNOWLEDGE_REVIEW: 'licitaciones.knowledge.review',
   LICITACIONES_KNOWLEDGE_PUBLISH: 'licitaciones.knowledge.publish',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 47 acciones');
-assert.equal(actionValues.length, 47, 'ACTIONS debe exponer exactamente 47 códigos estables');
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 48 acciones');
+assert.equal(actionValues.length, 48, 'ACTIONS debe exponer exactamente 48 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -224,6 +225,10 @@ runCases('licitaciones', [
   { name: 'custodia decide una ficha del registro de evidencia', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE, resource: {}, expected: true },
   { name: 'ficha empresarial sin custodia no decide evidencia', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE, resource: {}, expected: false },
   { name: 'solo consulta no decide evidencia', profile: tenderUser('consulta', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE, resource: {}, expected: false },
+  { name: 'quien tiene lecciones las gestiona', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_lecciones'] }), action: ACTIONS.LICITACIONES_LESSONS_MANAGE, resource: {}, expected: true },
+  { name: 'custodia sola no gestiona lecciones', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_LESSONS_MANAGE, resource: {}, expected: false },
+  { name: 'solo consulta no gestiona lecciones', profile: tenderUser('consulta', { permissions: ['licitaciones', 'licitaciones_lecciones'] }), action: ACTIONS.LICITACIONES_LESSONS_MANAGE, resource: {}, expected: false },
+  { name: 'agente no gestiona lecciones', profile: agent({ permissions: ['licitaciones', 'licitaciones_lecciones'] }), action: ACTIONS.LICITACIONES_LESSONS_MANAGE, resource: {}, expected: false },
   { name: 'agente no decide evidencia', profile: agent({ permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE, resource: {}, expected: false },
   { name: 'director sin permiso no configura', profile: human('director'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
   { name: 'admin sin custodia no convierte', profile: tenderUser('admin'), action: ACTIONS.LICITACIONES_CONVERT, resource: {}, expected: false },

@@ -21,6 +21,15 @@ export function canConfigureTenders(profile: TenderPermissionProfile): boolean {
   return profile.permissions.includes('licitaciones_empresa') || profile.permissions.includes('licitaciones_custodia');
 }
 
+/** Espeja LICITACIONES_LESSONS_MANAGE: el botón «Lecciones» y sus decisiones, sólo con su permiso (Juan, 2026-11-07). */
+export function canManageTenderLessons(profile: TenderPermissionProfile): boolean {
+  return isActiveHuman(profile)
+    && !isTenderReadOnlyProfile(profile)
+    && Array.isArray(profile.permissions)
+    && profile.permissions.includes('licitaciones')
+    && profile.permissions.includes('licitaciones_lecciones');
+}
+
 /** Mirrors LICITACIONES_CONFIGURE: custody is required for RUP/document mutations. */
 export function canManageTenderCompanyDocuments(profile: TenderPermissionProfile): boolean {
   return isActiveHuman(profile)

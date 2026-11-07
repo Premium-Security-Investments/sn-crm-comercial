@@ -583,12 +583,12 @@ function titleFor(route: Route, profile?: Profile | null) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
-  // Licitaciones tiene una entrada por vista: sólo se marca la vista abierta (Configuración se marca como Radar).
+  // Licitaciones tiene una entrada por vista: sólo se marca la vista abierta (Empresa y Lecciones se marcan como Radar).
   const isActiveHref = (href: string) => {
     if (href.startsWith('#/tenders?view=')) {
       if (route.page !== 'tenders') return false;
       const view = tenderViewFromHash();
-      return href === `#/tenders?view=${view === 'configuracion' ? 'radar' : view}`;
+      return href === `#/tenders?view=${view === 'configuracion' || view === 'lecciones' ? 'radar' : view}`;
     }
     return href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
   };

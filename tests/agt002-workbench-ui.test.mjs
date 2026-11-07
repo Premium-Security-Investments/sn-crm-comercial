@@ -134,7 +134,8 @@ assert.match(adapter, /visibleAuthorName:\s*message\.author_kind\s*===\s*'agent'
 assert.doesNotMatch(adapter, /visibleAuthorName:\s*message\.visible_agent_name,/);
 assert.doesNotMatch(adapter, /visibleAgentName:\s*['"]Vig-IA['"],/);
 assert.match(adapter, /contextLabel:\s*'Expediente activo',/);
-assert.match(adapter, /capabilities:\s*\['message',\s*'attach',\s*'draft',\s*'review',\s*'learning'\],/);
+// Juan, 2026-11-07: la Mesa de Licitaciones ya no muestra «Propuestas de aprendizaje»; eso pasó a Lecciones.
+assert.match(adapter, /capabilities:\s*\['message',\s*'attach',\s*'draft',\s*'review'\],/);
 assert.match(adapter, /humanReviewRequired:\s*true,/);
 assert.match(adapter, /\}\s*as const\)/);
 assert.match(adapter, /import\s*\{\s*AgentWorkbenchShell\s*\}\s*from\s*'..\/..\/agents\/workbench\/AgentWorkbenchShell';/);
