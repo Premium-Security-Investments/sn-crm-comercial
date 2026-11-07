@@ -4,6 +4,7 @@ import { redactAgt003CopilotText } from '../comercial/agt003-copilot-input.js';
 import { minimizarFuentes, sostieneAfirmacion } from '../../catalogo-fuentes.js';
 import { agt002FechaDeTrabajo } from './agt002-fecha-de-trabajo.js';
 import { agt002UsaTopeDeBorrador } from './agt002-mesa-document-intent.js';
+import { AGT002_LESSONS_POLICY } from './agt002-company-lessons.js';
 
 // Política inmutable de la Mesa Vig-IA para el puente de producción (Fase B1). El
 // contexto es dato citable, nunca instrucción; Vig-IA no tiene autoridad de
@@ -62,7 +63,7 @@ function sanitizeText(value, maxChars) {
   return redactAgt003CopilotText(stripControlChars(value)).slice(0, maxChars);
 }
 
-function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt002FechaDeTrabajo()) {
+function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt002FechaDeTrabajo(), lecciones = []) {
   const contextLinks = input.context_links.map(link => Object.freeze({
     kind: link.kind,
     id: link.id,
@@ -84,6 +85,12 @@ function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt0
       maxProcedencia: MAX_SOURCE_PROVENANCE_CHARS,
       maxValorPorNombre: { 'proceso.formato_oficial': MAX_FORMATO_VALUE_CHARS, 'proceso.seccion_del_pliego': MAX_FORMATO_VALUE_CHARS },
     });
+  }
+  // Lecciones de la empresa activas (encargo del 2026-11-06): como las fuentes, la clave sólo aparece si hay alguna.
+  if (lecciones.length > 0) {
+    minimizado.lecciones_de_la_empresa = Object.freeze(lecciones.map(item => Object.freeze(Object.fromEntries(
+      Object.entries(item).map(([key, value]) => [key, key === 'id' ? value : sanitizeText(value, 1200)]),
+    ))));
   }
   return Object.freeze(minimizado);
 }
@@ -276,6 +283,8 @@ export function createAgt002WorkbenchResponder({
   // Mejora 5: ({ input, document, missingInformation }) => metadata del archivo. La inyecta el drain, que tiene
   // el cliente del puente y la base; sin ella, los borradores siguen siendo sólo texto.
   produceDocument = null,
+  // Lecciones de la empresa: () => lecciones activas ya acotadas (agt002LessonsForPrompt). Sin ella, la Mesa de siempre.
+  loadLessons = null,
   now = () => new Date(),
 } = {}) {
   if (!client || typeof client.run !== 'function') {
@@ -293,6 +302,21 @@ export function createAgt002WorkbenchResponder({
   }
 
   if (typeof now !== 'function') throw new Error('La Mesa Vig-IA requiere un reloj configurado.');
+  if (loadLessons !== null && typeof loadLessons !== 'function') {
+    throw new Error('La Mesa Vig-IA requiere que el lector de lecciones sea una función.');
+  }
+
+  // Igual que las fuentes: si las lecciones no se pueden leer, la Mesa responde sin ellas.
+  async function leerLecciones(input) {
+    if (!loadLessons) return [];
+    try {
+      const lecciones = await loadLessons();
+      return Array.isArray(lecciones) ? lecciones.filter(isRecord) : [];
+    } catch (error) {
+      console.warn('agt002_workbench_lessons_unresolved', { event: 'agt002_workbench_lessons_unresolved', job_id: input.job_id, code: error?.code || 'lessons_failed' });
+      return [];
+    }
+  }
 
   // Sin catálogo conectado la Mesa sigue funcionando como antes. Si el catálogo falla, la Mesa
   // tampoco se cae: se queda sin esas fuentes y lo registra, de modo que el modelo no recibe el
@@ -359,7 +383,8 @@ export function createAgt002WorkbenchResponder({
       const allowedSourceIds = input.context_links.map(link => link.id);
       const withDocument = Boolean(produceDocument) && input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft;
       const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds, withDocument });
-      const minimizedInput = buildMinimizedInput(input, fuentesResueltas, agt002FechaDeTrabajo(now()));
+      const lecciones = await leerLecciones(input);
+      const minimizedInput = buildMinimizedInput(input, fuentesResueltas, agt002FechaDeTrabajo(now()), lecciones);
 
       // Re-chequeo del interruptor inmediatamente antes de invocar al puente: un
       // apagado a mitad del drain nunca debe llegar a llamar al modelo, aunque el
@@ -370,7 +395,7 @@ export function createAgt002WorkbenchResponder({
 
       const raw = await client.run({
         model,
-        policy: policyText,
+        policy: lecciones.length > 0 ? `${policyText} ${AGT002_LESSONS_POLICY}` : policyText,
         input: minimizedInput,
         outputSchema,
         // Al modelo se le deja el tope del borrador menos 15 s, que son para armar y guardar el Word. Una respuesta que

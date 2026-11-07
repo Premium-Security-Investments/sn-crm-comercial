@@ -115,3 +115,40 @@ export async function listAgt002Lessons(database, { statuses = AGT002_LESSON_STA
   }
   return data || [];
 }
+
+// Lo que Vig-IA Licitaciones recibe (PR b): sólo las activas, con tope de cantidad y de tamaño, en orden de código.
+export const AGT002_LESSONS_PROMPT_MAX_LESSONS = 40;
+export const AGT002_LESSONS_PROMPT_MAX_CHARS = 8000;
+
+export const AGT002_LESSONS_POLICY = [
+  'lecciones_de_la_empresa son reglas que la empresa aprendió en procesos anteriores y que una persona aprobó: son patrón, no prueba de cumplimiento.',
+  'Tenlas en cuenta en todo el análisis o la respuesta; cuando una lección cambie lo que dices, nómbrala por su id (por ejemplo «lección L-01») junto al numeral del pliego que aplica.',
+  'Nunca presentes una lección como evidencia del pliego ni como dato verificado de este proceso; si choca con el pliego o con una fuente verificada, prevalecen éstos y señala la diferencia.',
+].join(' ');
+
+/** Lecciones activas → bloque compacto para el prompt. Respeta el tope; lo que no cabe se omite entero, nunca a medias. */
+export function agt002LessonsForPrompt(lessons, { maxLessons = AGT002_LESSONS_PROMPT_MAX_LESSONS, maxChars = AGT002_LESSONS_PROMPT_MAX_CHARS } = {}) {
+  const out = [];
+  let size = 2;
+  for (const lesson of [...(Array.isArray(lessons) ? lessons : [])].sort((a, b) => String(a?.code).localeCompare(String(b?.code), 'es', { numeric: true }))) {
+    if (!lesson || lesson.status !== 'activa' || !CODE.test(String(lesson.code || '')) || typeof lesson.statement !== 'string') continue;
+    const item = { id: lesson.code, categoria: AGT002_LESSON_CATEGORIES[lesson.category] || 'Otro', leccion: lesson.statement };
+    if (lesson.rationale) item.por_que = lesson.rationale;
+    if (lesson.how_to_apply) item.como_aplicar = lesson.how_to_apply;
+    const itemSize = JSON.stringify(item).length + 1;
+    if (out.length >= maxLessons || size + itemSize > maxChars) break;
+    out.push(Object.freeze(item));
+    size += itemSize;
+  }
+  return Object.freeze(out);
+}
+
+/** Las activas listas para el prompt. Nunca hace fallar un análisis ni la Mesa: sin tabla o con error, lista vacía. */
+export async function loadAgt002LessonsForPrompt(database, options = {}) {
+  try {
+    return agt002LessonsForPrompt(await listAgt002Lessons(database, { statuses: ['activa'] }), options);
+  } catch (error) {
+    console.warn('agt002_lessons_unavailable', { event: 'agt002_lessons_unavailable', code: String(error?.code || 'error').slice(0, 80) });
+    return Object.freeze([]);
+  }
+}
