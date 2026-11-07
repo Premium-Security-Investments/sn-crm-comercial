@@ -1,6 +1,13 @@
 import type { ReactNode } from 'react';
 
-export type TenderModuleView = 'radar' | 'seguimiento' | 'oportunidades' | 'configuracion';
+export type TenderModuleView = 'radar' | 'seguimiento' | 'oportunidades' | 'configuracion' | 'lecciones';
+export type TenderLessonStatus = 'propuesta' | 'activa' | 'retirada' | 'descartada';
+export type TenderLesson = {
+  id: string; code: string; version: number; status: TenderLessonStatus; statement: string; rationale: string | null;
+  how_to_apply: string | null; category: string; source_kind: string; source_ref: string | null; opportunity_id: string | null;
+  proposed_by_model: boolean; reason: string | null; created_at: string; proposed_at: string;
+  proposed_by_name: string | null; decided_by_name: string | null;
+};
 export type TenderRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 export type TenderSection = 'hacer' | 'revisar' | 'prioridad_baja';
 export type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';

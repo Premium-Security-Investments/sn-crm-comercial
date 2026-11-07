@@ -1,4 +1,4 @@
-import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOpenBoard, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderLesson, TenderLessonStatus, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOpenBoard, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -218,4 +218,13 @@ export async function loadTenderDraftSharepointCopies(request: TenderRequest, op
 /** Pide la copia; la sube el servidor de tareas en uno o dos minutos. */
 export async function requestTenderDraftSharepointCopy(request: TenderRequest, input: { opportunity_id: string; version_id: string }): Promise<{ copy: TenderDraftSharepointCopy }> {
   return request('/api/tender-dossier-sharepoint-copies', { method: 'POST', body: JSON.stringify(input) });
+}
+
+// Lecciones de la empresa: sólo quien tiene el permiso de lecciones (el servidor lo vuelve a exigir).
+export async function loadTenderLessons(request: TenderRequest): Promise<{ lessons: TenderLesson[] }> {
+  return request<{ lessons: TenderLesson[] }>('/api/tender-lessons');
+}
+
+export async function decideTenderLesson(request: TenderRequest, input: { code: string; expected_version: number; status: Exclude<TenderLessonStatus, 'propuesta'>; reason?: string | null }): Promise<unknown> {
+  return request('/api/tender-lessons/decision', { method: 'POST', body: JSON.stringify(input) });
 }

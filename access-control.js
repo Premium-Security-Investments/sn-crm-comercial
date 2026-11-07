@@ -36,6 +36,7 @@ export const ACTIONS = Object.freeze({
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_COMPANY_PROFILE_UPDATE: 'licitaciones.company_profile.update',
   LICITACIONES_COMPANY_EVIDENCE_DECIDE: 'licitaciones.company_evidence.decide',
+  LICITACIONES_LESSONS_MANAGE: 'licitaciones.lessons.manage',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -73,6 +74,7 @@ const KNOWN_ACTIONS = new Set(Object.values(ACTIONS));
 const TENDER_PERMISSION = 'licitaciones';
 const TENDER_CUSTODY_PERMISSION = 'licitaciones_custodia';
 const TENDER_COMPANY_PERMISSION = 'licitaciones_empresa';
+const TENDER_LESSONS_PERMISSION = 'licitaciones_lecciones';
 const HUMAN_TENDER_ROLES = new Set(['admin', 'gerencia', 'director', 'comercial']);
 const PRIVILEGED_ROLES = new Set(['admin', 'gerencia']);
 
@@ -400,6 +402,12 @@ export function can(profile, action, resource = {}) {
       return canTenderCustodyAction(profile);
     case ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE:
       return canTenderCompanyProfileAction(profile);
+    // Lecciones de la empresa (Juan, 2026-11-07): ver, aprobar, descartar y retirar sólo con su permiso propio.
+    case ACTIONS.LICITACIONES_LESSONS_MANAGE:
+      return isHuman(profile)
+        && !READ_ONLY_ROLES.has(profile.role)
+        && hasPermission(profile, TENDER_PERMISSION)
+        && hasPermission(profile, TENDER_LESSONS_PERMISSION);
 
     case ACTIONS.SIIO_AREA_VIEW:
       return hasHumanRole(profile, PRIVILEGED_OR_READ_ONLY_ROLES)

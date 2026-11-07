@@ -170,6 +170,7 @@ import { presentAgt002ReanalysisStatus } from '../verticales/licitaciones/agt002
 import { readAgt002InitialAnalysisStatus } from '../verticales/licitaciones/agt002-initial-analysis-status.js';
 import { readAgt002ManualReanalysisStatus, requestAgt002AnalysisAfterUpload, requestAgt002ManualReanalysis } from '../verticales/licitaciones/agt002-manual-reanalysis.js';
 import { listAgt002Clarifications, recordAgt002Clarification } from '../verticales/licitaciones/agt002-clarifications.js';
+import { decideAgt002Lesson, listAgt002Lessons } from '../verticales/licitaciones/agt002-company-lessons.js';
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
 import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
@@ -530,6 +531,9 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   // así que pide el permiso de la ficha, no el de la Mesa.
   'POST /api/tender-company-evidence-decision': ['tenders', ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE],
   'POST /api/agt002-clarification-to-company-profile': ['tenders', ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE],
+  // Lecciones de la empresa (Juan, 2026-11-07): sólo quien tiene el permiso de lecciones las ve y las decide.
+  'GET /api/tender-lessons': ['tenders', ACTIONS.LICITACIONES_LESSONS_MANAGE],
+  'POST /api/tender-lessons/decision': ['tenders', ACTIONS.LICITACIONES_LESSONS_MANAGE],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
@@ -7923,6 +7927,42 @@ app.post('/api/agt002-clarifications', async (req, res) => {
       { tenderLabel: await tenderLabelForOpportunity(database, opportunityId) },
     );
     return res.status(201).json({ ...recorded, company_profile_suggestion: suggestion });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Lecciones de la empresa (encargo AGT-002 del 2026-11-06; Juan, 2026-11-07): botón «Lecciones» al lado de «Empresa»,
+// sólo para quien tiene `licitaciones_lecciones`. Por aprobar y activas, con el nombre de quien propuso y de quien decidió.
+app.get('/api/tender-lessons', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_LESSONS_MANAGE);
+    const database = requireDb();
+    const lessons = await listAgt002Lessons(database);
+    const ids = [...new Set(lessons.flatMap(row => [row.proposed_by, row.actor_id]).filter(Boolean))];
+    const names = new Map();
+    if (ids.length) {
+      const { data } = await database.from('psi_sales_profiles').select('id,full_name').in('id', ids);
+      for (const row of data || []) names.set(row.id, row.full_name);
+    }
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ lessons: lessons.map(row => ({
+      ...row,
+      proposed_by_name: names.get(row.proposed_by) || null,
+      decided_by_name: row.version > 1 ? names.get(row.actor_id) || null : null,
+    })) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-lessons/decision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_LESSONS_MANAGE);
+    res.set('Cache-Control', 'private, no-store');
+    const body = req.body || {};
+    const lesson = await decideAgt002Lesson(requireDb(), {
+      actorId: currentProfile?.id || '', code: body.code, expectedVersion: body.expected_version, status: body.status, reason: body.reason ?? null,
+    });
+    return res.json({ lesson });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

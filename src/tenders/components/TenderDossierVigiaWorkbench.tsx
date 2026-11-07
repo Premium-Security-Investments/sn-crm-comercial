@@ -10,7 +10,8 @@ const VIGIA_DOSSIER_CONFIG = Object.freeze({
   subtitle: 'Preparación de oferta',
   workbenchTitle: 'Mesa de ayuda',
   contextLabel: 'Expediente activo',
-  capabilities: ['message', 'attach', 'draft', 'review', 'learning'],
+  // Sin 'learning': las propuestas de aprendizaje de la Mesa se reemplazaron por Lecciones (Juan, 2026-11-07).
+  capabilities: ['message', 'attach', 'draft', 'review'],
   humanReviewRequired: true,
 } as const);
 

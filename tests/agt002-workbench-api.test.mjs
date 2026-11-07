@@ -236,6 +236,14 @@ await assert.rejects(
 );
 assert.equal(badCapabilityDb.calls.length, 0);
 
+// Juan, 2026-11-07: la Mesa ya no propone aprendizajes (pasó a Lecciones); se rechaza en la puerta.
+const learningDb = fakeDb(workspaceResponse());
+await assert.rejects(
+  () => postAgt002MessageApi(learningDb, draftBody({ capability_id: 'agt002.dossier-workbench.learning-proposal.v1' }), operator, enabled),
+  error => error.status === 400 && error.code === 'AGT002_WORKBENCH_LEARNING_RETIRED',
+);
+assert.equal(learningDb.calls.length, 0);
+
 // Un borrador sin documento no se encola: el responder lo rechazaría después del claim.
 const noArtifactDb = fakeDb(workspaceResponse());
 await assert.rejects(

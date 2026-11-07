@@ -69,6 +69,11 @@ function capability(value) {
   if (!Object.values(AGT002_WORKBENCH_CAPABILITIES).includes(value)) {
     throw apiError('capability_id no pertenece al contrato de la Mesa.', 400, 'AGT002_WORKBENCH_BAD_REQUEST');
   }
+  // Juan, 2026-11-07: la Mesa ya no propone aprendizajes; lo que la empresa aprende va a Lecciones (botón al lado de
+  // «Empresa»). Nunca se usó: 0 propuestas en la base.
+  if (value === AGT002_WORKBENCH_CAPABILITIES.learningProposal) {
+    throw apiError('La Mesa ya no propone aprendizajes: use Lecciones.', 400, 'AGT002_WORKBENCH_LEARNING_RETIRED');
+  }
   return value;
 }
 
