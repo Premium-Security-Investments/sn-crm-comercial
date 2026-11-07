@@ -6899,8 +6899,8 @@ app.post('/api/tender-closure-acta/confirm', async (req, res) => {
     const database = requireDb();
     await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
     const confirmed = await callConfirmTenderClosureActa(database, req.body || {}, currentProfile);
-    // Lecciones (encargo del 2026-11-06): con el acta confirmada, Vig-IA propone de 0 a 3 lecciones para que Juan o
-    // Katherine las aprueben en Lecciones. Nunca rompe la confirmación: el acta ya quedó guardada.
+    // Lecciones (encargo del 2026-11-06): con el acta confirmada, Vig-IA propone de 0 a 3 lecciones para que quien
+    // tiene el permiso de lecciones las apruebe. Nunca rompe la confirmación: el acta ya quedó guardada.
     const lessons = await proposeLessonsFromConfirmedActa(database, String(req.body?.opportunity_id || ''));
     res.status(201).json(confirmed && typeof confirmed === 'object' && !Array.isArray(confirmed) ? { ...confirmed, lessons_from_acta: lessons } : confirmed);
   } catch (error) { sendError(res, error, error?.status || 400); }
