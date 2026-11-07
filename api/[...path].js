@@ -39,6 +39,7 @@ import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../vertic
 import { callTenderOpportunityArchive } from '../verticales/licitaciones/tender-offer-archive-rpc.js';
 import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClosureActa, callReopenTenderClosureActa } from '../verticales/licitaciones/tender-closure-acta-rpc.js';
 import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../verticales/licitaciones/agt002-closure-acta-live.js';
+import { proposeLessonsFromConfirmedActa } from '../verticales/licitaciones/agt002-lessons-from-acta.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -6897,7 +6898,11 @@ app.post('/api/tender-closure-acta/confirm', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
     await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
-    res.status(201).json(await callConfirmTenderClosureActa(database, req.body || {}, currentProfile));
+    const confirmed = await callConfirmTenderClosureActa(database, req.body || {}, currentProfile);
+    // Lecciones (encargo del 2026-11-06): con el acta confirmada, Vig-IA propone de 0 a 3 lecciones para que Juan o
+    // Katherine las aprueben en Lecciones. Nunca rompe la confirmación: el acta ya quedó guardada.
+    const lessons = await proposeLessonsFromConfirmedActa(database, String(req.body?.opportunity_id || ''));
+    res.status(201).json(confirmed && typeof confirmed === 'object' && !Array.isArray(confirmed) ? { ...confirmed, lessons_from_acta: lessons } : confirmed);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
