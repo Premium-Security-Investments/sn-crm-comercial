@@ -2,6 +2,7 @@ import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.
 import { createAgt002WorkbenchResponder } from './agt002-workbench-responder.js';
 import { createAgt002DraftDocumentProducer } from './agt002-workbench-document.js';
 import { resolverParaLector } from '../../catalogo-fuentes.js';
+import { loadAgt002LessonsForPrompt } from './agt002-company-lessons.js';
 
 // Entrada 1 del catálogo de fuentes: lo que el servidor resuelve y estampa antes de llamar al
 // modelo. Son las tres que faltaban el 23-oct, cuando la Mesa inventó el nombre de la empresa
@@ -222,6 +223,8 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
           : null,
         // La pregunta viaja al catálogo para que la selección sea pertinente: 20 bloques de evidencia y más de cien
         // experiencias no caben en una respuesta, y un volcado tapa justo lo que se preguntó.
+        // Lecciones de la empresa activas: se leen en cada pedido, así una aprobada aplica desde la siguiente consulta.
+        loadLessons: () => loadAgt002LessonsForPrompt(database),
         resolveSources: ({ tenderId, message, documento }) => resolverParaLector(database, {
           lector: 'agt002.mesa',
           // El formato sólo se busca cuando hay un documento que escribir.

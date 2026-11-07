@@ -232,3 +232,23 @@ test('without official CRM data the synthesis proceeds unchanged (the context is
   assert.equal('official_crm_data' in request.input, false);
   assert.doesNotMatch(request.policy, /official_crm_data/);
 });
+
+// Lecciones de la empresa (encargo AGT-002 del 2026-11-06): las activas llegan a la síntesis con la regla de citarlas.
+test('la síntesis recibe las lecciones activas y la regla de citarlas; sin lecciones no cambia nada', async () => {
+  const requests = [];
+  const respuesta = { content: JSON.stringify({ claims: [], process_analysis: {}, requirements: [], findings: [], contradictions: [], coverage: [], recommendation: {}, open_items: [], process_deadlines: [] }), usage: { input_tokens: 1, output_tokens: 1 } };
+  const lecciones = [{ id: 'L-01', categoria: 'Sede o agencia', leccion: 'Agencia no es sucursal.' }];
+  for (const loadLessons of [async () => lecciones, async () => []]) {
+    const configured = runtime({
+      loadPackage: async () => stubPackage(),
+      loadLessons,
+      bridgeClient: { run: async value => { requests.push(value); return respuesta; } },
+      validateEnvelope: () => ({ ok: true, errors: [] }),
+    });
+    await configured.callModel({ job: synthesisJob, batch: synthesisBatch, modelId: 'model-a', members: batchMember });
+  }
+  assert.deepEqual(requests[0].input.lecciones_de_la_empresa, lecciones);
+  assert.match(requests[0].policy, /«lección L-01»/);
+  assert.equal('lecciones_de_la_empresa' in requests[1].input, false);
+  assert.doesNotMatch(requests[1].policy, /lecciones_de_la_empresa/);
+});

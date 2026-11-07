@@ -5,6 +5,7 @@ import {
   agt002InitialDiagnosticError, agt002PriorAnalysisForModel, buildInitialAggregate, buildInitialMemberOutputSchema, buildInitialSynthesisModelSchema,
 } from './agt002-initial-analysis-aggregate-builder.js';
 import { loadAgt002CompanyProfileSnapshotForWorkflow } from './agt002-company-profile-snapshot.js';
+import { AGT002_LESSONS_POLICY, loadAgt002LessonsForPrompt } from './agt002-company-lessons.js';
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
@@ -166,6 +167,8 @@ export function createAgt002InitialAnalysisRuntime({
   loadOfficialContext = defaultLoadOfficialContext,
   loadPriorAnalysis = defaultLoadPriorAnalysis,
   loadClarifications = defaultLoadClarifications,
+  // Lecciones de la empresa activas (encargo del 2026-11-06): se leen al sintetizar; si fallan, el análisis sigue sin ellas.
+  loadLessons = loadAgt002LessonsForPrompt,
   executorVersion = process.env.AGT002_DEPLOYED_VERSION || 'agt002-initial-analysis-worker',
   now = () => new Date(),
 } = {}) {
@@ -243,6 +246,8 @@ export function createAgt002InitialAnalysisRuntime({
             extraInput.human_clarifications = await loadClarifications(database, { ids: batch.clarificationIds, opportunityId: job.opportunityId });
           }
         }
+        const lecciones = await loadLessons(database);
+        if (Array.isArray(lecciones) && lecciones.length) extraInput.lecciones_de_la_empresa = lecciones;
         extraInput.evidence_catalog = pkg.members.map(member => ({
           document_id: member.document_version_id,
           source_classification: member.source_classification,
@@ -299,7 +304,7 @@ export function createAgt002InitialAnalysisRuntime({
 
       const response = await bridgeClient.run({
         model: modelId,
-        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : ''),
+        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : ''),
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,
