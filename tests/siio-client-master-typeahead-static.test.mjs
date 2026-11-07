@@ -45,7 +45,7 @@ const FROZEN = {
   // Actualizado a propósito (2026-11-05, F1/F2 de la auditoría Fiscalía): la Mesa pide además
   // `proceso.seccion_del_pliego`, la sección completa del numeral que se pregunta. Cupos, motor, puente, modelo, timeout
   // e interruptor no cambian.
-  'verticales/licitaciones/agt002-workbench-runtime.js': 'd30be0df734a68949baca89093dcea7fc65f7fdd099f93ee0a08a2c35dda79ae',
+  'verticales/licitaciones/agt002-workbench-runtime.js': 'd6f575ffd5ce0e3bfeed9e9bbd1d14bc5c8336c00abd74cd4a2347693080b199',
   // Actualizado a propósito (2026-11-05, F3 de la auditoría Fiscalía): el corte de vigencia de las normas
   // (`legalAsOf`) toma el día de Colombia en vez del de UTC. Cupos, motor, puente, modelo y timeout no cambian.
   'verticales/licitaciones/agt002-preview-runtime.js': '7d6f6f6b41af98b2b0b3081846565389f07c2bdb7e8766f3ff6570385fce33ae',
