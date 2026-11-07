@@ -121,8 +121,8 @@ $$;
 revoke all on function public.psi_propose_tender_lesson(uuid, jsonb, boolean) from public, anon, authenticated;
 grant execute on function public.psi_propose_tender_lesson(uuid, jsonb, boolean) to service_role;
 
--- Aprobar, descartar (una propuesta) o retirar (una activa, con motivo): versión nueva con el mismo contenido. p_expected_version evita aprobar sobre algo que cambió
--- mientras la pantalla estaba abierta.
+-- Aprobar, descartar (una propuesta) o retirar (una activa, con motivo): versión nueva con el mismo contenido.
+-- p_expected_version evita decidir sobre algo que cambió mientras la pantalla estaba abierta.
 create or replace function public.psi_decide_tender_lesson(p_actor_id uuid, p_code text, p_expected_version integer, p_status text, p_reason text)
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_cur public.psi_tender_lessons%rowtype; v_row public.psi_tender_lessons%rowtype;
