@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION, ocrPdfBuffer, runTenderDocumentOcrPass, selectOcrCandidates } from '../verticales/licitaciones/tender-document-ocr.js';
+import { TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION, ocrLooksReadable, ocrPdfBuffer, runTenderDocumentOcrPass, selectOcrCandidates } from '../verticales/licitaciones/tender-document-ocr.js';
 import { mergeCanonicalExtractionIntoDocument, selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 
 const V = (id, extra = {}) => ({ id, opportunity_id: 'o1', tender_id: 't1', name: `${id}.pdf`, mime_type: 'application/pdf', storage_path: `manual-uploads/o1/${id}.pdf`, current: true, extracted_text: '', actor_id: 'k', created_at: '2026-11-08T10:00:00Z', origin: 'propio', ...extra });
@@ -75,4 +75,22 @@ test('OCR real de una página escaneada (sólo donde hay tesseract)', { skip: !h
   const blank = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n164\n%%EOF');
   const result = await ocrPdfBuffer(blank, { maxPages: 1 });
   assert.equal(result.pages, 1);
+});
+
+// 2026-11-08, primera corrida en producción: el CDP de la Rama de Pereira, escaneado de lado, salió como texto sin sentido
+// y quedó «ok». La versión `-osd` endereza la página, descarta lo ilegible y vuelve a leer lo de la primera versión.
+test('lo ilegible queda como «gap» ocr_ilegible, y lo leído por la primera versión se vuelve a leer', async () => {
+  assert.equal(ocrLooksReadable('>». os eubed a¡qesuodsay eun 1ANSANA corasara sa vaca vato ANNV4 ZM1 NONV) OQ T1VW8lo ¿od 9]U3W|2yBIp OPeu xx yy zz qq ww ee rr tt'), false);
+  assert.equal(ocrLooksReadable('El valor asegurado de la póliza es de 400 SMMLV y la vigencia va hasta el primero de enero, según la carátula expedida por la aseguradora para la empresa en el mes de febrero.'), true);
+  const viejo = { id: 'v1', document_version_id: 'cdp', extractor_version: 'tender-document-ocr-tesseract@4', status: 'ok', created_at: '2026-11-08T20:10:00Z' };
+  assert.deepEqual(selectOcrCandidates([V('cdp')], [GAP('cdp'), viejo]).map(v => v.id), ['cdp']);
+  const garbage = '--- página 1 ---\n' + '>». os eubed a¡qesuodsay eun 1ANSANA corasara sa vaca vato ANNV4 ZM1 NONV OQ T1VW8lo od 9U3W 2yBIp OPeu xx yy zz qq ww ee rr tt'.repeat(3);
+  const db = fakeDb({ versions: [V('cdp')], extractions: [GAP('cdp'), viejo] });
+  await runTenderDocumentOcrPass(db, { ocr: async () => ({ text: garbage, pages: 1 }) });
+  assert.equal(db.calls[0].args.p_status, 'gap');
+  assert.equal(db.calls[0].args.p_gap_reason, 'ocr_ilegible');
+  // Y ese «gap» le gana en la lectura canónica al «ok» ilegible de la primera versión.
+  const nuevo = { id: 'v2', document_version_id: 'cdp', extractor_version: TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION, status: 'gap', created_at: '2026-11-08T21:00:00Z' };
+  const okViejo = { ...viejo, extracted_text: 'abc', text_hash: createHash('sha256').update('abc').digest('hex'), char_count: 3 };
+  assert.equal(selectCanonicalExtractionsByDocumentVersion([GAP('cdp'), okViejo, nuevo]).get('cdp').id, 'v2');
 });
