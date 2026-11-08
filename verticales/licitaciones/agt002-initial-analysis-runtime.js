@@ -6,6 +6,8 @@ import {
 } from './agt002-initial-analysis-aggregate-builder.js';
 import { loadAgt002CompanyProfileSnapshotForWorkflow } from './agt002-company-profile-snapshot.js';
 import { AGT002_LESSONS_POLICY, loadAgt002LessonsForPrompt } from './agt002-company-lessons.js';
+import { AGT002_DONDE_BUSCO_POLICY, AGT002_SECCIONES_POLICY, agt002NumeralesPendientes, agt002SeccionesPendientes } from './agt002-secciones-pendientes.js';
+import { selectCanonicalExtractionsByDocumentVersion } from './tender-document-extraction-persistence.js';
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
@@ -155,6 +157,21 @@ export function planAgt002InitialMemberCalls(members, maxChars) {
   return calls;
 }
 
+// F12: texto de documentos por versión: la extracción canónica (incluye la del OCR) y, si no hay, el texto legado.
+async function defaultLoadDocumentTexts(database, ids) {
+  if (!ids.length) return [];
+  const [versions, extractions] = await Promise.all([
+    database.from('psi_tender_document_versions').select('id,name,extracted_text').in('id', ids),
+    database.from('psi_tender_document_extractions').select('id,document_version_id,extractor_version,status,extracted_text,text_hash,char_count,created_at').in('document_version_id', ids),
+  ]);
+  if (versions.error) throw versions.error;
+  const canonical = selectCanonicalExtractionsByDocumentVersion(extractions.error ? [] : extractions.data || []);
+  return (versions.data || []).map(version => {
+    const row = canonical.get(version.id);
+    return { id: version.id, name: version.name, extracted_text: row?.status === 'ok' ? row.extracted_text : version.extracted_text || '' };
+  });
+}
+
 /** Creates the real INITIAL rehydration/model boundaries. Dependencies stay injectable for E0. */
 export function createAgt002InitialAnalysisRuntime({
   bridgeClient,
@@ -169,6 +186,8 @@ export function createAgt002InitialAnalysisRuntime({
   loadClarifications = defaultLoadClarifications,
   // Lecciones de la empresa activas (encargo del 2026-11-06): se leen al sintetizar; si fallan, el análisis sigue sin ellas.
   loadLessons = loadAgt002LessonsForPrompt,
+  // F12: el texto de los documentos que citó el análisis anterior, para leer completos los numerales pendientes.
+  loadDocumentTexts = defaultLoadDocumentTexts,
   executorVersion = process.env.AGT002_DEPLOYED_VERSION || 'agt002-initial-analysis-worker',
   now = () => new Date(),
 } = {}) {
@@ -242,6 +261,14 @@ export function createAgt002InitialAnalysisRuntime({
           const { prior, retiredDocumentIds } = agt002PriorAnalysisForModel(priorResult, { documentIds: pkg.members.map(member => member.document_version_id), scope: persistence.g1Scope });
           extraInput.prior_analysis = prior;
           extraInput.retired_document_ids = retiredDocumentIds;
+          // F12: lo que quedó pendiente se relee en su numeral completo. Si falla, el reanálisis sigue sin las secciones.
+          try {
+            const wanted = agt002NumeralesPendientes(prior);
+            if (wanted.length) {
+              const secciones = agt002SeccionesPendientes(prior, await loadDocumentTexts(database, [...new Set(wanted.map(item => item.document_id))]));
+              if (secciones.length) extraInput.secciones_del_pliego = secciones;
+            }
+          } catch { /* sin secciones */ }
           if (Array.isArray(batch.clarificationIds) && batch.clarificationIds.length) {
             extraInput.human_clarifications = await loadClarifications(database, { ids: batch.clarificationIds, opportunityId: job.opportunityId });
           }
@@ -304,7 +331,7 @@ export function createAgt002InitialAnalysisRuntime({
 
       const response = await bridgeClient.run({
         model: modelId,
-        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : ''),
+        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : '') + (extraInput.secciones_del_pliego ? AGT002_SECCIONES_POLICY : '') + AGT002_DONDE_BUSCO_POLICY,
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,
