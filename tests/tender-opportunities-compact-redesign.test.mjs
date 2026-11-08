@@ -57,6 +57,8 @@ function makeOpportunitiesRequest(rows) {
   const fn = async (path, options) => {
     // El tablero de procesos abiertos (mejora 4) es otra carga, con su propia ruta: no cuenta como carga de la lista.
     if (path === '/api/tender-open-board') return { summary: { procesos: 0 } };
+    // Los indicadores de ofertas (encargo del 2026-11-07) son otra carga, con su propia ruta.
+    if (path.startsWith('/api/tender-offer-indicators')) throw new Error('sin indicadores en esta prueba');
     calls.push(path);
     if (path.startsWith('/api/tender-opportunities')) return rows;
     throw new Error(`ruta no esperada en la prueba: ${options?.method || 'GET'} ${path}`);
