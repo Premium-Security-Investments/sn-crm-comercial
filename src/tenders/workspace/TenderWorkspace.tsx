@@ -398,12 +398,13 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
   opportunityId: string; request: TenderRequest; profiles: TenderDossierAssignee[]; canApprove: boolean;
   report: Agt002InitialReport | null; closeDate: string | null; offerStatus: TenderOfferStatus | null;
   onOfferStatusChanged: () => Promise<void> | void; channel?: ReactNode;
-  onSeedRequirements: () => Promise<{ inserted: number }>;
+  onSeedRequirements: () => Promise<{ inserted: number; tramites?: number }>;
 }) {
   const [workspace, setWorkspace] = useState<TenderDossierWorkspace | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [seedNote, setSeedNote] = useState('');
   const [draft, setDraft] = useState<ItemDraft>({ evidenceKind: 'texto', evidence: '', justification: '' });
   const [showNoAplica, setShowNoAplica] = useState(false);
   const [statusNote, setStatusNote] = useState('');
@@ -468,8 +469,12 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
     finally { setBusy(null); }
   };
   const seed = async () => {
-    setBusy('seed'); setError('');
-    try { await onSeedRequirements(); await reload(); }
+    setBusy('seed'); setError(''); setSeedNote('');
+    try {
+      const result = await onSeedRequirements();
+      if (result && result.tramites === 0) setSeedNote('El análisis de esta licitación no pide trámites con terceros que falten.');
+      await reload();
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(null); }
   };
@@ -528,6 +533,13 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
     {!hasRequirementItems && report && <div className="notice tw-seed">
       <span>Esta licitación todavía no tiene en su lista los requisitos del análisis.</span>
       <button type="button" disabled={busy === 'seed'} onClick={() => void seed()}>Cargar los requisitos del análisis</button>
+    </div>}
+    {/* Juan, 2026-11-08: las licitaciones con GO anterior a la mejora 3 (Fiscalía, Manizales) no tienen los trámites con
+        terceros. La misma siembra idempotente del GO los crea; lo que ya está no se duplica. */}
+    {hasRequirementItems && report && !workspace.checklist.some(item => item.item_key.startsWith(TRAMITE_ITEM_KEY_PREFIX)) && <div className="notice tw-seed">
+      <span>Esta licitación no tiene los trámites con terceros (certificados de clientes, Personería, RUP, multas), que piden días de espera.</span>
+      <button type="button" disabled={busy === 'seed'} onClick={() => void seed()}>Crear trámites con terceros</button>
+      {seedNote && <small className="muted">{seedNote}</small>}
     </div>}
 
     <section className="tw-card">
