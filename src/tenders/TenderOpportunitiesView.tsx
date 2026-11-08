@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatDateOnly, parseDateOnly } from '../dateOnly';
 import { loadTenderOpportunities } from './api';
 import { TenderManualProcessForm } from './components/TenderManualProcessForm';
+import { TenderOfferIndicatorsPanel } from './components/TenderOfferIndicatorsPanel';
 import { TenderOpenBoardPanel } from './components/TenderOpenBoardPanel';
 import { TenderStatusBadge } from './components/TenderStatusBadge';
 import { tenderDetailSectionHref } from './detailNavigationState';
@@ -154,6 +155,7 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
     <header className="tender-compact-header"><div className="tender-compact-title"><h2 id="tender-dossiers-heading">Oportunidades</h2><div className="tender-compact-meta"><span>Licitaciones convertidas: expediente, decisión y preparación</span></div></div><div className="row-actions">{canCreateManual && <button onClick={() => setCreatingManual(current => !current)} aria-expanded={creatingManual}>{creatingManual ? 'Cerrar creación manual' : 'Crear proceso a mano'}</button>}<button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></div></header>
     {moduleNavigation}
     {error && <div className="error" role="alert">{error}</div>}
+    <TenderOfferIndicatorsPanel request={request} />
     <TenderOpenBoardPanel request={request} />
     {canCreateManual && creatingManual && <TenderManualProcessForm request={request} onCreated={openCreatedManualProcess} onCancel={() => setCreatingManual(false)} />}
     <div className="opportunity-filter-row">

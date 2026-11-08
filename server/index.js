@@ -40,6 +40,7 @@ import { callTenderOpportunityArchive } from '../verticales/licitaciones/tender-
 import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClosureActa, callReopenTenderClosureActa } from '../verticales/licitaciones/tender-closure-acta-rpc.js';
 import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../verticales/licitaciones/agt002-closure-acta-live.js';
 import { proposeLessonsFromConfirmedActa } from '../verticales/licitaciones/agt002-lessons-from-acta.js';
+import { buildTenderOfferIndicators, currentGoDecisions, loadTenderOfferRecord, loadTenderOfferRows, pendingSubmissionReminders, registerTenderOfferResult, registerTenderOfferSubmission } from '../verticales/licitaciones/tender-offer-records.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -513,6 +514,12 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tender-compliance-matrix': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Tablero de procesos abiertos: el cruce de todos los expedientes con cierre por delante. Sólo lectura.
   'GET /api/tender-open-board': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  // Ofertas presentadas (encargo del 2026-11-07): registrar presentada o no con evidencia, su resultado, los
+  // indicadores del año y el aviso de cierres con GO sin registro.
+  'GET /api/tender-offer-record': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'POST /api/tender-offer-submission': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'POST /api/tender-offer-result': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'GET /api/tender-offer-indicators': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Paquete de la oferta: la lista de lo que va y el índice. Sin bytes y sin URLs firmadas en el cuerpo.
   'GET /api/tender-offer-package': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Mejora 5: revisar el Excel de la propuesta económica antes de radicar. Lee el archivo, no lo guarda.
@@ -6859,6 +6866,88 @@ app.post('/api/tender-offer-status', async (req, res) => {
       await draftClosureActaAfterClosure(database, req.body?.opportunity_id);
     }
     res.status(201).json(transition);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Ofertas presentadas (encargo AGT-002 del 2026-11-07). La radicación se registra con evidencia aunque el expediente
+// del CRM no esté completo: queda marcado y con la lista de lo que faltaba, sin aprobar nada.
+app.get('/api/tender-offer-record', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await loadTenderOfferRecord(database, opportunityId));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-offer-submission', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.status(201).json({ submission: await registerTenderOfferSubmission(database, { opportunityId, actorId: currentProfile?.id || '', body: req.body || {} }) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-offer-result', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const result = await registerTenderOfferResult(database, { opportunityId, actorId: currentProfile?.id || '', body: req.body || {} });
+    // El resultado cierra la licitación: igual que la transición a un estado final, abre el borrador del acta.
+    await draftClosureActaAfterClosure(database, opportunityId);
+    res.status(201).json({ result });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Indicadores del año (por mes y acumulado) y el aviso de cierres con GO sin registro, en una sola lectura.
+async function readTenderOfferIndicators(database, { year, now = new Date() }) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(now);
+  const opportunities = await must(database.from('psi_sales_opportunities')
+    .select('id,company_name,sede,created_at,archived_at,tender_offer_status')
+    .eq('service_type_code', 'licitacion_publica'));
+  const ids = opportunities.map(row => row.id);
+  const [tenders, decisions, rows] = await Promise.all([
+    ids.length ? must(database.from('psi_public_tenders').select('id,ref,value,deadline_at,raw,converted_opportunity_id').in('converted_opportunity_id', ids)) : [],
+    ids.length ? must(database.from('psi_tender_go_no_go_decisions').select('id,opportunity_id,decision,decided_at,supersedes_decision_id').in('opportunity_id', ids)) : [],
+    loadTenderOfferRows(database),
+  ]);
+  const tenderByOpportunity = new Map(tenders.map(row => [row.converted_opportunity_id, row]));
+  const goDecisions = currentGoDecisions(decisions);
+  const indicators = buildTenderOfferIndicators({
+    year, now, opportunities, goDecisions, submissions: rows.submissions, results: rows.results, goals: rows.goals,
+    tenderValues: Object.fromEntries(tenders.map(row => [row.converted_opportunity_id, Number(row.value) || 0])),
+  });
+  const reminders = pendingSubmissionReminders({
+    today,
+    goOpportunityIds: new Set(goDecisions.map(row => row.opportunity_id)),
+    submittedOpportunityIds: new Set(rows.submissions.map(row => row.opportunity_id)),
+    processes: opportunities.map(row => {
+      const tender = tenderByOpportunity.get(row.id);
+      const close = tender ? resolveCanonicalTenderDeadline(tender) : null;
+      return { opportunity_id: row.id, entity: row.company_name || null, ref: tender?.ref || row.sede || null, offer_status: row.tender_offer_status, archived: Boolean(row.archived_at), close_date: close ? String(close).slice(0, 10) : null };
+    }),
+  });
+  return { today, ...indicators, reminders };
+}
+
+app.get('/api/tender-offer-indicators', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const now = new Date();
+    const requested = Number(req.query.year);
+    const year = Number.isInteger(requested) && requested >= 2024 && requested <= 2100 ? requested : Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric' }).format(now));
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await readTenderOfferIndicators(requireDb(), { year, now }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

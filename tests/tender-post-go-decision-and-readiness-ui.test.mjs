@@ -310,7 +310,8 @@ test('2 — fuera de en_preparacion no se consulta el expediente ni se condicion
       false,
       'el gate de expediente sólo aplica a la transición a lista_para_presentar',
     );
-    assert.equal(buttonByText(view.container, 'Registrar adjudicada').disabled, false);
+    // Desde el 2026-11-07 el resultado se registra con su fuente en «Oferta presentada» (TenderOfferRecordPanel).
+    assert.equal(buttonByText(view.container, 'Registrar adjudicada'), undefined);
   } finally {
     await view.unmount();
   }

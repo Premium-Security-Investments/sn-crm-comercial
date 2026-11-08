@@ -1,4 +1,4 @@
-import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderLesson, TenderLessonStatus, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOpenBoard, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderLesson, TenderLessonStatus, TenderOfferIndicators, TenderOfferRecord, TenderOfferResult, TenderOfferSubmission, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOpenBoard, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -227,4 +227,22 @@ export async function loadTenderLessons(request: TenderRequest): Promise<{ lesso
 
 export async function decideTenderLesson(request: TenderRequest, input: { code: string; expected_version: number; status: Exclude<TenderLessonStatus, 'propuesta'>; reason?: string | null }): Promise<unknown> {
   return request('/api/tender-lessons/decision', { method: 'POST', body: JSON.stringify(input) });
+}
+
+// Ofertas presentadas: el registro de una licitación, registrar presentada / no presentada y el resultado, y los
+// indicadores del año con el aviso de cierres sin registro.
+export async function loadTenderOfferRecord(request: TenderRequest, opportunityId: string): Promise<TenderOfferRecord> {
+  return request<TenderOfferRecord>(`/api/tender-offer-record?opportunity_id=${encodeURIComponent(opportunityId)}`);
+}
+
+export async function registerTenderOfferSubmission(request: TenderRequest, input: { opportunity_id: string; kind: 'presentada' | 'no_presentada'; filing_reference?: string; submitted_at?: string; evidence_url?: string; reason?: string }): Promise<{ submission: TenderOfferSubmission }> {
+  return request('/api/tender-offer-submission', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function registerTenderOfferResult(request: TenderRequest, input: { opportunity_id: string; result: string; source_kind: string; source_url?: string; source_note?: string; rank?: string; bidders?: string; awarded_value?: string }): Promise<{ result: TenderOfferResult }> {
+  return request('/api/tender-offer-result', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function loadTenderOfferIndicators(request: TenderRequest, year?: number): Promise<TenderOfferIndicators> {
+  return request<TenderOfferIndicators>(`/api/tender-offer-indicators${year ? `?year=${year}` : ''}`);
 }
