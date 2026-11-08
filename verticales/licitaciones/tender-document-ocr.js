@@ -18,7 +18,10 @@ import { TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION } from './tender-document-text-e
 
 const run = promisify(execFile);
 const generation = Number(/@(\d+)$/.exec(TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION)?.[1] || 0);
-export const TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION = `tender-document-ocr-tesseract@${generation + 1}`;
+// `-osd`: la segunda versión endereza las páginas escaneadas de lado y descarta lo ilegible (2026-11-08: un CDP de la
+// Rama de Pereira escaneado girado salió como texto sin sentido). Cambiar el nombre hace que se vuelva a leer lo que leyó
+// la primera versión. Generación +2: tiene que ganarle también a lo que dejó la primera (`@4`), incluso a un «ok» ilegible.
+export const TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION = `tender-document-ocr-tesseract-osd@${generation + 2}`;
 export const TENDER_DOCUMENT_OCR_PARSER = 'tesseract-spa';
 const MIN_CHARS = 80;
 const isPdf = version => /pdf/i.test(String(version.mime_type || '')) || /\.pdf$/i.test(String(version.name || ''));
@@ -26,11 +29,13 @@ const isPdf = version => /pdf/i.test(String(version.mime_type || '')) || /\.pdf$
 /** Versiones vigentes de PDF cuya lectura canónica no tiene texto y que el OCR no ha intentado. Pura. */
 export function selectOcrCandidates(versions, extractionRows, { limit = 3 } = {}) {
   const canonical = selectCanonicalExtractionsByDocumentVersion(extractionRows);
-  const ocrTried = new Set(extractionRows.filter(row => String(row.extractor_version || '').startsWith('tender-document-ocr-')).map(row => row.document_version_id));
+  const ocrTried = new Set(extractionRows.filter(row => row.extractor_version === TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION).map(row => row.document_version_id));
+  const olderOcr = new Set(extractionRows.filter(row => String(row.extractor_version || '').startsWith('tender-document-ocr-') && row.extractor_version !== TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION).map(row => row.document_version_id));
   return versions
     .filter(version => version.current && isPdf(version) && version.storage_path && !ocrTried.has(version.id))
     .filter(version => {
       const row = canonical.get(version.id);
+      if (olderOcr.has(version.id)) return true;
       if (row) return row.status === 'gap';
       return String(version.extracted_text || '').trim().length < MIN_CHARS;
     })
@@ -48,7 +53,8 @@ export async function ocrPdfBuffer(buffer, { maxPages = 40, dpi = 200, timeoutMs
     const pages = (await readdir(dir)).filter(name => name.endsWith('.png')).sort();
     const texts = [];
     for (const page of pages) {
-      const { stdout } = await runner('tesseract', [join(dir, page), 'stdout', '-l', 'spa'], { timeout: 120_000, maxBuffer: 20 * 1024 * 1024 });
+      const image = await uprightPage(join(dir, page), runner);
+      const { stdout } = await runner('tesseract', [image, 'stdout', '-l', 'spa'], { timeout: 120_000, maxBuffer: 20 * 1024 * 1024 });
       texts.push(String(stdout || '').trim());
     }
     return { text: texts.map((text, index) => `--- página ${index + 1} ---\n${text}`).join('\n\n').trim(), pages: pages.length };
@@ -57,14 +63,40 @@ export async function ocrPdfBuffer(buffer, { maxPages = 40, dpi = 200, timeoutMs
   }
 }
 
+// Orientación de la página (tesseract --psm 0). Si viene girada con confianza, se endereza con Pillow; si no se puede
+// estimar (poco texto), se lee como viene.
+async function uprightPage(path, runner) {
+  try {
+    const { stdout } = await runner('tesseract', [path, 'stdout', '--psm', '0'], { timeout: 60_000 });
+    const rotate = Number(/Rotate:\s*(\d+)/.exec(stdout)?.[1] || 0);
+    const confidence = Number(/Orientation confidence:\s*([\d.]+)/.exec(stdout)?.[1] || 0);
+    if (!rotate || confidence < 1.5) return path;
+    const out = path.replace(/\.png$/, '-up.png');
+    await runner('python3', ['-c', 'import sys\nfrom PIL import Image\nImage.open(sys.argv[1]).rotate(-int(sys.argv[3]), expand=True).save(sys.argv[2])', path, out, String(rotate)], { timeout: 60_000 });
+    return out;
+  } catch {
+    return path;
+  }
+}
+
+const STOPWORDS = new Set(['de', 'la', 'el', 'que', 'en', 'los', 'del', 'las', 'por', 'con', 'para', 'una', 'se', 'al', 'y', 'a', 'o', 'no', 'su']);
+/** ¿Se puede leer? Proporción de palabras comunes del español entre las palabras del texto. */
+export function ocrLooksReadable(text) {
+  const words = String(text || '').toLowerCase().match(/[a-záéíóúüñ]+/g) || [];
+  if (words.length < 20) return words.join('').length >= MIN_CHARS;
+  const common = words.filter(word => STOPWORDS.has(word)).length;
+  return common / words.length >= 0.08;
+}
+
 function extractionParams(version, { text, pages }) {
-  const ok = text.replace(/--- página \d+ ---/g, '').trim().length >= MIN_CHARS;
+  const body = text.replace(/--- página \d+ ---/g, '').trim();
+  const ok = body.length >= MIN_CHARS && ocrLooksReadable(body);
   const base = {
     p_opportunity_id: version.opportunity_id, p_tender_id: version.tender_id, p_document_version_id: version.id,
     p_extractor_version: TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION, p_parser: TENDER_DOCUMENT_OCR_PARSER,
     p_metadata: { ocr: true, pages, engine: 'tesseract', language: 'spa' }, p_actor_id: version.actor_id,
   };
-  if (!ok) return { ...base, p_status: 'gap', p_extracted_text: null, p_text_hash: null, p_char_count: 0, p_text_byte_count: 0, p_gap_reason: 'ocr_sin_texto' };
+  if (!ok) return { ...base, p_status: 'gap', p_extracted_text: null, p_text_hash: null, p_char_count: 0, p_text_byte_count: 0, p_gap_reason: body.length >= MIN_CHARS ? 'ocr_ilegible' : 'ocr_sin_texto' };
   return {
     ...base, p_status: 'ok', p_extracted_text: text, p_text_hash: createHash('sha256').update(text, 'utf8').digest('hex'),
     p_char_count: [...text].length, p_text_byte_count: Buffer.byteLength(text, 'utf8'), p_gap_reason: null,
