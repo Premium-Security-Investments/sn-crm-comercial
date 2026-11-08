@@ -4,6 +4,7 @@ import { loadCompanyBase, loadCompanyProcurementDocuments, loadCompanyProfile } 
 import { deriveCompanyBlocks, summarizeCompanyBlocks, type CompanyBasePayload, type CompanyBlockState, type CompanyEvidenceDecision } from './companyBase';
 import { CompanyBlocksTable, CompanyExperienceSection, CompanyFinancialSection, CompanySitesSection, CompanyStatusSummary } from './components/CompanyBaseSections';
 import { TenderCompanyDocuments } from './components/TenderCompanyDocuments';
+import { CompanyFactProposals } from './components/CompanyFactProposals';
 import { createTenderConfigurationActions } from './tenderConfigurationActions';
 import type { TenderCompanyDocument, TenderCompanyProfile, TendersModuleProps } from './types';
 
@@ -204,6 +205,8 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
         disabled={editing} title={editing ? 'Guarde o cancele la edición primero' : undefined}
         onClick={event => openUploadDialog(event.currentTarget)}>Actualizar documento empresarial</button>
     </div>}
+    <CompanyFactProposals request={request} canDecide={canManageDocuments} onDecided={load}
+      labels={Object.fromEntries(companyBase.registry.map(entry => [entry.entry_id, entry.document_class]))} />
     <CompanyBlocksTable blocks={blocks} filter={blockFilter} onClearFilter={() => setBlockFilter(null)}
       canDecide={canManageDocuments} onDecide={decideEvidence}
       onUploadSupport={canManageDocuments && !editing ? openUploadDialog : undefined} />

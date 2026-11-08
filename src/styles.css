@@ -1022,3 +1022,10 @@ td.numeric-value{white-space:nowrap}
 .tender-offer-indicators-table th[scope="row"],.tender-offer-indicators-table thead th:first-child{text-align:left}
 .tender-offer-record-panel{border-top:1px solid #e2e8f0;padding-top:12px;margin-top:12px}
 .tender-offer-indicators-scroll{overflow-x:auto}
+/* F14: datos que Vig-IA propone a la ficha desde un expediente. */
+.company-fact-proposal-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.company-fact-proposal{border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:12px 14px}
+.company-fact-proposal p{margin:0 0 6px}
+.company-fact-proposal dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0 0 6px}
+.company-fact-proposal dt{font-size:12px;color:#64748b}
+.company-fact-proposal dd{margin:2px 0 0}
