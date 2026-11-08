@@ -9,9 +9,12 @@
 //   3. "Volver a analizar": admits the reanalysis a person asked for from the opportunity (agt002-manual-reanalysis.js),
 //      outside the daily cap of first analyses; the same worker timer runs it.
 //   (New SECOP phases of converted tenders have their own review service: agt002-phase-change-review.)
+// Entre 1 y 2: OCR de los PDF escaneados (Juan, 2026-11-08), antes de admitir análisis, para que el texto ya esté.
 import { createClient } from '@supabase/supabase-js';
 import { filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions } from '../../verticales/licitaciones/agt002-auto-initial.js';
 import { runAgt002ManualReanalysisRequests } from '../../verticales/licitaciones/agt002-manual-reanalysis.js';
+import { runTenderDocumentOcrPass } from '../../verticales/licitaciones/tender-document-ocr.js';
+import { proposeCompanyFactsFromDocuments } from '../../verticales/licitaciones/agt002-company-fact-proposals.js';
 
 const CLAIMABLE = ['queued', 'discovering_documents', 'importing_documents', 'retry_wait', 'ready_for_snapshot', 'snapshot_ready'];
 const log = event => console.log(JSON.stringify(event));
@@ -58,6 +61,16 @@ try {
   log(await driveDocuments());
 } catch (error) {
   log({ event: 'agt002_auto_initial_documents_failed', message: String(error?.message || error).slice(0, 200) });
+}
+try {
+  // F14 también para lo escaneado: si el documento es nuestro, el texto del OCR pasa por la propuesta a la ficha. La
+  // propuesta se apaga sola si este servidor no tiene la configuración de la Mesa.
+  const onText = (version, text) => version.origin === 'propio'
+    ? proposeCompanyFactsFromDocuments(database, { opportunityId: version.opportunity_id, actorId: version.actor_id, documents: [{ id: version.id, name: version.name, extracted_text: text }], environment: env, log })
+    : null;
+  for (const event of await runTenderDocumentOcrPass(database, { limit: Number(env.TENDER_OCR_PER_PASS || 2), onText })) log(event);
+} catch (error) {
+  log({ event: 'tender_ocr_pass_failed', message: String(error?.message || error).slice(0, 200) });
 }
 try {
   const dailyCap = Number(env.AGT002_AUTO_INITIAL_DAILY_CAP || 5);
