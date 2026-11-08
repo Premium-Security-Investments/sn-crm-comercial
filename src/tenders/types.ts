@@ -1130,3 +1130,21 @@ export type TenderOpenBoard = {
   };
   summary: { procesos: number; sin_analisis: number; tramites_compartidos: number; tramites_por_hacer: number; documentos_que_vencen: number; garantias_simultaneas: number; vencidos_que_tumban: number; no_subsanables_abiertos: number };
 };
+
+// Ofertas presentadas (encargo AGT-002 del 2026-11-07).
+export type TenderOfferSubmission = {
+  id: string; opportunity_id: string; kind: 'presentada' | 'no_presentada'; filing_reference: string | null; submitted_at: string | null;
+  evidence_url: string | null; reason: string | null; dossier_incomplete: boolean; missing_at_submission: Record<string, unknown>; created_at: string;
+};
+export type TenderOfferResultKind = 'ganada' | 'perdida' | 'rechazada' | 'desierta';
+export type TenderOfferResult = {
+  id: string; opportunity_id: string; result: TenderOfferResultKind; source_kind: 'informe_evaluacion' | 'acto_adjudicacion' | 'otro';
+  source_url: string | null; source_note: string | null; rank: number | null; bidders: number | null; awarded_value: number | string | null; created_at: string;
+};
+export type TenderOfferRecord = { submission: TenderOfferSubmission | null; result: TenderOfferResult | null };
+export type TenderOfferIndicatorMonth = { month: string; calificadas: number; go: number; presentadas: number; valor_concursado: number; adjudicadas: number; valor_adjudicado: number };
+export type TenderOfferIndicators = {
+  today: string; year: number; months: TenderOfferIndicatorMonth[]; ytd: Omit<TenderOfferIndicatorMonth, 'month'>;
+  goal: { target_value: number; progress: number } | null;
+  reminders: Array<{ opportunity_id: string; entity: string | null; ref: string | null; close_date: string }>;
+};

@@ -22,6 +22,7 @@ import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalys
 import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
 import { TenderMyDayOverdue } from './tenders/components/TenderMyDayOverdue';
+import { TenderMyDayOfferReminder } from './tenders/components/TenderMyDayOfferReminder';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
 import { TenderComplianceMatrixPanel } from './tenders/components/TenderComplianceMatrixPanel';
 import { TenderOfferPackagePanel } from './tenders/components/TenderOfferPackagePanel';
@@ -32,6 +33,7 @@ import { TenderClosureActa } from './tenders/workspace/TenderClosureActa';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { NavIcon, UserMenu } from './shell/UserMenu';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
+import { TenderOfferRecordPanel } from './tenders/components/TenderOfferRecordPanel';
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
@@ -1961,6 +1963,7 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, o
   return authorizedPreparation ? <div className="tender-document-panel">
     {sharePointUrl ? <a className="button" href={sharePointUrl} target="_blank" rel="noopener noreferrer">Abrir carpeta</a> : null}
     <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} readinessRevision={readinessRevision} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
+    <TenderOfferRecordPanel opportunityId={opportunity.id} offerStatus={opportunity.tender_offer_status as TenderOfferStatus | null | undefined} currentProfile={currentProfile} request={api} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
     {statusText && <div className="notice">{statusText}</div>}
   </div> : statusText ? <div className="notice">{statusText}</div> : null;
 }
@@ -3042,6 +3045,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
     </div>
     {/* Mejora 1: sólo quien trabaja licitaciones (hoy, Katherine) ve lo vencido que puede tumbar una oferta. */}
     {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOverdue request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
+    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOfferReminder request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}

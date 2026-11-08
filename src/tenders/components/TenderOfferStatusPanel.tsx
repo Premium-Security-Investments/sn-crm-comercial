@@ -6,8 +6,7 @@ import type { TenderCurrentProfile, TenderDossierWorkspace, TenderOfferStatus, T
 const EMPTY: TenderOfferStatusPayload = { status: 'pendiente_decision', history: [] };
 const NEXT: Partial<Record<TenderOfferStatus, Array<{ status: TenderOfferStatus; label: string }>>> = {
   en_preparacion: [{ status: 'lista_para_presentar', label: 'Marcar lista para presentar' }],
-  lista_para_presentar: [{ status: 'presentada', label: 'Registrar presentada' }],
-  presentada: [{ status: 'adjudicada', label: 'Registrar adjudicada' }, { status: 'no_adjudicada', label: 'Registrar no adjudicada' }],
+  // Presentada y el resultado se registran con evidencia en «Oferta presentada» (TenderOfferRecordPanel, 2026-11-07).
 };
 const label = (status: TenderOfferStatus) => ({
   pendiente_decision: 'Pendiente de decisión', en_preparacion: 'En preparación', lista_para_presentar: 'Lista para presentar',
