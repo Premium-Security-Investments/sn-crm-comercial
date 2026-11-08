@@ -110,3 +110,16 @@ export function agt002SeccionDelPedido({ documents = [], message }) {
   const numeral = agt002NumeralCitado(message);
   return numeral ? agt002SeccionPorNumeral({ documents, numeral }) : agt002SeccionPorFrase({ documents, message });
 }
+
+/**
+ * F12: la sección de un numeral en un documento dado (el que citó el análisis), no sólo en el pliego vigente. Si el
+ * numeral aparece varias veces como título, la última (el cuerpo, no el índice). Sin título, null.
+ */
+export function agt002SeccionDeDocumento({ document, numeral }) {
+  if (!numeral || typeof document?.extracted_text !== 'string' || !document.extracted_text.trim()) return null;
+  const todos = titulos(document.extracted_text);
+  const candidatos = todos.filter(entry => entry.numeral === numeral);
+  const elegido = candidatos[candidatos.length - 1];
+  if (!elegido) return null;
+  return { ...seccion(document.extracted_text, todos, elegido), documento: document.name, document_id: document.id, origen: 'numeral' };
+}

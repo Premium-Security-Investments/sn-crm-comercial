@@ -178,3 +178,37 @@ test('qué cambió: recomendación, requisitos re-evaluados y hallazgos nuevos o
   assert.deepEqual(changes.removedFindings, [{ title: 'Domicilio por confirmar', severity: 'HIGH' }]);
   assert.deepEqual(agt002AnalysisChanges(STORED, STORED), { recommendation: null, requirements: [], addedFindings: [], removedFindings: [] });
 });
+
+// F12 (auditoría Fiscalía, reanálisis fbcfbdd1): un requisito que quedó pendiente se relee en su numeral completo del
+// mismo documento, y toda síntesis exige decir dónde buscó antes de concluir «no se sabe».
+const PLIEGO = [
+  '3.1.14. Experiencia', 'Texto de experiencia.',
+  '3.1.15. Domicilio y presencia', 'El proponente deberá acreditar sede principal o sucursal en Cali.',
+  'En el caso de uniones temporales, la presencia podrá acreditarse con la de cualquiera de sus integrantes.',
+  '3.1.16. Capacidad financiera', 'Liquidez mayor o igual a 1,5.',
+].join('\n');
+
+test('F12: la síntesis incremental recibe completo el numeral de lo pendiente, del mismo documento', async () => {
+  const requests = [];
+  const members = [{ memberId: 'batch:0', content: { analysis_notes: [], open_items: [] }, contentHash: 'f'.repeat(64) }];
+  let asked;
+  await runtimeCapturing(requests, { loadDocumentTexts: async (_db, ids) => { asked = ids; return [{ id: 'pliego-def', name: 'Pliego definitivo.pdf', extracted_text: PLIEGO }]; } })
+    .callModel({ job, batch: { phase: 'synthesis', batchIndex: 1, requestHash: 'h', mode: 'incremental', priorAnalysisRunId: 'run-1' }, modelId: 'm', members });
+  assert.deepEqual(asked, ['pliego-def']);
+  const [seccion] = requests[0].input.secciones_del_pliego;
+  assert.equal(seccion.numeral, '3.1.15');
+  assert.equal(seccion.requirement_id, 'REQ-DOM');
+  assert.match(seccion.texto, /uniones temporales/);
+  assert.doesNotMatch(seccion.texto, /Liquidez/, 'termina en el numeral hermano siguiente');
+  assert.match(requests[0].policy, /secciones_del_pliego/);
+  assert.match(requests[0].policy, /diga en el texto en qué documento y numeral lo buscó/);
+});
+
+test('F12: sin secciones (o si fallan) la síntesis sigue igual, con la regla de decir dónde buscó', async () => {
+  const requests = [];
+  const members = [{ memberId: 'batch:0', content: { analysis_notes: [], open_items: [] }, contentHash: 'f'.repeat(64) }];
+  await runtimeCapturing(requests, { loadDocumentTexts: async () => { throw new Error('caída'); } })
+    .callModel({ job, batch: { phase: 'synthesis', batchIndex: 1, requestHash: 'h', mode: 'incremental', priorAnalysisRunId: 'run-1' }, modelId: 'm', members });
+  assert.equal('secciones_del_pliego' in requests[0].input, false);
+  assert.match(requests[0].policy, /lo buscó/);
+});
