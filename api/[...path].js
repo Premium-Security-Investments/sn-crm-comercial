@@ -41,6 +41,7 @@ import { getTenderClosureActa, callUpsertTenderClosureActa, callConfirmTenderClo
 import { draftClosureActaAfterClosure, sweepTenderClosureActas } from '../verticales/licitaciones/agt002-closure-acta-live.js';
 import { proposeLessonsFromConfirmedActa } from '../verticales/licitaciones/agt002-lessons-from-acta.js';
 import { buildTenderOfferIndicators, currentGoDecisions, loadTenderOfferRecord, loadTenderOfferRows, pendingSubmissionReminders, registerTenderOfferResult, registerTenderOfferSubmission } from '../verticales/licitaciones/tender-offer-records.js';
+import { decideCompanyFactProposal, listPendingCompanyFactProposals, proposeCompanyFactsFromDocuments } from '../verticales/licitaciones/agt002-company-fact-proposals.js';
 import {
   getTenderDossierWorkspace,
   callCreateTenderDossierItem,
@@ -538,6 +539,9 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   // Punto 4 de las aclaraciones: guardar en la ficha de la empresa lo que es de la empresa. Escribe la ficha,
   // así que pide el permiso de la ficha, no el de la Mesa.
   'POST /api/tender-company-evidence-decision': ['tenders', ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE],
+  // F14: lo que Vig-IA propone a la ficha desde un expediente. Se ve con la ficha y se decide con la custodia.
+  'GET /api/tender-company-fact-proposals': ['tenders', ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE],
+  'POST /api/tender-company-fact-proposals/decision': ['tenders', ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE],
   'POST /api/agt002-clarification-to-company-profile': ['tenders', ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE],
   // Lecciones de la empresa (Juan, 2026-11-07): sólo quien tiene el permiso de lecciones las ve y las decide.
   'GET /api/tender-lessons': ['tenders', ACTIONS.LICITACIONES_LESSONS_MANAGE],
@@ -2846,6 +2850,24 @@ app.post('/api/tender-company-evidence-decision', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE);
     res.json(await saveCompanyEvidenceDecision(requireDb(), req.body, currentProfile.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+// F14: lo que Vig-IA propuso a la ficha desde un expediente, por decidir; y la decisión (confirmar o descartar).
+app.get('/api/tender-company-fact-proposals', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE);
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ proposals: await listPendingCompanyFactProposals(requireDb()) });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-fact-proposals/decision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_COMPANY_EVIDENCE_DECIDE);
+    res.json(await decideCompanyFactProposal(requireDb(), { actorId: currentProfile.id, proposalId: req.body?.proposal_id, decision: req.body?.decision }));
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -7764,6 +7786,23 @@ export async function ingestTenderDossierDocuments(database, { opportunityId, op
     company_profile: await getTenderCompanyProfile(database),
     refresh_token: refreshToken,
   });
+  // F14 (Juan, 2026-11-08): un documento propio nuevo puede traer un dato de la empresa que la ficha no tiene. Vig-IA lo
+  // lee y lo propone en Empresa; nunca escribe la ficha y nunca hace fallar la carga.
+  let companyFactProposals = null;
+  const ownIds = preparedFiles.map(({ file, buffer }, index) => ({ origin: normalizeTenderDocumentOrigin(file.origin), id: tenderManualUploadDocumentId(buffer), status: results[index]?.status }))
+    .filter(item => item.origin === 'propio' && (item.status === 'new' || item.status === 'updated')).map(item => item.id);
+  if (ownIds.length) {
+    try {
+      const { data: ownDocuments } = await database.from('psi_tender_document_versions').select('id,name,extracted_text')
+        .eq('opportunity_id', opportunityId).eq('source', TENDER_MANUAL_UPLOAD_SOURCE).eq('current', true).in('source_document_id', ownIds);
+      companyFactProposals = await proposeCompanyFactsFromDocuments(database, {
+        opportunityId, actorId: actorProfileId, documents: ownDocuments || [],
+        sourceLabel: (await tenderLabelForOpportunity(database, opportunityId)) || String(opportunity?.company_name || '').slice(0, 300) || null,
+      });
+    } catch (proposalError) {
+      companyFactProposals = { status: 'failed', code: String(proposalError?.code || 'unknown').slice(0, 40) };
+    }
+  }
   // Lo nuevo se analiza solo, sobre el análisis vigente (Juan, 2026-10-20): se pide un reanálisis INCREMENTAL a nombre
   // de quien cargó; el job del host lo lanza (o espera a que termine el análisis en curso). Nunca hace fallar la carga.
   let analysisRequest = null;
@@ -7780,6 +7819,7 @@ export async function ingestTenderDossierDocuments(database, { opportunityId, op
     ...(await getTenderDocumentRecords(database, opportunityId)),
     upload_results: uploaded.map(({ name, status, error }) => ({ name, status, error })),
     analysis_request: analysisRequest,
+    company_fact_proposals: companyFactProposals,
     // F9: qué pasó a historial por esta carga y qué quedó en duda (no se archivó).
     archived: replaced.archived,
     archive_doubts: replaced.doubts,
