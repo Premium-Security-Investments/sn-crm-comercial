@@ -155,8 +155,6 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
     <header className="tender-compact-header"><div className="tender-compact-title"><h2 id="tender-dossiers-heading">Oportunidades</h2><div className="tender-compact-meta"><span>Licitaciones convertidas: expediente, decisión y preparación</span></div></div><div className="row-actions">{canCreateManual && <button onClick={() => setCreatingManual(current => !current)} aria-expanded={creatingManual}>{creatingManual ? 'Cerrar creación manual' : 'Crear proceso a mano'}</button>}<button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></div></header>
     {moduleNavigation}
     {error && <div className="error" role="alert">{error}</div>}
-    <TenderOfferIndicatorsPanel request={request} />
-    <TenderOpenBoardPanel request={request} />
     {canCreateManual && creatingManual && <TenderManualProcessForm request={request} onCreated={openCreatedManualProcess} onCancel={() => setCreatingManual(false)} />}
     <div className="opportunity-filter-row">
     <div className="opportunity-primary-filters" role="group" aria-label="Filtrar oportunidades">
@@ -199,5 +197,9 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
       <div className="row-actions">{safePublicTenderSourceUrl(dossier.url) && <a className="button secondary" href={safePublicTenderSourceUrl(dossier.url) || undefined} target="_blank" rel="noreferrer">Abrir fuente oficial</a>}<button onClick={() => navigate(tenderDetailSectionHref(dossier.opportunity_id, 'tender-document-review'))}>Abrir expediente</button><button className="secondary" onClick={() => void refreshDocuments(dossier)} disabled={retrying.has(dossier.opportunity_id)}>{retrying.has(dossier.opportunity_id) ? 'Actualizando…' : dossier.document_import_status === 'fallo_importacion' ? 'Reintentar actualización' : 'Actualizar documentos'}</button>{classifyOpportunityStage(dossier) === 'en_curso' && ['en_preparacion', 'lista_para_presentar'].includes(dossier.tender_offer_status) && <button className="secondary danger" onClick={() => void archiveOpportunity(dossier)} disabled={archivingId === dossier.opportunity_id}>{archivingId === dossier.opportunity_id ? 'Archivando…' : 'Archivar'}</button>}</div>
     </article>; })}</div>}
     <nav className="pagination" aria-label="Paginación de expedientes"><button className="secondary" disabled={page <= 1 || loading} onClick={() => setPage(current => current - 1)}>Anterior</button><span className="pagination-status">Página {page} · hasta {PAGE_SIZE} expedientes</span><button className="secondary" disabled={rows.length < PAGE_SIZE || loading} onClick={() => setPage(current => current + 1)}>Siguiente</button></nav>
+    {/* Juan, 2026-11-09: los indicadores y el tablero de procesos van al final mientras se ajustan, para no enredar al
+        equipo esta semana. */}
+    <TenderOfferIndicatorsPanel request={request} />
+    <TenderOpenBoardPanel request={request} />
   </section>;
 }

@@ -19,7 +19,7 @@ export function TenderOfferIndicatorsPanel({ request }: { request: TenderRequest
   }, [request, year]);
   if (!data) return null;
   const { ytd, goal } = data;
-  return <details className="card stack tender-offer-indicators" open>
+  return <details className="card stack tender-offer-indicators">
     <summary><strong>Ofertas {data.year}</strong>{' '}<span className="muted">· {ytd.presentadas} presentadas · {pesos(ytd.valor_concursado)} concursado{goal ? ` · ${goal.progress}% de la meta` : ''}</span></summary>
     <div className="row-actions">
       <label className="muted">Año <select value={data.year} onChange={event => setYear(Number(event.target.value))}>{[data.year - 1, data.year, data.year + 1].map(value => <option key={value} value={value}>{value}</option>)}</select></label>

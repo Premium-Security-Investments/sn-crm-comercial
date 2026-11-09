@@ -21,3 +21,11 @@ test('indicadores en Oportunidades y aviso en Mi día', () => {
   assert.match(server, /'POST \/api\/tender-offer-submission': \['tenders', ACTIONS\.LICITACIONES_GO_NO_GO_APPROVE\]/);
   assert.equal(server, read('api/[...path].js'));
 });
+
+test('Juan, 2026-11-09: indicadores y tablero de procesos van al final de Oportunidades, plegados', () => {
+  const view = read('src/tenders/TenderOpportunitiesView.tsx');
+  const list = view.indexOf('className="pagination"');
+  assert.ok(list > 0 && view.indexOf('<TenderOfferIndicatorsPanel') > list, 'después de la lista y la paginación');
+  assert.ok(view.indexOf('<TenderOpenBoardPanel') > list);
+  assert.doesNotMatch(read('src/tenders/components/TenderOfferIndicatorsPanel.tsx'), /tender-offer-indicators" open>/);
+});
