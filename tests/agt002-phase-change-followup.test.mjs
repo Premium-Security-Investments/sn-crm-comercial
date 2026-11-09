@@ -13,6 +13,8 @@ import {
   recordAgt002PhaseChangeDetected,
   runAgt002PhaseChangeAnalysisAdmissions,
   runAgt002PhaseChangeDocumentRefresh,
+  findAgt002PhaseChangeOpportunities,
+  watchAgt002DocumentsWithoutPhaseChange,
 } from '../verticales/licitaciones/agt002-phase-change-followup.js';
 import { countAgt002AutomaticAnalysesToday, listAgt002PhaseChangeAdmissionsToday } from '../verticales/licitaciones/agt002-auto-initial.js';
 import { planRadarPhaseIdentitySync, tenderSourceChangeFollowUpBlocker } from '../verticales/licitaciones/tender-phase-identity.js';
@@ -758,7 +760,10 @@ test('revisión completa: detecta, confirma, baja, archiva, reanaliza, informa e
   fs.files.set('/alerts/reported-keys.json', JSON.stringify({ keys: {} }));
   const api = {
     syncConvertedTenderPhaseLinks: async () => ({ active: 1, changed: 0 }),
-    probePhaseChangeTenderDocumentSet: async () => ({ new_set_hash: 'set-a', new_document_count: 2, document_count: 21, current_official_count: 19 }),
+    // Mejora 13: el proceso sin cambio de fase (opp-plain) no tiene documentos nuevos en esta prueba.
+    probePhaseChangeTenderDocumentSet: async (_database, opportunityId) => (opportunityId === 'opp-plain'
+      ? { new_set_hash: 'nada', new_document_count: 0, document_count: 5, current_official_count: 5 }
+      : { new_set_hash: 'set-a', new_document_count: 2, document_count: 21, current_official_count: 19 }),
     importPhaseChangeTenderDocuments: async (_database, opportunityId, options) => {
       tables.psi_sales_interactions.push(state('tender_phase_change_documents_imported', { new_set_hash: options.expectedNewSetHash, snapshot_id: 'snap-a', new_document_count: 2, incoming_names: ['PLIEGO DE CONDICIONES DEFINITIVO.pdf', 'RESOLUCION DE APERTURA.pdf'], archived: [{ name: 'PROYECTO PLIEGO DE CONDICIONES.pdf', replacedBy: 'PLIEGO DE CONDICIONES DEFINITIVO.pdf' }] }, new Date(Date.parse(options.now || '2026-10-13T19:00:01Z')).toISOString()));
       tables.psi_tender_document_state[0].current_snapshot_id = 'snap-a';
@@ -1028,3 +1033,31 @@ for (const [label, server] of servers) {
     assert.equal(plan.opportunityPatches[0].tender_id, 't-ftic', 'el plan lleva la licitación convertida');
   });
 }
+
+// Mejora 13 (encargo desde Terminal): la Fiscalía cargó su pliego definitivo el 30-oct sin mover la fase en SECOP.
+test('mejora 13: documentos nuevos sin cambio de fase se registran como cambio «documents» y entran al seguimiento', async () => {
+  const tables = world({ psi_sales_interactions: [DETECTED] });
+  const db = fakeDb(tables);
+  const probed = [];
+  const events = await watchAgt002DocumentsWithoutPhaseChange(db, {
+    now: at('2026-10-13T14:00:00Z'),
+    probeDocuments: async (opportunityId, options) => { probed.push([opportunityId, options.baselineAt]); return { new_set_hash: 'x', new_document_count: 1, document_count: 6, current_official_count: 5 }; },
+  });
+  assert.deepEqual(probed.map(([id]) => id), ['opp-plain'], 'sólo la que no tiene cambio registrado para su aviso vigente');
+  assert.deepEqual(events.map(event => event.event), ['agt002_document_watch_new_documents']);
+  const detected = tables.psi_sales_interactions.map(row => JSON.parse(row.notes)).filter(row => row.kind === 'tender_phase_change_detected' && row.change === 'documents');
+  assert.equal(detected.length, 1);
+  assert.equal(detected[0].origin, 'document_watch');
+  const candidates = await findAgt002PhaseChangeOpportunities(db, { now: at('2026-10-13T14:00:00Z') });
+  assert.ok(candidates.some(item => item.opportunityId === 'opp-plain' && item.change.change === 'documents'));
+});
+
+test('mejora 13: sin documentos nuevos, o si SECOP falla, no registra nada', async () => {
+  const tables = world({ psi_sales_interactions: [DETECTED] });
+  const db = fakeDb(tables);
+  const before = tables.psi_sales_interactions.length;
+  const quiet = await watchAgt002DocumentsWithoutPhaseChange(db, { now: at('2026-10-13T14:00:00Z'), probeDocuments: async () => ({ new_document_count: 0 }) });
+  const broken = await watchAgt002DocumentsWithoutPhaseChange(db, { now: at('2026-10-13T14:00:00Z'), probeDocuments: async () => { throw new Error('datos.gov.co'); } });
+  assert.deepEqual([...quiet, ...broken].map(event => event.event), ['agt002_document_watch_unchanged', 'agt002_document_watch_probe_failed']);
+  assert.equal(tables.psi_sales_interactions.length, before);
+});

@@ -23,6 +23,7 @@ import {
   runAgt002PhaseChangeDocumentRefresh,
   noticeUidFromTenderUrl,
   appendAgt002ObservationLine,
+  watchAgt002DocumentsWithoutPhaseChange,
 } from './agt002-phase-change-followup.js';
 import { runAgt002ScheduleFreshnessReview } from './agt002-schedule-freshness.js';
 import { runAgt002CompanyEvidenceWatch } from './agt002-company-evidence-watch.js';
@@ -134,6 +135,8 @@ export async function runAgt002PhaseChangeReview(database, {
   discardedWatch = runAgt002DiscardedPhaseWatch,
   // Vigilancia de la ficha de empresa contra los cierres abiertos (mejora 2 del encargo del 2026-10-31).
   companyEvidenceWatch = runAgt002CompanyEvidenceWatch,
+  // Mejora 13: inyectable como los demás pasos, para probarlo sin SECOP.
+  documentWatch = watchAgt002DocumentsWithoutPhaseChange,
   // Puente SharePoint ↔ CRM (mejora 1). `listSharepointFiles` lo inyecta el ejecutor del servidor de
   // tareas, que es el único con acceso a Graph: sin él el paso se salta en silencio, que es lo correcto
   // para cualquier entorno que no sea ese servidor (CI, pruebas, un despliegue web).
@@ -148,6 +151,12 @@ export async function runAgt002PhaseChangeReview(database, {
   // Limitación conocida: sólo SECOP II tiene seguimiento de fases. Una activa de otra fuente se deja explícita en el log.
   for (const item of sync?.other_sources || []) log({ event: 'agt002_phase_change_review_source_not_followed', opportunityId: item.opportunity_id, source: item.source });
   for (const event of await step('reconcile', () => reconcileAgt002PendingPhaseChanges(database, { now }), [])) log(event);
+  // Mejora 13: documentos nuevos sin cambio de fase (pliego definitivo de Fiscalía, 30-oct). Lo que encuentre lo toma el
+  // paso de documentos de esta misma revisión.
+  for (const event of await step('document_watch', () => documentWatch(database, {
+    now, ...(budgetMs ? { budgetMs } : {}),
+    probeDocuments: (opportunityId, options) => api.probePhaseChangeTenderDocumentSet(database, opportunityId, options),
+  }), [])) log(event);
   const documentEvents = await step('documents', () => runAgt002PhaseChangeDocumentRefresh(database, {
     now, ...(budgetMs ? { budgetMs } : {}),
     probeDocuments: (opportunityId, options) => api.probePhaseChangeTenderDocumentSet(database, opportunityId, options),
