@@ -66,3 +66,4 @@ export const CLOSURE_FORM_AIU_RATE: number;
 export type ClosureFormValueBasis = { monthly: boolean; label: string; short: string };
 export function closureFormValueBasis(serviceTypeCode?: string | null): ClosureFormValueBasis;
 export function closureFieldText(key: string, value: unknown): string;
+export const CLOSURE_FORM_REQUIRED_TO_WIN: boolean;
