@@ -94,6 +94,7 @@ export function isPhaseChangeDocumentSetTooSmall({ documentCount, currentOfficia
 function phaseChangeHead({ change, newPhase, ref, detectedAt } = {}) {
   const offer = /presentaci[oó]n de oferta/i.test(`${newPhase || ''} ${ref || ''}`);
   const what = change === 'republication' ? 'una versión nueva del proceso'
+    : change === 'documents' ? 'documentos nuevos en el mismo aviso'
     : offer ? 'el pliego definitivo (fase de oferta)' : 'una fase nueva del proceso';
   const seen = bogotaDayLabel(detectedAt);
   return `SECOP publicó ${what}${seen ? ` (visto el ${seen})` : ''}`;
@@ -335,6 +336,47 @@ export async function reconcileAgt002PendingPhaseChanges(database, { now = new D
       detectedAt: now.toISOString(), origin: 'reconciliation', previousUrl: null,
     }, { now });
     events.push({ event: 'agt002_phase_change_reconciled', opportunityId, noticeUid, previousNotice: lastOrigin });
+  }
+  return events;
+}
+
+/**
+ * Mejora 13 (encargo desde Terminal): documentos nuevos aunque SECOP no cambie de fase. La Fiscalía cargó su pliego
+ * definitivo el 30-oct sin mover la fase y nadie lo supo hasta el 2-nov. El seguimiento de documentos sólo miraba los
+ * procesos con un cambio de fase registrado; éste mira, en cada revisión, las convertidas ACTIVAS de SECOP II que no
+ * tienen ninguno para su aviso vigente: si SECOP publica documentos que el CRM no tiene, registra el cambio (`documents`)
+ * y el paso de documentos de la misma revisión los baja, reanaliza y avisa por el camino de siempre. Sólo lectura de
+ * SECOP; nunca lanza por una candidata y respeta el presupuesto de tiempo.
+ */
+export async function watchAgt002DocumentsWithoutPhaseChange(database, {
+  probeDocuments, now = new Date(), budgetMs = AGT002_PHASE_CHANGE_DOCUMENTS_DEFAULT_BUDGET_MS, clock = () => Date.now(),
+} = {}) {
+  if (typeof probeDocuments !== 'function') throw new Error('probeDocuments es obligatorio.');
+  const startedMs = clock();
+  const tenders = await must(database.from('psi_public_tenders')
+    .select('id,ref,url,status,deadline_at,converted_opportunity_id,internal_status,source')
+    .eq('internal_status', 'convertida_oportunidad'), 'convertidas');
+  const events = [];
+  for (const tender of tenders || []) {
+    const opportunityId = tender.converted_opportunity_id;
+    const noticeUid = noticeUidFromTenderUrl(tender.url);
+    if (!opportunityId || !noticeUid || (tender.source && tender.source !== 'SECOP II')) continue;
+    if (await agt002PhaseChangeOpportunityBlocker(database, opportunityId, tender.id)) continue;
+    if (tenderSourceChangeFollowUpBlocker({ status: tender.status, deadline: tender.deadline_at }, now)) continue;
+    const state = await readAgt002PhaseChangeState(database, opportunityId);
+    if (ofKind(state, AGT002_PHASE_CHANGE_KINDS.detected, noticeUid).length) continue; // ya lo sigue el paso de documentos
+    if (clock() - startedMs >= budgetMs) { events.push({ event: 'agt002_document_watch_deferred', reason: 'time_budget', opportunityId }); continue; }
+    try {
+      const probe = await probeDocuments(opportunityId, { noticeUid, baselineAt: now.toISOString() });
+      if (!Number(probe?.new_document_count || 0)) { events.push({ event: 'agt002_document_watch_unchanged', opportunityId }); continue; }
+      await recordAgt002PhaseChangeDetected(database, opportunityId, {
+        change: 'documents', url: tender.url, ref: tender.ref, newPhase: tender.status, deadline: tender.deadline_at,
+        detectedAt: now.toISOString(), origin: 'document_watch',
+      }, { now });
+      events.push({ event: 'agt002_document_watch_new_documents', opportunityId, newDocuments: Number(probe.new_document_count) });
+    } catch (error) {
+      events.push({ event: 'agt002_document_watch_probe_failed', opportunityId, message: String(error?.message || error).slice(0, 200) });
+    }
   }
   return events;
 }
