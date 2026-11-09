@@ -182,6 +182,8 @@ export function buildTenderOpenBoard({ processes = [] } = {}) {
       required_company_documents: requiredClasses(process).size,
       // Mejora 1: vencidos del expediente por consecuencia (null si no se pudo leer).
       vencidos: process.vencidos || null,
+      // F17: aviso de cronograma faltante (Mi día).
+      cronograma_faltante: process.cronograma_faltante === true,
     })),
     tramites,
     vencimientos,

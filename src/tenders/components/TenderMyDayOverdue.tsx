@@ -18,8 +18,19 @@ export function TenderMyDayOverdue({ request, onOpen }: { request: TenderRequest
     return () => { active = false; };
   }, [request]);
   const rows = (board?.processes || []).filter(process => process.vencidos && (process.vencidos.vencidos_que_tumban > 0 || process.vencidos.no_subsanables_abiertos > 0));
-  if (!rows.length) return null;
-  return <section className="notice my-day-tender-overdue" aria-label="Licitaciones con algo que puede tumbar la oferta">
+  // F17 (Juan, 2026-11-09): licitaciones abiertas cuyo análisis no trae la fecha de observaciones.
+  const sinCronograma = (board?.processes || []).filter(process => process.cronograma_faltante);
+  if (!rows.length && !sinCronograma.length) return null;
+  return <>
+  {sinCronograma.length > 0 && <section className="notice my-day-tender-overdue" aria-label="Licitaciones sin cronograma">
+    <strong>Falta el cronograma de SECOP</strong>
+    <ul>{sinCronograma.map(process => <li key={process.opportunity_id}>
+      <button type="button" className="tw-link" onClick={() => onOpen(process.opportunity_id)}>{process.entity || process.ref}</button>
+      {' · '}{countdownLabel(process.close_date)}
+      <small className="muted"> — el análisis no encontró la fecha de observaciones: imprima «Información del procedimiento» de SECOP II y súbala.</small>
+    </li>)}</ul>
+  </section>}
+  {rows.length > 0 && <section className="notice my-day-tender-overdue" aria-label="Licitaciones con algo que puede tumbar la oferta">
     <strong>Licitaciones con algo que puede tumbar la oferta</strong>
     <ul>
       {rows.map(process => {
@@ -34,5 +45,6 @@ export function TenderMyDayOverdue({ request, onOpen }: { request: TenderRequest
         </li>;
       })}
     </ul>
-  </section>;
+  </section>}
+  </>;
 }

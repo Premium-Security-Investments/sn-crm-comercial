@@ -12,7 +12,8 @@ test('la tarjeta usa el tablero (misma regla) y sólo sale si hay algo que puede
   const component = read(componentPath);
   assert.match(component, /loadTenderOpenBoard\(request\)/);
   assert.match(component, /process\.vencidos\.vencidos_que_tumban > 0 \|\| process\.vencidos\.no_subsanables_abiertos > 0/);
-  assert.match(component, /if \(!rows\.length\) return null;/);
+  // F17 (2026-11-09): la misma tarjeta muestra también las licitaciones sin cronograma; sin nada de las dos, no sale.
+  assert.match(component, /if \(!rows\.length && !sinCronograma\.length\) return null;/);
 });
 
 test('en Mi día la ve sólo quien tiene Licitaciones; los demás comerciales no', () => {

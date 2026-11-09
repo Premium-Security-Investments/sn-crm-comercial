@@ -59,6 +59,7 @@ import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/ten
 import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixCsv, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
 import { checkEconomicOffer, ECONOMIC_OFFER_MAX_BYTES } from '../verticales/licitaciones/tender-economic-offer-check.js';
 import { buildTenderOpenBoard } from '../verticales/licitaciones/tender-open-board.js';
+import { cronogramaFaltante } from '../verticales/licitaciones/tender-cronograma-faltante.js';
 import { overdueSummary } from '../verticales/licitaciones/tender-dossier-vencidos.js';
 import { AGT002_DRAFT_BUCKET, isAgt002DraftStoragePath } from '../verticales/licitaciones/agt002-workbench-document.js';
 import { TENDER_OFFER_PACKAGE_MATRIX_NAME, buildTenderOfferPackageManifest, tenderOfferPackageIndex } from '../verticales/licitaciones/tender-offer-package.js';
@@ -7148,6 +7149,8 @@ async function readTenderOpenBoard(database, currentProfile, now = new Date()) {
     processes.push({
       opportunity_id: row.id, ref: tender?.ref || row.sede || null, entity: row.company_name || null,
       offer_status: row.tender_offer_status || null, close_date: closeDate, bridge, matrix, vencidos,
+      // F17: el análisis listo no trae fecha de observaciones (cronograma sólo en el formulario de SECOP).
+      cronograma_faltante: Boolean(report?.available && cronogramaFaltante(report.report)),
     });
   }
   return { today, without_access: withoutAccess, ...buildTenderOpenBoard({ processes }) };
