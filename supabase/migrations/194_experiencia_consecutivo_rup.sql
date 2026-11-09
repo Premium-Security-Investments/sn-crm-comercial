@@ -1,0 +1,125 @@
+-- 194 — Mejora 8 (encargo desde Terminal): el consecutivo del contrato en el RUP, en cada experiencia de la ficha.
+--
+-- `psi_company_experience.rup_number` es el número de la experiencia dentro del RUP (84), pero los pliegos piden el
+-- «número consecutivo del contrato» que el RUP imprime al lado (086): desde la experiencia 77 los dos se separan, y en
+-- Terminal hubo que buscarlo a mano. Decisión de Juan (2026-11-09): Vig-IA lo lee del RUP y lo escribe directo.
+--
+-- Fuente: RUP de la Cámara de Comercio de Pereira expedido el 2026-11-03 (`21_RUP_SEGURIDAD_NACIONAL_2026-11-03_VIGENTE.pdf`,
+-- sha256 042dfe8dc683f805ef2e584a…, 62 páginas escaneadas), leído con OCR (tesseract, español) el 2026-11-09. Las 101
+-- experiencias cuadran con la ficha por número, contratante y valor en SMMLV; la 35 salió partida entre dos páginas y se
+-- leyó en la página siguiente (035). Sólo se llena donde la columna está vacía: correr dos veces no cambia nada.
+begin;
+
+alter table public.psi_company_experience add column if not exists rup_consecutive text
+  check (rup_consecutive is null or rup_consecutive ~ '^[0-9]{1,4}$');
+comment on column public.psi_company_experience.rup_consecutive is
+  'Número consecutivo del contrato en el RUP (el que piden los pliegos). Distinto de rup_number (número de la experiencia).';
+
+update public.psi_company_experience e
+set rup_consecutive = v.consecutivo, updated_at = now()
+from (values
+  (1, '001'),
+  (2, '002'),
+  (3, '003'),
+  (4, '004'),
+  (5, '005'),
+  (6, '006'),
+  (7, '007'),
+  (8, '008'),
+  (9, '009'),
+  (10, '010'),
+  (11, '011'),
+  (12, '012'),
+  (13, '013'),
+  (14, '014'),
+  (15, '015'),
+  (16, '016'),
+  (17, '017'),
+  (18, '018'),
+  (19, '019'),
+  (20, '020'),
+  (21, '021'),
+  (22, '022'),
+  (23, '023'),
+  (24, '024'),
+  (25, '025'),
+  (26, '026'),
+  (27, '027'),
+  (28, '028'),
+  (29, '029'),
+  (30, '030'),
+  (31, '031'),
+  (32, '032'),
+  (33, '033'),
+  (34, '034'),
+  (35, '035'),
+  (36, '036'),
+  (37, '037'),
+  (38, '038'),
+  (39, '039'),
+  (40, '040'),
+  (41, '041'),
+  (42, '042'),
+  (43, '043'),
+  (44, '044'),
+  (45, '045'),
+  (46, '046'),
+  (47, '047'),
+  (48, '048'),
+  (49, '049'),
+  (50, '050'),
+  (51, '051'),
+  (52, '052'),
+  (53, '053'),
+  (54, '054'),
+  (55, '055'),
+  (56, '056'),
+  (57, '057'),
+  (58, '058'),
+  (59, '059'),
+  (60, '060'),
+  (61, '061'),
+  (62, '062'),
+  (63, '063'),
+  (64, '064'),
+  (65, '065'),
+  (66, '066'),
+  (67, '067'),
+  (68, '068'),
+  (69, '069'),
+  (70, '070'),
+  (71, '071'),
+  (72, '072'),
+  (73, '073'),
+  (74, '074'),
+  (75, '075'),
+  (76, '076'),
+  (77, '079'),
+  (78, '080'),
+  (79, '081'),
+  (80, '082'),
+  (81, '083'),
+  (82, '084'),
+  (83, '085'),
+  (84, '086'),
+  (85, '088'),
+  (86, '089'),
+  (87, '090'),
+  (88, '091'),
+  (89, '093'),
+  (90, '094'),
+  (91, '095'),
+  (92, '096'),
+  (93, '097'),
+  (94, '098'),
+  (95, '099'),
+  (96, '100'),
+  (97, '101'),
+  (98, '102'),
+  (99, '103'),
+  (100, '104'),
+  (101, '105')
+) as v(rup_number, consecutivo)
+where e.rup_number = v.rup_number and e.rup_consecutive is null;
+
+commit;

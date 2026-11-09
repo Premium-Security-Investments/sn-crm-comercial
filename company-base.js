@@ -13,7 +13,9 @@ export const COMPANY_BASE_REGISTRY_SELECT = assertAgt002CompanyEvidenceRegistryM
   COMPANY_BASE_REGISTRY_ALLOWED_COLUMNS,
 );
 export const COMPANY_SITE_SELECT = 'id,department,city,address,is_main,supervigilancia_authorization,support_document_id,notes,source,updated_at';
-export const COMPANY_EXPERIENCE_SELECT = 'id,rup_number,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,notes,updated_at';
+export const COMPANY_EXPERIENCE_SELECT = 'id,rup_number,rup_consecutive,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,notes,updated_at';
+// Mejora 8: sin la migración 194 la columna no existe y la lectura sigue sin ella.
+const COMPANY_EXPERIENCE_SELECT_SIN_CONSECUTIVO = COMPANY_EXPERIENCE_SELECT.replace(',rup_consecutive', '');
 
 // Tablas opcionales hasta aplicar 127: la vista sigue funcionando sin ellas.
 const TABLE_ABSENT_ERROR_CODES = ['PGRST205', '42P01'];
@@ -62,13 +64,22 @@ async function registryRows(database) {
   return optionalRows(consulta(COMPANY_BASE_REGISTRY_SELECT_SIN_ANCLA));
 }
 
+async function experienceRows(database) {
+  const consulta = select => database.from('psi_company_experience').select(select)
+    .order('value_smmlv', { ascending: false, nullsFirst: false }).order('contracting_party');
+  const { data, error } = await consulta(COMPANY_EXPERIENCE_SELECT);
+  if (!error) return { rows: data || [], available: true };
+  if (TABLE_ABSENT_ERROR_CODES.includes(error.code)) return { rows: [], available: false };
+  if (!COLUMN_ABSENT_ERROR_CODES.includes(String(error.code))) throw error;
+  return optionalRows(consulta(COMPANY_EXPERIENCE_SELECT_SIN_CONSECUTIVO));
+}
+
 export async function loadCompanyBase(database) {
   const [registry, sites, experience] = await Promise.all([
     registryRows(database),
     optionalRows(database.from('psi_company_sites').select(COMPANY_SITE_SELECT)
       .order('is_main', { ascending: false }).order('department')),
-    optionalRows(database.from('psi_company_experience').select(COMPANY_EXPERIENCE_SELECT)
-      .order('value_smmlv', { ascending: false, nullsFirst: false }).order('contracting_party')),
+    experienceRows(database),
   ]);
   return {
     registry: registry.rows,

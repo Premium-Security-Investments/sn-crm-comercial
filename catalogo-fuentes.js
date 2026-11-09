@@ -719,10 +719,12 @@ export async function resolverEvidenciaAlCierre(database, { tenderId = null, pre
 export async function resolverExperiencia(database, { pregunta = null } = {}) {
   const nombre = 'empresa.experiencia';
   const procedencia = Object.freeze({ tabla: 'psi_company_experience' });
-  const { data, error } = await database
-    .from('psi_company_experience')
-    .select('rup_number,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,updated_at')
-    .order('value_smmlv', { ascending: false, nullsFirst: false });
+  // Mejora 8: con la 194, el consecutivo del contrato en el RUP (el que piden los pliegos); sin ella, la lectura de antes.
+  const consulta = select => database.from('psi_company_experience').select(select).order('value_smmlv', { ascending: false, nullsFirst: false });
+  let { data, error } = await consulta('rup_number,rup_consecutive,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,updated_at');
+  if (error && ['42703', 'PGRST204'].includes(String(error.code))) {
+    ({ data, error } = await consulta('rup_number,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,updated_at'));
+  }
   if (error || !Array.isArray(data) || data.length === 0) {
     return respuesta({
       nombre, valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA,
@@ -748,6 +750,8 @@ export async function resolverExperiencia(database, { pregunta = null } = {}) {
         valor_smmlv: fila.value_smmlv,
         anio: fila.contract_year,
         numero_rup: fila.rup_number,
+        // El número que piden los pliegos en el anexo de experiencia; distinto del número de la experiencia.
+        consecutivo_del_contrato_en_el_rup: fila.rup_consecutive ?? null,
       }))),
     }),
     estado: ESTADOS.VIGENTE,
