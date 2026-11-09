@@ -1,8 +1,10 @@
 // AGT-003 — etapa 3 del formulario de cierre, segunda mitad: sin formulario completo no se gana (Juan, 2026-11-04).
+// Apagado el 2026-11-09 por decisión de Juan mientras el equipo se acostumbra: las puertas siguen cableadas y un solo
+// interruptor (`CLOSURE_FORM_REQUIRED_TO_WIN`) las enciende.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { closureFormWinVerdict } from '../src/vigia/closure-form.js';
+import { CLOSURE_FORM_REQUIRED_TO_WIN, closureFormWinVerdict } from '../src/vigia/closure-form.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -37,10 +39,20 @@ test('todas las puertas a "aprobado" consultan el formulario, en los dos backend
 test('las licitaciones no pasan por el bloqueo', () => {
   const src = read('../server/index.js');
   const fn = src.slice(src.indexOf('function rejectWinOnCreate('));
-  assert.match(fn.slice(0, fn.indexOf('\n}\n')), /if \(isPublicTender \|\| payload\.stage_code !== 'aprobado'\) return;/);
+  assert.match(fn.slice(0, fn.indexOf('\n}\n')), /if \(!CLOSURE_FORM_REQUIRED_TO_WIN \|\| isPublicTender \|\| payload\.stage_code !== 'aprobado'\) return;/);
 });
 
 test('al crear, la pantalla no ofrece "Aprobado" (salvo licitaciones)', () => {
   const ui = read('../src/main.tsx');
-  assert.match(ui, /options=\{data\.stages\.filter\(s => id \|\| form\.service_type_code === 'licitacion_publica' \|\| s\.code !== 'aprobado'\)\.map\(s=>\[s\.code,s\.name\]\)\}/);
+  assert.match(ui, /options=\{data\.stages\.filter\(s => !CLOSURE_FORM_REQUIRED_TO_WIN \|\| id \|\| form\.service_type_code === 'licitacion_publica' \|\| s\.code !== 'aprobado'\)\.map\(s=>\[s\.code,s\.name\]\)\}/);
+});
+
+test('mientras el equipo se acostumbra (Juan, 2026-11-09), el interruptor está apagado y las puertas lo respetan', () => {
+  assert.equal(CLOSURE_FORM_REQUIRED_TO_WIN, false);
+  for (const file of ['../server/index.js', '../api/[...path].js']) {
+    const src = read(file);
+    const fn = src.slice(src.indexOf('async function requireClosureFormForWin('));
+    assert.match(fn.slice(0, fn.indexOf('\n}\n')), /^async function requireClosureFormForWin\(database, opportunityId\) \{\n {2}if \(!CLOSURE_FORM_REQUIRED_TO_WIN\) return;/);
+  }
+  assert.match(read('../src/vigia/ClosureFormPanel.tsx'), /CLOSURE_FORM_REQUIRED_TO_WIN \? 'Sin él completo no se puede marcar el negocio como ganado\.' : /);
 });

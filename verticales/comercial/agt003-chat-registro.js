@@ -15,7 +15,7 @@ import {
   CHAT_DATA_FIELDS, CHAT_NEXT_MAX_DAYS, chatCalendar, chatRegistroOutputSchema, normalizeChatOutput, weekdayName,
 } from '../../src/vigia/chat-registro.js';
 import { REGIONAL_OPTIONS } from '../../src/regional-options.js';
-import { CLOSURE_FORM_FIELDS } from '../../src/vigia/closure-form.js';
+import { CLOSURE_FORM_FIELDS, CLOSURE_FORM_REQUIRED_TO_WIN } from '../../src/vigia/closure-form.js';
 
 export const CHAT_TIMEOUT_MS = 75_000;
 export const CHAT_OPPORTUNITIES_MAX = 200;
@@ -38,7 +38,9 @@ export const CHAT_POLICY = [
   '  En las dos, nota es obligatoria: una frase con lo que el comercial contó, en primera persona, que explique la decisión. Si no te dijo por qué, pregúntale antes de proponerla.',
   '  Si el comercial no dice qué etapa ni se deduce de lo que contó, pregúntale en vez de escoger tú una etapa.',
   '- formulario_cierre: datos del formulario de cierre (formato GGC-FO-001) de un negocio que se está cerrando o se ganó: razón social y NIT para contratar y facturar, representante legal y su cédula, datos tributarios, facturación y pago, fechas del servicio, y los puestos vendidos. Las claves y etiquetas están en "formulario_de_cierre_campos"; usa en formulario sólo esas claves. Cada puesto que el comercial describa va en puestos (qué se vigila, hora de inicio y fin en HH:MM, número de vigilantes, si es armado, valor SIN IVA; en proyectos el valor es el total, en lo demás es mensual). Las direcciones donde se presta el servicio van en sedes. Los puestos y direcciones que propongas SE AGREGAN a los que ya tiene el formulario: no repitas los que el comercial ya había dictado. Sólo lo que el comercial dijo; nunca inventes un NIT, una cédula ni un valor.',
-  'Si el comercial cuenta que ganó un negocio, propón también el formulario_cierre con los datos que haya dado, y si faltan los puestos o el representante legal, pídeselos: para marcarlo ganado el formulario tiene que estar completo.',
+  CLOSURE_FORM_REQUIRED_TO_WIN
+    ? 'Si el comercial cuenta que ganó un negocio, propón también el formulario_cierre con los datos que haya dado, y si faltan los puestos o el representante legal, pídeselos: para marcarlo ganado el formulario tiene que estar completo.'
+    : 'Si el comercial cuenta que ganó un negocio, propón también el formulario_cierre con los datos que haya dado, y recuérdale que lo complete: operaciones y facturación lo necesitan para montar los puestos y facturar. Hoy no es obligatorio para marcarlo ganado: no detengas la decisión de ganar por eso.',
   'Si el comercial tiene pendientes por decidir (comercial.puede_crear_oportunidades = false), no propongas crear oportunidades: explícale que primero debe ponerse al día decidiendo sus pendientes en Mi día.',
   'No cambies el valor de la oferta ni el dueño, y no descartes ni congeles oportunidades: eso sigue en el botón "Decidir" de la ficha. Descartar y congelar son decisiones de cartera, no el relato de lo que pasó con el cliente.',
   'Después de proponer, si a ese cliente le faltan datos del perfil (campo faltan_del_perfil) y viene al caso, pide UNO o DOS de esos datos al final de la respuesta, de forma natural. Completar el perfil le da el premio "Análisis profundo".',

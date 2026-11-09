@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import {
-  CLOSURE_FORM_SECTIONS, closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormPlainText,
+  CLOSURE_FORM_REQUIRED_TO_WIN, CLOSURE_FORM_SECTIONS, closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormPlainText,
   closureFormValueBasis,
   type ClosureForm, type ClosureFormCatalogField, type ClosureFormPost, type ClosureFormSite,
 } from './closure-form.js';
@@ -132,7 +132,7 @@ export function ClosureFormPanel({ opportunityId, company, canEdit, onSaved }: {
       </span>
     </header>
     <p className="closure-form-intro">
-      Es el {state.format.code} que antes iba por correo. Sin él completo no se puede marcar el negocio como ganado.
+      Es el {state.format.code} que antes iba por correo. {CLOSURE_FORM_REQUIRED_TO_WIN ? 'Sin él completo no se puede marcar el negocio como ganado.' : 'Llénelo al cerrar el negocio: es lo que operaciones y facturación necesitan para montar los puestos y facturar.'}
       {state.saved ? '' : ' Todavía no se ha guardado: lo que ve viene de la oportunidad.'}
     </p>
     {!completeness.complete && <ul className="closure-form-missing">

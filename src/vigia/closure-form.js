@@ -31,6 +31,14 @@ export const CLOSURE_FORM_IVA_RATE = 0.19;
  */
 export const CLOSURE_FORM_AIU_RATE = 0.10;
 /**
+ * ¿Hace falta el formulario completo para marcar un negocio como ganado? (Juan, 2026-11-09: "mientras el equipo se
+ * acostumbra a hacerlo vamos a quitarle el condicional".) El formulario sigue en la ficha y en el chat; sólo deja de
+ * ser una puerta. Mientras esté en `false` tampoco se impide crear una oportunidad ya ganada, porque esa regla sólo
+ * existía para que nada naciera ganado sin formulario. Para volver a exigirlo basta poner `true`: servidor, pantalla y
+ * pruebas leen esta misma constante.
+ */
+export const CLOSURE_FORM_REQUIRED_TO_WIN = false;
+/**
  * En qué está expresado el valor que se escribe (Juan, 2026-10-25): **el total** en los proyectos y en las
  * licitaciones públicas, y **mensual** en todo lo demás — seguridad física, monitoreo, escoltas, portería virtual y
  * mantenimiento. Siempre **sin IVA**.

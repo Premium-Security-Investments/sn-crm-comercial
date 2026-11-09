@@ -239,7 +239,7 @@ import { briefQuotaMessage, buildBriefInput, claimBriefRun, runBriefSummary } fr
 import { CHAT_MESSAGE_MAX_CHARS, CHAT_REGISTRO_DEFAULT_DAILY_MAX, describeChatAction } from '../src/vigia/chat-registro.js';
 import {
   CLOSURE_FORM_FIELD_KEYS, CLOSURE_FORM_FORMAT, CLOSURE_FORM_VERSION, autofillClosureForm, autofillClosureSites,
-  cleanClosureFormInput, closureFormCatalog, closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormWinVerdict,
+  cleanClosureFormInput, closureFormCatalog, closureFormCompleteness, closureFormDurationDays, closureFormMoney, closureFormWinVerdict, CLOSURE_FORM_REQUIRED_TO_WIN,
 } from '../src/vigia/closure-form.js';
 import { buildAgt002StakeholderBriefPreview } from '../verticales/licitaciones/agt002-stakeholder-brief-preview.js';
 import {
@@ -4682,7 +4682,10 @@ app.put('/api/avancys/cliente-enlace', async (req, res) => {
 // formulario de cierre completo, porque ese formulario es lo que operaciones y facturación necesitan para montar los
 // puestos y facturar. Lo consultan TODAS las puertas que llevan una oportunidad a `aprobado`: la decisión (botón
 // "Decidir" y chat) y la edición de la ficha. El mensaje dice qué falta, no un "no se puede" a secas.
+// Desde el 2026-11-09 está apagado por decisión de Juan (`CLOSURE_FORM_REQUIRED_TO_WIN`): las puertas siguen llamando
+// aquí para que encenderlo otra vez sea cambiar una constante, no volver a cablear seis lugares.
 async function requireClosureFormForWin(database, opportunityId) {
+  if (!CLOSURE_FORM_REQUIRED_TO_WIN) return;
   const stored = await must(database.from('psi_sales_closure_forms').select(CLOSURE_FORM_SELECT).eq('opportunity_id', opportunityId).maybeSingle());
   const children = stored ? await closureFormChildren(database, stored.id) : { sites: [], posts: [] };
   const verdict = closureFormWinVerdict({ form: stored, sites: children.sites, posts: children.posts });
@@ -4695,7 +4698,7 @@ async function requireClosureFormForWin(database, opportunityId) {
 // Crear una oportunidad ya ganada no se permite (Juan, 2026-11-04): el formulario de cierre sólo existe cuando la
 // oportunidad existe, así que nacer ganada sería ganar sin formulario.
 function rejectWinOnCreate(payload, isPublicTender) {
-  if (isPublicTender || payload.stage_code !== 'aprobado') return;
+  if (!CLOSURE_FORM_REQUIRED_TO_WIN || isPublicTender || payload.stage_code !== 'aprobado') return;
   const error = new Error('Una oportunidad no se puede crear ya ganada: créela en otra etapa, llene el formulario de cierre y después márquela como ganada.');
   error.status = 400;
   error.code = 'AGT003_WIN_ON_CREATE';

@@ -65,6 +65,7 @@ import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity, splitByAgentDomain } from './vigia/commercial-scope.js';
 import { CLIENT_DEAL_TYPES, clientDealLabel, CUSTOMER_SEGMENT_FILTER_OPTIONS, matchesCustomerSegmentFilter, profileCompleteness, type ClientDealType } from './vigia/client-profile.js';
+import { CLOSURE_FORM_REQUIRED_TO_WIN } from './vigia/closure-form.js';
 import { competitorContractsDue, renewalsDue } from './vigia/renewal-alerts.js';
 import { dealMix } from './vigia/deal-mix.js';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
@@ -2308,7 +2309,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
       </label>
       <label>Fecha creación oportunidad<input type="date" value={creationDateValue} readOnly disabled/><small>Se asigna automáticamente con la fecha del día en que se crea la oportunidad.</small></label>
       <label>Comercial<Select value={String(form.owner_id || '')} onChange={v=>set('owner_id', v)} options={data.profiles.filter(isCommercialProfile).map(p=>[p.id,p.full_name])} empty="Seleccionar"/></label>
-      <label>Etapa<Select value={String(form.stage_code || '')} onChange={v=>set('stage_code', v)} options={data.stages.filter(s => id || form.service_type_code === 'licitacion_publica' || s.code !== 'aprobado').map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
+      <label>Etapa<Select value={String(form.stage_code || '')} onChange={v=>set('stage_code', v)} options={data.stages.filter(s => !CLOSURE_FORM_REQUIRED_TO_WIN || id || form.service_type_code === 'licitacion_publica' || s.code !== 'aprobado').map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
       {/* Al crear no se ofrece "Aprobado": un negocio se gana con su formulario de cierre, que existe cuando la oportunidad ya existe (Juan, 2026-11-04). */}
       <label>Servicio<Select value={String(form.service_type_code || '')} onChange={v=>set('service_type_code', v)} options={data.services.map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
       <label>Tipo de cliente<Select value={String(form.customer_segment || '')} onChange={v=>setForm(prev => ({ ...prev, customer_segment: v as CustomerSegment | '', client_deal_type: v === 'cliente_actual' ? prev.client_deal_type : '' }))} options={customerSegmentOptions} empty="Seleccionar" disabled={id ? !canEditSegment : false}/></label>
