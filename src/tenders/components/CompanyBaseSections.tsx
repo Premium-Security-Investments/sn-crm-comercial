@@ -227,11 +227,12 @@ export function CompanyExperienceSection({ experience, available, canEdit, onSav
     {!available ? null
       : experience.length === 0 ? <div className="company-document-empty"><strong>No hay contratos registrados.</strong><span>Agregue los contratos del RUP con su valor en SMMLV.</span></div>
       : <div className="tablewrap crm-readable-table company-base-table"><table>
-        <thead><tr><th>N.º RUP</th><th>Contratante</th><th>Objeto</th><th className="numeric">Valor</th><th>Año</th><th>Fuente</th>{canEdit && <th><span className="sr-only">Acciones</span></th>}</tr></thead>
+        <thead><tr><th>N.º RUP</th><th title="Número consecutivo del contrato en el RUP: el que piden los pliegos">Consecutivo</th><th>Contratante</th><th>Objeto</th><th className="numeric">Valor</th><th>Año</th><th>Fuente</th>{canEdit && <th><span className="sr-only">Acciones</span></th>}</tr></thead>
         <tbody>{experience.map(row => {
           const smmlv = toNumber(row.value_smmlv); const cop = toNumber(row.value_cop);
           return <tr key={row.id}>
             <td>{row.rup_number ?? <span className="muted">—</span>}</td>
+            <td>{row.rup_consecutive ?? <span className="muted">—</span>}</td>
             <td><strong>{row.contracting_party}</strong></td>
             <td>{row.contract_object || <span className="muted">Por confirmar</span>}</td>
             <td className="numeric">{smmlv !== null ? `${decimalFormatter.format(smmlv)} SMMLV` : cop !== null ? moneyFormatter.format(cop) : '—'}</td>
