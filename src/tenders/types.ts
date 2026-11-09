@@ -1116,7 +1116,7 @@ export type TenderOpenBoardProcessRef = { opportunity_id: string; ref: string; e
 export type TenderOpenBoard = {
   today: string;
   without_access: number;
-  processes: (TenderOpenBoardProcessRef & { offer_status: string | null; has_analysis: boolean; required_company_documents: number; vencidos: TenderOverdueSummary | null })[];
+  processes: (TenderOpenBoardProcessRef & { offer_status: string | null; has_analysis: boolean; required_company_documents: number; vencidos: TenderOverdueSummary | null; cronograma_faltante?: boolean })[];
   tramites: {
     key: string; label: string; owner: string; kind: string; kind_label: string; document_name: string | null; issued_at: string | null; expires_at: string | null;
     processes: (TenderOpenBoardProcessRef & { state: string | null; age_at_close_days: number | null })[];

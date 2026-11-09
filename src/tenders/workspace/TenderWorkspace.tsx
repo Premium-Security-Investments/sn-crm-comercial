@@ -14,6 +14,7 @@ import type { TenderDossierAssignee, TenderDossierItem, TenderDossierItemActionI
 import { TenderVigiaChannel } from './TenderVigiaChannel';
 import { TenderEconomicOfferCheck } from './TenderEconomicOfferCheck';
 import { TRAMITE_ITEM_KEY_PREFIX } from '../../../verticales/licitaciones/tender-tramites-con-terceros.js';
+import { CRONOGRAMA_FALTANTE_TEXTO, cronogramaFaltante } from '../../../verticales/licitaciones/tender-cronograma-faltante.js';
 import { TenderClarificationNotes, TenderClarificationsCard, TenderClarifyInline, TenderCompanyClarificationProposal, useTenderClarifications, type TenderClarification, type TenderClarificationPlacement } from './TenderClarify';
 import { OFFER_STATUS_LABEL, POST_GO_STATUSES, countdownLabel, daysUntil, formatDay, formatDeadline, todayInBogota } from './tenderWorkspaceFormat';
 
@@ -190,13 +191,16 @@ export function TenderScheduleCard({ report, compact = false }: { report: Agt002
   const [showPast, setShowPast] = useState(false);
   if (!report) return null;
   const rows = scheduleRows(report);
-  if (!rows.length) return null;
+  // F17: sin fecha de observaciones, el aviso va aunque no haya ninguna otra fecha.
+  const missing = cronogramaFaltante(report) ? <p className="notice tw-schedule-warning" role="note">{CRONOGRAMA_FALTANTE_TEXTO}</p> : null;
+  if (!rows.length) return missing;
   const complete = report.deadlines.some(deadline => Boolean(deadline.label));
   const nextKey = rows.find(row => row.days !== null && row.days >= 0)?.key;
   const past = rows.filter(row => row.days !== null && row.days < 0);
   const visible = compact && !showPast ? rows.filter(row => !(row.days !== null && row.days < 0)) : rows;
   return <section className="tw-card tw-schedule" aria-label="Cronograma del proceso">
     <small>Cronograma del proceso</small>
+    {missing}
     {!complete && <p className="tw-schedule-warning">Este análisis es anterior al cronograma completo y puede omitir fechas. El cronograma oficial está en el acto de apertura y en SECOP II; Vig-IA lo busca en los documentos si se le pregunta.</p>}
     <ol className="tw-schedule-list">
       {visible.map(row => {
