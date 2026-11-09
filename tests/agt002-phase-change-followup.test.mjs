@@ -1061,3 +1061,26 @@ test('mejora 13: sin documentos nuevos, o si SECOP falla, no registra nada', asy
   assert.deepEqual([...quiet, ...broken].map(event => event.event), ['agt002_document_watch_unchanged', 'agt002_document_watch_probe_failed']);
   assert.equal(tables.psi_sales_interactions.length, before);
 });
+
+// Mejora 15 (encargo desde Terminal): el mismo documento de Supersalud falló cuatro días seguidos y el correo salía cada
+// día. La misma falla de la misma tanda se informa una vez; si sigue ~3 días, una revisión humana, también una vez.
+test('mejora 15: la falla de una tanda se informa una sola vez y a los ~3 días pide revisión humana', async () => {
+  const { agt002AlertItems } = await import('../verticales/licitaciones/agt002-licitaciones-alerts.js');
+  const failure = { opportunityId: 'opp-sns', setHash: 'set-x', failure: 'import_failed' };
+  const keys = ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02'].map(day => agt002AlertItems({ failures: [failure] }, { day })[0].key);
+  assert.equal(new Set(keys).size, 1, 'misma clave todos los días: el correo no se repite');
+
+  const tables = world({ psi_sales_interactions: [DETECTED] });
+  const db = fakeDb(tables);
+  const probe = async () => ({ new_set_hash: 'set-x', document_count: 21, new_document_count: 2, current_official_count: 19 });
+  const importDocuments = async () => { throw new Error('descarga fallida'); };
+  const reviews = [];
+  for (const when of ['2026-10-08T13:05:00Z', '2026-10-09T13:05:00Z', '2026-10-10T13:05:00Z', '2026-10-11T13:05:00Z', '2026-10-12T13:05:00Z']) {
+    const events = await runAgt002PhaseChangeDocumentRefresh(db, { probeDocuments: probe, importDocuments, now: at(when) });
+    reviews.push(events.find(event => event.failure)?.review || null);
+  }
+  assert.deepEqual(reviews.filter(Boolean).slice(0, 1), ['import_failing']);
+  assert.equal(reviews[1], null, 'el primer día sólo es una falla');
+  const items = agt002AlertItems({ reviews: [{ opportunityId: 'opp-sns', noticeUid: 'n', review: 'import_failing' }, { opportunityId: 'opp-sns', noticeUid: 'n', review: 'import_failing' }] }, { day: '2026-11-02' });
+  assert.equal(new Set(items.map(item => item.key)).size, 1);
+});

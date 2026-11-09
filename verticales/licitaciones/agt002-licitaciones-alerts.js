@@ -46,6 +46,8 @@ const REVIEW_TEXT = {
   documents_missing: 'SECOP cambió de fase hace unos 3 días y datos.gov.co todavía no publica los documentos nuevos. Hay que revisar en SECOP y subirlos a mano.',
   documents_unstable: 'La lista de documentos en datos.gov.co sigue cambiando desde hace unos 3 días. Hay que revisar en SECOP y subirlos a mano.',
   documents_incomplete: 'Los documentos nuevos que muestra datos.gov.co están incompletos. Hay que revisar en SECOP y subirlos a mano.',
+  // Mejora 15: la misma tanda sigue sin poder bajarse después de unos 3 días de reintentos.
+  import_failing: 'Hace unos 3 días que los documentos nuevos de SECOP no se pueden bajar (se sigue reintentando). Hay que revisar en SECOP y subirlos a mano.',
 };
 const ANALYSIS_TEXT = {
   launched: 'Se lanzó el reanálisis automático con los documentos vigentes (sin los archivados). Tarda unos 10 minutos; el resultado llega en el siguiente aviso.',
@@ -72,7 +74,9 @@ export function agt002AlertItems({ detections = [], reopens = [], documents = []
   }
   for (const r of results) items.push({ key: `result:${r.jobId}:${r.status}`, opportunityId: r.opportunityId, type: 'result', fact: r });
   for (const r of reviews) items.push({ key: `review:${r.opportunityId}:${r.noticeUid}:${r.review}`, opportunityId: r.opportunityId, type: 'review', fact: r });
-  for (const f of failures) items.push({ key: `failure:${f.opportunityId}:${f.setHash}:${day}`, opportunityId: f.opportunityId, type: 'failure', fact: f });
+  // Mejora 15 (encargo desde Terminal): la misma falla de la misma tanda se informa UNA vez, no cada día (Supersalud
+  // mandó el mismo aviso cuatro días seguidos). Si sigue después de ~3 días, va una revisión aparte (`import_failing`).
+  for (const f of failures) items.push({ key: `failure:${f.opportunityId}:${f.setHash}`, opportunityId: f.opportunityId, type: 'failure', fact: f });
   return items;
 }
 

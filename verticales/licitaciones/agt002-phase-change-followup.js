@@ -461,7 +461,10 @@ export async function runAgt002PhaseChangeDocumentRefresh(database, {
       } catch (error) {
         const message = String(error?.message || error).slice(0, 200);
         await recordState(database, opportunityId, { kind: AGT002_PHASE_CHANGE_KINDS.importFailed, notice_uid: noticeUid, new_set_hash: probe.new_set_hash, code: error?.code || null, message }, { now });
-        events.push({ event: 'agt002_phase_change_documents_pending', reason: 'import_failed', failure: 'import_failed', setHash: probe.new_set_hash, message, ...base });
+        // Mejora 15: tras ~3 días fallando la misma tanda, una revisión humana (se informa una sola vez por su clave).
+        const firstFailure = ofKind(state, AGT002_PHASE_CHANGE_KINDS.importFailed, noticeUid).find(row => row.payload.new_set_hash === probe.new_set_hash);
+        const failingTooLong = firstFailure && ageMs(firstFailure.created_at, now) >= AGT002_PHASE_CHANGE_HUMAN_REVIEW_AFTER_MS;
+        events.push({ event: 'agt002_phase_change_documents_pending', reason: 'import_failed', failure: 'import_failed', setHash: probe.new_set_hash, message, ...(failingTooLong ? { review: 'import_failing' } : {}), ...base });
         continue;
       }
       const retiredCount = Number(result?.retired_count || 0);
