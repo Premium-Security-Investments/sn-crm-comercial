@@ -8379,9 +8379,14 @@ app.get('/api/tender-allies/candidates', async (req, res) => {
     const one = allCities.length > missing.length ? list(allCities) : null;
     const sum = list(missing);
     const readingOut = { mode: reading.mode, quote: reading.quote, quote_verified: reading.quote_verified, document_name: reading.document_name, locator: reading.locator, explanation: reading.explanation };
-    // uno_cumple: el socio necesita todas las ciudades del requisito. se_suma: sólo lo que nos falta. no_dice: las dos.
-    if (reading.mode === 'uno_cumple' && one) return res.json({ applies: true, installed: true, reading: readingOut, ...one });
-    if (reading.mode === 'no_dice' && one) return res.json({ applies: true, installed: true, reading: readingOut, ...one, alternative: { label: 'Si la Entidad acepta sumar entre integrantes', ...sum } });
+    // «Basta con uno» no prohíbe sumar (Juan, 2026-11-10): con uno_cumple o no_dice van las dos listas, la segunda
+    // rotulada como lo que depende de la Entidad.
+    if ((reading.mode === 'uno_cumple' || reading.mode === 'no_dice') && one) {
+      // La segunda lista sin repetir a quienes ya están en la primera (también tienen las ciudades que nos faltan).
+      const first = new Set(one.candidates.map(candidate => candidate.nit));
+      const others = rankAllyCandidates(allies.companies, { cityKeys: missing, processRef: tender?.ref || null, ourCities, limit: 50 }).filter(candidate => !first.has(candidate.nit)).slice(0, 5);
+      return res.json({ applies: true, installed: true, reading: readingOut, ...one, alternative: { label: 'Sólo si la Entidad acepta sumar entre integrantes (hay que aclararlo con ella)', cities: sum.cities, candidates: others } });
+    }
     res.json({ applies: true, installed: true, reading: readingOut, ...sum });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
