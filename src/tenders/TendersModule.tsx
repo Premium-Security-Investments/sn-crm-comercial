@@ -3,6 +3,7 @@ import { TenderTrackingView } from './TenderTrackingView';
 import { TenderOpportunitiesView } from './TenderOpportunitiesView';
 import { TenderConfigurationView } from './TenderConfigurationView';
 import { TenderLessonsView } from './TenderLessonsView';
+import { TenderAlliesView } from './TenderAlliesView';
 import { canConfigureTenders, canManageTenderCompanyDocuments, canManageTenderLessons } from './permissions';
 import { TenderModuleNavigation } from './components/TenderModuleNavigation';
 import type { TendersModuleProps } from './types';
@@ -21,6 +22,7 @@ export function TendersModule(props: TendersModuleProps) {
     {props.view === 'seguimiento' && <TenderTrackingView {...props} moduleNavigation={moduleNavigation} />}
     {props.view === 'oportunidades' && <TenderOpportunitiesView {...props} moduleNavigation={moduleNavigation} />}
     {props.view === 'configuracion' && <TenderConfigurationView {...props} moduleNavigation={moduleNavigation} canConfigure={canConfigure} canManageDocuments={canManageDocuments} />}
+    {props.view === 'aliados' && <TenderAlliesView {...props} moduleNavigation={moduleNavigation} />}
     {props.view === 'lecciones' && <TenderLessonsView {...props} moduleNavigation={moduleNavigation} canManageLessons={canManageTenderLessons(props.data.currentProfile)} />}
   </section>;
 }

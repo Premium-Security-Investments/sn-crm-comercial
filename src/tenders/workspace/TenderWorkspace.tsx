@@ -219,7 +219,7 @@ export function TenderScheduleCard({ report, compact = false }: { report: Agt002
 // --- Antes del GO: ¿nos presentamos? ------------------------------------------------------------------
 
 /** Antes del GO, con el registro de la decisión; después del GO, el mismo análisis para consulta (sin decisionPanel). */
-export function TenderDecideView({ report, decisionPanel, reanalysis, channel, documents, clarify }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode; reanalysis?: ReactNode; channel?: ReactNode; documents?: ReactNode; clarify?: ClarifyContext }) {
+export function TenderDecideView({ report, decisionPanel, reanalysis, channel, documents, clarify, allies }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode; reanalysis?: ReactNode; channel?: ReactNode; documents?: ReactNode; clarify?: ClarifyContext; allies?: ReactNode }) {
   const rows = useMemo(() => buildRequirementRows(report), [report]);
   const decisive = useMemo(() => decisiveRequirementRows(rows), [rows]);
   const others = useMemo(() => otherRiskNotes(report, rows), [report, rows]);
@@ -244,6 +244,8 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel, d
       <small>{decisionPanel ? 'Lo que recomienda Vig-IA' : 'Lo que recomendó Vig-IA antes del GO'}</small>
       <h3>{verdict.label}</h3>
       <p>{initialReportRecommendationText(report.recommendation.label)}</p>
+      {/* Aliados (Juan, 2026-11-09): con «Solo en unión temporal», los posibles socios debajo de la recomendación. */}
+      {allies}
       <p className="tw-muted">{initialReportCompanyFit(report)} · confianza {initialReportLabels.confidence(report.recommendation.confidence)} · {rows.length} requisitos revisados</p>
       {reanalysis}
     </section>

@@ -24,7 +24,7 @@ export function filterOpportunitySummaries(rows: TenderOpportunitySummary[], fil
 export function normalizeTenderModuleView(value: string): TenderModuleView {
   if (value === 'expedientes') return 'oportunidades';
   if (value === 'perfiles') return 'configuracion';
-  return value === 'seguimiento' || value === 'oportunidades' || value === 'configuracion' || value === 'lecciones' ? value : 'radar';
+  return value === 'seguimiento' || value === 'oportunidades' || value === 'configuracion' || value === 'lecciones' || value === 'aliados' ? value : 'radar';
 }
 
 export function dossierPageQuery(page: number, limit: number) {

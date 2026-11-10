@@ -34,6 +34,7 @@ import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDeci
 import { NavIcon, UserMenu } from './shell/UserMenu';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
 import { TenderOfferRecordPanel } from './tenders/components/TenderOfferRecordPanel';
+import { TenderAllyCandidates } from './tenders/components/TenderAllyCandidates';
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
@@ -591,7 +592,7 @@ function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfi
     if (href.startsWith('#/tenders?view=')) {
       if (route.page !== 'tenders') return false;
       const view = tenderViewFromHash();
-      return href === `#/tenders?view=${view === 'configuracion' || view === 'lecciones' ? 'radar' : view}`;
+      return href === `#/tenders?view=${view === 'configuracion' || view === 'lecciones' || view === 'aliados' ? 'radar' : view}`;
     }
     return href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
   };
@@ -1455,7 +1456,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           ? <TenderPrepareView key={`tender-prepare-${o.id}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={canDecide} report={tenderInitialReport} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus}
               onOfferStatusChanged={reloadAll}
               onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })} />
-          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} channel={!readOnly && tenderInitialReport ? <TenderVigiaChannel key={`tender-channel-${o.id}`} opportunityId={o.id} request={api} onJobsCompleted={bumpTenderOwnDocuments} /> : null}
+          : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} allies={<TenderAllyCandidates opportunityId={o.id} request={api} navigate={go} />} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} channel={!readOnly && tenderInitialReport ? <TenderVigiaChannel key={`tender-channel-${o.id}`} opportunityId={o.id} request={api} onJobsCompleted={bumpTenderOwnDocuments} /> : null}
               documents={!readOnly ? <TenderOwnDocuments key={`tender-own-documents-${o.id}`} opportunityId={o.id} request={api} refreshKey={tenderOwnDocumentsVersion} /> : null} />}
       </div>
       {moment === 'preparar' && <div className="tw-panel tw-panel-analisis"><TenderDecideView report={tenderInitialReport} reanalysis={reanalysis} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} /></div>}

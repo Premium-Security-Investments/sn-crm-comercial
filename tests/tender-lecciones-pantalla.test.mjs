@@ -20,7 +20,7 @@ test('el botón sólo es para quien tiene el permiso de lecciones', () => {
 });
 
 test('la vista existe y el menú de la izquierda no la muestra', () => {
-  assert.match(read('src/tenders/viewUtils.ts'), /value === 'lecciones' \? value : 'radar'/);
+  assert.match(read('src/tenders/viewUtils.ts'), /value === 'lecciones'( \|\| value === 'aliados')? \? value : 'radar'/);
   const profile = { ...person('comercial', ['licitaciones', 'licitaciones_lecciones']) };
   const labels = getVisibleNavGroups(profile).flatMap(group => group.items.map(item => item.label));
   assert.ok(!labels.includes('Lecciones'));
