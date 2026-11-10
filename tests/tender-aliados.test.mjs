@@ -80,3 +80,18 @@ test('pantalla y rutas: botón «Aliados» junto a «Lecciones», candidatos baj
   assert.match(server, /'GET \/api\/tender-allies\/candidates': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
   assert.equal(server, read('api/[...path].js'));
 });
+
+// 2026-11-10: la primera carga en producción se cayó en la participación 42, que traía sólo el año («2023»).
+test('una fecha que sólo trae el año va al detalle, y la recarga sólo agrega las participaciones que faltan', async () => {
+  const { normalizeSeedParticipation, loadAlliesListing } = await import('../verticales/licitaciones/tender-allies.js');
+  assert.deepEqual(normalizeSeedParticipation({ occurred_on: '2023', detail: 'Adjudicatario' }), { occurred_on: null, detail: 'Año 2023. Adjudicatario' });
+  assert.equal(VIGILANCE_PARTICIPATIONS_SEED.map(normalizeSeedParticipation).filter(part => part.occurred_on && !/^\d{4}-\d{2}-\d{2}$/.test(part.occurred_on)).length, 0);
+  const inserted = VIGILANCE_PARTICIPATIONS_SEED.slice(0, 41).map(part => ({ process_ref: part.process_ref, company_label: part.company_label, kind: part.kind }));
+  const calls = [];
+  const database = {
+    rpc: async (name, args) => { calls.push(name); if (name === 'psi_add_vigilance_participation') inserted.push(args.p_payload); return { data: { companies: 0, offices: 0 }, error: null }; },
+    from: () => ({ select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: { role: 'nosotros' } }), range: async () => ({ data: inserted.slice(0, 41), error: null }) }),
+  };
+  const result = await loadAlliesListing(database, { actorId: 'k', listing: [], source: 's', participationsSeed: VIGILANCE_PARTICIPATIONS_SEED });
+  assert.equal(result.participations_seeded, 19);
+});
