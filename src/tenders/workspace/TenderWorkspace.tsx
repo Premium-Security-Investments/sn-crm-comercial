@@ -532,7 +532,6 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
       </div>}
     </section>
     {error && <div className="error" role="alert">{error}</div>}
-    {offerRecord}
 
     <TenderScheduleCard report={report} compact />
 
@@ -610,5 +609,8 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
       <small>Documentos que se firman y aprueban</small>
       <TenderDossierArtifacts opportunityId={opportunityId} artifacts={shownArtifacts} request={request} canApprove={canApprove} workbenchEnabled={workspace.workbench_enabled} onChanged={reload} />
     </section>}
+
+    {/* Juan, 2026-11-10: registrar la radicación es lo último, después de preparar y aprobar los documentos. */}
+    {offerRecord && <section className="tw-card tw-offer-record">{offerRecord}</section>}
   </div>;
 }

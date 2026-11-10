@@ -36,7 +36,10 @@ test('Juan, 2026-11-10: en la pestaña Preparar está «Oferta presentada» y no
   const prepare = main.slice(main.indexOf('<TenderPrepareView'), main.indexOf('<TenderPrepareView') + 1200);
   assert.match(prepare, /offerRecord=\{<TenderOfferRecordPanel opportunityId=\{o\.id\}/);
   const workspace = read('src/tenders/workspace/TenderWorkspace.tsx');
-  assert.match(workspace, /\{offerRecord\}/);
+  // Juan, 2026-11-10: al final, después de «Documentos que se firman y aprueban», y con el rótulo legible.
+  assert.match(workspace, /\{offerRecord && <section className="tw-card tw-offer-record">\{offerRecord\}<\/section>\}/);
+  assert.ok(workspace.indexOf('Documentos que se firman y aprueban') < workspace.indexOf('tw-offer-record'));
+  assert.match(read('src/styles.css'), /\.tender-offer-record-panel \.eyebrow\{background:#eaf2ff;color:#174ea6\}/);
   const next = workspace.slice(workspace.indexOf('const NEXT_STATUS'), workspace.indexOf('};', workspace.indexOf('const NEXT_STATUS')));
   assert.doesNotMatch(next, /Registrar oferta presentada|Registrar adjudicada|Registrar no adjudicada/);
   assert.match(next, /Marcar lista para presentar/);
