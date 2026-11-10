@@ -95,3 +95,20 @@ test('una fecha que sólo trae el año va al detalle, y la recarga sólo agrega 
   const result = await loadAlliesListing(database, { actorId: 'k', listing: [], source: 's', participationsSeed: VIGILANCE_PARTICIPATIONS_SEED });
   assert.equal(result.participations_seeded, 19);
 });
+
+test('la pantalla sabe cuántas participaciones de la semilla faltan y no muestra ciudades vacías', async () => {
+  const { missingSeedCount, listAllies } = await import('../verticales/licitaciones/tender-allies.js');
+  const { normalizeSeedParticipation } = await import('../verticales/licitaciones/tender-allies.js');
+  const loaded = VIGILANCE_PARTICIPATIONS_SEED.slice(0, 41).map(normalizeSeedParticipation);
+  assert.equal(missingSeedCount(loaded, VIGILANCE_PARTICIPATIONS_SEED), VIGILANCE_PARTICIPATIONS_SEED.length - 41);
+  assert.equal(missingSeedCount(VIGILANCE_PARTICIPATIONS_SEED.map(normalizeSeedParticipation), VIGILANCE_PARTICIPATIONS_SEED), 0);
+  const rows = {
+    psi_vigilance_companies: [{ nit: '900000001', name: 'Uno', role: 'sin_clasificar' }],
+    psi_vigilance_company_offices: [{ nit: '900000001', city: 'CALI', city_key: 'cali' }, { nit: '900000001', city: ' ', city_key: '' }, { nit: '900000001', city: 'TULUÁ', city_key: 'tulua' }],
+    psi_vigilance_participations: [],
+  };
+  const database = { from: table => ({ select() { return this; }, range: async () => ({ data: rows[table], error: null }) }) };
+  const result = await listAllies(database, { participationsSeed: VIGILANCE_PARTICIPATIONS_SEED });
+  assert.deepEqual(result.companies[0].cities.map(city => city.city), ['CALI', 'TULUÁ']);
+  assert.equal(result.seed_missing, VIGILANCE_PARTICIPATIONS_SEED.length);
+});
