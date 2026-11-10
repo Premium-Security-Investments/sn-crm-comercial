@@ -1058,3 +1058,17 @@ td.numeric-value{white-space:nowrap}
 @media(max-width:700px){.tender-allies-form{grid-template-columns:1fr}.tender-allies-detail{grid-template-columns:minmax(0,1fr)}}
 .tw-ally-candidates{border-top:1px solid #e2e8f0;margin-top:8px;padding-top:8px}
 .tw-ally-candidates ul{margin:6px 0;padding-left:18px}
+
+/* La semana de licitaciones en Mi día (Juan, 2026-11-10): hoy destacado. */
+.my-day-tender-semana{display:grid;gap:8px;padding:14px 16px;border:1px solid #dbe7f5;border-radius:16px;background:#fff}
+.my-day-tender-semana header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px}
+.my-day-semana-day{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:8px 10px;border-radius:12px}
+.my-day-semana-day.is-today{background:#fff4e5;border:1px solid #f5b971}
+.my-day-semana-day.is-today .my-day-semana-date{color:#9a3412;font-weight:900}
+.my-day-semana-date{font-weight:800;color:#334155;text-transform:capitalize}
+.my-day-semana-day ul{margin:0;padding:0;list-style:none;display:grid;gap:3px}
+.my-day-semana-day li{display:grid;grid-template-columns:96px 1fr;gap:8px;align-items:baseline}
+.my-day-semana-hour{color:#475569;font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(max-width:640px){.my-day-semana-day{grid-template-columns:1fr;gap:4px}}
+/* En Mi día el enlace a la licitación es texto, no un botón (el .tw-link de la ficha sólo aplica dentro de .tw-workspace). */
+.my-day-tender-semana .tw-link,.my-day-tender-overdue .tw-link{background:none;border:0;box-shadow:none;color:#1d4ed8;padding:0;font:inherit;font-weight:800;cursor:pointer;text-decoration:underline;text-underline-offset:2px}

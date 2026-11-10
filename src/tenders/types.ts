@@ -1113,6 +1113,13 @@ export type TenderOverdueSummary = {
   primeros: { titulo: string; consecuencia: 'no_subsanable' | 'causa_rechazo' | 'obligatorio' | 'otro'; dias_vencido: number; responsable: string | null }[];
 };
 export type TenderOpenBoardProcessRef = { opportunity_id: string; ref: string; entity: string | null; close_date: string | null };
+/** La semana de licitaciones en Mi día (Juan, 2026-11-10): hitos del cronograma de hoy y los próximos días. */
+export type TenderSemanaItem = {
+  opportunity_id: string; entity: string | null; ref: string | null; offer_status: string | null;
+  label: string; kind: string | null; value: string; day: string; tiene_hora: boolean; por_confirmar: boolean; dias: number;
+};
+export type TenderSemana = { today: string; hasta: string; dias: number; hoy: number; procesos: number; without_access: number; items: TenderSemanaItem[] };
+
 export type TenderOpenBoard = {
   today: string;
   without_access: number;

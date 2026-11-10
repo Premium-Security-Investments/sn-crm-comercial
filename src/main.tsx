@@ -22,6 +22,7 @@ import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalys
 import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
 import { TenderMyDayOverdue } from './tenders/components/TenderMyDayOverdue';
+import { TenderMyDaySemana } from './tenders/components/TenderMyDaySemana';
 import { TenderMyDayOfferReminder } from './tenders/components/TenderMyDayOfferReminder';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
 import { TenderComplianceMatrixPanel } from './tenders/components/TenderComplianceMatrixPanel';
@@ -3047,6 +3048,8 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
       {subline && <p className="my-day-subline">{subline}</p>}
     </div>
     {/* Mejora 1: sólo quien trabaja licitaciones (hoy, Katherine) ve lo vencido que puede tumbar una oferta. */}
+    {/* Juan, 2026-11-10: la semana de licitaciones, con hoy destacado, va primero. */}
+    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDaySemana request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
     {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOverdue request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
     {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOfferReminder request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
