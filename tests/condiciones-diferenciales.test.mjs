@@ -76,3 +76,11 @@ test('sin la 200 la ficha no se rompe y guardar dice qué falta; las rutas y las
   assert.match(read('src/main.tsx'), /<TenderDifferentialBenefits opportunityId=\{o\.id\} request=\{api\} \/>/);
   assert.match(read('src/tenders/TenderConfigurationView.tsx'), /<CompanyDifferentialConditions request=\{request\} canEdit=\{canConfigure\} \/>/);
 });
+
+test('«experiencia» sola cerca de la mención no marca el beneficio como de experiencia (Fiscalía, 2026-11-10)', () => {
+  const doc = { name: 'Formatos.zip', extracted_text: 'FORMATO B – VINCULACIÓN DE PERSONAS EN CONDICIÓN DE DISCAPACIDAD. El proponente con experiencia en vigilancia diligencia este formato para el desempate con las personas en condición de discapacidad vinculadas.' };
+  const mention = findDifferentialMentions([doc]).discapacidad_nomina[0];
+  assert.ok(!mention.kinds.includes('experiencia'));
+  assert.ok(mention.kinds.includes('desempate'));
+  assert.ok(findDifferentialMentions([FISCALIA_ADENDA]).empresa_mujeres[0].kinds.includes('experiencia'));
+});
