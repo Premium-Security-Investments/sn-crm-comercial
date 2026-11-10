@@ -81,5 +81,8 @@ test('la 202 guarda una lectura por análisis; sin ella se calcula igual; la rut
   assert.equal(server, read('api/[...path].js'));
   const ui = read('src/tenders/components/TenderAllyCandidates.tsx');
   assert.match(ui, /Lectura del pliego:/);
+  assert.match(ui, /basta con que un integrante tenga \$\{cities\}\. No dice si la Entidad acepta sumar/);
+  assert.match(server, /reading\.mode === 'uno_cumple' \|\| reading\.mode === 'no_dice'\) && one\) \{/);
+  assert.match(server, /\.filter\(candidate => !first\.has\(candidate\.nit\)\)/);
   assert.match(ui, /no es una recomendación de Vig-IA/);
 });

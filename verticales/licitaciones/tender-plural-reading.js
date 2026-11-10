@@ -2,9 +2,10 @@
 //
 // Cuando la recomendación es «Solo en unión temporal», antes de proponer socios hay que saber cómo deja el pliego que un
 // proponente plural cumpla el requisito que nos falta:
-//   * uno_cumple: un solo integrante debe reunirlo. Fiscalía FGN-REC-IPSE-0058-2026, 5.3.2 punto 1: «si uno de los
-//     integrantes cumple con el requisito de tener domicilio principal, sucursal o agencia en la ciudad capital de cada
-//     seccional… se entenderá cumplido». El socio necesita TODAS las ciudades, incluidas las nuestras.
+//   * uno_cumple: el pliego dice que basta con que un integrante lo reúna. Fiscalía FGN-REC-IPSE-0058-2026, 5.3.2
+//     punto 1: «si uno de los integrantes cumple con el requisito de tener domicilio principal, sucursal o agencia en la
+//     ciudad capital de cada seccional… se entenderá cumplido». Eso no prohíbe sumar (Juan, 2026-11-10: no afirmar más
+//     de lo que dice el pliego): lo seguro es un socio con TODAS las ciudades; sumar depende de la Entidad.
 //   * se_suma: se suma entre integrantes. El socio sólo tiene que aportar lo que nos falta.
 //   * no_dice: el pliego no lo dice. Se muestran las dos listas.
 //
@@ -18,7 +19,7 @@ import { getAgt002WorkbenchRuntimeConfig, isAgt002WorkbenchDrainEnabled } from '
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 
 export const PLURAL_MODES = Object.freeze({
-  uno_cumple: 'Un solo integrante debe cumplirlo',
+  uno_cumple: 'Basta con que un integrante lo cumpla',
   se_suma: 'Se suma entre los integrantes',
   no_dice: 'El pliego no dice si un solo integrante o la suma',
 });

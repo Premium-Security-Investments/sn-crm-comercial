@@ -11,10 +11,12 @@ type Candidate = { nit: string; name: string; role: string; covered: string[]; c
 type Reading = { mode: 'uno_cumple' | 'se_suma' | 'no_dice'; quote: string | null; quote_verified: boolean; document_name: string | null; locator: string | null; explanation: string | null };
 type Payload = { applies: boolean; installed?: boolean; cities: string[]; candidates: Candidate[]; reading?: Reading; alternative?: { label: string; cities: string[]; candidates: Candidate[] } };
 // Encargo AGT-002 del 2026-11-10 (aprobado por Juan): la lista sale de cómo deja el pliego cumplir a una unión temporal.
+// Juan (2026-11-10): no afirmar más de lo que dice el pliego. «Si uno de los integrantes cumple… se entenderá cumplido»
+// dice que BASTA con uno, no que esté prohibido sumar: se muestran las dos listas, cada una con lo que la sostiene.
 const READING: Record<Reading['mode'], (cities: string) => string> = {
-  uno_cumple: cities => `un solo integrante debe tener ${cities}`,
-  se_suma: cities => `se suma entre los integrantes: el socio aporta ${cities}`,
-  no_dice: () => 'el pliego no dice si un solo integrante debe cumplirlo o si se suma',
+  uno_cumple: cities => `el pliego dice que basta con que un integrante tenga ${cities}. No dice si la Entidad acepta sumar entre integrantes`,
+  se_suma: cities => `el pliego permite sumar entre integrantes: el socio aporta ${cities}`,
+  no_dice: () => 'el pliego no dice si un solo integrante debe cumplirlo o si se puede sumar',
 };
 const joinCities = (cities: string[]) => cities.length > 1 ? `${cities.slice(0, -1).join(', ')} y ${cities[cities.length - 1]}` : cities[0] || '';
 const ROLE: Record<string, string> = { aliado: 'Aliado', aliado_potencial: 'Aliado potencial', competidor: 'Competidor', sin_clasificar: 'Sin clasificar' };
@@ -42,7 +44,7 @@ export function TenderAllyCandidates({ opportunityId, request, navigate, canEdit
       : !data.candidates.length
         ? <p className="tw-muted">Ninguna empresa del listado tiene oficina en {data.cities.join(' y ')}. <button type="button" className="tw-link" onClick={open}>Ver Aliados</button></p>
         : <>
-          <p className="tw-muted">Con oficina en {joinCities(data.cities)} según el listado de la Superintendencia (falta pedirles la resolución y el certificado de Cámara):</p>
+          <p className="tw-muted">{data.alternative ? <><b>Lo seguro según el pliego</b>: con oficina en {joinCities(data.cities)}</> : <>Con oficina en {joinCities(data.cities)}</>} según el listado de la Superintendencia (falta pedirles la resolución y el certificado de Cámara):</p>
           <CandidateList candidates={data.candidates} onOpen={setCard} />
           {data.alternative && data.alternative.candidates.length > 0 && <>
             <p className="tw-muted"><b>{data.alternative.label}</b>: con oficina en {joinCities(data.alternative.cities)}.</p>
