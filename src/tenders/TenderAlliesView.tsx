@@ -69,7 +69,6 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
   });
 
   const rows = filtered.slice(page * PAGE, page * PAGE + PAGE);
-  const totalParticipations = (payload?.companies || []).reduce((sum, company) => sum + company.participations.length, 0) + (payload?.participations_without_nit.length || 0);
   return <section className="stack tenders-page tender-allies-view" aria-labelledby="tender-allies-heading">
     <header className="tracking-header"><div><span className="eyebrow">Uniones temporales</span><h2 id="tender-allies-heading">Aliados</h2><p>Empresas de vigilancia —aliados y competidores— para buscar socio. Una oficina en el listado no prueba la agencia: el pliego pide la resolución de la Superintendencia y el certificado de Cámara.</p></div></header>
     {moduleNavigation}
@@ -77,13 +76,9 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
     {!payload ? <div className="notice">Cargando aliados…</div>
       : !payload.installed ? <div className="notice">Aliados todavía no está instalado en la base (falta la migración 196).</div>
       : <>
-        {/* Sin botón de recarga (Juan, 2026-11-10): el listado empacado ya está completo; uno nuevo de la Superintendencia lo
-            carga el agente. La ruta POST /api/tender-allies/load sigue para eso. */}
-        <div className="tender-allies-source">
-          <strong>Listado de la Superintendencia</strong>
-          <span>{payload.companies.length ? `${payload.companies.length} empresas · ${totalParticipations} participaciones registradas` : 'Todavía no se ha cargado.'}</span>
-          <small>{payload.listing_source}.</small>
-        </div>
+        {/* Sin tarjeta del listado (Juan, 2026-11-10: «no aporta nada, quita espacio y distrae»). Un listado nuevo de la
+            Superintendencia lo carga el agente con POST /api/tender-allies/load. */}
+        {!payload.companies.length && <div className="notice">El listado de la Superintendencia todavía no se ha cargado.</div>}
         {payload.companies.length > 0 && <>
           <div className="tender-allies-filters">
             <label>Ciudades (separadas por coma)<input value={cities} onChange={event => setCities(event.target.value)} placeholder="Quibdó, Armenia" /></label>
@@ -150,7 +145,8 @@ function AllyRow({ company, isOpen, onToggle, children }: { company: Company; is
       <td>{shown}{company.cities.length > 5 ? ` y ${company.cities.length - 5} más` : ''}</td>
       <td>{label(ROLES, company.role)}</td>
       <td>{company.participations.length || ''}</td>
-      <td>{company.contact || <span className="tender-allies-listing-contact">{[company.phone, company.email].filter(Boolean).join(' · ')}</span>}</td>
+      {/* Sin contacto propio, el del listado (Juan, 2026-11-10): el representante legal, su teléfono y su correo, en gris. */}
+      <td>{company.contact || <span className="tender-allies-listing-contact">{company.representative && <b>{company.representative}</b>}{[company.phone, company.email].filter(Boolean).join(' · ')}</span>}</td>
     </tr>
     {isOpen && <tr className="is-open-detail"><td colSpan={5}>{children}</td></tr>}
   </>;
