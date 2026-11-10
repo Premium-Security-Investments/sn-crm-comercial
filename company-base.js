@@ -13,9 +13,12 @@ export const COMPANY_BASE_REGISTRY_SELECT = assertAgt002CompanyEvidenceRegistryM
   COMPANY_BASE_REGISTRY_ALLOWED_COLUMNS,
 );
 export const COMPANY_SITE_SELECT = 'id,department,city,address,is_main,supervigilancia_authorization,support_document_id,notes,source,updated_at';
-export const COMPANY_EXPERIENCE_SELECT = 'id,rup_number,rup_consecutive,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,notes,updated_at,certificate_status,certificate_note,certificate_updated_at';
+const CERTIFICATE_PDF_COLUMNS = ',certificate_file_name,certificate_uploaded_at,certificate_text_source,certificate_review,certificate_reviewed_at';
+export const COMPANY_EXPERIENCE_SELECT = `id,rup_number,rup_consecutive,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,notes,updated_at,certificate_status,certificate_note,certificate_updated_at${CERTIFICATE_PDF_COLUMNS}`;
+// Mejora 9, segunda parte: sin la migración 199 no están el PDF ni la revisión, y la lectura sigue sin ellos.
+const COMPANY_EXPERIENCE_SELECT_SIN_PDF = COMPANY_EXPERIENCE_SELECT.replace(CERTIFICATE_PDF_COLUMNS, '');
 // Mejora 9: sin la migración 198 no están las columnas del certificado y la lectura sigue sin ellas.
-const COMPANY_EXPERIENCE_SELECT_SIN_CERTIFICADO = COMPANY_EXPERIENCE_SELECT.replace(',certificate_status,certificate_note,certificate_updated_at', '');
+const COMPANY_EXPERIENCE_SELECT_SIN_CERTIFICADO = COMPANY_EXPERIENCE_SELECT_SIN_PDF.replace(',certificate_status,certificate_note,certificate_updated_at', '');
 // Mejora 8: sin la migración 194 la columna no existe y la lectura sigue sin ella.
 const COMPANY_EXPERIENCE_SELECT_SIN_CONSECUTIVO = COMPANY_EXPERIENCE_SELECT_SIN_CERTIFICADO.replace(',rup_consecutive', '');
 
@@ -73,6 +76,9 @@ async function experienceRows(database) {
   if (!error) return { rows: data || [], available: true };
   if (TABLE_ABSENT_ERROR_CODES.includes(error.code)) return { rows: [], available: false };
   if (!COLUMN_ABSENT_ERROR_CODES.includes(String(error.code))) throw error;
+  const sinPdf = await consulta(COMPANY_EXPERIENCE_SELECT_SIN_PDF);
+  if (!sinPdf.error) return { rows: sinPdf.data || [], available: true };
+  if (!COLUMN_ABSENT_ERROR_CODES.includes(String(sinPdf.error.code))) throw sinPdf.error;
   const sinCertificado = await consulta(COMPANY_EXPERIENCE_SELECT_SIN_CERTIFICADO);
   if (!sinCertificado.error) return { rows: sinCertificado.data || [], available: true };
   if (!COLUMN_ABSENT_ERROR_CODES.includes(String(sinCertificado.error.code))) throw sinCertificado.error;
@@ -279,7 +285,7 @@ export async function saveExperienceCertificate(database, input, actorId) {
   if (!CERTIFICATE_STATUS_VALUES.includes(status)) throw inputError('El estado del certificado no es válido.');
   const { data, error } = await database.from('psi_company_experience')
     .update({ certificate_status: status, certificate_note: text(input?.certificate_note, 500), certificate_updated_at: new Date().toISOString(), updated_by: actorId })
-    .eq('id', id).select(COMPANY_EXPERIENCE_SELECT).single();
+    .eq('id', id).select(COMPANY_EXPERIENCE_SELECT_SIN_PDF).single();
   if (error) {
     if (COLUMN_ABSENT_ERROR_CODES.includes(String(error.code))) {
       const unavailable = new Error('El estado del certificado aún no está habilitado (falta aplicar la migración 198).');
@@ -292,5 +298,7 @@ export async function saveExperienceCertificate(database, input, actorId) {
 }
 
 export function saveCompanyExperience(database, input, actorId) {
-  return upsertRow(database, 'psi_company_experience', COMPANY_EXPERIENCE_SELECT, text(input?.id, 36), cleanCompanyExperience(input), actorId);
+  // Devuelve sólo lo que existe desde la 127: la pantalla recarga la ficha después, y así editar un contrato no depende
+  // de que estén aplicadas la 194, la 198 o la 199.
+  return upsertRow(database, 'psi_company_experience', COMPANY_EXPERIENCE_SELECT_SIN_CONSECUTIVO, text(input?.id, 36), cleanCompanyExperience(input), actorId);
 }

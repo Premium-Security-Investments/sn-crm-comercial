@@ -13,7 +13,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions } from '../../verticales/licitaciones/agt002-auto-initial.js';
 import { runAgt002ManualReanalysisRequests } from '../../verticales/licitaciones/agt002-manual-reanalysis.js';
-import { runTenderDocumentOcrPass } from '../../verticales/licitaciones/tender-document-ocr.js';
+import { runExperienceCertificateOcrPass, runTenderDocumentOcrPass } from '../../verticales/licitaciones/tender-document-ocr.js';
+import { reviewExperienceCertificate } from '../../verticales/licitaciones/experience-certificate-review.js';
 import { proposeCompanyFactsFromDocuments } from '../../verticales/licitaciones/agt002-company-fact-proposals.js';
 
 const CLAIMABLE = ['queued', 'discovering_documents', 'importing_documents', 'retry_wait', 'ready_for_snapshot', 'snapshot_ready'];
@@ -71,6 +72,14 @@ try {
   for (const event of await runTenderDocumentOcrPass(database, { limit: Number(env.TENDER_OCR_PER_PASS || 2), onText })) log(event);
 } catch (error) {
   log({ event: 'tender_ocr_pass_failed', message: String(error?.message || error).slice(0, 200) });
+}
+try {
+  // Mejora 9 (Juan, 2026-11-10): los certificados de experiencia escaneados se leen aquí, en el mismo pase, y Vig-IA los
+  // revisa contra el RUP (se apaga sola si este servidor no tiene la configuración de la Mesa).
+  const onText = row => reviewExperienceCertificate(database, row.id, { environment: env, log });
+  for (const event of await runExperienceCertificateOcrPass(database, { limit: Number(env.EXPERIENCE_CERTIFICATE_OCR_PER_PASS || 2), onText })) log(event);
+} catch (error) {
+  log({ event: 'experience_certificate_ocr_pass_failed', message: String(error?.message || error).slice(0, 200) });
 }
 try {
   const dailyCap = Number(env.AGT002_AUTO_INITIAL_DAILY_CAP || 5);

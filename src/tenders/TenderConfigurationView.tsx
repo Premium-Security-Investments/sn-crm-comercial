@@ -94,6 +94,28 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
     try { await mutationActions.saveExperienceCertificate(input); await reloadBase(); setMessage('Certificado actualizado.'); }
     catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
   };
+  const REVIEW_SKIPPED: Record<string, string> = { esperando_lectura: 'Es un escaneo: el servidor lo lee en unos minutos y Vig-IA lo revisa después.', ilegible: 'No se pudo leer el texto del certificado; revíselo a mano.', apagada: 'Vig-IA está apagada: el certificado quedó guardado sin revisión.' };
+  const certificateFiles = {
+    upload: async (id: string, file: File) => {
+      try {
+        const result = await mutationActions.uploadExperienceCertificate(id, file);
+        await reloadBase();
+        const review = result?.review;
+        setMessage(review?.status === 'ran' ? 'Certificado subido y revisado por Vig-IA.' : review?.status === 'failed' ? 'Certificado subido. La revisión de Vig-IA falló; puede pedirla de nuevo.' : `Certificado subido. ${REVIEW_SKIPPED[review?.reason || ''] || ''}`.trim());
+      } catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
+    },
+    review: async (id: string) => {
+      try {
+        const result = await mutationActions.reviewExperienceCertificate(id);
+        await reloadBase();
+        setMessage(result?.status === 'ran' ? 'Vig-IA revisó el certificado.' : result?.status === 'failed' ? 'La revisión de Vig-IA falló; intente de nuevo más tarde.' : REVIEW_SKIPPED[result?.reason || ''] || 'No hay nada que revisar todavía.');
+      } catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
+    },
+    open: async (id: string) => {
+      try { const { url } = await request<{ url: string }>(`/api/tender-company-experience/certificate-file?id=${encodeURIComponent(id)}`); window.open(url, '_blank', 'noopener'); }
+      catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
+    },
+  };
 
   const beginEditing = (trigger: HTMLButtonElement) => {
     if (!canConfigure) return;
@@ -215,7 +237,7 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
       canDecide={canManageDocuments} onDecide={decideEvidence}
       onUploadSupport={canManageDocuments && !editing ? openUploadDialog : undefined} />
     <CompanySitesSection sites={companyBase.sites} documents={documents} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveSite} />
-    <CompanyExperienceSection experience={companyBase.experience} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveExperience} onSaveCertificate={saveCertificate} />
+    <CompanyExperienceSection experience={companyBase.experience} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveExperience} onSaveCertificate={saveCertificate} certificateFiles={certificateFiles} />
     <CompanyFinancialSection profile={persistedCompany} />
 
     <section className="panel company-documents-panel" aria-labelledby="company-documents-heading">

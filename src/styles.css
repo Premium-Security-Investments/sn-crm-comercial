@@ -1085,3 +1085,9 @@ td.numeric-value{white-space:nowrap}
 .company-certificate-falta select{border-color:#e7b7b4}.company-certificate-incompleto select{border-color:#f0c36d}.company-certificate-pedido select{border-color:#9cbcf0}.company-certificate-completo select,.company-certificate-recibido select{border-color:#8fd0a6}
 .company-certificate small,.company-certificate .link-button{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .company-experience-table.company-base-table th,.company-experience-table.company-base-table td{width:auto}
+.company-certificate-file{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}.company-certificate-file label.link-button{cursor:pointer}
+.company-certificate-suggestion{font-weight:700}.company-certificate-suggestion-incompleto{color:#92400e}.company-certificate-suggestion-completo{color:#15803d}
+.company-certificate-review-row td{background:#f8fbff}
+.company-certificate-review{display:grid;gap:8px;padding:4px 2px;text-align:left;white-space:normal}.company-certificate-review li{text-align:left}.company-certificate-review-head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}.company-certificate-review-head span{font-size:13px;color:#40516b}
+.company-certificate-review p{margin:0}.company-certificate-review ul{margin:0;padding-left:18px;display:grid;gap:3px;font-size:13px}
+.company-certificate-check-falta,.company-certificate-check-no_coincide{color:#9a3412}.company-certificate-check-ok{color:#166534}.company-certificate-check-no_verificable{color:#526173}

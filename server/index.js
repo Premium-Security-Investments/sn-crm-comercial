@@ -100,6 +100,7 @@ import { agt003PreparationDate } from '../verticales/comercial/agt003-copilot-in
 import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { loadCompanyBase, recordUploadAsVerification, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite, saveExperienceCertificate } from '../company-base.js';
+import { reviewExperienceCertificate } from '../verticales/licitaciones/experience-certificate-review.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
 import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
 import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../verticales/licitaciones/tender-document-origin.js';
@@ -2897,6 +2898,88 @@ app.post('/api/tender-company-experience/certificate', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     res.json(await saveExperienceCertificate(requireDb(), req.body, currentProfile.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+// Mejora 9, segunda parte (Juan, 2026-11-10; migración 199): el PDF del certificado en la fila del contrato. Si trae
+// texto, Vig-IA lo revisa al subirlo; si es escaneado, lo lee el OCR del servidor (agt002-auto-initial) y la revisión
+// corre después. Vig-IA sólo sugiere: el estado lo pone una persona.
+const experienceCertificatePrefix = experienceId => `company-profile/experience-certificates/${experienceId}/`;
+const EXPERIENCE_CERTIFICATE_MISSING = 'El certificado en PDF aún no está habilitado (falta aplicar la migración 199).';
+const isColumnAbsent = error => ['42703', 'PGRST204'].includes(String(error?.code || ''));
+
+app.post('/api/tender-company-experience/certificate-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    const experienceId = String(req.body?.id || '').trim();
+    if (!/^[0-9a-f-]{36}$/i.test(experienceId)) throw clientInputError('Falta el contrato.');
+    const name = cleanFileName(req.body?.name || 'certificado.pdf');
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError('Seleccione el PDF del certificado.');
+    if (size > RUP_MAX_BYTES) throw clientInputError('El certificado supera 50MB.');
+    const database = requireDb();
+    await ensureTenderBucket(database);
+    const path = `${experienceCertificatePrefix(experienceId)}${Date.now()}-${name}`;
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(path);
+    if (error) throw error;
+    res.json({ path, token: data.token });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-experience/certificate-process', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    const experienceId = String(req.body?.id || '').trim();
+    const storagePath = String(req.body?.storage_path || '');
+    if (!/^[0-9a-f-]{36}$/i.test(experienceId) || !storagePath.startsWith(experienceCertificatePrefix(experienceId)) || storagePath.includes('..')) throw clientInputError('Ruta del certificado inválida.');
+    const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1));
+    const database = requireDb();
+    const { data: blob, error: downloadError } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+    if (downloadError) throw downloadError;
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    if (!buffer.length) throw clientInputError('El certificado cargado está vacío.');
+    let text = '';
+    try { text = String(await extractTextFromTenderFile(buffer, name, req.body?.mime_type || 'application/pdf') || '').trim(); } catch { text = ''; }
+    const hasText = text.length >= 200;
+    const { data: current, error: readError } = await database.from('psi_company_experience').select('id,certificate_status').eq('id', experienceId).maybeSingle();
+    if (readError) throw isColumnAbsent(readError) ? Object.assign(new Error(EXPERIENCE_CERTIFICATE_MISSING), { status: 409 }) : readError;
+    if (!current) throw Object.assign(new Error('Ese contrato no está en la ficha.'), { status: 404 });
+    const update = {
+      certificate_storage_path: storagePath, certificate_file_name: name, certificate_uploaded_at: new Date().toISOString(),
+      // Sin texto: lo lee el OCR del servidor (la columna nula es la cola).
+      certificate_text: hasText ? text.slice(0, 200000) : null, certificate_text_source: hasText ? 'pdf' : null,
+      certificate_review: null, certificate_reviewed_at: null, updated_by: currentProfile.id,
+      ...(['falta', 'pedido'].includes(current.certificate_status) ? { certificate_status: 'recibido', certificate_updated_at: new Date().toISOString() } : {}),
+    };
+    const { error: saveError } = await database.from('psi_company_experience').update(update).eq('id', experienceId);
+    if (saveError) throw isColumnAbsent(saveError) ? Object.assign(new Error(EXPERIENCE_CERTIFICATE_MISSING), { status: 409 }) : saveError;
+    const review = hasText ? await reviewExperienceCertificate(database, experienceId) : { status: 'skipped', reason: 'esperando_lectura' };
+    res.status(201).json({ review });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-experience/certificate-review', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    res.json(await reviewExperienceCertificate(requireDb(), String(req.body?.id || '')));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/tender-company-experience/certificate-file', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const { data: row, error } = await database.from('psi_company_experience').select('certificate_storage_path,certificate_file_name').eq('id', String(req.query?.id || '')).maybeSingle();
+    if (error) throw isColumnAbsent(error) ? Object.assign(new Error(EXPERIENCE_CERTIFICATE_MISSING), { status: 409 }) : error;
+    if (!row?.certificate_storage_path) throw Object.assign(new Error('Ese contrato no tiene certificado subido.'), { status: 404 });
+    const { data, error: signError } = await database.storage.from(tenderDocumentBucket).createSignedUrl(row.certificate_storage_path, 15 * 60, { download: row.certificate_file_name || 'certificado.pdf' });
+    if (signError) throw signError;
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ url: data.signedUrl });
   } catch (error) { sendAuthError(res, error); }
 });
 

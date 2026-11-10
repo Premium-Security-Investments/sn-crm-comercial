@@ -222,11 +222,16 @@ export function CompanySitesSection({ sites, documents = [], available, canEdit,
 }
 
 type CertificateInput = { id: string; certificate_status: string; certificate_note: string | null };
+type CertificateFiles = { upload: (id: string, file: File) => Promise<void>; review: (id: string) => Promise<void>; open: (id: string) => Promise<void> };
+const CHECK_LABELS: Record<string, string> = { entidad_contratante: 'Entidad contratante', a_nombre_de_la_empresa: 'A nombre de Seguridad Nacional', numero_de_contrato: 'Número de contrato', objeto: 'Objeto', valor: 'Valor', fechas_de_ejecucion: 'Fechas de inicio y terminación', fecha_de_expedicion: 'Fecha de expedición', firma: 'Firma y cargo de quien certifica' };
+const CHECK_STATE_LABELS: Record<string, string> = { ok: 'Bien', falta: 'Falta', no_coincide: 'No coincide con el RUP', no_verificable: 'No se puede verificar' };
 
-export function CompanyExperienceSection({ experience, available, canEdit, onSave, onSaveCertificate }: { experience: CompanyExperience[]; available: boolean; canEdit: boolean; onSave: (row: Partial<CompanyExperience>) => Promise<void>; onSaveCertificate?: (input: CertificateInput) => Promise<void> }) {
+export function CompanyExperienceSection({ experience, available, canEdit, onSave, onSaveCertificate, certificateFiles }: { experience: CompanyExperience[]; available: boolean; canEdit: boolean; onSave: (row: Partial<CompanyExperience>) => Promise<void>; onSaveCertificate?: (input: CertificateInput) => Promise<void>; certificateFiles?: CertificateFiles }) {
   const [editing, setEditing] = useState<Editing<CompanyExperience>>(null);
+  const [openReview, setOpenReview] = useState<string | null>(null);
+  const columns = 7 + (withCertificatesOf(experience) ? 1 : 0) + (canEdit ? 1 : 0);
   // Mejora 9 (migración 198): sin la 198 las filas no traen el estado y la columna no se muestra.
-  const withCertificates = experience.some(row => row.certificate_status != null);
+  const withCertificates = withCertificatesOf(experience);
   return <section className="panel company-base-experience" aria-labelledby="company-experience-heading">
     <header className="company-base-section-head"><div><span className="eyebrow">Experiencia</span><h3 id="company-experience-heading">Contratos para acreditar experiencia</h3><p>{experience.length} contrato{experience.length === 1 ? '' : 's'} registrado{experience.length === 1 ? '' : 's'}. El objeto se valida contra la certificación antes de usarlo en una oferta.</p></div>{canEdit && available && <button type="button" className="secondary" onClick={() => setEditing({ record: {} })}>Agregar contrato</button>}</header>
     {!available ? null
@@ -237,21 +242,46 @@ export function CompanyExperienceSection({ experience, available, canEdit, onSav
         <thead><tr><th>N.º RUP</th><th title="Número consecutivo del contrato en el RUP: el que piden los pliegos">Consecutivo</th><th>Contratante</th><th>Objeto</th><th className="numeric">Valor</th><th>Año</th>{withCertificates && <th className="company-certificate-col">Certificado</th>}<th>Fuente</th>{canEdit && <th><span className="sr-only">Acciones</span></th>}</tr></thead>
         <tbody>{experience.map(row => {
           const smmlv = toNumber(row.value_smmlv); const cop = toNumber(row.value_cop);
-          return <tr key={row.id}>
+          return <Fragment key={row.id}><tr>
             <td>{row.rup_number ?? <span className="muted">—</span>}</td>
             <td>{row.rup_consecutive ?? <span className="muted">—</span>}</td>
             <td><strong>{row.contracting_party}</strong></td>
             <td>{row.contract_object || <span className="muted">Por confirmar</span>}</td>
             <td className="numeric">{smmlv !== null ? `${decimalFormatter.format(smmlv)} SMMLV` : cop !== null ? moneyFormatter.format(cop) : '—'}</td>
             <td>{row.contract_year ?? <span className="muted">—</span>}</td>
-            {withCertificates && <td><CertificateCell row={row} canEdit={canEdit && Boolean(onSaveCertificate)} onSave={onSaveCertificate} /></td>}
+            {withCertificates && <td><CertificateCell row={row} canEdit={canEdit && Boolean(onSaveCertificate)} onSave={onSaveCertificate} files={certificateFiles} reviewOpen={openReview === row.id} onToggleReview={() => setOpenReview(openReview === row.id ? null : row.id)} /></td>}
             <td><small>{row.source}</small></td>
             {canEdit && <td><button type="button" className="secondary" onClick={() => setEditing({ record: row })}>Editar<span className="sr-only">: contrato {row.contracting_party}</span></button></td>}
-          </tr>;
+          </tr>
+          {openReview === row.id && row.certificate_review && <tr className="company-certificate-review-row"><td colSpan={columns}>
+            <CertificateReviewPanel row={row} canApply={canEdit && Boolean(onSaveCertificate)} onApply={status => onSaveCertificate?.({ id: row.id, certificate_status: status, certificate_note: row.certificate_review?.resumen || row.certificate_note || null })} onReviewAgain={certificateFiles ? () => certificateFiles.review(row.id) : undefined} />
+          </td></tr>}
+          </Fragment>;
         })}</tbody>
       </table></div></>}
     {editing && <CompanyRecordDialog title={editing.record.id ? 'Editar contrato' : 'Agregar contrato'} fields={EXPERIENCE_FIELDS} initial={editing.record as Record<string, unknown>} onCancel={() => setEditing(null)} onSave={async values => { await onSave(values as Partial<CompanyExperience>); setEditing(null); }} />}
   </section>;
+}
+
+function withCertificatesOf(experience: CompanyExperience[]) { return experience.some(row => row.certificate_status != null); }
+
+/** Lo que Vig-IA vio en el certificado, punto por punto contra el RUP. Sólo sugiere: aplicar es de una persona. */
+function CertificateReviewPanel({ row, canApply, onApply, onReviewAgain }: { row: CompanyExperience; canApply: boolean; onApply: (status: string) => void; onReviewAgain?: () => void }) {
+  const review = row.certificate_review!;
+  return <div className="company-certificate-review">
+    <div className="company-certificate-review-head">
+      <strong>Revisión de Vig-IA · contrato {row.rup_consecutive || row.contracting_party}</strong>
+      <span>Sugiere <b>{review.sugerencia === 'completo' ? 'Completo' : 'Incompleto'}</b>{row.certificate_reviewed_at ? ` · ${dateFormatter.format(new Date(row.certificate_reviewed_at))}` : ''}{row.certificate_text_source === 'ocr' ? ' · leído de un escaneo' : ''}</span>
+    </div>
+    {review.resumen && <p>{review.resumen}</p>}
+    <ul>{review.checks.map(check => <li key={check.item} className={`company-certificate-check company-certificate-check-${check.estado}`}>
+      <b>{CHECK_LABELS[check.item] || check.item}:</b> {CHECK_STATE_LABELS[check.estado] || check.estado}{check.detalle ? ` — ${check.detalle}` : ''}
+    </li>)}</ul>
+    <div className="row-actions">
+      {canApply && row.certificate_status !== review.sugerencia && <button type="button" onClick={() => onApply(review.sugerencia)}>Marcar como {review.sugerencia === 'completo' ? 'Completo' : 'Incompleto'}</button>}
+      {onReviewAgain && <button type="button" className="secondary" onClick={onReviewAgain}>Revisar de nuevo</button>}
+    </div>
+  </div>;
 }
 
 /** A qué cliente pedirle certificados primero (Juan, 2026-11-10: no hay carpeta con ellos; hay que pedirlos). */
@@ -274,12 +304,26 @@ function CertificateRequestPlan({ experience }: { experience: CompanyExperience[
   </div>;
 }
 
-function CertificateCell({ row, canEdit, onSave }: { row: CompanyExperience; canEdit: boolean; onSave?: (input: CertificateInput) => Promise<void> }) {
+function CertificateCell({ row, canEdit, onSave, files, reviewOpen, onToggleReview }: { row: CompanyExperience; canEdit: boolean; onSave?: (input: CertificateInput) => Promise<void>; files?: CertificateFiles; reviewOpen: boolean; onToggleReview: () => void }) {
   const status = row.certificate_status || 'falta';
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState(row.certificate_note || '');
   const save = (next: string, nextNote: string | null) => onSave?.({ id: row.id, certificate_status: next, certificate_note: nextNote });
-  if (!canEdit) return <span className={`company-certificate company-certificate-${status}`}>{CERTIFICATE_STATUSES[status as keyof typeof CERTIFICATE_STATUSES] || status}{row.certificate_note ? <small>{row.certificate_note}</small> : null}</span>;
+  const [uploading, setUploading] = useState(false);
+  const review = row.certificate_review;
+  // El PDF y la revisión (199): sin la columna del archivo, no se muestra nada de esto.
+  const pdf = files && row.certificate_file_name !== undefined ? <div className="company-certificate-file">
+    {row.certificate_file_name
+      ? <button type="button" className="link-button" title={row.certificate_file_name} onClick={() => void files.open(row.id)}>Ver PDF</button>
+      : null}
+    {canEdit && <label className="link-button">{uploading ? 'Subiendo…' : row.certificate_file_name ? 'Cambiar PDF' : 'Subir PDF'}<input type="file" accept="application/pdf,.pdf" hidden disabled={uploading} onChange={async event => { const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; setUploading(true); try { await files.upload(row.id, file); } finally { setUploading(false); } }} /></label>}
+    {row.certificate_file_name && (review
+      ? <button type="button" className={`link-button company-certificate-suggestion company-certificate-suggestion-${review.sugerencia}`} aria-expanded={reviewOpen} onClick={onToggleReview}>Vig-IA: {review.sugerencia === 'completo' ? 'completo' : 'incompleto'}</button>
+      : !row.certificate_text_source ? <small>Leyendo el escaneo…</small>
+      : row.certificate_text_source === 'sin_texto' ? <small>No se pudo leer: revisarlo a mano</small>
+      : canEdit ? <button type="button" className="link-button" onClick={() => void files.review(row.id)}>Pedir revisión a Vig-IA</button> : null)}
+  </div> : null;
+  if (!canEdit) return <span className={`company-certificate company-certificate-${status}`}>{CERTIFICATE_STATUSES[status as keyof typeof CERTIFICATE_STATUSES] || status}{row.certificate_note ? <small>{row.certificate_note}</small> : null}{pdf}</span>;
   return <div className={`company-certificate company-certificate-${status}`}>
     <select aria-label={`Certificado del contrato ${row.rup_consecutive || row.contracting_party}`} value={status} onChange={event => void save(event.target.value, row.certificate_note || null)}>
       {Object.entries(CERTIFICATE_STATUSES).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
@@ -290,6 +334,7 @@ function CertificateCell({ row, canEdit, onSave }: { row: CompanyExperience; can
         <button type="submit" className="secondary">Guardar</button>
       </form>
       : <button type="button" className="link-button" title={row.certificate_note || undefined} onClick={() => setNoteOpen(true)}>{row.certificate_note || 'Agregar nota'}</button>}
+    {pdf}
   </div>;
 }
 

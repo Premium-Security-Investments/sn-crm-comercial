@@ -137,3 +137,36 @@ export async function runTenderDocumentOcrPass(database, { limit = 3, bucket = '
   }
   return events;
 }
+
+/**
+ * Mejora 9 (migración 199): el mismo OCR para los certificados de experiencia subidos en Empresa que llegaron escaneados.
+ * Guarda el texto (o «sin_texto») en la experiencia; `onText` dispara la revisión de Vig-IA. Sin la 199, no hace nada.
+ */
+export async function runExperienceCertificateOcrPass(database, { limit = 2, bucket = 'tender-documents', ocr = ocrPdfBuffer, onText = null } = {}) {
+  const { data: rows, error } = await database.from('psi_company_experience').select('id,certificate_storage_path,certificate_file_name')
+    .not('certificate_storage_path', 'is', null).is('certificate_text_source', null)
+    .order('certificate_uploaded_at', { ascending: true }).limit(limit);
+  if (error) {
+    if (['42703', 'PGRST204'].includes(String(error.code))) return [{ event: 'experience_certificate_ocr_unavailable' }];
+    throw error;
+  }
+  if (!rows?.length) return [{ event: 'experience_certificate_ocr_idle' }];
+  const events = [];
+  for (const row of rows) {
+    try {
+      const { data: blob, error: downloadError } = await database.storage.from(bucket).download(row.certificate_storage_path);
+      if (downloadError) throw downloadError;
+      const result = await ocr(Buffer.from(await blob.arrayBuffer()));
+      const body = String(result.text || '').replace(/--- página \d+ ---/g, '').trim();
+      const ok = body.length >= MIN_CHARS && ocrLooksReadable(body);
+      const { error: saveError } = await database.from('psi_company_experience')
+        .update({ certificate_text: ok ? String(result.text).slice(0, 200000) : null, certificate_text_source: ok ? 'ocr' : 'sin_texto' }).eq('id', row.id);
+      if (saveError) throw saveError;
+      events.push({ event: 'experience_certificate_ocr_recorded', experience_id: row.id, readable: ok, pages: result.pages });
+      if (ok && typeof onText === 'function') events.push({ event: 'experience_certificate_review', experience_id: row.id, ...(await onText(row)) });
+    } catch (cause) {
+      events.push({ event: 'experience_certificate_ocr_failed', experience_id: row.id, code: String(cause?.code || cause?.message || 'error').slice(0, 80) });
+    }
+  }
+  return events;
+}
