@@ -32,6 +32,7 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
   const [open, setOpen] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ role: string; contact: string; notes: string }>({ role: '', contact: '', notes: '' });
   const [part, setPart] = useState<Record<string, string>>({ kind: 'oferto' });
+  const [adding, setAdding] = useState(false);
 
   const load = async () => {
     try { setPayload(await request<Payload>('/api/tender-allies')); setMessage(''); }
@@ -55,17 +56,17 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
     setBusy(true); setMessage('');
     try { await fn(); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); } finally { setBusy(false); }
   };
-  const loadListing = () => act(async () => {
-    const result = await request<{ companies: number; offices: number; participations_seeded: number }>('/api/tender-allies/load', { method: 'POST', body: '{}' });
-    setMessage(`Listado cargado: ${result.companies} empresas, ${result.offices} oficinas${result.participations_seeded ? `, ${result.participations_seeded} participaciones` : ''}.`);
-  });
   const toggle = (company: Company) => {
     setOpen(open === company.nit ? null : company.nit);
     setDraft({ role: company.role, contact: company.contact || '', notes: company.notes || '' });
     setPart({ kind: 'oferto' });
+    setAdding(false);
   };
   const save = (company: Company) => act(() => request('/api/tender-allies/company', { method: 'POST', body: JSON.stringify({ nit: company.nit, ...draft }) }));
-  const addPart = (company: Company) => act(() => request('/api/tender-allies/participation', { method: 'POST', body: JSON.stringify({ ...part, nit: company.nit, company_label: company.name }) }));
+  const addPart = (company: Company) => act(async () => {
+    await request('/api/tender-allies/participation', { method: 'POST', body: JSON.stringify({ ...part, nit: company.nit, company_label: company.name }) });
+    setPart({ kind: 'oferto' }); setAdding(false);
+  });
 
   const rows = filtered.slice(page * PAGE, page * PAGE + PAGE);
   const totalParticipations = (payload?.companies || []).reduce((sum, company) => sum + company.participations.length, 0) + (payload?.participations_without_nit.length || 0);
@@ -76,14 +77,12 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
     {!payload ? <div className="notice">Cargando aliados…</div>
       : !payload.installed ? <div className="notice">Aliados todavía no está instalado en la base (falta la migración 196).</div>
       : <>
+        {/* Sin botón de recarga (Juan, 2026-11-10): el listado empacado ya está completo; uno nuevo de la Superintendencia lo
+            carga el agente. La ruta POST /api/tender-allies/load sigue para eso. */}
         <div className="tender-allies-source">
-          <div>
-            <strong>Listado de la Superintendencia</strong>
-            <span>{payload.companies.length ? `${payload.companies.length} empresas · ${totalParticipations} participaciones registradas` : 'Todavía no se ha cargado.'}</span>
-            <small>{payload.listing_source}. Actualizar no toca rol, contacto ni notas.</small>
-            {(payload.seed_missing || 0) > 0 && <small className="tender-allies-warn">Faltan {payload.seed_missing} participaciones de la carga inicial: «Actualizar listado» las completa.</small>}
-          </div>
-          {canEdit && <button type="button" disabled={busy} onClick={() => void loadListing()}>{busy ? 'Actualizando…' : payload.companies.length ? 'Actualizar listado' : 'Cargar el listado'}</button>}
+          <strong>Listado de la Superintendencia</strong>
+          <span>{payload.companies.length ? `${payload.companies.length} empresas · ${totalParticipations} participaciones registradas` : 'Todavía no se ha cargado.'}</span>
+          <small>{payload.listing_source}.</small>
         </div>
         {payload.companies.length > 0 && <>
           <div className="tender-allies-filters">
@@ -95,7 +94,7 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
           <p className="muted">{filtered.length} de {payload.companies.length} empresas.</p>
           <div className="tender-allies-scroll"><table className="tender-allies-table">
             <colgroup><col className="col-name" /><col className="col-cities" /><col className="col-role" /><col className="col-seen" /><col className="col-contact" /></colgroup>
-            <thead><tr><th scope="col">Empresa</th><th scope="col">Ciudades</th><th scope="col">Rol</th><th scope="col">Procesos</th><th scope="col">Contacto</th></tr></thead>
+            <thead><tr><th scope="col">Empresa</th><th scope="col">Ciudades</th><th scope="col">Rol</th><th scope="col">Vista en procesos</th><th scope="col">Contacto</th></tr></thead>
             <tbody>{rows.map(company => <AllyRow key={company.nit} company={company} isOpen={open === company.nit} onToggle={() => toggle(company)}>
               <div className="tender-allies-detail">
                 <div className="tender-allies-facts">
@@ -112,24 +111,24 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
                   {company.participations.length > 0
                     ? <ul>{company.participations.map(item => <li key={item.id}>{item.process_ref}{item.entity ? ` (${item.entity})` : ''} · {label(KINDS, item.kind)}{item.detail ? ` · ${item.detail}` : ''}{item.occurred_on ? ` · ${item.occurred_on}` : ''}</li>)}</ul>
                     : <p className="muted">Ninguno todavía.</p>}
+                  {canEdit && !adding && <button type="button" className="secondary tender-allies-add" onClick={() => setAdding(true)}>+ Agregar proceso</button>}
                 </div>
-                </div>
-                {canEdit && <div className="tender-allies-forms">
-                {canEdit && <form className="tender-allies-form" onSubmit={event => { event.preventDefault(); void save(company); }}>
-                  <h4>Lo nuestro</h4>
-                  <label>Rol<select value={draft.role} onChange={event => setDraft({ ...draft, role: event.target.value })}>{ROLES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
-                  <label>Contacto<input value={draft.contact} onChange={event => setDraft({ ...draft, contact: event.target.value })} maxLength={1000} placeholder="Nombre, cargo, teléfono" /></label>
-                  <label className="wide">Notas<textarea value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} maxLength={4000} rows={3} /></label>
-                  <div className="wide"><button type="submit" disabled={busy}>Guardar</button></div>
-                </form>}
-                {canEdit && <form className="tender-allies-form" onSubmit={event => { event.preventDefault(); void addPart(company); }}>
+                {canEdit && adding && <form className="tender-allies-form" onSubmit={event => { event.preventDefault(); void addPart(company); }}>
                   <h4>Agregar un proceso donde la vimos</h4>
                   <label>Proceso<input required value={part.process_ref || ''} onChange={event => setPart({ ...part, process_ref: event.target.value })} placeholder="Ej. FGN-REC-IPSE-0058-2026" /></label>
                   <label>Entidad<input value={part.entity || ''} onChange={event => setPart({ ...part, entity: event.target.value })} placeholder="Ej. Fiscalía" /></label>
                   <label>Qué hizo<select value={part.kind} onChange={event => setPart({ ...part, kind: event.target.value })}>{KINDS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
                   <label>Fecha<input type="date" value={part.occurred_on || ''} onChange={event => setPart({ ...part, occurred_on: event.target.value })} /></label>
                   <label className="wide">Detalle<input value={part.detail || ''} onChange={event => setPart({ ...part, detail: event.target.value })} placeholder="Ej. Puesto 3 de 28" /></label>
-                  <div className="wide"><button type="submit" className="secondary" disabled={busy}>Agregar</button></div>
+                  <div className="wide row-actions"><button type="submit" disabled={busy}>Agregar</button><button type="button" className="secondary" onClick={() => setAdding(false)}>Cancelar</button></div>
+                </form>}
+                </div>
+                {canEdit && <div className="tender-allies-forms">
+                {canEdit && <form className="tender-allies-form" onSubmit={event => { event.preventDefault(); void save(company); }}>
+                  <h4>Lo nuestro</h4>
+                  <label>Rol<select value={draft.role} onChange={event => setDraft({ ...draft, role: event.target.value })}>{ROLES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+                  <label>Contacto<input value={draft.contact} onChange={event => setDraft({ ...draft, contact: event.target.value })} maxLength={1000} placeholder="Nombre, cargo, teléfono" /></label>
+                  <div className="wide tender-allies-notes"><label>Notas<textarea value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} maxLength={4000} rows={2} /></label><button type="submit" disabled={busy}>Guardar</button></div>
                 </form>}
                 </div>}
               </div>
@@ -151,8 +150,8 @@ function AllyRow({ company, isOpen, onToggle, children }: { company: Company; is
       <td>{shown}{company.cities.length > 5 ? ` y ${company.cities.length - 5} más` : ''}</td>
       <td>{label(ROLES, company.role)}</td>
       <td>{company.participations.length || ''}</td>
-      <td>{company.contact || ''}</td>
+      <td>{company.contact || <span className="tender-allies-listing-contact">{[company.phone, company.email].filter(Boolean).join(' · ')}</span>}</td>
     </tr>
-    {isOpen && <tr><td colSpan={5}>{children}</td></tr>}
+    {isOpen && <tr className="is-open-detail"><td colSpan={5}>{children}</td></tr>}
   </>;
 }

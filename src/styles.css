@@ -454,7 +454,7 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 /* Licitaciones — navegación interna del expediente */
 .tender-module-navigation{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
 .tender-module-navigation .tender-module-tabs.module-segmented-nav{display:inline-grid;grid-template-columns:repeat(3,minmax(112px,1fr));width:auto;max-width:100%;flex-direction:row}
-.tender-module-navigation .tender-configuration-link{flex:0 0 auto;min-height:36px;padding:7px 10px}
+.tender-module-navigation .tender-configuration-link{flex:0 0 auto;min-height:36px;padding:7px 10px}.tender-module-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-left:auto}
 .link-button{min-height:auto;padding:0;border:0;background:transparent;color:#174174;text-decoration:underline;box-shadow:none}
 .tender-detail-navigation{position:sticky;top:8px;z-index:12;display:grid;grid-template-columns:auto minmax(112px,.25fr) minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid #dbe7f5;border-radius:16px;background:rgba(255,255,255,.97);box-shadow:0 10px 30px rgba(15,35,65,.1);backdrop-filter:blur(10px)}
 .tender-detail-back{white-space:nowrap;font-weight:850;text-decoration:none}
@@ -478,6 +478,7 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
   .tender-module-navigation{align-items:stretch;flex-direction:column;gap:8px}
   .tender-module-navigation .tender-module-tabs.module-segmented-nav{grid-template-columns:repeat(3,minmax(0,1fr));width:100%}
   .tender-module-navigation .tender-configuration-link{align-self:flex-start;min-height:44px}
+  .tender-module-actions{justify-content:flex-start;margin-left:0}
   .tender-detail-navigation{top:8px;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;padding:10px}
   .tender-detail-back,.tender-detail-source{min-height:44px}
   .tender-detail-sections{grid-column:1/-1;flex-direction:row}
@@ -1030,8 +1031,7 @@ td.numeric-value{white-space:nowrap}
 .company-fact-proposal dt{font-size:12px;color:#64748b}
 .company-fact-proposal dd{margin:2px 0 0}
 /* Aliados para uniones temporales (Licitaciones → Aliados) y posibles socios bajo la recomendación. */
-.tender-allies-source{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 16px;border:1px solid #dbe5f2;border-radius:16px;background:#f8fbff}
-.tender-allies-source>div{display:grid;gap:3px;min-width:0}.tender-allies-source strong{color:#10213d}.tender-allies-source span{color:#40516b;font-size:14px}.tender-allies-warn{color:#92400e;font-weight:700}
+.tender-allies-source{display:grid;gap:3px;padding:12px 16px;border:1px solid #dbe5f2;border-radius:16px;background:#f8fbff}.tender-allies-source strong{color:#10213d}.tender-allies-source span{color:#40516b;font-size:14px}.tender-allies-warn{color:#92400e;font-weight:700}
 .tender-allies-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end}
 .tender-allies-filters label{display:flex;flex-direction:column;gap:6px;font-weight:700;color:#40516b;font-size:13px}
 .tender-allies-filters label input,.tender-allies-filters label select{font-weight:400}
@@ -1041,17 +1041,19 @@ td.numeric-value{white-space:nowrap}
 .tender-allies-table .col-name{width:30%}.tender-allies-table .col-cities{width:30%}.tender-allies-table .col-role{width:13%}.tender-allies-table .col-seen{width:8%}.tender-allies-table .col-contact{width:19%}
 .tender-allies-table th,.tender-allies-table td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top;overflow-wrap:anywhere;font-weight:400}
 .tender-allies-table thead th{font-weight:800;color:#40516b;background:#f8fbff}
-.tender-allies-table tr.is-open{background:#f8fafc}
+.tender-allies-table td{white-space:normal}
+.tender-allies-table tr.is-open,.tender-allies-table tr.is-open-detail{background:#f3f7ff}.tender-allies-table tr.is-open>th,.tender-allies-table tr.is-open-detail>td{box-shadow:inset 4px 0 0 #1d4ed8}.tender-allies-table tr.is-open>*{border-bottom:0}.tender-allies-table tr.is-open-detail>td{border-bottom:2px solid #bfd3f6;padding:4px 12px 14px 16px}
+.tender-allies-listing-contact{color:#7b8799;font-size:12px}
 .tender-allies-table th small{display:block;color:#66758c;margin-top:2px}
 .tender-allies-table tbody th{text-transform:none;letter-spacing:0;font-size:13px;color:#172033;background:transparent;white-space:normal}
 .tender-allies-table .tender-allies-name,.tender-allies-table .tender-allies-name:hover,.tender-allies-table .tender-allies-name:focus-visible{all:unset;cursor:pointer;color:#174ea6;font-weight:700;line-height:1.3;white-space:normal}.tender-allies-table .tender-allies-name:hover{text-decoration:underline}.tender-allies-table .tender-allies-name:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
-.tender-allies-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;padding:6px 2px;align-items:start}.tender-allies-facts,.tender-allies-forms{display:grid;gap:12px;align-content:start}
+.tender-allies-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;padding:6px 2px;align-items:start}.tender-allies-detail>*,.tender-allies-facts,.tender-allies-forms{min-width:0}.tender-allies-facts,.tender-allies-forms{display:grid;gap:12px;align-content:start}.tender-allies-detail dd,.tender-allies-detail li{overflow-wrap:anywhere;white-space:normal}.tender-allies-add{justify-self:start;padding:7px 12px;font-size:13px}
 .tender-allies-detail dl{align-content:start;grid-template-columns:110px minmax(0,1fr);gap:4px 10px;font-size:13px}.tender-allies-detail ul{margin:6px 0;padding-left:18px}
 .tender-allies-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start;padding:12px;border:1px solid #e2eaf5;border-radius:12px;background:#fff}
 .tender-allies-form h4{grid-column:1/-1;margin:0;color:#10213d;font-size:14px}
 .tender-allies-form label{display:flex;flex-direction:column;gap:5px;font-weight:700;color:#40516b;font-size:13px;min-width:0}
 .tender-allies-form label input,.tender-allies-form label select,.tender-allies-form label textarea{font-weight:400}
-.tender-allies-form textarea{min-height:70px}
+.tender-allies-form textarea{min-height:52px}.tender-allies-notes{display:flex;align-items:flex-end;gap:10px}.tender-allies-notes label{flex:1}
 .tender-allies-form button{padding:8px 14px}
 @media(max-width:700px){.tender-allies-form{grid-template-columns:1fr}}
 .tw-ally-candidates{border-top:1px solid #e2e8f0;margin-top:8px;padding-top:8px}
