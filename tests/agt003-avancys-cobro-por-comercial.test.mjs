@@ -9,7 +9,7 @@ const ENTORNO = Object.freeze({
   AVANCYS_ODOO_API_KEY: 'clave-de-mentira', AVANCYS_ODOO_COMPANY_ID: '1',
 });
 
-function odoo(facturas) {
+function odoo(facturas, clientes = {}) {
   const pedidos = [];
   const fetchImpl = async (_url, opciones) => {
     const cuerpo = JSON.parse(opciones.body);
@@ -17,29 +17,35 @@ function odoo(facturas) {
     let result;
     if (service === 'common') result = 7;
     else {
-      const [, , , modelo, metodo, , nombrado] = args;
+      const [, , , modelo, metodo, posicional, nombrado] = args;
       pedidos.push({ modelo, metodo, campos: nombrado.fields });
-      const desde = nombrado.offset || 0;
-      result = facturas.slice(desde, desde + nombrado.limit);
+      if (modelo === 'res.partner') {
+        const ids = (posicional[0].find(hoja => hoja[0] === 'id') || [])[2] || [];
+        result = ids.map(id => ({ id, user_id: clientes[id] ?? false }));
+      } else {
+        const desde = nombrado.offset || 0;
+        result = facturas.slice(desde, desde + nombrado.limit);
+      }
     }
     return { ok: true, status: 200, text: async () => JSON.stringify({ jsonrpc: '2.0', id: cuerpo.id, result }) };
   };
   return { fetchImpl, pedidos };
 }
 
-const f = (id, user, untaxed, total, residual, state, type = 'out_invoice') => ({
-  id, partner_id: [1, 'Cliente'], invoice_user_id: user, amount_untaxed: untaxed, amount_total: total,
+// `cliente` es el id del cliente; el comercial que cuenta es el asignado al cliente, no el que hizo la factura.
+const f = (id, cliente, untaxed, total, residual, state, type = 'out_invoice') => ({
+  id, partner_id: [cliente, `Cliente ${cliente}`], invoice_user_id: [99, 'Marisol (facturación)'], amount_untaxed: untaxed, amount_total: total,
   amount_residual: residual, payment_state: state, move_type: type, invoice_date: '2026-10-15', write_date: '2026-10-20 10:00:00',
 });
 
 test('pagado, parcial, pendiente y nota crédito, por comercial y por estado', async () => {
   const { fetchImpl, pedidos } = odoo([
-    f(1, [5, 'Lina Cardenas'], 1000, 1019, 0, 'paid'),
-    f(2, [5, 'Lina Cardenas'], 2000, 2038, 1019, 'partial'),
-    f(3, [6, 'Jhon Bermudez'], 500, 509.5, 509.5, 'not_paid'),
-    f(4, [5, 'Lina Cardenas'], 100, 101.9, 0, 'paid', 'out_refund'),
-    f(5, false, 300, 305.7, 0, 'in_payment'),
-  ]);
+    f(1, 10, 1000, 1019, 0, 'paid'),
+    f(2, 10, 2000, 2038, 1019, 'partial'),
+    f(3, 11, 500, 509.5, 509.5, 'not_paid'),
+    f(4, 10, 100, 101.9, 0, 'paid', 'out_refund'),
+    f(5, 12, 300, 305.7, 0, 'in_payment'),
+  ], { 10: [5, 'Lina Cardenas'], 11: [6, 'Jhon Bermudez'], 12: false });
   const lector = crearLectorAvancys({ entorno: ENTORNO, fetchImpl });
   const r = await lector.cobroPorComercial({ mes: '2026-10' });
   assert.equal(r.facturas, 5);
@@ -49,6 +55,8 @@ test('pagado, parcial, pendiente y nota crédito, por comercial y por estado', a
   assert.deepEqual({ pagado: jhon.pagado, pendiente: jhon.pendiente }, { pagado: 0, pendiente: 500 });
   assert.equal(r.comerciales.find(c => c.avancys_user_id === null).pagado, 300, 'sin comercial también se cuenta');
   assert.deepEqual(r.estados.map(e => e.estado).sort(), ['in_payment', 'not_paid', 'paid', 'partial']);
+  assert.ok(!r.comerciales.some(c => c.nombre === 'Marisol (facturación)'), 'quien hace la factura no es el comercial');
+  assert.ok(pedidos.some(p => p.modelo === 'res.partner'), 'lee el comercial asignado al cliente');
   const lectura = pedidos.find(p => p.modelo === 'account.move');
   assert.ok(lectura.campos.includes('payment_state') && lectura.campos.includes('amount_residual'));
 });

@@ -2912,7 +2912,7 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
       </details>
       <details className="panel dashboard-details">
         <summary>Ventas y pipeline por tipo de cliente {year}</summary>
-        <div className="tablewrap crm-readable-table dashboard-sales-table"><table><thead><tr><th>Tipo</th><th>Ventas {year}</th><th>Pipeline activo</th></tr></thead><tbody>{dealMixRows.map(row => <tr key={row.key}>
+        <div className="tablewrap crm-readable-table deal-mix-table"><table><thead><tr><th>Tipo</th><th>Ventas {year}</th><th>Pipeline activo</th></tr></thead><tbody>{dealMixRows.map(row => <tr key={row.key}>
           <td><strong>{row.label}</strong></td>
           <td className="money-cell">{row.salesCount ? <>{fmtMoneyCompact(row.sales)} <small className="muted">· {row.salesCount}</small></> : '—'}</td>
           <td className="money-cell">{row.pipelineCount ? <>{fmtMoneyCompact(row.pipeline)} <small className="muted">· {row.pipelineCount}</small></> : '—'}</td>

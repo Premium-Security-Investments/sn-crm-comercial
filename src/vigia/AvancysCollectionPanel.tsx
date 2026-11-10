@@ -50,9 +50,9 @@ export function AvancysCollectionPanel() {
     {estado === 'listo' && datos?.motivo && <p className="muted">{datos.motivo}</p>}
     {estado === 'listo' && datos && !datos.motivo && <>
       <p className="muted">{datos.facturas} facturas · {datos.estados.map(e => `${ESTADO_LABEL[e.estado] || e.estado}: ${e.facturas}`).join(' · ')}{datos.recortado ? ' · La lectura pudo quedar incompleta.' : ''}</p>
-      <div className="tablewrap crm-readable-table dashboard-sales-table"><table><thead><tr><th>Comercial en Avancys</th><th>Facturas</th><th>Facturado</th><th>Pagado</th><th>Pendiente</th></tr></thead>
+      <div className="tablewrap crm-readable-table avancys-cobro-table"><table><thead><tr><th>Comercial del cliente</th><th>Facturas</th><th>Facturado</th><th>Pagado</th><th>Pendiente</th></tr></thead>
         <tbody>{datos.comerciales.map(c => <tr key={String(c.avancys_user_id)}>
-          <td><strong>{c.nombre || 'Sin comercial en la factura'}</strong></td>
+          <td><strong>{c.nombre || 'Cliente sin comercial asignado'}</strong></td>
           <td className="numeric-value">{c.facturas}</td>
           <td className="money-cell">{pesos(c.facturado)}</td>
           <td className="money-cell">{pesos(c.pagado)}</td>

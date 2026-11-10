@@ -1100,3 +1100,13 @@ td.numeric-value{white-space:nowrap}
 .ally-card-dialog h4{margin:4px 0 0;color:#10213d;font-size:20px}.ally-card-dialog header small{display:block;color:#66758c}
 .ally-card-dialog .tender-allies-detail{padding:0}
 @media(max-width:760px){.ally-card-dialog .tender-allies-detail{grid-template-columns:minmax(0,1fr)}}
+
+/* Tablas cortas del tablero (desglose por tipo de cliente, cobro por comercial): caben en la pantalla.
+   La regla general de .crm-readable-table exige 1180 px de ancho y cortaba la última columna (Juan, 2026-11-10). */
+.crm-readable-table.avancys-cobro-table table{min-width:640px;width:100%}
+.avancys-cobro-table th:nth-child(1),.avancys-cobro-table td:nth-child(1){width:34%}
+.avancys-cobro-table th:nth-child(2),.avancys-cobro-table td:nth-child(2){width:10%;text-align:right}
+.avancys-cobro-table th:nth-child(n+3),.avancys-cobro-table td:nth-child(n+3){width:18.66%;text-align:right}
+.crm-readable-table.deal-mix-table table{min-width:520px;width:100%}
+.deal-mix-table th:nth-child(1),.deal-mix-table td:nth-child(1){width:46%}
+.deal-mix-table th:nth-child(n+2),.deal-mix-table td:nth-child(n+2){width:27%;text-align:right}
