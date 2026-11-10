@@ -101,6 +101,7 @@ import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approve
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { loadCompanyBase, recordUploadAsVerification, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite, saveExperienceCertificate } from '../company-base.js';
 import { reviewExperienceCertificate } from '../verticales/licitaciones/experience-certificate-review.js';
+import { assessDifferentialBenefits, findDifferentialMentions, listDifferentialConditions, saveDifferentialCondition } from '../verticales/licitaciones/differential-conditions.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
 import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
 import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../verticales/licitaciones/tender-document-origin.js';
@@ -560,6 +561,9 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-allies/participation': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/candidates': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/tender-company-differential-conditions': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'POST /api/tender-company-differential-conditions': ['tenders', ACTIONS.LICITACIONES_CONFIGURE],
+  'GET /api/tender-differential-benefits': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-lessons/decision': ['tenders', ACTIONS.LICITACIONES_LESSONS_MANAGE],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
@@ -2982,6 +2986,39 @@ app.get('/api/tender-company-experience/certificate-file', async (req, res) => {
     if (signError) throw signError;
     res.set('Cache-Control', 'private, no-store');
     res.json({ url: data.signedUrl });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+// Mejora 10 (Juan, 2026-11-10; migración 200): las condiciones diferenciales en la ficha, y en cada licitación dónde el
+// pliego las premia. Los datos los ponen Juan o Katherine; el aviso sale de leer el texto de los documentos.
+app.get('/api/tender-company-differential-conditions', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await listDifferentialConditions(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-differential-conditions', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    res.json(await saveDifferentialCondition(requireDb(), req.body, currentProfile.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/tender-differential-benefits', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    const { installed, conditions } = await listDifferentialConditions(database);
+    const { documents } = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
+    res.json({ installed, benefits: assessDifferentialBenefits(conditions, findDifferentialMentions(documents)) });
   } catch (error) { sendAuthError(res, error); }
 });
 

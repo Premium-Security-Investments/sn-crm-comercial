@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { supabaseBrowser } from '../supabaseBrowser';
 import { loadCompanyBase, loadCompanyProcurementDocuments, loadCompanyProfile } from './api';
 import { deriveCompanyBlocks, summarizeCompanyBlocks, type CompanyBasePayload, type CompanyBlockState, type CompanyEvidenceDecision } from './companyBase';
+import { CompanyDifferentialConditions } from './components/CompanyDifferentialConditions';
 import { CompanyBlocksTable, CompanyExperienceSection, CompanyFinancialSection, CompanySitesSection, CompanyStatusSummary } from './components/CompanyBaseSections';
 import { TenderCompanyDocuments } from './components/TenderCompanyDocuments';
 import { CompanyFactProposals } from './components/CompanyFactProposals';
@@ -238,6 +239,7 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
       onUploadSupport={canManageDocuments && !editing ? openUploadDialog : undefined} />
     <CompanySitesSection sites={companyBase.sites} documents={documents} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveSite} />
     <CompanyExperienceSection experience={companyBase.experience} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveExperience} onSaveCertificate={saveCertificate} certificateFiles={certificateFiles} />
+    <CompanyDifferentialConditions request={request} canEdit={canConfigure} />
     <CompanyFinancialSection profile={persistedCompany} />
 
     <section className="panel company-documents-panel" aria-labelledby="company-documents-heading">
