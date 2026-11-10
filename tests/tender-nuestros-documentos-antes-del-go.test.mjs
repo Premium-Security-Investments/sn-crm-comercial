@@ -28,7 +28,7 @@ test('«+ Observaciones al pliego» usa la misma clave con que la Mesa crea el d
 
 test('la vista por decidir la muestra y se refresca cuando la Mesa termina', () => {
   const workspace = read('../src/tenders/workspace/TenderWorkspace.tsx');
-  assert.match(workspace, /export function TenderDecideView\(\{ report, decisionPanel, reanalysis, channel, documents, clarify \}/);
+  assert.match(workspace, /export function TenderDecideView\(\{ report, decisionPanel, reanalysis, channel, documents, clarify(, allies)? \}/);
   assert.match(workspace, /\{channel\}\s*\n\s*\{\/\* F16[^*]*\*\/\}\s*\n\s*\{documents\}/);
   const main = read('../src/main.tsx');
   assert.match(main, /<TenderVigiaChannel key=\{`tender-channel-\$\{o\.id\}`\} opportunityId=\{o\.id\} request=\{api\} onJobsCompleted=\{bumpTenderOwnDocuments\} \/>/);
