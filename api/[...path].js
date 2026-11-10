@@ -59,6 +59,7 @@ import { buildTenderCompanyDocumentBridge } from '../verticales/licitaciones/ten
 import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderComplianceMatrixCsv, tenderComplianceMatrixTable } from '../verticales/licitaciones/tender-compliance-matrix.js';
 import { checkEconomicOffer, ECONOMIC_OFFER_MAX_BYTES } from '../verticales/licitaciones/tender-economic-offer-check.js';
 import { buildTenderOpenBoard } from '../verticales/licitaciones/tender-open-board.js';
+import { buildTenderSemana } from '../verticales/licitaciones/tender-semana.js';
 import { cronogramaFaltante } from '../verticales/licitaciones/tender-cronograma-faltante.js';
 import { overdueSummary } from '../verticales/licitaciones/tender-dossier-vencidos.js';
 import { AGT002_DRAFT_BUCKET, isAgt002DraftStoragePath } from '../verticales/licitaciones/agt002-workbench-document.js';
@@ -519,6 +520,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tender-compliance-matrix': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Tablero de procesos abiertos: el cruce de todos los expedientes con cierre por delante. Sólo lectura.
   'GET /api/tender-open-board': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/tender-semana': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Ofertas presentadas (encargo del 2026-11-07): registrar presentada o no con evidencia, su resultado, los
   // indicadores del año y el aviso de cierres con GO sin registro.
   'GET /api/tender-offer-record': ['tenders', ACTIONS.LICITACIONES_VIEW],
@@ -7191,6 +7193,46 @@ app.get('/api/tender-open-board', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
     res.json(await readTenderOpenBoard(requireDb(), currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/**
+ * La semana de licitaciones (Juan, 2026-11-10): los hitos del cronograma de hoy y los próximos días de todas las
+ * licitaciones abiertas, «no importa el estado del proceso» (por decidir, en preparación o presentada). Fuera quedan
+ * las descartadas, archivadas, cerradas con NO GO y las que ya tienen resultado. Sólo lectura; cada proceso pasa por la
+ * misma verificación de acceso que su expediente.
+ */
+async function readTenderSemana(database, currentProfile, now = new Date()) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(now);
+  const opportunities = await must(database.from('psi_sales_opportunities')
+    .select('id,sede,company_name,tender_offer_status,stage_code,archive_note,archived_at,discarded_at,lost_at,deleted_at')
+    .eq('service_type_code', 'licitacion_publica'));
+  const open = opportunities.filter(row => !row.archive_note && !row.archived_at && !row.discarded_at && !row.lost_at && !row.deleted_at
+    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
+  const ids = open.map(row => row.id);
+  const { data: results } = ids.length ? await database.from('psi_tender_offer_results').select('opportunity_id').in('opportunity_id', ids) : { data: [] };
+  const withResult = new Set((results || []).map(row => row.opportunity_id));
+  const tenders = ids.length ? await must(database.from('psi_public_tenders').select('ref,converted_opportunity_id').in('converted_opportunity_id', ids)) : [];
+  const refByOpportunity = new Map(tenders.map(row => [row.converted_opportunity_id, row.ref]));
+  let withoutAccess = 0;
+  const processes = [];
+  for (const row of open) {
+    if (withResult.has(row.id)) continue;
+    try { await ensureTenderOpportunity(database, row.id, currentProfile); }
+    catch (error) { if (error?.status === 403 || error?.status === 404) { withoutAccess += 1; continue; } throw error; }
+    const report = await readAgt002InitialAnalysisReport(database, row.id);
+    if (!report?.available || !report.report) continue;
+    processes.push({ opportunity_id: row.id, entity: row.company_name || null, ref: refByOpportunity.get(row.id) || row.sede || null,
+      offer_status: row.tender_offer_status || null, deadlines: report.report.deadlines || [] });
+  }
+  return { without_access: withoutAccess, procesos: processes.length, ...buildTenderSemana({ processes, today }) };
+}
+
+app.get('/api/tender-semana', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.json(await readTenderSemana(requireDb(), currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

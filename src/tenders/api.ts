@@ -1,4 +1,4 @@
-import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderLesson, TenderLessonStatus, TenderOfferIndicators, TenderOfferRecord, TenderOfferResult, TenderOfferSubmission, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOpenBoard, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderLesson, TenderLessonStatus, TenderOfferIndicators, TenderOfferRecord, TenderOfferResult, TenderOfferSubmission, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOpenBoard, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate, TenderSemana } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -205,6 +205,11 @@ export async function reopenTenderClosureActa(request: TenderRequest, opportunit
 /** El tablero de procesos abiertos: qué trámite sirve para varias, qué vence antes de qué cierre y qué se pide por proceso. */
 export async function loadTenderOpenBoard(request: TenderRequest): Promise<TenderOpenBoard> {
   return request<TenderOpenBoard>('/api/tender-open-board');
+}
+
+/** La semana de licitaciones (Mi día, Juan 2026-11-10). */
+export async function loadTenderSemana(request: TenderRequest): Promise<TenderSemana> {
+  return request<TenderSemana>('/api/tender-semana');
 }
 
 /** Mejora 5: estado de las copias de trabajo en SharePoint de los borradores del expediente. */
