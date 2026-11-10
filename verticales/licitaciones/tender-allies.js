@@ -84,16 +84,28 @@ export async function loadAlliesListing(database, { actorId, listing, source, pa
   // Nosotros, para que nunca salgamos como candidato de nosotros mismos.
   const { data: own } = await database.from('psi_vigilance_companies').select('role').eq('nit', OUR_NIT).maybeSingle();
   if (own && own.role === 'sin_clasificar') await database.rpc('psi_update_vigilance_company', { p_actor_id: actorId, p_nit: OUR_NIT, p_role: 'nosotros', p_contact: null, p_notes: null });
+  // Las participaciones de la semilla que falten (por proceso, empresa y tipo): volver a cargar no duplica y completa una
+  // carga que se haya cortado (2026-11-10: la primera se cayó en la 42, que traía sólo el año «2023»).
+  const existing = await all(database, 'psi_vigilance_participations', 'process_ref,company_label,kind');
+  const seen = new Set(existing.map(participationKey));
   let seeded = 0;
-  const { count } = await database.from('psi_vigilance_participations').select('id', { count: 'exact', head: true });
-  if (!count) {
-    for (const part of participationsSeed) {
-      const { error } = await database.rpc('psi_add_vigilance_participation', { p_actor_id: actorId, p_payload: part });
-      if (error) throw mapError(error);
-      seeded += 1;
-    }
+  for (const part of participationsSeed.map(normalizeSeedParticipation)) {
+    if (seen.has(participationKey(part))) continue;
+    const { error } = await database.rpc('psi_add_vigilance_participation', { p_actor_id: actorId, p_payload: part });
+    if (error) throw mapError(error);
+    seen.add(participationKey(part));
+    seeded += 1;
   }
   return { companies, offices, participations_seeded: seeded };
+}
+
+const participationKey = part => [part.process_ref, part.company_label, part.kind].map(value => String(value || '').trim().toUpperCase()).join('|');
+
+/** Una fecha sólo con el año («2023») no es una fecha: va al detalle y la fecha queda vacía. */
+export function normalizeSeedParticipation(part) {
+  const when = String(part?.occurred_on || '').trim();
+  if (!when || /^\d{4}-\d{2}-\d{2}$/.test(when)) return part;
+  return { ...part, occurred_on: null, detail: [/^\d{4}$/.test(when) ? `Año ${when}` : when, part.detail].filter(Boolean).join('. ') };
 }
 
 export async function updateAlly(database, { actorId, nit, role, contact, notes }) {
