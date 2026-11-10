@@ -79,7 +79,8 @@ test('pantalla y rutas: Empresa, Aliados y Lecciones juntos a la derecha; candid
   const view = read('src/tenders/TenderAlliesView.tsx');
   assert.doesNotMatch(view, /loadListing|Actualizar listado/, 'sin botón de recarga (Juan, 2026-11-10)');
   assert.match(view, /Vista en procesos/);
-  assert.match(view, /\+ Agregar proceso/);
+  assert.match(read('src/tenders/components/AllyDetail.tsx'), /\+ Agregar proceso/);
+  assert.match(view, /<AllyDetail company=\{company\}/);
   assert.match(read('src/tenders/workspace/TenderWorkspace.tsx'), /initialReportRecommendationText\(report\.recommendation\.label\)\}<\/p>\n\s+\{\/\*[^\n]*\*\/\}\n\s+\{allies\}/);
   const server = read('server/index.js');
   assert.match(server, /'GET \/api\/tender-allies\/candidates': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
@@ -155,4 +156,24 @@ test('migración 197: el contacto en cuatro campos; sin la 197, se guarda junto 
   } }) };
   const listed = await listAllies(db);
   assert.equal(listed.companies[0].email, 'x@y.com.co');
+});
+
+// 2026-11-10 (Juan): desde «Posibles socios» en Decidir se abre la ficha de la empresa en una ventana.
+test('la ficha de una empresa se abre en una ventana desde «Posibles socios»', async () => {
+  const { getAlly } = await import('../verticales/licitaciones/tender-allies.js');
+  const rows = {
+    psi_vigilance_companies: { nit: '800010866', name: 'EXPERTOS SEGURIDAD LTDA', role: 'sin_clasificar', email: 'notificaciones@expertoseguridad.co m.co' },
+    psi_vigilance_company_offices: [{ nit: '800010866', city: 'QUIBDO', city_key: 'quibdo' }, { nit: '800010866', city: 'ARMENIA', city_key: 'armenia' }, { nit: '800010866', city: 'ARMENIA', city_key: 'armenia' }],
+    psi_vigilance_participations: [{ id: 'p1', nit: '800010866', process_ref: 'SIC 23 DE 2026', kind: 'observo_proyecto' }],
+  };
+  const database = { from: table => { const chain = { select() { return chain; }, eq() { return table === 'psi_vigilance_companies' ? chain : Promise.resolve({ data: rows[table], error: null }); }, maybeSingle: async () => ({ data: rows[table], error: null }) }; return chain; } };
+  const company = await getAlly(database, '800010866');
+  assert.deepEqual(company.cities.map(city => city.city), ['QUIBDO', 'ARMENIA']);
+  assert.equal(company.email, 'notificaciones@expertoseguridad.com.co');
+  assert.equal(company.participations.length, 1);
+  await assert.rejects(getAlly(database, 'x'), /no es válida/);
+  const candidates = read('src/tenders/components/TenderAllyCandidates.tsx');
+  assert.match(candidates, /onClick=\{\(\) => setCard\(candidate\.nit\)\}/);
+  assert.match(candidates, /<AllyCardDialog nit=\{card\}/);
+  assert.match(read('server/index.js'), /'GET \/api\/tender-allies\/company': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
 });

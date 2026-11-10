@@ -93,6 +93,29 @@ export async function listAllies(database, { participationsSeed = [] } = {}) {
   }
 }
 
+/** Una empresa con sus ciudades y sus participaciones: la ficha que se abre desde «Posibles socios» en Decidir. */
+export async function getAlly(database, nit) {
+  const key = String(nit || '').replace(/\D/g, '');
+  if (!/^[0-9]{6,12}$/.test(key)) throw fail('La empresa no es válida.', 400);
+  const one = select => database.from('psi_vigilance_companies').select(select).eq('nit', key).maybeSingle();
+  let { data: company, error } = await one(`${COMPANY_COLUMNS},${CONTACT_COLUMNS}`);
+  if (error && missingColumn(error)) ({ data: company, error } = await one(COMPANY_COLUMNS));
+  if (error) throw mapError(error);
+  if (!company) throw fail('Esa empresa no está en la base.', 404);
+  const [{ data: offices, error: officesError }, { data: participations, error: partsError }] = await Promise.all([
+    database.from('psi_vigilance_company_offices').select('nit,city,city_key,department,office_type').eq('nit', key),
+    database.from('psi_vigilance_participations').select('id,nit,company_label,entity,process_ref,kind,detail,source,occurred_on,created_at').eq('nit', key),
+  ]);
+  if (officesError) throw mapError(officesError);
+  if (partsError) throw mapError(partsError);
+  const cities = [];
+  for (const office of offices || []) {
+    if (!String(office.city || '').trim() || !office.city_key || cities.some(item => item.city_key === office.city_key)) continue;
+    cities.push({ city: office.city, city_key: office.city_key, department: office.department });
+  }
+  return { ...company, email: cleanEmail(company.email), contact_email: cleanEmail(company.contact_email), cities, participations: participations || [] };
+}
+
 /** Carga (o actualiza) el listado en tandas, sin tocar rol, contacto ni notas; la primera vez, también las participaciones. */
 export async function loadAlliesListing(database, { actorId, listing, source, participationsSeed = [] }) {
   let companies = 0;

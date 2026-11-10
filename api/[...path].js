@@ -179,7 +179,7 @@ import { listAgt002Clarifications, recordAgt002Clarification } from '../vertical
 import { decideAgt002Lesson, listAgt002Lessons } from '../verticales/licitaciones/agt002-company-lessons.js';
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
-import { addParticipation, cityKey, citiesToCover, listAllies, loadAlliesListing, rankAllyCandidates, updateAlly } from '../verticales/licitaciones/tender-allies.js';
+import { addParticipation, cityKey, citiesToCover, getAlly, listAllies, loadAlliesListing, rankAllyCandidates, updateAlly } from '../verticales/licitaciones/tender-allies.js';
 import { VIGILANCE_LISTING, VIGILANCE_LISTING_SOURCE } from '../data/aliados/listado-supervigilancia-2026-11-07.js';
 import { VIGILANCE_PARTICIPATIONS_SEED } from '../data/aliados/participaciones-semilla-2026-11-09.js';
 import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
@@ -558,6 +558,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'POST /api/tender-allies/participation': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/candidates': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-lessons/decision': ['tenders', ACTIONS.LICITACIONES_LESSONS_MANAGE],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
@@ -8252,6 +8253,16 @@ app.post('/api/tender-allies/participation', async (req, res) => {
 
 // Candidatos para la recomendación «Solo en unión temporal»: lo que nos falta se calcula con la ficha (sedes con
 // autorización vigente), no con el listado.
+// La ficha de una empresa, para abrirla en una ventana desde «Posibles socios» (Juan, 2026-11-10).
+app.get('/api/tender-allies/company', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ company: await getAlly(requireDb(), req.query.nit) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.get('/api/tender-allies/candidates', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
