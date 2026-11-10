@@ -10,7 +10,7 @@ import type { TendersModuleProps } from './types';
  */
 type City = { city: string; city_key: string; department: string | null };
 type Participation = { id: string; nit: string | null; company_label: string; entity: string | null; process_ref: string; kind: string; detail: string | null; source: string | null; occurred_on: string | null };
-type Company = { nit: string; dv: string | null; name: string; acronyms: string | null; representative: string | null; phone: string | null; email: string | null; license_resolution: string | null; role: string; contact: string | null; notes: string | null; cities: City[]; participations: Participation[] };
+type Company = { nit: string; dv: string | null; name: string; acronyms: string | null; representative: string | null; phone: string | null; email: string | null; license_resolution: string | null; role: string; contact: string | null; contact_name?: string | null; contact_title?: string | null; contact_phone?: string | null; contact_email?: string | null; notes: string | null; cities: City[]; participations: Participation[] };
 type Payload = { installed: boolean; companies: Company[]; participations_without_nit: Participation[]; listing_source: string; seed_missing?: number };
 
 const ROLES: Array<[string, string]> = [['sin_clasificar', 'Sin clasificar'], ['aliado_potencial', 'Aliado potencial'], ['aliado', 'Aliado'], ['competidor', 'Competidor'], ['descartado', 'Descartado'], ['nosotros', 'Nosotros']];
@@ -18,6 +18,10 @@ const KINDS: Array<[string, string]> = [['oferto', 'Ofertó'], ['observo_proyect
 const label = (pairs: Array<[string, string]>, key: string) => pairs.find(([value]) => value === key)?.[1] || key;
 const fold = (value: string) => value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const PAGE = 50;
+type Draft = { role: string; name: string; title: string; phone: string; email: string; notes: string };
+const EMPTY_DRAFT: Draft = { role: '', name: '', title: '', phone: '', email: '', notes: '' };
+/** Nuestro contacto en la empresa: los cuatro campos (197) o, si es de antes, el texto libre. */
+const ownContact = (company: Company) => ({ name: company.contact_name || '', title: company.contact_title || '', phone: company.contact_phone || '', email: company.contact_email || '', legacy: company.contact || '' });
 
 export function TenderAlliesView({ request, data, moduleNavigation }: TendersModuleProps & { moduleNavigation: ReactNode }) {
   const canEdit = canApproveTenderGoNoGo(data.currentProfile);
@@ -30,7 +34,7 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
   const [onlySeen, setOnlySeen] = useState(false);
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ role: string; contact: string; notes: string }>({ role: '', contact: '', notes: '' });
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [part, setPart] = useState<Record<string, string>>({ kind: 'oferto' });
   const [adding, setAdding] = useState(false);
 
@@ -58,11 +62,12 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
   };
   const toggle = (company: Company) => {
     setOpen(open === company.nit ? null : company.nit);
-    setDraft({ role: company.role, contact: company.contact || '', notes: company.notes || '' });
+    const own = ownContact(company);
+    setDraft({ role: company.role, name: own.name || own.legacy, title: own.title, phone: own.phone, email: own.email, notes: company.notes || '' });
     setPart({ kind: 'oferto' });
     setAdding(false);
   };
-  const save = (company: Company) => act(() => request('/api/tender-allies/company', { method: 'POST', body: JSON.stringify({ nit: company.nit, ...draft }) }));
+  const save = (company: Company) => act(() => request('/api/tender-allies/company', { method: 'POST', body: JSON.stringify({ nit: company.nit, role: draft.role, notes: draft.notes, contact: { name: draft.name, title: draft.title, phone: draft.phone, email: draft.email } }) }));
   const addPart = (company: Company) => act(async () => {
     await request('/api/tender-allies/participation', { method: 'POST', body: JSON.stringify({ ...part, nit: company.nit, company_label: company.name }) });
     setPart({ kind: 'oferto' }); setAdding(false);
@@ -120,9 +125,13 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
                 </div>
                 {canEdit && <div className="tender-allies-forms">
                 {canEdit && <form className="tender-allies-form" onSubmit={event => { event.preventDefault(); void save(company); }}>
-                  <h4>Lo nuestro</h4>
-                  <label>Rol<select value={draft.role} onChange={event => setDraft({ ...draft, role: event.target.value })}>{ROLES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
-                  <label>Contacto<input value={draft.contact} onChange={event => setDraft({ ...draft, contact: event.target.value })} maxLength={1000} placeholder="Nombre, cargo, teléfono" /></label>
+                  <h4>Nuestra relación con la empresa</h4>
+                  <p className="muted wide">Lo llenamos nosotros: qué es para nosotros y con quién hablamos allá.</p>
+                  <label className="wide">Rol<select value={draft.role} onChange={event => setDraft({ ...draft, role: event.target.value })}>{ROLES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+                  <label>Nombre del contacto<input value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} maxLength={200} /></label>
+                  <label>Cargo<input value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} maxLength={200} placeholder="Ej. Gerente comercial" /></label>
+                  <label>Teléfono<input type="tel" value={draft.phone} onChange={event => setDraft({ ...draft, phone: event.target.value })} maxLength={100} /></label>
+                  <label>Correo<input type="email" value={draft.email} onChange={event => setDraft({ ...draft, email: event.target.value })} maxLength={200} /></label>
                   <div className="wide tender-allies-notes"><label>Notas<textarea value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} maxLength={4000} rows={2} /></label><button type="submit" disabled={busy}>Guardar</button></div>
                 </form>}
                 </div>}
@@ -146,8 +155,15 @@ function AllyRow({ company, isOpen, onToggle, children }: { company: Company; is
       <td>{label(ROLES, company.role)}</td>
       <td>{company.participations.length || ''}</td>
       {/* Sin contacto propio, el del listado (Juan, 2026-11-10): el representante legal, su teléfono y su correo, en gris. */}
-      <td>{company.contact || <span className="tender-allies-listing-contact">{company.representative && <b>{company.representative}</b>}{[company.phone, company.email].filter(Boolean).join(' · ')}</span>}</td>
+      <td><ContactCell company={company} /></td>
     </tr>
     {isOpen && <tr className="is-open-detail"><td colSpan={5}>{children}</td></tr>}
   </>;
+}
+
+function ContactCell({ company }: { company: Company }) {
+  const own = ownContact(company);
+  if (own.name || own.title || own.phone || own.email) return <span className="tender-allies-own-contact"><b>{own.name || own.title}</b>{own.name && own.title ? <small>{own.title}</small> : null}<small>{[own.phone, own.email].filter(Boolean).join(' · ')}</small></span>;
+  if (own.legacy) return <>{own.legacy}</>;
+  return <span className="tender-allies-listing-contact">{company.representative && <b>{company.representative}</b>}{[company.phone, company.email].filter(Boolean).join(' · ')}</span>;
 }

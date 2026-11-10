@@ -1037,17 +1037,17 @@ td.numeric-value{white-space:nowrap}
 .tender-allies-filters label input,.tender-allies-filters label select{font-weight:400}
 .tender-allies-filters .tender-allies-check{flex-direction:row;align-items:center;gap:8px;padding:10px 0}.tender-allies-check input{width:auto;margin:0}
 .tender-allies-scroll{overflow-x:auto}
-.tender-allies-table{width:100%;min-width:760px;table-layout:fixed;border-collapse:collapse;font-size:13px}
-.tender-allies-table .col-name{width:30%}.tender-allies-table .col-cities{width:30%}.tender-allies-table .col-role{width:13%}.tender-allies-table .col-seen{width:8%}.tender-allies-table .col-contact{width:19%}
+.tenders-page .tender-allies-table{width:100%;min-width:760px;table-layout:fixed;border-collapse:collapse;font-size:13px}
+.tender-allies-table .col-name{width:28%}.tender-allies-table .col-cities{width:28%}.tender-allies-table .col-role{width:12%}.tender-allies-table .col-seen{width:10%}.tender-allies-table .col-contact{width:22%}
 .tender-allies-table th,.tender-allies-table td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top;overflow-wrap:anywhere;font-weight:400}
-.tender-allies-table thead th{font-weight:800;color:#40516b;background:#f8fbff}
+.tender-allies-table thead th{font-weight:800;color:#40516b;background:#f8fbff;overflow-wrap:normal;white-space:normal}
 .tender-allies-table td{white-space:normal}
 .tender-allies-table tr.is-open,.tender-allies-table tr.is-open-detail{background:#f3f7ff}.tender-allies-table tr.is-open>th,.tender-allies-table tr.is-open-detail>td{box-shadow:inset 4px 0 0 #1d4ed8}.tender-allies-table tr.is-open>*{border-bottom:0}.tender-allies-table tr.is-open-detail>td{border-bottom:2px solid #bfd3f6;padding:4px 12px 14px 16px}
-.tender-allies-listing-contact{color:#7b8799;font-size:12px}.tender-allies-listing-contact b{display:block;font-weight:600;color:#5b6678}
+.tender-allies-listing-contact{color:#7b8799;font-size:12px}.tender-allies-listing-contact b{display:block;font-weight:600;color:#5b6678}.tender-allies-own-contact b,.tender-allies-own-contact small{display:block}.tender-allies-own-contact small{color:#526173;font-size:12px}.tender-allies-form p{margin:-4px 0 0;font-size:12px}.tender-allies-notes>*{min-width:0}.tender-allies-notes button{flex:0 0 auto}
 .tender-allies-table th small{display:block;color:#66758c;margin-top:2px}
 .tender-allies-table tbody th{text-transform:none;letter-spacing:0;font-size:13px;color:#172033;background:transparent;white-space:normal}
 .tender-allies-table .tender-allies-name,.tender-allies-table .tender-allies-name:hover,.tender-allies-table .tender-allies-name:focus-visible{all:unset;cursor:pointer;color:#174ea6;font-weight:700;line-height:1.3;white-space:normal}.tender-allies-table .tender-allies-name:hover{text-decoration:underline}.tender-allies-table .tender-allies-name:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
-.tender-allies-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;padding:6px 2px;align-items:start}.tender-allies-detail>*,.tender-allies-facts,.tender-allies-forms{min-width:0}.tender-allies-facts,.tender-allies-forms{display:grid;gap:12px;align-content:start}.tender-allies-detail dd,.tender-allies-detail li{overflow-wrap:anywhere;white-space:normal}.tender-allies-add{justify-self:start;padding:7px 12px;font-size:13px}
+.tender-allies-detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:6px 2px;align-items:start}.tender-allies-detail>*,.tender-allies-facts,.tender-allies-forms{min-width:0}.tender-allies-facts,.tender-allies-forms{display:grid;gap:12px;align-content:start}.tender-allies-detail dd,.tender-allies-detail li{overflow-wrap:anywhere;white-space:normal}.tender-allies-add{justify-self:start;padding:7px 12px;font-size:13px}
 .tender-allies-detail dl{align-content:start;grid-template-columns:110px minmax(0,1fr);gap:4px 10px;font-size:13px}.tender-allies-detail ul{margin:6px 0;padding-left:18px}
 .tender-allies-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start;padding:12px;border:1px solid #e2eaf5;border-radius:12px;background:#fff}
 .tender-allies-form h4{grid-column:1/-1;margin:0;color:#10213d;font-size:14px}
@@ -1055,6 +1055,6 @@ td.numeric-value{white-space:nowrap}
 .tender-allies-form label input,.tender-allies-form label select,.tender-allies-form label textarea{font-weight:400}
 .tender-allies-form textarea{min-height:52px}.tender-allies-notes{display:flex;align-items:flex-end;gap:10px}.tender-allies-notes label{flex:1}
 .tender-allies-form button{padding:8px 14px}
-@media(max-width:700px){.tender-allies-form{grid-template-columns:1fr}}
+@media(max-width:700px){.tender-allies-form{grid-template-columns:1fr}.tender-allies-detail{grid-template-columns:minmax(0,1fr)}}
 .tw-ally-candidates{border-top:1px solid #e2e8f0;margin-top:8px;padding-top:8px}
 .tw-ally-candidates ul{margin:6px 0;padding-left:18px}
