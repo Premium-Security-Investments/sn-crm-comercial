@@ -21,11 +21,15 @@ const CAMPOS = Object.freeze({
   cuenta: Object.freeze(['id', 'code', 'partner_id', 'write_date']),
   orden: Object.freeze(['id', 'client_id', 'product_id', 'service_type', 'valor_mensual', 'fact_start_date', 'fact_end_date', 'write_date']),
   factura: Object.freeze(['id', 'partner_id', 'amount_untaxed', 'move_type', 'invoice_date', 'write_date']),
+  // Lista aparte para el cobro (comisiones, Juan 2026-11-10): si Avancys no entrega alguno de estos campos, falla
+  // sólo esta lectura y no la facturación por cliente de la Torre, que usa `factura`.
+  facturaPago: Object.freeze(['id', 'partner_id', 'invoice_user_id', 'amount_untaxed', 'amount_total', 'amount_residual', 'payment_state', 'move_type', 'invoice_date', 'write_date']),
   cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'state_id', 'write_date']),
 });
 
 const MODELO = Object.freeze({
   factura: 'account.move',
+  facturaPago: 'account.move',
   orden: 'project.service.order.line.invoice',
   puesto: 'hr.roster.puesto',
   contrato: 'project.project',
@@ -472,6 +476,62 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
   }
 
   /**
+   * El cobro de lo facturado en un mes, por comercial (comisiones; Juan, 2026-11-10). El otrosí paga la comisión
+   * "una vez el cliente haya realizado el pago", así que el dato que importa no es lo facturado sino lo pagado.
+   *
+   * La parte pagada de cada factura se estima sin IVA: `amount_untaxed × (1 − amount_residual / amount_total)`.
+   * `amount_residual` viene con IVA, por eso se pasa a proporción. El comercial es `invoice_user_id`, el vendedor
+   * que Avancys anota en la factura. Las notas crédito restan. Es una REFERENCIA: el número que se paga es el de
+   * cartera.
+   */
+  async function cobroPorComercial({ mes }) {
+    if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) falla('AVANCYS_MES_INVALIDO');
+    const [anio, numeroMes] = String(mes).split('-').map(Number);
+    const desde = `${mes}-01`;
+    const hasta = new Date(Date.UTC(anio, numeroMes, 0)).toISOString().slice(0, 10);
+    const filas = await leer('facturaPago',
+      [['move_type', 'in', ['out_invoice', 'out_refund']], ['state', '=', 'posted'],
+       ['invoice_date', '>=', desde], ['invoice_date', '<=', hasta]],
+      { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+
+    const estados = new Map();
+    const porComercial = new Map();
+    for (const fila of filas) {
+      const signo = fila.move_type === 'out_refund' ? -1 : 1;
+      const sinIva = (Number(fila.amount_untaxed) || 0) * signo;
+      const total = Number(fila.amount_total) || 0;
+      const pendiente = Math.max(0, Number(fila.amount_residual) || 0);
+      const proporcionPagada = total > 0 ? Math.min(1, Math.max(0, 1 - pendiente / total)) : 0;
+      const pagadoSinIva = sinIva * proporcionPagada;
+      const estado = texto(fila.payment_state) || 'sin_estado';
+      const e = estados.get(estado) || { estado, facturas: 0, facturado: 0 };
+      e.facturas += 1; e.facturado += sinIva;
+      estados.set(estado, e);
+      const idComercial = unoAMuchos(fila.invoice_user_id);
+      const clave = idComercial === null ? 'sin_comercial' : String(idComercial);
+      const c = porComercial.get(clave) || {
+        avancys_user_id: idComercial,
+        nombre: Array.isArray(fila.invoice_user_id) ? texto(fila.invoice_user_id[1]) : null,
+        facturas: 0, facturado: 0, pagado: 0, pendiente: 0,
+      };
+      c.facturas += 1; c.facturado += sinIva; c.pagado += pagadoSinIva; c.pendiente += sinIva - pagadoSinIva;
+      porComercial.set(clave, c);
+    }
+    const redondo = n => Math.round(n);
+    const comerciales = [...porComercial.values()]
+      .map(c => Object.freeze({ ...c, facturado: redondo(c.facturado), pagado: redondo(c.pagado), pendiente: redondo(c.pendiente) }))
+      .sort((a, b) => b.facturado - a.facturado);
+    return Object.freeze({
+      mes,
+      facturas: filas.length,
+      recortado: filas.length >= MAX_FILAS_PAGINADO,
+      estados: Object.freeze([...estados.values()].map(e => Object.freeze({ ...e, facturado: redondo(e.facturado) })).sort((a, b) => b.facturas - a.facturas)),
+      comerciales: Object.freeze(comerciales),
+      as_of: corteDe([filas]),
+    });
+  }
+
+  /**
    * Lo facturado en un mes, por cliente. Es lo que la Torre no tenía: su ingreso por cliente sale
    * hoy de una hoja que alguien importa, y que no es la facturación sino la provisión de cierre.
    *
@@ -613,5 +673,5 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
+  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
 }

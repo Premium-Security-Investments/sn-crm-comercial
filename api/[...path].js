@@ -496,6 +496,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
+  'GET /api/agt003/avancys/cobro-por-comercial': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'PUT /api/avancys/cliente-enlace': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
@@ -4689,6 +4690,33 @@ app.get('/api/siio/avancys/facturacion-por-cliente', async (req, res) => {
   } catch (error) {
     if (error?.codigo) {
       return res.json({ mes: String(req.query.mes || ''), total: 0, clientes: [], concentracion: null, as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });
+    }
+    sendError(res, error, error?.status || 400);
+  }
+});
+
+// AGT-003 — el cobro de lo facturado, por comercial (comisiones; Juan, 2026-11-10). El otrosí paga la comisión cuando
+// el cliente paga; esto muestra, por vendedor de Avancys, lo facturado en el mes, cuánto está pagado y cuánto
+// pendiente. Es una REFERENCIA: el número que se paga es el de cartera (decisión de Juan). Si Avancys no entrega el
+// estado de pago, se dice en `motivo`: eso es justamente lo que se quería comprobar.
+app.get('/api/agt003/avancys/cobro-por-comercial', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireCommercialBehaviorAccess(currentProfile);
+    const mes = String(req.query.mes || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(mes)) {
+      const error = new Error('Debe indicar el mes en formato AAAA-MM.');
+      error.status = 400;
+      throw error;
+    }
+    const lector = crearLectorAvancys();
+    res.set('Cache-Control', 'private, no-store');
+    if (!lector) return res.json({ mes, facturas: 0, estados: [], comerciales: [], as_of: null, motivo: 'Avancys no esta configurado en este ambiente.' });
+    const leido = await lector.cobroPorComercial({ mes });
+    return res.json({ ...leido, motivo: null });
+  } catch (error) {
+    if (error?.codigo) {
+      return res.json({ mes: String(req.query.mes || ''), facturas: 0, estados: [], comerciales: [], as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });
     }
     sendError(res, error, error?.status || 400);
   }
