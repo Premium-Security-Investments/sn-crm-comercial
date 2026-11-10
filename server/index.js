@@ -2990,7 +2990,7 @@ app.get('/api/tender-company-experience/certificate-file', async (req, res) => {
 });
 
 // Mejora 10 (Juan, 2026-11-10; migración 200): las condiciones diferenciales en la ficha, y en cada licitación dónde el
-// pliego las premia. Los datos los ponen Juan o Katherine; el aviso sale de leer el texto de los documentos.
+// pliego las premia. Los datos los pone quien configura Licitaciones; el aviso sale de leer el texto de los documentos.
 app.get('/api/tender-company-differential-conditions', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
