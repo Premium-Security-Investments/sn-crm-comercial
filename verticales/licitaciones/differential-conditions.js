@@ -60,8 +60,11 @@ const KIND_PATTERNS = [
   ['garantia', /garant[ií]a/i],
   ['desempate', /desempate|empate/i],
   ['puntaje', /puntaje|puntos?\b|ponderaci[oó]n/i],
-  ['experiencia', /experiencia|contratos?\s+ejecutad/i],
+  // Estricto: «experiencia» sola aparece cerca de casi todo en un pliego (Fiscalía, 2026-11-10: salía en las tres).
+  ['experiencia', /contratos?\s+ejecutad|acreditar[^.]{0,80}(?:contratos|experiencia)|experiencia\s+diferencial/i],
 ];
+
+const KIND_RADIUS = 240;
 
 /** El tipo de beneficio que sugiere el contexto del fragmento. */
 function kindsOf(context) {
@@ -82,7 +85,9 @@ export function findDifferentialMentions(documents, { perCondition = 3, radius =
         const start = Math.max(0, match.index - radius);
         const end = Math.min(text.length, match.index + match[0].length + radius);
         const excerpt = text.slice(start, end).replace(/\s+/g, ' ').trim();
-        found[code].push({ document: document.name || 'Documento', excerpt: `${start > 0 ? '…' : ''}${excerpt}${end < text.length ? '…' : ''}`, kinds: kindsOf(excerpt), key: excerpt.toLowerCase().replace(/[^a-z0-9áéíóúñ]+/g, '') });
+        // El tipo de beneficio se mira cerca de la mención, no en todo el fragmento que se muestra.
+        const near = text.slice(Math.max(0, match.index - KIND_RADIUS), Math.min(text.length, match.index + match[0].length + KIND_RADIUS));
+        found[code].push({ document: document.name || 'Documento', excerpt: `${start > 0 ? '…' : ''}${excerpt}${end < text.length ? '…' : ''}`, kinds: kindsOf(near), key: excerpt.toLowerCase().replace(/[^a-z0-9áéíóúñ]+/g, '') });
       }
     }
   }
