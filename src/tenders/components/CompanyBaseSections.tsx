@@ -4,6 +4,7 @@ import {
   type CompanyBlock, type CompanyBlockState, type CompanyEvidenceDecision, type CompanyExperience, type CompanySite,
 } from '../companyBase';
 import type { TenderCompanyDocument, TenderCompanyProfile } from '../types';
+import { CERTIFICATE_STATUSES, certificateRequestPlan } from '../../../verticales/licitaciones/experience-certificates.js';
 
 const dateFormatter = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const moneyFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -220,14 +221,20 @@ export function CompanySitesSection({ sites, documents = [], available, canEdit,
   </section>;
 }
 
-export function CompanyExperienceSection({ experience, available, canEdit, onSave }: { experience: CompanyExperience[]; available: boolean; canEdit: boolean; onSave: (row: Partial<CompanyExperience>) => Promise<void> }) {
+type CertificateInput = { id: string; certificate_status: string; certificate_note: string | null };
+
+export function CompanyExperienceSection({ experience, available, canEdit, onSave, onSaveCertificate }: { experience: CompanyExperience[]; available: boolean; canEdit: boolean; onSave: (row: Partial<CompanyExperience>) => Promise<void>; onSaveCertificate?: (input: CertificateInput) => Promise<void> }) {
   const [editing, setEditing] = useState<Editing<CompanyExperience>>(null);
+  // Mejora 9 (migración 198): sin la 198 las filas no traen el estado y la columna no se muestra.
+  const withCertificates = experience.some(row => row.certificate_status != null);
   return <section className="panel company-base-experience" aria-labelledby="company-experience-heading">
     <header className="company-base-section-head"><div><span className="eyebrow">Experiencia</span><h3 id="company-experience-heading">Contratos para acreditar experiencia</h3><p>{experience.length} contrato{experience.length === 1 ? '' : 's'} registrado{experience.length === 1 ? '' : 's'}. El objeto se valida contra la certificación antes de usarlo en una oferta.</p></div>{canEdit && available && <button type="button" className="secondary" onClick={() => setEditing({ record: {} })}>Agregar contrato</button>}</header>
     {!available ? null
       : experience.length === 0 ? <div className="company-document-empty"><strong>No hay contratos registrados.</strong><span>Agregue los contratos del RUP con su valor en SMMLV.</span></div>
-      : <div className="tablewrap crm-readable-table company-base-table"><table>
-        <thead><tr><th>N.º RUP</th><th title="Número consecutivo del contrato en el RUP: el que piden los pliegos">Consecutivo</th><th>Contratante</th><th>Objeto</th><th className="numeric">Valor</th><th>Año</th><th>Fuente</th>{canEdit && <th><span className="sr-only">Acciones</span></th>}</tr></thead>
+      : <>{withCertificates && <CertificateRequestPlan experience={experience} />}<div className="tablewrap crm-readable-table company-base-table company-experience-table"><table>
+        {/* Anchos propios: los de .company-base-table son de cinco columnas y dejaban Año, Fuente y Editar en 0 px. */}
+        <colgroup><col style={{ width: '6%' }} /><col style={{ width: '8%' }} /><col style={{ width: withCertificates ? '20%' : '26%' }} /><col style={{ width: withCertificates ? '14%' : '20%' }} /><col style={{ width: '12%' }} /><col style={{ width: '6%' }} />{withCertificates && <col style={{ width: '18%' }} />}<col style={{ width: '9%' }} />{canEdit && <col style={{ width: '7%' }} />}</colgroup>
+        <thead><tr><th>N.º RUP</th><th title="Número consecutivo del contrato en el RUP: el que piden los pliegos">Consecutivo</th><th>Contratante</th><th>Objeto</th><th className="numeric">Valor</th><th>Año</th>{withCertificates && <th className="company-certificate-col">Certificado</th>}<th>Fuente</th>{canEdit && <th><span className="sr-only">Acciones</span></th>}</tr></thead>
         <tbody>{experience.map(row => {
           const smmlv = toNumber(row.value_smmlv); const cop = toNumber(row.value_cop);
           return <tr key={row.id}>
@@ -237,13 +244,53 @@ export function CompanyExperienceSection({ experience, available, canEdit, onSav
             <td>{row.contract_object || <span className="muted">Por confirmar</span>}</td>
             <td className="numeric">{smmlv !== null ? `${decimalFormatter.format(smmlv)} SMMLV` : cop !== null ? moneyFormatter.format(cop) : '—'}</td>
             <td>{row.contract_year ?? <span className="muted">—</span>}</td>
+            {withCertificates && <td><CertificateCell row={row} canEdit={canEdit && Boolean(onSaveCertificate)} onSave={onSaveCertificate} /></td>}
             <td><small>{row.source}</small></td>
             {canEdit && <td><button type="button" className="secondary" onClick={() => setEditing({ record: row })}>Editar<span className="sr-only">: contrato {row.contracting_party}</span></button></td>}
           </tr>;
         })}</tbody>
-      </table></div>}
+      </table></div></>}
     {editing && <CompanyRecordDialog title={editing.record.id ? 'Editar contrato' : 'Agregar contrato'} fields={EXPERIENCE_FIELDS} initial={editing.record as Record<string, unknown>} onCancel={() => setEditing(null)} onSave={async values => { await onSave(values as Partial<CompanyExperience>); setEditing(null); }} />}
   </section>;
+}
+
+/** A qué cliente pedirle certificados primero (Juan, 2026-11-10: no hay carpeta con ellos; hay que pedirlos). */
+function CertificateRequestPlan({ experience }: { experience: CompanyExperience[] }) {
+  const plan = certificateRequestPlan(experience, { limit: 8 });
+  const percent = (value: number) => `${Math.round(value * 100)} %`;
+  return <div className="company-certificate-plan">
+    <div className="company-certificate-plan-head">
+      <strong>Certificados por pedir</strong>
+      <span>{plan.counts.completo + plan.counts.recibido} de {plan.total_contracts} contratos con certificado · {plan.counts.pedido} pedidos · {plan.counts.falta + plan.counts.incompleto} por conseguir, de {plan.clients_to_request} clientes</span>
+    </div>
+    {plan.top.length > 0 && <>
+      <p className="muted">Pida primero a estos clientes: un mismo cliente certifica varios contratos. Van en orden del valor que destraban.</p>
+      <ol>{plan.top.map(client => <li key={client.key}>
+        <strong>{client.name}</strong>
+        <span>{client.contracts.length} contrato{client.contracts.length === 1 ? '' : 's'} · {decimalFormatter.format(client.smmlv)} SMMLV · {percent(client.share)} del valor (acumulado {percent(client.accumulated_share)})</span>
+        <small>Consecutivos RUP: {client.contracts.map(item => item.consecutive || '—').join(', ')}{client.contracts.some(item => item.status === 'incompleto') ? ' · hay uno incompleto: pedirlo de nuevo' : ''}</small>
+      </li>)}</ol>
+    </>}
+  </div>;
+}
+
+function CertificateCell({ row, canEdit, onSave }: { row: CompanyExperience; canEdit: boolean; onSave?: (input: CertificateInput) => Promise<void> }) {
+  const status = row.certificate_status || 'falta';
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState(row.certificate_note || '');
+  const save = (next: string, nextNote: string | null) => onSave?.({ id: row.id, certificate_status: next, certificate_note: nextNote });
+  if (!canEdit) return <span className={`company-certificate company-certificate-${status}`}>{CERTIFICATE_STATUSES[status as keyof typeof CERTIFICATE_STATUSES] || status}{row.certificate_note ? <small>{row.certificate_note}</small> : null}</span>;
+  return <div className={`company-certificate company-certificate-${status}`}>
+    <select aria-label={`Certificado del contrato ${row.rup_consecutive || row.contracting_party}`} value={status} onChange={event => void save(event.target.value, row.certificate_note || null)}>
+      {Object.entries(CERTIFICATE_STATUSES).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+    </select>
+    {noteOpen
+      ? <form onSubmit={event => { event.preventDefault(); void save(status, note.trim() || null); setNoteOpen(false); }}>
+        <input value={note} onChange={event => setNote(event.target.value)} maxLength={500} placeholder="Qué le falta, a quién se pidió" autoFocus />
+        <button type="submit" className="secondary">Guardar</button>
+      </form>
+      : <button type="button" className="link-button" title={row.certificate_note || undefined} onClick={() => setNoteOpen(true)}>{row.certificate_note || 'Agregar nota'}</button>}
+  </div>;
 }
 
 export function CompanyFinancialSection({ profile }: { profile: TenderCompanyProfile }) {

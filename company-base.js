@@ -13,9 +13,11 @@ export const COMPANY_BASE_REGISTRY_SELECT = assertAgt002CompanyEvidenceRegistryM
   COMPANY_BASE_REGISTRY_ALLOWED_COLUMNS,
 );
 export const COMPANY_SITE_SELECT = 'id,department,city,address,is_main,supervigilancia_authorization,support_document_id,notes,source,updated_at';
-export const COMPANY_EXPERIENCE_SELECT = 'id,rup_number,rup_consecutive,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,notes,updated_at';
+export const COMPANY_EXPERIENCE_SELECT = 'id,rup_number,rup_consecutive,contracting_party,contract_object,value_smmlv,value_cop,contract_year,source,notes,updated_at,certificate_status,certificate_note,certificate_updated_at';
+// Mejora 9: sin la migración 198 no están las columnas del certificado y la lectura sigue sin ellas.
+const COMPANY_EXPERIENCE_SELECT_SIN_CERTIFICADO = COMPANY_EXPERIENCE_SELECT.replace(',certificate_status,certificate_note,certificate_updated_at', '');
 // Mejora 8: sin la migración 194 la columna no existe y la lectura sigue sin ella.
-const COMPANY_EXPERIENCE_SELECT_SIN_CONSECUTIVO = COMPANY_EXPERIENCE_SELECT.replace(',rup_consecutive', '');
+const COMPANY_EXPERIENCE_SELECT_SIN_CONSECUTIVO = COMPANY_EXPERIENCE_SELECT_SIN_CERTIFICADO.replace(',rup_consecutive', '');
 
 // Tablas opcionales hasta aplicar 127: la vista sigue funcionando sin ellas.
 const TABLE_ABSENT_ERROR_CODES = ['PGRST205', '42P01'];
@@ -71,6 +73,9 @@ async function experienceRows(database) {
   if (!error) return { rows: data || [], available: true };
   if (TABLE_ABSENT_ERROR_CODES.includes(error.code)) return { rows: [], available: false };
   if (!COLUMN_ABSENT_ERROR_CODES.includes(String(error.code))) throw error;
+  const sinCertificado = await consulta(COMPANY_EXPERIENCE_SELECT_SIN_CERTIFICADO);
+  if (!sinCertificado.error) return { rows: sinCertificado.data || [], available: true };
+  if (!COLUMN_ABSENT_ERROR_CODES.includes(String(sinCertificado.error.code))) throw sinCertificado.error;
   return optionalRows(consulta(COMPANY_EXPERIENCE_SELECT_SIN_CONSECUTIVO));
 }
 
@@ -262,6 +267,28 @@ export async function recordUploadAsVerification(database, { entryId, documentId
   } catch {
     return null;
   }
+}
+
+const CERTIFICATE_STATUS_VALUES = ['falta', 'pedido', 'recibido', 'incompleto', 'completo'];
+
+/** Mejora 9: el estado del certificado de una experiencia y su nota (qué le falta, a quién se le pidió). */
+export async function saveExperienceCertificate(database, input, actorId) {
+  const id = text(input?.id, 36);
+  if (!id) throw inputError('Falta el contrato.');
+  const status = String(input?.certificate_status || '');
+  if (!CERTIFICATE_STATUS_VALUES.includes(status)) throw inputError('El estado del certificado no es válido.');
+  const { data, error } = await database.from('psi_company_experience')
+    .update({ certificate_status: status, certificate_note: text(input?.certificate_note, 500), certificate_updated_at: new Date().toISOString(), updated_by: actorId })
+    .eq('id', id).select(COMPANY_EXPERIENCE_SELECT).single();
+  if (error) {
+    if (COLUMN_ABSENT_ERROR_CODES.includes(String(error.code))) {
+      const unavailable = new Error('El estado del certificado aún no está habilitado (falta aplicar la migración 198).');
+      unavailable.status = 409;
+      throw unavailable;
+    }
+    throw error;
+  }
+  return data;
 }
 
 export function saveCompanyExperience(database, input, actorId) {

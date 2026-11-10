@@ -90,6 +90,10 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
 
   const saveSite = async (site: Parameters<typeof mutationActions.saveCompanySite>[0]) => { await mutationActions.saveCompanySite(site); await reloadBase(); setMessage('Sede guardada.'); };
   const saveExperience = async (row: Parameters<typeof mutationActions.saveCompanyExperience>[0]) => { await mutationActions.saveCompanyExperience(row); await reloadBase(); setMessage('Contrato guardado.'); };
+  const saveCertificate = async (input: Parameters<typeof mutationActions.saveExperienceCertificate>[0]) => {
+    try { await mutationActions.saveExperienceCertificate(input); await reloadBase(); setMessage('Certificado actualizado.'); }
+    catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
+  };
 
   const beginEditing = (trigger: HTMLButtonElement) => {
     if (!canConfigure) return;
@@ -211,7 +215,7 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
       canDecide={canManageDocuments} onDecide={decideEvidence}
       onUploadSupport={canManageDocuments && !editing ? openUploadDialog : undefined} />
     <CompanySitesSection sites={companyBase.sites} documents={documents} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveSite} />
-    <CompanyExperienceSection experience={companyBase.experience} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveExperience} />
+    <CompanyExperienceSection experience={companyBase.experience} available={companyBase.structured_tables_available} canEdit={canConfigure} onSave={saveExperience} onSaveCertificate={saveCertificate} />
     <CompanyFinancialSection profile={persistedCompany} />
 
     <section className="panel company-documents-panel" aria-labelledby="company-documents-heading">

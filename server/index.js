@@ -99,7 +99,7 @@ import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunBy
 import { agt003PreparationDate } from '../verticales/comercial/agt003-copilot-input.js';
 import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
-import { loadCompanyBase, recordUploadAsVerification, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite } from '../company-base.js';
+import { loadCompanyBase, recordUploadAsVerification, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite, saveExperienceCertificate } from '../company-base.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
 import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
 import { TENDER_DOCUMENT_ORIGINS, normalizeTenderDocumentOrigin } from '../verticales/licitaciones/tender-document-origin.js';
@@ -2888,6 +2888,15 @@ app.post('/api/tender-company-experience', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     res.status(req.body?.id ? 200 : 201).json(await saveCompanyExperience(requireDb(), req.body, currentProfile.id));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+// Mejora 9 (Juan, 2026-11-10): el estado del certificado de cada experiencia, para saber qué pedirle a cada cliente.
+app.post('/api/tender-company-experience/certificate', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    res.json(await saveExperienceCertificate(requireDb(), req.body, currentProfile.id));
   } catch (error) { sendAuthError(res, error); }
 });
 
