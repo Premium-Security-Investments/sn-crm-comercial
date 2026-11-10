@@ -8087,7 +8087,7 @@ app.get('/api/tender-allies', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
     res.set('Cache-Control', 'private, no-store');
-    res.json({ ...(await listAllies(requireDb())), listing_source: VIGILANCE_LISTING_SOURCE });
+    res.json({ ...(await listAllies(requireDb(), { participationsSeed: VIGILANCE_PARTICIPATIONS_SEED })), listing_source: VIGILANCE_LISTING_SOURCE });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

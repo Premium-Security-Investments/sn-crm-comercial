@@ -44,8 +44,11 @@ async function all(database, table, select) {
   }
 }
 
-/** La base completa para la pantalla: empresas con sus ciudades y cuántas veces las vimos. Sin la 196, vacía. */
-export async function listAllies(database) {
+/**
+ * La base completa para la pantalla: empresas con sus ciudades y cuántas veces las vimos, y cuántas participaciones de la
+ * semilla faltan por cargar (para que la pantalla lo diga). Sin la 196, vacía.
+ */
+export async function listAllies(database, { participationsSeed = [] } = {}) {
   try {
     const [companies, offices, participations] = await Promise.all([
       all(database, 'psi_vigilance_companies', 'nit,dv,name,acronyms,representative,phone,email,license_resolution,role,contact,notes,updated_at'),
@@ -54,6 +57,7 @@ export async function listAllies(database) {
     ]);
     const citiesByNit = new Map();
     for (const office of offices) {
+      if (!String(office.city || '').trim() || !office.city_key) continue;
       const list = citiesByNit.get(office.nit) || [];
       if (!list.some(item => item.city_key === office.city_key)) list.push({ city: office.city, city_key: office.city_key, department: office.department });
       citiesByNit.set(office.nit, list);
@@ -64,9 +68,10 @@ export async function listAllies(database) {
       installed: true,
       companies: companies.map(company => ({ ...company, cities: citiesByNit.get(company.nit) || [], participations: partsByNit.get(company.nit) || [] })),
       participations_without_nit: participations.filter(part => !part.nit),
+      seed_missing: missingSeedCount(participations, participationsSeed),
     };
   } catch (error) {
-    if (missingTable(error)) return { installed: false, companies: [], participations_without_nit: [] };
+    if (missingTable(error)) return { installed: false, companies: [], participations_without_nit: [], seed_missing: 0 };
     throw error;
   }
 }
@@ -97,6 +102,12 @@ export async function loadAlliesListing(database, { actorId, listing, source, pa
     seeded += 1;
   }
   return { companies, offices, participations_seeded: seeded };
+}
+
+/** Cuántas participaciones de la semilla no están en la base (por proceso, empresa y tipo). */
+export function missingSeedCount(participations, participationsSeed) {
+  const seen = new Set(participations.map(participationKey));
+  return participationsSeed.map(normalizeSeedParticipation).filter(part => !seen.has(participationKey(part))).length;
 }
 
 const participationKey = part => [part.process_ref, part.company_label, part.kind].map(value => String(value || '').trim().toUpperCase()).join('|');
