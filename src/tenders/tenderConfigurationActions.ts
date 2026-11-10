@@ -45,6 +45,18 @@ export function createTenderConfigurationActions({ canConfigure, canDecideEviden
       if (!canConfigure) return null;
       return request<CompanyExperience>('/api/tender-company-experience/certificate', { method: 'POST', body: JSON.stringify(input) });
     },
+    async uploadExperienceCertificate(id: string, file: File): Promise<{ review: { status: string; reason?: string } } | null> {
+      if (!canConfigure) return null;
+      if (file.size > RUP_MAX_BYTES) throw new Error('El certificado supera 50MB.');
+      const ticket = await request<SignedUpload>('/api/tender-company-experience/certificate-upload-url', { method: 'POST', body: JSON.stringify({ id, name: file.name, size: file.size }) });
+      const uploaded = await uploadToSignedUrl(ticket.path, ticket.token, file);
+      if (uploaded.error) throw uploaded.error;
+      return request('/api/tender-company-experience/certificate-process', { method: 'POST', body: JSON.stringify({ id, name: file.name, mime_type: file.type, storage_path: ticket.path }) });
+    },
+    async reviewExperienceCertificate(id: string): Promise<{ status: string; reason?: string; code?: string | null } | null> {
+      if (!canConfigure) return null;
+      return request('/api/tender-company-experience/certificate-review', { method: 'POST', body: JSON.stringify({ id }) });
+    },
     async uploadCompanyDocument(file: File | undefined, metadata: CompanyDocumentMetadata): Promise<CompanyDocumentUploadResponse | null> {
       if (!canConfigure || !file) return null;
       if (file.size > RUP_MAX_BYTES) throw new Error('Error: el documento empresarial supera 50MB.');

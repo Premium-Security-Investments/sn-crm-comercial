@@ -11,7 +11,8 @@ export type CompanyRegistryEntry = {
   decision_support_document_id?: string | null;
 };
 export type CompanySite = { id: string; department: string; city?: string | null; address?: string | null; is_main: boolean; supervigilancia_authorization?: string | null; support_document_id?: string | null; notes?: string | null; source?: string | null };
-export type CompanyExperience = { id: string; rup_number?: number | null; rup_consecutive?: string | null; contracting_party: string; contract_object?: string | null; value_smmlv?: number | string | null; value_cop?: number | string | null; contract_year?: number | null; source: string; notes?: string | null; certificate_status?: string | null; certificate_note?: string | null; certificate_updated_at?: string | null };
+export type CompanyExperience = { id: string; rup_number?: number | null; rup_consecutive?: string | null; contracting_party: string; contract_object?: string | null; value_smmlv?: number | string | null; value_cop?: number | string | null; contract_year?: number | null; source: string; notes?: string | null; certificate_status?: string | null; certificate_note?: string | null; certificate_updated_at?: string | null; certificate_file_name?: string | null; certificate_uploaded_at?: string | null; certificate_text_source?: string | null; certificate_review?: CertificateReview | null; certificate_reviewed_at?: string | null };
+export type CertificateReview = { checks: Array<{ item: string; estado: string; detalle: string | null }>; sugerencia: 'completo' | 'incompleto'; resumen: string | null };
 export type CompanyBasePayload = { registry: CompanyRegistryEntry[]; sites: CompanySite[]; experience: CompanyExperience[]; structured_tables_available: boolean };
 
 export type CompanyBlockState = 'vencido' | 'vence_pronto' | 'al_dia' | 'sin_verificar';
