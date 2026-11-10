@@ -299,8 +299,8 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel, d
 const ITEM_STATUS_LABEL: Record<TenderDossierItem['status'], string> = { pendiente: 'Pendiente', en_progreso: 'En progreso', listo: 'Listo', bloqueado: 'Bloqueado' };
 const NEXT_STATUS: Partial<Record<TenderOfferStatus, { status: TenderOfferStatus; label: string }[]>> = {
   en_preparacion: [{ status: 'lista_para_presentar', label: 'Marcar lista para presentar' }],
-  lista_para_presentar: [{ status: 'presentada', label: 'Registrar oferta presentada' }],
-  presentada: [{ status: 'adjudicada', label: 'Registrar adjudicada' }, { status: 'no_adjudicada', label: 'Registrar no adjudicada' }],
+  // Presentada y el resultado se registran con su evidencia en «Oferta presentada» (offerRecord), como en el detalle
+  // anterior desde el 2026-11-07. Juan, 2026-11-10: Terminal se radicó y en Preparar no había dónde registrarlo.
 };
 
 function itemDueClass(item: TenderDossierItem, today: string) {
@@ -400,10 +400,12 @@ export function TenderOverdueStrip({ closeDate, overdue, notCurable, tramites = 
   </section>;
 }
 
-export function TenderPrepareView({ opportunityId, request, profiles, canApprove, report, closeDate, offerStatus, onOfferStatusChanged, channel, onSeedRequirements }: {
+export function TenderPrepareView({ opportunityId, request, profiles, canApprove, report, closeDate, offerStatus, onOfferStatusChanged, channel, offerRecord, onSeedRequirements }: {
   opportunityId: string; request: TenderRequest; profiles: TenderDossierAssignee[]; canApprove: boolean;
   report: Agt002InitialReport | null; closeDate: string | null; offerStatus: TenderOfferStatus | null;
   onOfferStatusChanged: () => Promise<void> | void; channel?: ReactNode;
+  /** «Oferta presentada»: radicado o RPL y resultado con su fuente. Lo arma quien monta la vista. */
+  offerRecord?: ReactNode;
   onSeedRequirements: () => Promise<{ inserted: number; tramites?: number }>;
 }) {
   const [workspace, setWorkspace] = useState<TenderDossierWorkspace | null>(null);
@@ -530,6 +532,7 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
       </div>}
     </section>
     {error && <div className="error" role="alert">{error}</div>}
+    {offerRecord}
 
     <TenderScheduleCard report={report} compact />
 
