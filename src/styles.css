@@ -1029,3 +1029,12 @@ td.numeric-value{white-space:nowrap}
 .company-fact-proposal dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0 0 6px}
 .company-fact-proposal dt{font-size:12px;color:#64748b}
 .company-fact-proposal dd{margin:2px 0 0}
+/* Aliados para uniones temporales (Licitaciones → Aliados) y posibles socios bajo la recomendación. */
+.tender-allies-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end}
+.tender-allies-scroll{overflow-x:auto}
+.tender-allies-table{width:100%;border-collapse:collapse;font-size:13px}
+.tender-allies-table th,.tender-allies-table td{padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
+.tender-allies-table tr.is-open{background:#f8fafc}
+.tender-allies-edit{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;align-items:end;border-top:1px solid #e2e8f0;padding-top:8px}
+.tw-ally-candidates{border-top:1px solid #e2e8f0;margin-top:8px;padding-top:8px}
+.tw-ally-candidates ul{margin:6px 0;padding-left:18px}

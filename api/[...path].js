@@ -177,6 +177,9 @@ import { listAgt002Clarifications, recordAgt002Clarification } from '../vertical
 import { decideAgt002Lesson, listAgt002Lessons } from '../verticales/licitaciones/agt002-company-lessons.js';
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
+import { addParticipation, cityKey, citiesToCover, listAllies, loadAlliesListing, rankAllyCandidates, updateAlly } from '../verticales/licitaciones/tender-allies.js';
+import { VIGILANCE_LISTING, VIGILANCE_LISTING_SOURCE } from '../data/aliados/listado-supervigilancia-2026-11-07.js';
+import { VIGILANCE_PARTICIPATIONS_SEED } from '../data/aliados/participaciones-semilla-2026-11-09.js';
 import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId, withEsuAliadosPriority } from '../esu-direct-crawl.js';
 import { isTenderProcessingJobSuperseded } from '../verticales/licitaciones/tender-processing-status.js';
@@ -546,6 +549,12 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/agt002-clarification-to-company-profile': ['tenders', ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE],
   // Lecciones de la empresa (Juan, 2026-11-07): sólo quien tiene el permiso de lecciones las ve y las decide.
   'GET /api/tender-lessons': ['tenders', ACTIONS.LICITACIONES_LESSONS_MANAGE],
+  // Aliados para uniones temporales (Juan, 2026-11-09): lo ve y lo edita quien opera Licitaciones.
+  'GET /api/tender-allies': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'POST /api/tender-allies/load': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'POST /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'POST /api/tender-allies/participation': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'GET /api/tender-allies/candidates': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-lessons/decision': ['tenders', ACTIONS.LICITACIONES_LESSONS_MANAGE],
   'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
@@ -8067,6 +8076,69 @@ app.post('/api/agt002-clarifications', async (req, res) => {
       { tenderLabel: await tenderLabelForOpportunity(database, opportunityId) },
     );
     return res.status(201).json({ ...recorded, company_profile_suggestion: suggestion });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Aliados para uniones temporales (encargo AGT-002 del 2026-11-09; Juan, 2026-11-09): botón «Aliados» al lado de
+// «Empresa» y «Lecciones». La base es la plataforma; el listado de la Superintendencia viene empacado y se carga (o se
+// actualiza) con un botón, sin tocar rol, contacto ni notas.
+app.get('/api/tender-allies', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ ...(await listAllies(requireDb())), listing_source: VIGILANCE_LISTING_SOURCE });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-allies/load', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    res.json(await loadAlliesListing(requireDb(), { actorId: currentProfile.id, listing: VIGILANCE_LISTING, source: VIGILANCE_LISTING_SOURCE, participationsSeed: VIGILANCE_PARTICIPATIONS_SEED }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-allies/company', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const body = req.body || {};
+    res.json(await updateAlly(requireDb(), { actorId: currentProfile.id, nit: body.nit, role: body.role, contact: body.contact, notes: body.notes }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-allies/participation', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    res.status(201).json(await addParticipation(requireDb(), { actorId: currentProfile.id, body: req.body || {} }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Candidatos para la recomendación «Solo en unión temporal»: lo que nos falta se calcula con la ficha (sedes con
+// autorización vigente), no con el listado.
+app.get('/api/tender-allies/candidates', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    const report = await readAgt002InitialAnalysisReport(database, opportunityId);
+    const label = report?.available ? String(report.report?.recommendation?.label || '') : '';
+    if (!/^solo en uni[oó]n temporal/i.test(label)) return res.json({ applies: false, cities: [], candidates: [] });
+    const allies = await listAllies(database);
+    if (!allies.installed || !allies.companies.length) return res.json({ applies: true, installed: allies.installed, cities: [], candidates: [] });
+    const { data: sites } = await database.from('psi_company_sites').select('city,supervigilancia_authorization');
+    const ourCityKeys = new Set((sites || []).filter(site => !/pendiente/i.test(String(site.supervigilancia_authorization || ''))).map(site => cityKey(site.city)));
+    const knownCityKeys = new Set(allies.companies.flatMap(company => company.cities.map(city => city.city_key)));
+    const keys = citiesToCover(label, { ourCityKeys, knownCityKeys });
+    const { data: tender } = await database.from('psi_public_tenders').select('ref').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
+    const candidates = rankAllyCandidates(allies.companies, { cityKeys: keys, processRef: tender?.ref || null });
+    const names = new Map(allies.companies.flatMap(company => company.cities).map(city => [city.city_key, city.city]));
+    res.json({ applies: true, installed: true, cities: keys.map(key => names.get(key) || key), candidates });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
