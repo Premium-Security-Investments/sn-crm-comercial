@@ -101,6 +101,7 @@ import { selectVigiaApprovedAssets } from '../verticales/comercial/vigia-approve
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { loadCompanyBase, recordUploadAsVerification, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite, saveExperienceCertificate } from '../company-base.js';
 import { reviewExperienceCertificate } from '../verticales/licitaciones/experience-certificate-review.js';
+import { pluralReadingFor } from '../verticales/licitaciones/tender-plural-reading.js';
 import { assessDifferentialBenefits, findDifferentialMentions, listDifferentialConditions, saveDifferentialCondition } from '../verticales/licitaciones/differential-conditions.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
 import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
@@ -8342,13 +8343,28 @@ app.get('/api/tender-allies/candidates', async (req, res) => {
     const allies = await listAllies(database);
     if (!allies.installed || !allies.companies.length) return res.json({ applies: true, installed: allies.installed, cities: [], candidates: [] });
     const { data: sites } = await database.from('psi_company_sites').select('city,supervigilancia_authorization');
-    const ourCityKeys = new Set((sites || []).filter(site => !/pendiente/i.test(String(site.supervigilancia_authorization || ''))).map(site => cityKey(site.city)));
+    const ourSites = (sites || []).filter(site => !/pendiente/i.test(String(site.supervigilancia_authorization || '')));
+    const ourCityKeys = new Set(ourSites.map(site => cityKey(site.city)));
+    const ourCities = new Map(ourSites.map(site => [cityKey(site.city), site.city]));
     const knownCityKeys = new Set(allies.companies.flatMap(company => company.cities.map(city => city.city_key)));
-    const keys = citiesToCover(label, { ourCityKeys, knownCityKeys });
-    const { data: tender } = await database.from('psi_public_tenders').select('ref').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
-    const candidates = rankAllyCandidates(allies.companies, { cityKeys: keys, processRef: tender?.ref || null });
     const names = new Map(allies.companies.flatMap(company => company.cities).map(city => [city.city_key, city.city]));
-    res.json({ applies: true, installed: true, cities: keys.map(key => names.get(key) || key), candidates });
+    const { data: tender } = await database.from('psi_public_tenders').select('ref').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
+    const missing = citiesToCover(label, { ourCityKeys, knownCityKeys });
+    // Encargo del 2026-11-10 (aprobado por Juan): primero cómo deja el pliego cumplir a un proponente plural.
+    const status = await readAgt002InitialAnalysisStatus(database, opportunityId);
+    const { data: version } = await database.from('psi_agt002_pre_go_analysis_versions').select('envelope')
+      .eq('analysis_run_id', status.runId).order('aggregate_version', { ascending: false }).limit(1).maybeSingle();
+    const { documents } = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
+    const reading = await pluralReadingFor(database, { opportunityId, runId: status.runId, envelope: version?.envelope, label, documents, knownCityKeys });
+    const allCities = (reading.required_cities || []).filter(key => knownCityKeys.has(key));
+    const list = keys => ({ cities: keys.map(key => names.get(key) || key), candidates: rankAllyCandidates(allies.companies, { cityKeys: keys, processRef: tender?.ref || null, ourCities }) });
+    const one = allCities.length > missing.length ? list(allCities) : null;
+    const sum = list(missing);
+    const readingOut = { mode: reading.mode, quote: reading.quote, quote_verified: reading.quote_verified, document_name: reading.document_name, locator: reading.locator, explanation: reading.explanation };
+    // uno_cumple: el socio necesita todas las ciudades del requisito. se_suma: sólo lo que nos falta. no_dice: las dos.
+    if (reading.mode === 'uno_cumple' && one) return res.json({ applies: true, installed: true, reading: readingOut, ...one });
+    if (reading.mode === 'no_dice' && one) return res.json({ applies: true, installed: true, reading: readingOut, ...one, alternative: { label: 'Si la Entidad acepta sumar entre integrantes', ...sum } });
+    res.json({ applies: true, installed: true, reading: readingOut, ...sum });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

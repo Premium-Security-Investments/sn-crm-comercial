@@ -173,7 +173,8 @@ test('la ficha de una empresa se abre en una ventana desde «Posibles socios»',
   assert.equal(company.participations.length, 1);
   await assert.rejects(getAlly(database, 'x'), /no es válida/);
   const candidates = read('src/tenders/components/TenderAllyCandidates.tsx');
-  assert.match(candidates, /onClick=\{\(\) => setCard\(candidate\.nit\)\}/);
+  assert.match(candidates, /onClick=\{\(\) => onOpen\(candidate\.nit\)\}/);
+  assert.match(candidates, /<CandidateList candidates=\{data\.candidates\} onOpen=\{setCard\} \/>/);
   assert.match(candidates, /<AllyCardDialog nit=\{card\}/);
   assert.match(read('server/index.js'), /'GET \/api\/tender-allies\/company': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
 });
