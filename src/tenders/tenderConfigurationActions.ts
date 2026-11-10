@@ -41,6 +41,10 @@ export function createTenderConfigurationActions({ canConfigure, canDecideEviden
       if (!canConfigure) return null;
       return request<CompanyExperience>('/api/tender-company-experience', { method: 'POST', body: JSON.stringify(experience) });
     },
+    async saveExperienceCertificate(input: { id: string; certificate_status: string; certificate_note: string | null }): Promise<CompanyExperience | null> {
+      if (!canConfigure) return null;
+      return request<CompanyExperience>('/api/tender-company-experience/certificate', { method: 'POST', body: JSON.stringify(input) });
+    },
     async uploadCompanyDocument(file: File | undefined, metadata: CompanyDocumentMetadata): Promise<CompanyDocumentUploadResponse | null> {
       if (!canConfigure || !file) return null;
       if (file.size > RUP_MAX_BYTES) throw new Error('Error: el documento empresarial supera 50MB.');
