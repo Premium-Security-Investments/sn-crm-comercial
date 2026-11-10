@@ -480,9 +480,12 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
    * "una vez el cliente haya realizado el pago", así que el dato que importa no es lo facturado sino lo pagado.
    *
    * La parte pagada de cada factura se estima sin IVA: `amount_untaxed × (1 − amount_residual / amount_total)`.
-   * `amount_residual` viene con IVA, por eso se pasa a proporción. El comercial es `invoice_user_id`, el vendedor
-   * que Avancys anota en la factura. Las notas crédito restan. Es una REFERENCIA: el número que se paga es el de
-   * cartera.
+   * `amount_residual` viene con IVA, por eso se pasa a proporción. Las notas crédito restan. Es una REFERENCIA: el
+   * número que se paga es el de cartera.
+   *
+   * El comercial es el ASIGNADO AL CLIENTE (`res.partner.user_id`), no `invoice_user_id`. Medido en producción el
+   * 2026-11-10: `invoice_user_id` es quien elabora la factura — una sola persona de facturación aparecía con 1.574 de
+   * las 1.900 facturas de octubre y 10.252 millones —, así que no sirve para atribuir comisiones.
    */
   async function cobroPorComercial({ mes }) {
     if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) falla('AVANCYS_MES_INVALIDO');
@@ -493,6 +496,15 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
       [['move_type', 'in', ['out_invoice', 'out_refund']], ['state', '=', 'posted'],
        ['invoice_date', '>=', desde], ['invoice_date', '<=', hasta]],
       { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+
+    // El comercial de cada cliente, en una lectura por lotes de los clientes facturados.
+    const idsCliente = [...new Set(filas.map(fila => unoAMuchos(fila.partner_id)).filter(id => id !== null))];
+    const comercialDelCliente = new Map();
+    for (let desde = 0; desde < idsCliente.length; desde += 500) {
+      const lote = idsCliente.slice(desde, desde + 500);
+      const clientes = await leer('cliente', [['id', 'in', lote]], { limite: lote.length });
+      for (const cliente of clientes) comercialDelCliente.set(cliente.id, cliente.user_id || false);
+    }
 
     const estados = new Map();
     const porComercial = new Map();
@@ -507,11 +519,12 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
       const e = estados.get(estado) || { estado, facturas: 0, facturado: 0 };
       e.facturas += 1; e.facturado += sinIva;
       estados.set(estado, e);
-      const idComercial = unoAMuchos(fila.invoice_user_id);
+      const asignado = comercialDelCliente.get(unoAMuchos(fila.partner_id));
+      const idComercial = unoAMuchos(asignado);
       const clave = idComercial === null ? 'sin_comercial' : String(idComercial);
       const c = porComercial.get(clave) || {
         avancys_user_id: idComercial,
-        nombre: Array.isArray(fila.invoice_user_id) ? texto(fila.invoice_user_id[1]) : null,
+        nombre: Array.isArray(asignado) ? texto(asignado[1]) : null,
         facturas: 0, facturado: 0, pagado: 0, pendiente: 0,
       };
       c.facturas += 1; c.facturado += sinIva; c.pagado += pagadoSinIva; c.pendiente += sinIva - pagadoSinIva;
