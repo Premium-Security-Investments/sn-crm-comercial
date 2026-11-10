@@ -1091,3 +1091,11 @@ td.numeric-value{white-space:nowrap}
 .company-certificate-review{display:grid;gap:8px;padding:4px 2px;text-align:left;white-space:normal}.company-certificate-review li{text-align:left}.company-certificate-review-head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}.company-certificate-review-head span{font-size:13px;color:#40516b}
 .company-certificate-review p{margin:0}.company-certificate-review ul{margin:0;padding-left:18px;display:grid;gap:3px;font-size:13px}
 .company-certificate-check-falta,.company-certificate-check-no_coincide{color:#9a3412}.company-certificate-check-ok{color:#166534}.company-certificate-check-no_verificable{color:#526173}
+
+/* La ficha de un aliado en una ventana, desde «Posibles socios» en Decidir (Juan, 2026-11-10). */
+.tw-ally-name{all:unset;cursor:pointer;font-weight:800;color:#174ea6;text-decoration:underline;text-decoration-color:rgba(23,78,166,.35);text-underline-offset:3px}.tw-ally-name:hover{text-decoration-color:#174ea6}.tw-ally-name:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
+.ally-card-dialog{width:min(1000px,100%);max-height:calc(100vh - 32px);overflow:auto;display:grid;gap:14px;padding:20px;border-radius:20px;background:#fff;box-shadow:0 28px 70px rgba(8,15,28,.35);outline:none}
+.ally-card-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;position:sticky;top:-20px;background:#fff;padding-top:4px;z-index:1}
+.ally-card-dialog h4{margin:4px 0 0;color:#10213d;font-size:20px}.ally-card-dialog header small{display:block;color:#66758c}
+.ally-card-dialog .tender-allies-detail{padding:0}
+@media(max-width:760px){.ally-card-dialog .tender-allies-detail{grid-template-columns:minmax(0,1fr)}}
