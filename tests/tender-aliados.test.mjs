@@ -72,9 +72,14 @@ test('migración 196: la recarga no toca rol, contacto ni notas; las participaci
   await pg.close();
 });
 
-test('pantalla y rutas: botón «Aliados» junto a «Lecciones», candidatos bajo la recomendación', () => {
+test('pantalla y rutas: Empresa, Aliados y Lecciones juntos a la derecha; candidatos bajo la recomendación', () => {
   const nav = read('src/tenders/components/TenderModuleNavigation.tsx');
-  assert.ok(nav.indexOf('Lecciones') < nav.indexOf('Aliados'));
+  const at = word => nav.indexOf(`\n        ${word}\n`);
+  assert.ok(nav.indexOf('tender-module-actions') < at('Empresa') && at('Empresa') < at('Aliados') && at('Aliados') < at('Lecciones'));
+  const view = read('src/tenders/TenderAlliesView.tsx');
+  assert.doesNotMatch(view, /loadListing|Actualizar listado/, 'sin botón de recarga (Juan, 2026-11-10)');
+  assert.match(view, /Vista en procesos/);
+  assert.match(view, /\+ Agregar proceso/);
   assert.match(read('src/tenders/workspace/TenderWorkspace.tsx'), /initialReportRecommendationText\(report\.recommendation\.label\)\}<\/p>\n\s+\{\/\*[^\n]*\*\/\}\n\s+\{allies\}/);
   const server = read('server/index.js');
   assert.match(server, /'GET \/api\/tender-allies\/candidates': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
