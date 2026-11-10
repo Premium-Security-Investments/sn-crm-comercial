@@ -14,6 +14,8 @@ export const PARTICIPATION_KINDS = Object.freeze({
   adjudicatario: 'Adjudicatario', contratista_actual: 'Contratista actual', otro: 'Otro',
 });
 export const OUR_NIT = '891408256';
+// Estatal de Seguridad nunca se propone como socio (Juan, 2026-11-10); sigue contando como competidor.
+export const NEVER_PROPOSED_NITS = Object.freeze(['816004965']);
 const ROLE_ORDER = ['aliado', 'aliado_potencial', 'sin_clasificar', 'competidor'];
 
 /** Clave de ciudad: minúsculas, sin tildes, sin «D.C.», sin signos. */
@@ -211,22 +213,25 @@ export function citiesToCover(label, { ourCityKeys = new Set(), knownCityKeys = 
 }
 
 /** Hasta `limit` candidatos que tienen oficina en todas las ciudades (o, si nadie, los que cubren más), sin descartados. */
-export function rankAllyCandidates(companies, { cityKeys, processRef = null, limit = 5 }) {
+export function rankAllyCandidates(companies, { cityKeys, processRef = null, limit = 5, ourCities = new Map() }) {
   if (!cityKeys.length) return [];
   const target = normProcess(processRef);
   const scored = companies
-    .filter(company => company.role !== 'descartado' && company.role !== 'nosotros' && company.nit !== OUR_NIT)
+    .filter(company => company.role !== 'descartado' && company.role !== 'nosotros' && company.nit !== OUR_NIT && !NEVER_PROPOSED_NITS.includes(company.nit))
     .map(company => {
       const have = new Set((company.cities || []).map(city => city.city_key));
       const covered = cityKeys.filter(key => have.has(key));
       const inProcess = target ? (company.participations || []).filter(part => normProcess(part.process_ref) === target || (target.length >= 6 && normProcess(part.process_ref).includes(target))) : [];
       const incumbent = inProcess.some(part => part.kind === 'contratista_actual' || part.kind === 'adjudicatario');
+      // Encargo del 2026-11-10, punto 2: no se esconde a nadie; se avisa si tiene oficina en nuestras ciudades.
+      const ourZone = [...ourCities.keys()].filter(key => have.has(key)).map(key => ourCities.get(key));
       return {
         nit: company.nit, name: company.name, role: company.role, contact: [company.contact_name, company.contact_title, company.contact_phone, cleanEmail(company.contact_email)].filter(Boolean).join(' · ') || company.contact || null, phone: company.phone || null, email: cleanEmail(company.email),
         covered: covered.map(key => (company.cities || []).find(city => city.city_key === key)?.city || key),
         covers_all: covered.length === cityKeys.length,
         times_seen: (company.participations || []).length,
         warning: incumbent ? 'Es el contratista actual de este proceso.' : inProcess.length ? 'Ya se mueve en este proceso (ofertó u observó): es competidor directo.' : company.role === 'competidor' ? 'Lo tenemos marcado como competidor.' : null,
+        zone_warning: ourZone.length ? `Tiene oficina en ${ourZone.join(' y ')}: compite en nuestra zona.` : null,
         evidence: 'Oficina en el listado de la Superintendencia de Vigilancia; para el pliego hay que pedirle la resolución y el certificado de Cámara.',
         _score: [covered.length === cityKeys.length ? 0 : 1, -covered.length, ROLE_ORDER.indexOf(company.role), -((company.participations || []).length), -(company.cities || []).length],
       };

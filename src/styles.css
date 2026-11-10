@@ -1123,3 +1123,9 @@ td.numeric-value{white-space:nowrap}
 .tw-differential{border-top:1px solid #e2e8f0;margin-top:8px;padding-top:8px}.tw-differential>ul{margin:6px 0;padding-left:18px;display:grid;gap:8px}
 .tw-differential li>span{display:block;color:#40516b}.tw-differential details{font-size:12px}.tw-differential details ul{padding-left:16px;margin:4px 0}
 .tw-differential-aplica>b{color:#166534}.tw-differential-por_confirmar>b{color:#92400e}.tw-differential-no_aplica>b{color:#475569}
+
+/* Lectura del pliego para uniones temporales encima de «Posibles socios» (encargo AGT-002 del 2026-11-10). */
+.tw-ally-reading{margin:6px 0 2px;padding:8px 10px;border-left:3px solid #1d4ed8;background:#f5f8ff;border-radius:6px}
+.tw-ally-reading blockquote{margin:6px 0 0;font-style:italic;color:#334155}
+.tw-ally-source{font-size:12px;margin:4px 0}
+.tw-ally-zone{color:#92400e;font-size:13px}
