@@ -108,6 +108,52 @@ export function generalEvaluation(risks) {
  * `images`: { [evidenciaId]: { base64, mime, width, height } } — sólo las que el archivo pudo preparar (JPG/PNG
  * reducidos); una evidencia sin imagen preparada se cita por nombre y huella.
  */
+// Migración 201: los antecedentes del puesto en SecurityOps, con fuente y fecha de corte. Sólo conteos y los reportes
+// de riesgo escritos para esto («Alerta de Riesgos» y el «Estudio de seguridad» del historial del puesto).
+const TIPO_NOVEDAD = { general: 'generales', seguridad: 'de seguridad', tecnologia: 'de tecnología', infraestructura: 'de infraestructura', dotacion: 'de dotación', panico: 'de pánico', judicializacion: 'de judicialización', otro: 'otras' };
+const TIPO_VISITA = { supervision: 'de supervisión', aprovisionamiento: 'de aprovisionamiento', soporte_tecnico: 'de soporte técnico' };
+const counts = (map, words) => Object.entries(map || {}).sort((a, b) => b[1] - a[1]).map(([key, n]) => `${n} ${words[key] || key}`).join(', ');
+
+function secopsSource(secops, ref) {
+  const match = /^securityops:(alerta|nota):(.+)$/.exec(String(ref || ''));
+  if (!secops || !match) return null;
+  const item = ((match[1] === 'alerta' ? secops.alertas : secops.notas) || []).find(entry => entry.id === match[2]);
+  if (!item) return null;
+  return match[1] === 'alerta'
+    ? `la Alerta de Riesgos de SecurityOps del ${item.fecha ? longDate(item.fecha) : 'puesto'}`
+    : `la nota «${item.titulo || 'Estudio de seguridad'}» del historial del puesto en SecurityOps${item.fecha ? ` (${longDate(item.fecha)})` : ''}`;
+}
+
+function secopsSection(secops, { h2, p, list, blocks }) {
+  if (!secops) return;
+  const r = secops.resumen || {};
+  h2('Antecedentes operativos del puesto (SecurityOps)');
+  p(clip(`Fuente: SecurityOps, puesto «${secops.puesto?.nombre || ''}»${secops.puesto?.direccion ? `, ${secops.puesto.direccion}` : ''}. Periodo: ${secops.ventana?.desde ? longDate(secops.ventana.desde) : '—'} a ${secops.ventana?.hasta ? longDate(secops.ventana.hasta) : '—'}; datos con corte al ${secops.corte ? longDate(secops.corte) : '—'}.`, 900));
+  const rows = [
+    ['Novedades reportadas', `${r.novedades?.total ?? 0}${r.novedades?.total ? ` (${counts(r.novedades.por_tipo, TIPO_NOVEDAD)})` : ''}`],
+    ['Novedades de prioridad alta o crítica', String(r.novedades?.altas ?? 0)],
+    ['Rondas registradas', `${r.rondas?.total ?? 0}${r.rondas?.completitud_promedio != null ? `, con ${r.rondas.completitud_promedio} % de puntos marcados en promedio` : ''}`],
+    ['Visitas al puesto', `${r.visitas?.total ?? 0}${r.visitas?.total ? ` (${counts(r.visitas.por_tipo, TIPO_VISITA)})` : ''}${r.visitas?.ultima ? `; la última el ${longDate(r.visitas.ultima)}` : ''}`],
+    ['Fallas de medios técnicos reportadas', `${r.fallas?.total ?? 0}${r.fallas?.abiertas ? `, ${r.fallas.abiertas} abiertas al corte` : ''}`],
+    ['Visitas técnicas', String(r.visitas_tecnicas?.total ?? 0)],
+  ];
+  blocks.push({ kind: 'table', header: ['Indicador', 'Últimos 12 meses'], rows: rows.map(row => row.map(value => clip(value, 400))) });
+  const failures = (secops.fallas || []).filter(item => item.titulo).slice(0, 12);
+  if (failures.length) list(failures.map(item => clip(`${item.fecha ? longDate(item.fecha) : ''} · ${item.titulo}${item.abierta ? ' (abierta)' : ''}`, 300)));
+  if (secops.alertas?.length) {
+    h2('Alertas de riesgo reportadas en campo');
+    blocks.push({ kind: 'table', header: ['Fecha', 'Riesgo', 'Descripción', 'Recomendaciones'], rows: secops.alertas.slice(0, 40).map(item => [item.fecha ? longDate(item.fecha) : '—', clip(item.riesgo, 300), clip(item.descripcion, 1200) || '—', clip(item.recomendaciones, 1200) || '—']) });
+  }
+  if (secops.notas?.length) {
+    h2('Notas de coordinación para el estudio');
+    for (const note of secops.notas.slice(0, 20)) {
+      p(clip(`${note.fecha ? `${longDate(note.fecha)} · ` : ''}${note.titulo || 'Estudio de seguridad'}${note.realizado_por ? ` — ${note.realizado_por}` : ''}`, 400));
+      if (note.detalle) p(clip(note.detalle, 4000));
+      if (note.recomendaciones) p(clip(`Recomendaciones: ${note.recomendaciones}`, 4000));
+    }
+  }
+}
+
 export function buildStudyReport(snapshot, meta, images = {}) {
   const study = snapshot.estudio;
   const template = PLANTILLAS[study.plantilla];
@@ -188,6 +234,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   if (caracter.grupos_delincuenciales) { h2('Grupos y organizaciones delincuenciales'); p(clip(caracter.grupos_delincuenciales, 5000)); }
   if (caracter.fuentes?.length) { h2('Fuentes'); list(caracter.fuentes.slice(0, 15).map(fuente => clip(`${fuente.nombre}${fuente.fecha ? ` (${longDate(fuente.fecha)})` : ''}${fuente.url ? ` · ${fuente.url}` : ''}`, 600))); }
   if (caracter.contexto_interno) { h2('Contexto interno'); p(clip(caracter.contexto_interno, 5800)); }
+  secopsSection(snapshot.securityops, { h2, p, list, blocks });
   const support = contacts.filter(row => row.tipo === 'apoyo');
   if (support.length) {
     h2('Entidades de apoyo');
@@ -256,6 +303,10 @@ export function buildStudyReport(snapshot, meta, images = {}) {
     ];
     if (recommendations.length) list(recommendations); else p('Sin recomendaciones registradas.');
     if (risk.origen === 'agente') blocks.push({ kind: 'center', text: 'Registrado a partir de la nota de campo, con apoyo de Vig-IA, y calificado por una persona.' });
+    if (risk.origen === 'securityops') {
+      const source = secopsSource(snapshot.securityops, risk.fuente);
+      blocks.push({ kind: 'center', text: clip(`Registrado a partir de ${source || 'un reporte de SecurityOps'}, y calificado por una persona.`, 400) });
+    }
   }
 
   // Capítulo I-C: plan estratégico.

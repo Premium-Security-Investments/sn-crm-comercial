@@ -1,0 +1,36 @@
+[Unit]
+Description=Estudios de Seguridad <- SecurityOps: directorio de puestos y antecedentes de cada estudio vinculado
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/estudios-seguridad/run-estudios-seguridad-securityops.mjs
+
+# Lee SecurityOps con la cuenta de servicio vigia-operaciones-lectura (roles/datastore.viewer: no puede escribir) y
+# escribe sólo en las tablas de la migración 201 del SIIO. Juan, 2026-11-10: "podemos construir ya". Sin estudios
+# vinculados sólo refresca el directorio una vez al día. A Firestore se le piden únicamente los campos de FIELDS en
+# verticales/estudios-seguridad/securityops.js: nada de nombres, cédulas, selfies ni biometría.
+#
+# La ruta real (release) la pone el drop-in `10-release.conf`, como en los demás trabajos.
+Environment=ESTUDIOS_SECURITYOPS_KEY_FILE=/root/.vigia-firestore/clave.json
+
+# Root porque la llave vive en /root/.vigia-firestore (600); de la casa de root sólo ve esa carpeta, y de sólo lectura.
+ProtectHome=tmpfs
+BindReadOnlyPaths=/root/.vigia-firestore
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+TimeoutStartSec=600

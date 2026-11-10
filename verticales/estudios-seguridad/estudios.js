@@ -12,6 +12,7 @@ import { METODOLOGIA_V1, valorarRiesgo } from './metodologia.js';
 import { PLANTILLAS } from './plantilla.js';
 import { listEvidence } from './evidencias.js';
 import { cleanCharacterization, loadCharacterization } from './caracterizacion.js';
+import { loadSecurityOps } from './securityops.js';
 
 export const STUDY_TABLE = 'psi_security_studies';
 export const ZONE_TABLE = 'psi_security_study_zones';
@@ -170,12 +171,13 @@ export function valuateRisk(row, methodologyId = METODOLOGIA_V1.id) {
 
 export async function getStudy(db, id) {
   const study = await readStudy(db, id);
-  const [zones, risks, actions, evidence, characterization] = await Promise.all([
+  const [zones, risks, actions, evidence, characterization, securityops] = await Promise.all([
     must(db.from(ZONE_TABLE).select('*').eq('study_id', study.id).order('position', { ascending: true })),
     must(db.from(RISK_TABLE).select('*').eq('study_id', study.id).order('number', { ascending: true })),
     must(db.from(ACTION_TABLE).select('*').eq('study_id', study.id).order('created_at', { ascending: true })),
     listEvidence(db, study.id),
     loadCharacterization(db, study.id),
+    loadSecurityOps(db, study),
   ]);
   const valued = (risks || []).map(risk => ({ ...risk, valuation: valuateRisk(risk, study.methodology_id) }));
   const levels = { actual: {}, residual: {} };
@@ -192,6 +194,7 @@ export async function getStudy(db, id) {
     evidence: evidence.evidence,
     evidence_available: evidence.available,
     characterization,
+    securityops,
     summary: { risks: valued.length, levels },
     editable: EDITABLE_STATUSES.has(study.status),
     methodology: METODOLOGIAS[study.methodology_id] || null,
@@ -275,7 +278,7 @@ async function requireZoneInStudy(db, studyId, zoneId) {
   await readChild(db, ZONE_TABLE, studyId, zoneId, 'Zona');
 }
 
-export async function addRisk(db, studyId, body = {}, profile, { now = new Date(), origin = 'manual' } = {}) {
+export async function addRisk(db, studyId, body = {}, profile, { now = new Date(), origin = 'manual', sourceRef = null } = {}) {
   const study = await requireEditable(db, studyId);
   const row = cleanRiskInput(body, PLANTILLAS[study.template_id]);
   await requireZoneInStudy(db, study.id, row.zone_id);
@@ -283,7 +286,9 @@ export async function addRisk(db, studyId, body = {}, profile, { now = new Date(
   const number = Math.max(0, ...(numbers || []).map(risk => risk.number)) + 1;
   const stamp = now.toISOString();
   const risk = await must(db.from(RISK_TABLE).insert({
-    ...row, study_id: study.id, number, origin: origin === 'agente' ? 'agente' : 'manual',
+    ...row, study_id: study.id, number, origin: origin === 'agente' || origin === 'securityops' ? origin : 'manual',
+    // Migración 201: el riesgo que sale de SecurityOps lleva la alerta o nota de donde salió.
+    ...(origin === 'securityops' ? { source_ref: sourceRef } : {}),
     created_by: profile.id, created_at: stamp, updated_at: stamp,
   }).select('*').single());
   await touch(db, study.id, stamp);

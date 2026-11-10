@@ -60,6 +60,17 @@ export function canonicalJson(value) {
   return JSON.stringify(value ?? null);
 }
 
+function securityOpsSnapshot(source) {
+  const data = source?.data;
+  if (!source?.puesto || !data || data.status !== 'ok') return null;
+  const { puesto } = source;
+  return {
+    puesto: { id: puesto.id, nombre: puesto.name, direccion: puesto.address ?? null, municipio: puesto.municipio ?? null, regional: puesto.regional ?? null },
+    corte: data.synced_at, ventana: { desde: data.window_from, hasta: data.window_to },
+    resumen: data.summary, alertas: data.alerts, notas: data.notes, fallas: data.failures,
+  };
+}
+
 // La foto de la versión: lo que el informe y el archivo van a mostrar. Las evidencias van por su huella, no por bytes.
 export function buildSnapshot(detail) {
   const { study } = detail;
@@ -87,12 +98,14 @@ export function buildSnapshot(detail) {
       probabilidad: risk.probability, impacto_empresa: risk.impact_company, impacto_personas: risk.impact_people,
       control_existente: { descripcion: risk.current_control, calidad: risk.current_quality, eficacia: risk.current_efficacy, eficiencia: risk.current_efficiency },
       control_propuesto: { descripcion: risk.proposed_control, calidad: risk.proposed_quality, eficacia: risk.proposed_efficacy, eficiencia: risk.proposed_efficiency },
-      origen: risk.origin, valoracion: risk.valuation,
+      origen: risk.origin, fuente: risk.source_ref ?? null, valoracion: risk.valuation,
     })),
     acciones: detail.actions.map(action => ({
       id: action.id, riesgo: action.risk_id, accion: action.description, responsable: action.owner_label,
       fecha_compromiso: action.due_date, prioridad: action.priority, estado: action.status,
     })),
+    // Migración 201: los antecedentes del puesto en SecurityOps, tal como estaban al aprobar, con su fecha de corte.
+    securityops: securityOpsSnapshot(detail.securityops),
     evidencias: (detail.evidence || []).map(item => ({
       id: item.id, riesgo: item.risk_id, zona: item.zone_id, proposito: item.purpose || 'evidencia', tipo: item.kind, archivo: item.file_name, mime: item.mime_type,
       bytes: item.size_bytes, sha256: item.sha256, ruta: item.storage_path, leyenda: item.caption, fecha: item.taken_on,
