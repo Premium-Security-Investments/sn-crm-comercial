@@ -17,6 +17,7 @@ export type Study = StudySummaryRow & {
   client_description?: string | null; location_description?: string | null; latitude?: number | string | null; longitude?: number | string | null;
   external_context?: string | null; criminal_groups?: string | null; internal_context?: string | null;
   context_sources?: Array<{ nombre: string; url: string | null; fecha: string | null }>;
+  securityops_puesto_id?: string | null; securityops_requested_at?: string | null;
 };
 
 export type Zone = { id: string; name: string; description: string | null; position: number };
@@ -30,7 +31,7 @@ export type Risk = {
   probability: number; impact_company: number; impact_people: number;
   current_control: string | null; current_quality: number | null; current_efficacy: number | null; current_efficiency: number | null;
   proposed_control: string | null; proposed_quality: number | null; proposed_efficacy: number | null; proposed_efficiency: number | null;
-  origin: 'manual' | 'agente'; valuation: Valuation;
+  origin: 'manual' | 'agente' | 'securityops'; source_ref?: string | null; valuation: Valuation;
 };
 
 export type Action = {
@@ -70,9 +71,32 @@ export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; rie
 
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
-  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review;
+  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review; securityops?: SecurityOpsState;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
+
+// SecurityOps (migración 201): el puesto vinculado y lo que trajo el servidor de tareas. Sólo conteos y los reportes de
+// riesgo escritos para el estudio: nada de datos de personas.
+export type SecurityOpsPuesto = {
+  id: string; name: string; address: string | null; municipio: string | null; departamento: string | null; regional: string | null;
+  zone: number | null; sap: string | null; kind: string | null; monitoring: boolean; latitude: number | string | null; longitude: number | string | null;
+  geo_pending: boolean; active?: boolean;
+};
+export type SecurityOpsAlert = { id: string; fecha: string | null; riesgo: string; descripcion: string | null; recomendaciones: string | null; fotos: number; rol: string | null };
+export type SecurityOpsNote = { id: string; fecha: string | null; titulo: string | null; detalle: string | null; realizado_por: string | null; recomendaciones: string | null; adjuntos: number };
+export type SecurityOpsData = {
+  status: 'ok' | 'error'; synced_at: string; window_from: string | null; window_to: string | null; error: string | null;
+  summary: {
+    novedades?: { total: number; por_tipo: Record<string, number>; altas: number; ultima: string | null };
+    rondas?: { total: number; completitud_promedio: number | null };
+    visitas?: { total: number; por_tipo: Record<string, number>; ultima: string | null };
+    fallas?: { total: number; abiertas: number };
+    visitas_tecnicas?: { total: number; ultima: string | null };
+  };
+  alerts: SecurityOpsAlert[]; notes: SecurityOpsNote[];
+  failures: Array<{ fecha: string | null; titulo: string | null; estado: string | null; prioridad: string | null; abierta: boolean }>;
+};
+export type SecurityOpsState = { available: boolean; puesto: SecurityOpsPuesto | null; data: SecurityOpsData | null; pending?: boolean };
 
 export type ClientOption = { source: 'avancys' | 'crm'; ref: string; name: string; nit: string | null; city: string | null; site: string | null };
 export type PostsResult = { encontrado: boolean; avancys: string; contratos: Array<{ nombre: string | null; inicia: string | null; vence: string | null; total_puestos: number; puestos: Array<{ codigo: string | null; nombre: string | null }> }> };
@@ -89,6 +113,10 @@ export const createStudy = (body: Record<string, unknown>) => api<Study>(BASE, j
 export const updateStudy = (id: string, body: Record<string, unknown>) => api<Study>(`${BASE}/${encodeURIComponent(id)}`, json('PATCH', body));
 export const searchClients = (q: string) => api<{ clients: ClientOption[]; avancys: string }>(`${BASE}/clientes?q=${encodeURIComponent(q)}`);
 export const clientPosts = (nit: string) => api<PostsResult>(`${BASE}/puestos?nit=${encodeURIComponent(nit)}`);
+
+export const searchSecurityOpsPuestos = (q: string, todos = false) => api<SecurityOpsPuesto[]>(`${BASE}/securityops/puestos?q=${encodeURIComponent(q)}${todos ? '&todos=1' : ''}`);
+export const linkSecurityOps = (studyId: string, puestoId: string | null) => api<{ puesto_id: string | null }>(`${BASE}/${encodeURIComponent(studyId)}/securityops`, json('POST', { puesto_id: puestoId }));
+export const refreshSecurityOps = (studyId: string) => api<{ requested: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/securityops/actualizar`, json('POST', {}));
 
 const child = (studyId: string, kind: 'zonas' | 'riesgos' | 'acciones', childId?: string) =>
   `${BASE}/${encodeURIComponent(studyId)}/${kind}${childId ? `/${encodeURIComponent(childId)}` : ''}`;

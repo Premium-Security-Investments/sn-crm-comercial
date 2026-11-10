@@ -12,6 +12,7 @@ import { addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys
 import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { reviewStudy as reviewSecurityStudy } from '../verticales/estudios-seguridad/revisor.js';
+import { addRiskFromSecurityOps, linkPuesto as linkSecurityOpsPuesto, requestRefresh as refreshSecurityOps, searchPuestos as searchSecurityOpsPuestos } from '../verticales/estudios-seguridad/securityops.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
@@ -3581,6 +3582,9 @@ securityStudyRoute('get', '/api/estudios-seguridad/clientes', async (db, req) =>
   return { clients: [...deAvancys, ...delCrm].slice(0, 25), avancys };
 });
 // Puestos de un cliente de Avancys, agrupados por contrato, para elegir la sede del estudio.
+// SecurityOps (migración 201): buscar el puesto en el directorio que copia el servidor de tareas. Sin unidades de
+// monitoreo salvo que se pidan: el 72 % del directorio son cuentas de alarma.
+securityStudyRoute('get', '/api/estudios-seguridad/securityops/puestos', (db, req) => searchSecurityOpsPuestos(db, String(req.query.q || '').slice(0, 120), { todos: req.query.todos === '1' }));
 securityStudyRoute('get', '/api/estudios-seguridad/puestos', async (_db, req) => {
   const lector = crearLectorAvancys();
   if (!lector) return { encontrado: false, contratos: [], avancys: 'sin_configurar' };
@@ -3661,7 +3665,21 @@ securityStudyRoute('patch', '/api/estudios-seguridad/:id', (db, req, profile) =>
 securityStudyRoute('post', '/api/estudios-seguridad/:id/zonas', (db, req, profile) => addSecurityStudyZone(db, req.params.id, req.body || {}, profile));
 securityStudyRoute('patch', '/api/estudios-seguridad/:id/zonas/:zoneId', (db, req, profile) => updateSecurityStudyZone(db, req.params.id, req.params.zoneId, req.body || {}, profile));
 securityStudyRoute('delete', '/api/estudios-seguridad/:id/zonas/:zoneId', (db, req, profile) => deleteSecurityStudyZone(db, req.params.id, req.params.zoneId, profile));
-securityStudyRoute('post', '/api/estudios-seguridad/:id/riesgos', (db, req, profile) => addSecurityStudyRisk(db, req.params.id, req.body || {}, profile));
+// "Llevar al estudio" una alerta o nota de SecurityOps: el riesgo lleva source_ref y las calificaciones del analista.
+securityStudyRoute('post', '/api/estudios-seguridad/:id/riesgos', (db, req, profile) => (req.body?.source_ref
+  ? addRiskFromSecurityOps(db, req.params.id, req.body, profile, addSecurityStudyRisk)
+  : addSecurityStudyRisk(db, req.params.id, req.body || {}, profile)));
+// Vincular el estudio a un puesto de SecurityOps (o desvincularlo con null) y pedir que se traigan sus antecedentes.
+securityStudyRoute('post', '/api/estudios-seguridad/:id/securityops', async (db, req) => {
+  const detail = await getSecurityStudy(db, req.params.id);
+  if (!detail.editable) throw Object.assign(new Error('El estudio no está en borrador: no se puede cambiar el puesto.'), { status: 409 });
+  return linkSecurityOpsPuesto(db, detail.study, req.body?.puesto_id ?? null);
+});
+securityStudyRoute('post', '/api/estudios-seguridad/:id/securityops/actualizar', async (db, req) => {
+  const detail = await getSecurityStudy(db, req.params.id);
+  if (['aprobado', 'archivado'].includes(detail.study.status)) throw Object.assign(new Error('El estudio está aprobado: su versión ya guardó los antecedentes.'), { status: 409 });
+  return refreshSecurityOps(db, detail.study);
+});
 securityStudyRoute('patch', '/api/estudios-seguridad/:id/riesgos/:riskId', (db, req, profile) => updateSecurityStudyRisk(db, req.params.id, req.params.riskId, req.body || {}, profile));
 securityStudyRoute('delete', '/api/estudios-seguridad/:id/riesgos/:riskId', (db, req, profile) => deleteSecurityStudyRisk(db, req.params.id, req.params.riskId, profile));
 securityStudyRoute('post', '/api/estudios-seguridad/:id/acciones', (db, req, profile) => addSecurityStudyAction(db, req.params.id, req.body || {}, profile));

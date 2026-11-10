@@ -8,6 +8,7 @@ import { WorkflowPanel } from './WorkflowPanel';
 import { ReviewPanel } from './ReviewPanel';
 import { FieldNotePanel } from './FieldNotePanel';
 import { CharacterizationPanel } from './CharacterizationPanel';
+import { SecurityOpsPanel } from './SecurityOpsPanel';
 import {
   IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
@@ -174,7 +175,9 @@ function NewStudyForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
 function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void }) {
   const [detail, setDetail] = useState<StudyDetail | null>(null);
   const [error, setError] = useState('');
-  const [addingRisk, setAddingRisk] = useState(false);
+  // El formulario de riesgo nuevo: vacío con «+ Agregar riesgo», o ya escrito desde una alerta de SecurityOps.
+  const [newRisk, setNewRisk] = useState<RiskDraft | null>(null);
+  const addingRisk = newRisk !== null;
   const [urls, setUrls] = useState<Record<string, string | null>>({});
   // Los enlaces de las fotos son firmados y vencen a los 10 minutos: se piden de nuevo con cada recarga.
   const reload = useCallback(() => getStudy(studyId).then(next => {
@@ -210,6 +213,9 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
 
     <CharacterizationPanel study={study} characterization={detail.characterization} evidence={evidence} urls={urls} editable={editable} evidenceAvailable={detail.evidence_available} onChanged={reload} />
 
+    {detail.securityops ? <SecurityOpsPanel study={study} state={detail.securityops} risks={risks} editable={editable} onChanged={reload}
+      onUseAsRisk={draft => { setNewRisk({ ...EMPTY_RISK, ...draft }); window.setTimeout(() => document.getElementById('es-riesgo-desde-securityops')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); }} /> : null}
+
     <ZonesBlock studyId={study.id} zones={zones} editable={editable} onChanged={reload} onError={setError} />
 
     {detail.evidence_available
@@ -220,9 +226,10 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
 
     <div className="es-section-head">
       <h3>Riesgos ({risks.length})</h3>
-      {editable && !addingRisk ? <button type="button" onClick={() => setAddingRisk(true)}>+ Agregar riesgo</button> : null}
+      {editable && !addingRisk ? <button type="button" onClick={() => setNewRisk(EMPTY_RISK)}>+ Agregar riesgo</button> : null}
     </div>
-    {addingRisk ? <RiskForm studyId={study.id} zones={zones} catalog={catalog} clientProcesses={clientProcesses} onCancel={() => setAddingRisk(false)} onSaved={() => { setAddingRisk(false); reload(); }} /> : null}
+    {newRisk?.source_ref ? <p className="es-muted" id="es-riesgo-desde-securityops">Este riesgo viene de SecurityOps. Revise el texto y califíquelo: la probabilidad, el impacto y los controles los pone usted.</p> : null}
+    {newRisk ? <RiskForm key={newRisk.source_ref || 'nuevo'} studyId={study.id} zones={zones} catalog={catalog} clientProcesses={clientProcesses} initial={newRisk} onCancel={() => setNewRisk(null)} onSaved={() => { setNewRisk(null); reload(); }} /> : null}
     {risks.length === 0 && !addingRisk ? <p className="es-muted">Sin riesgos todavía.</p> : null}
     <ul className="es-risks">{risks.map(risk => <RiskItem key={risk.id} studyId={study.id} risk={risk} zoneLabel={risk.zone_id ? zoneName.get(risk.zone_id) || '' : ''} zones={zones} catalog={catalog}
       actions={actions.filter(action => action.risk_id === risk.id)} editable={editable} onChanged={reload} onError={setError}
@@ -383,7 +390,7 @@ function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable,
     <div className="es-risk-head">
       <div>
         <strong>R{risk.number} · {risk.title}</strong>
-        <small className="es-muted">{[risk.client_process, risk.risk_factor, zoneLabel, risk.catalog_risk_code, risk.process_code].filter(Boolean).join(' · ') || 'Riesgo propio'}{risk.origin === 'agente' ? ' · registrado con el agente' : ''}</small>
+        <small className="es-muted">{[risk.client_process, risk.risk_factor, zoneLabel, risk.catalog_risk_code, risk.process_code].filter(Boolean).join(' · ') || 'Riesgo propio'}{risk.origin === 'agente' ? ' · registrado con el agente' : risk.origin === 'securityops' ? ' · viene de SecurityOps' : ''}</small>
       </div>
       {editable ? <div className="es-actions">
         <button type="button" className="secondary" onClick={() => setEditing(true)}>Editar</button>

@@ -6,7 +6,8 @@ import { PGlite } from '@electric-sql/pglite';
 export const PREPARER = { id: '11111111-1111-4111-8111-111111111111', role: 'colaborador', permissions: ['estudios_seguridad'] };
 export const REVIEWER = { id: '44444444-4444-4444-8444-444444444444', role: 'colaborador', permissions: ['estudios_seguridad', 'estudios_seguridad_revisar'] };
 export const APPROVER = { id: '55555555-5555-4555-8555-555555555555', role: 'gerencia', permissions: ['estudios_seguridad', 'estudios_seguridad_aprobar'] };
-const MIGRATIONS = ['178_estudios_seguridad_base.sql', '179_estudios_seguridad_evidencias.sql', '180_estudios_seguridad_aprobacion.sql', '181_estudios_seguridad_agente.sql', '186_estudios_seguridad_archivo.sql', '187_estudios_seguridad_caracterizacion.sql', '188_estudios_seguridad_seguimiento.sql'];
+// La 201 (SecurityOps) va después de la 188 aunque haya otras migraciones de otros módulos entre ellas.
+const MIGRATIONS = ['178_estudios_seguridad_base.sql', '179_estudios_seguridad_evidencias.sql', '180_estudios_seguridad_aprobacion.sql', '181_estudios_seguridad_agente.sql', '186_estudios_seguridad_archivo.sql', '187_estudios_seguridad_caracterizacion.sql', '188_estudios_seguridad_seguimiento.sql', '201_estudios_seguridad_securityops.sql'];
 
 export async function database({ upTo = MIGRATIONS.length } = {}) {
   const pg = new PGlite();
@@ -54,8 +55,9 @@ export function supabaseOver(pg, objects = new Map()) {
       }
     },
     from(table) {
-      const state = { op: 'select', columns: '*', filters: [], order: [], values: null, returning: false };
-      const where = params => state.filters.length ? ` where ${state.filters.map(([column, value, op]) => { params.push(value); return op === 'in' ? `"${column}" = any($${params.length})` : `"${column}" = $${params.length}`; }).join(' and ')}` : '';
+      const state = { op: 'select', columns: '*', filters: [], order: [], values: null, returning: false, limit: null, conflict: null };
+      const OPS = { in: column => `"${column}" = any($N)`, ilike: column => `"${column}" ilike $N`, is: column => `"${column}" is not distinct from $N` };
+      const where = params => state.filters.length ? ` where ${state.filters.map(([column, value, op]) => { params.push(value); return (OPS[op] ? OPS[op](column) : `"${column}" = $N`).replace('$N', `$${params.length}`); }).join(' and ')}` : '';
       const run = async () => {
         const params = [];
         let sql;
@@ -64,7 +66,9 @@ export function supabaseOver(pg, objects = new Map()) {
           const rows = Array.isArray(state.values) ? state.values : [state.values];
           const keys = Object.keys(rows[0]);
           const tuples = rows.map(row => `(${keys.map(key => { params.push(row[key] !== null && typeof row[key] === 'object' && !(row[key] instanceof Date) ? JSON.stringify(row[key]) : row[key]); return `$${params.length}`; }).join(', ')})`);
-          sql = `insert into public.${table} (${keys.map(key => `"${key}"`).join(', ')}) values ${tuples.join(', ')} returning *`;
+          // upsert(…, { onConflict }) como supabase-js: actualiza las demás columnas.
+          const conflict = state.conflict ? ` on conflict ("${state.conflict}") do update set ${keys.filter(key => key !== state.conflict).map(key => `"${key}" = excluded."${key}"`).join(', ')}` : '';
+          sql = `insert into public.${table} (${keys.map(key => `"${key}"`).join(', ')}) values ${tuples.join(', ')}${conflict} returning *`;
         } else if (state.op === 'update') {
           const keys = Object.keys(state.values);
           const sets = keys.map(key => { params.push(state.values[key]); return `"${key}" = $${params.length}`; }).join(', ');
@@ -73,7 +77,7 @@ export function supabaseOver(pg, objects = new Map()) {
           sql = `delete from public.${table}${where(params)} returning *`;
         } else {
           const columns = state.columns === '*' ? '*' : state.columns.split(',').map(column => `"${column.trim()}"`).join(', ');
-          sql = `select ${columns} from public.${table}${where(params)}${state.order.length ? ` order by ${state.order.map(([column, asc]) => `"${column}" ${asc ? 'asc' : 'desc'}`).join(', ')}` : ''}`;
+          sql = `select ${columns} from public.${table}${where(params)}${state.order.length ? ` order by ${state.order.map(([column, asc]) => `"${column}" ${asc ? 'asc' : 'desc'}`).join(', ')}` : ''}${state.limit ? ` limit ${Number(state.limit)}` : ''}`;
         }
         try {
           const result = await pg.query(sql, params);
@@ -86,6 +90,10 @@ export function supabaseOver(pg, objects = new Map()) {
         select(columns = '*') { if (state.op === 'select') state.columns = columns; return chain; },
         eq(column, value) { state.filters.push([column, value]); return chain; },
         in(column, values) { state.filters.push([column, values, 'in']); return chain; },
+        ilike(column, pattern) { state.filters.push([column, pattern, 'ilike']); return chain; },
+        is(column, value) { state.filters.push([column, value, 'is']); return chain; },
+        limit(count) { state.limit = count; return chain; },
+        upsert(values, { onConflict = 'id' } = {}) { state.op = 'insert'; state.values = values; state.conflict = onConflict; return chain; },
         order(column, { ascending = true } = {}) { state.order.push([column, ascending]); return chain; },
         insert(values) { state.op = 'insert'; state.values = values; return chain; },
         update(values) { state.op = 'update'; state.values = values; return chain; },
