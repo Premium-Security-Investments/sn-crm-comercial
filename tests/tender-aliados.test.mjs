@@ -117,3 +117,42 @@ test('la pantalla sabe cuántas participaciones de la semilla faltan y no muestr
   assert.deepEqual(result.companies[0].cities.map(city => city.city), ['CALI', 'TULUÁ']);
   assert.equal(result.seed_missing, VIGILANCE_PARTICIPATIONS_SEED.length);
 });
+
+// 2026-11-10 (Juan): el contacto en cuatro campos (197) y los correos del PDF sin el espacio partido.
+test('migración 197: el contacto en cuatro campos; sin la 197, se guarda junto en el texto libre', async () => {
+  const { cleanEmail, updateAlly, listAllies } = await import('../verticales/licitaciones/tender-allies.js');
+  assert.equal(cleanEmail('notificaciones@expertoseguridad.co m.co'), 'notificaciones@expertoseguridad.com.co');
+  const migration = read('supabase/migrations/197_aliados_contacto_separado.sql');
+  assert.match(migration, /revoke all on function public\.psi_save_vigilance_company\(uuid, text, text, jsonb, text\) from public, anon, authenticated/);
+  const pg = new PGlite();
+  await pg.exec(`create role anon; create role authenticated; create role service_role;
+    create table psi_sales_profiles (id uuid primary key, active boolean, identity_type text, role text);
+    create table psi_access_permissions (code text primary key, active boolean);
+    create table psi_profile_permissions (profile_id uuid, permission_code text);
+    create table psi_sales_opportunities (id uuid primary key);
+    insert into psi_sales_profiles values ('00000000-0000-4000-8000-00000000000a', true, 'human', 'admin');
+    insert into psi_access_permissions values ('licitaciones', true);
+    insert into psi_profile_permissions values ('00000000-0000-4000-8000-00000000000a', 'licitaciones');`);
+  await pg.exec(read('supabase/migrations/196_aliados_empresas_vigilancia.sql'));
+  await pg.exec(migration);
+  await pg.query('select public.psi_load_vigilance_listing($1, $2, $3)', ['00000000-0000-4000-8000-00000000000a', 's', JSON.stringify([{ nit: '900000001', name: 'Uno', offices: [] }])]);
+  await pg.query('select public.psi_save_vigilance_company($1, $2, $3, $4, $5)', ['00000000-0000-4000-8000-00000000000a', '900000001', 'aliado', JSON.stringify({ name: 'Ana Gómez', title: 'Gerente comercial', phone: '300 1', email: 'ana@uno.co' }), 'Nota']);
+  const row = (await pg.query('select role, contact_name, contact_title, contact_phone, contact_email, notes from psi_vigilance_companies')).rows[0];
+  assert.deepEqual(Object.values(row), ['aliado', 'Ana Gómez', 'Gerente comercial', '300 1', 'ana@uno.co', 'Nota']);
+  await pg.close();
+
+  const calls = [];
+  const without197 = { rpc: async (name, args) => { calls.push([name, args.p_contact]); return name === 'psi_save_vigilance_company' ? { error: { code: 'PGRST202', message: 'not found' } } : { data: {}, error: null }; } };
+  await updateAlly(without197, { actorId: 'a', nit: '900000001', role: 'aliado', contact: { name: 'Ana', title: 'Gerente', phone: '300', email: 'a@b. co' }, notes: '' });
+  assert.deepEqual(calls[1], ['psi_update_vigilance_company', 'Ana · Gerente · 300 · a@b.co']);
+
+  const rows = { psi_vigilance_company_offices: [], psi_vigilance_participations: [] };
+  let first = true;
+  const db = { from: table => ({ select(columns) { this.columns = columns; return this; }, range: async function () {
+    if (table !== 'psi_vigilance_companies') return { data: rows[table], error: null };
+    if (first && this.columns.includes('contact_name')) { first = false; return { data: null, error: { code: '42703', message: 'column contact_name does not exist' } }; }
+    return { data: [{ nit: '900000001', name: 'Uno', role: 'aliado', email: 'x@y.co m.co' }], error: null };
+  } }) };
+  const listed = await listAllies(db);
+  assert.equal(listed.companies[0].email, 'x@y.com.co');
+});

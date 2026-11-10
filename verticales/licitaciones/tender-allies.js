@@ -44,6 +44,23 @@ async function all(database, table, select) {
   }
 }
 
+const COMPANY_COLUMNS = 'nit,dv,name,acronyms,representative,phone,email,license_resolution,role,contact,notes,updated_at';
+const CONTACT_COLUMNS = 'contact_name,contact_title,contact_phone,contact_email';
+const missingColumn = error => String(error?.code || '') === '42703' || /contact_(name|title|phone|email)/.test(String(error?.message || ''));
+const missingFunction = error => ['42883', 'PGRST202'].includes(String(error?.code || '').toUpperCase());
+
+/** Las empresas con el contacto en cuatro campos (197); sin la 197, sin ellos. */
+async function allCompanies(database) {
+  try { return await all(database, 'psi_vigilance_companies', `${COMPANY_COLUMNS},${CONTACT_COLUMNS}`); }
+  catch (error) { if (missingColumn(error)) return all(database, 'psi_vigilance_companies', COMPANY_COLUMNS); throw error; }
+}
+
+/** El PDF de la Superintendencia parte algunos correos con un espacio («expertoseguridad.co m.co»): se muestran sin él. */
+export function cleanEmail(value) {
+  const text = String(value || '').replace(/\s+/g, '');
+  return text || null;
+}
+
 /**
  * La base completa para la pantalla: empresas con sus ciudades y cuántas veces las vimos, y cuántas participaciones de la
  * semilla faltan por cargar (para que la pantalla lo diga). Sin la 196, vacía.
@@ -51,7 +68,7 @@ async function all(database, table, select) {
 export async function listAllies(database, { participationsSeed = [] } = {}) {
   try {
     const [companies, offices, participations] = await Promise.all([
-      all(database, 'psi_vigilance_companies', 'nit,dv,name,acronyms,representative,phone,email,license_resolution,role,contact,notes,updated_at'),
+      allCompanies(database),
       all(database, 'psi_vigilance_company_offices', 'nit,city,city_key,department,office_type'),
       all(database, 'psi_vigilance_participations', 'id,nit,company_label,entity,process_ref,kind,detail,source,occurred_on,created_at'),
     ]);
@@ -66,7 +83,7 @@ export async function listAllies(database, { participationsSeed = [] } = {}) {
     for (const part of participations) if (part.nit) partsByNit.set(part.nit, [...(partsByNit.get(part.nit) || []), part]);
     return {
       installed: true,
-      companies: companies.map(company => ({ ...company, cities: citiesByNit.get(company.nit) || [], participations: partsByNit.get(company.nit) || [] })),
+      companies: companies.map(company => ({ ...company, email: cleanEmail(company.email), contact_email: cleanEmail(company.contact_email), cities: citiesByNit.get(company.nit) || [], participations: partsByNit.get(company.nit) || [] })),
       participations_without_nit: participations.filter(part => !part.nit),
       seed_missing: missingSeedCount(participations, participationsSeed),
     };
@@ -119,10 +136,22 @@ export function normalizeSeedParticipation(part) {
   return { ...part, occurred_on: null, detail: [/^\d{4}$/.test(when) ? `Año ${when}` : when, part.detail].filter(Boolean).join('. ') };
 }
 
+/**
+ * Guarda lo nuestro de una empresa. `contact` = {name, title, phone, email} (197); sin la 197, los cuatro campos se
+ * guardan juntos en el texto libre de la 196.
+ */
 export async function updateAlly(database, { actorId, nit, role, contact, notes }) {
   if (!/^[0-9]{6,12}$/.test(String(nit || ''))) throw fail('La empresa no es válida.', 400);
   if (role && !Object.hasOwn(ALLY_ROLES, role)) throw fail('El rol no es válido.', 400);
-  const { data, error } = await database.rpc('psi_update_vigilance_company', { p_actor_id: actorId, p_nit: nit, p_role: role || null, p_contact: contact ?? null, p_notes: notes ?? null });
+  const parts = contact && typeof contact === 'object' ? {
+    name: String(contact.name || '').trim().slice(0, 200), title: String(contact.title || '').trim().slice(0, 200),
+    phone: String(contact.phone || '').trim().slice(0, 100), email: cleanEmail(contact.email)?.slice(0, 200) || '',
+  } : { name: String(contact || '').trim().slice(0, 200), title: '', phone: '', email: '' };
+  const saved = await database.rpc('psi_save_vigilance_company', { p_actor_id: actorId, p_nit: nit, p_role: role || null, p_contact: parts, p_notes: notes ?? null });
+  if (!saved.error) return saved.data;
+  if (!missingFunction(saved.error)) throw mapError(saved.error);
+  const text = [parts.name, parts.title, parts.phone, parts.email].filter(Boolean).join(' · ') || null;
+  const { data, error } = await database.rpc('psi_update_vigilance_company', { p_actor_id: actorId, p_nit: nit, p_role: role || null, p_contact: text, p_notes: notes ?? null });
   if (error) throw mapError(error);
   return data;
 }
@@ -170,7 +199,7 @@ export function rankAllyCandidates(companies, { cityKeys, processRef = null, lim
       const inProcess = target ? (company.participations || []).filter(part => normProcess(part.process_ref) === target || (target.length >= 6 && normProcess(part.process_ref).includes(target))) : [];
       const incumbent = inProcess.some(part => part.kind === 'contratista_actual' || part.kind === 'adjudicatario');
       return {
-        nit: company.nit, name: company.name, role: company.role, contact: company.contact || null, phone: company.phone || null, email: company.email || null,
+        nit: company.nit, name: company.name, role: company.role, contact: [company.contact_name, company.contact_title, company.contact_phone, cleanEmail(company.contact_email)].filter(Boolean).join(' · ') || company.contact || null, phone: company.phone || null, email: cleanEmail(company.email),
         covered: covered.map(key => (company.cities || []).find(city => city.city_key === key)?.city || key),
         covers_all: covered.length === cityKeys.length,
         times_seen: (company.participations || []).length,
