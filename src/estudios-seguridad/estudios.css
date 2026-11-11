@@ -110,3 +110,10 @@
 /* Vigencia del estudio (migración 209) */
 .es-validity{display:flex;flex-direction:column;gap:6px}
 .es-validity p{margin:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+
+/* Tablero de alertas de la sección */
+.es-alerts{display:flex;flex-direction:column;gap:10px}
+.es-alerts h3,.es-alerts p{margin:0}
+.es-alert-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.es-alert-group{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;background:#fff}
+.es-alert-group ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}

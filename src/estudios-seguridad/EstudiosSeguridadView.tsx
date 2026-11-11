@@ -11,6 +11,7 @@ import { CharacterizationPanel } from './CharacterizationPanel';
 import { SecurityOpsPanel } from './SecurityOpsPanel';
 import { DeliveryPanel } from './DeliveryPanel';
 import { ValidityBadge, ValidityLine } from './ValidityLine';
+import { AlertsPanel } from './AlertsPanel';
 import {
   IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, RENEWAL_OPTIONS, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
@@ -49,6 +50,7 @@ function StudyList({ onOpen }: { onOpen: (id: string) => void }) {
     </div>
     {creating ? <NewStudyForm onCancel={() => setCreating(false)} onCreated={onOpen} /> : null}
     {error ? <div className="error" role="alert">{error}</div> : null}
+    {studies?.length ? <AlertsPanel studies={studies} onOpen={onOpen} /> : null}
     {studies === null && !error ? <p className="es-muted">Cargando estudios…</p> : null}
     {studies?.length === 0 ? <p className="es-muted">Todavía no hay estudios. Cree el primero con "+ Nuevo estudio".</p> : null}
     {studies?.length ? <div className="tablewrap"><table>
