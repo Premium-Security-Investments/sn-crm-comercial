@@ -81,7 +81,7 @@ test('pantalla y rutas: Empresa, Aliados y Lecciones juntos a la derecha; candid
   assert.match(view, /Vista en procesos/);
   assert.match(read('src/tenders/components/AllyDetail.tsx'), /\+ Agregar proceso/);
   assert.match(view, /<AllyDetail company=\{company\}/);
-  assert.match(read('src/tenders/workspace/TenderWorkspace.tsx'), /initialReportRecommendationText\(report\.recommendation\.label\)\}<\/p>\n\s+\{\/\*[^\n]*\*\/\}\n\s+\{allies\}/);
+  assert.match(read('src/tenders/workspace/TenderWorkspace.tsx'), /<RecommendationText text=\{initialReportRecommendationText\(report\.recommendation\.label\)\} \/>\n\s+\{\/\*[^\n]*\*\/\}\n\s+\{allies\}/);
   const server = read('server/index.js');
   assert.match(server, /'GET \/api\/tender-allies\/candidates': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
   assert.equal(server, read('api/[...path].js'));
