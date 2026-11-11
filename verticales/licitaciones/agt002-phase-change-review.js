@@ -25,7 +25,9 @@ import {
   appendAgt002ObservationLine,
   watchAgt002DocumentsWithoutPhaseChange,
 } from './agt002-phase-change-followup.js';
-import { runAgt002ScheduleFreshnessReview } from './agt002-schedule-freshness.js';
+import { agt002IsOfficialDocumentSource, runAgt002ScheduleFreshnessReview } from './agt002-schedule-freshness.js';
+import { tenderDocumentBreaksEntitySilence } from './tender-document-origin.js';
+import { runTenderOfficialValuesReview } from './tender-official-values.js';
 import { runAgt002CompanyEvidenceWatch } from './agt002-company-evidence-watch.js';
 import { runAgt002SharepointEvidenceWatch } from './agt002-sharepoint-evidence-diff.js';
 import { runAgt002DiscardedPhaseWatch } from './agt002-discarded-phase-watch.js';
@@ -142,6 +144,8 @@ export async function runAgt002PhaseChangeReview(database, {
   // para cualquier entorno que no sea ese servidor (CI, pruebas, un despliegue web).
   sharepointWatch = runAgt002SharepointEvidenceWatch,
   listSharepointFiles = null,
+  // Valor y cierre de la oportunidad al día con los documentos de la entidad (Juan, 2026-11-11). Inyectable.
+  officialValuesReview = runTenderOfficialValuesReview,
 } = {}) {
   const runId = `${bogotaDay(now.toISOString())}-${bogotaTime(now.toISOString()).replace(':', '')}-${now.toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`;
   const step = async (name, fn, fallback) => { try { return await fn(); } catch (error) { log({ event: `agt002_phase_change_review_${name}_failed`, message: String(error?.message || error).slice(0, 200) }); return fallback; } };
@@ -171,6 +175,15 @@ export async function runAgt002PhaseChangeReview(database, {
     now, log,
     inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
     appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
+  }), []);
+  // Valor y cierre: si el pliego definitivo o una adenda cambian el presupuesto, o el cronograma confirmado cambia el
+  // cierre, la oportunidad se pone al día sola y deja la constancia (Manizales LP-01-2026, 10-nov: el presupuesto bajó a
+  // la mitad y el CRM siguió con el viejo). Sólo cuentan los documentos de la entidad.
+  await step('official_values', () => officialValuesReview(database, {
+    log,
+    inactiveReason: (db, opportunityId, tenderId) => agt002PhaseChangeOpportunityBlocker(db, opportunityId, tenderId),
+    appendLine: (db, opportunityId, line) => appendAgt002ObservationLine(db, opportunityId, line),
+    isEntityDocument: document => tenderDocumentBreaksEntitySilence(document, agt002IsOfficialDocumentSource),
   }), []);
   // Ficha de empresa contra el cierre: un documento vencido, uno que no llega vigente al cierre, o una
   // decisión de evidencia que no nombra su documento. Las reglas ya existían y sólo se veían si alguien
