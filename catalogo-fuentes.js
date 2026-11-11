@@ -21,6 +21,7 @@ import { agt002ListarFormatos, agt002LocateFormato } from './verticales/licitaci
 import { agt002SeccionDelPedido } from './verticales/licitaciones/agt002-seccion-del-pliego.js';
 import { agt002ReglasParaPlurales } from './verticales/licitaciones/agt002-reglas-plurales.js';
 import { ALLY_BOARD_RULE, buildAllyBoard, buildProcessParticipantsBoard } from './verticales/licitaciones/tender-allies-board.js';
+import { assessDifferentialBenefits, findDifferentialMentions, listDifferentialConditions } from './verticales/licitaciones/differential-conditions.js';
 import { readAgt002InitialAnalysisReport } from './verticales/licitaciones/agt002-initial-analysis-report.js';
 import { readAgt002InitialAnalysisStatus } from './verticales/licitaciones/agt002-initial-analysis-status.js';
 
@@ -213,6 +214,15 @@ export const DATOS = Object.freeze({
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
     fuentes: Object.freeze(['psi_vigilance_companies', 'psi_vigilance_company_offices', 'psi_vigilance_participations', 'psi_tender_plural_readings']),
+    lectores: Object.freeze(['agt002.mesa']),
+  }),
+  // Mejora 10 en la Mesa (Juan, 2026-11-11): las condiciones diferenciales de la ficha (empresa de mujeres, tamaño,
+  // discapacidad en la nómina) y dónde las premia este pliego, para que Vig-IA las tenga en el chat.
+  'empresa.condiciones_diferenciales': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_company_differential_conditions', 'psi_tender_document_versions']),
     lectores: Object.freeze(['agt002.mesa']),
   }),
   // Punto 7 del encargo de Aliados: quiénes se han movido en este proceso (observaron, ofertaron, contratista actual).
@@ -964,6 +974,38 @@ export async function resolverAliadosCandidatos(database, { tenderId, pregunta }
   });
 }
 
+// Una pregunta toca las condiciones diferenciales si nombra la condición o lo que se gana con ella.
+const PREGUNTA_DIFERENCIAL = /mujer|mipyme|tama[nñ]o|gran empresa|discapac|desempat|diferencial|garant[ií]a|puntaje|ponderable|beneficio|factor/i;
+
+/**
+ * Mejora 10 en la Mesa (2026-11-11): lo que la ficha dice de las condiciones diferenciales y, del texto del pliego, dónde
+ * dan beneficio (garantía, desempate, puntaje, experiencia), con el fragmento. Lo mismo que muestra Decidir.
+ */
+export async function resolverCondicionesDiferenciales(database, { tenderId, pregunta }) {
+  const vacio = nota => respuesta({ nombre: 'empresa.condiciones_diferenciales', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA, forma: FORMAS.TIPADO, asOf: null, procedencia: Object.freeze({ tabla: 'psi_company_differential_conditions', nota }) });
+  if (!PREGUNTA_DIFERENCIAL.test(String(pregunta || ''))) return vacio('la pregunta no es de condiciones diferenciales, garantía ni desempate');
+  const { installed, conditions } = await listDifferentialConditions(database);
+  if (!installed) return vacio('las condiciones diferenciales no están instaladas');
+  let benefits = [];
+  if (typeof tenderId === 'string' && tenderId.trim()) {
+    const { data } = await database.from('psi_tender_document_versions').select('name,extracted_text').eq('tender_id', tenderId).eq('current', true);
+    benefits = assessDifferentialBenefits(conditions, findDifferentialMentions(Array.isArray(data) ? data : []));
+  }
+  const fechas = conditions.map(condition => soloFecha(condition.updated_at)).filter(Boolean).sort();
+  return respuesta({
+    nombre: 'empresa.condiciones_diferenciales',
+    valor: Object.freeze({
+      en_la_ficha: Object.freeze(conditions.map(condition => Object.freeze({ condicion: condition.label, estado: condition.status, valor: condition.value, detalle: condition.detail, soporte: condition.evidence, certificada_el: condition.certified_on }))),
+      en_este_pliego: Object.freeze(benefits.map(benefit => Object.freeze({ condicion: benefit.label, nos_aplica: benefit.verdict, beneficio: benefit.kinds, que_hacer: benefit.action, donde_lo_dice: benefit.mentions.map(item => Object.freeze({ documento: item.document, fragmento: item.excerpt })) }))),
+    }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: fechas.length ? fechas[fechas.length - 1] : null,
+    procedencia: Object.freeze({ tabla: 'psi_company_differential_conditions', nota: 'la ficha de Empresa y el texto del pliego vigente' }),
+  });
+}
+
 /** Punto 7 del encargo de Aliados: quiénes se han movido en este proceso, cuando la pregunta es de competencia o de socios. */
 export async function resolverCompetenciaDelProceso(database, { tenderId, pregunta }) {
   const vacio = nota => respuesta({ nombre: 'aliados.competencia_del_proceso', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA, forma: FORMAS.TIPADO, asOf: null, procedencia: Object.freeze({ tabla: 'psi_vigilance_participations', nota }) });
@@ -1046,6 +1088,7 @@ const RESOLVEDORES = Object.freeze({
   'proceso.reglas_para_plurales': (database, contexto) => resolverReglasParaPlurales(database, contexto),
   'aliados.candidatos': (database, contexto) => resolverAliadosCandidatos(database, contexto),
   'aliados.competencia_del_proceso': (database, contexto) => resolverCompetenciaDelProceso(database, contexto),
+  'empresa.condiciones_diferenciales': (database, contexto) => resolverCondicionesDiferenciales(database, contexto),
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),

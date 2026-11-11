@@ -84,3 +84,21 @@ test('«experiencia» sola cerca de la mención no marca el beneficio como de ex
   assert.ok(mention.kinds.includes('desempate'));
   assert.ok(findDifferentialMentions([FISCALIA_ADENDA]).empresa_mujeres[0].kinds.includes('experiencia'));
 });
+
+// Mejora 10 en la Mesa (Juan, 2026-11-11: «siga»): Vig-IA tiene en el chat lo mismo que Decidir.
+test('la Mesa recibe las condiciones de la ficha y dónde las premia el pliego, sólo si la pregunta las toca', async () => {
+  const { resolverCondicionesDiferenciales } = await import('../catalogo-fuentes.js');
+  const tables = {
+    psi_company_differential_conditions: { data: [{ code: 'empresa_mujeres', status: 'cumple', certified_on: '2026-06-22', updated_at: '2026-11-10T20:00:00Z' }, { code: 'tamano_empresarial', status: 'cumple', value: 'gran_empresa' }, { code: 'discapacidad_nomina', status: 'por_confirmar' }], error: null },
+    psi_tender_document_versions: { data: [TERMINAL], error: null },
+  };
+  const database = { from: table => { const chain = { select() { return chain; }, eq() { return chain; }, then: resolve => Promise.resolve(tables[table]).then(resolve) }; return chain; } };
+  assert.equal((await resolverCondicionesDiferenciales(database, { tenderId: 't', pregunta: '¿Quién firma la carta?' })).valor, null);
+  const fuente = await resolverCondicionesDiferenciales(database, { tenderId: 't', pregunta: '¿De cuánto es la garantía de seriedad?' });
+  assert.equal(fuente.estado, 'vigente');
+  assert.equal(fuente.valor.en_la_ficha.find(item => item.condicion === 'Empresa de mujeres').certificada_el, '2026-06-22');
+  const women = fuente.valor.en_este_pliego.find(item => item.condicion === 'Empresa de mujeres');
+  assert.equal(women.nos_aplica, 'aplica');
+  assert.ok(women.beneficio.includes('garantia'));
+  assert.match(women.donde_lo_dice[0].fragmento, /diez por ciento \(10%\)/);
+});
