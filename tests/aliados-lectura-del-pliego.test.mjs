@@ -86,3 +86,13 @@ test('la 202 guarda una lectura por análisis; sin ella se calcula igual; la rut
   assert.match(server, /\.filter\(candidate => !first\.has\(candidate\.nit\)\)/);
   assert.match(ui, /no es una recomendación de Vig-IA/);
 });
+
+test('el aviso de zona nombra sólo nuestras ciudades que pide el pliego, y las ciudades se escriben normal', async () => {
+  const { cityName, joinNames } = await import('../verticales/licitaciones/tender-allies.js');
+  assert.equal(cityName('BOGOTÁ D.C.'), 'Bogotá D.C.');
+  assert.equal(cityName('SANTA ROSA DE CABAL'), 'Santa Rosa de Cabal');
+  assert.equal(joinNames(['Pereira', 'Manizales', 'Armenia']), 'Pereira, Manizales y Armenia');
+  const server = read('server/index.js');
+  assert.match(server, /const zoneCities = new Map\(\[\.\.\.ourCities\]\.filter\(\(\[key\]\) => zone\.has\(key\)\)\)/);
+  assert.doesNotMatch(server, /ourCities, limit: 50|processRef: tender\?\.ref \|\| null, ourCities \}/);
+});
