@@ -75,6 +75,7 @@ import { CLOSURE_FORM_REQUIRED_TO_WIN } from './vigia/closure-form.js';
 import { competitorContractsDue, renewalsDue } from './vigia/renewal-alerts.js';
 import { dealMix } from './vigia/deal-mix.js';
 import { AvancysCollectionPanel } from './vigia/AvancysCollectionPanel';
+import { OpportunityQuotes, QuotesSection } from './vigia/QuotesSection';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
 import { LeadAnalysisPanel } from './vigia/LeadAnalysisPanel';
@@ -133,7 +134,7 @@ type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string;
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-type Route = { page: 'home' | 'clients' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'estudios' | 'invalid'; id?: string };
+type Route = { page: 'home' | 'clients' | 'opportunities' | 'quotes' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'estudios' | 'invalid'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment' | 'client_deal_type'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; client_deal_type?: ClientDealType | ''; };
@@ -302,6 +303,7 @@ function parseRoute(): Route {
   if (page === 'home') return { page: 'home' };
   if (page === 'clients') return { page: 'clients' };
   if (page === 'opportunities') return { page: 'opportunities' };
+  if (page === 'cotizar') return id ? { page: 'quotes', id: decodeURIComponent(id) } : { page: 'quotes' };
   if (page === 'tenders') return { page: 'tenders' };
   if (page === 'detail') return id ? { page: 'detail', id: decodeURIComponent(id) } : { page: 'invalid' };
   if (page === 'edit') return id ? { page: 'edit', id: decodeURIComponent(id) } : { page: 'invalid' };
@@ -575,6 +577,7 @@ function areaFor(route: Route) {
 }
 function titleFor(route: Route, profile?: Profile | null) {
   if (route.page === 'opportunities') return 'Oportunidades';
+  if (route.page === 'quotes') return 'Cotizar';
   if (route.page === 'tenders') return 'Licitaciones';
   if (route.page === 'clients') return profile?.role === 'comercial' ? 'Mis clientes' : 'Clientes';
   if (route.page === 'detail') return 'Detalle de oportunidad';
@@ -628,6 +631,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
   if (route.page === 'agents') return <AgentsView key={route.id || 'agents'} agentId={route.id} />;
   if (route.page === 'estudios') return <EstudiosSeguridadView studyId={route.id} navigate={go} />;
+  if (route.page === 'quotes') return <QuotesSection id={route.id} opportunities={data.opportunities} navigate={go} />;
   const hasOpportunities = isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'));
   // Quien sólo entra a Programación (u otra pestaña sin Oportunidades) no ve el tablero comercial.
   if (!hasOpportunities) return <NoCommercialHome profile={data.currentProfile} />;
@@ -1486,7 +1490,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const tenderPostGoLabel = o.service_type_code === 'licitacion_publica' ? TENDER_POST_GO_HERO_LABELS[o.tender_offer_status || ''] : undefined;
   return <section className={o.service_type_code === 'licitacion_publica' ? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'} data-tender-tab={o.service_type_code === 'licitacion_publica' ? tenderTab : undefined}>
     <div id="tender-summary" className="tender-summary-anchor tender-detail-anchor" tabIndex={-1}>
-      <div className="hero"><div><Badge>{tenderPostGoLabel || o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentDealLabel(o)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && !tenderPostGoLabel && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
+      <div className="hero"><div><Badge>{tenderPostGoLabel || o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {Number(o.offer_value) > 0 ? fmtMoney(o.offer_value) : 'Valor sin definir'}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentDealLabel(o)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions">{canAccessRoute(data.currentProfile, 'edit') && <button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>}{!readOnly && o.service_type_code !== 'licitacion_publica' && <button className="secondary" onClick={() => go(`#/cotizar/nueva?opportunity=${encodeURIComponent(o.id)}`)}>Cotizar</button>}{!readOnly && o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && !tenderPostGoLabel && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
@@ -1530,6 +1534,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-grid' : undefined}>
     <div className={o.service_type_code !== 'licitacion_publica' ? 'opportunity-work-main' : undefined}>
     {!readOnly && o.service_type_code !== 'licitacion_publica' && !isTerminalStage(o.stage_code) && <OpportunityDecisionPanel opportunity={o} data={data} onChanged={async () => { await load(); await refresh(); }} />}
+    {o.service_type_code !== 'licitacion_publica' && <OpportunityQuotes opportunityId={o.id} opportunities={data.opportunities} navigate={go} />}
     {/* El formulario de cierre (GGC-FO-001): va junto a la decisión, porque es lo que habrá que tener completo para
         poder marcar el negocio como ganado (Juan, 2026-10-23). Se ve también cuando ya está ganado, para leerlo. */}
     {o.service_type_code !== 'licitacion_publica' && <ClosureFormPanel
