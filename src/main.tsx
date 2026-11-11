@@ -38,6 +38,7 @@ import { TenderOfferRecordPanel } from './tenders/components/TenderOfferRecordPa
 import { TenderAllyCandidates } from './tenders/components/TenderAllyCandidates';
 import { TenderDifferentialBenefits } from './tenders/components/CompanyDifferentialConditions';
 import { TenderProcessParticipants } from './tenders/components/TenderProcessParticipants';
+import { TenderFilingFolder } from './tenders/components/TenderFilingFolder';
 import { canApproveTenderGoNoGo } from './tenders/permissions';
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
@@ -1461,7 +1462,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           ? <TenderPrepareView key={`tender-prepare-${o.id}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={canDecide} report={tenderInitialReport} closeDate={o.expected_close_date || null} offerStatus={tenderOfferStatus}
               onOfferStatusChanged={reloadAll}
               offerRecord={<TenderOfferRecordPanel opportunityId={o.id} offerStatus={tenderOfferStatus} currentProfile={data.currentProfile} request={api} onChanged={reloadAll} />}
-              onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })} />
+              onSeedRequirements={() => api<{ inserted: number }>('/api/tender-dossier-requirements-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id }) })}
+              filing={<TenderFilingFolder opportunityId={o.id} request={api} canRequest={canApproveTenderGoNoGo(data.currentProfile)} />} />
           : <TenderDecideView report={tenderInitialReport} decisionPanel={decisionPanel} reanalysis={reanalysis} allies={<><TenderAllyCandidates opportunityId={o.id} request={api} navigate={go} canEdit={canApproveTenderGoNoGo(data.currentProfile)} /><TenderProcessParticipants opportunityId={o.id} request={api} canEdit={canApproveTenderGoNoGo(data.currentProfile)} /><TenderDifferentialBenefits opportunityId={o.id} request={api} /></>} clarify={!readOnly ? { opportunityId: o.id, request: api, canSaveToCompany: can(data.currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE), tenderLabel: o.company_name || '' } : undefined} channel={!readOnly && tenderInitialReport ? <TenderVigiaChannel key={`tender-channel-${o.id}`} opportunityId={o.id} request={api} onJobsCompleted={bumpTenderOwnDocuments} /> : null}
               documents={!readOnly ? <TenderOwnDocuments key={`tender-own-documents-${o.id}`} opportunityId={o.id} request={api} refreshKey={tenderOwnDocumentsVersion} /> : null} />}
       </div>
