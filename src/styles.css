@@ -1139,3 +1139,23 @@ td.numeric-value{white-space:nowrap}
 .tw-participants .tw-ally-name,.tw-participants .tw-ally-name:hover,.tw-participants .tw-ally-name:focus-visible{all:unset;cursor:pointer;font-weight:800;color:#174ea6;background:none;box-shadow:none;transform:none;text-decoration:underline;text-decoration-color:rgba(23,78,166,.35);text-underline-offset:3px}.tw-participants .tw-ally-name:hover{color:#0d3a85}
 
 .tw-ally-candidates .tw-ally-tag.is-neutral{background:#e0e7ff;color:#1e3a8a}
+
+/* Cotizar (AGT-003, 2026-11-11): una sección para los dos cotizadores. */
+.quote-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.quote-tabs a{padding:8px 14px;border-radius:999px;border:1px solid #cbd7e8;color:#31445f;text-decoration:none;font-weight:700;font-size:14px}
+.quote-tabs a.is-active{background:#0b3ea8;border-color:#0b3ea8;color:#fff}
+.quote-list-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.quote-list{list-style:none;margin:8px 0 0;padding:0}
+.quote-list li{border-top:1px solid #e3eaf4}
+.quote-list a,.quote-list li>span{display:flex;flex-direction:column;gap:2px;padding:12px 4px;color:inherit;text-decoration:none}
+.quote-list a:hover{background:#f5f9ff}
+.quote-list small{color:#5d6b82}
+.quote-kind{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.quote-kind span{font-weight:700;color:#31445f}
+.quote-kind button{background:#fff;color:#31445f;border:1px solid #cbd7e8}
+.quote-kind button.is-on{background:#0b3ea8;color:#fff;border-color:#0b3ea8}
+.quote-row{border-top:1px solid #e3eaf4;padding:12px 0;display:flex;flex-direction:column;gap:8px}
+.quote-days{display:flex;gap:14px;flex-wrap:wrap}
+.quote-line-total{margin:0;color:#172033;font-variant-numeric:tabular-nums}
+.quote-line-error{margin:0;color:#b42318;font-weight:650}
+.quote-summary p{margin:6px 0;font-variant-numeric:tabular-nums}

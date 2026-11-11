@@ -20,6 +20,7 @@ export type NavRoutePage =
   | 'home'
   | 'clients'
   | 'opportunities'
+  | 'quotes'
   | 'tenders'
   | 'detail'
   | 'new'
@@ -52,7 +53,8 @@ const directiveViewerRoles = new Set([...managementRoles, 'consulta']);
 const goalWriterRoles = new Set(['admin', 'gerencia']);
 // Rutas de escritura que un rol de solo consulta nunca abre, aunque tenga el módulo.
 // IT → Agentes administra la Plataforma de Agentes: nunca se abre en solo consulta, aunque hoy la vista sea de lectura.
-const writeOnlyPages = new Set<NavRoutePage>(['new', 'edit', 'users', 'goals', 'agents']);
+// Cotizar también: el servidor no deja cotizar al perfil de solo consulta (Juan, 2026-11-11).
+const writeOnlyPages = new Set<NavRoutePage>(['new', 'edit', 'users', 'goals', 'agents', 'quotes']);
 
 export const PROGRAMACION_APP_URL = 'https://main.dud08epu9vf89.amplifyapp.com';
 
@@ -75,6 +77,9 @@ const navGroups: readonly NavGroupDefinition[] = [
       // Prioridades Comerciales (#/alerts) salió del menú: su motor alimenta el Dashboard comercial y el orden
       // "por urgencia" de Oportunidades. La ruta sigue abierta para enlaces directos.
       { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },
+      // Los dos cotizadores (vigilancia y medios tecnológicos) en una sola sección (Juan, 2026-11-11). Se cotiza desde
+      // aquí sin oportunidad, para un precio rápido, o desde la ficha de la oportunidad.
+      { href: '#/cotizar', label: 'Cotizar', page: 'quotes' },
       // Metas comerciales (decisión de Juan, 2026-10-09: va en Comercial, no en Administración). En el menú sólo la ve
       // quien carga metas; el comercial llega a su meta desde Mi día.
       { href: '#/goals', label: 'Cargar metas', page: 'goals' },
@@ -129,6 +134,7 @@ const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   // trabaja clientes. No agrega una casilla nueva al formulario de permisos.
   clients: 'modulo_oportunidades',
   opportunities: 'modulo_oportunidades',
+  quotes: 'modulo_oportunidades',
   detail: 'modulo_oportunidades',
   new: 'modulo_oportunidades',
   edit: 'modulo_oportunidades',

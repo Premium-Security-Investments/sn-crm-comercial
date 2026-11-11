@@ -77,7 +77,7 @@ import { hasPermission } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
-import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, ratesInEffect } from '../src/vigia/quote-engine.js';
+import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, quoteTotals, ratesInEffect } from '../src/vigia/quote-engine.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
@@ -506,6 +506,10 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/agt003/avancys/cobro-por-comercial': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'GET /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'POST /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'PUT /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'PUT /api/avancys/cliente-enlace': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
@@ -4829,6 +4833,138 @@ app.post('/api/agt003/quote-rates', async (req, res) => {
       throw error;
     }
     res.status(201).json(data);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// AGT-003 — Cotizaciones (entrega 3; Juan, 2026-11-11). Se cotiza desde el menú (sin oportunidad, para un precio rápido)
+// o desde la oportunidad, y una cotización suelta se liga después. Una cotización puede llevar puestos de vigilancia y
+// líneas de tecnología a la vez. El dinero no se guarda: lo calcula el motor con la copia de tarifas de la cotización,
+// que se toma de las vigentes cada vez que se guarda. Quien la hizo la ve; gerencia y administración ven todas; si está
+// ligada a una oportunidad, también quien puede ver esa oportunidad.
+const QUOTE_SELECT = 'id,opportunity_id,client_name,title,status,guard_rates,tech_rates,created_by,created_at,updated_at';
+async function currentQuoteRates(database) {
+  const rows = await readQuoteRates(database);
+  const today = bogotaDay(new Date());
+  const pick = kind => ratesInEffect((rows || []).filter(row => row.kind === kind), today);
+  const guard = pick('vigilancia');
+  const tech = pick('tecnologia');
+  return { guardRates: guard ? normalizeGuardRates(guard.params) : DEFAULT_GUARD_RATES, techRates: tech ? normalizeTechRates(tech.params) : DEFAULT_TECH_RATES };
+}
+function quoteInput(body = {}) {
+  const guardPosts = (Array.isArray(body.guardPosts) ? body.guardPosts : []).slice(0, 50).map(post => ({
+    name: typeof post?.name === 'string' ? post.name.trim().slice(0, 160) : '',
+    start: String(post?.start ?? ''), end: String(post?.end ?? ''),
+    dayTypes: Array.isArray(post?.dayTypes) ? post.dayTypes.map(String) : [],
+    guards: Number(post?.guards), modality: String(post?.modality || ''),
+  }));
+  const techLines = (Array.isArray(body.techLines) ? body.techLines : []).slice(0, 200).map(line => ({
+    description: typeof line?.description === 'string' ? line.description.trim().slice(0, 500) : '',
+    category: String(line?.category || ''), quantity: Number(line?.quantity), unitCost: Number(line?.unitCost),
+  }));
+  if (!guardPosts.length && !techLines.length) { const error = new Error('Agregue al menos un puesto o una línea de tecnología.'); error.status = 400; throw error; }
+  return { guardPosts, techLines };
+}
+async function loadQuote(database, id, profile) {
+  const quote = await must(database.from('psi_quotes').select(QUOTE_SELECT).eq('id', id).maybeSingle());
+  if (!quote) { const error = new Error('Cotización no encontrada.'); error.status = 404; throw error; }
+  if (quote.created_by !== profile.id && !globalCrmScopeRoles.has(profile.role)) {
+    if (!quote.opportunity_id) { const error = new Error('No tiene acceso a esta cotización.'); error.status = 403; throw error; }
+    await ensureOpportunityAccess(database, quote.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+  }
+  const [posts, lines] = await Promise.all([
+    must(database.from('psi_quote_guard_posts').select('name,start_time,end_time,day_types,guards,modality,position').eq('quote_id', id).order('position', { ascending: true })),
+    must(database.from('psi_quote_tech_lines').select('description,category,quantity,unit_cost,position').eq('quote_id', id).order('position', { ascending: true })),
+  ]);
+  const input = {
+    guardPosts: (posts || []).map(p => ({ name: p.name || '', start: p.start_time, end: p.end_time, dayTypes: p.day_types, guards: p.guards, modality: p.modality })),
+    techLines: (lines || []).map(l => ({ description: l.description || '', category: l.category, quantity: Number(l.quantity), unitCost: Number(l.unit_cost) })),
+  };
+  const totals = quoteTotals(input, { guardRates: normalizeGuardRates(quote.guard_rates || DEFAULT_GUARD_RATES), techRates: normalizeTechRates(quote.tech_rates || DEFAULT_TECH_RATES) });
+  return { ...quote, ...input, totals };
+}
+async function saveQuoteItems(database, quoteId, input) {
+  await must(database.from('psi_quote_guard_posts').delete().eq('quote_id', quoteId).select('id'));
+  await must(database.from('psi_quote_tech_lines').delete().eq('quote_id', quoteId).select('id'));
+  if (input.guardPosts.length) await must(database.from('psi_quote_guard_posts').insert(input.guardPosts.map((p, i) => ({ quote_id: quoteId, position: i + 1, name: p.name || null, start_time: p.start, end_time: p.end, day_types: p.dayTypes, guards: p.guards, modality: p.modality }))).select('id'));
+  if (input.techLines.length) await must(database.from('psi_quote_tech_lines').insert(input.techLines.map((l, i) => ({ quote_id: quoteId, position: i + 1, description: l.description || null, category: l.category, quantity: l.quantity, unit_cost: l.unitCost }))).select('id'));
+}
+function requireQuoteWriter(profile) {
+  requireModuleAction(profile, 'opportunities');
+  if (isReadOnlyRole(profile.role)) { const error = new Error('El perfil de solo consulta no puede cotizar.'); error.status = 403; throw error; }
+}
+app.get('/api/agt003/quotes', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '').trim();
+    let query = database.from('psi_quotes').select('id,opportunity_id,client_name,title,status,created_by,created_at,updated_at').order('updated_at', { ascending: false }).limit(200);
+    if (opportunityId) {
+      await ensureOpportunityAccess(database, opportunityId, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+      query = query.eq('opportunity_id', opportunityId);
+    } else if (!globalCrmScopeRoles.has(currentProfile.role)) {
+      query = query.eq('created_by', currentProfile.id);
+    }
+    const { data, error } = await query;
+    if (error) { if (error.code === '42P01') return res.json({ quotes: [], motivo: 'Las tablas del cotizador todavía no existen (migración 204).' }); throw error; }
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ quotes: data || [], motivo: null });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.get('/api/agt003/quote', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const id = String(req.query.id || '').trim();
+    if (!id) { const error = new Error('Debe indicar la cotización.'); error.status = 400; throw error; }
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await loadQuote(database, id, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/agt003/quotes', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    const input = quoteInput(req.body);
+    const rates = await currentQuoteRates(database);
+    quoteTotals(input, rates); // valida todo con el motor antes de guardar nada
+    const opportunityId = typeof req.body?.opportunity_id === 'string' && req.body.opportunity_id.trim() ? req.body.opportunity_id.trim() : null;
+    let clientName = typeof req.body?.client_name === 'string' ? req.body.client_name.trim().slice(0, 200) : '';
+    if (opportunityId) {
+      const opportunity = await ensureOpportunityAccess(database, opportunityId, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+      clientName ||= opportunity.company_name || '';
+    }
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 200) || null : null;
+    const quote = await must(database.from('psi_quotes').insert({ opportunity_id: opportunityId, client_name: clientName || null, title, guard_rates: rates.guardRates, tech_rates: rates.techRates, created_by: currentProfile.id }).select('id').single());
+    await saveQuoteItems(database, quote.id, input);
+    res.status(201).json(await loadQuote(database, quote.id, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.put('/api/agt003/quote', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    const id = String(req.query.id || '').trim();
+    const existing = await loadQuote(database, id, currentProfile);
+    if (existing.created_by !== currentProfile.id && !globalCrmScopeRoles.has(currentProfile.role)) { const error = new Error('Sólo quien hizo la cotización la puede cambiar.'); error.status = 403; throw error; }
+    const input = quoteInput(req.body);
+    const rates = await currentQuoteRates(database);
+    quoteTotals(input, rates);
+    const patch = { guard_rates: rates.guardRates, tech_rates: rates.techRates, updated_at: new Date().toISOString() };
+    if (typeof req.body?.client_name === 'string') patch.client_name = req.body.client_name.trim().slice(0, 200) || null;
+    if (typeof req.body?.title === 'string') patch.title = req.body.title.trim().slice(0, 200) || null;
+    // Ligar a una oportunidad (una cotización rápida del menú que ya tiene cliente en el CRM).
+    if (typeof req.body?.opportunity_id === 'string' && req.body.opportunity_id.trim() && req.body.opportunity_id.trim() !== existing.opportunity_id) {
+      const opportunity = await ensureOpportunityAccess(database, req.body.opportunity_id.trim(), currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+      patch.opportunity_id = opportunity.id;
+      if (!patch.client_name && !existing.client_name) patch.client_name = opportunity.company_name || null;
+    }
+    await must(database.from('psi_quotes').update(patch).eq('id', id).select('id').single());
+    await saveQuoteItems(database, id, input);
+    res.json(await loadQuote(database, id, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
