@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { withAdvancingClock } from './helpers/pglite-advancing-clock.mjs';
 import { getAgt002WorkbenchApi, postAgt002MessageApi, postAgt002RetryApi } from '../verticales/licitaciones/agt002-workbench-api.js';
 import { AGT002_WORKBENCH_CAPABILITIES, AGT002_WORKBENCH_POLICY_VERSION } from '../verticales/licitaciones/agt002-workbench-contract.js';
 import {
@@ -36,7 +37,7 @@ const operator = Object.freeze({
 });
 const enabled = Object.freeze({ enabled: true });
 
-const db = new PGlite();
+const db = withAdvancingClock(new PGlite());
 await db.exec(`
   create role anon; create role authenticated; create role service_role;
   create table public.psi_sales_profiles (

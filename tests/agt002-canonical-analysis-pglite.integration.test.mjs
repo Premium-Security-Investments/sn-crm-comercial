@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { withAdvancingClock } from './helpers/pglite-advancing-clock.mjs';
 
 const strip = value => value.replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
 const migration = strip(readFileSync(new URL('../supabase/migrations/050_agt002_canonical_analysis.sql', import.meta.url), 'utf8'));
@@ -9,7 +10,8 @@ const O = '11111111-1111-4111-8111-111111111111';
 const T = '22222222-2222-4222-8222-222222222222';
 const S = '33333333-3333-4333-8333-333333333333';
 
-const pg = new PGlite();
+
+const pg = withAdvancingClock(new PGlite());
 await pg.exec(`
   create role authenticated; create role service_role; create role anon;
   create table public.psi_sales_opportunities (id uuid primary key);

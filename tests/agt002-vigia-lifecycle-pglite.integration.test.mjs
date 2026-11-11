@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
+import { withAdvancingClock } from './helpers/pglite-advancing-clock.mjs';
 import { callTenderGoNoGoDecision } from '../verticales/licitaciones/tender-go-no-go-rpc.js';
 import { registerAgt002ContextVersion } from '../verticales/licitaciones/tender-analysis-foundation.js';
 import { buildAgt002OpportunityContextV2 } from '../verticales/licitaciones/agt002-opportunity-context-v2.js';
@@ -100,7 +101,7 @@ function makeWorkerPersistence(pg) {
 }
 
 async function freshDb() {
-  const pg = new PGlite();
+  const pg = withAdvancingClock(new PGlite());
   await pg.exec(`
     create role anon; create role authenticated; create role service_role;
     create table public.psi_sales_profiles (id uuid primary key, active boolean not null default true, identity_type text default 'human', role text, full_name text);
