@@ -65,7 +65,7 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
   const setDraft = (artifact: TenderDossierArtifact, patch: Partial<ArtifactDraft>) => setDrafts(current => ({ ...current, [artifact.id]: { ...draftFor(artifact), ...patch } }));
 
   // Mejora 5: la copia de trabajo en SharePoint, pedida con el botón. Mientras haya una en curso, se vuelve a mirar cada
-  // 15 s; la sube el servidor de tareas en uno o dos minutos.
+  // 15 s; la sube el servidor de tareas en hasta 5 minutos.
   const [copies, setCopies] = useState<Record<string, TenderDraftSharepointCopy>>({});
   const loadCopies = useCallback(async () => {
     try {
@@ -215,7 +215,7 @@ export function TenderDossierArtifacts({ opportunityId, artifacts, request, canA
                 {files.archivo && !files.sharepointUrl && (!copy || copy.status === 'fallido') && <button type="button" className="secondary" disabled={uploadingId === artifact.id} onClick={() => void uploadToSharepoint(artifact)}>{uploadingId === artifact.id ? 'Pidiendo…' : 'Subir a SharePoint'}</button>}
               </div>
               {files.archivo && !files.sharepointUrl && (copy?.status === 'pendiente' || copy?.status === 'subiendo'
-                ? <p className="muted">Subiendo la copia de trabajo a SharePoint; tarda uno o dos minutos.</p>
+                ? <p className="muted">Subiendo la copia de trabajo a SharePoint; tarda hasta 5 minutos.</p>
                 : copy?.status === 'fallido'
                   ? <p className="error" role="alert">No se pudo subir a SharePoint: {copy.error_text || 'error desconocido'}. Puede volver a intentarlo con «Subir a SharePoint», aquí.</p>
                   : <p className="muted">El Word de aquí es el original que armó {VIGIA_VISIBLE_NAMES.tenders}. Para trabajarlo en SharePoint, use «Subir a SharePoint».</p>)}

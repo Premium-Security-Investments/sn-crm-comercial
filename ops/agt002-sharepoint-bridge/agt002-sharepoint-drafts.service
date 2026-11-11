@@ -2,6 +2,11 @@
 Description=AGT-002 borradores -> SharePoint: sube la copia de trabajo de los borradores que una persona pidió con el botón
 After=network-online.target
 Wants=network-online.target
+# Un solo reloj para los pedidos (Juan, 2026-11-11): cada corrida arranca también el archivo de Estudios de Seguridad y
+# la lectura de SecurityOps, y espera a que terminen. Cada uno sigue siendo su propia unidad, con su sandbox: este
+# trabajo no ve la llave de SecurityOps ni aquel la sesión de Graph. Si uno falla, los demás corren igual.
+Wants=estudios-seguridad-archivo.service estudios-seguridad-securityops.service
+After=estudios-seguridad-archivo.service estudios-seguridad-securityops.service
 
 [Service]
 Type=oneshot

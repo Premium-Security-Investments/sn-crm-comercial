@@ -125,8 +125,8 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
       // The full import runs on the server (~5 minutes); the light refresh only remains before migration 109.
       setNotice(result.sync_request
         ? (result.sync_request.already_open
-          ? 'Ya hay una sincronización completa en curso. Tarda unos 5 minutos; luego pulse "Recargar vista".'
-          : 'Sincronización completa solicitada: trae todo de SECOP, TVEC y ESU, igual que la diaria. Tarda unos 5 minutos; luego pulse "Recargar vista".')
+          ? 'Ya hay una sincronización completa en curso. Tarda unos 10 minutos; luego pulse "Recargar vista".'
+          : 'Sincronización completa solicitada: trae todo de SECOP, TVEC y ESU, igual que la diaria. Tarda unos 10 minutos; luego pulse "Recargar vista".')
         : 'Fuentes oficiales sincronizadas.');
       void loadRunReceipts(); void loadRunDelta();
     }

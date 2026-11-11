@@ -1,5 +1,5 @@
 // Mejora 11 (migración 203): el paso de la carpeta de radicación dentro del trabajo que ya sube los borradores a
-// SharePoint cada minuto (ops/agt002-sharepoint-bridge/run-agt002-sharepoint-drafts.mjs). No es un trabajo nuevo (Juan
+// SharePoint cada 5 minutos (ops/agt002-sharepoint-bridge/run-agt002-sharepoint-drafts.mjs). No es un trabajo nuevo (Juan
 // pidió no multiplicar tareas repetitivas). Sin nada que hacer no lista SharePoint ni toca Microsoft.
 //
 //   1. Los GO registrados desde que existe la mejora entran solos a la cola; los procesos viejos, con el botón.

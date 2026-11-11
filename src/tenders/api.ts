@@ -220,7 +220,7 @@ export type TenderDraftSharepointCopy = {
 export async function loadTenderDraftSharepointCopies(request: TenderRequest, opportunityId: string): Promise<{ copies: TenderDraftSharepointCopy[] }> {
   return request(`/api/tender-dossier-sharepoint-copies?id=${encodeURIComponent(opportunityId)}`);
 }
-/** Pide la copia; la sube el servidor de tareas en uno o dos minutos. */
+/** Pide la copia; la sube el servidor de tareas en hasta 5 minutos. */
 export async function requestTenderDraftSharepointCopy(request: TenderRequest, input: { opportunity_id: string; version_id: string }): Promise<{ copy: TenderDraftSharepointCopy }> {
   return request('/api/tender-dossier-sharepoint-copies', { method: 'POST', body: JSON.stringify(input) });
 }
