@@ -165,7 +165,8 @@ test('"Llevar al estudio": sólo alertas y notas traídas para ESTE estudio, una
   await runSecurityOpsSync(db, fakeReader(), () => {}, NOW);
   await linkPuesto(db, study, 'PUESTO1', NOW);
   await runSecurityOpsSync(db, fakeReader(), () => {}, new Date(NOW.getTime() + 60e3));
-  const rated = { probability: 4, impact_company: 3, impact_people: 2, current_control: 'Guarda en la entrada', current_quality: 3, current_efficacy: 3, current_efficiency: 3 };
+  // IEC 31010: los datos sugieren 3 (una novedad de seguridad en 12 meses); el analista escoge 4 y explica por qué.
+  const rated = { probability: 4, probability_basis: 'Dos alertas de riesgo recientes sobre el mismo cerramiento.', impact_company: 3, impact_people: 2, current_control: 'Guarda en la entrada', current_quality: 3, current_efficacy: 3, current_efficiency: 3 };
 
   await assert.rejects(addRiskFromSecurityOps(db, study.id, { source_ref: 'securityops:alerta:OTRA', title: 'xxx', ...rated }, PREPARER, addRisk), error => error.status === 409);
   await assert.rejects(addRiskFromSecurityOps(db, study.id, { source_ref: 'securityops:foto:ALERTA1', title: 'xxx', ...rated }, PREPARER, addRisk), error => error.status === 400);

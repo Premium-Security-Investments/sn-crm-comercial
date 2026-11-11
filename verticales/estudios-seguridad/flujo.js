@@ -8,6 +8,7 @@
 
 import { createHash } from 'node:crypto';
 import { getStudy } from './estudios.js';
+import { METODOLOGIA_GUIA } from './metodologia.js';
 
 export const REVIEW_PERMISSION = 'estudios_seguridad_revisar';
 export const APPROVE_PERMISSION = 'estudios_seguridad_aprobar';
@@ -48,9 +49,14 @@ export function readinessIssues(detail) {
   if (!detail.study.visit_date) issues.push('Falta la fecha de la visita.');
   if (detail.risks.length === 0) issues.push('El estudio no tiene riesgos.');
   for (const risk of detail.risks) {
-    if (!CRITICAL_LEVELS.has(risk.valuation.actual.nivel)) continue;
+    // IEC 31010 (2026-11-11): con impacto 5 (crítico) se exige plan de contingencia aunque el riesgo sea poco probable.
+    const contingency = risk.valuation.metodologia === METODOLOGIA_GUIA.id && risk.valuation.impacto === 5;
+    if (!CRITICAL_LEVELS.has(risk.valuation.actual.nivel) && !contingency) continue;
     const planned = detail.actions.some(action => action.risk_id === risk.id && action.status !== 'descartada' && action.owner_label && action.due_date);
-    if (!planned) issues.push(`R${risk.number} está en nivel ${LEVEL_WORD[risk.valuation.actual.nivel]} y no tiene una acción con responsable y fecha.`);
+    if (planned) continue;
+    issues.push(CRITICAL_LEVELS.has(risk.valuation.actual.nivel)
+      ? `R${risk.number} está en nivel ${LEVEL_WORD[risk.valuation.actual.nivel]} y no tiene una acción con responsable y fecha.`
+      : `R${risk.number} tiene impacto crítico: necesita un plan de contingencia (una acción con responsable y fecha), aunque sea poco probable.`);
   }
   return issues;
 }
@@ -99,6 +105,9 @@ export function buildSnapshot(detail) {
       riesgo: risk.title, proceso_cliente: risk.client_process ?? null, factor: risk.risk_factor ?? null, causas: risk.causes, consecuencias: risk.consequences,
       probabilidad: risk.probability, impacto_empresa: risk.impact_company, impacto_personas: risk.impact_people,
       probabilidad_residual: risk.residual_probability ?? null,
+      // IEC 31010 (migración 208): respaldo, confianza y supuestos de la calificación.
+      probabilidad_sugerida: risk.suggested_probability ?? null, justificacion_probabilidad: risk.probability_basis ?? null,
+      confianza: risk.confidence ?? null, supuestos: risk.assumptions ?? null,
       control_existente: { descripcion: risk.current_control, calidad: risk.current_quality, eficacia: risk.current_efficacy, eficiencia: risk.current_efficiency },
       control_propuesto: { descripcion: risk.proposed_control, calidad: risk.proposed_quality, eficacia: risk.proposed_efficacy, eficiencia: risk.proposed_efficiency },
       origen: risk.origin, fuente: risk.source_ref ?? null, valoracion: risk.valuation,

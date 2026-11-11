@@ -96,7 +96,8 @@ export function valorarRiesgo(riesgo, metodologia = METODOLOGIA_V1) {
 //   · riesgo actual = ⌈P actual × I × (1 − efectividad)⌉: el control se descuenta UNA vez, sobre la magnitud;
 //   · riesgo residual = P residual × I (estimado; sin probabilidad residual, el residual es el actual);
 //   · magnitudes enteras de 1 a 25 ("mostrar las magnitudes del riesgo en enteros del 1 al 25"): el mínimo es 1;
-//   · tres niveles, los de las matrices del equipo: aceptable hasta 6, tolerable hasta 14, inaceptable desde 15.
+//   · tres niveles, los de las matrices del equipo: aceptable hasta 6, tolerable hasta 14, inaceptable desde 15;
+//   · IEC 31010 (2026-11-11): con impacto 5 (crítico) el nivel mínimo es tolerable.
 export const METODOLOGIA_GUIA = Object.freeze({
   id: 'guia-calificacion-2026',
   topeControl: 1,
@@ -117,14 +118,21 @@ export function valorarSegunGuia(riesgo, metodologia = METODOLOGIA_GUIA) {
   const inherente = probabilidad * impacto;
   const actual = Math.max(1, techo(inherente * (1 - efectividadActual)));
   const residual = residualEscogida == null ? actual : residualEscogida * impacto;
+  // IEC 31010 (Juan, 2026-11-11: "vamos a regirnos por la norma"): una consecuencia crítica no queda aceptable aunque
+  // sea poco probable. Con impacto 5 el nivel mínimo es tolerable, y exige plan de contingencia (flujo.js).
+  const nivel = magnitud => {
+    const base = nivelDeMagnitud(magnitud, metodologia);
+    return impacto === 5 && base === metodologia.niveles[0].codigo ? metodologia.niveles[1].codigo : base;
+  };
+  const porImpacto = magnitud => impacto === 5 && nivelDeMagnitud(magnitud, metodologia) === metodologia.niveles[0].codigo;
   return {
     metodologia: metodologia.id,
     impacto,
-    inherente: { magnitud: inherente, nivel: nivelDeMagnitud(inherente, metodologia) },
-    actual: { probabilidad, efectividadControl: efectividadActual, magnitud: actual, nivel: nivelDeMagnitud(actual, metodologia) },
+    inherente: { magnitud: inherente, nivel: nivel(inherente) },
+    actual: { probabilidad, efectividadControl: efectividadActual, magnitud: actual, nivel: nivel(actual), minimoPorImpacto: porImpacto(actual) },
     residual: {
       probabilidad: residualEscogida ?? probabilidad, efectividadControl: efectividadPropuesta, magnitud: residual,
-      nivel: nivelDeMagnitud(residual, metodologia), escogida: residualEscogida != null,
+      nivel: nivel(residual), escogida: residualEscogida != null, minimoPorImpacto: porImpacto(residual),
     },
   };
 }

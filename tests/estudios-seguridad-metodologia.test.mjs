@@ -191,6 +191,10 @@ test('guía: el control se descuenta una vez, el mínimo es 1, sin residual esco
   assert.deepEqual([sinResidual.residual.magnitud, sinResidual.residual.escogida], [sinResidual.actual.magnitud, false]);
   const nivel = (p, i) => valorarSegunGuia({ probabilidad: p, impacto: i }).actual.nivel;
   // Límites: 6 aceptable, 7 no existe como producto, 8 y 14 no: 12 tolerable, 15 inaceptable.
-  assert.deepEqual([nivel(1, 5), nivel(3, 2), nivel(2, 4), nivel(3, 4), nivel(3, 5)], ['aceptable', 'aceptable', 'tolerable', 'tolerable', 'inaceptable'], '5 y 6 aceptable; 8 y 12 tolerable; 15 inaceptable');
+  assert.deepEqual([nivel(2, 2), nivel(3, 2), nivel(2, 4), nivel(3, 4), nivel(3, 5)], ['aceptable', 'aceptable', 'tolerable', 'tolerable', 'inaceptable'], '4 y 6 aceptable; 8 y 12 tolerable; 15 inaceptable');
+  // IEC 31010 (Juan, 2026-11-11: "vamos a regirnos por la norma"): con impacto 5 el mínimo es tolerable.
+  const rara = valorarSegunGuia({ probabilidad: 1, impacto: 5 });
+  assert.deepEqual([rara.actual.magnitud, rara.actual.nivel, rara.actual.minimoPorImpacto], [5, 'tolerable', true]);
+  assert.equal(valorarSegunGuia({ probabilidad: 1, impacto: 4 }).actual.nivel, 'aceptable', 'con impacto 4 no hay mínimo');
   assert.throws(() => valorarSegunGuia({ probabilidad: 3, impacto: 3, probabilidadResidual: 6 }), /probabilidad residual/);
 });

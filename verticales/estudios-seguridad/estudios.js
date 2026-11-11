@@ -13,6 +13,7 @@ import { PLANTILLAS } from './plantilla.js';
 import { listEvidence } from './evidencias.js';
 import { cleanCharacterization, loadCharacterization } from './caracterizacion.js';
 import { loadSecurityOps } from './securityops.js';
+import { suggestProbability, suggestionsForStudy } from './sugerencia.js';
 
 export const STUDY_TABLE = 'psi_security_studies';
 export const ZONE_TABLE = 'psi_security_study_zones';
@@ -204,6 +205,8 @@ export async function getStudy(db, id) {
     evidence_available: evidence.available,
     characterization,
     securityops,
+    // IEC 31010: la probabilidad que sugieren los datos para cada riesgo del catálogo y para uno propio.
+    probability_suggestions: suggestionsForStudy({ catalog: template ? { riesgos: template.riesgos } : null, securityops, crimeStats: characterization?.estadisticas || [] }),
     summary: { risks: valued.length, levels },
     editable: EDITABLE_STATUSES.has(study.status),
     methodology: METODOLOGIAS[study.methodology_id] || null,
@@ -256,6 +259,35 @@ export async function deleteZone(db, studyId, zoneId, profile, now = new Date())
 
 // --- Riesgos -------------------------------------------------------------------------------------------------
 
+const CONFIDENCE = new Set(['alta', 'media', 'baja']);
+function confidence(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (!CONFIDENCE.has(value)) throw invalid('Confianza: alta, media o baja.');
+  return value;
+}
+
+// IEC 31010 (Juan, 2026-11-11): la plataforma sugiere la probabilidad con los datos; si el analista se aparta, escribe
+// por qué. Se guarda la sugerida junto a la escogida, para poder medir después la diferencia.
+async function studySignals(db, study) {
+  const [securityops, characterization] = await Promise.all([loadSecurityOps(db, study), loadCharacterization(db, study.id)]);
+  return { securityops, crimeStats: characterization?.estadisticas || [] };
+}
+
+/** Para validar varios riesgos antes de crear el primero (la nota de campo no deja nada a medias). */
+export async function probabilityChecker(db, study) {
+  const catalog = PLANTILLAS[study.template_id];
+  const signals = await studySignals(db, study);
+  return row => applyProbabilityRule(row, suggestProbability({ catalogCode: row.catalog_risk_code, catalog, ...signals }));
+}
+
+function applyProbabilityRule(row, suggestion) {
+  row.suggested_probability = suggestion?.probabilidad ?? null;
+  if (suggestion && row.probability !== suggestion.probabilidad && (row.probability_basis || '').length < 10) {
+    throw invalid(`Probabilidad: los datos sugieren ${suggestion.probabilidad} (${suggestion.significado}; ${suggestion.fuente}). Si escoge otra, explique por qué en la justificación.`);
+  }
+  return row;
+}
+
 export function cleanRiskInput(body = {}, catalog = null) {
   const catalogCode = text(body.catalog_risk_code, { field: 'Riesgo del catálogo', max: 10 });
   if (catalogCode && catalog && !catalog.riesgos.some(item => item.codigo === catalogCode)) throw invalid('Riesgo del catálogo inválido.');
@@ -277,6 +309,10 @@ export function cleanRiskInput(body = {}, catalog = null) {
     // La guía tiene un solo impacto: si no llega el de personas, es el mismo (la metodología v1 usaba el mayor).
     impact_people: scale(body.impact_people ?? body.impact_company, 'Impacto sobre personas'),
     residual_probability: scale(body.residual_probability, 'Probabilidad residual', { optional: true }),
+    // IEC 31010 (migración 208): por qué esa probabilidad, qué tan seguro está el analista y con qué supuestos.
+    probability_basis: text(body.probability_basis, { field: 'Justificación de la probabilidad', max: 1000 }),
+    confidence: confidence(body.confidence),
+    assumptions: text(body.assumptions, { field: 'Supuestos', max: 2000 }),
     current_control: text(body.current_control, { field: 'Control existente', max: 4000 }),
     ...rating(body, 'current', 'Control existente'),
     proposed_control: text(body.proposed_control, { field: 'Control propuesto', max: 4000 }),
@@ -291,7 +327,9 @@ async function requireZoneInStudy(db, studyId, zoneId) {
 
 export async function addRisk(db, studyId, body = {}, profile, { now = new Date(), origin = 'manual', sourceRef = null } = {}) {
   const study = await requireEditable(db, studyId);
-  const row = cleanRiskInput(body, PLANTILLAS[study.template_id]);
+  const catalog = PLANTILLAS[study.template_id];
+  const row = cleanRiskInput(body, catalog);
+  applyProbabilityRule(row, suggestProbability({ catalogCode: row.catalog_risk_code, catalog, ...(await studySignals(db, study)) }));
   await requireZoneInStudy(db, study.id, row.zone_id);
   const numbers = await must(db.from(RISK_TABLE).select('number').eq('study_id', study.id));
   const number = Math.max(0, ...(numbers || []).map(risk => risk.number)) + 1;
@@ -309,7 +347,13 @@ export async function addRisk(db, studyId, body = {}, profile, { now = new Date(
 export async function updateRisk(db, studyId, riskId, body = {}, profile, now = new Date()) {
   const study = await requireEditable(db, studyId);
   const current = await readChild(db, RISK_TABLE, study.id, riskId, 'Riesgo');
-  const row = cleanRiskInput({ ...current, ...body }, PLANTILLAS[study.template_id]);
+  const catalog = PLANTILLAS[study.template_id];
+  const row = cleanRiskInput({ ...current, ...body }, catalog);
+  // Sólo se vuelve a sugerir si cambia la probabilidad o el riesgo del catálogo: editar un texto no exige justificar de
+  // nuevo porque SecurityOps se haya actualizado entretanto.
+  if (row.probability !== current.probability || (row.catalog_risk_code ?? null) !== (current.catalog_risk_code ?? null)) {
+    applyProbabilityRule(row, suggestProbability({ catalogCode: row.catalog_risk_code, catalog, ...(await studySignals(db, study)) }));
+  }
   await requireZoneInStudy(db, study.id, row.zone_id);
   const stamp = now.toISOString();
   const risk = await must(db.from(RISK_TABLE).update({ ...row, updated_at: stamp }).eq('id', current.id).select('*').single());

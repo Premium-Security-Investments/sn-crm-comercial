@@ -81,6 +81,10 @@ export const ESCALAS = Object.freeze({
   probabilidad: Object.freeze(['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta']),
   // Impacto: los nombres de la guía de calificación (sede Medellín, noviembre de 2026).
   impacto: Object.freeze(['Muy leve', 'Leve', 'Moderado', 'Grave', 'Crítico']),
+  // IEC 31010: cada nivel con significado definido. Probabilidad: frecuencia en la sede y antecedentes en la zona
+  // (sugerencia.js); impacto: los descriptores de la guía de calificación.
+  probabilidadSignificado: Object.freeze(['no ha ocurrido en la sede y no hay antecedentes en la zona', 'hay antecedentes en la zona, pero no ocurrió en la sede en el último año', 'ocurrió en la sede una vez en el último año', 'ocurrió en la sede varias veces en el último año', 'ocurre en la sede casi todos los meses']),
+  impactoSignificado: Object.freeze(['efecto mínimo', 'efecto limitado', 'efecto relevante', 'efecto severo', 'efecto muy grave']),
   // Calificación del control en palabras. 2 a 4, verificados contra los Excel; 1 y 5, de la «Guía de calificación de la
   // matriz 5×5 y controles» de la sede Medellín (analista de riesgos, noviembre de 2026), que los propone para
   // estandarizar los informes. Juan, 2026-11-11: "adelante con los nombres".

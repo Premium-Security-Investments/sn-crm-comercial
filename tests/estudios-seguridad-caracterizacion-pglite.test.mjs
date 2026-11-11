@@ -111,7 +111,7 @@ test('el informe toma cada dato de su lugar: caracterización, dispositivo, cont
   await addCharacterizationRow(db, study.id, 'dispositivo', { name: 'Cold Process', schedule: '24 horas', armed: false });
   const risk = await addRisk(db, study.id, {
     title: 'Infiltración de personal con intención delictiva', client_process: 'Gestión Humana', risk_factor: 'Humano – Procedimental – Estratégico',
-    probability: 3, impact_company: 4, impact_people: 3, current_control: 'Estudios de confiabilidad', current_quality: 3, current_efficacy: 3, current_efficiency: 3,
+    probability: 3, probability_basis: 'Hubo un caso de infiltración en la planta vecina este año.', confidence: 'media', assumptions: 'Los estudios de confiabilidad se aplican a todo el personal nuevo.', impact_company: 4, impact_people: 3, current_control: 'Estudios de confiabilidad', current_quality: 3, current_efficacy: 3, current_efficiency: 3,
     proposed_control: 'Reevaluación periódica', proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4,
   }, PREPARER);
   await addAction(db, study.id, { risk_id: risk.id, description: 'Reevaluación anual del personal crítico', owner_label: 'Gestión Humana', due_date: '2026-12-15' }, PREPARER);
