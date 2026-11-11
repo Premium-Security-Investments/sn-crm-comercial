@@ -1129,3 +1129,11 @@ td.numeric-value{white-space:nowrap}
 .tw-ally-reading blockquote{margin:6px 0 0;font-style:italic;color:#334155}
 .tw-ally-source{font-size:12px;margin:4px 0}
 .tw-ally-zone{color:#92400e;font-size:13px}
+
+/* Punto 7 del encargo de Aliados (Juan, 2026-11-11): quiénes se han movido en este proceso, plegado en Decidir. */
+.tw-participants{border-top:1px solid #e2e8f0;margin-top:8px;padding-top:8px}
+.tw-participants>summary{cursor:pointer;font-weight:700;color:#10213d;padding:4px 0}
+.tw-participants[open]{display:grid;gap:10px}
+.tw-participants-group h4{margin:12px 0 0;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#475569}
+.tw-ally-tag.is-neutral{background:#e0e7ff;color:#1e3a8a}.tw-ally-tag.is-good{background:#dcfce7;color:#166534}
+.tw-participants .tw-ally-name,.tw-participants .tw-ally-name:hover,.tw-participants .tw-ally-name:focus-visible{all:unset;cursor:pointer;font-weight:800;color:#174ea6;background:none;box-shadow:none;transform:none;text-decoration:underline;text-decoration-color:rgba(23,78,166,.35);text-underline-offset:3px}.tw-participants .tw-ally-name:hover{color:#0d3a85}

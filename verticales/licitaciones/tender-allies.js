@@ -82,7 +82,7 @@ export async function listAllies(database, { participationsSeed = [] } = {}) {
     const [companies, offices, participations] = await Promise.all([
       allCompanies(database),
       all(database, 'psi_vigilance_company_offices', 'nit,city,city_key,department,office_type'),
-      all(database, 'psi_vigilance_participations', 'id,nit,company_label,entity,process_ref,kind,detail,source,occurred_on,created_at'),
+      all(database, 'psi_vigilance_participations', 'id,nit,company_label,entity,process_ref,opportunity_id,kind,detail,source,occurred_on,created_at'),
     ]);
     const citiesByNit = new Map();
     for (const office of offices) {
@@ -251,4 +251,51 @@ export function rankAllyCandidates(companies, { cityKeys, processRef = null, lim
   const pool = full.length ? full : scored;
   const cmp = (a, b) => { for (let i = 0; i < a._score.length; i += 1) if (a._score[i] !== b._score[i]) return a._score[i] - b._score[i]; return a.name.localeCompare(b.name); };
   return pool.sort(cmp).slice(0, limit).map(({ _score, ...candidate }) => candidate);
+}
+
+// Punto 7 del encargo de Aliados (Juan, 2026-11-11: «vamos así»): quiénes se han movido en este proceso, agrupados por lo
+// que hicieron, con cuántos procesos nuestros más tienen en la base, cómo los tenemos marcados y si tienen oficina en las
+// ciudades nuestras que pide el pliego. Sólo lectura: los datos se registran en Aliados.
+export const PARTICIPANT_GROUPS = Object.freeze([
+  ['observo_proyecto', 'Observaron el proyecto de pliego'],
+  ['observo_definitivo', 'Observaron el pliego definitivo'],
+  ['oferto', 'Ofertaron'],
+  ['contratista', 'Contratista actual o adjudicatario'],
+  ['otro', 'Otros'],
+]);
+const groupOf = kind => (kind === 'contratista_actual' || kind === 'adjudicatario' ? 'contratista' : PARTICIPANT_GROUPS.some(([key]) => key === kind) ? kind : 'otro');
+
+/** ¿Esta participación es de este proceso? Con oportunidad, sólo la exacta; sin ella, por la referencia. Pura. */
+export function participationInProcess(part, { opportunityId, tenderRef }) {
+  if (part.opportunity_id) return part.opportunity_id === opportunityId;
+  const ref = normProcess(part.process_ref);
+  const target = normProcess(tenderRef);
+  if (!ref || !target) return false;
+  return ref === target || (ref.length >= 8 && target.includes(ref)) || (target.length >= 8 && ref.includes(target));
+}
+
+/**
+ * Los que se movieron en el proceso, agrupados. `companies` como los devuelve listAllies (con cities y participations);
+ * `zoneCities`: Map(city_key → nombre) de nuestras ciudades que pide el pliego. Pura.
+ */
+export function processParticipants({ companies, withoutNit = [], opportunityId, tenderRef, zoneCities = new Map() }) {
+  const groups = new Map(PARTICIPANT_GROUPS.map(([key, label]) => [key, { key, label, items: [] }]));
+  const inProcess = part => participationInProcess(part, { opportunityId, tenderRef });
+  for (const company of companies) {
+    const here = (company.participations || []).filter(inProcess);
+    if (!here.length) continue;
+    const others = new Set((company.participations || []).filter(part => !inProcess(part)).map(part => normProcess(part.process_ref))).size;
+    const have = new Set((company.cities || []).map(city => city.city_key));
+    const zone = [...zoneCities.keys()].filter(key => have.has(key)).map(key => zoneCities.get(key));
+    for (const part of here) {
+      groups.get(groupOf(part.kind)).items.push({
+        nit: company.nit, name: company.name, role: company.role, kind: part.kind, detail: part.detail || null,
+        occurred_on: part.occurred_on || null, other_processes: others, zone_cities: zone,
+      });
+    }
+  }
+  for (const part of withoutNit.filter(inProcess)) {
+    groups.get(groupOf(part.kind)).items.push({ nit: null, name: part.company_label, role: null, kind: part.kind, detail: part.detail || null, occurred_on: part.occurred_on || null, other_processes: 0, zone_cities: [] });
+  }
+  return [...groups.values()].filter(group => group.items.length).map(group => ({ ...group, items: group.items.sort((a, b) => a.name.localeCompare(b.name)) }));
 }
