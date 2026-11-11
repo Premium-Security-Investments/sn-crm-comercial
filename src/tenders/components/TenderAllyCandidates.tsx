@@ -9,7 +9,8 @@ import { AllyCardDialog } from './AllyDetail';
  */
 type Candidate = { nit: string; name: string; role: string; covered: string[]; covers_all: boolean; times_seen: number; warning: string | null; zone_warning?: string | null; competed_against_us?: number; offices?: number; size_note?: string | null; contact: string | null; phone: string | null; email: string | null };
 type Reading = { mode: 'uno_cumple' | 'se_suma' | 'no_dice'; quote: string | null; quote_verified: boolean; document_name: string | null; locator: string | null; explanation: string | null };
-type Payload = { applies: boolean; installed?: boolean; cities: string[]; candidates: Candidate[]; reading?: Reading; alternative?: { label: string; cities: string[]; candidates: Candidate[] } };
+type Pair = { first: Candidate; second: Candidate };
+type Payload = { applies: boolean; installed?: boolean; cities: string[]; candidates: Candidate[]; pairs?: Pair[]; reading?: Reading; alternative?: { label: string; cities: string[]; candidates: Candidate[]; pairs?: Pair[] } };
 // Encargo AGT-002 del 2026-11-10 (aprobado por Juan): la lista sale de cómo deja el pliego cumplir a una unión temporal.
 // Juan (2026-11-10): no afirmar más de lo que dice el pliego. «Si uno de los integrantes cumple… se entenderá cumplido»
 // dice que BASTA con uno, no que esté prohibido sumar: se muestran las dos listas, cada una con lo que la sostiene.
@@ -46,9 +47,11 @@ export function TenderAllyCandidates({ opportunityId, request, navigate, canEdit
         : <>
           <p className="tw-muted">{data.alternative ? <><b>Lo seguro según el pliego</b>: con oficina en {joinCities(data.cities)}</> : <>Con oficina en {joinCities(data.cities)}</>} según el listado de la Superintendencia (falta pedirles la resolución y el certificado de Cámara):</p>
           <CandidateList candidates={data.candidates} onOpen={setCard} />
-          {data.alternative && data.alternative.candidates.length > 0 && <>
+          <PairList pairs={data.pairs} cities={data.cities} onOpen={setCard} />
+          {data.alternative && (data.alternative.candidates.length > 0 || (data.alternative.pairs || []).length > 0) && <>
             <p className="tw-muted"><b>{data.alternative.label}</b>: con oficina en {joinCities(data.alternative.cities)}.</p>
             <CandidateList candidates={data.alternative.candidates} onOpen={setCard} />
+            <PairList pairs={data.alternative.pairs} cities={data.alternative.cities} onOpen={setCard} />
           </>}
           <button type="button" className="tw-link" onClick={open}>Ver todos en Aliados →</button>
         </>}
@@ -74,4 +77,14 @@ function CandidateList({ candidates, onOpen }: { candidates: Candidate[]; onOpen
       {candidate.size_note && <span className="tw-ally-tag is-neutral">{candidate.size_note}</span>}
     </div>}
   </li>)}</ul>;
+}
+
+/** Punto 4 (2026-11-11): dos socios que entre los dos cubren las ciudades, cuando ninguno solo las cubre. */
+function PairList({ pairs, cities, onOpen }: { pairs?: Pair[]; cities: string[]; onOpen: (nit: string) => void }) {
+  if (!pairs?.length) return null;
+  const part = (candidate: Candidate) => <><button type="button" className="tw-ally-name" onClick={() => onOpen(candidate.nit)}>{candidate.name}</button> <span className="tw-ally-meta">({candidate.covered.join(', ')})</span></>;
+  return <div className="tw-ally-pairs">
+    <p className="tw-muted">Ningún socio solo tiene {joinCities(cities)}. <b>Combinaciones de dos socios</b>:</p>
+    <ul className="tw-ally-list">{pairs.map(pair => <li key={`${pair.first.nit}-${pair.second.nit}`}><div className="tw-ally-line">{part(pair.first)} <b>+</b> {part(pair.second)}</div></li>)}</ul>
+  </div>;
 }

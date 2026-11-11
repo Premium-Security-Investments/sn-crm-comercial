@@ -315,3 +315,34 @@ export function processParticipants({ companies, withoutNit = [], opportunityId,
   }
   return [...groups.values()].filter(group => group.items.length).map(group => ({ ...group, items: group.items.sort((a, b) => a.name.localeCompare(b.name)) }));
 }
+
+/**
+ * Punto 4 del encargo de Aliados (Juan, 2026-11-11: «sería útil para procesos futuros»): combinaciones de dos socios que
+ * entre los dos cubren las ciudades, sólo cuando ningún socio solo las cubre. Se ordenan por la suma de los puestos de
+ * cada uno en el orden del punto 3 (relación y si compitió contra nosotros), sin repetir socio entre combinaciones.
+ * Quien llama decide si aplica: sólo si el pliego permite sumar (o en la lista rotulada «sólo si la Entidad acepta»).
+ */
+export function rankAllyPairs(companies, { cityKeys, limit = 3, pool = 40, ...options }) {
+  if (cityKeys.length < 2) return [];
+  const ranked = rankAllyCandidates(companies, { cityKeys, ...options, limit: 500 });
+  if (!ranked.length || ranked.some(candidate => candidate.covers_all)) return [];
+  const keysOf = new Map(companies.map(company => [company.nit, new Set((company.cities || []).map(city => city.city_key))]));
+  const top = ranked.slice(0, pool);
+  const pairs = [];
+  for (let i = 0; i < top.length; i += 1) {
+    for (let j = i + 1; j < top.length; j += 1) {
+      const a = keysOf.get(top[i].nit) || new Set();
+      const b = keysOf.get(top[j].nit) || new Set();
+      if (cityKeys.every(key => a.has(key) || b.has(key))) pairs.push({ score: i + j, first: top[i], second: top[j] });
+    }
+  }
+  const used = new Set();
+  const out = [];
+  for (const pair of pairs.sort((x, y) => x.score - y.score)) {
+    if (used.has(pair.first.nit) || used.has(pair.second.nit)) continue;
+    used.add(pair.first.nit); used.add(pair.second.nit);
+    out.push({ first: pair.first, second: pair.second });
+    if (out.length === limit) break;
+  }
+  return out;
+}
