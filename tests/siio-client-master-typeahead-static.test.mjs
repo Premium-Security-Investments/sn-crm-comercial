@@ -48,7 +48,9 @@ const FROZEN = {
   // Actualizado a propósito (2026-11-11, piloto Fiscalía): la Mesa pide además `proceso.reglas_para_plurales`, las
   // reglas del pliego para uniones temporales, cuando la pregunta es de unión temporal. Cupos, motor, puente, modelo,
   // timeout e interruptor no cambian.
-  'verticales/licitaciones/agt002-workbench-runtime.js': '4f3a2f00bb546f352795cd587ad23619b60bbfe128d1be0f39c9311f5b7228ec',
+  // Actualizado a propósito (2026-11-11, punto 5 del encargo de Aliados): la Mesa pide además `aliados.candidatos` y
+  // `aliados.competencia_del_proceso`. Cupos, motor, puente, modelo, timeout e interruptor no cambian.
+  'verticales/licitaciones/agt002-workbench-runtime.js': 'bebf48f6fb74ab02b0d54f91f6cf72d94eb16a0b22dcd69e06e94bb15484883b',
   // Actualizado a propósito (2026-11-05, F3 de la auditoría Fiscalía): el corte de vigencia de las normas
   // (`legalAsOf`) toma el día de Colombia en vez del de UTC. Cupos, motor, puente, modelo y timeout no cambian.
   'verticales/licitaciones/agt002-preview-runtime.js': '7d6f6f6b41af98b2b0b3081846565389f07c2bdb7e8766f3ff6570385fce33ae',

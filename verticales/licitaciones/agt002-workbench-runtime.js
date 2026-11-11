@@ -31,6 +31,9 @@ export const AGT002_MESA_FUENTES = Object.freeze([
   'proceso.seccion_del_pliego',
   // Piloto Fiscalía (2026-11-11): qué cumple cada integrante y qué se suma, con el numeral, si la pregunta es de UT.
   'proceso.reglas_para_plurales',
+  // Punto 5 del encargo de Aliados (2026-11-11): la lista de socios de Decidir con su regla, y la competencia del proceso.
+  'aliados.candidatos',
+  'aliados.competencia_del_proceso',
 ]);
 import {
   claimAgt002WorkbenchJob,
