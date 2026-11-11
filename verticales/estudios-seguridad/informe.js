@@ -12,6 +12,7 @@
 // queda el paquete en SharePoint: siempre bajo 99_Del_CRM/Estudios_de_Seguridad/.
 
 import { METODOLOGIAS, METODOLOGIA_V1, nivelDeMagnitud } from './metodologia.js';
+import { RENEWAL_OPTIONS, studyValidity } from './vigencia.js';
 import { ESCALAS, PLANTILLAS, controlWord } from './plantilla.js';
 
 export const ARCHIVE_BASE_PATH = '99_Del_CRM/Estudios_de_Seguridad';
@@ -404,6 +405,9 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   }
   chapter('Informes, registro y seguimiento');
   p(`Una vez socializado el estudio en comité de seguridad con las directivas de ${clientName}, se dispondrá de un plan de trabajo conjunto para su seguimiento. Los avances se revisarán de manera bimensual en comité de seguridad, con base en el plan de tratamiento y en los indicadores de gestión.`);
+  // Migración 209: vigencia del estudio (Héctor: mínimo cada 6 meses, máximo cada 3 años, y antes ante un siniestro).
+  const validity = studyValidity({ renewal_months: study.renovacion_meses }, { approvedAt: meta.approvedAt });
+  if (validity.vence) p(`Vigencia: este estudio se renueva ${RENEWAL_OPTIONS.find(item => item.meses === validity.meses)?.etiqueta.toLowerCase() || `cada ${validity.meses} meses`}, a más tardar el ${longDate(validity.vence)}, o antes si cambian las instalaciones o se presenta un siniestro.`);
 
   if (evidence.length) {
     h2('Evidencias del estudio');

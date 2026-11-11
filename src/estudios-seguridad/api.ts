@@ -8,8 +8,21 @@ export type Nivel = 'bajo' | 'moderado' | 'alto' | 'critico' | 'aceptable' | 'to
 
 export type StudySummaryRow = {
   id: string; code: string; title: string; status: StudyStatus; client_name: string; site_name: string;
-  site_city: string | null; visit_date: string | null; updated_at: string; risk_count: number;
+  site_city: string | null; visit_date: string | null; updated_at: string; risk_count: number; validity?: Validity;
 };
+
+// Migración 209: vigencia del estudio y revaloración (Héctor: mínimo cada 6 meses, máximo cada 3 años).
+export type Validity = {
+  estado: 'sin_aprobar' | 'vigente' | 'por_vencer' | 'vencido'; aprobado: string | null; vence: string | null; dias: number | null; meses: number;
+  revalorar: Array<{ motivo: 'pedida' | 'siniestro'; fecha: string; detalle: string }>;
+};
+// Copia de RENEWAL_OPTIONS en verticales/estudios-seguridad/vigencia.js.
+export const RENEWAL_OPTIONS = [
+  { meses: 6, etiqueta: 'Cada 6 meses', cuando: 'puesto crítico con requisito normativo (BASC, OEA)' },
+  { meses: 12, etiqueta: 'Cada año', cuando: 'requisito normativo (BASC, OEA) o puesto crítico' },
+  { meses: 24, etiqueta: 'Cada 2 años', cuando: 'procedimiento de la empresa' },
+  { meses: 36, etiqueta: 'Cada 3 años', cuando: 'puesto no crítico' },
+];
 
 export type Study = StudySummaryRow & {
   client_source: 'avancys' | 'crm'; client_ref: string; client_nit: string | null;
@@ -19,6 +32,7 @@ export type Study = StudySummaryRow & {
   external_context?: string | null; criminal_groups?: string | null; internal_context?: string | null;
   context_sources?: Array<{ nombre: string; url: string | null; fecha: string | null }>;
   securityops_puesto_id?: string | null; securityops_requested_at?: string | null;
+  renewal_months?: number; revaluation_requested_at?: string | null; revaluation_note?: string | null;
 };
 
 export type Zone = { id: string; name: string; description: string | null; position: number };
@@ -75,7 +89,7 @@ export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; rie
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
   evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review; securityops?: SecurityOpsState; entrega?: Entrega;
-  probability_suggestions?: ProbabilitySuggestions;
+  probability_suggestions?: ProbabilitySuggestions; validity?: Validity;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
@@ -131,6 +145,7 @@ export const searchSecurityOpsPuestos = (q: string, todos = false) => api<Securi
 export const linkSecurityOps = (studyId: string, puestoId: string | null) => api<{ puesto_id: string | null }>(`${BASE}/${encodeURIComponent(studyId)}/securityops`, json('POST', { puesto_id: puestoId }));
 export const refreshSecurityOps = (studyId: string) => api<{ requested: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/securityops/actualizar`, json('POST', {}));
 
+export const requestRevaluation = (studyId: string, note: string) => api<{ requested: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/revaloracion`, json('POST', { note }));
 export const recordDelivery = (studyId: string, body: Record<string, unknown>) => api<Delivery>(`${BASE}/${encodeURIComponent(studyId)}/socializacion`, json('POST', body));
 export const createShare = (studyId: string, body: { label?: string; days?: number }) => api<Share & { token: string; path: string }>(`${BASE}/${encodeURIComponent(studyId)}/enlaces`, json('POST', body));
 export const revokeShare = (studyId: string, shareId: string) => api<{ revoked: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/enlaces/${encodeURIComponent(shareId)}/anular`, json('POST', {}));

@@ -88,6 +88,7 @@ export function buildSnapshot(detail) {
       cliente: { fuente: study.client_source, referencia: study.client_ref, nombre: study.client_name, nit: study.client_nit },
       sede: { fuente: study.site_source, referencia: study.site_ref, nombre: study.site_name, ciudad: study.site_city, direccion: study.site_address },
       alcance: study.scope, fecha_visita: study.visit_date, preparado_por: study.prepared_by,
+      renovacion_meses: study.renewal_months ?? 24,
     },
     // Tramo 5 (migración 187): la caracterización de la sede, como la trae el capítulo I-A del informe real.
     caracterizacion: {

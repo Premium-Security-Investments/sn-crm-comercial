@@ -12,7 +12,8 @@ import { addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys
 import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { reviewStudy as reviewSecurityStudy } from '../verticales/estudios-seguridad/revisor.js';
-import { createShare as createSecurityStudyShare, loadDelivery as loadSecurityStudyDelivery, recordDelivery as recordSecurityStudyDelivery, renderPublicPage as renderSecurityStudyPublicPage, resolvePublicStudy as resolveSecurityStudyPublic, revokeShare as revokeSecurityStudyShare } from '../verticales/estudios-seguridad/entrega.js';
+import { requestRevaluation as requestSecurityStudyRevaluation } from '../verticales/estudios-seguridad/vigencia.js';
+import { canDeliver as canDeliverSecurityStudy, createShare as createSecurityStudyShare, loadDelivery as loadSecurityStudyDelivery, recordDelivery as recordSecurityStudyDelivery, renderPublicPage as renderSecurityStudyPublicPage, resolvePublicStudy as resolveSecurityStudyPublic, revokeShare as revokeSecurityStudyShare } from '../verticales/estudios-seguridad/entrega.js';
 import { addRiskFromSecurityOps, linkPuesto as linkSecurityOpsPuesto, requestRefresh as refreshSecurityOps, searchPuestos as searchSecurityOpsPuestos } from '../verticales/estudios-seguridad/securityops.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
@@ -3708,6 +3709,13 @@ securityStudyRoute('post', '/api/estudios-seguridad/:id/securityops', async (db,
   return linkSecurityOpsPuesto(db, detail.study, req.body?.puesto_id ?? null);
 });
 // Socialización con el cliente y enlaces en línea (migración 206).
+// Pedir revaloración de un estudio aprobado (cambio de instalaciones u otro motivo; migración 209).
+securityStudyRoute('post', '/api/estudios-seguridad/:id/revaloracion', async (db, req, profile) => {
+  const { study } = await getSecurityStudy(db, req.params.id);
+  if (!canDeliverSecurityStudy(profile, study)) throw Object.assign(new Error('Sólo quien preparó, revisa o aprueba estudios pide revaloración.'), { status: 403 });
+  if (!['aprobado', 'archivado'].includes(study.status)) throw Object.assign(new Error('Sólo se pide revaloración de un estudio aprobado.'), { status: 409 });
+  return requestSecurityStudyRevaluation(db, study, req.body || {});
+});
 securityStudyRoute('post', '/api/estudios-seguridad/:id/socializacion', async (db, req, profile) => recordSecurityStudyDelivery(db, (await getSecurityStudy(db, req.params.id)).study, req.body || {}, profile));
 securityStudyRoute('post', '/api/estudios-seguridad/:id/enlaces', async (db, req, profile) => createSecurityStudyShare(db, (await getSecurityStudy(db, req.params.id)).study, req.body || {}, profile));
 securityStudyRoute('post', '/api/estudios-seguridad/:id/enlaces/:shareId/anular', async (db, req, profile) => revokeSecurityStudyShare(db, (await getSecurityStudy(db, req.params.id)).study, req.params.shareId, profile));

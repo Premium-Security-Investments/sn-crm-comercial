@@ -20,6 +20,9 @@ const MAX_ALERTS = 40;
 const MAX_NOTES = 40;
 const MAX_FAILURES = 40;
 const EDITABLE = ['borrador', 'devuelto', 'en_revision', 'revisado'];
+// Los aprobados también se refrescan una vez al día (no a pedido): sus siniestros posteriores piden revaloración
+// (vigencia.js). La versión aprobada no cambia: congeló lo que había.
+const DAILY = [...EDITABLE, 'aprobado', 'archivado'];
 // Estados de un ticket de fallas que siguen abiertos (SecurityOps src/utils/reportesFallas.js; igual que AGT-004).
 const TICKET_OPEN = new Set(['nuevo', 'convertido', 'atendido', 'en_aprobacion', 'cotizacion_aprobada', 'cotizacion_rechazada']);
 
@@ -185,9 +188,11 @@ export function buildAntecedentes(raw, now = new Date()) {
   const tecnicas = pick(raw.tecnicas, 'fecha');
   const completitudes = rondas.map(row => Number(row.completitud)).filter(Number.isFinite);
   const priorities = countBy(novedades, 'prioridad');
+  // Migración 209: los días de las novedades graves, para pedir revaloración si ocurren después de aprobar.
+  const graves = novedades.filter(row => ['alta', 'critica'].includes(row.prioridad)).map(row => row._day).filter(Boolean).sort().reverse().slice(0, 50);
 
   const summary = {
-    novedades: { total: novedades.length, por_tipo: countBy(novedades, 'tipo'), altas: (priorities.alta || 0) + (priorities.critica || 0), ultima: latest(novedades) },
+    novedades: { total: novedades.length, por_tipo: countBy(novedades, 'tipo'), altas: (priorities.alta || 0) + (priorities.critica || 0), altas_fechas: graves, ultima: latest(novedades) },
     rondas: { total: rondas.length, completitud_promedio: completitudes.length ? Math.round(completitudes.reduce((a, b) => a + b, 0) / completitudes.length) : null },
     visitas: { total: visitas.length, por_tipo: countBy(visitas, 'tipoVisita'), ultima: latest(visitas) },
     fallas: { total: fallas.length, abiertas: fallas.filter(row => TICKET_OPEN.has(row.estado)).length },
@@ -235,7 +240,7 @@ export async function fetchAntecedentes(reader, puestoId, now = new Date()) {
 // Estudios con puesto vinculado que piden datos: recién vinculados o con "Actualizar", y los que siguen en trabajo y
 // tienen más de un día. Los aprobados no se refrescan: su versión ya congeló lo que había.
 export async function pendingStudies(db, now = new Date()) {
-  const { data: studies, error } = await db.from('psi_security_studies').select('id, status, securityops_puesto_id, securityops_requested_at').in('status', EDITABLE);
+  const { data: studies, error } = await db.from('psi_security_studies').select('id, status, securityops_puesto_id, securityops_requested_at').in('status', DAILY);
   if (error) throw error;
   const linked = (studies || []).filter(study => study.securityops_puesto_id);
   if (!linked.length) return [];

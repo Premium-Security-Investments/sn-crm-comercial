@@ -14,6 +14,7 @@ import { listEvidence } from './evidencias.js';
 import { cleanCharacterization, loadCharacterization } from './caracterizacion.js';
 import { loadSecurityOps } from './securityops.js';
 import { suggestProbability, suggestionsForStudy } from './sugerencia.js';
+import { RENEWAL_MONTHS, studyValidity } from './vigencia.js';
 
 export const STUDY_TABLE = 'psi_security_studies';
 export const ZONE_TABLE = 'psi_security_study_zones';
@@ -112,6 +113,8 @@ export function cleanStudyInput(body = {}) {
     site_address: text(body.site_address, { field: 'Dirección', max: 300 }),
     scope: text(body.scope, { field: 'Alcance', max: 4000 }),
     visit_date: isoDate(body.visit_date, 'Fecha de visita'),
+    // Migración 209: cada cuánto se renueva (Héctor: mínimo cada 6 meses, máximo cada 3 años).
+    ...(body.renewal_months !== undefined && body.renewal_months !== null && body.renewal_months !== '' ? { renewal_months: renewal(body.renewal_months) } : {}),
   };
 }
 
@@ -128,6 +131,7 @@ export async function updateStudy(db, id, body = {}, profile, now = new Date()) 
   if (body.title !== undefined) patch.title = text(body.title, { field: 'Título', min: 3, max: 200 });
   if (body.scope !== undefined) patch.scope = text(body.scope, { field: 'Alcance', max: 4000 });
   if (body.visit_date !== undefined) patch.visit_date = isoDate(body.visit_date, 'Fecha de visita');
+  if (body.renewal_months !== undefined) patch.renewal_months = renewal(body.renewal_months);
   Object.assign(patch, cleanCharacterization(body));
   if (body.client_source !== undefined || body.site_source !== undefined) {
     const merged = cleanStudyInput({ ...current, ...body });
@@ -142,14 +146,30 @@ export async function updateStudy(db, id, body = {}, profile, now = new Date()) 
   return must(db.from(STUDY_TABLE).update(patch).eq('id', current.id).select('*').single());
 }
 
-export async function listStudies(db) {
+export async function listStudies(db, now = new Date()) {
   const studies = await must(db.from(STUDY_TABLE)
-    .select('id, code, title, status, client_name, site_name, site_city, visit_date, prepared_by, created_at, updated_at')
+    .select('*')
     .order('updated_at', { ascending: false }));
   const risks = await must(db.from(RISK_TABLE).select('study_id'));
   const count = new Map();
   for (const risk of risks || []) count.set(risk.study_id, (count.get(risk.study_id) || 0) + 1);
-  return (studies || []).map(study => ({ ...study, risk_count: count.get(study.id) || 0 }));
+  // Migración 209: la vigencia de cada estudio (aprobación de la última versión, frecuencia y siniestros posteriores).
+  const [versions, secops] = await Promise.all([
+    db.from('psi_security_study_versions').select('study_id, version, approved_at'),
+    db.from('psi_security_study_securityops').select('study_id, puesto_id, status, summary'),
+  ]);
+  const approvedAt = new Map();
+  for (const row of (versions.error ? [] : versions.data) || []) {
+    const prev = approvedAt.get(row.study_id);
+    if (!prev || row.version > prev.version) approvedAt.set(row.study_id, row);
+  }
+  const ops = new Map(((secops.error ? [] : secops.data) || []).map(row => [row.study_id, row]));
+  return (studies || []).map(study => ({
+    id: study.id, code: study.code, title: study.title, status: study.status, client_name: study.client_name, site_name: study.site_name,
+    site_city: study.site_city, visit_date: study.visit_date, prepared_by: study.prepared_by, created_at: study.created_at, updated_at: study.updated_at,
+    risk_count: count.get(study.id) || 0,
+    validity: studyValidity(study, { approvedAt: approvedAt.get(study.id)?.approved_at || null, securityops: ops.get(study.id)?.puesto_id === study.securityops_puesto_id ? { data: ops.get(study.id) } : null, now }),
+  }));
 }
 
 function controlFrom(row, prefix) {
@@ -181,13 +201,14 @@ export function valuateRisk(row, methodologyId = METODOLOGIA_V1.id) {
 
 export async function getStudy(db, id) {
   const study = await readStudy(db, id);
-  const [zones, risks, actions, evidence, characterization, securityops] = await Promise.all([
+  const [zones, risks, actions, evidence, characterization, securityops, lastVersion] = await Promise.all([
     must(db.from(ZONE_TABLE).select('*').eq('study_id', study.id).order('position', { ascending: true })),
     must(db.from(RISK_TABLE).select('*').eq('study_id', study.id).order('number', { ascending: true })),
     must(db.from(ACTION_TABLE).select('*').eq('study_id', study.id).order('created_at', { ascending: true })),
     listEvidence(db, study.id),
     loadCharacterization(db, study.id),
     loadSecurityOps(db, study),
+    db.from('psi_security_study_versions').select('approved_at').eq('study_id', study.id).order('version', { ascending: false }).limit(1),
   ]);
   const valued = (risks || []).map(risk => ({ ...risk, valuation: valuateRisk(risk, study.methodology_id) }));
   const levels = { actual: {}, residual: {} };
@@ -205,6 +226,8 @@ export async function getStudy(db, id) {
     evidence_available: evidence.available,
     characterization,
     securityops,
+    // Migración 209: vigencia y revaloración.
+    validity: studyValidity(study, { approvedAt: lastVersion?.error ? null : lastVersion?.data?.[0]?.approved_at || null, securityops }),
     // IEC 31010: la probabilidad que sugieren los datos para cada riesgo del catálogo y para uno propio.
     probability_suggestions: suggestionsForStudy({ catalog: template ? { riesgos: template.riesgos } : null, securityops, crimeStats: characterization?.estadisticas || [] }),
     summary: { risks: valued.length, levels },
@@ -258,6 +281,12 @@ export async function deleteZone(db, studyId, zoneId, profile, now = new Date())
 }
 
 // --- Riesgos -------------------------------------------------------------------------------------------------
+
+function renewal(value) {
+  const months = Number(value);
+  if (!RENEWAL_MONTHS.has(months)) throw invalid('Renovación: cada 6, 12, 24 o 36 meses.');
+  return months;
+}
 
 const CONFIDENCE = new Set(['alta', 'media', 'baja']);
 function confidence(value) {

@@ -10,8 +10,9 @@ import { FieldNotePanel } from './FieldNotePanel';
 import { CharacterizationPanel } from './CharacterizationPanel';
 import { SecurityOpsPanel } from './SecurityOpsPanel';
 import { DeliveryPanel } from './DeliveryPanel';
+import { ValidityBadge, ValidityLine } from './ValidityLine';
 import {
-  IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, STATUS_LABELS,
+  IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, RENEWAL_OPTIONS, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
   type Action, type Catalog, type ClientOption, type Evidence, type Nivel, type PostsResult, type ProbabilitySuggestions, type Risk, type RiskDraft, type StudyDetail, type StudySummaryRow, type Zone,
 } from './api';
@@ -51,12 +52,13 @@ function StudyList({ onOpen }: { onOpen: (id: string) => void }) {
     {studies === null && !error ? <p className="es-muted">Cargando estudios…</p> : null}
     {studies?.length === 0 ? <p className="es-muted">Todavía no hay estudios. Cree el primero con "+ Nuevo estudio".</p> : null}
     {studies?.length ? <div className="tablewrap"><table>
-      <thead><tr><th>Código</th><th>Estudio</th><th>Cliente y sede</th><th>Estado</th><th>Visita</th><th>Riesgos</th></tr></thead>
+      <thead><tr><th>Código</th><th>Estudio</th><th>Cliente y sede</th><th>Estado</th><th>Vigencia</th><th>Visita</th><th>Riesgos</th></tr></thead>
       <tbody>{studies.map(study => <tr key={study.id} className="clickable" onClick={() => onOpen(study.id)}>
         <td><strong>{study.code}</strong></td>
         <td>{study.title}</td>
         <td>{study.client_name}<br /><small className="es-muted">{study.site_name}{study.site_city ? ` · ${study.site_city}` : ''}</small></td>
         <td><span className="badge">{STATUS_LABELS[study.status]}</span></td>
+        <td><ValidityBadge validity={study.validity} /></td>
         <td>{fmtDate(study.visit_date)}</td>
         <td>{study.risk_count}</td>
       </tr>)}</tbody>
@@ -78,6 +80,7 @@ function NewStudyForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
   const [site, setSite] = useState<SiteChoice | null>(null);
   const [manualSite, setManualSite] = useState(false);
   const [visitDate, setVisitDate] = useState('');
+  const [renewal, setRenewal] = useState(24);
   const [scope, setScope] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -108,7 +111,7 @@ function NewStudyForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
     try {
       const created = await createStudy({
         title, client_source: client.source, client_ref: client.ref, client_name: client.name, client_nit: client.nit,
-        ...site, visit_date: visitDate || null, scope: scope || null,
+        ...site, visit_date: visitDate || null, scope: scope || null, renewal_months: renewal,
       });
       onCreated(created.id);
     } catch (reason) {
@@ -161,6 +164,11 @@ function NewStudyForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
 
     <div className="es-grid-2">
       <label>Fecha de la visita<input type="date" value={visitDate} onChange={event => setVisitDate(event.target.value)} /></label>
+      <label>Renovación del estudio
+        <select value={renewal} onChange={event => setRenewal(Number(event.target.value))}>
+          {RENEWAL_OPTIONS.map(item => <option key={item.meses} value={item.meses}>{item.etiqueta} ({item.cuando})</option>)}
+        </select>
+      </label>
     </div>
     <label>Alcance<textarea value={scope} onChange={event => setScope(event.target.value)} rows={3} maxLength={4000} placeholder="Qué instalaciones y qué tipo de riesgos cubre el estudio" /></label>
     {error ? <p className="es-error" role="alert">{error}</p> : null}
@@ -203,6 +211,7 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
       <span className="badge">{STATUS_LABELS[study.status]}</span>
     </div>
     {study.scope ? <p className="es-scope">{study.scope}</p> : null}
+    <ValidityLine studyId={study.id} validity={detail.validity} renewalMonths={study.renewal_months ?? 24} editable={editable} canRequest={Boolean(detail.entrega?.can)} onChanged={reload} />
     {error ? <p className="es-error" role="alert">{error}</p> : null}
     {detail.review ? <ReviewPanel review={detail.review} /> : null}
     {detail.entrega ? <DeliveryPanel studyId={study.id} status={study.status} latestVersion={detail.workflow?.versions.length ? detail.workflow.versions[detail.workflow.versions.length - 1].version : null} entrega={detail.entrega} onChanged={reload} /> : null}
