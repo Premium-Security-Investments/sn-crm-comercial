@@ -182,7 +182,8 @@ import { listAgt002Clarifications, recordAgt002Clarification } from '../vertical
 import { decideAgt002Lesson, listAgt002Lessons } from '../verticales/licitaciones/agt002-company-lessons.js';
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
-import { addParticipation, cityKey, cityName, citiesToCover, getAlly, listAllies, loadAlliesListing, processKey, processParticipants, rankAllyCandidates, updateAlly } from '../verticales/licitaciones/tender-allies.js';
+import { addParticipation, getAlly, listAllies, loadAlliesListing, updateAlly } from '../verticales/licitaciones/tender-allies.js';
+import { buildAllyBoard, buildProcessParticipantsBoard } from '../verticales/licitaciones/tender-allies-board.js';
 import { VIGILANCE_LISTING, VIGILANCE_LISTING_SOURCE } from '../data/aliados/listado-supervigilancia-2026-11-07.js';
 import { VIGILANCE_PARTICIPATIONS_SEED } from '../data/aliados/participaciones-semilla-2026-11-09.js';
 import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
@@ -8347,16 +8348,7 @@ app.get('/api/tender-allies/process-participants', async (req, res) => {
     const opportunityId = String(req.query.opportunity_id || '');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
     res.set('Cache-Control', 'private, no-store');
-    const allies = await listAllies(database);
-    if (!allies.installed) return res.json({ installed: false, groups: [] });
-    const { data: tender } = await database.from('psi_public_tenders').select('ref').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
-    const { data: sites } = await database.from('psi_company_sites').select('city,supervigilancia_authorization');
-    const ourCities = new Map((sites || []).filter(site => !/pendiente/i.test(String(site.supervigilancia_authorization || ''))).map(site => [cityKey(site.city), site.city]));
-    // «Nuestra zona» = nuestras ciudades que pide el pliego, según la última lectura para uniones temporales; sin ella, todas.
-    const { data: reading } = await database.from('psi_tender_plural_readings').select('required_cities').eq('opportunity_id', opportunityId).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    const required = new Set(reading?.required_cities || []);
-    const zoneCities = required.size ? new Map([...ourCities].filter(([key]) => required.has(key))) : ourCities;
-    res.json({ installed: true, groups: processParticipants({ companies: allies.companies, withoutNit: allies.participations_without_nit, opportunityId, tenderRef: tender?.ref || null, zoneCities }) });
+    res.json(await buildProcessParticipantsBoard(database, { opportunityId }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -8380,43 +8372,15 @@ app.get('/api/tender-allies/candidates', async (req, res) => {
     res.set('Cache-Control', 'private, no-store');
     const report = await readAgt002InitialAnalysisReport(database, opportunityId);
     const label = report?.available ? String(report.report?.recommendation?.label || '') : '';
-    if (!/^solo en uni[oó]n temporal/i.test(label)) return res.json({ applies: false, cities: [], candidates: [] });
-    const allies = await listAllies(database);
-    if (!allies.installed || !allies.companies.length) return res.json({ applies: true, installed: allies.installed, cities: [], candidates: [] });
-    const { data: sites } = await database.from('psi_company_sites').select('city,supervigilancia_authorization');
-    const ourSites = (sites || []).filter(site => !/pendiente/i.test(String(site.supervigilancia_authorization || '')));
-    const ourCityKeys = new Set(ourSites.map(site => cityKey(site.city)));
-    const ourCities = new Map(ourSites.map(site => [cityKey(site.city), site.city]));
-    const knownCityKeys = new Set(allies.companies.flatMap(company => company.cities.map(city => city.city_key)));
-    const names = new Map(allies.companies.flatMap(company => company.cities).map(city => [city.city_key, cityName(city.city)]));
-    const { data: tender } = await database.from('psi_public_tenders').select('ref').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
-    const missing = citiesToCover(label, { ourCityKeys, knownCityKeys });
-    // Punto 3: los procesos nuestros (licitaciones convertidas en oportunidad) para saber quién compitió contra nosotros.
-    const { data: ourTenders } = await database.from('psi_public_tenders').select('ref').not('converted_opportunity_id', 'is', null);
-    const ourProcessRefs = new Set((ourTenders || []).map(row => processKey(row.ref)).filter(Boolean));
-    // Encargo del 2026-11-10 (aprobado por Juan): primero cómo deja el pliego cumplir a un proponente plural.
-    const status = await readAgt002InitialAnalysisStatus(database, opportunityId);
-    const { data: version } = await database.from('psi_agt002_pre_go_analysis_versions').select('envelope')
-      .eq('analysis_run_id', status.runId).order('aggregate_version', { ascending: false }).limit(1).maybeSingle();
-    const { documents } = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
-    const reading = await pluralReadingFor(database, { opportunityId, runId: status.runId, envelope: version?.envelope, label, documents, knownCityKeys });
-    const allCities = (reading.required_cities || []).filter(key => knownCityKeys.has(key));
-    // «Compite en nuestra zona» con nuestras ciudades que pide este pliego, no con todas las de la ficha (Juan, 2026-11-10).
-    const zone = new Set([...allCities, ...missing]);
-    const zoneCities = new Map([...ourCities].filter(([key]) => zone.has(key)));
-    const list = keys => ({ cities: keys.map(key => names.get(key) || key), candidates: rankAllyCandidates(allies.companies, { cityKeys: keys, processRef: tender?.ref || null, ourCities: zoneCities, ourProcessRefs }) });
-    const one = allCities.length > missing.length ? list(allCities) : null;
-    const sum = list(missing);
-    const readingOut = { mode: reading.mode, quote: reading.quote, quote_verified: reading.quote_verified, document_name: reading.document_name, locator: reading.locator, explanation: reading.explanation };
-    // «Basta con uno» no prohíbe sumar (Juan, 2026-11-10): con uno_cumple o no_dice van las dos listas, la segunda
-    // rotulada como lo que depende de la Entidad.
-    if ((reading.mode === 'uno_cumple' || reading.mode === 'no_dice') && one) {
-      // La segunda lista sin repetir a quienes ya están en la primera (también tienen las ciudades que nos faltan).
-      const first = new Set(one.candidates.map(candidate => candidate.nit));
-      const others = rankAllyCandidates(allies.companies, { cityKeys: missing, processRef: tender?.ref || null, ourCities: zoneCities, ourProcessRefs, limit: 50 }).filter(candidate => !first.has(candidate.nit)).slice(0, 5);
-      return res.json({ applies: true, installed: true, reading: readingOut, ...one, alternative: { label: 'Sólo si la Entidad acepta sumar entre integrantes (hay que aclararlo con ella)', cities: sum.cities, candidates: others } });
-    }
-    res.json({ applies: true, installed: true, reading: readingOut, ...sum });
+    // Encargo del 2026-11-10 (aprobado por Juan): primero cómo deja el pliego cumplir a un proponente plural. La lista
+    // se arma en tender-allies-board.js, igual para Decidir y para la Mesa.
+    res.json(await buildAllyBoard(database, { opportunityId, label, getReading: async ({ knownCityKeys }) => {
+      const status = await readAgt002InitialAnalysisStatus(database, opportunityId);
+      const { data: version } = await database.from('psi_agt002_pre_go_analysis_versions').select('envelope')
+        .eq('analysis_run_id', status.runId).order('aggregate_version', { ascending: false }).limit(1).maybeSingle();
+      const { documents } = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
+      return pluralReadingFor(database, { opportunityId, runId: status.runId, envelope: version?.envelope, label, documents, knownCityKeys });
+    } }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

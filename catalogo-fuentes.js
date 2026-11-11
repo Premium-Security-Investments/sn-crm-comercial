@@ -20,6 +20,9 @@ import { matchCompanyDocumentClasses } from './verticales/licitaciones/tender-co
 import { agt002ListarFormatos, agt002LocateFormato } from './verticales/licitaciones/agt002-formato-oficial.js';
 import { agt002SeccionDelPedido } from './verticales/licitaciones/agt002-seccion-del-pliego.js';
 import { agt002ReglasParaPlurales } from './verticales/licitaciones/agt002-reglas-plurales.js';
+import { ALLY_BOARD_RULE, buildAllyBoard, buildProcessParticipantsBoard } from './verticales/licitaciones/tender-allies-board.js';
+import { readAgt002InitialAnalysisReport } from './verticales/licitaciones/agt002-initial-analysis-report.js';
+import { readAgt002InitialAnalysisStatus } from './verticales/licitaciones/agt002-initial-analysis-status.js';
 
 export const ESTADOS = Object.freeze({
   VIGENTE: 'vigente',
@@ -201,6 +204,23 @@ export const DATOS = Object.freeze({
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
     fuentes: Object.freeze(['psi_tender_document_versions']),
+    lectores: Object.freeze(['agt002.mesa']),
+  }),
+  // Punto 5 del encargo de Aliados (2026-11-11): la lista de «Posibles socios» que ve la persona en Decidir, con la
+  // regla con que se armó, para que Vig-IA pueda explicar por qué sale cada uno. Es un cruce, no una recomendación.
+  'aliados.candidatos': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_vigilance_companies', 'psi_vigilance_company_offices', 'psi_vigilance_participations', 'psi_tender_plural_readings']),
+    lectores: Object.freeze(['agt002.mesa']),
+  }),
+  // Punto 7 del encargo de Aliados: quiénes se han movido en este proceso (observaron, ofertaron, contratista actual).
+  'aliados.competencia_del_proceso': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_vigilance_participations', 'psi_vigilance_companies']),
     lectores: Object.freeze(['agt002.mesa']),
   }),
   // Mejora 6: los formatos y anexos numerados que pide el proceso, para la «relación de anexos» de la carta.
@@ -898,6 +918,73 @@ export async function resolverReglasParaPlurales(database, { tenderId, pregunta 
   });
 }
 
+// Una pregunta es de competencia si pregunta quién observó, ofertó o ganó, o por competidores.
+const PREGUNTA_COMPETENCIA = /compet|observ|ofert|oferent|contratista|adjudic|movid|rival|qui[eé]n(?:es)? (?:m[aá]s )?(?:se presenta|participa)/i;
+
+async function oportunidadDelProceso(database, tenderId) {
+  const { data } = await database.from('psi_public_tenders').select('converted_opportunity_id').eq('id', tenderId).maybeSingle();
+  return data?.converted_opportunity_id || null;
+}
+
+/**
+ * Punto 5 del encargo de Aliados (2026-11-11): la lista de «Posibles socios» de Decidir, con la lectura del pliego y la
+ * regla con que se armó, cuando la pregunta es de unión temporal o de socios. Usa la lectura guardada del análisis
+ * vigente (la que calculó Decidir); sin ella, la lista de lo que nos falta.
+ */
+export async function resolverAliadosCandidatos(database, { tenderId, pregunta }) {
+  const vacio = nota => respuesta({ nombre: 'aliados.candidatos', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA, forma: FORMAS.TIPADO, asOf: null, procedencia: Object.freeze({ tabla: 'psi_vigilance_companies', nota }) });
+  if (typeof tenderId !== 'string' || !tenderId.trim()) return vacio('sin proceso en el expediente');
+  if (!PREGUNTA_PLURAL.test(String(pregunta || ''))) return vacio('la pregunta no es de socios ni de uniones temporales');
+  const opportunityId = await oportunidadDelProceso(database, tenderId);
+  if (!opportunityId) return vacio('el proceso no está convertido en oportunidad');
+  const report = await readAgt002InitialAnalysisReport(database, opportunityId);
+  const label = report?.available ? String(report.report?.recommendation?.label || '') : '';
+  const board = await buildAllyBoard(database, { opportunityId, label, getReading: async () => {
+    const status = await readAgt002InitialAnalysisStatus(database, opportunityId);
+    const { data } = await database.from('psi_tender_plural_readings').select('*').eq('opportunity_id', opportunityId).eq('analysis_run_id', status.runId).maybeSingle();
+    return data || null;
+  } });
+  if (!board.applies) return vacio('la recomendación vigente no es «Solo en unión temporal»: no se arma lista de socios');
+  const socio = candidate => Object.freeze({ nombre: candidate.name, nit: candidate.nit, rol: candidate.role, cubre: candidate.covered, avisos: [candidate.warning, candidate.zone_warning, candidate.size_note].filter(Boolean), compitio_contra_nosotros_en_procesos: candidate.competed_against_us || 0 });
+  return respuesta({
+    nombre: 'aliados.candidatos',
+    valor: Object.freeze({
+      regla_de_la_lista: ALLY_BOARD_RULE,
+      lectura_del_pliego: board.reading ? Object.freeze({ lectura: board.reading.mode, cita: board.reading.quote, documento: board.reading.document_name, numeral: board.reading.locator }) : null,
+      ciudades: board.cities,
+      candidatos: Object.freeze((board.candidates || []).map(socio)),
+      alternativa: board.alternative ? Object.freeze({ rotulo: board.alternative.label, ciudades: board.alternative.cities, candidatos: board.alternative.candidates.map(socio) }) : null,
+    }),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: soloFecha(new Date().toISOString()),
+    procedencia: Object.freeze({ tabla: 'psi_vigilance_companies', nota: 'misma lista que «Posibles socios» en Decidir' }),
+  });
+}
+
+/** Punto 7 del encargo de Aliados: quiénes se han movido en este proceso, cuando la pregunta es de competencia o de socios. */
+export async function resolverCompetenciaDelProceso(database, { tenderId, pregunta }) {
+  const vacio = nota => respuesta({ nombre: 'aliados.competencia_del_proceso', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA, forma: FORMAS.TIPADO, asOf: null, procedencia: Object.freeze({ tabla: 'psi_vigilance_participations', nota }) });
+  if (typeof tenderId !== 'string' || !tenderId.trim()) return vacio('sin proceso en el expediente');
+  const texto = String(pregunta || '');
+  if (!PREGUNTA_COMPETENCIA.test(texto) && !PREGUNTA_PLURAL.test(texto)) return vacio('la pregunta no es de competencia ni de socios');
+  const opportunityId = await oportunidadDelProceso(database, tenderId);
+  if (!opportunityId) return vacio('el proceso no está convertido en oportunidad');
+  const board = await buildProcessParticipantsBoard(database, { opportunityId });
+  if (!board.installed) return vacio('Aliados no está instalado');
+  if (!board.groups.length) return vacio('no hay participaciones registradas en Aliados para este proceso');
+  return respuesta({
+    nombre: 'aliados.competencia_del_proceso',
+    valor: Object.freeze(board.groups.map(group => Object.freeze({ grupo: group.label, empresas: group.items.map(item => Object.freeze({ nombre: item.name, nit: item.nit, rol: item.role, detalle: item.detail, fecha: item.occurred_on, otros_procesos_nuestros: item.other_processes, oficina_en_nuestra_zona: item.zone_cities })) }))),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: soloFecha(new Date().toISOString()),
+    procedencia: Object.freeze({ tabla: 'psi_vigilance_participations', nota: 'lo registrado en Aliados; sólo lectura' }),
+  });
+}
+
 /**
  * Mejora 6 (encargo desde Terminal): la lista de formatos y anexos numerados del proceso —títulos del pliego vigente y
  * archivos propios con número—, para que la «relación de anexos que se presentan» de la carta salga de lo que el
@@ -956,6 +1043,8 @@ const RESOLVEDORES = Object.freeze({
   'proceso.formatos_del_pliego': (database, contexto) => resolverFormatosDelPliego(database, contexto),
   'proceso.seccion_del_pliego': (database, contexto) => resolverSeccionDelPliego(database, contexto),
   'proceso.reglas_para_plurales': (database, contexto) => resolverReglasParaPlurales(database, contexto),
+  'aliados.candidatos': (database, contexto) => resolverAliadosCandidatos(database, contexto),
+  'aliados.competencia_del_proceso': (database, contexto) => resolverCompetenciaDelProceso(database, contexto),
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),

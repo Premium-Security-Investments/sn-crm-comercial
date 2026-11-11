@@ -77,13 +77,14 @@ test('la 202 guarda una lectura por análisis; sin ella se calcula igual; la rut
   const reading = await pluralReadingFor(without202, { opportunityId: 'o', runId: 'r', envelope: ENVELOPE, label: LABEL, documents: [COMPLEMENTO], knownCityKeys: KNOWN, environment: {} });
   assert.equal(reading.mode, 'uno_cumple');
   const server = read('server/index.js');
-  assert.match(server, /const reading = await pluralReadingFor\(database/);
+  assert.match(server, /return pluralReadingFor\(database, \{ opportunityId, runId: status\.runId/);
+  const board = read('verticales/licitaciones/tender-allies-board.js');
   assert.equal(server, read('api/[...path].js'));
   const ui = read('src/tenders/components/TenderAllyCandidates.tsx');
   assert.match(ui, /Lectura del pliego:/);
   assert.match(ui, /basta con que un integrante tenga \$\{cities\}\. No dice si la Entidad acepta sumar/);
-  assert.match(server, /reading\.mode === 'uno_cumple' \|\| reading\.mode === 'no_dice'\) && one\) \{/);
-  assert.match(server, /\.filter\(candidate => !first\.has\(candidate\.nit\)\)/);
+  assert.match(board, /reading\.mode === 'uno_cumple' \|\| reading\.mode === 'no_dice'\) && one\) \{/);
+  assert.match(board, /\.filter\(candidate => !first\.has\(candidate\.nit\)\)/);
   assert.match(ui, /no es una recomendación de Vig-IA/);
 });
 
@@ -92,7 +93,7 @@ test('el aviso de zona nombra sólo nuestras ciudades que pide el pliego, y las 
   assert.equal(cityName('BOGOTÁ D.C.'), 'Bogotá D.C.');
   assert.equal(cityName('SANTA ROSA DE CABAL'), 'Santa Rosa de Cabal');
   assert.equal(joinNames(['Pereira', 'Manizales', 'Armenia']), 'Pereira, Manizales y Armenia');
-  const server = read('server/index.js');
-  assert.match(server, /const zoneCities = new Map\(\[\.\.\.ourCities\]\.filter\(\(\[key\]\) => zone\.has\(key\)\)\)/);
-  assert.doesNotMatch(server, /ourCities, limit: 50|processRef: tender\?\.ref \|\| null, ourCities \}/);
+  const board = read('verticales/licitaciones/tender-allies-board.js');
+  assert.match(board, /const zoneCities = new Map\(\[\.\.\.ourCities\]\.filter\(\(\[key\]\) => zone\.has\(key\)\)\)/);
+  assert.match(board, /ourCities: zoneCities, ourProcessRefs/);
 });

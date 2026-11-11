@@ -150,6 +150,8 @@ test('la Mesa pide los once datos y los puede leer', () => {
     'empresa.sedes', 'empresa.evidencia_al_cierre', 'empresa.experiencia',
     'proceso.datos_oficiales', 'proceso.formato_oficial', 'proceso.formatos_del_pliego', 'proceso.seccion_del_pliego',
     'proceso.reglas_para_plurales',
+    // Punto 5 del encargo de Aliados (2026-11-11): la lista de socios de Decidir y la competencia del proceso.
+    'aliados.candidatos', 'aliados.competencia_del_proceso',
   ]);
   for (const nombre of AGT002_MESA_FUENTES) {
     assert.ok(DATOS[nombre], `${nombre} debe estar declarado en el catálogo`);
