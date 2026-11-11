@@ -411,12 +411,14 @@ export function TenderOverdueStrip({ closeDate, overdue, notCurable, tramites = 
   </section>;
 }
 
-export function TenderPrepareView({ opportunityId, request, profiles, canApprove, report, closeDate, offerStatus, onOfferStatusChanged, channel, offerRecord, onSeedRequirements }: {
+export function TenderPrepareView({ opportunityId, request, profiles, canApprove, report, closeDate, offerStatus, onOfferStatusChanged, channel, offerRecord, filing, onSeedRequirements }: {
   opportunityId: string; request: TenderRequest; profiles: TenderDossierAssignee[]; canApprove: boolean;
   report: Agt002InitialReport | null; closeDate: string | null; offerStatus: TenderOfferStatus | null;
   onOfferStatusChanged: () => Promise<void> | void; channel?: ReactNode;
   /** «Oferta presentada»: radicado o RPL y resultado con su fuente. Lo arma quien monta la vista. */
   offerRecord?: ReactNode;
+  /** Mejora 11: la carpeta de radicación en SharePoint, con su índice. */
+  filing?: ReactNode;
   onSeedRequirements: () => Promise<{ inserted: number; tramites?: number }>;
 }) {
   const [workspace, setWorkspace] = useState<TenderDossierWorkspace | null>(null);
@@ -620,6 +622,8 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
       <small>Documentos que se firman y aprueban</small>
       <TenderDossierArtifacts opportunityId={opportunityId} artifacts={shownArtifacts} request={request} canApprove={canApprove} workbenchEnabled={workspace.workbench_enabled} onChanged={reload} />
     </section>}
+
+    {filing}
 
     {/* Juan, 2026-11-10: registrar la radicación es lo último, después de preparar y aprobar los documentos. */}
     {offerRecord && <section className="tw-card tw-offer-record">{offerRecord}</section>}

@@ -245,3 +245,11 @@
 .tw-ally-tag.is-alert{background:#fee2e2;color:#991b1b}
 .tw-differential>ul{gap:12px}
 .tw-differential li>span{margin-top:2px;line-height:1.6}
+
+/* Mejora 11 (Juan, 2026-11-11): la carpeta de radicación en Preparar. */
+.tw-filing-head{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.tw-filing-sections{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.tw-filing-sections>li{padding:8px 10px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;font-size:13px}
+.tw-filing-sections>li.is-empty{background:#fffbeb;border-color:#fcd34d}
+.tw-filing-sections ul{margin:4px 0 0;padding-left:16px;display:grid;gap:2px;font-size:12px;color:#475569;overflow-wrap:anywhere}
+.tw-filing-compare{display:grid;gap:6px;padding-top:6px;border-top:1px solid #e2e8f0}

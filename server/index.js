@@ -564,6 +564,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-allies/participation': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/candidates': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/tender-filing-folder': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'POST /api/tender-filing-folder/request': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/process-participants': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-company-differential-conditions': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-company-differential-conditions': ['tenders', ACTIONS.LICITACIONES_CONFIGURE],
@@ -8349,6 +8351,51 @@ app.get('/api/tender-allies/process-participants', async (req, res) => {
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
     res.set('Cache-Control', 'private, no-store');
     res.json(await buildProcessParticipantsBoard(database, { opportunityId }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Mejora 11 (Juan, 2026-11-11; migración 203): la carpeta de radicación del proceso en SharePoint. La crea el trabajo de
+// borradores a SharePoint al registrar el GO (o cuando alguien la pide); aquí se lee su estado, el índice de
+// 03_PARA_RADICAR y la comparación con 04_Radicado, y se pide crearla o actualizar el índice.
+app.get('/api/tender-filing-folder', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    const { data, error } = await database.from('psi_tender_filing_folders').select('status,origin,web_url,error,refresh_requested_at,snapshot,snapshot_at,created_at').eq('opportunity_id', opportunityId).maybeSingle();
+    if (error) {
+      if (['PGRST205', '42P01'].includes(String(error.code))) return res.json({ installed: false, folder: null });
+      throw error;
+    }
+    res.json({ installed: true, folder: data || null });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-filing-folder/request', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const action = String(req.body?.action || '');
+    const nowIso = new Date().toISOString();
+    const { data: current } = await database.from('psi_tender_filing_folders').select('status').eq('opportunity_id', opportunityId).maybeSingle();
+    if (action === 'crear') {
+      if (current?.status === 'creada') throw Object.assign(new Error('La carpeta de radicación ya está creada.'), { status: 409 });
+      const { error } = current
+        ? await database.from('psi_tender_filing_folders').update({ status: 'pendiente', error: null, requested_by: currentProfile.id, updated_at: nowIso }).eq('opportunity_id', opportunityId)
+        : await database.from('psi_tender_filing_folders').insert({ opportunity_id: opportunityId, origin: 'boton', requested_by: currentProfile.id });
+      if (error) throw error;
+    } else if (action === 'actualizar') {
+      if (current?.status !== 'creada') throw Object.assign(new Error('Primero hay que crear la carpeta de radicación.'), { status: 409 });
+      const { error } = await database.from('psi_tender_filing_folders').update({ refresh_requested_at: nowIso, updated_at: nowIso }).eq('opportunity_id', opportunityId);
+      if (error) throw error;
+    } else throw Object.assign(new Error('Acción no válida.'), { status: 400 });
+    res.json({ ok: true });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

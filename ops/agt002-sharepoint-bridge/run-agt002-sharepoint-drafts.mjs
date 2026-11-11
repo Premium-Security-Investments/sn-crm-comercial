@@ -21,6 +21,7 @@ import { agt002MapTendersToProcessFolders, agt002StorageObjectPaths } from '../.
 import {
   AGT002_DRAFT_SHAREPOINT_ERRORS, agt002DraftSharepointPath, agt002ParseUploadOutput,
 } from '../../verticales/licitaciones/agt002-draft-sharepoint-copy.js';
+import { runFilingFolderPass } from '../../verticales/licitaciones/tender-filing-folder-run.js';
 
 const run = promisify(execFile);
 const log = event => console.log(JSON.stringify(event));
@@ -98,5 +99,32 @@ if (!supabaseUrl || !serviceRoleKey || !inventory || !uploader || !drive || !pro
   } catch {
     log({ event: 'agt002_sharepoint_drafts_failed', motivo: 'corrida' });
     process.exitCode = 1;
+  }
+  // Mejora 11 (2026-11-11): la carpeta de radicación, en este mismo trabajo. Sin nada pendiente no toca SharePoint.
+  try {
+    const listing = async (path, depth) => {
+      const { stdout } = await run('/usr/bin/python3', [inventory, drive, path, String(depth)], { timeout: 300_000, maxBuffer: 32 * 1024 * 1024 });
+      return JSON.parse(stdout)?.archivos || [];
+    };
+    const work = mkdtempSync(join(tmpdir(), 'agt002-radicacion-'));
+    try {
+      let counter = 0;
+      const events = await runFilingFolderPass(database, {
+        processesPath,
+        listFolders: async () => [...new Set((await listing(processesPath, 2)).map(file => String(file?.ruta || '').replace(`${processesPath}/`, '').split('/')[0]).filter(Boolean))],
+        inventory: path => listing(path, 4),
+        upload: async (destination, content) => {
+          const local = join(work, `leeme-${counter += 1}.md`);
+          writeFileSync(local, content);
+          let out = '';
+          try { ({ stdout: out } = await run('/usr/bin/python3', [uploader, drive, destination, local], { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })); }
+          catch (uploadError) { out = String(uploadError?.stdout || ''); }
+          return agt002ParseUploadOutput(out);
+        },
+      });
+      for (const event of events) log(event);
+    } finally { rmSync(work, { recursive: true, force: true }); }
+  } catch {
+    log({ event: 'tender_filing_failed', motivo: 'corrida' });
   }
 }
