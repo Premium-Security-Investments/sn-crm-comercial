@@ -12,6 +12,7 @@ import { addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys
 import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { reviewStudy as reviewSecurityStudy } from '../verticales/estudios-seguridad/revisor.js';
+import { createShare as createSecurityStudyShare, loadDelivery as loadSecurityStudyDelivery, recordDelivery as recordSecurityStudyDelivery, renderPublicPage as renderSecurityStudyPublicPage, resolvePublicStudy as resolveSecurityStudyPublic, revokeShare as revokeSecurityStudyShare } from '../verticales/estudios-seguridad/entrega.js';
 import { addRiskFromSecurityOps, linkPuesto as linkSecurityOpsPuesto, requestRefresh as refreshSecurityOps, searchPuestos as searchSecurityOpsPuestos } from '../verticales/estudios-seguridad/securityops.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
@@ -3590,6 +3591,21 @@ securityStudyRoute('get', '/api/estudios-seguridad/clientes', async (db, req) =>
   return { clients: [...deAvancys, ...delCrm].slice(0, 25), avancys };
 });
 // Puestos de un cliente de Avancys, agrupados por contrato, para elegir la sede del estudio.
+// Enlace del cliente (migración 206): página PÚBLICA, sin sesión. El token es la llave (256 bits; la base guarda su huella),
+// vence y se puede anular. Sólo muestra lo que el cliente ya recibe en el informe y el estado de hoy de las recomendaciones.
+app.get('/api/estudios-seguridad/publico/:token', async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  });
+  try {
+    const result = await resolveSecurityStudyPublic(requireDb(), req.params.token);
+    res.status(result.ok ? 200 : 404).type('html').send(renderSecurityStudyPublicPage(result));
+  } catch (error) {
+    console.warn('security_study_public_failed', { event: 'security_study_public_failed', code: error?.code || 'desconocido' });
+    res.status(503).type('html').send(renderSecurityStudyPublicPage({ ok: false, reason: 'error' }));
+  }
+});
 // SecurityOps (migración 201): buscar el puesto en el directorio que copia el servidor de tareas. Sin unidades de
 // monitoreo salvo que se pidan: el 72 % del directorio son cuentas de alarma.
 securityStudyRoute('get', '/api/estudios-seguridad/securityops/puestos', (db, req) => searchSecurityOpsPuestos(db, String(req.query.q || '').slice(0, 120), { todos: req.query.todos === '1' }));
@@ -3607,8 +3623,8 @@ securityStudyRoute('get', '/api/estudios-seguridad/puestos', async (_db, req) =>
 securityStudyRoute('get', '/api/estudios-seguridad/:id', async (db, req, profile) => {
   const detail = await getSecurityStudy(db, req.params.id);
   // Tramo 9: el revisor de inconsistencias sólo lee; señala y no cambia nada.
-  const [workflow, review] = await Promise.all([loadSecurityStudyWorkflow(db, detail.study, profile), reviewSecurityStudy(db, detail)]);
-  return { ...detail, workflow, review };
+  const [workflow, review, entrega] = await Promise.all([loadSecurityStudyWorkflow(db, detail.study, profile), reviewSecurityStudy(db, detail), loadSecurityStudyDelivery(db, detail.study, profile)]);
+  return { ...detail, workflow, review, entrega };
 });
 // Nota de campo con Vig-IA (AGT-003, agt003.estudios-nota-campo; Juan, 2026-11-05). Propone; no guarda. El cupo y los
 // avisos de falla son los del brief de reunión: lo fallido no gasta cupo y nunca se cae a otra forma de llamar al modelo.
@@ -3683,6 +3699,10 @@ securityStudyRoute('post', '/api/estudios-seguridad/:id/securityops', async (db,
   if (!detail.editable) throw Object.assign(new Error('El estudio no está en borrador: no se puede cambiar el puesto.'), { status: 409 });
   return linkSecurityOpsPuesto(db, detail.study, req.body?.puesto_id ?? null);
 });
+// Socialización con el cliente y enlaces en línea (migración 206).
+securityStudyRoute('post', '/api/estudios-seguridad/:id/socializacion', async (db, req, profile) => recordSecurityStudyDelivery(db, (await getSecurityStudy(db, req.params.id)).study, req.body || {}, profile));
+securityStudyRoute('post', '/api/estudios-seguridad/:id/enlaces', async (db, req, profile) => createSecurityStudyShare(db, (await getSecurityStudy(db, req.params.id)).study, req.body || {}, profile));
+securityStudyRoute('post', '/api/estudios-seguridad/:id/enlaces/:shareId/anular', async (db, req, profile) => revokeSecurityStudyShare(db, (await getSecurityStudy(db, req.params.id)).study, req.params.shareId, profile));
 securityStudyRoute('post', '/api/estudios-seguridad/:id/securityops/actualizar', async (db, req) => {
   const detail = await getSecurityStudy(db, req.params.id);
   if (['aprobado', 'archivado'].includes(detail.study.status)) throw Object.assign(new Error('El estudio está aprobado: su versión ya guardó los antecedentes.'), { status: 409 });

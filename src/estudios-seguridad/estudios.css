@@ -96,3 +96,10 @@
 .es-secops-list li{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;background:#fff;display:flex;flex-direction:column;gap:4px}
 .es-secops-list p{margin:0;white-space:pre-wrap}
 .es-secops details summary{cursor:pointer;font-weight:700;color:#40516b}
+
+/* Entrega al cliente (migración 206) */
+.es-delivery{display:flex;flex-direction:column;gap:10px;border-color:#c9e7d3;background:#f6fcf8}
+.es-delivery h3,.es-delivery p{margin:0}
+.es-delivery .es-nivel{margin-right:8px}
+.es-share-created{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:1px solid #f1d9a6;background:#fffaf0;border-radius:10px;padding:10px}
+.es-share-created input{flex:1 1 320px;min-width:0;font-family:ui-monospace,monospace;font-size:13px}
