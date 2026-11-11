@@ -19,6 +19,7 @@ import { buildTenderCompanyDocumentBridge } from './verticales/licitaciones/tend
 import { matchCompanyDocumentClasses } from './verticales/licitaciones/tender-compliance-matrix.js';
 import { agt002ListarFormatos, agt002LocateFormato } from './verticales/licitaciones/agt002-formato-oficial.js';
 import { agt002SeccionDelPedido } from './verticales/licitaciones/agt002-seccion-del-pliego.js';
+import { agt002ReglasParaPlurales } from './verticales/licitaciones/agt002-reglas-plurales.js';
 
 export const ESTADOS = Object.freeze({
   VIGENTE: 'vigente',
@@ -187,6 +188,15 @@ export const DATOS = Object.freeze({
   }),
   // F1/F2 (auditoría Fiscalía): la sección completa del pliego que el pedido cita por numeral o por sus palabras.
   'proceso.seccion_del_pliego': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_tender_document_versions']),
+    lectores: Object.freeze(['agt002.mesa']),
+  }),
+  // Piloto Fiscalía (2026-11-11): las frases literales del pliego sobre consorcios y uniones temporales, con su numeral y
+  // su lectura, cuando la pregunta es de unión temporal. Sin esto la Mesa no podía decir qué cumple cada integrante.
+  'proceso.reglas_para_plurales': Object.freeze({
     dominio: 'licitacion',
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
@@ -853,6 +863,41 @@ export async function resolverSeccionDelPliego(database, { tenderId, pregunta })
   });
 }
 
+// Una pregunta es de unión temporal si nombra la figura, un socio o los integrantes.
+const PREGUNTA_PLURAL = /consorci|uni[oó]n(?:es)? temporal|\bUT\b|plural|\bsocios?\b|aliad[oa]s?\b|integrantes?\b/i;
+
+/**
+ * Piloto Fiscalía (2026-11-11): las reglas del pliego vigente para consorcios y uniones temporales —frases literales,
+ * con el numeral donde están y su lectura (basta_uno, se_suma, pondera, cada_uno)—, cuando la pregunta es de unión
+ * temporal. La pregunta «qué cumple cada integrante y qué se suma» no cita un numeral, así que la sección del pliego no
+ * llegaba, y las frases de «cada uno de los integrantes» se perdían. Se citan, no se interpretan.
+ */
+export async function resolverReglasParaPlurales(database, { tenderId, pregunta }) {
+  const vacio = nota => respuesta({
+    nombre: 'proceso.reglas_para_plurales', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.CONGELADA, forma: FORMAS.TIPADO,
+    asOf: null, procedencia: Object.freeze({ tabla: 'psi_tender_document_versions', nota }),
+  });
+  if (typeof tenderId !== 'string' || !tenderId.trim()) return vacio('sin proceso en el expediente');
+  if (!PREGUNTA_PLURAL.test(String(pregunta || ''))) return vacio('la pregunta no es de consorcios ni de uniones temporales');
+  const { data, error } = await database.from('psi_tender_document_versions')
+    .select('id,name,created_at,extracted_text')
+    .eq('tender_id', tenderId).eq('current', true);
+  if (error || !Array.isArray(data)) return vacio('no se pudieron leer los documentos del proceso');
+  const reglas = agt002ReglasParaPlurales(data, { max: 30 });
+  if (!reglas.length) return vacio('el pliego vigente no trae frases sobre cómo cumple un consorcio o una unión temporal');
+  const fechas = data.map(row => soloFecha(row.created_at)).filter(Boolean).sort();
+  return respuesta({
+    nombre: 'proceso.reglas_para_plurales',
+    valor: Object.freeze(reglas.map(regla => Object.freeze({ documento: regla.documento, numeral: regla.numeral, lectura: regla.lectura, frase: regla.frase }))),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.CONGELADA,
+    // Es texto del pliego: se cita, no se interpreta. La lectura y el numeral los saca el servidor del texto.
+    forma: FORMAS.TIPADO,
+    asOf: fechas.length ? fechas[fechas.length - 1] : null,
+    procedencia: Object.freeze({ tabla: 'psi_tender_document_versions', documentos: [...new Set(reglas.map(regla => regla.documento).filter(Boolean))] }),
+  });
+}
+
 /**
  * Mejora 6 (encargo desde Terminal): la lista de formatos y anexos numerados del proceso —títulos del pliego vigente y
  * archivos propios con número—, para que la «relación de anexos que se presentan» de la carta salga de lo que el
@@ -910,6 +955,7 @@ const RESOLVEDORES = Object.freeze({
   'proceso.formato_oficial': (database, contexto) => resolverFormatoOficial(database, contexto),
   'proceso.formatos_del_pliego': (database, contexto) => resolverFormatosDelPliego(database, contexto),
   'proceso.seccion_del_pliego': (database, contexto) => resolverSeccionDelPliego(database, contexto),
+  'proceso.reglas_para_plurales': (database, contexto) => resolverReglasParaPlurales(database, contexto),
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),
