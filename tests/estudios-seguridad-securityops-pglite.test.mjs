@@ -112,7 +112,7 @@ test('los antecedentes: 12 meses en hora de Colombia, alertas y notas para el es
   const result = buildAntecedentes({ novedades: RAW.novedades, rondas: RAW.rondas, visitas: RAW.puesto_visits, fallas: RAW.reportes_fallas, tecnicas: RAW.visitas_tecnico, alertas: RAW.formularios, historial: RAW.historial }, NOW);
   assert.equal(result.window_from, '2025-11-10');
   assert.equal(result.window_to, '2026-11-10');
-  assert.deepEqual(result.summary.novedades, { total: 2, por_tipo: { seguridad: 1, general: 1 }, altas: 1, ultima: '2026-11-10' });
+  assert.deepEqual(result.summary.novedades, { total: 2, por_tipo: { seguridad: 1, general: 1 }, altas: 1, altas_fechas: ['2026-09-01'], ultima: '2026-11-10' });
   assert.deepEqual(result.summary.rondas, { total: 2, completitud_promedio: 90 });
   assert.deepEqual(result.summary.fallas, { total: 2, abiertas: 1 });
   assert.deepEqual(result.alerts.map(alert => [alert.id, alert.fotos]), [['ALERTA2', 0], ['ALERTA1', 2]], 'la más reciente primero');

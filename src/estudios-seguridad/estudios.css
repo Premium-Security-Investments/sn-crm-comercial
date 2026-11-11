@@ -106,3 +106,7 @@
 
 /* IEC 31010: probabilidad sugerida por los datos */
 .es-suggestion{margin:0;padding:10px 12px;border:1px solid #c7d7f3;border-radius:10px;background:#f7faff;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+
+/* Vigencia del estudio (migración 209) */
+.es-validity{display:flex;flex-direction:column;gap:6px}
+.es-validity p{margin:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
