@@ -74,3 +74,26 @@ test('migración 209: frecuencia por defecto de 2 años, valores cerrados, y rev
   assert.equal(columns.rows.length, 0);
   assert.equal((await listStudies(db))[0].validity.meses, 24, 'sin la columna, la lista sigue: 2 años');
 });
+
+// El tablero de alertas de la sección (Juan, 2026-11-11: "en la sección de estudio de seguridad … no en gerencia").
+test('la lista trae lo que necesita el tablero: entrega pendiente y recomendaciones vencidas, nuestras y del cliente', async () => {
+  const { recordDelivery } = await import('../verticales/estudios-seguridad/entrega.js');
+  const pg = await database();
+  const db = supabaseOver(pg);
+  const study = await createStudy(db, STUDY, PREPARER);
+  const risk = await addRisk(db, study.id, { title: 'Hurto de mercancía', probability: 3, impact_company: 3 }, PREPARER);
+  await addAction(db, study.id, { risk_id: risk.id, description: 'Control de salida', owner_label: 'Seguridad', due_date: '2026-01-15' }, PREPARER);
+  await addAction(db, study.id, { risk_id: risk.id, description: 'Malla nueva', owner_label: 'Cliente', due_date: '2026-02-15', responsible_party: 'cliente' }, PREPARER);
+  await addAction(db, study.id, { risk_id: risk.id, description: 'Cámaras', owner_label: 'Cliente', due_date: '2099-01-01', responsible_party: 'cliente' }, PREPARER);
+  let row = (await listStudies(db)).find(item => item.id === study.id);
+  assert.deepEqual([row.delivered, row.latest_version], [null, null], 'sin aprobar no hay entrega pendiente');
+  assert.deepEqual(row.overdue_actions, { nuestras: 1, cliente: 1 });
+  for (const [action, who] of [['enviar', PREPARER], ['marcar_revisado', REVIEWER], ['aprobar', APPROVER]]) await transitionStudy(db, study.id, { action }, who);
+  row = (await listStudies(db)).find(item => item.id === study.id);
+  assert.deepEqual([row.delivered, row.latest_version], [false, 1], 'aprobado sin entregar');
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
+  await recordDelivery(db, (await getStudy(db, study.id)).study, { delivered_on: today, medium: 'virtual', presented_by: 'Analista y coordinador', attendees: 'Gerente' }, PREPARER);
+  await pg.query(`update public.psi_security_study_actions set status = 'cumplida' where description = 'Control de salida'`);
+  row = (await listStudies(db)).find(item => item.id === study.id);
+  assert.deepEqual([row.delivered, row.overdue_actions], [true, { nuestras: 0, cliente: 1 }]);
+});

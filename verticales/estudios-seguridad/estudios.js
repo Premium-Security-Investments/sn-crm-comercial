@@ -154,10 +154,25 @@ export async function listStudies(db, now = new Date()) {
   const count = new Map();
   for (const risk of risks || []) count.set(risk.study_id, (count.get(risk.study_id) || 0) + 1);
   // Migración 209: la vigencia de cada estudio (aprobación de la última versión, frecuencia y siniestros posteriores).
-  const [versions, secops] = await Promise.all([
+  // Tablero de alertas de la sección (Juan, 2026-11-11: "en la sección de estudio de seguridad … no en gerencia"):
+  // entregas pendientes y recomendaciones vencidas.
+  const [versions, secops, deliveries, actions] = await Promise.all([
     db.from('psi_security_study_versions').select('study_id, version, approved_at'),
     db.from('psi_security_study_securityops').select('study_id, puesto_id, status, summary'),
+    db.from('psi_security_study_deliveries').select('study_id, version'),
+    db.from(ACTION_TABLE).select('study_id, due_date, status, responsible_party').in('status', ['pendiente', 'en_curso']),
   ]);
+  const delivered = new Set(((deliveries.error ? [] : deliveries.data) || []).map(row => `${row.study_id}:${row.version}`));
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(now);
+  const overdue = new Map();
+  for (const action of (actions.error ? [] : actions.data) || []) {
+    // La fecha llega como texto desde supabase-js y como Date desde otros lectores.
+    const due = action.due_date instanceof Date ? action.due_date.toISOString().slice(0, 10) : String(action.due_date || '').slice(0, 10);
+    if (!due || due >= today) continue;
+    const entry = overdue.get(action.study_id) || { nuestras: 0, cliente: 0 };
+    entry[action.responsible_party === 'cliente' ? 'cliente' : 'nuestras'] += 1;
+    overdue.set(action.study_id, entry);
+  }
   const approvedAt = new Map();
   for (const row of (versions.error ? [] : versions.data) || []) {
     const prev = approvedAt.get(row.study_id);
@@ -168,6 +183,9 @@ export async function listStudies(db, now = new Date()) {
     id: study.id, code: study.code, title: study.title, status: study.status, client_name: study.client_name, site_name: study.site_name,
     site_city: study.site_city, visit_date: study.visit_date, prepared_by: study.prepared_by, created_at: study.created_at, updated_at: study.updated_at,
     risk_count: count.get(study.id) || 0,
+    latest_version: approvedAt.get(study.id)?.version ?? null,
+    delivered: approvedAt.has(study.id) ? delivered.has(`${study.id}:${approvedAt.get(study.id).version}`) : null,
+    overdue_actions: overdue.get(study.id) || { nuestras: 0, cliente: 0 },
     validity: studyValidity(study, { approvedAt: approvedAt.get(study.id)?.approved_at || null, securityops: ops.get(study.id)?.puesto_id === study.securityops_puesto_id ? { data: ops.get(study.id) } : null, now }),
   }));
 }

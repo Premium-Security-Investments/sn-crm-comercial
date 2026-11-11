@@ -9,6 +9,7 @@ export type Nivel = 'bajo' | 'moderado' | 'alto' | 'critico' | 'aceptable' | 'to
 export type StudySummaryRow = {
   id: string; code: string; title: string; status: StudyStatus; client_name: string; site_name: string;
   site_city: string | null; visit_date: string | null; updated_at: string; risk_count: number; validity?: Validity;
+  latest_version?: number | null; delivered?: boolean | null; overdue_actions?: { nuestras: number; cliente: number };
 };
 
 // Migración 209: vigencia del estudio y revaloración (Héctor: mínimo cada 6 meses, máximo cada 3 años).
