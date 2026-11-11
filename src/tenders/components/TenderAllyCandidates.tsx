@@ -7,7 +7,7 @@ import { AllyCardDialog } from './AllyDetail';
  * con nuestra ficha. Hasta 5, sin descartados, con aviso si es el contratista actual o un competidor directo. Una oficina
  * en el listado no prueba la agencia: hay que pedir la resolución y el certificado de Cámara.
  */
-type Candidate = { nit: string; name: string; role: string; covered: string[]; covers_all: boolean; times_seen: number; warning: string | null; zone_warning?: string | null; contact: string | null; phone: string | null; email: string | null };
+type Candidate = { nit: string; name: string; role: string; covered: string[]; covers_all: boolean; times_seen: number; warning: string | null; zone_warning?: string | null; competed_against_us?: number; offices?: number; size_note?: string | null; contact: string | null; phone: string | null; email: string | null };
 type Reading = { mode: 'uno_cumple' | 'se_suma' | 'no_dice'; quote: string | null; quote_verified: boolean; document_name: string | null; locator: string | null; explanation: string | null };
 type Payload = { applies: boolean; installed?: boolean; cities: string[]; candidates: Candidate[]; reading?: Reading; alternative?: { label: string; cities: string[]; candidates: Candidate[] } };
 // Encargo AGT-002 del 2026-11-10 (aprobado por Juan): la lista sale de cómo deja el pliego cumplir a una unión temporal.
@@ -38,7 +38,7 @@ export function TenderAllyCandidates({ opportunityId, request, navigate, canEdit
       <span><b>Lectura del pliego:</b> {READING[data.reading.mode](joinCities(data.cities))}{data.reading.locator ? ` (${data.reading.locator}${data.reading.document_name ? `, ${data.reading.document_name}` : ''})` : data.reading.document_name ? ` (${data.reading.document_name})` : ''}.</span>
       {data.reading.quote && <details><summary>Lo que dice el pliego</summary><blockquote>«{data.reading.quote}»</blockquote></details>}
     </div>}
-    <p className="tw-muted tw-ally-source">Cruce automático con la base de Aliados según esa lectura; no es una recomendación de Vig-IA.</p>
+    <p className="tw-muted tw-ally-source">Cruce automático con la base de Aliados según esa lectura; no es una recomendación de Vig-IA. Orden: primero aliados, luego quienes no han competido contra nosotros.</p>
     {!data.cities.length
       ? <p className="tw-muted">Lo que falta no es una ciudad (por ejemplo, un indicador financiero): Aliados todavía no filtra por eso. <button type="button" className="tw-link" onClick={open}>Ver Aliados</button></p>
       : !data.candidates.length
@@ -64,12 +64,14 @@ function CandidateList({ candidates, onOpen }: { candidates: Candidate[]; onOpen
       <button type="button" className="tw-ally-name" onClick={() => onOpen(candidate.nit)}>{candidate.name}</button>
       <span className="tw-ally-meta">NIT {candidate.nit} · {ROLE[candidate.role] || candidate.role}
         {!candidate.covers_all && <> · cubre {candidate.covered.join(', ')}</>}
-        {candidate.times_seen > 0 && <> · visto en {candidate.times_seen} proceso{candidate.times_seen === 1 ? '' : 's'}</>}
         {(candidate.contact || candidate.phone) && <> · {candidate.contact || candidate.phone}</>}</span>
     </div>
-    {(candidate.warning || candidate.zone_warning) && <div className="tw-ally-tags">
+    {(candidate.warning || candidate.zone_warning || candidate.competed_against_us || candidate.size_note) && <div className="tw-ally-tags">
       {candidate.warning && <span className="tw-ally-tag is-alert">{candidate.warning}</span>}
+      {/* Punto 3 (2026-11-11): lo que decide el orden, a la vista. */}
+      {(candidate.competed_against_us || 0) > 0 && <span className="tw-ally-tag is-alert">Compitió contra nosotros en {candidate.competed_against_us} proceso{candidate.competed_against_us === 1 ? '' : 's'}</span>}
       {candidate.zone_warning && <span className="tw-ally-tag">{candidate.zone_warning}</span>}
+      {candidate.size_note && <span className="tw-ally-tag is-neutral">{candidate.size_note}</span>}
     </div>}
   </li>)}</ul>;
 }
