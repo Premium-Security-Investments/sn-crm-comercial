@@ -57,13 +57,19 @@ export function TenderAllyCandidates({ opportunityId, request, navigate, canEdit
 }
 
 function CandidateList({ candidates, onOpen }: { candidates: Candidate[]; onOpen: (nit: string) => void }) {
-  return <ul>{candidates.map(candidate => <li key={candidate.nit}>
-            {/* La ficha en una ventana (Juan, 2026-11-10). */}
-            <button type="button" className="tw-ally-name" onClick={() => onOpen(candidate.nit)}>{candidate.name}</button> · NIT {candidate.nit} · {ROLE[candidate.role] || candidate.role}
-            {!candidate.covers_all && <> · cubre {candidate.covered.join(', ')}</>}
-            {candidate.times_seen > 0 && <> · visto en {candidate.times_seen} proceso{candidate.times_seen === 1 ? '' : 's'}</>}
-            {(candidate.contact || candidate.phone) && <> · {candidate.contact || candidate.phone}</>}
-            {candidate.warning && <span className="tw-reject"> {candidate.warning}</span>}
-            {candidate.zone_warning && <span className="tw-ally-zone"> {candidate.zone_warning}</span>}
+  // Más fácil de leer (Juan, 2026-11-11): nombre y datos en una línea, los avisos como etiquetas debajo.
+  return <ul className="tw-ally-list">{candidates.map(candidate => <li key={candidate.nit}>
+    <div className="tw-ally-line">
+      {/* La ficha en una ventana (Juan, 2026-11-10). */}
+      <button type="button" className="tw-ally-name" onClick={() => onOpen(candidate.nit)}>{candidate.name}</button>
+      <span className="tw-ally-meta">NIT {candidate.nit} · {ROLE[candidate.role] || candidate.role}
+        {!candidate.covers_all && <> · cubre {candidate.covered.join(', ')}</>}
+        {candidate.times_seen > 0 && <> · visto en {candidate.times_seen} proceso{candidate.times_seen === 1 ? '' : 's'}</>}
+        {(candidate.contact || candidate.phone) && <> · {candidate.contact || candidate.phone}</>}</span>
+    </div>
+    {(candidate.warning || candidate.zone_warning) && <div className="tw-ally-tags">
+      {candidate.warning && <span className="tw-ally-tag is-alert">{candidate.warning}</span>}
+      {candidate.zone_warning && <span className="tw-ally-tag">{candidate.zone_warning}</span>}
+    </div>}
   </li>)}</ul>;
 }

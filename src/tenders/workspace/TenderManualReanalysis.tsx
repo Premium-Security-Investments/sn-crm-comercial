@@ -93,7 +93,8 @@ export function TenderManualReanalysis({ opportunityId, request, analyzedAt, fir
 /** Qué cambió con el último reanálisis: recomendación, requisitos re-evaluados y hallazgos nuevos o retirados. */
 export function TenderAnalysisChanges({ changes, incremental }: { changes: ManualReanalysisChanges; incremental: boolean }) {
   const empty = !changes.recommendation && !changes.requirements.length && !changes.addedFindings.length && !changes.removedFindings.length;
-  return <details className="tw-reanalysis-changes" open>
+  // Plegado (Juan, 2026-11-11: Decidir saturada de texto): se abre con un clic.
+  return <details className="tw-reanalysis-changes">
     <summary>{incremental ? 'Qué cambió con los documentos nuevos' : 'Qué cambió con el último análisis'}</summary>
     {empty && <p className="tw-muted">No cambió la recomendación, ni la evaluación de ningún requisito, ni los hallazgos.</p>}
     {changes.recommendation && <p><strong>Recomendación:</strong> {changes.recommendation.from || '—'} → <strong>{changes.recommendation.to || '—'}</strong></p>}

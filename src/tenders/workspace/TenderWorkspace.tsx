@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { paragraphs, recommendationParts } from '../readableText';
 import '../components/tender-dossier.css';
 import './tender-workspace.css';
 import {
@@ -113,12 +114,13 @@ function sourceLine(source: RequirementRow['sources'][number]) {
 /** Detalle de un requisito tal como lo leyó el análisis. Lo usan las dos vistas. */
 function RequirementAnalysisDetail({ row, compact = false }: { row: RequirementRow; compact?: boolean }) {
   return <div className="tw-req-detail-body">
-    {!compact && row.actions.length > 0 && <section><h4>Qué hay que hacer</h4>{row.actions.map(action => <p key={action}>{action}</p>)}</section>}
-    {row.demand && <section><h4>Qué exige el pliego</h4><p>{row.demand}</p>
-      {row.sources.length > 0 && <p className="tw-source-line">{row.sources.map(sourceLine).join(' · ')}</p>}</section>}
-    {row.company.length > 0 && <section><h4>Cómo estamos</h4>{row.company.map(text => <p key={text}>{text}</p>)}</section>}
+    {/* Más fácil de leer (Juan, 2026-11-11): los párrafos largos en frases sueltas y las fuentes en lista. */}
+    {!compact && row.actions.length > 0 && <section><h4>Qué hay que hacer</h4>{row.actions.flatMap(action => paragraphs(action)).map((text, index) => <p key={index}>{text}</p>)}</section>}
+    {row.demand && <section><h4>Qué exige el pliego</h4>{paragraphs(row.demand).map((text, index) => <p key={index}>{text}</p>)}
+      {row.sources.length > 0 && <details className="tw-source-fold"><summary>Fuentes ({row.sources.length})</summary><ul className="tw-source-list">{row.sources.map(source => <li key={sourceLine(source)}>{sourceLine(source)}</li>)}</ul></details>}</section>}
+    {row.company.length > 0 && <section><h4>Cómo estamos</h4>{row.company.flatMap(text => paragraphs(text)).map((text, index) => <p key={index}>{text}</p>)}</section>}
     {row.notes.length > 0 && <section><h4>Lo que advierte el análisis</h4>{row.notes.map(note => <div className="tw-note" key={note.title}>
-      <strong>{note.title}</strong>{note.impact && <p>{note.impact}</p>}
+      <strong>{note.title}</strong>{paragraphs(note.impact).map((text, index) => <p key={index}>{text}</p>)}
     </div>)}</section>}
     {row.openItems.length > 0 && <section><h4>Pendientes</h4><ul>{row.openItems.map(item => <li key={item.text}>{item.text}{item.dueAt ? ` · ${formatDeadline(item.dueAt)}` : ''}</li>)}</ul></section>}
   </div>;
@@ -219,6 +221,14 @@ export function TenderScheduleCard({ report, compact = false }: { report: Agt002
 // --- Antes del GO: ¿nos presentamos? ------------------------------------------------------------------
 
 /** Antes del GO, con el registro de la decisión; después del GO, el mismo análisis para consulta (sin decisionPanel). */
+function RecommendationText({ text }: { text: string }) {
+  const { lead, points } = recommendationParts(text);
+  return <div className="tw-verdict-text">
+    <p className="tw-verdict-lead">{lead}</p>
+    {points.length > 0 && <ul>{points.map((point, index) => <li key={index}>{point}</li>)}</ul>}
+  </div>;
+}
+
 export function TenderDecideView({ report, decisionPanel, reanalysis, channel, documents, clarify, allies }: { report: Agt002InitialReport | null; decisionPanel?: ReactNode; reanalysis?: ReactNode; channel?: ReactNode; documents?: ReactNode; clarify?: ClarifyContext; allies?: ReactNode }) {
   const rows = useMemo(() => buildRequirementRows(report), [report]);
   const decisive = useMemo(() => decisiveRequirementRows(rows), [rows]);
@@ -243,7 +253,8 @@ export function TenderDecideView({ report, decisionPanel, reanalysis, channel, d
     <section className={`tw-card tw-verdict-card tone-${verdict.tone}`}>
       <small>{decisionPanel ? 'Lo que recomienda Vig-IA' : 'Lo que recomendó Vig-IA antes del GO'}</small>
       <h3>{verdict.label}</h3>
-      <p>{initialReportRecommendationText(report.recommendation.label)}</p>
+      {/* Más fácil de leer (Juan, 2026-11-11): el titular de la recomendación y sus puntos, en vez de un solo párrafo. */}
+      <RecommendationText text={initialReportRecommendationText(report.recommendation.label)} />
       {/* Aliados (Juan, 2026-11-09): con «Solo en unión temporal», los posibles socios debajo de la recomendación. */}
       {allies}
       <p className="tw-muted">{initialReportCompanyFit(report)} · confianza {initialReportLabels.confidence(report.recommendation.confidence)} · {rows.length} requisitos revisados</p>
