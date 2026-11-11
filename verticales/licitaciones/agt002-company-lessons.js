@@ -124,6 +124,8 @@ export const AGT002_LESSONS_POLICY = [
   'lecciones_de_la_empresa son reglas que la empresa aprendió en procesos anteriores y que una persona aprobó: son patrón, no prueba de cumplimiento.',
   'Tenlas en cuenta en todo el análisis o la respuesta; cuando una lección cambie lo que dices, nómbrala por su id (por ejemplo «lección L-01») junto al numeral del pliego que aplica.',
   'Nunca presentes una lección como evidencia del pliego ni como dato verificado de este proceso; si choca con el pliego o con una fuente verificada, prevalecen éstos y señala la diferencia.',
+  // Piloto Fiscalía, 2026-11-11: citó la lección de «antigüedad mínima de la sede» en un pliego que no pide antigüedad.
+  'Usa una lección sólo si este pliego trae el supuesto que la lección describe; si no lo trae, no la cites.',
 ].join(' ');
 
 /** Lecciones activas → bloque compacto para el prompt. Respeta el tope; lo que no cabe se omite entero, nunca a medias. */

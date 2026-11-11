@@ -68,3 +68,8 @@ test('sin lecciones activas, o si fallan, la Mesa queda exactamente como antes',
     assert.equal(client.visto.policy, AGT002_WORKBENCH_POLICY);
   }
 });
+
+test('una lección sólo se usa si el pliego trae su supuesto (piloto Fiscalía, 2026-11-11)', async () => {
+  const { AGT002_LESSONS_POLICY } = await import('../verticales/licitaciones/agt002-company-lessons.js');
+  assert.match(AGT002_LESSONS_POLICY, /sólo si este pliego trae el supuesto que la lección describe/);
+});
