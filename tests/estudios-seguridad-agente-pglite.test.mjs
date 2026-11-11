@@ -31,9 +31,9 @@ const MODEL_OUTPUT = {
   respuesta: 'Propongo dos riesgos y una zona nueva.',
   zonas_nuevas: [{ ref: 'n1', nombre: 'Portería vehicular' }, { ref: 'n2', nombre: 'bodega 3' }],
   riesgos: [
-    { zona: 'z1', catalogo: 'R02', proceso: 'P03', proceso_cliente: 'Logística', factor: 'Físico – Perimetral', titulo: 'Intrusión por la malla rota del costado norte', causas: 'Malla rota', consecuencias: 'Hurto en la bodega', control_existente: 'Ronda cada 2 horas', control_propuesto: 'Reparar la malla y poner cámara', evidencia_en_nota: 'la malla del costado norte está rota y no hay cámara' },
-    { zona: 'n1', catalogo: 'R01', proceso: 'P99', proceso_cliente: '', factor: '', titulo: 'Ingreso de camiones sin registro', causas: '', consecuencias: '', control_existente: '', control_propuesto: 'Registro de vehículos', evidencia_en_nota: 'los camiones entran sin registro' },
-    { zona: 'z1', catalogo: 'R16', proceso: '', proceso_cliente: '', factor: '', titulo: 'Amenaza terrorista', causas: '', consecuencias: '', control_existente: '', control_propuesto: '', evidencia_en_nota: 'sabotaje grave en la planta' },
+    { zona: 'z1', catalogo: 'RB-03', proceso: 'P03', proceso_cliente: 'Logística', factor: 'Físico – Perimetral', titulo: 'Intrusión por la malla rota del costado norte', causas: 'Malla rota', consecuencias: 'Hurto en la bodega', control_existente: 'Ronda cada 2 horas', control_propuesto: 'Reparar la malla y poner cámara', evidencia_en_nota: 'la malla del costado norte está rota y no hay cámara' },
+    { zona: 'n1', catalogo: 'RB-01', proceso: 'P99', proceso_cliente: '', factor: '', titulo: 'Ingreso de camiones sin registro', causas: '', consecuencias: '', control_existente: '', control_propuesto: 'Registro de vehículos', evidencia_en_nota: 'los camiones entran sin registro' },
+    { zona: 'z1', catalogo: 'RB-17', proceso: '', proceso_cliente: '', factor: '', titulo: 'Amenaza terrorista', causas: '', consecuencias: '', control_existente: '', control_propuesto: '', evidencia_en_nota: 'sabotaje grave en la planta' },
   ],
   avisos: [],
 };
@@ -46,7 +46,7 @@ test('la política y el esquema: propone texto, no califica, y el formato es cer
   const risk = schema.properties.riesgos.items;
   assert.equal(risk.additionalProperties, false);
   for (const forbidden of ['probabilidad', 'impacto', 'nivel', 'calidad']) assert.equal(Object.keys(risk.properties).some(key => key.includes(forbidden)), false, `sin ${forbidden}`);
-  assert.deepEqual(risk.properties.catalogo.enum.slice(0, 3), ['', 'R01', 'R02']);
+  assert.deepEqual(risk.properties.catalogo.enum.slice(0, 3), ['', 'RB-01', 'RB-02']);
 });
 
 test('al modelo no viajan ids ni NIT: sólo referencias cortas', async () => {
@@ -68,7 +68,9 @@ test('normaliza: zonas existentes no se repiten, catálogo coherente y sin cita 
   assert.equal(out.riesgos.length, 2);
   assert.equal(out.riesgos[0].zone_id, bodega.id);
   assert.equal(out.riesgos[1].zone_ref, 'n1');
-  assert.equal(out.riesgos[1].process_code, 'P02', 'P99 no existe: toma el primer proceso del riesgo R01');
+  assert.equal(out.riesgos[1].process_code, null, 'P99 no existe y la lista base no ata riesgos a procesos: queda sin proceso');
+  assert.deepEqual(out.riesgos.map(risk => risk.catalog_risk_code), ['RB-03', 'RB-01']);
+  assert.equal(out.riesgos[0].process_code, 'P03', 'un proceso que existe se conserva');
   assert.deepEqual([out.riesgos[0].client_process, out.riesgos[0].risk_factor, out.riesgos[1].client_process], ['Logística', 'Físico – Perimetral', null]);
   assert.match(out.avisos.join(' '), /Se descartó "Amenaza terrorista": no cita un fragmento de la nota/);
   for (const risk of out.riesgos) assert.equal('probability' in risk, false, 'la propuesta no trae calificación');

@@ -284,8 +284,15 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = 
   const set = (patch: RiskDraft) => setForm(current => ({ ...current, ...patch }));
   const processes = useMemo(() => {
     const allowed = catalog?.riesgos.find(item => item.codigo === form.catalog_risk_code)?.procesos;
-    return (catalog?.procesos || []).filter(process => !allowed || allowed.includes(process.codigo));
+    return (catalog?.procesos || []).filter(process => !allowed?.length || allowed.includes(process.codigo));
   }, [catalog, form.catalog_risk_code]);
+  // La lista base, agrupada por categoría, en el orden en que viene.
+  const riskGroups = useMemo(() => {
+    const groups = new Map<string, Catalog['riesgos']>();
+    for (const item of catalog?.riesgos || []) groups.set(item.categoria || 'Otros', [...(groups.get(item.categoria || 'Otros') || []), item]);
+    return [...groups.entries()];
+  }, [catalog]);
+  const selectedRisk = catalog?.riesgos.find(item => item.codigo === form.catalog_risk_code) || null;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -303,11 +310,15 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = 
       <label>Riesgo del catálogo
         <select value={form.catalog_risk_code || ''} onChange={event => {
           const item = catalog?.riesgos.find(entry => entry.codigo === event.target.value);
-          set({ catalog_risk_code: event.target.value || null, title: form.title || item?.nombre || '', process_code: item?.procesos.includes(form.process_code || '') ? form.process_code : item?.procesos[0] || null });
+          const keepProcess = !item?.procesos.length || item.procesos.includes(form.process_code || '');
+          set({ catalog_risk_code: event.target.value || null, title: form.title || item?.nombre || '', process_code: keepProcess ? form.process_code : item?.procesos[0] || null });
         }}>
-          <option value="">Riesgo propio (no está en el catálogo)</option>
-          {(catalog?.riesgos || []).map(item => <option key={item.codigo} value={item.codigo}>{item.codigo} · {item.nombre}</option>)}
+          <option value="">Riesgo propio del sitio (no está en la lista base)</option>
+          {riskGroups.map(([category, items]) => <optgroup key={category} label={category}>
+            {items.map(item => <option key={item.codigo} value={item.codigo}>{item.codigo} · {item.nombre}</option>)}
+          </optgroup>)}
         </select>
+        {selectedRisk?.cubre ? <small className="es-muted">{selectedRisk.cubre}</small> : null}
       </label>
       <label>Proceso
         <select value={form.process_code || ''} onChange={event => set({ process_code: event.target.value || null })}>

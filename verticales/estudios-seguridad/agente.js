@@ -83,7 +83,8 @@ export function buildFieldNoteInput(detail, note, today) {
       zonas: detail.zones.map(zone => ({ ref: zoneRef.get(zone.id), nombre: zone.name })),
       riesgos_registrados: detail.risks.map(risk => ({ ref: `r${risk.number}`, riesgo: clip(risk.title, 200), zona: risk.zone_id ? zoneRef.get(risk.zone_id) || null : null })),
       catalogo: {
-        riesgos: catalog.riesgos.map(item => ({ codigo: item.codigo, nombre: item.nombre, procesos: item.procesos })),
+        // Lista base: la categoría y lo que cubre cada riesgo marcan el límite entre los que se parecen.
+        riesgos: catalog.riesgos.map(item => ({ codigo: item.codigo, nombre: item.nombre, categoria: item.categoria ?? null, cubre: item.cubre ?? null })),
         procesos: catalog.procesos.map(item => ({ codigo: item.codigo, nombre: item.nombre })),
       },
       nota: clip(note, FIELD_NOTE_MAX_CHARS),
@@ -124,7 +125,9 @@ export function normalizeFieldNoteOutput(raw, { zoneRefs, zones, catalog, note }
       continue;
     }
     const catalogEntry = catalog.riesgos.find(entry => entry.codigo === item?.catalogo) || null;
-    const proceso = catalog.procesos.some(entry => entry.codigo === item?.proceso) && (!catalogEntry || catalogEntry.procesos.includes(item.proceso)) ? item.proceso : (catalogEntry?.procesos[0] || null);
+    // La lista base no ata riesgos a procesos: sin procesos en la entrada, cualquiera del catálogo vale.
+    const allowed = catalogEntry?.procesos?.length ? catalogEntry.procesos : null;
+    const proceso = catalog.procesos.some(entry => entry.codigo === item?.proceso) && (!allowed || allowed.includes(item.proceso)) ? item.proceso : (allowed?.[0] || null);
     let zone = { zone_id: null, zone_ref: null };
     if (/^z\d+$/.test(item?.zona || '') && zoneRefs[item.zona]) zone = { zone_id: zoneRefs[item.zona], zone_ref: null };
     else if (/^n[1-8]$/.test(item?.zona || '')) zone = newRefToExisting.has(item.zona) ? { zone_id: newRefToExisting.get(item.zona), zone_ref: null } : newZones.some(z => z.ref === item.zona) ? { zone_id: null, zone_ref: item.zona } : zone;
