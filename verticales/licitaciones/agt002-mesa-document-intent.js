@@ -76,24 +76,17 @@ export function agt002ResolveRequestedDocument(intent, artifacts = []) {
   return { action: 'create', title, key };
 }
 
-// F7 (auditoría del piloto Fiscalía, 2026-11-05): «Con eso, redacta las observaciones para radicar en SECOP… Texto
-// formal, listo para pegar» se cortó a los 30 s (`AGT002_RESPONDER_TIMEOUT`), porque antes del GO todo es respuesta y
-// sólo el borrador tiene 90 s. Esto NO crea documentos —para eso está `agt002DocumentRequestIntent`, que es estricto
-// a propósito—: sólo reconoce que el mensaje pide redactar un texto, para darle el tope del borrador. Equivocarse aquí
-// cuesta, a lo sumo, esperar más.
-const DRAFTING_VERB = /\b(redact[aeo]\w*|elabor[aeo]\w*|proyect[aeo]\w*|escrib[ae]\w*|prepar[aeo]\w*|arm[aeo]\w*|hazme|haz|haga|genera\w*|dame)\b/;
-const DRAFTING_OBJECT = /\b(observacion(es)?|carta|anexo|formato|oficio|comunicacion|solicitud|respuesta formal|texto (formal|listo)|derecho de peticion|subsanacion|aclaracion(es)?|declaracion|certificacion|compromiso|correo|documento|borrador|propuesta|manifestacion|poder)\b/;
-
-/** ¿El mensaje pide redactar un texto? Sólo decide el tope de tiempo de la respuesta. */
-export function agt002PideRedaccion(message) {
-  const text = fold(message);
-  if (!text.trim()) return false;
-  const verb = DRAFTING_VERB.exec(text);
-  return Boolean(verb && DRAFTING_OBJECT.test(text.slice(verb.index)));
-}
-
-/** El tope del borrador vale para un borrador y para una respuesta que pide redactar (F7). */
+// F7 (auditoría del piloto Fiscalía, 2026-11-05): «redacta las observaciones… Texto formal, listo para pegar» se cortó a
+// los 30 s (`AGT002_RESPONDER_TIMEOUT`), porque antes del GO todo es respuesta y sólo el borrador tenía 90 s. Primero se
+// le dio el tope largo sólo a la respuesta que pedía redactar; el 11-nov se cortó una pregunta de análisis que no pedía
+// redactar, y ahora toda respuesta tiene el tope largo. Esto NO crea documentos: para eso está
+// `agt002DocumentRequestIntent`, que es estricto a propósito.
+/**
+ * El tope del borrador vale para un borrador y para toda respuesta (F7 y piloto Fiscalía, 2026-11-11). Una pregunta de
+ * análisis con citas («qué cumple cada integrante, qué se suma, cita el numeral») tampoco cabe en 30 s, y no pide
+ * redactar: se cortó a los 30 s el 11-nov. El tope es un máximo; lo corto termina igual de rápido.
+ */
 export function agt002UsaTopeDeBorrador(input) {
-  if (input?.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft) return true;
-  return input?.capability_id === AGT002_WORKBENCH_CAPABILITIES.reply && agt002PideRedaccion(input.message);
+  return input?.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft
+    || input?.capability_id === AGT002_WORKBENCH_CAPABILITIES.reply;
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { agt002PideRedaccion, agt002UsaTopeDeBorrador } from '../verticales/licitaciones/agt002-mesa-document-intent.js';
+import { agt002UsaTopeDeBorrador } from '../verticales/licitaciones/agt002-mesa-document-intent.js';
 import { runAgt002WorkbenchWorker } from '../verticales/licitaciones/agt002-workbench-worker.js';
 import { createAgt002WorkbenchResponder } from '../verticales/licitaciones/agt002-workbench-responder.js';
 import { AGT002_WORKBENCH_CONTRACT_VERSION, AGT002_WORKBENCH_POLICY_VERSION } from '../verticales/licitaciones/agt002-workbench-contract.js';
@@ -14,13 +14,18 @@ const PEDIDO_FISCALIA = 'Te paso el texto literal del pliego definitivo, numeral
   + 'radicada ante la SuperVigilancia. Texto formal, listo para pegar.';
 const REPLY = 'agt002.dossier-workbench.reply.v1';
 
-test('reconoce que el pedido de Fiscalía pide redactar; una pregunta no', () => {
-  assert.equal(agt002PideRedaccion(PEDIDO_FISCALIA), true);
-  assert.equal(agt002PideRedaccion('Prepara la carta de presentación'), true);
-  assert.equal(agt002PideRedaccion('¿Qué dice el numeral 5.3.2 para uniones temporales?'), false);
-  assert.equal(agt002PideRedaccion('dame el numeral y la página'), false);
+// 11-nov: la pregunta de análisis del piloto Fiscalía (no pide redactar) también se cortó a los 30 s.
+const PREGUNTA_ANALISIS = 'Si armamos una unión temporal con Sepecol o con Vigilancia Acosta para cubrir Armenia y Quibdó, ¿qué requisitos '
+  + 'habilitantes debe cumplir cada integrante por separado, cuáles se suman entre los dos y qué documentos le debo pedir hoy al socio? '
+  + 'Cita el numeral del pliego de cada uno.';
+const LEARNING = 'agt002.dossier-workbench.learning-proposal.v1';
+
+test('toda respuesta y todo borrador tienen el tope largo; la propuesta de aprendizaje no', () => {
   assert.equal(agt002UsaTopeDeBorrador({ capability_id: REPLY, message: PEDIDO_FISCALIA }), true);
-  assert.equal(agt002UsaTopeDeBorrador({ capability_id: REPLY, message: '¿Cuándo cierra?' }), false);
+  assert.equal(agt002UsaTopeDeBorrador({ capability_id: REPLY, message: PREGUNTA_ANALISIS }), true);
+  assert.equal(agt002UsaTopeDeBorrador({ capability_id: REPLY, message: '¿Cuándo cierra?' }), true);
+  assert.equal(agt002UsaTopeDeBorrador({ capability_id: 'agt002.dossier-workbench.draft.v1', message: 'x' }), true);
+  assert.equal(agt002UsaTopeDeBorrador({ capability_id: LEARNING, message: 'x' }), false);
 });
 
 const ids = {
@@ -56,13 +61,13 @@ test('caso Fiscalía: una respuesta que pide redactar tiene el tope del borrador
   assert.deepEqual(persistence.eventos, [{ eventType: 'completed' }]);
 });
 
-test('una pregunta corriente sigue con el tope corto', async () => {
-  const persistence = persistencia('¿Qué dice el numeral 5.3.2?');
+test('caso Fiscalía 11-nov: una pregunta de análisis también tiene el tope del borrador y termina', async () => {
+  const persistence = persistencia(PREGUNTA_ANALISIS);
   await runAgt002WorkbenchWorker({ persistence, responder: lento, limits });
-  assert.deepEqual(persistence.eventos, [{ eventType: 'failed', code: 'AGT002_RESPONDER_TIMEOUT' }]);
+  assert.deepEqual(persistence.eventos, [{ eventType: 'completed' }]);
 });
 
-test('el puente recibe el tope del borrador menos 5 s cuando la respuesta pide redactar', async () => {
+test('el puente recibe el tope del borrador menos 5 s en toda respuesta', async () => {
   const vistos = [];
   const client = { async run(args) { vistos.push(args.timeoutMs); return { content: JSON.stringify({ content_text: 'x', source_links: [], missing_information: [], required_actions: [] }), usage: { input_tokens: 1, output_tokens: 1 } }; } };
   const responder = createAgt002WorkbenchResponder({ client, model: 'm', timeoutMs: 30_000, draftTimeoutMs: 90_000 });
@@ -72,5 +77,5 @@ test('el puente recibe el tope del borrador menos 5 s cuando la respuesta pide r
   };
   await responder.respond(entrada(PEDIDO_FISCALIA));
   await responder.respond(entrada('¿Qué dice el numeral 5.3.2?'));
-  assert.deepEqual(vistos, [85_000, 30_000]);
+  assert.deepEqual(vistos, [85_000, 85_000]);
 });
