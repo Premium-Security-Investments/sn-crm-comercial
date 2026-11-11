@@ -8,7 +8,7 @@
 // El permiso de módulo (`estudios_seguridad`) lo exige la ruta. Dentro del módulo, en este tramo, cualquiera que lo
 // tenga puede editar un estudio en borrador o devuelto: el flujo preparador → revisor → aprobador llega en el tramo 3.
 
-import { METODOLOGIA_V1, valorarRiesgo } from './metodologia.js';
+import { METODOLOGIAS, METODOLOGIA_V1, METODOLOGIA_VIGENTE, valorarRiesgo, valorarSegunGuia } from './metodologia.js';
 import { PLANTILLAS } from './plantilla.js';
 import { listEvidence } from './evidencias.js';
 import { cleanCharacterization, loadCharacterization } from './caracterizacion.js';
@@ -19,7 +19,6 @@ export const ZONE_TABLE = 'psi_security_study_zones';
 export const RISK_TABLE = 'psi_security_study_risks';
 export const ACTION_TABLE = 'psi_security_study_actions';
 
-const METODOLOGIAS = Object.freeze({ [METODOLOGIA_V1.id]: METODOLOGIA_V1 });
 const EDITABLE_STATUSES = new Set(['borrador', 'devuelto']);
 const CLIENT_SOURCES = new Set(['avancys', 'crm']);
 const SITE_SOURCES = new Set(['avancys_puesto', 'crm', 'manual']);
@@ -117,7 +116,7 @@ export function cleanStudyInput(body = {}) {
 
 export async function createStudy(db, body, profile, now = new Date()) {
   const stamp = now.toISOString();
-  const row = { ...cleanStudyInput(body), prepared_by: profile.id, created_at: stamp, updated_at: stamp };
+  const row = { ...cleanStudyInput(body), methodology_id: METODOLOGIA_VIGENTE.id, prepared_by: profile.id, created_at: stamp, updated_at: stamp };
   return must(db.from(STUDY_TABLE).insert(row).select('*').single());
 }
 
@@ -160,6 +159,16 @@ function controlFrom(row, prefix) {
 export function valuateRisk(row, methodologyId = METODOLOGIA_V1.id) {
   const metodologia = METODOLOGIAS[methodologyId];
   if (!metodologia) throw invalid(`Metodología desconocida: ${methodologyId}.`, 500);
+  // La guía (2026-11-11): un solo impacto y la probabilidad residual escogida por el analista.
+  if (metodologia.probabilidadResidualEscogida) {
+    return valorarSegunGuia({
+      probabilidad: row.probability,
+      impacto: row.impact_company,
+      probabilidadResidual: row.residual_probability ?? null,
+      controlActual: controlFrom(row, 'current'),
+      controlPropuesto: controlFrom(row, 'proposed'),
+    }, metodologia);
+  }
   return valorarRiesgo({
     probabilidad: row.probability,
     impactoEmpresa: row.impact_company,
@@ -265,7 +274,9 @@ export function cleanRiskInput(body = {}, catalog = null) {
     consequences: text(body.consequences, { field: 'Consecuencias', max: 4000 }),
     probability: scale(body.probability, 'Probabilidad'),
     impact_company: scale(body.impact_company, 'Impacto sobre la empresa'),
-    impact_people: scale(body.impact_people, 'Impacto sobre personas'),
+    // La guía tiene un solo impacto: si no llega el de personas, es el mismo (la metodología v1 usaba el mayor).
+    impact_people: scale(body.impact_people ?? body.impact_company, 'Impacto sobre personas'),
+    residual_probability: scale(body.residual_probability, 'Probabilidad residual', { optional: true }),
     current_control: text(body.current_control, { field: 'Control existente', max: 4000 }),
     ...rating(body, 'current', 'Control existente'),
     proposed_control: text(body.proposed_control, { field: 'Control propuesto', max: 4000 }),
@@ -327,7 +338,16 @@ function cleanAction(body) {
     due_date: isoDate(body.due_date, 'Fecha compromiso'),
     priority,
     status,
+    // Migración 205: a cargo de Seguridad Nacional o del cliente. Sólo las nuestras pasan a Seguimiento gerencial.
+    responsible_party: party(body.responsible_party),
   };
+}
+
+const PARTIES = new Set(['seguridad_nacional', 'cliente']);
+function party(value) {
+  if (value === undefined || value === null || value === '') return 'seguridad_nacional';
+  if (!PARTIES.has(value)) throw invalid('A cargo de: Seguridad Nacional o el cliente.');
+  return value;
 }
 
 export async function addAction(db, studyId, body = {}, profile, now = new Date()) {

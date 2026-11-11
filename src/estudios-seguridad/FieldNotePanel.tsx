@@ -32,7 +32,7 @@ export function FieldNotePanel({ studyId, zones, onSaved }: { studyId: string; z
     } catch (reason) { setError(message(reason)); } finally { setBusy(false); }
   };
   const chosen = drafts.filter(draft => draft.selected);
-  const missing = chosen.filter(draft => !draft.probability || !draft.impact_company || !draft.impact_people).length;
+  const missing = chosen.filter(draft => !draft.probability || !draft.impact_company).length;
   const confirm = async () => {
     if (!proposal) return;
     setBusy(true); setError('');
@@ -40,7 +40,7 @@ export function FieldNotePanel({ studyId, zones, onSaved }: { studyId: string; z
       const refs = new Set(chosen.map(draft => draft.zone_ref).filter(Boolean));
       const created = await confirmFromNote(studyId, {
         zonas_nuevas: proposal.zonas_nuevas.filter(zone => refs.has(zone.ref)),
-        riesgos: chosen.map(({ selected: _selected, ...draft }) => ({ ...draft, probability: draft.probability!, impact_company: draft.impact_company!, impact_people: draft.impact_people! })),
+        riesgos: chosen.map(({ selected: _selected, ...draft }) => ({ ...draft, probability: draft.probability!, impact_company: draft.impact_company!, impact_people: draft.impact_company! })),
       });
       setDone(`Quedaron registrados ${created.riesgos.length} riesgo(s)${created.zonas.length ? ` y ${created.zonas.length} zona(s) nueva(s)` : ''}.`);
       setProposal(null); setDrafts([]); setNote('');
@@ -69,9 +69,8 @@ export function FieldNotePanel({ studyId, zones, onSaved }: { studyId: string; z
         {draft.proposed_control ? <p><span className="es-label">Control propuesto:</span> {draft.proposed_control}</p> : null}
         <blockquote>“{draft.evidence_quote}”</blockquote>
         {draft.selected ? <div className="es-grid-3">
-          <Scale label="Probabilidad" value={draft.probability} scale={PROBABILITY_SCALE} onChange={value => set(index, { probability: value })} />
-          <Scale label="Impacto sobre la empresa" value={draft.impact_company} scale={IMPACT_SCALE} onChange={value => set(index, { impact_company: value })} />
-          <Scale label="Impacto sobre personas" value={draft.impact_people} scale={IMPACT_SCALE} onChange={value => set(index, { impact_people: value })} />
+          <Scale label="Probabilidad actual" value={draft.probability} scale={PROBABILITY_SCALE} onChange={value => set(index, { probability: value })} />
+          <Scale label="Impacto" value={draft.impact_company} scale={IMPACT_SCALE} onChange={value => set(index, { impact_company: value, impact_people: value })} />
         </div> : null}
       </li>)}</ul>
       {!drafts.length ? <p className="es-muted">Vig-IA no encontró riesgos para proponer en esta nota.</p> : null}

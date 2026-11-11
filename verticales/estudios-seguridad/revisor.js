@@ -6,8 +6,8 @@
 // con el número repetido—. Sólo LEE: no cambia estados, calificaciones ni textos. Quien revisa decide.
 import { readinessIssues } from './flujo.js';
 
-const HIGH_LEVELS = new Set(['alto', 'critico']);
-const LEVEL_WORD = { alto: 'alto', critico: 'crítico' };
+const HIGH_LEVELS = new Set(['alto', 'critico', 'inaceptable']);
+const LEVEL_WORD = { alto: 'alto', critico: 'crítico', inaceptable: 'inaceptable' };
 // Sufijos societarios que no distinguen a un cliente de otro.
 const LEGAL_SUFFIXES = /\b(s ?a ?s|s ?a|ltda|limitada|e ?s ?p|s en c|y cia|cia|sociedad anonima|sucursal colombia|bic)\b/g;
 const MIN_NAME = 4;
@@ -103,6 +103,9 @@ function riskFindings(detail) {
     if (HIGH_LEVELS.has(actual.nivel)) {
       if (!rated(risk, 'proposed') && !hasText(risk.proposed_control)) {
         findings.push({ code: 'sin_control_propuesto', severity: 'revisar', risk: risk.number, message: `${code} está en nivel ${LEVEL_WORD[actual.nivel]} y no tiene control propuesto: el residual queda igual al actual.` });
+      } else if (residual.escogida === false) {
+        // Guía de calificación: la probabilidad residual la escoge el analista; sin ella, el residual es el actual.
+        findings.push({ code: 'sin_probabilidad_residual', severity: 'revisar', risk: risk.number, message: `${code} está en nivel ${LEVEL_WORD[actual.nivel]} y no tiene probabilidad residual: el residual queda igual al actual.` });
       } else if (residual.magnitud >= actual.magnitud) {
         findings.push({ code: 'residual_no_baja', severity: 'revisar', risk: risk.number, message: `${code} está en nivel ${LEVEL_WORD[actual.nivel]} y el control propuesto no lo baja (sigue en ${residual.magnitud}).` });
       }

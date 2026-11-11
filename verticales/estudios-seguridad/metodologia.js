@@ -87,6 +87,48 @@ export function valorarRiesgo(riesgo, metodologia = METODOLOGIA_V1) {
   };
 }
 
+// La metodología vigente desde el 2026-11-11: la «Guía de calificación de la matriz 5×5 y controles» de la sede Medellín
+// (analista de riesgos, noviembre de 2026). Juan: "todo lo que nos respondieron en la guía esas ya son las respuestas" y
+// "vamos con el de 3 niveles".
+//   · la probabilidad actual y la residual las ESCOGE el analista (no se calculan);
+//   · un solo impacto;
+//   · efectividad = calidad × eficacia × eficiencia / 125, sin tope;
+//   · riesgo actual = ⌈P actual × I × (1 − efectividad)⌉: el control se descuenta UNA vez, sobre la magnitud;
+//   · riesgo residual = P residual × I (estimado; sin probabilidad residual, el residual es el actual);
+//   · magnitudes enteras de 1 a 25 ("mostrar las magnitudes del riesgo en enteros del 1 al 25"): el mínimo es 1;
+//   · tres niveles, los de las matrices del equipo: aceptable hasta 6, tolerable hasta 14, inaceptable desde 15.
+export const METODOLOGIA_GUIA = Object.freeze({
+  id: 'guia-calificacion-2026',
+  topeControl: 1,
+  probabilidadResidualEscogida: true,
+  niveles: MATRIZ_HISTORICA.niveles,
+});
+
+export const METODOLOGIA_VIGENTE = METODOLOGIA_GUIA;
+export const METODOLOGIAS = Object.freeze({ [METODOLOGIA_V1.id]: METODOLOGIA_V1, [METODOLOGIA_GUIA.id]: METODOLOGIA_GUIA });
+
+// riesgo: { probabilidad, impacto, probabilidadResidual (o null), controlActual, controlPropuesto }
+export function valorarSegunGuia(riesgo, metodologia = METODOLOGIA_GUIA) {
+  const probabilidad = escala(riesgo.probabilidad, 'probabilidad');
+  const impacto = escala(riesgo.impacto, 'impacto');
+  const residualEscogida = riesgo.probabilidadResidual == null ? null : escala(riesgo.probabilidadResidual, 'probabilidad residual');
+  const efectividadActual = efectividadControl(riesgo.controlActual, metodologia);
+  const efectividadPropuesta = efectividadControl(riesgo.controlPropuesto, metodologia);
+  const inherente = probabilidad * impacto;
+  const actual = Math.max(1, techo(inherente * (1 - efectividadActual)));
+  const residual = residualEscogida == null ? actual : residualEscogida * impacto;
+  return {
+    metodologia: metodologia.id,
+    impacto,
+    inherente: { magnitud: inherente, nivel: nivelDeMagnitud(inherente, metodologia) },
+    actual: { probabilidad, efectividadControl: efectividadActual, magnitud: actual, nivel: nivelDeMagnitud(actual, metodologia) },
+    residual: {
+      probabilidad: residualEscogida ?? probabilidad, efectividadControl: efectividadPropuesta, magnitud: residual,
+      nivel: nivelDeMagnitud(residual, metodologia), escogida: residualEscogida != null,
+    },
+  };
+}
+
 // Un Excel histórico trae un solo impacto: se toma igual para empresa y personas, y el revisor lo separa.
 export function riesgoDesdeMatrizHistorica({ probabilidad, impacto, controlActual, controlPropuesto }) {
   return { probabilidad, impactoEmpresa: impacto, impactoPersonas: impacto, controlActual, controlPropuesto };

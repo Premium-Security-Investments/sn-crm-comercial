@@ -19,8 +19,8 @@ async function readyStudy() {
   const pg = await database();
   const db = supabaseOver(pg);
   const study = await createStudy(db, STUDY, PREPARER);
-  // P4 × I4 con control 3/4/3 → actual 12, alto: necesita una acción con responsable y fecha.
-  const risk = await addRisk(db, study.id, { title: 'Acceso indebido a la bodega', probability: 4, impact_company: 4, impact_people: 2, current_quality: 3, current_efficacy: 4, current_efficiency: 3 }, PREPARER);
+  // Guía: P5 × I4 = 20, control 3/4/3 (28,8 %) → actual ⌈14,24⌉ = 15, inaceptable: necesita una acción con responsable y fecha.
+  const risk = await addRisk(db, study.id, { title: 'Acceso indebido a la bodega', probability: 5, impact_company: 4, impact_people: 2, current_quality: 3, current_efficacy: 4, current_efficiency: 3 }, PREPARER);
   return { pg, db, study, risk };
 }
 
@@ -44,7 +44,7 @@ test('el camino completo: enviar, devolver, corregir, revisar, aprobar, reabrir 
   const { db, study, risk } = await readyStudy();
 
   // No se envía con un riesgo alto sin acción con responsable y fecha.
-  await assert.rejects(go(db, study, 'enviar', PREPARER), error => error.status === 422 && /R1 está en nivel alto/.test(error.message));
+  await assert.rejects(go(db, study, 'enviar', PREPARER), error => error.status === 422 && /R1 está en nivel inaceptable/.test(error.message));
   await addAction(db, study.id, { risk_id: risk.id, description: 'Reparar la malla', owner_label: 'Mantenimiento', due_date: '2026-12-15' }, PREPARER);
   assert.deepEqual(await go(db, study, 'enviar', PREPARER), { status: 'en_revision', version: null, followups: 0, sha256: null });
 
@@ -54,7 +54,7 @@ test('el camino completo: enviar, devolver, corregir, revisar, aprobar, reabrir 
   // El revisor devuelve con observación; sin ella, no.
   await assert.rejects(go(db, study, 'devolver', REVIEWER, ''), /escriba la observación/);
   await go(db, study, 'devolver', REVIEWER, 'Falta la calificación del control propuesto.');
-  await updateRisk(db, study.id, risk.id, { proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4 }, PREPARER);
+  await updateRisk(db, study.id, risk.id, { proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4, residual_probability: 2 }, PREPARER);
   await go(db, study, 'enviar', PREPARER);
   await go(db, study, 'marcar_revisado', REVIEWER);
 
@@ -75,7 +75,8 @@ test('el camino completo: enviar, devolver, corregir, revisar, aprobar, reabrir 
   // La huella guardada es la de la foto guardada.
   const { data: [{ snapshot }] } = await db.from('psi_security_study_versions').select('snapshot').eq('study_id', study.id);
   assert.equal(createHash('sha256').update(canonicalJson(snapshot)).digest('hex'), approved.sha256);
-  assert.equal(snapshot.riesgos[0].valoracion.residual.nivel, 'moderado');
+  assert.equal(snapshot.riesgos[0].valoracion.residual.nivel, 'tolerable', 'P residual 2 × I4 = 8');
+  assert.equal(snapshot.riesgos[0].probabilidad_residual, 2);
 
   // Reabrir, corregir y aprobar de nuevo da la versión 2; la 1 no cambia.
   await go(db, study, 'reabrir', APPROVER);

@@ -11,12 +11,13 @@
 // Devuelve el informe como DATOS para verticales/estudios-seguridad/render-informe.js. Aquí también se decide dónde
 // queda el paquete en SharePoint: siempre bajo 99_Del_CRM/Estudios_de_Seguridad/.
 
-import { nivelDeMagnitud } from './metodologia.js';
+import { METODOLOGIAS, METODOLOGIA_V1, nivelDeMagnitud } from './metodologia.js';
 import { ESCALAS, PLANTILLAS, controlWord } from './plantilla.js';
 
 export const ARCHIVE_BASE_PATH = '99_Del_CRM/Estudios_de_Seguridad';
-const NIVEL = Object.freeze({ bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico' });
-const NIVEL_ORDER = ['critico', 'alto', 'moderado', 'bajo'];
+const NIVEL = Object.freeze({ bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico', aceptable: 'Aceptable', tolerable: 'Tolerable', inaceptable: 'Inaceptable' });
+// De más grave a menos grave; cada estudio sólo usa los niveles de su metodología.
+const NIVEL_ORDER = ['critico', 'inaceptable', 'alto', 'tolerable', 'moderado', 'aceptable', 'bajo'];
 const PRIORIDAD = Object.freeze({ alta: 'Alta', media: 'Media', baja: 'Baja' });
 const ESTADO_ACCION = Object.freeze({ pendiente: 'Pendiente', en_curso: 'En curso', cumplida: 'Cumplida', descartada: 'Descartada' });
 const MODALIDAD = Object.freeze({ vigilancia: 'Vigilancia', guia_canino: 'Guía canino', supervision: 'Supervisión', monitoreo: 'Monitoreo', otro: 'Otro' });
@@ -75,14 +76,14 @@ export function archiveFileNames(snapshot, version) {
  * Mapa de calor 5×5 como tabla de colores: filas de probabilidad (Muy alta arriba), columnas de impacto. Cada celda
  * se colorea con el nivel de la metodología v1 para probabilidad × impacto y lista los códigos que caen en ella.
  */
-export function heatmapBlock(marks, { compact = true } = {}) {
+export function heatmapBlock(marks, { compact = true, metodologia = METODOLOGIA_V1 } = {}) {
   const header = [{ text: 'Probabilidad / Impacto', axis: true }, ...ESCALAS.impacto.map(name => ({ text: name, axis: true }))];
   const rows = [];
   for (let probability = 5; probability >= 1; probability--) {
     const row = [{ text: ESCALAS.probabilidad[probability - 1], axis: true }];
     for (let impact = 1; impact <= 5; impact++) {
       const codes = marks.filter(mark => mark.probabilidad === probability && mark.impacto === impact).map(mark => mark.code);
-      row.push({ text: codes.join(' '), level: nivelDeMagnitud(probability * impact), bold: true, center: true });
+      row.push({ text: codes.join(' '), level: nivelDeMagnitud(probability * impact, metodologia), bold: true, center: true });
     }
     rows.push(row);
   }
@@ -105,23 +106,26 @@ export function generalEvaluation(risks) {
 
 // Del plan estratégico de la sede Medellín (noviembre de 2026; Juan, 2026-11-11: "adelante con … las mejoras del
 // informe"): tres grupos de prioridad según el nivel actual, con el criterio de seguimiento de cada uno.
+// Con la guía (3 niveles) cada grupo es un nivel: inaceptable, tolerable y aceptable; con la v1, crítico, alto y el resto.
 export const PRIORITY_GROUPS = Object.freeze([
-  Object.freeze({ nombre: 'Atención preferente', niveles: ['critico'], criterio: 'Riesgo actual crítico. Registrar acciones con responsable, fecha y evidencia de cierre, y volver a valorar.' }),
-  Object.freeze({ nombre: 'Intervención programada', niveles: ['alto'], criterio: 'Riesgo actual alto. Programar los controles propuestos y verificar su cumplimiento.' }),
-  Object.freeze({ nombre: 'Mantenimiento preventivo', niveles: ['moderado', 'bajo'], criterio: 'Riesgo actual moderado o bajo. Mantener las medidas y vigilar los cambios del entorno.' }),
+  Object.freeze({ nombre: 'Atención preferente', niveles: ['critico', 'inaceptable'], criterio: 'Registrar acciones con responsable, fecha y evidencia de cierre, y volver a valorar.' }),
+  Object.freeze({ nombre: 'Intervención programada', niveles: ['alto', 'tolerable'], criterio: 'Programar los controles propuestos y verificar su cumplimiento.' }),
+  Object.freeze({ nombre: 'Mantenimiento preventivo', niveles: ['moderado', 'bajo', 'aceptable'], criterio: 'Mantener las medidas y vigilar los cambios del entorno.' }),
 ]);
 
 /** Riesgos por grupo de prioridad, de mayor a menor magnitud actual. */
-export function treatmentPriorities(risks) {
+export function treatmentPriorities(risks, metodologia = METODOLOGIA_V1) {
+  const own = new Set(metodologia.niveles.map(item => item.codigo));
   return PRIORITY_GROUPS.map(group => ({
     ...group,
+    criterio: `Riesgo actual ${group.niveles.filter(code => own.has(code)).map(code => NIVEL[code].toLowerCase()).join(' o ')}. ${group.criterio}`,
     riesgos: risks.filter(risk => group.niveles.includes(risk.valoracion.actual.nivel))
       .sort((a, b) => b.valoracion.actual.magnitud - a.valoracion.actual.magnitud || a.numero - b.numero),
   }));
 }
 
 /**
- * La foto de la versión → el informe como datos. `meta`: { version, sha256, approvedAt, approverName, preparerName }.
+ * La foto de la versión → el informe como datos. `meta`: { version, sha256, approvedAt, approverName, preparerName, reviewerName }.
  * `images`: { [evidenciaId]: { base64, mime, width, height } } — sólo las que el archivo pudo preparar (JPG/PNG
  * reducidos); una evidencia sin imagen preparada se cita por nombre y huella.
  */
@@ -171,8 +175,23 @@ function secopsSection(secops, { h2, p, list, blocks }) {
   }
 }
 
+// Los cargos del flujo (Juan, 2026-11-11): prepara el analista de riesgos, revisa el coordinador, aprueba el jefe de
+// operaciones.
+export const SIGNATURE_ROLES = Object.freeze({ elaboro: 'Analista de riesgos', reviso: 'Coordinador', aprobo: 'Jefe de operaciones' });
+
+// El párrafo de metodología dice la regla con que se calculó ESTE estudio.
+function methodologyText(id) {
+  const scales = `probabilidad (${ESCALAS.probabilidad.join(', ')}) e impacto (${ESCALAS.impacto.join(', ')}), de 1 a 5`;
+  if (METODOLOGIAS[id]?.probabilidadResidualEscogida) {
+    return `Metodología ${id}, basada en la NTC-ISO 31000 de 2018 y en la guía de calificación de la matriz 5 × 5 de Seguridad Nacional: matriz cruzada de ${scales}. La valoración inicial es probabilidad × impacto. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad es calidad × eficacia × eficiencia ÷ 125. El riesgo actual es la valoración inicial descontada una vez por la efectividad del control existente, redondeada al entero superior. El riesgo residual es la probabilidad residual que se espera después de implementar los controles propuestos, multiplicada por el mismo impacto: es una estimación, no un resultado verificado. Las magnitudes van de 1 a 25. Niveles: 1 a 6 aceptable, 7 a 14 tolerable y 15 a 25 inaceptable.`;
+  }
+  return `Metodología ${id}, basada en la NTC-ISO 31000 de 2018: matriz cruzada de probabilidad por impacto. Cada riesgo se califica con una ${scales}, con dos impactos (sobre la empresa o sede y sobre las personas; cuenta el mayor). Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad (producto / 125, con tope del 90 %) reduce la probabilidad una sola vez. El riesgo actual considera los controles existentes; el residual, además, los controles propuestos: es una estimación de lo que se espera al implementarlos, no un resultado verificado. Niveles: 1 a 5 bajo, 6 a 10 moderado, 11 a 15 alto y 16 a 25 crítico.`;
+}
+
 export function buildStudyReport(snapshot, meta, images = {}) {
   const study = snapshot.estudio;
+  const metodologia = METODOLOGIAS[study.metodologia] || METODOLOGIA_V1;
+  const heatmap = marks => heatmapBlock(marks, { metodologia });
   const template = PLANTILLAS[study.plantilla];
   const catalog = new Map((template?.riesgos || []).map(item => [item.codigo, item.nombre]));
   const zones = new Map(snapshot.zonas.map(zone => [zone.id, zone.nombre]));
@@ -232,8 +251,8 @@ export function buildStudyReport(snapshot, meta, images = {}) {
     'Ley 1581 de 2012 y Decreto 1377 de 2013, protección de datos personales.',
   ]);
   h2('Metodología');
-  p(`Metodología ${study.metodologia}, basada en la NTC-ISO 31000 de 2018: matriz cruzada de probabilidad por impacto. Cada riesgo se califica con una probabilidad (${ESCALAS.probabilidad.join(', ')}) y dos impactos (${ESCALAS.impacto.join(', ')}), de 1 a 5: sobre la empresa o sede y sobre las personas; cuenta el mayor. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad (producto / 125, con tope del 90 %) reduce la probabilidad una sola vez. El riesgo actual considera los controles existentes; el residual, además, los controles propuestos: es una estimación de lo que se espera al implementarlos, no un resultado verificado. Niveles: 1 a 5 bajo, 6 a 10 moderado, 11 a 15 alto y 16 a 25 crítico.`);
-  blocks.push(heatmapBlock([]));
+  p(methodologyText(study.metodologia));
+  blocks.push(heatmap([]));
   blocks.push({ kind: 'center', text: 'Niveles de riesgo según probabilidad e impacto.', cover: false });
 
   // Capítulo I-A: caracterización.
@@ -293,6 +312,8 @@ export function buildStudyReport(snapshot, meta, images = {}) {
       ['Proceso', risk.proceso_cliente || '—'],
       ['Factor de riesgo', risk.factor || '—'],
       ['Riesgo del catálogo', risk.catalogo ? `${risk.catalogo} · ${catalog.get(risk.catalogo) || ''}` : 'Riesgo propio'],
+      ['Probabilidad actual · impacto', `${ESCALAS.probabilidad[risk.valoracion.actual.probabilidad - 1]} (${risk.valoracion.actual.probabilidad}) · ${ESCALAS.impacto[risk.valoracion.impacto - 1]} (${risk.valoracion.impacto})`],
+      ['Valoración inicial (probabilidad × impacto)', String(risk.valoracion.inherente?.magnitud ?? risk.valoracion.actual.probabilidad * risk.valoracion.impacto)],
       ['Calidad · eficacia · eficiencia del control', ratingWords(ce) || 'Sin calificar'],
       ['Efectividad del control existente', percent(risk.valoracion.actual.efectividadControl)],
       ['Magnitud del riesgo actual', { text: level(risk.valoracion.actual), level: risk.valoracion.actual.nivel }],
@@ -302,7 +323,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
     const photo = photos.map(imageOf).find(Boolean);
     if (photo) blocks.push({ ...photo, maxWidthIn: 3.8, maxHeightIn: 2.4, caption: clip(photos.find(item => images[item.id])?.leyenda || 'Foto de evidencia.', 300) });
     const impact = risk.valoracion.impacto;
-    blocks.push(heatmapBlock([
+    blocks.push(heatmap([
       { probabilidad: risk.valoracion.actual.probabilidad, impacto: impact, code: `R${risk.numero}` },
       { probabilidad: risk.valoracion.residual.probabilidad, impacto: impact, code: `R${risk.numero}R` },
     ]));
@@ -336,14 +357,14 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   h2('3. Mantener y controlar el nivel de criticidad');
   list(['Implementar indicadores de gestión para el control y seguimiento de la operación de seguridad.', 'Realizar comités de seguridad para evaluar los avances del plan.']);
   h2('Priorización del tratamiento');
-  blocks.push({ kind: 'table', header: ['Prioridad', 'Riesgos', 'Criterio de seguimiento'], rows: treatmentPriorities(risks).map(group => [
+  blocks.push({ kind: 'table', header: ['Prioridad', 'Riesgos', 'Criterio de seguimiento'], rows: treatmentPriorities(risks, metodologia).map(group => [
     group.nombre, group.riesgos.length ? clip(group.riesgos.map(risk => `R${risk.numero} (${risk.valoracion.actual.magnitud})`).join(', '), 800) : 'Ninguno', group.criterio,
   ]) });
   const plan = snapshot.acciones.filter(action => action.estado !== 'descartada').slice(0, 120);
   if (plan.length) {
     h2('Plan de tratamiento');
     blocks.push({ kind: 'table', header: ['Riesgo', 'Acción', 'Responsable', 'Fecha compromiso', 'Prioridad', 'Estado'], rows: plan.map(action => [
-      riskNumber.has(action.riesgo) ? `R${riskNumber.get(action.riesgo)}` : '—', clip(action.accion, 600), clip(action.responsable) || 'Sin responsable',
+      riskNumber.has(action.riesgo) ? `R${riskNumber.get(action.riesgo)}` : '—', clip(action.accion, 600), `${clip(action.responsable) || 'Sin responsable'}${action.a_cargo === 'cliente' ? ' (cliente)' : ''}`,
       action.fecha_compromiso ? longDate(action.fecha_compromiso) : 'Sin fecha', PRIORIDAD[action.prioridad] || action.prioridad, ESTADO_ACCION[action.estado] || action.estado,
     ]) });
   }
@@ -361,9 +382,9 @@ export function buildStudyReport(snapshot, meta, images = {}) {
 
   chapter('Mapa de criticidad general');
   h2('Riesgo actual');
-  blocks.push(heatmapBlock(risks.map(risk => ({ probabilidad: risk.valoracion.actual.probabilidad, impacto: risk.valoracion.impacto, code: `${risk.numero}A` }))));
+  blocks.push(heatmap(risks.map(risk => ({ probabilidad: risk.valoracion.actual.probabilidad, impacto: risk.valoracion.impacto, code: `${risk.numero}A` }))));
   h2('Riesgo residual estimado');
-  blocks.push(heatmapBlock(risks.map(risk => ({ probabilidad: risk.valoracion.residual.probabilidad, impacto: risk.valoracion.impacto, code: `${risk.numero}R` }))));
+  blocks.push(heatmap(risks.map(risk => ({ probabilidad: risk.valoracion.residual.probabilidad, impacto: risk.valoracion.impacto, code: `${risk.numero}R` }))));
   blocks.push({ kind: 'center', text: 'Los números corresponden al código de cada riesgo (A: actual, R: residual estimado si se implementan los controles propuestos).' });
 
   // Cadena de mando y seguimiento.
@@ -388,8 +409,10 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   blocks.push({ kind: 'spacer' });
   blocks.push({ kind: 'signature', text: 'Cordialmente,' });
   blocks.push({ kind: 'spacer' });
-  blocks.push({ kind: 'signature', text: `**${meta.preparerName || 'Analista de seguridad'}**\nAnalista de seguridad — Seguridad Nacional Ltda.` });
-  blocks.push({ kind: 'signature', text: `Aprobó la versión ${meta.version}: ${meta.approverName || 'sin nombre registrado'}.\nHuella de la versión (sha256): ${meta.sha256}` });
+  // Firma quien aprueba (jefe de operaciones); el informe dice también quién lo elaboró y quién lo revisó.
+  blocks.push({ kind: 'signature', text: `**${meta.approverName || 'Sin nombre registrado'}**\n${SIGNATURE_ROLES.aprobo} — Seguridad Nacional Ltda.` });
+  blocks.push({ kind: 'spacer' });
+  blocks.push({ kind: 'signature', text: `Elaboró: ${meta.preparerName || 'sin nombre registrado'}, ${SIGNATURE_ROLES.elaboro.toLowerCase()}.\nRevisó: ${meta.reviewerName || 'sin nombre registrado'}, ${SIGNATURE_ROLES.reviso.toLowerCase()}.\nAprobó la versión ${meta.version}: ${meta.approverName || 'sin nombre registrado'}, ${SIGNATURE_ROLES.aprobo.toLowerCase()}.\nHuella de la versión (sha256): ${meta.sha256}` });
 
   // Índice después de la portada, con los capítulos que sí salieron.
   blocks.splice(indexAt + 1, 0, { kind: 'h1', text: 'Contenido' }, { kind: 'list', items: [...contents.map((title, index) => `${index + 1}. ${title}`), ...(risks.length ? [`Fichas de riesgo: R1 a R${risks.length}`] : [])] }, { kind: 'page_break' });

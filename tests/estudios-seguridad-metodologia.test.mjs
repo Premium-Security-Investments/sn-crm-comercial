@@ -168,3 +168,29 @@ test('rechaza calificaciones fuera de la escala de 1 a 5', () => {
   assert.throws(() => valorarRiesgo({ probabilidad: 3, impactoEmpresa: 3, impactoPersonas: 2.5 }), /impactoPersonas/);
   assert.throws(() => efectividadControl({ calidad: 2, eficacia: 2 }), /eficiencia/);
 });
+
+// La guía de calificación de la sede Medellín (Juan, 2026-11-11: "todo lo que nos respondieron en la guía esas ya son
+// las respuestas"; "vamos con el de 3 niveles"; "si la guía ya dice que es 1 vamos con 1").
+test('guía: el ejemplo de la guía (accesos no autorizados) da 9, 8 y 6', async () => {
+  const { valorarSegunGuia, METODOLOGIA_VIGENTE } = await import('../verticales/estudios-seguridad/metodologia.js');
+  assert.equal(METODOLOGIA_VIGENTE.id, 'guia-calificacion-2026');
+  const control = valor => ({ calidad: valor, eficacia: valor, eficiencia: valor });
+  const v = valorarSegunGuia({ probabilidad: 3, impacto: 3, probabilidadResidual: 2, controlActual: control(3), controlPropuesto: control(4) });
+  assert.deepEqual([v.inherente.magnitud, v.actual.efectividadControl, v.actual.magnitud, v.residual.magnitud], [9, 0.216, 8, 6]);
+  assert.deepEqual([v.actual.nivel, v.residual.nivel, v.residual.escogida], ['tolerable', 'aceptable', true]);
+});
+
+test('guía: el control se descuenta una vez, el mínimo es 1, sin residual escogido el residual es el actual, y tres niveles', async () => {
+  const { valorarSegunGuia } = await import('../verticales/estudios-seguridad/metodologia.js');
+  const control = valor => ({ calidad: valor, eficacia: valor, eficiencia: valor });
+  // P5 × I5 = 25 con control 3/3/3: ⌈25 × 0,784⌉ = 20 (la hoja de Medellín, que lo descuenta dos veces, da 16).
+  assert.equal(valorarSegunGuia({ probabilidad: 5, impacto: 5, controlActual: control(3) }).actual.magnitud, 20);
+  // Control perfecto: 100 % de efectividad, pero la magnitud no baja de 1.
+  assert.equal(valorarSegunGuia({ probabilidad: 5, impacto: 5, controlActual: control(5) }).actual.magnitud, 1);
+  const sinResidual = valorarSegunGuia({ probabilidad: 4, impacto: 4, controlActual: control(3) });
+  assert.deepEqual([sinResidual.residual.magnitud, sinResidual.residual.escogida], [sinResidual.actual.magnitud, false]);
+  const nivel = (p, i) => valorarSegunGuia({ probabilidad: p, impacto: i }).actual.nivel;
+  // Límites: 6 aceptable, 7 no existe como producto, 8 y 14 no: 12 tolerable, 15 inaceptable.
+  assert.deepEqual([nivel(1, 5), nivel(3, 2), nivel(2, 4), nivel(3, 4), nivel(3, 5)], ['aceptable', 'aceptable', 'tolerable', 'tolerable', 'inaceptable'], '5 y 6 aceptable; 8 y 12 tolerable; 15 inaceptable');
+  assert.throws(() => valorarSegunGuia({ probabilidad: 3, impacto: 3, probabilidadResidual: 6 }), /probabilidad residual/);
+});

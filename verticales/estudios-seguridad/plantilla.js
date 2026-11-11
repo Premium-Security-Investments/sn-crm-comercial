@@ -79,7 +79,8 @@ export const PLANTILLA_INSTALACIONES_FISICAS_V1 = Object.freeze({
 // sólo los nombres; los números y la fórmula de la metodología v1 son los mismos.
 export const ESCALAS = Object.freeze({
   probabilidad: Object.freeze(['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta']),
-  impacto: Object.freeze(['Insignificante', 'Leve', 'Moderado', 'Grave', 'Catastrófico']),
+  // Impacto: los nombres de la guía de calificación (sede Medellín, noviembre de 2026).
+  impacto: Object.freeze(['Muy leve', 'Leve', 'Moderado', 'Grave', 'Crítico']),
   // Calificación del control en palabras. 2 a 4, verificados contra los Excel; 1 y 5, de la «Guía de calificación de la
   // matriz 5×5 y controles» de la sede Medellín (analista de riesgos, noviembre de 2026), que los propone para
   // estandarizar los informes. Juan, 2026-11-11: "adelante con los nombres".

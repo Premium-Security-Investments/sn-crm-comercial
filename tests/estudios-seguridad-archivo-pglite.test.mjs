@@ -31,7 +31,7 @@ async function approvedStudy() {
   const risk = await addRisk(db, study.id, {
     zone_id: zone.id, catalog_risk_code: 'RB-02', process_code: 'P11', title: 'Acceso indebido a la bodega 3', causes: 'Malla rota',
     probability: 4, impact_company: 4, impact_people: 2, current_control: 'Ronda cada dos horas', current_quality: 3, current_efficacy: 4, current_efficiency: 3,
-    proposed_control: 'Reparar la malla', proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4,
+    proposed_control: 'Reparar la malla', proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4, residual_probability: 2,
   }, PREPARER);
   await addAction(db, study.id, { risk_id: risk.id, description: 'Reparar la malla del costado norte', owner_label: 'Mantenimiento', due_date: '2026-12-15', priority: 'alta' }, PREPARER);
   const ticket = await requestEvidenceUpload(db, study.id, { file_name: 'malla.jpg', mime_type: 'image/jpeg', size_bytes: JPEG.length, risk_id: risk.id });
@@ -95,6 +95,8 @@ test('el trabajo arma el paquete desde la versión congelada y lo sube bajo 99_D
   assert.deepEqual(result, { processed: 1, ok: 1 });
   const photo = deps.reports[0].blocks.find(block => block.kind === 'image');
   assert.deepEqual([photo?.mime, photo?.width, photo?.height], ['image/jpeg', 2, 1], 'la foto del riesgo va reducida dentro del informe');
+  const signature = deps.reports[0].blocks.filter(block => block.kind === 'signature').map(block => block.text).join('\n');
+  assert.match(signature, /Elaboró: Ana Preparadora, analista de riesgos\.\nRevisó: Rubén Revisor, coordinador\.\nAprobó la versión 1: Alba Aprobadora, jefe de operaciones\./, 'el trabajo pone a quien revisó, tomado del historial');
 
   const folder = `${ARCHIVE_BASE_PATH}/EST-${new Date().getFullYear()}-0001 Cliente Prueba S.A.S. - Bodega 1 Zona Franca/v1`;
   assert.deepEqual(deps.uploads.map(item => item.relativePath), [
@@ -137,14 +139,18 @@ test('una evidencia alterada detiene el archivo; un archivo que ya estaba (reint
 test('el informe cabe en el generador con membrete y dice lo que se aprobó', async () => {
   const { db, study } = await approvedStudy();
   const { data: [version] } = await db.from('psi_security_study_versions').select('version, snapshot, snapshot_sha256, approved_at').eq('study_id', study.id);
-  const report = buildStudyReport(version.snapshot, { version: 1, sha256: version.snapshot_sha256, approvedAt: version.approved_at, approverName: 'Alba Aprobadora', preparerName: 'Ana Preparadora' });
+  const report = buildStudyReport(version.snapshot, { version: 1, sha256: version.snapshot_sha256, approvedAt: version.approved_at, approverName: 'Alba Aprobadora', preparerName: 'Ana Preparadora', reviewerName: 'Rubén Revisor' });
   // Pasa la validación real del generador (bloques, filas, columnas, textos) sobre la plantilla corporativa.
   const fodt = buildStudyReportFodt(readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8'), report);
   assert.match(fodt, /ESTUDIO DE SEGURIDAD FÍSICA/);
   assert.match(fodt, /Evaluación general/);
   assert.match(fodt, /la magnitud total bajaría de 12 a 8 puntos/, 'la evaluación general se calcula y no queda cortada');
-  assert.match(fodt, /12 · Alto/, 'riesgo actual de R1');
-  assert.match(fodt, /8 · Moderado/, 'riesgo residual de R1');
+  assert.match(fodt, /12 · Tolerable/, 'riesgo actual de R1 con la guía');
+  assert.match(fodt, /Elaboró: Ana Preparadora, analista de riesgos\./, 'los tres cargos del flujo');
+  assert.match(fodt, /Revisó: Rubén Revisor, coordinador\./);
+  assert.match(fodt, /Alba Aprobadora/);
+  assert.match(fodt, /Jefe de operaciones — Seguridad Nacional Ltda\./);
+  assert.match(fodt, /8 · Tolerable/, 'riesgo residual de R1: probabilidad residual 2 × impacto 4');
   assert.match(fodt, /Reparar la malla del costado norte/);
   assert.match(fodt, new RegExp(version.snapshot_sha256));
   assert.equal(sharepointSafeName('Cliente: "A" / B * C?. '), 'Cliente A B C');

@@ -103,7 +103,7 @@ test('confirmar: crea zonas y riesgos con origen agente y la calificación de la
   const created = await confirmFieldNote(db, study.id, { zonas_nuevas: out.zonas_nuevas, riesgos: rated }, PREPARER);
   assert.deepEqual(created.zonas.map(zone => zone.name), ['Portería vehicular']);
   assert.deepEqual(created.riesgos.map(risk => [risk.number, risk.origin, risk.zone_id]), [[1, 'agente', detail.zones[0].id], [2, 'agente', created.zonas[0].id]]);
-  assert.equal(created.riesgos[0].valuation.actual.nivel, 'alto');
+  assert.equal(created.riesgos[0].valuation.actual.nivel, 'tolerable', 'guía: P4 × I3 = 12, sin control');
 });
 
 test('cupo: la reserva de la 181 cuenta por equipo y por persona, y una a la vez', async () => {

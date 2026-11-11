@@ -51,7 +51,12 @@ export async function archiveVersion(database, archive, deps, log = () => {}) {
     .select('version, snapshot, snapshot_sha256, approved_by, approved_at').eq('study_id', archive.study_id).eq('version', archive.version).maybeSingle();
   if (error || !version) throw new ArchiveFailure('version');
   const snapshot = version.snapshot;
-  const ids = [...new Set([version.approved_by, snapshot.estudio.preparado_por].filter(Boolean))];
+  // Quién revisó esta versión: el último "marcar_revisado" antes de aprobarla (Juan, 2026-11-11: prepara el analista de
+  // riesgos, revisa el coordinador, aprueba el jefe de operaciones; los tres firman el informe).
+  const { data: reviews } = await database.from('psi_security_study_events').select('actor_id, created_at').eq('study_id', archive.study_id).eq('action', 'marcar_revisado').order('created_at', { ascending: false });
+  const time = value => new Date(value).getTime();
+  const reviewer = (reviews || []).find(item => !version.approved_at || time(item.created_at) <= time(version.approved_at))?.actor_id || null;
+  const ids = [...new Set([version.approved_by, snapshot.estudio.preparado_por, reviewer].filter(Boolean))];
   const { data: people } = await database.from('psi_sales_profiles').select('id, full_name').in('id', ids);
   const name = id => (people || []).find(person => person.id === id)?.full_name || null;
 
@@ -81,7 +86,7 @@ export async function archiveVersion(database, archive, deps, log = () => {}) {
   try {
     docx = await deps.renderDocx(buildStudyReport(snapshot, {
       version: version.version, sha256: version.snapshot_sha256, approvedAt: version.approved_at,
-      approverName: name(version.approved_by), preparerName: name(snapshot.estudio.preparado_por),
+      approverName: name(version.approved_by), preparerName: name(snapshot.estudio.preparado_por), reviewerName: name(reviewer),
     }, images));
   } catch { throw new ArchiveFailure('informe'); }
   try { pdf = await deps.toPdf(docx); } catch { throw new ArchiveFailure('pdf'); }

@@ -3,7 +3,8 @@
 import { api } from '../apiClient';
 
 export type StudyStatus = 'borrador' | 'en_revision' | 'devuelto' | 'revisado' | 'aprobado' | 'archivado';
-export type Nivel = 'bajo' | 'moderado' | 'alto' | 'critico';
+// v1: cuatro niveles; guía de calificación (2026-11-11): aceptable, tolerable e inaceptable.
+export type Nivel = 'bajo' | 'moderado' | 'alto' | 'critico' | 'aceptable' | 'tolerable' | 'inaceptable';
 
 export type StudySummaryRow = {
   id: string; code: string; title: string; status: StudyStatus; client_name: string; site_name: string;
@@ -22,13 +23,13 @@ export type Study = StudySummaryRow & {
 
 export type Zone = { id: string; name: string; description: string | null; position: number };
 
-type Tramo = { probabilidad: number; efectividadControl: number; magnitud: number; nivel: Nivel };
+type Tramo = { probabilidad: number; efectividadControl: number; magnitud: number; nivel: Nivel; escogida?: boolean };
 export type Valuation = { impacto: number; inherente: { magnitud: number; nivel: Nivel }; actual: Tramo; residual: Tramo };
 
 export type Risk = {
   id: string; number: number; zone_id: string | null; catalog_risk_code: string | null; process_code: string | null;
   title: string; client_process?: string | null; risk_factor?: string | null; causes: string | null; consequences: string | null;
-  probability: number; impact_company: number; impact_people: number;
+  probability: number; impact_company: number; impact_people: number; residual_probability?: number | null;
   current_control: string | null; current_quality: number | null; current_efficacy: number | null; current_efficiency: number | null;
   proposed_control: string | null; proposed_quality: number | null; proposed_efficacy: number | null; proposed_efficiency: number | null;
   origin: 'manual' | 'agente' | 'securityops'; source_ref?: string | null; valuation: Valuation;
@@ -37,6 +38,7 @@ export type Risk = {
 export type Action = {
   id: string; risk_id: string; description: string; owner_label: string | null; due_date: string | null;
   priority: 'alta' | 'media' | 'baja'; status: 'pendiente' | 'en_curso' | 'cumplida' | 'descartada';
+  responsible_party?: 'seguridad_nacional' | 'cliente';
 };
 
 export type Evidence = {
@@ -165,13 +167,13 @@ export const seedPostsFromAvancys = (studyId: string) =>
 export const STATUS_LABELS: Record<StudyStatus, string> = {
   borrador: 'Borrador', en_revision: 'En revisión', devuelto: 'Devuelto', revisado: 'Revisado', aprobado: 'Aprobado', archivado: 'Archivado',
 };
-export const NIVEL_LABELS: Record<Nivel, string> = { bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico' };
-export const NIVEL_ORDER: Nivel[] = ['critico', 'alto', 'moderado', 'bajo'];
+export const NIVEL_LABELS: Record<Nivel, string> = { bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico', aceptable: 'Aceptable', tolerable: 'Tolerable', inaceptable: 'Inaceptable' };
+export const NIVEL_ORDER: Nivel[] = ['critico', 'inaceptable', 'alto', 'tolerable', 'moderado', 'aceptable', 'bajo'];
 
 // Escalas con los nombres que la casa usa con sus clientes (informe de HADA, 2026-11-05); los números no cambian.
 // Copia de ESCALAS en verticales/estudios-seguridad/plantilla.js (el servidor es el que manda).
 export const PROBABILITY_SCALE = ['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta'];
-export const IMPACT_SCALE = ['Insignificante', 'Leve', 'Moderado', 'Grave', 'Catastrófico'];
+export const IMPACT_SCALE = ['Muy leve', 'Leve', 'Moderado', 'Grave', 'Crítico'];
 // Calificación del control en palabras, la misma de plantilla.js: 2 a 4 de los Excel; 1 y 5 de la guía de calificación
 // de la sede Medellín (noviembre de 2026).
 const CONTROL_WORDS: Record<'calidad' | 'eficacia' | 'eficiencia', Record<number, string>> = {

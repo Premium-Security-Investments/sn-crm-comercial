@@ -15,7 +15,8 @@ import { promisify } from 'node:util';
 import { AGT002_DOCUMENT_TEMPLATE_PATH, agt002InlineSpans } from '../licitaciones/agt002-document-render.js';
 
 export const REPORT_LIMITS = Object.freeze({ blocks: 1500, text: 6000, rows: 120, columns: 10, imageBytes: 4 * 1024 * 1024 });
-export const LEVEL_COLORS = Object.freeze({ bajo: '#8fd16a', moderado: '#ffe066', alto: '#f6a644', critico: '#e5534b' });
+// Los cuatro niveles de la v1 y los tres de la guía (aceptable verde, tolerable amarillo, inaceptable rojo).
+export const LEVEL_COLORS = Object.freeze({ bajo: '#8fd16a', moderado: '#ffe066', alto: '#f6a644', critico: '#e5534b', aceptable: '#8fd16a', tolerable: '#ffe066', inaceptable: '#e5534b' });
 const DOCX_FILTER = 'docx:MS Word 2007 XML';
 
 export class StudyReportError extends Error {
