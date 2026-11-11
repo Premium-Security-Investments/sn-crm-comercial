@@ -2,7 +2,7 @@
 // AGT-002 — sube a SharePoint la copia de trabajo de los borradores que una persona pidió con el botón (mejora 5,
 // migración 177). **Autorizado por Juan el 2026-11-04**: el botón, no un horario, decide qué sube.
 //
-// Corre cada minuto, pero sin pedidos no hace nada: ni lista SharePoint ni toca Microsoft. Corre como root por lo mismo
+// Corre cada 5 minutos, pero sin pedidos no hace nada: ni lista SharePoint ni toca Microsoft. Corre como root por lo mismo
 // que el puente SharePoint: la sesión delegada de Graph vive en /root/.vigia-graph con permisos 700, y no se copia a un
 // usuario de servicio (ver el handoff del 2026-11-03, §6).
 //

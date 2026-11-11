@@ -2,6 +2,11 @@
 Description=SIIO AGT-002 durable initial-analysis worker
 Wants=network-online.target
 After=network-online.target
+# Un solo reloj para el análisis (Juan, 2026-11-11): cada corrida arranca primero la admisión automática
+# (documentos, OCR, primeros análisis y "Volver a analizar"), espera a que termine y después ejecuta lo admitido.
+# Cada paso sigue siendo su propia unidad, con su usuario y su entorno; si la admisión falla, el worker corre igual.
+Wants=agt002-auto-initial.service
+After=agt002-auto-initial.service
 
 [Service]
 Type=oneshot

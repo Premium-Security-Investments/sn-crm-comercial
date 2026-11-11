@@ -1,6 +1,6 @@
 // Estudios de Seguridad Física: los antecedentes del puesto en SecurityOps (migración 201; Juan, 2026-11-10).
 //
-// El analista vincula el estudio a un puesto de SecurityOps; el servidor de tareas trae, en uno o dos minutos, lo que pasó
+// El analista vincula el estudio a un puesto de SecurityOps; el servidor de tareas trae, en hasta 5 minutos, lo que pasó
 // allí en 12 meses y los reportes escritos para el estudio («Alerta de Riesgos» y el «Estudio de seguridad» del
 // historial). «Llevar al estudio» abre el formulario del riesgo ya escrito: las calificaciones las pone el analista.
 import { useEffect, useState } from 'react';
@@ -24,11 +24,11 @@ export function SecurityOpsPanel({ study, state, risks, editable, onChanged, onU
   const [searching, setSearching] = useState(false);
   const pending = Boolean(state.puesto && state.pending);
 
-  // Mientras el servidor de tareas trae los datos, la ficha se recarga sola cada 20 s (hasta 6 minutos).
+  // Mientras el servidor de tareas trae los datos, la ficha se recarga sola cada 20 s (hasta 10 minutos).
   useEffect(() => {
     if (!pending) return undefined;
     let tries = 0;
-    const timer = window.setInterval(() => { tries += 1; if (tries > 18) window.clearInterval(timer); else onChanged(); }, 20_000);
+    const timer = window.setInterval(() => { tries += 1; if (tries > 30) window.clearInterval(timer); else onChanged(); }, 20_000);
     return () => window.clearInterval(timer);
   }, [pending, onChanged]);
 
@@ -62,7 +62,7 @@ export function SecurityOpsPanel({ study, state, risks, editable, onChanged, onU
     </div>
     <p><strong>{puesto.name}</strong>{puesto.monitoring ? ' · unidad de monitoreo' : ''}<br /><span className="es-muted">{place(puesto) || 'Sin dirección en SecurityOps'}</span></p>
     {canUseCoords ? <button type="button" className="es-link" disabled={busy} onClick={() => act(() => updateStudy(study.id, { latitude: Number(puesto.latitude), longitude: Number(puesto.longitude) }))}>Usar las coordenadas de SecurityOps en el estudio{puesto.geo_pending ? ' (SecurityOps las marca por verificar)' : ''}</button> : null}
-    {pending ? <p className="es-muted">Trayendo los datos de SecurityOps; tarda uno o dos minutos y esta sección se actualiza sola.</p> : null}
+    {pending ? <p className="es-muted">Trayendo los datos de SecurityOps; tarda hasta 5 minutos y esta sección se actualiza sola.</p> : null}
     {data?.status === 'error' ? <p className="es-error">{data.error || 'No se pudo leer SecurityOps.'}</p> : null}
     {s ? <>
       <p className="es-muted">Últimos 12 meses ({fmtDate(data?.window_from)} a {fmtDate(data?.window_to)}) · corte {fmtDate(data?.synced_at)}</p>

@@ -1,9 +1,9 @@
 [Unit]
-Description=Check every 2 minutes for a pending Radar full-import request
+Description=Check every 5 minutes for a pending Radar full-import request (the import itself takes up to 25 minutes)
 
 [Timer]
 OnBootSec=90
-OnUnitInactiveSec=120
+OnUnitInactiveSec=300
 RandomizedDelaySec=5s
 
 [Install]

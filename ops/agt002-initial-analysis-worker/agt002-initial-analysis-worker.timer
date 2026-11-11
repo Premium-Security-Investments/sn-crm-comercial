@@ -1,9 +1,9 @@
 [Unit]
-Description=Run the SIIO AGT-002 initial-analysis worker periodically
+Description=AGT-002 análisis: admisión automática y luego el worker, cada 2 minutos (el único reloj del análisis)
 
 [Timer]
 OnBootSec=30s
-OnUnitInactiveSec=60
+OnUnitInactiveSec=120
 RandomizedDelaySec=5s
 Persistent=false
 Unit=agt002-initial-analysis-worker.service

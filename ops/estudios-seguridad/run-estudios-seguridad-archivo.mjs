@@ -3,7 +3,7 @@
 // 2026-11-05: al aprobar, el informe se genera solo y queda en cola; la aprobación es el pedido de una persona que su
 // regla del 2026-11-04 exige para subir a su nombre.
 //
-// Corre cada minuto, pero sin pedidos no hace nada: ni arma documentos ni toca Microsoft. Corre como root por la misma
+// Corre cada 5 minutos, con los borradores, pero sin pedidos no hace nada: ni arma documentos ni toca Microsoft. Corre como root por la misma
 // razón que agt002-sharepoint-drafts: la sesión delegada de Graph vive en /root/.vigia-graph (700) y no se copia a un
 // usuario de servicio. La lógica está en verticales/estudios-seguridad/archivo.js; aquí sólo se conectan las piezas.
 import { execFile } from 'node:child_process';

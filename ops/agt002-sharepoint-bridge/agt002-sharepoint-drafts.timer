@@ -1,9 +1,9 @@
 [Unit]
-Description=AGT-002 borradores -> SharePoint, cada minuto (sin pedidos no hace nada)
+Description=Pedidos a SharePoint y SecurityOps (borradores, carpeta de radicación, archivo de estudios, SecurityOps), cada 5 minutos
 
 [Timer]
 OnBootSec=2min
-OnUnitInactiveSec=60s
+OnUnitInactiveSec=300s
 AccuracySec=10s
 Unit=agt002-sharepoint-drafts.service
 

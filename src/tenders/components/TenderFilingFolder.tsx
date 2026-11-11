@@ -27,7 +27,7 @@ export function TenderFilingFolder({ opportunityId, request, canRequest }: { opp
   const ask = async (action: 'crear' | 'actualizar') => {
     try {
       await request('/api/tender-filing-folder/request', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunityId, action }) });
-      setMessage(action === 'crear' ? 'Pedido: el servidor crea la carpeta en un minuto.' : 'Pedido: el índice se actualiza en un minuto.');
+      setMessage(action === 'crear' ? 'Pedido: el servidor crea la carpeta en hasta 5 minutos.' : 'Pedido: el índice se actualiza en hasta 5 minutos.');
       await load();
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
   };

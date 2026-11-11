@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// AGT-002 automatic first analysis after a conversion (owner decision 2026-10-06). One pass, run by a systemd timer:
+// AGT-002 automatic first analysis after a conversion (owner decision 2026-10-06). One pass, started by the
+// initial-analysis worker unit before each worker run (one timer for the whole analysis since 2026-11-11):
 //   1. Documents: drives the CRM's own durable document pipeline (POST /api/tender-processing-worker-run, one document
 //      per call) while a conversion at or after AGT002_AUTO_INITIAL_SINCE still waits for its documents. The pipeline's
 //      claim is global FIFO, so an older pending job is processed first: that only downloads documents (no model, no

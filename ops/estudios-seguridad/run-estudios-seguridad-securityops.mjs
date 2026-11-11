@@ -2,7 +2,7 @@
 // Estudios de Seguridad — trae de SecurityOps el directorio de puestos y los antecedentes de cada estudio vinculado
 // (migración 201; Juan, 2026-11-10: "podemos construir ya").
 //
-// Corre cada dos minutos y sin pedidos casi no hace nada: el directorio se refresca una vez al día y un estudio sólo se
+// Corre cada 5 minutos, con los borradores, y sin pedidos casi no hace nada: el directorio se refresca una vez al día y un estudio sólo se
 // lee si se acaba de vincular, si alguien pidió "Actualizar" o si sus datos tienen más de un día. Lee SecurityOps con la
 // cuenta de servicio vigia-operaciones-lectura (roles/datastore.viewer: un commit responde 403), que vive en
 // /root/.vigia-firestore y no sale de este servidor. La lógica está en verticales/estudios-seguridad/securityops.js.
