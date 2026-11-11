@@ -12,7 +12,7 @@ import { getAgt003CopilotRuntimeConfig, resolveAgt003BridgeConnection } from '..
 import { AGT003_ESTUDIOS_CAPABILITY, createModelGatewayClient } from '../../platform-model-gateway.js';
 import { classifyAgt003ModelFailure } from '../../src/vigia/model-failures.js';
 import { PLANTILLAS } from './plantilla.js';
-import { addRisk, addZone, cleanRiskInput, getStudy } from './estudios.js';
+import { addRisk, addZone, cleanRiskInput, getStudy, probabilityChecker } from './estudios.js';
 
 export const FIELD_NOTE_TIMEOUT_MS = 75_000;
 export const FIELD_NOTE_MAX_CHARS = 4000;
@@ -211,13 +211,15 @@ export async function confirmFieldNote(db, studyId, body = {}, profile) {
     throw error;
   }
   const refs = new Set(zonesIn.map(zone => zone?.ref));
+  // IEC 31010: la probabilidad que se aparta de la sugerida necesita justificación; se revisa antes de crear nada.
+  const checkProbability = await probabilityChecker(db, detail.study);
   for (const [index, risk] of risksIn.entries()) {
     if (risk?.zone_ref && !refs.has(risk.zone_ref)) {
       const error = new Error(`Riesgo ${index + 1}: la zona nueva no está entre las que se van a crear.`);
       error.status = 400;
       throw error;
     }
-    try { cleanRiskInput({ ...risk, zone_id: risk?.zone_ref ? null : risk?.zone_id }, catalog); } catch (error) {
+    try { checkProbability(cleanRiskInput({ ...risk, zone_id: risk?.zone_ref ? null : risk?.zone_id }, catalog)); } catch (error) {
       error.message = `Riesgo ${index + 1} ("${clip(risk?.title, 60)}"): ${error.message}`;
       throw error;
     }

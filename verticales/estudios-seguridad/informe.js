@@ -17,6 +17,7 @@ import { ESCALAS, PLANTILLAS, controlWord } from './plantilla.js';
 export const ARCHIVE_BASE_PATH = '99_Del_CRM/Estudios_de_Seguridad';
 const NIVEL = Object.freeze({ bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico', aceptable: 'Aceptable', tolerable: 'Tolerable', inaceptable: 'Inaceptable' });
 // De más grave a menos grave; cada estudio sólo usa los niveles de su metodología.
+const CONFIANZA = Object.freeze({ alta: 'Alta', media: 'Media', baja: 'Baja' });
 const NIVEL_ORDER = ['critico', 'inaceptable', 'alto', 'tolerable', 'moderado', 'aceptable', 'bajo'];
 const PRIORIDAD = Object.freeze({ alta: 'Alta', media: 'Media', baja: 'Baja' });
 const ESTADO_ACCION = Object.freeze({ pendiente: 'Pendiente', en_curso: 'En curso', cumplida: 'Cumplida', descartada: 'Descartada' });
@@ -29,7 +30,7 @@ const clip = (value, max = MAX_CELL) => {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 };
-const level = tramo => `${tramo.magnitud} · ${NIVEL[tramo.nivel] || tramo.nivel}`;
+const level = tramo => `${tramo.magnitud} · ${NIVEL[tramo.nivel] || tramo.nivel}${tramo.minimoPorImpacto ? ' (mínimo por impacto crítico)' : ''}`;
 const bogota = (value, options) => {
   if (!value) return 'sin fecha';
   const date = new Date(String(value).length === 10 ? `${value}T12:00:00Z` : value);
@@ -183,7 +184,7 @@ export const SIGNATURE_ROLES = Object.freeze({ elaboro: 'Analista de riesgos', r
 function methodologyText(id) {
   const scales = `probabilidad (${ESCALAS.probabilidad.join(', ')}) e impacto (${ESCALAS.impacto.join(', ')}), de 1 a 5`;
   if (METODOLOGIAS[id]?.probabilidadResidualEscogida) {
-    return `Metodología ${id}, basada en la NTC-ISO 31000 de 2018 y en la guía de calificación de la matriz 5 × 5 de Seguridad Nacional: matriz cruzada de ${scales}. La valoración inicial es probabilidad × impacto. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad es calidad × eficacia × eficiencia ÷ 125. El riesgo actual es la valoración inicial descontada una vez por la efectividad del control existente, redondeada al entero superior. El riesgo residual es la probabilidad residual que se espera después de implementar los controles propuestos, multiplicada por el mismo impacto: es una estimación, no un resultado verificado. Las magnitudes van de 1 a 25. Niveles: 1 a 6 aceptable, 7 a 14 tolerable y 15 a 25 inaceptable.`;
+    return `Metodología ${id}. Sigue los principios y el proceso de gestión del riesgo de la NTC-ISO 31000:2018 y usa técnicas de apreciación del riesgo descritas en la NTC-IEC/ISO 31010 (adopción de IEC 31010:2019): listas de verificación, análisis de controles y matriz de consecuencia y probabilidad con escalas definidas, junto con la guía de calificación de la matriz 5 × 5 de Seguridad Nacional. Estas normas son guías y no son certificables; este documento no constituye una certificación. Matriz cruzada de ${scales}. Cada nivel de probabilidad tiene un significado definido: ${ESCALAS.probabilidadSignificado.map((text, index) => `${index + 1}, ${text}`).join('; ')}. La plataforma sugiere la probabilidad con la estadística de delitos de la zona y las novedades registradas en el puesto durante 12 meses; cuando el analista escoge otra, deja escrito por qué, y cada calificación declara su nivel de confianza y sus supuestos. La valoración inicial es probabilidad × impacto. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad es calidad × eficacia × eficiencia ÷ 125. El riesgo actual es la valoración inicial descontada una vez por la efectividad del control existente, redondeada al entero superior. El riesgo residual es la probabilidad residual que se espera después de implementar los controles propuestos, multiplicada por el mismo impacto: es una estimación, no un resultado verificado. Las magnitudes van de 1 a 25 y sirven para ordenar los riesgos, no como una medida exacta. Niveles: 1 a 6 aceptable, 7 a 14 tolerable y 15 a 25 inaceptable; un riesgo de impacto crítico (5) es como mínimo tolerable y lleva plan de contingencia, aunque sea poco probable.`;
   }
   return `Metodología ${id}, basada en la NTC-ISO 31000 de 2018: matriz cruzada de probabilidad por impacto. Cada riesgo se califica con una ${scales}, con dos impactos (sobre la empresa o sede y sobre las personas; cuenta el mayor). Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad (producto / 125, con tope del 90 %) reduce la probabilidad una sola vez. El riesgo actual considera los controles existentes; el residual, además, los controles propuestos: es una estimación de lo que se espera al implementarlos, no un resultado verificado. Niveles: 1 a 5 bajo, 6 a 10 moderado, 11 a 15 alto y 16 a 25 crítico.`;
 }
@@ -248,6 +249,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
     'Decreto 1072 de 2015, Sistema de Gestión de la Seguridad y Salud en el Trabajo.',
     'Norma ISO 45001 de 2018, Seguridad y Salud en el Trabajo.',
     'Norma NTC-ISO 31000 de 2018, Gestión del Riesgo.',
+    'Norma NTC-IEC/ISO 31010, Técnicas de evaluación del riesgo (adopción de IEC 31010:2019).',
     'Ley 1581 de 2012 y Decreto 1377 de 2013, protección de datos personales.',
   ]);
   h2('Metodología');
@@ -314,6 +316,12 @@ export function buildStudyReport(snapshot, meta, images = {}) {
       ['Riesgo del catálogo', risk.catalogo ? `${risk.catalogo} · ${catalog.get(risk.catalogo) || ''}` : 'Riesgo propio'],
       ['Probabilidad actual · impacto', `${ESCALAS.probabilidad[risk.valoracion.actual.probabilidad - 1]} (${risk.valoracion.actual.probabilidad}) · ${ESCALAS.impacto[risk.valoracion.impacto - 1]} (${risk.valoracion.impacto})`],
       ['Valoración inicial (probabilidad × impacto)', String(risk.valoracion.inherente?.magnitud ?? risk.valoracion.actual.probabilidad * risk.valoracion.impacto)],
+      ...(METODOLOGIAS[study.metodologia]?.probabilidadResidualEscogida ? [
+        ['Probabilidad sugerida por los datos', risk.probabilidad_sugerida ? `${risk.probabilidad_sugerida} · ${ESCALAS.probabilidadSignificado[risk.probabilidad_sugerida - 1]}` : 'Sin dato de respaldo: juicio del analista'],
+        ...(risk.justificacion_probabilidad ? [['Por qué esta probabilidad', risk.justificacion_probabilidad]] : []),
+        ['Confianza de la calificación', CONFIANZA[risk.confianza] || 'Sin declarar'],
+        ...(risk.supuestos ? [['Supuestos', risk.supuestos]] : []),
+      ] : []),
       ['Calidad · eficacia · eficiencia del control', ratingWords(ce) || 'Sin calificar'],
       ['Efectividad del control existente', percent(risk.valoracion.actual.efectividadControl)],
       ['Magnitud del riesgo actual', { text: level(risk.valoracion.actual), level: risk.valoracion.actual.nivel }],

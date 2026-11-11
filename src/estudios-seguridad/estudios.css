@@ -103,3 +103,6 @@
 .es-delivery .es-nivel{margin-right:8px}
 .es-share-created{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:1px solid #f1d9a6;background:#fffaf0;border-radius:10px;padding:10px}
 .es-share-created input{flex:1 1 320px;min-width:0;font-family:ui-monospace,monospace;font-size:13px}
+
+/* IEC 31010: probabilidad sugerida por los datos */
+.es-suggestion{margin:0;padding:10px 12px;border:1px solid #c7d7f3;border-radius:10px;background:#f7faff;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}

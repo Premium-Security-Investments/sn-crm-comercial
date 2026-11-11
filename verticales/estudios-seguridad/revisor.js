@@ -113,6 +113,11 @@ function riskFindings(detail) {
         findings.push({ code: 'sin_foto', severity: 'revisar', risk: risk.number, message: `${code} está en nivel ${LEVEL_WORD[actual.nivel]} y no tiene ninguna foto que lo respalde.` });
       }
     }
+    // IEC 31010: el juicio experto se contrasta con datos y declara su incertidumbre.
+    if (HIGH_LEVELS.has(actual.nivel) && risk.valuation.metodologia === 'guia-calificacion-2026') {
+      if (risk.suggested_probability == null) findings.push({ code: 'juicio_sin_dato', severity: 'revisar', risk: risk.number, message: `${code} está en nivel ${LEVEL_WORD[actual.nivel]} y su probabilidad no tiene dato de respaldo (ni estadística de la zona ni SecurityOps): es juicio del analista.` });
+      if (risk.confidence === 'baja') findings.push({ code: 'confianza_baja', severity: 'revisar', risk: risk.number, message: `${code} está en nivel ${LEVEL_WORD[actual.nivel]} y el analista declaró confianza baja: conviene una segunda opinión.` });
+    }
     for (const [prefix, word] of [['current', 'existente'], ['proposed', 'propuesto']]) {
       const described = hasText(risk[`${prefix}_control`]);
       if (described && !rated(risk, prefix)) findings.push({ code: 'control_sin_calificar', severity: 'revisar', risk: risk.number, message: `${code}: el control ${word} está descrito pero no calificado, así que no cuenta en la valoración.` });

@@ -30,6 +30,7 @@ export type Risk = {
   id: string; number: number; zone_id: string | null; catalog_risk_code: string | null; process_code: string | null;
   title: string; client_process?: string | null; risk_factor?: string | null; causes: string | null; consequences: string | null;
   probability: number; impact_company: number; impact_people: number; residual_probability?: number | null;
+  suggested_probability?: number | null; probability_basis?: string | null; confidence?: 'alta' | 'media' | 'baja' | null; assumptions?: string | null;
   current_control: string | null; current_quality: number | null; current_efficacy: number | null; current_efficiency: number | null;
   proposed_control: string | null; proposed_quality: number | null; proposed_efficacy: number | null; proposed_efficiency: number | null;
   origin: 'manual' | 'agente' | 'securityops'; source_ref?: string | null; valuation: Valuation;
@@ -74,6 +75,7 @@ export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; rie
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
   evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review; securityops?: SecurityOpsState; entrega?: Entrega;
+  probability_suggestions?: ProbabilitySuggestions;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
@@ -104,6 +106,10 @@ export type SecurityOpsState = { available: boolean; puesto: SecurityOpsPuesto |
 export type Delivery = { id: string; version: number; delivered_on: string; medium: 'presencial' | 'virtual' | 'correo'; presented_by: string; attendees: string; support: string | null; notes: string | null; recorded_at: string };
 export type Share = { id: string; version: number; label: string | null; created_at: string; expires_at: string; revoked_at: string | null; state: 'activo' | 'vencido' | 'anulado'; views: number; last_view: string | null };
 export type Entrega = { available: boolean; can: boolean; deliveries: Delivery[]; shares: Share[] };
+
+// IEC 31010: la probabilidad que sugieren los datos (estadística de la zona y SecurityOps), por riesgo del catálogo.
+export type ProbabilitySuggestion = { probabilidad: number; significado: string; fuente: string; aproximada: boolean };
+export type ProbabilitySuggestions = { propio: ProbabilitySuggestion | null; porCodigo: Record<string, ProbabilitySuggestion | null> };
 
 export type ClientOption = { source: 'avancys' | 'crm'; ref: string; name: string; nit: string | null; city: string | null; site: string | null };
 export type PostsResult = { encontrado: boolean; avancys: string; contratos: Array<{ nombre: string | null; inicia: string | null; vence: string | null; total_puestos: number; puestos: Array<{ codigo: string | null; nombre: string | null }> }> };
@@ -182,6 +188,9 @@ export const NIVEL_ORDER: Nivel[] = ['critico', 'inaceptable', 'alto', 'tolerabl
 // Escalas con los nombres que la casa usa con sus clientes (informe de HADA, 2026-11-05); los números no cambian.
 // Copia de ESCALAS en verticales/estudios-seguridad/plantilla.js (el servidor es el que manda).
 export const PROBABILITY_SCALE = ['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta'];
+// IEC 31010: cada nivel con significado definido (copia de ESCALAS.probabilidadSignificado en plantilla.js).
+export const PROBABILITY_MEANING = ['no ha ocurrido en la sede y no hay antecedentes en la zona', 'hay antecedentes en la zona, pero no ocurrió en la sede en el último año', 'ocurrió en la sede una vez en el último año', 'ocurrió en la sede varias veces en el último año', 'ocurre en la sede casi todos los meses'];
+export const PROBABILITY_SCALE_DESCRIBED = PROBABILITY_SCALE.map((name, index) => `${name}: ${PROBABILITY_MEANING[index]}`);
 export const IMPACT_SCALE = ['Muy leve', 'Leve', 'Moderado', 'Grave', 'Crítico'];
 // Calificación del control en palabras, la misma de plantilla.js: 2 a 4 de los Excel; 1 y 5 de la guía de calificación
 // de la sede Medellín (noviembre de 2026).

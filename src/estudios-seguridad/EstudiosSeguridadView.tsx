@@ -11,9 +11,9 @@ import { CharacterizationPanel } from './CharacterizationPanel';
 import { SecurityOpsPanel } from './SecurityOpsPanel';
 import { DeliveryPanel } from './DeliveryPanel';
 import {
-  IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, STATUS_LABELS,
+  IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
-  type Action, type Catalog, type ClientOption, type Evidence, type Nivel, type PostsResult, type Risk, type RiskDraft, type StudyDetail, type StudySummaryRow, type Zone,
+  type Action, type Catalog, type ClientOption, type Evidence, type Nivel, type PostsResult, type ProbabilitySuggestions, type Risk, type RiskDraft, type StudyDetail, type StudySummaryRow, type Zone,
 } from './api';
 
 const message = (reason: unknown) => (reason instanceof Error ? reason.message : 'No se pudo completar la operación.');
@@ -224,16 +224,16 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
       ? <EvidenceStrip studyId={study.id} items={evidence.filter(item => !item.risk_id && (item.purpose ?? 'evidencia') === 'evidencia')} urls={urls} editable={editable} label="Fotos y documentos generales de la visita" onChanged={reload} />
       : <p className="es-muted">Las fotos y documentos todavía no están habilitados en esta instalación.</p>}
 
-    {editable ? <FieldNotePanel studyId={study.id} zones={zones} onSaved={reload} /> : null}
+    {editable ? <FieldNotePanel studyId={study.id} zones={zones} suggestions={detail.probability_suggestions} onSaved={reload} /> : null}
 
     <div className="es-section-head">
       <h3>Riesgos ({risks.length})</h3>
       {editable && !addingRisk ? <button type="button" onClick={() => setNewRisk(EMPTY_RISK)}>+ Agregar riesgo</button> : null}
     </div>
     {newRisk?.source_ref ? <p className="es-muted" id="es-riesgo-desde-securityops">Este riesgo viene de SecurityOps. Revise el texto y califíquelo: la probabilidad, el impacto y los controles los pone usted.</p> : null}
-    {newRisk ? <RiskForm key={newRisk.source_ref || 'nuevo'} studyId={study.id} zones={zones} catalog={catalog} clientProcesses={clientProcesses} initial={newRisk} onCancel={() => setNewRisk(null)} onSaved={() => { setNewRisk(null); reload(); }} /> : null}
+    {newRisk ? <RiskForm key={newRisk.source_ref || 'nuevo'} studyId={study.id} zones={zones} catalog={catalog} clientProcesses={clientProcesses} suggestions={detail.probability_suggestions} initial={newRisk} onCancel={() => setNewRisk(null)} onSaved={() => { setNewRisk(null); reload(); }} /> : null}
     {risks.length === 0 && !addingRisk ? <p className="es-muted">Sin riesgos todavía.</p> : null}
-    <ul className="es-risks">{risks.map(risk => <RiskItem key={risk.id} studyId={study.id} risk={risk} zoneLabel={risk.zone_id ? zoneName.get(risk.zone_id) || '' : ''} zones={zones} catalog={catalog}
+    <ul className="es-risks">{risks.map(risk => <RiskItem key={risk.id} studyId={study.id} risk={risk} zoneLabel={risk.zone_id ? zoneName.get(risk.zone_id) || '' : ''} zones={zones} catalog={catalog} suggestions={detail.probability_suggestions}
       actions={actions.filter(action => action.risk_id === risk.id)} editable={editable} onChanged={reload} onError={setError}
       evidence={detail.evidence_available ? evidence.filter(item => item.risk_id === risk.id) : null} urls={urls} />)}</ul>
     {!editable ? <p className="es-muted">El estudio no está en borrador: es de consulta.</p> : null}
@@ -279,7 +279,7 @@ function ScaleSelect({ label, value, scale, onChange, required = false }: { labe
 
 const EMPTY_RISK: RiskDraft = { title: '', probability: undefined, impact_company: undefined, impact_people: undefined };
 
-function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = [], onCancel, onSaved }: { studyId: string; zones: Zone[]; catalog: Catalog | null; initial?: RiskDraft; riskId?: string; clientProcesses?: string[]; onCancel: () => void; onSaved: (risk: Risk) => void }) {
+function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = [], suggestions, onCancel, onSaved }: { studyId: string; zones: Zone[]; catalog: Catalog | null; initial?: RiskDraft; riskId?: string; clientProcesses?: string[]; suggestions?: ProbabilitySuggestions; onCancel: () => void; onSaved: (risk: Risk) => void }) {
   const [form, setForm] = useState<RiskDraft>(initial || EMPTY_RISK);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -295,6 +295,8 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = 
     return [...groups.entries()];
   }, [catalog]);
   const selectedRisk = catalog?.riesgos.find(item => item.codigo === form.catalog_risk_code) || null;
+  const suggestion = (form.catalog_risk_code ? suggestions?.porCodigo[form.catalog_risk_code] : suggestions?.propio) ?? null;
+  const departs = Boolean(suggestion && form.probability && form.probability !== suggestion.probabilidad);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -355,8 +357,24 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = 
     </div>
     <div className="es-grid-3">
       {/* Guía de calificación (2026-11-11): la probabilidad actual la escoge el analista y hay un solo impacto. */}
-      <ScaleSelect label="Probabilidad actual" value={form.probability} scale={PROBABILITY_SCALE} onChange={value => set({ probability: value ?? undefined })} required />
+      <ScaleSelect label="Probabilidad actual" value={form.probability} scale={PROBABILITY_SCALE_DESCRIBED} onChange={value => set({ probability: value ?? undefined })} required />
       <ScaleSelect label="Impacto" value={form.impact_company} scale={IMPACT_SCALE} onChange={value => set({ impact_company: value ?? undefined, impact_people: value ?? undefined })} required />
+      <label>Confianza en la calificación
+        <select value={form.confidence || ''} onChange={event => set({ confidence: (event.target.value || null) as RiskDraft['confidence'] })}>
+          <option value="">Sin declarar</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
+        </select>
+      </label>
+    </div>
+    {/* IEC 31010: la probabilidad se contrasta con los datos; si el analista se aparta, explica por qué. */}
+    {suggestion ? <p className="es-suggestion">
+      Los datos sugieren <strong>{suggestion.probabilidad} · {PROBABILITY_SCALE[suggestion.probabilidad - 1]}</strong> ({suggestion.significado}). <small className="es-muted">Fuente: {suggestion.fuente}. Es aproximada: usted decide.</small>
+      {form.probability !== suggestion.probabilidad ? <button type="button" className="es-link" onClick={() => set({ probability: suggestion.probabilidad })}>Usar la sugerida</button> : null}
+    </p> : <p className="es-muted">No hay datos para sugerir la probabilidad (ni estadística de la zona ni SecurityOps): la calificación queda como juicio del analista.</p>}
+    <div className="es-grid-2">
+      <label>Por qué esta probabilidad{departs ? ' (obligatorio: se aparta de la sugerida)' : ''}
+        <textarea rows={2} value={form.probability_basis || ''} onChange={event => set({ probability_basis: event.target.value })} maxLength={1000} required={departs} minLength={departs ? 10 : undefined} placeholder="Evidencia: siniestros, novedades, inspección, entrevista con el cliente" />
+      </label>
+      <label>Supuestos<textarea rows={2} value={form.assumptions || ''} onChange={event => set({ assumptions: event.target.value })} maxLength={2000} placeholder="Ej.: el CCTV graba 30 días; la ronda nocturna se cumple" /></label>
     </div>
     <fieldset className="es-fieldset">
       <legend>Control existente</legend>
@@ -386,8 +404,8 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = 
   </form>;
 }
 
-function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable, onChanged, onError, evidence, urls }: {
-  studyId: string; risk: Risk; zoneLabel: string; zones: Zone[]; catalog: Catalog | null; actions: Action[]; editable: boolean; onChanged: () => void; onError: (text: string) => void;
+function RiskItem({ studyId, risk, zoneLabel, zones, catalog, suggestions, actions, editable, onChanged, onError, evidence, urls }: {
+  studyId: string; risk: Risk; zoneLabel: string; zones: Zone[]; catalog: Catalog | null; suggestions?: ProbabilitySuggestions; actions: Action[]; editable: boolean; onChanged: () => void; onError: (text: string) => void;
   evidence: Evidence[] | null; urls: Record<string, string | null>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -398,7 +416,7 @@ function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable,
   };
   if (editing) {
     const { id: _id, number: _number, valuation: _valuation, origin: _origin, ...draft } = risk;
-    return <li><RiskForm studyId={studyId} zones={zones} catalog={catalog} riskId={risk.id} initial={draft} clientProcesses={[]} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} /></li>;
+    return <li><RiskForm studyId={studyId} zones={zones} catalog={catalog} riskId={risk.id} initial={draft} clientProcesses={[]} suggestions={suggestions} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} /></li>;
   }
   return <li className="es-card es-risk">
     <div className="es-risk-head">

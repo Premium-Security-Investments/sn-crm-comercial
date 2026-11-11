@@ -1,9 +1,9 @@
 // Nota de campo con Vig-IA (AGT-003): el inspector cuenta lo que vio y Vig-IA propone zonas y riesgos con su texto.
 // La calificación (probabilidad e impactos) la pone la persona aquí antes de confirmar; nada se guarda sin confirmar.
 import { useState } from 'react';
-import { IMPACT_SCALE, PROBABILITY_SCALE, confirmFromNote, proposeFromNote, type FieldNoteProposal, type FieldNoteRisk, type Zone } from './api';
+import { IMPACT_SCALE, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, confirmFromNote, proposeFromNote, type FieldNoteProposal, type FieldNoteRisk, type ProbabilitySuggestions, type Zone } from './api';
 
-type Draft = FieldNoteRisk & { selected: boolean; probability: number | null; impact_company: number | null; impact_people: number | null };
+type Draft = FieldNoteRisk & { selected: boolean; probability: number | null; impact_company: number | null; impact_people: number | null; probability_basis?: string };
 const message = (reason: unknown) => (reason instanceof Error ? reason.message : 'Vig-IA no pudo responder.');
 
 function Scale({ label, value, scale, onChange }: { label: string; value: number | null; scale: string[]; onChange: (value: number | null) => void }) {
@@ -15,7 +15,7 @@ function Scale({ label, value, scale, onChange }: { label: string; value: number
   </label>;
 }
 
-export function FieldNotePanel({ studyId, zones, onSaved }: { studyId: string; zones: Zone[]; onSaved: () => void }) {
+export function FieldNotePanel({ studyId, zones, suggestions, onSaved }: { studyId: string; zones: Zone[]; suggestions?: ProbabilitySuggestions; onSaved: () => void }) {
   const [note, setNote] = useState('');
   const [proposal, setProposal] = useState<FieldNoteProposal | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -32,7 +32,10 @@ export function FieldNotePanel({ studyId, zones, onSaved }: { studyId: string; z
     } catch (reason) { setError(message(reason)); } finally { setBusy(false); }
   };
   const chosen = drafts.filter(draft => draft.selected);
-  const missing = chosen.filter(draft => !draft.probability || !draft.impact_company).length;
+  // IEC 31010: la probabilidad que sugieren los datos; si el analista se aparta, explica por qué (el servidor lo exige).
+  const suggestionFor = (draft: Draft) => (draft.catalog_risk_code ? suggestions?.porCodigo[draft.catalog_risk_code] : suggestions?.propio) ?? null;
+  const departs = (draft: Draft) => { const s = suggestionFor(draft); return Boolean(s && draft.probability && draft.probability !== s.probabilidad); };
+  const missing = chosen.filter(draft => !draft.probability || !draft.impact_company || (departs(draft) && (draft.probability_basis || '').trim().length < 10)).length;
   const confirm = async () => {
     if (!proposal) return;
     setBusy(true); setError('');
@@ -69,9 +72,11 @@ export function FieldNotePanel({ studyId, zones, onSaved }: { studyId: string; z
         {draft.proposed_control ? <p><span className="es-label">Control propuesto:</span> {draft.proposed_control}</p> : null}
         <blockquote>“{draft.evidence_quote}”</blockquote>
         {draft.selected ? <div className="es-grid-3">
-          <Scale label="Probabilidad actual" value={draft.probability} scale={PROBABILITY_SCALE} onChange={value => set(index, { probability: value })} />
+          <Scale label="Probabilidad actual" value={draft.probability} scale={PROBABILITY_SCALE_DESCRIBED} onChange={value => set(index, { probability: value })} />
           <Scale label="Impacto" value={draft.impact_company} scale={IMPACT_SCALE} onChange={value => set(index, { impact_company: value, impact_people: value })} />
         </div> : null}
+        {draft.selected && suggestionFor(draft) ? <small className="es-muted">Los datos sugieren {suggestionFor(draft)!.probabilidad} · {PROBABILITY_SCALE[suggestionFor(draft)!.probabilidad - 1]} ({suggestionFor(draft)!.fuente}).</small> : null}
+        {draft.selected && departs(draft) ? <label>Por qué esta probabilidad (se aparta de la sugerida)<textarea rows={2} value={draft.probability_basis || ''} onChange={event => set(index, { probability_basis: event.target.value })} maxLength={1000} /></label> : null}
       </li>)}</ul>
       {!drafts.length ? <p className="es-muted">Vig-IA no encontró riesgos para proponer en esta nota.</p> : null}
       <div className="es-actions">
