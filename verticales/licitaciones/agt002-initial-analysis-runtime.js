@@ -7,6 +7,7 @@ import {
 import { loadAgt002CompanyProfileSnapshotForWorkflow } from './agt002-company-profile-snapshot.js';
 import { AGT002_LESSONS_POLICY, loadAgt002LessonsForPrompt } from './agt002-company-lessons.js';
 import { AGT002_DONDE_BUSCO_POLICY, AGT002_SECCIONES_POLICY, agt002NumeralesPendientes, agt002SeccionesPendientes } from './agt002-secciones-pendientes.js';
+import { AGT002_PLURALES_POLICY, agt002ReglasParaPlurales } from './agt002-reglas-plurales.js';
 import { selectCanonicalExtractionsByDocumentVersion } from './tender-document-extraction-persistence.js';
 
 function stable(value) {
@@ -273,6 +274,13 @@ export function createAgt002InitialAnalysisRuntime({
             extraInput.human_clarifications = await loadClarifications(database, { ids: batch.clarificationIds, opportunityId: job.opportunityId });
           }
         }
+        // Punto 6 del encargo de Aliados (2026-11-10): las frases literales del pliego sobre consorcios y uniones
+        // temporales van aparte, con su lectura, para que la síntesis no concluya «no consta» con la frase en la mano
+        // (Fiscalía `22f4bec0`). En el análisis inicial y en el reanálisis. Si falla, sigue sin ellas.
+        try {
+          const reglas = agt002ReglasParaPlurales(await loadDocumentTexts(database, [...new Set(pkg.members.map(member => member.document_version_id))]));
+          if (reglas.length) extraInput.reglas_para_plurales = reglas;
+        } catch { /* sin reglas */ }
         const lecciones = await loadLessons(database);
         if (Array.isArray(lecciones) && lecciones.length) extraInput.lecciones_de_la_empresa = lecciones;
         extraInput.evidence_catalog = pkg.members.map(member => ({
@@ -331,7 +339,7 @@ export function createAgt002InitialAnalysisRuntime({
 
       const response = await bridgeClient.run({
         model: modelId,
-        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : '') + (extraInput.secciones_del_pliego ? AGT002_SECCIONES_POLICY : '') + AGT002_DONDE_BUSCO_POLICY,
+        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : '') + (extraInput.secciones_del_pliego ? AGT002_SECCIONES_POLICY : '') + (extraInput.reglas_para_plurales ? AGT002_PLURALES_POLICY : '') + AGT002_DONDE_BUSCO_POLICY,
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,
