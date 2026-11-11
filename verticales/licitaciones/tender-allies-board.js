@@ -1,12 +1,13 @@
 // «Posibles socios» y «Quiénes se han movido en este proceso», armados en un solo lugar para Decidir y para la Mesa
 // (punto 5 del encargo de Aliados, 2026-11-11: Vig-IA tiene que poder explicar por qué sale cada socio, y no podía:
 // «las fuentes verificadas no incluyen la lista de aliados del CRM ni su regla de filtrado»).
-import { cityKey, cityName, citiesToCover, listAllies, processKey, processParticipants, rankAllyCandidates } from './tender-allies.js';
+import { cityKey, cityName, citiesToCover, listAllies, processKey, processParticipants, rankAllyCandidates, rankAllyPairs } from './tender-allies.js';
 
 const ALTERNATIVE_LABEL = 'Sólo si la Entidad acepta sumar entre integrantes (hay que aclararlo con ella)';
 export const ALLY_BOARD_RULE = 'Cruce automático con la base de Aliados (listado de la Superintendencia de Vigilancia), no una recomendación de Vig-IA. '
   + 'Ciudades: si el pliego dice que basta con que un integrante cumpla, primero los que tienen todas las ciudades del requisito, y aparte, sólo si la Entidad acepta sumar, los que aportan las que nos faltan; si se suma, los que aportan las que nos faltan. '
   + 'Orden: primero quien cubre todas las ciudades; luego por relación (aliado, aliado potencial, sin clasificar, competidor); luego quien no ha competido contra nosotros. '
+  + 'Combinaciones de dos socios: sólo donde se puede sumar y ningún socio solo cubre todo, ordenadas igual. '
   + 'El tamaño no ordena: desde 30 ciudades con oficina se avisa que querrá liderar la unión. Estatal de Seguridad nunca se propone. Una oficina en el listado no prueba la agencia: hay que pedir la resolución y el certificado de Cámara.';
 
 async function ourCitiesOf(database) {
@@ -38,6 +39,8 @@ export async function buildAllyBoard(database, { opportunityId, label, getReadin
   const zoneCities = new Map([...ourCities].filter(([key]) => zone.has(key)));
   const rank = (keys, limit) => rankAllyCandidates(allies.companies, { cityKeys: keys, processRef: tender?.ref || null, ourCities: zoneCities, ourProcessRefs, limit });
   const list = keys => ({ cities: keys.map(key => names.get(key) || key), candidates: rank(keys, 5) });
+  // Punto 4: combinaciones de dos, sólo donde se puede sumar y ningún socio solo cubre todo.
+  const pairs = keys => rankAllyPairs(allies.companies, { cityKeys: keys, processRef: tender?.ref || null, ourCities: zoneCities, ourProcessRefs });
   const one = allCities.length > missing.length ? list(allCities) : null;
   const sum = list(missing);
   const readingOut = reading ? { mode: reading.mode, quote: reading.quote, quote_verified: reading.quote_verified, document_name: reading.document_name, locator: reading.locator, explanation: reading.explanation } : null;
@@ -46,9 +49,10 @@ export async function buildAllyBoard(database, { opportunityId, label, getReadin
   if (reading && (reading.mode === 'uno_cumple' || reading.mode === 'no_dice') && one) {
     const first = new Set(one.candidates.map(candidate => candidate.nit));
     const others = rank(missing, 50).filter(candidate => !first.has(candidate.nit)).slice(0, 5);
-    return { applies: true, installed: true, reading: readingOut, ...one, alternative: { label: ALTERNATIVE_LABEL, cities: sum.cities, candidates: others } };
+    return { applies: true, installed: true, reading: readingOut, ...one, alternative: { label: ALTERNATIVE_LABEL, cities: sum.cities, candidates: others, pairs: pairs(missing) } };
   }
-  return { applies: true, installed: true, reading: readingOut, ...sum };
+  // Sin lectura no se sabe si se puede sumar: no se proponen combinaciones.
+  return { applies: true, installed: true, reading: readingOut, ...sum, pairs: reading?.mode === 'se_suma' ? pairs(missing) : [] };
 }
 
 /** Quiénes se han movido en el proceso (punto 7), con la zona según la última lectura para uniones temporales. */
