@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AGT002_DOCUMENT_TEMPLATE_PATH } from '../verticales/licitaciones/agt002-document-render.js';
 import { buildStudyReportFodt, imageSize } from '../verticales/estudios-seguridad/render-informe.js';
-import { buildStudyReport, generalEvaluation, heatmapBlock } from '../verticales/estudios-seguridad/informe.js';
+import { buildStudyReport, generalEvaluation, heatmapBlock, treatmentPriorities } from '../verticales/estudios-seguridad/informe.js';
 import { valorarRiesgo } from '../verticales/estudios-seguridad/metodologia.js';
 
 const skeleton = readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8');
@@ -42,7 +42,7 @@ const IMG = { base64: PNG.toString('base64'), mime: 'image/png', width: 2, heigh
 test('la estructura del informe de HADA, con fotos y mapas, sobre la plantilla corporativa', () => {
   const report = buildStudyReport(snapshot(), META, { logo: IMG, f1: IMG });
   const fodt = buildStudyReportFodt(skeleton, report);
-  const order = ['ESTUDIO DE SEGURIDAD FÍSICA', 'Contenido', 'Introducción', 'Marco legal', 'Decreto 356 de 1994', 'Metodología', 'Contexto externo e interno', 'Diagnóstico y evaluación de riesgos', 'Evaluación general', 'Medición comparativa del riesgo', 'R1 · Infiltración de personal', 'Recomendaciones de seguridad', 'R2 · Contaminación de carga', 'Diseño del plan estratégico de seguridad', 'Mapa de criticidad general', 'Escalonamiento o cadena de mando', 'Informes, registro y seguimiento', 'Álvaro Analista'];
+  const order = ['ESTUDIO DE SEGURIDAD FÍSICA', 'Contenido', 'Introducción', 'Marco legal', 'Decreto 356 de 1994', 'Metodología', 'Contexto externo e interno', 'Diagnóstico y evaluación de riesgos', 'Evaluación general', 'Medición comparativa del riesgo', 'R1 · Infiltración de personal', 'Recomendaciones de seguridad', 'R2 · Contaminación de carga', 'Diseño del plan estratégico de seguridad', 'Priorización del tratamiento', 'Control documental y trazabilidad', 'Mapa de criticidad general', 'Escalonamiento o cadena de mando', 'Informes, registro y seguimiento', 'Álvaro Analista'];
   let at = 0;
   for (const piece of order) {
     const found = fodt.indexOf(piece, at);
@@ -82,7 +82,19 @@ test('tamaño de imagen por la cabecera, y mapas de calor con el color de la v1'
 test('la evaluación general se calcula entera, y no queda cortada como la del PDF', () => {
   const text = generalEvaluation(snapshot().riesgos);
   assert.match(text, /de los 2 riesgos identificados 1 en nivel crítico, 1 en nivel alto/);
-  assert.match(text, /la magnitud total baja de 37 a 29 puntos/);
-  assert.match(text, /el nivel residual más alto es crítico\.$/);
+  assert.match(text, /la magnitud total bajaría de 37 a 29 puntos/);
+  assert.match(text, /el nivel residual estimado más alto es crítico\.$/);
   assert.equal(generalEvaluation([]), 'El estudio no tiene riesgos valorados.');
+});
+
+test('priorización del tratamiento en tres grupos, del plan de la sede Medellín; y el residual siempre como estimado', () => {
+  const groups = treatmentPriorities(snapshot().riesgos);
+  assert.deepEqual(groups.map(group => [group.nombre, group.riesgos.map(risk => risk.numero)]), [
+    ['Atención preferente', [2]], ['Intervención programada', [1]], ['Mantenimiento preventivo', []],
+  ]);
+  const fodt = buildStudyReportFodt(skeleton, buildStudyReport(snapshot(), META, {}));
+  assert.ok(fodt.includes('R2 (25)'), 'cada riesgo con su magnitud actual');
+  assert.ok(fodt.includes('Magnitud del riesgo residual (estimada)'));
+  assert.ok(fodt.includes('no un resultado verificado'));
+  assert.ok(!/Magnitud del riesgo residual<\//.test(fodt), 'ningún residual sin la palabra estimado');
 });

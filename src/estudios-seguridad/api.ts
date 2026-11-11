@@ -172,11 +172,11 @@ export const NIVEL_ORDER: Nivel[] = ['critico', 'alto', 'moderado', 'bajo'];
 // Copia de ESCALAS en verticales/estudios-seguridad/plantilla.js (el servidor es el que manda).
 export const PROBABILITY_SCALE = ['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta'];
 export const IMPACT_SCALE = ['Insignificante', 'Leve', 'Moderado', 'Grave', 'Catastrófico'];
-// Calificación del control en palabras, verificada contra los Excel (2 = Poco, 3 = Medianamente, 4 = pleno). Para 1 y
-// 5 no hay ejemplo en ningún estudio: se muestra el número.
+// Calificación del control en palabras, la misma de plantilla.js: 2 a 4 de los Excel; 1 y 5 de la guía de calificación
+// de la sede Medellín (noviembre de 2026).
 const CONTROL_WORDS: Record<'calidad' | 'eficacia' | 'eficiencia', Record<number, string>> = {
-  calidad: { 2: 'Poco confiable', 3: 'Medianamente confiable', 4: 'Confiable' },
-  eficacia: { 2: 'Poco eficaz', 3: 'Medianamente eficaz', 4: 'Eficaz' },
-  eficiencia: { 2: 'Poco eficiente', 3: 'Medianamente eficiente', 4: 'Eficiente' },
+  calidad: { 1: 'No confiable', 2: 'Poco confiable', 3: 'Medianamente confiable', 4: 'Confiable', 5: 'Altamente confiable' },
+  eficacia: { 1: 'Ineficaz', 2: 'Poco eficaz', 3: 'Medianamente eficaz', 4: 'Eficaz', 5: 'Altamente eficaz' },
+  eficiencia: { 1: 'Ineficiente', 2: 'Poco eficiente', 3: 'Medianamente eficiente', 4: 'Eficiente', 5: 'Altamente eficiente' },
 };
 export const controlScale = (dimension: 'calidad' | 'eficacia' | 'eficiencia') => [1, 2, 3, 4, 5].map(value => CONTROL_WORDS[dimension][value] || String(value));

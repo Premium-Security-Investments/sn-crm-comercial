@@ -128,6 +128,10 @@ test('escalas con los nombres de la casa y calificaciones en palabras', () => {
   assert.deepEqual(ESCALAS.probabilidad, ['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta']);
   assert.deepEqual(ESCALAS.impacto, ['Insignificante', 'Leve', 'Moderado', 'Grave', 'Catastrófico']);
   assert.deepEqual([2, 3, 4].map(value => controlWord('calidad', value)), ['Poco confiable', 'Medianamente confiable', 'Confiable']);
-  assert.equal(controlWord('eficacia', 5), 'Calificación 5', 'sin ejemplo en los estudios: el número, no un nombre inventado');
+  // 1 y 5: de la guía de calificación de la sede Medellín (noviembre de 2026).
+  assert.deepEqual([1, 5].map(value => controlWord('calidad', value)), ['No confiable', 'Altamente confiable']);
+  assert.deepEqual([1, 5].map(value => controlWord('eficacia', value)), ['Ineficaz', 'Altamente eficaz']);
+  assert.deepEqual([1, 5].map(value => controlWord('eficiencia', value)), ['Ineficiente', 'Altamente eficiente']);
+  assert.equal(controlWord('eficacia', 7), 'Calificación 7', 'fuera de la escala: el número, no un nombre inventado');
   assert.equal(controlWord('eficiencia', null), null);
 });
