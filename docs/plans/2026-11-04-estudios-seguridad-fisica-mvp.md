@@ -194,6 +194,46 @@ Cada tramo es un PR con pruebas, con la migración aplicada antes de fusionar y 
   dejar.
 - El 7 arranca en cuanto existan los usuarios, sin esperar al 6. Lo que el piloto encuentre entra al 6.
 
+## 4b. Tramos nuevos (reunión con Héctor Martínez y Fabián Franco, 2026-11-11)
+
+Juan, 2026-11-11: el módulo "permanece en SIIO". Si Fabián toma el código para SecurityOps, se lleva la lógica de
+`verticales/estudios-seguridad/` tal cual. Las ideas y la transcripción están en el handoff
+`2026-11-11-AGT-000-estudios-seguridad-reunion-hector`.
+
+**10. Socialización y enlace para el cliente.**
+- **Hecho (2026-11-11, migración 206):** registrar la socialización; con ella la versión cuenta como entregada.
+- **Enlace en línea de solo lectura, con estas reglas:**
+  - la base guarda solo la huella del token;
+  - vence, por defecto a 90 días;
+  - se puede anular;
+  - cada apertura queda registrada solo con la hora;
+  - muestra la versión aprobada y el estado de hoy de las recomendaciones.
+
+**11. Vencimiento del estudio.**
+- Un puesto crítico o normativo (BASC, OEA) se estudia cada 6 meses o cada año; uno no crítico, cada 2 o 3 años.
+- El SIIO avisa cuando se acerca la fecha.
+- Un siniestro en SecurityOps pide revalorar antes de la fecha.
+
+**12. Comparación con el estudio anterior** de la misma sede: qué riesgos aparecieron, desaparecieron, subieron o bajaron. Se ve en la revisión y en el informe.
+
+**13. Seguimiento de las recomendaciones a cargo del cliente.**
+- Si no se cumplen, se genera una carta o boletín de recomendación con la evidencia (alertas de SecurityOps).
+- Protege a la empresa de la corresponsabilidad.
+- El enlace del tramo 10 muestra su avance.
+
+**14. Preguntas guiadas por riesgo y contramedidas estándar.**
+- Dependen del material de Héctor (ISO 31010 y estudios base).
+- Siempre son una sugerencia: califica el analista.
+
+**15. Informe de gestión por puesto.**
+- Depende de los informes que tenga Fabián.
+- Se construye aquí y Fabián lo lleva a SecurityOps.
+
+**Más adelante:**
+- escala de riesgo propia de un cliente;
+- plantilla de riesgos integrales (económicos, ambientales, de continuidad);
+- el cargo de cada persona en la firma, para cuando el coordinador hace de analista.
+
 ## 5. Principios (sin cambios)
 
 1. SIIO es la fuente de verdad de los datos. SharePoint guarda los originales, las evidencias y los informes. Word y

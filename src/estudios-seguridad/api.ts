@@ -73,7 +73,7 @@ export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; rie
 
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
-  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review; securityops?: SecurityOpsState;
+  evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review; securityops?: SecurityOpsState; entrega?: Entrega;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
@@ -100,6 +100,11 @@ export type SecurityOpsData = {
 };
 export type SecurityOpsState = { available: boolean; puesto: SecurityOpsPuesto | null; data: SecurityOpsData | null; pending?: boolean };
 
+// Socialización con el cliente y enlaces en línea (migración 206).
+export type Delivery = { id: string; version: number; delivered_on: string; medium: 'presencial' | 'virtual' | 'correo'; presented_by: string; attendees: string; support: string | null; notes: string | null; recorded_at: string };
+export type Share = { id: string; version: number; label: string | null; created_at: string; expires_at: string; revoked_at: string | null; state: 'activo' | 'vencido' | 'anulado'; views: number; last_view: string | null };
+export type Entrega = { available: boolean; can: boolean; deliveries: Delivery[]; shares: Share[] };
+
 export type ClientOption = { source: 'avancys' | 'crm'; ref: string; name: string; nit: string | null; city: string | null; site: string | null };
 export type PostsResult = { encontrado: boolean; avancys: string; contratos: Array<{ nombre: string | null; inicia: string | null; vence: string | null; total_puestos: number; puestos: Array<{ codigo: string | null; nombre: string | null }> }> };
 
@@ -119,6 +124,10 @@ export const clientPosts = (nit: string) => api<PostsResult>(`${BASE}/puestos?ni
 export const searchSecurityOpsPuestos = (q: string, todos = false) => api<SecurityOpsPuesto[]>(`${BASE}/securityops/puestos?q=${encodeURIComponent(q)}${todos ? '&todos=1' : ''}`);
 export const linkSecurityOps = (studyId: string, puestoId: string | null) => api<{ puesto_id: string | null }>(`${BASE}/${encodeURIComponent(studyId)}/securityops`, json('POST', { puesto_id: puestoId }));
 export const refreshSecurityOps = (studyId: string) => api<{ requested: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/securityops/actualizar`, json('POST', {}));
+
+export const recordDelivery = (studyId: string, body: Record<string, unknown>) => api<Delivery>(`${BASE}/${encodeURIComponent(studyId)}/socializacion`, json('POST', body));
+export const createShare = (studyId: string, body: { label?: string; days?: number }) => api<Share & { token: string; path: string }>(`${BASE}/${encodeURIComponent(studyId)}/enlaces`, json('POST', body));
+export const revokeShare = (studyId: string, shareId: string) => api<{ revoked: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/enlaces/${encodeURIComponent(shareId)}/anular`, json('POST', {}));
 
 const child = (studyId: string, kind: 'zonas' | 'riesgos' | 'acciones', childId?: string) =>
   `${BASE}/${encodeURIComponent(studyId)}/${kind}${childId ? `/${encodeURIComponent(childId)}` : ''}`;
