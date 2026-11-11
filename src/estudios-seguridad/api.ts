@@ -67,7 +67,7 @@ export type Post = { id: string; source: 'avancys' | 'manual'; source_ref: strin
 export type Characterization = { available: boolean; estadisticas: CrimeStat[]; contactos: Contact[]; dispositivo: Post[] };
 export type CharacterizationSection = 'estadisticas' | 'contactos' | 'dispositivo';
 
-export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; riesgos: Array<{ codigo: string; nombre: string; procesos: string[] }> };
+export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; riesgos: Array<{ codigo: string; nombre: string; procesos: string[]; categoria?: string; cubre?: string }> };
 
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;

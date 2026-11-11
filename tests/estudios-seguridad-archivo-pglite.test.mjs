@@ -29,7 +29,7 @@ async function approvedStudy() {
   const study = await createStudy(db, STUDY, PREPARER);
   const zone = await addZone(db, study.id, { name: 'Bodega 3' }, PREPARER);
   const risk = await addRisk(db, study.id, {
-    zone_id: zone.id, catalog_risk_code: 'R08', process_code: 'P11', title: 'Acceso indebido a la bodega 3', causes: 'Malla rota',
+    zone_id: zone.id, catalog_risk_code: 'RB-02', process_code: 'P11', title: 'Acceso indebido a la bodega 3', causes: 'Malla rota',
     probability: 4, impact_company: 4, impact_people: 2, current_control: 'Ronda cada dos horas', current_quality: 3, current_efficacy: 4, current_efficiency: 3,
     proposed_control: 'Reparar la malla', proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4,
   }, PREPARER);

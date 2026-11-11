@@ -67,7 +67,7 @@ test('un estudio se registra completo y el servidor calcula la valoración', asy
 
   // El R4 de HADA (acceso indebido a bodegas): P4, I4, control 3/4/3 → actual 12 alto con la v1.
   const r1 = await addRisk(db, study.id, {
-    zone_id: bodega.id, catalog_risk_code: 'R08', process_code: 'P11', title: 'Acceso indebido a zonas de almacenamiento',
+    zone_id: bodega.id, catalog_risk_code: 'RB-02', process_code: 'P11', title: 'Acceso indebido a zonas de almacenamiento',
     causes: 'Malla rota en el costado norte', probability: 4, impact_company: 4, impact_people: 2,
     current_control: 'Ronda cada dos horas', current_quality: 3, current_efficacy: 4, current_efficiency: 3,
     proposed_control: 'Reparar la malla y poner cámara con analítica', proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4,
@@ -89,7 +89,8 @@ test('un estudio se registra completo y el servidor calcula la valoración', asy
   assert.equal(full.actions.length, 1);
   assert.deepEqual(full.summary.levels.actual, { alto: 2 });
   assert.equal(full.catalog.procesos.length, 22);
-  assert.equal(full.catalog.riesgos.length, 26);
+  assert.equal(full.catalog.riesgos.length, 31, 'la lista base: RB-01 a RB-31');
+  assert.equal(new Set(full.catalog.riesgos.map(item => item.nombre)).size, 31, 'sin nombres repetidos');
 
   // Corregir una calificación recalcula; nadie escribe el nivel.
   const corrected = await updateRisk(db, study.id, r1.id, { probability: 2, level: 'bajo', valuation: { actual: { nivel: 'bajo' } } }, PREPARER);
