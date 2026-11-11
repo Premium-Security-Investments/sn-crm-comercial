@@ -411,7 +411,7 @@ export function TenderOverdueStrip({ closeDate, overdue, notCurable, tramites = 
   </section>;
 }
 
-export function TenderPrepareView({ opportunityId, request, profiles, canApprove, report, closeDate, offerStatus, onOfferStatusChanged, channel, offerRecord, filing, onSeedRequirements }: {
+export function TenderPrepareView({ opportunityId, request, profiles, canApprove, report, closeDate, offerStatus, onOfferStatusChanged, channel, offerRecord, filing, experience, onSeedRequirements }: {
   opportunityId: string; request: TenderRequest; profiles: TenderDossierAssignee[]; canApprove: boolean;
   report: Agt002InitialReport | null; closeDate: string | null; offerStatus: TenderOfferStatus | null;
   onOfferStatusChanged: () => Promise<void> | void; channel?: ReactNode;
@@ -419,6 +419,8 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
   offerRecord?: ReactNode;
   /** Mejora 11: la carpeta de radicación en SharePoint, con su índice. */
   filing?: ReactNode;
+  /** Mejora 9, tercera parte: la experiencia para esta oferta. */
+  experience?: ReactNode;
   onSeedRequirements: () => Promise<{ inserted: number; tramites?: number }>;
 }) {
   const [workspace, setWorkspace] = useState<TenderDossierWorkspace | null>(null);
@@ -622,6 +624,8 @@ export function TenderPrepareView({ opportunityId, request, profiles, canApprove
       <small>Documentos que se firman y aprueban</small>
       <TenderDossierArtifacts opportunityId={opportunityId} artifacts={shownArtifacts} request={request} canApprove={canApprove} workbenchEnabled={workspace.workbench_enabled} onChanged={reload} />
     </section>}
+
+    {experience}
 
     {filing}
 
