@@ -17,6 +17,7 @@ export const OUR_NIT = '891408256';
 // Estatal de Seguridad nunca se propone como socio (Juan, 2026-11-10); sigue contando como competidor.
 export const NEVER_PROPOSED_NITS = Object.freeze(['816004965']);
 const ROLE_ORDER = ['aliado', 'aliado_potencial', 'sin_clasificar', 'competidor'];
+const roleRank = role => { const index = ROLE_ORDER.indexOf(role); return index === -1 ? ROLE_ORDER.indexOf('sin_clasificar') : index; };
 
 /** «Pereira», «Manizales y Armenia», «Pereira, Manizales y Armenia». */
 export function joinNames(names) {
@@ -34,6 +35,8 @@ export function cityKey(value) {
     .replace(/\bd\.?\s*c\.?\b/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 const normProcess = value => String(value || '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
+/** La clave de una referencia de proceso, para comparar («LP-01-2026» = «LP 01 2026»). */
+export const processKey = normProcess;
 
 function fail(message, status) { return Object.assign(new Error(message), { status }); }
 function missingTable(error) {
@@ -223,7 +226,12 @@ export function citiesToCover(label, { ourCityKeys = new Set(), knownCityKeys = 
 }
 
 /** Hasta `limit` candidatos que tienen oficina en todas las ciudades (o, si nadie, los que cubren más), sin descartados. */
-export function rankAllyCandidates(companies, { cityKeys, processRef = null, limit = 5, ourCities = new Map() }) {
+// Punto 3 del encargo de Aliados (2026-11-11): el orden sale de hechos de competencia y de la relación, no sólo de las
+// ciudades. Quien compitió contra nosotros (en procesos donde también estuvimos) va después; el tamaño no ordena: se
+// muestra, porque un socio mucho más grande querrá liderar la unión.
+export const LARGE_COMPANY_OFFICES = 30;
+
+export function rankAllyCandidates(companies, { cityKeys, processRef = null, limit = 5, ourCities = new Map(), ourProcessRefs = new Set() }) {
   if (!cityKeys.length) return [];
   const target = normProcess(processRef);
   const scored = companies
@@ -235,6 +243,11 @@ export function rankAllyCandidates(companies, { cityKeys, processRef = null, lim
       const incumbent = inProcess.some(part => part.kind === 'contratista_actual' || part.kind === 'adjudicatario');
       // Encargo del 2026-11-10, punto 2: no se esconde a nadie; se avisa si tiene oficina en nuestras ciudades.
       const ourZone = [...ourCities.keys()].filter(key => have.has(key)).map(key => ourCities.get(key));
+      // Procesos nuestros (con oportunidad en el CRM o con la referencia de una licitación convertida), sin contar éste.
+      const competed = new Set((company.participations || [])
+        .filter(part => !inProcess.includes(part) && (part.opportunity_id || ourProcessRefs.has(normProcess(part.process_ref))))
+        .map(part => normProcess(part.process_ref))).size;
+      const offices = (company.cities || []).length;
       return {
         nit: company.nit, name: company.name, role: company.role, contact: [company.contact_name, company.contact_title, company.contact_phone, cleanEmail(company.contact_email)].filter(Boolean).join(' · ') || company.contact || null, phone: company.phone || null, email: cleanEmail(company.email),
         covered: covered.map(key => (company.cities || []).find(city => city.city_key === key)?.city || key),
@@ -242,8 +255,11 @@ export function rankAllyCandidates(companies, { cityKeys, processRef = null, lim
         times_seen: (company.participations || []).length,
         warning: incumbent ? 'Es el contratista actual de este proceso.' : inProcess.length ? 'Ya se mueve en este proceso (ofertó u observó): es competidor directo.' : company.role === 'competidor' ? 'Lo tenemos marcado como competidor.' : null,
         zone_warning: ourZone.length ? `Tiene oficina en ${joinNames(ourZone)}: compite en nuestra zona.` : null,
+        competed_against_us: competed,
+        offices,
+        size_note: offices >= LARGE_COMPANY_OFFICES ? `Grande: ${offices} ciudades con oficina; querrá liderar la unión.` : null,
         evidence: 'Oficina en el listado de la Superintendencia de Vigilancia; para el pliego hay que pedirle la resolución y el certificado de Cámara.',
-        _score: [covered.length === cityKeys.length ? 0 : 1, -covered.length, ROLE_ORDER.indexOf(company.role), -((company.participations || []).length), -(company.cities || []).length],
+        _score: [covered.length === cityKeys.length ? 0 : 1, -covered.length, roleRank(company.role), competed > 0 ? 1 : 0, competed],
       };
     })
     .filter(candidate => candidate.covered.length > 0);

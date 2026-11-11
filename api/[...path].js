@@ -182,7 +182,7 @@ import { listAgt002Clarifications, recordAgt002Clarification } from '../vertical
 import { decideAgt002Lesson, listAgt002Lessons } from '../verticales/licitaciones/agt002-company-lessons.js';
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
-import { addParticipation, cityKey, cityName, citiesToCover, getAlly, listAllies, loadAlliesListing, processParticipants, rankAllyCandidates, updateAlly } from '../verticales/licitaciones/tender-allies.js';
+import { addParticipation, cityKey, cityName, citiesToCover, getAlly, listAllies, loadAlliesListing, processKey, processParticipants, rankAllyCandidates, updateAlly } from '../verticales/licitaciones/tender-allies.js';
 import { VIGILANCE_LISTING, VIGILANCE_LISTING_SOURCE } from '../data/aliados/listado-supervigilancia-2026-11-07.js';
 import { VIGILANCE_PARTICIPATIONS_SEED } from '../data/aliados/participaciones-semilla-2026-11-09.js';
 import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
@@ -8391,6 +8391,9 @@ app.get('/api/tender-allies/candidates', async (req, res) => {
     const names = new Map(allies.companies.flatMap(company => company.cities).map(city => [city.city_key, cityName(city.city)]));
     const { data: tender } = await database.from('psi_public_tenders').select('ref').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
     const missing = citiesToCover(label, { ourCityKeys, knownCityKeys });
+    // Punto 3: los procesos nuestros (licitaciones convertidas en oportunidad) para saber quién compitió contra nosotros.
+    const { data: ourTenders } = await database.from('psi_public_tenders').select('ref').not('converted_opportunity_id', 'is', null);
+    const ourProcessRefs = new Set((ourTenders || []).map(row => processKey(row.ref)).filter(Boolean));
     // Encargo del 2026-11-10 (aprobado por Juan): primero cómo deja el pliego cumplir a un proponente plural.
     const status = await readAgt002InitialAnalysisStatus(database, opportunityId);
     const { data: version } = await database.from('psi_agt002_pre_go_analysis_versions').select('envelope')
@@ -8401,7 +8404,7 @@ app.get('/api/tender-allies/candidates', async (req, res) => {
     // «Compite en nuestra zona» con nuestras ciudades que pide este pliego, no con todas las de la ficha (Juan, 2026-11-10).
     const zone = new Set([...allCities, ...missing]);
     const zoneCities = new Map([...ourCities].filter(([key]) => zone.has(key)));
-    const list = keys => ({ cities: keys.map(key => names.get(key) || key), candidates: rankAllyCandidates(allies.companies, { cityKeys: keys, processRef: tender?.ref || null, ourCities: zoneCities }) });
+    const list = keys => ({ cities: keys.map(key => names.get(key) || key), candidates: rankAllyCandidates(allies.companies, { cityKeys: keys, processRef: tender?.ref || null, ourCities: zoneCities, ourProcessRefs }) });
     const one = allCities.length > missing.length ? list(allCities) : null;
     const sum = list(missing);
     const readingOut = { mode: reading.mode, quote: reading.quote, quote_verified: reading.quote_verified, document_name: reading.document_name, locator: reading.locator, explanation: reading.explanation };
@@ -8410,7 +8413,7 @@ app.get('/api/tender-allies/candidates', async (req, res) => {
     if ((reading.mode === 'uno_cumple' || reading.mode === 'no_dice') && one) {
       // La segunda lista sin repetir a quienes ya están en la primera (también tienen las ciudades que nos faltan).
       const first = new Set(one.candidates.map(candidate => candidate.nit));
-      const others = rankAllyCandidates(allies.companies, { cityKeys: missing, processRef: tender?.ref || null, ourCities: zoneCities, limit: 50 }).filter(candidate => !first.has(candidate.nit)).slice(0, 5);
+      const others = rankAllyCandidates(allies.companies, { cityKeys: missing, processRef: tender?.ref || null, ourCities: zoneCities, ourProcessRefs, limit: 50 }).filter(candidate => !first.has(candidate.nit)).slice(0, 5);
       return res.json({ applies: true, installed: true, reading: readingOut, ...one, alternative: { label: 'Sólo si la Entidad acepta sumar entre integrantes (hay que aclararlo con ella)', cities: sum.cities, candidates: others } });
     }
     res.json({ applies: true, installed: true, reading: readingOut, ...sum });

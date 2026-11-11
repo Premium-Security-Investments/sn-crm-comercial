@@ -50,3 +50,21 @@ test('ruta de sólo lectura con permiso de ver, y el bloque plegado en Decidir',
   assert.match(read('src/tenders/components/TenderProcessParticipants.tsx'), /<summary>Quiénes se han movido en este proceso \(\{total\}\)<\/summary>/);
   assert.match(read('verticales/licitaciones/tender-allies.js'), /'id,nit,company_label,entity,process_ref,opportunity_id,kind/);
 });
+
+// Punto 3 (2026-11-11): el orden sale de la relación y de si compitió contra nosotros; el tamaño se muestra, no ordena.
+test('orden: aliados primero, luego quienes no compitieron contra nosotros; el tamaño es un dato', async () => {
+  const { rankAllyCandidates } = await import('../verticales/licitaciones/tender-allies.js');
+  const four = ['pereira', 'manizales', 'armenia', 'quibdo'].map(city);
+  const many = Array.from({ length: 51 }, (_, index) => city(`ciudad${index}`));
+  const companies = [
+    { nit: '800010866', name: 'EXPERTOS', role: 'sin_clasificar', cities: four, participations: [{ process_ref: 'SIC 23 DE 2026', opportunity_id: null }, { process_ref: 'LP-01-2026', opportunity_id: MANIZALES }] },
+    { nit: '860011268', name: 'AMCOVIT', role: 'sin_clasificar', cities: [...four, ...many], participations: [] },
+    { nit: '860523408', name: 'NAPOLES', role: 'aliado_potencial', cities: four, participations: [{ process_ref: 'SIC 23 DE 2026', opportunity_id: null }] },
+    { nit: '891502104', name: 'COVISUR', role: 'competidor', cities: four, participations: [] },
+  ];
+  const ranked = rankAllyCandidates(companies, { cityKeys: ['pereira', 'manizales', 'armenia', 'quibdo'], ourProcessRefs: new Set(['SIC23DE2026']) });
+  assert.deepEqual(ranked.map(item => item.name), ['NAPOLES', 'AMCOVIT', 'EXPERTOS', 'COVISUR']);
+  assert.equal(ranked.find(item => item.name === 'EXPERTOS').competed_against_us, 2);
+  assert.match(ranked.find(item => item.name === 'AMCOVIT').size_note, /^Grande: 55 ciudades con oficina; querrá liderar la unión\.$/);
+  assert.equal(ranked.find(item => item.name === 'NAPOLES').competed_against_us, 1);
+});
