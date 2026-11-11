@@ -29,6 +29,8 @@ export const AGT002_MESA_FUENTES = Object.freeze([
   'proceso.formatos_del_pliego',
   // F1/F2 (auditoría Fiscalía): la sección completa del numeral que se pregunta, también antes del GO.
   'proceso.seccion_del_pliego',
+  // Piloto Fiscalía (2026-11-11): qué cumple cada integrante y qué se suma, con el numeral, si la pregunta es de UT.
+  'proceso.reglas_para_plurales',
 ]);
 import {
   claimAgt002WorkbenchJob,

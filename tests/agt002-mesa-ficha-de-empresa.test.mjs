@@ -141,13 +141,15 @@ test('la experiencia se selecciona por la pregunta y el total siempre viaja', as
   assert.equal(sinPregunta.estado, ESTADOS.VIGENTE);
 });
 
-test('la Mesa pide los diez datos y los puede leer', () => {
+test('la Mesa pide los once datos y los puede leer', () => {
   // Desde el 2026-11-04 (mejora 5): los datos oficiales del proceso y el formato oficial del documento. Desde el
-  // 2026-11-05: los formatos del pliego (mejora 6) y la sección del numeral que se pregunta (F1/F2).
+  // 2026-11-05: los formatos del pliego (mejora 6) y la sección del numeral que se pregunta (F1/F2). Desde el 2026-11-11:
+  // las reglas del pliego para consorcios y uniones temporales (piloto Fiscalía).
   assert.deepEqual(AGT002_MESA_FUENTES, [
     'empresa.identidad', 'empresa.codigos_rup', 'analisis.canonico.company_fit',
     'empresa.sedes', 'empresa.evidencia_al_cierre', 'empresa.experiencia',
     'proceso.datos_oficiales', 'proceso.formato_oficial', 'proceso.formatos_del_pliego', 'proceso.seccion_del_pliego',
+    'proceso.reglas_para_plurales',
   ]);
   for (const nombre of AGT002_MESA_FUENTES) {
     assert.ok(DATOS[nombre], `${nombre} debe estar declarado en el catálogo`);

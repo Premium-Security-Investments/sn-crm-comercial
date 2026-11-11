@@ -21,6 +21,7 @@ export const AGT002_WORKBENCH_POLICY = [
   'Una fuente con sostiene_afirmacion en falso —por estar en prosa, vencida, en disputa o sin verificar— no sostiene ninguna afirmación: declárala en missing_information en vez de afirmar sobre ella.',
   'Si fuentes_resueltas no trae el dato que la pregunta necesita, dilo en missing_information; nunca completes el hueco con lo que recuerdes.',
   'Si fuentes_resueltas trae proceso.seccion_del_pliego, ése es el texto completo del numeral: cítalo de ahí antes que de los fragmentos de context_links, y si viene recortado, dilo.',
+  'Si fuentes_resueltas trae proceso.reglas_para_plurales, son frases literales del pliego sobre consorcios y uniones temporales, cada una con su numeral y su lectura: «basta_uno» (basta con que un integrante cumpla; no dice que esté prohibido sumar), «se_suma» (se suma entre integrantes), «pondera» (se calcula con el porcentaje de participación) y «cada_uno» (cada integrante lo cumple por separado). Úsalas para decir qué le toca a cada integrante y qué se suma, citando el numeral; no afirmes más de lo que dice la frase.',
   'La fecha y la hora de hoy son las de fecha_de_trabajo, en hora de Colombia: úsalas para todo plazo, vencimiento o «hoy», y nunca las reemplaces por la fecha de tu entorno.',
 ].join(' ');
 
@@ -28,7 +29,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_LINK_LABEL_CHARS = 300;
 const MAX_LINK_SOURCE_REF_CHARS = 1000;
-const MAX_RESOLVED_SOURCES = 10;
+const MAX_RESOLVED_SOURCES = 12;
 const MAX_SOURCE_VALUE_CHARS = 6000;
 const MAX_SOURCE_PROVENANCE_CHARS = 500;
 // El texto oficial de un formato (mejora 5) entra completo: el JSON del valor más los escapes de 10.000 caracteres.
@@ -83,7 +84,7 @@ function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt0
       maxFuentes: MAX_RESOLVED_SOURCES,
       maxValor: MAX_SOURCE_VALUE_CHARS,
       maxProcedencia: MAX_SOURCE_PROVENANCE_CHARS,
-      maxValorPorNombre: { 'proceso.formato_oficial': MAX_FORMATO_VALUE_CHARS, 'proceso.seccion_del_pliego': MAX_FORMATO_VALUE_CHARS },
+      maxValorPorNombre: { 'proceso.formato_oficial': MAX_FORMATO_VALUE_CHARS, 'proceso.seccion_del_pliego': MAX_FORMATO_VALUE_CHARS, 'proceso.reglas_para_plurales': MAX_FORMATO_VALUE_CHARS },
     });
   }
   // Lecciones de la empresa activas (encargo del 2026-11-06): como las fuentes, la clave sólo aparece si hay alguna.

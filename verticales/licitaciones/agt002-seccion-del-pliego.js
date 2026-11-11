@@ -63,6 +63,22 @@ function seccion(text, todos, entry) {
   return { numeral: entry.numeral, titulo: entry.titulo, recortado: limpio.length > AGT002_SECCION_MAX_CHARS, texto: limpio.slice(0, AGT002_SECCION_MAX_CHARS) };
 }
 
+/**
+ * Dónde queda una posición del texto: el último título de dos niveles o más antes de ella («5.3.2») y, si después de
+ * ese título hay un ítem de un nivel («8. CERTIFICADO…»), también el ítem: «5.3.2, punto 8». Sin título, null. Lo usan
+ * las reglas para plurales para que cada frase llegue con su numeral (piloto Fiscalía, 2026-11-11).
+ */
+export function agt002UbicacionEnTexto(text, index) {
+  const antes = titulos(String(text || '')).filter(entry => entry.start <= index);
+  let numeral = null;
+  let punto = null;
+  for (const entry of antes) {
+    if (entry.numeral.includes('.')) { numeral = entry.numeral; punto = null; } else if (numeral && !entry.numeral.startsWith('0')) punto = entry.numeral;
+  }
+  if (!numeral) return null;
+  return punto ? `${numeral}, punto ${punto}` : numeral;
+}
+
 /** La sección del numeral citado, del pliego vigente. Si aparece más de una vez como título, la última (el cuerpo). */
 export function agt002SeccionPorNumeral({ documents = [], numeral }) {
   if (!numeral) return null;
