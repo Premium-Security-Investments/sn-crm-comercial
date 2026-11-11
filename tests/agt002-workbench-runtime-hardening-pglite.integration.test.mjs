@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { withAdvancingClock } from './helpers/pglite-advancing-clock.mjs';
 
 // Fase A de endurecimiento operacional de la Mesa AGT-002 (migración 046, aditiva sobre
 // 045): barrido de leases expirados (crash de worker -> reclamable), cupo diario por
@@ -26,7 +27,7 @@ const key = char => char.repeat(64);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function freshDb() {
-  const db = new PGlite();
+  const db = withAdvancingClock(new PGlite());
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
     create table public.psi_sales_profiles (

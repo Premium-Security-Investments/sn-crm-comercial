@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { withAdvancingClock } from './helpers/pglite-advancing-clock.mjs';
 
 const dossierMigration = readFileSync(new URL('../supabase/migrations/040_tender_dossier_workspace.sql', import.meta.url), 'utf8');
 const workbenchMigration = readFileSync(new URL('../supabase/migrations/045_agt002_dossier_workbench.sql', import.meta.url), 'utf8');
@@ -18,8 +19,9 @@ const ids = Object.freeze({
 });
 const key = char => char.repeat(64);
 
+
 async function freshDb() {
-  const db = new PGlite();
+  const db = withAdvancingClock(new PGlite());
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
     create table public.psi_sales_profiles (

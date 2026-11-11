@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
+import { withAdvancingClock } from './helpers/pglite-advancing-clock.mjs';
 
 // F5 de la auditoría del piloto Fiscalía (migración 182): el pedido de Supersalud `b8352089` falló 5 veces con
 // AGT002_INVALID_JOB_INPUT y cada «Reintentar» lo devolvía al frente de la cola. Una entrada inválida y un pedido
@@ -27,7 +28,7 @@ const key = char => char.repeat(64);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function freshDb({ withF5 = true } = {}) {
-  const db = new PGlite();
+  const db = withAdvancingClock(new PGlite());
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
     create table public.psi_sales_profiles (
