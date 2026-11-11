@@ -36,6 +36,8 @@ const MAX_SOURCE_VALUE_CHARS = 6000;
 const MAX_SOURCE_PROVENANCE_CHARS = 500;
 // El texto oficial de un formato (mejora 5) entra completo: el JSON del valor más los escapes de 10.000 caracteres.
 const MAX_FORMATO_VALUE_CHARS = 12_000;
+// Hasta 40 reglas de unos 400 caracteres con su numeral y lectura (piloto Fiscalía, 11-nov: con 12.000 no cabían las del 5.3.2).
+const MAX_REGLAS_PLURALES_CHARS = 24_000;
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -86,7 +88,7 @@ function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt0
       maxFuentes: MAX_RESOLVED_SOURCES,
       maxValor: MAX_SOURCE_VALUE_CHARS,
       maxProcedencia: MAX_SOURCE_PROVENANCE_CHARS,
-      maxValorPorNombre: { 'proceso.formato_oficial': MAX_FORMATO_VALUE_CHARS, 'proceso.seccion_del_pliego': MAX_FORMATO_VALUE_CHARS, 'proceso.reglas_para_plurales': MAX_FORMATO_VALUE_CHARS },
+      maxValorPorNombre: { 'proceso.formato_oficial': MAX_FORMATO_VALUE_CHARS, 'proceso.seccion_del_pliego': MAX_FORMATO_VALUE_CHARS, 'proceso.reglas_para_plurales': MAX_REGLAS_PLURALES_CHARS },
     });
   }
   // Lecciones de la empresa activas (encargo del 2026-11-06): como las fuentes, la clave sólo aparece si hay alguna.

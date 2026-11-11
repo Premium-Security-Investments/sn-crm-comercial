@@ -61,6 +61,7 @@ function posicionEn(text, frase, desde = 0) {
  */
 export function agt002ReglasParaPlurales(documents, { max = 12 } = {}) {
   const seen = new Set();
+  const fromDocument = new Map();
   const found = [];
   for (const document of Array.isArray(documents) ? documents : []) {
     let desde = 0;
@@ -71,10 +72,22 @@ export function agt002ReglasParaPlurales(documents, { max = 12 } = {}) {
       if (posicion >= 0) desde = posicion + 1;
       const numeral = posicion >= 0 ? agt002UbicacionEnTexto(document.extracted_text, posicion) : null;
       // La misma frase en dos puntos distintos (Fiscalía 5.3.2, puntos 8 y 9) son dos reglas; repetida en el mismo, una.
-      const key = `${numeral}|${frase.toLowerCase().replace(/[^a-z0-9áéíóúñ]+/g, '')}`;
+      // La misma frase en OTRO documento (el pliego en .docx y en .pdf) es una copia: vale la del primero, salvo que la
+      // copia la ubique mejor —sin numeral contra «5.3.2», o «5.3.2» contra «5.3.2, punto 8»—: el .docx suele perder los
+      // saltos de línea de los títulos.
+      const texto = frase.toLowerCase().replace(/[^a-z0-9áéíóúñ]+/g, '');
+      const key = `${numeral}|${texto}`;
       if (seen.has(key)) continue;
+      const copia = fromDocument.get(texto);
+      if (copia && copia.document_id !== document.id) {
+        const mejor = numeral && (!copia.numeral || (numeral.startsWith(copia.numeral) && numeral.length > copia.numeral.length));
+        if (mejor) Object.assign(copia, { document_id: document.id, documento: document.name || null, numeral });
+        continue;
+      }
       seen.add(key);
-      found.push({ document_id: document.id, documento: document.name || null, numeral, frase, lectura, sobre_presencia: PRESENCE.test(frase) });
+      const regla = { document_id: document.id, documento: document.name || null, numeral, frase, lectura, sobre_presencia: PRESENCE.test(frase) };
+      if (!copia) fromDocument.set(texto, regla);
+      found.push(regla);
     }
   }
   return found.sort((a, b) => Number(b.sobre_presencia) - Number(a.sobre_presencia)).slice(0, max);
