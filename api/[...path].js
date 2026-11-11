@@ -182,7 +182,7 @@ import { listAgt002Clarifications, recordAgt002Clarification } from '../vertical
 import { decideAgt002Lesson, listAgt002Lessons } from '../verticales/licitaciones/agt002-company-lessons.js';
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
-import { addParticipation, cityKey, cityName, citiesToCover, getAlly, listAllies, loadAlliesListing, rankAllyCandidates, updateAlly } from '../verticales/licitaciones/tender-allies.js';
+import { addParticipation, cityKey, cityName, citiesToCover, getAlly, listAllies, loadAlliesListing, processParticipants, rankAllyCandidates, updateAlly } from '../verticales/licitaciones/tender-allies.js';
 import { VIGILANCE_LISTING, VIGILANCE_LISTING_SOURCE } from '../data/aliados/listado-supervigilancia-2026-11-07.js';
 import { VIGILANCE_PARTICIPATIONS_SEED } from '../data/aliados/participaciones-semilla-2026-11-09.js';
 import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
@@ -563,6 +563,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-allies/participation': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/candidates': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/tender-allies/process-participants': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-company-differential-conditions': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-company-differential-conditions': ['tenders', ACTIONS.LICITACIONES_CONFIGURE],
   'GET /api/tender-differential-benefits': ['tenders', ACTIONS.LICITACIONES_VIEW],
@@ -8337,6 +8338,28 @@ app.post('/api/tender-allies/participation', async (req, res) => {
 
 // Candidatos para la recomendación «Solo en unión temporal»: lo que nos falta se calcula con la ficha (sedes con
 // autorización vigente), no con el listado.
+// Punto 7 del encargo de Aliados (Juan, 2026-11-11): quiénes se han movido en este proceso, en Decidir. Sólo lectura.
+app.get('/api/tender-allies/process-participants', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    const allies = await listAllies(database);
+    if (!allies.installed) return res.json({ installed: false, groups: [] });
+    const { data: tender } = await database.from('psi_public_tenders').select('ref').eq('converted_opportunity_id', opportunityId).limit(1).maybeSingle();
+    const { data: sites } = await database.from('psi_company_sites').select('city,supervigilancia_authorization');
+    const ourCities = new Map((sites || []).filter(site => !/pendiente/i.test(String(site.supervigilancia_authorization || ''))).map(site => [cityKey(site.city), site.city]));
+    // «Nuestra zona» = nuestras ciudades que pide el pliego, según la última lectura para uniones temporales; sin ella, todas.
+    const { data: reading } = await database.from('psi_tender_plural_readings').select('required_cities').eq('opportunity_id', opportunityId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    const required = new Set(reading?.required_cities || []);
+    const zoneCities = required.size ? new Map([...ourCities].filter(([key]) => required.has(key))) : ourCities;
+    res.json({ installed: true, groups: processParticipants({ companies: allies.companies, withoutNit: allies.participations_without_nit, opportunityId, tenderRef: tender?.ref || null, zoneCities }) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 // La ficha de una empresa, para abrirla en una ventana desde «Posibles socios» (Juan, 2026-11-10).
 app.get('/api/tender-allies/company', async (req, res) => {
   try {
