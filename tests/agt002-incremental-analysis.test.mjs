@@ -191,10 +191,16 @@ const PLIEGO = [
 test('F12: la síntesis incremental recibe completo el numeral de lo pendiente, del mismo documento', async () => {
   const requests = [];
   const members = [{ memberId: 'batch:0', content: { analysis_notes: [], open_items: [] }, contentHash: 'f'.repeat(64) }];
-  let asked;
-  await runtimeCapturing(requests, { loadDocumentTexts: async (_db, ids) => { asked = ids; return [{ id: 'pliego-def', name: 'Pliego definitivo.pdf', extracted_text: PLIEGO }]; } })
+  const asked = [];
+  await runtimeCapturing(requests, { loadDocumentTexts: async (_db, ids) => { asked.push(ids); return [{ id: 'pliego-def', name: 'Pliego definitivo.pdf', extracted_text: PLIEGO }]; } })
     .callModel({ job, batch: { phase: 'synthesis', batchIndex: 1, requestHash: 'h', mode: 'incremental', priorAnalysisRunId: 'run-1' }, modelId: 'm', members });
-  assert.deepEqual(asked, ['pliego-def']);
+  assert.deepEqual(asked[0], ['pliego-def'], 'las secciones se leen del documento que citó la evidencia');
+  // Punto 6 del encargo de Aliados (2026-11-10): la frase sobre uniones temporales va aparte, literal y con su lectura.
+  const [regla] = requests[0].input.reglas_para_plurales;
+  assert.equal(regla.lectura, 'basta_uno');
+  assert.equal(regla.frase, 'En el caso de uniones temporales, la presencia podrá acreditarse con la de cualquiera de sus integrantes.');
+  assert.match(requests[0].policy, /reglas_para_plurales/);
+  assert.match(requests[0].policy, /no dice que esté prohibido sumar/);
   const [seccion] = requests[0].input.secciones_del_pliego;
   assert.equal(seccion.numeral, '3.1.15');
   assert.equal(seccion.requirement_id, 'REQ-DOM');
@@ -211,4 +217,14 @@ test('F12: sin secciones (o si fallan) la síntesis sigue igual, con la regla de
     .callModel({ job, batch: { phase: 'synthesis', batchIndex: 1, requestHash: 'h', mode: 'incremental', priorAnalysisRunId: 'run-1' }, modelId: 'm', members });
   assert.equal('secciones_del_pliego' in requests[0].input, false);
   assert.match(requests[0].policy, /lo buscó/);
+});
+
+test('reglas para plurales: Fiscalía 5.3.2 se lee «basta con uno»; sin frases, no se manda nada', async () => {
+  const { agt002ReglasParaPlurales } = await import('../verticales/licitaciones/agt002-reglas-plurales.js');
+  const fiscalia = 'La infraestructura puede corresponder a la sede principal, sucursal o agencia. En cuanto a los consorcios o uniones temporales, si uno de los integrantes cumple con el requisito de tener domicilio principal, sucursal o agencia en la ciudad capital de cada seccional que conforma la regional, se entenderá cumplido el requisito. Los consorcios presentarán el documento de constitución.';
+  const reglas = agt002ReglasParaPlurales([{ id: 'complemento', name: 'COMPLEMENTO PLIEGO DEFINITIVO.pdf', extracted_text: fiscalia }]);
+  assert.equal(reglas.length, 1, 'la frase sobre la constitución del consorcio no es una regla de cómo cumplir');
+  assert.equal(reglas[0].lectura, 'basta_uno');
+  assert.equal(reglas[0].sobre_presencia, true);
+  assert.deepEqual(agt002ReglasParaPlurales([{ id: 'x', extracted_text: 'Vigilancia fija y móvil.' }]), []);
 });

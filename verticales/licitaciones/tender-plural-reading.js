@@ -14,6 +14,7 @@
 // cita se comprueba contra el texto. El reanálisis de Fiscalía del 2026-11-10 tuvo la frase en la mano y concluyó «no
 // consta»: por eso la frase se busca aquí, sin depender de que el modelo la vea.
 import { agt002NumeralesPendientes } from './agt002-secciones-pendientes.js';
+import { ONE, PRESENCE, SUM, pluralSentences } from './agt002-reglas-plurales.js';
 import { agt002SeccionDeDocumento } from './agt002-seccion-del-pliego.js';
 import { getAgt002WorkbenchRuntimeConfig, isAgt002WorkbenchDrainEnabled } from './agt002-workbench-runtime.js';
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
@@ -26,20 +27,7 @@ export const PLURAL_MODES = Object.freeze({
 
 const fold = value => String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const squash = value => fold(value).replace(/[^a-z0-9]+/g, ' ').trim();
-const PLURAL = /consorci|uni[oó]n(?:es)? temporal|proponentes? plural|estructuras? plural/i;
-// Lo que el requisito de presencia suele nombrar (sede, agencia, sucursal, domicilio, oficina, infraestructura).
-const PRESENCE = /domicilio|sede|sucursal|agencia|oficina|infraestructura|presencia/i;
-const ONE = /\b(?:uno|una|alguno|cualquiera)\s+de\s+(?:los|sus)\s+(?:integrantes|miembros)\b[^.]{0,200}\bcumpl|\bal\s+menos\s+uno\s+de\s+(?:los|sus)\s+(?:integrantes|miembros)\b/i;
-const SUM = /\bsuma(?:r|ndo|toria)?\b|\ben\s+conjunto\b|\bentre\s+(?:los|sus|todos\s+los)\s+(?:integrantes|miembros)\b|\bcada\s+uno\s+de\s+(?:los|sus)\s+integrantes\s+aport/i;
-
-/** Las frases del texto que hablan de consorcios o uniones temporales. Pura. */
-export function pluralSentences(text) {
-  const out = [];
-  for (const sentence of String(text || '').replace(/\s+/g, ' ').split(/(?<=[.;:])\s+(?=[A-ZÁÉÍÓÚÑ0-9«"(])/)) {
-    if (PLURAL.test(sentence) && sentence.length <= 1500) out.push(sentence.trim());
-  }
-  return out;
-}
+export { pluralSentences };
 
 /** La lectura que da el texto solo, si es clara: uno_cumple o se_suma, con la frase. Pura. */
 export function readPluralRuleFromText(sentences) {
