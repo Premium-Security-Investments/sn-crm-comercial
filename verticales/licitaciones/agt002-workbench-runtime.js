@@ -34,6 +34,8 @@ export const AGT002_MESA_FUENTES = Object.freeze([
   // Punto 5 del encargo de Aliados (2026-11-11): la lista de socios de Decidir con su regla, y la competencia del proceso.
   'aliados.candidatos',
   'aliados.competencia_del_proceso',
+  // Mejora 10 en la Mesa (2026-11-11): empresa de mujeres, tamaño y discapacidad, y dónde las premia el pliego.
+  'empresa.condiciones_diferenciales',
 ]);
 import {
   claimAgt002WorkbenchJob,

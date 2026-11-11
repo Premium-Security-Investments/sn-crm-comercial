@@ -50,7 +50,9 @@ const FROZEN = {
   // timeout e interruptor no cambian.
   // Actualizado a propósito (2026-11-11, punto 5 del encargo de Aliados): la Mesa pide además `aliados.candidatos` y
   // `aliados.competencia_del_proceso`. Cupos, motor, puente, modelo, timeout e interruptor no cambian.
-  'verticales/licitaciones/agt002-workbench-runtime.js': 'bebf48f6fb74ab02b0d54f91f6cf72d94eb16a0b22dcd69e06e94bb15484883b',
+  // Actualizado a propósito (2026-11-11, mejora 10 en la Mesa): la Mesa pide además `empresa.condiciones_diferenciales`.
+  // Cupos, motor, puente, modelo, timeout e interruptor no cambian.
+  'verticales/licitaciones/agt002-workbench-runtime.js': '5939613143e47c88b40a5daac088854b2b04fc76b2d333a3da9e75981f677901',
   // Actualizado a propósito (2026-11-05, F3 de la auditoría Fiscalía): el corte de vigencia de las normas
   // (`legalAsOf`) toma el día de Colombia en vez del de UTC. Cupos, motor, puente, modelo y timeout no cambian.
   'verticales/licitaciones/agt002-preview-runtime.js': '7d6f6f6b41af98b2b0b3081846565389f07c2bdb7e8766f3ff6570385fce33ae',
