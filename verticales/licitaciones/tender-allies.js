@@ -18,6 +18,16 @@ export const OUR_NIT = '891408256';
 export const NEVER_PROPOSED_NITS = Object.freeze(['816004965']);
 const ROLE_ORDER = ['aliado', 'aliado_potencial', 'sin_clasificar', 'competidor'];
 
+/** «Pereira», «Manizales y Armenia», «Pereira, Manizales y Armenia». */
+export function joinNames(names) {
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}` : names[0] || '';
+}
+
+/** El nombre de una ciudad del listado (en mayúsculas) escrito normal: «QUIBDO» → «Quibdo», «BOGOTÁ D.C.» → «Bogotá D.C.». */
+export function cityName(value) {
+  return String(value || '').toLowerCase().replace(/(^|[\s(-])([a-záéíóúñ])/g, (match, lead, letter) => lead + letter.toUpperCase()).replace(/\bD\.c\./, 'D.C.').replace(/\b(De|Del|La|Las|Los|Y)\b/g, word => word.toLowerCase());
+}
+
 /** Clave de ciudad: minúsculas, sin tildes, sin «D.C.», sin signos. */
 export function cityKey(value) {
   return String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -231,7 +241,7 @@ export function rankAllyCandidates(companies, { cityKeys, processRef = null, lim
         covers_all: covered.length === cityKeys.length,
         times_seen: (company.participations || []).length,
         warning: incumbent ? 'Es el contratista actual de este proceso.' : inProcess.length ? 'Ya se mueve en este proceso (ofertó u observó): es competidor directo.' : company.role === 'competidor' ? 'Lo tenemos marcado como competidor.' : null,
-        zone_warning: ourZone.length ? `Tiene oficina en ${ourZone.join(' y ')}: compite en nuestra zona.` : null,
+        zone_warning: ourZone.length ? `Tiene oficina en ${joinNames(ourZone)}: compite en nuestra zona.` : null,
         evidence: 'Oficina en el listado de la Superintendencia de Vigilancia; para el pliego hay que pedirle la resolución y el certificado de Cámara.',
         _score: [covered.length === cityKeys.length ? 0 : 1, -covered.length, ROLE_ORDER.indexOf(company.role), -((company.participations || []).length), -(company.cities || []).length],
       };
