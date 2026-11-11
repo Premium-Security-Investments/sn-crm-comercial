@@ -398,8 +398,8 @@ export function createAgt002WorkbenchResponder({
         policy: lecciones.length > 0 ? `${policyText} ${AGT002_LESSONS_POLICY}` : policyText,
         input: minimizedInput,
         outputSchema,
-        // Al modelo se le deja el tope del borrador menos 15 s, que son para armar y guardar el Word. Una respuesta que
-        // pide redactar (F7) no arma Word: se le dejan 5 s para guardar.
+        // Al modelo se le deja el tope del borrador menos 15 s, que son para armar y guardar el Word. Una respuesta (F7)
+        // no arma Word: se le dejan 5 s para guardar.
         timeoutMs: input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft
           ? Math.max(timeoutMs, draftTimeoutMs - 15_000)
           : agt002UsaTopeDeBorrador(input) ? Math.max(timeoutMs, draftTimeoutMs - 5_000) : timeoutMs,

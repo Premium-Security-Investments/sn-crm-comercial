@@ -114,7 +114,7 @@ export async function runAgt002WorkbenchWorker({
 
   let result;
   try {
-    // Un borrador arma además el Word: tiene su propio tope (mejora 5). Una respuesta que pide redactar, también (F7).
+    // Un borrador arma además el Word: tiene su propio tope (mejora 5). Toda respuesta, también (F7, 11-nov).
     const timeoutMs = agt002UsaTopeDeBorrador(input) && limits.draftResponderTimeoutMs
       ? limits.draftResponderTimeoutMs : limits.responderTimeoutMs;
     result = await respondWithTimeout(responder, input, timeoutMs);
