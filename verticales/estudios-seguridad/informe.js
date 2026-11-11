@@ -98,9 +98,26 @@ export function generalEvaluation(risks) {
   const residual = risks.reduce((sum, risk) => sum + risk.valoracion.residual.magnitud, 0);
   const worst = NIVEL_ORDER.find(nivel => risks.some(risk => risk.valoracion.residual.nivel === nivel));
   return `Con el dispositivo y los controles existentes, de los ${risks.length} riesgos identificados ${phrase('actual')}. `
-    + `Al implementar los controles y acciones recomendados, el riesgo residual quedaría con ${phrase('residual')}; `
-    + `la magnitud total baja de ${actual} a ${residual} puntos (${percent(actual ? (actual - residual) / actual : 0)} menos) `
-    + `y el nivel residual más alto es ${NIVEL[worst].toLowerCase()}.`;
+    + `Al implementar los controles y acciones recomendados, el riesgo residual estimado quedaría con ${phrase('residual')}; `
+    + `la magnitud total bajaría de ${actual} a ${residual} puntos (${percent(actual ? (actual - residual) / actual : 0)} menos) `
+    + `y el nivel residual estimado más alto es ${NIVEL[worst].toLowerCase()}.`;
+}
+
+// Del plan estratégico de la sede Medellín (noviembre de 2026; Juan, 2026-11-11: "adelante con … las mejoras del
+// informe"): tres grupos de prioridad según el nivel actual, con el criterio de seguimiento de cada uno.
+export const PRIORITY_GROUPS = Object.freeze([
+  Object.freeze({ nombre: 'Atención preferente', niveles: ['critico'], criterio: 'Riesgo actual crítico. Registrar acciones con responsable, fecha y evidencia de cierre, y volver a valorar.' }),
+  Object.freeze({ nombre: 'Intervención programada', niveles: ['alto'], criterio: 'Riesgo actual alto. Programar los controles propuestos y verificar su cumplimiento.' }),
+  Object.freeze({ nombre: 'Mantenimiento preventivo', niveles: ['moderado', 'bajo'], criterio: 'Riesgo actual moderado o bajo. Mantener las medidas y vigilar los cambios del entorno.' }),
+]);
+
+/** Riesgos por grupo de prioridad, de mayor a menor magnitud actual. */
+export function treatmentPriorities(risks) {
+  return PRIORITY_GROUPS.map(group => ({
+    ...group,
+    riesgos: risks.filter(risk => group.niveles.includes(risk.valoracion.actual.nivel))
+      .sort((a, b) => b.valoracion.actual.magnitud - a.valoracion.actual.magnitud || a.numero - b.numero),
+  }));
 }
 
 /**
@@ -215,7 +232,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
     'Ley 1581 de 2012 y Decreto 1377 de 2013, protección de datos personales.',
   ]);
   h2('Metodología');
-  p(`Metodología ${study.metodologia}, basada en la NTC-ISO 31000 de 2018: matriz cruzada de probabilidad por impacto. Cada riesgo se califica con una probabilidad (${ESCALAS.probabilidad.join(', ')}) y dos impactos (${ESCALAS.impacto.join(', ')}), de 1 a 5: sobre la empresa o sede y sobre las personas; cuenta el mayor. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad (producto / 125, con tope del 90 %) reduce la probabilidad una sola vez. El riesgo actual considera los controles existentes; el residual, además, los controles propuestos. Niveles: 1 a 5 bajo, 6 a 10 moderado, 11 a 15 alto y 16 a 25 crítico.`);
+  p(`Metodología ${study.metodologia}, basada en la NTC-ISO 31000 de 2018: matriz cruzada de probabilidad por impacto. Cada riesgo se califica con una probabilidad (${ESCALAS.probabilidad.join(', ')}) y dos impactos (${ESCALAS.impacto.join(', ')}), de 1 a 5: sobre la empresa o sede y sobre las personas; cuenta el mayor. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad (producto / 125, con tope del 90 %) reduce la probabilidad una sola vez. El riesgo actual considera los controles existentes; el residual, además, los controles propuestos: es una estimación de lo que se espera al implementarlos, no un resultado verificado. Niveles: 1 a 5 bajo, 6 a 10 moderado, 11 a 15 alto y 16 a 25 crítico.`);
   blocks.push(heatmapBlock([]));
   blocks.push({ kind: 'center', text: 'Niveles de riesgo según probabilidad e impacto.', cover: false });
 
@@ -258,11 +275,11 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   p(generalEvaluation(risks));
   if (risks.length) {
     h2('Medición comparativa del riesgo');
-    blocks.push({ kind: 'table', header: ['Código', 'Proceso', 'Riesgo', 'Actual', 'Residual', 'Reducción', 'Resultado'], rows: risks.slice(0, 120).map(risk => {
+    blocks.push({ kind: 'table', header: ['Código', 'Proceso', 'Riesgo', 'Actual', 'Residual estimado', 'Reducción', 'Resultado'], rows: risks.slice(0, 120).map(risk => {
       const actual = risk.valoracion.actual.magnitud;
       const residual = risk.valoracion.residual.magnitud;
       return [`R${risk.numero}`, clip(risk.proceso_cliente) || '—', clip(risk.riesgo, 200), { text: level(risk.valoracion.actual), level: risk.valoracion.actual.nivel }, { text: level(risk.valoracion.residual), level: risk.valoracion.residual.nivel },
-        `${actual - residual} (${percent(actual ? (actual - residual) / actual : 0)})`, residual < actual ? 'Disminuye' : 'Se mantiene'];
+        `${actual - residual} (${percent(actual ? (actual - residual) / actual : 0)})`, residual < actual ? 'Disminuiría' : 'Se mantiene'];
     }) });
   }
 
@@ -279,7 +296,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
       ['Calidad · eficacia · eficiencia del control', ratingWords(ce) || 'Sin calificar'],
       ['Efectividad del control existente', percent(risk.valoracion.actual.efectividadControl)],
       ['Magnitud del riesgo actual', { text: level(risk.valoracion.actual), level: risk.valoracion.actual.nivel }],
-      ['Magnitud del riesgo residual', { text: level(risk.valoracion.residual), level: risk.valoracion.residual.nivel }],
+      ['Magnitud del riesgo residual (estimada)', { text: level(risk.valoracion.residual), level: risk.valoracion.residual.nivel }],
     ].map(row => row.map(value => (typeof value === 'string' ? clip(value, 400) : value))) });
     const photos = evidence.filter(item => item.riesgo === risk.id && item.tipo === 'foto');
     const photo = photos.map(imageOf).find(Boolean);
@@ -289,7 +306,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
       { probabilidad: risk.valoracion.actual.probabilidad, impacto: impact, code: `R${risk.numero}` },
       { probabilidad: risk.valoracion.residual.probabilidad, impacto: impact, code: `R${risk.numero}R` },
     ]));
-    blocks.push({ kind: 'center', text: `Mapa del riesgo: R${risk.numero} actual y R${risk.numero}R residual.` });
+    blocks.push({ kind: 'center', text: `Mapa del riesgo: R${risk.numero} actual y R${risk.numero}R residual estimado.` });
     h2('Controles actuales y existentes');
     p(clip(ce.descripcion, 5000) || 'No se registraron controles existentes.');
     h2('Causas de materialización del riesgo');
@@ -318,6 +335,10 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   list(['Diseñar, socializar y verificar los protocolos de atención inmediata ante eventos indeseados o perturbadores.', 'Revisar y ajustar los planes de emergencia, contingencia y continuidad del negocio, con simulacros y pruebas de vulnerabilidad.', 'Coordinar y establecer alianzas con las autoridades y entidades de apoyo.']);
   h2('3. Mantener y controlar el nivel de criticidad');
   list(['Implementar indicadores de gestión para el control y seguimiento de la operación de seguridad.', 'Realizar comités de seguridad para evaluar los avances del plan.']);
+  h2('Priorización del tratamiento');
+  blocks.push({ kind: 'table', header: ['Prioridad', 'Riesgos', 'Criterio de seguimiento'], rows: treatmentPriorities(risks).map(group => [
+    group.nombre, group.riesgos.length ? clip(group.riesgos.map(risk => `R${risk.numero} (${risk.valoracion.actual.magnitud})`).join(', '), 800) : 'Ninguno', group.criterio,
+  ]) });
   const plan = snapshot.acciones.filter(action => action.estado !== 'descartada').slice(0, 120);
   if (plan.length) {
     h2('Plan de tratamiento');
@@ -327,12 +348,23 @@ export function buildStudyReport(snapshot, meta, images = {}) {
     ]) });
   }
 
+  h2('Control documental y trazabilidad');
+  p('El cumplimiento del plan se demuestra con evidencia, no con la declaración de que la medida se tomó. Para cerrar cada acción se espera, según corresponda:');
+  list([
+    'Actas de inspección, revisión y mantenimiento de la infraestructura y de los sistemas tecnológicos.',
+    'Registros de ingreso y salida, manejo de visitantes, inventarios y custodia documental.',
+    'Pruebas funcionales de los sistemas de alarma, videovigilancia y comunicaciones.',
+    'Registros de capacitación, simulacros y socialización de protocolos.',
+    'Fotografías o soportes del antes y el después de la medida implementada.',
+  ]);
+  p('Cada acción con responsable y fecha queda como compromiso en el Seguimiento gerencial del SIIO hasta su cierre con evidencia. Un cambio de calificación de un riesgo se hace en una nueva versión de este estudio, que conserva la anterior con su huella.');
+
   chapter('Mapa de criticidad general');
   h2('Riesgo actual');
   blocks.push(heatmapBlock(risks.map(risk => ({ probabilidad: risk.valoracion.actual.probabilidad, impacto: risk.valoracion.impacto, code: `${risk.numero}A` }))));
-  h2('Riesgo residual');
+  h2('Riesgo residual estimado');
   blocks.push(heatmapBlock(risks.map(risk => ({ probabilidad: risk.valoracion.residual.probabilidad, impacto: risk.valoracion.impacto, code: `${risk.numero}R` }))));
-  blocks.push({ kind: 'center', text: 'Los números corresponden al código de cada riesgo (A: actual, R: residual).' });
+  blocks.push({ kind: 'center', text: 'Los números corresponden al código de cada riesgo (A: actual, R: residual estimado si se implementan los controles propuestos).' });
 
   // Cadena de mando y seguimiento.
   chapter('Escalonamiento o cadena de mando');

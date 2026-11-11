@@ -70,12 +70,13 @@ export const PLANTILLA_INSTALACIONES_FISICAS_V1 = Object.freeze({
 export const ESCALAS = Object.freeze({
   probabilidad: Object.freeze(['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta']),
   impacto: Object.freeze(['Insignificante', 'Leve', 'Moderado', 'Grave', 'Catastrófico']),
-  // Calificación del control en palabras, verificada contra los Excel: 2 = "Poco…", 3 = "Medianamente…", 4 = pleno.
-  // Para 1 y 5 no hay ejemplo en ningún estudio: se muestra el número (por confirmar con el analista).
+  // Calificación del control en palabras. 2 a 4, verificados contra los Excel; 1 y 5, de la «Guía de calificación de la
+  // matriz 5×5 y controles» de la sede Medellín (analista de riesgos, noviembre de 2026), que los propone para
+  // estandarizar los informes. Juan, 2026-11-11: "adelante con los nombres".
   control: Object.freeze({
-    calidad: Object.freeze({ 2: 'Poco confiable', 3: 'Medianamente confiable', 4: 'Confiable' }),
-    eficacia: Object.freeze({ 2: 'Poco eficaz', 3: 'Medianamente eficaz', 4: 'Eficaz' }),
-    eficiencia: Object.freeze({ 2: 'Poco eficiente', 3: 'Medianamente eficiente', 4: 'Eficiente' }),
+    calidad: Object.freeze({ 1: 'No confiable', 2: 'Poco confiable', 3: 'Medianamente confiable', 4: 'Confiable', 5: 'Altamente confiable' }),
+    eficacia: Object.freeze({ 1: 'Ineficaz', 2: 'Poco eficaz', 3: 'Medianamente eficaz', 4: 'Eficaz', 5: 'Altamente eficaz' }),
+    eficiencia: Object.freeze({ 1: 'Ineficiente', 2: 'Poco eficiente', 3: 'Medianamente eficiente', 4: 'Eficiente', 5: 'Altamente eficiente' }),
   }),
 });
 

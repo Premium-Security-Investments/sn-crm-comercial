@@ -142,7 +142,7 @@ test('el informe cabe en el generador con membrete y dice lo que se aprobó', as
   const fodt = buildStudyReportFodt(readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8'), report);
   assert.match(fodt, /ESTUDIO DE SEGURIDAD FÍSICA/);
   assert.match(fodt, /Evaluación general/);
-  assert.match(fodt, /la magnitud total baja de 12 a 8 puntos/, 'la evaluación general se calcula y no queda cortada');
+  assert.match(fodt, /la magnitud total bajaría de 12 a 8 puntos/, 'la evaluación general se calcula y no queda cortada');
   assert.match(fodt, /12 · Alto/, 'riesgo actual de R1');
   assert.match(fodt, /8 · Moderado/, 'riesgo residual de R1');
   assert.match(fodt, /Reparar la malla del costado norte/);
