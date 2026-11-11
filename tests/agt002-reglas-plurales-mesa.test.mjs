@@ -68,3 +68,23 @@ test('la Mesa las recibe cuando la pregunta es de unión temporal, y no cuando n
   assert.match(AGT002_WORKBENCH_POLICY, /proceso\.reglas_para_plurales/);
   assert.match(AGT002_WORKBENCH_POLICY, /«cada_uno» \(cada integrante lo cumple por separado\)/);
 });
+
+test('el pliego definitivo va primero: con muchos documentos, las reglas del 5.3.2 no se quedan por fuera (11-nov)', async () => {
+  // Fiscalía tiene 15 documentos que hablan de uniones temporales; el estudio previo y los formatos llenaban el cupo.
+  const relleno = Array.from({ length: 60 }, (_, index) => `En caso de consorcio o unión temporal, se sumará el aporte número ${index} de los integrantes.`).join('\n');
+  const muchos = [
+    { id: 'ep', name: 'Estudio Previo Eje Cafetero final - con texto.pdf', document_type: 'estudios_previos', created_at: '2026-11-04T23:02:38Z', extracted_text: `6.1.4 Requisitos\n${relleno}` },
+    { id: 'proy', name: 'COMPLEMENTO PROYECTO PLIEGO FGN-REC-IPSE-0058-2026.pdf', document_type: 'pliego', created_at: '2026-10-29T13:24:21Z', extracted_text: PLIEGO },
+    { id: 'pdf', name: 'COMPLEMENTO PLIEGO DEFINITIVO FGN-REC-IPSE-0058-2026.pdf', document_type: 'pliego', created_at: '2026-11-02T19:01:17Z', extracted_text: PLIEGO },
+    { id: 'docx', name: 'COMPLEMENTO PLIEGO DEFINITIVO FGN-REC-IPSE-0058-2026.docx', document_type: 'pliego', created_at: '2026-11-02T19:01:21Z', extracted_text: PLIEGO.replace(/\n/g, ' ') },
+  ];
+  const q = { select: () => q, eq: () => q, then: (ok, ko) => Promise.resolve({ data: muchos, error: null }).then(ok, ko) };
+  const fuente = await resolverReglasParaPlurales({ from: () => q }, { tenderId: 't', pregunta: '¿Qué cumple cada integrante de la unión temporal?' });
+  const del53 = fuente.valor.filter(regla => /^5\.3\.2, punto/.test(regla.numeral || '')).map(regla => regla.numeral).sort();
+  assert.deepEqual(del53, ['5.3.2, punto 1', '5.3.2, punto 3', '5.3.2, punto 4', '5.3.2, punto 8', '5.3.2, punto 9'], 'llegan todas las del 5.3.2, del PDF');
+  assert.ok(fuente.valor.every(regla => !/PROYECTO/.test(regla.documento)), 'un proyecto no cuenta');
+  const frases = fuente.valor.filter(regla => /cada uno de sus miembros deberá cumplir/.test(regla.frase));
+  assert.equal(frases.length, 1, 'la copia en .docx del mismo pliego no se repite');
+  assert.ok(fuente.valor.length <= 40);
+  assert.ok(fuente.valor.every(regla => regla.frase.length <= 401));
+});

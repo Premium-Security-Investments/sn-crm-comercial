@@ -20,6 +20,7 @@ import { matchCompanyDocumentClasses } from './verticales/licitaciones/tender-co
 import { agt002ListarFormatos, agt002LocateFormato } from './verticales/licitaciones/agt002-formato-oficial.js';
 import { agt002SeccionDelPedido } from './verticales/licitaciones/agt002-seccion-del-pliego.js';
 import { agt002ReglasParaPlurales } from './verticales/licitaciones/agt002-reglas-plurales.js';
+import { tenderDocumentWeight } from './verticales/licitaciones/tender-official-values.js';
 import { ALLY_BOARD_RULE, buildAllyBoard, buildProcessParticipantsBoard } from './verticales/licitaciones/tender-allies-board.js';
 import { assessDifferentialBenefits, findDifferentialMentions, listDifferentialConditions } from './verticales/licitaciones/differential-conditions.js';
 import { readAgt002InitialAnalysisReport } from './verticales/licitaciones/agt002-initial-analysis-report.js';
@@ -910,15 +911,24 @@ export async function resolverReglasParaPlurales(database, { tenderId, pregunta 
   if (typeof tenderId !== 'string' || !tenderId.trim()) return vacio('sin proceso en el expediente');
   if (!PREGUNTA_PLURAL.test(String(pregunta || ''))) return vacio('la pregunta no es de consorcios ni de uniones temporales');
   const { data, error } = await database.from('psi_tender_document_versions')
-    .select('id,name,created_at,extracted_text')
+    .select('id,name,document_type,created_at,extracted_text')
     .eq('tender_id', tenderId).eq('current', true);
   if (error || !Array.isArray(data)) return vacio('no se pudieron leer los documentos del proceso');
-  const reglas = agt002ReglasParaPlurales(data, { max: 30 });
+  // Primero lo que manda (adenda, pliego definitivo, apertura, pliego); un proyecto no cuenta. Fiscalía, 11-nov: con 15
+  // documentos que hablan de uniones temporales, las reglas del estudio previo y de los formatos llenaban el cupo y las
+  // del 5.3.2 del pliego —las de «cada uno de los integrantes»— quedaban por fuera.
+  // A igual peso, primero el PDF: conserva los renglones de los títulos, y de ahí sale el numeral («5.3.2, punto 8»).
+  const esPdf = row => (/\.pdf$/i.test(String(row.name || '')) ? 1 : 0);
+  const ordenados = data.filter(row => tenderDocumentWeight(row) >= 0)
+    .sort((a, b) => tenderDocumentWeight(b) - tenderDocumentWeight(a) || esPdf(b) - esPdf(a)
+      || String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const reglas = agt002ReglasParaPlurales(ordenados, { max: 40 });
   if (!reglas.length) return vacio('el pliego vigente no trae frases sobre cómo cumple un consorcio o una unión temporal');
   const fechas = data.map(row => soloFecha(row.created_at)).filter(Boolean).sort();
   return respuesta({
     nombre: 'proceso.reglas_para_plurales',
-    valor: Object.freeze(reglas.map(regla => Object.freeze({ documento: regla.documento, numeral: regla.numeral, lectura: regla.lectura, frase: regla.frase }))),
+    // La frase se recorta a 400 caracteres para que quepan todas: la lectura y el numeral van completos.
+    valor: Object.freeze(reglas.map(regla => Object.freeze({ documento: regla.documento, numeral: regla.numeral, lectura: regla.lectura, frase: regla.frase.length > 400 ? `${regla.frase.slice(0, 400)}…` : regla.frase }))),
     estado: ESTADOS.VIGENTE,
     frescura: FRESCURAS.CONGELADA,
     // Es texto del pliego: se cita, no se interpreta. La lectura y el numeral los saca el servidor del texto.
