@@ -119,14 +119,14 @@ test('el informe toma cada dato de su lugar: caracterización, dispositivo, cont
   assert.equal(snapshot.riesgos[0].proceso_cliente, 'Gestión Humana');
   assert.equal(snapshot.caracterizacion.grupos_delincuenciales, 'Los Costeños.');
   const fodt = buildStudyReportFodt(readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8'), buildStudyReport(snapshot, { version: 1, sha256, approvedAt: '2026-10-30T15:00:00Z', approverName: 'Alba', preparerName: 'Álvaro' }));
-  for (const expected of ['Introducción', 'Manufactura de jabones desde 1956.', 'Contexto externo', 'Extorsión', 'Grupos y organizaciones delincuenciales', 'Dispositivo de seguridad', 'Cold Process', 'Procesos internos analizados', 'Gestión Humana', 'Humano – Procedimental – Estratégico', 'Medianamente confiable · Medianamente eficaz · Medianamente eficiente', 'Confiable · Eficaz · Eficiente', 'Escalonamiento o cadena de mando', '3105210260', 'Insignificante', 'Catastrófico']) {
+  for (const expected of ['Introducción', 'Manufactura de jabones desde 1956.', 'Contexto externo', 'Extorsión', 'Grupos y organizaciones delincuenciales', 'Dispositivo de seguridad', 'Cold Process', 'Procesos internos analizados', 'Gestión Humana', 'Humano – Procedimental – Estratégico', 'Medianamente confiable · Medianamente eficaz · Medianamente eficiente', 'Confiable · Eficaz · Eficiente', 'Escalonamiento o cadena de mando', '3105210260', 'Muy leve', 'Crítico']) {
     assert.ok(fodt.includes(expected), `falta en el informe: ${expected}`);
   }
 });
 
 test('escalas con los nombres de la casa y calificaciones en palabras', () => {
   assert.deepEqual(ESCALAS.probabilidad, ['Muy baja', 'Baja', 'Media', 'Alta', 'Muy alta']);
-  assert.deepEqual(ESCALAS.impacto, ['Insignificante', 'Leve', 'Moderado', 'Grave', 'Catastrófico']);
+  assert.deepEqual(ESCALAS.impacto, ['Muy leve', 'Leve', 'Moderado', 'Grave', 'Crítico'], 'los de la guía de calificación');
   assert.deepEqual([2, 3, 4].map(value => controlWord('calidad', value)), ['Poco confiable', 'Medianamente confiable', 'Confiable']);
   // 1 y 5: de la guía de calificación de la sede Medellín (noviembre de 2026).
   assert.deepEqual([1, 5].map(value => controlWord('calidad', value)), ['No confiable', 'Altamente confiable']);

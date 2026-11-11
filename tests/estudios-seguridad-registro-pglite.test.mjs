@@ -65,21 +65,24 @@ test('un estudio se registra completo y el servidor calcula la valoración', asy
   const porteria = await addZone(db, study.id, { name: 'Portería vehicular' }, PREPARER);
   assert.deepEqual([bodega.position, porteria.position], [1, 2]);
 
-  // El R4 de HADA (acceso indebido a bodegas): P4, I4, control 3/4/3 → actual 12 alto con la v1.
+  // El R4 de HADA (acceso indebido a bodegas) con la guía: P4 × I4 = 16, control 3/4/3 (28,8 %) → actual ⌈11,39⌉ = 12
+  // tolerable; probabilidad residual escogida 2 → residual 2 × 4 = 8 tolerable.
   const r1 = await addRisk(db, study.id, {
     zone_id: bodega.id, catalog_risk_code: 'RB-02', process_code: 'P11', title: 'Acceso indebido a zonas de almacenamiento',
     causes: 'Malla rota en el costado norte', probability: 4, impact_company: 4, impact_people: 2,
     current_control: 'Ronda cada dos horas', current_quality: 3, current_efficacy: 4, current_efficiency: 3,
-    proposed_control: 'Reparar la malla y poner cámara con analítica', proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4,
+    proposed_control: 'Reparar la malla y poner cámara con analítica', proposed_quality: 4, proposed_efficacy: 4, proposed_efficiency: 4, residual_probability: 2,
   }, PREPARER);
   assert.equal(r1.number, 1);
-  assert.deepEqual([r1.valuation.actual.magnitud, r1.valuation.actual.nivel, r1.valuation.residual.magnitud, r1.valuation.residual.nivel], [12, 'alto', 8, 'moderado']);
+  assert.deepEqual([r1.valuation.actual.magnitud, r1.valuation.actual.nivel, r1.valuation.residual.magnitud, r1.valuation.residual.nivel], [12, 'tolerable', 8, 'tolerable']);
+  assert.equal(r1.impact_people, 2, 'el impacto de personas que llega se guarda; la guía usa uno solo');
 
-  // Riesgo propio, sin catálogo ni controles calificados: el residual es el inherente.
+  // Riesgo propio, sin catálogo ni controles calificados ni probabilidad residual: el residual es el actual. La guía
+  // usa un solo impacto: el que llega como impacto (impact_company), aunque llegue otro de personas.
   const r2 = await addRisk(db, study.id, { zone_id: porteria.id, title: 'Ingreso de vehículos sin registro', probability: '3', impact_company: '3', impact_people: '4' }, PREPARER, { origin: 'agente' });
   assert.equal(r2.number, 2);
   assert.equal(r2.origin, 'agente');
-  assert.equal(r2.valuation.residual.magnitud, 12);
+  assert.deepEqual([r2.valuation.actual.magnitud, r2.valuation.residual.magnitud, r2.valuation.residual.escogida], [9, 9, false]);
 
   await addAction(db, study.id, { risk_id: r1.id, description: 'Reparar la malla del costado norte', owner_label: 'Mantenimiento del cliente', due_date: '2026-12-15', priority: 'alta' }, PREPARER);
 
@@ -87,14 +90,14 @@ test('un estudio se registra completo y el servidor calcula la valoración', asy
   assert.equal(full.editable, true);
   assert.equal(full.risks.length, 2);
   assert.equal(full.actions.length, 1);
-  assert.deepEqual(full.summary.levels.actual, { alto: 2 });
+  assert.deepEqual(full.summary.levels.actual, { tolerable: 2 });
   assert.equal(full.catalog.procesos.length, 22);
   assert.equal(full.catalog.riesgos.length, 31, 'la lista base: RB-01 a RB-31');
   assert.equal(new Set(full.catalog.riesgos.map(item => item.nombre)).size, 31, 'sin nombres repetidos');
 
   // Corregir una calificación recalcula; nadie escribe el nivel.
   const corrected = await updateRisk(db, study.id, r1.id, { probability: 2, level: 'bajo', valuation: { actual: { nivel: 'bajo' } } }, PREPARER);
-  assert.deepEqual([corrected.valuation.actual.magnitud, corrected.valuation.actual.nivel], [8, 'moderado']);
+  assert.deepEqual([corrected.valuation.actual.magnitud, corrected.valuation.actual.nivel], [6, 'aceptable'], '2 × 4 × 0,712 = 5,7 → 6');
 
   // Borrar una zona no borra sus riesgos: quedan sin zona.
   await deleteZone(db, study.id, porteria.id, PREPARER);

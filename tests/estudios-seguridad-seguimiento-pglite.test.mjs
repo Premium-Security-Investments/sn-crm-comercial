@@ -20,11 +20,14 @@ async function studyWithPlan() {
   const pg = await database();
   const db = supabaseOver(pg);
   const study = await createStudy(db, STUDY, PREPARER);
-  // P4 × I4 con control 3/4/3 → actual 12, alto: necesita una acción con responsable y fecha.
-  const risk = await addRisk(db, study.id, { title: 'Acceso indebido a la bodega', probability: 4, impact_company: 4, impact_people: 2, current_quality: 3, current_efficacy: 4, current_efficiency: 3 }, PREPARER);
+  // Guía: P5 × I4 con control 3/4/3 → actual 15, inaceptable: necesita una acción con responsable y fecha.
+  const risk = await addRisk(db, study.id, { title: 'Acceso indebido a la bodega', probability: 5, impact_company: 4, impact_people: 2, current_quality: 3, current_efficacy: 4, current_efficiency: 3 }, PREPARER);
   const malla = await addAction(db, study.id, { risk_id: risk.id, description: 'Reparar la malla perimetral', owner_label: 'Mantenimiento', due_date: '2026-12-15', priority: 'alta' }, PREPARER);
   await addAction(db, study.id, { risk_id: risk.id, description: 'Evaluar cámaras térmicas', priority: 'baja' }, PREPARER);
   await addAction(db, study.id, { risk_id: risk.id, description: 'Cambiar candados', owner_label: 'Seguridad', due_date: '2026-11-20', status: 'descartada' }, PREPARER);
+  // Juan, 2026-11-11: sólo pasan las nuestras. Ésta tiene responsable y fecha, pero está a cargo del cliente.
+  await addAction(db, study.id, { risk_id: risk.id, description: 'Revisar antecedentes del personal', owner_label: 'Gestión Humana del cliente', due_date: '2026-12-01', responsible_party: 'cliente' }, PREPARER);
+  await assert.rejects(addAction(db, study.id, { risk_id: risk.id, description: 'xxx', responsible_party: 'tercero' }, PREPARER), /A cargo de/);
   return { pg, db, study, risk, malla };
 }
 
@@ -55,7 +58,7 @@ test('al aprobar, cada acción abierta con responsable y fecha crea un compromis
   const approved = await go(db, study, 'aprobar', APPROVER);
   assert.equal(approved.followups, 1);
   const rows = await followups(pg);
-  assert.equal(rows.length, 1, 'sin responsable o fecha, o descartada, no pasa');
+  assert.equal(rows.length, 1, 'sin responsable o fecha, descartada, o a cargo del cliente, no pasa');
   assert.deepEqual({ ...rows[0], origin_label: undefined }, {
     title: 'Reparar la malla perimetral', owner_label: 'Mantenimiento', due_date: '2026-12-15', origin_type: 'estudio_seguridad',
     origin_ref: malla.id, origin_label: undefined, created_by: APPROVER.id, created_role: 'sistema', status: 'abierto',
@@ -81,7 +84,7 @@ test('reaprobar no duplica ni reescribe; sólo agrega las acciones nuevas. Cerra
 
   const detail = await getStudy(db, study.id);
   assert.equal(detail.actions.find(item => item.id === malla.id).status, 'pendiente', 'la acción del estudio no cambia');
-  assert.equal(detail.risks[0].valuation.actual.nivel, 'alto', 'el riesgo no se cierra');
+  assert.equal(detail.risks[0].valuation.actual.nivel, 'inaceptable', 'el riesgo no se cierra');
   assert.deepEqual((await loadWorkflow(db, detail.study, APPROVER)).followups, { total: 2, abiertos: 1, cumplidos: 1 });
 });
 

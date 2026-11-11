@@ -22,7 +22,7 @@ async function studyWithProblems() {
   const study = await createStudy(db, STUDY, PREPARER);
   // R1: alto, sin control propuesto, sin foto, con "Hada International" copiado y causas con el número 3 dos veces.
   await addRisk(db, study.id, {
-    title: 'Hurto de producto terminado', probability: 4, impact_company: 4, impact_people: 2, current_control: 'Guardas en portería', current_quality: 3, current_efficacy: 4, current_efficiency: 3,
+    title: 'Hurto de producto terminado', probability: 5, impact_company: 4, impact_people: 2, current_control: 'Guardas en portería', current_quality: 3, current_efficacy: 4, current_efficiency: 3,
     causes: '1. Bodega sin cámaras\n3. Rotación de personal\n3. Rotación de personal en Hada International',
   }, PREPARER);
   // R2 a R4: las mismas calificaciones, copiadas. R4 repite el nombre de R2.
@@ -48,11 +48,11 @@ test('señala lo que se coló en los estudios reales', async () => {
   const said = code => review.findings.filter(item => item.code === code).map(item => item.message);
 
   assert.equal(review.blocking, 1);
-  assert.match(said('incompleto')[0], /R1 está en nivel alto y no tiene una acción con responsable y fecha/);
+  assert.match(said('incompleto')[0], /R1 está en nivel inaceptable y no tiene una acción con responsable y fecha/);
   assert.deepEqual(said('otro_cliente'), ['Aparece el nombre de otro cliente («Hada International S.A.») en R1. ¿Se copió de otro estudio?']);
   assert.deepEqual(said('calificaciones_identicas'), ['R2, R3 y R4 tienen exactamente las mismas calificaciones (probabilidad, impactos y controles). ¿Se valoró cada uno o se copiaron?']);
-  assert.deepEqual(said('sin_control_propuesto'), ['R1 está en nivel alto y no tiene control propuesto: el residual queda igual al actual.']);
-  assert.deepEqual(said('sin_foto'), ['R1 está en nivel alto y no tiene ninguna foto que lo respalde.']);
+  assert.deepEqual(said('sin_control_propuesto'), ['R1 está en nivel inaceptable y no tiene control propuesto: el residual queda igual al actual.']);
+  assert.deepEqual(said('sin_foto'), ['R1 está en nivel inaceptable y no tiene ninguna foto que lo respalde.']);
   assert.deepEqual(said('causas_numeracion'), ['R1: hay dos causas con el número 3.']);
   assert.deepEqual(said('riesgo_repetido'), ['R2 y R4 tienen el mismo nombre.']);
   assert.deepEqual(said('control_sin_calificar'), ['R4: el control propuesto está descrito pero no calificado, así que no cuenta en la valoración.']);

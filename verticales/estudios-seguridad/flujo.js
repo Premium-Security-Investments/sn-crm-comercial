@@ -14,7 +14,9 @@ export const APPROVE_PERMISSION = 'estudios_seguridad_aprobar';
 export const EVENTS_TABLE = 'psi_security_study_events';
 export const VERSIONS_TABLE = 'psi_security_study_versions';
 export const ACTIONS = Object.freeze(['enviar', 'marcar_revisado', 'devolver', 'aprobar', 'reabrir']);
-const CRITICAL_LEVELS = new Set(['alto', 'critico']);
+// Niveles que exigen una acción con responsable y fecha: alto y crítico (v1) e inaceptable (guía, 2026-11-11).
+const CRITICAL_LEVELS = new Set(['alto', 'critico', 'inaceptable']);
+const LEVEL_WORD = { alto: 'alto', critico: 'crítico', inaceptable: 'inaceptable' };
 
 function invalid(message, status = 400) {
   const error = new Error(message);
@@ -48,7 +50,7 @@ export function readinessIssues(detail) {
   for (const risk of detail.risks) {
     if (!CRITICAL_LEVELS.has(risk.valuation.actual.nivel)) continue;
     const planned = detail.actions.some(action => action.risk_id === risk.id && action.status !== 'descartada' && action.owner_label && action.due_date);
-    if (!planned) issues.push(`R${risk.number} está en nivel ${risk.valuation.actual.nivel === 'critico' ? 'crítico' : 'alto'} y no tiene una acción con responsable y fecha.`);
+    if (!planned) issues.push(`R${risk.number} está en nivel ${LEVEL_WORD[risk.valuation.actual.nivel]} y no tiene una acción con responsable y fecha.`);
   }
   return issues;
 }
@@ -96,6 +98,7 @@ export function buildSnapshot(detail) {
       id: risk.id, numero: risk.number, zona: risk.zone_id, catalogo: risk.catalog_risk_code, proceso: risk.process_code,
       riesgo: risk.title, proceso_cliente: risk.client_process ?? null, factor: risk.risk_factor ?? null, causas: risk.causes, consecuencias: risk.consequences,
       probabilidad: risk.probability, impacto_empresa: risk.impact_company, impacto_personas: risk.impact_people,
+      probabilidad_residual: risk.residual_probability ?? null,
       control_existente: { descripcion: risk.current_control, calidad: risk.current_quality, eficacia: risk.current_efficacy, eficiencia: risk.current_efficiency },
       control_propuesto: { descripcion: risk.proposed_control, calidad: risk.proposed_quality, eficacia: risk.proposed_efficacy, eficiencia: risk.proposed_efficiency },
       origen: risk.origin, fuente: risk.source_ref ?? null, valoracion: risk.valuation,
@@ -103,6 +106,7 @@ export function buildSnapshot(detail) {
     acciones: detail.actions.map(action => ({
       id: action.id, riesgo: action.risk_id, accion: action.description, responsable: action.owner_label,
       fecha_compromiso: action.due_date, prioridad: action.priority, estado: action.status,
+      a_cargo: action.responsible_party ?? 'seguridad_nacional',
     })),
     // Migración 201: los antecedentes del puesto en SecurityOps, tal como estaban al aprobar, con su fecha de corte.
     securityops: securityOpsSnapshot(detail.securityops),

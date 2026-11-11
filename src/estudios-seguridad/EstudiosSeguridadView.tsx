@@ -352,9 +352,9 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = 
       <label>Consecuencias<textarea rows={2} value={form.consequences || ''} onChange={event => set({ consequences: event.target.value })} maxLength={4000} /></label>
     </div>
     <div className="es-grid-3">
-      <ScaleSelect label="Probabilidad" value={form.probability} scale={PROBABILITY_SCALE} onChange={value => set({ probability: value ?? undefined })} required />
-      <ScaleSelect label="Impacto sobre la empresa" value={form.impact_company} scale={IMPACT_SCALE} onChange={value => set({ impact_company: value ?? undefined })} required />
-      <ScaleSelect label="Impacto sobre personas" value={form.impact_people} scale={IMPACT_SCALE} onChange={value => set({ impact_people: value ?? undefined })} required />
+      {/* Guía de calificación (2026-11-11): la probabilidad actual la escoge el analista y hay un solo impacto. */}
+      <ScaleSelect label="Probabilidad actual" value={form.probability} scale={PROBABILITY_SCALE} onChange={value => set({ probability: value ?? undefined })} required />
+      <ScaleSelect label="Impacto" value={form.impact_company} scale={IMPACT_SCALE} onChange={value => set({ impact_company: value ?? undefined, impact_people: value ?? undefined })} required />
     </div>
     <fieldset className="es-fieldset">
       <legend>Control existente</legend>
@@ -373,8 +373,9 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = 
         <ScaleSelect label="Eficacia" value={form.proposed_efficacy} scale={controlScale('eficacia')} onChange={value => set({ proposed_efficacy: value })} />
         <ScaleSelect label="Eficiencia" value={form.proposed_efficiency} scale={controlScale('eficiencia')} onChange={value => set({ proposed_efficiency: value })} />
       </div>
+      <ScaleSelect label="Probabilidad residual (si se implementa lo recomendado)" value={form.residual_probability} scale={PROBABILITY_SCALE} onChange={value => set({ residual_probability: value })} />
     </fieldset>
-    <small className="es-muted">Cada control se califica completo (calidad, eficacia y eficiencia) o se deja sin calificar. El nivel lo calcula SIIO.</small>
+    <small className="es-muted">Cada control se califica completo (calidad, eficacia y eficiencia) o se deja sin calificar. Sin probabilidad residual, el residual queda igual al actual. La magnitud y el nivel los calcula SIIO.</small>
     {error ? <p className="es-error" role="alert">{error}</p> : null}
     <div className="es-actions">
       <button type="submit" disabled={saving}>{saving ? 'Guardando…' : riskId ? 'Guardar cambios' : 'Agregar riesgo'}</button>
@@ -412,7 +413,7 @@ function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable,
       <span>Inherente <NivelBadge nivel={v.inherente.nivel} value={v.inherente.magnitud} /></span>
       <span>Actual <NivelBadge nivel={v.actual.nivel} value={v.actual.magnitud} /></span>
       <span>Residual <NivelBadge nivel={v.residual.nivel} value={v.residual.magnitud} /></span>
-      <small className="es-muted">P {risk.probability} · impacto {v.impacto} (empresa {risk.impact_company}, personas {risk.impact_people})</small>
+      <small className="es-muted">P actual {risk.probability} · impacto {v.impacto}{v.residual.escogida ? ` · P residual ${v.residual.probabilidad}` : ''}</small>
     </div>
     {risk.current_control ? <p><span className="es-label">Control existente:</span> {risk.current_control}</p> : null}
     {risk.proposed_control ? <p><span className="es-label">Control propuesto:</span> {risk.proposed_control}</p> : null}
@@ -422,15 +423,15 @@ function RiskItem({ studyId, risk, zoneLabel, zones, catalog, actions, editable,
 }
 
 function ActionsBlock({ studyId, riskId, actions, editable, onChanged, onError }: { studyId: string; riskId: string; actions: Action[]; editable: boolean; onChanged: () => void; onError: (text: string) => void }) {
-  const [draft, setDraft] = useState({ description: '', owner_label: '', due_date: '', priority: 'media' as Action['priority'] });
+  const [draft, setDraft] = useState({ description: '', owner_label: '', due_date: '', priority: 'media' as Action['priority'], responsible_party: 'seguridad_nacional' as NonNullable<Action['responsible_party']> });
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const add = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
     try {
-      await addAction(studyId, { risk_id: riskId, description: draft.description, owner_label: draft.owner_label || null, due_date: draft.due_date || null, priority: draft.priority });
-      setDraft({ description: '', owner_label: '', due_date: '', priority: 'media' });
+      await addAction(studyId, { risk_id: riskId, description: draft.description, owner_label: draft.owner_label || null, due_date: draft.due_date || null, priority: draft.priority, responsible_party: draft.responsible_party });
+      setDraft({ description: '', owner_label: '', due_date: '', priority: 'media', responsible_party: 'seguridad_nacional' });
       setOpen(false);
       onChanged();
     } catch (reason) { onError(message(reason)); } finally { setBusy(false); }
@@ -441,13 +442,19 @@ function ActionsBlock({ studyId, riskId, actions, editable, onChanged, onError }
   return <div className="es-plan">
     <span className="es-label">Plan de tratamiento</span>
     {actions.length ? <ul>{actions.map(action => <li key={action.id}>
-      {action.description} <small className="es-muted">· {action.owner_label || 'sin responsable'} · {action.due_date ? fmtDate(action.due_date) : 'sin fecha'} · prioridad {action.priority}</small>
+      {action.description} <small className="es-muted">· {action.owner_label || 'sin responsable'}{action.responsible_party === 'cliente' ? ' (cliente)' : ''} · {action.due_date ? fmtDate(action.due_date) : 'sin fecha'} · prioridad {action.priority}</small>
       {editable ? <button type="button" className="es-link" onClick={() => remove(action)} aria-label={`Quitar la acción ${action.description}`}>Quitar</button> : null}
     </li>)}</ul> : <small className="es-muted"> Sin acciones.</small>}
     {editable && !open ? <button type="button" className="es-link" onClick={() => setOpen(true)}>+ Acción</button> : null}
     {open ? <form className="es-grid-4" onSubmit={add} aria-label="Nueva acción">
       <label>Acción<input value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} required minLength={3} maxLength={1000} /></label>
       <label>Responsable<input value={draft.owner_label} onChange={event => setDraft({ ...draft, owner_label: event.target.value })} maxLength={120} placeholder="Persona o área" /></label>
+      <label>A cargo de
+        <select value={draft.responsible_party} onChange={event => setDraft({ ...draft, responsible_party: event.target.value as NonNullable<Action['responsible_party']> })}>
+          <option value="seguridad_nacional">Seguridad Nacional (pasa a Seguimiento gerencial)</option>
+          <option value="cliente">El cliente (sólo queda en el plan del informe)</option>
+        </select>
+      </label>
       <label>Fecha compromiso<input type="date" value={draft.due_date} onChange={event => setDraft({ ...draft, due_date: event.target.value })} /></label>
       <label>Prioridad<select value={draft.priority} onChange={event => setDraft({ ...draft, priority: event.target.value as Action['priority'] })}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></label>
       <div className="es-actions"><button type="submit" disabled={busy}>Agregar</button><button type="button" className="secondary" onClick={() => setOpen(false)}>Cancelar</button></div>
