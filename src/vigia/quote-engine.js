@@ -55,6 +55,49 @@ export class QuoteInputError extends Error {
 }
 const fail = message => { throw new QuoteInputError(message); };
 
+const inRange = (value, min, max, label) => {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < min || number > max) fail(`${label} debe estar entre ${min} y ${max}.`);
+  return number;
+};
+
+/**
+ * Valida un juego de tarifas de vigilancia antes de guardarlo (pantalla de tarifas, sólo administrador). Rangos
+ * amplios, sólo para atajar errores de digitación: un factor de 102,1 o un IVA de 19 en vez de 0,19.
+ */
+export function normalizeGuardRates(params = {}) {
+  const dayStartHour = inRange(params.dayStartHour, 0, 23, 'La hora de inicio del día');
+  const dayEndHour = inRange(params.dayEndHour, 1, 24, 'La hora de fin del día');
+  if (dayEndHour <= dayStartHour) fail('La hora de fin del día tiene que ser posterior a la de inicio.');
+  const dayShare = inRange(params.dayShare, 0, 1, 'La participación del día');
+  const nightShare = inRange(params.nightShare, 0, 1, 'La participación de la noche');
+  if (Math.abs(dayShare + nightShare - 1) > 0.0001) fail('Día y noche tienen que sumar 100 %.');
+  const modalities = {};
+  for (const code of GUARD_MODALITIES) modalities[code] = inRange(params.modalities?.[code], 0, 0.5, `El porcentaje de la modalidad ${code}`);
+  return Object.freeze({
+    smlmv: inRange(params.smlmv, 100000, 100000000, 'El salario mínimo'),
+    factor: inRange(params.factor, 1, 30, 'El factor'),
+    dayShare, nightShare, dayStartHour, dayEndHour,
+    modalities: Object.freeze(modalities),
+    lifeInsurancePerGuard: inRange(params.lifeInsurancePerGuard, 0, 1000000, 'El seguro de vida por guarda'),
+    aiuRate: inRange(params.aiuRate, 0, 0.5, 'El AIU'),
+    ivaRate: inRange(params.ivaRate, 0, 0.5, 'El IVA'),
+  });
+}
+
+/** Valida un juego de tarifas de tecnología (margen sobre el precio de venta e IVA). */
+export function normalizeTechRates(params = {}) {
+  return Object.freeze({
+    margin: inRange(params.margin, 0, 0.9, 'El margen'),
+    ivaRate: inRange(params.ivaRate, 0, 0.5, 'El IVA'),
+  });
+}
+
+/** El juego vigente para un día (`AAAA-MM-DD`): el de `valid_from` más reciente que no sea posterior a ese día. */
+export function ratesInEffect(rows = [], day) {
+  return [...rows].filter(row => row && String(row.valid_from) <= day).sort((a, b) => String(b.valid_from).localeCompare(String(a.valid_from)))[0] || null;
+}
+
 /**
  * Hora militar ("0630", "1900", "2400", "6", "18", "06:30") → horas decimales. Rechaza lo imposible (minutos de 60 en
  * adelante, más de 24 horas) en vez de calcular con eso.

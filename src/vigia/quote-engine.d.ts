@@ -31,3 +31,6 @@ export function coveredDays(dayTypes: unknown): number;
 export function quoteGuardPost(post: GuardPostInput, rates?: GuardRates): GuardPostQuote;
 export function quoteTechLine(line: TechLineInput, rates?: TechRates): TechLineQuote;
 export function quoteTotals(input: { guardPosts?: GuardPostInput[]; techLines?: TechLineInput[] }, rates?: { guardRates?: GuardRates; techRates?: TechRates }): QuoteTotals;
+export function normalizeGuardRates(params: unknown): GuardRates;
+export function normalizeTechRates(params: unknown): TechRates;
+export function ratesInEffect<T extends { valid_from: string }>(rows: T[], day: string): T | null;

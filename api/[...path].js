@@ -76,6 +76,7 @@ import { hasPermission } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
+import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, ratesInEffect } from '../src/vigia/quote-engine.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
@@ -501,6 +502,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/avancys/cobro-por-comercial': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
+  'GET /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'POST /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'PUT /api/avancys/cliente-enlace': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
@@ -4753,6 +4756,56 @@ app.get('/api/siio/avancys/facturacion-por-cliente', async (req, res) => {
     }
     sendError(res, error, error?.status || 400);
   }
+});
+
+// AGT-003 — Tarifas del cotizador, con vigencia (entrega 2; Juan, 2026-11-11). Las publica la Superintendencia a más
+// tardar el 31 de diciembre; las carga el administrador (Juan: "por ahora déjemelo a mí") y nunca se sobrescriben: cada
+// juego rige desde su fecha y el anterior queda como historia. Las lee cualquiera que pueda cotizar.
+const QUOTE_RATE_KINDS = Object.freeze({ vigilancia: normalizeGuardRates, tecnologia: normalizeTechRates });
+const QUOTE_RATE_DEFAULTS = Object.freeze({ vigilancia: DEFAULT_GUARD_RATES, tecnologia: DEFAULT_TECH_RATES });
+async function readQuoteRates(database) {
+  const { data, error } = await database.from('psi_quote_rates').select('id,kind,valid_from,params,notes,created_at').order('valid_from', { ascending: false });
+  // Sin la migración 204 se cotiza con las tarifas de 2026 del código y se dice.
+  if (error) { if (error.code === '42P01') return null; throw error; }
+  return data || [];
+}
+app.get('/api/agt003/quote-rates', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    const today = bogotaDay(new Date());
+    const rows = await readQuoteRates(database);
+    const result = {};
+    for (const kind of Object.keys(QUOTE_RATE_KINDS)) {
+      const history = (rows || []).filter(row => row.kind === kind);
+      const current = ratesInEffect(history, today);
+      result[kind] = { current: current ? { ...current, params: QUOTE_RATE_KINDS[kind](current.params) } : { valid_from: null, params: QUOTE_RATE_DEFAULTS[kind], notes: 'Tarifas del código (no hay tarifas cargadas).' }, history };
+    }
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ today, rates: result, canEdit: currentProfile.role === 'admin', motivo: rows === null ? 'La tabla de tarifas todavía no existe (migración 204).' : null });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/agt003/quote-rates', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    if (currentProfile.role !== 'admin') { const error = new Error('Sólo el administrador carga tarifas del cotizador.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const kind = String(req.body?.kind || '');
+    const normalize = QUOTE_RATE_KINDS[kind];
+    if (!normalize) { const error = new Error('El tipo de tarifa es vigilancia o tecnologia.'); error.status = 400; throw error; }
+    const validFrom = String(req.body?.valid_from || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(validFrom) || bogotaDay(`${validFrom}T12:00:00-05:00`) !== validFrom) { const error = new Error('La fecha de vigencia no es válida.'); error.status = 400; throw error; }
+    const params = normalize(req.body?.params || {});
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim().slice(0, 500) || null : null;
+    const { data, error } = await database.from('psi_quote_rates').insert({ kind, valid_from: validFrom, params, notes, created_by: currentProfile.id }).select('id,kind,valid_from,params,notes,created_at').single();
+    if (error) {
+      if (error.code === '23505') { const conflict = new Error('Ya hay tarifas de ese tipo con esa fecha de vigencia. Use otra fecha.'); conflict.status = 409; throw conflict; }
+      throw error;
+    }
+    res.status(201).json(data);
+  } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 // AGT-003 — el cobro de lo facturado, por comercial (comisiones; Juan, 2026-11-10). El otrosí paga la comisión cuando
