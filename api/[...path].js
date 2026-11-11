@@ -186,6 +186,7 @@ import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
 import { addParticipation, getAlly, listAllies, loadAlliesListing, updateAlly } from '../verticales/licitaciones/tender-allies.js';
 import { buildAllyBoard, buildProcessParticipantsBoard } from '../verticales/licitaciones/tender-allies-board.js';
+import { presentExperiencePlan, proposeExperiencePlan } from '../verticales/licitaciones/tender-experience-plan.js';
 import { VIGILANCE_LISTING, VIGILANCE_LISTING_SOURCE } from '../data/aliados/listado-supervigilancia-2026-11-07.js';
 import { VIGILANCE_PARTICIPATIONS_SEED } from '../data/aliados/participaciones-semilla-2026-11-09.js';
 import { rejectUngovernedAgt002Route } from '../verticales/licitaciones/agt002-governed-route-retirement.js';
@@ -568,6 +569,9 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-allies/participation': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/candidates': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/tender-experience-plan': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'POST /api/tender-experience-plan/propose': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'POST /api/tender-experience-plan/selection': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-filing-folder': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-filing-folder/request': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/process-participants': ['tenders', ACTIONS.LICITACIONES_VIEW],
@@ -8468,6 +8472,72 @@ app.post('/api/tender-filing-folder/request', async (req, res) => {
       const { error } = await database.from('psi_tender_filing_folders').update({ refresh_requested_at: nowIso, updated_at: nowIso }).eq('opportunity_id', opportunityId);
       if (error) throw error;
     } else throw Object.assign(new Error('Acción no válida.'), { status: 400 });
+    res.json({ ok: true });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Mejora 9, tercera parte (Juan, 2026-11-11; migración 207): la experiencia para esta oferta. Vig-IA propone qué
+// contratos van a la parte habilitante y a la ponderable; el servidor la revisa y una persona acepta o cambia.
+const EXPERIENCE_PLAN_COLUMNS = 'id,rup_consecutive,contracting_party,contract_object,value_smmlv,contract_year,certificate_status,unspsc_codes';
+const experiencePlanMissing = error => ['PGRST205', '42P01', '42703', 'PGRST204'].includes(String(error?.code || ''));
+async function readExperiencePlanInputs(database, opportunityId) {
+  const [{ data: plan, error: planError }, { data: experience, error: experienceError }] = await Promise.all([
+    database.from('psi_tender_experience_plans').select('*').eq('opportunity_id', opportunityId).maybeSingle(),
+    database.from('psi_company_experience').select(EXPERIENCE_PLAN_COLUMNS),
+  ]);
+  if (planError || experienceError) {
+    if (experiencePlanMissing(planError || experienceError)) return { installed: false };
+    throw planError || experienceError;
+  }
+  return { installed: true, plan, experience: experience || [] };
+}
+
+app.get('/api/tender-experience-plan', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.set('Cache-Control', 'private, no-store');
+    const inputs = await readExperiencePlanInputs(database, opportunityId);
+    if (!inputs.installed) return res.json({ installed: false, plan: null });
+    res.json({ installed: true, plan: presentExperiencePlan(inputs.plan, inputs.experience) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-experience-plan/propose', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const inputs = await readExperiencePlanInputs(database, opportunityId);
+    if (!inputs.installed) throw Object.assign(new Error('La propuesta de experiencia aún no está habilitada (falta la migración 207).'), { status: 409 });
+    const status = await readAgt002InitialAnalysisStatus(database, opportunityId);
+    if (!status.runId) throw Object.assign(new Error('Este proceso todavía no tiene análisis de Vig-IA.'), { status: 409 });
+    const { data: version } = await database.from('psi_agt002_pre_go_analysis_versions').select('envelope')
+      .eq('analysis_run_id', status.runId).order('aggregate_version', { ascending: false }).limit(1).maybeSingle();
+    const { documents } = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
+    const result = await proposeExperiencePlan(database, { opportunityId, runId: status.runId, envelope: version?.envelope, documents, experience: inputs.experience, actorId: currentProfile.id });
+    res.json(result);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-experience-plan/selection', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const list = value => (Array.isArray(value) ? value : []).map(item => String(item).trim()).filter(item => /^\d{1,4}$/.test(item)).slice(0, 30);
+    const selection = { habilitante: list(req.body?.habilitante), ponderable: list(req.body?.ponderable) };
+    const nowIso = new Date().toISOString();
+    const { data, error } = await database.from('psi_tender_experience_plans').update({ selection, selection_by: currentProfile.id, selection_at: nowIso, updated_at: nowIso }).eq('opportunity_id', opportunityId).select('opportunity_id');
+    if (error) throw error;
+    if (!data?.length) throw Object.assign(new Error('Primero pida la propuesta a Vig-IA.'), { status: 409 });
     res.json({ ok: true });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
