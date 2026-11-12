@@ -44,6 +44,7 @@ test('separa lo permitido de lo denegado, con el motivo que da Odoo en una sola 
   assert.equal(tarifario.permitido, false);
   assert.match(tarifario.motivo, /AccessError: No tiene permiso para leer$/);
   assert.equal(r.pedidos.filter(f => f.permitido).length, MODELOS_PEDIDOS.length - 2);
+  assert.deepEqual(r.turnos.map(f => f.modelo), ['hr.roster.programacion', 'hr.roster.programacion.line']);
 });
 
 test('el campo oculto deja la rentabilidad bloqueada y dice qué grupo la abre', async () => {

@@ -31,6 +31,14 @@ export const MODELOS_PEDIDOS = Object.freeze([
   ['hr.roster.modalidad', 'modalidades de turno'],
 ]);
 
+// La programación de turnos de Avancys. Hoy no se usa (0 programaciones medidas el 2026-10-29, y
+// Juan confirma el 2026-11-12 que se empezará allá). Cuando tenga registros, ahí estará quién cubrió
+// qué puesto: el dato real para el costo por cliente. Se cuenta en cada medición para notarlo.
+export const MODELOS_TURNOS = Object.freeze([
+  ['hr.roster.programacion', 'programaciones de turnos'],
+  ['hr.roster.programacion.line', 'líneas de programación (persona, puesto, día)'],
+]);
+
 // El único que desbloquea rentabilidad por cliente: un campo de hr.contract.
 export const CAMPO_CLAVE = Object.freeze({
   modelo: 'hr.contract',
@@ -106,6 +114,8 @@ export async function medirAccesoAvancys({ config = configuracionDeAvancys(), fe
   for (const modelo of MODELOS_EN_USO) enUso.push(await probar(modelo));
   const pedidos = [];
   for (const modelo of MODELOS_PEDIDOS) pedidos.push(await probar(modelo));
+  const turnos = [];
+  for (const modelo of MODELOS_TURNOS) turnos.push(await probar(modelo));
 
   const clave = { ...CAMPO_CLAVE, permitido: false };
   try {
@@ -134,6 +144,7 @@ export async function medirAccesoAvancys({ config = configuracionDeAvancys(), fe
     medido_en: ahora().toISOString(),
     en_uso: enUso,
     pedidos,
+    turnos,
     campo_clave: clave,
     rentabilidad_por_cliente: clave.permitido ? 'desbloqueada' : 'bloqueada',
     informe_rentabilidad: informe,
