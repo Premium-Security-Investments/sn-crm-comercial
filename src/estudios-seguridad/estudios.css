@@ -137,3 +137,18 @@
 .es-guided-choices{display:flex;gap:6px;flex-wrap:wrap}
 .es-guided-choices button{padding:4px 12px}
 .es-guided-on{outline:2px solid #1b64f2}
+/* Corbatín (migración 216): causas y controles que evitan | evento | controles que reducen el daño y consecuencias. */
+.es-control-detail{display:flex;flex-direction:column;gap:8px;padding:10px 0;border-top:1px solid #edf1f6}
+.es-control-detail:first-of-type{border-top:0}
+.es-bowtie{border:1px solid #e2e8f0;border-radius:11px;padding:8px 12px}
+.es-bowtie summary{cursor:pointer;font-weight:700;color:#40516b}
+.es-bt-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,180px) minmax(0,1fr);gap:12px;align-items:center;margin-top:10px}
+.es-bt-side{display:flex;flex-direction:column;gap:6px;min-width:0}
+.es-bt-side ol,.es-bt-side ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.es-bt-knot{display:flex;align-items:center;justify-content:center;text-align:center;padding:14px 10px;border-radius:999px;background:#1b2b45;color:#fff;min-height:64px}
+.es-bt-control{list-style:none;margin-left:-18px;padding:4px 8px;border-left:4px solid #1b64f2;background:#f7faff;border-radius:6px;display:flex;flex-direction:column}
+.es-bt-control small{color:#5b6b82}
+.es-bt-propuesto{border-left-style:dashed;border-left-color:#8a9ab3;background:#fafbfc}
+.es-bt-gap > span{color:#b42318;font-weight:600}
+.es-bt-gap > small{color:#b42318}
+@media (max-width:760px){.es-bt-grid{grid-template-columns:1fr}.es-bt-knot{border-radius:11px;min-height:0}}

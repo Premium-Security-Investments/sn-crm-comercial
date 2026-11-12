@@ -5,6 +5,7 @@
 // residual que no baja, un riesgo alto sin foto, controles descritos sin calificar o calificados sin describir, causas
 // con el número repetido—. Sólo LEE: no cambia estados, calificaciones ni textos. Quien revisa decide.
 import { readinessIssues } from './flujo.js';
+import { bowTie } from './corbatin.js';
 
 const HIGH_LEVELS = new Set(['alto', 'critico', 'inaceptable']);
 const LEVEL_WORD = { alto: 'alto', critico: 'crítico', inaceptable: 'inaceptable' };
@@ -125,6 +126,15 @@ function riskFindings(detail) {
     }
     if (rated(risk, 'current') && rated(risk, 'proposed') && residual.efectividadControl < actual.efectividadControl) {
       findings.push({ code: 'propuesto_mas_debil', severity: 'revisar', risk: risk.number, message: `${code}: el control propuesto califica peor que el existente.` });
+    }
+    // Corbatín (NTC-IEC/ISO 31010:2020, B.4.2): con los controles ubicados, cada causa de un riesgo alto debe tener
+    // algún control, existente o propuesto.
+    if (HIGH_LEVELS.has(actual.nivel)) {
+      const tie = bowTie(risk);
+      if (tie.sin_ningun_control.length) {
+        const many = tie.sin_ningun_control.length > 1;
+        findings.push({ code: 'causa_sin_control', severity: 'revisar', risk: risk.number, message: `${code}: ${many ? 'las causas' : 'la causa'} ${list(tie.sin_ningun_control.map(String))} no ${many ? 'tienen' : 'tiene'} ningún control, ni existente ni propuesto.` });
+      }
     }
     findings.push(...causeFindings(risk));
     const title = normalizeText(risk.title);

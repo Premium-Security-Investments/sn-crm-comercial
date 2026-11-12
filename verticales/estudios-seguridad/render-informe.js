@@ -120,7 +120,9 @@ function cell(value, header, where) {
   if (!CELL_STYLE.has(style)) fail(`${where}: nivel de color inválido.`);
   const textStyle = spec.axis ? 'EsTxtEje' : spec.bold || header ? 'EsTxtCeldaNegrilla' : 'EsTxtCelda';
   const content = text(String(spec.text ?? ''), where, { optional: true });
-  return `<table:table-cell table:style-name="${style}" office:value-type="string">${paragraph(spec.center || spec.axis || spec.level ? 'EsCeldaCentro' : 'EsCeldaTexto', content, textStyle)}</table:table-cell>`;
+  // Un salto de línea en la celda es otro párrafo (el corbatín pone un control por renglón).
+  const paragraphs = content.split('\n').map(line => paragraph(spec.center || spec.axis || spec.level ? 'EsCeldaCentro' : 'EsCeldaTexto', line, textStyle)).join('');
+  return `<table:table-cell table:style-name="${style}" office:value-type="string">${paragraphs}</table:table-cell>`;
 }
 
 function table(entry, index) {

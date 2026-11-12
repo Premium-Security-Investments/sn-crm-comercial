@@ -17,6 +17,7 @@ import { suggestProbability, suggestionsForStudy } from './sugerencia.js';
 import { RENEWAL_MONTHS, studyValidity } from './vigencia.js';
 import { findPreviousStudy, loadComparison, validatePrevious } from './comparacion.js';
 import { guidedView, loadAnswers } from './recorrido.js';
+import { cleanControlDetails } from './corbatin.js';
 
 export const STUDY_TABLE = 'psi_security_studies';
 export const ZONE_TABLE = 'psi_security_study_zones';
@@ -354,7 +355,7 @@ export function cleanRiskInput(body = {}, catalog = null) {
   if (catalogCode && catalog && !catalog.riesgos.some(item => item.codigo === catalogCode)) throw invalid('Riesgo del catálogo inválido.');
   const processCode = text(body.process_code, { field: 'Proceso', max: 10 });
   if (processCode && catalog && !catalog.procesos.some(item => item.codigo === processCode)) throw invalid('Proceso inválido.');
-  return {
+  const row = {
     zone_id: body.zone_id ? uuid(body.zone_id, 'Zona') : null,
     catalog_risk_code: catalogCode,
     process_code: processCode,
@@ -379,6 +380,10 @@ export function cleanRiskInput(body = {}, catalog = null) {
     proposed_control: text(body.proposed_control, { field: 'Control propuesto', max: 4000 }),
     ...rating(body, 'proposed', 'Control propuesto'),
   };
+  // Migración 216: el dueño del riesgo (opcional) y los datos de cada control, contra los renglones de los controles.
+  row.risk_owner = text(body.risk_owner, { field: 'Dueño del riesgo', max: 200 });
+  row.control_details = cleanControlDetails(body.control_details, row);
+  return row;
 }
 
 async function requireZoneInStudy(db, studyId, zoneId) {

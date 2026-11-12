@@ -15,6 +15,7 @@ import { AlertsPanel } from './AlertsPanel';
 import { ComparisonPanel } from './ComparisonPanel';
 import { LettersPanel } from './LettersPanel';
 import { GuidedPanel } from './GuidedPanel';
+import { BowTieView, ControlDetailsEditor } from './BowTie';
 import {
   IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, RENEWAL_OPTIONS, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
@@ -415,6 +416,10 @@ function RiskForm({ studyId, zones, catalog, initial, riskId, clientProcesses = 
       </div>
       <ScaleSelect label="Probabilidad residual (si se implementa lo recomendado)" value={form.residual_probability} scale={PROBABILITY_SCALE} onChange={value => set({ residual_probability: value })} />
     </fieldset>
+    <ControlDetailsEditor form={form} set={set} />
+    <label>Dueño del riesgo (opcional)
+      <input value={form.risk_owner || ''} onChange={event => set({ risk_owner: event.target.value })} maxLength={200} placeholder="Cargo del cliente que responde por este riesgo. Ej.: Jefe de Logística" />
+    </label>
     <small className="es-muted">Cada control se califica completo (calidad, eficacia y eficiencia) o se deja sin calificar. Sin probabilidad residual, el residual queda igual al actual. La magnitud y el nivel los calcula SIIO.</small>
     {error ? <p className="es-error" role="alert">{error}</p> : null}
     <div className="es-actions">
@@ -457,6 +462,8 @@ function RiskItem({ studyId, risk, zoneLabel, zones, catalog, suggestions, actio
     </div>
     {risk.current_control ? <p><span className="es-label">Control existente:</span> {risk.current_control}</p> : null}
     {risk.proposed_control ? <p><span className="es-label">Control propuesto:</span> {risk.proposed_control}</p> : null}
+    {risk.risk_owner ? <p><span className="es-label">Dueño del riesgo:</span> {risk.risk_owner}</p> : null}
+    <BowTieView risk={risk} />
     {evidence ? <EvidenceStrip studyId={studyId} items={evidence} urls={urls} riskId={risk.id} editable={editable} label="Evidencia" onChanged={onChanged} /> : null}
     <ActionsBlock studyId={studyId} riskId={risk.id} actions={actions} editable={editable} onChanged={onChanged} onError={onError} />
   </li>;

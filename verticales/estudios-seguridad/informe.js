@@ -14,6 +14,7 @@
 import { METODOLOGIAS, METODOLOGIA_V1, nivelDeMagnitud } from './metodologia.js';
 import { RENEWAL_OPTIONS, studyValidity } from './vigencia.js';
 import { ESCALAS, PLANTILLAS, controlWord } from './plantilla.js';
+import { bowTie, controlNote } from './corbatin.js';
 
 export const ARCHIVE_BASE_PATH = '99_Del_CRM/Estudios_de_Seguridad';
 const NIVEL = Object.freeze({ bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico', aceptable: 'Aceptable', tolerable: 'Tolerable', inaceptable: 'Inaceptable' });
@@ -97,12 +98,14 @@ export function generalEvaluation(risks) {
   if (!risks.length) return 'El estudio no tiene riesgos valorados.';
   const count = key => NIVEL_ORDER.map(nivel => [nivel, risks.filter(risk => risk.valoracion[key].nivel === nivel).length]).filter(([, n]) => n);
   const phrase = key => count(key).map(([nivel, n]) => `${n} en nivel ${NIVEL[nivel].toLowerCase()}`).join(', ');
-  const actual = risks.reduce((sum, risk) => sum + risk.valoracion.actual.magnitud, 0);
-  const residual = risks.reduce((sum, risk) => sum + risk.valoracion.residual.magnitud, 0);
+  // NTC-IEC/ISO 31010:2020, 6.3.7.1: las magnitudes de una escala semicuantitativa comparan riesgos, no se suman.
+  // Se cuenta cuántos riesgos bajan de nivel, no una "magnitud total".
+  const order = nivel => NIVEL_ORDER.indexOf(nivel);
+  const lower = risks.filter(risk => order(risk.valoracion.residual.nivel) > order(risk.valoracion.actual.nivel)).length;
   const worst = NIVEL_ORDER.find(nivel => risks.some(risk => risk.valoracion.residual.nivel === nivel));
   return `Con el dispositivo y los controles existentes, de los ${risks.length} riesgos identificados ${phrase('actual')}. `
     + `Al implementar los controles y acciones recomendados, el riesgo residual estimado quedaría con ${phrase('residual')}; `
-    + `la magnitud total bajaría de ${actual} a ${residual} puntos (${percent(actual ? (actual - residual) / actual : 0)} menos) `
+    + `${lower === 0 ? 'ningún riesgo bajaría' : lower === 1 ? '1 riesgo bajaría' : `${lower} riesgos bajarían`} de nivel `
     + `y el nivel residual estimado más alto es ${NIVEL[worst].toLowerCase()}.`;
 }
 
@@ -205,9 +208,23 @@ export const SIGNATURE_ROLES = Object.freeze({ elaboro: 'Analista de riesgos', r
 function methodologyText(id) {
   const scales = `probabilidad (${ESCALAS.probabilidad.join(', ')}) e impacto (${ESCALAS.impacto.join(', ')}), de 1 a 5`;
   if (METODOLOGIAS[id]?.probabilidadResidualEscogida) {
-    return `Metodología ${id}. Sigue los principios y el proceso de gestión del riesgo de la NTC-ISO 31000:2018 y usa técnicas de apreciación del riesgo descritas en la NTC-IEC/ISO 31010 (adopción de IEC 31010:2019): listas de verificación, análisis de controles y matriz de consecuencia y probabilidad con escalas definidas, junto con la guía de calificación de la matriz 5 × 5 de Seguridad Nacional. Estas normas son guías y no son certificables; este documento no constituye una certificación. Matriz cruzada de ${scales}. Cada nivel de probabilidad tiene un significado definido: ${ESCALAS.probabilidadSignificado.map((text, index) => `${index + 1}, ${text}`).join('; ')}. La plataforma sugiere la probabilidad con la estadística de delitos de la zona y las novedades registradas en el puesto durante 12 meses; cuando el analista escoge otra, deja escrito por qué, y cada calificación declara su nivel de confianza y sus supuestos. La valoración inicial es probabilidad × impacto. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad es calidad × eficacia × eficiencia ÷ 125. El riesgo actual es la valoración inicial descontada una vez por la efectividad del control existente, redondeada al entero superior. El riesgo residual es la probabilidad residual que se espera después de implementar los controles propuestos, multiplicada por el mismo impacto: es una estimación, no un resultado verificado. Las magnitudes van de 1 a 25 y sirven para ordenar los riesgos, no como una medida exacta. Niveles: 1 a 6 aceptable, 7 a 14 tolerable y 15 a 25 inaceptable; un riesgo de impacto crítico (5) es como mínimo tolerable y lleva plan de contingencia, aunque sea poco probable.`;
+    return `Metodología ${id}. Sigue los principios y el proceso de gestión del riesgo de la NTC-ISO 31000:2018 y usa técnicas de apreciación del riesgo descritas en la NTC-IEC/ISO 31010:2020 (adopción idéntica de IEC 31010:2019): listas de verificación, análisis de controles con diagrama de corbatín y matriz de consecuencia y probabilidad con escalas definidas, junto con la guía de calificación de la matriz 5 × 5 de Seguridad Nacional. Estas normas son guías y no son certificables; este documento no constituye una certificación. Matriz cruzada de ${scales}. Cada nivel de probabilidad tiene un significado definido: ${ESCALAS.probabilidadSignificado.map((text, index) => `${index + 1}, ${text}`).join('; ')}. La plataforma sugiere la probabilidad con la estadística de delitos de la zona y las novedades registradas en el puesto durante 12 meses; cuando el analista escoge otra, deja escrito por qué, y cada calificación declara su nivel de confianza y sus supuestos. La valoración inicial es probabilidad × impacto. Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad es calidad × eficacia × eficiencia ÷ 125. El riesgo actual es la valoración inicial descontada una vez por la efectividad del control existente, redondeada al entero superior. El riesgo residual es la probabilidad residual que se espera después de implementar los controles propuestos, multiplicada por el mismo impacto: es una estimación, no un resultado verificado. Las magnitudes van de 1 a 25 y sirven para ordenar los riesgos, no como una medida exacta. Niveles: 1 a 6 aceptable, 7 a 14 tolerable y 15 a 25 inaceptable; un riesgo de impacto crítico (5) es como mínimo tolerable y lleva plan de contingencia, aunque sea poco probable.`;
   }
   return `Metodología ${id}, basada en la NTC-ISO 31000 de 2018: matriz cruzada de probabilidad por impacto. Cada riesgo se califica con una ${scales}, con dos impactos (sobre la empresa o sede y sobre las personas; cuenta el mayor). Cada control se califica por su calidad, su eficacia y su eficiencia, de 1 a 5; su efectividad (producto / 125, con tope del 90 %) reduce la probabilidad una sola vez. El riesgo actual considera los controles existentes; el residual, además, los controles propuestos: es una estimación de lo que se espera al implementarlos, no un resultado verificado. Niveles: 1 a 5 bajo, 6 a 10 moderado, 11 a 15 alto y 16 a 25 crítico.`;
+}
+
+// Corbatín (NTC-IEC/ISO 31010:2020, B.4.2): sólo si el analista ubicó los controles antes o después del evento.
+function bowTieSection(risk, { h2, p, list, blocks }) {
+  const tie = bowTie(risk);
+  if (!tie.detallado) return;
+  const named = items => items.map(item => clip(`${item.texto}${controlNote(item) ? ` (${controlNote(item)})` : ''}`, 500)).join('\n') || '';
+  h2('Corbatín: causas, controles y consecuencias');
+  blocks.push({ kind: 'table', header: ['Causa', 'Controles que evitan el evento'], rows: [
+    ...tie.causas.map(cause => [clip(`${cause.numero}. ${cause.texto}`, 500), named(cause.controles) || (tie.antes_todas.length ? 'Los de todas las causas' : 'Ninguno: causa sin defensa')]),
+    ...(tie.antes_todas.length ? [['Todas las causas', named(tie.antes_todas)]] : []),
+  ] });
+  blocks.push({ kind: 'table', header: ['Controles que reducen el daño si ocurre', 'Consecuencias'], rows: [[named(tie.despues) || 'Ninguno', clip(tie.consecuencias.join('\n'), 2000) || 'No registradas']] });
+  if (tie.sin_ningun_control.length) p(`Causa${tie.sin_ningun_control.length === 1 ? '' : 's'} sin ningún control, ni existente ni propuesto: ${tie.sin_ningun_control.join(', ')}.`);
 }
 
 export function buildStudyReport(snapshot, meta, images = {}) {
@@ -270,7 +287,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
     'Decreto 1072 de 2015, Sistema de Gestión de la Seguridad y Salud en el Trabajo.',
     'Norma ISO 45001 de 2018, Seguridad y Salud en el Trabajo.',
     'Norma NTC-ISO 31000 de 2018, Gestión del Riesgo.',
-    'Norma NTC-IEC/ISO 31010, Técnicas de evaluación del riesgo (adopción de IEC 31010:2019).',
+    'Norma NTC-IEC/ISO 31010 de 2020, Técnicas de evaluación del riesgo (adopción idéntica de IEC 31010:2019).',
     'Ley 1581 de 2012 y Decreto 1377 de 2013, protección de datos personales.',
   ]);
   h2('Metodología');
@@ -335,6 +352,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
       ['Escenario físico', zones.get(risk.zona) || 'Sin zona'],
       ['Proceso', risk.proceso_cliente || '—'],
       ['Factor de riesgo', risk.factor || '—'],
+      ...(risk.dueno ? [['Dueño del riesgo', risk.dueno]] : []),
       ['Riesgo del catálogo', risk.catalogo ? `${risk.catalogo} · ${catalog.get(risk.catalogo) || ''}` : 'Riesgo propio'],
       ['Probabilidad actual · impacto', `${ESCALAS.probabilidad[risk.valoracion.actual.probabilidad - 1]} (${risk.valoracion.actual.probabilidad}) · ${ESCALAS.impacto[risk.valoracion.impacto - 1]} (${risk.valoracion.impacto})`],
       ['Valoración inicial (probabilidad × impacto)', String(risk.valoracion.inherente?.magnitud ?? risk.valoracion.actual.probabilidad * risk.valoracion.impacto)],
@@ -363,6 +381,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
     h2('Causas de materialización del riesgo');
     p(clip(risk.causas, 5000) || 'No registradas.');
     if (risk.consecuencias) { h2('Consecuencias'); p(clip(risk.consecuencias, 5000)); }
+    bowTieSection(risk, { h2, p, list, blocks });
     h2('Recomendaciones de seguridad');
     const actions = snapshot.acciones.filter(action => action.riesgo === risk.id && action.estado !== 'descartada');
     const recommendations = [
