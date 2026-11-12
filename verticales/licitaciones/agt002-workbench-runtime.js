@@ -48,6 +48,7 @@ import {
 } from './agt002-workbench-persistence.js';
 import { runAgt002WorkbenchWorker } from './agt002-workbench-worker.js';
 import { armarAgt002CarpetaDelProceso } from './agt002-mesa-carpeta.js';
+import { ejecutarAgt002AccionesDeLaMesa } from './agt002-mesa-acciones.js';
 
 // Fase B1: puente de producción mínimo de la Mesa Vig-IA, sin ruta HTTP ni
 // programador todavía. Ningún gate de esta fábrica lee AGT002_PREVIEW_* — la Mesa
@@ -238,6 +239,16 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
         // La carpeta del proceso (Juan, 2026-11-12): detrás de su propio interruptor, porque necesita el puente nuevo
         // (cuerpo de 16 MiB y herramientas de lectura). Con el puente viejo una pregunta con carpeta fallaría.
         armarCarpeta: environment.AGT002_MESA_CARPETA === '1' ? ({ tenderId }) => armarAgt002CarpetaDelProceso(database, { tenderId }) : null,
+        // Paso 4 (Juan, 2026-11-12): lo que la persona pide en el mensaje se hace, a su nombre (el autor del mensaje).
+        ejecutarAcciones: async ({ input, acciones }) => {
+          const { data: mensaje } = await database.from('psi_agt002_workbench_messages')
+            .select('author_id,author_kind,content,author:psi_sales_profiles(full_name)').eq('id', input.origin_message_id).maybeSingle();
+          if (!mensaje || mensaje.author_kind !== 'human') return ['No hice cambios en el CRM: el pedido no viene de una persona.'];
+          return ejecutarAgt002AccionesDeLaMesa(database, {
+            acciones, mensaje: mensaje.content, opportunityId: input.opportunity_id, tenderId: input.tender_id,
+            autorId: mensaje.author_id, autorNombre: mensaje.author?.full_name || null,
+          });
+        },
         resolveSources: ({ tenderId, message, documento }) => resolverParaLector(database, {
           lector: 'agt002.mesa',
           // El formato sólo se busca cuando hay un documento que escribir.

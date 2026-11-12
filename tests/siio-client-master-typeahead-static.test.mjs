@@ -54,7 +54,7 @@ const FROZEN = {
   // Cupos, motor, puente, modelo, timeout e interruptor no cambian.
   // Actualizado a propósito (2026-11-12, pestaña Requisitos en la Mesa): la Mesa pide además
   // `empresa.hechos_que_nos_faltan`. Cupos, motor, puente, modelo, timeout e interruptor no cambian.
-  'verticales/licitaciones/agt002-workbench-runtime.js': '03524f6ce9dd70e3bb422e33044b27d78fd610382765e595c47053a2a85d1a07',
+  'verticales/licitaciones/agt002-workbench-runtime.js': 'd5d54e6bb72b180730e692326c66a2692b6d3ad0801e2128411fae55353bd73e',
   // Actualizado a propósito (2026-11-05, F3 de la auditoría Fiscalía): el corte de vigencia de las normas
   // (`legalAsOf`) toma el día de Colombia en vez del de UTC. Cupos, motor, puente, modelo y timeout no cambian.
   'verticales/licitaciones/agt002-preview-runtime.js': '7d6f6f6b41af98b2b0b3081846565389f07c2bdb7e8766f3ff6570385fce33ae',
