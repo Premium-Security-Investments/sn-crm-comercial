@@ -154,6 +154,8 @@ test('la Mesa pide los once datos y los puede leer', () => {
     'aliados.candidatos', 'aliados.competencia_del_proceso',
     // Mejora 10 en la Mesa (2026-11-11).
     'empresa.condiciones_diferenciales',
+    // Pestaña «Requisitos» en la Mesa (2026-11-12).
+    'empresa.hechos_que_nos_faltan',
   ]);
   for (const nombre of AGT002_MESA_FUENTES) {
     assert.ok(DATOS[nombre], `${nombre} debe estar declarado en el catálogo`);

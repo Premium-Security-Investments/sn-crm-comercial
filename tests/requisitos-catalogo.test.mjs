@@ -230,3 +230,13 @@ test('el puente diario ya no carga la matriz: sólo con --cargar-matriz y sin av
   assert.doesNotMatch(only, /appendLine|runAgt002SharepointEvidenceWatch/);
   assert.match(runner, /force: true/);
 });
+
+test('la Mesa recibe los hechos que nos faltan con su regla; si no hay, la fuente queda sin verificar', async () => {
+  const { resolverHechosQueNosFaltan, DATOS, puedeLeer } = await import('../catalogo-fuentes.js');
+  assert.equal(puedeLeer('empresa.hechos_que_nos_faltan', 'agt002.mesa'), true);
+  assert.equal(DATOS['empresa.hechos_que_nos_faltan'].responsable, 'Katherine');
+  const failing = { from: () => { throw new Error('caída'); } };
+  const vacia = await resolverHechosQueNosFaltan(failing);
+  assert.equal(vacia.valor, null);
+  assert.match(read('verticales/licitaciones/agt002-workbench-responder.js'), /empresa\.hechos_que_nos_faltan[^']*si no los tocan, no los menciones/);
+});

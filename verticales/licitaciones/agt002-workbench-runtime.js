@@ -36,6 +36,8 @@ export const AGT002_MESA_FUENTES = Object.freeze([
   'aliados.competencia_del_proceso',
   // Mejora 10 en la Mesa (2026-11-11): empresa de mujeres, tamaño y discapacidad, y dónde las premia el pliego.
   'empresa.condiciones_diferenciales',
+  // Pestaña «Requisitos» en la Mesa (2026-11-12): lo que no tenemos y nos inhabilita, y qué se decidió.
+  'empresa.hechos_que_nos_faltan',
 ]);
 import {
   claimAgt002WorkbenchJob,
