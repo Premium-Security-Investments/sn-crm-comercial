@@ -32,6 +32,10 @@ test('el cuestionario: códigos únicos, cada pregunta apunta a riesgos de la li
   const covered = new Set(QUESTIONS.flatMap(question => question.riesgos));
   assert.deepEqual([...base].filter(code => !covered.has(code)), [], 'los 31 riesgos de la lista base tienen al menos una pregunta');
   assert.ok(QUESTIONS.filter(question => question.tipo === 'escenario').length >= 8);
+  // Cruce del 2026-11-12 con el material del equipo: cada pregunta dice de dónde sale; sólo la póliza viene de la norma.
+  assert.ok(QUESTIONS.every(question => question.fuente), 'todas con fuente');
+  assert.deepEqual(QUESTIONS.filter(question => question.fuente.startsWith('Norma')).map(question => question.codigo), ['BIE-06']);
+  assert.equal(QUESTIONS.length, 92);
 });
 
 test('responder: sí, no o no aplica; los escenarios piden análisis; desmarcar borra', async () => {

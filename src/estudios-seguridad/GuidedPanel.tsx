@@ -16,7 +16,7 @@ function Question({ studyId, question, editable, onSaved, onError }: { studyId: 
   };
   const weak = question.tipo === 'verificacion' && question.respuesta && question.respuesta !== 'na' && question.respuesta !== question.favorable;
   return <li className={`es-guided-q${weak ? ' es-guided-weak' : ''}`}>
-    <span>{question.texto}</span>
+    <span>{question.texto} <small className="es-muted">· sale de: {question.fuente}</small></span>
     {question.tipo === 'verificacion' ? <div className="es-guided-choices" role="radiogroup" aria-label={question.texto}>
       {CHOICES.map(choice => <button key={choice.value} type="button" role="radio" aria-checked={question.respuesta === choice.value} disabled={!editable || busy}
         className={question.respuesta === choice.value ? 'es-guided-on' : 'secondary'} onClick={() => void save(question.respuesta === choice.value ? null : choice.value, note)}>{choice.label}</button>)}

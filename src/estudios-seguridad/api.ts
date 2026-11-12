@@ -13,7 +13,7 @@ export type StudySummaryRow = {
 };
 
 // Migración 214: recorrido guiado (lista de verificación y "¿qué pasaría si…?" de la IEC 31010).
-export type GuidedQuestion = { codigo: string; tipo: 'verificacion' | 'escenario'; texto: string; favorable: 'si' | 'no' | null; respuesta: 'si' | 'no' | 'na' | null; nota: string | null };
+export type GuidedQuestion = { codigo: string; tipo: 'verificacion' | 'escenario'; texto: string; fuente: string; favorable: 'si' | 'no' | null; respuesta: 'si' | 'no' | 'na' | null; nota: string | null };
 export type GuidedProposal = { codigo: string; nombre: string; categoria: string; vulnerabilidades: number; preguntas: string[]; causas: string | null; control_existente: string | null; control_propuesto: string | null; escenarios: string[]; ya_en_estudio: number | null };
 export type Guided = { available: boolean; version?: string; total?: number; respondidas?: number; areas?: Array<{ codigo: string; nombre: string; respondidas: number; preguntas: GuidedQuestion[] }>; propuestas?: GuidedProposal[] };
 

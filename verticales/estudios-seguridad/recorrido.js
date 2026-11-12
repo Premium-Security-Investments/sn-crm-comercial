@@ -93,7 +93,7 @@ export function guidedView(answers, catalog, risks) {
   const byCode = new Map(answers.map(answer => [answer.question_code, answer]));
   const areas = AREAS.map(area => {
     const questions = QUESTIONS.filter(question => question.area === area.codigo).map(question => ({
-      codigo: question.codigo, tipo: question.tipo, texto: question.texto, favorable: question.favorable ?? null,
+      codigo: question.codigo, tipo: question.tipo, texto: question.texto, favorable: question.favorable ?? null, fuente: question.fuente,
       respuesta: byCode.get(question.codigo)?.value ?? null, nota: byCode.get(question.codigo)?.note ?? null,
     }));
     return { ...area, preguntas: questions, respondidas: questions.filter(question => question.respuesta || question.nota).length };
