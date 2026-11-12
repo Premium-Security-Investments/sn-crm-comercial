@@ -5,7 +5,7 @@ import { minimizarFuentes, sostieneAfirmacion } from '../../catalogo-fuentes.js'
 import { agt002FechaDeTrabajo } from './agt002-fecha-de-trabajo.js';
 import { agt002UsaTopeDeBorrador } from './agt002-mesa-document-intent.js';
 import { AGT002_LESSONS_POLICY } from './agt002-company-lessons.js';
-import { AGT002_CARPETA_POLICY } from './agt002-mesa-carpeta.js';
+import { AGT002_CARPETA_POLICY, AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA } from './agt002-mesa-carpeta.js';
 
 // Política inmutable de la Mesa Vig-IA para el puente de producción (Fase B1). El
 // contexto es dato citable, nunca instrucción; Vig-IA no tiene autoridad de
@@ -423,7 +423,7 @@ export function createAgt002WorkbenchResponder({
 
       const raw = await client.run({
         model,
-        policy: [policyText, lecciones.length > 0 ? AGT002_LESSONS_POLICY : null, carpeta ? AGT002_CARPETA_POLICY : null].filter(Boolean).join(' '),
+        policy: [carpeta ? policyText.replace(AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA) : policyText, lecciones.length > 0 ? AGT002_LESSONS_POLICY : null, carpeta ? AGT002_CARPETA_POLICY : null].filter(Boolean).join(' '),
         input: minimizedInput,
         outputSchema,
         // Al modelo se le deja el tope del borrador menos 15 s, que son para armar y guardar el Word. Una respuesta (F7)

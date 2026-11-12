@@ -17,8 +17,14 @@ const CARPETAS = Object.freeze([
 const PRIORIDAD_AL_RECORTAR = ['06_terceros', '07_otros', '04_estudios_previos', '03_anexos_y_formatos', '05_nuestro', '02_respuestas_actas_e_informes'];
 const MARGEN_INDICE_BYTES = 64 * 1024;
 
+// La política base de la Mesa prohíbe toda herramienta; con carpeta esa regla se cambia por ésta. En producción
+// (DEAJ, 12-nov) el modelo obedeció la prohibición, no buscó y repitió el fragmento cortado.
+export const AGT002_SIN_HERRAMIENTAS = 'No uses herramientas, navegación, correo, mensajería, archivos externos ni acciones fuera de esta generación estructurada.';
+export const AGT002_SOLO_LECTURA_DE_LA_CARPETA = 'Sólo puedes usar las herramientas de lectura (Grep para buscar, Read para leer, Glob para listar) sobre la carpeta del proceso que está en tu directorio de trabajo; no uses navegación, correo, mensajería ni acciones fuera de esta generación estructurada.';
+
 export const AGT002_CARPETA_POLICY = [
   'CARPETA DEL PROCESO. Tu directorio de trabajo tiene el texto completo de todos los documentos vigentes de esta licitación; empieza por 00_INDICE.md.',
+  'Antes de responder busca SIEMPRE en la carpeta, aunque context_links o fuentes_resueltas ya traigan fragmentos: esos fragmentos son recortes, pueden venir cortados o mezclar dos columnas, y si un fragmento y la carpeta no coinciden, manda la carpeta.',
   'Trabaja como un analista que lee la fuente: (1) busca con Grep los términos de la pregunta y sus sinónimos en toda la carpeta (por ejemplo sucursal, agencia, sede; consorcio, unión temporal, integrante); (2) lee con Read el bloque completo alrededor de cada hallazgo, no sólo la línea; (3) manda el pliego definitivo y la última adenda sobre el proyecto y los estudios previos; (4) en las respuestas a observaciones busca primero las de SEGURIDAD NACIONAL y di qué decidió la entidad (acoge, no acoge, acepta parcialmente, aclara);',
   '(5) esas respuestas vienen de tablas de dos columnas (lo que pidió el observante y lo que respondió la entidad) y el texto puede venir intercalado línea por línea: separa una columna de la otra antes de concluir, y nunca tomes como respuesta a una observación una frase que pertenece a otra;',
   '(6) antes de decir que algo no consta, no está o viene cortado, búscalo otra vez con otras palabras y en las otras carpetas; si después de eso no aparece, dilo y di qué buscaste.',

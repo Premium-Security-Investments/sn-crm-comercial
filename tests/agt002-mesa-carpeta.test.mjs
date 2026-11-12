@@ -12,7 +12,7 @@ import { validarAgt002Carpeta, AGT002_CARPETA_MAX_BYTES } from '../agt002-mesa-c
 import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
 import { createAgt002BridgeServer } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
-import { armarAgt002CarpetaDelProceso, AGT002_CARPETA_POLICY } from '../verticales/licitaciones/agt002-mesa-carpeta.js';
+import { armarAgt002CarpetaDelProceso, AGT002_CARPETA_POLICY, AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA } from '../verticales/licitaciones/agt002-mesa-carpeta.js';
 import { createAgt002WorkbenchResponder } from '../verticales/licitaciones/agt002-workbench-responder.js';
 import { AGT002_WORKBENCH_CAPABILITIES } from '../verticales/licitaciones/agt002-workbench-contract.js';
 
@@ -150,9 +150,13 @@ test('la Mesa manda la carpeta con su política y el tope largo; si la carpeta f
   assert.deepEqual(llamadas[0].carpeta, CARPETA);
   assert.ok(llamadas[0].policy.includes(AGT002_CARPETA_POLICY));
   assert.equal(llamadas[0].timeoutMs, 85_000);
+  // DEAJ, 12-nov: con la prohibición de herramientas intacta, el modelo no buscó y repitió el fragmento cortado.
+  assert.equal(llamadas[0].policy.includes(AGT002_SIN_HERRAMIENTAS), false);
+  assert.ok(llamadas[0].policy.includes(AGT002_SOLO_LECTURA_DE_LA_CARPETA));
 
   const sinCarpeta = [];
   await responder({ armarCarpeta: async () => { throw new Error('base caída'); }, llamadas: sinCarpeta }).respond(PREGUNTA).catch(() => {});
   assert.equal(Object.hasOwn(sinCarpeta[0], 'carpeta'), false);
   assert.equal(sinCarpeta[0].policy.includes(AGT002_CARPETA_POLICY), false);
+  assert.ok(sinCarpeta[0].policy.includes(AGT002_SIN_HERRAMIENTAS), 'sin carpeta sigue prohibido usar herramientas');
 });
