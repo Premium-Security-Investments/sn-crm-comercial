@@ -236,6 +236,7 @@ type Aprox = {
   horas_por_dia?: { promedio: number; mediana: number | null; minimo: number | null; maximo: number | null; con_dato: number; campos_leidos: string[] };
   vigilantes_por_linea?: { con_dato: number; promedio: number | null; mas_de_uno: number };
   excluidas?: { producto: string; lineas: number }[];
+  lectura_de_ordenes?: { leidas: number; cliente_por_contrato: number; sin_cliente: number; sin_producto: number; sin_puesto: number };
 };
 
 // Rentabilidad aproximada (acordada con Juan el 2026-11-12): ingreso real por cliente y costo de
@@ -284,6 +285,7 @@ function RentabilidadAproximada() {
         {' '}mediana {datos.horas_por_dia.mediana?.toFixed(1) ?? '—'}, de {datos.horas_por_dia.minimo?.toFixed(1) ?? '—'} a {datos.horas_por_dia.maximo?.toFixed(1) ?? '—'}).
         {datos.vigilantes_por_linea?.con_dato ? ` Cantidad de vigilantes por línea: ${datos.vigilantes_por_linea.con_dato.toLocaleString('es-CO')} la traen, promedio ${(datos.vigilantes_por_linea.promedio ?? 0).toFixed(1)}, ${datos.vigilantes_por_linea.mas_de_uno.toLocaleString('es-CO')} con más de uno (no se usa todavía).` : ''}
         {' '}Campos leídos: {datos.horas_por_dia.campos_leidos.join(', ')}.
+        {datos.lectura_de_ordenes ? ` Órdenes activas leídas: ${datos.lectura_de_ordenes.leidas.toLocaleString('es-CO')}; cliente tomado del contrato: ${datos.lectura_de_ordenes.cliente_por_contrato.toLocaleString('es-CO')}; sin cliente: ${datos.lectura_de_ordenes.sin_cliente.toLocaleString('es-CO')}; sin producto: ${datos.lectura_de_ordenes.sin_producto.toLocaleString('es-CO')}; sin puesto: ${datos.lectura_de_ordenes.sin_puesto.toLocaleString('es-CO')}.` : ''}
       </p> : null}
       <div className="siio-table-wrap"><table>
         <thead><tr><th>Cliente</th><th>Ingresos</th><th>Horas</th><th>Vigilantes (est.)</th><th>Indirecto (est.)</th><th>Directo</th><th>Margen (est.)</th></tr></thead>

@@ -263,12 +263,14 @@ function mesAproximado() {
   const ejecutar = async (modelo, metodo, args, kwargs) => {
     llamadas.push({ modelo, metodo, args, kwargs });
     if (modelo === 'account.analytic.account') return args[0][0][2].map(id => ANALITICAS[id]);
+    if (modelo === 'project.project') return [{ id: 77, partner_id: [500, 'JERONIMO MARTINS'] }];
     if (modelo === 'project.service.order.line') {
-      if (metodo === 'fields_get') return { partner_id: {}, product_id: {}, time_in: {}, time_out: {}, weekdays: {} };
+      if (metodo === 'fields_get') return { partner_id: {}, project_id: {}, product_id: {}, time_in: {}, time_out: {}, weekdays: {} };
       return [
         { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 6, time_out: 6, weekdays: false },
         { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 18, time_out: 6, weekdays: false },
-        { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 0, time_out: 0, weekdays: false },
+        { partner_id: false, project_id: [77, 'CONTRATO ARA'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 0, time_out: 0, weekdays: false },
+        { partner_id: false, project_id: false, product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 6, time_out: 18, weekdays: false },
         { partner_id: [600, 'OTRO CLIENTE'], product_id: [2, '[VI001] VIGILANCIA FISICA CON ARMA'], time_in: 6, time_out: 18, weekdays: '1,2,3,4,5' },
         { partner_id: [600, 'OTRO CLIENTE'], product_id: [3, '[MO005] MONITOREO TELEMATICO (GPRS)'], time_in: 0, time_out: 0, weekdays: false },
       ];
@@ -313,7 +315,8 @@ test('rentabilidad aproximada: horas del horario de la orden, promedio a la que 
   assert.ok(Math.abs(otro.costo_vigilantes - (-2400 * horasOtro / r.horas)) < 1e-6);
   const lectura = llamadas.find(l => l.modelo === 'project.service.order.line' && l.metodo === 'search_read');
   assert.deepEqual(lectura.args[0], [['state', '=', 'active']]);
-  assert.deepEqual(lectura.kwargs.fields, ['partner_id', 'product_id', 'time_in', 'time_out', 'weekdays']);
+  assert.deepEqual(lectura.kwargs.fields, ['partner_id', 'project_id', 'product_id', 'time_in', 'time_out', 'weekdays']);
+  assert.deepEqual(r.lectura_de_ordenes, { leidas: 6, cliente_por_contrato: 1, sin_cliente: 1, sin_producto: 0, sin_puesto: 0 });
 });
 
 test('rentabilidad aproximada: mes mal escrito no consulta', async () => {

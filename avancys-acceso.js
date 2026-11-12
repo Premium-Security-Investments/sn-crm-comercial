@@ -471,7 +471,7 @@ export function fraccionDeSemana(dias) {
 }
 
 const VIGILANCIA_FISICA = /^\s*\[VI\d+\]/i;
-const CAMPOS_HORARIO = ['partner_id', 'product_id', 'time_in', 'time_out', 'duration', 'weekdays', 'cantidad_vigilantes'];
+const CAMPOS_HORARIO = ['partner_id', 'project_id', 'puesto_id', 'product_id', 'time_in', 'time_out', 'duration', 'weekdays', 'cantidad_vigilantes'];
 const PAGINA_ORDENES = 2000;
 
 export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
@@ -490,13 +490,36 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
   const lineas = [];
   const porDia = [];
   const vigilantes = [];
+  // El cliente de la línea: el suyo, o el del contrato (project.project). La primera corrida real
+  // (2026-11-12) dejó 7 líneas de miles: la mayoría no trae `partner_id` propio.
+  const proyectos = [...new Set(filas.filter(f => !Array.isArray(f.partner_id) && Array.isArray(f.project_id)).map(f => f.project_id[0]))];
+  const clienteDelProyecto = new Map();
+  for (let i = 0; i < proyectos.length; i += LOTE_CUENTAS) {
+    const lote = proyectos.slice(i, i + LOTE_CUENTAS);
+    for (const p of (await ejecutar('project.project', 'search_read', [[['id', 'in', lote]]], { fields: ['partner_id'], limit: lote.length })) || []) {
+      if (Array.isArray(p.partner_id)) clienteDelProyecto.set(p.id, p.partner_id);
+    }
+  }
+  const cuenta = { leidas: filas.length, cliente_por_contrato: 0, sin_cliente: 0, sin_producto: 0, sin_puesto: 0 };
+
   for (const fila of filas) {
-    if (!Array.isArray(fila.partner_id)) continue;
-    const producto = Array.isArray(fila.product_id) ? String(fila.product_id[1]) : 'Sin producto';
-    if (!VIGILANCIA_FISICA.test(producto)) {
+    let cliente = Array.isArray(fila.partner_id) ? fila.partner_id : null;
+    if (!cliente && Array.isArray(fila.project_id)) {
+      cliente = clienteDelProyecto.get(fila.project_id[0]) || null;
+      if (cliente) cuenta.cliente_por_contrato += 1;
+    }
+    if (!cliente) { cuenta.sin_cliente += 1; continue; }
+    const producto = Array.isArray(fila.product_id) ? String(fila.product_id[1]) : null;
+    // Sin producto, la línea cuenta como vigilancia física si tiene puesto: el puesto es el
+    // objeto que se le vende al cliente. Se cuenta aparte para saber cuántas fueron.
+    if (!producto) {
+      if (campos.includes('puesto_id') && !Array.isArray(fila.puesto_id)) { cuenta.sin_puesto += 1; continue; }
+      cuenta.sin_producto += 1;
+    } else if (!VIGILANCIA_FISICA.test(producto)) {
       excluidas.set(producto, (excluidas.get(producto) || 0) + 1);
       continue;
     }
+    fila.partner_id = cliente;
     let horas = horasDelTurno(fila.time_in, fila.time_out);
     let fuente = horas ? 'horario' : null;
     if (!horas && Number(fila.duration) > 0 && Number(fila.duration) <= 24) { horas = Number(fila.duration); fuente = 'duracion'; }
@@ -506,7 +529,7 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
       porDia.push(horas);
     }
     if (Number(fila.cantidad_vigilantes) > 0) vigilantes.push(Number(fila.cantidad_vigilantes));
-    lineas.push({ cliente_id: fila.partner_id[0], cliente: String(fila.partner_id[1]), producto, porDia: horas, fuente });
+    lineas.push({ cliente_id: fila.partner_id[0], cliente: String(fila.partner_id[1]), producto: producto || 'Sin producto', porDia: horas, fuente });
   }
 
   // La línea de vigilancia física sin horario recibe el promedio de las que sí lo tienen.
@@ -523,6 +546,7 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
     lineas,
     horas: total,
     fuentes,
+    cuenta,
     horas_por_dia: {
       promedio,
       mediana: ordenadas.length ? ordenadas[Math.floor(ordenadas.length / 2)] : null,
@@ -612,6 +636,7 @@ export async function rentabilidadAproximada(ejecutar, { mes }) {
       horas_por_dia: horario.horas_por_dia,
       vigilantes_por_linea: horario.vigilantes_por_linea,
       excluidas: horario.excluidas,
+      lectura_de_ordenes: horario.cuenta,
       fondo,
       ingresos_clientes: ingresosClientes,
       clientes_con_ingreso: filas.filter(fila => fila.ingresos > 0).length,
