@@ -68,6 +68,28 @@ export function suggestProbability({ catalogCode = null, catalog = null, securit
   return { probabilidad, significado: PROBABILIDAD_ANCLADA[probabilidad - 1], fuente: source.join('; '), aproximada: true };
 }
 
+/**
+ * Indicador por riesgo (Juan, 2026-11-12: "vamos con A"): después de aprobar, si las novedades de SecurityOps de la sede
+ * en 12 meses ya corresponden a una probabilidad mayor que la calificada Y mayor que la que sugerían los datos al
+ * calificar, los hechos cambiaron: hay que revalorar. Sólo cuenta lo de la sede (no la estadística de la zona) y no hay
+ * umbral manual: la escala anclada es el umbral. Devuelve una entrada por riesgo que se quedó corto.
+ */
+export function riskIndicators({ risks = [], catalog = null, securityops = null }) {
+  if (securityops?.data?.status !== 'ok') return [];
+  const out = [];
+  for (const risk of risks) {
+    const now = suggestProbability({ catalogCode: risk.catalog_risk_code ?? null, catalog, securityops });
+    // Sin conteos en la sede, suggestProbability cae a 1: eso no es un hecho nuevo.
+    if (!now || now.probabilidad < 3) continue;
+    if (now.probabilidad <= Number(risk.probability) || now.probabilidad <= Number(risk.suggested_probability || 0)) continue;
+    out.push({
+      riesgo: risk.number, titulo: risk.title, calificada: Number(risk.probability), hechos: now.probabilidad,
+      detalle: `R${risk.number} ${risk.title} se calificó con probabilidad ${risk.probability}, pero los hechos ya corresponden a ${now.probabilidad} (${now.significado}; ${now.fuente}).`,
+    });
+  }
+  return out;
+}
+
 /** Las sugerencias de todo el catálogo para la ficha: { propio, porCodigo }. */
 export function suggestionsForStudy({ catalog, securityops, crimeStats }) {
   const porCodigo = {};

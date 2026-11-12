@@ -35,7 +35,7 @@ export function ValidityLine({ studyId, validity, renewalMonths, editable, canRe
       {validity?.estado === 'sin_aprobar' ? <small className="es-muted"> El vencimiento se cuenta desde la aprobación.</small> : null}
     </p>
     {validity?.revalorar.length ? <ul className="es-review-list es-review-block">{validity.revalorar.map((item, index) => <li key={index}>
-      {item.motivo === 'siniestro' ? 'Revalorar por siniestro: ' : `Revaloración pedida el ${fmtDate(item.fecha)}: `}{item.detalle}
+      {item.motivo === 'siniestro' ? 'Revalorar por siniestro: ' : item.motivo === 'indicador' ? 'La realidad superó la calificación: ' : `Revaloración pedida el ${fmtDate(item.fecha)}: `}{item.detalle}
     </li>)}</ul> : null}
     {canRequest && validity && validity.estado !== 'sin_aprobar' ? (asking ? <div className="es-inline">
       <input value={note} onChange={event => setNote(event.target.value)} maxLength={1000} placeholder="Motivo: cambio en las instalaciones, siniestro, pedido del cliente…" aria-label="Motivo de la revaloración" />

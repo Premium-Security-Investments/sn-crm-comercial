@@ -158,9 +158,13 @@ export async function listStudies(db, now = new Date()) {
   const studies = await must(db.from(STUDY_TABLE)
     .select('*')
     .order('updated_at', { ascending: false }));
-  const risks = await must(db.from(RISK_TABLE).select('study_id'));
+  const risks = await must(db.from(RISK_TABLE).select('study_id, number, title, catalog_risk_code, probability, suggested_probability'));
   const count = new Map();
-  for (const risk of risks || []) count.set(risk.study_id, (count.get(risk.study_id) || 0) + 1);
+  const byStudy = new Map();
+  for (const risk of risks || []) {
+    count.set(risk.study_id, (count.get(risk.study_id) || 0) + 1);
+    byStudy.set(risk.study_id, [...(byStudy.get(risk.study_id) || []), risk]);
+  }
   // Migración 209: la vigencia de cada estudio (aprobación de la última versión, frecuencia y siniestros posteriores).
   // Tablero de alertas de la sección (Juan, 2026-11-11: "en la sección de estudio de seguridad … no en gerencia"):
   // entregas pendientes y recomendaciones vencidas.
@@ -194,7 +198,11 @@ export async function listStudies(db, now = new Date()) {
     latest_version: approvedAt.get(study.id)?.version ?? null,
     delivered: approvedAt.has(study.id) ? delivered.has(`${study.id}:${approvedAt.get(study.id).version}`) : null,
     overdue_actions: overdue.get(study.id) || { nuestras: 0, cliente: 0 },
-    validity: studyValidity(study, { approvedAt: approvedAt.get(study.id)?.approved_at || null, securityops: ops.get(study.id)?.puesto_id === study.securityops_puesto_id ? { data: ops.get(study.id) } : null, now }),
+    // El indicador por riesgo sólo mira estudios aprobados: los riesgos de la base son los de la versión vigente.
+    validity: studyValidity(study, {
+      approvedAt: approvedAt.get(study.id)?.approved_at || null, securityops: ops.get(study.id)?.puesto_id === study.securityops_puesto_id ? { data: ops.get(study.id) } : null,
+      risks: study.status === 'aprobado' ? byStudy.get(study.id) || [] : null, catalog: PLANTILLAS[study.template_id] || null, now,
+    }),
   }));
 }
 
@@ -260,7 +268,9 @@ export async function getStudy(db, id) {
     guided_answers: guidedAnswers || [],
     recorrido: guidedView(guidedAnswers, template ? { riesgos: template.riesgos } : null, valued),
     // Migración 209: vigencia y revaloración.
-    validity: studyValidity(study, { approvedAt: lastVersion?.error ? null : lastVersion?.data?.[0]?.approved_at || null, securityops }),
+    validity: studyValidity(study, {
+      approvedAt: lastVersion?.error ? null : lastVersion?.data?.[0]?.approved_at || null, securityops,
+      risks: study.status === 'aprobado' ? valued : null, catalog: template, }),
     // IEC 31010: la probabilidad que sugieren los datos para cada riesgo del catálogo y para uno propio.
     probability_suggestions: suggestionsForStudy({ catalog: template ? { riesgos: template.riesgos } : null, securityops, crimeStats: characterization?.estadisticas || [] }),
     summary: { risks: valued.length, levels },
