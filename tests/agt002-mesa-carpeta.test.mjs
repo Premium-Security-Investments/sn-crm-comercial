@@ -105,12 +105,15 @@ test('el puente pasa una carpeta válida al cliente y rechaza una inválida sin 
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
-function baseDeDatos(versiones, extracciones = []) {
+function baseDeDatos(versiones, extracciones = [], otras = {}) {
+  const tablas = { psi_tender_document_versions: versiones, psi_tender_document_extractions: extracciones, ...otras };
   const consulta = filas => {
-    const q = { select: () => q, eq: () => q, order: () => q, in: () => Promise.resolve({ data: extracciones, error: null }), then: (ok, ko) => Promise.resolve({ data: filas, error: null }).then(ok, ko) };
+    const q = { select: () => q, eq: () => q, is: () => q, order: () => q, limit: () => q, in: () => q,
+      maybeSingle: () => Promise.resolve({ data: filas[0] ?? null, error: null }),
+      then: (ok, ko) => Promise.resolve({ data: filas, error: null }).then(ok, ko) };
     return q;
   };
-  return { from: tabla => consulta(tabla === 'psi_tender_document_versions' ? versiones : extracciones) };
+  return { from: tabla => consulta(tablas[tabla] || []), rpc: async () => ({ data: null, error: null }) };
 }
 
 test('el armador ordena por lo que es cada documento, pone el índice primero y usa la extracción canónica', async () => {
@@ -131,7 +134,9 @@ test('el armador ordena por lo que es cada documento, pone el índice primero y 
   assert.equal(rutas.some(ruta => ruta.includes('Anexo')), false, 'un documento sin texto no entra');
   assert.match(carpeta.archivos.find(a => a.ruta.startsWith('01_')).texto, /texto canónico/);
   assert.match(carpeta.archivos[0].texto, /Respuesta Observaciones LP-07-2026\.pdf/);
-  assert.equal(validarAgt002Carpeta(carpeta).length, 4);
+  // Sin oportunidad no hay ficha; el índice de procesos va igual (aquí, sin licitaciones abiertas).
+  assert.equal(validarAgt002Carpeta(carpeta).length, 5);
+  assert.ok(rutas.includes('00_PROCESOS_ABIERTOS.md'));
   assert.equal(await armarAgt002CarpetaDelProceso(baseDeDatos([]), { tenderId: 't1' }), null);
 });
 
@@ -159,4 +164,69 @@ test('la Mesa manda la carpeta con su política y el tope largo; si la carpeta f
   assert.equal(Object.hasOwn(sinCarpeta[0], 'carpeta'), false);
   assert.equal(sinCarpeta[0].policy.includes(AGT002_CARPETA_POLICY), false);
   assert.ok(sinCarpeta[0].policy.includes(AGT002_SIN_HERRAMIENTAS), 'sin carpeta sigue prohibido usar herramientas');
+});
+
+import { fichaDelProcesoMarkdown, indiceDeProcesosMarkdown } from '../verticales/licitaciones/agt002-ficha-del-proceso.js';
+
+const REPORTE = {
+  recommendation: { label: 'Solo en unión temporal: liquidez 2,37 frente a 2,73 y agencia, no sucursal, en Bogotá.' },
+  companyFitLabel: 'NO_APTO',
+  deadlines: [
+    { kind: 'PROJECT_OBSERVATIONS', label: 'Observaciones al proyecto de pliego', value: '2026-11-06T17:00:00-05:00', certainty: 'CONFIRMED' },
+    { kind: 'OBSERVATIONS', label: 'Observaciones al pliego definitivo', value: '2026-11-17T17:00:00-05:00', certainty: 'CONFIRMED' },
+    { kind: 'SUBMISSION', label: 'Cierre', value: '2026-11-24T09:00:00-05:00', certainty: 'CONFIRMED' },
+  ],
+  findings: [{ title: 'Liquidez', impact: 'Exige 2,73; tenemos 2,37.', blocker: true }, { title: 'Póliza', impact: 'ok', blocker: false }],
+  openItems: [{ description: 'Revisar uniformes', critical: false, status: 'OPEN' }, { description: 'Identificar socio con sucursal en Bogotá', critical: true, status: 'OPEN', ownerRole: 'Comercial' }],
+};
+
+test('la ficha junta datos, estado, lo que dijeron las personas, cronograma, bloqueos y pendientes', () => {
+  const ficha = fichaDelProcesoMarkdown({
+    hoy: '2026-11-12',
+    oportunidad: { id: 'o1', company_name: 'Rama Judicial DEAJ', tender_offer_status: 'en_preparacion', current_security_provider: 'AMCOVIT' },
+    tender: { entity: 'Dirección Ejecutiva de Administración Judicial', ref: 'LP-07-2026', title: 'Vigilancia altas cortes', value: 33322051436.43, deadline_at: '2026-11-24T14:00:00Z', city: 'Bogotá' },
+    decision: { decision: 'go', decided_by_name: 'Katherine Valencia', decided_at: '2026-11-05T17:06:00Z', justification: 'Vamos si hay socio' },
+    aclaraciones: [{ created_at: '2026-11-12T13:00:00Z', author_name: 'Juan Botero', content: 'Yo me encargo de definir el socio.' }],
+    reporte: REPORTE,
+  });
+  assert.match(ficha, /Contratista actual del servicio: AMCOVIT/);
+  assert.match(ficha, /Decisión GO\/NO-GO: go por Katherine Valencia el 2026-11-05: «Vamos si hay socio»/);
+  assert.match(ficha, /Juan Botero: «Yo me encargo de definir el socio\.»/);
+  assert.match(ficha, /\(pasó\) 2026-11-06 5:00 p\. m\.: Observaciones al proyecto de pliego/);
+  assert.match(ficha, /Cierre: 2026-11-24 9:00 a\. m\./);
+  assert.match(ficha, /Presupuesto oficial: \$33\.322\.051\.436/);
+  assert.match(ficha, /- Liquidez: Exige 2,73/);
+  assert.doesNotMatch(ficha, /- Póliza/);
+  assert.ok(ficha.indexOf('[crítico] Identificar socio') < ficha.indexOf('Revisar uniformes'), 'lo crítico primero');
+});
+
+test('el índice da una línea por proceso, ordenada por la próxima fecha, y marca el de la conversación', () => {
+  const indice = indiceDeProcesosMarkdown({
+    hoy: '2026-11-12', actual: 'o2',
+    procesos: [
+      { oportunidad: { id: 'o1', company_name: 'DEAJ', tender_offer_status: 'en_preparacion' }, tender: { ref: 'LP-07-2026' }, decision: { decision: 'go' }, reporte: REPORTE },
+      { oportunidad: { id: 'o2', company_name: 'Terminal', tender_offer_status: 'presentada' }, tender: { ref: 'TT-SPO-07-2026' }, decision: null,
+        reporte: { recommendation: { label: 'Presentada' }, deadlines: [{ kind: 'EVALUATION_OBSERVATIONS', label: 'Subsanación', value: '2026-11-12T17:00:00-05:00' }] } },
+      { oportunidad: { id: 'o3', company_name: 'Sin análisis', tender_offer_status: null }, tender: null, decision: null, reporte: null },
+    ],
+  });
+  const lineas = indice.split('\n').filter(l => l.startsWith('- '));
+  assert.equal(lineas.length, 3);
+  assert.match(lineas[0], /^- → Terminal · TT-SPO-07-2026 · presentada · sin GO · .*próxima: 2026-11-12 5:00 p\. m\. Subsanación/);
+  assert.match(lineas[1], /DEAJ · LP-07-2026 · en_preparacion · go · cierre 2026-11-24 9:00 a\. m\. · próxima: 2026-11-17 5:00 p\. m\. Observaciones al pliego definitivo/);
+  assert.match(lineas[2], /análisis no listo/);
+});
+
+test('la carpeta lleva la ficha y el índice de procesos al principio cuando se pueden leer, y sigue sin ellos si no', async () => {
+  const versiones = [{ id: 'v1', name: 'Pliego.pdf', document_type: 'pliego', origin: 'entidad', created_at: '2026-11-12T13:12:00Z', extracted_text: 'texto' }];
+  const otras = {
+    psi_public_tenders: [{ id: 't1', ref: 'LP-07-2026', converted_opportunity_id: 'o1' }],
+    psi_sales_opportunities: [{ id: 'o1', company_name: 'DEAJ', tender_offer_status: 'en_preparacion' }],
+  };
+  const carpeta = await armarAgt002CarpetaDelProceso(baseDeDatos(versiones, [], otras), { tenderId: 't1', now: new Date('2026-11-12T15:00:00Z') });
+  assert.deepEqual(carpeta.archivos.map(a => a.ruta).slice(0, 3), ['00_FICHA.md', '00_INDICE.md', '00_PROCESOS_ABIERTOS.md']);
+  assert.match(carpeta.archivos[0].texto, /Ficha del proceso: DEAJ · LP-07-2026/);
+  assert.match(carpeta.archivos[2].texto, /- → DEAJ · LP-07-2026/);
+  const sinFicha = await armarAgt002CarpetaDelProceso(baseDeDatos(versiones), { tenderId: 't1' });
+  assert.equal(sinFicha.archivos[0].ruta, '00_INDICE.md');
 });
