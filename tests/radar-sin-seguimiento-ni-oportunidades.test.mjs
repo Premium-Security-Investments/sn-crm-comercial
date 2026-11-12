@@ -25,3 +25,12 @@ test('el Radar filtra después de agrupar', () => {
   const view = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
   assert.ok(view.includes('onlyRadarCandidates(deduplicateTenders(payload?.tenders || []))'));
 });
+
+test('Oportunidades: cuántas hay en Todas, Por decidir y En curso, sin archivadas', async () => {
+  const stage = buildSync({ entryPoints: [new URL('../src/tenders/opportunityStage.ts', import.meta.url).pathname], bundle: true, platform: 'node', format: 'esm', write: false });
+  const { countOpportunityStages } = await import(`data:text/javascript;base64,${Buffer.from(stage.outputFiles[0].contents).toString('base64')}`);
+  const rows = [{ decision: null }, { decision: 'go', tender_offer_status: 'en_preparacion' }, { decision: 'no_go' }, { decision: 'go', archived_at: '2026-11-01' }, { decision: 'pendiente' }];
+  assert.deepEqual(countOpportunityStages(rows), { all: 4, por_decidir: 2, en_curso: 1 });
+  const view = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
+  for (const label of ['>Todas<FilterCount value={counts?.all} />', '>Por decidir<FilterCount value={counts?.por_decidir} />', '>En curso<FilterCount value={counts?.en_curso} />']) assert.ok(view.includes(label), label);
+});

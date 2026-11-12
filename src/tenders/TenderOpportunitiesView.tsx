@@ -7,7 +7,7 @@ import { TenderOpenBoardPanel } from './components/TenderOpenBoardPanel';
 import { TenderStatusBadge } from './components/TenderStatusBadge';
 import { tenderDetailSectionHref } from './detailNavigationState';
 import { tenderDossierQueueState } from './dossierUtils';
-import { classifyOpportunityStage, opportunityQueryFilter, type TenderOpportunityPrimaryFilter, type TenderOpportunityStage } from './opportunityStage';
+import { classifyOpportunityStage, countOpportunityStages, opportunityQueryFilter, type TenderOpportunityPrimaryFilter, type TenderOpportunityStage } from './opportunityStage';
 import { canCreateManualTenderProcess } from './permissions';
 import { tenderDecisionLabel, tenderDocumentStatusLabel, tenderOfferStatusLabel, tenderOpportunityStageLabel, tenderOpportunityStageTone, tenderStatusTone } from './statusLabels';
 import { readableTenderTitle, tenderFitBadgeLabel, tenderFitPlainReasons } from './radarUtils';
@@ -16,6 +16,11 @@ import { dossierPageQuery, reloadCurrentDossierPage as reloadDossierPage, sortTe
 import type { TenderDocumentRefreshResult, TenderManualProcessCreated, TenderOpportunitySummary, TenderOpportunityVigiaAnalysis, TendersModuleProps } from './types';
 
 const PAGE_SIZE = 25;
+
+/** Cuántas hay detrás de un filtro (Juan, 2026-11-12): pastilla a la derecha del nombre; nada mientras carga. */
+function FilterCount({ value }: { value: number | undefined }) {
+  return value === undefined ? null : <span className="opportunity-filter-count" aria-label={`${value} oportunidades`}>{value}</span>;
+}
 
 const opportunityOfferValueFormatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 
@@ -108,12 +113,27 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
     setLoading(true); setError(null);
     try {
       const nextRows = await reloadDossierPage<TenderOpportunitySummary[]>(page, PAGE_SIZE, nextQuery => loadTenderOpportunities<TenderOpportunitySummary[]>(request, { ...nextQuery, filter: queryFilter }));
-      if (requestVersion === requestVersionRef.current) setRows(nextRows);
+      if (requestVersion === requestVersionRef.current) { setRows(nextRows); void loadCounts(); }
     }
     catch (cause) { if (requestVersion === requestVersionRef.current) setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { if (requestVersion === requestVersionRef.current) setLoading(false); }
   };
   useEffect(() => { void reloadCurrentDossierPage(); }, [query.filter, query.limit, query.offset]);
+
+  // Los números de cada filtro: toda la bandeja (sin archivadas), por páginas de 50, con el clasificador de la bandeja.
+  const [counts, setCounts] = useState<{ all: number; por_decidir: number; en_curso: number } | null>(null);
+  const loadCounts = async () => {
+    try {
+      const all: TenderOpportunitySummary[] = [];
+      for (let offset = 0; offset < 1000; offset += 50) {
+        const pageRows = await loadTenderOpportunities<TenderOpportunitySummary[]>(request, { limit: 50, offset, filter: 'all' });
+        all.push(...pageRows);
+        if (pageRows.length < 50) break;
+      }
+      setCounts(countOpportunityStages(all));
+    } catch { setCounts(null); }
+  };
+
 
   // La bandeja de convertidas debe priorizar el cierre más próximo en Todas y en cada estado.
   const displayRows = useMemo(() => sortTenderOpportunitySummaries(rows), [rows]);
@@ -158,9 +178,9 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
     {canCreateManual && creatingManual && <TenderManualProcessForm request={request} onCreated={openCreatedManualProcess} onCancel={() => setCreatingManual(false)} />}
     <div className="opportunity-filter-row">
     <div className="opportunity-primary-filters" role="group" aria-label="Filtrar oportunidades">
-      <button type="button" className="secondary" aria-pressed={filter === 'all'} disabled={loading} onClick={() => { setFilter('all'); setPage(1); }}>Todas</button>
-      <button type="button" className="secondary" aria-pressed={filter === 'por_decidir'} disabled={loading} onClick={() => { setFilter('por_decidir'); setPage(1); }}>Por decidir</button>
-      <button type="button" className="secondary" aria-pressed={filter === 'en_curso'} disabled={loading} onClick={() => { setFilter('en_curso'); setPage(1); }}>En curso</button>
+      <button type="button" className="secondary" aria-pressed={filter === 'all'} disabled={loading} onClick={() => { setFilter('all'); setPage(1); }}>Todas<FilterCount value={counts?.all} /></button>
+      <button type="button" className="secondary" aria-pressed={filter === 'por_decidir'} disabled={loading} onClick={() => { setFilter('por_decidir'); setPage(1); }}>Por decidir<FilterCount value={counts?.por_decidir} /></button>
+      <button type="button" className="secondary" aria-pressed={filter === 'en_curso'} disabled={loading} onClick={() => { setFilter('en_curso'); setPage(1); }}>En curso<FilterCount value={counts?.en_curso} /></button>
     </div>
       {/* Archivadas es de consulta, no un paso del proceso (Juan, 2026-10-13): va aparte, a la derecha y discreta. */}
       <button type="button" className={`opportunity-archived-link${filter === 'archivadas' ? ' is-active' : ''}`} aria-pressed={filter === 'archivadas'} disabled={loading} onClick={() => { setFilter(filter === 'archivadas' ? 'all' : 'archivadas'); setPage(1); }}>{filter === 'archivadas' ? 'Viendo archivadas · volver' : 'Ver archivadas'}</button>
