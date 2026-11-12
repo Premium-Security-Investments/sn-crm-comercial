@@ -62,7 +62,8 @@ assert.match(opportunities, /aria-pressed=\{filter === 'all'\}/, 'El botón Toda
 assert.match(opportunities, /aria-pressed=\{filter === 'por_decidir'\}/, 'El botón Por decidir debe comparar su estado pulsado contra el filtro por_decidir.');
 assert.match(opportunities, /aria-pressed=\{filter === 'en_curso'\}/, 'El botón En curso debe comparar su estado pulsado contra el filtro en_curso.');
 assert.doesNotMatch(opportunities, /aria-pressed=\{filter === 'cerradas'\}/, 'Ya no debe existir un botón de filtro primario para Cerradas.');
-for (const label of ['Todas', 'Por decidir', 'En curso']) assert.ok(opportunities.includes(`>${label}</button>`), `Oportunidades debe mostrar el botón ${label}`);
+// Desde el 2026-11-12 cada botón lleva su número a la derecha del nombre (<FilterCount />).
+for (const label of ['Todas', 'Por decidir', 'En curso']) assert.ok(opportunities.includes(`>${label}</button>`) || opportunities.includes(`>${label}<FilterCount`), `Oportunidades debe mostrar el botón ${label}`);
 assert.ok(!opportunities.includes('>Cerradas</button>'), 'Oportunidades ya no debe ofrecer el botón de filtro Cerradas.');
 for (const label of ['Todas', 'Por decidir', 'En curso']) assert.ok(opportunityStage.includes(`label: '${label}'`), `Oportunidades debe ofrecer el filtro primario ${label}`);
 assert.ok(!opportunityStage.includes("label: 'Cerradas'"), 'opportunityStage.ts ya no debe ofrecer el filtro primario Cerradas.');

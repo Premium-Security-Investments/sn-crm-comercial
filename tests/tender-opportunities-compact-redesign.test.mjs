@@ -25,6 +25,9 @@ const read = relative => readFileSync(new URL(`../${relative}`, import.meta.url)
 const compact = value => value.replace(/\s+/g, '');
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// El texto de un botón de filtro sin la pastilla con su número.
+const filterLabel = button => [...button.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join('').trim();
+
 function loadModule(relativePath) {
   const bundle = buildSync({
     entryPoints: [new URL(relativePath, import.meta.url).pathname],
@@ -83,7 +86,8 @@ function metadataMap(article) {
 
 async function clickByText(view, text) {
   const button = [...view.container.querySelectorAll('.opportunity-primary-filters button')]
-    .find(candidate => candidate.textContent.trim() === text);
+    // El nombre sin la pastilla con el número (contador de cada filtro, 2026-11-12).
+    .find(candidate => filterLabel(candidate) === text);
   if (!button) throw new Error(`no existe un botón de filtro con texto "${text}"`);
   await act(async () => { button.dispatchEvent(new view.window.MouseEvent('click', { bubbles: true })); });
 }
@@ -153,11 +157,13 @@ test('2 — la vista inicial es "Por decidir", no "Todas"', async () => {
   const { view, request } = mountOpportunities([]);
   try {
     await settle(view);
-    assert.equal(request.calls.length, 1, 'debe hacer exactamente una carga inicial');
+    // Los contadores de cada filtro (2026-11-12) piden la bandeja completa aparte, de 50 en 50 y con filter=all.
+    const pageCalls = request.calls.filter(call => !/filter=all&limit=50&/.test(call));
+    assert.equal(pageCalls.length, 1, 'debe hacer exactamente una carga inicial');
     assert.match(request.calls[0], /filter=por_decidir/, 'la primera carga debe pedir el filtro Por decidir, no Todas');
 
     const buttons = [...view.container.querySelectorAll('.opportunity-primary-filters button')];
-    const pressed = buttons.filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.textContent.trim());
+    const pressed = buttons.filter(button => button.getAttribute('aria-pressed') === 'true').map(filterLabel);
     assert.deepEqual(pressed, ['Por decidir'], 'sólo "Por decidir" debe iniciar presionado');
   } finally {
     await view.unmount();

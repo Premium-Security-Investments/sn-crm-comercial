@@ -73,3 +73,18 @@ export function normalizeOpportunityPrimaryFilter(value: unknown): TenderOpportu
 export function opportunityQueryFilter(filter: unknown): TenderOpportunityFilter {
   return normalizeOpportunityPrimaryFilter(filter);
 }
+
+/**
+ * Cuántas oportunidades hay detrás de cada filtro primario (Juan, 2026-11-12: «cuando uno entra a oportunidades no sabe
+ * cuántas tiene»). Con el mismo clasificador de la bandeja, para que el número coincida con lo que muestra el filtro.
+ */
+export function countOpportunityStages(rows: ClassifiableOpportunity[]): { all: number; por_decidir: number; en_curso: number } {
+  const counts = { all: 0, por_decidir: 0, en_curso: 0 };
+  for (const row of rows) {
+    const stage = classifyOpportunityStage(row);
+    if (stage === 'archivadas') continue;
+    counts.all += 1;
+    if (stage === 'por_decidir' || stage === 'en_curso') counts[stage] += 1;
+  }
+  return counts;
+}
