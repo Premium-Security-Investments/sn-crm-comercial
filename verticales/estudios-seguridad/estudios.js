@@ -15,6 +15,7 @@ import { cleanCharacterization, loadCharacterization } from './caracterizacion.j
 import { loadSecurityOps } from './securityops.js';
 import { suggestProbability, suggestionsForStudy } from './sugerencia.js';
 import { RENEWAL_MONTHS, studyValidity } from './vigencia.js';
+import { findPreviousStudy, loadComparison, validatePrevious } from './comparacion.js';
 
 export const STUDY_TABLE = 'psi_security_studies';
 export const ZONE_TABLE = 'psi_security_study_zones';
@@ -121,6 +122,10 @@ export function cleanStudyInput(body = {}) {
 export async function createStudy(db, body, profile, now = new Date()) {
   const stamp = now.toISOString();
   const row = { ...cleanStudyInput(body), methodology_id: METODOLOGIA_VIGENTE.id, prepared_by: profile.id, created_at: stamp, updated_at: stamp };
+  // Migración 212: el estudio anterior de la misma sede (el último aprobado del mismo cliente y sede), para comparar.
+  // Sólo si hay uno: así un estudio se puede crear aunque la migración 212 no se haya aplicado.
+  const previous = await findPreviousStudy(db, row);
+  if (previous) row.previous_study_id = previous;
   return must(db.from(STUDY_TABLE).insert(row).select('*').single());
 }
 
@@ -132,6 +137,7 @@ export async function updateStudy(db, id, body = {}, profile, now = new Date()) 
   if (body.scope !== undefined) patch.scope = text(body.scope, { field: 'Alcance', max: 4000 });
   if (body.visit_date !== undefined) patch.visit_date = isoDate(body.visit_date, 'Fecha de visita');
   if (body.renewal_months !== undefined) patch.renewal_months = renewal(body.renewal_months);
+  if (body.previous_study_id !== undefined) patch.previous_study_id = await validatePrevious(db, current, body.previous_study_id);
   Object.assign(patch, cleanCharacterization(body));
   if (body.client_source !== undefined || body.site_source !== undefined) {
     const merged = cleanStudyInput({ ...current, ...body });
@@ -229,6 +235,8 @@ export async function getStudy(db, id) {
     db.from('psi_security_study_versions').select('approved_at').eq('study_id', study.id).order('version', { ascending: false }).limit(1),
   ]);
   const valued = (risks || []).map(risk => ({ ...risk, valuation: valuateRisk(risk, study.methodology_id) }));
+  // Migración 212: la comparación con el estudio anterior de la misma sede.
+  const comparison = await loadComparison(db, study, valued, study.methodology_id);
   const levels = { actual: {}, residual: {} };
   for (const risk of valued) {
     levels.actual[risk.valuation.actual.nivel] = (levels.actual[risk.valuation.actual.nivel] || 0) + 1;
@@ -244,6 +252,7 @@ export async function getStudy(db, id) {
     evidence_available: evidence.available,
     characterization,
     securityops,
+    comparison,
     // Migración 209: vigencia y revaloración.
     validity: studyValidity(study, { approvedAt: lastVersion?.error ? null : lastVersion?.data?.[0]?.approved_at || null, securityops }),
     // IEC 31010: la probabilidad que sugieren los datos para cada riesgo del catálogo y para uno propio.

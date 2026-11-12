@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { getStudy } from './estudios.js';
 import { METODOLOGIA_GUIA } from './metodologia.js';
+import { comparisonSnapshot } from './comparacion.js';
 
 export const REVIEW_PERMISSION = 'estudios_seguridad_revisar';
 export const APPROVE_PERMISSION = 'estudios_seguridad_aprobar';
@@ -120,6 +121,8 @@ export function buildSnapshot(detail) {
     })),
     // Migración 201: los antecedentes del puesto en SecurityOps, tal como estaban al aprobar, con su fecha de corte.
     securityops: securityOpsSnapshot(detail.securityops),
+    // Migración 212: cómo se movieron los riesgos frente al estudio anterior, tal como estaba al aprobar.
+    comparacion: comparisonSnapshot(detail.comparison),
     evidencias: (detail.evidence || []).map(item => ({
       id: item.id, riesgo: item.risk_id, zona: item.zone_id, proposito: item.purpose || 'evidencia', tipo: item.kind, archivo: item.file_name, mime: item.mime_type,
       bytes: item.size_bytes, sha256: item.sha256, ruta: item.storage_path, leyenda: item.caption, fecha: item.taken_on,

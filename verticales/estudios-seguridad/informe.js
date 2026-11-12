@@ -177,6 +177,26 @@ function secopsSection(secops, { h2, p, list, blocks }) {
   }
 }
 
+// Migración 212: cómo se movieron los riesgos frente al estudio anterior de la sede (Héctor, reunión del 2026-11-11).
+const CAMBIO = { sube: 'Sube', baja: 'Baja', igual: 'Igual', nuevo: 'Nuevo', ya_no_esta: 'Ya no está' };
+const ESTADO_HOY = { pendiente: 'pendiente', en_curso: 'en curso', cumplida: 'cumplida', descartada: 'descartada' };
+function comparisonSection(comparison, { h2, p, list, blocks }) {
+  if (!comparison) return;
+  const before = comparison.estudio_anterior;
+  const r = comparison.resumen || {};
+  h2('Comparación con el estudio anterior');
+  p(clip(`Frente al estudio ${before.codigo} (versión ${before.version}, aprobado el ${longDate(before.aprobado)}): ${r.sube || 0} riesgos suben, ${r.baja || 0} bajan, ${r.igual || 0} siguen igual, ${r.nuevo || 0} son nuevos y ${r.ya_no_esta || 0} ya no están.${comparison.misma_metodologia ? '' : ' El estudio anterior usó otra metodología: se compara el nivel, no la magnitud.'}`, 900));
+  const cell = item => (item ? { text: `${item.magnitud} · ${NIVEL[item.nivel] || item.nivel}`, level: item.nivel } : '—');
+  blocks.push({ kind: 'table', header: ['Riesgo', 'Antes', 'Ahora', 'Cambio'], rows: comparison.riesgos.slice(0, 120).map(row => [
+    clip(row.actual ? `R${row.actual.numero} · ${row.actual.riesgo}` : `${row.anterior.riesgo} (antes R${row.anterior.numero})`, 300), cell(row.anterior), cell(row.actual), CAMBIO[row.estado] || row.estado,
+  ]) });
+  const pending = (comparison.recomendaciones_anteriores || []).filter(item => !['cumplida', 'descartada'].includes(item.estado));
+  if (pending.length) {
+    p(`De las recomendaciones del estudio anterior, ${pending.length} no se han cumplido:`);
+    list(pending.slice(0, 40).map(item => clip(`${item.riesgo} · ${item.accion} — a cargo ${item.a_cargo === 'cliente' ? 'del cliente' : 'de Seguridad Nacional'}${item.fecha ? `, para el ${longDate(item.fecha)}` : ''}; hoy ${ESTADO_HOY[item.estado] || item.estado}.`, 600)));
+  }
+}
+
 // Los cargos del flujo (Juan, 2026-11-11): prepara el analista de riesgos, revisa el coordinador, aprueba el jefe de
 // operaciones.
 export const SIGNATURE_ROLES = Object.freeze({ elaboro: 'Analista de riesgos', reviso: 'Coordinador', aprobo: 'Jefe de operaciones' });
@@ -304,6 +324,7 @@ export function buildStudyReport(snapshot, meta, images = {}) {
         `${actual - residual} (${percent(actual ? (actual - residual) / actual : 0)})`, residual < actual ? 'Disminuiría' : 'Se mantiene'];
     }) });
   }
+  comparisonSection(snapshot.comparacion, { h2, p, list, blocks });
 
   // Fichas: una por riesgo, como en el informe real.
   for (const risk of risks) {

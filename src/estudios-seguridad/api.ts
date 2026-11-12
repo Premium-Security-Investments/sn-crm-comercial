@@ -12,6 +12,15 @@ export type StudySummaryRow = {
   latest_version?: number | null; delivered?: boolean | null; overdue_actions?: { nuestras: number; cliente: number };
 };
 
+// Migración 212: comparación con el estudio anterior de la sede.
+type ComparedRisk = { numero: number; codigo: string | null; titulo: string; magnitud: number; nivel: Nivel; residual: Nivel };
+export type Comparison = {
+  estudio: { id: string; codigo: string; titulo: string; version: number; aprobado: string | null; metodologia: string };
+  rows: Array<{ estado: 'sube' | 'baja' | 'igual' | 'nuevo' | 'ya_no_esta'; actual: ComparedRisk | null; anterior: ComparedRisk | null }>;
+  resumen: Record<'sube' | 'baja' | 'igual' | 'nuevo' | 'ya_no_esta', number>; mismaMetodologia: boolean;
+  recomendaciones: Array<{ riesgo: string; accion: string; a_cargo: 'cliente' | 'seguridad_nacional'; fecha: string | null; estado: string }>;
+};
+
 // Migración 209: vigencia del estudio y revaloración (Héctor: mínimo cada 6 meses, máximo cada 3 años).
 export type Validity = {
   estado: 'sin_aprobar' | 'vigente' | 'por_vencer' | 'vencido'; aprobado: string | null; vence: string | null; dias: number | null; meses: number;
@@ -90,7 +99,7 @@ export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; rie
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
   evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review; securityops?: SecurityOpsState; entrega?: Entrega;
-  probability_suggestions?: ProbabilitySuggestions; validity?: Validity;
+  probability_suggestions?: ProbabilitySuggestions; validity?: Validity; comparison?: Comparison | null;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 

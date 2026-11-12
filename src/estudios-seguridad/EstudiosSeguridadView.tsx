@@ -12,6 +12,7 @@ import { SecurityOpsPanel } from './SecurityOpsPanel';
 import { DeliveryPanel } from './DeliveryPanel';
 import { ValidityBadge, ValidityLine } from './ValidityLine';
 import { AlertsPanel } from './AlertsPanel';
+import { ComparisonPanel } from './ComparisonPanel';
 import {
   IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, RENEWAL_OPTIONS, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
@@ -218,6 +219,8 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
     {detail.review ? <ReviewPanel review={detail.review} /> : null}
     {detail.entrega ? <DeliveryPanel studyId={study.id} status={study.status} latestVersion={detail.workflow?.versions.length ? detail.workflow.versions[detail.workflow.versions.length - 1].version : null} entrega={detail.entrega} onChanged={reload} /> : null}
     {detail.workflow?.available ? <WorkflowPanel studyId={study.id} status={study.status} preparedBy={study.prepared_by} workflow={detail.workflow} onChanged={reload} /> : null}
+
+    {detail.comparison ? <ComparisonPanel studyId={study.id} comparison={detail.comparison} editable={editable} onChanged={reload} /> : null}
 
     <div className="es-summary" aria-label="Resumen de la valoración">
       <SummaryRow label="Riesgo actual" counts={summary.levels.actual} />
