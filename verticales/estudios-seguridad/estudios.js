@@ -25,8 +25,10 @@ export const RISK_TABLE = 'psi_security_study_risks';
 export const ACTION_TABLE = 'psi_security_study_actions';
 
 const EDITABLE_STATUSES = new Set(['borrador', 'devuelto']);
-const CLIENT_SOURCES = new Set(['avancys', 'crm']);
-const SITE_SOURCES = new Set(['avancys_puesto', 'crm', 'manual']);
+// Cliente único (Juan, 2026-11-12): "estudios de seguridad debe usar solo los clientes que avancys le va a traer".
+// El cliente sale de Avancys con su NIT; la sede, de sus puestos en Avancys o escrita a mano.
+const CLIENT_SOURCES = new Set(['avancys']);
+const SITE_SOURCES = new Set(['avancys_puesto', 'manual']);
 const ACTION_STATUSES = new Set(['pendiente', 'en_curso', 'cumplida', 'descartada']);
 const PRIORITIES = new Set(['alta', 'media', 'baja']);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -97,7 +99,7 @@ async function touch(db, studyId, stamp) {
 
 export function cleanStudyInput(body = {}) {
   const clientSource = CLIENT_SOURCES.has(body.client_source) ? body.client_source : null;
-  if (!clientSource) throw invalid('Elija el cliente de Avancys o del CRM: los clientes no se escriben a mano.');
+  if (!clientSource) throw invalid('Elija el cliente de Avancys: los clientes no se escriben a mano.');
   const siteSource = SITE_SOURCES.has(body.site_source) ? body.site_source : null;
   if (!siteSource) throw invalid('Origen de la sede inválido.');
   const siteRef = text(body.site_ref, { field: 'Sede', max: 120 });

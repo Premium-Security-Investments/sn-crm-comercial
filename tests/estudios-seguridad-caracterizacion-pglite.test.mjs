@@ -83,8 +83,8 @@ test('el dispositivo se siembra con los puestos del contrato en Avancys, sin dup
   assert.deepEqual(await seedPostsFromAvancys(db, study.id, lector), { added: 0, already: 3, found: 3, total_contratos: 2 });
   const { characterization } = await getStudy(db, study.id);
   assert.deepEqual(characterization.dispositivo.map(row => [row.source, row.source_ref, row.name]), [['avancys', 'P-04', 'Fase 4'], ['avancys', 'P-07', 'Fase 7'], ['avancys', 'K-1', 'Guía canino']]);
-  const crm = await createStudy(db, { ...STUDY, client_source: 'crm', client_ref: 'c1', client_nit: null }, PREPARER);
-  await assert.rejects(seedPostsFromAvancys(db, crm.id, lector), /no viene de Avancys/);
+  // Cliente único (Juan, 2026-11-12): un estudio sólo se crea con un cliente de Avancys.
+  await assert.rejects(createStudy(db, { ...STUDY, client_source: 'crm', client_ref: 'c1', client_nit: null }, PREPARER), /cliente de Avancys/);
 });
 
 test('mapa y logo: imágenes imprimibles y del estudio, no de un riesgo', async () => {

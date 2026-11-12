@@ -74,7 +74,7 @@ function StudyList({ onOpen }: { onOpen: (id: string) => void }) {
 
 // --- Alta: el cliente y la sede se eligen de las fuentes ------------------------------------------------------------
 
-type SiteChoice = { site_source: 'avancys_puesto' | 'crm' | 'manual'; site_ref: string | null; site_name: string; site_city: string };
+type SiteChoice = { site_source: 'avancys_puesto' | 'manual'; site_ref: string | null; site_name: string; site_city: string };
 
 function NewStudyForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (id: string) => void }) {
   const [title, setTitle] = useState('');
@@ -105,8 +105,6 @@ function NewStudyForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
     setManualSite(false);
     setPosts(null);
     if (option.source === 'avancys' && option.nit) clientPosts(option.nit).then(setPosts).catch(() => setPosts({ encontrado: false, contratos: [], avancys: 'no_disponible' }));
-    // Un cliente del CRM trae su sede si la tiene; si no, se escribe y queda marcada como escrita a mano.
-    if (option.source === 'crm' && option.site) setSite({ site_source: 'crm', site_ref: option.ref, site_name: option.site, site_city: option.city || '' });
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -135,7 +133,7 @@ function NewStudyForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
     </label>
     {!client ? <label>Cliente
       <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Escriba al menos 3 letras del nombre" aria-describedby="es-client-help" />
-      <small id="es-client-help" className="es-muted">Se busca en Avancys y en el CRM. Los clientes no se escriben a mano.{avancysState !== 'ok' ? ' Avancys no respondió: solo se muestran los del CRM.' : ''}</small>
+      <small id="es-client-help" className="es-muted">Se busca en Avancys: el cliente es el de Avancys, con su NIT. Los clientes no se escriben a mano.{avancysState !== 'ok' ? ' Avancys no respondió: intente de nuevo en un momento.' : ''}</small>
     </label> : <div className="es-chosen">
       <span><strong>{client.name}</strong>{client.nit ? ` · NIT ${client.nit}` : ''} <span className="badge">{client.source === 'avancys' ? 'Avancys' : 'CRM'}</span></span>
       <button type="button" className="secondary" onClick={() => { setClient(null); setSite(null); setPosts(null); }}>Cambiar</button>
@@ -158,7 +156,6 @@ function NewStudyForm({ onCancel, onCreated }: { onCancel: () => void; onCreated
           {allPosts.map(post => <option key={post.codigo || post.nombre} value={post.codigo || ''}>{post.nombre}{post.contrato ? ` · ${post.contrato}` : ''}</option>)}
         </select>
       </label> : null}
-      {site?.site_source === 'crm' && !manualSite ? <p>{site.site_name}{site.site_city ? ` · ${site.site_city}` : ''} <span className="badge">CRM</span></p> : null}
       {!manualSite ? <button type="button" className="es-link" onClick={() => { setManualSite(true); setSite({ site_source: 'manual', site_ref: null, site_name: '', site_city: '' }); }}>
         La sede no aparece (prospecto o sede nueva)
       </button> : <div className="es-grid-2">
