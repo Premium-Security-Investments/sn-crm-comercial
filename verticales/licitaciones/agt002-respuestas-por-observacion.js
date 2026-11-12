@@ -155,7 +155,11 @@ export function configuracionDelPuente(environment) {
  */
 export async function runAgt002RespuestasPorObservacionPass(database, { environment = process.env, bridgeClient = null, limit = 1, timeoutMs = 6 * 60 * 1000 } = {}) {
   const puente = configuracionDelPuente(environment);
-  if (!puente) return [{ event: 'agt002_respuestas_skipped', reason: 'apagada' }];
+  // Sólo sí/no, nunca valores: dice cuál de las tres condiciones del puente del análisis falta en la unidad.
+  if (!puente) {
+    return [{ event: 'agt002_respuestas_skipped', reason: 'apagada', mesa: false, llamadas: environment?.AGT002_MODEL_CALLS_ENABLED === 'true',
+      llave: String(environment?.AGT002_BRIDGE_HMAC_SECRET || '').trim().length >= 32, modelo: Boolean(String(environment?.AGT002_INITIAL_ANALYSIS_MODEL_ID || '').trim()) }];
+  }
   if (timeoutMs < AGT002_RESPUESTAS_MIN_MS) return [{ event: 'agt002_respuestas_skipped', reason: 'sin_tiempo' }];
   let pendientes;
   try { pendientes = await candidatos(database); }
