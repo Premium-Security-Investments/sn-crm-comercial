@@ -602,7 +602,7 @@ function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfi
     if (href.startsWith('#/tenders?view=')) {
       if (route.page !== 'tenders') return false;
       const view = tenderViewFromHash();
-      return href === `#/tenders?view=${view === 'configuracion' || view === 'lecciones' || view === 'aliados' ? 'radar' : view}`;
+      return href === `#/tenders?view=${view === 'configuracion' || view === 'lecciones' || view === 'aliados' || view === 'requisitos' ? 'radar' : view}`;
     }
     return href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
   };

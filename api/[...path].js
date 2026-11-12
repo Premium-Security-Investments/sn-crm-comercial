@@ -106,6 +106,7 @@ import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } fro
 import { loadCompanyBase, recordUploadAsVerification, saveCompanyEvidenceDecision, saveCompanyExperience, saveCompanySite, saveExperienceCertificate } from '../company-base.js';
 import { reviewExperienceCertificate } from '../verticales/licitaciones/experience-certificate-review.js';
 import { pluralReadingFor } from '../verticales/licitaciones/tender-plural-reading.js';
+import { loadRequirementsBoard, saveRequirementFocus } from '../verticales/licitaciones/tender-requirements.js';
 import { assessDifferentialBenefits, findDifferentialMentions, listDifferentialConditions, saveDifferentialCondition } from '../verticales/licitaciones/differential-conditions.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../verticales/licitaciones/tender-document-versioning.js';
 import { isTenderManualUploadStoragePath, tenderManualUploadStoragePath } from '../verticales/licitaciones/tender-manual-upload-path.js';
@@ -580,6 +581,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tender-filing-folder': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-filing-folder/request': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/process-participants': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/tender-requirements': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'POST /api/tender-requirements/focus': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-company-differential-conditions': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-company-differential-conditions': ['tenders', ACTIONS.LICITACIONES_CONFIGURE],
   'GET /api/tender-differential-benefits': ['tenders', ACTIONS.LICITACIONES_VIEW],
@@ -3005,6 +3008,25 @@ app.get('/api/tender-company-experience/certificate-file', async (req, res) => {
     if (signError) throw signError;
     res.set('Cache-Control', 'private, no-store');
     res.json({ url: data.signedUrl });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+// Pestaña «Requisitos» (Juan, 2026-11-11; migración 210): el catálogo histórico de requisitos y «lo que nos frena». Lo
+// ve quien entra a Licitaciones; el estado de cada requisito lo cambia quien decide GO/NO-GO, como en Aliados.
+app.get('/api/tender-requirements', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await loadRequirementsBoard(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-requirements/focus', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    res.json(await saveRequirementFocus(requireDb(), req.body, currentProfile.id));
   } catch (error) { sendAuthError(res, error); }
 });
 
