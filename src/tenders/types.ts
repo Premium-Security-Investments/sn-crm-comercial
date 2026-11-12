@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type TenderModuleView = 'radar' | 'seguimiento' | 'oportunidades' | 'configuracion' | 'lecciones' | 'aliados';
+export type TenderModuleView = 'radar' | 'seguimiento' | 'oportunidades' | 'configuracion' | 'lecciones' | 'aliados' | 'requisitos';
 export type TenderLessonStatus = 'propuesta' | 'activa' | 'retirada' | 'descartada';
 export type TenderLesson = {
   id: string; code: string; version: number; status: TenderLessonStatus; statement: string; rationale: string | null;

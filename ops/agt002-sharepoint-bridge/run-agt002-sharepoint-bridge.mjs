@@ -25,13 +25,22 @@
 // puentes (archivos 600 de cada usuario de puente) exige root. Autorizado por Juan el 2026-11-03.
 // Del archivo sólo se toma el vencimiento; ver `agt002-bridge-session-watch.js`. Es independiente: si
 // uno de los dos pasos falla, el otro corre igual.
+//
+// ## El tercer paso: la matriz histórica de requisitos
+//
+// Juan, 2026-11-12 («vaya con la tabla»): el Excel de la matriz sigue en SharePoint y es la fuente; aquí se copia a
+// psi_tender_requirement_history para la pestaña «Requisitos», sólo si cambió desde la última copia. Lee con la misma
+// sesión de Graph (bajar.py, junto al listador) y no escribe en SharePoint. Independiente de los otros dos.
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
 import { agt002PhaseChangeOpportunityBlocker } from '../../verticales/licitaciones/agt002-phase-change-followup.js';
 import { runAgt002SharepointEvidenceWatch } from '../../verticales/licitaciones/agt002-sharepoint-evidence-diff.js';
 import { runAgt002BridgeSessionWatch } from '../../verticales/licitaciones/agt002-bridge-session-watch.js';
+import { runRequirementMatrixSync } from '../../verticales/licitaciones/requirement-history-import.js';
 
 const BRIDGE_SESSIONS = ['AGT-001', 'AGT-002', 'AGT-003'].map(agent => ({
   agent,
@@ -87,12 +96,31 @@ if (!supabaseUrl || !serviceRoleKey || !script || !drive || !folder) {
       inactiveReason,
       appendLine,
     });
+    let matrixFailed = false;
+    try {
+      const run = promisify(execFile);
+      const matrix = await runRequirementMatrixSync(database, {
+        listFolder: async path => JSON.parse((await run('/usr/bin/python3', [script, drive, path], { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })).stdout)?.archivos || [],
+        download: async path => {
+          const dir = await mkdtemp(join(tmpdir(), 'matriz-'));
+          try {
+            await run('/usr/bin/python3', [join(dirname(script), 'bajar.py'), drive, path, join(dir, 'matriz.xlsx')], { timeout: 120_000 });
+            return await readFile(join(dir, 'matriz.xlsx'));
+          } finally { await rm(dir, { recursive: true, force: true }); }
+        },
+      });
+      log(matrix);
+      matrixFailed = ['requirement_matrix_missing', 'requirement_matrix_failed'].includes(matrix.event);
+    } catch (error) {
+      log({ event: 'requirement_matrix_failed', code: error?.code || 'excepcion' });
+      matrixFailed = true;
+    }
     const avisos = events.filter(event => event.event === 'agt002_sharepoint_watch_notice').length;
     const fallos = events.filter(event => event.event === 'agt002_sharepoint_watch_failed').length;
     log({ event: 'agt002_sharepoint_bridge_fin', archivos: files.length, avisos, fallos });
     // Sin listado no se concluye nada, y eso ES un fallo del trabajo: que se vea en rojo, en vez de
     // parecer un día tranquilo. Un aviso que no se pudo escribir también.
-    if (files.length === 0 || fallos > 0 || sessionFailures > 0) process.exitCode = 1;
+    if (files.length === 0 || fallos > 0 || sessionFailures > 0 || matrixFailed) process.exitCode = 1;
   } catch {
     log({ event: 'agt002_sharepoint_bridge_failed' });
     process.exitCode = 1;

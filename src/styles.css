@@ -1159,3 +1159,27 @@ td.numeric-value{white-space:nowrap}
 .quote-line-total{margin:0;color:#172033;font-variant-numeric:tabular-nums}
 .quote-line-error{margin:0;color:#b42318;font-weight:650}
 .quote-summary p{margin:6px 0;font-variant-numeric:tabular-nums}
+/* Pestaña «Requisitos» (2026-11-11): lo que nos frena, en tarjetas, y el catálogo histórico, como la tabla de Aliados. */
+.tender-requirements-focus-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:start}
+.tender-requirements-focus{display:grid;gap:10px;padding:16px;border:1px solid #dbe4f0;border-left:4px solid #c2410c;border-radius:12px;background:#fff;min-width:0}
+.tender-requirements-focus.is-en_tramite{border-left-color:#b7791f}.tender-requirements-focus.is-resuelto{border-left-color:#15803d}
+.tender-requirements-focus header{display:flex;justify-content:space-between;gap:10px;align-items:start}.tender-requirements-focus h4{margin:0;font-size:16px;color:#172033}
+.tender-requirements-status{flex:0 0 auto;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#fde7dc;color:#9a3412}
+.tender-requirements-status.is-en_tramite{background:#fdf2d6;color:#8a5a0b}.tender-requirements-status.is-resuelto{background:#dcf5e3;color:#166534}
+.tender-requirements-count{margin:0;color:#40516b;font-size:14px}.tender-requirements-view section>h3{margin-bottom:0}.tender-requirements-view section>h3+p{margin-top:0}
+.tenders-page .tender-requirements-focus dl{display:block;margin:0}.tenders-page .tender-requirements-focus dt{display:block;font-size:12px;font-weight:800;color:#5b6678;margin:10px 0 2px}.tenders-page .tender-requirements-focus dt:first-child{margin-top:0}.tenders-page .tender-requirements-focus dd{display:block;margin:0;line-height:1.5;overflow-wrap:anywhere}
+.tender-requirements-focus>button{justify-self:start;padding:7px 12px;font-size:13px}
+.tender-requirements-processes{margin:6px 0 0;padding-left:18px;display:grid;gap:3px;font-size:13px}
+.tender-requirements-form{display:grid;gap:10px}.tender-requirements-form label{display:flex;flex-direction:column;gap:5px;font-weight:700;color:#40516b;font-size:13px}.tender-requirements-form textarea,.tender-requirements-form input,.tender-requirements-form select{font-weight:400}
+.tender-requirements-actions{display:flex;gap:8px}
+.tenders-page .tender-requirements-table{width:100%;min-width:640px;table-layout:fixed;border-collapse:collapse;font-size:13px}
+.tender-requirements-table .col-title{width:52%}.tender-requirements-table .col-category{width:22%}.tender-requirements-table .col-count{width:13%}
+.tender-requirements-table th,.tender-requirements-table td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top;overflow-wrap:anywhere;white-space:normal}
+.tender-requirements-table thead th{font-weight:800;color:#40516b;background:#f8fbff}
+.tender-requirements-table tr.is-open{background:#f3f7ff}.tender-requirements-table tr.is-open>td{border-bottom:0}.tender-requirements-table tr.is-open>td:first-child{box-shadow:inset 4px 0 0 #1d4ed8}
+.tender-requirements-table .tender-requirements-name,.tender-requirements-table .tender-requirements-name:hover,.tender-requirements-table .tender-requirements-name:focus-visible{all:unset;cursor:pointer;color:#174ea6;font-weight:700;line-height:1.35;white-space:normal}.tender-requirements-table .tender-requirements-name:hover{text-decoration:underline}.tender-requirements-table .tender-requirements-name:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
+.tender-requirements-detail>td{background:#f3f7ff;box-shadow:inset 4px 0 0 #1d4ed8;border-bottom:2px solid #bfd3f6;padding:4px 12px 14px 16px}
+.tender-requirements-tag{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:#e8eef8;color:#40516b;font-size:11px;font-weight:700;vertical-align:middle}.tender-requirements-tag.is-blocked{background:#fde7dc;color:#9a3412}
+.tender-requirements-occurrences ul{list-style:none;margin:0;padding:0;display:grid;gap:12px}.tender-requirements-occurrences li{padding-bottom:12px;border-bottom:1px solid #dbe4f0}.tender-requirements-occurrences li:last-child{border-bottom:0}
+.tender-requirements-occurrences p{margin:4px 0;line-height:1.5}.tender-requirements-occurrence-head{font-weight:700}
+.tender-requirements-occurrences blockquote{margin:6px 0 0;padding:6px 10px;border-left:3px solid #bfd3f6;color:#40516b;font-size:12px;background:#fff}
