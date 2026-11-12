@@ -3,7 +3,9 @@
 // Héctor Martínez (reunión del 2026-11-11): "como mínimo cada 6 meses y como máximo cada 3 años", según el puesto, y
 // antes si cambian las instalaciones o hay un siniestro: "el estudio de seguridad es el que nos blinda". Aquí sólo hay
 // cálculo: la fecha de vencimiento sale de la aprobación de la última versión y la frecuencia del estudio; la
-// revaloración la piden una persona (cambio de instalaciones) o las novedades graves de SecurityOps posteriores.
+// revaloración la piden una persona (cambio de instalaciones), las novedades graves de SecurityOps posteriores o el
+// indicador por riesgo (las novedades de la sede ya superan la probabilidad calificada; sugerencia.js).
+import { riskIndicators } from './sugerencia.js';
 
 export const RENEWAL_OPTIONS = Object.freeze([
   Object.freeze({ meses: 6, etiqueta: 'Cada 6 meses', cuando: 'puesto crítico con requisito normativo (BASC, OEA)' }),
@@ -29,7 +31,7 @@ function addMonths(isoDay, months) {
  * `approvedAt`: la aprobación de la última versión (o null). `securityops`: lo traído para el estudio (summary.altas_fechas).
  * Devuelve { estado: 'sin_aprobar' | 'vigente' | 'por_vencer' | 'vencido', aprobado, vence, dias, meses, revalorar: [...] }.
  */
-export function studyValidity(study, { approvedAt = null, securityops = null, now = new Date() } = {}) {
+export function studyValidity(study, { approvedAt = null, securityops = null, risks = null, catalog = null, now = new Date() } = {}) {
   const meses = RENEWAL_MONTHS.has(Number(study.renewal_months)) ? Number(study.renewal_months) : 24;
   if (!approvedAt) return { estado: 'sin_aprobar', aprobado: null, vence: null, dias: null, meses, revalorar: [] };
   const aprobado = bogotaDay(approvedAt);
@@ -45,6 +47,10 @@ export function studyValidity(study, { approvedAt = null, securityops = null, no
   const graves = (securityops?.data?.status === 'ok' ? securityops.data.summary?.novedades?.altas_fechas || [] : []).filter(day => day > aprobado).sort();
   if (graves.length) {
     revalorar.push({ motivo: 'siniestro', fecha: graves.at(-1), detalle: `${graves.length} ${graves.length === 1 ? 'novedad' : 'novedades'} de prioridad alta o crítica en SecurityOps después de la aprobación (la última, ${graves.at(-1)}).` });
+  }
+  // Indicador por riesgo: las novedades de la sede superan la probabilidad calificada.
+  for (const item of risks ? riskIndicators({ risks, catalog, securityops }) : []) {
+    revalorar.push({ motivo: 'indicador', fecha: today, riesgo: item.riesgo, detalle: item.detalle });
   }
   return { estado, aprobado, vence, dias, meses, revalorar };
 }
