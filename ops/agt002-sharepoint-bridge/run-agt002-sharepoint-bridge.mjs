@@ -26,11 +26,12 @@
 // Del archivo sólo se toma el vencimiento; ver `agt002-bridge-session-watch.js`. Es independiente: si
 // uno de los dos pasos falla, el otro corre igual.
 //
-// ## El tercer paso: la matriz histórica de requisitos
+// ## La matriz histórica de requisitos: una sola vez, con `--cargar-matriz`
 //
-// Juan, 2026-11-12 («vaya con la tabla»): el Excel de la matriz sigue en SharePoint y es la fuente; aquí se copia a
-// psi_tender_requirement_history para la pestaña «Requisitos», sólo si cambió desde la última copia. Lee con la misma
-// sesión de Graph (bajar.py, junto al listador) y no escribe en SharePoint. Independiente de los otros dos.
+// Juan, 2026-11-12: el Excel de la matriz (SharePoint) ya no va a cambiar y desde ahora el CRM es la fuente del listado.
+// Por eso no es un paso diario: `--cargar-matriz` corre SÓLO esa carga —sin sesiones ni avisos en los expedientes— y
+// la copia completa a psi_tender_requirement_history aunque la fecha del archivo no haya cambiado (un primer intento
+// dejó 400 de 798 filas). Lee con la misma sesión de Graph (bajar.py, junto al listador); no escribe en SharePoint.
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -54,11 +55,36 @@ const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim(
 const script = String(process.env.AGT002_SHAREPOINT_INVENTORY_SCRIPT || '').trim();
 const drive = String(process.env.AGT002_SHAREPOINT_DRIVE_ID || '').trim();
 const folder = String(process.env.AGT002_SHAREPOINT_LIBRARY_PATH || '').trim();
+const onlyMatrix = process.argv.includes('--cargar-matriz');
+
+async function loadMatrix(database) {
+  const run = promisify(execFile);
+  return runRequirementMatrixSync(database, {
+    force: true,
+    listFolder: async path => JSON.parse((await run('/usr/bin/python3', [script, drive, path], { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })).stdout)?.archivos || [],
+    download: async path => {
+      const dir = await mkdtemp(join(tmpdir(), 'matriz-'));
+      try {
+        await run('/usr/bin/python3', [join(dirname(script), 'bajar.py'), drive, path, join(dir, 'matriz.xlsx')], { timeout: 120_000 });
+        return await readFile(join(dir, 'matriz.xlsx'));
+      } finally { await rm(dir, { recursive: true, force: true }); }
+    },
+  });
+}
 
 if (!supabaseUrl || !serviceRoleKey || !script || !drive || !folder) {
   // Una sola línea segura en stdout, nunca los valores.
   log({ event: 'agt002_sharepoint_bridge_config_invalida' });
   process.exitCode = 1;
+} else if (onlyMatrix) {
+  try {
+    const matrix = await loadMatrix(createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } }));
+    log(matrix);
+    if (matrix.event !== 'requirement_matrix_loaded') process.exitCode = 1;
+  } catch (error) {
+    log({ event: 'requirement_matrix_failed', code: error?.code || 'excepcion' });
+    process.exitCode = 1;
+  }
 } else {
   try {
     const database = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -96,31 +122,12 @@ if (!supabaseUrl || !serviceRoleKey || !script || !drive || !folder) {
       inactiveReason,
       appendLine,
     });
-    let matrixFailed = false;
-    try {
-      const run = promisify(execFile);
-      const matrix = await runRequirementMatrixSync(database, {
-        listFolder: async path => JSON.parse((await run('/usr/bin/python3', [script, drive, path], { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 })).stdout)?.archivos || [],
-        download: async path => {
-          const dir = await mkdtemp(join(tmpdir(), 'matriz-'));
-          try {
-            await run('/usr/bin/python3', [join(dirname(script), 'bajar.py'), drive, path, join(dir, 'matriz.xlsx')], { timeout: 120_000 });
-            return await readFile(join(dir, 'matriz.xlsx'));
-          } finally { await rm(dir, { recursive: true, force: true }); }
-        },
-      });
-      log(matrix);
-      matrixFailed = ['requirement_matrix_missing', 'requirement_matrix_failed'].includes(matrix.event);
-    } catch (error) {
-      log({ event: 'requirement_matrix_failed', code: error?.code || 'excepcion' });
-      matrixFailed = true;
-    }
     const avisos = events.filter(event => event.event === 'agt002_sharepoint_watch_notice').length;
     const fallos = events.filter(event => event.event === 'agt002_sharepoint_watch_failed').length;
     log({ event: 'agt002_sharepoint_bridge_fin', archivos: files.length, avisos, fallos });
     // Sin listado no se concluye nada, y eso ES un fallo del trabajo: que se vea en rojo, en vez de
     // parecer un día tranquilo. Un aviso que no se pudo escribir también.
-    if (files.length === 0 || fallos > 0 || sessionFailures > 0 || matrixFailed) process.exitCode = 1;
+    if (files.length === 0 || fallos > 0 || sessionFailures > 0) process.exitCode = 1;
   } catch {
     log({ event: 'agt002_sharepoint_bridge_failed' });
     process.exitCode = 1;
