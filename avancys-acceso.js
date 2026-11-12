@@ -420,3 +420,134 @@ export async function medirPygPorCliente({ mes, config = configuracionDeAvancys(
   const resultado = await pygPorCliente(sesion.ejecutar, { mes: mes || mesCerradoAnterior(ahora()) });
   return { ...resultado, configurado: true, autenticado: true, origen: config.origen, medido_en: ahora().toISOString() };
 }
+
+// Rentabilidad aproximada por cliente (acordada con Juan el 2026-11-12).
+//
+// Avancys no sabe qué vigilante cubrió qué puesto: cada contrato laboral va a una sola cuenta de
+// agencia × área (lo confirmó el administrador), y la programación de turnos todavía no se hace
+// allá. Lo real es el ingreso de cada cliente y el costo de cada centro. Lo que se estima es
+// cuánto del costo de vigilantes le toca a cada cliente:
+//
+//   costo por hora   = nómina y costos de los centros "…VIGILANTES" del mes ÷ horas vendidas del mes
+//   costo del cliente = horas de sus líneas de orden de servicio × costo por hora
+//   lo indirecto      = el resto de los centros de la empresa, repartido por la facturación
+//
+// Las horas salen del nombre del producto de cada línea de orden de servicio ("24 HORAS",
+// "12 H", "LUNES A VIERNES"). La línea cuyo producto no dice horas no entra al reparto y se cuenta
+// aparte, con el producto, para que una persona vea qué falta reconocer.
+export const ORDENES_DE_SERVICIO = 'project.service.order.line.invoice';
+const CENTRO_VIGILANTES = /VIGILANTES\s*$/i;
+const EMPRESA = /^\s*(\[\d+\]\s*)?SEGURIDAD NACIONAL LTDA/i;
+
+export function horasPorDiaDelProducto(nombre) {
+  const texto = String(nombre || '').toUpperCase();
+  const encontrado = texto.match(/(\d{1,2})\s*(?:H|HR|HRS|HORAS)\b/);
+  const horas = encontrado ? Number(encontrado[1]) : null;
+  if (!horas || horas > 24) return null;
+  let dias = 1;
+  if (/LUNES A VIERNES|\bL\s*[-A]\s*V\b/.test(texto)) dias = 5 / 7;
+  else if (/LUNES A S[AÁ]BADO|\bL\s*[-A]\s*S\b/.test(texto)) dias = 6 / 7;
+  return horas * dias;
+}
+
+export async function rentabilidadAproximada(ejecutar, { mes }) {
+  const rango = rangoDelMes(mes);
+  if (!rango) return { legible: false, mes: mes || null, motivo: 'El mes debe venir como AAAA-MM.' };
+  try {
+    const [anio, numero] = mes.split('-').map(Number);
+    const diasDelMes = new Date(Date.UTC(anio, numero, 0)).getUTCDate();
+    const desde = `${mes}-01`;
+    const hasta = `${mes}-${String(diasDelMes).padStart(2, '0')}`;
+
+    // 1. Lo real: resultado por cuenta analítica.
+    const cuentas = await cuentasDelRango(ejecutar, rango);
+    const porCuenta = await sumarPorClase(ejecutar, rango, cuentas, 'account_id', grupo => (Array.isArray(grupo.account_id) ? grupo.account_id[0] : null));
+    const ids = [...porCuenta.keys()].filter(Boolean);
+    const datosDe = new Map();
+    for (let i = 0; i < ids.length; i += LOTE_CUENTAS) {
+      const lote = ids.slice(i, i + LOTE_CUENTAS);
+      for (const fila of (await ejecutar('account.analytic.account', 'search_read', [[['id', 'in', lote]]], { fields: ['partner_id', 'name'], limit: lote.length })) || []) datosDe.set(fila.id, fila);
+    }
+
+    const clientes = new Map();
+    const fondo = { vigilantes: 0, indirecto: 0, ingresos_sin_cliente: 0, centros_vigilantes: 0 };
+    for (const [id, montos] of porCuenta) {
+      const datos = datosDe.get(id) || {};
+      const partner = Array.isArray(datos.partner_id) ? datos.partner_id : null;
+      const interna = !partner || EMPRESA.test(String(partner[1])) || EMPRESA.test(String(datos.name || ''));
+      const costo = montos.personal + montos.otros_costos;
+      if (interna) {
+        if (CENTRO_VIGILANTES.test(String(datos.name || ''))) { fondo.vigilantes += costo; fondo.centros_vigilantes += 1; }
+        else fondo.indirecto += costo;
+        fondo.ingresos_sin_cliente += montos.ingresos;
+        continue;
+      }
+      const fila = clientes.get(partner[0]) || { cliente: String(partner[1]), ingresos: 0, costo_directo: 0, horas: 0, lineas: 0, lineas_sin_horas: 0 };
+      fila.ingresos += montos.ingresos;
+      fila.costo_directo += costo;
+      clientes.set(partner[0], fila);
+    }
+
+    // 2. Lo que se estima: horas vendidas a cada cliente en el mes.
+    const grupos = (await ejecutar(ORDENES_DE_SERVICIO, 'read_group',
+      [[['state', '=', 'aprobado'], ['fact_start_date', '<=', hasta], ['fact_end_date', '>=', desde]], ['id'], ['client_id', 'product_id']],
+      { lazy: false, limit: 20000 })) || [];
+    const sinHoras = new Map();
+    let horasTotales = 0;
+    let lineas = 0;
+    let lineasConHoras = 0;
+    for (const grupo of grupos) {
+      if (!Array.isArray(grupo.client_id)) continue;
+      const cantidad = grupo.__count || 0;
+      const producto = Array.isArray(grupo.product_id) ? String(grupo.product_id[1]) : 'Sin producto';
+      const porDia = horasPorDiaDelProducto(producto);
+      const fila = clientes.get(grupo.client_id[0]) || { cliente: String(grupo.client_id[1]), ingresos: 0, costo_directo: 0, horas: 0, lineas: 0, lineas_sin_horas: 0 };
+      fila.lineas += cantidad;
+      lineas += cantidad;
+      if (porDia) {
+        const horas = porDia * diasDelMes * cantidad;
+        fila.horas += horas;
+        horasTotales += horas;
+        lineasConHoras += cantidad;
+      } else {
+        fila.lineas_sin_horas += cantidad;
+        sinHoras.set(producto, (sinHoras.get(producto) || 0) + cantidad);
+      }
+      clientes.set(grupo.client_id[0], fila);
+    }
+
+    // 3. El reparto.
+    const costoHora = horasTotales ? fondo.vigilantes / horasTotales : 0;
+    const ingresosClientes = [...clientes.values()].reduce((suma, fila) => suma + Math.max(fila.ingresos, 0), 0);
+    const filas = [...clientes.values()].map(fila => {
+      const vigilantes = fila.horas * costoHora;
+      const indirecto = ingresosClientes ? fondo.indirecto * Math.max(fila.ingresos, 0) / ingresosClientes : 0;
+      const margen = fila.ingresos + fila.costo_directo + vigilantes + indirecto;
+      return { ...fila, costo_vigilantes: vigilantes, costo_indirecto: indirecto, margen };
+    }).sort((izq, der) => der.ingresos - izq.ingresos);
+
+    return {
+      legible: true,
+      aproximado: true,
+      mes,
+      costo_por_hora: costoHora,
+      horas: horasTotales,
+      lineas,
+      lineas_con_horas: lineasConHoras,
+      fondo,
+      ingresos_clientes: ingresosClientes,
+      clientes_con_ingreso: filas.filter(fila => fila.ingresos > 0).length,
+      clientes: filas.slice(0, MAX_CLIENTES_PYG),
+      productos_sin_horas: [...sinHoras].map(([producto, cantidad]) => ({ producto, lineas: cantidad })).sort((izq, der) => der.lineas - izq.lineas).slice(0, 20),
+    };
+  } catch (error) {
+    return { legible: false, mes, motivo: motivoDe(error) };
+  }
+}
+
+export async function medirRentabilidadAproximada({ mes, config = configuracionDeAvancys(), fetchImpl = globalThis.fetch, ahora = () => new Date() } = {}) {
+  const sesion = await abrirSesion({ config, fetchImpl, ahora });
+  if (!sesion.ejecutar) return sesion.estado;
+  const resultado = await rentabilidadAproximada(sesion.ejecutar, { mes: mes || mesCerradoAnterior(ahora()) });
+  return { ...resultado, configurado: true, autenticado: true, origen: config.origen, medido_en: ahora().toISOString() };
+}

@@ -94,7 +94,7 @@ import { createAgt003CopilotApi } from '../verticales/comercial/agt003-copilot-a
 import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../verticales/comercial/agt003-copilot-runtime.js';
 import { resolverParaLector } from '../catalogo-fuentes.js';
 import { crearLectorAvancys } from '../avancys-odoo-lectura.js';
-import { medirAccesoAvancys, medirPygPorCliente } from '../avancys-acceso.js';
+import { medirAccesoAvancys, medirPygPorCliente, medirRentabilidadAproximada } from '../avancys-acceso.js';
 import { veTodaLaCarteraComercial } from '../access-control.js';
 
 // Lo que el copiloto comercial recibe resuelto antes de cada corrida. Crece una línea por entrada.
@@ -617,6 +617,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/siio/avancys/devengado': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/avancys/acceso': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/avancys/pyg-por-cliente': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/avancys/rentabilidad-aproximada': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/sources': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'GET /api/siio/decisions': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/decisions': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
@@ -4780,6 +4781,17 @@ app.get('/api/siio/avancys/pyg-por-cliente', async (req, res) => {
     requireModuleAction(currentProfile, 'siio');
     res.set('Cache-Control', 'private, no-store');
     res.json(await medirPygPorCliente({ mes: typeof req.query.mes === 'string' ? req.query.mes : undefined }));
+  } catch (error) { sendError(res, error, error?.status || 500); }
+});
+
+// Rentabilidad aproximada por cliente: ingreso real y costo de vigilantes repartido por las horas
+// vendidas a cada cliente. A pedido, como las mediciones de arriba.
+app.get('/api/siio/avancys/rentabilidad-aproximada', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'siio');
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await medirRentabilidadAproximada({ mes: typeof req.query.mes === 'string' ? req.query.mes : undefined }));
   } catch (error) { sendError(res, error, error?.status || 500); }
 });
 

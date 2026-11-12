@@ -217,6 +217,88 @@ function PygPorCliente() {
   </div>;
 }
 
+type FilaAprox = { cliente: string; ingresos: number; costo_directo: number; horas: number; lineas: number; lineas_sin_horas: number; costo_vigilantes: number; costo_indirecto: number; margen: number };
+type Aprox = {
+  configurado?: boolean;
+  autenticado?: boolean;
+  legible?: boolean;
+  motivo?: string;
+  mes?: string;
+  costo_por_hora?: number;
+  horas?: number;
+  lineas?: number;
+  lineas_con_horas?: number;
+  fondo?: { vigilantes: number; indirecto: number; ingresos_sin_cliente: number; centros_vigilantes: number };
+  ingresos_clientes?: number;
+  clientes_con_ingreso?: number;
+  clientes?: FilaAprox[];
+  productos_sin_horas?: { producto: string; lineas: number }[];
+};
+
+// Rentabilidad aproximada (acordada con Juan el 2026-11-12): ingreso real por cliente y costo de
+// vigilantes repartido por las horas vendidas. Siempre dice "aproximado" y cuánto no se reconoció.
+function RentabilidadAproximada() {
+  const [mes, setMes] = useState(mesAnterior);
+  const [estado, setEstado] = useState<'quieto' | 'midiendo' | 'listo' | 'error'>('quieto');
+  const [datos, setDatos] = useState<Aprox | null>(null);
+  const [error, setError] = useState('');
+
+  async function calcular() {
+    setEstado('midiendo');
+    setError('');
+    try {
+      setDatos(await api<Aprox>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`));
+      setEstado('listo');
+    } catch (fallo) {
+      setError(fallo instanceof Error ? fallo.message : String(fallo));
+      setEstado('error');
+    }
+  }
+
+  const f = datos?.fondo;
+  return <div className="siio-pulse-block">
+    <h4>Rentabilidad aproximada por cliente</h4>
+    <p className="siio-pulse-footnote">
+      Ingreso real de cada cliente. El costo de vigilantes se reparte por las horas que se le venden (costo por hora promedio de la empresa); supervisión, operaciones y administración, por la facturación. Es una aproximación hasta que la programación de turnos se haga en Avancys.
+    </p>
+    <input type="month" value={mes} onChange={evento => setMes(evento.target.value)} aria-label="Mes" />
+    {' '}<button type="button" onClick={() => void calcular()} disabled={estado === 'midiendo' || !mes}>
+      {estado === 'midiendo' ? 'Calculando…' : 'Calcular'}
+    </button>
+    {estado === 'error' ? <p className="siio-alert-text">No se pudo calcular: {error}</p> : null}
+    {datos && datos.legible === false ? <p className="siio-alert-text">No se pudo calcular: {datos.motivo}</p> : null}
+    {datos && datos.autenticado === false ? <p className="siio-alert-text">Avancys no aceptó la conexión: {datos.motivo}</p> : null}
+    {datos?.legible && f ? <>
+      <p className="siio-pulse-source">
+        {datos.mes} · aproximado. Costo de vigilantes {millones(f.vigilantes)} ({f.centros_vigilantes} centros) ÷ {Math.round(datos.horas ?? 0).toLocaleString('es-CO')} horas vendidas
+        {' '}= ${Math.round(Math.abs(datos.costo_por_hora ?? 0)).toLocaleString('es-CO')} por hora. Indirecto repartido por facturación: {millones(f.indirecto)}.
+        {' '}Líneas de orden con horas reconocidas: {(datos.lineas_con_horas ?? 0).toLocaleString('es-CO')} de {(datos.lineas ?? 0).toLocaleString('es-CO')} ({pct(datos.lineas_con_horas ?? 0, datos.lineas ?? 0)}).
+        {' '}Ingresos en cuentas de la empresa, sin cliente: {millones(f.ingresos_sin_cliente)}.
+      </p>
+      <div className="siio-table-wrap"><table>
+        <thead><tr><th>Cliente</th><th>Ingresos</th><th>Horas</th><th>Vigilantes (est.)</th><th>Indirecto (est.)</th><th>Directo</th><th>Margen (est.)</th></tr></thead>
+        <tbody>{(datos.clientes || []).map(fila => <tr key={fila.cliente}>
+          <td><strong>{fila.cliente}</strong>{fila.lineas_sin_horas ? <span className="siio-secondary"> · {fila.lineas_sin_horas} de {fila.lineas} líneas sin horas</span> : null}</td>
+          <td>{millones(fila.ingresos)}</td>
+          <td>{Math.round(fila.horas).toLocaleString('es-CO')}</td>
+          <td>{millones(fila.costo_vigilantes)}</td>
+          <td>{millones(fila.costo_indirecto)}</td>
+          <td>{millones(fila.costo_directo)}</td>
+          <td>{millones(fila.margen)} · {pct(fila.margen, fila.ingresos)}</td>
+        </tr>)}</tbody>
+      </table></div>
+      {datos.productos_sin_horas?.length ? <>
+        <h4>Productos cuyo nombre no dice las horas</h4>
+        <p className="siio-pulse-footnote">Estas líneas no entran al reparto de vigilantes. Si alguno es vigilancia, hay que decir cuántas horas cubre.</p>
+        <div className="siio-table-wrap"><table>
+          <thead><tr><th>Producto</th><th>Líneas</th></tr></thead>
+          <tbody>{datos.productos_sin_horas.map(fila => <tr key={fila.producto}><td>{fila.producto}</td><td>{fila.lineas.toLocaleString('es-CO')}</td></tr>)}</tbody>
+        </table></div>
+      </> : null}
+    </> : null}
+  </div>;
+}
+
 const hora = (valor?: string) => (valor
   ? new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }).format(new Date(valor))
   : '');
@@ -283,6 +365,7 @@ export function SiioAvancysAcceso() {
       {acceso.informe_rentabilidad ? <InformeRentabilidad informe={acceso.informe_rentabilidad} /> : null}
       {acceso.lineas_analiticas ? <LineasAnaliticas lineas={acceso.lineas_analiticas} /> : null}
       {acceso.lineas_analiticas?.trae_nomina ? <PygPorCliente /> : null}
+      {acceso.lineas_analiticas?.trae_nomina ? <RentabilidadAproximada /> : null}
       {acceso.turnos?.length ? <Lista titulo="Programación de turnos en Avancys (todavía no se usa; cuando tenga registros, ahí está quién cubrió cada puesto)" filas={acceso.turnos} /> : null}
       {acceso.pedidos?.length ? <Lista titulo="Lo que se pidió el 29 de octubre" filas={acceso.pedidos} /> : null}
       {acceso.en_uso?.length ? <Lista titulo="Lo que la Torre ya usa" filas={acceso.en_uso} /> : null}
