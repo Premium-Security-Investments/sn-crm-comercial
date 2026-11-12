@@ -141,6 +141,15 @@ export function deduplicateTenders(tenders: PublicTender[]): PublicTender[] {
   return order.map(key => byKey.get(key)!).filter(Boolean);
 }
 
+/**
+ * Lo que el Radar muestra (Juan, 2026-11-12: «no tiene sentido que estén en dos lugares»): un proceso que pasó a
+ * Seguimiento o se convirtió en oportunidad ya vive en esas vistas y sale del Radar. Se aplica después de agrupar los
+ * duplicados, que prefieren la copia en seguimiento o convertida: así sale el grupo entero y no queda una copia suelta.
+ */
+export function onlyRadarCandidates(tenders: PublicTender[]): PublicTender[] {
+  return tenders.filter(tender => tender.internal_status !== 'en_revision' && tender.internal_status !== 'convertida_oportunidad');
+}
+
 export function tenderMatchesRegion(tender: PublicTender, regionKey: TenderRegionKey): boolean {
   if (regionKey === 'todas') return true;
   const haystack = normalizeTenderText(`${tender.dept || ''} ${tender.city || ''} ${tender.entity || ''} ${tender.title || ''}`);

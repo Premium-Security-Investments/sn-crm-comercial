@@ -4,7 +4,7 @@ import { TenderSavedSearches } from './components/TenderSavedSearches';
 import { tenderDetailSectionHref } from './detailNavigationState';
 import { tenderDocumentStatusLabel } from './statusLabels';
 import { safePublicTenderSourceUrl } from './tenderUiState';
-import { TENDER_OFFICIAL_SOURCES, TENDER_RADAR_RUN_DELTA_SELECTABLE_CATEGORIES, TENDER_SN_REGIONS, deduplicateTenders, filterRadarTenders, isTenderExpired, sortTenderCards, readableTenderTitle, tenderFitBadgeLabel, tenderFitPlainReasons, tenderPhaseContinuityLabel, tenderRadarRunDeltaCardLabels, tenderRadarRunDeltaCategoryLabel, tenderRadarRunDeltaSourceEvents, tenderRadarRunDeltaStableKeysForCategory, tenderRadarRunReceiptCoverageRatio, tenderRadarRunReceiptHistoryOrdered, tenderRadarRunReceiptSourceStatusLabel, tenderRadarRunReceiptStatusLabel, tenderRadarRunReceiptTimeLabel } from './radarUtils';
+import { TENDER_OFFICIAL_SOURCES, TENDER_RADAR_RUN_DELTA_SELECTABLE_CATEGORIES, TENDER_SN_REGIONS, deduplicateTenders, filterRadarTenders, onlyRadarCandidates, isTenderExpired, sortTenderCards, readableTenderTitle, tenderFitBadgeLabel, tenderFitPlainReasons, tenderPhaseContinuityLabel, tenderRadarRunDeltaCardLabels, tenderRadarRunDeltaCategoryLabel, tenderRadarRunDeltaSourceEvents, tenderRadarRunDeltaStableKeysForCategory, tenderRadarRunReceiptCoverageRatio, tenderRadarRunReceiptHistoryOrdered, tenderRadarRunReceiptSourceStatusLabel, tenderRadarRunReceiptStatusLabel, tenderRadarRunReceiptTimeLabel } from './radarUtils';
 import type { PublicTender, TenderConversionResult, TenderDeadlineFilter, TenderInternalStatus, TenderRadarFilters, TenderRadarPayload, TenderRadarRunDelta, TenderRadarRunDeltaCategory, TenderRadarRunReceipt, TenderRegionKey, TenderScoreFilter, TenderSearchProfile, TenderSection, TenderSortKey, TenderValueFilter, TendersModuleProps } from './types';
 import { isTenderReadOnlyProfile } from './permissions';
 
@@ -138,7 +138,7 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
     try {
       const updated = await enterTrackingFromRadar(request, tender.stable_key || tender.id, tender.tracking_updated_at || null);
       setPayload(current => current ? { ...current, tenders: current.tenders.map(row => row.id === tender.id ? { ...row, ...updated, internal_status: 'en_revision' } : row) } : current);
-      setNotice('Proceso enviado a Seguimiento.');
+      setNotice('Proceso enviado a Seguimiento: desde ahora está allí y sale del Radar.');
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusyId(null); }
   };
@@ -157,7 +157,7 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
     finally { setBusyId(null); }
   };
 
-  const deduped = useMemo(() => deduplicateTenders(payload?.tenders || []), [payload]);
+  const deduped = useMemo(() => onlyRadarCandidates(deduplicateTenders(payload?.tenders || [])), [payload]);
   const sortedRows = useMemo(() => sortTenderCards(filterRadarTenders(deduped, { query, source, region, deadline, value, score, section, internalStatus }), sort, direction), [deduped, query, source, region, deadline, value, score, section, internalStatus, sort, direction]);
   const deltaSelectedKeys = useMemo(() => (runDelta && runDelta.baseline_available && selectedDeltaCategory) ? tenderRadarRunDeltaStableKeysForCategory(runDelta, selectedDeltaCategory) : null, [runDelta, selectedDeltaCategory]);
   const rows = useMemo(() => deltaSelectedKeys ? sortedRows.filter(tender => deltaSelectedKeys.has(tender.stable_key || tender.id)) : sortedRows, [sortedRows, deltaSelectedKeys]);
