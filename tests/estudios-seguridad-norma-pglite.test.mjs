@@ -74,7 +74,7 @@ test('impacto 5: mínimo tolerable y plan de contingencia obligatorio; el inform
   const { snapshot } = buildSnapshot(detail);
   assert.equal(snapshot.riesgos[0].confianza, 'baja');
   const text = JSON.stringify(buildStudyReport(snapshot, { version: 1, sha256: 'a'.repeat(64), approvedAt: '2026-11-12T15:00:00Z', approverName: 'Alba', preparerName: 'Ana' }).blocks);
-  assert.match(text, /NTC-IEC\/ISO 31010 \(adopción de IEC 31010:2019\)/);
+  assert.match(text, /NTC-IEC\/ISO 31010:2020 \(adopción idéntica de IEC 31010:2019\)/);
   assert.match(text, /no constituye una certificación/);
   assert.match(text, /5 · Tolerable \(mínimo por impacto crítico\)/);
   assert.match(text, /Sin dato de respaldo: juicio del analista/);

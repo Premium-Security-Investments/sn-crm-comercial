@@ -82,7 +82,9 @@ test('tamaño de imagen por la cabecera, y mapas de calor con el color de la v1'
 test('la evaluación general se calcula entera, y no queda cortada como la del PDF', () => {
   const text = generalEvaluation(snapshot().riesgos);
   assert.match(text, /de los 2 riesgos identificados 1 en nivel crítico, 1 en nivel alto/);
-  assert.match(text, /la magnitud total bajaría de 37 a 29 puntos/);
+  // NTC-IEC/ISO 31010:2020, 6.3.7.1: no se suman magnitudes; se cuenta cuántos riesgos bajan de nivel.
+  assert.match(text, /1 riesgo bajaría de nivel/);
+  assert.doesNotMatch(text, /magnitud total|puntos/);
   assert.match(text, /el nivel residual estimado más alto es crítico\.$/);
   assert.equal(generalEvaluation([]), 'El estudio no tiene riesgos valorados.');
 });

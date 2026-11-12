@@ -113,6 +113,8 @@ export function buildSnapshot(detail) {
       confianza: risk.confidence ?? null, supuestos: risk.assumptions ?? null,
       control_existente: { descripcion: risk.current_control, calidad: risk.current_quality, eficacia: risk.current_efficacy, eficiencia: risk.current_efficiency },
       control_propuesto: { descripcion: risk.proposed_control, calidad: risk.proposed_quality, eficacia: risk.proposed_efficacy, eficiencia: risk.proposed_efficiency },
+      // Migración 216: dueño del riesgo y datos de cada control (corbatín).
+      dueno: risk.risk_owner ?? null, datos_controles: Array.isArray(risk.control_details) ? risk.control_details : [],
       origen: risk.origin, fuente: risk.source_ref ?? null, valoracion: risk.valuation,
     })),
     acciones: detail.actions.map(action => ({

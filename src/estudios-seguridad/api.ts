@@ -60,11 +60,18 @@ export type Zone = { id: string; name: string; description: string | null; posit
 type Tramo = { probabilidad: number; efectividadControl: number; magnitud: number; nivel: Nivel; escogida?: boolean };
 export type Valuation = { impacto: number; inherente: { magnitud: number; nivel: Nivel }; actual: Tramo; residual: Tramo };
 
+export type ControlDetail = {
+  tipo: 'existente' | 'propuesto'; texto: string; momento: 'antes' | 'despues' | null; causa: number | null; verificado: boolean | null;
+  depende_de: string | null; puede_fallar: string | null; lo_sostiene: string | null;
+};
+
 export type Risk = {
   id: string; number: number; zone_id: string | null; catalog_risk_code: string | null; process_code: string | null;
   title: string; client_process?: string | null; risk_factor?: string | null; causes: string | null; consequences: string | null;
   probability: number; impact_company: number; impact_people: number; residual_probability?: number | null;
   suggested_probability?: number | null; probability_basis?: string | null; confidence?: 'alta' | 'media' | 'baja' | null; assumptions?: string | null;
+  // Migración 216: dueño del riesgo (opcional) y los datos de cada control para el corbatín.
+  risk_owner?: string | null; control_details?: ControlDetail[];
   current_control: string | null; current_quality: number | null; current_efficacy: number | null; current_efficiency: number | null;
   proposed_control: string | null; proposed_quality: number | null; proposed_efficacy: number | null; proposed_efficiency: number | null;
   origin: 'manual' | 'agente' | 'securityops'; source_ref?: string | null; valuation: Valuation;
