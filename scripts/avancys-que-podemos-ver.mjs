@@ -10,11 +10,23 @@
 // Credenciales por entorno:
 //   AVANCYS_ODOO_URL  AVANCYS_ODOO_DATABASE  AVANCYS_ODOO_USERNAME  AVANCYS_ODOO_API_KEY
 //
-// Uso:  node scripts/avancys-que-podemos-ver.mjs
+// Uso:  node --env-file=<archivo> scripts/avancys-que-podemos-ver.mjs
+//
+// Con --env-file lo lee Node con su propio lector de .env. No cargar el archivo con `. archivo`
+// en bash: deja comillas y escapes como texto y la dirección deja de ser válida.
 
 import { configuracionDeAvancys } from '../avancys-odoo-lectura.js';
 
-const config = configuracionDeAvancys();
+let config;
+try {
+  config = configuracionDeAvancys();
+} catch (error) {
+  // La dirección de Odoo no es secreta (está en los handoffs); se muestra entera para ver qué
+  // carácter sobra: un salto de línea, una comilla o un espacio que dejó el archivo .env.
+  console.error(`La dirección de Avancys no es válida (${error.codigo || error.message}).`);
+  console.error(`Valor recibido: ${JSON.stringify(process.env.AVANCYS_ODOO_URL)}`);
+  process.exit(2);
+}
 if (!config) {
   console.error('Avancys no está configurado: faltan AVANCYS_ODOO_* en el entorno.');
   process.exit(2);
