@@ -14,6 +14,7 @@ import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
 import { renderStudyReportDocx } from '../../verticales/estudios-seguridad/render-informe.js';
 import { runArchiveBatch } from '../../verticales/estudios-seguridad/archivo.js';
+import { runLetterBatch } from '../../verticales/estudios-seguridad/cartas.js';
 
 const run = promisify(execFile);
 const log = event => console.log(JSON.stringify(event));
@@ -71,6 +72,13 @@ if (!supabaseUrl || !serviceRoleKey || !uploader || !drive) {
     if (result.processed) log({ event: 'estudios_archivo_corrida', pedidos: result.processed, archivados: result.ok });
   } catch {
     log({ event: 'estudios_archivo_corrida_fallida' });
+    process.exitCode = 1;
+  }
+  // Migración 213: las cartas de recomendación al cliente, con el mismo membrete y la misma subida (nunca sobrescribe).
+  try {
+    await runLetterBatch(database, { renderDocx: report => renderStudyReportDocx(report, { soffice }), toPdf, upload }, log);
+  } catch {
+    log({ event: 'estudios_cartas_corrida_fallida' });
     process.exitCode = 1;
   }
 }

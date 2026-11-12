@@ -13,6 +13,7 @@ import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, r
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { reviewStudy as reviewSecurityStudy } from '../verticales/estudios-seguridad/revisor.js';
 import { requestRevaluation as requestSecurityStudyRevaluation } from '../verticales/estudios-seguridad/vigencia.js';
+import { loadLetters as loadSecurityStudyLetters, markLetterSent as markSecurityStudyLetterSent, requestLetter as requestSecurityStudyLetter } from '../verticales/estudios-seguridad/cartas.js';
 import { canDeliver as canDeliverSecurityStudy, createShare as createSecurityStudyShare, loadDelivery as loadSecurityStudyDelivery, recordDelivery as recordSecurityStudyDelivery, renderPublicPage as renderSecurityStudyPublicPage, resolvePublicStudy as resolveSecurityStudyPublic, revokeShare as revokeSecurityStudyShare } from '../verticales/estudios-seguridad/entrega.js';
 import { addRiskFromSecurityOps, linkPuesto as linkSecurityOpsPuesto, requestRefresh as refreshSecurityOps, searchPuestos as searchSecurityOpsPuestos } from '../verticales/estudios-seguridad/securityops.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
@@ -3654,8 +3655,8 @@ securityStudyRoute('get', '/api/estudios-seguridad/puestos', async (_db, req) =>
 securityStudyRoute('get', '/api/estudios-seguridad/:id', async (db, req, profile) => {
   const detail = await getSecurityStudy(db, req.params.id);
   // Tramo 9: el revisor de inconsistencias sólo lee; señala y no cambia nada.
-  const [workflow, review, entrega] = await Promise.all([loadSecurityStudyWorkflow(db, detail.study, profile), reviewSecurityStudy(db, detail), loadSecurityStudyDelivery(db, detail.study, profile)]);
-  return { ...detail, workflow, review, entrega };
+  const [workflow, review, entrega, cartas] = await Promise.all([loadSecurityStudyWorkflow(db, detail.study, profile), reviewSecurityStudy(db, detail), loadSecurityStudyDelivery(db, detail.study, profile), loadSecurityStudyLetters(db, detail.study, profile)]);
+  return { ...detail, workflow, review, entrega, cartas };
 });
 // Nota de campo con Vig-IA (AGT-003, agt003.estudios-nota-campo; Juan, 2026-11-05). Propone; no guarda. El cupo y los
 // avisos de falla son los del brief de reunión: lo fallido no gasta cupo y nunca se cae a otra forma de llamar al modelo.
@@ -3731,6 +3732,10 @@ securityStudyRoute('post', '/api/estudios-seguridad/:id/securityops', async (db,
   return linkSecurityOpsPuesto(db, detail.study, req.body?.puesto_id ?? null);
 });
 // Socialización con el cliente y enlaces en línea (migración 206).
+// Cartas de recomendación al cliente (migración 213): se piden aquí; las arma y sube el servidor de tareas; el envío lo
+// hace una persona y lo registra aquí.
+securityStudyRoute('post', '/api/estudios-seguridad/:id/cartas', async (db, req, profile) => requestSecurityStudyLetter(db, (await getSecurityStudy(db, req.params.id)).study, req.body || {}, profile));
+securityStudyRoute('post', '/api/estudios-seguridad/:id/cartas/:letterId/enviada', async (db, req, profile) => markSecurityStudyLetterSent(db, (await getSecurityStudy(db, req.params.id)).study, req.params.letterId, req.body || {}, profile));
 // Pedir revaloración de un estudio aprobado (cambio de instalaciones u otro motivo; migración 209).
 securityStudyRoute('post', '/api/estudios-seguridad/:id/revaloracion', async (db, req, profile) => {
   const { study } = await getSecurityStudy(db, req.params.id);
