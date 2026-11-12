@@ -198,6 +198,9 @@ test('a member batch that needs several calls merges their notes, renews the lea
     heartbeat: async () => { heartbeats += 1; },
   });
   assert.equal(requests.length, 2);
+  // DEAJ LP-07-2026 (2026-11-12): las respuestas a observaciones (408 mil caracteres) se leyeron en dos partes y el
+  // modelo, sin saber qué era «parte 1/2», concluyó que el documento estaba incompleto.
+  assert.ok(requests.every(request => /metadata\.part/.test(request.policy) && /no diga que el documento está incompleto/.test(request.policy)));
   assert.equal(heartbeats, 1);
   assert.deepEqual(requests.map(request => request.idempotencyKey), ['job-1:member_batch_analysis:0:h:1/2', 'job-1:member_batch_analysis:0:h:2/2']);
   assert.equal(result.output.analysis_notes.length, 2);
