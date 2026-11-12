@@ -12,6 +12,11 @@ export type StudySummaryRow = {
   latest_version?: number | null; delivered?: boolean | null; overdue_actions?: { nuestras: number; cliente: number };
 };
 
+// Migración 213: cartas de recomendación al cliente.
+export type ClientRecommendation = { id: string; riesgo: string; riesgo_nombre: string | null; nivel: Nivel | null; accion: string; fecha: string | null; estado: string; vencida: boolean };
+export type Letter = { id: string; version: number; recipient: string; items: number; status: 'pendiente' | 'procesando' | 'lista' | 'fallida' | 'enviada'; attempts: number; file_url: string | null; error: string | null; requested_at: string; sent_on: string | null; sent_to: string | null; sent_medium: 'correo' | 'fisico' | 'reunion' | null };
+export type Letters = { available: boolean; can: boolean; letters: Letter[]; pending: ClientRecommendation[] };
+
 // Migración 212: comparación con el estudio anterior de la sede.
 type ComparedRisk = { numero: number; codigo: string | null; titulo: string; magnitud: number; nivel: Nivel; residual: Nivel };
 export type Comparison = {
@@ -99,7 +104,7 @@ export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; rie
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
   evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review; securityops?: SecurityOpsState; entrega?: Entrega;
-  probability_suggestions?: ProbabilitySuggestions; validity?: Validity; comparison?: Comparison | null;
+  probability_suggestions?: ProbabilitySuggestions; validity?: Validity; comparison?: Comparison | null; cartas?: Letters;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
@@ -155,6 +160,8 @@ export const searchSecurityOpsPuestos = (q: string, todos = false) => api<Securi
 export const linkSecurityOps = (studyId: string, puestoId: string | null) => api<{ puesto_id: string | null }>(`${BASE}/${encodeURIComponent(studyId)}/securityops`, json('POST', { puesto_id: puestoId }));
 export const refreshSecurityOps = (studyId: string) => api<{ requested: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/securityops/actualizar`, json('POST', {}));
 
+export const requestLetter = (studyId: string, body: { recipient: string; items: string[] }) => api<Letter>(`${BASE}/${encodeURIComponent(studyId)}/cartas`, json('POST', body));
+export const markLetterSent = (studyId: string, letterId: string, body: { sent_on: string; sent_to: string; sent_medium: string }) => api<{ sent: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/cartas/${encodeURIComponent(letterId)}/enviada`, json('POST', body));
 export const requestRevaluation = (studyId: string, note: string) => api<{ requested: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/revaloracion`, json('POST', { note }));
 export const recordDelivery = (studyId: string, body: Record<string, unknown>) => api<Delivery>(`${BASE}/${encodeURIComponent(studyId)}/socializacion`, json('POST', body));
 export const createShare = (studyId: string, body: { label?: string; days?: number }) => api<Share & { token: string; path: string }>(`${BASE}/${encodeURIComponent(studyId)}/enlaces`, json('POST', body));

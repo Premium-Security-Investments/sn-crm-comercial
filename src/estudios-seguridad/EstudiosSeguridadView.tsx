@@ -13,6 +13,7 @@ import { DeliveryPanel } from './DeliveryPanel';
 import { ValidityBadge, ValidityLine } from './ValidityLine';
 import { AlertsPanel } from './AlertsPanel';
 import { ComparisonPanel } from './ComparisonPanel';
+import { LettersPanel } from './LettersPanel';
 import {
   IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, RENEWAL_OPTIONS, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
@@ -217,6 +218,7 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
     <ValidityLine studyId={study.id} validity={detail.validity} renewalMonths={study.renewal_months ?? 24} editable={editable} canRequest={Boolean(detail.entrega?.can)} onChanged={reload} />
     {error ? <p className="es-error" role="alert">{error}</p> : null}
     {detail.review ? <ReviewPanel review={detail.review} /> : null}
+    {detail.cartas ? <LettersPanel studyId={study.id} cartas={detail.cartas} onChanged={reload} /> : null}
     {detail.entrega ? <DeliveryPanel studyId={study.id} status={study.status} latestVersion={detail.workflow?.versions.length ? detail.workflow.versions[detail.workflow.versions.length - 1].version : null} entrega={detail.entrega} onChanged={reload} /> : null}
     {detail.workflow?.available ? <WorkflowPanel studyId={study.id} status={study.status} preparedBy={study.prepared_by} workflow={detail.workflow} onChanged={reload} /> : null}
 
