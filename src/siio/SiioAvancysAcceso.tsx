@@ -61,6 +61,7 @@ type Acceso = {
   motivo?: string;
   en_uso?: Prueba[];
   pedidos?: Prueba[];
+  turnos?: Prueba[];
   campo_clave?: CampoClave;
   rentabilidad_por_cliente?: 'desbloqueada' | 'bloqueada';
   informe_rentabilidad?: Informe | null;
@@ -282,6 +283,7 @@ export function SiioAvancysAcceso() {
       {acceso.informe_rentabilidad ? <InformeRentabilidad informe={acceso.informe_rentabilidad} /> : null}
       {acceso.lineas_analiticas ? <LineasAnaliticas lineas={acceso.lineas_analiticas} /> : null}
       {acceso.lineas_analiticas?.trae_nomina ? <PygPorCliente /> : null}
+      {acceso.turnos?.length ? <Lista titulo="Programación de turnos en Avancys (todavía no se usa; cuando tenga registros, ahí está quién cubrió cada puesto)" filas={acceso.turnos} /> : null}
       {acceso.pedidos?.length ? <Lista titulo="Lo que se pidió el 29 de octubre" filas={acceso.pedidos} /> : null}
       {acceso.en_uso?.length ? <Lista titulo="Lo que la Torre ya usa" filas={acceso.en_uso} /> : null}
     </> : null}
