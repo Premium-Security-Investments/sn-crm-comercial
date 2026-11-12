@@ -78,13 +78,37 @@ export function opportunityQueryFilter(filter: unknown): TenderOpportunityFilter
  * Cuántas oportunidades hay detrás de cada filtro primario (Juan, 2026-11-12: «cuando uno entra a oportunidades no sabe
  * cuántas tiene»). Con el mismo clasificador de la bandeja, para que el número coincida con lo que muestra el filtro.
  */
-export function countOpportunityStages(rows: ClassifiableOpportunity[]): { all: number; por_decidir: number; en_curso: number } {
-  const counts = { all: 0, por_decidir: 0, en_curso: 0 };
+export type OpportunityStageCounts = { all: number; por_decidir: number; en_curso: number; cerradas: number };
+export function countOpportunityStages(rows: ClassifiableOpportunity[]): OpportunityStageCounts {
+  // Juan, 2026-11-12: las cerradas (NO GO o con resultado) no cuentan en Todas; Todas = Por decidir + En curso.
+  const counts = { all: 0, por_decidir: 0, en_curso: 0, cerradas: 0 };
   for (const row of rows) {
     const stage = classifyOpportunityStage(row);
     if (stage === 'archivadas') continue;
+    if (stage === 'cerradas') { counts.cerradas += 1; continue; }
     counts.all += 1;
-    if (stage === 'por_decidir' || stage === 'en_curso') counts[stage] += 1;
+    counts[stage] += 1;
   }
   return counts;
+}
+
+/** Lo que va en «Todas» (Juan, 2026-11-12): sin cerradas ni archivadas. Pura. */
+export function isActiveOpportunity(row: ClassifiableOpportunity): boolean {
+  const stage = classifyOpportunityStage(row);
+  return stage === 'por_decidir' || stage === 'en_curso';
+}
+
+/**
+ * Los grupos de «Ver cerradas» (Juan, 2026-11-12): No GO (decidimos no presentarnos), Archivadas (se archivaron por
+ * otra razón: con GO pero no nos presentamos, o de prueba) y Con resultado (adjudicada o no adjudicada). Pura.
+ */
+export type ClosedOpportunityGroup = 'no_go' | 'archivadas' | 'con_resultado';
+export const CLOSED_OPPORTUNITY_GROUPS: readonly { value: ClosedOpportunityGroup; label: string; hint: string }[] = [
+  { value: 'no_go', label: 'No GO', hint: 'Decidimos no presentarnos.' },
+  { value: 'archivadas', label: 'Archivadas', hint: 'Se archivaron por otra razón: con GO pero no nos presentamos, o de prueba.' },
+  { value: 'con_resultado', label: 'Con resultado', hint: 'Presentadas y ya adjudicadas o no adjudicadas.' },
+];
+export function closedOpportunityGroup(row: ClassifiableOpportunity): ClosedOpportunityGroup {
+  if (row?.archived_at) return 'archivadas';
+  return ['adjudicada', 'no_adjudicada'].includes(String(row?.tender_offer_status || '')) ? 'con_resultado' : 'no_go';
 }

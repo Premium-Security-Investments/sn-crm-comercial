@@ -1188,3 +1188,6 @@ td.numeric-value{white-space:nowrap}
 .opportunity-primary-filters button{display:inline-flex;align-items:center;gap:8px}
 .opportunity-filter-count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 7px;border-radius:999px;background:#e8eef8;color:#1e2b45;font-size:12px;font-weight:800;line-height:1}
 .opportunity-primary-filters button[aria-pressed="true"] .opportunity-filter-count{background:#fff;color:#1b64f2}
+/* «Ver cerradas» (2026-11-12): No GO, Archivadas y Con resultado, cada grupo con su número. */
+.opportunity-closed-group{display:grid;gap:8px}.opportunity-closed-group h3{display:flex;align-items:center;gap:8px;margin:8px 0 0;font-size:16px;color:#10213d}.opportunity-closed-group>p{margin:0}
+.opportunity-archived-link{display:inline-flex;align-items:center;gap:8px}

@@ -158,7 +158,8 @@ test('2 — la vista inicial es "Por decidir", no "Todas"', async () => {
   try {
     await settle(view);
     // Los contadores de cada filtro (2026-11-12) piden la bandeja completa aparte, de 50 en 50 y con filter=all.
-    const pageCalls = request.calls.filter(call => !/filter=all&limit=50&/.test(call));
+    // Desde el 2026-11-12 los contadores piden además las archivadas: toda llamada de 50 es de contadores.
+    const pageCalls = request.calls.filter(call => !/limit=50&/.test(call));
     assert.equal(pageCalls.length, 1, 'debe hacer exactamente una carga inicial');
     assert.match(request.calls[0], /filter=por_decidir/, 'la primera carga debe pedir el filtro Por decidir, no Todas');
 
@@ -180,7 +181,8 @@ const GROUPING_ROWS = [
   { opportunity_id: 'pending-2', entity: 'Entidad Pendiente Dos', title: 'Proceso pendiente dos', decision: null, tender_offer_status: 'pendiente_decision' },
 ];
 
-test('3 — "Todas" agrupa Por decidir, luego En curso, luego Cerradas, sin descartar filas', async () => {
+// Juan, 2026-11-12: las cerradas salen de «Todas» (Todas = Por decidir + En curso) y van a «Ver cerradas».
+test('3 — "Todas" agrupa Por decidir y luego En curso; las cerradas no están', async () => {
   const { view } = mountOpportunities(GROUPING_ROWS);
   try {
     await settle(view);
@@ -190,8 +192,7 @@ test('3 — "Todas" agrupa Por decidir, luego En curso, luego Cerradas, sin desc
     assert.deepEqual(entities, [
       'Entidad Pendiente Uno', 'Entidad Pendiente Dos',
       'Entidad Activa Uno',
-      'Entidad Cerrada Uno', 'Entidad Cerrada Dos',
-    ], 'el orden visual debe agrupar por_decidir, en_curso y cerradas, preservando el orden relativo dentro de cada grupo');
+    ], 'el orden visual debe agrupar por_decidir y en_curso, preservando el orden relativo dentro de cada grupo');
   } finally {
     await view.unmount();
   }
@@ -203,7 +204,11 @@ test('3 — cada fila muestra su etapa; las cerradas llevan la etiqueta "Cerrada
     await settle(view);
     await clickByText(view, 'Todas');
     await settle(view);
-    const articles = [...view.container.querySelectorAll('.tracking-row')];
+    // Las cerradas están en «Ver cerradas» desde el 2026-11-12: se juntan las tarjetas de las dos vistas.
+    const activeArticles = [...view.container.querySelectorAll('.tracking-row')];
+    view.container.querySelector('.opportunity-archived-link').click();
+    await settle(view);
+    const articles = [...activeArticles, ...view.container.querySelectorAll('.tracking-row')];
     const byEntity = Object.fromEntries(articles.map(article => [article.querySelector('h3').textContent.trim(), article]));
 
     const expectedStage = {
