@@ -61,13 +61,13 @@ export function tenderDocumentWeight(document) {
  * todas las cifras oficiales vistas, para saber si el valor de la oportunidad es una copia oficial. Pura.
  * `documents`: [{ name, document_type, created_at, extracted_text }], ya filtrados a los de la entidad.
  */
-export function tenderOfficialBudget(documents) {
+export function tenderOfficialBudget(documents, { incluirProyecto = false } = {}) {
   const official = new Set();
   const ranked = [];
   for (const document of Array.isArray(documents) ? documents : []) {
     const figures = tenderBudgetFigures(document?.extracted_text);
     figures.forEach(figure => official.add(figure));
-    const weight = tenderDocumentWeight(document);
+    const weight = incluirProyecto ? Math.max(tenderDocumentWeight(document), 0) : tenderDocumentWeight(document);
     if (figures.length && weight >= 0) ranked.push({ document, weight, distinct: [...new Set(figures)] });
   }
   ranked.sort((a, b) => b.weight - a.weight || String(b.document.created_at || '').localeCompare(String(a.document.created_at || '')));
@@ -102,15 +102,22 @@ export function tenderOfficialValuesPlan({ opportunity, secopValue = null, docum
   const updates = {};
   const lines = [];
   if (PRESENTED.has(opportunity?.tender_offer_status)) return { updates, lines, skipped: 'oferta_presentada_o_cerrada' };
-  const budget = tenderOfficialBudget(documents);
+  let budget = tenderOfficialBudget(documents);
   const current = Number(opportunity?.offer_value || 0);
+  // Un valor absurdo (menos de un millón, como el «$1.000» que trajo SECOP en Rama Medellín LP002-2026) no puede esperar
+  // al definitivo: si sólo hay proyecto, se toma el del proyecto como provisional (Juan, 2026-11-12).
+  let provisional = false;
+  if (!budget.value && !budget.ambiguous && current < 1_000_000) {
+    const delProyecto = tenderOfficialBudget(documents, { incluirProyecto: true });
+    if (delProyecto.value || delProyecto.ambiguous) { budget = delProyecto; provisional = Boolean(delProyecto.value); }
+  }
   if (budget.ambiguous) {
     lines.push(`Vig-IA, valor oficial: «${budget.document.name}» trae dos cifras distintas de presupuesto oficial (${budget.figures.map(pesos).join(' y ')}); el valor de la oportunidad no se cambió. Revisar cuál rige.`);
   } else if (budget.value && budget.value !== current) {
     const officialCopy = !current || current === Number(secopValue || 0) || budget.official.includes(current);
     if (officialCopy) {
       updates.offer_value = budget.value;
-      lines.push(`Vig-IA, valor oficial: el valor de la oportunidad pasó de ${current ? pesos(current) : 'vacío'} a ${pesos(budget.value)}, el presupuesto oficial de «${budget.document.name}».`);
+      lines.push(`Vig-IA, valor oficial: el valor de la oportunidad pasó de ${current ? pesos(current) : 'vacío'} a ${pesos(budget.value)}, el presupuesto oficial de «${budget.document.name}»${provisional ? '. Es provisional: sale del proyecto, se revisa con el pliego definitivo' : ''}.`);
     } else {
       lines.push(`Vig-IA, valor oficial: «${budget.document.name}» dice que el presupuesto oficial es ${pesos(budget.value)}; la oportunidad tiene ${pesos(current)}, que no es una cifra oficial, así que no se cambió. Revisar si es a propósito.`);
     }

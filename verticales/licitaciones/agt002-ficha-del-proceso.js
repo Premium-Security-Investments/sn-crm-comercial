@@ -48,7 +48,8 @@ export function fichaDelProcesoMarkdown({ oportunidad, tender = null, decision =
     `- Entidad: ${linea(tender?.entity || oportunidad.company_name) || 'sin dato'}`,
     `- Referencia: ${linea(tender?.ref) || 'sin dato'}`,
     `- Objeto: ${corto(tender?.title, 500) || 'sin dato'}`,
-    `- Presupuesto oficial: ${pesos(tender?.value) || 'sin dato'}`,
+    // El valor de la oportunidad es el que se corrige (revisión programada o pedido en la Mesa); el de SECOP se dice si difiere.
+    `- Presupuesto oficial: ${pesos(oportunidad.offer_value) || pesos(tender?.value) || 'sin dato'}${pesos(oportunidad.offer_value) && pesos(tender?.value) && Math.round(Number(oportunidad.offer_value)) !== Math.round(Number(tender?.value)) ? ` (SECOP trae ${pesos(tender.value)}; manda el del CRM, que sale de los documentos)` : ''}`,
     `- Cierre: ${fecha(cierre) || 'sin dato'}`,
     `- Ubicación: ${[tender?.city, tender?.dept].filter(Boolean).map(linea).join(', ') || 'sin dato'}`,
     `- SECOP: ${linea(tender?.url) || 'sin dato'}`,
@@ -144,7 +145,7 @@ async function reporteDe(database, opportunityId) {
   } catch { return null; }
 }
 
-const OPORTUNIDAD = 'id,company_name,tender_offer_status,stage_code,current_security_provider,current_security_provider_none,archive_note,archived_at,discarded_at,lost_at,deleted_at';
+const OPORTUNIDAD = 'id,company_name,offer_value,tender_offer_status,stage_code,current_security_provider,current_security_provider_none,archive_note,archived_at,discarded_at,lost_at,deleted_at';
 const TENDER = 'id,entity,ref,process_id,title,value,status,deadline_at,dept,city,url,converted_opportunity_id';
 
 /** Lee y arma la ficha del proceso de la licitación `tenderId`; null si no hay oportunidad. */

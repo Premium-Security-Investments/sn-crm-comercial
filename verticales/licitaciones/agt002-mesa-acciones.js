@@ -1,0 +1,139 @@
+// Lo que se dice en la Mesa se hace (Juan, 2026-11-12, paso 4 del expediente vivo). En Rama Medellín Juan pidió
+// «podemos actualizar la información en el CRM para que no salga 1.000» y Vig-IA sólo pudo contestar «yo no modifico el
+// CRM». Y lo que una persona decide en el chat («yo me encargo del socio») no llegaba a la ficha del proceso.
+//
+// Regla acordada con Juan:
+//   * Si la persona lo pide en el mensaje, Vig-IA lo hace y lo dice («Anoté…», «Corregí… de A a B, según…»), con
+//     constancia en la oportunidad. Lo que dijo una persona no se vuelve a confirmar.
+//   * Si Vig-IA encuentra el error por su cuenta, no lo cambia: pregunta «¿lo corrijo?».
+//   * Sólo una lista corta: notas y decisiones de la ficha, presupuesto, fecha de cierre y contratista actual. Nunca la
+//     ficha de empresa, nunca una oferta ya presentada.
+// El servidor comprueba que la frase con que la persona lo pidió está en su mensaje; si no está, no se hace nada.
+
+const PRESENTADA = new Set(['presentada', 'adjudicada', 'no_adjudicada', 'cerrada_no_go']);
+export const AGT002_MESA_MAX_ACCIONES = 5;
+
+const pesos = value => `$${Math.round(Number(value)).toLocaleString('es-CO')}`;
+
+export const AGT002_MESA_CAMPOS = Object.freeze({
+  presupuesto: {
+    nombre: 'el presupuesto (valor de la oportunidad)',
+    columna: 'offer_value',
+    leer: valor => {
+      const limpio = String(valor || '').replace(/[^\d,.]/g, '').replace(/,\d{1,2}$/, '').replace(/[.,]/g, '');
+      const numero = Number(limpio);
+      return Number.isSafeInteger(numero) && numero >= 1_000_000 ? numero : null;
+    },
+    mostrar: valor => (valor ? pesos(valor) : 'vacío'),
+  },
+  cierre: {
+    nombre: 'la fecha de cierre',
+    columna: 'expected_close_date',
+    leer: valor => (/^\d{4}-\d{2}-\d{2}$/.test(String(valor || '').trim()) && !Number.isNaN(Date.parse(String(valor).trim())) ? String(valor).trim() : null),
+    mostrar: valor => (valor ? String(valor).slice(0, 10) : 'vacía'),
+  },
+  contratista_actual: {
+    nombre: 'el contratista actual',
+    columna: 'current_security_provider',
+    leer: valor => { const t = String(valor || '').replace(/\s+/g, ' ').trim(); return t.length >= 2 && t.length <= 200 ? t : null; },
+    mostrar: valor => (valor ? `«${valor}»` : 'vacío'),
+  },
+});
+
+export const AGT002_MESA_ACCIONES_SCHEMA = Object.freeze({
+  type: 'array',
+  maxItems: AGT002_MESA_MAX_ACCIONES,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['tipo', 'campo', 'valor', 'fuente', 'pedido_literal'],
+    properties: {
+      tipo: { type: 'string', enum: ['anotar', 'corregir'] },
+      campo: { type: 'string', enum: ['', ...Object.keys(AGT002_MESA_CAMPOS)] },
+      valor: { type: 'string', minLength: 1, maxLength: 1000 },
+      fuente: { type: 'string', maxLength: 600 },
+      pedido_literal: { type: 'string', minLength: 1, maxLength: 400 },
+    },
+  },
+});
+
+export const AGT002_MESA_ACCIONES_POLICY = [
+  'ACCIONES. Puedes hacer dos cosas en el CRM, y sólo si la persona lo pide en ESTE mensaje: (a) anotar en la ficha del proceso una decisión o un hecho que ella dice (por ejemplo «yo me encargo de definir el socio», «no observamos el proyecto», «somos el contratista actual»): tipo «anotar», campo vacío, valor = la decisión en una frase clara en tercera persona;',
+  '(b) corregir un dato del proceso que ella pide corregir: tipo «corregir», campo presupuesto (valor en pesos), cierre (AAAA-MM-DD) o contratista_actual, y fuente = el archivo de la carpeta y la frase literal que lo sostiene; búscalo en la carpeta antes de proponer el valor.',
+  'En pedido_literal copia EXACTAMENTE las palabras del mensaje de la persona con que lo pide; si no lo pidió en este mensaje, no pongas ninguna acción. Si encuentras un dato equivocado por tu cuenta, no lo corrijas: dilo y pregunta «¿lo corrijo?». El servidor ejecuta las acciones y agrega al final de tu respuesta lo que hizo; no digas que ya lo hiciste.',
+].join(' ');
+
+function normalizar(texto) {
+  return String(texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/** ¿La frase con que «la persona lo pidió» está de verdad en su mensaje? Pura. */
+export function pidioLaPersona(pedidoLiteral, mensaje) {
+  const pedido = normalizar(pedidoLiteral);
+  return pedido.split(' ').filter(Boolean).length >= 2 && normalizar(mensaje).includes(pedido);
+}
+
+/**
+ * Ejecuta las acciones que pidió la persona y devuelve las líneas para agregar a la respuesta. Nunca lanza: lo que no se
+ * pudo hacer se dice.
+ */
+export async function ejecutarAgt002AccionesDeLaMesa(database, { acciones, mensaje, opportunityId, tenderId, autorId, autorNombre, ahora = new Date() }) {
+  const lineas = [];
+  const lista = Array.isArray(acciones) ? acciones.slice(0, AGT002_MESA_MAX_ACCIONES) : [];
+  if (!lista.length) return lineas;
+  if (!opportunityId || !tenderId || !autorId) return ['No pude hacer cambios en el CRM: falta saber el proceso o quién lo pidió.'];
+  const fecha = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(ahora);
+  let oportunidad = null;
+  for (const accion of lista) {
+    try {
+      if (!pidioLaPersona(accion?.pedido_literal, mensaje)) {
+        lineas.push(`No hice «${String(accion?.valor || '').slice(0, 120)}»: no encontré en su mensaje el pedido. Si lo quiere, pídamelo directamente.`);
+        continue;
+      }
+      if (accion.tipo === 'anotar') {
+        const { error } = await database.from('psi_agt002_clarifications').insert({
+          opportunity_id: opportunityId, tender_id: tenderId, author_id: autorId,
+          content: String(accion.valor).trim().slice(0, 1000), target_kind: 'mesa', target_label: `Dicho en la Mesa: «${String(accion.pedido_literal).trim().slice(0, 300)}»`,
+        });
+        if (error) throw error;
+        lineas.push(`Anoté en la ficha del proceso: «${String(accion.valor).trim()}».`);
+        continue;
+      }
+      const campo = AGT002_MESA_CAMPOS[accion.campo];
+      const valor = campo?.leer(accion.valor);
+      if (accion.tipo !== 'corregir' || !campo || valor === null) {
+        lineas.push(`No corregí ${campo ? campo.nombre : 'ese dato'}: el valor «${String(accion.valor).slice(0, 80)}» no es válido.`);
+        continue;
+      }
+      if (!oportunidad) {
+        const { data, error } = await database.from('psi_sales_opportunities')
+          .select('id,offer_value,expected_close_date,current_security_provider,tender_offer_status').eq('id', opportunityId).maybeSingle();
+        if (error || !data) throw error || new Error('oportunidad no encontrada');
+        oportunidad = data;
+      }
+      if (PRESENTADA.has(oportunidad.tender_offer_status)) {
+        lineas.push(`No corregí ${campo.nombre}: la oferta ya está ${oportunidad.tender_offer_status} y eso no se toca desde la Mesa.`);
+        continue;
+      }
+      const anterior = oportunidad[campo.columna];
+      if (String(anterior ?? '') === String(valor)) {
+        lineas.push(`${campo.nombre[0].toUpperCase()}${campo.nombre.slice(1)} ya era ${campo.mostrar(valor)}; no cambié nada.`);
+        continue;
+      }
+      const cambios = { [campo.columna]: valor, ...(campo.columna === 'current_security_provider' ? { current_security_provider_none: false } : {}) };
+      const { error } = await database.from('psi_sales_opportunities').update(cambios).eq('id', opportunityId);
+      if (error) throw error;
+      oportunidad = { ...oportunidad, ...cambios };
+      const fuente = String(accion.fuente || '').trim().slice(0, 400);
+      await database.rpc('psi_append_opportunity_observation_line', {
+        p_opportunity_id: opportunityId,
+        p_line: `Vig-IA, a pedido de ${autorNombre || 'la persona'} en la Mesa (${fecha}): ${campo.nombre} pasó de ${campo.mostrar(anterior)} a ${campo.mostrar(valor)}.${fuente ? ` Fuente: ${fuente}.` : ''}`,
+      });
+      lineas.push(`Corregí ${campo.nombre}: de ${campo.mostrar(anterior)} a ${campo.mostrar(valor)}${fuente ? `, según ${fuente}` : ''}. Quedó la constancia en la oportunidad.`);
+    } catch (error) {
+      console.warn('agt002_mesa_accion_failed', { event: 'agt002_mesa_accion_failed', code: error?.code || 'accion_failed' });
+      lineas.push(`No pude hacer «${String(accion?.valor || '').slice(0, 120)}» en el CRM por un error; avise a Innovación.`);
+    }
+  }
+  return lineas;
+}

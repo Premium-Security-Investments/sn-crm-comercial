@@ -5,6 +5,7 @@ import { minimizarFuentes, sostieneAfirmacion } from '../../catalogo-fuentes.js'
 import { agt002FechaDeTrabajo } from './agt002-fecha-de-trabajo.js';
 import { agt002UsaTopeDeBorrador } from './agt002-mesa-document-intent.js';
 import { AGT002_LESSONS_POLICY } from './agt002-company-lessons.js';
+import { AGT002_MESA_ACCIONES_POLICY, AGT002_MESA_ACCIONES_SCHEMA } from './agt002-mesa-acciones.js';
 import { AGT002_CARPETA_POLICY, AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA } from './agt002-mesa-carpeta.js';
 
 // Política inmutable de la Mesa Vig-IA para el puente de producción (Fase B1). El
@@ -152,17 +153,19 @@ export const AGT002_DRAFT_DOCUMENT_SCHEMA = Object.freeze({
 // Esquema de salida cerrado por capacidad: sólo pide al modelo el contenido
 // genuinamente generativo. Identidad, snapshot, base_version y política nunca se le
 // piden al modelo porque el servidor los estampa siempre desde el trabajo congelado.
-function buildOutputSchema(capabilityId, { allowedSourceIds, withDocument = false }) {
+function buildOutputSchema(capabilityId, { allowedSourceIds, withDocument = false, conAcciones = false }) {
   if (capabilityId === AGT002_WORKBENCH_CAPABILITIES.reply) {
     return {
       type: 'object',
       additionalProperties: false,
-      required: ['content_text', 'source_links', 'missing_information', 'required_actions'],
+      required: ['content_text', 'source_links', 'missing_information', 'required_actions', ...(conAcciones ? ['acciones'] : [])],
       properties: {
         content_text: { type: 'string', minLength: 1, maxLength: 12_000 },
         source_links: sourceLinksSchema(allowedSourceIds),
         missing_information: textArraySchema(2000),
         required_actions: textArraySchema(2000),
+        // Paso 4 (Juan, 2026-11-12): lo que la persona pide en el mensaje, el servidor lo hace (agt002-mesa-acciones.js).
+        ...(conAcciones ? { acciones: AGT002_MESA_ACCIONES_SCHEMA } : {}),
       },
     };
   }
@@ -297,6 +300,9 @@ export function createAgt002WorkbenchResponder({
   // La carpeta del proceso: ({ tenderId }) => { archivos } | null (agt002-mesa-carpeta.js). Con ella el modelo busca y lee
   // el texto completo de los documentos en vez de quedarse con fragmentos. Sin ella, la Mesa de siempre.
   armarCarpeta = null,
+  // Paso 4: ({ input, acciones }) => líneas con lo que se hizo en el CRM (agt002-mesa-acciones.js). Sin ella, la Mesa no
+  // toca el CRM, como siempre.
+  ejecutarAcciones = null,
   now = () => new Date(),
 } = {}) {
   if (!client || typeof client.run !== 'function') {
@@ -409,7 +415,8 @@ export function createAgt002WorkbenchResponder({
       const fuentesResueltas = await resolverFuentes(input);
       const allowedSourceIds = input.context_links.map(link => link.id);
       const withDocument = Boolean(produceDocument) && input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft;
-      const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds, withDocument });
+      const conAcciones = typeof ejecutarAcciones === 'function' && input.capability_id === AGT002_WORKBENCH_CAPABILITIES.reply;
+      const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds, withDocument, conAcciones });
       const lecciones = await leerLecciones(input);
       const carpeta = await leerCarpeta(input);
       const minimizedInput = buildMinimizedInput(input, fuentesResueltas, agt002FechaDeTrabajo(now()), lecciones);
@@ -423,7 +430,7 @@ export function createAgt002WorkbenchResponder({
 
       const raw = await client.run({
         model,
-        policy: [carpeta ? policyText.replace(AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA) : policyText, lecciones.length > 0 ? AGT002_LESSONS_POLICY : null, carpeta ? AGT002_CARPETA_POLICY : null].filter(Boolean).join(' '),
+        policy: [carpeta ? policyText.replace(AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA) : policyText, lecciones.length > 0 ? AGT002_LESSONS_POLICY : null, carpeta ? AGT002_CARPETA_POLICY : null, conAcciones ? AGT002_MESA_ACCIONES_POLICY : null].filter(Boolean).join(' '),
         input: minimizedInput,
         outputSchema,
         // Al modelo se le deja el tope del borrador menos 15 s, que son para armar y guardar el Word. Una respuesta (F7)
@@ -460,6 +467,16 @@ export function createAgt002WorkbenchResponder({
       if (!sourceLinks.every(sourceId => allowedSourceSet.has(sourceId))) {
         console.warn('agt002_workbench_responder_output_rejected', { event: 'agt002_workbench_responder_output_rejected', code: 'forged_source' });
         throw responderError('Vig-IA citó una fuente fuera del contexto autorizado.', 'AGT002_RESPONDER_FORGED_SOURCE');
+      }
+
+      // Lo que la persona pidió en el mensaje lo hace el servidor; lo que hizo (o por qué no) va al final de la respuesta.
+      if (conAcciones && Array.isArray(modelOutput.acciones) && modelOutput.acciones.length) {
+        let lineas;
+        try { lineas = await ejecutarAcciones({ input, acciones: modelOutput.acciones }); }
+        catch { lineas = ['No pude hacer los cambios que pidió en el CRM por un error; avise a Innovación.']; }
+        if (Array.isArray(lineas) && lineas.length) {
+          modelOutput = { ...modelOutput, content_text: `${modelOutput.content_text}\n\n${lineas.join('\n')}`.slice(0, 12_000) };
+        }
       }
 
       const serverDraft = withDocument ? await produceDraftDocument(input, modelOutput) : null;
