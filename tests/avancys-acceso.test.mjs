@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claseDeCuenta, fraccionDeSemana, horasDelTurno, horasPorDiaDelProducto, rentabilidadAproximada, medirAccesoAvancys, mesCerradoAnterior, mirarInformeRentabilidad, mirarLineasAnaliticas, pygPorCliente, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
+import { claseDeCuenta, horasDelTurno, horasPorDiaDelProducto, rentabilidadAproximada, medirAccesoAvancys, mesCerradoAnterior, mirarInformeRentabilidad, mirarLineasAnaliticas, pygPorCliente, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
 
 const config = Object.freeze({ origen: 'https://odoo.prueba', database: 'db', username: 'u', clave: 'k', companyId: null });
 
@@ -265,14 +265,14 @@ function mesAproximado() {
     if (modelo === 'account.analytic.account') return args[0][0][2].map(id => ANALITICAS[id]);
     if (modelo === 'project.project') return [{ id: 77, partner_id: [500, 'JERONIMO MARTINS'] }];
     if (modelo === 'project.service.order.line') {
-      if (metodo === 'fields_get') return { partner_id: {}, project_id: {}, product_id: {}, time_in: {}, time_out: {}, weekdays: {} };
+      if (metodo === 'fields_get') return { partner_id: {}, project_id: {}, product_id: {}, time_in: {}, time_out: {}, duration: {}, dias_facturables: {} };
       return [
-        { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 6, time_out: 6, weekdays: false },
-        { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 18, time_out: 6, weekdays: false },
-        { partner_id: false, project_id: [77, 'CONTRATO ARA'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 0, time_out: 0, weekdays: false },
-        { partner_id: false, project_id: false, product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 6, time_out: 18, weekdays: false },
-        { partner_id: [600, 'OTRO CLIENTE'], product_id: [2, '[VI001] VIGILANCIA FISICA CON ARMA'], time_in: 6, time_out: 18, weekdays: '1,2,3,4,5' },
-        { partner_id: [600, 'OTRO CLIENTE'], product_id: [3, '[MO005] MONITOREO TELEMATICO (GPRS)'], time_in: 0, time_out: 0, weekdays: false },
+        { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], duration: 24, dias_facturables: 30 },
+        { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], duration: 0, time_in: '18:00:00', time_out: '06:00:00', dias_facturables: 30 },
+        { partner_id: false, project_id: [77, 'CONTRATO ARA'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], duration: 0, time_in: false, time_out: false, dias_facturables: 0 },
+        { partner_id: false, project_id: false, product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], duration: 12, dias_facturables: 30 },
+        { partner_id: [600, 'OTRO CLIENTE'], product_id: [2, '[VI001] VIGILANCIA FISICA CON ARMA'], duration: 12, dias_facturables: 2 },
+        { partner_id: [600, 'OTRO CLIENTE'], product_id: [3, '[MO005] MONITOREO TELEMATICO (GPRS)'], duration: 24, dias_facturables: 30 },
       ];
     }
     const [filtro, , [agrupar]] = args;
@@ -283,15 +283,13 @@ function mesAproximado() {
   return { ejecutar, llamadas };
 }
 
-test('horario del turno: cruza la medianoche, igual es 24 h, cero es sin dato; días de la semana', () => {
-  assert.equal(horasDelTurno(6, 18), 12);
-  assert.equal(horasDelTurno(18, 6), 12);
-  assert.equal(horasDelTurno(6, 6), 24);
-  assert.equal(horasDelTurno(0, 0), null);
-  assert.equal(horasDelTurno(false, 18), null);
-  assert.ok(Math.abs(fraccionDeSemana('1,2,3,4,5') - 5 / 7) < 1e-9);
-  assert.ok(Math.abs(fraccionDeSemana(6) - 6 / 7) < 1e-9);
-  assert.equal(fraccionDeSemana(false), 1);
+test('horario del turno: texto de Avancys, cruza la medianoche, igual es 24 h, vacío es sin dato', () => {
+  assert.equal(horasDelTurno('06:00:00', '18:00:00'), 12);
+  assert.equal(horasDelTurno('18:00:00', '06:00:00'), 12);
+  assert.equal(horasDelTurno('06:00:00', '06:00:00'), 24);
+  assert.equal(horasDelTurno('09:30:00', '21:00:00'), 11.5);
+  assert.equal(horasDelTurno(false, '18:00:00'), null);
+  assert.equal(horasDelTurno('', ''), null);
 });
 
 test('rentabilidad aproximada: horas del horario de la orden, promedio a la que no tiene, monitoreo fuera', async () => {
@@ -299,13 +297,14 @@ test('rentabilidad aproximada: horas del horario de la orden, promedio a la que 
   const r = await rentabilidadAproximada(ejecutar, { mes: '2026-09' });
   assert.equal(r.legible, true);
   assert.equal(r.aproximado, true);
-  // Con dato: 24, 12 y 12 × 5/7 h/día. La tercera de ARA recibe el promedio.
-  const promedio = (24 + 12 + 12 * 5 / 7) / 3;
-  assert.ok(Math.abs(r.horas_por_dia.promedio - promedio) < 1e-9);
-  assert.deepEqual(r.fuentes_de_horas, { horario: 3, duracion: 0, nombre: 0, promedio: 1 });
+  // Con dato por día: 24 (duración), 12 (horario) y 12 (duración). La tercera de ARA, sin dato y sin
+  // días facturables, recibe el promedio por día y el mes entero.
+  const promedio = (24 + 12 + 12) / 3;
+  assert.equal(r.horas_por_dia.promedio, promedio);
+  assert.deepEqual(r.fuentes_de_horas, { horario: 1, duracion: 2, nombre: 0, promedio: 1 });
   assert.deepEqual(r.excluidas, [{ producto: '[MO005] MONITOREO TELEMATICO (GPRS)', lineas: 1 }]);
-  const horasAra = (24 + 12 + promedio) * 30;
-  const horasOtro = 12 * 5 / 7 * 30;
+  const horasAra = 24 * 30 + 12 * 30 + promedio * 30;
+  const horasOtro = 12 * 2;
   assert.ok(Math.abs(r.horas - (horasAra + horasOtro)) < 1e-6);
   const [ara, otro] = r.clientes;
   assert.equal(ara.cliente, 'JERONIMO MARTINS');
@@ -315,7 +314,7 @@ test('rentabilidad aproximada: horas del horario de la orden, promedio a la que 
   assert.ok(Math.abs(otro.costo_vigilantes - (-2400 * horasOtro / r.horas)) < 1e-6);
   const lectura = llamadas.find(l => l.modelo === 'project.service.order.line' && l.metodo === 'search_read');
   assert.deepEqual(lectura.args[0], [['state', '=', 'active']]);
-  assert.deepEqual(lectura.kwargs.fields, ['partner_id', 'project_id', 'product_id', 'time_in', 'time_out', 'weekdays']);
+  assert.deepEqual(lectura.kwargs.fields, ['partner_id', 'project_id', 'product_id', 'time_in', 'time_out', 'duration', 'dias_facturables']);
   assert.deepEqual(r.lectura_de_ordenes, { leidas: 6, cliente_por_contrato: 1, sin_cliente: 1, sin_producto: 0, sin_puesto: 0 });
 });
 

@@ -449,29 +449,29 @@ export function horasPorDiaDelProducto(nombre) {
   return horas * dias;
 }
 
-// Odoo guarda la hora como número (6.5 = 06:30). Un turno que cruza la medianoche termina "antes"
-// de empezar; entrada igual a salida es un puesto de 24 horas.
+// En Avancys `time_in` y `time_out` son texto ("06:00:00"). Un turno que cruza la medianoche
+// termina "antes" de empezar; entrada igual a salida es un puesto de 24 horas.
+function aHoras(valor) {
+  if (typeof valor === 'number') return valor;
+  const partes = String(valor || '').match(/^\s*(\d{1,2}):(\d{2})/);
+  return partes ? Number(partes[1]) + Number(partes[2]) / 60 : null;
+}
+
 export function horasDelTurno(entrada, salida) {
   // Odoo devuelve `false` en un campo vacío, y Number(false) sería medianoche.
-  if (typeof entrada !== 'number' || typeof salida !== 'number') return null;
-  const desde = Number(entrada);
-  const hasta = Number(salida);
-  if (!Number.isFinite(desde) || !Number.isFinite(hasta) || (desde === 0 && hasta === 0)) return null;
+  if (entrada === false || salida === false || entrada == null || salida == null) return null;
+  const desde = aHoras(entrada);
+  const hasta = aHoras(salida);
+  if (desde === null || hasta === null) return null;
   const horas = hasta > desde ? hasta - desde : 24 - desde + hasta;
   return horas > 0 && horas <= 24 ? horas : null;
 }
 
-// `weekdays` puede venir como lista ("1,2,3,4,5"), como número de días o vacío. Vacío es toda la semana.
-export function fraccionDeSemana(dias) {
-  if (typeof dias === 'number' && dias >= 1 && dias <= 7) return dias / 7;
-  const lista = String(dias || '').match(/[1-7]/g);
-  if (Array.isArray(dias) && dias.length >= 1 && dias.length <= 7) return dias.length / 7;
-  if (lista && lista.length >= 1 && lista.length <= 7 && /[,;\s-]/.test(String(dias))) return new Set(lista).size / 7;
-  return 1;
-}
-
 const VIGILANCIA_FISICA = /^\s*\[VI\d+\]/i;
-const CAMPOS_HORARIO = ['partner_id', 'project_id', 'puesto_id', 'product_id', 'time_in', 'time_out', 'duration', 'weekdays', 'cantidad_vigilantes'];
+// Medido el 2026-11-12 sobre las 6.329 líneas activas: `duration` (horas por día) y
+// `dias_facturables` (días del mes) vienen en casi todas; `partner_id` solo en 8, por eso el cliente
+// sale del contrato; `horas_facturables` está vacío.
+const CAMPOS_HORARIO = ['partner_id', 'project_id', 'puesto_id', 'product_id', 'time_in', 'time_out', 'duration', 'dias_facturables', 'cantidad_vigilantes'];
 const PAGINA_ORDENES = 2000;
 
 export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
@@ -520,16 +520,14 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
       continue;
     }
     fila.partner_id = cliente;
-    let horas = horasDelTurno(fila.time_in, fila.time_out);
-    let fuente = horas ? 'horario' : null;
-    if (!horas && Number(fila.duration) > 0 && Number(fila.duration) <= 24) { horas = Number(fila.duration); fuente = 'duracion'; }
+    let horas = Number(fila.duration) > 0 && Number(fila.duration) <= 24 ? Number(fila.duration) : null;
+    let fuente = horas ? 'duracion' : null;
+    if (!horas) { horas = horasDelTurno(fila.time_in, fila.time_out); fuente = horas ? 'horario' : null; }
     if (!horas) { horas = horasPorDiaDelProducto(producto); fuente = horas ? 'nombre' : null; }
-    if (horas) {
-      horas *= fraccionDeSemana(fila.weekdays);
-      porDia.push(horas);
-    }
+    if (horas) porDia.push(horas);
+    const dias = Number(fila.dias_facturables) > 0 ? Math.min(Number(fila.dias_facturables), diasDelMes) : diasDelMes;
     if (Number(fila.cantidad_vigilantes) > 0) vigilantes.push(Number(fila.cantidad_vigilantes));
-    lineas.push({ cliente_id: fila.partner_id[0], cliente: String(fila.partner_id[1]), producto: producto || 'Sin producto', porDia: horas, fuente });
+    lineas.push({ cliente_id: fila.partner_id[0], cliente: String(fila.partner_id[1]), producto: producto || 'Sin producto', porDia: horas, dias, fuente });
   }
 
   // La línea de vigilancia física sin horario recibe el promedio de las que sí lo tienen.
@@ -538,7 +536,7 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
   for (const linea of lineas) {
     if (!linea.fuente) { linea.porDia = promedio; linea.fuente = 'promedio'; }
     fuentes[linea.fuente] += 1;
-    linea.horas = linea.porDia * diasDelMes;
+    linea.horas = linea.porDia * linea.dias;
     total += linea.horas;
   }
   const ordenadas = [...porDia].sort((izq, der) => izq - der);
