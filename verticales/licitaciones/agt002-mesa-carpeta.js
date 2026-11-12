@@ -3,6 +3,7 @@
 // al principio. El puente la escribe en disco y el modelo la recorre con buscar, leer y listar, como el agente de código.
 import { selectCanonicalExtractionsByDocumentVersion } from './tender-document-extraction-persistence.js';
 import { AGT002_CARPETA_MAX_ARCHIVOS, AGT002_CARPETA_MAX_BYTES } from '../../agt002-mesa-carpeta-contrato.js';
+import { armarAgt002FichaDelProceso, armarAgt002IndiceDeProcesos } from './agt002-ficha-del-proceso.js';
 
 // Lo que manda primero. Las respuestas, actas e informes de la entidad hoy se clasifican como «otro»: el nombre los separa.
 const CARPETAS = Object.freeze([
@@ -15,7 +16,8 @@ const CARPETAS = Object.freeze([
   ['07_otros', () => true],
 ]);
 const PRIORIDAD_AL_RECORTAR = ['06_terceros', '07_otros', '04_estudios_previos', '03_anexos_y_formatos', '05_nuestro', '02_respuestas_actas_e_informes'];
-const MARGEN_INDICE_BYTES = 64 * 1024;
+// El índice de la carpeta, la ficha y el índice de procesos abiertos van aparte del tope de los documentos.
+const MARGEN_INDICE_BYTES = 256 * 1024;
 
 // La política base de la Mesa prohíbe toda herramienta; con carpeta esa regla se cambia por ésta. En producción
 // (DEAJ, 12-nov) el modelo obedeció la prohibición, no buscó y repitió el fragmento cortado.
@@ -23,7 +25,7 @@ export const AGT002_SIN_HERRAMIENTAS = 'No uses herramientas, navegación, corre
 export const AGT002_SOLO_LECTURA_DE_LA_CARPETA = 'Sólo puedes usar las herramientas de lectura (Grep para buscar, Read para leer, Glob para listar) sobre la carpeta del proceso que está en tu directorio de trabajo; no uses navegación, correo, mensajería ni acciones fuera de esta generación estructurada.';
 
 export const AGT002_CARPETA_POLICY = [
-  'CARPETA DEL PROCESO. Tu directorio de trabajo tiene el texto completo de todos los documentos vigentes de esta licitación; empieza por 00_INDICE.md.',
+  'CARPETA DEL PROCESO. Tu directorio de trabajo tiene el texto completo de todos los documentos vigentes de esta licitación. Empieza por 00_FICHA.md (estado, decisiones de las personas, cronograma y pendientes de este proceso), sigue con 00_INDICE.md (qué documentos hay) y usa 00_PROCESOS_ABIERTOS.md cuando la pregunta toque otras licitaciones o el conjunto. Lo que una persona dijo en la ficha es un hecho del proceso, no lo vuelvas a preguntar.',
   'Antes de responder busca SIEMPRE en la carpeta, aunque context_links o fuentes_resueltas ya traigan fragmentos: esos fragmentos son recortes, pueden venir cortados o mezclar dos columnas, y si un fragmento y la carpeta no coinciden, manda la carpeta.',
   'Trabaja como un analista que lee la fuente: (1) busca con Grep los términos de la pregunta y sus sinónimos en toda la carpeta (por ejemplo sucursal, agencia, sede; consorcio, unión temporal, integrante); (2) lee con Read el bloque completo alrededor de cada hallazgo, no sólo la línea; (3) manda el pliego definitivo y la última adenda sobre el proyecto y los estudios previos; (4) en las respuestas a observaciones busca primero las de SEGURIDAD NACIONAL y di qué decidió la entidad (acoge, no acoge, acepta parcialmente, aclara);',
   '(5) esas respuestas vienen de tablas de dos columnas (lo que pidió el observante y lo que respondió la entidad) y el texto puede venir intercalado línea por línea: separa una columna de la otra antes de concluir, y nunca tomes como respuesta a una observación una frase que pertenece a otra;',
@@ -53,8 +55,9 @@ function encabezado(doc, carpeta) {
  * Devuelve { archivos: [{ ruta, texto }] } o null si la licitación no tiene documentos con texto. Si el total pasa el
  * tope, deja fuera primero lo que menos manda y lo dice en el índice.
  */
-export async function armarAgt002CarpetaDelProceso(database, { tenderId }) {
+export async function armarAgt002CarpetaDelProceso(database, { tenderId, now = new Date() }) {
   if (!tenderId) return null;
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(now);
   const versiones = await database.from('psi_tender_document_versions')
     .select('id,name,document_type,origin,created_at,extracted_text')
     .eq('tender_id', tenderId).eq('current', true).order('created_at', { ascending: true });
@@ -103,9 +106,20 @@ export async function armarAgt002CarpetaDelProceso(database, { tenderId }) {
     '',
   ].join('\n');
 
+  // La ficha y el índice de procesos ayudan, pero no son condición: si fallan, la carpeta va sin ellos.
+  let ficha = null; let procesos = null;
+  try { ficha = await armarAgt002FichaDelProceso(database, { tenderId, hoy }); }
+  catch (error) { ficha = null; console.warn('agt002_mesa_ficha_unavailable', { event: 'agt002_mesa_ficha_unavailable', code: error?.code || 'ficha_failed' }); }
+  try {
+    const { data: tender } = await database.from('psi_public_tenders').select('converted_opportunity_id').eq('id', tenderId).maybeSingle();
+    procesos = await armarAgt002IndiceDeProcesos(database, { hoy, actual: tender?.converted_opportunity_id || null });
+  } catch (error) { procesos = null; console.warn('agt002_mesa_procesos_unavailable', { event: 'agt002_mesa_procesos_unavailable', code: error?.code || 'procesos_failed' }); }
+
   return {
     archivos: [
+      ...(ficha ? [{ ruta: '00_FICHA.md', texto: ficha }] : []),
       { ruta: '00_INDICE.md', texto: indice },
+      ...(procesos ? [{ ruta: '00_PROCESOS_ABIERTOS.md', texto: procesos }] : []),
       ...entradas.map(({ ruta, doc, carpeta, texto }) => ({ ruta, texto: encabezado(doc, carpeta) + texto })),
     ],
   };
