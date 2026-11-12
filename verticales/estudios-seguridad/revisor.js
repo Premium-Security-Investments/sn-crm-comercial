@@ -136,6 +136,20 @@ function riskFindings(detail) {
   return findings;
 }
 
+// Migración 212: frente al estudio anterior de la sede. Un riesgo que estaba y ya no está puede ser una mejora o una omisión;
+// una recomendación anterior sin cumplir sigue siendo un riesgo abierto (Héctor, reunión del 2026-11-11).
+function comparisonFindings(detail) {
+  const comparison = detail.comparison;
+  if (!comparison) return [];
+  const findings = comparison.rows.filter(row => row.estado === 'ya_no_esta').map(row => ({
+    code: 'riesgo_anterior_ausente', severity: 'revisar',
+    message: `«${row.anterior.titulo}» estaba en el estudio anterior (${comparison.estudio.codigo}, R${row.anterior.numero}) y no está en este: ¿desapareció la causa o se omitió?`,
+  }));
+  const pending = (comparison.recomendaciones || []).filter(item => ['pendiente', 'en_curso'].includes(item.estado));
+  if (pending.length) findings.push({ code: 'recomendaciones_anteriores_pendientes', severity: 'revisar', message: `${pending.length} ${pending.length === 1 ? 'recomendación' : 'recomendaciones'} del estudio anterior (${comparison.estudio.codigo}) no se han cumplido: conviene tenerlas en cuenta al calificar.` });
+  return findings;
+}
+
 function actionFindings(detail) {
   const visit = isoDay(detail.study.visit_date);
   if (!visit) return [];
@@ -154,6 +168,7 @@ export function consistencyFindings(detail, { otherClients = [] } = {}) {
     ...sameRatingFindings(detail.risks || []),
     ...riskFindings(detail),
     ...actionFindings(detail),
+    ...comparisonFindings(detail),
   ];
 }
 
