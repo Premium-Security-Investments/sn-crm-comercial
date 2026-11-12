@@ -10,7 +10,8 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 const AGT002_INVARIANTS = [
   ['agt002-hetzner-bridge-server.js', [
     "const BRIDGE_PATH = '/v1/agt002-preview/run';",
-    'export const AGT002_BRIDGE_MAX_BODY_BYTES = 1_048_576;',
+    // 16 MiB desde el 2026-11-12: la carpeta del proceso de la Mesa viaja en el cuerpo (cambio deliberado de AGT-002).
+    'export const AGT002_BRIDGE_MAX_BODY_BYTES = 16 * 1024 * 1024;',
     'AGT002_CODEX_TIMEOUT: 504,',
     'AGT002_CODEX_LOGIN_REQUIRED: 503,',
     "AGT002_BRIDGE_METHOD_NOT_ALLOWED'",

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { spawn as defaultSpawn } from 'node:child_process';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { validarAgt002Carpeta } from './agt002-mesa-carpeta-contrato.js';
 
 /**
  * Cliente OAuth propio de AGT-002 en modo impresión de Claude Code (preview/
@@ -203,6 +205,9 @@ export function createAgt002ClaudeClient({
   spawn = defaultSpawn,
   command = 'claude',
   cwd = tmpdir(),
+  // Donde se escriben las carpetas de proceso (una por turno, borrada al terminar). Sin ella, un turno con carpeta se
+  // rechaza: el cliente de siempre no lee disco.
+  carpetasRoot = null,
   env = process.env,
 } = {}) {
   if (typeof spawn !== 'function' || !nonEmptyString(command)) {
@@ -216,7 +221,7 @@ export function createAgt002ClaudeClient({
   const baseEnv = sanitizeEnv(env);
 
   return {
-    run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal, cwd: callerCwd, effort } = {}) {
+    run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal, cwd: callerCwd, effort, carpeta } = {}) {
       if (!nonEmptyString(model)) return Promise.reject(new Error('AGT-002 requiere un modelo configurado.'));
       if (!nonEmptyString(policy)) return Promise.reject(new Error('AGT-002 requiere una política configurada.'));
       if (!isRecord(input)) return Promise.reject(new Error('AGT-002 requiere una entrada estructurada.'));
@@ -243,6 +248,34 @@ export function createAgt002ClaudeClient({
       }
       const schemaArgs = ['--json-schema', serializedSchema];
 
+      // Con carpeta, el turno corre DENTRO de ella con buscar, leer y listar. Claude Code sólo deja leer sin permiso
+      // dentro del directorio de trabajo; fuera de él, en modo -p, cada lectura se niega (verificado con 2.1.302 el
+      // 2026-11-12). No hay herramientas de escritura, de comandos ni de red.
+      let carpetaDir = null;
+      if (carpeta !== undefined) {
+        if (!nonEmptyString(carpetasRoot) || !isAbsolute(carpetasRoot)) {
+          return Promise.reject(failure('El puente no tiene dónde escribir la carpeta del proceso.', 'AGT002_CLAUDE_TRANSPORT_ERROR'));
+        }
+        let archivos;
+        try { archivos = validarAgt002Carpeta(carpeta); }
+        catch { return Promise.reject(new Error('AGT-002 recibió una carpeta de proceso inválida.')); }
+        try {
+          mkdirSync(carpetasRoot, { recursive: true, mode: 0o700 });
+          carpetaDir = mkdtempSync(join(carpetasRoot, 'turno-'));
+          for (const { ruta, texto } of archivos) {
+            const destino = join(carpetaDir, ruta);
+            mkdirSync(dirname(destino), { recursive: true, mode: 0o700 });
+            writeFileSync(destino, texto, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+          }
+        } catch {
+          if (carpetaDir) { try { rmSync(carpetaDir, { recursive: true, force: true }); } catch { /* best effort */ } }
+          return Promise.reject(failure('El puente no pudo preparar la carpeta del proceso.', 'AGT002_CLAUDE_TRANSPORT_ERROR'));
+        }
+      }
+      const borrarCarpeta = () => {
+        if (carpetaDir) { try { rmSync(carpetaDir, { recursive: true, force: true }); } catch { /* best effort */ } }
+      };
+
       const args = [
         '-p',
         '--model', model,
@@ -252,16 +285,16 @@ export function createAgt002ClaudeClient({
         // Sin herramientas, sin sesión persistida y en modo seguro: el turno no
         // puede leer ni escribir el disco del puente. No se usa --bare porque
         // impediría al subproceso leer su propia sesión OAuth.
-        '--tools', '',
+        '--tools', carpetaDir ? 'Read,Grep,Glob' : '',
         '--no-session-persistence',
         '--safe-mode',
         '--system-prompt', policy,
       ];
 
-      return new Promise((resolve, reject) => {
+      const turno = new Promise((resolve, reject) => {
         let child;
         try {
-          child = spawn(command, args, { cwd, env: baseEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+          child = spawn(command, args, { cwd: carpetaDir || cwd, env: baseEnv, stdio: ['pipe', 'pipe', 'pipe'] });
         } catch {
           reject(failure('El servicio de AGT-002 no está disponible.', 'AGT002_CLAUDE_TRANSPORT_ERROR'));
           return;
@@ -387,6 +420,8 @@ export function createAgt002ClaudeClient({
           settle(reject, failure('El servicio de AGT-002 no está disponible.', 'AGT002_CLAUDE_TRANSPORT_ERROR'));
         }
       });
+      // La carpeta vive lo que dura el turno: se borra al terminar, con éxito o con falla.
+      return turno.finally(borrarCarpeta);
     },
   };
 }

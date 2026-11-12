@@ -38,7 +38,7 @@ import {
 // Codex Structured Outputs strict-mode limits (mirrors tests/agt002-preview-codex-client.test.mjs).
 const CODEX_MAX_OBJECT_DEPTH = 5;
 const CODEX_MAX_TOTAL_PROPERTIES = 100;
-// The bridge rejects a request body over 1 MiB (AGT002_BRIDGE_MAX_BODY_BYTES); the schema is only
+// The bridge caps the request body (AGT002_BRIDGE_MAX_BODY_BYTES) and Claude Code takes the schema in argv; the schema is only
 // part of that body, so it must be comfortably small on its own.
 const SCHEMA_BYTES_CEILING = 131_072; // 128 KiB — a generous guard; the real schema is ~10 KiB.
 
