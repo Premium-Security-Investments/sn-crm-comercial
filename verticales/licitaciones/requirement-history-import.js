@@ -30,6 +30,7 @@ const PROCESS_LABELS = {
   'popayan-cauca-fisica': 'Popayán (Cauca) · vigilancia física',
   'riohacha-la-guajira-fisica': 'Riohacha (La Guajira) · vigilancia física',
   'santa-rosa-risaralda': 'Santa Rosa de Cabal (Risaralda)',
+  'tunja-boyaca-hibrida': 'Tunja (Boyacá) · vigilancia híbrida',
   'valledupar-cesar-videovigilancia': 'Valledupar (Cesar) · videovigilancia',
   'villamaria-caldas-fisica': 'Villamaría (Caldas) · vigilancia física',
   'yopal-casanare-hibrida': 'Yopal (Casanare) · vigilancia híbrida',
@@ -66,6 +67,12 @@ export function parseRequirementMatrix(bytes) {
       const slugs = [...new Set([...String(get(cells, 'OBSERVACIONES') || '').matchAll(/([a-z0-9]+(?:-[a-z0-9]+)+)-(?:H|P|PUN)-\d+/g)].map(match => match[1]))].sort();
       const sha = String(get(cells, 'SHA256_PLIEGO') || '');
       if (!slugs.length && sha) slugs.push(`pliego-${sha.slice(0, 10)}`);
+      // Las filas sin observaciones traen el proceso en el identificador: «RUN04-CO1.REQ.8308809-H-025» (la solicitud
+      // de SECOP) o «tunja-boyaca-hibrida-TUNJA-HAB-013».
+      const secop = id.match(/CO1\.REQ\.\d+/)?.[0];
+      const slug = id.match(/^([a-z]+(?:-[a-z]+)+)-[A-Z]/)?.[1];
+      if (!slugs.length && secop) slugs.push(`SECOP ${secop}`);
+      if (!slugs.length && slug) slugs.push(slug);
       const points = get(cells, 'PUNTOS_MAXIMOS_OPCION');
       rows.push({
         id, kind, categoria: clip(get(cells, 'CATEGORIA'), 80) || null, requisito,

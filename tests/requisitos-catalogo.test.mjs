@@ -7,6 +7,7 @@ import AdmZip from 'adm-zip';
 import { parseRequirementMatrix, runRequirementMatrixSync } from '../verticales/licitaciones/requirement-history-import.js';
 import { REQUIREMENT_FOCUS, REQUIREMENT_TYPES, buildRequirementCatalog, buildRequirementFocus, classifyRequirement, isRequirementFragment } from '../verticales/licitaciones/requirement-catalog.js';
 import { saveRequirementFocus } from '../verticales/licitaciones/tender-requirements.js';
+import { assessRequirement } from '../verticales/licitaciones/requirement-assessment.js';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -68,6 +69,7 @@ test('la matriz se limpia: sólo Habilitantes y Puntuables, proceso legible, sin
   assert.equal(catalog.totals.excluded_fragments, 1, 'el título del PDF no cuenta');
   assert.equal(catalog.types.find(type => type.key === 'liquidez').processes, 2);
   assert.ok(catalog.types.some(type => type.key === 'presencia_local'));
+  assert.deepEqual(rows.map(row => row.procesos.length > 0), [true, false, true, true]);
   assert.ok(catalog.types.some(type => type.key === 'p_industria_nacional'));
 });
 
@@ -116,50 +118,83 @@ function pgliteRest(pg) {
   } };
 }
 
-test('los análisis y las actas cuentan: «nos frenó» sin repetir el proceso', () => {
+// La ficha de la empresa como la arma el servidor (datos al 2026-11-12).
+const COMPANY = { liquidez: 2.37, endeudamiento: 0.5, cobertura: 17.47, roe: 0.49, roa: 0.24, capitalTrabajo: 9589715984, patrimonio: 11383759299,
+  codes: ['46171600', '92121500', '92121600', '92121700'], mainCity: 'Pereira', licenseUntil: '10-may-2029',
+  agencies: [{ city: 'Cartago', since: 2015 }, { city: 'Manizales', since: 2014 }, { city: 'Bogotá', since: 2020 }, { city: 'Cali', since: 2024 }],
+  documents: [{ type: 'communications_license', name: '' }, { type: 'quality_certifications', name: 'ISO 9001:2015' }] };
+const verdict = (type, text) => assessRequirement({ type, text }, COMPANY).verdict;
+
+test('el cruce con la ficha dice qué nos inhabilita y qué no', () => {
+  assert.equal(verdict('liquidez', 'Índice de liquidez mínimo exigido Mayor o igual a 3,17'), 'inhabilita');
+  assert.equal(verdict('liquidez', 'Índice de liquidez mínimo Corte 31/12/2024 o 31/12/2025, liquidez >= 1'), 'cumple', 'la fecha del corte no es el umbral');
+  assert.equal(verdict('liquidez', 'Liquidez >=2; endeudamiento <=0.40; cobertura de intereses >=11.50.'), 'inhabilita', 'el endeudamiento de la misma fila');
+  assert.equal(verdict('rentabilidad', 'ROE >=0.046; ROA >=0.012.'), 'cumple');
+  assert.equal(verdict('capital_trabajo', 'Capital de trabajo mayor o igual al 50% del presupuesto.'), 'depende');
+  assert.match(assessRequirement({ type: 'capital_trabajo', text: 'al 50% del presupuesto' }, COMPANY).reason, /hasta \$19\.179 millones/);
+  assert.equal(verdict('codigos_unspsc', 'La clasificación del RUP debe incluir el UNSPSC 92121700.'), 'cumple');
+  assert.equal(verdict('codigos_unspsc', 'Código UNSPSC 46101500 (armas)'), 'inhabilita');
+  assert.equal(verdict('presencia_local', 'Acreditar domicilio principal, sucursal o agencia en el Distrito de Barranquilla.'), 'inhabilita');
+  assert.equal(verdict('presencia_local', 'Contar con sede principal, sucursal o agencia en Cali.'), 'cumple');
+  assert.equal(verdict('presencia_local', 'Contar con sede principal o sucursal en Manizales.'), 'inhabilita', 'la agencia no es sucursal');
+  assert.equal(verdict('presencia_local', 'Domicilio principal en Pereira con cinco años.'), 'cumple');
+  // Los ejemplos de Juan (2026-11-12).
+  assert.equal(verdict('registro_tecnologia', 'Resolución del registro de comercializadores de equipos tecnológicos'), 'inhabilita');
+  assert.equal(verdict('canina', 'Resolución de sede canina, certificación de los canes y póliza de 400 SMMLV'), 'inhabilita');
+  assert.equal(verdict('licencia_comunicaciones', 'Acreditar licencia de comunicaciones para cobertura nacional.'), 'inhabilita');
+  assert.equal(verdict('licencia_comunicaciones', 'Licencia de frecuencias a nivel nacional o en Risaralda'), 'cumple');
+  assert.equal(verdict('calidad_sst', 'Certificación ISO 27001 vigente'), 'inhabilita');
+  // Los papeles que se renuevan no inhabilitan: se preparan.
+  for (const type of ['garantia_seriedad', 'sanciones_supervigilancia', 'antecedentes', 'existencia_representacion', 'armas']) assert.equal(verdict(type, 'cualquier texto'), 'se_prepara', type);
+  assert.equal(verdict('rup_vigente', 'RUP vigente y en firme'), 'cumple');
+});
+
+test('la pestaña muestra sólo los hechos que nos inhabilitan, con cada proceso una vez', () => {
   const crm = [
     { opportunity_id: 'o1', process: 'Municipio de Pereira · LP-220', requirement_id: 'REQ-LIQUIDEZ', category: 'FINANCIAL', text: 'Liquidez mínima 3,06', blocker: true },
-    { opportunity_id: 'o1', process: 'Municipio de Pereira · LP-220', requirement_id: 'REQ-CODIGOS', category: 'EXPERIENCE', text: 'Código 46101500', evaluation: 'BLOCKER' },
-    { opportunity_id: 'o2', process: 'Rama Judicial', requirement_id: 'REQ-LIQUIDEZ', category: 'FINANCIAL', text: 'Liquidez 2,73', blocker: false },
+    { opportunity_id: 'o1', process: 'Municipio de Pereira · LP-220', requirement_id: 'REQ-CODIGOS', category: 'EXPERIENCE', text: 'Código UNSPSC 46101500', evaluation: 'BLOCKER' },
+    { opportunity_id: 'o2', process: 'Rama Judicial', requirement_id: 'REQ-LIQUIDEZ', category: 'FINANCIAL', text: 'Liquidez mayor o igual a 1,5', blocker: false },
+    { opportunity_id: 'o3', process: 'Fiscalía', requirement_id: 'REQ-SERIEDAD', category: 'INSURANCE', text: 'Garantía de seriedad por el 10 %', blocker: true },
   ];
-  const actas = [{ opportunity_id: 'o1', process: 'Municipio de Pereira · LP-220', title: 'Liquidez mínima 3,06', text: 'La empresa declara 2,37.' }];
-  const catalog = buildRequirementCatalog({ crm, actas });
-  const liquidez = catalog.types.find(type => type.key === 'liquidez');
-  assert.equal(liquidez.processes, 2);
-  assert.deepEqual(liquidez.blocked_in.map(item => item.opportunity_id), ['o1']);
-  const focus = buildRequirementFocus(catalog, { state: [{ focus_key: 'financiero', status: 'en_tramite', owner: 'Katherine', note: 'Hablando con el banco.' }] });
-  assert.equal(focus.length, REQUIREMENT_FOCUS.length);
-  const financiero = focus.find(item => item.key === 'financiero');
-  assert.equal(financiero.status, 'en_tramite');
-  assert.equal(financiero.blocked_in.length, 1);
-  assert.ok(financiero.fix_action.length > 20, 'sin acción guardada, propone la inicial');
-  assert.equal(focus[0].blocked_in.length >= focus.at(-1).blocked_in.length, true, 'primero lo que más nos frenó');
+  const actas = [{ opportunity_id: 'o4', process: 'ESU · 2026-5', title: 'Resolución del registro de comercializadores de equipos tecnológicos', text: 'El perfil no la trae.' }];
+  const catalog = buildRequirementCatalog({ crm, actas, assess: item => assessRequirement({ type: item.type, text: [item.text, item.quote].filter(Boolean).join(' ') }, COMPANY) });
+  const focus = buildRequirementFocus(catalog, { state: [{ focus_key: 'codigos', status: 'iniciar', owner: 'Katherine', note: 'Pedir a la Cámara.' }] });
+  assert.deepEqual(focus.map(item => item.key).sort(), ['codigos', 'financiero', 'importador']);
+  assert.equal(focus.find(item => item.key === 'financiero').processes.length, 1, 'la Rama cumple la liquidez de 1,5');
+  assert.equal(focus.find(item => item.key === 'codigos').status, 'iniciar');
+  assert.ok(!focus.some(item => item.key === 'seriedad'), 'la garantía de seriedad se saca en minutos');
+  assert.ok(REQUIREMENT_FOCUS.every(item => item.fix.length > 20));
 });
 
 test('guardar valida el foco y el estado, y avisa si falta la migración', async () => {
   const saved = [];
   const db = missing => ({ from: () => ({ upsert: row => { saved.push(row); return { select: () => ({ single: async () => missing ? { error: { code: '42P01' } } : { data: row, error: null } }) }; } }) });
   await assert.rejects(saveRequirementFocus(db(), { focus_key: 'otra', status: 'pendiente' }, 'p1'), /no es válido/);
-  await assert.rejects(saveRequirementFocus(db(), { focus_key: 'seriedad', status: 'listo' }, 'p1'), /estado no es válido/);
-  const row = await saveRequirementFocus(db(), { focus_key: 'seriedad', status: 'en_tramite', owner: ' Katherine ', note: '' }, 'p1');
+  await assert.rejects(saveRequirementFocus(db(), { focus_key: 'canino', status: 'pendiente' }, 'p1'), /estado no es válido/);
+  await assert.rejects(saveRequirementFocus(db(), { focus_key: 'seriedad', status: 'iniciar' }, 'p1'), /no es válido/);
+  const row = await saveRequirementFocus(db(), { focus_key: 'canino', status: 'iniciar', owner: ' Katherine ', note: '' }, 'p1');
   assert.equal(row.owner, 'Katherine');
   assert.equal(row.note, null);
-  await assert.rejects(saveRequirementFocus(db(true), { focus_key: 'seriedad', status: 'pendiente' }, 'p1'), /migración 210/);
+  await assert.rejects(saveRequirementFocus(db(true), { focus_key: 'canino', status: 'por_decidir' }, 'p1'), /migración 215/);
 });
 
-test('migración 210: tabla sólo para el servidor, siete focos, no pisa lo escrito', async () => {
+test('migraciones 210 y 215: sólo el servidor, los grupos de hechos y sus decisiones, sin pisar lo escrito', async () => {
   const pg = new PGlite();
   await pg.exec("create role anon; create role authenticated; create role service_role; create table public.psi_sales_profiles (id uuid primary key);");
-  const sql = read('supabase/migrations/210_requisitos_que_nos_frenan.sql');
+  await pg.exec(read('supabase/migrations/210_requisitos_que_nos_frenan.sql'));
+  await pg.exec("update public.psi_tender_requirement_focus set note = 'escrito por una persona', status = 'en_tramite' where focus_key = 'codigos'");
+  const sql = read('supabase/migrations/215_requisitos_que_nos_inhabilitan.sql');
   await pg.exec(sql);
-  await pg.exec("update public.psi_tender_requirement_focus set note = 'escrito por una persona' where focus_key = 'seriedad'");
   await pg.exec(sql);
-  const { rows } = await pg.query('select focus_key, owner, note from public.psi_tender_requirement_focus order by focus_key');
+  const { rows } = await pg.query('select focus_key, status, owner, note from public.psi_tender_requirement_focus');
   assert.deepEqual(rows.map(row => row.focus_key).sort(), REQUIREMENT_FOCUS.map(focus => focus.key).sort());
-  assert.equal(rows.find(row => row.focus_key === 'seriedad').note, 'escrito por una persona');
-  assert.ok(rows.every(row => row.owner === 'Katherine'));
-  assert.match(sql, /revoke all on table public\.psi_tender_requirement_focus from public, anon, authenticated, service_role/);
-  await assert.rejects(pg.exec("insert into public.psi_tender_requirement_focus (focus_key) values ('otra')"));
+  const codigos = rows.find(row => row.focus_key === 'codigos');
+  assert.equal(codigos.note, 'escrito por una persona');
+  assert.equal(codigos.status, 'en_tramite');
+  assert.ok(rows.filter(row => row.focus_key !== 'codigos').every(row => row.status === 'por_decidir' && row.owner === 'Katherine'));
+  await assert.rejects(pg.exec("insert into public.psi_tender_requirement_focus (focus_key) values ('seriedad')"));
+  await assert.rejects(pg.exec("update public.psi_tender_requirement_focus set status = 'pendiente' where focus_key = 'canino'"));
+  await pg.exec(read('supabase/rollbacks/215_requisitos_que_nos_inhabilitan_rollback.sql'));
   await pg.exec(read('supabase/rollbacks/210_requisitos_que_nos_frenan_rollback.sql'));
 });
 
