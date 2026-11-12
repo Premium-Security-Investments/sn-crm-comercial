@@ -52,13 +52,17 @@ const MATRIX = workbook({
     ['H-002', 'general', '5.1 REQUISITOS HABILITANTES JURÍDICOS:', null, null, null, null, '', 'OCURRENCIA_HISTORICA'],
     ['H-003', 'presencia', 'Contar con sede principal, sucursal o agencia en Ibagué.', null, null, null, '03901ad3303994aa', '', 'OCURRENCIA_HISTORICA']],
   Puntuables: [['Matriz'], ['Una fila'], ['ID_OCURRENCIA', 'CATEGORIA', 'REQUISITO', 'REGLA_DE_PUNTUACION', 'PUNTOS_MAXIMOS_OPCION', 'OBSERVACIONES'],
-    ['PUN-001', 'industria nacional', 'Puntaje por apoyo a la industria nacional.', 'Hasta 10 puntos', '10', 'Fuentes consolidadas: neiva-huila-vigilancia-P-0001']],
+    ['PUN-001', 'industria nacional', 'Puntaje por apoyo a la industria nacional.', 'Hasta 10 puntos', '10', 'Fuentes consolidadas: neiva-huila-vigilancia-P-0001'],
+    ['bogota-distrito-capital-de-bogota-hibrida-H-0001', 'puntuacion', 'Otorgar puntaje por la ponderación de calidad del servicio.', null, null, ''],
+    ['bogota-distrito-capital-de-bogota-hibrida-H-0002', 'puntuacion', 'Otorgar puntaje por la ponderación del precio ofertado.', null, null, '']],
   'Alistamiento SN': [['ID_REQUISITO'], ['H-001']],
 });
 
 test('la matriz se limpia: sólo Habilitantes y Puntuables, proceso legible, sin columnas técnicas', () => {
   const rows = parseRequirementMatrix(MATRIX);
-  assert.deepEqual(rows.map(row => row.id), ['H-001', 'H-002', 'H-003', 'PUN-001']);
+  assert.deepEqual(rows.slice(0, 4).map(row => row.id), ['H-001', 'H-002', 'H-003', 'PUN-001']);
+  assert.equal(new Set(rows.map(row => row.id)).size, rows.length, 'los IDs largos no se repiten al acortarlos');
+  assert.ok(rows.every(row => row.id.length <= 40));
   assert.deepEqual(rows[0].procesos, ['Ibagué (Tolima) · vigilancia híbrida', 'Pereira (Risaralda) · seguridad electrónica']);
   assert.deepEqual(rows[2].procesos, ['Rama Judicial Pereira · vigilancia'], 'sin observaciones, el proceso sale de la huella del pliego');
   assert.equal(rows[3].kind, 'puntuable');
@@ -69,7 +73,7 @@ test('la matriz se limpia: sólo Habilitantes y Puntuables, proceso legible, sin
   assert.equal(catalog.totals.excluded_fragments, 1, 'el título del PDF no cuenta');
   assert.equal(catalog.types.find(type => type.key === 'liquidez').processes, 2);
   assert.ok(catalog.types.some(type => type.key === 'presencia_local'));
-  assert.deepEqual(rows.map(row => row.procesos.length > 0), [true, false, true, true]);
+  assert.deepEqual(rows.map(row => row.procesos.length > 0), [true, false, true, true, true, true], 'el proceso sale del ID largo antes de acortarlo');
   assert.ok(catalog.types.some(type => type.key === 'p_industria_nacional'));
 });
 
@@ -82,11 +86,13 @@ test('el puente sólo baja la matriz si cambió, y la tabla queda igual al Excel
   let downloads = 0;
   const file = { nombre: 'Matriz_Historica_Requisitos_Habilitantes_y_Puntuables.xlsx', modificado_en: '2026-10-27T10:54:58Z' };
   const deps = { listFolder: async () => [file], download: async () => { downloads += 1; return MATRIX; } };
-  assert.deepEqual(await runRequirementMatrixSync(database, deps), { event: 'requirement_matrix_loaded', filas: 4, retiradas: 1 });
+  assert.deepEqual(await runRequirementMatrixSync(database, deps), { event: 'requirement_matrix_loaded', filas: 6, retiradas: 1 });
   assert.deepEqual(await runRequirementMatrixSync(database, deps), { event: 'requirement_matrix_unchanged' });
   assert.equal(downloads, 1);
   const { rows } = await pg.query('select id, procesos from public.psi_tender_requirement_history order by id');
-  assert.deepEqual(rows.map(row => row.id), ['H-001', 'H-002', 'H-003', 'PUN-001']);
+  assert.deepEqual(rows.slice(0, 4).map(row => row.id), ['H-001', 'H-002', 'H-003', 'PUN-001']);
+  assert.equal(new Set(rows.map(row => row.id)).size, rows.length, 'los IDs largos no se repiten al acortarlos');
+  assert.ok(rows.every(row => row.id.length <= 40));
   assert.deepEqual(await runRequirementMatrixSync(database, { ...deps, listFolder: async () => [] }), { event: 'requirement_matrix_missing' });
   await pg.exec(read('supabase/rollbacks/211_matriz_historica_requisitos_rollback.sql'));
 });

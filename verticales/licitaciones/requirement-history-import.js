@@ -6,6 +6,7 @@
 // técnicas (estado metodológico, revisión humana, confianza, huella del pliego, alcance de la fuente, fecha de ingreso)
 // y con el proceso de origen sacado de OBSERVACIONES («Fuentes consolidadas: pereira-risaralda-electronica-H-0…») o de
 // la huella del pliego. La hoja «Alistamiento SN» no se carga: su lugar lo ocupa la evaluación de la empresa del CRM.
+import { createHash } from 'node:crypto';
 import { readWorkbook } from './tender-economic-offer-check.js';
 
 export const REQUIREMENT_MATRIX_PATH = '06_Productos_PSI/Licitaciones/01_Base_Maestra_y_Taxonomia/01_Bases_de_datos_historica/Matriz_Historica_Requisitos_Habilitantes_y_Puntuables.xlsx';
@@ -41,6 +42,9 @@ const clip = (value, max) => {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
 };
 const column = ref => ref.replace(/\d+$/, '');
+// La tabla guarda IDs de hasta 40 caracteres. 63 filas de la matriz los traen más largos y con el mismo comienzo
+// («bogota-distrito-capital-de-bogota-hibrida-…»): cortarlos los repetía. Los largos se acortan con una huella.
+const shortId = id => (id.length <= 40 ? id : `${id.slice(0, 27)}-${createHash('sha256').update(id).digest('hex').slice(0, 12)}`);
 const rowOf = ref => Number(ref.match(/\d+$/)?.[0] || 0);
 
 /** Las filas limpias de la matriz a partir de los bytes del .xlsx. Pura. */
@@ -61,7 +65,8 @@ export function parseRequirementMatrix(bytes) {
     const get = (cells, name) => (header.has(name) ? cells.get(header.get(name)) : null);
     for (const row of [...grid.keys()].filter(row => row > headerRow).sort((a, b) => a - b)) {
       const cells = grid.get(row);
-      const id = clip(get(cells, 'ID_OCURRENCIA'), 40);
+      const rawId = String(get(cells, 'ID_OCURRENCIA') ?? '').replace(/\s+/g, ' ').trim();
+      const id = shortId(rawId);
       const requisito = clip(get(cells, 'REQUISITO'), 500);
       if (!id || !requisito) continue;
       const slugs = [...new Set([...String(get(cells, 'OBSERVACIONES') || '').matchAll(/([a-z0-9]+(?:-[a-z0-9]+)+)-(?:H|P|PUN)-\d+/g)].map(match => match[1]))].sort();
@@ -69,8 +74,8 @@ export function parseRequirementMatrix(bytes) {
       if (!slugs.length && sha) slugs.push(`pliego-${sha.slice(0, 10)}`);
       // Las filas sin observaciones traen el proceso en el identificador: «RUN04-CO1.REQ.8308809-H-025» (la solicitud
       // de SECOP) o «tunja-boyaca-hibrida-TUNJA-HAB-013».
-      const secop = id.match(/CO1\.REQ\.\d+/)?.[0];
-      const slug = id.match(/^([a-z]+(?:-[a-z]+)+)-[A-Z]/)?.[1];
+      const secop = rawId.match(/CO1\.REQ\.\d+/)?.[0];
+      const slug = rawId.match(/^([a-z]+(?:-[a-z]+)+)-[A-Z]/)?.[1];
       if (!slugs.length && secop) slugs.push(`SECOP ${secop}`);
       if (!slugs.length && slug) slugs.push(slug);
       const points = get(cells, 'PUNTOS_MAXIMOS_OPCION');
