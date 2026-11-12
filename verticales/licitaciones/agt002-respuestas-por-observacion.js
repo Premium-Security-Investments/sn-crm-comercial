@@ -134,19 +134,34 @@ async function marcar(database, doc, estado, { observaciones = 0, error = null }
   }, { onConflict: 'document_version_id' });
 }
 
+// En el servidor de tareas la Mesa no está configurada (vive en Vercel): ahí se usa el puente del análisis, con su llave,
+// su modelo y su interruptor de llamadas al modelo, que ya están en la unidad. Primera pasada (12-nov): «apagada».
+export function configuracionDelPuente(environment) {
+  if (isAgt002WorkbenchDrainEnabled(environment)) {
+    const config = getAgt002WorkbenchRuntimeConfig(environment);
+    return { model: config.model, crear: () => createAgt002HetznerBridgeClient({ url: config.bridgeUrl, hmacSecret: config.hmacSecret }) };
+  }
+  const hmacSecret = String(environment?.AGT002_BRIDGE_HMAC_SECRET || '').trim();
+  const model = String(environment?.AGT002_INITIAL_ANALYSIS_MODEL_ID || '').trim();
+  if (environment?.AGT002_MODEL_CALLS_ENABLED === 'true' && hmacSecret.length >= 32 && model) {
+    return { model, crear: () => createAgt002HetznerBridgeClient({ hmacSecret }) };
+  }
+  return null;
+}
+
 /**
  * Lee como máximo `limit` documentos de respuestas pendientes y guarda sus observaciones. Devuelve eventos de registro.
  * Sin la migración 217 o con la Mesa apagada no hace nada.
  */
 export async function runAgt002RespuestasPorObservacionPass(database, { environment = process.env, bridgeClient = null, limit = 1, timeoutMs = 6 * 60 * 1000 } = {}) {
-  if (!isAgt002WorkbenchDrainEnabled(environment)) return [{ event: 'agt002_respuestas_skipped', reason: 'apagada' }];
+  const puente = configuracionDelPuente(environment);
+  if (!puente) return [{ event: 'agt002_respuestas_skipped', reason: 'apagada' }];
   if (timeoutMs < AGT002_RESPUESTAS_MIN_MS) return [{ event: 'agt002_respuestas_skipped', reason: 'sin_tiempo' }];
   let pendientes;
   try { pendientes = await candidatos(database); }
   catch (error) { return [{ event: 'agt002_respuestas_skipped', reason: 'lectura', code: error?.code || null }]; }
   if (!pendientes.length) return [{ event: 'agt002_respuestas_idle' }];
-  const config = getAgt002WorkbenchRuntimeConfig(environment);
-  const client = bridgeClient || createAgt002HetznerBridgeClient({ url: config.bridgeUrl, hmacSecret: config.hmacSecret });
+  const client = bridgeClient || puente.crear();
   const eventos = [];
   for (const doc of pendientes.slice(0, limit)) {
     const inicio = Date.now();
@@ -154,7 +169,7 @@ export async function runAgt002RespuestasPorObservacionPass(database, { environm
       const texto = await textoDe(database, doc);
       if (!texto.trim()) { await marcar(database, doc, 'fallido', { error: 'sin_texto' }); eventos.push({ event: 'agt002_respuestas_failed', document_version_id: doc.id, code: 'sin_texto' }); continue; }
       const raw = await client.run({
-        model: config.model,
+        model: puente.model,
         policy: AGT002_RESPUESTAS_POLICY,
         input: { documento: clip(doc.name, 300) },
         outputSchema: AGT002_RESPUESTAS_SCHEMA,
