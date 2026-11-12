@@ -232,7 +232,10 @@ type Aprox = {
   ingresos_clientes?: number;
   clientes_con_ingreso?: number;
   clientes?: FilaAprox[];
-  productos_sin_horas?: { producto: string; lineas: number }[];
+  fuentes_de_horas?: { horario: number; duracion: number; nombre: number; promedio: number };
+  horas_por_dia?: { promedio: number; mediana: number | null; minimo: number | null; maximo: number | null; con_dato: number; campos_leidos: string[] };
+  vigilantes_por_linea?: { con_dato: number; promedio: number | null; mas_de_uno: number };
+  excluidas?: { producto: string; lineas: number }[];
 };
 
 // Rentabilidad aproximada (acordada con Juan el 2026-11-12): ingreso real por cliente y costo de
@@ -259,7 +262,7 @@ function RentabilidadAproximada() {
   return <div className="siio-pulse-block">
     <h4>Rentabilidad aproximada por cliente</h4>
     <p className="siio-pulse-footnote">
-      Ingreso real de cada cliente. El costo de vigilantes se reparte por las horas que se le venden (costo por hora promedio de la empresa); supervisión, operaciones y administración, por la facturación. Es una aproximación hasta que la programación de turnos se haga en Avancys.
+      Ingreso real de cada cliente. El costo de vigilantes se reparte por las horas de sus puestos de vigilancia física, según el horario de la orden de servicio (costo por hora promedio de la empresa); supervisión, operaciones y administración, por la facturación. Es una aproximación hasta que la programación de turnos se haga en Avancys.
     </p>
     <input type="month" value={mes} onChange={evento => setMes(evento.target.value)} aria-label="Mes" />
     {' '}<button type="button" onClick={() => void calcular()} disabled={estado === 'midiendo' || !mes}>
@@ -272,13 +275,20 @@ function RentabilidadAproximada() {
       <p className="siio-pulse-source">
         {datos.mes} · aproximado. Costo de vigilantes {millones(f.vigilantes)} ({f.centros_vigilantes} centros) ÷ {Math.round(datos.horas ?? 0).toLocaleString('es-CO')} horas vendidas
         {' '}= ${Math.round(Math.abs(datos.costo_por_hora ?? 0)).toLocaleString('es-CO')} por hora. Indirecto repartido por facturación: {millones(f.indirecto)}.
-        {' '}Líneas de orden con horas reconocidas: {(datos.lineas_con_horas ?? 0).toLocaleString('es-CO')} de {(datos.lineas ?? 0).toLocaleString('es-CO')} ({pct(datos.lineas_con_horas ?? 0, datos.lineas ?? 0)}).
         {' '}Ingresos en cuentas de la empresa, sin cliente: {millones(f.ingresos_sin_cliente)}.
       </p>
+      {datos.fuentes_de_horas && datos.horas_por_dia ? <p className="siio-pulse-footnote">
+        Horas de {(datos.lineas ?? 0).toLocaleString('es-CO')} líneas activas de vigilancia física: {datos.fuentes_de_horas.horario.toLocaleString('es-CO')} por hora de entrada y salida,
+        {' '}{datos.fuentes_de_horas.duracion.toLocaleString('es-CO')} por duración, {datos.fuentes_de_horas.nombre.toLocaleString('es-CO')} por el nombre
+        {' '}y {datos.fuentes_de_horas.promedio.toLocaleString('es-CO')} sin dato, a las que se les puso el promedio ({(datos.horas_por_dia.promedio ?? 0).toFixed(1)} h/día;
+        {' '}mediana {datos.horas_por_dia.mediana?.toFixed(1) ?? '—'}, de {datos.horas_por_dia.minimo?.toFixed(1) ?? '—'} a {datos.horas_por_dia.maximo?.toFixed(1) ?? '—'}).
+        {datos.vigilantes_por_linea?.con_dato ? ` Cantidad de vigilantes por línea: ${datos.vigilantes_por_linea.con_dato.toLocaleString('es-CO')} la traen, promedio ${(datos.vigilantes_por_linea.promedio ?? 0).toFixed(1)}, ${datos.vigilantes_por_linea.mas_de_uno.toLocaleString('es-CO')} con más de uno (no se usa todavía).` : ''}
+        {' '}Campos leídos: {datos.horas_por_dia.campos_leidos.join(', ')}.
+      </p> : null}
       <div className="siio-table-wrap"><table>
         <thead><tr><th>Cliente</th><th>Ingresos</th><th>Horas</th><th>Vigilantes (est.)</th><th>Indirecto (est.)</th><th>Directo</th><th>Margen (est.)</th></tr></thead>
         <tbody>{(datos.clientes || []).map(fila => <tr key={fila.cliente}>
-          <td><strong>{fila.cliente}</strong>{fila.lineas_sin_horas ? <span className="siio-secondary"> · {fila.lineas_sin_horas} de {fila.lineas} líneas sin horas</span> : null}</td>
+          <td><strong>{fila.cliente}</strong>{fila.lineas ? <span className="siio-secondary"> · {fila.lineas} líneas{fila.lineas_sin_horas ? `, ${fila.lineas_sin_horas} con horas promedio` : ''}</span> : null}</td>
           <td>{millones(fila.ingresos)}</td>
           <td>{Math.round(fila.horas).toLocaleString('es-CO')}</td>
           <td>{millones(fila.costo_vigilantes)}</td>
@@ -287,14 +297,9 @@ function RentabilidadAproximada() {
           <td>{millones(fila.margen)} · {pct(fila.margen, fila.ingresos)}</td>
         </tr>)}</tbody>
       </table></div>
-      {datos.productos_sin_horas?.length ? <>
-        <h4>Productos cuyo nombre no dice las horas</h4>
-        <p className="siio-pulse-footnote">Estas líneas no entran al reparto de vigilantes. Si alguno es vigilancia, hay que decir cuántas horas cubre.</p>
-        <div className="siio-table-wrap"><table>
-          <thead><tr><th>Producto</th><th>Líneas</th></tr></thead>
-          <tbody>{datos.productos_sin_horas.map(fila => <tr key={fila.producto}><td>{fila.producto}</td><td>{fila.lineas.toLocaleString('es-CO')}</td></tr>)}</tbody>
-        </table></div>
-      </> : null}
+      {datos.excluidas?.length ? <p className="siio-pulse-footnote">
+        Sin costo de vigilantes (monitoreo y electrónica): {datos.excluidas.map(fila => `${fila.producto} (${fila.lineas.toLocaleString('es-CO')})`).join(' · ')}.
+      </p> : null}
     </> : null}
   </div>;
 }

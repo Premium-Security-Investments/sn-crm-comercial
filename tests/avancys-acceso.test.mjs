@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claseDeCuenta, horasPorDiaDelProducto, rentabilidadAproximada, medirAccesoAvancys, mesCerradoAnterior, mirarInformeRentabilidad, mirarLineasAnaliticas, pygPorCliente, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
+import { claseDeCuenta, fraccionDeSemana, horasDelTurno, horasPorDiaDelProducto, rentabilidadAproximada, medirAccesoAvancys, mesCerradoAnterior, mirarInformeRentabilidad, mirarLineasAnaliticas, pygPorCliente, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
 
 const config = Object.freeze({ origen: 'https://odoo.prueba', database: 'db', username: 'u', clave: 'k', companyId: null });
 
@@ -263,11 +263,14 @@ function mesAproximado() {
   const ejecutar = async (modelo, metodo, args, kwargs) => {
     llamadas.push({ modelo, metodo, args, kwargs });
     if (modelo === 'account.analytic.account') return args[0][0][2].map(id => ANALITICAS[id]);
-    if (modelo === 'project.service.order.line.invoice') {
+    if (modelo === 'project.service.order.line') {
+      if (metodo === 'fields_get') return { partner_id: {}, product_id: {}, time_in: {}, time_out: {}, weekdays: {} };
       return [
-        { client_id: [500, 'JERONIMO MARTINS'], product_id: [1, 'VIGILANCIA 24 HORAS'], __count: 2 },
-        { client_id: [600, 'OTRO CLIENTE'], product_id: [2, 'VIGILANCIA 12 HORAS'], __count: 2 },
-        { client_id: [600, 'OTRO CLIENTE'], product_id: [3, 'MONITOREO'], __count: 1 },
+        { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 6, time_out: 6, weekdays: false },
+        { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 18, time_out: 6, weekdays: false },
+        { partner_id: [500, 'JERONIMO MARTINS'], product_id: [1, '[VI002] VIGILANCIA FISICA SIN ARMA'], time_in: 0, time_out: 0, weekdays: false },
+        { partner_id: [600, 'OTRO CLIENTE'], product_id: [2, '[VI001] VIGILANCIA FISICA CON ARMA'], time_in: 6, time_out: 18, weekdays: '1,2,3,4,5' },
+        { partner_id: [600, 'OTRO CLIENTE'], product_id: [3, '[MO005] MONITOREO TELEMATICO (GPRS)'], time_in: 0, time_out: 0, weekdays: false },
       ];
     }
     const [filtro, , [agrupar]] = args;
@@ -278,27 +281,39 @@ function mesAproximado() {
   return { ejecutar, llamadas };
 }
 
-test('rentabilidad aproximada: costo de vigilantes por horas vendidas, indirecto por facturación', async () => {
+test('horario del turno: cruza la medianoche, igual es 24 h, cero es sin dato; días de la semana', () => {
+  assert.equal(horasDelTurno(6, 18), 12);
+  assert.equal(horasDelTurno(18, 6), 12);
+  assert.equal(horasDelTurno(6, 6), 24);
+  assert.equal(horasDelTurno(0, 0), null);
+  assert.equal(horasDelTurno(false, 18), null);
+  assert.ok(Math.abs(fraccionDeSemana('1,2,3,4,5') - 5 / 7) < 1e-9);
+  assert.ok(Math.abs(fraccionDeSemana(6) - 6 / 7) < 1e-9);
+  assert.equal(fraccionDeSemana(false), 1);
+});
+
+test('rentabilidad aproximada: horas del horario de la orden, promedio a la que no tiene, monitoreo fuera', async () => {
   const { ejecutar, llamadas } = mesAproximado();
   const r = await rentabilidadAproximada(ejecutar, { mes: '2026-09' });
   assert.equal(r.legible, true);
   assert.equal(r.aproximado, true);
-  // 30 días: ARA 2 × 24 × 30 = 1.440 h; el otro 2 × 12 × 30 = 720 h.
-  assert.equal(r.horas, 2160);
-  assert.equal(r.fondo.vigilantes, -2400);
-  assert.equal(r.fondo.indirecto, -400);
-  assert.equal(r.lineas, 5);
-  assert.equal(r.lineas_con_horas, 4);
+  // Con dato: 24, 12 y 12 × 5/7 h/día. La tercera de ARA recibe el promedio.
+  const promedio = (24 + 12 + 12 * 5 / 7) / 3;
+  assert.ok(Math.abs(r.horas_por_dia.promedio - promedio) < 1e-9);
+  assert.deepEqual(r.fuentes_de_horas, { horario: 3, duracion: 0, nombre: 0, promedio: 1 });
+  assert.deepEqual(r.excluidas, [{ producto: '[MO005] MONITOREO TELEMATICO (GPRS)', lineas: 1 }]);
+  const horasAra = (24 + 12 + promedio) * 30;
+  const horasOtro = 12 * 5 / 7 * 30;
+  assert.ok(Math.abs(r.horas - (horasAra + horasOtro)) < 1e-6);
   const [ara, otro] = r.clientes;
   assert.equal(ara.cliente, 'JERONIMO MARTINS');
-  assert.ok(Math.abs(ara.costo_vigilantes - (-2400 * 1440 / 2160)) < 1e-6);
+  assert.equal(ara.lineas_sin_horas, 1);
+  assert.ok(Math.abs(ara.costo_vigilantes - (-2400 * horasAra / r.horas)) < 1e-6);
   assert.ok(Math.abs(ara.costo_indirecto - (-400 * 3000 / 4000)) < 1e-6);
-  assert.ok(Math.abs(ara.margen - (3000 - 1600 - 300)) < 1e-6);
-  assert.equal(otro.lineas_sin_horas, 1);
-  assert.deepEqual(r.productos_sin_horas, [{ producto: 'MONITOREO', lineas: 1 }]);
-  const orden = llamadas.find(l => l.modelo === 'project.service.order.line.invoice');
-  assert.deepEqual(orden.args[0], [['state', '=', 'aprobado'], ['fact_start_date', '<=', '2026-09-30'], ['fact_end_date', '>=', '2026-09-01']]);
-  assert.equal(orden.metodo, 'read_group');
+  assert.ok(Math.abs(otro.costo_vigilantes - (-2400 * horasOtro / r.horas)) < 1e-6);
+  const lectura = llamadas.find(l => l.modelo === 'project.service.order.line' && l.metodo === 'search_read');
+  assert.deepEqual(lectura.args[0], [['state', '=', 'active']]);
+  assert.deepEqual(lectura.kwargs.fields, ['partner_id', 'product_id', 'time_in', 'time_out', 'weekdays']);
 });
 
 test('rentabilidad aproximada: mes mal escrito no consulta', async () => {
