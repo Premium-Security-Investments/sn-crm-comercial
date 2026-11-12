@@ -60,7 +60,7 @@ export function createAgt002HetznerBridgeClient({ url = bridgeRunUrl(resolveAgt0
   const path = new URL(url).pathname;
 
   return {
-    async run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal, effort } = {}) {
+    async run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal, effort, carpeta } = {}) {
       if (typeof model !== 'string' || !model.trim()) throw new Error('AGT-002 Preview requiere un modelo configurado.');
       if (typeof policy !== 'string' || !policy.trim()) throw new Error('AGT-002 Preview requiere una política (baseInstructions) configurada.');
       if (!isPlainObject(input)) throw new Error('AGT-002 Preview requiere una entrada cerrada.');
@@ -74,7 +74,8 @@ export function createAgt002HetznerBridgeClient({ url = bridgeRunUrl(resolveAgt0
       }
       if (signal?.aborted) throw transportError('La ejecución de AGT-002 Preview fue cancelada.', 'AGT002_CODEX_CANCELLED');
 
-      const body = JSON.stringify({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort });
+      // La carpeta del proceso sólo viaja cuando el llamador la arma (la Mesa con el interruptor encendido).
+      const body = JSON.stringify({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort, ...(carpeta !== undefined ? { carpeta } : {}) });
       const timestamp = String(now());
       const nonce = randomNonce();
       const canonical = buildCanonicalString({ method: 'POST', path, bodySha256Hex: sha256Hex(body), timestamp, nonce });

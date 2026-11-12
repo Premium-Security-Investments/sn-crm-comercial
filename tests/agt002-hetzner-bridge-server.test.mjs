@@ -63,7 +63,7 @@ async function testWrongContentTypeRejected() {
 
 async function testOversizedBodyRejected() {
   await withServer(fakeSuccessClient, async (base) => {
-    const oversized = JSON.stringify({ padding: 'x'.repeat(1_100_000) });
+    const oversized = JSON.stringify({ padding: 'x'.repeat(AGT002_BRIDGE_MAX_BODY_BYTES + 100_000) });
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(oversized), body: oversized });
     assert.equal(response.status, 413);
   });
@@ -73,7 +73,7 @@ async function testOversizedBodyEmitsSafeLogEvent() {
   const originalLog = console.log;
   const lines = [];
   console.log = (line) => { lines.push(line); };
-  const oversized = JSON.stringify({ padding: 'x'.repeat(1_100_000) });
+  const oversized = JSON.stringify({ padding: 'x'.repeat(AGT002_BRIDGE_MAX_BODY_BYTES + 100_000) });
   try {
     await withServer(fakeSuccessClient, async (base) => {
       const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(oversized), body: oversized });

@@ -36,7 +36,8 @@ const command = process.env.AGT002_CLAUDE_CLI_BIN || 'claude';
 // OAuth desde CLAUDE_CONFIG_DIR, fijado por la unidad systemd en
 // /opt/agt002-bridge/.claude. El cwd es fijo y absoluto: nunca lo decide la
 // petición.
-const claudeClient = createAgt002ClaudeClient({ command, cwd: '/opt/agt002-bridge' });
+// Las carpetas de proceso de la Mesa van en var/, el único lugar escribible del puente (ReadWritePaths de la unidad).
+const claudeClient = createAgt002ClaudeClient({ command, cwd: '/opt/agt002-bridge', carpetasRoot: '/opt/agt002-bridge/var/mesa-carpetas' });
 // La allowlist de modelos nunca se construye desde el entorno ni se inyecta aquí: el puente
 // (agt002-hetzner-bridge-server.js) siempre usa el contrato frozen compartido.
 const hostSurfaceObserver = createAgt002HostSurfaceObserver();

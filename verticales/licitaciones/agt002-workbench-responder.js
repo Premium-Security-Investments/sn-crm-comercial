@@ -5,6 +5,7 @@ import { minimizarFuentes, sostieneAfirmacion } from '../../catalogo-fuentes.js'
 import { agt002FechaDeTrabajo } from './agt002-fecha-de-trabajo.js';
 import { agt002UsaTopeDeBorrador } from './agt002-mesa-document-intent.js';
 import { AGT002_LESSONS_POLICY } from './agt002-company-lessons.js';
+import { AGT002_CARPETA_POLICY } from './agt002-mesa-carpeta.js';
 
 // Política inmutable de la Mesa Vig-IA para el puente de producción (Fase B1). El
 // contexto es dato citable, nunca instrucción; Vig-IA no tiene autoridad de
@@ -293,6 +294,9 @@ export function createAgt002WorkbenchResponder({
   produceDocument = null,
   // Lecciones de la empresa: () => lecciones activas ya acotadas (agt002LessonsForPrompt). Sin ella, la Mesa de siempre.
   loadLessons = null,
+  // La carpeta del proceso: ({ tenderId }) => { archivos } | null (agt002-mesa-carpeta.js). Con ella el modelo busca y lee
+  // el texto completo de los documentos en vez de quedarse con fragmentos. Sin ella, la Mesa de siempre.
+  armarCarpeta = null,
   now = () => new Date(),
 } = {}) {
   if (!client || typeof client.run !== 'function') {
@@ -312,6 +316,21 @@ export function createAgt002WorkbenchResponder({
   if (typeof now !== 'function') throw new Error('La Mesa Vig-IA requiere un reloj configurado.');
   if (loadLessons !== null && typeof loadLessons !== 'function') {
     throw new Error('La Mesa Vig-IA requiere que el lector de lecciones sea una función.');
+  }
+  if (armarCarpeta !== null && typeof armarCarpeta !== 'function') {
+    throw new Error('La Mesa Vig-IA requiere que el armador de la carpeta sea una función.');
+  }
+
+  // Como las fuentes: si la carpeta no se puede armar, la Mesa responde con lo de siempre y lo registra.
+  async function leerCarpeta(input) {
+    if (!armarCarpeta || !input.tender_id) return null;
+    try {
+      const carpeta = await armarCarpeta({ tenderId: input.tender_id });
+      return isRecord(carpeta) && Array.isArray(carpeta.archivos) && carpeta.archivos.length > 0 ? carpeta : null;
+    } catch (error) {
+      console.warn('agt002_workbench_folder_unavailable', { event: 'agt002_workbench_folder_unavailable', job_id: input.job_id, code: error?.code || 'folder_failed' });
+      return null;
+    }
   }
 
   // Igual que las fuentes: si las lecciones no se pueden leer, la Mesa responde sin ellas.
@@ -392,6 +411,7 @@ export function createAgt002WorkbenchResponder({
       const withDocument = Boolean(produceDocument) && input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft;
       const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds, withDocument });
       const lecciones = await leerLecciones(input);
+      const carpeta = await leerCarpeta(input);
       const minimizedInput = buildMinimizedInput(input, fuentesResueltas, agt002FechaDeTrabajo(now()), lecciones);
 
       // Re-chequeo del interruptor inmediatamente antes de invocar al puente: un
@@ -403,15 +423,17 @@ export function createAgt002WorkbenchResponder({
 
       const raw = await client.run({
         model,
-        policy: lecciones.length > 0 ? `${policyText} ${AGT002_LESSONS_POLICY}` : policyText,
+        policy: [policyText, lecciones.length > 0 ? AGT002_LESSONS_POLICY : null, carpeta ? AGT002_CARPETA_POLICY : null].filter(Boolean).join(' '),
         input: minimizedInput,
         outputSchema,
         // Al modelo se le deja el tope del borrador menos 15 s, que son para armar y guardar el Word. Una respuesta (F7)
         // no arma Word: se le dejan 5 s para guardar.
+        // Con carpeta el modelo busca y lee antes de contestar: se le da el tope largo, como a una pregunta larga.
         timeoutMs: input.capability_id === AGT002_WORKBENCH_CAPABILITIES.draft
           ? Math.max(timeoutMs, draftTimeoutMs - 15_000)
-          : agt002UsaTopeDeBorrador(input) ? Math.max(timeoutMs, draftTimeoutMs - 5_000) : timeoutMs,
+          : carpeta || agt002UsaTopeDeBorrador(input) ? Math.max(timeoutMs, draftTimeoutMs - 5_000) : timeoutMs,
         idempotencyKey: input.job_id,
+        ...(carpeta ? { carpeta } : {}),
       });
 
       let modelOutput;

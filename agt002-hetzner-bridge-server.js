@@ -5,6 +5,7 @@ import { logBridgeEvent } from './agt002-hetzner-bridge-log.js';
 import { sha256Hex } from './agt002-hetzner-bridge-signing.js';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
+import { validarAgt002Carpeta } from './agt002-mesa-carpeta-contrato.js';
 import { buildAgt002ControlPlaneIdentity } from './verticales/licitaciones/agt002-control-plane-identity.js';
 import { AGT002_HOST_SURFACE_UNITS } from './verticales/licitaciones/agt002-host-surface-observer.js';
 
@@ -27,7 +28,8 @@ const HOST_SURFACE_OBSERVATION_UNAVAILABLE = Object.freeze({
 async function defaultHostSurfaceObserver() {
   throw new Error('AGT002_BRIDGE_HOST_SURFACE_OBSERVER_NOT_CONFIGURED');
 }
-export const AGT002_BRIDGE_MAX_BODY_BYTES = 1_048_576;
+// 16 MiB: la carpeta del proceso (texto completo de sus documentos, hasta 14 MiB) viaja en el cuerpo firmado.
+export const AGT002_BRIDGE_MAX_BODY_BYTES = 16 * 1024 * 1024;
 /**
  * El puente decide qué modelos existen: nada fuera de la lista llega al argv del proveedor.
  * Re-exporta el contrato compartido (agt002-preview-allowed-models.js) en vez de mantener su
@@ -200,7 +202,7 @@ export function createAgt002BridgeServer({
       if (Object.hasOwn(body, 'cwd')) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
       if (url.pathname === DOCUMENT_PATH) return renderDocument(res, body);
 
-      const { model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort } = body;
+      const { model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort, carpeta } = body;
       // El modelo lo propone el cuerpo firmado, pero lo decide el puente: sólo
       // un alias exacto de la allowlist puede llegar al argv del proveedor.
       if (typeof model !== 'string' || !allowedModelSet.has(model) || typeof policy !== 'string' || !policy.trim()) {
@@ -214,6 +216,10 @@ export function createAgt002BridgeServer({
       // present must be a real allowlisted reasoning effort before it can ever reach the Codex
       // subprocess — fail closed, exactly like every other malformed field above.
       if (effort !== undefined && !isAgt002PreviewReasoningEffort(effort)) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
+      // La carpeta del proceso es opcional; si viene, se valida aquí antes de que el cliente la escriba en disco.
+      if (carpeta !== undefined) {
+        try { validarAgt002Carpeta(carpeta); } catch { return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST'); }
+      }
 
       const startedAt = Date.now();
       const correlationId = randomUUID();
@@ -247,7 +253,7 @@ export function createAgt002BridgeServer({
 
       let runResult;
       try {
-        runResult = codexClient.run({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort, signal: controller.signal });
+        runResult = codexClient.run({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort, signal: controller.signal, ...(carpeta !== undefined ? { carpeta } : {}) });
       } catch (error) {
         handleError(error);
         return;

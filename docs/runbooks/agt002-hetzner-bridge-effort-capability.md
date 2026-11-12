@@ -81,6 +81,7 @@ confirmar que estos archivos están presentes y actualizados en el host (rutas r
   importado directamente por `agt002-hetzner-bridge-server.js` y `agt002-hetzner-bridge-log.js`.
 - `agt002-preview-allowed-models.js` — contrato compartido, congelado, de la allowlist de modelos
   (`['sonnet']`); importado directamente por `agt002-hetzner-bridge-server.js`.
+- `agt002-mesa-carpeta-contrato.js` — contrato de la carpeta del proceso de la Mesa (rutas y tamaño que el puente acepta y el cliente escribe en `var/mesa-carpetas`)
 - `agt002-control-plane-identity.js` — construye la identidad de control-plane (`surface`/`sha`/
   `version`/`source`/`observed_at_utc`) de una superficie AGT-002; importado directamente por
   `agt002-hetzner-bridge-server.js`.

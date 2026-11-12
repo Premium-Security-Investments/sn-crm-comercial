@@ -47,6 +47,7 @@ import {
   sweepExpiredLeases,
 } from './agt002-workbench-persistence.js';
 import { runAgt002WorkbenchWorker } from './agt002-workbench-worker.js';
+import { armarAgt002CarpetaDelProceso } from './agt002-mesa-carpeta.js';
 
 // Fase B1: puente de producción mínimo de la Mesa Vig-IA, sin ruta HTTP ni
 // programador todavía. Ningún gate de esta fábrica lee AGT002_PREVIEW_* — la Mesa
@@ -234,6 +235,9 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
         // experiencias no caben en una respuesta, y un volcado tapa justo lo que se preguntó.
         // Lecciones de la empresa activas: se leen en cada pedido, así una aprobada aplica desde la siguiente consulta.
         loadLessons: () => loadAgt002LessonsForPrompt(database),
+        // La carpeta del proceso (Juan, 2026-11-12): detrás de su propio interruptor, porque necesita el puente nuevo
+        // (cuerpo de 16 MiB y herramientas de lectura). Con el puente viejo una pregunta con carpeta fallaría.
+        armarCarpeta: environment.AGT002_MESA_CARPETA === '1' ? ({ tenderId }) => armarAgt002CarpetaDelProceso(database, { tenderId }) : null,
         resolveSources: ({ tenderId, message, documento }) => resolverParaLector(database, {
           lector: 'agt002.mesa',
           // El formato sólo se busca cuando hay un documento que escribir.
