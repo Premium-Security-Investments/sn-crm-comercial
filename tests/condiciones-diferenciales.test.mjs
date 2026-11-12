@@ -73,7 +73,9 @@ test('sin la 200 la ficha no se rompe y guardar dice qué falta; las rutas y las
   assert.match(server, /'GET \/api\/tender-differential-benefits': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
   assert.match(server, /'POST \/api\/tender-company-differential-conditions': \['tenders', ACTIONS\.LICITACIONES_CONFIGURE\]/);
   assert.equal(server, read('api/[...path].js'));
-  assert.match(read('src/main.tsx'), /<TenderDifferentialBenefits opportunityId=\{o\.id\} request=\{api\} \/>/);
+  // Juan, 2026-11-12: son documentos que se presentan sí o sí, como el RUP: van en la lista de documentos de Preparar, no en Decidir.
+  assert.doesNotMatch(read('src/main.tsx'), /TenderDifferentialBenefits/);
+  assert.match(read('src/tenders/components/TenderCompanyDocumentBridgePanel.tsx'), /row\.key === 'differential_scoring_support' && <TenderDifferentialDocuments/);
   assert.match(read('src/tenders/TenderConfigurationView.tsx'), /<CompanyDifferentialConditions request=\{request\} canEdit=\{canConfigure\} \/>/);
 });
 

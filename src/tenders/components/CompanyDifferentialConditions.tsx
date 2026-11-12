@@ -49,24 +49,22 @@ export function CompanyDifferentialConditions({ request, canEdit }: { request: T
 
 type Benefit = { code: string; label: string; verdict: 'aplica' | 'no_aplica' | 'por_confirmar'; kinds: string[]; action: string; mentions: Array<{ document: string; excerpt: string; kinds: string[] }> };
 const KIND_LABEL: Record<string, string> = { garantia: 'garantía', desempate: 'desempate', puntaje: 'puntaje', experiencia: 'experiencia' };
-const VERDICT_LABEL: Record<string, string> = { aplica: 'Nos aplica', no_aplica: 'No nos aplica', por_confirmar: 'Por confirmar' };
 
-/** En Decidir: dónde este pliego premia una condición diferencial y qué hacer (Juan, 2026-11-10). */
-export function TenderDifferentialBenefits({ opportunityId, request }: { opportunityId: string; request: TenderRequest }) {
+/**
+ * En Preparar, dentro de la fila «Soportes de criterios diferenciales» de los documentos de la empresa (Juan,
+ * 2026-11-12: «es como si me fuera a poner ahí el RUP y la cédula del representante legal; son documentos que sí o sí
+ * se deben presentar»). Sólo lo que este pliego premia y nos aplica o falta confirmar, como una acción más de la lista.
+ */
+export function TenderDifferentialDocuments({ opportunityId, request }: { opportunityId: string; request: TenderRequest }) {
   const [benefits, setBenefits] = useState<Benefit[] | null>(null);
   useEffect(() => {
     let active = true;
     void request<{ installed: boolean; benefits: Benefit[] }>(`/api/tender-differential-benefits?opportunity_id=${encodeURIComponent(opportunityId)}`)
-      .then(payload => { if (active) setBenefits(payload.installed ? payload.benefits : []); }, () => undefined);
+      .then(payload => { if (active) setBenefits(payload.installed ? payload.benefits.filter(benefit => benefit.verdict !== 'no_aplica') : []); }, () => undefined);
     return () => { active = false; };
   }, [opportunityId, request]);
   if (!benefits?.length) return null;
-  return <div className="tw-differential">
-    <strong>Condiciones diferenciales en este pliego</strong>
-    <ul>{benefits.map(benefit => <li key={benefit.code} className={`tw-differential-${benefit.verdict}`}>
-      <b>{benefit.label}</b> · {VERDICT_LABEL[benefit.verdict]}{benefit.kinds.length ? ` · ${benefit.kinds.map(kind => KIND_LABEL[kind] || kind).join(', ')}` : ''}
-      <span>{benefit.action}</span>
-      <details><summary>Dónde lo dice ({benefit.mentions.length})</summary><ul>{benefit.mentions.map((mention, index) => <li key={index}><small><b>{mention.document}:</b> {mention.excerpt}</small></li>)}</ul></details>
-    </li>)}</ul>
-  </div>;
+  return <ul className="tw-differential-docs">{benefits.map(benefit => <li key={benefit.code}>
+    <strong>{benefit.label}</strong>{benefit.kinds.length ? ` (da ${benefit.kinds.map(kind => KIND_LABEL[kind] || kind).join(', ')})` : ''}: {benefit.action}
+  </li>)}</ul>;
 }

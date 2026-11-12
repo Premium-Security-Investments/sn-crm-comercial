@@ -4,6 +4,7 @@ import { formatDateOnly } from '../../dateOnly';
 import { loadTenderCompanyDocumentBridge } from '../api';
 import { TENDER_COMPANY_DOCUMENT_STATE_LABELS, sortTenderCompanyDocumentRows, tenderCompanyDocumentStateTone } from '../companyDocumentBridgeView';
 import type { TenderCompanyDocumentBridge, TenderRequest } from '../types';
+import { TenderDifferentialDocuments } from './CompanyDifferentialConditions';
 
 /**
  * Lo que la empresa ya tiene, contrastado con el cierre de ESTA licitación (encargo de Juan, 2026-10-30: "el después
@@ -76,6 +77,7 @@ export function TenderCompanyDocumentBridgePanel({ opportunityId, request }: { o
         {row.age_note && <p className="muted">{row.age_note} Si el pliego exige una expedición más reciente, hay que volver a pedirlo.</p>}
         {!row.expires_at && row.vigencia_text && <p className="muted">Ficha de empresa: {row.vigencia_text}</p>}
         {row.action && <p><strong>Qué hacer:</strong> {row.action}</p>}
+        {row.key === 'differential_scoring_support' && <TenderDifferentialDocuments opportunityId={opportunityId} request={request} />}
       </li>)}
     </ul>
     {bridge.unmatched_documents.length > 0 && <details>
