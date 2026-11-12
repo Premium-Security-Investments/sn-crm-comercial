@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  esDocumentoDeRespuestas, normalizarRespuestas, respuestasPorObservacionMarkdown, runAgt002RespuestasPorObservacionPass,
+  esDocumentoDeRespuestas, normalizarRespuestas, configuracionDelPuente, respuestasPorObservacionMarkdown, runAgt002RespuestasPorObservacionPass,
   AGT002_RESPUESTAS_MAX_INTENTOS,
 } from '../verticales/licitaciones/agt002-respuestas-por-observacion.js';
 
@@ -94,4 +94,12 @@ test('la migración 217 crea las dos tablas sólo para service_role y su reversa
   assert.match(sql, /decision in \('acoge', 'acoge_parcialmente', 'no_acoge', 'aclara', 'otra'\)/);
   const reversa = readFileSync(new URL('../supabase/rollbacks/217_respuestas_por_observacion_rollback.sql', import.meta.url), 'utf8');
   assert.match(reversa, /drop table if exists public\.psi_agt002_respuestas_observacion_docs;/);
+});
+
+test('en el servidor de tareas, sin la Mesa configurada, usa el puente y el modelo del análisis', () => {
+  const analisis = { AGT002_MODEL_CALLS_ENABLED: 'true', AGT002_BRIDGE_HMAC_SECRET: 'y'.repeat(40), AGT002_INITIAL_ANALYSIS_MODEL_ID: 'sonnet' };
+  assert.equal(configuracionDelPuente(analisis).model, 'sonnet');
+  assert.equal(configuracionDelPuente(ENV).model, 'modelo', 'con la Mesa configurada, la de la Mesa');
+  assert.equal(configuracionDelPuente({ ...analisis, AGT002_MODEL_CALLS_ENABLED: 'false' }), null);
+  assert.equal(configuracionDelPuente({ ...analisis, AGT002_BRIDGE_HMAC_SECRET: 'corta' }), null);
 });
