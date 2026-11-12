@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { medirAccesoAvancys, mirarInformeRentabilidad, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
+import { medirAccesoAvancys, mirarInformeRentabilidad, mirarLineasAnaliticas, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
 
 const config = Object.freeze({ origen: 'https://odoo.prueba', database: 'db', username: 'u', clave: 'k', companyId: null });
 
@@ -131,4 +131,56 @@ test('un fallo adentro del informe no tumba la medición: lo dice y sigue', asyn
   const r = await mirarInformeRentabilidad(async () => { throw new Error('AccessError: no\nmás'); });
   assert.equal(r.legible, false);
   assert.match(r.motivo, /AccessError/);
+});
+
+// Líneas analíticas de mentira: un mes de ingresos y costos, con nómina en la 7205.
+function lineas({ conNomina = true } = {}) {
+  const dominios = [];
+  const ejecutar = async (modelo, metodo, args) => {
+    assert.equal(modelo, 'account.analytic.line');
+    if (metodo === 'search_count') { dominios.push(args[0]); return args[0].length > 1 ? 2900 : args[0].length ? 3000 : 40000; }
+    if (metodo === 'search_read') return [{ date: '2026-08-01' }];
+    if (metodo === 'read_group') {
+      const [filtro, , [agrupar]] = args;
+      const lado = filtro.at(-1);
+      if (agrupar === 'date:month') {
+        return lado[1] === '>' ? [{ 'date:month': 'agosto 2026', amount: 13_900_000_000, __count: 300 }]
+          : [{ 'date:month': 'agosto 2026', amount: -12_000_000_000, __count: 2000 }];
+      }
+      return [
+        { general_account_id: [1, '41559501 Servicio de vigilancia'], amount: 13_900_000_000, __count: 300 },
+        { general_account_id: [2, conNomina ? '72050601 Sueldos' : '72950101 Dotación'], amount: -9_000_000_000, __count: 1500 },
+        { general_account_id: [3, conNomina ? '72051501 Horas extras' : '72950201 Armas'], amount: -2_000_000_000, __count: 400 },
+        { general_account_id: false, amount: -1_000_000_000, __count: 100 },
+      ];
+    }
+    return null;
+  };
+  return { ejecutar, dominios };
+}
+
+test('líneas analíticas: suma por mes y agrupa por cuenta del PUC a cuatro dígitos', async () => {
+  const { ejecutar, dominios } = lineas();
+  const r = await mirarLineasAnaliticas(ejecutar, { ahora: () => new Date('2026-11-12T12:00:00Z') });
+  assert.equal(r.legible, true);
+  assert.equal(r.desde, '2025-11-01');
+  assert.deepEqual(dominios[1], [['date', '>=', '2025-11-01']]);
+  assert.deepEqual(r.por_mes, [{ mes: 'agosto 2026', ingresos: 13_900_000_000, costos: -12_000_000_000, filas: 2300 }]);
+  assert.deepEqual(r.por_cuenta.map(c => [c.codigo, c.monto, c.personal]), [
+    ['4155', 13_900_000_000, false], ['7205', -11_000_000_000, true], ['sin cuenta', -1_000_000_000, false],
+  ]);
+  assert.equal(r.costo_de_personal, -11_000_000_000);
+  assert.equal(r.trae_nomina, true);
+  assert.equal(r.con_cliente, 2900);
+});
+
+test('líneas analíticas sin cuentas de personal: no dice que trae nómina', async () => {
+  const r = await mirarLineasAnaliticas(lineas({ conNomina: false }).ejecutar);
+  assert.equal(r.trae_nomina, false);
+  assert.equal(r.costo_de_personal, 0);
+});
+
+test('líneas analíticas denegadas: lo dice sin tumbar la medición', async () => {
+  const r = await mirarLineasAnaliticas(async () => { throw new Error('AccessError: no puede leer\nmás'); });
+  assert.deepEqual(r, { legible: false, motivo: 'AccessError: no puede leer' });
 });
