@@ -4,6 +4,7 @@
 import { selectCanonicalExtractionsByDocumentVersion } from './tender-document-extraction-persistence.js';
 import { AGT002_CARPETA_MAX_ARCHIVOS, AGT002_CARPETA_MAX_BYTES } from '../../agt002-mesa-carpeta-contrato.js';
 import { armarAgt002FichaDelProceso, armarAgt002IndiceDeProcesos } from './agt002-ficha-del-proceso.js';
+import { esDocumentoDeRespuestas, leerAgt002RespuestasPorObservacion, respuestasPorObservacionMarkdown } from './agt002-respuestas-por-observacion.js';
 
 // Lo que manda primero. Las respuestas, actas e informes de la entidad hoy se clasifican como «otro»: el nombre los separa.
 const CARPETAS = Object.freeze([
@@ -28,7 +29,7 @@ export const AGT002_CARPETA_POLICY = [
   'CARPETA DEL PROCESO. Tu directorio de trabajo tiene el texto completo de todos los documentos vigentes de esta licitación. Empieza por 00_FICHA.md (estado, decisiones de las personas, cronograma y pendientes de este proceso), sigue con 00_INDICE.md (qué documentos hay) y usa 00_PROCESOS_ABIERTOS.md cuando la pregunta toque otras licitaciones o el conjunto. Lo que una persona dijo en la ficha es un hecho del proceso, no lo vuelvas a preguntar.',
   'Antes de responder busca SIEMPRE en la carpeta, aunque context_links o fuentes_resueltas ya traigan fragmentos: esos fragmentos son recortes, pueden venir cortados o mezclar dos columnas, y si un fragmento y la carpeta no coinciden, manda la carpeta.',
   'Trabaja como un analista que lee la fuente: (1) busca con Grep los términos de la pregunta y sus sinónimos en toda la carpeta (por ejemplo sucursal, agencia, sede; consorcio, unión temporal, integrante); (2) lee con Read el bloque completo alrededor de cada hallazgo, no sólo la línea; (3) manda el pliego definitivo y la última adenda sobre el proyecto y los estudios previos; (4) en las respuestas a observaciones busca primero las de SEGURIDAD NACIONAL y di qué decidió la entidad (acoge, no acoge, acepta parcialmente, aclara);',
-  '(5) esas respuestas vienen de tablas de dos columnas (lo que pidió el observante y lo que respondió la entidad) y el texto puede venir intercalado línea por línea: separa una columna de la otra antes de concluir, y nunca tomes como respuesta a una observación una frase que pertenece a otra;',
+  '(5) junto a cada documento de respuestas puede haber un archivo «… - por observacion.md» con cada observación ya separada (quién, qué pidió, qué decidió la entidad), las nuestras primero: úsalo primero y confirma la frase en el documento original. Sin ese archivo, esas respuestas vienen de tablas de dos columnas (lo que pidió el observante y lo que respondió la entidad) y el texto puede venir intercalado línea por línea: separa una columna de la otra antes de concluir, y nunca tomes como respuesta a una observación una frase que pertenece a otra;',
   '(6) antes de decir que algo no consta, no está o viene cortado, búscalo otra vez con otras palabras y en las otras carpetas; si después de eso no aparece, dilo y di qué buscaste.',
   'Cita el archivo y la frase literal que sostiene cada conclusión. Lo de 06_terceros es contexto, nunca regla del proceso.',
 ].join(' ');
@@ -106,6 +107,17 @@ export async function armarAgt002CarpetaDelProceso(database, { tenderId, now = n
     '',
   ].join('\n');
 
+  // Las respuestas ya separadas por observación (paso 3): junto a su documento original. Sin la 217, nada.
+  let separadas = [];
+  try {
+    const respuestas = entradas.filter(entrada => esDocumentoDeRespuestas(entrada.doc));
+    const porDocumento = await leerAgt002RespuestasPorObservacion(database, respuestas.map(entrada => entrada.doc.id));
+    separadas = respuestas.filter(entrada => porDocumento.get(entrada.doc.id)?.length).map(entrada => ({
+      ruta: entrada.ruta.replace(/\.txt$/, ' - por observacion.md'),
+      texto: respuestasPorObservacionMarkdown(entrada.doc.name, porDocumento.get(entrada.doc.id)),
+    }));
+  } catch (error) { console.warn('agt002_mesa_respuestas_unavailable', { event: 'agt002_mesa_respuestas_unavailable', code: error?.code || 'respuestas_failed' }); }
+
   // La ficha y el índice de procesos ayudan, pero no son condición: si fallan, la carpeta va sin ellos.
   let ficha = null; let procesos = null;
   try { ficha = await armarAgt002FichaDelProceso(database, { tenderId, hoy }); }
@@ -121,6 +133,7 @@ export async function armarAgt002CarpetaDelProceso(database, { tenderId, now = n
       { ruta: '00_INDICE.md', texto: indice },
       ...(procesos ? [{ ruta: '00_PROCESOS_ABIERTOS.md', texto: procesos }] : []),
       ...entradas.map(({ ruta, doc, carpeta, texto }) => ({ ruta, texto: encabezado(doc, carpeta) + texto })),
+      ...separadas,
     ],
   };
 }

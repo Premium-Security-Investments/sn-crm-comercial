@@ -17,6 +17,7 @@ import { runAgt002ManualReanalysisRequests } from '../../verticales/licitaciones
 import { runExperienceCertificateOcrPass, runTenderDocumentOcrPass } from '../../verticales/licitaciones/tender-document-ocr.js';
 import { reviewExperienceCertificate } from '../../verticales/licitaciones/experience-certificate-review.js';
 import { proposeCompanyFactsFromDocuments } from '../../verticales/licitaciones/agt002-company-fact-proposals.js';
+import { runAgt002RespuestasPorObservacionPass } from '../../verticales/licitaciones/agt002-respuestas-por-observacion.js';
 
 const CLAIMABLE = ['queued', 'discovering_documents', 'importing_documents', 'retry_wait', 'ready_for_snapshot', 'snapshot_ready'];
 const log = event => console.log(JSON.stringify(event));
@@ -94,4 +95,12 @@ try {
 } catch (error) {
   log({ event: 'agt002_manual_reanalysis_pass_failed', message: String(error?.message || error).slice(0, 200) });
   process.exitCode = 1;
+}
+// Paso 3 del expediente vivo (Juan, 2026-11-12): las respuestas a observaciones, una por observación, para la Mesa.
+// Va al final y con el tiempo que le quede a esta pasada (la unidad corta a los 10 minutos); si no alcanza, la siguiente.
+try {
+  const restante = Number(env.AGT002_AUTO_INITIAL_TIMEOUT_MS || 600_000) - Math.round(process.uptime() * 1000) - 45_000;
+  for (const event of await runAgt002RespuestasPorObservacionPass(database, { environment: env, timeoutMs: Math.min(restante, 8 * 60 * 1000) })) log(event);
+} catch (error) {
+  log({ event: 'agt002_respuestas_pass_failed', message: String(error?.message || error).slice(0, 200) });
 }
