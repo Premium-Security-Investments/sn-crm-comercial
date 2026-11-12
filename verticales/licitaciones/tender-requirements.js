@@ -141,3 +141,34 @@ export async function saveRequirementFocus(database, input, actorId) {
   }
   return data;
 }
+
+// Segunda parte de la pestaña «Requisitos» (Juan, 2026-11-12: «vamos con eso»): Vig-IA recibe en cada análisis los
+// hechos que nos faltan, para decir en el requisito del pliego que lo pida que no lo tenemos, cuántas veces nos ha
+// inhabilitado y qué se decidió. Es contexto de la empresa, no evidencia del pliego.
+export const AGT002_HECHOS_QUE_FALTAN_POLICY = [
+  ' hechos_que_nos_faltan son requisitos que, según la ficha de la empresa, no cumplimos y que sólo se arreglan con un',
+  'trámite (una sucursal, un código en el RUP, un registro, una licencia, un indicador financiero). Si este pliego pide',
+  'uno de ellos, dilo en ese requisito: que la empresa no lo tiene, en cuántos procesos ya nos ha inhabilitado y la',
+  'decisión vigente sobre el trámite; trátalo como bloqueo salvo que el pliego permita suplirlo (por ejemplo, con otro',
+  'integrante de una unión temporal). Si el pliego no lo pide, no lo menciones. No es evidencia del pliego: la cita',
+  'sigue siendo la del pliego.',
+].join(' ');
+
+/** Los hechos que nos faltan, para el análisis. Si algo falla, el análisis sigue sin ellos. */
+export async function loadRequirementGapsForPrompt(database) {
+  try {
+    const board = await loadRequirementsBoard(database);
+    return board.focus.filter(item => item.status !== 'resuelto').map(item => Object.freeze({
+      id: item.key,
+      hecho: item.title,
+      nos_ha_inhabilitado_en: item.processes.length,
+      ejemplos: item.processes.slice(0, 3).map(process => `${process.process}: ${process.reason}`.slice(0, 300)),
+      como_estamos: (item.live_state || item.current_state || '').slice(0, 400) || null,
+      decision: FOCUS_STATUSES[item.status] || item.status,
+      que_lo_resuelve: item.fix_action.slice(0, 300),
+    }));
+  } catch (error) {
+    console.warn('agt002_requirement_gaps_unavailable', { event: 'agt002_requirement_gaps_unavailable', code: String(error?.code || 'error').slice(0, 80) });
+    return [];
+  }
+}
