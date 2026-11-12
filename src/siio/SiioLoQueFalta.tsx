@@ -1,4 +1,5 @@
 import type { CommercialSummary } from './commercialSummary';
+import { SiioAvancysAcceso } from './SiioAvancysAcceso';
 
 // Lo que a la Torre le falta para estar completa, en un solo lugar.
 //
@@ -53,5 +54,6 @@ export function SiioLoQueFalta({ summary }: { summary: CommercialSummary | null 
         <small className="siio-secondary">{item.area}</small>
       </div>)}
     </div>
+    <SiioAvancysAcceso />
   </div>;
 }
