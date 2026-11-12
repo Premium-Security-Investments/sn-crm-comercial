@@ -252,3 +252,28 @@ test('la síntesis recibe las lecciones activas y la regla de citarlas; sin lecc
   assert.equal('lecciones_de_la_empresa' in requests[1].input, false);
   assert.doesNotMatch(requests[1].policy, /lecciones_de_la_empresa/);
 });
+
+// Pestaña «Requisitos», segunda parte (Juan, 2026-11-12): los hechos que nos faltan llegan a la síntesis con la regla
+// de decirlo sólo si el pliego los pide; si no hay o fallan, el análisis queda como antes.
+test('la síntesis recibe los hechos que nos faltan y la regla de usarlos; sin ellos no cambia nada', async () => {
+  const requests = [];
+  const respuesta = { content: JSON.stringify({ claims: [], process_analysis: {}, requirements: [], findings: [], contradictions: [], coverage: [], recommendation: {}, open_items: [], process_deadlines: [] }), usage: { input_tokens: 1, output_tokens: 1 } };
+  const hechos = [{ id: 'codigos', hecho: 'Códigos UNSPSC que no tenemos en el RUP', nos_ha_inhabilitado_en: 2, ejemplos: ['Municipio de Pereira: No tenemos en el RUP: 46101500.'], como_estamos: null, decision: 'Iniciar trámite', que_lo_resuelve: 'Inscribir el 46101500.' }];
+  for (const loadRequirementGaps of [async () => hechos, async () => [], async () => { throw new Error('caída'); }]) {
+    const configured = runtime({
+      loadPackage: async () => stubPackage(),
+      loadLessons: async () => [],
+      loadRequirementGaps: async database => { try { return await loadRequirementGaps(database); } catch { return []; } },
+      bridgeClient: { run: async value => { requests.push(value); return respuesta; } },
+      validateEnvelope: () => ({ ok: true, errors: [] }),
+    });
+    await configured.callModel({ job: synthesisJob, batch: synthesisBatch, modelId: 'model-a', members: batchMember });
+  }
+  assert.deepEqual(requests[0].input.hechos_que_nos_faltan, hechos);
+  assert.match(requests[0].policy, /hechos_que_nos_faltan/);
+  assert.match(requests[0].policy, /Si el pliego no lo pide, no lo menciones/);
+  for (const request of requests.slice(1)) {
+    assert.equal('hechos_que_nos_faltan' in request.input, false);
+    assert.doesNotMatch(request.policy, /hechos_que_nos_faltan/);
+  }
+});

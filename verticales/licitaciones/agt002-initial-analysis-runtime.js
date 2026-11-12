@@ -8,6 +8,7 @@ import { loadAgt002CompanyProfileSnapshotForWorkflow } from './agt002-company-pr
 import { AGT002_LESSONS_POLICY, loadAgt002LessonsForPrompt } from './agt002-company-lessons.js';
 import { AGT002_DONDE_BUSCO_POLICY, AGT002_SECCIONES_POLICY, agt002NumeralesPendientes, agt002SeccionesPendientes } from './agt002-secciones-pendientes.js';
 import { AGT002_PLURALES_POLICY, agt002ReglasParaPlurales } from './agt002-reglas-plurales.js';
+import { AGT002_HECHOS_QUE_FALTAN_POLICY, loadRequirementGapsForPrompt } from './tender-requirements.js';
 import { selectCanonicalExtractionsByDocumentVersion } from './tender-document-extraction-persistence.js';
 
 function stable(value) {
@@ -187,6 +188,8 @@ export function createAgt002InitialAnalysisRuntime({
   loadClarifications = defaultLoadClarifications,
   // Lecciones de la empresa activas (encargo del 2026-11-06): se leen al sintetizar; si fallan, el análisis sigue sin ellas.
   loadLessons = loadAgt002LessonsForPrompt,
+  // Los hechos que nos faltan (pestaña «Requisitos», 2026-11-12): si fallan, el análisis sigue sin ellos.
+  loadRequirementGaps = loadRequirementGapsForPrompt,
   // F12: el texto de los documentos que citó el análisis anterior, para leer completos los numerales pendientes.
   loadDocumentTexts = defaultLoadDocumentTexts,
   executorVersion = process.env.AGT002_DEPLOYED_VERSION || 'agt002-initial-analysis-worker',
@@ -283,6 +286,8 @@ export function createAgt002InitialAnalysisRuntime({
         } catch { /* sin reglas */ }
         const lecciones = await loadLessons(database);
         if (Array.isArray(lecciones) && lecciones.length) extraInput.lecciones_de_la_empresa = lecciones;
+        const hechos = await loadRequirementGaps(database);
+        if (Array.isArray(hechos) && hechos.length) extraInput.hechos_que_nos_faltan = hechos;
         extraInput.evidence_catalog = pkg.members.map(member => ({
           document_id: member.document_version_id,
           source_classification: member.source_classification,
@@ -339,7 +344,7 @@ export function createAgt002InitialAnalysisRuntime({
 
       const response = await bridgeClient.run({
         model: modelId,
-        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : '') + (extraInput.secciones_del_pliego ? AGT002_SECCIONES_POLICY : '') + (extraInput.reglas_para_plurales ? AGT002_PLURALES_POLICY : '') + AGT002_DONDE_BUSCO_POLICY,
+        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : '') + (extraInput.secciones_del_pliego ? AGT002_SECCIONES_POLICY : '') + (extraInput.reglas_para_plurales ? AGT002_PLURALES_POLICY : '') + (extraInput.hechos_que_nos_faltan ? AGT002_HECHOS_QUE_FALTAN_POLICY : '') + AGT002_DONDE_BUSCO_POLICY,
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,

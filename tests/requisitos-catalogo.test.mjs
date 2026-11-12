@@ -212,3 +212,9 @@ test('la pestaña va entre Empresa y Aliados, y el servidor la protege', () => {
   assert.match(server, /'GET \/api\/tender-requirements': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
   assert.match(server, /'POST \/api\/tender-requirements\/focus': \['tenders', ACTIONS\.LICITACIONES_GO_NO_GO_APPROVE\]/);
 });
+
+test('para el análisis: sólo lo no resuelto, con la decisión; si la base falla, lista vacía', async () => {
+  const { loadRequirementGapsForPrompt } = await import('../verticales/licitaciones/tender-requirements.js');
+  const failing = { from: () => { throw Object.assign(new Error('caída'), { code: 'X' }); } };
+  assert.deepEqual(await loadRequirementGapsForPrompt(failing), []);
+});
