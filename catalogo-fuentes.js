@@ -18,6 +18,7 @@ import { crearLectorAvancys } from './avancys-odoo-lectura.js';
 import { buildTenderCompanyDocumentBridge } from './verticales/licitaciones/tender-company-document-bridge.js';
 import { matchCompanyDocumentClasses } from './verticales/licitaciones/tender-compliance-matrix.js';
 import { agt002ListarFormatos, agt002LocateFormato } from './verticales/licitaciones/agt002-formato-oficial.js';
+import { loadRequirementGapsForPrompt } from './verticales/licitaciones/tender-requirements.js';
 import { agt002SeccionDelPedido } from './verticales/licitaciones/agt002-seccion-del-pliego.js';
 import { agt002ReglasParaPlurales } from './verticales/licitaciones/agt002-reglas-plurales.js';
 import { tenderDocumentWeight } from './verticales/licitaciones/tender-official-values.js';
@@ -224,6 +225,15 @@ export const DATOS = Object.freeze({
     estado: ESTADOS.VIGENTE,
     responsable: 'Katherine',
     fuentes: Object.freeze(['psi_company_differential_conditions', 'psi_tender_document_versions']),
+    lectores: Object.freeze(['agt002.mesa']),
+  }),
+  // Pestaña «Requisitos» en la Mesa (Juan, 2026-11-12: «hagamos eso, claro que es importante»): lo que la empresa no
+  // tiene y nos inhabilita, cuántas veces y qué se decidió sobre el trámite. Lo mismo que el análisis.
+  'empresa.hechos_que_nos_faltan': Object.freeze({
+    dominio: 'licitacion',
+    estado: ESTADOS.VIGENTE,
+    responsable: 'Katherine',
+    fuentes: Object.freeze(['psi_tender_requirement_focus', 'psi_tender_requirement_history', 'psi_agt002_pre_go_analysis_versions', 'psi_tender_closure_acta', 'psi_company_procurement_profile']),
     lectores: Object.freeze(['agt002.mesa']),
   }),
   // Punto 7 del encargo de Aliados: quiénes se han movido en este proceso (observaron, ofertaron, contratista actual).
@@ -1016,6 +1026,25 @@ export async function resolverCondicionesDiferenciales(database, { tenderId, pre
   });
 }
 
+/**
+ * Pestaña «Requisitos» en la Mesa (2026-11-12): los hechos que la empresa no tiene y nos inhabilitan (sucursal,
+ * códigos del RUP, registros, licencias, indicadores), con en cuántos procesos lo han hecho y la decisión vigente. Va
+ * siempre: son pocos y la regla de la Mesa dice cuándo usarlos.
+ */
+export async function resolverHechosQueNosFaltan(database) {
+  const hechos = await loadRequirementGapsForPrompt(database);
+  if (!hechos.length) return respuesta({ nombre: 'empresa.hechos_que_nos_faltan', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA, forma: FORMAS.TIPADO, asOf: null, procedencia: Object.freeze({ tabla: 'psi_tender_requirement_focus', nota: 'sin hechos pendientes o la pestaña no respondió' }) });
+  return respuesta({
+    nombre: 'empresa.hechos_que_nos_faltan',
+    valor: Object.freeze(hechos),
+    estado: ESTADOS.VIGENTE,
+    frescura: FRESCURAS.VIVA,
+    forma: FORMAS.TIPADO,
+    asOf: null,
+    procedencia: Object.freeze({ tabla: 'psi_tender_requirement_focus', nota: 'la pestaña Requisitos: cruce con la ficha de la empresa, análisis y actas' }),
+  });
+}
+
 /** Punto 7 del encargo de Aliados: quiénes se han movido en este proceso, cuando la pregunta es de competencia o de socios. */
 export async function resolverCompetenciaDelProceso(database, { tenderId, pregunta }) {
   const vacio = nota => respuesta({ nombre: 'aliados.competencia_del_proceso', valor: null, estado: ESTADOS.NO_VERIFICADO, frescura: FRESCURAS.VIVA, forma: FORMAS.TIPADO, asOf: null, procedencia: Object.freeze({ tabla: 'psi_vigilance_participations', nota }) });
@@ -1099,6 +1128,7 @@ const RESOLVEDORES = Object.freeze({
   'aliados.candidatos': (database, contexto) => resolverAliadosCandidatos(database, contexto),
   'aliados.competencia_del_proceso': (database, contexto) => resolverCompetenciaDelProceso(database, contexto),
   'empresa.condiciones_diferenciales': (database, contexto) => resolverCondicionesDiferenciales(database, contexto),
+  'empresa.hechos_que_nos_faltan': database => resolverHechosQueNosFaltan(database),
   'empresa.identidad': (database) => resolverIdentidadEmpresa(database),
   'empresa.sedes': (database) => resolverSedes(database),
   'empresa.codigos_rup': (database) => resolverCodigosRup(database),
