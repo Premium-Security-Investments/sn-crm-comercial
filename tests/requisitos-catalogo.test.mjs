@@ -89,6 +89,8 @@ test('el puente sólo baja la matriz si cambió, y la tabla queda igual al Excel
   assert.deepEqual(await runRequirementMatrixSync(database, deps), { event: 'requirement_matrix_loaded', filas: 6, retiradas: 1 });
   assert.deepEqual(await runRequirementMatrixSync(database, deps), { event: 'requirement_matrix_unchanged' });
   assert.equal(downloads, 1);
+  assert.equal((await runRequirementMatrixSync(database, { ...deps, force: true })).event, 'requirement_matrix_loaded', 'la carga a mano no mira la fecha');
+  assert.equal(downloads, 2);
   const { rows } = await pg.query('select id, procesos from public.psi_tender_requirement_history order by id');
   assert.deepEqual(rows.slice(0, 4).map(row => row.id), ['H-001', 'H-002', 'H-003', 'PUN-001']);
   assert.equal(new Set(rows.map(row => row.id)).size, rows.length, 'los IDs largos no se repiten al acortarlos');
@@ -217,4 +219,14 @@ test('para el análisis: sólo lo no resuelto, con la decisión; si la base fall
   const { loadRequirementGapsForPrompt } = await import('../verticales/licitaciones/tender-requirements.js');
   const failing = { from: () => { throw Object.assign(new Error('caída'), { code: 'X' }); } };
   assert.deepEqual(await loadRequirementGapsForPrompt(failing), []);
+});
+
+test('el puente diario ya no carga la matriz: sólo con --cargar-matriz y sin avisos', () => {
+  const runner = read('ops/agt002-sharepoint-bridge/run-agt002-sharepoint-bridge.mjs');
+  assert.match(runner, /process\.argv\.includes\('--cargar-matriz'\)/);
+  const daily = runner.slice(runner.indexOf('} else {\n  try {'));
+  assert.doesNotMatch(daily, /loadMatrix|runRequirementMatrixSync/);
+  const only = runner.slice(runner.indexOf('} else if (onlyMatrix)'), runner.indexOf('} else {\n  try {'));
+  assert.doesNotMatch(only, /appendLine|runAgt002SharepointEvidenceWatch/);
+  assert.match(runner, /force: true/);
 });

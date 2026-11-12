@@ -111,10 +111,10 @@ export async function syncRequirementHistory(database, rows, { sourceModifiedAt 
 }
 
 /**
- * El paso del puente diario. `listFolder(path)` → archivos del inventario ({ nombre, modificado_en }); `download(path)`
+ * La carga de la matriz (`--cargar-matriz` del puente). `force` la copia aunque la fecha no haya cambiado. `listFolder(path)` → archivos del inventario ({ nombre, modificado_en }); `download(path)`
  * → bytes. Sólo baja el Excel si cambió desde la última copia. Devuelve un evento sin rutas ni contenido.
  */
-export async function runRequirementMatrixSync(database, { listFolder, download, path = REQUIREMENT_MATRIX_PATH }) {
+export async function runRequirementMatrixSync(database, { listFolder, download, path = REQUIREMENT_MATRIX_PATH, force = false }) {
   const folder = path.split('/').slice(0, -1).join('/');
   const name = path.split('/').pop();
   const file = (await listFolder(folder)).find(item => item?.nombre === name);
@@ -123,7 +123,7 @@ export async function runRequirementMatrixSync(database, { listFolder, download,
   if (error) return { event: ['PGRST205', '42P01'].includes(String(error.code || '')) ? 'requirement_matrix_unavailable' : 'requirement_matrix_failed', code: String(error.code || 'lectura') };
   const modifiedAt = file.modificado_en ? new Date(file.modificado_en).toISOString() : null;
   const stored = current?.[0]?.source_modified_at ? new Date(current[0].source_modified_at).toISOString() : null;
-  if (modifiedAt && stored === modifiedAt) return { event: 'requirement_matrix_unchanged' };
+  if (!force && modifiedAt && stored === modifiedAt) return { event: 'requirement_matrix_unchanged' };
   const rows = parseRequirementMatrix(await download(path));
   const counts = await syncRequirementHistory(database, rows, { sourceModifiedAt: modifiedAt });
   return { event: 'requirement_matrix_loaded', ...counts };
