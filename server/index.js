@@ -5159,8 +5159,74 @@ app.put('/api/avancys/cliente-enlace', async (req, res) => {
       conflicto.status = error.code === '23505' ? 409 : 500;
       throw conflicto;
     }
+    // Cliente único (Juan, 2026-11-12): enlazado, el cliente lleva el nombre de Avancys. Si otro cliente del CRM ya
+    // tiene ese nombre, son dos registros del mismo cliente: el enlace queda y se avisa, no se pisa al otro.
+    const nombreAvancys = String(req.body?.avancys_nombre || '').trim();
+    let nombre = cliente.company_name;
+    let aviso = null;
+    if (nombreAvancys && nombreAvancys !== cliente.company_name) {
+      const { error: renombre } = await database.from('psi_sales_clients').update({ company_name: nombreAvancys, updated_at: new Date().toISOString() }).eq('id', clientId);
+      if (!renombre) nombre = nombreAvancys;
+      else aviso = renombre.code === '23505'
+        ? `Quedó enlazado, pero otro cliente del CRM ya se llama "${nombreAvancys}": es un duplicado y hay que unificarlos.`
+        : 'Quedó enlazado, pero no se pudo poner el nombre de Avancys.';
+    }
     res.set('Cache-Control', 'private, no-store');
-    return res.json({ client_id: clientId, avancys_ref_num: refNum, company_name: cliente.company_name });
+    return res.json({ client_id: clientId, avancys_ref_num: refNum, company_name: nombre, aviso });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Cliente único (Juan, 2026-11-12): "el cliente sea el de avancys en cualquier parte que este". Un cliente del CRM
+// que ya es cliente (marcado así, o con un negocio ganado) tiene que estar enlazado a su registro de Avancys; sólo los
+// prospectos viven sin enlace. Esta es la lista de trabajo: los que faltan, y para cada uno los candidatos de Avancys.
+// Confirma una persona con PUT /api/avancys/cliente-enlace; el sistema sólo propone. El 2026-11-12 había 1 de 327.
+app.get('/api/avancys/clientes-por-vincular', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    if (!veTodaLaCarteraComercial(currentProfile)) {
+      const error = new Error('Sólo dirección y gerencia comercial vinculan clientes.');
+      error.status = 403;
+      throw error;
+    }
+    const database = requireDb();
+    const [clientes, enlaces, ganadas] = await Promise.all([
+      must(database.from('psi_sales_clients').select('id,company_name,customer_segment,quote_city').order('company_name', { ascending: true })),
+      must(database.from('psi_cliente_avancys').select('client_id')),
+      must(database.from('psi_sales_opportunities').select('client_id').eq('stage_code', 'aprobado')),
+    ]);
+    const enlazados = new Set((enlaces || []).map(fila => fila.client_id));
+    const conGanada = new Set((ganadas || []).map(fila => fila.client_id).filter(Boolean));
+    const pendientes = (clientes || [])
+      .filter(cliente => !enlazados.has(cliente.id) && (cliente.customer_segment === 'cliente_actual' || conGanada.has(cliente.id)))
+      .map(cliente => ({ ...cliente, negocio_ganado: conGanada.has(cliente.id) }));
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ pendientes, enlazados: enlazados.size, total_clientes: (clientes || []).length });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Candidatos de Avancys para un nombre: por la primera palabra significativa y filtrados por las dos, como el resto
+// del CRM (buscarClientes busca por nombre). Nunca enlaza: sólo propone.
+app.get('/api/avancys/candidatos-enlace', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const consulta = String(req.query.q || '').trim();
+    const lector = crearLectorAvancys();
+    if (!lector) {
+      const error = new Error('Avancys no está configurado.');
+      error.status = 503;
+      throw error;
+    }
+    const palabras = palabrasDelNombre(consulta);
+    if ((palabras[0] || '').length < 3) return res.json({ candidatos: [] });
+    const { clientes } = await lector.buscarClientes({ texto: palabras[0], limite: 25 });
+    const candidatos = (clientes || [])
+      .filter(cliente => cliente.identificacion?.numero && nombreCoincide(cliente.nombre, palabras))
+      .slice(0, 8)
+      .map(cliente => ({ nombre: cliente.nombre, nit: cliente.identificacion.numero, departamento: cliente.departamento || null, atendido_por: cliente.atendido_por || null }));
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ candidatos });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

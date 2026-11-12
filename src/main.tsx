@@ -84,6 +84,7 @@ import { VigiaChatRegistro } from './vigia/VigiaChatRegistro';
 import { DeleteRequestsPanel, NextConversation, NowQueue, OpportunityDecisionForm, TodayDone, WeekList, RenewalsDue } from './vigia/OpportunityDecision';
 import { commercialHealthScore, compliancePct as ownerCompliancePct, dataQualitySummary, elapsedQuarters, HEALTH_SCORE_EXPLANATION, namesSummary, ownerRegionalMap, regionalOf } from './vigia/commercial-dashboard-model';
 import { ACTIONS, can, isReadOnlyRole } from '../access-control.js';
+import { VincularAvancys } from './clients/VincularAvancys';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -967,6 +968,7 @@ function ClientsView({ currentProfile }: { currentProfile: Profile }) {
   // Sin título: la pantalla ya se llama "Clientes" en el encabezado, y repetirlo era ruido.
   return <section className="panel">
     <p className="muted">Los clientes que la empresa ya tiene. Se leen de Avancys en vivo; no se copian al CRM.</p>
+    {!mios && <VincularAvancys />}
     {estado === 'cargando' && <p className="muted">Consultando Avancys…</p>}
     {estado === 'error' && <p className="muted">No fue posible consultar Avancys: {error}</p>}
     {estado === 'listo' && datos && <>
