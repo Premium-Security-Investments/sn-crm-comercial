@@ -23,19 +23,32 @@ type Informe = {
   trae_costos?: boolean;
   columnas_de_costo?: string[];
 };
+type MesPyg = { mes: string; ingresos: number; personal: number; otros_costos: number; margen: number; filas: number };
 type Lineas = {
   legible: boolean;
   motivo?: string;
   total?: number;
   desde?: string;
   filas?: number;
-  con_cliente?: number;
   primera_fecha?: string | null;
-  por_mes?: { mes: string; ingresos: number; costos: number; filas: number }[];
-  por_cuenta?: { codigo: string; nombre: string; monto: number; filas: number; personal: boolean }[];
+  por_mes?: MesPyg[];
+  por_cuenta?: { codigo: string; nombre: string; monto: number; filas: number; clase: string; personal: boolean }[];
   cuentas?: number;
+  cuentas_de_balance?: number;
   costo_de_personal?: number;
   trae_nomina?: boolean;
+};
+type FilaCliente = { cliente: string; sin_cliente: boolean; cuentas_analiticas: number; ingresos: number; personal: number; otros_costos: number; margen: number };
+type Pyg = {
+  configurado?: boolean;
+  autenticado?: boolean;
+  legible?: boolean;
+  motivo?: string;
+  mes?: string | null;
+  totales?: { ingresos: number; personal: number; otros_costos: number; margen: number };
+  clientes_con_movimiento?: number;
+  clientes?: FilaCliente[];
+  sin_cliente?: FilaCliente | null;
 };
 type CampoClave = { modelo: string; campo: string; para: string; grupo: string; permitido: boolean; total?: number; diligenciados?: number; motivo?: string };
 type Acceso = {
@@ -92,39 +105,97 @@ function InformeRentabilidad({ informe }: { informe: Informe }) {
   </div>;
 }
 
-// De dónde saca Odoo el informe: si la nómina ya llega a la cuenta analítica de cada contrato,
-// el costo por cliente está aquí aunque el campo de reparto siga oculto.
+const millones = (valor: number) => cifra(valor, 'monetary');
+const pct = (parte: number, base: number) => (base ? `${Math.round((parte / base) * 1000) / 10} %` : '—');
+
+// De dónde saca Odoo el informe: la nómina llega a la cuenta analítica de cada contrato, así que
+// el costo por cliente está aquí aunque el campo de reparto siga oculto. Solo cuentas de resultados.
 function LineasAnaliticas({ lineas }: { lineas: Lineas }) {
   if (!lineas.legible) return <div className="siio-pulse-block">
     <h4>Líneas analíticas</h4>
     <p className="siio-secondary">No se pueden leer las líneas analíticas: {lineas.motivo}</p>
   </div>;
-  const filas = lineas.filas ?? 0;
   return <div className="siio-pulse-block">
     <h4>Líneas analíticas (de donde sale el informe)</h4>
     <div className={`siio-avancys-clave${lineas.trae_nomina ? ' siio-avancys-clave-ok' : ''}`}>
       <strong>{lineas.trae_nomina ? 'La nómina sí llega a las cuentas analíticas' : 'La nómina no llega a las cuentas analíticas'}</strong>
       <span>
-        Gastos y costos de personal (PUC 5105, 7205…) en el último año: {cifra(lineas.costo_de_personal ?? 0, 'monetary')}.
-        {' '}{filas.toLocaleString('es-CO')} líneas desde el {lineas.desde} ({(lineas.total ?? 0).toLocaleString('es-CO')} en total, la primera del {lineas.primera_fecha ?? '—'});
-        {' '}con cliente: {(lineas.con_cliente ?? 0).toLocaleString('es-CO')}.
+        Costo y gasto de personal en el último año: {millones(lineas.costo_de_personal ?? 0)}.
+        {' '}{(lineas.filas ?? 0).toLocaleString('es-CO')} líneas; la primera es del {lineas.primera_fecha ?? '—'}.
+        {' '}Solo cuentas de resultados (clases 4 a 7); se dejan fuera {lineas.cuentas_de_balance ?? 0} cuentas de balance que Avancys también reparte.
       </span>
     </div>
     {lineas.por_mes?.length ? <div className="siio-table-wrap"><table>
-      <thead><tr><th>Mes</th><th>Ingresos</th><th>Costos</th><th>Líneas</th></tr></thead>
+      <thead><tr><th>Mes</th><th>Ingresos</th><th>Personal</th><th>Otros costos</th><th>Margen</th></tr></thead>
       <tbody>{lineas.por_mes.map(fila => <tr key={fila.mes}>
-        <td>{fila.mes}</td><td>{cifra(fila.ingresos, 'monetary')}</td><td>{cifra(fila.costos, 'monetary')}</td><td>{fila.filas.toLocaleString('es-CO')}</td>
+        <td>{fila.mes}</td><td>{millones(fila.ingresos)}</td><td>{millones(fila.personal)}</td><td>{millones(fila.otros_costos)}</td>
+        <td>{millones(fila.margen)} · {pct(fila.margen, fila.ingresos)}</td>
       </tr>)}</tbody>
     </table></div> : null}
     {lineas.por_cuenta?.length ? <div className="siio-table-wrap"><table>
       <thead><tr><th>Cuenta (PUC)</th><th>Monto</th><th>Líneas</th></tr></thead>
       <tbody>{lineas.por_cuenta.map(fila => <tr key={fila.codigo}>
-        <td><strong>{fila.codigo}</strong> {fila.nombre}{fila.personal ? ' · personal' : ''}</td>
-        <td>{cifra(fila.monto, 'monetary')}</td><td>{fila.filas.toLocaleString('es-CO')}</td>
+        <td><strong>{fila.codigo}</strong> {fila.nombre} · {fila.clase === 'ingreso' ? 'ingreso' : fila.personal ? 'personal' : 'otro costo'}</td>
+        <td>{millones(fila.monto)}</td><td>{fila.filas.toLocaleString('es-CO')}</td>
       </tr>)}</tbody>
     </table></div> : null}
     {(lineas.cuentas ?? 0) > (lineas.por_cuenta?.length ?? 0)
-      ? <p className="siio-pulse-footnote">Se muestran las {lineas.por_cuenta?.length} cuentas de mayor monto de {lineas.cuentas}.</p> : null}
+      ? <p className="siio-pulse-footnote">Se muestran las {lineas.por_cuenta?.length} cuentas de resultados de mayor monto de {lineas.cuentas}.</p> : null}
+  </div>;
+}
+
+const mesAnterior = () => {
+  const hoy = new Date();
+  const fecha = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// Estado de resultados de un mes por cliente. Es una medición para comprobar que cuadra con lo
+// facturado antes de llevarlo a la Torre, no la vista final.
+function PygPorCliente() {
+  const [mes, setMes] = useState(mesAnterior);
+  const [estado, setEstado] = useState<'quieto' | 'midiendo' | 'listo' | 'error'>('quieto');
+  const [pyg, setPyg] = useState<Pyg | null>(null);
+  const [error, setError] = useState('');
+
+  async function medir() {
+    setEstado('midiendo');
+    setError('');
+    try {
+      setPyg(await api<Pyg>(`/api/siio/avancys/pyg-por-cliente?mes=${encodeURIComponent(mes)}`));
+      setEstado('listo');
+    } catch (fallo) {
+      setError(fallo instanceof Error ? fallo.message : String(fallo));
+      setEstado('error');
+    }
+  }
+
+  const t = pyg?.totales;
+  return <div className="siio-pulse-block">
+    <h4>Resultado por cliente en un mes</h4>
+    <p className="siio-pulse-footnote">Ingresos, nómina y otros costos de las líneas analíticas; el cliente es el de la cuenta analítica.</p>
+    <input type="month" value={mes} onChange={evento => setMes(evento.target.value)} aria-label="Mes" />
+    {' '}<button type="button" onClick={() => void medir()} disabled={estado === 'midiendo' || !mes}>
+      {estado === 'midiendo' ? 'Preguntando a Avancys…' : 'Ver por cliente'}
+    </button>
+    {estado === 'error' ? <p className="siio-alert-text">No se pudo calcular: {error}</p> : null}
+    {pyg && pyg.legible === false ? <p className="siio-alert-text">No se pudo calcular: {pyg.motivo}</p> : null}
+    {pyg && pyg.autenticado === false ? <p className="siio-alert-text">Avancys no aceptó la conexión: {pyg.motivo}</p> : null}
+    {pyg?.legible && t ? <>
+      <p className="siio-pulse-source">
+        {pyg.mes}: ingresos {millones(t.ingresos)} · personal {millones(t.personal)} · otros costos {millones(t.otros_costos)} · margen {millones(t.margen)} ({pct(t.margen, t.ingresos)}). {pyg.clientes_con_movimiento?.toLocaleString('es-CO')} clientes con movimiento.
+      </p>
+      <div className="siio-table-wrap"><table>
+        <thead><tr><th>Cliente</th><th>Ingresos</th><th>Personal</th><th>Otros costos</th><th>Margen</th></tr></thead>
+        <tbody>{[...(pyg.clientes || []), ...(pyg.sin_cliente ? [pyg.sin_cliente] : [])].map(fila => <tr key={fila.cliente}>
+          <td><strong>{fila.cliente}</strong> <span className="siio-secondary">· {fila.cuentas_analiticas} cuentas</span></td>
+          <td>{millones(fila.ingresos)} · {pct(fila.ingresos, t.ingresos)}</td>
+          <td>{millones(fila.personal)}</td>
+          <td>{millones(fila.otros_costos)}</td>
+          <td>{millones(fila.margen)} · {pct(fila.margen, fila.ingresos)}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </> : null}
   </div>;
 }
 
@@ -177,7 +248,13 @@ export function SiioAvancysAcceso() {
 
     {acceso?.autenticado ? <>
       <p className="siio-pulse-source">Medido el {hora(acceso.medido_en)} contra {acceso.origen}.</p>
-      {clave ? <div className={`siio-avancys-clave${clave.permitido ? ' siio-avancys-clave-ok' : ''}`}>
+      {clave && !clave.permitido && acceso.lineas_analiticas?.trae_nomina ? <div className="siio-avancys-clave siio-avancys-clave-ok">
+        <strong>Rentabilidad por cliente: se puede calcular desde las líneas analíticas</strong>
+        <span>
+          La nómina ya llega a la cuenta analítica de cada contrato. El campo {clave.modelo}.{clave.campo} sigue oculto,
+          pero no hace falta: Avancys no lo abre porque el grupo {clave.grupo} también escribe.
+        </span>
+      </div> : clave ? <div className={`siio-avancys-clave${clave.permitido ? ' siio-avancys-clave-ok' : ''}`}>
         <strong>{clave.permitido ? 'Rentabilidad por cliente: ya se puede calcular' : 'Rentabilidad por cliente: sigue bloqueada'}</strong>
         <span>
           {clave.permitido
@@ -187,6 +264,7 @@ export function SiioAvancysAcceso() {
       </div> : null}
       {acceso.informe_rentabilidad ? <InformeRentabilidad informe={acceso.informe_rentabilidad} /> : null}
       {acceso.lineas_analiticas ? <LineasAnaliticas lineas={acceso.lineas_analiticas} /> : null}
+      {acceso.lineas_analiticas?.trae_nomina ? <PygPorCliente /> : null}
       {acceso.pedidos?.length ? <Lista titulo="Lo que se pidió el 29 de octubre" filas={acceso.pedidos} /> : null}
       {acceso.en_uso?.length ? <Lista titulo="Lo que la Torre ya usa" filas={acceso.en_uso} /> : null}
     </> : null}

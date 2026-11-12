@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { medirAccesoAvancys, mirarInformeRentabilidad, mirarLineasAnaliticas, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
+import { claseDeCuenta, medirAccesoAvancys, mesCerradoAnterior, mirarInformeRentabilidad, mirarLineasAnaliticas, pygPorCliente, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
 
 const config = Object.freeze({ origen: 'https://odoo.prueba', database: 'db', username: 'u', clave: 'k', companyId: null });
 
@@ -133,51 +133,92 @@ test('un fallo adentro del informe no tumba la medición: lo dice y sigue', asyn
   assert.match(r.motivo, /AccessError/);
 });
 
-// Líneas analíticas de mentira: un mes de ingresos y costos, con nómina en la 7205.
-function lineas({ conNomina = true } = {}) {
-  const dominios = [];
-  const ejecutar = async (modelo, metodo, args) => {
+// Líneas analíticas de mentira, con la forma medida el 2026-11-12: ingresos en la 4155, nómina en
+// 7201/7202 y en 7301 (sueldos supervisores, que no empieza por 72), y cuentas de balance
+// repartidas también (1305, 2505) que no deben contar.
+const CUENTAS = [
+  { id: 1, nombre: '41559501 AIU SERVICIO VIGILANCIA', monto: 13_900_000_000, filas: 300 },
+  { id: 2, nombre: '72010101 SUELDO VIGILANTES', monto: -6_000_000_000, filas: 1500 },
+  { id: 3, nombre: '72020101 CESANTIAS', monto: -1_000_000_000, filas: 400 },
+  { id: 4, nombre: '73010101 SUELDOS SUPERVISORES / ESCOLTAS', monto: -500_000_000, filas: 100 },
+  { id: 5, nombre: '73250101 DOTACION', monto: -800_000_000, filas: 100 },
+  { id: 6, nombre: '13050501 CLIENTES VIGILANCIA', monto: -4_000_000_000, filas: 90 },
+  { id: 7, nombre: '25050101 NOMINAS', monto: 2_000_000_000, filas: 80 },
+];
+function lineas() {
+  const llamadas = [];
+  const ejecutar = async (modelo, metodo, args, kwargs) => {
+    llamadas.push({ modelo, metodo, args, kwargs });
+    if (modelo === 'account.analytic.account') {
+      return args[0][0][2].map(id => ({ id, partner_id: id === 10 ? [500, 'JERONIMO MARTINS COLOMBIA'] : id === 11 ? [600, 'OTRO CLIENTE'] : false }));
+    }
     assert.equal(modelo, 'account.analytic.line');
-    if (metodo === 'search_count') { dominios.push(args[0]); return args[0].length > 1 ? 2900 : args[0].length ? 3000 : 40000; }
-    if (metodo === 'search_read') return [{ date: '2026-08-01' }];
+    if (metodo === 'search_count') return args[0].length ? 3000 : 40000;
+    if (metodo === 'search_read') return [{ date: '2026-07-31' }];
     if (metodo === 'read_group') {
       const [filtro, , [agrupar]] = args;
-      const lado = filtro.at(-1);
-      if (agrupar === 'date:month') {
-        return lado[1] === '>' ? [{ 'date:month': 'agosto 2026', amount: 13_900_000_000, __count: 300 }]
-          : [{ 'date:month': 'agosto 2026', amount: -12_000_000_000, __count: 2000 }];
+      const ultimo = filtro.at(-1);
+      if (agrupar === 'general_account_id') return CUENTAS.map(c => ({ general_account_id: [c.id, c.nombre], amount: c.monto, __count: c.filas }));
+      const ids = ultimo[0] === 'general_account_id' ? ultimo[2] : [];
+      const cuentas = CUENTAS.filter(c => ids.includes(c.id));
+      const monto = cuentas.reduce((s, c) => s + c.monto, 0);
+      const filas = cuentas.reduce((s, c) => s + c.filas, 0);
+      if (agrupar === 'date:month') return [{ 'date:month': 'agosto 2026', amount: monto, __count: filas }];
+      if (agrupar === 'account_id') {
+        // La cuenta 10 es de Jerónimo Martins y lleva el 70 %; la 11 de otro cliente; la 12 sin cliente.
+        return [
+          { account_id: [10, 'CC-ARA'], amount: monto * 0.7, __count: 1 },
+          { account_id: [11, 'CC-OTRO'], amount: monto * 0.2, __count: 1 },
+          { account_id: [12, 'CC-ADMIN'], amount: monto * 0.1, __count: 1 },
+        ];
       }
-      return [
-        { general_account_id: [1, '41559501 Servicio de vigilancia'], amount: 13_900_000_000, __count: 300 },
-        { general_account_id: [2, conNomina ? '72050601 Sueldos' : '72950101 Dotación'], amount: -9_000_000_000, __count: 1500 },
-        { general_account_id: [3, conNomina ? '72051501 Horas extras' : '72950201 Armas'], amount: -2_000_000_000, __count: 400 },
-        { general_account_id: false, amount: -1_000_000_000, __count: 100 },
-      ];
     }
     return null;
   };
-  return { ejecutar, dominios };
+  return { ejecutar, llamadas };
 }
 
-test('líneas analíticas: suma por mes y agrupa por cuenta del PUC a cuatro dígitos', async () => {
-  const { ejecutar, dominios } = lineas();
-  const r = await mirarLineasAnaliticas(ejecutar, { ahora: () => new Date('2026-11-12T12:00:00Z') });
-  assert.equal(r.legible, true);
-  assert.equal(r.desde, '2025-11-01');
-  assert.deepEqual(dominios[1], [['date', '>=', '2025-11-01']]);
-  assert.deepEqual(r.por_mes, [{ mes: 'agosto 2026', ingresos: 13_900_000_000, costos: -12_000_000_000, filas: 2300 }]);
-  assert.deepEqual(r.por_cuenta.map(c => [c.codigo, c.monto, c.personal]), [
-    ['4155', 13_900_000_000, false], ['7205', -11_000_000_000, true], ['sin cuenta', -1_000_000_000, false],
-  ]);
-  assert.equal(r.costo_de_personal, -11_000_000_000);
-  assert.equal(r.trae_nomina, true);
-  assert.equal(r.con_cliente, 2900);
+test('clase de cuenta: 4 es ingreso, 72 y los sueldos de la 73 son personal, el balance no cuenta', () => {
+  assert.equal(claseDeCuenta({ codigo: '4155', nombre: 'AIU SERVICIO VIGILANCIA' }), 'ingreso');
+  assert.equal(claseDeCuenta({ codigo: '7203', nombre: 'APORTES A RIESGOS' }), 'personal');
+  assert.equal(claseDeCuenta({ codigo: '7301', nombre: 'SUELDOS SUPERVISORES / ESCOLTAS' }), 'personal');
+  assert.equal(claseDeCuenta({ codigo: '5105', nombre: 'SALARIO INTEGRAL' }), 'personal');
+  assert.equal(claseDeCuenta({ codigo: '7325', nombre: 'DOTACION' }), 'otro_costo');
+  assert.equal(claseDeCuenta({ codigo: '2505', nombre: 'NOMINAS' }), 'balance');
+  assert.equal(claseDeCuenta({ codigo: '9999', nombre: 'CUENTA PUENTE INGRESOS' }), 'balance');
 });
 
-test('líneas analíticas sin cuentas de personal: no dice que trae nómina', async () => {
-  const r = await mirarLineasAnaliticas(lineas({ conNomina: false }).ejecutar);
-  assert.equal(r.trae_nomina, false);
-  assert.equal(r.costo_de_personal, 0);
+test('líneas analíticas: solo resultados, por mes con margen, y la nómina incluye la 7301', async () => {
+  const r = await mirarLineasAnaliticas(lineas().ejecutar, { ahora: () => new Date('2026-11-12T12:00:00Z') });
+  assert.equal(r.legible, true);
+  assert.equal(r.desde, '2025-11-01');
+  assert.equal(r.cuentas_de_balance, 2);
+  assert.equal(r.costo_de_personal, -7_500_000_000);
+  assert.equal(r.trae_nomina, true);
+  assert.deepEqual(r.por_mes, [{ mes: 'agosto 2026', ingresos: 13_900_000_000, personal: -7_500_000_000, otros_costos: -800_000_000, filas: 2400, margen: 5_600_000_000 }]);
+  assert.equal(r.por_cuenta.some(c => c.codigo === '1305' || c.codigo === '2505'), false);
+});
+
+test('resultado por cliente: el cliente sale de la cuenta analítica y lo demás queda sin cliente', async () => {
+  const { ejecutar, llamadas } = lineas();
+  const r = await pygPorCliente(ejecutar, { mes: '2026-08' });
+  assert.equal(r.legible, true);
+  assert.deepEqual(llamadas[0].args[0].slice(0, 2), [['date', '>=', '2026-08-01'], ['date', '<', '2026-09-01']]);
+  assert.equal(r.clientes_con_movimiento, 2);
+  assert.equal(r.clientes[0].cliente, 'JERONIMO MARTINS COLOMBIA');
+  assert.ok(Math.abs(r.clientes[0].ingresos - 13_900_000_000 * 0.7) < 1);
+  assert.ok(Math.abs(r.clientes[0].margen - 5_600_000_000 * 0.7) < 1);
+  assert.equal(r.sin_cliente.sin_cliente, true);
+  assert.ok(Math.abs(r.totales.margen - 5_600_000_000) < 1);
+});
+
+test('resultado por cliente: diciembre cruza de año y un mes mal escrito no consulta', async () => {
+  const { ejecutar, llamadas } = lineas();
+  await pygPorCliente(ejecutar, { mes: '2026-12' });
+  assert.deepEqual(llamadas[0].args[0].slice(0, 2), [['date', '>=', '2026-12-01'], ['date', '<', '2027-01-01']]);
+  const malo = await pygPorCliente(async () => { throw new Error('no debía llamar'); }, { mes: '2026-13' });
+  assert.equal(malo.legible, false);
+  assert.equal(mesCerradoAnterior(new Date('2026-01-15T00:00:00Z')), '2025-12');
 });
 
 test('líneas analíticas denegadas: lo dice sin tumbar la medición', async () => {
