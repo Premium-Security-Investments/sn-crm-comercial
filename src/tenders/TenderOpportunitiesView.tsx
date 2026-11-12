@@ -7,7 +7,7 @@ import { TenderOpenBoardPanel } from './components/TenderOpenBoardPanel';
 import { TenderStatusBadge } from './components/TenderStatusBadge';
 import { tenderDetailSectionHref } from './detailNavigationState';
 import { tenderDossierQueueState } from './dossierUtils';
-import { classifyOpportunityStage, countOpportunityStages, opportunityQueryFilter, type TenderOpportunityPrimaryFilter, type TenderOpportunityStage } from './opportunityStage';
+import { CLOSED_OPPORTUNITY_GROUPS, classifyOpportunityStage, closedOpportunityGroup, countOpportunityStages, isActiveOpportunity, opportunityQueryFilter, type OpportunityStageCounts, type TenderOpportunityPrimaryFilter, type TenderOpportunityStage } from './opportunityStage';
 import { canCreateManualTenderProcess } from './permissions';
 import { tenderDecisionLabel, tenderDocumentStatusLabel, tenderOfferStatusLabel, tenderOpportunityStageLabel, tenderOpportunityStageTone, tenderStatusTone } from './statusLabels';
 import { readableTenderTitle, tenderFitBadgeLabel, tenderFitPlainReasons } from './radarUtils';
@@ -108,11 +108,32 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
   // el servidor nunca deja fuera una fila que el clasificador puro sí mostraría en esa página.
   const queryFilter = opportunityQueryFilter(filter);
   const query = useMemo(() => ({ ...dossierPageQuery(page, PAGE_SIZE), filter: queryFilter }), [queryFilter, page]);
+  // Toda la bandeja de un filtro del servidor, de 50 en 50.
+  const loadEvery = async (serverFilter: 'all' | 'cerradas' | 'archivadas') => {
+    const every: TenderOpportunitySummary[] = [];
+    for (let offset = 0; offset < 1000; offset += 50) {
+      const pageRows = await loadTenderOpportunities<TenderOpportunitySummary[]>(request, { limit: 50, offset, filter: serverFilter });
+      every.push(...pageRows);
+      if (pageRows.length < 50) break;
+    }
+    return every;
+  };
   const reloadCurrentDossierPage = async () => {
     const requestVersion = ++requestVersionRef.current;
     setLoading(true); setError(null);
     try {
-      const nextRows = await reloadDossierPage<TenderOpportunitySummary[]>(page, PAGE_SIZE, nextQuery => loadTenderOpportunities<TenderOpportunitySummary[]>(request, { ...nextQuery, filter: queryFilter }));
+      // Juan, 2026-11-12: «Todas» es Por decidir + En curso (sin cerradas), y «Ver cerradas» trae cerradas y archivadas
+      // en tres grupos. Las dos se arman aquí con la bandeja completa (son pocas filas); los demás filtros, por página.
+      let nextRows: TenderOpportunitySummary[];
+      if (filter === 'all') {
+        const active = sortTenderOpportunitySummaries((await loadEvery('all')).filter(isActiveOpportunity));
+        nextRows = active.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+        if (requestVersion === requestVersionRef.current) setActiveTotal(active.length);
+      } else if (filter === 'archivadas') {
+        nextRows = [...(await loadEvery('cerradas')), ...(await loadEvery('archivadas'))];
+      } else {
+        nextRows = await reloadDossierPage<TenderOpportunitySummary[]>(page, PAGE_SIZE, nextQuery => loadTenderOpportunities<TenderOpportunitySummary[]>(request, { ...nextQuery, filter: queryFilter }));
+      }
       if (requestVersion === requestVersionRef.current) { setRows(nextRows); void loadCounts(); }
     }
     catch (cause) { if (requestVersion === requestVersionRef.current) setError(cause instanceof Error ? cause.message : String(cause)); }
@@ -121,16 +142,12 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
   useEffect(() => { void reloadCurrentDossierPage(); }, [query.filter, query.limit, query.offset]);
 
   // Los números de cada filtro: toda la bandeja (sin archivadas), por páginas de 50, con el clasificador de la bandeja.
-  const [counts, setCounts] = useState<{ all: number; por_decidir: number; en_curso: number } | null>(null);
+  const [counts, setCounts] = useState<(OpportunityStageCounts & { archivadas: number }) | null>(null);
+  const [activeTotal, setActiveTotal] = useState(0);
   const loadCounts = async () => {
     try {
-      const all: TenderOpportunitySummary[] = [];
-      for (let offset = 0; offset < 1000; offset += 50) {
-        const pageRows = await loadTenderOpportunities<TenderOpportunitySummary[]>(request, { limit: 50, offset, filter: 'all' });
-        all.push(...pageRows);
-        if (pageRows.length < 50) break;
-      }
-      setCounts(countOpportunityStages(all));
+      const [all, archived] = await Promise.all([loadEvery('all'), loadEvery('archivadas')]);
+      setCounts({ ...countOpportunityStages(all), archivadas: archived.length });
     } catch { setCounts(null); }
   };
 
@@ -170,22 +187,7 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
     navigate(tenderDetailSectionHref(created.opportunity_id, 'tender-document-review'));
   };
 
-  if (loading && !rows.length) return <div className="notice">Cargando expedientes…</div>;
-  return <section className="stack tenders-page tender-dossiers-view" aria-labelledby="tender-dossiers-heading">
-    <header className="tender-compact-header"><div className="tender-compact-title"><h2 id="tender-dossiers-heading">Oportunidades</h2><div className="tender-compact-meta"><span>Licitaciones convertidas: expediente, decisión y preparación</span></div></div><div className="row-actions">{canCreateManual && <button onClick={() => setCreatingManual(current => !current)} aria-expanded={creatingManual}>{creatingManual ? 'Cerrar creación manual' : 'Crear proceso a mano'}</button>}<button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></div></header>
-    {moduleNavigation}
-    {error && <div className="error" role="alert">{error}</div>}
-    {canCreateManual && creatingManual && <TenderManualProcessForm request={request} onCreated={openCreatedManualProcess} onCancel={() => setCreatingManual(false)} />}
-    <div className="opportunity-filter-row">
-    <div className="opportunity-primary-filters" role="group" aria-label="Filtrar oportunidades">
-      <button type="button" className="secondary" aria-pressed={filter === 'all'} disabled={loading} onClick={() => { setFilter('all'); setPage(1); }}>Todas<FilterCount value={counts?.all} /></button>
-      <button type="button" className="secondary" aria-pressed={filter === 'por_decidir'} disabled={loading} onClick={() => { setFilter('por_decidir'); setPage(1); }}>Por decidir<FilterCount value={counts?.por_decidir} /></button>
-      <button type="button" className="secondary" aria-pressed={filter === 'en_curso'} disabled={loading} onClick={() => { setFilter('en_curso'); setPage(1); }}>En curso<FilterCount value={counts?.en_curso} /></button>
-    </div>
-      {/* Archivadas es de consulta, no un paso del proceso (Juan, 2026-10-13): va aparte, a la derecha y discreta. */}
-      <button type="button" className={`opportunity-archived-link${filter === 'archivadas' ? ' is-active' : ''}`} aria-pressed={filter === 'archivadas'} disabled={loading} onClick={() => { setFilter(filter === 'archivadas' ? 'all' : 'archivadas'); setPage(1); }}>{filter === 'archivadas' ? 'Viendo archivadas · volver' : 'Ver archivadas'}</button>
-    </div>
-    {!displayRows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{displayRows.map(dossier => {
+  const renderCard = (dossier: TenderOpportunitySummary) => {
       const stage = classifyOpportunityStage(dossier);
       const queueState = tenderDossierQueueState(dossier);
       const dossierError = queueState.error || dossier.dossier_error || dossier.document_import_error;
@@ -215,8 +217,30 @@ export function TenderOpportunitiesView({ data, request, navigate, moduleNavigat
       <p className="muted opportunity-footnote">{dossier.document_count ?? 0} documentos{dossier.missing_document_count ? ` · ${dossier.missing_document_count} faltantes` : ''} · Actualizada {formatOpportunityLastUpdatedAt(dossier.last_updated_at, '—')}</p>
       {refreshResult && <p className="muted" role="status">Actualización: {refreshResult.new_count} nuevos · {refreshResult.updated_count} actualizados · {refreshResult.unchanged_count} sin cambios · {refreshResult.failed_count} fallidos.</p>}
       <div className="row-actions">{safePublicTenderSourceUrl(dossier.url) && <a className="button secondary" href={safePublicTenderSourceUrl(dossier.url) || undefined} target="_blank" rel="noreferrer">Abrir fuente oficial</a>}<button onClick={() => navigate(tenderDetailSectionHref(dossier.opportunity_id, 'tender-document-review'))}>Abrir expediente</button><button className="secondary" onClick={() => void refreshDocuments(dossier)} disabled={retrying.has(dossier.opportunity_id)}>{retrying.has(dossier.opportunity_id) ? 'Actualizando…' : dossier.document_import_status === 'fallo_importacion' ? 'Reintentar actualización' : 'Actualizar documentos'}</button>{classifyOpportunityStage(dossier) === 'en_curso' && ['en_preparacion', 'lista_para_presentar'].includes(dossier.tender_offer_status) && <button className="secondary danger" onClick={() => void archiveOpportunity(dossier)} disabled={archivingId === dossier.opportunity_id}>{archivingId === dossier.opportunity_id ? 'Archivando…' : 'Archivar'}</button>}</div>
-    </article>; })}</div>}
-    <nav className="pagination" aria-label="Paginación de expedientes"><button className="secondary" disabled={page <= 1 || loading} onClick={() => setPage(current => current - 1)}>Anterior</button><span className="pagination-status">Página {page} · hasta {PAGE_SIZE} expedientes</span><button className="secondary" disabled={rows.length < PAGE_SIZE || loading} onClick={() => setPage(current => current + 1)}>Siguiente</button></nav>
+    </article>; };
+
+  if (loading && !rows.length) return <div className="notice">Cargando expedientes…</div>;
+  return <section className="stack tenders-page tender-dossiers-view" aria-labelledby="tender-dossiers-heading">
+    <header className="tender-compact-header"><div className="tender-compact-title"><h2 id="tender-dossiers-heading">Oportunidades</h2><div className="tender-compact-meta"><span>Licitaciones convertidas: expediente, decisión y preparación</span></div></div><div className="row-actions">{canCreateManual && <button onClick={() => setCreatingManual(current => !current)} aria-expanded={creatingManual}>{creatingManual ? 'Cerrar creación manual' : 'Crear proceso a mano'}</button>}<button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></div></header>
+    {moduleNavigation}
+    {error && <div className="error" role="alert">{error}</div>}
+    {canCreateManual && creatingManual && <TenderManualProcessForm request={request} onCreated={openCreatedManualProcess} onCancel={() => setCreatingManual(false)} />}
+    <div className="opportunity-filter-row">
+    <div className="opportunity-primary-filters" role="group" aria-label="Filtrar oportunidades">
+      <button type="button" className="secondary" aria-pressed={filter === 'all'} disabled={loading} onClick={() => { setFilter('all'); setPage(1); }}>Todas<FilterCount value={counts?.all} /></button>
+      <button type="button" className="secondary" aria-pressed={filter === 'por_decidir'} disabled={loading} onClick={() => { setFilter('por_decidir'); setPage(1); }}>Por decidir<FilterCount value={counts?.por_decidir} /></button>
+      <button type="button" className="secondary" aria-pressed={filter === 'en_curso'} disabled={loading} onClick={() => { setFilter('en_curso'); setPage(1); }}>En curso<FilterCount value={counts?.en_curso} /></button>
+    </div>
+      {/* Archivadas es de consulta, no un paso del proceso (Juan, 2026-10-13): va aparte, a la derecha y discreta. */}
+      <button type="button" className={`opportunity-archived-link${filter === 'archivadas' ? ' is-active' : ''}`} aria-pressed={filter === 'archivadas'} disabled={loading} onClick={() => { setFilter(filter === 'archivadas' ? 'all' : 'archivadas'); setPage(1); }}>{filter === 'archivadas' ? 'Viendo cerradas · volver' : <>Ver cerradas<FilterCount value={counts ? counts.cerradas + counts.archivadas : undefined} /></>}</button>
+    </div>
+    {filter === 'archivadas'
+      ? CLOSED_OPPORTUNITY_GROUPS.map(group => { const groupRows = displayRows.filter(row => closedOpportunityGroup(row) === group.value); return <section key={group.value} className="opportunity-closed-group" aria-label={group.label}>
+          <h3>{group.label}<FilterCount value={groupRows.length} /></h3><p className="muted">{group.hint}</p>
+          {groupRows.length ? <div className="tracking-queue">{groupRows.map(renderCard)}</div> : <p className="muted">Ninguna por ahora.</p>}
+        </section>; })
+      : !displayRows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{displayRows.map(renderCard)}</div>}
+    {filter !== 'archivadas' && <nav className="pagination" aria-label="Paginación de expedientes"><button className="secondary" disabled={page <= 1 || loading} onClick={() => setPage(current => current - 1)}>Anterior</button><span className="pagination-status">Página {page} · hasta {PAGE_SIZE} expedientes</span><button className="secondary" disabled={(filter === 'all' ? page * PAGE_SIZE >= activeTotal : rows.length < PAGE_SIZE) || loading} onClick={() => setPage(current => current + 1)}>Siguiente</button></nav>}
     {/* Juan, 2026-11-09: los indicadores y el tablero de procesos van al final mientras se ajustan, para no enredar al
         equipo esta semana. */}
     <TenderOfferIndicatorsPanel request={request} />

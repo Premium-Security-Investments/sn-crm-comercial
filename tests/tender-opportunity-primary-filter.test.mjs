@@ -212,7 +212,7 @@ test('la vista de oportunidades ofrece filtros activos y Archivadas, sin botón 
     ['en_curso', 'en_curso', 'En curso'],
   ], 'debe haber tres botones del proceso, cada uno con aria-pressed y reinicio de página al hacer clic');
   // Archivadas es de consulta (Juan, 2026-10-13): enlace aparte, a la derecha, que entra y sale del filtro.
-  for (const fragment of ["className={`opportunity-archived-link", "aria-pressed={filter === 'archivadas'}", "setFilter(filter === 'archivadas' ? 'all' : 'archivadas'); setPage(1);", "'Viendo archivadas · volver' : 'Ver archivadas'"]) {
+  for (const fragment of ["className={`opportunity-archived-link", "aria-pressed={filter === 'archivadas'}", "setFilter(filter === 'archivadas' ? 'all' : 'archivadas'); setPage(1);", "'Viendo cerradas · volver' : <>Ver cerradas"]) {
     assert.ok(opportunitiesView.includes(fragment), `Archivadas como enlace aparte: falta ${fragment}`);
   }
   assert.ok(!/aria-pressed=\{filter === 'cerradas'\}/.test(opportunitiesView), 'no debe existir un control con aria-pressed para cerradas');
