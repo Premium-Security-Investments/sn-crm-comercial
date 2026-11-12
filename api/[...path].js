@@ -13,6 +13,7 @@ import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, r
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { reviewStudy as reviewSecurityStudy } from '../verticales/estudios-seguridad/revisor.js';
 import { requestRevaluation as requestSecurityStudyRevaluation } from '../verticales/estudios-seguridad/vigencia.js';
+import { saveAnswer as saveSecurityStudyAnswer } from '../verticales/estudios-seguridad/recorrido.js';
 import { loadLetters as loadSecurityStudyLetters, markLetterSent as markSecurityStudyLetterSent, requestLetter as requestSecurityStudyLetter } from '../verticales/estudios-seguridad/cartas.js';
 import { canDeliver as canDeliverSecurityStudy, createShare as createSecurityStudyShare, loadDelivery as loadSecurityStudyDelivery, recordDelivery as recordSecurityStudyDelivery, renderPublicPage as renderSecurityStudyPublicPage, resolvePublicStudy as resolveSecurityStudyPublic, revokeShare as revokeSecurityStudyShare } from '../verticales/estudios-seguridad/entrega.js';
 import { addRiskFromSecurityOps, linkPuesto as linkSecurityOpsPuesto, requestRefresh as refreshSecurityOps, searchPuestos as searchSecurityOpsPuestos } from '../verticales/estudios-seguridad/securityops.js';
@@ -3734,6 +3735,12 @@ securityStudyRoute('post', '/api/estudios-seguridad/:id/securityops', async (db,
   return linkSecurityOpsPuesto(db, detail.study, req.body?.puesto_id ?? null);
 });
 // Socialización con el cliente y enlaces en línea (migración 206).
+// Recorrido guiado (migración 214): una respuesta por pregunta, sólo mientras el estudio se puede editar.
+securityStudyRoute('put', '/api/estudios-seguridad/:id/recorrido/:code', async (db, req, profile) => {
+  const detail = await getSecurityStudy(db, req.params.id);
+  if (!detail.editable) throw Object.assign(new Error('El estudio no está en borrador: no se puede modificar.'), { status: 409 });
+  return saveSecurityStudyAnswer(db, detail.study.id, req.params.code, req.body || {}, profile);
+});
 // Cartas de recomendación al cliente (migración 213): se piden aquí; las arma y sube el servidor de tareas; el envío lo
 // hace una persona y lo registra aquí.
 securityStudyRoute('post', '/api/estudios-seguridad/:id/cartas', async (db, req, profile) => requestSecurityStudyLetter(db, (await getSecurityStudy(db, req.params.id)).study, req.body || {}, profile));

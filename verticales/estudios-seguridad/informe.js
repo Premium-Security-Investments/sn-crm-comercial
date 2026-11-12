@@ -430,6 +430,23 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   const validity = studyValidity({ renewal_months: study.renovacion_meses }, { approvedAt: meta.approvedAt });
   if (validity.vence) p(`Vigencia: este estudio se renueva ${RENEWAL_OPTIONS.find(item => item.meses === validity.meses)?.etiqueta.toLowerCase() || `cada ${validity.meses} meses`}, a más tardar el ${longDate(validity.vence)}, o antes si cambian las instalaciones o se presenta un siniestro.`);
 
+  // Migración 214: la lista de verificación y los escenarios del recorrido (IEC 31010: listas de verificación y SWIFT).
+  const answered = snapshot.recorrido?.respuestas || [];
+  if (answered.length) {
+    const ANSWER = { si: 'Sí', no: 'No', na: 'No aplica' };
+    h2('Lista de verificación del recorrido');
+    const checks = answered.filter(item => item.tipo === 'verificacion');
+    if (checks.length) blocks.push({ kind: 'table', header: ['Área', 'Pregunta', 'Respuesta', 'Observación'], rows: checks.slice(0, 120).map(item => [
+      clip(item.area, 80), clip(item.pregunta, 400),
+      item.favorable === false ? { text: ANSWER[item.respuesta], level: 'tolerable' } : ANSWER[item.respuesta] || '—', clip(item.nota, 600) || '—',
+    ]) });
+    const scenarios = answered.filter(item => item.tipo === 'escenario' && item.nota);
+    if (scenarios.length) {
+      h2('Escenarios analizados: ¿qué pasaría si…?');
+      list(scenarios.map(item => clip(`${item.pregunta} ${item.nota}`, 1500)));
+    }
+  }
+
   if (evidence.length) {
     h2('Evidencias del estudio');
     blocks.push({ kind: 'table', header: ['Archivo', 'Riesgo', 'Tipo', 'Huella (sha256)'], rows: evidence.slice(0, 120).map(item => [

@@ -16,6 +16,7 @@ import { loadSecurityOps } from './securityops.js';
 import { suggestProbability, suggestionsForStudy } from './sugerencia.js';
 import { RENEWAL_MONTHS, studyValidity } from './vigencia.js';
 import { findPreviousStudy, loadComparison, validatePrevious } from './comparacion.js';
+import { guidedView, loadAnswers } from './recorrido.js';
 
 export const STUDY_TABLE = 'psi_security_studies';
 export const ZONE_TABLE = 'psi_security_study_zones';
@@ -235,6 +236,8 @@ export async function getStudy(db, id) {
     db.from('psi_security_study_versions').select('approved_at').eq('study_id', study.id).order('version', { ascending: false }).limit(1),
   ]);
   const valued = (risks || []).map(risk => ({ ...risk, valuation: valuateRisk(risk, study.methodology_id) }));
+  // Migración 214: el recorrido guiado (respuestas y lo que proponen).
+  const guidedAnswers = await loadAnswers(db, study.id);
   // Migración 212: la comparación con el estudio anterior de la misma sede.
   const comparison = await loadComparison(db, study, valued, study.methodology_id);
   const levels = { actual: {}, residual: {} };
@@ -253,6 +256,8 @@ export async function getStudy(db, id) {
     characterization,
     securityops,
     comparison,
+    guided_answers: guidedAnswers || [],
+    recorrido: guidedView(guidedAnswers, template ? { riesgos: template.riesgos } : null, valued),
     // Migración 209: vigencia y revaloración.
     validity: studyValidity(study, { approvedAt: lastVersion?.error ? null : lastVersion?.data?.[0]?.approved_at || null, securityops }),
     // IEC 31010: la probabilidad que sugieren los datos para cada riesgo del catálogo y para uno propio.

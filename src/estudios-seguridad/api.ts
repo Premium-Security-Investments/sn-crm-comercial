@@ -12,6 +12,11 @@ export type StudySummaryRow = {
   latest_version?: number | null; delivered?: boolean | null; overdue_actions?: { nuestras: number; cliente: number };
 };
 
+// Migración 214: recorrido guiado (lista de verificación y "¿qué pasaría si…?" de la IEC 31010).
+export type GuidedQuestion = { codigo: string; tipo: 'verificacion' | 'escenario'; texto: string; fuente: string; favorable: 'si' | 'no' | null; respuesta: 'si' | 'no' | 'na' | null; nota: string | null };
+export type GuidedProposal = { codigo: string; nombre: string; categoria: string; vulnerabilidades: number; preguntas: string[]; causas: string | null; control_existente: string | null; control_propuesto: string | null; escenarios: string[]; ya_en_estudio: number | null };
+export type Guided = { available: boolean; version?: string; total?: number; respondidas?: number; areas?: Array<{ codigo: string; nombre: string; respondidas: number; preguntas: GuidedQuestion[] }>; propuestas?: GuidedProposal[] };
+
 // Migración 213: cartas de recomendación al cliente.
 export type ClientRecommendation = { id: string; riesgo: string; riesgo_nombre: string | null; nivel: Nivel | null; accion: string; fecha: string | null; estado: string; vencida: boolean };
 export type Letter = { id: string; version: number; recipient: string; items: number; status: 'pendiente' | 'procesando' | 'lista' | 'fallida' | 'enviada'; attempts: number; file_url: string | null; error: string | null; requested_at: string; sent_on: string | null; sent_to: string | null; sent_medium: 'correo' | 'fisico' | 'reunion' | null };
@@ -104,7 +109,7 @@ export type Catalog = { procesos: Array<{ codigo: string; nombre: string }>; rie
 export type StudyDetail = {
   study: Study; zones: Zone[]; risks: Risk[]; actions: Action[]; editable: boolean; catalog: Catalog | null;
   evidence: Evidence[]; evidence_available: boolean; workflow?: Workflow; characterization?: Characterization; review?: Review; securityops?: SecurityOpsState; entrega?: Entrega;
-  probability_suggestions?: ProbabilitySuggestions; validity?: Validity; comparison?: Comparison | null; cartas?: Letters;
+  probability_suggestions?: ProbabilitySuggestions; validity?: Validity; comparison?: Comparison | null; cartas?: Letters; recorrido?: Guided;
   summary: { risks: number; levels: { actual: Partial<Record<Nivel, number>>; residual: Partial<Record<Nivel, number>> } };
 };
 
@@ -160,6 +165,7 @@ export const searchSecurityOpsPuestos = (q: string, todos = false) => api<Securi
 export const linkSecurityOps = (studyId: string, puestoId: string | null) => api<{ puesto_id: string | null }>(`${BASE}/${encodeURIComponent(studyId)}/securityops`, json('POST', { puesto_id: puestoId }));
 export const refreshSecurityOps = (studyId: string) => api<{ requested: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/securityops/actualizar`, json('POST', {}));
 
+export const saveGuidedAnswer = (studyId: string, code: string, body: { value: 'si' | 'no' | 'na' | null; note: string | null }) => api<unknown>(`${BASE}/${encodeURIComponent(studyId)}/recorrido/${encodeURIComponent(code)}`, json('PUT', body));
 export const requestLetter = (studyId: string, body: { recipient: string; items: string[] }) => api<Letter>(`${BASE}/${encodeURIComponent(studyId)}/cartas`, json('POST', body));
 export const markLetterSent = (studyId: string, letterId: string, body: { sent_on: string; sent_to: string; sent_medium: string }) => api<{ sent: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/cartas/${encodeURIComponent(letterId)}/enviada`, json('POST', body));
 export const requestRevaluation = (studyId: string, note: string) => api<{ requested: boolean }>(`${BASE}/${encodeURIComponent(studyId)}/revaloracion`, json('POST', { note }));

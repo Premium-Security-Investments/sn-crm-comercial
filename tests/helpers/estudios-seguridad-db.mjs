@@ -7,7 +7,7 @@ export const PREPARER = { id: '11111111-1111-4111-8111-111111111111', role: 'col
 export const REVIEWER = { id: '44444444-4444-4444-8444-444444444444', role: 'colaborador', permissions: ['estudios_seguridad', 'estudios_seguridad_revisar'] };
 export const APPROVER = { id: '55555555-5555-4555-8555-555555555555', role: 'gerencia', permissions: ['estudios_seguridad', 'estudios_seguridad_aprobar'] };
 // La 201 (SecurityOps) va después de la 188 aunque haya otras migraciones de otros módulos entre ellas.
-const MIGRATIONS = ['178_estudios_seguridad_base.sql', '179_estudios_seguridad_evidencias.sql', '180_estudios_seguridad_aprobacion.sql', '181_estudios_seguridad_agente.sql', '186_estudios_seguridad_archivo.sql', '187_estudios_seguridad_caracterizacion.sql', '188_estudios_seguridad_seguimiento.sql', '201_estudios_seguridad_securityops.sql', '205_estudios_seguridad_metodologia_guia.sql', '206_estudios_seguridad_socializacion_enlace.sql', '208_estudios_seguridad_norma_31010.sql', '209_estudios_seguridad_vencimiento.sql', '212_estudios_seguridad_estudio_anterior.sql', '213_estudios_seguridad_cartas.sql'];
+const MIGRATIONS = ['178_estudios_seguridad_base.sql', '179_estudios_seguridad_evidencias.sql', '180_estudios_seguridad_aprobacion.sql', '181_estudios_seguridad_agente.sql', '186_estudios_seguridad_archivo.sql', '187_estudios_seguridad_caracterizacion.sql', '188_estudios_seguridad_seguimiento.sql', '201_estudios_seguridad_securityops.sql', '205_estudios_seguridad_metodologia_guia.sql', '206_estudios_seguridad_socializacion_enlace.sql', '208_estudios_seguridad_norma_31010.sql', '209_estudios_seguridad_vencimiento.sql', '212_estudios_seguridad_estudio_anterior.sql', '213_estudios_seguridad_cartas.sql', '214_estudios_seguridad_recorrido.sql'];
 
 export async function database({ upTo = MIGRATIONS.length } = {}) {
   const pg = new PGlite();
@@ -67,7 +67,8 @@ export function supabaseOver(pg, objects = new Map()) {
           const keys = Object.keys(rows[0]);
           const tuples = rows.map(row => `(${keys.map(key => { params.push(row[key] !== null && typeof row[key] === 'object' && !(row[key] instanceof Date) ? JSON.stringify(row[key]) : row[key]); return `$${params.length}`; }).join(', ')})`);
           // upsert(…, { onConflict }) como supabase-js: actualiza las demás columnas.
-          const conflict = state.conflict ? ` on conflict ("${state.conflict}") do update set ${keys.filter(key => key !== state.conflict).map(key => `"${key}" = excluded."${key}"`).join(', ')}` : '';
+          const conflictKeys = state.conflict ? state.conflict.split(',').map(key => key.trim()) : [];
+          const conflict = state.conflict ? ` on conflict (${conflictKeys.map(key => `"${key}"`).join(', ')}) do update set ${keys.filter(key => !conflictKeys.includes(key)).map(key => `"${key}" = excluded."${key}"`).join(', ')}` : '';
           sql = `insert into public.${table} (${keys.map(key => `"${key}"`).join(', ')}) values ${tuples.join(', ')}${conflict} returning *`;
         } else if (state.op === 'update') {
           const keys = Object.keys(state.values);

@@ -14,6 +14,7 @@ import { ValidityBadge, ValidityLine } from './ValidityLine';
 import { AlertsPanel } from './AlertsPanel';
 import { ComparisonPanel } from './ComparisonPanel';
 import { LettersPanel } from './LettersPanel';
+import { GuidedPanel } from './GuidedPanel';
 import {
   IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, RENEWAL_OPTIONS, STATUS_LABELS,
   addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
@@ -239,6 +240,9 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
     {detail.evidence_available
       ? <EvidenceStrip studyId={study.id} items={evidence.filter(item => !item.risk_id && (item.purpose ?? 'evidencia') === 'evidencia')} urls={urls} editable={editable} label="Fotos y documentos generales de la visita" onChanged={reload} />
       : <p className="es-muted">Las fotos y documentos todavía no están habilitados en esta instalación.</p>}
+
+    {detail.recorrido ? <GuidedPanel studyId={study.id} guided={detail.recorrido} editable={editable} onChanged={reload}
+      onUseAsRisk={draft => { setNewRisk({ ...EMPTY_RISK, ...draft }); window.setTimeout(() => document.querySelector('[aria-label="Nuevo riesgo"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); }} /> : null}
 
     {editable ? <FieldNotePanel studyId={study.id} zones={zones} suggestions={detail.probability_suggestions} onSaved={reload} /> : null}
 
