@@ -150,6 +150,15 @@ function comparisonFindings(detail) {
   return findings;
 }
 
+// Migración 214: un recorrido guiado a medias deja áreas sin mirar.
+function guidedFindings(detail) {
+  const guided = detail.recorrido;
+  if (!guided?.available || !detail.risks?.length) return [];
+  if (!guided.respondidas) return [{ code: 'recorrido_sin_hacer', severity: 'revisar', message: 'No se respondió el recorrido guiado: la lista de verificación ayuda a no dejar áreas de la sede sin revisar.' }];
+  const empty = guided.areas.filter(area => !area.respondidas).map(area => area.nombre);
+  return empty.length ? [{ code: 'recorrido_incompleto', severity: 'revisar', message: `Del recorrido guiado quedaron sin revisar: ${list(empty)}.` }] : [];
+}
+
 function actionFindings(detail) {
   const visit = isoDay(detail.study.visit_date);
   if (!visit) return [];
@@ -169,6 +178,7 @@ export function consistencyFindings(detail, { otherClients = [] } = {}) {
     ...riskFindings(detail),
     ...actionFindings(detail),
     ...comparisonFindings(detail),
+    ...guidedFindings(detail),
   ];
 }
 

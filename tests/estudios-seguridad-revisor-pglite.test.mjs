@@ -69,7 +69,9 @@ test('un estudio limpio no tiene hallazgos, y el mismo cliente no cuenta como ot
   const study = await createStudy(db, STUDY, PREPARER);
   await addRisk(db, study.id, { title: 'Hurto menor de Jabones del Norte', probability: 2, impact_company: 2, impact_people: 1, current_control: 'Rondas', current_quality: 3, current_efficacy: 3, current_efficiency: 3 }, PREPARER);
   const review = await reviewStudy(db, await getStudy(db, study.id));
-  assert.deepEqual(review, { findings: [], blocking: 0, total: 0 });
+  // Sin el recorrido guiado (migración 214) queda sólo ese aviso: lo demás está limpio.
+  assert.deepEqual(review.findings.map(item => item.code), ['recorrido_sin_hacer']);
+  assert.equal(review.blocking, 0);
 });
 
 test('el revisor no cambia estados, calificaciones ni textos: sólo lee (prueba de servidor)', async () => {
