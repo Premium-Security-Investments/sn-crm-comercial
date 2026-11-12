@@ -117,6 +117,7 @@ export async function medirAccesoAvancys({ config = configuracionDeAvancys(), fe
   if (pedidos.find(fila => fila.modelo === INFORME_RENTABILIDAD)?.permitido) {
     informe = await mirarInformeRentabilidad(ejecutar);
   }
+  const lineas = await mirarLineasAnaliticas(ejecutar, { ahora });
 
   return {
     configurado: true,
@@ -128,6 +129,7 @@ export async function medirAccesoAvancys({ config = configuracionDeAvancys(), fe
     campo_clave: clave,
     rentabilidad_por_cliente: clave.permitido ? 'desbloqueada' : 'bloqueada',
     informe_rentabilidad: informe,
+    lineas_analiticas: lineas,
   };
 }
 
@@ -171,6 +173,22 @@ export async function mirarInformeRentabilidad(ejecutar) {
       fechas = { campo: campoFecha, desde: primera?.[0]?.[campoFecha] || null, hasta: ultima?.[0]?.[campoFecha] || null };
     }
 
+    // Mes a mes, para saber si es un mes de operación o tres, y compararlo con lo facturado.
+    let porMes = [];
+    if (campoFecha) {
+      const columnas = numericos.filter(col => col.filas_con_valor > 0).map(col => col.campo);
+      if (columnas.length) try {
+        const grupos = await ejecutar(INFORME_RENTABILIDAD, 'read_group', [[], columnas.map(c => `${c}:sum`), [`${campoFecha}:month`]], { lazy: false, orderby: `${campoFecha} asc` });
+        porMes = (grupos || []).map(grupo => ({
+          mes: grupo[`${campoFecha}:month`] || null,
+          filas: grupo.__count ?? null,
+          sumas: Object.fromEntries(columnas.map(c => [c, Number(grupo[c]) || 0])),
+        }));
+      } catch {
+        // Sin el desglose por mes el resto del informe sigue valiendo.
+      }
+    }
+
     // Un costo con nombre de costo y con valor en alguna fila. Es una pista, no una conclusión:
     // la lectura la hace una persona con la tabla completa al lado.
     const costos = numericos.filter(col => /cost|costo/i.test(`${col.campo} ${col.etiqueta}`) && col.filas_con_valor > 0);
@@ -181,8 +199,80 @@ export async function mirarInformeRentabilidad(ejecutar) {
       numericos,
       vinculos,
       fechas,
+      por_mes: porMes,
       trae_costos: costos.length > 0,
       columnas_de_costo: costos.map(col => col.campo),
+    };
+  } catch (error) {
+    return { legible: false, motivo: motivoDe(error) };
+  }
+}
+
+// Las líneas analíticas son de donde Odoo saca el informe de rentabilidad. El informe trae el
+// costo de partes de horas en cero, pero "otros costos" lleno: si Avancys contabiliza la nómina
+// con la cuenta analítica de cada contrato, el costo por cliente ya está aquí, aunque el campo que
+// dice cómo se reparte (hr.contract.analytic_distribution) siga oculto. Se mira por mes y por
+// cuenta contable (los cuatro primeros dígitos del PUC: 5105, 7205… son gastos de personal).
+// Solo agregados, del último año.
+export const LINEAS_ANALITICAS = 'account.analytic.line';
+const MESES_ATRAS = 12;
+// Gastos y costos de personal en el PUC colombiano.
+const PUC_PERSONAL = /^(5105|5205|6105|6205|7105|7205|7305|7405|7505)/;
+
+function cuentaPuc(valor) {
+  const nombre = Array.isArray(valor) ? String(valor[1] || '') : '';
+  const codigo = (nombre.match(/^\s*(\d+)/) || [])[1] || '';
+  return { codigo: codigo.slice(0, 4) || 'sin cuenta', nombre: nombre.replace(/^\s*\d+\s*/, '') };
+}
+
+export async function mirarLineasAnaliticas(ejecutar, { ahora = () => new Date() } = {}) {
+  try {
+    const inicio = new Date(ahora());
+    inicio.setUTCMonth(inicio.getUTCMonth() - MESES_ATRAS, 1);
+    const desde = inicio.toISOString().slice(0, 10);
+    const enRango = [['date', '>=', desde]];
+
+    const total = await ejecutar(LINEAS_ANALITICAS, 'search_count', [[]]);
+    const filas = await ejecutar(LINEAS_ANALITICAS, 'search_count', [enRango]);
+    const conCliente = await ejecutar(LINEAS_ANALITICAS, 'search_count', [[...enRango, ['partner_id', '!=', false]]]);
+    const primera = await ejecutar(LINEAS_ANALITICAS, 'search_read', [[]], { fields: ['date'], limit: 1, order: 'date asc' });
+
+    const sumarPor = async (filtro, agrupar) => (await ejecutar(LINEAS_ANALITICAS, 'read_group', [[...enRango, filtro], ['amount:sum'], [agrupar]], { lazy: false })) || [];
+
+    const meses = new Map();
+    for (const [lado, filtro] of [['ingresos', ['amount', '>', 0]], ['costos', ['amount', '<', 0]]]) {
+      for (const grupo of await sumarPor(filtro, 'date:month')) {
+        const mes = grupo['date:month'] || 'sin fecha';
+        const fila = meses.get(mes) || { mes, ingresos: 0, costos: 0, filas: 0 };
+        fila[lado] += Number(grupo.amount) || 0;
+        fila.filas += grupo.__count || 0;
+        meses.set(mes, fila);
+      }
+    }
+
+    const cuentas = new Map();
+    for (const grupo of await sumarPor(['amount', '!=', 0], 'general_account_id')) {
+      const { codigo, nombre } = cuentaPuc(grupo.general_account_id);
+      const fila = cuentas.get(codigo) || { codigo, nombre, monto: 0, filas: 0, personal: PUC_PERSONAL.test(codigo) };
+      fila.monto += Number(grupo.amount) || 0;
+      fila.filas += grupo.__count || 0;
+      cuentas.set(codigo, fila);
+    }
+    const porCuenta = [...cuentas.values()].sort((izq, der) => Math.abs(der.monto) - Math.abs(izq.monto));
+    const personal = porCuenta.filter(fila => fila.personal).reduce((suma, fila) => suma + fila.monto, 0);
+
+    return {
+      legible: true,
+      total,
+      desde,
+      filas,
+      con_cliente: conCliente,
+      primera_fecha: primera?.[0]?.date || null,
+      por_mes: [...meses.values()],
+      por_cuenta: porCuenta.slice(0, 15),
+      cuentas: porCuenta.length,
+      costo_de_personal: personal,
+      trae_nomina: personal < 0,
     };
   } catch (error) {
     return { legible: false, motivo: motivoDe(error) };

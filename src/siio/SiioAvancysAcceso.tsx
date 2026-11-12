@@ -6,7 +6,7 @@ import { Badge } from './SiioUi';
 //
 // Las credenciales están marcadas como sensibles en Vercel: no se pueden descargar, ni siquiera
 // para revisarlas. La única que puede preguntarle a Avancys es la aplicación desplegada, así que
-// la medición se pide desde aquí. No se dispara sola: cada medición hace unas quince consultas.
+// la medición se pide desde aquí. No se dispara sola: cada medición hace unas treinta consultas.
 
 type Prueba = { modelo: string; para: string; permitido: boolean; filas?: number; motivo?: string };
 type Numerico = { campo: string; etiqueta: string; tipo: string; total: number; filas_con_valor: number };
@@ -19,8 +19,23 @@ type Informe = {
   numericos?: Numerico[];
   vinculos?: Vinculo[];
   fechas?: { campo: string; desde: string | null; hasta: string | null } | null;
+  por_mes?: { mes: string | null; filas: number | null; sumas: Record<string, number> }[];
   trae_costos?: boolean;
   columnas_de_costo?: string[];
+};
+type Lineas = {
+  legible: boolean;
+  motivo?: string;
+  total?: number;
+  desde?: string;
+  filas?: number;
+  con_cliente?: number;
+  primera_fecha?: string | null;
+  por_mes?: { mes: string; ingresos: number; costos: number; filas: number }[];
+  por_cuenta?: { codigo: string; nombre: string; monto: number; filas: number; personal: boolean }[];
+  cuentas?: number;
+  costo_de_personal?: number;
+  trae_nomina?: boolean;
 };
 type CampoClave = { modelo: string; campo: string; para: string; grupo: string; permitido: boolean; total?: number; diligenciados?: number; motivo?: string };
 type Acceso = {
@@ -34,6 +49,7 @@ type Acceso = {
   campo_clave?: CampoClave;
   rentabilidad_por_cliente?: 'desbloqueada' | 'bloqueada';
   informe_rentabilidad?: Informe | null;
+  lineas_analiticas?: Lineas | null;
 };
 
 const cifra = (valor: number, tipo: string) => (tipo === 'integer'
@@ -65,6 +81,50 @@ function InformeRentabilidad({ informe }: { informe: Informe }) {
         <td>{col.filas_con_valor.toLocaleString('es-CO')}</td>
       </tr>)}</tbody>
     </table></div> : <p className="siio-secondary">El informe no tiene columnas numéricas.</p>}
+    {informe.por_mes?.length ? <div className="siio-table-wrap"><table>
+      <thead><tr><th>Mes</th><th>Filas</th>{Object.keys(informe.por_mes[0].sumas).map(c => <th key={c}><code>{c}</code></th>)}</tr></thead>
+      <tbody>{informe.por_mes.map(fila => <tr key={fila.mes ?? 'sin fecha'}>
+        <td>{fila.mes ?? 'sin fecha'}</td>
+        <td>{(fila.filas ?? 0).toLocaleString('es-CO')}</td>
+        {Object.entries(fila.sumas).map(([c, v]) => <td key={c}>{cifra(v, 'monetary')}</td>)}
+      </tr>)}</tbody>
+    </table></div> : null}
+  </div>;
+}
+
+// De dónde saca Odoo el informe: si la nómina ya llega a la cuenta analítica de cada contrato,
+// el costo por cliente está aquí aunque el campo de reparto siga oculto.
+function LineasAnaliticas({ lineas }: { lineas: Lineas }) {
+  if (!lineas.legible) return <div className="siio-pulse-block">
+    <h4>Líneas analíticas</h4>
+    <p className="siio-secondary">No se pueden leer las líneas analíticas: {lineas.motivo}</p>
+  </div>;
+  const filas = lineas.filas ?? 0;
+  return <div className="siio-pulse-block">
+    <h4>Líneas analíticas (de donde sale el informe)</h4>
+    <div className={`siio-avancys-clave${lineas.trae_nomina ? ' siio-avancys-clave-ok' : ''}`}>
+      <strong>{lineas.trae_nomina ? 'La nómina sí llega a las cuentas analíticas' : 'La nómina no llega a las cuentas analíticas'}</strong>
+      <span>
+        Gastos y costos de personal (PUC 5105, 7205…) en el último año: {cifra(lineas.costo_de_personal ?? 0, 'monetary')}.
+        {' '}{filas.toLocaleString('es-CO')} líneas desde el {lineas.desde} ({(lineas.total ?? 0).toLocaleString('es-CO')} en total, la primera del {lineas.primera_fecha ?? '—'});
+        {' '}con cliente: {(lineas.con_cliente ?? 0).toLocaleString('es-CO')}.
+      </span>
+    </div>
+    {lineas.por_mes?.length ? <div className="siio-table-wrap"><table>
+      <thead><tr><th>Mes</th><th>Ingresos</th><th>Costos</th><th>Líneas</th></tr></thead>
+      <tbody>{lineas.por_mes.map(fila => <tr key={fila.mes}>
+        <td>{fila.mes}</td><td>{cifra(fila.ingresos, 'monetary')}</td><td>{cifra(fila.costos, 'monetary')}</td><td>{fila.filas.toLocaleString('es-CO')}</td>
+      </tr>)}</tbody>
+    </table></div> : null}
+    {lineas.por_cuenta?.length ? <div className="siio-table-wrap"><table>
+      <thead><tr><th>Cuenta (PUC)</th><th>Monto</th><th>Líneas</th></tr></thead>
+      <tbody>{lineas.por_cuenta.map(fila => <tr key={fila.codigo}>
+        <td><strong>{fila.codigo}</strong> {fila.nombre}{fila.personal ? ' · personal' : ''}</td>
+        <td>{cifra(fila.monto, 'monetary')}</td><td>{fila.filas.toLocaleString('es-CO')}</td>
+      </tr>)}</tbody>
+    </table></div> : null}
+    {(lineas.cuentas ?? 0) > (lineas.por_cuenta?.length ?? 0)
+      ? <p className="siio-pulse-footnote">Se muestran las {lineas.por_cuenta?.length} cuentas de mayor monto de {lineas.cuentas}.</p> : null}
   </div>;
 }
 
@@ -126,6 +186,7 @@ export function SiioAvancysAcceso() {
         </span>
       </div> : null}
       {acceso.informe_rentabilidad ? <InformeRentabilidad informe={acceso.informe_rentabilidad} /> : null}
+      {acceso.lineas_analiticas ? <LineasAnaliticas lineas={acceso.lineas_analiticas} /> : null}
       {acceso.pedidos?.length ? <Lista titulo="Lo que se pidió el 29 de octubre" filas={acceso.pedidos} /> : null}
       {acceso.en_uso?.length ? <Lista titulo="Lo que la Torre ya usa" filas={acceso.en_uso} /> : null}
     </> : null}
