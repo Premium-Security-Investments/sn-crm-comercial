@@ -41,7 +41,8 @@ function findCardByEntity(view, entity) {
 const TWO_PHASES_ROW = {
   id: 'tender-continuidad', source: 'SECOP II', section: 'hacer', entity: 'Entidad Continuidad',
   title: 'Servicio de vigilancia', value: 500000000, score: 90, reasons: [], risks: [],
-  internal_status: 'convertida_oportunidad', converted_opportunity_id: '11111111-1111-4111-8111-111111111111',
+  // Un proceso nuevo: los convertidos en oportunidad ya no salen en el Radar (Juan, 2026-11-12).
+  internal_status: 'nueva', converted_opportunity_id: null,
   known_phases: ['Presentación de observaciones', 'Presentación de oferta'],
 };
 
