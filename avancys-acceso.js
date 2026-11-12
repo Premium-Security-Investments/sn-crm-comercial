@@ -432,10 +432,9 @@ export async function medirPygPorCliente({ mes, config = configuracionDeAvancys(
 //   costo del cliente = horas de sus líneas de orden de servicio × costo por hora
 //   lo indirecto      = el resto de los centros de la empresa, repartido por la facturación
 //
-// Las horas salen del nombre del producto de cada línea de orden de servicio ("24 HORAS",
-// "12 H", "LUNES A VIERNES"). La línea cuyo producto no dice horas no entra al reparto y se cuenta
-// aparte, con el producto, para que una persona vea qué falta reconocer.
-export const ORDENES_DE_SERVICIO = 'project.service.order.line.invoice';
+// Las horas salen del horario de cada línea activa de orden de servicio de vigilancia física
+// (productos [VI…]): entrada y salida, o la duración, o el nombre; la que no tiene ninguno recibe el
+// promedio. Las líneas de monitoreo y electrónica ([MO…]) no reciben costo de vigilantes.
 const CENTRO_VIGILANTES = /VIGILANTES\s*$/i;
 const EMPRESA = /^\s*(\[\d+\]\s*)?SEGURIDAD NACIONAL LTDA/i;
 
@@ -450,14 +449,103 @@ export function horasPorDiaDelProducto(nombre) {
   return horas * dias;
 }
 
+// Odoo guarda la hora como número (6.5 = 06:30). Un turno que cruza la medianoche termina "antes"
+// de empezar; entrada igual a salida es un puesto de 24 horas.
+export function horasDelTurno(entrada, salida) {
+  // Odoo devuelve `false` en un campo vacío, y Number(false) sería medianoche.
+  if (typeof entrada !== 'number' || typeof salida !== 'number') return null;
+  const desde = Number(entrada);
+  const hasta = Number(salida);
+  if (!Number.isFinite(desde) || !Number.isFinite(hasta) || (desde === 0 && hasta === 0)) return null;
+  const horas = hasta > desde ? hasta - desde : 24 - desde + hasta;
+  return horas > 0 && horas <= 24 ? horas : null;
+}
+
+// `weekdays` puede venir como lista ("1,2,3,4,5"), como número de días o vacío. Vacío es toda la semana.
+export function fraccionDeSemana(dias) {
+  if (typeof dias === 'number' && dias >= 1 && dias <= 7) return dias / 7;
+  const lista = String(dias || '').match(/[1-7]/g);
+  if (Array.isArray(dias) && dias.length >= 1 && dias.length <= 7) return dias.length / 7;
+  if (lista && lista.length >= 1 && lista.length <= 7 && /[,;\s-]/.test(String(dias))) return new Set(lista).size / 7;
+  return 1;
+}
+
+const VIGILANCIA_FISICA = /^\s*\[VI\d+\]/i;
+const CAMPOS_HORARIO = ['partner_id', 'product_id', 'time_in', 'time_out', 'duration', 'weekdays', 'cantidad_vigilantes'];
+const PAGINA_ORDENES = 2000;
+
+export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
+  const modelo = 'project.service.order.line';
+  const existentes = await ejecutar(modelo, 'fields_get', [CAMPOS_HORARIO], { attributes: ['type'] }) || {};
+  const campos = CAMPOS_HORARIO.filter(campo => existentes[campo]);
+  const filas = [];
+  for (let offset = 0; ; offset += PAGINA_ORDENES) {
+    const lote = (await ejecutar(modelo, 'search_read', [[['state', '=', 'active']]], { fields: campos, limit: PAGINA_ORDENES, offset, order: 'id asc' })) || [];
+    filas.push(...lote);
+    if (lote.length < PAGINA_ORDENES) break;
+  }
+
+  const fuentes = { horario: 0, duracion: 0, nombre: 0, promedio: 0 };
+  const excluidas = new Map();
+  const lineas = [];
+  const porDia = [];
+  const vigilantes = [];
+  for (const fila of filas) {
+    if (!Array.isArray(fila.partner_id)) continue;
+    const producto = Array.isArray(fila.product_id) ? String(fila.product_id[1]) : 'Sin producto';
+    if (!VIGILANCIA_FISICA.test(producto)) {
+      excluidas.set(producto, (excluidas.get(producto) || 0) + 1);
+      continue;
+    }
+    let horas = horasDelTurno(fila.time_in, fila.time_out);
+    let fuente = horas ? 'horario' : null;
+    if (!horas && Number(fila.duration) > 0 && Number(fila.duration) <= 24) { horas = Number(fila.duration); fuente = 'duracion'; }
+    if (!horas) { horas = horasPorDiaDelProducto(producto); fuente = horas ? 'nombre' : null; }
+    if (horas) {
+      horas *= fraccionDeSemana(fila.weekdays);
+      porDia.push(horas);
+    }
+    if (Number(fila.cantidad_vigilantes) > 0) vigilantes.push(Number(fila.cantidad_vigilantes));
+    lineas.push({ cliente_id: fila.partner_id[0], cliente: String(fila.partner_id[1]), producto, porDia: horas, fuente });
+  }
+
+  // La línea de vigilancia física sin horario recibe el promedio de las que sí lo tienen.
+  const promedio = porDia.length ? porDia.reduce((suma, valor) => suma + valor, 0) / porDia.length : 24;
+  let total = 0;
+  for (const linea of lineas) {
+    if (!linea.fuente) { linea.porDia = promedio; linea.fuente = 'promedio'; }
+    fuentes[linea.fuente] += 1;
+    linea.horas = linea.porDia * diasDelMes;
+    total += linea.horas;
+  }
+  const ordenadas = [...porDia].sort((izq, der) => izq - der);
+  return {
+    lineas,
+    horas: total,
+    fuentes,
+    horas_por_dia: {
+      promedio,
+      mediana: ordenadas.length ? ordenadas[Math.floor(ordenadas.length / 2)] : null,
+      minimo: ordenadas[0] ?? null,
+      maximo: ordenadas.at(-1) ?? null,
+      con_dato: ordenadas.length,
+      campos_leidos: campos,
+    },
+    vigilantes_por_linea: {
+      con_dato: vigilantes.length,
+      promedio: vigilantes.length ? vigilantes.reduce((suma, valor) => suma + valor, 0) / vigilantes.length : null,
+      mas_de_uno: vigilantes.filter(valor => valor > 1).length,
+    },
+    excluidas: [...excluidas].map(([producto, cantidad]) => ({ producto, lineas: cantidad })).sort((izq, der) => der.lineas - izq.lineas).slice(0, 10),
+  };
+}
+
 export async function rentabilidadAproximada(ejecutar, { mes }) {
   const rango = rangoDelMes(mes);
   if (!rango) return { legible: false, mes: mes || null, motivo: 'El mes debe venir como AAAA-MM.' };
   try {
     const [anio, numero] = mes.split('-').map(Number);
     const diasDelMes = new Date(Date.UTC(anio, numero, 0)).getUTCDate();
-    const desde = `${mes}-01`;
-    const hasta = `${mes}-${String(diasDelMes).padStart(2, '0')}`;
 
     // 1. Lo real: resultado por cuenta analítica.
     const cuentas = await cuentasDelRango(ejecutar, rango);
@@ -488,33 +576,19 @@ export async function rentabilidadAproximada(ejecutar, { mes }) {
       clientes.set(partner[0], fila);
     }
 
-    // 2. Lo que se estima: horas vendidas a cada cliente en el mes.
-    const grupos = (await ejecutar(ORDENES_DE_SERVICIO, 'read_group',
-      [[['state', '=', 'aprobado'], ['fact_start_date', '<=', hasta], ['fact_end_date', '>=', desde]], ['id'], ['client_id', 'product_id']],
-      { lazy: false, limit: 20000 })) || [];
-    const sinHoras = new Map();
-    let horasTotales = 0;
-    let lineas = 0;
-    let lineasConHoras = 0;
-    for (const grupo of grupos) {
-      if (!Array.isArray(grupo.client_id)) continue;
-      const cantidad = grupo.__count || 0;
-      const producto = Array.isArray(grupo.product_id) ? String(grupo.product_id[1]) : 'Sin producto';
-      const porDia = horasPorDiaDelProducto(producto);
-      const fila = clientes.get(grupo.client_id[0]) || { cliente: String(grupo.client_id[1]), ingresos: 0, costo_directo: 0, horas: 0, lineas: 0, lineas_sin_horas: 0 };
-      fila.lineas += cantidad;
-      lineas += cantidad;
-      if (porDia) {
-        const horas = porDia * diasDelMes * cantidad;
-        fila.horas += horas;
-        horasTotales += horas;
-        lineasConHoras += cantidad;
-      } else {
-        fila.lineas_sin_horas += cantidad;
-        sinHoras.set(producto, (sinHoras.get(producto) || 0) + cantidad);
-      }
-      clientes.set(grupo.client_id[0], fila);
+    // 2. Lo que se estima: horas de vigilancia física vendidas a cada cliente. El producto no dice
+    // las horas (medido el 2026-11-12: "VIGILANCIA FISICA SIN ARMA", "CON ARMA"…); el horario
+    // vive en la línea de la orden de servicio (`time_in`, `time_out`, `duration`, `weekdays`).
+    // Se leen las líneas activas hoy: es el mismo servicio del mes salvo altas y retiros recientes.
+    const horario = await horariosDeVigilancia(ejecutar, { diasDelMes });
+    for (const linea of horario.lineas) {
+      const fila = clientes.get(linea.cliente_id) || { cliente: linea.cliente, ingresos: 0, costo_directo: 0, horas: 0, lineas: 0, lineas_sin_horas: 0 };
+      fila.lineas += 1;
+      fila.horas += linea.horas;
+      if (linea.fuente === 'promedio') fila.lineas_sin_horas += 1;
+      clientes.set(linea.cliente_id, fila);
     }
+    const horasTotales = horario.horas;
 
     // 3. El reparto.
     const costoHora = horasTotales ? fondo.vigilantes / horasTotales : 0;
@@ -532,13 +606,16 @@ export async function rentabilidadAproximada(ejecutar, { mes }) {
       mes,
       costo_por_hora: costoHora,
       horas: horasTotales,
-      lineas,
-      lineas_con_horas: lineasConHoras,
+      lineas: horario.lineas.length,
+      lineas_con_horas: horario.lineas.length - horario.fuentes.promedio,
+      fuentes_de_horas: horario.fuentes,
+      horas_por_dia: horario.horas_por_dia,
+      vigilantes_por_linea: horario.vigilantes_por_linea,
+      excluidas: horario.excluidas,
       fondo,
       ingresos_clientes: ingresosClientes,
       clientes_con_ingreso: filas.filter(fila => fila.ingresos > 0).length,
       clientes: filas.slice(0, MAX_CLIENTES_PYG),
-      productos_sin_horas: [...sinHoras].map(([producto, cantidad]) => ({ producto, lineas: cantidad })).sort((izq, der) => der.lineas - izq.lineas).slice(0, 20),
     };
   } catch (error) {
     return { legible: false, mes, motivo: motivoDe(error) };
