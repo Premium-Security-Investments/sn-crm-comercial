@@ -150,7 +150,7 @@ function lineas() {
   const ejecutar = async (modelo, metodo, args, kwargs) => {
     llamadas.push({ modelo, metodo, args, kwargs });
     if (modelo === 'account.analytic.account') {
-      return args[0][0][2].map(id => ({ id, partner_id: id === 10 ? [500, 'JERONIMO MARTINS COLOMBIA'] : id === 11 ? [600, 'OTRO CLIENTE'] : false }));
+      return args[0][0][2].map(id => ({ id, code: `CC${id}`, name: `Centro ${id}`, group_id: id === 12 ? [1, 'ADMINISTRACION'] : false, partner_id: id === 10 ? [500, 'JERONIMO MARTINS COLOMBIA'] : id === 11 ? [600, 'OTRO CLIENTE'] : false }));
     }
     assert.equal(modelo, 'account.analytic.line');
     if (metodo === 'search_count') return args[0].length ? 3000 : 40000;
@@ -210,6 +210,10 @@ test('resultado por cliente: el cliente sale de la cuenta analítica y lo demás
   assert.ok(Math.abs(r.clientes[0].margen - 5_600_000_000 * 0.7) < 1);
   assert.equal(r.sin_cliente.sin_cliente, true);
   assert.ok(Math.abs(r.totales.margen - 5_600_000_000) < 1);
+  assert.equal(r.cuentas_con_costo, 3);
+  assert.deepEqual(r.cuentas_de_costo.map(c => [c.codigo, c.grupo, c.cliente]), [
+    ['CC10', null, 'JERONIMO MARTINS COLOMBIA'], ['CC11', null, 'OTRO CLIENTE'], ['CC12', 'ADMINISTRACION', null],
+  ]);
 });
 
 test('resultado por cliente: diciembre cruza de año y un mes mal escrito no consulta', async () => {

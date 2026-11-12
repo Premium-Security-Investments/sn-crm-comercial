@@ -49,6 +49,8 @@ type Pyg = {
   clientes_con_movimiento?: number;
   clientes?: FilaCliente[];
   sin_cliente?: FilaCliente | null;
+  cuentas_con_costo?: number;
+  cuentas_de_costo?: { codigo: string | null; nombre: string; grupo: string | null; cliente: string | null; ingresos: number; personal: number; otros_costos: number; margen: number }[];
 };
 type CampoClave = { modelo: string; campo: string; para: string; grupo: string; permitido: boolean; total?: number; diligenciados?: number; motivo?: string };
 type Acceso = {
@@ -195,6 +197,21 @@ function PygPorCliente() {
           <td>{millones(fila.margen)} · {pct(fila.margen, fila.ingresos)}</td>
         </tr>)}</tbody>
       </table></div>
+      {pyg.cuentas_de_costo?.length ? <>
+        <h4>Dónde cae el costo</h4>
+        <p className="siio-pulse-footnote">
+          Las {pyg.cuentas_de_costo.length} cuentas analíticas con más nómina y costos, de {pyg.cuentas_con_costo?.toLocaleString('es-CO')} que tienen costo este mes.
+        </p>
+        <div className="siio-table-wrap"><table>
+          <thead><tr><th>Cuenta analítica</th><th>Grupo</th><th>Cliente</th><th>Personal</th><th>Otros costos</th><th>Ingresos</th></tr></thead>
+          <tbody>{pyg.cuentas_de_costo.map((fila, i) => <tr key={`${fila.codigo}-${i}`}>
+            <td><strong>{fila.codigo ?? '—'}</strong> {fila.nombre}</td>
+            <td>{fila.grupo ?? '—'}</td>
+            <td>{fila.cliente ?? '—'}</td>
+            <td>{millones(fila.personal)}</td><td>{millones(fila.otros_costos)}</td><td>{millones(fila.ingresos)}</td>
+          </tr>)}</tbody>
+        </table></div>
+      </> : null}
     </> : null}
   </div>;
 }

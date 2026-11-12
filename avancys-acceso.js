@@ -321,6 +321,7 @@ export async function mirarLineasAnaliticas(ejecutar, { ahora = () => new Date()
 // analíticas. El cliente es el de la cuenta analítica (la misma ruta que usa clienteDelPuesto).
 // Las cuentas analíticas sin cliente quedan juntas (administración, sedes).
 export const MAX_CLIENTES_PYG = 30;
+export const MAX_CUENTAS_DE_COSTO = 40;
 const LOTE_CUENTAS = 1000;
 
 export function rangoDelMes(mes) {
@@ -344,10 +345,14 @@ export async function pygPorCliente(ejecutar, { mes }) {
 
     const ids = [...porCuenta.keys()].filter(Boolean);
     const clienteDe = new Map();
+    const datosDe = new Map();
     for (let i = 0; i < ids.length; i += LOTE_CUENTAS) {
       const lote = ids.slice(i, i + LOTE_CUENTAS);
-      const filas = (await ejecutar('account.analytic.account', 'search_read', [[['id', 'in', lote]]], { fields: ['partner_id'], limit: lote.length })) || [];
-      for (const fila of filas) if (Array.isArray(fila.partner_id)) clienteDe.set(fila.id, fila.partner_id);
+      const filas = (await ejecutar('account.analytic.account', 'search_read', [[['id', 'in', lote]]], { fields: ['partner_id', 'code', 'name', 'group_id'], limit: lote.length })) || [];
+      for (const fila of filas) {
+        if (Array.isArray(fila.partner_id)) clienteDe.set(fila.id, fila.partner_id);
+        datosDe.set(fila.id, fila);
+      }
     }
 
     const clientes = new Map();
@@ -365,9 +370,29 @@ export async function pygPorCliente(ejecutar, { mes }) {
     const suma = campo => todas.reduce((total, fila) => total + fila[campo], 0);
     const conCliente = todas.filter(fila => !fila.sin_cliente).sort((izq, der) => der.ingresos - izq.ingresos);
 
+    // Dónde cae el costo. El 2026-11-12 (octubre) la nómina apareció entera en 79 cuentas analíticas
+    // cuyo cliente es la propia empresa, no en las de cada cliente. Para saber si esas cuentas se
+    // pueden ligar a un cliente (una por puesto o contrato) o son centros internos (sede, área),
+    // se listan las de mayor costo con su código, nombre y grupo.
+    const cuentasDeCosto = [...porCuenta]
+      .map(([id, montos]) => {
+        const datos = datosDe.get(id) || {};
+        return {
+          codigo: datos.code || null,
+          nombre: datos.name || (id ? `cuenta ${id}` : 'Sin cuenta analítica'),
+          grupo: Array.isArray(datos.group_id) ? String(datos.group_id[1]) : null,
+          cliente: Array.isArray(datos.partner_id) ? String(datos.partner_id[1]) : null,
+          ...conMargen(montos),
+        };
+      })
+      .filter(fila => fila.personal + fila.otros_costos < 0)
+      .sort((izq, der) => (izq.personal + izq.otros_costos) - (der.personal + der.otros_costos));
+
     return {
       legible: true,
       mes,
+      cuentas_con_costo: cuentasDeCosto.length,
+      cuentas_de_costo: cuentasDeCosto.slice(0, MAX_CUENTAS_DE_COSTO).map(({ filas, ...fila }) => fila),
       totales: { ingresos: suma('ingresos'), personal: suma('personal'), otros_costos: suma('otros_costos'), margen: suma('margen') },
       clientes_con_movimiento: conCliente.length,
       clientes: conCliente.slice(0, MAX_CLIENTES_PYG),
