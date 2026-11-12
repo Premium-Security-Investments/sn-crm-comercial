@@ -9,6 +9,19 @@ import { Badge } from './SiioUi';
 // la medición se pide desde aquí. No se dispara sola: cada medición hace unas quince consultas.
 
 type Prueba = { modelo: string; para: string; permitido: boolean; filas?: number; motivo?: string };
+type Numerico = { campo: string; etiqueta: string; tipo: string; total: number; filas_con_valor: number };
+type Vinculo = { campo: string; etiqueta: string; relacion: string | null; filas_con_valor: number };
+type Informe = {
+  legible: boolean;
+  motivo?: string;
+  filas?: number;
+  columnas?: number;
+  numericos?: Numerico[];
+  vinculos?: Vinculo[];
+  fechas?: { campo: string; desde: string | null; hasta: string | null } | null;
+  trae_costos?: boolean;
+  columnas_de_costo?: string[];
+};
 type CampoClave = { modelo: string; campo: string; para: string; grupo: string; permitido: boolean; total?: number; diligenciados?: number; motivo?: string };
 type Acceso = {
   configurado: boolean;
@@ -20,7 +33,40 @@ type Acceso = {
   pedidos?: Prueba[];
   campo_clave?: CampoClave;
   rentabilidad_por_cliente?: 'desbloqueada' | 'bloqueada';
+  informe_rentabilidad?: Informe | null;
 };
+
+const cifra = (valor: number, tipo: string) => (tipo === 'integer'
+  ? Math.round(valor).toLocaleString('es-CO')
+  : `${valor < 0 ? '−' : ''}$${Math.round(Math.abs(valor) / 1e6).toLocaleString('es-CO')} M`);
+
+// Qué trae por dentro el informe de rentabilidad de Odoo, antes de construir encima.
+function InformeRentabilidad({ informe }: { informe: Informe }) {
+  if (!informe.legible) return <p className="siio-secondary">No se pudo mirar adentro del informe de rentabilidad: {informe.motivo}</p>;
+  const filas = informe.filas ?? 0;
+  return <div className="siio-pulse-block">
+    <h4>Adentro del informe de rentabilidad de Odoo</h4>
+    <div className={`siio-avancys-clave${informe.trae_costos ? ' siio-avancys-clave-ok' : ''}`}>
+      <strong>{informe.trae_costos ? 'Trae columnas de costo con valores' : 'No trae costos llenos'}</strong>
+      <span>
+        {filas.toLocaleString('es-CO')} filas
+        {informe.fechas?.desde ? `, del ${informe.fechas.desde} al ${informe.fechas.hasta}` : ''}.
+        {informe.trae_costos ? ` Columnas de costo con valor: ${(informe.columnas_de_costo || []).join(', ')}.` : ''}
+      </span>
+    </div>
+    {informe.vinculos?.length ? <p className="siio-pulse-footnote">
+      Con qué se puede cruzar: {informe.vinculos.map(v => `${v.etiqueta} en ${v.filas_con_valor.toLocaleString('es-CO')} de ${filas.toLocaleString('es-CO')} filas`).join(' · ')}.
+    </p> : null}
+    {informe.numericos?.length ? <div className="siio-table-wrap"><table>
+      <thead><tr><th>Columna</th><th>Total</th><th>Filas con valor</th></tr></thead>
+      <tbody>{informe.numericos.map(col => <tr key={col.campo}>
+        <td><strong>{col.etiqueta}</strong> <code>{col.campo}</code></td>
+        <td>{cifra(col.total, col.tipo)}</td>
+        <td>{col.filas_con_valor.toLocaleString('es-CO')}</td>
+      </tr>)}</tbody>
+    </table></div> : <p className="siio-secondary">El informe no tiene columnas numéricas.</p>}
+  </div>;
+}
 
 const hora = (valor?: string) => (valor
   ? new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }).format(new Date(valor))
@@ -79,6 +125,7 @@ export function SiioAvancysAcceso() {
             : `Falta leer ${clave.modelo}.${clave.campo} (${clave.para}). Lo habilita el grupo ${clave.grupo}.`}
         </span>
       </div> : null}
+      {acceso.informe_rentabilidad ? <InformeRentabilidad informe={acceso.informe_rentabilidad} /> : null}
       {acceso.pedidos?.length ? <Lista titulo="Lo que se pidió el 29 de octubre" filas={acceso.pedidos} /> : null}
       {acceso.en_uso?.length ? <Lista titulo="Lo que la Torre ya usa" filas={acceso.en_uso} /> : null}
     </> : null}
