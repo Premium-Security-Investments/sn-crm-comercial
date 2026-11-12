@@ -41,7 +41,7 @@ export const REQUIREMENT_TYPES = Object.freeze([
   T('p_poblaciones', P, 'puntaje', 'Vinculación de poblaciones (víctimas, reincorporados, jóvenes, etnias, adulto mayor)', /victima|reincorpora|reintegra|joven|etnic|indigena|afro|adulto mayor|madre cabeza|padre cabeza|pospenad|vulnerab|primer empleo/),
   T('p_desempate', P, 'puntaje', 'Factores de desempate', /desempate|empate/),
   T('p_sanciones', P, 'puntaje', 'Sin multas ni incumplimientos previos', /sancion|multa|incumplimiento|clausula penal|caducidad/),
-  T('p_calidad', P, 'puntaje', 'Certificaciones de calidad (ISO, BASC, SST)', /iso|basc|ntc|certificacion(es)? de (calidad|gestion)|sistema de gestion|calidad/),
+  T('p_calidad', P, 'puntaje', 'Certificaciones de calidad (ISO, BASC, SST)', /\biso\b|basc|\bntc\b|certificacion(es)? de (calidad|gestion)|sistema de gestion|calidad/),
   T('p_capacitacion', P, 'puntaje', 'Capacitación adicional del personal', /capacitaci|curso|formacion|entrenamiento|reentrenamiento|diplomado|seminario/),
   T('p_sedes', P, 'puntaje', 'Sedes, sucursales o agencias en la zona', /sucursal|agencia|sede|oficina|domicilio|presencia/),
   T('p_tecnologia', P, 'puntaje', 'Medios tecnológicos, equipos o armamento adicionales', /\barmas?\b|armamento|mantenimiento|frecuencia|tecnolog|cctv|camara|video|monitoreo|alarma|gps|boton|detector|radio|equipo|dron|software|plataforma|biometr|control de acceso/),
@@ -69,21 +69,22 @@ export const REQUIREMENT_TYPES = Object.freeze([
   T('poliza_rce', H, 'garantias', 'Póliza de responsabilidad civil extracontractual', /responsabilidad civil|extracontractual|\brce\b/),
   T('poliza_vida', H, 'garantias', 'Seguro de vida colectivo del personal', /seguro de vida|poliza de vida|vida colectiv|^vida$/),
   T('garantias_contrato', H, 'garantias', 'Garantías del contrato (cumplimiento, salarios, calidad)', /garantia|poliza|amparo|asegurad|seguro|hurto/),
-  T('licencia_comunicaciones', H, 'licencias', 'Licencia de comunicaciones o espectro (MinTIC)', /mintic|espectro|frecuencia|comunicacion|radio|telecomunicaci|\btic\b/),
+  T('licencia_comunicaciones', H, 'licencias', 'Licencia de comunicaciones o espectro (MinTIC)', /mintic|espectro|frecuencia|comunicacion|radio|telecomunicaci|\btic\b|valor agregado|telematic|habilitante convergente|\bvas\b/),
   T('armas', H, 'licencias', 'Armas: permisos de tenencia, porte y listado', /\barmas?\b|armamento|salvoconducto|\btenencia\b|\bporte\b|indumil|comercio de armas/),
   T('canina', H, 'licencias', 'Medio canino: resolución, certificación y póliza', /canin|perro|cane/),
   T('uniformes', H, 'licencias', 'Uniformes aprobados por la Supervigilancia', /uniforme|distintivo/),
   T('red_apoyo', H, 'licencias', 'Red de apoyo de la Policía', /red (de apoyo|policia)|frente de seguridad/),
   T('registro_tecnologia', H, 'licencias', 'Registro de comercializador o fabricante de equipos tecnológicos', /comercializador|fabricante|distribuidor autorizado|carta del fabricante|registro (de )?(productores|equipos)/),
-  T('licencia_supervigilancia', H, 'licencias', 'Licencia de funcionamiento de la Supervigilancia (modalidades y medios)', /licencia|superintendencia de vigilancia|supervigilancia|modalidad|medio tecnologico|autorizacion|resolucion de funcionamiento|svsp/),
+  T('horas_extras', H, 'juridico', 'Autorización de horas extras del Ministerio del Trabajo', /horas extra|trabajo suplementario|ministerio del trabajo/),
   T('sanciones_supervigilancia', H, 'juridico', 'Certificado de multas y sanciones de la Supervigilancia', /sancion|multa/),
+  T('licencia_supervigilancia', H, 'licencias', 'Licencia de funcionamiento de la Supervigilancia (modalidades y medios)', /licencia de funcionamiento|licencia (de|para) (la )?(vigilancia|prestacion|utilizacion|uso)|\blicencia\b(?! (de|para) (uso del espectro|valor agregado))|superintendencia de vigilancia|supervigilancia|modalidad|medio tecnologico|medios tecnologicos|resolucion de funcionamiento|svsp/,
+    /organo social|estatutos|representante legal|salud en el trabajo|\bsst\b|subcontrat/),
   T('antecedentes', H, 'juridico', 'Antecedentes fiscales, disciplinarios, judiciales, REDAM y medidas correctivas', /antecedente|\bfiscal(es)?\b|disciplinari|judicial|redam|medidas correctivas|contraloria|procuraduria|policia nacional|cert(ificado)? policia|dijin|siri|deudores alimentarios|inhabilidades por delitos sexuales/),
   T('seguridad_social', H, 'juridico', 'Pago de seguridad social y parafiscales', /seguridad social|parafiscal|aportes|articulo 50|ley 789|sena|icbf|caja de compensacion|planilla/),
   T('existencia_representacion', H, 'juridico', 'Existencia y representación legal, objeto social y duración', /existencia|representacion legal|camara de comercio|objeto social|duracion|matricula mercantil|registro mercantil|constitu|representante legal|persona juridica|apoderado/),
   T('inhabilidades', H, 'juridico', 'Inhabilidades, incompatibilidades y conflicto de interés', /inhabilidad|incompatibilidad|conflicto de inter|prohibicion|capacidad legal|capacidad juridica/),
   T('sarlaft', H, 'juridico', 'Origen de fondos y prevención de lavado de activos (SARLAFT)', /sarlaft|lavado|origen de (los )?fondos|terroris/),
   T('rut', H, 'juridico', 'RUT', /\brut\b|registro unico tributario/),
-  T('horas_extras', H, 'juridico', 'Autorización de horas extras del Ministerio del Trabajo', /horas extra|trabajo suplementario|ministerio del trabajo/),
   T('experiencia_especifica', H, 'experiencia', 'Experiencia específica (objeto, valor y lugar del contrato)', /experiencia especifica|especifica/),
   T('experiencia_general', H, 'experiencia', 'Experiencia general (número de contratos y valor en SMMLV)', /experiencia|\bexp\b|contrato|smmlv|certificacion(es)? de (cumplimiento|contrato)|acta de liquidacion/),
   T('responsable_sst', H, 'personal', 'Responsable o coordinador de SST', /\bsst\b|salud en el trabajo|sg-?sst/),
@@ -91,7 +92,7 @@ export const REQUIREMENT_TYPES = Object.freeze([
   T('centro_operaciones', H, 'tecnico', 'Centro de operaciones o central de monitoreo', /central|centro (de )?(operaciones|control|monitoreo)|monitoreo|24 ?horas/),
   T('vehiculos', H, 'tecnico', 'Vehículos y motos', /vehiculo|moto|camioneta|automotor|parque automotor/),
   T('equipos_tecnologia', H, 'tecnico', 'Equipos y medios tecnológicos (CCTV, alarmas, control de acceso)', /cctv|camara|video|alarma|control de acceso|equipo|tecnolog|software|nodo|biometr|grabador/),
-  T('calidad_sst', H, 'tecnico', 'Sistemas de gestión (SG-SST, ISO, calificación ARL)', /iso|calidad|gestion|arl|estandares minimos|basc/),
+  T('calidad_sst', H, 'tecnico', 'Sistemas de gestión (SG-SST, ISO, calificación ARL)', /\biso\b|calidad|sistema de gestion|\barl\b|estandares minimos|basc/),
   T('oferta_economica', H, 'economico', 'Oferta económica, tarifas mínimas y tope del presupuesto', /precio|economic|tarifa|presupuesto|valor (total|de la oferta|ofertado)|aiu|iva|anexo (economico|9)|tope/),
   T('identificacion', H, 'juridico', 'Documento de identidad y situación militar', /cedula|documento de identidad|identificacion|situacion militar|pasaporte/, /conformacion|consorcio|union temporal|plural/),
   T('estructura_organizacional', H, 'tecnico', 'Estructura organizacional, organigrama y atención al cliente', /organigrama|estructura organizacional|atencion al (cliente|usuario|consumidor)|pqr/),
@@ -152,35 +153,40 @@ export function isRequirementFragment(text) {
   return /^(\d+(\.\d+)*\.? )?(criterios?|factor(es)? de (calificacion|evaluacion|escogencia)|requisitos habilitantes|la evaluacion|el comite|para la evaluacion|este criterio)\b/.test(folded);
 }
 
-// «Lo que nos frena» (Juan, 2026-11-11): los requisitos que más veces impidieron presentarse, agrupados como se
-// trabajan. `types` son los tipos del catálogo que cuentan para cada uno; `live` dice qué parte de la ficha muestra
-// «cómo estamos hoy» (si no hay, lo escribe una persona). La acción inicial es la propuesta; la cambia quien trabaja.
+// «Lo que nos inhabilita» (Juan, 2026-11-11 y 2026-11-12): sólo los HECHOS que nos faltan y exigen un trámite —una
+// sede o sucursal, un código en el RUP, un registro o una licencia—, para que Katherine decida si se inicia el trámite y
+// en el futuro no nos inhabiliten por eso. Los papeles que se renuevan (Cámara de Comercio, RUP con fecha nueva,
+// certificados, garantía de seriedad) no van: se sacan en minutos. Un grupo aparece sólo si algún requisito suyo nos
+// inhabilita según la ficha, o un análisis o un acta lo marcó como bloqueo. `fix` es la propuesta inicial.
 export const REQUIREMENT_FOCUS = Object.freeze([
-  { key: 'presencia', title: 'Presencia en la ciudad', types: ['presencia_local'], live: 'sedes',
-    fix: 'Convertir en sucursal las agencias de las ciudades donde más se licita (empezando por Cali) y tener por ciudad un socio para unión temporal.' },
-  { key: 'financiero', title: 'Indicadores financieros', types: ['liquidez', 'endeudamiento', 'capital_trabajo', 'rentabilidad', 'cobertura_intereses', 'patrimonio'], live: 'financiero',
-    fix: 'Tener identificados socios con liquidez alta para ponderar en unión temporal, y revisar con Financiero el endeudamiento (0,50) antes del próximo corte.' },
-  { key: 'codigos', title: 'Códigos UNSPSC del RUP', types: ['codigos_unspsc'], live: 'codigos',
-    fix: 'Inscribir en el RUP los códigos que más piden y no tenemos (46101500 primero), con contratos que los respalden; queda en firme 10 días hábiles después.' },
-  { key: 'seriedad', title: 'Garantía de seriedad', types: ['garantia_seriedad'], live: null,
-    fix: 'Acordar con la aseguradora un cupo para garantías de seriedad y su tiempo de expedición, para no depender de cada trámite.' },
-  { key: 'certificados', title: 'Certificados que se vencen', types: ['sanciones_supervigilancia', 'antecedentes', 'armas'], live: null,
-    fix: 'Un calendario de renovación: sanciones de la Supervigilancia (90 días), antecedentes, listado de armas; renovarlos al abrir cada proceso.' },
-  { key: 'licencias_especiales', title: 'Licencias especiales', types: ['licencia_comunicaciones', 'registro_tecnologia'], live: null,
-    fix: 'Revisar la cobertura del permiso de comunicaciones (Bogotá) y decidir si conviene el registro de comercializador de equipos tecnológicos.' },
-  { key: 'personal_local', title: 'Personal exigido en la oferta', types: ['personal_minimo', 'responsable_sst'], live: null,
-    fix: 'Tener con Operaciones un banco de hojas de vida por cargo y ciudad (supervisores, coordinadores, SST) listo para anexar.' },
+  { key: 'presencia', title: 'Sede, sucursal o agencia en la ciudad', types: ['presencia_local'], live: 'sedes',
+    fix: 'Decidir en qué ciudades abrir sucursal o convertir la agencia en sucursal (las agencias no sirven cuando piden sucursal), empezando por las que más se repiten; mientras tanto, socio en unión temporal.' },
+  { key: 'codigos', title: 'Códigos UNSPSC que no tenemos en el RUP', types: ['codigos_unspsc'], live: 'codigos',
+    fix: 'Inscribir en el RUP los códigos que faltan (el 46101500, armas, primero) con contratos que los respalden; queda en firme 10 días hábiles después.' },
+  { key: 'comunicaciones', title: 'Registro o permiso de telecomunicaciones nacional', types: ['licencia_comunicaciones'], live: null,
+    fix: 'Tramitar ante MinTIC la ampliación del permiso de espectro a cobertura nacional.' },
+  { key: 'importador', title: 'Registro de importador, comercializador o distribuidor de equipos', types: ['registro_tecnologia'], live: null,
+    fix: 'Inscribirse ante la Supervigilancia como importador o comercializador de equipos de vigilancia, si vamos a licitar procesos de tecnología.' },
+  { key: 'canino', title: 'Sede canina (criadero) autorizada', types: ['canina'], live: null,
+    fix: 'Obtener la resolución de la Supervigilancia para una sede canina (criadero) en Pereira.' },
+  { key: 'financiero', title: 'Indicadores financieros por debajo de lo que piden', types: ['liquidez', 'endeudamiento', 'cobertura_intereses', 'rentabilidad', 'estados_financieros'], live: 'financiero',
+    fix: 'Revisar con Financiero si al próximo corte se puede subir la liquidez a 2,5 o más y bajar el endeudamiento del 50 %; mientras tanto, socio con buenos indicadores en unión temporal.' },
+  { key: 'certificaciones', title: 'Certificaciones que no tenemos', types: ['calidad_sst'], live: null,
+    fix: 'Decidir si se tramita la certificación que piden.' },
+  { key: 'horas_extras', title: 'Autorización de horas extras del Ministerio del Trabajo', types: ['horas_extras'], live: null,
+    fix: 'Confirmar si la tenemos; si no, solicitarla al Ministerio del Trabajo.' },
 ]);
-export const FOCUS_STATUSES = Object.freeze({ pendiente: 'Pendiente', en_tramite: 'En trámite', resuelto: 'Resuelto' });
+export const FOCUS_STATUSES = Object.freeze({ por_decidir: 'Por decidir', iniciar: 'Iniciar trámite', en_tramite: 'En trámite', resuelto: 'Resuelto', no_por_ahora: 'No por ahora' });
 
 const processKeyOf = occurrence => foldText(occurrence.process || '');
 
 /**
  * El catálogo: una fila por tipo con sus ocurrencias, cuántos procesos lo piden y en cuáles nos frenó. Pura.
  *   matriz: filas de psi_tender_requirement_history; crm: [{ opportunity_id, process, url, requirement_id, category, text, validity,
- *   blocker, evaluation }]; actas: [{ opportunity_id, process, title, text, source }].
+ *   blocker, evaluation }]; actas: [{ opportunity_id, process, title, text, source }]. `assess(occurrence)` → veredicto
+ *   contra la ficha (requirement-assessment.js), sólo para los habilitantes.
  */
-export function buildRequirementCatalog({ matriz = [], crm = [], actas = [] } = {}) {
+export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], assess = null } = {}) {
   const occurrences = [];
   let excluded = 0;
   for (const row of matriz) {
@@ -207,6 +213,9 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [] } = 
       text: item.title || '', threshold: null, quote: item.text || null, url: item.url || null, incomplete: false, blocked: true });
   }
 
+  if (assess) for (const occurrence of occurrences) {
+    if (requirementType(occurrence.type)?.kind === H) occurrence.assessment = assess(occurrence);
+  }
   const byType = new Map();
   for (const occurrence of occurrences) {
     if (!byType.has(occurrence.type)) byType.set(occurrence.type, []);
@@ -230,18 +239,34 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [] } = 
   return { types, totals: { occurrences: occurrences.length, excluded_fragments: excluded, processes: allProcesses.size, types: types.length } };
 }
 
-/** «Lo que nos frena»: cada foco con los procesos donde nos frenó, sin repetir, y los que lo piden. Pura. */
+/**
+ * «Lo que nos inhabilita»: un grupo por hecho que nos falta, sólo si algún requisito suyo nos inhabilita según la ficha o
+ * un análisis o un acta lo marcó como bloqueo. Cada proceso una vez, con el motivo. Pura.
+ */
 export function buildRequirementFocus(catalog, { state = [] } = {}) {
   const byKey = new Map((catalog?.types || []).map(type => [type.key, type]));
   const saved = new Map(state.map(row => [row.focus_key, row]));
   return REQUIREMENT_FOCUS.map(focus => {
-    const types = focus.types.map(key => byKey.get(key)).filter(Boolean);
-    const blocked = new Map();
-    for (const type of types) for (const item of type.blocked_in) blocked.set(item.opportunity_id || foldText(item.process), item);
-    const processes = new Set(types.flatMap(type => type.occurrences.map(processKeyOf)));
+    const occurrences = focus.types.flatMap(key => byKey.get(key)?.occurrences || [])
+      .filter(item => item.assessment?.verdict === 'inhabilita' || item.blocked);
+    const processes = new Map();
+    for (const item of occurrences) {
+      const id = item.opportunity_id || processKeyOf(item);
+      if (!processes.has(id)) processes.set(id, { opportunity_id: item.opportunity_id || null, process: item.process, reason: item.assessment?.verdict === 'inhabilita' ? item.assessment.reason : item.text, blocked: item.blocked });
+    }
     const row = saved.get(focus.key) || {};
-    return { key: focus.key, title: focus.title, types: focus.types, live: focus.live, blocked_in: [...blocked.values()], processes: processes.size,
-      status: row.status || 'pendiente', owner: row.owner || null, note: row.note || null, current_state: row.current_state || null,
+    return { key: focus.key, title: focus.title, types: focus.types, live: focus.live, processes: [...processes.values()],
+      blocked: [...processes.values()].filter(item => item.blocked).length,
+      status: row.status || 'por_decidir', owner: row.owner || null, note: row.note || null, current_state: row.current_state || null,
       fix_action: row.fix_action || focus.fix, updated_at: row.updated_at || null };
-  }).sort((a, b) => b.blocked_in.length - a.blocked_in.length || b.processes - a.processes);
+  }).filter(focus => focus.processes.length).sort((a, b) => b.processes.length - a.processes.length);
+}
+
+/** «Por confirmar»: hechos de los mismos grupos que la ficha no deja decidir. Pura. */
+export function buildRequirementPending(catalog) {
+  const keys = new Set(REQUIREMENT_FOCUS.flatMap(focus => focus.types));
+  return (catalog?.types || []).filter(type => keys.has(type.key)).map(type => {
+    const items = type.occurrences.filter(item => item.assessment?.verdict === 'verificar');
+    return { key: type.key, title: type.title, processes: [...new Map(items.map(item => [item.opportunity_id || processKeyOf(item), { opportunity_id: item.opportunity_id || null, process: item.process, reason: item.assessment.reason }])).values()] };
+  }).filter(item => item.processes.length);
 }
