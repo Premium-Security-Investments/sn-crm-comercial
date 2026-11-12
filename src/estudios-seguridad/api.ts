@@ -152,7 +152,7 @@ export type Entrega = { available: boolean; can: boolean; deliveries: Delivery[]
 export type ProbabilitySuggestion = { probabilidad: number; significado: string; fuente: string; aproximada: boolean };
 export type ProbabilitySuggestions = { propio: ProbabilitySuggestion | null; porCodigo: Record<string, ProbabilitySuggestion | null> };
 
-export type ClientOption = { source: 'avancys' | 'crm'; ref: string; name: string; nit: string | null; city: string | null; site: string | null };
+export type ClientOption = { source: 'avancys'; ref: string; name: string; nit: string | null; city: string | null; site: string | null };
 export type PostsResult = { encontrado: boolean; avancys: string; contratos: Array<{ nombre: string | null; inicia: string | null; vence: string | null; total_puestos: number; puestos: Array<{ codigo: string | null; nombre: string | null }> }> };
 
 export type RiskDraft = Partial<Omit<Risk, 'id' | 'number' | 'valuation' | 'origin'>>;

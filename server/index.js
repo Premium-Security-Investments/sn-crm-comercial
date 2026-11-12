@@ -3602,30 +3602,26 @@ function securityStudyRoute(method, route, handler) {
 }
 securityStudyRoute('get', '/api/estudios-seguridad', db => listSecurityStudies(db).then(studies => ({ studies })));
 securityStudyRoute('post', '/api/estudios-seguridad', (db, req, profile) => createSecurityStudy(db, req.body || {}, profile));
-// Clientes para elegir: los del CRM (prospectos y clientes con oportunidad) y los de Avancys, donde nace el NIT.
-// Si Avancys no responde se siguen ofreciendo los del CRM y se dice por qué.
+// Clientes para elegir: sólo los de Avancys, con su NIT (Juan, 2026-11-12: "estudios de seguridad debe usar solo los
+// clientes que avancys le va a traer"). Si Avancys no responde, no se ofrece otra fuente: se dice por qué.
 securityStudyRoute('get', '/api/estudios-seguridad/clientes', async (db, req) => {
   const consulta = String(req.query.q || '');
-  const clients = await must(db.from('psi_sales_clients').select(CLIENT_MASTER_SELECT).order('company_name', { ascending: true }));
-  const delCrm = typeaheadMatches(clients, consulta).slice(0, 15)
-    .map(cliente => ({ source: 'crm', ref: cliente.id, name: cliente.company_name, nit: null, city: cliente.quote_city || null, site: cliente.sede || null }));
-  let deAvancys = [];
+  let clients = [];
   let avancys = 'ok';
   try {
     const lector = crearLectorAvancys();
     if (!lector) avancys = 'sin_configurar';
     else {
-      const yaEstan = new Set(delCrm.map(cliente => normalizeClientName(cliente.name)));
-      const { clientes } = await lector.buscarClientes({ texto: consulta, limite: 10 });
-      deAvancys = clientes
-        .filter(cliente => cliente.nombre && cliente.identificacion?.numero && !yaEstan.has(normalizeClientName(cliente.nombre)))
+      const { clientes } = await lector.buscarClientes({ texto: consulta, limite: 25 });
+      clients = clientes
+        .filter(cliente => cliente.nombre && cliente.identificacion?.numero)
         .map(cliente => ({ source: 'avancys', ref: cliente.identificacion.numero, name: cliente.nombre, nit: cliente.identificacion.numero, city: cliente.departamento || null, site: null }));
     }
   } catch (error) {
     avancys = 'no_disponible';
     console.warn('security_study_clients_avancys_unavailable', { event: 'security_study_clients_avancys_unavailable', code: error?.codigo || 'desconocido' });
   }
-  return { clients: [...deAvancys, ...delCrm].slice(0, 25), avancys };
+  return { clients, avancys };
 });
 // Puestos de un cliente de Avancys, agrupados por contrato, para elegir la sede del estudio.
 // Enlace del cliente (migración 206): página PÚBLICA, sin sesión. El token es la llave (256 bits; la base guarda su huella),
