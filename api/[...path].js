@@ -4363,6 +4363,7 @@ async function createOpportunityForProfile(database, currentProfile, body) {
   const isPublicTender = payload.service_type_code === 'licitacion_publica';
   rejectWinOnCreate(payload, isPublicTender);
   if (currentProfile.role === 'comercial' && !isPublicTender) await requireNoPendingDecisions(database, currentProfile.id);
+  if (!isPublicTender) await adoptLinkedAvancysClient(database, body);
   const requestedClientId = isPublicTender ? null : (body.client_id || null);
   const authorizedSiblingIds = isPublicTender ? null : await prepareClientForNewOpportunity(database, currentProfile, payload, requestedClientId);
   const data = await persistSalesOpportunity(database, {
@@ -4375,6 +4376,7 @@ async function createOpportunityForProfile(database, currentProfile, body) {
     authorizedSiblingIds,
   });
   if (!isPublicTender) await saveClientProfile(database, data.id, body);
+  if (!isPublicTender) await linkAvancysClient(database, currentProfile, data?.client_id, body);
   return data;
 }
 
@@ -4389,6 +4391,7 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
   if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
   const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
   if (!isPublicTender && payload.stage_code === 'aprobado' && existing.stage_code !== 'aprobado') await requireClosureFormForWin(database, existing.id);
+  if (!isPublicTender) await adoptLinkedAvancysClient(database, body);
   const clientPlan = isPublicTender
     ? { kind: 'noop', clientId: null }
     : await prepareClientForOpportunityUpdate(database, existing, payload, body.client_id || null, body);
@@ -4415,6 +4418,7 @@ async function updateOpportunityForProfile(database, currentProfile, id, body) {
   await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
   await logStageChange(database, id, currentProfile.id, existing.stage_code, payload.stage_code);
   if (!isPublicTender) await saveClientProfile(database, id, body);
+  if (!isPublicTender) await linkAvancysClient(database, currentProfile, data?.client_id, body);
   return data;
 }
 
@@ -9251,7 +9255,8 @@ app.post('/api/opportunities', async (req, res) => {
     const isPublicTender = payload.service_type_code === 'licitacion_publica';
     rejectWinOnCreate(payload, isPublicTender);
     if (currentProfile.role === 'comercial' && !isPublicTender) await requireNoPendingDecisions(database, currentProfile.id);
-    const requestedClientId = isPublicTender ? null : (req.body.client_id || null);
+    if (!isPublicTender) await adoptLinkedAvancysClient(database, req.body);
+  const requestedClientId = isPublicTender ? null : (req.body.client_id || null);
     const authorizedSiblingIds = isPublicTender ? null : await prepareClientForNewOpportunity(database, currentProfile, payload, requestedClientId);
     const data = await persistSalesOpportunity(database, {
       mode: 'create',
@@ -9263,6 +9268,7 @@ app.post('/api/opportunities', async (req, res) => {
       authorizedSiblingIds,
     });
     if (!isPublicTender) await saveClientProfile(database, data.id, req.body);
+    if (!isPublicTender) await linkAvancysClient(database, currentProfile, data?.client_id, req.body);
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -9281,7 +9287,8 @@ app.put('/api/opportunities/:id', async (req, res) => {
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
     if (!isPublicTender && payload.stage_code === 'aprobado' && existing.stage_code !== 'aprobado') await requireClosureFormForWin(database, existing.id);
-    const clientPlan = isPublicTender
+    if (!isPublicTender) await adoptLinkedAvancysClient(database, req.body);
+  const clientPlan = isPublicTender
       ? { kind: 'noop', clientId: null }
       : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
@@ -9303,6 +9310,7 @@ app.put('/api/opportunities/:id', async (req, res) => {
     await logCustomerSegmentChange(database, req.params.id, currentProfile.id, existing.customer_segment, payload.customer_segment);
     await logStageChange(database, req.params.id, currentProfile.id, existing.stage_code, payload.stage_code);
     if (!isPublicTender) await saveClientProfile(database, req.params.id, req.body);
+    if (!isPublicTender) await linkAvancysClient(database, currentProfile, data?.client_id, req.body);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -9543,7 +9551,8 @@ app.put('/api/opportunity', async (req, res) => {
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     const isPublicTender = (payload.service_type_code || existing.service_type_code) === 'licitacion_publica';
     if (!isPublicTender && payload.stage_code === 'aprobado' && existing.stage_code !== 'aprobado') await requireClosureFormForWin(database, existing.id);
-    const clientPlan = isPublicTender
+    if (!isPublicTender) await adoptLinkedAvancysClient(database, req.body);
+  const clientPlan = isPublicTender
       ? { kind: 'noop', clientId: null }
       : await prepareClientForOpportunityUpdate(database, existing, payload, req.body.client_id || null, req.body);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
@@ -9565,6 +9574,7 @@ app.put('/api/opportunity', async (req, res) => {
     await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
     await logStageChange(database, id, currentProfile.id, existing.stage_code, payload.stage_code);
     if (!isPublicTender) await saveClientProfile(database, id, req.body);
+    if (!isPublicTender) await linkAvancysClient(database, currentProfile, data?.client_id, req.body);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -10768,6 +10778,32 @@ async function preflightNewClientName(database, companyName) {
   const existing = await findClientMasterByName(database, companyName);
   if (existing) throw clientDuplicateNameError(companyName);
 }
+// Cliente único (Juan, 2026-11-12): "el cliente sea el de avancys en cualquier parte que este". Cuando el comercial
+// escoge un cliente de la lista de Avancys, el formulario manda `avancys_nit`. Si ya hay un cliente del CRM vinculado a
+// ese NIT, la oportunidad se pega a ése (no nace otro); si no, el que se crea queda vinculado al guardar. Escogerlo de la
+// lista de Avancys es la confirmación de una persona.
+function avancysNitOf(body) {
+  const nit = String(body?.avancys_nit || '').replace(/[^0-9]/g, '');
+  return nit.length >= 5 ? nit : null;
+}
+async function adoptLinkedAvancysClient(database, body) {
+  const nit = avancysNitOf(body);
+  if (!nit || body.client_id) return;
+  const { data } = await database.from('psi_cliente_avancys').select('client_id').eq('avancys_ref_num', nit).maybeSingle();
+  if (data?.client_id) body.client_id = data.client_id;
+}
+async function linkAvancysClient(database, profile, clientId, body) {
+  const nit = avancysNitOf(body);
+  if (!nit || !clientId) return;
+  const { data: existente } = await database.from('psi_cliente_avancys').select('avancys_ref_num').eq('client_id', clientId).maybeSingle();
+  if (existente) return;
+  const { error } = await database.from('psi_cliente_avancys').insert({
+    client_id: clientId, avancys_ref_num: nit, avancys_nombre: String(body.company_name || '').trim() || null, confirmado_por: profile.id,
+  });
+  // 23505: ese NIT ya está en otro cliente del CRM. La oportunidad queda guardada; el duplicado aparece en "Clientes".
+  if (error && error.code !== '23505') console.warn('crm_avancys_link_failed', { event: 'crm_avancys_link_failed', code: error.code || 'desconocido' });
+}
+
 async function prepareClientForNewOpportunity(database, profile, payload, requestedClientId) {
   if (requestedClientId) {
     const client = await fetchClientMasterById(database, requestedClientId);
@@ -10852,9 +10888,16 @@ app.get('/api/client-typeahead', async (req, res) => {
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const consulta = String(req.query.q || '');
-    const clients = await must(database.from('psi_sales_clients').select(CLIENT_MASTER_SELECT).order('company_name', { ascending: true }));
+    const [clients, vinculos] = await Promise.all([
+      must(database.from('psi_sales_clients').select(CLIENT_MASTER_SELECT).order('company_name', { ascending: true })),
+      database.from('psi_cliente_avancys').select('client_id,avancys_ref_num'),
+    ]);
+    // Si los vínculos no se pueden leer, el buscador sigue: sólo deja de mostrar el NIT.
+    const enlaces = vinculos?.error ? [] : vinculos?.data || [];
+    // Cliente único: el cliente del CRM vinculado lleva su NIT, y el mismo cliente de Avancys no se ofrece dos veces.
+    const nitDe = new Map((enlaces || []).map(fila => [fila.client_id, fila.avancys_ref_num]));
     const delCrm = typeaheadMatches(clients, consulta).slice(0, 20)
-      .map(cliente => ({ ...cliente, origen: 'crm', company_nit: null, atendido_por: null }));
+      .map(cliente => ({ ...cliente, origen: 'crm', company_nit: nitDe.get(cliente.id) || null, atendido_por: null }));
 
     // Y los clientes que la empresa ya tiene, que no están en el CRM. Es lo que evita que un
     // comercial cree por segunda vez un cliente de hace años, y trae su NIT sin escribirlo.
@@ -10869,9 +10912,12 @@ app.get('/api/client-typeahead', async (req, res) => {
       const lector = crearLectorAvancys();
       if (lector) {
         const yaEstan = new Set(delCrm.map(cliente => normalizeClientName(cliente.company_name)));
+        // Si el cliente del CRM que ya salió está vinculado a este NIT, es el mismo: no se ofrece otra vez. Si está
+        // vinculado a un cliente del CRM que no salió por nombre, se ofrece; al guardar se pega a ese cliente.
+        const nitsMostrados = new Set(delCrm.map(cliente => cliente.company_nit).filter(Boolean).map(String));
         const { clientes } = await lector.buscarClientes({ texto: consulta, limite: 10 });
         deAvancys = clientes
-          .filter(cliente => cliente.nombre && !yaEstan.has(normalizeClientName(cliente.nombre)))
+          .filter(cliente => cliente.nombre && !yaEstan.has(normalizeClientName(cliente.nombre)) && !nitsMostrados.has(String(cliente.identificacion?.numero || '')))
           .map(cliente => ({
             // No es un cliente del CRM y no tiene su id: el formulario no debe mandarlo como tal.
             id: `avancys:${cliente.identificacion?.numero || cliente.nombre}`,

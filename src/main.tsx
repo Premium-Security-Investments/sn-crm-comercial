@@ -139,8 +139,22 @@ type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; r
 type Route = { page: 'home' | 'clients' | 'opportunities' | 'quotes' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'estudios' | 'invalid'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
-type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment' | 'client_deal_type'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; client_deal_type?: ClientDealType | ''; };
+type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment' | 'client_deal_type'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; client_deal_type?: ClientDealType | ''; avancys_nit?: string; };
 type ClientSuggestion = { id: string; company_name: string; origen?: 'crm' | 'avancys'; company_nit?: string | null; atendido_por?: string | null; customer_segment: CustomerSegment | null; regional_nombre: string | null; sede: string | null; quote_city: string | null; economic_sector: string | null; decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null };
+// Las palabras que cuentan de un nombre de empresa: sin tildes, sin formas societarias ni palabras cortas.
+const SOCIETARIAS = new Set(['sa', 'sas', 'ltda', 'ph', 'de', 'del', 'la', 'las', 'los', 'el', 'y', 'cia', 'limitada', 'colombia']);
+function palabrasCliente(nombre: string) {
+  return nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(p => p.length > 2 && !SOCIETARIAS.has(p));
+}
+// Un cliente que ya existe y se parece al nombre escrito: comparten las dos primeras palabras que cuentan (o la única).
+async function clienteParecido(nombre: string): Promise<ClientSuggestion | null> {
+  const escritas = palabrasCliente(nombre).slice(0, 2);
+  if (!escritas.length) return null;
+  try {
+    const sugerencias = await api<ClientSuggestion[]>(`/api/client-typeahead?q=${encodeURIComponent(escritas[0])}`);
+    return sugerencias.find(s => { const suyas = palabrasCliente(s.company_name); return escritas.every(p => suyas.includes(p)); }) || null;
+  } catch { return null; }
+}
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
@@ -2215,7 +2229,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
     clientTypedRef.current = true;
     setForm(prev => {
       const next = { ...prev, company_name: value };
-      if (prev.client_id && normalizeClientName(value) !== normalizeClientName(selectedClientNameRef.current)) next.client_id = '';
+      if ((prev.client_id || prev.avancys_nit) && normalizeClientName(value) !== normalizeClientName(selectedClientNameRef.current)) { next.client_id = ''; next.avancys_nit = ''; }
       return next;
     });
   };
@@ -2229,6 +2243,9 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
       ...prev,
       client_id: deAvancys ? '' : client.id,
       company_nit: deAvancys ? (client.company_nit || '') : (prev.company_nit || ''),
+      // Cliente único (Juan, 2026-11-12): escogido de Avancys, el servidor lo pega al cliente vinculado a ese NIT o
+      // vincula el que se crea. Uno del CRM ya vinculado trae su NIT para mostrarlo, pero va por client_id.
+      avancys_nit: deAvancys ? (client.company_nit || '') : '',
       customer_segment: deAvancys ? 'cliente_actual' : (client.customer_segment || ''),
       company_name: client.company_name,
       regional_nombre: client.regional_nombre || '',
@@ -2276,6 +2293,17 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   ];
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Cliente único (Juan, 2026-11-12): un cliente nuevo escrito a mano que se parece a uno que ya existe casi siempre
+    // es el mismo ("Hitachi Energy Colombia S.A." y "… LTDA"). Se pregunta antes de crearlo; si de verdad es otro,
+    // por ejemplo un prospecto nuevo, el comercial sigue.
+    if (!id && !form.client_id && !form.avancys_nit && form.service_type_code !== 'licitacion_publica') {
+      const parecido = await clienteParecido(String(form.company_name || ''));
+      if (parecido && !window.confirm(`Ya existe "${parecido.company_name}"${parecido.company_nit ? ` (NIT ${parecido.company_nit})` : ''}${parecido.origen === 'avancys' ? ', cliente de Avancys' : ''}.\n\n¿Es un cliente distinto? Aceptar crea uno nuevo. Cancelar lo devuelve para escogerlo de la lista.`)) {
+        setStatus(`Escoja "${parecido.company_name}" de la lista de clientes.`);
+        setShowClientSuggestions(true);
+        return;
+      }
+    }
     setStatus('Guardando…');
     try {
       const saved = await api<{id:string}>(id ? `/api/opportunity?id=${encodeURIComponent(id)}` : '/api/opportunities', {
