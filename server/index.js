@@ -5239,8 +5239,25 @@ app.get('/api/avancys/clientes-por-vincular', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
-// Candidatos de Avancys para un nombre: por la primera palabra significativa y filtrados por las dos, como el resto
-// del CRM (buscarClientes busca por nombre). Nunca enlaza: sólo propone.
+// Candidatos de Avancys para un nombre. Nunca enlaza: sólo propone, y confirma una persona.
+//
+// Buscar por la primera palabra no servía (Juan, 2026-11-13: "no me esta presentando con quien vincularlos"): con
+// "CONJUNTO MONTEVEDRA" se pedía "conjunto", Avancys devolvía los 25 primeros conjuntos en orden alfabético y Montevedra
+// nunca entraba; y exigir todas las palabras descartaba "HADA INTERNATIONAL" para "Hada Internacional". Ahora se busca
+// por cada palabra que distingue (sin "conjunto", "edificio", "hotel"…), se juntan los resultados y se ordenan por
+// cuántas palabras coinciden; una palabra coincide también por su raíz (las 5 primeras letras).
+const PALABRAS_GENERICAS = new Set(['conjunto', 'residencial', 'edificio', 'torre', 'torres', 'hotel', 'constructora', 'consorcio',
+  'club', 'centro', 'comercial', 'sede', 'principal', 'parcelacion', 'liceo', 'colegio', 'clinica', 'hospital', 'empresa',
+  'empresas', 'grupo', 'colombia', 'internacional', 'international', 'nacional', 'industrial', 'industriales', 'compania',
+  'sociedad', 'asociacion', 'corporacion', 'fundacion', 'comite', 'unidad', 'planta', 'zona', 'cartago', 'pereira', 'manizales',
+  'medellin', 'bogota', 'dosquebradas', 'cali', 'armenia']);
+function palabrasQueDistinguen(nombre) {
+  const todas = String(nombre || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(palabra => palabra.length > 1 && !FORMAS_SOCIETARIAS.has(palabra));
+  const propias = todas.filter(palabra => !PALABRAS_GENERICAS.has(palabra) && palabra.length >= 3);
+  return { todas, propias: propias.length ? propias : todas.filter(palabra => palabra.length >= 3) };
+}
+const raiz = palabra => palabra.slice(0, 5);
 app.get('/api/avancys/candidatos-enlace', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -5252,13 +5269,27 @@ app.get('/api/avancys/candidatos-enlace', async (req, res) => {
       error.status = 503;
       throw error;
     }
-    const palabras = palabrasDelNombre(consulta);
-    if ((palabras[0] || '').length < 3) return res.json({ candidatos: [] });
-    const { clientes } = await lector.buscarClientes({ texto: palabras[0], limite: 25 });
-    const candidatos = (clientes || [])
-      .filter(cliente => cliente.identificacion?.numero && nombreCoincide(cliente.nombre, palabras))
+    const { todas, propias } = palabrasQueDistinguen(consulta);
+    // Las más largas primero: suelen ser las que distinguen. Máximo tres consultas por cliente.
+    const buscadas = [...new Set(propias)].sort((a, b) => b.length - a.length).slice(0, 3);
+    if (!buscadas.length) return res.json({ candidatos: [] });
+    const porNit = new Map();
+    for (const palabra of buscadas) {
+      const { clientes } = await lector.buscarClientes({ texto: palabra, limite: 25 });
+      for (const cliente of clientes || []) {
+        const nit = cliente.identificacion?.numero;
+        if (!nit || porNit.has(nit)) continue;
+        const suyas = palabrasQueDistinguen(cliente.nombre).todas;
+        const coinciden = todas.filter(palabra => suyas.some(suya => suya === palabra || (palabra.length >= 5 && suya.startsWith(raiz(palabra)))));
+        const propiasQueCoinciden = coinciden.filter(palabra => propias.includes(palabra)).length;
+        if (!propiasQueCoinciden) continue;
+        porNit.set(nit, { cliente, puntos: propiasQueCoinciden * 10 + coinciden.length });
+      }
+    }
+    const candidatos = [...porNit.values()]
+      .sort((a, b) => b.puntos - a.puntos || String(a.cliente.nombre).localeCompare(String(b.cliente.nombre)))
       .slice(0, 8)
-      .map(cliente => ({ nombre: cliente.nombre, nit: cliente.identificacion.numero, departamento: cliente.departamento || null, atendido_por: cliente.atendido_por || null }));
+      .map(({ cliente }) => ({ nombre: cliente.nombre, nit: cliente.identificacion.numero, departamento: cliente.departamento || null, atendido_por: cliente.atendido_por || null }));
     res.set('Cache-Control', 'private, no-store');
     return res.json({ candidatos });
   } catch (error) { sendError(res, error, error?.status || 400); }
