@@ -1328,3 +1328,5 @@
 .siio-clientes-meses button:hover,.siio-clientes-meses button:focus{background:#eef4fd;color:#1b355f}
 .siio-clientes-meses button.active,.siio-clientes-meses button.active:hover,.siio-clientes-meses button.active:focus{background:#174ea6;border-color:#174ea6;color:#fff}
 .siio-clientes-meses button:focus-visible{outline:2px solid #1b64f2;outline-offset:2px}
+.siio-clientes-detalle{display:grid;gap:8px;margin-top:22px;padding-top:18px;border-top:1px solid #e2eaf5}
+.siio-dashboard .siio-table-wrap td.siio-celda-total{font-weight:800;border-left:2px solid #e2eaf5}

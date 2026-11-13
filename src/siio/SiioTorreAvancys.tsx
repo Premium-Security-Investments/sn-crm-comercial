@@ -69,6 +69,7 @@ const hora = (valor?: string) => (valor
   ? new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }).format(new Date(valor))
   : '');
 const MAX_CLIENTES = 15;
+const MESES_PIERDEN = 3;
 
 function Cifra({ etiqueta, valor, comparacion, alerta }: { etiqueta: string; valor: string; comparacion?: string | null; alerta?: boolean }) {
   return <div className={`siio-key-figure${alerta ? ' siio-card-alert' : ''}`}>
@@ -289,41 +290,54 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
   }, [cerrados.join(','), torre?.mes_cerrado]);
 
   if (!cerrados.length) return <p className="siio-secondary">Todavía no hay un mes cerrado en Avancys para ver lo que deja cada cliente.</p>;
-  // Historia: los clientes que perdieron en algún mes cerrado, con su margen en cada mes.
+  // Los que pierden no dependen del mes elegido (Juan, 2026-11-13): los últimos tres meses cerrados y el acumulado del
+  // año, que en Avancys empieza en agosto de 2026.
   const legibles = cerrados.map(mes => ({ mes, datos: datosDe(mes) })).filter((x): x is { mes: string; datos: Clientes } => typeof x.datos === 'object' && Boolean(x.datos?.legible));
-  const historia = new Map<string, { nombre: string; meses: Record<string, Cliente> }>();
+  const ultimos = legibles.slice(-MESES_PIERDEN);
+  const anio = cerrados[cerrados.length - 1].slice(0, 4);
+  const delAnio = legibles.filter(({ mes }) => mes.startsWith(anio));
+  const historia = new Map<string, { nombre: string; meses: Record<string, Cliente>; ingresos: number; margen: number }>();
   for (const { mes, datos } of legibles) {
     for (const fila of datos.clientes || []) {
       const clave = nitDe(fila.cliente) || fila.cliente;
-      const actual = historia.get(clave) || { nombre: fila.cliente, meses: {} };
+      const actual = historia.get(clave) || { nombre: fila.cliente, meses: {}, ingresos: 0, margen: 0 };
       actual.meses[mes] = fila;
+      if (mes.startsWith(anio)) { actual.ingresos += fila.ingresos; actual.margen += fila.margen; }
       historia.set(clave, actual);
     }
   }
-  const pierdenAlguna = [...historia.values()].filter(fila => Object.values(fila.meses).some(m => m.ingresos > 0 && m.margen < 0))
-    .map(fila => ({ ...fila, perdidas: Object.values(fila.meses).filter(m => m.ingresos > 0 && m.margen < 0).length, ingreso: Math.max(...Object.values(fila.meses).map(m => m.ingresos)) }))
-    .sort((a, b) => b.perdidas - a.perdidas || b.ingreso - a.ingreso);
+  const pierde = (m?: Cliente) => Boolean(m && m.ingresos > 0 && m.margen < 0);
+  const pierden = [...historia.values()]
+    .filter(fila => ultimos.some(({ mes }) => pierde(fila.meses[mes])) || (fila.ingresos > 0 && fila.margen < 0))
+    .map(fila => ({ ...fila, todos: ultimos.length > 1 && ultimos.every(({ mes }) => pierde(fila.meses[mes])) }))
+    .sort((a, b) => a.margen - b.margen);
   const cargando = cerrados.some(mes => datosDe(mes) === 'cargando');
+  const desde = delAnio.length ? nombreMes(delAnio[0].mes).split(' ')[0] : '';
   return <>
-    <div className="siio-clientes-meses" role="group" aria-label="Mes de los clientes">
-      <span>Mes cerrado</span>
-      {cerrados.map(mes => <button key={mes} type="button" aria-pressed={mes === mesClientes} className={mes === mesClientes ? 'active' : ''} onClick={() => setElegido(mes)}>{nombreMes(mes)}</button>)}
-    </div>
-    {legibles.length > 1 || pierdenAlguna.length ? <section aria-label="Clientes que pierden, mes a mes">
-      <h3>Los que pierden, mes a mes</h3>
+    <section aria-label="Clientes que pierden">
+      <h3>Los que pierden</h3>
+      <p className="siio-pulse-footnote">Últimos {ultimos.length === 1 ? 'mes cerrado' : `${ultimos.length} meses cerrados`} y lo acumulado en {anio}{desde ? ` (desde ${desde}, cuando empieza Avancys)` : ''}. Primero los que más pierden en el año.</p>
       {cargando ? <p className="siio-pulse-footnote">Calculando los otros meses…</p> : null}
-      {pierdenAlguna.length ? <div className="siio-table-wrap"><table>
-        <thead><tr><th>Cliente</th>{legibles.map(({ mes }) => <th key={mes}>{nombreMes(mes).split(' ')[0]}</th>)}</tr></thead>
-        <tbody>{pierdenAlguna.slice(0, MAX_CLIENTES).map(fila => <tr key={fila.nombre}>
-          <td>{fila.nombre.replace(/^\[\d+\]\s*/, '')}{fila.perdidas === legibles.length && legibles.length > 1 ? <> <Badge tone="danger">todos los meses</Badge></> : null}</td>
-          {legibles.map(({ mes }) => {
+      {pierden.length ? <div className="siio-table-wrap"><table>
+        <thead><tr><th>Cliente</th>{ultimos.map(({ mes }) => <th key={mes}>{nombreMes(mes).split(' ')[0]}</th>)}<th>Acumulado {anio}</th></tr></thead>
+        <tbody>{pierden.slice(0, MAX_CLIENTES).map(fila => <tr key={fila.nombre}>
+          <td>{fila.nombre.replace(/^\[\d+\]\s*/, '')}{fila.todos ? <> <Badge tone="danger">todos los meses</Badge></> : null}</td>
+          {ultimos.map(({ mes }) => {
             const m = fila.meses[mes];
-            return <td key={mes} className={m && m.margen < 0 ? 'siio-celda-mal' : undefined}>{m ? <>{millones(m.margen)} · {pct(m.margen, m.ingresos)}</> : '—'}</td>;
+            return <td key={mes} className={pierde(m) ? 'siio-celda-mal' : undefined}>{m ? <>{millones(m.margen)} · {pct(m.margen, m.ingresos)}</> : '—'}</td>;
           })}
+          <td className={fila.margen < 0 ? 'siio-celda-mal siio-celda-total' : 'siio-celda-total'}>{fila.ingresos ? <>{millones(fila.margen)} · {pct(fila.margen, fila.ingresos)}</> : '—'}</td>
         </tr>)}</tbody>
       </table></div> : <p className="siio-secondary">Ningún cliente pierde en los meses cerrados.</p>}
-    </section> : null}
-    <DetalleClientes mes={mesClientes} datos={datosDe(mesClientes)} />
+    </section>
+    <section aria-label="Cliente por cliente" className="siio-clientes-detalle">
+      <label className="siio-pulso-mes">Mes cerrado
+        <select value={mesClientes} onChange={evento => setElegido(evento.target.value)}>
+          {[...cerrados].reverse().map(mes => <option key={mes} value={mes}>{nombreMes(mes)}</option>)}
+        </select>
+      </label>
+      <DetalleClientes mes={mesClientes} datos={datosDe(mesClientes)} />
+    </section>
   </>;
 }
 

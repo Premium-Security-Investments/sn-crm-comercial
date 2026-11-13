@@ -21,8 +21,10 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   assert.match(torre, /Requiere decisión hoy/);
   assert.match(torre, /<Badge tone="amber">Proyección<\/Badge>/);
   assert.match(torre, /cierre de Finanzas/);
-  assert.match(torre, /aria-label="Mes de los clientes"/);
-  assert.match(torre, /Los que pierden, mes a mes/);
+  // Los que pierden: últimos tres meses cerrados y acumulado del año; el mes elegido sólo cambia el detalle.
+  assert.match(torre, /const MESES_PIERDEN = 3;/);
+  assert.match(torre, /<th>Acumulado \{anio\}<\/th>/);
+  assert.match(torre, /aria-label="Cliente por cliente"[\s\S]*<select value=\{mesClientes\}/);
   // El selector general ya no pide clientes de un mes abierto.
   assert.doesNotMatch(torre, /clientesDelMes/);
 });
