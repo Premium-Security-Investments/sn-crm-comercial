@@ -5,6 +5,7 @@
 import { REQUIREMENT_MATRIX_PATH } from './requirement-history-import.js';
 import { FOCUS_STATUSES, REQUIREMENT_FOCUS, buildRequirementCatalog, buildRequirementFocus, buildRequirementPending } from './requirement-catalog.js';
 import { assessRequirement } from './requirement-assessment.js';
+import { TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES } from './tender-opportunity-stage.js';
 
 function fail(message, status) { return Object.assign(new Error(message), { status }); }
 const absent = error => ['PGRST205', '42P01'].includes(String(error?.code || ''));
@@ -48,14 +49,14 @@ export function closingDay(deadlineAt) {
 const TERMINAL_OFFER = new Set(['cerrada_no_go', 'adjudicada', 'no_adjudicada', 'presentada']);
 
 /**
- * Por oportunidad: si sigue abierta (no archivada, sin NO GO, sin oferta presentada ni resultado, y con cierre de hoy en
+ * Por oportunidad: si sigue abierta (no archivada ni descartada, sin NO GO, sin oferta presentada ni resultado, y con cierre de hoy en
  * adelante) y el día de cierre. Es lo que separa en la tarjeta los procesos próximos de los pasados.
  */
 export async function loadOpportunityWindows(database, tenders, today = new Date(Date.now() - 5 * 3600e3).toISOString().slice(0, 10)) {
   const ids = [...tenders.keys()];
   if (!ids.length) return new Map();
   const [opportunities, decisions] = await Promise.all([
-    database.from('psi_sales_opportunities').select('id,archived_at,tender_offer_status').in('id', ids),
+    database.from('psi_sales_opportunities').select('id,archived_at,tender_offer_status,stage_code').in('id', ids),
     database.from('psi_tender_go_no_go_decisions').select('opportunity_id,decision,decided_at').in('opportunity_id', ids),
   ]);
   if (opportunities.error) throw opportunities.error;
@@ -68,7 +69,8 @@ export async function loadOpportunityWindows(database, tenders, today = new Date
   const windows = new Map();
   for (const row of opportunities.data || []) {
     const deadline = closingDay(tenders.get(row.id)?.deadline_at);
-    const open = !row.archived_at && !TERMINAL_OFFER.has(String(row.tender_offer_status || '')) && latest.get(row.id)?.decision !== 'no_go'
+    const open = !row.archived_at && !TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES.has(row.stage_code)
+      && !TERMINAL_OFFER.has(String(row.tender_offer_status || '')) && latest.get(row.id)?.decision !== 'no_go'
       && Boolean(deadline) && deadline >= today;
     windows.set(row.id, { deadline, open });
   }

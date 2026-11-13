@@ -205,13 +205,13 @@ test('el día de cierre y la ventana de cada oportunidad', async () => {
   assert.equal(closingDay(null), null);
   const rows = {
     psi_sales_opportunities: [{ id: 'a', archived_at: null, tender_offer_status: 'en_preparacion' }, { id: 'b', archived_at: null, tender_offer_status: 'presentada' },
-      { id: 'c', archived_at: null, tender_offer_status: 'pendiente_decision' }, { id: 'd', archived_at: '2026-11-01', tender_offer_status: null }, { id: 'e', archived_at: null, tender_offer_status: null }],
+      { id: 'c', archived_at: null, tender_offer_status: 'pendiente_decision' }, { id: 'd', archived_at: '2026-11-01', tender_offer_status: null }, { id: 'e', archived_at: null, tender_offer_status: null }, { id: 'f', archived_at: null, tender_offer_status: null, stage_code: 'descartado' }],
     psi_tender_go_no_go_decisions: [{ opportunity_id: 'c', decision: 'go', decided_at: '2026-11-01' }, { opportunity_id: 'c', decision: 'no_go', decided_at: '2026-11-05' }],
   };
   const database = { from: table => ({ select: () => ({ in: async () => ({ data: rows[table], error: null }) }) }) };
-  const tenders = new Map(['a', 'b', 'c', 'd', 'e'].map(id => [id, { deadline_at: id === 'e' ? '2026-11-10T00:00:00Z' : '2026-11-24T00:00:00Z' }]));
+  const tenders = new Map(['a', 'b', 'c', 'd', 'e', 'f'].map(id => [id, { deadline_at: id === 'e' ? '2026-11-10T00:00:00Z' : '2026-11-24T00:00:00Z' }]));
   const windows = await loadOpportunityWindows(database, tenders, '2026-11-13');
-  assert.deepEqual([...windows].filter(([, value]) => value.open).map(([id]) => id), ['a'], 'presentada, NO GO, archivada y ya cerrada no son próximas');
+  assert.deepEqual([...windows].filter(([, value]) => value.open).map(([id]) => id), ['a'], 'presentada, NO GO, archivada, descartada y ya cerrada no son próximas');
   assert.equal(windows.get('a').deadline, '2026-11-24');
 });
 
