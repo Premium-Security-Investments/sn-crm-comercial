@@ -1,0 +1,22 @@
+/* Lista de vincular con Avancys (Juan, 2026-11-13: "visualmente esto es pesimo"): una tarjeta por cliente, los
+   candidatos en filas de una línea con el botón a la derecha. */
+.vincular{min-width:0;max-width:100%;box-sizing:border-box;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;display:flex;flex-direction:column;gap:12px}
+.vincular-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;color:var(--text)}
+.vincular-head p{margin:0;flex:1 1 260px;min-width:0;color:var(--muted)}
+.vincular-head strong{color:var(--text)}
+.vincular-lista{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.vincular-cliente{min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.vincular-cliente-nombre{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.vincular-cliente-nombre strong{font-size:15px}
+.vincular-cliente-nombre small{color:var(--muted)}
+.vincular-candidatos{display:flex;flex-direction:column;margin:0;padding:0;list-style:none;border-top:1px solid var(--line)}
+.vincular-candidato{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.vincular-candidato span{min-width:0}
+.vincular-candidato b{display:block;font-weight:700;overflow-wrap:anywhere}
+.vincular-candidato small{display:block;color:var(--muted)}
+.vincular-candidato button{padding:6px 14px;white-space:nowrap}
+.vincular-buscar{display:flex;gap:8px;flex-wrap:wrap}
+.vincular-buscar input{flex:1 1 160px;min-width:0}
+.vincular-buscar button{white-space:nowrap}
+.vincular-nota{margin:0;color:var(--muted);font-size:14px}
+.vincular details summary{cursor:pointer;font-weight:700;color:var(--text)}

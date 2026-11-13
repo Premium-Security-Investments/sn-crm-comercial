@@ -5250,7 +5250,10 @@ const PALABRAS_GENERICAS = new Set(['conjunto', 'residencial', 'edificio', 'torr
   'club', 'centro', 'comercial', 'sede', 'principal', 'parcelacion', 'liceo', 'colegio', 'clinica', 'hospital', 'empresa',
   'empresas', 'grupo', 'colombia', 'internacional', 'international', 'nacional', 'industrial', 'industriales', 'compania',
   'sociedad', 'asociacion', 'corporacion', 'fundacion', 'comite', 'unidad', 'planta', 'zona', 'cartago', 'pereira', 'manizales',
-  'medellin', 'bogota', 'dosquebradas', 'cali', 'armenia']);
+  'medellin', 'bogota', 'dosquebradas', 'cali', 'armenia', 'risaralda', 'caldas', 'antioquia', 'quindio', 'valle', 'cauca',
+  'cundinamarca', 'tolima', 'huila', 'santander', 'boyaca', 'atlantico', 'bolivar', 'narino', 'meta', 'occidente', 'oriente',
+  'norte', 'sur', 'eje', 'cafetero', 'servicios', 'inversiones', 'comercializadora', 'distribuidora', 'administracion', 'propiedad',
+  'horizontal', 'copropiedad', 'agrupacion', 'urbanizacion', 'ciudadela', 'sucursal', 'almacen', 'oficina']);
 function palabrasQueDistinguen(nombre) {
   const todas = String(nombre || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(palabra => palabra.length > 1 && !FORMAS_SOCIETARIAS.has(palabra));
@@ -5282,13 +5285,15 @@ app.get('/api/avancys/candidatos-enlace', async (req, res) => {
         const suyas = palabrasQueDistinguen(cliente.nombre).todas;
         const coinciden = todas.filter(palabra => suyas.some(suya => suya === palabra || (palabra.length >= 5 && suya.startsWith(raiz(palabra)))));
         const propiasQueCoinciden = coinciden.filter(palabra => propias.includes(palabra)).length;
-        if (!propiasQueCoinciden) continue;
+        // Juan, 2026-11-13: proponía cualquier empresa "de Risaralda". Con dos o más palabras propias, tienen que
+        // coincidir al menos dos; con una sola, esa.
+        if (propiasQueCoinciden < Math.min(2, propias.length)) continue;
         porNit.set(nit, { cliente, puntos: propiasQueCoinciden * 10 + coinciden.length });
       }
     }
     const candidatos = [...porNit.values()]
       .sort((a, b) => b.puntos - a.puntos || String(a.cliente.nombre).localeCompare(String(b.cliente.nombre)))
-      .slice(0, 8)
+      .slice(0, 5)
       .map(({ cliente }) => ({ nombre: cliente.nombre, nit: cliente.identificacion.numero, departamento: cliente.departamento || null, atendido_por: cliente.atendido_por || null }));
     res.set('Cache-Control', 'private, no-store');
     return res.json({ candidatos });
