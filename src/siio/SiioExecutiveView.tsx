@@ -152,15 +152,15 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
   const [pestana, setPestana] = useState<PestanaTorre>('resultados');
   const refPestanas = useRef<HTMLElement | null>(null);
   const irA = (destino: PestanaTorre) => { setPestana(destino); refPestanas.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-  // Lo que requiere decisión: lo de Avancys (clientes, cartera, mes abierto) y lo comercial, en frases.
+  // Lo que requiere decisión hoy: lo de Avancys (clientes, cartera, mes abierto) y lo comercial, en tarjetas.
   const alertas: AlertaTorre[] = (() => {
     const lista: AlertaTorre[] = [];
-    if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', texto: <><strong>{estaSemana.vencidos === 1 ? '1 decisión con fecha ya venció' : `${estaSemana.vencidos} decisiones con fecha ya vencieron`}</strong> sin registrarse.</> });
+    if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', cifra: estaSemana.vencidos === 1 ? '1 decisión' : `${estaSemana.vencidos} decisiones`, texto: 'con fecha ya vencida, sin registrarse.' });
     lista.push(...alertasDeAvancys(torre));
     const porDecidir = (commercial?.tenders.calendar || []).filter(item => item.attention === 'requiere_decision');
-    if (porDecidir.length) lista.push({ clave: 'licitaciones', pestana: 'comercial', texto: <><strong>{porDecidir.length} licitaciones esperan decisión</strong> de presentarse.</> });
+    if (porDecidir.length) lista.push({ clave: 'licitaciones', pestana: 'comercial', cifra: porDecidir.length === 1 ? '1 licitación' : `${porDecidir.length} licitaciones`, texto: 'esperan la decisión de presentarse.' });
     const paradas = commercial?.pipeline.stale_large || [];
-    if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', texto: <><strong>{paradas.length} ofertas grandes paradas</strong> más de 30 días ({millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0))} al mes).</> });
+    if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', cifra: paradas.length === 1 ? '1 oferta grande' : `${paradas.length} ofertas grandes`, texto: `paradas más de 30 días (${millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0))} al mes).` });
     return lista.slice(0, 5);
   })();
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';

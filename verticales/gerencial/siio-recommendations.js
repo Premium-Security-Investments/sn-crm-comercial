@@ -290,7 +290,7 @@ async function loadRecommendationContext(database, now) {
     database.from('siio_followups').select('title,origin_type,due_date,status').eq('status', 'abierto').order('due_date', { ascending: true }).limit(20)
       .then(result => (result?.error ? [] : result?.data || [])),
     // La Torre en vivo: si Avancys no responde, Vig-IA trabaja con lo demás.
-    torreAvancys({ ahora: () => now }).catch(() => null),
+    torreAvancys({ ahora: () => now, db: database }).catch(() => null),
   ]);
   let warnings = [];
   if (pulse?.source?.import_id) {
