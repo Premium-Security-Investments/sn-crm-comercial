@@ -1231,3 +1231,40 @@
 
 /* Torre: mes elegido en la tendencia del año. */
 .siio-cell-selected{font-weight:700;background:var(--siio-selected-bg,rgba(23,65,116,.08))}
+
+/* Torre por decisiones (Juan, 2026-11-13): una frase con el resultado del mes, lo que requiere
+   decisión y pestañas. Un solo elemento fuerte por pantalla: la frase del resultado. */
+.siio-pulso{display:grid;gap:10px}
+.siio-pulso-cabeza{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:8px 16px;font-size:13px}
+.siio-pulso-mes{display:grid;gap:4px;font-size:12px;font-weight:700;color:#40516b}
+.siio-pulso-mes select{min-width:240px;font-weight:700}
+.siio-pulso-frase{margin:6px 0 0;font-size:clamp(22px,2.6vw,32px);line-height:1.2;letter-spacing:-.01em;color:#10213d;font-weight:600;text-wrap:balance}
+.siio-pulso-frase strong{font-weight:800}
+.siio-pulso-ok{color:#166534;font-weight:700}
+.siio-pulso-mal{color:#b91c1c;font-weight:700}
+.siio-pulso-apoyo{margin:0;color:#40516b;font-size:14px}
+.siio-pulso-tendencia{display:flex;align-items:end;gap:6px;margin:6px 0 0;padding:0;list-style:none;overflow-x:auto}
+.siio-pulso-tendencia li{flex:1 0 44px}
+.siio-pulso-tendencia button{display:grid;justify-items:center;gap:3px;width:100%;min-height:44px;padding:4px 2px;border:0;border-radius:8px;background:transparent;color:#40516b;font:inherit;cursor:pointer}
+.siio-pulso-tendencia button:hover{background:#eef4fd}
+.siio-pulso-tendencia button:focus-visible{outline:2px solid #1b64f2;outline-offset:2px}
+.siio-pulso-tendencia .barra{width:70%;max-width:28px;border-radius:4px 4px 0 0;background:#b9cdf0}
+.siio-pulso-tendencia .actual .barra{background:#1b64f2}
+.siio-pulso-tendencia .negativo .barra{background:#f2b8b5}
+.siio-pulso-tendencia .estimado .barra{background:repeating-linear-gradient(135deg,#b9cdf0 0 4px,#dde7f7 4px 8px)}
+.siio-pulso-tendencia .valor{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:#10213d}
+.siio-pulso-tendencia .mes{font-size:11px;text-transform:capitalize}
+.siio-pulso-tendencia .actual .mes{color:#1b64f2;font-weight:800}
+
+.siio-decide h2{margin:0 0 6px;font-size:18px}
+.siio-decide ul{display:grid;margin:0;padding:0;list-style:none}
+.siio-decide li{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid #e6edf7}
+.siio-decide li:first-child{border-top:0}
+.siio-decide p{margin:0;max-width:75ch;color:#10213d;font-size:15px;line-height:1.45}
+.siio-decide strong{color:#92400e}
+.siio-decide .siio-link-button{flex:none;min-height:44px}
+
+.siio-pestanas{position:sticky;top:0;z-index:2;overflow-x:auto}
+.siio-dashboard .siio-table-wrap tr.siio-fila-alerta td{background:#fef2f2}
+.siio-dashboard .siio-table-wrap td{font-variant-numeric:tabular-nums}
+.siio-pestanas.module-segmented-nav{grid-template-columns:repeat(6,minmax(110px,1fr))}
