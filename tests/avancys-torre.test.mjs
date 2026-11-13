@@ -15,12 +15,20 @@ test('estado del mes: en curso es parcial; un mes con la nómina a medias tambi�
     { mes: '2026-09', personal: -1100 },
     { mes: '2026-10', personal: -500 },
     { mes: '2026-11', personal: -2 },
-  ], '2026-11');
+  ], '2026-11', { hoy: '2026-12-15' });
   assert.deepEqual(meses.map(fila => [fila.mes, fila.estado]), [
     ['2026-08', 'cerrado'], ['2026-09', 'cerrado'], ['2026-10', 'parcial'], ['2026-11', 'parcial'],
   ]);
   assert.match(meses[2].motivo, /nómina/);
   assert.equal(meses[3].motivo, 'Mes en curso');
+});
+
+test('un mes con la nómina casi completa no se da por cerrado antes de 30 días, salvo que Contabilidad lo bloquee', () => {
+  const filas = [{ mes: '2026-08', personal: -1200 }, { mes: '2026-09', personal: -1100 }, { mes: '2026-10', personal: -1000 }, { mes: '2026-11', personal: -2 }];
+  const hoy = '2026-11-13';
+  assert.deepEqual(marcarMeses(filas, '2026-11', { hoy }).map(fila => fila.estado), ['cerrado', 'cerrado', 'parcial', 'parcial']);
+  assert.match(marcarMeses(filas, '2026-11', { hoy })[2].motivo, /Contabilidad/);
+  assert.deepEqual(marcarMeses(filas, '2026-11', { hoy, bloqueo: '2026-10-31' }).map(fila => fila.estado), ['cerrado', 'cerrado', 'cerrado', 'parcial']);
 });
 
 // Una contabilidad de mentira: cuentas de resultados y de balance, agrupadas por cuenta y mes.

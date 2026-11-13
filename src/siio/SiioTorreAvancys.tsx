@@ -218,7 +218,7 @@ export function alertasDeAvancys(t: TorreAvancys): AlertaTorre[] {
     salida.push({ clave: 'cartera', pestana: 'cartera', texto: <><strong>{millones(c.vencido.saldo)} vencidos</strong>, el {pct(c.vencido.saldo, c.total.saldo)} de la cartera; {altos ? `${altos} clientes concentran lo más grande` : ''}.</> });
   }
   const parcial = (t.torre?.pyg || []).find(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso');
-  if (parcial) salida.push({ clave: 'nomina', pestana: 'resultados', texto: <><strong>{nombreMes(parcial.mes)} sigue abierto en la contabilidad:</strong> falta registrar parte de la nómina; su resultado es una proyección.</> });
+  if (parcial) salida.push({ clave: 'nomina', pestana: 'resultados', texto: <><strong>{nombreMes(parcial.mes)} sigue abierto en la contabilidad</strong> ({(parcial.motivo || '').toLowerCase()}): su resultado es una proyección, no una cifra cerrada.</> });
   return salida;
 }
 

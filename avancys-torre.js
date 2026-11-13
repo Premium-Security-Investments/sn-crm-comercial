@@ -37,12 +37,28 @@ const mediana = valores => {
   return orden.length % 2 ? orden[medio] : (orden[medio - 1] + orden[medio]) / 2;
 };
 
-// El estado de cada mes: el mes en curso siempre es parcial; uno pasado es parcial si su nómina
-// contabilizada queda por debajo del 85 % de la mediana de los demás meses pasados.
-export function marcarMeses(meses, mesActual) {
+// Días que se le dan a Contabilidad para registrar un mes antes de darlo por cerrado si no lo
+// bloquea en Avancys. El 2026-11-13 octubre llegaba al 88 % de la nómina sin estar completo, y la
+// Torre mostró un margen de 22 % que no existía.
+export const DIAS_PARA_CERRAR = 30;
+const ultimoDia = mes => {
+  const [anio, numero] = mes.split('-').map(Number);
+  return new Date(Date.UTC(anio, numero, 0)).toISOString().slice(0, 10);
+};
+const sumarDias = (fecha, dias) => new Date(Date.parse(`${fecha}T00:00:00Z`) + dias * 86400000).toISOString().slice(0, 10);
+
+// El estado de cada mes. Cerrado: Contabilidad lo bloqueó en Avancys (fecha de bloqueo del periodo)
+// o ya pasaron DIAS_PARA_CERRAR desde que terminó y su nómina está completa (al menos el 85 % de la
+// mediana de los demás meses). Lo demás es parcial y se muestra como proyección.
+export function marcarMeses(meses, mesActual, { hoy = null, bloqueo = null } = {}) {
   const pasados = meses.filter(fila => fila.mes < mesActual);
   return meses.map(fila => {
     if (fila.mes >= mesActual) return { ...fila, estado: 'parcial', motivo: 'Mes en curso' };
+    const fin = ultimoDia(fila.mes);
+    if (bloqueo && bloqueo >= fin) return { ...fila, estado: 'cerrado', motivo: null };
+    if (hoy && hoy < sumarDias(fin, DIAS_PARA_CERRAR)) {
+      return { ...fila, estado: 'parcial', motivo: 'Contabilidad todavía está registrando el mes' };
+    }
     const otros = pasados.filter(otro => otro.mes !== fila.mes).map(otro => Math.abs(otro.personal));
     const referencia = mediana(otros);
     if (referencia && Math.abs(fila.personal) < NOMINA_COMPLETA * referencia) {
@@ -87,13 +103,19 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
   // la provisión de ingresos mes vencido (avancys-pyg.js). Las líneas analíticas quedan para el
   // detalle por cliente: no todo el gasto pasa por ellas.
   const pyg = await estadoDeResultados(ejecutar, { desde, hasta: sumarMeses(mesActual, 1), devengado });
+  // Fecha de bloqueo del periodo en Avancys: cuando Contabilidad la usa, manda sobre la regla de días.
+  let bloqueo = null;
+  try {
+    const [empresa] = (await ejecutar('res.company', 'search_read', [[]], { fields: ['period_lock_date'], limit: 1 })) || [];
+    bloqueo = empresa?.period_lock_date || null;
+  } catch { bloqueo = null; }
   const meses = marcarMeses(pyg.map(fila => ({
     mes: fila.mes,
     ingresos: fila.totales.ingresos,
     personal: fila.totales.personal,
     otros_costos: fila.totales.antes_de_impuestos - fila.totales.ingresos - fila.totales.personal,
     margen: fila.totales.antes_de_impuestos,
-  })), mesActual);
+  })), mesActual, { hoy: ahora().toISOString().slice(0, 10), bloqueo });
   const estadoDe = new Map(meses.map(fila => [fila.mes, fila]));
   const cerrados = meses.filter(fila => fila.estado === 'cerrado');
   const mesCerrado = cerrados.at(-1)?.mes || null;
@@ -128,6 +150,7 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     mes_cerrado: mesCerrado,
     mes_anterior: cerrados.at(-2)?.mes || null,
     primera_linea: primerDia,
+    bloqueo_contable: bloqueo,
     clientes,
     cartera,
   };
