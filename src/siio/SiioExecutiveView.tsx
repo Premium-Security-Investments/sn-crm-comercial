@@ -22,6 +22,7 @@ import { SiioHorasPorCliente } from './SiioHorasPorCliente';
 import { SiioLoQueFalta } from './SiioLoQueFalta';
 import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
 import { SiioRecommendations } from './SiioRecommendations';
+import { SiioTorreAvancys } from './SiioTorreAvancys';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState } from './types';
 
@@ -159,6 +160,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
 
     <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
+
+    <SiioTorreAvancys />
 
     <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} />
 
