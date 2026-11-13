@@ -169,12 +169,22 @@ export const REQUIREMENT_FOCUS = Object.freeze([
     fix: 'Inscribirse ante la Supervigilancia como importador o comercializador de equipos de vigilancia, si vamos a licitar procesos de tecnología.' },
   { key: 'canino', title: 'Sede canina (criadero) autorizada', types: ['canina'], live: null,
     fix: 'Obtener la resolución de la Supervigilancia para una sede canina (criadero) en Pereira.' },
-  { key: 'financiero', title: 'Indicadores financieros por debajo de lo que piden', types: ['liquidez', 'endeudamiento', 'cobertura_intereses', 'rentabilidad', 'estados_financieros'], live: 'financiero',
+  { key: 'financiero', title: 'Indicadores financieros por debajo de lo que piden', types: ['liquidez', 'endeudamiento', 'cobertura_intereses', 'rentabilidad', 'capital_trabajo', 'patrimonio', 'capacidad_residual', 'estados_financieros'], live: 'financiero',
     fix: 'Revisar con Financiero si al próximo corte se puede subir la liquidez a 2,5 o más y bajar el endeudamiento del 50 %; mientras tanto, socio con buenos indicadores en unión temporal.' },
   { key: 'certificaciones', title: 'Certificaciones que no tenemos', types: ['calidad_sst'], live: null,
     fix: 'Decidir si se tramita la certificación que piden.' },
   { key: 'horas_extras', title: 'Autorización de horas extras del Ministerio del Trabajo', types: ['horas_extras'], live: null,
     fix: 'Confirmar si la tenemos; si no, solicitarla al Ministerio del Trabajo.' },
+  // Juan, 2026-11-13. Estos cuatro no se pueden medir contra la ficha: entran cuando un análisis, un acta o una persona
+  // (bloqueo anotado) dicen que nos inhabilitan, y no van a «por confirmar» (casi todo pliego pide personal y experiencia).
+  { key: 'experiencia', title: 'Experiencia que no podemos acreditar', types: ['experiencia_especifica', 'experiencia_general'], live: null, pending: false,
+    fix: 'Pedir ya los certificados de los contratos que más se repiten (Jerónimo Martins 070 y 089, Megabús 088, Terminales de Medellín 086); si el objeto o el alcance no alcanza, socio en unión temporal.' },
+  { key: 'personal', title: 'Personal acreditado que no tenemos', types: ['personal_minimo', 'responsable_sst'], live: null, pending: false,
+    fix: 'Con Talento Humano: quién tiene credencial de consultor de la Supervigilancia, los años de vínculo y los cursos que piden; tramitar lo que falte.' },
+  { key: 'armas', title: 'Armas y salvoconductos a nombre de la empresa', types: ['armas'], live: null, pending: false,
+    fix: 'Con Operaciones: cuántas armas tenemos con salvoconducto a nombre de la empresa y en qué ciudad; si no alcanzan, comprar o trasladar.' },
+  { key: 'red_apoyo', title: 'Red de Apoyo de la Policía en la ciudad', types: ['red_apoyo'], live: null,
+    fix: 'Confirmar en qué ciudades estamos inscritos en la Red de Apoyo de la Policía y registrarlo en la ficha; inscribirse donde haya procesos.' },
 ]);
 export const FOCUS_STATUSES = Object.freeze({ por_decidir: 'Por decidir', iniciar: 'Iniciar trámite', en_tramite: 'En trámite', resuelto: 'Resuelto', no_por_ahora: 'No por ahora' });
 
@@ -186,9 +196,16 @@ const processKeyOf = occurrence => foldText(occurrence.process || '');
  *   blocker, evaluation }]; actas: [{ opportunity_id, process, title, text, source }]. `assess(occurrence)` → veredicto
  *   contra la ficha (requirement-assessment.js), sólo para los habilitantes.
  */
-export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], assess = null } = {}) {
+export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], blocks = [], assess = null } = {}) {
   const occurrences = [];
   let excluded = 0;
+  // Los bloqueos anotados van primero: una persona leyó el pliego, así que su motivo es el que se muestra.
+  for (const item of blocks) {
+    const focus = REQUIREMENT_FOCUS.find(entry => entry.key === item.focus_key);
+    if (!focus) continue;
+    occurrences.push({ type: focus.types[0], source: 'anotado', id: item.id || null, opportunity_id: item.opportunity_id, process: item.process,
+      text: item.reason || '', threshold: null, quote: item.citation || null, url: item.url || null, incomplete: false, blocked: true, annotated: true });
+  }
   for (const row of matriz) {
     const key = classifyRequirement({ kind: row.kind, parts: [row.requisito, row.categoria] });
     const fragment = isRequirementFragment(row.requisito);
@@ -203,7 +220,7 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], ass
     const parts = [item.requirement_id ? String(item.requirement_id).replace(/^REQ-/, '') : '', item.text || ''];
     const kind = looksLikeScoring(parts) ? P : H;
     const key = classifyRequirement({ kind, parts, crmCategory: item.category });
-    occurrences.push({ type: key, source: 'crm', id: item.requirement_id || null, opportunity_id: item.opportunity_id, process: item.process,
+    occurrences.push({ type: key, source: 'crm', id: item.requirement_id || null, opportunity_id: item.opportunity_id, process: item.process, city: item.city || null,
       text: item.text || item.requirement_id || '', threshold: item.validity || null, quote: null, url: item.url || null, incomplete: false,
       blocked: item.blocker === true || item.evaluation === 'BLOCKER' });
   }
@@ -214,7 +231,7 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], ass
   }
 
   if (assess) for (const occurrence of occurrences) {
-    if (requirementType(occurrence.type)?.kind === H) occurrence.assessment = assess(occurrence);
+    if (requirementType(occurrence.type)?.kind === H && !occurrence.annotated) occurrence.assessment = assess(occurrence);
   }
   const byType = new Map();
   for (const occurrence of occurrences) {
@@ -241,30 +258,43 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], ass
 
 /**
  * «Lo que nos inhabilita»: un grupo por hecho que nos falta, sólo si algún requisito suyo nos inhabilita según la ficha o
- * un análisis o un acta lo marcó como bloqueo. Cada proceso una vez, con el motivo. Pura.
+ * un análisis, un acta o una persona lo marcó como bloqueo. Cada proceso una vez, con el motivo.
+ *
+ * Próximos y pasados (Juan, 2026-11-13: «mostrar en la tarjeta los procesos futuros que nos bloquea ese requisito y tal
+ * vez con un desplegable ver los pasados»): `opportunities` dice, por oportunidad del CRM, si sigue abierta y cuándo
+ * cierra. Los abiertos van en `upcoming` por fecha de cierre; el resto (cerrados, archivados y los de la matriz
+ * histórica) en `past`. Los grupos con procesos próximos van primero. Pura.
  */
-export function buildRequirementFocus(catalog, { state = [] } = {}) {
+export function buildRequirementFocus(catalog, { state = [], opportunities = new Map() } = {}) {
   const byKey = new Map((catalog?.types || []).map(type => [type.key, type]));
   const saved = new Map(state.map(row => [row.focus_key, row]));
   return REQUIREMENT_FOCUS.map(focus => {
     const occurrences = focus.types.flatMap(key => byKey.get(key)?.occurrences || [])
-      .filter(item => item.assessment?.verdict === 'inhabilita' || item.blocked);
+      .filter(item => item.assessment?.verdict === 'inhabilita' || item.blocked)
+      .sort((a, b) => Number(Boolean(b.annotated)) - Number(Boolean(a.annotated)));
     const processes = new Map();
     for (const item of occurrences) {
       const id = item.opportunity_id || processKeyOf(item);
-      if (!processes.has(id)) processes.set(id, { opportunity_id: item.opportunity_id || null, process: item.process, reason: item.assessment?.verdict === 'inhabilita' ? item.assessment.reason : item.text, blocked: item.blocked });
+      if (processes.has(id)) continue;
+      const opportunity = item.opportunity_id ? opportunities.get(item.opportunity_id) : null;
+      processes.set(id, { opportunity_id: item.opportunity_id || null, process: item.process,
+        reason: item.assessment?.verdict === 'inhabilita' ? item.assessment.reason : item.text, blocked: item.blocked, annotated: Boolean(item.annotated),
+        deadline: opportunity?.deadline || null, upcoming: Boolean(opportunity?.open) });
     }
+    const list = [...processes.values()];
+    const upcoming = list.filter(item => item.upcoming).sort((a, b) => String(a.deadline || '9999').localeCompare(String(b.deadline || '9999')));
     const row = saved.get(focus.key) || {};
-    return { key: focus.key, title: focus.title, types: focus.types, live: focus.live, processes: [...processes.values()],
-      blocked: [...processes.values()].filter(item => item.blocked).length,
+    return { key: focus.key, title: focus.title, types: focus.types, live: focus.live, processes: list, upcoming, past: list.filter(item => !item.upcoming),
+      blocked: list.filter(item => item.blocked).length,
       status: row.status || 'por_decidir', owner: row.owner || null, note: row.note || null, current_state: row.current_state || null,
       fix_action: row.fix_action || focus.fix, updated_at: row.updated_at || null };
-  }).filter(focus => focus.processes.length).sort((a, b) => b.processes.length - a.processes.length);
+  }).filter(focus => focus.processes.length)
+    .sort((a, b) => b.upcoming.length - a.upcoming.length || b.processes.length - a.processes.length);
 }
 
 /** «Por confirmar»: hechos de los mismos grupos que la ficha no deja decidir. Pura. */
 export function buildRequirementPending(catalog) {
-  const keys = new Set(REQUIREMENT_FOCUS.flatMap(focus => focus.types));
+  const keys = new Set(REQUIREMENT_FOCUS.filter(focus => focus.pending !== false).flatMap(focus => focus.types));
   return (catalog?.types || []).filter(type => keys.has(type.key)).map(type => {
     const items = type.occurrences.filter(item => item.assessment?.verdict === 'verificar');
     return { key: type.key, title: type.title, processes: [...new Map(items.map(item => [item.opportunity_id || processKeyOf(item), { opportunity_id: item.opportunity_id || null, process: item.process, reason: item.assessment.reason }])).values()] };

@@ -54,6 +54,33 @@ test('anota en la ficha lo que la persona decide, a su nombre', async () => {
   assert.match(lineas[0], /^Anoté en la ficha del proceso: «Juan Botero se encarga/);
 });
 
+test('la nota de la Mesa cumple las reglas de la tabla de aclaraciones (sin target_kind suelto)', async () => {
+  const db = baseDeDatos({ id: 'o1' });
+  await ejecutarAgt002AccionesDeLaMesa(db, { ...BASE, mensaje: 'anote que yo me encargo del socio', acciones: [{ tipo: 'anotar', campo: '', valor: 'Juan se encarga del socio.', fuente: '', pedido_literal: 'yo me encargo del socio' }] });
+  const fila = db.hecho.clarifications[0];
+  assert.equal(fila.tabla, 'psi_agt002_clarifications');
+  assert.ok(fila.target_kind === null || fila.target_kind === undefined || ['requirement', 'finding'].includes(fila.target_kind));
+  assert.equal(fila.target_kind == null, fila.target_id == null, 'target_kind y target_id van juntos (check de la tabla)');
+});
+
+test('lleva a Requisitos el bloqueo que la persona pide, en su grupo y con la cita; no lo duplica', async () => {
+  const db = baseDeDatos({ id: 'o1' });
+  const mensaje = 'Eso de la sucursal llévelo a Requisitos, nos inhabilita';
+  const accion = { tipo: 'bloqueo', campo: 'presencia', valor: 'Piden sede principal o sucursal en Bogotá y tenemos agencia.', fuente: 'Pliego 1.7: «SEDE PRINCIPAL O SUCURSAL EN BOGOTÁ»', pedido_literal: 'llévelo a Requisitos' };
+  const lineas = await ejecutarAgt002AccionesDeLaMesa(db, { ...BASE, mensaje, acciones: [accion, { ...accion, campo: 'seriedad' }] });
+  assert.equal(db.hecho.clarifications.length, 1);
+  assert.deepEqual(db.hecho.clarifications[0], { tabla: 'psi_tender_requirement_blocks', opportunity_id: 'o1', focus_key: 'presencia', reason: accion.valor, citation: accion.fuente, source: 'mesa', created_by: 'p1' });
+  assert.match(lineas[0], /Llevé a Requisitos, en «Sede, sucursal o agencia en la ciudad»/);
+  assert.match(lineas[1], /falta el grupo/, 'un grupo que no existe no se anota');
+  const repetido = baseDeDatos({ id: 'o1' });
+  repetido.from = () => ({ insert: async () => ({ error: { code: '23505' } }) });
+  assert.match((await ejecutarAgt002AccionesDeLaMesa(repetido, { ...BASE, mensaje, acciones: [accion] }))[0], /ya estaba en Requisitos/);
+  const sinPedido = baseDeDatos({ id: 'o1' });
+  await ejecutarAgt002AccionesDeLaMesa(sinPedido, { ...BASE, mensaje: 'qué dice el pliego de la sede', acciones: [accion] });
+  assert.equal(sinPedido.hecho.clarifications.length, 0, 'sin pedido no se anota');
+  assert.match(AGT002_MESA_ACCIONES_POLICY, /tipo «bloqueo»/);
+});
+
 test('no hace nada si no lo pidió la persona, si la oferta ya se presentó o si el valor no sirve', async () => {
   const db = baseDeDatos({ id: 'o1', offer_value: '1000.00', tender_offer_status: 'presentada' });
   const lineas = await ejecutarAgt002AccionesDeLaMesa(db, { ...BASE, mensaje: '¿Cuál es el monto?', acciones: [

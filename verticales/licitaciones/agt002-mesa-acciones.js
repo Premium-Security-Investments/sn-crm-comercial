@@ -9,6 +9,12 @@
 //   * Sólo una lista corta: notas y decisiones de la ficha, presupuesto, fecha de cierre y contratista actual. Nunca la
 //     ficha de empresa, nunca una oferta ya presentada.
 // El servidor comprueba que la frase con que la persona lo pidió está en su mensaje; si no está, no se hace nada.
+//
+// Bloqueos (Juan, 2026-11-13, plan de la pestaña «Requisitos»): si la persona dice que algo del pliego nos inhabilita y
+// pide llevarlo a Requisitos, queda anotado en ese grupo con el motivo y la cita, aunque el análisis no lo haya marcado.
+import { REQUIREMENT_FOCUS } from './requirement-catalog.js';
+
+export const AGT002_MESA_GRUPOS_BLOQUEO = Object.freeze(Object.fromEntries(REQUIREMENT_FOCUS.map(focus => [focus.key, focus.title])));
 
 const PRESENTADA = new Set(['presentada', 'adjudicada', 'no_adjudicada', 'cerrada_no_go']);
 export const AGT002_MESA_MAX_ACCIONES = 5;
@@ -48,8 +54,8 @@ export const AGT002_MESA_ACCIONES_SCHEMA = Object.freeze({
     additionalProperties: false,
     required: ['tipo', 'campo', 'valor', 'fuente', 'pedido_literal'],
     properties: {
-      tipo: { type: 'string', enum: ['anotar', 'corregir'] },
-      campo: { type: 'string', enum: ['', ...Object.keys(AGT002_MESA_CAMPOS)] },
+      tipo: { type: 'string', enum: ['anotar', 'corregir', 'bloqueo'] },
+      campo: { type: 'string', enum: ['', ...Object.keys(AGT002_MESA_CAMPOS), ...Object.keys(AGT002_MESA_GRUPOS_BLOQUEO)] },
       valor: { type: 'string', minLength: 1, maxLength: 1000 },
       fuente: { type: 'string', maxLength: 600 },
       pedido_literal: { type: 'string', minLength: 1, maxLength: 400 },
@@ -60,6 +66,7 @@ export const AGT002_MESA_ACCIONES_SCHEMA = Object.freeze({
 export const AGT002_MESA_ACCIONES_POLICY = [
   'ACCIONES. Puedes hacer dos cosas en el CRM, y sólo si la persona lo pide en ESTE mensaje: (a) anotar en la ficha del proceso una decisión o un hecho que ella dice (por ejemplo «yo me encargo de definir el socio», «no observamos el proyecto», «somos el contratista actual»): tipo «anotar», campo vacío, valor = la decisión en una frase clara en tercera persona;',
   '(b) corregir un dato del proceso que ella pide corregir: tipo «corregir», campo presupuesto (valor en pesos), cierre (AAAA-MM-DD) o contratista_actual, y fuente = el archivo de la carpeta y la frase literal que lo sostiene; búscalo en la carpeta antes de proponer el valor.',
+  `(c) llevar a la pestaña Requisitos un requisito de este pliego que nos inhabilita, cuando la persona lo pide («anótelo como bloqueo», «llévelo a Requisitos»): tipo «bloqueo», campo = el grupo (${Object.entries(AGT002_MESA_GRUPOS_BLOQUEO).map(([key, title]) => `${key}: ${title}`).join('; ')}), valor = por qué nos inhabilita en una frase (qué piden y cómo estamos), fuente = el numeral y la frase literal del pliego; búscalo en la carpeta.`,
   'En pedido_literal copia EXACTAMENTE las palabras del mensaje de la persona con que lo pide; si no lo pidió en este mensaje, no pongas ninguna acción. Si encuentras un dato equivocado por tu cuenta, no lo corrijas: dilo y pregunta «¿lo corrijo?». El servidor ejecuta las acciones y agrega al final de tu respuesta lo que hizo; no digas que ya lo hiciste.',
 ].join(' ');
 
@@ -91,12 +98,30 @@ export async function ejecutarAgt002AccionesDeLaMesa(database, { acciones, mensa
         continue;
       }
       if (accion.tipo === 'anotar') {
+        // Sin target_kind: la tabla sólo admite «requirement» o «finding», y siempre con target_id (2026-11-13: con «mesa»
+        // la inserción fallaba en producción).
         const { error } = await database.from('psi_agt002_clarifications').insert({
           opportunity_id: opportunityId, tender_id: tenderId, author_id: autorId,
-          content: String(accion.valor).trim().slice(0, 1000), target_kind: 'mesa', target_label: `Dicho en la Mesa: «${String(accion.pedido_literal).trim().slice(0, 300)}»`,
+          content: String(accion.valor).trim().slice(0, 1000), target_kind: null, target_label: `Dicho en la Mesa: «${String(accion.pedido_literal).trim().slice(0, 300)}»`,
         });
         if (error) throw error;
         lineas.push(`Anoté en la ficha del proceso: «${String(accion.valor).trim()}».`);
+        continue;
+      }
+      if (accion.tipo === 'bloqueo') {
+        const grupo = AGT002_MESA_GRUPOS_BLOQUEO[accion.campo];
+        const motivo = String(accion.valor || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+        if (!grupo || motivo.length < 5) {
+          lineas.push(`No llevé a Requisitos «${motivo.slice(0, 120)}»: falta el grupo o el motivo.`);
+          continue;
+        }
+        const { error } = await database.from('psi_tender_requirement_blocks').insert({
+          opportunity_id: opportunityId, focus_key: accion.campo, reason: motivo, citation: String(accion.fuente || '').trim().slice(0, 500) || null,
+          source: 'mesa', created_by: autorId,
+        });
+        if (error && String(error.code || '') === '23505') { lineas.push(`Ese bloqueo ya estaba en Requisitos (${grupo}).`); continue; }
+        if (error) throw error;
+        lineas.push(`Llevé a Requisitos, en «${grupo}»: ${motivo}`);
         continue;
       }
       const campo = AGT002_MESA_CAMPOS[accion.campo];
