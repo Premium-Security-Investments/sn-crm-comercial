@@ -159,11 +159,11 @@ test('los nombres de entidad llegan sin asteriscos de SECOP', () => {
 test('la Torre se lee por decisiones: la frase del mes, lo que requiere decisión y las pestañas', async () => {
   const { readFileSync } = await import('node:fs');
   const view = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
-  const pulso = view.indexOf('<SiioPulsoMes');
+  const pulso = view.indexOf('<SiioPortada');
   const decide = view.indexOf('<SiioRequiereDecision');
   const pestanas = view.indexOf('role="tablist"');
   const keyFigures = view.indexOf('<SiioKeyFigures');
-  assert.ok(pulso > 0 && pulso < decide && decide < pestanas && pestanas < keyFigures, 'orden: frase del mes, requiere decisión, pestañas con el detalle');
+  assert.ok(pulso > 0 && pulso < decide && decide < pestanas && pestanas < keyFigures, 'orden: portada (frase y tres bloques), requiere decisión, pestañas con el detalle');
   assert.match(view, /'fuentes', 'Fuentes y detalle'/, 'el Excel por periodo, sus alertas y los detalles quedan en la pestaña Fuentes y detalle');
   assert.match(view, /conFinanzas=\{false\}/, 'las tarjetas del Excel salen de la vista de gerencia');
   assert.match(view, /<details className="panel siio-detail">/);

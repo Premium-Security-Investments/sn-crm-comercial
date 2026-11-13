@@ -23,7 +23,7 @@ import { SiioLoQueFalta } from './SiioLoQueFalta';
 import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
 import { SiioRecommendations } from './SiioRecommendations';
 import { SiioPestanaParametros } from './SiioParametros';
-import { alertasDeAvancys, SiioPestanaCartera, SiioPestanaClientes, SiioPestanaResultados, SiioPulsoMes, SiioRequiereDecision, useTorreAvancys, type AlertaTorre, type PestanaTorre } from './SiioTorreAvancys';
+import { alertasDeAvancys, SiioPestanaCartera, SiioPestanaClientes, SiioPestanaResultados, SiioPortada, SiioRequiereDecision, useTorreAvancys, type AlertaTorre, type PestanaTorre } from './SiioTorreAvancys';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState } from './types';
 
@@ -155,20 +155,20 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
   // Lo que requiere decisión hoy: lo de Avancys (clientes, cartera, mes abierto) y lo comercial, en tarjetas.
   const alertas: AlertaTorre[] = (() => {
     const lista: AlertaTorre[] = [];
-    if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', cifra: estaSemana.vencidos === 1 ? '1 decisión' : `${estaSemana.vencidos} decisiones`, texto: 'con fecha ya vencida, sin registrarse.' });
+    if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', prioridad: 'media', responsable: 'Gerencia', cifra: estaSemana.vencidos === 1 ? '1 decisión' : `${estaSemana.vencidos} decisiones`, texto: 'con fecha ya vencida, sin registrarse.' });
     lista.push(...alertasDeAvancys(torre));
     const porDecidir = (commercial?.tenders.calendar || []).filter(item => item.attention === 'requiere_decision');
-    if (porDecidir.length) lista.push({ clave: 'licitaciones', pestana: 'comercial', cifra: porDecidir.length === 1 ? '1 licitación' : `${porDecidir.length} licitaciones`, texto: 'esperan la decisión de presentarse.' });
+    if (porDecidir.length) lista.push({ clave: 'licitaciones', pestana: 'comercial', prioridad: 'media', responsable: 'Licitaciones', cifra: porDecidir.length === 1 ? '1 licitación' : `${porDecidir.length} licitaciones`, texto: 'esperan la decisión de presentarse.' });
     const paradas = commercial?.pipeline.stale_large || [];
-    if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', cifra: paradas.length === 1 ? '1 oferta grande' : `${paradas.length} ofertas grandes`, texto: `paradas más de 30 días (${millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0))} al mes).` });
+    if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', prioridad: 'media', responsable: 'Comercial', cifra: paradas.length === 1 ? '1 oferta grande' : `${paradas.length} ofertas grandes`, texto: `paradas más de 30 días (${millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0))} al mes).` });
     return lista.slice(0, 5);
   })();
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
-    {/* Plan de la Torre (Juan, 2026-11-13): una frase con el resultado del mes, lo que requiere decisión
-        y pestañas. Cada tabla vive en su pestaña; lo que no ayuda a decidir no entra. */}
-    <SiioPulsoMes t={torre} />
+    {/* Portada de la Torre (maqueta aprobada por Juan, 2026-11-13): la frase del último mes cerrado, tres bloques
+        (clientes, cartera, presupuesto), lo que requiere decisión y pestañas. Lo que no ayuda a decidir no entra. */}
+    <SiioPortada t={torre} onIr={(destino, mes) => { if (mes) torre.setMes(mes); irA(destino); }} />
 
     <SiioRequiereDecision alertas={alertas} onIr={irA} />
 
