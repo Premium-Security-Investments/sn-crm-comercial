@@ -3,6 +3,7 @@ import { resolveAgt002GovernedDocumentForExecution } from './agt002-governed-doc
 import { validatePreGoAnalysisV2 } from './agt002-pre-go-analysis-v2.js';
 import {
   agt002InitialDiagnosticError, agt002PriorAnalysisForModel, buildInitialAggregate, buildInitialMemberOutputSchema, buildInitialSynthesisModelSchema,
+  pruneDanglingClaimListReferences,
 } from './agt002-initial-analysis-aggregate-builder.js';
 import { loadAgt002CompanyProfileSnapshotForWorkflow } from './agt002-company-profile-snapshot.js';
 import { AGT002_LESSONS_POLICY, loadAgt002LessonsForPrompt } from './agt002-company-lessons.js';
@@ -363,8 +364,12 @@ export function createAgt002InitialAnalysisRuntime({
 
       let output = parsed;
       if (synthesis) {
+        const cleaned = pruneDanglingClaimListReferences(parsed);
+        if (cleaned.pruned.length) {
+          console.warn(JSON.stringify({ event: 'agt002_initial_analysis_dangling_claim_refs_pruned', job_id: job.jobId, count: cleaned.pruned.length, refs: cleaned.pruned.slice(0, 10) }));
+        }
         output = buildInitialAggregate({
-          analysis: parsed,
+          analysis: cleaned.analysis,
           identity: {
             analysisRunId: persistence.analysisRunId,
             authorizationId: persistence.authorizationId,
