@@ -1334,8 +1334,9 @@
 .siio-dashboard .siio-table-wrap td.siio-celda-total{font-weight:800;border-left:2px solid #e2eaf5}
 
 /* Portada de la Torre */
-.siio-header-bar .siio-navigation{display:inline-flex;width:auto;gap:2px;padding:3px}
-.siio-header-bar .siio-navigation button{min-height:34px;padding:6px 14px;font-size:13px}
+/* Las vistas van en una fila dentro de la cabecera; las reglas generales del menú segmentado las apilaban. */
+.siio-dashboard .siio-header-bar .siio-navigation.module-segmented-nav{display:inline-flex;flex-direction:row;flex-wrap:nowrap;grid-template-columns:none;width:auto;gap:2px;padding:3px}
+.siio-dashboard .siio-header-bar .siio-navigation.module-segmented-nav button{flex:none;min-height:34px;padding:6px 14px;font-size:13px;white-space:nowrap}
 .siio-header-bar .siio-header-profile{margin-left:auto}
 .siio-portada-frase{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 28px;align-items:center}
 .siio-portada-frase > div{display:grid;gap:6px;min-width:0}
