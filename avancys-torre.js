@@ -9,8 +9,9 @@
 // Calcular un mes contra Odoo tarda medio minuto, así que el resultado se guarda en memoria del
 // servidor y se recalcula a pedido o cuando vence. Solo lectura y solo agregados.
 
-import { configuracionDeAvancys } from './avancys-odoo-lectura.js';
+import { configuracionDeAvancys, crearLectorAvancys } from './avancys-odoo-lectura.js';
 import { abrirSesion, claseDeCuenta, cuentaPuc, LINEAS_ANALITICAS, rentabilidadAproximada } from './avancys-acceso.js';
+import { CLIENTES_MES_VENCIDO, estadoDeResultados, LINEAS, sumarMeses } from './avancys-pyg.js';
 
 export const VIGENCIA_MS = 30 * 60 * 1000;
 // Un mes cuya nómina contabilizada está por debajo de este tanto de la de los otros meses está a
@@ -19,10 +20,6 @@ export const NOMINA_COMPLETA = 0.85;
 const MESES = 4;
 
 const mesDe = fecha => fecha.toISOString().slice(0, 7);
-function sumarMeses(mes, cuantos) {
-  const [anio, numero] = mes.split('-').map(Number);
-  return mesDe(new Date(Date.UTC(anio, numero - 1 + cuantos, 1)));
-}
 const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 // read_group de Odoo 14 rotula los meses como "agosto 2026" (según el idioma del usuario) o "August 2026".
 const MESES_EN = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
@@ -75,7 +72,7 @@ export async function resultadoPorMes(ejecutar, { desde, hasta }) {
     .sort((izq, der) => izq.mes.localeCompare(der.mes));
 }
 
-export async function calcularTorre(ejecutar, { ahora = () => new Date() } = {}) {
+export async function calcularTorre(ejecutar, { ahora = () => new Date(), devengado = async () => ({ total: 0, clientes: [] }) } = {}) {
   const mesActual = mesDe(ahora());
   // Las líneas analíticas empiezan con una carga del año acumulado (el 2026-07-31): ese mes no es
   // un mes de operación y no se muestra.
@@ -86,7 +83,18 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date() } = {})
     const primerMesCompleto = primerDia.endsWith('-01') ? primerDia.slice(0, 7) : sumarMeses(primerDia.slice(0, 7), 1);
     if (primerMesCompleto > desde) desde = primerMesCompleto;
   }
-  const meses = marcarMeses(await resultadoPorMes(ejecutar, { desde, hasta: sumarMeses(mesActual, 1) }), mesActual);
+  // El resultado de la empresa sale de la contabilidad general con las líneas del PYG de Finanzas y
+  // la provisión de ingresos mes vencido (avancys-pyg.js). Las líneas analíticas quedan para el
+  // detalle por cliente: no todo el gasto pasa por ellas.
+  const pyg = await estadoDeResultados(ejecutar, { desde, hasta: sumarMeses(mesActual, 1), devengado });
+  const meses = marcarMeses(pyg.map(fila => ({
+    mes: fila.mes,
+    ingresos: fila.totales.ingresos,
+    personal: fila.totales.personal,
+    otros_costos: fila.totales.antes_de_impuestos - fila.totales.ingresos - fila.totales.personal,
+    margen: fila.totales.antes_de_impuestos,
+  })), mesActual);
+  const estadoDe = new Map(meses.map(fila => [fila.mes, fila]));
   const cerrados = meses.filter(fila => fila.estado === 'cerrado');
   const mesCerrado = cerrados.at(-1)?.mes || null;
   const clientes = mesCerrado ? await rentabilidadAproximada(ejecutar, { mes: mesCerrado }) : null;
@@ -97,7 +105,16 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date() } = {})
     // La cartera no tumba el resultado ni los clientes: se dice que no se pudo leer.
     cartera = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
   }
-  return { meses, mes_cerrado: mesCerrado, mes_anterior: cerrados.at(-2)?.mes || null, primera_linea: primerDia, clientes, cartera };
+  return {
+    meses,
+    lineas_pyg: LINEAS,
+    pyg: pyg.map(fila => ({ ...fila, estado: estadoDe.get(fila.mes)?.estado || 'parcial', motivo: estadoDe.get(fila.mes)?.motivo || null })),
+    mes_cerrado: mesCerrado,
+    mes_anterior: cerrados.at(-2)?.mes || null,
+    primera_linea: primerDia,
+    clientes,
+    cartera,
+  };
 }
 
 // ¿Nos están pagando? Facturas de cliente publicadas con saldo, por antigüedad del vencimiento.
@@ -132,12 +149,17 @@ export async function carteraVencida(ejecutar, { hoy }) {
 
 let guardado = null;
 
-export async function torreAvancys({ refrescar = false, config = configuracionDeAvancys(), fetchImpl = globalThis.fetch, ahora = () => new Date() } = {}) {
+function devengadoDeAvancys() {
+  const lector = crearLectorAvancys();
+  return mes => lector.devengadoDelMes({ mes, identificaciones: CLIENTES_MES_VENCIDO });
+}
+
+export async function torreAvancys({ refrescar = false, config = configuracionDeAvancys(), fetchImpl = globalThis.fetch, ahora = () => new Date(), devengado } = {}) {
   const momento = ahora().getTime();
   if (!refrescar && guardado && momento - guardado.en < VIGENCIA_MS) return { ...guardado.datos, desde_memoria: true };
   const sesion = await abrirSesion({ config, fetchImpl, ahora });
   if (!sesion.ejecutar) return sesion.estado;
-  const datos = { ...(await calcularTorre(sesion.ejecutar, { ahora })), configurado: true, autenticado: true, origen: config.origen, medido_en: new Date(momento).toISOString() };
+  const datos = { ...(await calcularTorre(sesion.ejecutar, { ahora, devengado: devengado || devengadoDeAvancys() })), configurado: true, autenticado: true, origen: config.origen, medido_en: new Date(momento).toISOString() };
   guardado = { en: momento, datos };
   return { ...datos, desde_memoria: false };
 }

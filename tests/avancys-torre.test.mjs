@@ -43,7 +43,9 @@ function odoo({ primera = '2026-07-31' } = {}) {
       return GRUPOS.filter(([etiqueta]) => {
         const mes = mesDeEtiqueta(etiqueta);
         return `${mes}-01` >= desde && `${mes}-01` < hasta;
-      }).map(([etiqueta, cuenta, monto], i) => ({ 'date:month': etiqueta, general_account_id: [i + 1, cuenta], amount: monto, __count: 1 }));
+      }).map(([etiqueta, cuenta, monto], i) => (modelo === 'account.move.line'
+        ? { 'date:month': etiqueta, account_id: [i + 1, cuenta], balance: -monto, __count: 1 }
+        : { 'date:month': etiqueta, general_account_id: [i + 1, cuenta], amount: monto, __count: 1 }));
     }
     // La rentabilidad por cliente se prueba en avancys-acceso.test.mjs: aquí basta con que no falle.
     if (metodo === 'fields_get') return {};
@@ -70,6 +72,9 @@ test('la Torre salta el mes de la carga inicial y toma el último mes con la nó
   assert.equal(r.mes_cerrado, '2026-09');
   assert.equal(r.mes_anterior, '2026-08');
   assert.equal(r.clientes.mes, '2026-09');
+  assert.equal(r.pyg.length, 4);
+  assert.equal(r.pyg[1].totales.antes_de_impuestos, 110);
+  assert.ok(r.lineas_pyg.length > 10);
 });
 
 test('lo calculado se guarda 30 minutos y "refrescar" lo vuelve a pedir', async () => {
