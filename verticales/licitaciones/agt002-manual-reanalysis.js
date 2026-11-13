@@ -17,6 +17,8 @@ import { readTenderOpportunityInactiveReason } from './tender-opportunity-stage.
 const TABLE = 'psi_agt002_manual_reanalysis_requests';
 const AUTHORIZATION_WINDOW_MS = 48 * 60 * 60 * 1000;
 const ACTIVE_JOB_STATUSES = new Set(['QUEUED', 'CLAIMED', 'RUNNING', 'NEEDS_ATTENTION']);
+// Sin análisis canónico, un primer análisis se puede volver a pedir sólo si todo lo anterior terminó en falla.
+const RETRYABLE_FIRST_STATUSES = new Set(['FAILED', 'CANCELLED']);
 const LAUNCHED_ADMISSION_STATUSES = new Set(['admitted', 'existing']);
 // Red de seguridad de costo, igual que la del cambio de fase: por proceso y en total por día (hora Bogotá). El incremental
 // (sólo los documentos cargados a mano, migración 139) es mucho más barato y se dispara solo, así que tiene su propio cupo.
@@ -101,8 +103,10 @@ export async function evaluateAgt002ManualReanalysis(database, opportunityId, {
   // arrancó —la Fiscalía del Eje Cafetero quedó con 12 documentos y sin análisis— no había ninguna puerta. El botón
   // lanza también el primero, sólo si no hay ningún análisis admitido todavía y ya hay documentos de la entidad. El
   // incremental sigue necesitando un análisis vigente contra el que comparar.
+  // Juan, 2026-11-13: si todos los intentos anteriores fallaron, el botón también lanza el primero. Defensoría quedó sin
+  // análisis porque un reinicio del puente cortó la síntesis (12-nov) y no había forma de volver a pedirlo.
   if (!canonical?.id) {
-    if (mode !== 'full' || (jobs || []).length > 0) return { reason: 'sin_analisis_previo', tenderId };
+    if (mode !== 'full' || (jobs || []).some(job => !RETRYABLE_FIRST_STATUSES.has(job.status))) return { reason: 'sin_analisis_previo', tenderId };
     const documents = await must(database.from('psi_tender_document_versions')
       .select('id').eq('opportunity_id', opportunityId).eq('current', true).limit(1), 'documentos vigentes');
     if (!(documents || []).length) return { reason: 'sin_documentos_legibles', tenderId };
