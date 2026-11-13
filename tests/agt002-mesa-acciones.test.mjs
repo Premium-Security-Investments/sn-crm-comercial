@@ -54,6 +54,15 @@ test('anota en la ficha lo que la persona decide, a su nombre', async () => {
   assert.match(lineas[0], /^Anoté en la ficha del proceso: «Juan Botero se encarga/);
 });
 
+test('la nota de la Mesa cumple las reglas de la tabla de aclaraciones (sin target_kind suelto)', async () => {
+  const db = baseDeDatos({ id: 'o1' });
+  await ejecutarAgt002AccionesDeLaMesa(db, { ...BASE, mensaje: 'anote que yo me encargo del socio', acciones: [{ tipo: 'anotar', campo: '', valor: 'Juan se encarga del socio.', fuente: '', pedido_literal: 'yo me encargo del socio' }] });
+  const fila = db.hecho.clarifications[0];
+  assert.equal(fila.tabla, 'psi_agt002_clarifications');
+  assert.ok(fila.target_kind === null || fila.target_kind === undefined || ['requirement', 'finding'].includes(fila.target_kind));
+  assert.equal(fila.target_kind == null, fila.target_id == null, 'target_kind y target_id van juntos (check de la tabla)');
+});
+
 test('lleva a Requisitos el bloqueo que la persona pide, en su grupo y con la cita; no lo duplica', async () => {
   const db = baseDeDatos({ id: 'o1' });
   const mensaje = 'Eso de la sucursal llévelo a Requisitos, nos inhabilita';

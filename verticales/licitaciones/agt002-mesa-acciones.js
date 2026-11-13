@@ -98,9 +98,11 @@ export async function ejecutarAgt002AccionesDeLaMesa(database, { acciones, mensa
         continue;
       }
       if (accion.tipo === 'anotar') {
+        // Sin target_kind: la tabla sólo admite «requirement» o «finding», y siempre con target_id (2026-11-13: con «mesa»
+        // la inserción fallaba en producción).
         const { error } = await database.from('psi_agt002_clarifications').insert({
           opportunity_id: opportunityId, tender_id: tenderId, author_id: autorId,
-          content: String(accion.valor).trim().slice(0, 1000), target_kind: 'mesa', target_label: `Dicho en la Mesa: «${String(accion.pedido_literal).trim().slice(0, 300)}»`,
+          content: String(accion.valor).trim().slice(0, 1000), target_kind: null, target_label: `Dicho en la Mesa: «${String(accion.pedido_literal).trim().slice(0, 300)}»`,
         });
         if (error) throw error;
         lineas.push(`Anoté en la ficha del proceso: «${String(accion.valor).trim()}».`);
