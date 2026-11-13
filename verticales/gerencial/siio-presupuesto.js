@@ -1,19 +1,43 @@
 // AGT-001 / Gerencia: presupuesto contra ejecución, el «Mapa de ejecución» que Finanzas arma a mano en el Excel (hoja
 // AnVal11), calculado con la contabilidad de Avancys.
 //
-// Cada cuenta suma en un rubro según el mapeo de Parámetros (punto 11). Rubro 0 = ingresos de vigilancia; 1–18 = los
-// rubros de vigilancia; 20 = ingresos de tecnología; 21–40 = rubros de tecnología. Cada rubro se lee como % del ingreso
-// de su unidad y se compara con el presupuesto del año (punto 1). La provisión de ingresos mes vencido suma al ingreso
-// de vigilancia, igual que en el estado de resultados.
-import { PARAMETROS_TABLE, RUBROS } from './siio-parametros.js';
+// Cada cuenta suma en un rubro según el mapeo de Parámetros (punto 11); los rubros de cada unidad están en
+// siio-parametros.js. Cada rubro se lee como % del ingreso de su unidad y se compara con el presupuesto del año (punto 1).
+import { PARAMETROS_TABLE, UNIDADES } from './siio-parametros.js';
 
-const INGRESOS_VIGILANCIA = 0;
-const INGRESOS_TECNOLOGIA = 20;
 const MAX_SIN_MAPEO = 8;
 const redondear = valor => Math.round(valor * 10) / 10;
 
+// El presupuesto de un rubro: { vigilancia: { salarios: 49 } }. Acepta también la forma sembrada primero
+// ({ salarios: { vigilancia: 49 } }) mientras quede alguna fila así en la base.
+function metaDe(presupuesto, unidad, clave) {
+  const valor = presupuesto?.[unidad]?.[clave] ?? presupuesto?.[clave]?.[unidad];
+  return Number.isFinite(valor) ? valor : null;
+}
+
+function unidadDelMes(unidad, porRubro, ajusteIngresos, presupuesto) {
+  const ingresos = (porRubro.get(unidad.ingresos) || 0) + ajusteIngresos;
+  const rubros = unidad.rubros.map(rubro => {
+    const ejecutado = -(porRubro.get(rubro.numero) || 0);
+    const pct = ingresos ? redondear((ejecutado / ingresos) * 100) : null;
+    const meta = presupuesto ? metaDe(presupuesto, unidad.clave, rubro.clave) : null;
+    return { clave: rubro.clave, etiqueta: rubro.etiqueta, ejecutado, pct, presupuesto: meta, diferencia: pct !== null && meta !== null ? redondear(pct - meta) : null };
+  });
+  const costos = rubros.reduce((suma, fila) => suma + fila.ejecutado, 0);
+  const conMeta = rubros.some(fila => fila.presupuesto !== null);
+  const sumaPresupuesto = rubros.reduce((suma, fila) => suma + (fila.presupuesto || 0), 0);
+  return {
+    ingresos,
+    costos,
+    rentabilidad: ingresos ? redondear(((ingresos - costos) / ingresos) * 100) : null,
+    rentabilidad_presupuesto: conMeta ? redondear(100 - sumaPresupuesto) : null,
+    rubros,
+  };
+}
+
 // Puro. `meses`: { 'AAAA-MM': { cuentas: { codigo: valor }, ajuste_ingresos, estado } } con ingresos en positivo y
-// costos en negativo; `mapeo`: [{ cuenta, rubro }]; `presupuestos`: { 'AAAA': { clave_rubro: { vigilancia } } }.
+// costos en negativo; `mapeo`: [{ cuenta, rubro }]; `presupuestos`: { 'AAAA': { vigilancia: {...}, tecnologia: {...} } }.
+// La provisión de mes vencido es de vigilancia y suma a su ingreso, como en el estado de resultados.
 export function presupuestoContraEjecucion({ meses = {}, mapeo = [], presupuestos = {} }) {
   const rubroDe = new Map(mapeo.filter(fila => fila?.cuenta && Number.isFinite(Number(fila.rubro))).map(fila => [String(fila.cuenta), Number(fila.rubro)]));
   const salida = {};
@@ -28,37 +52,13 @@ export function presupuestoContraEjecucion({ meses = {}, mapeo = [], presupuesto
       }
       porRubro.set(rubro, (porRubro.get(rubro) || 0) + valor);
     }
-    const ingresosVigilancia = (porRubro.get(INGRESOS_VIGILANCIA) || 0) + (datos.ajuste_ingresos || 0);
     const presupuesto = presupuestos[mes.slice(0, 4)] || null;
-    const rubros = RUBROS.map(rubro => {
-      const ejecutado = -(porRubro.get(rubro.numero) || 0);
-      const pct = ingresosVigilancia ? redondear((ejecutado / ingresosVigilancia) * 100) : null;
-      const meta = presupuesto?.[rubro.clave]?.vigilancia;
-      const presupuestado = Number.isFinite(meta) ? meta : null;
-      return { clave: rubro.clave, etiqueta: rubro.etiqueta, ejecutado, pct, presupuesto: presupuestado, diferencia: pct !== null && presupuestado !== null ? redondear(pct - presupuestado) : null };
-    });
-    const costos = rubros.reduce((suma, fila) => suma + fila.ejecutado, 0);
-    const presupuestoCompleto = rubros.every(fila => fila.presupuesto !== null || fila.ejecutado === 0);
-    const sumaPresupuesto = rubros.reduce((suma, fila) => suma + (fila.presupuesto || 0), 0);
-    let ingresosTecnologia = porRubro.get(INGRESOS_TECNOLOGIA) || 0;
-    let costosTecnologia = 0;
-    for (const [rubro, valor] of porRubro) if (rubro > INGRESOS_TECNOLOGIA) costosTecnologia -= valor;
+    const [vigilancia, tecnologia] = UNIDADES;
     salida[mes] = {
       mes,
       estado: datos.estado || null,
-      vigilancia: {
-        ingresos: ingresosVigilancia,
-        costos,
-        rentabilidad: ingresosVigilancia ? redondear(((ingresosVigilancia - costos) / ingresosVigilancia) * 100) : null,
-        rentabilidad_presupuesto: presupuesto && presupuestoCompleto ? redondear(100 - sumaPresupuesto) : null,
-        rubros,
-      },
-      // Los rubros de tecnología no tienen nombre confirmado: por ahora sólo el total.
-      tecnologia: {
-        ingresos: ingresosTecnologia,
-        costos: costosTecnologia,
-        rentabilidad: ingresosTecnologia ? redondear(((ingresosTecnologia - costosTecnologia) / ingresosTecnologia) * 100) : null,
-      },
+      vigilancia: unidadDelMes(vigilancia, porRubro, datos.ajuste_ingresos || 0, presupuesto),
+      tecnologia: unidadDelMes(tecnologia, porRubro, 0, presupuesto),
       sin_mapeo: sinMapeo.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)).slice(0, MAX_SIN_MAPEO),
       sin_mapeo_cuentas: sinMapeo.length,
       presupuesto_anio: presupuesto ? mes.slice(0, 4) : null,

@@ -9,8 +9,9 @@ import { Badge } from './SiioUi';
 type Campo = { clave: string; etiqueta: string; tipo: 'pct' | 'pesos' | 'numero' | 'texto' | 'texto_largo' | 'fecha' | 'opcion'; opciones?: [string, string][]; requerido?: boolean };
 type Parametro = {
   numero: number; clave: string; grupo: 'persona' | 'temporal' | 'mantenimiento'; nombre: string; encargado: string; frecuencia: string;
-  periodo: 'anio' | 'mes' | 'ninguno'; para: string; forma: 'campos' | 'filas' | 'tabla' | 'externo'; campos?: Campo[]; filas?: [string, string][]; donde?: string;
+  periodo: 'anio' | 'mes' | 'ninguno'; para: string; forma: 'campos' | 'filas' | 'secciones' | 'externo'; campos?: Campo[]; secciones?: Seccion[]; donde?: string;
 };
+type Seccion = { clave: string; etiqueta: string; filas: [string, string][] };
 type Version = { id: string; clave: string; periodo: string; valor?: unknown; nota: string | null; estado: 'confirmado' | 'sin_confirmar'; creado_por_nombre: string | null; creado_at: string; reemplazado_at?: string | null };
 type Respuesta = { catalogo: Parametro[]; vigentes: Version[]; cambios: Version[]; disponible: boolean; puede_editar: boolean; clientes_mes_vencido: number | null };
 type Fila = Record<string, string | number | null>;
@@ -27,7 +28,7 @@ function periodoInicial(parametro: Parametro) {
 
 function vacio(parametro: Parametro): unknown {
   if (parametro.forma === 'filas') return [];
-  if (parametro.forma === 'tabla') return Object.fromEntries((parametro.filas || []).map(([clave]) => [clave, {}]));
+  if (parametro.forma === 'secciones') return Object.fromEntries((parametro.secciones || []).map(seccion => [seccion.clave, {}]));
   return {};
 }
 
@@ -88,18 +89,21 @@ function Editor({ parametro, vigentes, puedeEditar, onGuardado }: { parametro: P
       </label>)}
     </div> : null}
 
-    {parametro.forma === 'tabla' ? <div className="siio-table-wrap"><table>
-      <thead><tr><th>Rubro</th>{campos.map(campo => <th key={campo.clave}>{campo.etiqueta}</th>)}</tr></thead>
-      <tbody>{(parametro.filas || []).map(([clave, etiqueta]) => {
-        const fila = (objeto[clave] || {}) as Fila;
-        return <tr key={clave}><td>{etiqueta}</td>{campos.map(campo => <td key={campo.clave}>
-          <Entrada campo={campo} valor={fila[campo.clave]} soloLectura={soloLectura} onCambio={valor => setBorrador({ ...objeto, [clave]: { ...fila, [campo.clave]: valor } })} />
-        </td>)}</tr>;
-      })}</tbody>
-      <tfoot><tr><th>Total</th>{campos.map(campo => <th key={campo.clave}>
-        {(Math.round((parametro.filas || []).reduce((suma, [clave]) => suma + (Number(((objeto[clave] || {}) as Fila)[campo.clave]) || 0), 0) * 100) / 100).toLocaleString('es-CO')} %
-      </th>)}</tr></tfoot>
-    </table></div> : null}
+    {parametro.forma === 'secciones' ? <div className="siio-parametro-secciones">{(parametro.secciones || []).map(seccion => {
+      const datos = (objeto[seccion.clave] || {}) as Fila;
+      const total = Math.round(seccion.filas.reduce((suma, [clave]) => suma + (Number(datos[clave]) || 0), 0) * 100) / 100;
+      const pctCampo: Campo = { clave: 'pct', etiqueta: seccion.etiqueta, tipo: 'pct' };
+      return <div key={seccion.clave} className="siio-table-wrap"><table>
+        <thead><tr><th>{seccion.etiqueta}</th><th>% del ingreso</th></tr></thead>
+        <tbody>{seccion.filas.map(([clave, etiqueta]) => <tr key={clave}><td>{etiqueta}</td><td>
+          <Entrada campo={{ ...pctCampo, etiqueta: `${seccion.etiqueta}: ${etiqueta}` }} valor={datos[clave]} soloLectura={soloLectura} onCambio={valor => setBorrador({ ...objeto, [seccion.clave]: { ...datos, [clave]: valor } })} />
+        </td></tr>)}</tbody>
+        <tfoot>
+          <tr><th>Total costos y gastos</th><th>{total.toLocaleString('es-CO')} %</th></tr>
+          <tr><th>Rentabilidad presupuestada</th><th>{(Math.round((100 - total) * 100) / 100).toLocaleString('es-CO')} %</th></tr>
+        </tfoot>
+      </table></div>;
+    })}</div> : null}
 
     {parametro.forma === 'filas' ? <>
       <div className="siio-table-wrap"><table>

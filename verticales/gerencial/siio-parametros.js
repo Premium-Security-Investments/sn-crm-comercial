@@ -9,8 +9,9 @@ import { LINEAS } from '../../avancys-pyg.js';
 
 export const PARAMETROS_TABLE = 'siio_parametros';
 
-// Los 18 rubros del «Mapa de ejecución» de Finanzas (hoja AnVal11), en su orden. El número es el que marca cada cuenta
-// en la columna de rubro del Excel: 1–18 en vigilancia; en tecnología, el mismo rubro suma 20.
+// Los rubros del «Mapa de ejecución» de Finanzas (hoja AnVal11), en su orden. El número es el que marca cada cuenta en
+// la columna de rubro del Excel: 1–18 en vigilancia (0 = ingresos) y 21–40 en tecnología (20 = ingresos). Tecnología
+// tiene sus propios rubros, no los mismos de vigilancia.
 export const RUBROS = Object.freeze([
   { clave: 'salarios', numero: 1, etiqueta: 'Salarios' },
   { clave: 'prestaciones', numero: 2, etiqueta: 'Prestaciones y seguridad social' },
@@ -20,7 +21,7 @@ export const RUBROS = Object.freeze([
   { clave: 'supervision', numero: 6, etiqueta: 'Supervisión' },
   { clave: 'servicios_adicionales', numero: 7, etiqueta: 'Servicios adicionales' },
   { clave: 'valores_agregados', numero: 8, etiqueta: 'Valores agregados' },
-  { clave: 'seleccion', numero: 9, etiqueta: 'Selección' },
+  { clave: 'seleccion', numero: 9, etiqueta: 'Selección y desarrollo' },
   { clave: 'comisiones', numero: 10, etiqueta: 'Comisiones' },
   { clave: 'impuestos', numero: 11, etiqueta: 'Impuestos' },
   { clave: 'comercializacion', numero: 12, etiqueta: 'Comercialización' },
@@ -32,6 +33,34 @@ export const RUBROS = Object.freeze([
   { clave: 'discrecionales', numero: 18, etiqueta: 'Discrecionales' },
 ]);
 
+export const RUBROS_TECNOLOGIA = Object.freeze([
+  { clave: 'personal_monitoreo', numero: 21, etiqueta: 'Personal de monitoreo' },
+  { clave: 'personal_tecnico', numero: 22, etiqueta: 'Personal técnico' },
+  { clave: 'contratistas', numero: 23, etiqueta: 'Contratistas' },
+  { clave: 'materia_prima', numero: 24, etiqueta: 'Materia prima' },
+  { clave: 'dotacion', numero: 25, etiqueta: 'Dotación' },
+  { clave: 'logistica', numero: 26, etiqueta: 'Logística' },
+  { clave: 'seguros', numero: 27, etiqueta: 'Seguros' },
+  { clave: 'supervision_reaccion', numero: 28, etiqueta: 'Supervisión y reacción' },
+  { clave: 'monitoreo', numero: 29, etiqueta: 'Monitoreo' },
+  { clave: 'valores_agregados', numero: 30, etiqueta: 'Valores agregados' },
+  { clave: 'seleccion', numero: 31, etiqueta: 'Selección y desarrollo' },
+  { clave: 'comisiones', numero: 32, etiqueta: 'Comisiones' },
+  { clave: 'impuestos', numero: 33, etiqueta: 'Impuestos' },
+  { clave: 'comercializacion', numero: 34, etiqueta: 'Comercialización' },
+  { clave: 'personal_administrativo', numero: 35, etiqueta: 'Personal administrativo' },
+  { clave: 'administrativos', numero: 36, etiqueta: 'Gastos administrativos' },
+  { clave: 'financieros', numero: 37, etiqueta: 'Gastos financieros' },
+  { clave: 'siniestralidad', numero: 38, etiqueta: 'Siniestralidad' },
+  { clave: 'imprevistos', numero: 39, etiqueta: 'Imprevistos' },
+  { clave: 'discrecionales', numero: 40, etiqueta: 'Discrecionales' },
+]);
+
+export const UNIDADES = Object.freeze([
+  { clave: 'vigilancia', etiqueta: 'Vigilancia', ingresos: 0, rubros: RUBROS },
+  { clave: 'tecnologia', etiqueta: 'Tecnología', ingresos: 20, rubros: RUBROS_TECNOLOGIA },
+]);
+
 const INDICADORES = [
   ['liquidez', 'Índice de liquidez'], ['endeudamiento', 'Nivel de endeudamiento'], ['capital_trabajo', 'Capital de trabajo'],
   ['cobertura_intereses', 'Razón de cobertura de intereses'], ['rentabilidad_patrimonio', 'Rentabilidad del patrimonio'],
@@ -39,13 +68,13 @@ const INDICADORES = [
 ];
 const LINEAS_PYG = LINEAS.map(linea => [linea.clave, linea.etiqueta]);
 
-// forma: 'campos' (un objeto), 'filas' (una lista), 'tabla' (filas fijas × columnas) o 'externo' (vive en otra pantalla).
+// forma: 'campos' (un objeto), 'filas' (una lista), 'secciones' (un % por fila fija, en varias tablas) o 'externo'
+// (vive en otra pantalla).
 // periodo: 'anio' ('2026'), 'mes' ('2026-11') o 'ninguno'.
 export const PARAMETROS = Object.freeze([
   { numero: 1, clave: 'presupuesto_rubros', grupo: 'persona', nombre: 'Presupuesto por rubro', encargado: 'Finanzas', frecuencia: 'Anual, con revisiones', periodo: 'anio',
     para: 'Presupuesto contra ejecución: cada rubro como % del ingreso de su unidad de negocio.',
-    forma: 'tabla', filas: RUBROS.map(rubro => [rubro.clave, rubro.etiqueta]),
-    campos: [{ clave: 'vigilancia', etiqueta: 'Vigilancia', tipo: 'pct' }, { clave: 'tecnologia', etiqueta: 'Tecnología', tipo: 'pct' }] },
+    forma: 'secciones', secciones: UNIDADES.map(unidad => ({ clave: unidad.clave, etiqueta: unidad.etiqueta, filas: unidad.rubros.map(rubro => [rubro.clave, rubro.etiqueta]) })) },
   { numero: 2, clave: 'metas_mes', grupo: 'persona', nombre: 'Metas financieras del mes', encargado: 'Gerencia', frecuencia: 'Mensual', periodo: 'mes',
     para: 'Cumplimiento del mes en la Torre. Las metas de ventas siguen en «Cargar metas».',
     forma: 'campos', campos: [{ clave: 'ingresos', etiqueta: 'Ingresos', tipo: 'pesos' }, { clave: 'margen_operacional', etiqueta: 'Margen operacional', tipo: 'pct' }] },
@@ -150,10 +179,14 @@ export function limpiarValor(parametro, valor) {
     const llena = fila => fila && typeof fila === 'object' && Object.values(fila).some(item => item !== null && item !== undefined && String(item).trim() !== '');
     return valor.filter(llena).map((fila, indice) => limpiarObjeto(parametro.campos, fila, `Fila ${indice + 1}: `));
   }
-  if (parametro.forma === 'tabla') {
+  if (parametro.forma === 'secciones') {
     const fuente = valor && typeof valor === 'object' && !Array.isArray(valor) ? valor : {};
     const salida = {};
-    for (const [clave, etiqueta] of parametro.filas) salida[clave] = limpiarObjeto(parametro.campos, fuente[clave], `${etiqueta}: `);
+    for (const seccion of parametro.secciones) {
+      const datos = fuente[seccion.clave] && typeof fuente[seccion.clave] === 'object' ? fuente[seccion.clave] : {};
+      salida[seccion.clave] = {};
+      for (const [clave, etiqueta] of seccion.filas) salida[seccion.clave][clave] = limpiarCampo({ etiqueta, tipo: 'pct' }, datos[clave], `${seccion.etiqueta}, `);
+    }
     return salida;
   }
   throw invalid('Este parámetro se registra en otra pantalla.');

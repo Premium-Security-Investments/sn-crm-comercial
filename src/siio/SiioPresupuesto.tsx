@@ -1,4 +1,4 @@
-import type { Presupuesto } from './SiioTorreAvancys';
+import type { Presupuesto, UnidadEjecucion } from './SiioTorreAvancys';
 import { Badge } from './SiioUi';
 
 // Presupuesto contra ejecución: el «Mapa de ejecución» de Finanzas (hoja AnVal11) calculado con Avancys y con el
@@ -29,35 +29,42 @@ export function SiioPresupuesto({ presupuesto, mes }: { presupuesto: Presupuesto
     <h3>Presupuesto contra ejecución</h3>
     <p className="siio-secondary">Todavía no hay un mes cerrado en Avancys hasta {nombreMes(mes)} para comparar.</p>
   </section>;
-  const v = fila.vigilancia;
-  const pasados = v.rubros.filter(rubro => rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA);
   const sinConfirmar = presupuesto.sin_confirmar || [];
   return <section className="siio-presupuesto" aria-label="Presupuesto contra ejecución">
-    <h3>Presupuesto contra ejecución · vigilancia</h3>
-    <p>
-      En {nombreMes(fila.mes)} la vigilancia dejó <strong>{porcentaje(v.rentabilidad)}</strong>
-      {v.rentabilidad_presupuesto !== null ? <> contra <strong>{porcentaje(v.rentabilidad_presupuesto)}</strong> presupuestado</> : null}.
-      {pasados.length ? <> Se pasan {pasados.length === 1 ? 'un rubro' : `${pasados.length} rubros`}: {pasados.map(rubro => rubro.etiqueta.toLowerCase()).join(', ')}.</> : null}
-    </p>
+    <h3>Presupuesto contra ejecución</h3>
     {fila.mes !== mes ? <p className="siio-pulse-footnote">{nombreMes(mes)} no está cerrado en la contabilidad: se compara {nombreMes(fila.mes)}, el último mes cerrado.</p> : null}
-    <div className="siio-table-wrap"><table>
-      <thead><tr><th>Rubro</th><th>Presupuesto</th><th>Ejecutado</th><th>Diferencia</th><th>Valor del mes</th></tr></thead>
-      <tbody>{v.rubros.map(rubro => <tr key={rubro.clave} className={rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA ? 'siio-fila-alerta' : undefined}>
-        <td>{rubro.etiqueta}</td>
-        <td>{porcentaje(rubro.presupuesto)}</td>
-        <td>{porcentaje(rubro.pct)}</td>
-        <td>{puntos(rubro.diferencia)}</td>
-        <td>{millones(rubro.ejecutado)}</td>
-      </tr>)}</tbody>
-      <tfoot><tr><th>Ingresos de vigilancia</th><th /><th /><th /><th>{millones(v.ingresos)}</th></tr></tfoot>
-    </table></div>
+    <Unidad nombre="Vigilancia" mes={fila.mes} u={fila.vigilancia} />
+    <Unidad nombre="Tecnología" mes={fila.mes} u={fila.tecnologia} />
     <p className="siio-pulse-footnote">
-      Tecnología, {nombreMes(fila.mes)}: ingresos {millones(fila.tecnologia.ingresos)}, rentabilidad {porcentaje(fila.tecnologia.rentabilidad)}. Sus rubros se abren cuando Finanzas confirme los nombres.
-      {' '}Cada rubro es el % del ingreso de vigilancia, con la provisión de mes vencido, como en el Mapa de ejecución de Finanzas; no incluye los ajustes de cierre que no están en Avancys.
+      Cada rubro es el % del ingreso de su unidad, como en el Mapa de ejecución de Finanzas; el de vigilancia lleva la provisión de mes vencido. No incluye los ajustes de cierre que no están en Avancys.
     </p>
     {sinConfirmar.length ? <p className="siio-pulse-footnote"><Badge tone="amber">Sin confirmar</Badge> El presupuesto y el mapeo de cuentas se sembraron del Excel; Finanzas los confirma en Parámetros.</p> : null}
     {fila.sin_mapeo_cuentas ? <p className="siio-pulse-footnote">
       {fila.sin_mapeo_cuentas === 1 ? '1 cuenta con movimiento no tiene rubro' : `${fila.sin_mapeo_cuentas} cuentas con movimiento no tienen rubro`}: {fila.sin_mapeo.map(item => `${item.cuenta} (${millones(item.valor)})`).join(', ')}. Se asignan en Parámetros.
     </p> : null}
   </section>;
+}
+
+function Unidad({ nombre, mes, u }: { nombre: string; mes: string; u: UnidadEjecucion }) {
+  if (!u.ingresos) return <p className="siio-secondary">{nombre}: sin ingresos registrados en {nombreMes(mes)}.</p>;
+  const pasados = u.rubros.filter(rubro => rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA);
+  return <div className="siio-presupuesto-unidad">
+    <h4>{nombre}</h4>
+    <p>
+      En {nombreMes(mes)} dejó <strong>{porcentaje(u.rentabilidad)}</strong>
+      {u.rentabilidad_presupuesto !== null ? <> contra <strong>{porcentaje(u.rentabilidad_presupuesto)}</strong> presupuestado</> : null}.
+      {pasados.length ? <> Se pasan {pasados.length === 1 ? 'un rubro' : `${pasados.length} rubros`}: {pasados.map(rubro => rubro.etiqueta.toLowerCase()).join(', ')}.</> : null}
+    </p>
+    <div className="siio-table-wrap"><table>
+      <thead><tr><th>Rubro</th><th>Presupuesto</th><th>Ejecutado</th><th>Diferencia</th><th>Valor del mes</th></tr></thead>
+      <tbody>{u.rubros.filter(rubro => rubro.ejecutado || rubro.presupuesto).map(rubro => <tr key={rubro.clave} className={rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA ? 'siio-fila-alerta' : undefined}>
+        <td>{rubro.etiqueta}</td>
+        <td>{porcentaje(rubro.presupuesto)}</td>
+        <td>{porcentaje(rubro.pct)}</td>
+        <td>{puntos(rubro.diferencia)}</td>
+        <td>{millones(rubro.ejecutado)}</td>
+      </tr>)}</tbody>
+      <tfoot><tr><th>Ingresos de {nombre.toLowerCase()}</th><th /><th /><th /><th>{millones(u.ingresos)}</th></tr></tfoot>
+    </table></div>
+  </div>;
 }

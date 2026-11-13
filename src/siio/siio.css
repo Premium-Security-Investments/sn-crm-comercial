@@ -1315,3 +1315,9 @@
 .siio-clientes-meses button{min-height:36px;padding:6px 12px;border:1px solid #cbd9e8;border-radius:999px;background:#fff;color:#1b355f;font:inherit;font-weight:700;text-transform:capitalize;cursor:pointer}
 .siio-clientes-meses button.active{background:#174ea6;border-color:#174ea6;color:#fff}
 .siio-dashboard .siio-table-wrap td.siio-celda-mal{background:#fef2f2;color:#991b1b;font-weight:700}
+
+.siio-parametro-secciones{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;align-items:start}
+.siio-parametro-secciones td:last-child{width:150px}
+.siio-presupuesto-unidad{display:grid;gap:6px}
+.siio-presupuesto-unidad h4{margin:8px 0 0;font-size:15px}
+.siio-presupuesto-unidad p{margin:0}
