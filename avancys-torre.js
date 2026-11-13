@@ -11,7 +11,7 @@
 
 import { configuracionDeAvancys, crearLectorAvancys } from './avancys-odoo-lectura.js';
 import { abrirSesion, claseDeCuenta, cuentaPuc, LINEAS_ANALITICAS, rentabilidadAproximada } from './avancys-acceso.js';
-import { CLIENTES_MES_VENCIDO, estadoDeResultados, LINEAS, sumarMeses } from './avancys-pyg.js';
+import { CLIENTES_MES_VENCIDO, estadoDeResultados, ingresosContratados, LINEAS, proyectarMes, sumarMeses } from './avancys-pyg.js';
 
 export const VIGENCIA_MS = 30 * 60 * 1000;
 // Un mes cuya nómina contabilizada está por debajo de este tanto de la de los otros meses está a
@@ -105,10 +105,26 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     // La cartera no tumba el resultado ni los clientes: se dice que no se pudo leer.
     cartera = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
   }
+  // Los meses incompletos se proyectan sobre el último mes cerrado; el mes en curso, además, con lo
+  // contratado en las órdenes de servicio. Es una proyección y así se muestra.
+  const base = pyg.find(fila => fila.mes === mesCerrado) || null;
+  const pygConEstado = [];
+  for (const fila of pyg) {
+    const estado = estadoDe.get(fila.mes)?.estado || 'parcial';
+    let proyeccion = null;
+    if (estado === 'parcial' && base) {
+      let ingresosOrdenes = null;
+      if (fila.mes === mesActual) {
+        try { ingresosOrdenes = await ingresosContratados(ejecutar, fila.mes); } catch { ingresosOrdenes = null; }
+      }
+      proyeccion = proyectarMes(fila, base, { ingresosOrdenes });
+    }
+    pygConEstado.push({ ...fila, estado, motivo: estadoDe.get(fila.mes)?.motivo || null, proyeccion });
+  }
   return {
     meses,
     lineas_pyg: LINEAS,
-    pyg: pyg.map(fila => ({ ...fila, estado: estadoDe.get(fila.mes)?.estado || 'parcial', motivo: estadoDe.get(fila.mes)?.motivo || null })),
+    pyg: pygConEstado,
     mes_cerrado: mesCerrado,
     mes_anterior: cerrados.at(-2)?.mes || null,
     primera_linea: primerDia,

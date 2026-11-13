@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { api } from '../apiClient';
 import { Badge } from './SiioUi';
+import type { FinancialPulse } from './financialPulse';
 
 // Las dos preguntas de plata de la Torre (plan del 2026-11-12), en vivo desde Avancys:
 // ¿ganamos plata el mes pasado? y ¿qué clientes dejan y cuáles quitan?
@@ -20,6 +21,7 @@ type MesPyg = {
   provision: { del_mes: number; del_mes_anterior: number; ajuste: number; clientes: { nombre: string; devengado: number }[]; error: string | null };
   totales: Totales;
   sin_clasificar: { cuenta: string; valor: number }[];
+  proyeccion: { lineas: Record<string, number>; totales: Totales; estimadas: string[]; base_mes: string; ingresos_ordenes: number | null } | null;
 };
 type Saldo = { saldo: number; facturas: number };
 type Cartera = { error?: string; hoy?: string; total?: Saldo; vencido?: Saldo; tramos?: ({ tramo: string } & Saldo)[]; deudores?: { cliente: string; vencido: number; facturas: number }[] };
@@ -70,7 +72,7 @@ function cambio(actual: number, anterior: number | undefined, etiqueta: string) 
   return `${diferencia >= 0 ? 'Sube' : 'Baja'} ${millones(Math.abs(diferencia))} frente a ${etiqueta} (${millones(anterior)})`;
 }
 
-export function SiioTorreAvancys() {
+export function SiioTorreAvancys({ oficial = null }: { oficial?: FinancialPulse | null }) {
   const [estado, setEstado] = useState<'cargando' | 'listo' | 'error'>('cargando');
   const [torre, setTorre] = useState<Torre | null>(null);
   const [error, setError] = useState('');
@@ -153,7 +155,7 @@ export function SiioTorreAvancys() {
         </p>
       </> : null}
 
-      {torre?.pyg?.length && torre.lineas_pyg ? <EstadoDeResultados lineas={torre.lineas_pyg} meses={torre.pyg} /> : null}
+      {torre?.pyg?.length && torre.lineas_pyg ? <EstadoDeResultados lineas={torre.lineas_pyg} meses={torre.pyg} oficial={oficial} /> : null}
 
       <h3>¿Nos están pagando?</h3>
       {torre?.cartera?.error ? <p className="siio-alert-text">No se pudo leer la cartera: {torre.cartera.error}</p> : null}
@@ -202,27 +204,47 @@ const GRUPOS: { grupo: string; titulo: string; total: keyof Totales; totalEtique
 ];
 
 // El estado de resultados con las líneas del PYG de Finanzas, mes a mes, en vivo desde Avancys.
-// Modelo para afinar con las áreas (Juan, 2026-11-13): cada línea dice qué cuentas suma.
-function EstadoDeResultados({ lineas, meses }: { lineas: LineaPyg[]; meses: MesPyg[] }) {
+// Modelo para afinar con las áreas (Juan, 2026-11-13): cada línea dice qué cuentas suma. Los meses
+// cerrados son automáticos; los incompletos y el mes en curso, proyectados (≈); el cierre oficial de
+// Finanzas (el Excel cargado) se muestra debajo para los meses que lo tienen.
+function EstadoDeResultados({ lineas, meses, oficial }: { lineas: LineaPyg[]; meses: MesPyg[]; oficial: FinancialPulse | null }) {
   const ultimoCerrado = [...meses].reverse().find(fila => fila.estado === 'cerrado');
   const prov = ultimoCerrado?.provision;
   const sinClasificar = meses.flatMap(fila => fila.sin_clasificar.map(c => ({ ...c, mes: fila.mes })));
+  const valores = (fila: MesPyg) => fila.proyeccion ? fila.proyeccion.lineas : fila.lineas;
+  const totalesDe = (fila: MesPyg) => fila.proyeccion ? fila.proyeccion.totales : fila.totales;
+  const oficialDe = (mes: string) => {
+    const [anio, numero] = mes.split('-').map(Number);
+    return oficial?.months.find(m => m.year === anio && m.month === numero)?.totals || null;
+  };
+  const conOficial = meses.some(fila => oficialDe(fila.mes));
+  const celda = (fila: MesPyg, valor: number, clave?: string) => {
+    const estimada = fila.proyeccion && (!clave || fila.proyeccion.estimadas.includes(clave));
+    return <span className={estimada ? 'siio-secondary' : undefined}>{fila.proyeccion ? '≈ ' : ''}{millones(valor)}</span>;
+  };
   return <>
     <h3>Estado de resultados automático · como el PYG de Finanzas</h3>
     <p className="siio-pulse-footnote">
-      Mismas líneas y cuentas que el Excel de Finanzas, armadas solas desde la contabilidad de Avancys. Es un modelo en afinación:
-      las diferencias con el Excel se van cerrando a medida que las áreas registran completo en Avancys. Los meses parciales se muestran sin conclusiones.
+      Mismas líneas y cuentas que el Excel de Finanzas, armadas solas desde la contabilidad de Avancys. Los meses cerrados son automáticos;
+      los que todavía no están completos y el mes en curso son <strong>proyecciones (≈)</strong>: lo registrado más lo que falta, estimado con el último mes cerrado
+      y, para el mes en curso, con lo contratado en las órdenes de servicio. Es un modelo en afinación: se vuelve más preciso a medida que las áreas registran completo en Avancys.
     </p>
     <div className="siio-table-wrap"><table>
-      <thead><tr><th>Línea</th>{meses.map(fila => <th key={fila.mes}>{nombreMes(fila.mes)}{fila.estado === 'parcial' ? ' *' : ''}</th>)}</tr></thead>
+      <thead><tr><th>Línea</th>{meses.map(fila => <th key={fila.mes}>{nombreMes(fila.mes)}{fila.proyeccion ? <><br /><span className="siio-secondary">{fila.motivo === 'Mes en curso' ? 'en vivo · proyección' : 'proyección'}</span></> : null}</th>)}</tr></thead>
       <tbody>{GRUPOS.map(g => <Fragment key={g.grupo}>
         {lineas.filter(l => l.grupo === g.grupo).map(l => <tr key={l.clave}>
           <td title={`Cuentas ${l.cuentas}`}>{l.etiqueta}{l.clave === 'ing_vigilancia' ? ' (con provisión)' : ''}</td>
-          {meses.map(fila => <td key={fila.mes}>{millones(fila.lineas[l.clave] || 0)}</td>)}
+          {meses.map(fila => <td key={fila.mes}>{celda(fila, valores(fila)[l.clave] || 0, l.clave)}</td>)}
         </tr>)}
-        <tr><td><strong>{g.totalEtiqueta}</strong></td>{meses.map(fila => <td key={fila.mes}><strong>{millones(fila.totales[g.total])}</strong>
-          {g.total !== 'ingresos' && fila.estado === 'cerrado' ? <span className="siio-secondary"> · {pct(fila.totales[g.total], fila.totales.ingresos)}</span> : null}</td>)}</tr>
-      </Fragment>)}</tbody>
+        <tr><td><strong>{g.totalEtiqueta}</strong></td>{meses.map(fila => <td key={fila.mes}><strong>{celda(fila, totalesDe(fila)[g.total])}</strong>
+          {g.total !== 'ingresos' ? <span className="siio-secondary"> · {pct(totalesDe(fila)[g.total], totalesDe(fila).ingresos)}</span> : null}</td>)}</tr>
+      </Fragment>)}
+      {conOficial ? <>
+        <tr><td colSpan={meses.length + 1}><strong>Cierre oficial de Finanzas (Excel cargado)</strong></td></tr>
+        <tr><td>Ingresos</td>{meses.map(fila => <td key={fila.mes}>{oficialDe(fila.mes) ? millones(oficialDe(fila.mes)!.ingresos) : <span className="siio-secondary">sin cierre</span>}</td>)}</tr>
+        <tr><td>Utilidad operacional</td>{meses.map(fila => { const o = oficialDe(fila.mes); return <td key={fila.mes}>{o ? <>{millones(o.utilidad_operacional)} <span className="siio-secondary">· {pct(o.utilidad_operacional, o.ingresos)}</span></> : <span className="siio-secondary">—</span>}</td>; })}</tr>
+        <tr><td>Antes de impuestos</td>{meses.map(fila => { const o = oficialDe(fila.mes); return <td key={fila.mes}>{o ? millones(o.utilidad_operacional + o.resultado_no_operacional) : <span className="siio-secondary">—</span>}</td>; })}</tr>
+      </> : null}</tbody>
     </table></div>
     {prov ? <p className="siio-pulse-footnote">
       <strong>Provisión de ingresos mes vencido ({nombreMes(ultimoCerrado?.mes)}):</strong> se suma el servicio prestado y no facturado ({millones(prov.del_mes)}) y se resta el del mes anterior, que se facturó en este ({millones(prov.del_mes_anterior)}): ajuste de {millones(prov.ajuste)}.
@@ -230,9 +252,9 @@ function EstadoDeResultados({ lineas, meses }: { lineas: LineaPyg[]; meses: MesP
       {prov.error ? ` No se pudo calcular completa: ${prov.error}.` : ''}
     </p> : null}
     <p className="siio-pulse-footnote">
-      * Mes parcial: en curso o con la nómina aún no contabilizada completa.
+      {meses.filter(fila => fila.proyeccion).map(fila => `${nombreMes(fila.mes)}: ${fila.proyeccion!.estimadas.length} líneas estimadas con ${nombreMes(fila.proyeccion!.base_mes)}${fila.proyeccion!.ingresos_ordenes !== null ? `; ingresos por lo contratado en órdenes de servicio (${millones(fila.proyeccion!.ingresos_ordenes)})` : ''}`).join('. ')}.
       {' '}{sinClasificar.length ? `Cuentas de resultados que no caen en ninguna línea: ${sinClasificar.map(c => `${c.cuenta} (${nombreMes(c.mes)}) ${millones(c.valor)}`).join(' · ')}.` : 'Todas las cuentas de resultados quedaron clasificadas.'}
-      {' '}Pasa el cursor sobre cada línea para ver qué cuentas suma.
+      {' '}En gris, lo estimado. Pasa el cursor sobre cada línea para ver qué cuentas suma.
     </p>
   </>;
 }
