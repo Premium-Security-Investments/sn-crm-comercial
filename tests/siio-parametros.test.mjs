@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
-import { PARAMETROS, RUBROS, RUBROS_TECNOLOGIA, guardarParametro, limpiarValor, listarParametros, periodoValido } from '../verticales/gerencial/siio-parametros.js';
+import { PARAMETROS, RUBROS, RUBROS_TECNOLOGIA, guardarParametro, historicoCargado, limpiarValor, listarParametros, periodoValido } from '../verticales/gerencial/siio-parametros.js';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const porClave = clave => PARAMETROS.find(parametro => parametro.clave === clave);
@@ -128,4 +128,10 @@ test('la pestaña va entre Vig-IA y Fuentes y detalle, y el servidor la expone',
   const server = read('server/index.js');
   assert.match(server, /app\.get\('\/api\/siio\/parametros'/);
   assert.match(server, /app\.put\('\/api\/siio\/parametros\/:clave'/);
+});
+
+test('el histórico dice qué trae el Excel publicado y qué falta del año anterior', () => {
+  assert.deepEqual(historicoCargado('2026-08-01'), { cargado: 'enero–agosto de 2025 y de 2026', falta: 'septiembre–diciembre de 2025', hasta: '2026-08' });
+  assert.equal(historicoCargado('2026-12-01').falta, null);
+  assert.equal(historicoCargado(null).cargado, null);
 });
