@@ -161,7 +161,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
 
-    <SiioTorreAvancys />
+    <SiioTorreAvancys oficial={pulse} />
 
     <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} />
 

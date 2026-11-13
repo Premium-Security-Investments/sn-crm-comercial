@@ -173,3 +173,46 @@ export async function estadoDeResultados(ejecutar, { desde, hasta, devengado }) 
   }
   return meses;
 }
+
+// Lo que se le factura a los clientes en un mes según las órdenes de servicio aprobadas y vigentes
+// en ese mes. Medido el 2026-11-13: para septiembre da menos de un 3 % de diferencia con lo
+// contabilizado, así que sirve para proyectar el mes en curso.
+export async function ingresosContratados(ejecutar, mes) {
+  const [anio, numero] = mes.split('-').map(Number);
+  const ultimo = new Date(Date.UTC(anio, numero, 0)).toISOString().slice(0, 10);
+  const [grupo] = (await ejecutar('project.service.order.line.invoice', 'read_group',
+    [[['state', '=', 'aprobado'], ['fact_start_date', '<=', ultimo], ['fact_end_date', '>=', `${mes}-01`]], ['valor_mensual:sum'], []],
+    { lazy: false })) || [];
+  return Number(grupo?.valor_mensual) || 0;
+}
+
+const GRUPOS_DE_COSTO = new Set(['costos', 'gastos', 'no_operacional', 'impuestos']);
+
+// Proyección de un mes que todavía no está completo en la contabilidad (el mes en curso, o uno
+// pasado con la nómina a medio contabilizar). Cada costo o gasto toma lo registrado o, si es
+// menos, lo del último mes cerrado: los costos se causan hacia fin de mes. Los ingresos del mes en
+// curso salen de lo contratado en las órdenes de servicio, repartido como en el mes cerrado; los de
+// un mes pasado son los registrados. Cada línea dice si quedó estimada.
+export function proyectarMes(fila, base, { ingresosOrdenes = null } = {}) {
+  const lineas = { ...fila.lineas };
+  const estimadas = [];
+  for (const linea of LINEAS) {
+    if (!GRUPOS_DE_COSTO.has(linea.grupo)) continue;
+    const registrado = fila.lineas[linea.clave] || 0;
+    const referencia = base.lineas[linea.clave] || 0;
+    if (Math.abs(referencia) > Math.abs(registrado)) {
+      lineas[linea.clave] = referencia;
+      estimadas.push(linea.clave);
+    }
+  }
+  if (ingresosOrdenes !== null) {
+    const ingresosBase = LINEAS.filter(l => l.grupo === 'ingresos').reduce((total, l) => total + (base.lineas[l.clave] || 0), 0);
+    if (ingresosBase) {
+      for (const linea of LINEAS.filter(l => l.grupo === 'ingresos')) {
+        lineas[linea.clave] = ingresosOrdenes * (base.lineas[linea.clave] || 0) / ingresosBase;
+        estimadas.push(linea.clave);
+      }
+    }
+  }
+  return { lineas, totales: totales(lineas), estimadas, base_mes: base.mes, ingresos_ordenes: ingresosOrdenes };
+}

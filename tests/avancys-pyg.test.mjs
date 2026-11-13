@@ -66,3 +66,34 @@ test('si la provisión falla, el estado de resultados sale sin ella y lo dice', 
   assert.equal(ago.lineas.ing_vigilancia, 1000);
   assert.equal(ago.provision.error, 'AVANCYS_TIEMPO');
 });
+
+test('proyección: cada costo toma lo registrado o lo del mes cerrado, lo mayor; el mes en curso, ingresos por lo contratado', async () => {
+  const { proyectarMes } = await import('../avancys-pyg.js');
+  const vacio = () => Object.fromEntries(LINEAS.map(l => [l.clave, 0]));
+  const base = { mes: '2026-09', lineas: { ...vacio(), ing_vigilancia: 900, ing_monitoreo: 100, mod_vigilancia: -700, generales_vigilancia: -50 } };
+  const octubre = { mes: '2026-10', lineas: { ...vacio(), ing_vigilancia: 950, ing_monitoreo: 100, mod_vigilancia: -400, generales_vigilancia: -60 } };
+  const p = proyectarMes(octubre, base);
+  assert.equal(p.lineas.mod_vigilancia, -700);
+  assert.equal(p.lineas.generales_vigilancia, -60);
+  assert.equal(p.lineas.ing_vigilancia, 950);
+  assert.deepEqual(p.estimadas, ['mod_vigilancia']);
+  assert.equal(p.totales.antes_de_impuestos, 950 + 100 - 700 - 60);
+  const noviembre = { mes: '2026-11', lineas: { ...vacio(), ing_vigilancia: 300 } };
+  const q = proyectarMes(noviembre, base, { ingresosOrdenes: 2000 });
+  assert.equal(q.lineas.ing_vigilancia, 1800);
+  assert.equal(q.lineas.ing_monitoreo, 200);
+  assert.equal(q.ingresos_ordenes, 2000);
+  assert.ok(q.estimadas.includes('ing_vigilancia') && q.estimadas.includes('mod_vigilancia'));
+});
+
+test('ingresos contratados: órdenes aprobadas vigentes en el mes', async () => {
+  const { ingresosContratados } = await import('../avancys-pyg.js');
+  let dominio;
+  const total = await ingresosContratados(async (modelo, metodo, args) => {
+    assert.equal(modelo, 'project.service.order.line.invoice');
+    dominio = args[0];
+    return [{ valor_mensual: 1234, __count: 3 }];
+  }, '2026-11');
+  assert.equal(total, 1234);
+  assert.deepEqual(dominio, [['state', '=', 'aprobado'], ['fact_start_date', '<=', '2026-11-30'], ['fact_end_date', '>=', '2026-11-01']]);
+});
