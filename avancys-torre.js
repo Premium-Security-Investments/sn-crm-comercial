@@ -131,6 +131,8 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
   // contratado en las órdenes de servicio. Es una proyección y así se muestra.
   const base = pyg.find(fila => fila.mes === mesCerrado) || null;
   const pygConEstado = [];
+  // Saldo por cuenta de cada mes: no va a la pantalla; con él el servidor arma el presupuesto contra ejecución.
+  const saldosCuentas = {};
   for (const fila of pyg) {
     const estado = estadoDe.get(fila.mes)?.estado || 'parcial';
     let proyeccion = null;
@@ -141,7 +143,9 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
       }
       proyeccion = proyectarMes(fila, base, { ingresosOrdenes });
     }
-    pygConEstado.push({ ...fila, estado, motivo: estadoDe.get(fila.mes)?.motivo || null, proyeccion });
+    const { cuentas, ...resto } = fila;
+    saldosCuentas[fila.mes] = { cuentas: cuentas || {}, ajuste_ingresos: fila.provision?.ajuste || 0, estado };
+    pygConEstado.push({ ...resto, estado, motivo: estadoDe.get(fila.mes)?.motivo || null, proyeccion });
   }
   return {
     meses,
@@ -153,6 +157,7 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     bloqueo_contable: bloqueo,
     clientes,
     cartera,
+    saldos_cuentas: saldosCuentas,
   };
 }
 

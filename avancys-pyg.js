@@ -99,7 +99,9 @@ export async function saldosPorMes(ejecutar, { desde, hasta }) {
     const [, codigo, nombre] = String(grupo.account_id[1]).match(/^\s*(\d+)\s*(.*)$/) || [];
     if (!codigo || !/^[4-7]/.test(codigo)) continue;
     const valor = -(Number(grupo.balance) || 0);
-    const fila = meses.get(mes) || { mes, lineas: Object.fromEntries(LINEAS.map(l => [l.clave, 0])), sin_clasificar: new Map() };
+    const fila = meses.get(mes) || { mes, lineas: Object.fromEntries(LINEAS.map(l => [l.clave, 0])), sin_clasificar: new Map(), cuentas: {} };
+    // El saldo de cada cuenta queda aparte para el presupuesto contra ejecución, que suma por rubro y no por línea.
+    fila.cuentas[codigo] = (fila.cuentas[codigo] || 0) + valor;
     const clave = lineaDeCuenta(codigo, nombre);
     if (clave) fila.lineas[clave] += valor;
     else fila.sin_clasificar.set(codigo, { cuenta: `${codigo} ${nombre}`.trim(), valor: (fila.sin_clasificar.get(codigo)?.valor || 0) + valor });
@@ -168,6 +170,7 @@ export async function estadoDeResultados(ejecutar, { desde, hasta, devengado }) 
         error: actual.error || anterior.error || null,
       },
       totales: totales(lineas),
+      cuentas: fila.cuentas,
       sin_clasificar: [...fila.sin_clasificar.values()].filter(c => Math.abs(c.valor) >= 1).sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)).slice(0, 10),
     });
   }
