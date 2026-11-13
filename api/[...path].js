@@ -7,6 +7,7 @@ import { cleanFinancialImportRequest, financialImportStoragePath, listFinancialI
 import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse.js';
 import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
+import { guardarParametro, listarParametros } from '../verticales/gerencial/siio-parametros.js';
 import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, addZone as addSecurityStudyZone, createStudy as createSecurityStudy, deleteAction as deleteSecurityStudyAction, deleteRisk as deleteSecurityStudyRisk, deleteZone as deleteSecurityStudyZone, getStudy as getSecurityStudy, listStudies as listSecurityStudies, updateAction as updateSecurityStudyAction, updateRisk as updateSecurityStudyRisk, updateStudy as updateSecurityStudy, updateZone as updateSecurityStudyZone } from '../verticales/estudios-seguridad/estudios.js';
 import { addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys, updateCharacterizationRow } from '../verticales/estudios-seguridad/caracterizacion.js';
 import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
@@ -3587,6 +3588,24 @@ app.patch('/api/siio/followups/:id', async (req, res) => {
     const { profile } = await getAuthContext(req);
     requireModuleAction(profile, 'siio');
     res.json(await updateFollowup(requireDb(), req.params.id, req.body || {}, profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// Parámetros de la Torre (migración 219): lo que Avancys no tiene y debe ingresar una persona, con encargado e historial.
+// Ve todo el que entra al SIIO; cambian sólo admin y gerencia (verticales/gerencial/siio-parametros.js).
+app.get('/api/siio/parametros', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'siio');
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await listarParametros(requireDb(), profile));
+  } catch (error) { sendError(res, error, error?.status || 500); }
+});
+app.put('/api/siio/parametros/:clave', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireModuleAction(profile, 'siio');
+    res.json(await guardarParametro(requireDb(), req.params.clave, req.body || {}, profile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
