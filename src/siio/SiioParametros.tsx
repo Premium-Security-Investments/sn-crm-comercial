@@ -13,7 +13,7 @@ type Parametro = {
 };
 type Seccion = { clave: string; etiqueta: string; filas: [string, string][] };
 type Version = { id: string; clave: string; periodo: string; valor?: unknown; nota: string | null; estado: 'confirmado' | 'sin_confirmar'; creado_por_nombre: string | null; creado_at: string; reemplazado_at?: string | null };
-type Respuesta = { catalogo: Parametro[]; vigentes: Version[]; cambios: Version[]; disponible: boolean; puede_editar: boolean; clientes_mes_vencido: number | null };
+type Respuesta = { catalogo: Parametro[]; vigentes: Version[]; cambios: Version[]; disponible: boolean; puede_editar: boolean; clientes_mes_vencido: number | null; historico: { cargado: string | null; falta: string | null } | null };
 type Fila = Record<string, string | number | null>;
 
 const GRUPOS: [Parametro['grupo'], string][] = [['persona', 'Lo ingresa una persona'], ['temporal', 'Temporales, hasta que Avancys los tenga'], ['mantenimiento', 'Mantenimiento']];
@@ -133,6 +133,9 @@ function estadoDe(parametro: Parametro, datos: Respuesta) {
     const total = datos.clientes_mes_vencido;
     return total ? <Badge tone="green">{total === 1 ? '1 cliente marcado' : `${total} clientes marcados`}</Badge> : <Badge tone="amber">Ninguno marcado</Badge>;
   }
+  if (parametro.clave === 'historico' && datos.historico) {
+    return datos.historico.falta ? <Badge tone="amber">Falta {datos.historico.falta}</Badge> : <Badge tone="green">Completo</Badge>;
+  }
   if (parametro.forma === 'externo') return <Badge tone="blue">En otra pantalla</Badge>;
   const versiones = datos.vigentes.filter(item => item.clave === parametro.clave);
   if (!versiones.length) return <Badge tone="amber">Sin dato</Badge>;
@@ -177,7 +180,8 @@ export function SiioPestanaParametros() {
             {parametro.forma === 'externo' ? null : <button type="button" className="siio-link-button" aria-expanded={abierto === parametro.clave}
               onClick={() => setAbierto(abierto === parametro.clave ? null : parametro.clave)}>{abierto === parametro.clave ? 'Cerrar' : datos.puede_editar ? 'Ver y editar' : 'Ver'}</button>}
           </div>
-          {parametro.forma === 'externo' ? <p className="siio-pulse-footnote">{parametro.donde}</p> : null}
+          {parametro.forma === 'externo' ? <p className="siio-pulse-footnote">{parametro.donde}
+            {parametro.clave === 'historico' && datos.historico?.cargado ? <> Ya está cargado: {datos.historico.cargado}.</> : null}</p> : null}
           {abierto === parametro.clave ? <Editor parametro={parametro} vigentes={datos.vigentes} puedeEditar={datos.puede_editar && datos.disponible} onGuardado={() => void cargar()} /> : null}
         </li>)}
       </ul>

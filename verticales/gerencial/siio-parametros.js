@@ -101,8 +101,9 @@ export const PARAMETROS = Object.freeze([
     para: 'Comodatos y reclasificaciones con su motivo. La meta es que quede en cero: que se registren en Avancys.',
     forma: 'filas', campos: [{ clave: 'linea', etiqueta: 'Línea del estado de resultados', tipo: 'opcion', opciones: LINEAS_PYG, requerido: true },
       { clave: 'valor', etiqueta: 'Valor', tipo: 'pesos', requerido: true }, { clave: 'motivo', etiqueta: 'Motivo', tipo: 'texto', requerido: true }] },
-  { numero: 10, clave: 'historico', grupo: 'temporal', nombre: 'Histórico enero 2025 – julio 2026', encargado: 'Finanzas', frecuencia: 'Carga única', periodo: 'ninguno',
-    para: 'Comparativo y acumulado de los meses de Yeminus.', forma: 'externo', donde: 'Se carga con el Excel de Finanzas, en «Fuentes y detalle».' },
+  { numero: 10, clave: 'historico', grupo: 'temporal', nombre: 'Histórico de los meses de Yeminus', encargado: 'Finanzas', frecuencia: 'Hasta completar 2025', periodo: 'ninguno',
+    para: 'Comparar cada mes con el mismo mes del año anterior y llevar el acumulado. Avancys empieza en agosto de 2026.',
+    forma: 'externo', donde: 'Sale del Excel mensual de Finanzas, en «Fuentes y detalle»: el de un mes trae de enero a ese mes de este año y del anterior.' },
   { numero: 11, clave: 'mapeo_cuentas', grupo: 'mantenimiento', nombre: 'Cuenta → rubro del presupuesto', encargado: 'Finanzas', frecuencia: 'Cuando aparece una cuenta nueva', periodo: 'ninguno',
     para: 'Con qué rubro suma cada cuenta en el presupuesto contra ejecución.',
     forma: 'filas', campos: [{ clave: 'cuenta', etiqueta: 'Cuenta', tipo: 'texto', requerido: true }, { clave: 'nombre', etiqueta: 'Nombre', tipo: 'texto' },
@@ -200,11 +201,12 @@ function sinTabla(error) {
 // Lo que ve la pestaña: el catálogo, el valor vigente de cada clave y periodo, y los últimos cambios.
 // Si la migración 219 no ha corrido, la pestaña se muestra igual, sin datos, y lo dice.
 export async function listarParametros(db, profile) {
-  const respuesta = { catalogo: PARAMETROS, rubros: RUBROS, vigentes: [], cambios: [], disponible: true, puede_editar: puedeEditarParametros(profile), clientes_mes_vencido: null };
-  const [vigentes, cambios, provision] = await Promise.all([
+  const respuesta = { catalogo: PARAMETROS, rubros: RUBROS, vigentes: [], cambios: [], disponible: true, puede_editar: puedeEditarParametros(profile), clientes_mes_vencido: null, historico: null };
+  const [vigentes, cambios, provision, excel] = await Promise.all([
     db.from(PARAMETROS_TABLE).select('id,clave,periodo,valor,nota,estado,creado_por_nombre,creado_at').is('reemplazado_at', null).order('periodo', { ascending: false }),
     db.from(PARAMETROS_TABLE).select('id,clave,periodo,nota,estado,creado_por_nombre,creado_at,reemplazado_at').order('creado_at', { ascending: false }).limit(30),
     db.from('psi_cliente_provision').select('avancys_ref_num', { count: 'exact', head: true }).eq('activo', true),
+    db.from('siio_financial_imports').select('period_month').eq('status', 'publicado').order('period_month', { ascending: false }).limit(1),
   ]);
   if (vigentes.error) {
     if (!sinTabla(vigentes.error)) throw vigentes.error;
@@ -214,7 +216,22 @@ export async function listarParametros(db, profile) {
     respuesta.cambios = cambios.data || [];
   }
   if (!provision.error) respuesta.clientes_mes_vencido = provision.count ?? null;
+  respuesta.historico = excel?.error ? null : historicoCargado(excel?.data?.[0]?.period_month || null);
   return respuesta;
+}
+
+// Puro. El Excel mensual de Finanzas de un mes trae los balances de enero a ese mes de su año y del anterior (hojas
+// «1 26»… y «1 25»…), y Avancys empieza en agosto de 2026. Lo que falta del año anterior es lo que va después de ese mes.
+export const PRIMER_MES_AVANCYS = '2026-08';
+const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+export function historicoCargado(periodoExcel) {
+  if (!periodoExcel) return { cargado: null, falta: 'Todo: no hay un Excel de Finanzas publicado.' };
+  const anio = Number(String(periodoExcel).slice(0, 4));
+  const mes = Number(String(periodoExcel).slice(5, 7));
+  const nombre = numero => MESES_ES[numero - 1];
+  const cargado = `${nombre(1)}–${nombre(mes)} de ${anio - 1} y de ${anio}`;
+  const falta = mes < 12 ? `${nombre(mes + 1)}–diciembre de ${anio - 1}` : null;
+  return { cargado, falta, hasta: `${anio}-${String(mes).padStart(2, '0')}` };
 }
 
 // Guarda una versión nueva: marca la vigente como reemplazada y deja la nueva. Si la nueva no entra, la anterior vuelve
