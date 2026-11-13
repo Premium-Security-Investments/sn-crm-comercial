@@ -22,6 +22,7 @@ import { SiioHorasPorCliente } from './SiioHorasPorCliente';
 import { SiioLoQueFalta } from './SiioLoQueFalta';
 import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
 import { SiioRecommendations } from './SiioRecommendations';
+import { SiioPestanaParametros } from './SiioParametros';
 import { alertasDeAvancys, SiioPestanaCartera, SiioPestanaClientes, SiioPestanaResultados, SiioPulsoMes, SiioRequiereDecision, useTorreAvancys, type AlertaTorre, type PestanaTorre } from './SiioTorreAvancys';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState } from './types';
@@ -97,7 +98,7 @@ function metricChange(metric: SiioFinancialMetric) {
 }
 
 const PESTANAS: ReadonlyArray<[PestanaTorre, string]> = [
-  ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['vigia', 'Vig-IA'], ['fuentes', 'Fuentes y detalle'],
+  ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['vigia', 'Vig-IA'], ['parametros', 'Parámetros'], ['fuentes', 'Fuentes y detalle'],
 ];
 
 export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtra = null }: { payload: SiioBootstrapPayload; routeState: Extract<SiioRouteState, { view: 'resumen' }>; onNavigate: (state: SiioRouteState) => void; fuentesExtra?: ReactNode }) {
@@ -207,6 +208,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
       <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
       {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
     </> : null}
+    {pestana === 'parametros' ? <section className="panel" role="tabpanel" aria-label="Parámetros"><SiioPestanaParametros /></section> : null}
     {pestana === 'fuentes' ? <>
       {fuentesExtra}
       <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">

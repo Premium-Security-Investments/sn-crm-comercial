@@ -1267,10 +1267,31 @@
 .siio-pestanas{position:sticky;top:0;z-index:2;overflow-x:auto}
 .siio-dashboard .siio-table-wrap tr.siio-fila-alerta td{background:#fef2f2}
 .siio-dashboard .siio-table-wrap td{font-variant-numeric:tabular-nums}
-.siio-pestanas.module-segmented-nav{grid-template-columns:repeat(6,minmax(110px,1fr))}
+.siio-pestanas.module-segmented-nav{grid-template-columns:repeat(7,minmax(110px,1fr))}
 
 .siio-chart-grid-layout.siio-chart-sola{grid-template-columns:1fr}
 .siio-pyg-cabeza{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px}
 .siio-pyg-cabeza h3{margin:0}
 .siio-como{margin-top:8px}
 .siio-como summary{cursor:pointer;color:#1b4f9c;font-weight:700;font-size:13px;min-height:44px;display:flex;align-items:center}
+
+/* Pestaña «Parámetros» de la Torre */
+.siio-parametros h3{margin:18px 0 8px}
+.siio-parametro-lista{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.siio-parametro-lista>li{padding:12px 14px;border:1px solid #e2eaf5;border-radius:14px;background:#fff}
+.siio-parametro-fila{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center}
+.siio-parametro-fila>div{display:grid;gap:2px}
+.siio-parametro-fila small{color:#64748b;font-weight:700}
+.siio-parametro-fila span{color:#526173;font-size:13px}
+.siio-parametro-editor{display:grid;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid #e2eaf5}
+.siio-parametro-periodo,.siio-parametro-campos label,.siio-parametro-guardar label{display:grid;gap:4px;font-size:13px;font-weight:700;color:#1b355f}
+.siio-parametro-periodo{max-width:200px}
+.siio-parametro-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.siio-parametro-entrada{display:flex;align-items:center;gap:4px}
+.siio-parametro-entrada input{width:100%;min-width:90px}
+.siio-parametro-editor td select,.siio-parametro-editor td input{min-width:110px}
+.siio-parametro-guardar{display:flex;flex-wrap:wrap;align-items:end;gap:10px}
+.siio-parametro-guardar label{flex:1 1 260px}
+.siio-parametro-cambios{margin-top:16px}
+.siio-parametro-cambios ul{margin:8px 0 0;padding-left:18px;color:#526173;font-size:13px}
+@media(max-width:640px){.siio-parametro-fila{grid-template-columns:1fr;justify-items:start}}

@@ -201,7 +201,7 @@ export function SiioPulsoMes({ t }: { t: TorreAvancys }) {
 }
 
 export type AlertaTorre = { clave: string; texto: React.ReactNode; pestana: PestanaTorre };
-export type PestanaTorre = 'resultados' | 'clientes' | 'cartera' | 'comercial' | 'vigia' | 'fuentes';
+export type PestanaTorre = 'resultados' | 'clientes' | 'cartera' | 'comercial' | 'vigia' | 'parametros' | 'fuentes';
 
 // Lo que pide una decisión, en frases cortas y ordenado por peso. Cada una lleva a su pestaña.
 export function alertasDeAvancys(t: TorreAvancys): AlertaTorre[] {
