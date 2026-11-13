@@ -90,7 +90,44 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date() } = {})
   const cerrados = meses.filter(fila => fila.estado === 'cerrado');
   const mesCerrado = cerrados.at(-1)?.mes || null;
   const clientes = mesCerrado ? await rentabilidadAproximada(ejecutar, { mes: mesCerrado }) : null;
-  return { meses, mes_cerrado: mesCerrado, mes_anterior: cerrados.at(-2)?.mes || null, primera_linea: primerDia, clientes };
+  let cartera;
+  try {
+    cartera = await carteraVencida(ejecutar, { hoy: ahora().toISOString().slice(0, 10) });
+  } catch (error) {
+    // La cartera no tumba el resultado ni los clientes: se dice que no se pudo leer.
+    cartera = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
+  }
+  return { meses, mes_cerrado: mesCerrado, mes_anterior: cerrados.at(-2)?.mes || null, primera_linea: primerDia, clientes, cartera };
+}
+
+// ¿Nos están pagando? Facturas de cliente publicadas con saldo, por antigüedad del vencimiento.
+// `amount_residual` viene con IVA. La historia de Avancys empieza en agosto de 2026: lo anterior no
+// está aquí.
+const FACTURAS = 'account.move';
+export const MAX_DEUDORES = 10;
+const diaMenos = (hoy, dias) => new Date(Date.parse(`${hoy}T00:00:00Z`) - dias * 86400000).toISOString().slice(0, 10);
+
+export async function carteraVencida(ejecutar, { hoy }) {
+  const conSaldo = [['move_type', '=', 'out_invoice'], ['state', '=', 'posted'], ['amount_residual', '>', 0]];
+  const sumar = async filtro => {
+    const [grupo] = (await ejecutar(FACTURAS, 'read_group', [[...conSaldo, ...filtro], ['amount_residual:sum'], []], { lazy: false })) || [];
+    return { saldo: Number(grupo?.amount_residual) || 0, facturas: grupo?.__count || 0 };
+  };
+  const total = await sumar([]);
+  const vencido = await sumar([['invoice_date_due', '<', hoy]]);
+  const tramos = [];
+  for (const [etiqueta, desde, hasta] of [['1 a 30 días', 30, 0], ['31 a 60 días', 60, 30], ['61 a 90 días', 90, 60], ['Más de 90 días', null, 90]]) {
+    const filtro = [['invoice_date_due', '<', diaMenos(hoy, hasta)]];
+    if (desde !== null) filtro.push(['invoice_date_due', '>=', diaMenos(hoy, desde)]);
+    tramos.push({ tramo: etiqueta, ...(await sumar(filtro)) });
+  }
+  const grupos = (await ejecutar(FACTURAS, 'read_group',
+    [[...conSaldo, ['invoice_date_due', '<', hoy]], ['amount_residual:sum'], ['partner_id']],
+    { lazy: false, orderby: 'amount_residual desc', limit: MAX_DEUDORES })) || [];
+  const deudores = grupos
+    .filter(grupo => Array.isArray(grupo.partner_id))
+    .map(grupo => ({ cliente: String(grupo.partner_id[1]), vencido: Number(grupo.amount_residual) || 0, facturas: grupo.__count || 0 }));
+  return { hoy, total, vencido, tramos, deudores };
 }
 
 let guardado = null;
