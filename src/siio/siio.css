@@ -1268,3 +1268,9 @@
 .siio-dashboard .siio-table-wrap tr.siio-fila-alerta td{background:#fef2f2}
 .siio-dashboard .siio-table-wrap td{font-variant-numeric:tabular-nums}
 .siio-pestanas.module-segmented-nav{grid-template-columns:repeat(6,minmax(110px,1fr))}
+
+.siio-chart-grid-layout.siio-chart-sola{grid-template-columns:1fr}
+.siio-pyg-cabeza{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px}
+.siio-pyg-cabeza h3{margin:0}
+.siio-como{margin-top:8px}
+.siio-como summary{cursor:pointer;color:#1b4f9c;font-weight:700;font-size:13px;min-height:44px;display:flex;align-items:center}

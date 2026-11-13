@@ -198,3 +198,29 @@ test('las advertencias contables nombran el mes completo para que Vig-IA no conf
   assert.equal(spellSheetMonths('8 25: no cuadra'), 'agosto de 2025: no cuadra');
   assert.equal(spellSheetMonths('Hay meses sin provisión'), 'Hay meses sin provisión');
 });
+
+test('Vig-IA recibe la Torre en vivo de Avancys: meses con su estado, clientes en pérdida y cartera, en millones', async () => {
+  const { bloqueAvancys, buildRecommendationsInput } = await import('../verticales/gerencial/siio-recommendations.js');
+  const totales = (ingresos, utilidad) => ({ ingresos, costos: -(ingresos - utilidad) * 0.8, gastos: -(ingresos - utilidad) * 0.2, utilidad_ordinaria: utilidad });
+  const torre = {
+    autenticado: true,
+    mes_cerrado: '2026-09',
+    pyg: [
+      { mes: '2026-09', estado: 'cerrado', totales: totales(1000e6, 80e6), proyeccion: null },
+      { mes: '2026-10', estado: 'parcial', totales: totales(1000e6, 300e6), proyeccion: { totales: totales(1000e6, 100e6) } },
+    ],
+    clientes: { legible: true, costo_por_hora: -15000, clientes: [
+      { cliente: '[1] CLIENTE GRANDE', ingresos: 400e6, margen: -10e6, precio_hora: 19000 },
+      { cliente: '[2] CLIENTE BUENO', ingresos: 200e6, margen: 30e6, precio_hora: 24000 },
+    ] },
+    cartera: { hoy: '2026-11-13', total: { saldo: 900e6 }, vencido: { saldo: 450e6 }, tramos: [{ tramo: '1 a 30 días', saldo: 300e6 }], deudores: [{ cliente: '[X] [3] DEUDOR', vencido: 100e6 }] },
+  };
+  const b = bloqueAvancys(torre);
+  assert.equal(b.mes_cerrado, '2026-09');
+  assert.deepEqual(b.meses.map(m => [m.mes, m.estado, m.utilidad_operacional, m.margen_operacional_pct]), [['2026-09', 'cerrado', 80, 8], ['2026-10', 'parcial (proyección)', 100, 10]]);
+  assert.deepEqual(b.clientes.en_perdida.map(c => [c.cliente, c.margen_pct]), [['CLIENTE GRANDE', -2.5]]);
+  assert.equal(b.clientes.costo_por_hora_vigilante, 15000);
+  assert.deepEqual(b.cartera.deudores, [{ cliente: 'DEUDOR', vencido: 100 }]);
+  assert.deepEqual(bloqueAvancys(null), { estado: 'sin datos de Avancys' });
+  assert.equal(buildRecommendationsInput({ avancys: torre }).avancys.mes_cerrado, '2026-09');
+});

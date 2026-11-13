@@ -81,7 +81,8 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
     {/* Only the Torre and Seguimiento are offered; old links to Fuentes or Agentes fall back to the Torre. */}
     {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'seguimiento'
       ? <SiioFollowupsTab />
-      : <><SiioExecutiveView payload={payload} routeState={routeState.view === 'resumen' ? routeState : navigateSiioView('resumen') as Extract<SiioRouteState, { view: 'resumen' }>} onNavigate={onNavigate} /><SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} /></>}
+      : <><SiioExecutiveView payload={payload} routeState={routeState.view === 'resumen' ? routeState : navigateSiioView('resumen') as Extract<SiioRouteState, { view: 'resumen' }>} onNavigate={onNavigate}
+        fuentesExtra={<SiioFinancialImportPanel canImport={['admin', 'gerencia'].includes(currentProfile.role)} onPublished={load} />} /></>}
     {payload && snapshot && !readOnly ? <SiioBoardDraftAction open={boardDraftOpen} onClose={() => setBoardDraftOpen(false)} payload={payload} snapshot={snapshot} trackingItems={trackingItems} recommendations={recommendations} /> : null}
   </section>;
 }
