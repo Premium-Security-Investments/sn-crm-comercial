@@ -140,7 +140,7 @@ export function SiioTrendCharts({ pulse, summary, conMargen = true }: { pulse: F
   if ((!pulse || !conMargen) && !closed.length) return null;
   return <section className="panel siio-trends" aria-label="Tendencia">
     <h2>Tendencia</h2>
-    <div className="siio-chart-grid-layout">
+    <div className={`siio-chart-grid-layout${conMargen ? '' : ' siio-chart-sola'}`}>
       {/* Ingresos y utilidad por mes salieron de aquí: el margen ya combina las dos, y la tabla
           mes a mes con las cifras exactas está en el detalle de Finanzas. Cuatro gráficas de la
           misma serie llenan la pantalla sin agregar una lectura. */}

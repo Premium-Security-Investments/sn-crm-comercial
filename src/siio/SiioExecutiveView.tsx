@@ -100,7 +100,7 @@ const PESTANAS: ReadonlyArray<[PestanaTorre, string]> = [
   ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['vigia', 'Vig-IA'], ['fuentes', 'Fuentes y detalle'],
 ];
 
-export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload: SiioBootstrapPayload; routeState: Extract<SiioRouteState, { view: 'resumen' }>; onNavigate: (state: SiioRouteState) => void }) {
+export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtra = null }: { payload: SiioBootstrapPayload; routeState: Extract<SiioRouteState, { view: 'resumen' }>; onNavigate: (state: SiioRouteState) => void; fuentesExtra?: ReactNode }) {
   const snapshot = useMemo(() => deriveSiioExecutiveSnapshot({
     financialMetrics: payload.financialMetrics,
     payrollAggregates: payload.payrollAggregates,
@@ -177,13 +177,15 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     </nav>
 
     {pestana === 'resultados' ? <section className="panel" role="tabpanel" aria-label="Resultados"><SiioPestanaResultados t={torre} /></section> : null}
-    {pestana === 'clientes' ? <section className="panel" role="tabpanel" aria-label="Clientes"><SiioPestanaClientes t={torre} /></section> : null}
+    {pestana === 'clientes' ? <>
+      <section className="panel" role="tabpanel" aria-label="Clientes"><SiioPestanaClientes t={torre} /></section>
+      {/* El servicio que se le presta al cliente va al lado de lo que deja: ARA en Bogotá, por ejemplo. */}
+      <Panel title="Cumplimiento del servicio"><SiioOperationsAttention summary={operations} /></Panel>
+    </> : null}
     {pestana === 'cartera' ? <section className="panel" role="tabpanel" aria-label="Cartera"><SiioPestanaCartera t={torre} /></section> : null}
     {pestana === 'comercial' ? <>
       <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
-      <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} conFinanzas={false} />
-      <SiioTrendCharts pulse={pulse} summary={commercial} conMargen={false} />
-      <Panel title="Lo que viene y requiere atención">
+      <Panel title="Lo que hay que decidir">
         {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
         {licitacionesArriba || quedanLicitaciones ? <section className="siio-attention-section" aria-label="Licitaciones públicas">
           <h3>Licitaciones públicas</h3>
@@ -196,21 +198,17 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           {privateNotes.length ? <div className="siio-pulse-readings"><ul>{privateNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
           {commercial ? <PrivateAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
         </section> : null}
-        <SiioOperationsAttention summary={operations} />
-        {followups.data?.permissions.view ? <section className="siio-attention-section" aria-label="Seguimiento gerencial">
-          <h3>Seguimiento gerencial</h3>
-          <p className="siio-secondary">
-            {openFollowups.length ? `${openFollowups.length} seguimientos abiertos` : 'Sin seguimientos abiertos'}{lateFollowups.length ? <> · <span className="siio-alert-text">{lateFollowups.length} vencidos</span></> : null}{' '}
-            <button type="button" className="siio-link-button" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Ver seguimiento</button>
-          </p>
-        </section> : null}
+        <p className="siio-pulse-footnote"><button type="button" className="siio-link-button" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Ver los seguimientos abiertos{openFollowups.length ? ` (${openFollowups.length}${lateFollowups.length ? `, ${lateFollowups.length} vencidos` : ''})` : ''}</button></p>
       </Panel>
+      <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} conFinanzas={false} />
+      <SiioTrendCharts pulse={pulse} summary={commercial} conMargen={false} />
     </> : null}
     {pestana === 'vigia' ? <>
       <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
       {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
     </> : null}
     {pestana === 'fuentes' ? <>
+      {fuentesExtra}
       <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">
         <span className="siio-eyebrow">Resumen ejecutivo</span>
         <label>Periodo financiero
