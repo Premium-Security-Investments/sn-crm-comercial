@@ -192,3 +192,33 @@ test('a REANALYSIS identity (108) stamps kind, version and source, and the v2 ag
   const initial = buildInitialAggregate(inputs());
   assert.deepEqual([initial.meta.analysis_kind, initial.meta.analysis_version, initial.meta.source_analysis_run_id], ['INITIAL', 1, null]);
 });
+
+// Defensoría del Pueblo (2026-11-13): una referencia rota en una lista tumbaba la síntesis entera.
+test('las referencias rotas en listas *_claim_ids se retiran y se cuentan; las únicas y los claims no se tocan', async () => {
+  const { pruneDanglingClaimListReferences } = await import('../verticales/licitaciones/agt002-initial-analysis-aggregate-builder.js');
+  const analysis = {
+    claims: [{ claim_id: 'CLM-A', display_text: 'a' }, { claim_id: 'CLM-B', display_text: 'b' }],
+    process_analysis: { technical_scope_claim_ids: ['CLM-A', 'CLM-FANTASMA', 'CLM-B'], summary_claim_id: 'CLM-OTRO' },
+    company_fit: { limitation_claim_ids: ['CLM-B'] },
+    requirements: [{ requirement_id: 'REQ-1', text_claim_id: 'CLM-A', evidence_claim_ids: ['CLM-NO'] }],
+  };
+  const { analysis: cleaned, pruned } = pruneDanglingClaimListReferences(analysis);
+  assert.deepEqual(cleaned.process_analysis.technical_scope_claim_ids, ['CLM-A', 'CLM-B']);
+  assert.deepEqual(cleaned.requirements[0].evidence_claim_ids, []);
+  assert.equal(cleaned.process_analysis.summary_claim_id, 'CLM-OTRO', 'una referencia única rota se deja para que la validación la rechace');
+  assert.equal(cleaned.requirements[0].text_claim_id, 'CLM-A');
+  assert.deepEqual(cleaned.claims, analysis.claims);
+  assert.deepEqual(pruned.map(item => item.path), ['process_analysis.technical_scope_claim_ids.1', 'requirements.0.evidence_claim_ids.0']);
+  assert.deepEqual(analysis.process_analysis.technical_scope_claim_ids, ['CLM-A', 'CLM-FANTASMA', 'CLM-B'], 'no muta la respuesta original');
+  assert.deepEqual(pruneDanglingClaimListReferences(analysis).analysis, pruneDanglingClaimListReferences(cleaned).analysis, 'idempotente');
+  const sinRotas = pruneDanglingClaimListReferences({ claims: [], process_analysis: {} });
+  assert.deepEqual(sinRotas.pruned, []);
+});
+
+test('el runtime limpia las listas antes de armar el agregado (el hash del núcleo corresponde a lo publicado)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const runtime = readFileSync(new URL('../verticales/licitaciones/agt002-initial-analysis-runtime.js', import.meta.url), 'utf8');
+  const prune = runtime.indexOf('pruneDanglingClaimListReferences(parsed)');
+  assert.ok(prune > 0 && prune < runtime.indexOf('output = buildInitialAggregate({'));
+  assert.match(runtime, /analysis: cleaned\.analysis,/);
+});

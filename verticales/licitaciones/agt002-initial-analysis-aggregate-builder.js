@@ -252,6 +252,39 @@ function expandSourceRef(ref, membersByDocument, cutoffAt) {
  * Stamps the server-owned parts around the model's analytical sections and returns the full v2 envelope.
  * Throws a diagnostic error (closed reason, no model content) when the stamping inputs are unusable.
  */
+/**
+ * Defensoría del Pueblo (2026-11-13): la síntesis terminó (6 minutos, 54.608 tokens) y se perdió entera porque una lista
+ * de referencias (`process_analysis.technical_scope_claim_ids`) traía un id de claim que el mismo modelo no emitió. En las
+ * listas de referencias (`*_claim_ids`) un id que no existe sólo es un enlace roto: se retira y se cuenta. No se inventa
+ * nada ni se toca un claim; las referencias únicas (`*_claim_id`) siguen fallando como antes, y si una lista queda vacía
+ * donde el esquema exige al menos una, la validación también falla. Se aplica sobre la respuesta del modelo, antes de
+ * armar el agregado, para que el hash del núcleo corresponda a lo que se publica. Pura.
+ */
+export function pruneDanglingClaimListReferences(analysis) {
+  if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) return { analysis, pruned: [] };
+  const known = new Set((Array.isArray(analysis.claims) ? analysis.claims : []).map(claim => claim?.claim_id).filter(id => typeof id === 'string'));
+  const pruned = [];
+  const walk = (value, path) => {
+    if (Array.isArray(value)) return value.map((item, index) => walk(item, `${path}.${index}`));
+    if (!value || typeof value !== 'object') return value;
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      const here = path ? `${path}.${key}` : key;
+      if (key !== 'claims' && key.endsWith('_claim_ids') && Array.isArray(item)) {
+        out[key] = item.filter((id, index) => {
+          const keep = typeof id !== 'string' || known.has(id);
+          if (!keep) pruned.push({ path: `${here}.${index}`, claim_id: id.slice(0, 80) });
+          return keep;
+        });
+        continue;
+      }
+      out[key] = key === 'claims' ? item : walk(item, here);
+    }
+    return out;
+  };
+  return { analysis: walk(analysis, ''), pruned };
+}
+
 export function buildInitialAggregate({ analysis, identity, pkg, now, executor }) {
   if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) throw agt002InitialDiagnosticError('analysis_not_object');
   if (!INITIAL_SCOPES.includes(identity?.g1Scope)) throw agt002InitialDiagnosticError('scope_not_supported', { scope: String(identity?.g1Scope) });
