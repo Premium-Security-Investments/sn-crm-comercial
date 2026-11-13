@@ -33,3 +33,11 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   // El selector general ya no pide clientes de un mes abierto.
   assert.doesNotMatch(torre, /clientesDelMes/);
 });
+
+test('cartera: lo vencido con todos sus tramos y los meses de deuda comparados con IVA', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  assert.match(torre, /const IVA = 1\.19;/);
+  assert.match(torre, /const meses = mensual \? fila\.vencido \/ \(mensual \* IVA\) : null;/);
+  assert.match(torre, /\(c\.tramos \|\| \[\]\)\.map\(tramo => <Cifra/);
+  assert.match(torre, /etiqueta="Sin vencer"/);
+});
