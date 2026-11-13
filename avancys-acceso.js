@@ -63,7 +63,7 @@ function motivoDe(error) {
 }
 
 // Login y un `ejecutar` de solo lectura. Si no hay sesión, `estado` dice por qué.
-async function abrirSesion({ config, fetchImpl, ahora = () => new Date() }) {
+export async function abrirSesion({ config, fetchImpl, ahora = () => new Date() }) {
   if (!config) return { estado: { configurado: false, motivo: 'Avancys no está configurado en este ambiente.' } };
 
   let serie = 0;
@@ -242,7 +242,7 @@ const MESES_ATRAS = 12;
 const PUC_PERSONAL = /^(5105|5205|72)/;
 const NOMBRE_PERSONAL = /SUELD|SALARI|CESANT|PRIMA|VACACI|APORTE|PARAFISCAL|HORAS EXTRA|RECARGO|INDEMNIZ|AUXILIO DE TRANSP|BONIFIC|SEGURIDAD SOCIAL|PENSION|CAJA DE COMPENS|ICBF|SENA\b/i;
 
-function cuentaPuc(valor) {
+export function cuentaPuc(valor) {
   const nombre = Array.isArray(valor) ? String(valor[1] || '') : '';
   const codigo = (nombre.match(/^\s*(\d+)/) || [])[1] || '';
   return { id: Array.isArray(valor) ? valor[0] : null, codigo: codigo.slice(0, 4) || 'sin cuenta', nombre: nombre.replace(/^\s*\d+\s*/, '') };
@@ -619,7 +619,7 @@ export async function rentabilidadAproximada(ejecutar, { mes }) {
       const vigilantes = fila.horas * costoHora;
       const indirecto = ingresosClientes ? fondo.indirecto * Math.max(fila.ingresos, 0) / ingresosClientes : 0;
       const margen = fila.ingresos + fila.costo_directo + vigilantes + indirecto;
-      return { ...fila, costo_vigilantes: vigilantes, costo_indirecto: indirecto, margen };
+      return { ...fila, costo_vigilantes: vigilantes, costo_indirecto: indirecto, margen, precio_hora: fila.horas ? fila.ingresos / fila.horas : null };
     }).sort((izq, der) => der.ingresos - izq.ingresos);
 
     return {
