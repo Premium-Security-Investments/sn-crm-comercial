@@ -11,7 +11,7 @@ import type { TendersModuleProps } from './types';
 type Process = { opportunity_id: string | null; process: string; reason: string; blocked?: boolean; deadline?: string | null; upcoming?: boolean };
 type Status = 'por_decidir' | 'iniciar' | 'en_tramite' | 'resuelto' | 'no_por_ahora';
 type Focus = { key: string; title: string; live: string | null; live_state: string | null; processes: Process[]; upcoming: Process[]; past: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
-type Pending = { key: string; title: string; processes: Process[] };
+type Pending = { key: string; title: string; processes: Process[]; upcoming: Process[]; past: Process[] };
 type Payload = { installed: boolean; matrix: { rows: number; loaded_at: string | null }; crm_processes: number; focus: Focus[]; pending: Pending[]; catalog: { totals: { processes: number } } };
 
 const STATUSES: [Status, string][] = [['por_decidir', 'Por decidir'], ['iniciar', 'Iniciar trámite'], ['en_tramite', 'En trámite'], ['resuelto', 'Resuelto'], ['no_por_ahora', 'No por ahora']];
@@ -19,6 +19,7 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const day = (date?: string | null) => (date && /^\d{4}-\d{2}-\d{2}/.test(date) ? `${Number(date.slice(8, 10))}-${MONTHS[Number(date.slice(5, 7)) - 1]}` : '');
 // El nombre corto del proceso para la línea de próximos: la entidad sin «Rama Judicial · Dirección Seccional de…».
+const foldName = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const shortName = (process: string) => {
   const [entity, ref] = process.split(' · ');
   const city = entity.match(/(?:Administraci[oó]n Judicial|Seccional)(?: de)? ([A-ZÁÉÍÓÚÑ][\wáéíóúñ]+)\s*$/)?.[1];
@@ -26,7 +27,9 @@ const shortName = (process: string) => {
   const acronym = plain.match(/^([A-ZÁÉÍÓÚÑ]{2,5}) [A-ZÁÉÍÓÚÑ]/)?.[1];
   const name = /Direcci[oó]n Ejecutiva de Administraci[oó]n Judicial/i.test(entity) ? 'DEAJ' : city ? `Rama ${city}` : acronym
     || (plain.length > 28 ? `${plain.slice(0, 26)}…` : plain);
-  return ref && !city && name.length < 12 ? `${name} ${ref}` : name;
+  // «SIC» + «SIC 23 DE 2026»: si la referencia ya empieza por el nombre, va sola.
+  if (ref && !city && name.length < 12) return foldName(ref).startsWith(foldName(name)) ? ref : `${name} ${ref}`;
+  return name;
 };
 
 /**
@@ -120,7 +123,11 @@ export function TenderRequirementsView({ request, data, moduleNavigation }: Tend
       </section>
       {payload.pending.length > 0 && <details className="tender-requirements-pending">
         <summary>Por confirmar: {plural(payload.pending.length, 'requisito que la ficha no deja decidir', 'requisitos que la ficha no deja decidir')}</summary>
-        {payload.pending.map(item => <div key={item.key}><h4>{item.title}</h4><ProcessList items={item.processes} /></div>)}
+        {payload.pending.map(item => <div key={item.key}><h4>{item.title}</h4>
+          {item.upcoming.length ? <ProcessList items={item.upcoming.map(process => ({ ...process, process: `${process.process}${process.deadline ? ` (cierra ${day(process.deadline)})` : ''}` }))} />
+            : <p className="muted">Ningún proceso abierto.</p>}
+          {item.past.length > 0 && <details className="tender-requirements-past"><summary>Procesos pasados ({item.past.length})</summary><ProcessList items={item.past} /></details>}
+        </div>)}
       </details>}
       <p className="muted">Fuentes: {payload.matrix.rows ? `la matriz histórica de SharePoint (${payload.matrix.rows} filas)` : 'la matriz histórica de SharePoint todavía no se ha cargado'}, {payload.crm_processes} procesos analizados en el CRM y las actas de cierre. Cada análisis nuevo entra solo.</p>
     </>}

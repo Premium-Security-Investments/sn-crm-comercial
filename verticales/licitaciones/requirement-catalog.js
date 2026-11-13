@@ -292,11 +292,24 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
     .sort((a, b) => b.upcoming.length - a.upcoming.length || b.processes.length - a.processes.length);
 }
 
-/** «Por confirmar»: hechos de los mismos grupos que la ficha no deja decidir. Pura. */
-export function buildRequirementPending(catalog) {
-  const keys = new Set(REQUIREMENT_FOCUS.filter(focus => focus.pending !== false).flatMap(focus => focus.types));
-  return (catalog?.types || []).filter(type => keys.has(type.key)).map(type => {
+/**
+ * «Por confirmar»: hechos de los mismos grupos que la ficha no deja decidir. Como en las tarjetas (Juan, 2026-11-13), los
+ * procesos abiertos van primero por fecha de cierre y el resto en `past`; y un proceso que ya está en la tarjeta de su
+ * grupo como bloqueo no se repite aquí. Pura.
+ */
+export function buildRequirementPending(catalog, { opportunities = new Map(), focus = [] } = {}) {
+  const groups = REQUIREMENT_FOCUS.filter(entry => entry.pending !== false);
+  const groupOf = new Map(groups.flatMap(entry => entry.types.map(type => [type, entry.key])));
+  const inCard = new Set(focus.flatMap(card => card.processes.map(item => `${card.key}|${item.opportunity_id || foldText(item.process || '')}`)));
+  return (catalog?.types || []).filter(type => groupOf.has(type.key)).map(type => {
     const items = type.occurrences.filter(item => item.assessment?.verdict === 'verificar');
-    return { key: type.key, title: type.title, processes: [...new Map(items.map(item => [item.opportunity_id || processKeyOf(item), { opportunity_id: item.opportunity_id || null, process: item.process, reason: item.assessment.reason }])).values()] };
-  }).filter(item => item.processes.length);
+    const processes = [...new Map(items.map(item => {
+      const id = item.opportunity_id || processKeyOf(item);
+      const opportunity = item.opportunity_id ? opportunities.get(item.opportunity_id) : null;
+      return [id, { opportunity_id: item.opportunity_id || null, process: item.process, reason: item.assessment.reason,
+        deadline: opportunity?.deadline || null, upcoming: Boolean(opportunity?.open) }];
+    })).entries()].filter(([id]) => !inCard.has(`${groupOf.get(type.key)}|${id}`)).map(([, value]) => value);
+    const upcoming = processes.filter(item => item.upcoming).sort((a, b) => String(a.deadline || '9999').localeCompare(String(b.deadline || '9999')));
+    return { key: type.key, title: type.title, processes, upcoming, past: processes.filter(item => !item.upcoming) };
+  }).filter(item => item.processes.length).sort((a, b) => b.upcoming.length - a.upcoming.length);
 }

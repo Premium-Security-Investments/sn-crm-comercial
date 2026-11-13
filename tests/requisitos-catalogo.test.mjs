@@ -198,6 +198,22 @@ test('la tarjeta separa los procesos próximos (por fecha de cierre) de los pasa
   assert.ok(!buildRequirementPending(catalog).some(item => ['experiencia_general', 'experiencia_especifica', 'personal_minimo', 'armas'].includes(item.key)), 'personal y experiencia no inundan «por confirmar»');
 });
 
+test('«por confirmar» pone primero los abiertos, deja atrás los pasados y no repite lo que ya está en una tarjeta', () => {
+  const crm = [
+    { opportunity_id: 'manizales', process: 'Rama Manizales · LP-01-2026', requirement_id: 'REQ-MINTIC', category: 'LEGAL', text: 'Frecuencias mínimas para la cobertura en Caldas', blocker: false },
+    { opportunity_id: 'pereira', process: 'Rama Pereira · LP-01-2026', requirement_id: 'REQ-MINTIC', category: 'LEGAL', text: 'Frecuencias mínimas para la cobertura en Risaralda', blocker: false },
+    { opportunity_id: 'terminal', process: 'Terminal · TT-SPO-07-2026', requirement_id: 'REQ-MINTIC', category: 'LEGAL', text: 'Frecuencias mínimas para la cobertura en Bogotá', blocker: false },
+  ];
+  const blocks = [{ id: 'b', opportunity_id: 'manizales', process: 'Rama Manizales · LP-01-2026', focus_key: 'comunicaciones', reason: 'El espectro no cubre Caldas; salida literal C.' }];
+  const catalog = buildRequirementCatalog({ crm, blocks, assess: item => assessRequirement({ type: item.type, text: item.text }, COMPANY) });
+  const opportunities = new Map([['manizales', { deadline: '2026-11-25', open: true }], ['pereira', { deadline: '2026-11-26', open: true }], ['terminal', { deadline: '2026-11-04', open: false }]]);
+  const focus = buildRequirementFocus(catalog, { opportunities });
+  const pending = buildRequirementPending(catalog, { opportunities, focus }).find(item => item.key === 'licencia_comunicaciones');
+  assert.deepEqual(pending.upcoming.map(item => item.opportunity_id), ['pereira'], 'Manizales ya está en la tarjeta');
+  assert.deepEqual(pending.past.map(item => item.opportunity_id), ['terminal']);
+  assert.match(read('src/tenders/TenderRequirementsView.tsx'), /startsWith\(foldName\(name\)\) \? ref/, '«SIC SIC 23 DE 2026» sale como «SIC 23 DE 2026»');
+});
+
 test('el día de cierre y la ventana de cada oportunidad', async () => {
   const { closingDay, loadOpportunityWindows } = await import('../verticales/licitaciones/tender-requirements.js');
   assert.equal(closingDay('2026-11-24T00:00:00+00:00'), '2026-11-24', 'a medianoche UTC es una fecha, no se corre un día');
