@@ -193,17 +193,30 @@ export async function carteraVencida(ejecutar, { hoy }) {
 
 let guardado = null;
 
-function devengadoDeAvancys() {
-  const lector = crearLectorAvancys();
-  return mes => lector.devengadoDelMes({ mes, identificaciones: CLIENTES_MES_VENCIDO });
+// Los clientes de mes vencido son los que una persona marca en la ficha del cliente (`psi_cliente_provision`); Juan
+// decidió el 2026-11-13 que esa lista manda. La lista fija de avancys-pyg.js queda sólo si la base no responde.
+export async function clientesMesVencido(db) {
+  if (!db) return CLIENTES_MES_VENCIDO;
+  try {
+    const { data, error } = await db.from('psi_cliente_provision').select('avancys_ref_num').eq('activo', true);
+    if (error || !Array.isArray(data)) return CLIENTES_MES_VENCIDO;
+    return data.map(fila => String(fila.avancys_ref_num || '').trim()).filter(Boolean);
+  } catch {
+    return CLIENTES_MES_VENCIDO;
+  }
 }
 
-export async function torreAvancys({ refrescar = false, config = configuracionDeAvancys(), fetchImpl = globalThis.fetch, ahora = () => new Date(), devengado } = {}) {
+function devengadoDeAvancys(identificaciones) {
+  const lector = crearLectorAvancys();
+  return mes => lector.devengadoDelMes({ mes, identificaciones });
+}
+
+export async function torreAvancys({ refrescar = false, config = configuracionDeAvancys(), fetchImpl = globalThis.fetch, ahora = () => new Date(), devengado, db = null } = {}) {
   const momento = ahora().getTime();
   if (!refrescar && guardado && momento - guardado.en < VIGENCIA_MS) return { ...guardado.datos, desde_memoria: true };
   const sesion = await abrirSesion({ config, fetchImpl, ahora });
   if (!sesion.ejecutar) return sesion.estado;
-  const datos = { ...(await calcularTorre(sesion.ejecutar, { ahora, devengado: devengado || devengadoDeAvancys() })), configurado: true, autenticado: true, origen: config.origen, medido_en: new Date(momento).toISOString() };
+  const datos = { ...(await calcularTorre(sesion.ejecutar, { ahora, devengado: devengado || devengadoDeAvancys(await clientesMesVencido(db)) })), configurado: true, autenticado: true, origen: config.origen, medido_en: new Date(momento).toISOString() };
   guardado = { en: momento, datos };
   return { ...datos, desde_memoria: false };
 }

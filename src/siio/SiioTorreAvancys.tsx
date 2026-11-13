@@ -98,7 +98,6 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
   const [torre, setTorre] = useState<Torre | null>(null);
   const [error, setError] = useState('');
   const [mesElegido, setMesElegido] = useState('');
-  const [clientesDelMes, setClientesDelMes] = useState<{ mes: string; datos: Clientes | null; estado: 'cargando' | 'listo' | 'error' } | null>(null);
 
   async function cargar(refrescar = false) {
     setEstado('cargando');
@@ -147,21 +146,10 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
   const indice = opciones.findIndex(o => o.mes === mes);
   const mesPrevio = indice > 0 ? opciones[indice - 1].mes : null;
 
-  useEffect(() => {
-    if (!mes || !torre?.primera_linea || mes === torre.mes_cerrado || mes < torre.primera_linea.slice(0, 7)) { setClientesDelMes(null); return; }
-    let vigente = true;
-    setClientesDelMes({ mes, datos: null, estado: 'cargando' });
-    api<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`)
-      .then(datos => { if (vigente) setClientesDelMes({ mes, datos, estado: 'listo' }); })
-      .catch(() => { if (vigente) setClientesDelMes({ mes, datos: null, estado: 'error' }); });
-    return () => { vigente = false; };
-  }, [mes, torre?.mes_cerrado, torre?.primera_linea]);
-
-  const clientes = mes === torre?.mes_cerrado ? torre?.clientes || null : clientesDelMes?.datos || null;
   const antesDeAvancys = Boolean(torre?.primera_linea && mes && mes < torre.primera_linea.slice(0, 7));
   return {
     estado, error, torre, cargar, opciones, mes, setMes: setMesElegido, opcion, resumen: resumenDe(mes), resumenDe, mesPrevio,
-    previo: mesPrevio ? resumenDe(mesPrevio) : null, clientes, clientesEstado: mes === torre?.mes_cerrado ? 'listo' : clientesDelMes?.estado || null,
+    previo: mesPrevio ? resumenDe(mesPrevio) : null,
     antesDeAvancys, oficial,
   };
 }
@@ -169,52 +157,71 @@ export type TorreAvancys = ReturnType<typeof useTorreAvancys>;
 
 const esEstimado = (o: OpcionMes | null) => o?.fuente === 'proyeccion' || o?.fuente === 'en_vivo';
 
-// La franja de arriba: una frase con el resultado del mes, el selector y la tendencia del año.
+// La franja de arriba: una frase con el resultado del mes, el selector y la tendencia del año, lado a lado para que
+// quepa en una franja corta (Juan, 2026-11-13: «mucho espacio para decir tan poco»). Una proyección no se presenta
+// como un resultado: va en gris y lo dice.
 export function SiioPulsoMes({ t }: { t: TorreAvancys }) {
   const { estado, error, torre, opciones, mes, setMes, opcion, resumen, previo, mesPrevio, resumenDe } = t;
-  const aprox = esEstimado(opcion) ? 'cerca de ' : '';
+  const estimado = esEstimado(opcion);
   const tendencia = opciones.map(o => ({ ...o, r: resumenDe(o.mes) })).filter(o => o.r && o.r.ingresos);
   const maximo = Math.max(0.01, ...tendencia.map(o => Math.abs(o.r!.utilidad / o.r!.ingresos)));
+  const oficiales = tendencia.filter(o => o.fuente === 'oficial');
+  const deAvancys = tendencia.filter(o => o.fuente !== 'oficial');
+  const tramo = (lista: typeof tendencia) => (lista.length ? `${nombreMes(lista[0].mes).split(' ')[0]}${lista.length > 1 ? `–${nombreMes(lista[lista.length - 1].mes).split(' ')[0]}` : ''}` : '');
   return <section className="panel siio-pulso" aria-label="Resultado del mes">
-    <div className="siio-pulso-cabeza">
-      <label className="siio-pulso-mes">Mes
-        <select value={mes} onChange={evento => setMes(evento.target.value)} disabled={!opciones.length}>
-          {opciones.map(o => <option key={o.mes} value={o.mes}>{nombreMes(o.mes)} · {o.etiqueta}</option>)}
-        </select>
-      </label>
-      {torre?.medido_en ? <span className="siio-secondary">Avancys leído el {hora(torre.medido_en).replace(/\.$/, '')}{torre.desde_memoria ? ' (guardado)' : ''} · <button type="button" className="siio-link-button" onClick={() => void t.cargar(true)}>Volver a leer</button></span> : null}
+    <div className="siio-pulso-texto">
+      <div className="siio-pulso-cabeza">
+        <label className="siio-pulso-mes">Mes
+          <select value={mes} onChange={evento => setMes(evento.target.value)} disabled={!opciones.length}>
+            {opciones.map(o => <option key={o.mes} value={o.mes}>{nombreMes(o.mes)} · {o.etiqueta}</option>)}
+          </select>
+        </label>
+        {torre?.medido_en ? <span className="siio-secondary">Avancys leído el {hora(torre.medido_en).replace(/\.$/, '')}{torre.desde_memoria ? ' (guardado)' : ''} · <button type="button" className="siio-link-button" onClick={() => void t.cargar(true)}>Volver a leer</button></span> : null}
+      </div>
+      {estado === 'cargando' && !resumen ? <p className="siio-pulso-frase siio-secondary">Leyendo la contabilidad de Avancys…</p> : null}
+      {estado === 'error' ? <p className="siio-alert-text">No se pudo leer Avancys: {error}</p> : null}
+      {resumen ? <>
+        {estimado ? <h2 className="siio-pulso-frase siio-pulso-estimado">
+          {nombreMes(mes).replace(/^./, letra => letra.toUpperCase())} va en <strong>≈ {millones(resumen.utilidad)}</strong>, {pct(resumen.utilidad, resumen.ingresos)} de los ingresos
+        </h2> : <h2 className="siio-pulso-frase">
+          En {nombreMes(mes)} {resumen.utilidad >= 0 ? 'ganamos' : 'perdimos'} <strong>{millones(Math.abs(resumen.utilidad))}</strong>
+          {' '}<span className={resumen.utilidad >= 0 ? 'siio-pulso-ok' : 'siio-pulso-mal'}>{pct(resumen.utilidad, resumen.ingresos)} de los ingresos</span>
+        </h2>}
+        <p className="siio-pulso-apoyo">
+          {estimado ? <><Badge tone="amber">Proyección</Badge> El mes no está completo en la contabilidad: lo registrado más lo que falta, estimado. </> : null}
+          Ingresos {estimado ? '≈ ' : ''}{millones(resumen.ingresos)}{previo && mesPrevio ? <> · {nombreMes(mesPrevio).split(' ')[0]} {pct(previo.utilidad, previo.ingresos)}</> : null} · fuente: {resumen.fuente}.
+        </p>
+      </> : null}
     </div>
-    {estado === 'cargando' && !resumen ? <p className="siio-pulso-frase siio-secondary">Leyendo la contabilidad de Avancys…</p> : null}
-    {estado === 'error' ? <p className="siio-alert-text">No se pudo leer Avancys: {error}</p> : null}
-    {resumen ? <>
-      <h2 className="siio-pulso-frase">
-        En {nombreMes(mes)} {resumen.utilidad >= 0 ? 'ganamos' : 'perdimos'} <strong>{aprox}{millones(Math.abs(resumen.utilidad))}</strong>
-        {' '}<span className={resumen.utilidad >= 0 ? 'siio-pulso-ok' : 'siio-pulso-mal'}>{pct(resumen.utilidad, resumen.ingresos)} de los ingresos</span>
-      </h2>
-      <p className="siio-pulso-apoyo">
-        Ingresos {aprox}{millones(resumen.ingresos)}{previo && mesPrevio ? <> · {nombreMes(mesPrevio).split(' ')[0]} {pct(previo.utilidad, previo.ingresos)}</> : null}
-        {' '}· fuente: {resumen.fuente}{opcion && esEstimado(opcion) ? ' (el mes no está completo en la contabilidad)' : ''}.
-      </p>
-      {tendencia.length > 1 ? <ol className="siio-pulso-tendencia" aria-label="Margen operacional de cada mes del año">
+    {tendencia.length > 1 ? <div className="siio-pulso-grafico">
+      <ol className="siio-pulso-tendencia" aria-label="Margen operacional de cada mes del año">
         {tendencia.map(o => {
           const valor = o.r!.utilidad / o.r!.ingresos;
-          return <li key={o.mes} className={[o.mes === mes ? 'actual' : '', valor < 0 ? 'negativo' : '', esEstimado(o) ? 'estimado' : ''].join(' ').trim()}>
+          return <li key={o.mes} className={[o.mes === mes ? 'actual' : '', valor < 0 ? 'negativo' : '', esEstimado(o) ? 'estimado' : '', o.fuente === 'oficial' ? 'oficial' : ''].join(' ').trim()}>
             <button type="button" onClick={() => setMes(o.mes)} aria-pressed={o.mes === mes} title={`${nombreMes(o.mes)} · ${o.etiqueta}`}>
-              <span className="barra" style={{ height: `${Math.max(6, Math.round((Math.abs(valor) / maximo) * 44))}px` }} />
+              <span className="barra" style={{ height: `${Math.max(4, Math.round((Math.abs(valor) / maximo) * 34))}px` }} />
               <span className="valor">{esEstimado(o) ? '≈' : ''}{pct(o.r!.utilidad, o.r!.ingresos).replace(' %', '%')}</span>
               <span className="mes">{nombreMes(o.mes).slice(0, 3)}</span>
             </button>
           </li>;
         })}
-      </ol> : null}
-    </> : null}
+      </ol>
+      <p className="siio-pulso-leyenda">
+        {oficiales.length ? <><span className="muestra oficial" /> {tramo(oficiales)}: cierre de Finanzas </> : null}
+        {deAvancys.length ? <><span className="muestra" /> {tramo(deAvancys)}: Avancys </> : null}
+        <span className="muestra estimado" /> proyección
+      </p>
+    </div> : null}
   </section>;
 }
 
-export type AlertaTorre = { clave: string; texto: React.ReactNode; pestana: PestanaTorre };
+// Lo que pide una decisión hoy: no depende del mes elegido arriba (Juan, 2026-11-13: «se ve una nota que va y viene»).
+// Cada tarjeta es una cifra y una línea; «Ver» lleva a su pestaña.
+export type AlertaTorre = { clave: string; cifra: string; texto: string; pestana: PestanaTorre };
 export type PestanaTorre = 'resultados' | 'clientes' | 'cartera' | 'comercial' | 'vigia' | 'parametros' | 'fuentes';
 
-// Lo que pide una decisión, en frases cortas y ordenado por peso. Cada una lleva a su pestaña.
+const sinCodigo = (nombre: string) => nombre.replace(/^\[\d+\]\s*/, '').replace(/\s+(S\.?A\.?S?\.?|LTDA\.?)$/i, '');
+
 export function alertasDeAvancys(t: TorreAvancys): AlertaTorre[] {
   const salida: AlertaTorre[] = [];
   // Lo que deja cada cliente se juzga con el último mes cerrado: un mes a medias tiene la nómina incompleta.
@@ -222,25 +229,29 @@ export function alertasDeAvancys(t: TorreAvancys): AlertaTorre[] {
   const enPerdida = (k?.clientes || []).filter(fila => fila.ingresos > 0 && fila.margen < 0);
   if (enPerdida.length) {
     const mayor = [...enPerdida].sort((a, b) => b.ingresos - a.ingresos)[0];
-    salida.push({ clave: 'clientes', pestana: 'clientes', texto: <><strong>{enPerdida.length} clientes pierden plata</strong> en {nombreMes(t.torre?.mes_cerrado)} ({millones(enPerdida.reduce((s, f) => s + f.margen, 0))}); el más grande es {mayor.cliente.replace(/^\[\d+\]\s*/, '')}.</> });
+    salida.push({ clave: 'clientes', pestana: 'clientes', cifra: `${enPerdida.length} clientes`,
+      texto: `pierden plata en ${nombreMes(t.torre?.mes_cerrado)} (${millones(enPerdida.reduce((s, f) => s + f.margen, 0))}); el más grande, ${sinCodigo(mayor.cliente)}.` });
   }
   const c = t.torre?.cartera;
   if (c?.total && c.vencido && c.total.saldo) {
-    const altos = (c.deudores || []).length;
-    salida.push({ clave: 'cartera', pestana: 'cartera', texto: <><strong>{millones(c.vencido.saldo)} vencidos</strong>, el {pct(c.vencido.saldo, c.total.saldo)} de la cartera; {altos ? `${altos} clientes concentran lo más grande` : ''}.</> });
+    salida.push({ clave: 'cartera', pestana: 'cartera', cifra: millones(c.vencido.saldo), texto: `de cartera vencida, el ${pct(c.vencido.saldo, c.total.saldo)} de lo que nos deben.` });
   }
   const parcial = (t.torre?.pyg || []).find(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso');
-  if (parcial) salida.push({ clave: 'nomina', pestana: 'resultados', texto: <><strong>{nombreMes(parcial.mes)} sigue abierto en la contabilidad</strong> ({(parcial.motivo || '').toLowerCase()}): su resultado es una proyección, no una cifra cerrada.</> });
+  if (parcial) salida.push({ clave: 'nomina', pestana: 'resultados', cifra: nombreMes(parcial.mes).split(' ')[0].replace(/^./, letra => letra.toUpperCase()),
+    texto: `sigue abierto en la contabilidad (${(parcial.motivo || '').toLowerCase()}): su resultado es una proyección.` });
   return salida;
 }
 
 export function SiioRequiereDecision({ alertas, onIr }: { alertas: AlertaTorre[]; onIr: (pestana: PestanaTorre) => void }) {
   if (!alertas.length) return null;
-  return <section className="panel siio-decide" aria-label="Requiere decisión">
-    <h2>Requiere decisión</h2>
+  return <section className="panel siio-decide" aria-label="Requiere decisión hoy">
+    <h2>Requiere decisión hoy</h2>
     <ul>{alertas.map(alerta => <li key={alerta.clave}>
-      <p>{alerta.texto}</p>
-      <button type="button" className="siio-link-button" onClick={() => onIr(alerta.pestana)}>Ver</button>
+      <button type="button" onClick={() => onIr(alerta.pestana)}>
+        <strong>{alerta.cifra}</strong>
+        <span>{alerta.texto}</span>
+        <small>Ver</small>
+      </button>
     </li>)}</ul>
   </section>;
 }
@@ -254,19 +265,79 @@ export function SiioPestanaResultados({ t }: { t: TorreAvancys }) {
   </>;
 }
 
+// Clientes con su propio selector de mes y la historia de los que pierden (Juan, 2026-11-13: «una sección donde uno
+// pueda entrar y cambiar de mes sobre esa parte»). Sólo meses cerrados: con la nómina a medias el costo no se sabe.
 export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
-  const k = t.clientes;
-  if (t.antesDeAvancys) return <p className="siio-secondary">Antes de agosto de 2026 la contabilidad estaba en Yeminus: no hay detalle por cliente para {nombreMes(t.mes)}.</p>;
-  if (t.clientesEstado === 'cargando') return <p className="siio-secondary">Calculando los clientes de {nombreMes(t.mes)}…</p>;
-  if (t.clientesEstado === 'error' || (k && k.legible === false)) return <p className="siio-alert-text">No se pudieron calcular los clientes de {nombreMes(t.mes)}{k?.motivo ? `: ${k.motivo}` : ''}.</p>;
-  if (!k?.legible) return <p className="siio-secondary">Sin datos de clientes para {nombreMes(t.mes)}.</p>;
+  const torre = t.torre;
+  const primero = torre?.primera_linea?.slice(0, 7) || '';
+  const cerrados = (torre?.pyg || []).filter(fila => fila.estado === 'cerrado' && fila.mes >= primero).map(fila => fila.mes);
+  const [elegido, setElegido] = useState('');
+  const [porMes, setPorMes] = useState<Record<string, Clientes | 'cargando' | 'error'>>({});
+  const mesClientes = elegido || torre?.mes_cerrado || cerrados[cerrados.length - 1] || '';
+  const datosDe = (mes: string): Clientes | 'cargando' | 'error' | undefined => (mes === torre?.mes_cerrado && torre?.clientes ? torre.clientes : porMes[mes]);
+  useEffect(() => {
+    let vigente = true;
+    for (const mes of cerrados) {
+      if (mes === torre?.mes_cerrado || porMes[mes]) continue;
+      setPorMes(actual => ({ ...actual, [mes]: 'cargando' }));
+      api<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`)
+        .then(datos => { if (vigente) setPorMes(actual => ({ ...actual, [mes]: datos })); })
+        .catch(() => { if (vigente) setPorMes(actual => ({ ...actual, [mes]: 'error' })); });
+    }
+    return () => { vigente = false; };
+  }, [cerrados.join(','), torre?.mes_cerrado]);
+
+  if (!cerrados.length) return <p className="siio-secondary">Todavía no hay un mes cerrado en Avancys para ver lo que deja cada cliente.</p>;
+  // Historia: los clientes que perdieron en algún mes cerrado, con su margen en cada mes.
+  const legibles = cerrados.map(mes => ({ mes, datos: datosDe(mes) })).filter((x): x is { mes: string; datos: Clientes } => typeof x.datos === 'object' && Boolean(x.datos?.legible));
+  const historia = new Map<string, { nombre: string; meses: Record<string, Cliente> }>();
+  for (const { mes, datos } of legibles) {
+    for (const fila of datos.clientes || []) {
+      const clave = nitDe(fila.cliente) || fila.cliente;
+      const actual = historia.get(clave) || { nombre: fila.cliente, meses: {} };
+      actual.meses[mes] = fila;
+      historia.set(clave, actual);
+    }
+  }
+  const pierdenAlguna = [...historia.values()].filter(fila => Object.values(fila.meses).some(m => m.ingresos > 0 && m.margen < 0))
+    .map(fila => ({ ...fila, perdidas: Object.values(fila.meses).filter(m => m.ingresos > 0 && m.margen < 0).length, ingreso: Math.max(...Object.values(fila.meses).map(m => m.ingresos)) }))
+    .sort((a, b) => b.perdidas - a.perdidas || b.ingreso - a.ingreso);
+  const cargando = cerrados.some(mes => datosDe(mes) === 'cargando');
+  return <>
+    <div className="siio-clientes-meses" role="group" aria-label="Mes de los clientes">
+      <span>Mes cerrado</span>
+      {cerrados.map(mes => <button key={mes} type="button" aria-pressed={mes === mesClientes} className={mes === mesClientes ? 'active' : ''} onClick={() => setElegido(mes)}>{nombreMes(mes)}</button>)}
+    </div>
+    {legibles.length > 1 || pierdenAlguna.length ? <section aria-label="Clientes que pierden, mes a mes">
+      <h3>Los que pierden, mes a mes</h3>
+      {cargando ? <p className="siio-pulse-footnote">Calculando los otros meses…</p> : null}
+      {pierdenAlguna.length ? <div className="siio-table-wrap"><table>
+        <thead><tr><th>Cliente</th>{legibles.map(({ mes }) => <th key={mes}>{nombreMes(mes).split(' ')[0]}</th>)}</tr></thead>
+        <tbody>{pierdenAlguna.slice(0, MAX_CLIENTES).map(fila => <tr key={fila.nombre}>
+          <td>{fila.nombre.replace(/^\[\d+\]\s*/, '')}{fila.perdidas === legibles.length && legibles.length > 1 ? <> <Badge tone="danger">todos los meses</Badge></> : null}</td>
+          {legibles.map(({ mes }) => {
+            const m = fila.meses[mes];
+            return <td key={mes} className={m && m.margen < 0 ? 'siio-celda-mal' : undefined}>{m ? <>{millones(m.margen)} · {pct(m.margen, m.ingresos)}</> : '—'}</td>;
+          })}
+        </tr>)}</tbody>
+      </table></div> : <p className="siio-secondary">Ningún cliente pierde en los meses cerrados.</p>}
+    </section> : null}
+    <DetalleClientes mes={mesClientes} datos={datosDe(mesClientes)} />
+  </>;
+}
+
+function DetalleClientes({ mes, datos }: { mes: string; datos: Clientes | 'cargando' | 'error' | undefined }) {
+  if (datos === 'cargando' || datos === undefined) return <p className="siio-secondary">Calculando los clientes de {nombreMes(mes)}…</p>;
+  if (datos === 'error' || datos.legible === false) return <p className="siio-alert-text">No se pudieron calcular los clientes de {nombreMes(mes)}{datos !== 'error' && datos.motivo ? `: ${datos.motivo}` : ''}.</p>;
+  const k = datos;
   const costoHora = Math.abs(k.costo_por_hora ?? 0);
   const conIngreso = (k.clientes || []).filter(fila => fila.ingresos > 0);
   const pierden = conIngreso.filter(fila => fila.margen < 0);
   const filas = [...pierden, ...conIngreso.filter(fila => fila.margen >= 0)].slice(0, MAX_CLIENTES);
-  return <>
+  return <section aria-label={`Clientes de ${nombreMes(mes)}`}>
+    <h3>{nombreMes(mes).replace(/^./, letra => letra.toUpperCase())}, cliente por cliente</h3>
     <p className="siio-pulse-footnote">
-      {nombreMes(t.mes)} · <strong>aproximado</strong>: ingreso real de cada cliente; costo de vigilantes a {pesos(costoHora)} la hora por las horas de sus puestos; supervisión y administración por facturación.
+      <strong>Aproximado</strong>: ingreso real de cada cliente; costo de vigilantes a {pesos(costoHora)} la hora por las horas de sus puestos; supervisión y administración por facturación.
       {' '}Primero los que pierden; luego los de mayor ingreso.
     </p>
     <div className="siio-table-wrap"><table>
@@ -280,7 +351,7 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
       </tr>)}</tbody>
     </table></div>
     <p className="siio-pulse-footnote">{conIngreso.length.toLocaleString('es-CO')} clientes con ingreso; se muestran {filas.length}. Para los que se facturan mes vencido, el ingreso de un mes corresponde al servicio del anterior.</p>
-  </>;
+  </section>;
 }
 
 export function SiioPestanaCartera({ t }: { t: TorreAvancys }) {

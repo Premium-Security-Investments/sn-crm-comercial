@@ -4825,7 +4825,7 @@ app.get('/api/siio/avancys/torre', async (req, res) => {
     requireModuleAction(currentProfile, 'siio');
     res.set('Cache-Control', 'private, no-store');
     // El presupuesto contra ejecución se arma aquí porque el mapeo y el presupuesto viven en Parámetros.
-    res.json(await agregarPresupuesto(requireDb(), await torreAvancys({ refrescar: req.query.refrescar === '1' })));
+    res.json(await agregarPresupuesto(requireDb(), await torreAvancys({ refrescar: req.query.refrescar === '1', db: requireDb() })));
   } catch (error) { sendError(res, error, error?.status || 500); }
 });
 
