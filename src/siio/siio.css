@@ -1360,3 +1360,4 @@
 .siio-portada-linea b.mal{background:#e8a29c}
 .siio-portada-linea u{position:absolute;top:-3px;bottom:-3px;width:2px;background:#10213d}
 @media(max-width:1100px){.siio-portada-bloques{grid-template-columns:1fr}.siio-portada-frase{grid-template-columns:1fr}}
+.siio-key-grid + .siio-key-grid{margin-top:10px}

@@ -70,6 +70,7 @@ const hora = (valor?: string) => (valor
   : '');
 const MAX_CLIENTES = 15;
 const MESES_PIERDEN = 3;
+const IVA = 1.19;
 
 function Cifra({ etiqueta, valor, comparacion, alerta }: { etiqueta: string; valor: string; comparacion?: string | null; alerta?: boolean }) {
   return <div className={`siio-key-figure${alerta ? ' siio-card-alert' : ''}`}>
@@ -484,18 +485,25 @@ export function SiioPestanaCartera({ t }: { t: TorreAvancys }) {
   if (!c?.total || !c.vencido) return <p className="siio-secondary">Sin datos de cartera todavía.</p>;
   const ingresoMes = new Map((t.torre?.clientes?.clientes || []).map(fila => [nitDe(fila.cliente), fila.ingresos]));
   const cerrado = t.torre?.mes_cerrado ? t.resumenDe(t.torre.mes_cerrado) : null;
-  const dias = cerrado?.ingresos ? Math.round((c.total.saldo / (cerrado.ingresos * 1.19)) * 30) : null;
+  const dias = cerrado?.ingresos ? Math.round((c.total.saldo / (cerrado.ingresos * IVA)) * 30) : null;
   return <>
-    <div className="siio-key-grid siio-key-grid-4">
+    {/* Lo vencido y todos sus tramos, para que se vea que suman (Juan, 2026-11-13). Vencida = pasó la fecha de
+        vencimiento de la factura, aunque sea por un día; los tramos se cuentan desde esa fecha. */}
+    <div className="siio-key-grid siio-key-grid-3">
       <Cifra etiqueta="Por cobrar hoy" valor={millones(c.total.saldo)} comparacion={dias ? `≈ ${dias} días de facturación` : null} />
-      <Cifra etiqueta="Vencida" valor={millones(c.vencido.saldo)} alerta={c.vencido.saldo > c.total.saldo / 2} comparacion={`${pct(c.vencido.saldo, c.total.saldo)} de la cartera`} />
-      {(c.tramos || []).slice(1, 3).map(tramo => <Cifra key={tramo.tramo} etiqueta={`Vencida ${tramo.tramo}`} valor={millones(tramo.saldo)} alerta={tramo.tramo.startsWith('61') && tramo.saldo > 0} />)}
+      <Cifra etiqueta="Sin vencer" valor={millones(c.total.saldo - c.vencido.saldo)} comparacion="todavía no llega a su fecha de pago" />
+      <Cifra etiqueta="Vencida" valor={millones(c.vencido.saldo)} alerta={c.vencido.saldo > c.total.saldo / 2} comparacion={`${pct(c.vencido.saldo, c.total.saldo)} de la cartera, aunque sea por un día`} />
+    </div>
+    <div className="siio-key-grid siio-key-grid-4">
+      {(c.tramos || []).map(tramo => <Cifra key={tramo.tramo} etiqueta={`Vencida ${tramo.tramo.toLowerCase()}`} valor={millones(tramo.saldo)}
+        comparacion={c.vencido?.saldo ? `${pct(tramo.saldo, c.vencido.saldo)} de lo vencido` : null} alerta={tramo.saldo > 0 && (tramo.tramo.startsWith('61') || tramo.tramo.startsWith('Más'))} />)}
     </div>
     <div className="siio-table-wrap"><table>
       <thead><tr><th>Quién debe más (vencido)</th><th>Vencido</th><th>Equivale a</th></tr></thead>
       <tbody>{(c.deudores || []).map(fila => {
+        // La deuda viene con IVA y el ingreso del cliente sin IVA: se lleva el ingreso a valor facturado (con IVA).
         const mensual = ingresoMes.get(nitDe(fila.cliente));
-        const meses = mensual ? fila.vencido / mensual : null;
+        const meses = mensual ? fila.vencido / (mensual * IVA) : null;
         return <tr key={fila.cliente} className={meses !== null && meses >= 2 ? 'siio-fila-alerta' : undefined}>
           <td>{fila.cliente.replace(/^(\[[^\]]+\]\s*)+/, '')}</td>
           <td>{millones(fila.vencido)}</td>
