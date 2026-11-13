@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
-import { PARAMETROS, RUBROS, guardarParametro, limpiarValor, listarParametros, periodoValido } from '../verticales/gerencial/siio-parametros.js';
+import { PARAMETROS, RUBROS, RUBROS_TECNOLOGIA, guardarParametro, limpiarValor, listarParametros, periodoValido } from '../verticales/gerencial/siio-parametros.js';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const porClave = clave => PARAMETROS.find(parametro => parametro.clave === clave);
@@ -50,6 +50,8 @@ test('el catálogo tiene los 11 puntos acordados, numerados y con encargado', ()
   assert.deepEqual(PARAMETROS.map(parametro => parametro.numero), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   assert.ok(PARAMETROS.every(parametro => parametro.encargado && parametro.frecuencia && parametro.para));
   assert.equal(RUBROS.length, 18);
+  // Tecnología tiene sus propios rubros (21–40 en el Excel), no los de vigilancia.
+  assert.deepEqual(RUBROS_TECNOLOGIA.map(rubro => rubro.numero), Array.from({ length: 20 }, (_, i) => 21 + i));
   // Los dos que ya tienen su pantalla sólo se señalan.
   assert.deepEqual(PARAMETROS.filter(parametro => parametro.forma === 'externo').map(parametro => parametro.clave), ['clientes_mes_vencido', 'historico']);
   // Las claves guardables son exactamente las que acepta la migración.
@@ -74,9 +76,13 @@ test('el valor se limpia según la forma y rechaza lo que no cuadra', () => {
   assert.deepEqual(creditos, [{ banco: 'Banco A', concepto: 'Capital de trabajo', tasa: 12, fecha_final: '2028-01-31' }]);
   assert.throws(() => limpiarValor(porClave('creditos'), [{ banco: 'Banco A' }]), /Fila 1: Concepto: dato obligatorio/);
   assert.throws(() => limpiarValor(porClave('ajustes_cierre'), [{ linea: 'no_existe', valor: 1, motivo: 'x' }]), /opción no válida/);
-  const presupuesto = limpiarValor(porClave('presupuesto_rubros'), { salarios: { vigilancia: 10 } });
-  assert.equal(Object.keys(presupuesto).length, 18);
-  assert.deepEqual(presupuesto.salarios, { vigilancia: 10, tecnologia: null });
+  const presupuesto = limpiarValor(porClave('presupuesto_rubros'), { vigilancia: { salarios: '10' }, tecnologia: { materia_prima: 35, otro: 1 } });
+  assert.equal(Object.keys(presupuesto.vigilancia).length, 18);
+  assert.equal(Object.keys(presupuesto.tecnologia).length, 20);
+  assert.equal(presupuesto.vigilancia.salarios, 10);
+  assert.equal(presupuesto.tecnologia.materia_prima, 35);
+  assert.equal(presupuesto.tecnologia.otro, undefined);
+  assert.throws(() => limpiarValor(porClave('presupuesto_rubros'), { tecnologia: { seguros: 140 } }), /Tecnología, Seguros/);
   assert.throws(() => limpiarValor(porClave('historico'), {}), /otra pantalla/);
 });
 

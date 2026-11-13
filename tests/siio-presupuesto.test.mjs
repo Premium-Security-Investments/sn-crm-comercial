@@ -16,7 +16,7 @@ const meses = {
 const mapeo = [
   { cuenta: '4155A', rubro: 0 }, { cuenta: '4155T', rubro: 20 }, { cuenta: '7201A', rubro: 1 }, { cuenta: '7202A', rubro: 2 }, { cuenta: '7250T', rubro: 21 },
 ];
-const presupuestos = { 2026: { salarios: { vigilancia: 45 }, prestaciones: { vigilancia: 25 } } };
+const presupuestos = { 2026: { vigilancia: { salarios: 45, prestaciones: 25 }, tecnologia: { personal_monitoreo: 60 } } };
 
 test('cada rubro es el % del ingreso de su unidad, con la provisión, contra el presupuesto del año', () => {
   const fila = presupuestoContraEjecucion({ meses, mapeo, presupuestos })['2026-09'];
@@ -28,7 +28,10 @@ test('cada rubro es el % del ingreso de su unidad, con la provisión, contra el 
   assert.equal(fila.vigilancia.rentabilidad, 25);
   // Faltan rubros con presupuesto pero sin gasto: el presupuesto alcanza para la rentabilidad presupuestada.
   assert.equal(fila.vigilancia.rentabilidad_presupuesto, 30);
-  assert.deepEqual(fila.tecnologia, { ingresos: 200, costos: 150, rentabilidad: 25 });
+  assert.deepEqual([fila.tecnologia.ingresos, fila.tecnologia.costos, fila.tecnologia.rentabilidad, fila.tecnologia.rentabilidad_presupuesto], [200, 150, 25, 40]);
+  const monitoreo = fila.tecnologia.rubros.find(rubro => rubro.clave === 'personal_monitoreo');
+  assert.deepEqual([monitoreo.pct, monitoreo.presupuesto, monitoreo.diferencia], [75, 60, 15]);
+  assert.equal(fila.tecnologia.rubros.length, 20);
   assert.deepEqual(fila.sin_mapeo, [{ cuenta: '9999X', valor: -7 }]);
   assert.equal(fila.vigilancia.rubros.length, 18);
 });
@@ -62,4 +65,9 @@ test('la Torre entra al mes en vivo y juzga a los clientes con el último mes ce
   assert.match(torre, /const mes = mesElegido \|\| enVivo \|\|/);
   assert.match(torre, /const k = t\.torre\?\.clientes;/);
   assert.match(read('server/index.js'), /agregarPresupuesto\(requireDb\(\), await torreAvancys\(/);
+});
+
+test('acepta el presupuesto sembrado con la forma anterior', () => {
+  const fila = presupuestoContraEjecucion({ meses, mapeo, presupuestos: { 2026: { salarios: { vigilancia: 45 } } } })['2026-09'];
+  assert.equal(fila.vigilancia.rubros.find(rubro => rubro.clave === 'salarios').presupuesto, 45);
 });
