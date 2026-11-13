@@ -15,6 +15,7 @@ import { createClient } from '@supabase/supabase-js';
 import { filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions } from '../../verticales/licitaciones/agt002-auto-initial.js';
 import { runAgt002ManualReanalysisRequests } from '../../verticales/licitaciones/agt002-manual-reanalysis.js';
 import { runExperienceCertificateOcrPass, runTenderDocumentOcrPass } from '../../verticales/licitaciones/tender-document-ocr.js';
+import { runTenderDocumentLegacyOfficePass } from '../../verticales/licitaciones/tender-document-legacy-office.js';
 import { reviewExperienceCertificate } from '../../verticales/licitaciones/experience-certificate-review.js';
 import { proposeCompanyFactsFromDocuments } from '../../verticales/licitaciones/agt002-company-fact-proposals.js';
 import { runAgt002RespuestasPorObservacionPass } from '../../verticales/licitaciones/agt002-respuestas-por-observacion.js';
@@ -74,6 +75,13 @@ try {
   for (const event of await runTenderDocumentOcrPass(database, { limit: Number(env.TENDER_OCR_PER_PASS || 2), onText })) log(event);
 } catch (error) {
   log({ event: 'tender_ocr_pass_failed', message: String(error?.message || error).slice(0, 200) });
+}
+try {
+  // Formatos viejos de Office (Juan, 2026-11-13): .doc y .xls, sueltos o dentro de un zip, se convierten con LibreOffice y
+  // se vuelven a leer antes de que arranque el análisis.
+  for (const event of await runTenderDocumentLegacyOfficePass(database, { limit: Number(env.TENDER_LEGACY_OFFICE_PER_PASS || 2) })) log(event);
+} catch (error) {
+  log({ event: 'tender_legacy_office_pass_failed', message: String(error?.message || error).slice(0, 200) });
 }
 try {
   // Mejora 9 (Juan, 2026-11-10): los certificados de experiencia escaneados se leen aquí, en el mismo pase, y Vig-IA los
