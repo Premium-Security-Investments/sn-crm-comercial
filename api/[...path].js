@@ -8,6 +8,7 @@ import { loadFinancialPulse } from '../verticales/gerencial/siio-financial-pulse
 import { loadCommercialSummary } from '../verticales/gerencial/siio-commercial-summary.js';
 import { createFollowup, listFollowups, updateFollowup } from '../verticales/gerencial/siio-followups.js';
 import { guardarParametro, listarParametros } from '../verticales/gerencial/siio-parametros.js';
+import { agregarPresupuesto } from '../verticales/gerencial/siio-presupuesto.js';
 import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, addZone as addSecurityStudyZone, createStudy as createSecurityStudy, deleteAction as deleteSecurityStudyAction, deleteRisk as deleteSecurityStudyRisk, deleteZone as deleteSecurityStudyZone, getStudy as getSecurityStudy, listStudies as listSecurityStudies, updateAction as updateSecurityStudyAction, updateRisk as updateSecurityStudyRisk, updateStudy as updateSecurityStudy, updateZone as updateSecurityStudyZone } from '../verticales/estudios-seguridad/estudios.js';
 import { addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys, updateCharacterizationRow } from '../verticales/estudios-seguridad/caracterizacion.js';
 import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
@@ -4823,7 +4824,8 @@ app.get('/api/siio/avancys/torre', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'siio');
     res.set('Cache-Control', 'private, no-store');
-    res.json(await torreAvancys({ refrescar: req.query.refrescar === '1' }));
+    // El presupuesto contra ejecución se arma aquí porque el mapeo y el presupuesto viven en Parámetros.
+    res.json(await agregarPresupuesto(requireDb(), await torreAvancys({ refrescar: req.query.refrescar === '1' })));
   } catch (error) { sendError(res, error, error?.status || 500); }
 });
 

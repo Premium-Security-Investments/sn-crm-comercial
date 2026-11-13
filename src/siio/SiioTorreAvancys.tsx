@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import type React from 'react';
 import { api } from '../apiClient';
 import { Badge } from './SiioUi';
+import { SiioPresupuesto } from './SiioPresupuesto';
 import type { FinancialPulse } from './financialPulse';
 
 // Las dos preguntas de plata de la Torre (plan del 2026-11-12), en vivo desde Avancys:
@@ -26,6 +27,13 @@ type MesPyg = {
 };
 type Saldo = { saldo: number; facturas: number };
 type Cartera = { error?: string; hoy?: string; total?: Saldo; vencido?: Saldo; tramos?: ({ tramo: string } & Saldo)[]; deudores?: { cliente: string; vencido: number; facturas: number }[] };
+type RubroEjecucion = { clave: string; etiqueta: string; ejecutado: number; pct: number | null; presupuesto: number | null; diferencia: number | null };
+type MesPresupuesto = {
+  mes: string; estado: 'cerrado' | 'parcial' | null; presupuesto_anio: string | null; sin_mapeo: { cuenta: string; valor: number }[]; sin_mapeo_cuentas: number;
+  vigilancia: { ingresos: number; costos: number; rentabilidad: number | null; rentabilidad_presupuesto: number | null; rubros: RubroEjecucion[] };
+  tecnologia: { ingresos: number; costos: number; rentabilidad: number | null };
+};
+export type Presupuesto = { disponible: boolean; motivo?: string; sin_confirmar?: string[]; meses?: Record<string, MesPresupuesto> };
 type Torre = {
   configurado?: boolean;
   autenticado?: boolean;
@@ -40,6 +48,7 @@ type Torre = {
   cartera?: Cartera | null;
   lineas_pyg?: LineaPyg[];
   pyg?: MesPyg[];
+  presupuesto?: Presupuesto | null;
 };
 
 // El mismo tercero sale con nombres distintos en la factura y en la cuenta analítica
@@ -118,7 +127,9 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
     }
     return [...porMes.values()].sort((x, y) => x.mes.localeCompare(y.mes));
   })();
-  const mes = mesElegido || torre?.mes_cerrado || opciones[opciones.length - 1]?.mes || '';
+  // Se entra al mes en curso, en vivo (Juan, 2026-11-13); mientras Avancys no responde, al último mes que haya.
+  const enVivo = opciones.find(o => o.fuente === 'en_vivo')?.mes;
+  const mes = mesElegido || enVivo || opciones[opciones.length - 1]?.mes || '';
   const opcion = opciones.find(o => o.mes === mes) || null;
   const oficialDe = (m: string) => {
     const [anio, numero] = m.split('-').map(Number);
@@ -206,11 +217,12 @@ export type PestanaTorre = 'resultados' | 'clientes' | 'cartera' | 'comercial' |
 // Lo que pide una decisión, en frases cortas y ordenado por peso. Cada una lleva a su pestaña.
 export function alertasDeAvancys(t: TorreAvancys): AlertaTorre[] {
   const salida: AlertaTorre[] = [];
-  const k = t.clientes;
+  // Lo que deja cada cliente se juzga con el último mes cerrado: un mes a medias tiene la nómina incompleta.
+  const k = t.torre?.clientes;
   const enPerdida = (k?.clientes || []).filter(fila => fila.ingresos > 0 && fila.margen < 0);
   if (enPerdida.length) {
     const mayor = [...enPerdida].sort((a, b) => b.ingresos - a.ingresos)[0];
-    salida.push({ clave: 'clientes', pestana: 'clientes', texto: <><strong>{enPerdida.length} clientes pierden plata</strong> en {nombreMes(t.mes)} ({millones(enPerdida.reduce((s, f) => s + f.margen, 0))}); el más grande es {mayor.cliente.replace(/^\[\d+\]\s*/, '')}.</> });
+    salida.push({ clave: 'clientes', pestana: 'clientes', texto: <><strong>{enPerdida.length} clientes pierden plata</strong> en {nombreMes(t.torre?.mes_cerrado)} ({millones(enPerdida.reduce((s, f) => s + f.margen, 0))}); el más grande es {mayor.cliente.replace(/^\[\d+\]\s*/, '')}.</> });
   }
   const c = t.torre?.cartera;
   if (c?.total && c.vencido && c.total.saldo) {
@@ -236,7 +248,10 @@ export function SiioRequiereDecision({ alertas, onIr }: { alertas: AlertaTorre[]
 export function SiioPestanaResultados({ t }: { t: TorreAvancys }) {
   const { torre } = t;
   if (!torre?.pyg?.length || !torre.lineas_pyg) return <p className="siio-secondary">Sin datos de Avancys todavía.</p>;
-  return <EstadoDeResultados lineas={torre.lineas_pyg} meses={torre.pyg} oficial={t.oficial} />;
+  return <>
+    <EstadoDeResultados lineas={torre.lineas_pyg} meses={torre.pyg} oficial={t.oficial} />
+    <SiioPresupuesto presupuesto={torre.presupuesto || null} mes={t.mes} />
+  </>;
 }
 
 export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {

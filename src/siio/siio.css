@@ -1295,3 +1295,7 @@
 .siio-parametro-cambios{margin-top:16px}
 .siio-parametro-cambios ul{margin:8px 0 0;padding-left:18px;color:#526173;font-size:13px}
 @media(max-width:640px){.siio-parametro-fila{grid-template-columns:1fr;justify-items:start}}
+
+/* Presupuesto contra ejecución, en Resultados */
+.siio-presupuesto{display:grid;gap:8px;margin-top:22px;padding-top:18px;border-top:1px solid #e2eaf5}
+.siio-presupuesto h3{margin:0}
