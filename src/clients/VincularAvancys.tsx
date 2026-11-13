@@ -8,6 +8,7 @@
 // día que Avancys los tenga.
 import { useEffect, useState } from 'react';
 import { api } from '../apiClient';
+import './vincular.css';
 
 type Request = typeof api;
 type Pendiente = { id: string; company_name: string; customer_segment: string | null; quote_city: string | null; negocio_ganado: boolean };
@@ -26,27 +27,23 @@ function Fila({ cliente, busqueda, onBuscar, onEnlazar }: {
     setGuardando(true); setError('');
     try { await onEnlazar(candidato); } catch (err) { setError(err instanceof Error ? err.message : String(err)); setGuardando(false); }
   };
-  return <tr>
-    <td>
-      <strong>{cliente.company_name}</strong><br />
-      <small className="muted">{[cliente.customer_segment === 'cliente_actual' ? 'Cliente actual' : null, cliente.negocio_ganado ? 'negocio ganado' : null, cliente.quote_city].filter(Boolean).join(' · ')}</small>
-    </td>
-    <td>
-      {(!busqueda || busqueda.estado === 'buscando') && <small className="muted">Buscando en Avancys…</small>}
-      {busqueda?.estado === 'error' && <small className="muted">{busqueda.error}</small>}
-      {busqueda?.estado === 'listo' && (busqueda.candidatos.length
-        ? <ul className="dashboard-simple-list">{busqueda.candidatos.map(c => <li key={c.nit}>
-          <span><strong>{c.nombre}</strong> · NIT {c.nit}{c.departamento ? ` · ${c.departamento}` : ''}{c.atendido_por ? ` · ${c.atendido_por}` : ''}</span>
-          <button type="button" className="secondary" disabled={guardando} onClick={() => void enlazar(c)}>{guardando ? 'Guardando…' : 'Es este'}</button>
-        </li>)}</ul>
-        : <small className="muted">Avancys no tiene un cliente con ese nombre. Si tiene otra razón social, búsquela abajo.</small>)}
-      {error ? <><br /><small className="muted">{error}</small></> : null}
-      <div className="filters">
-        <input value={texto} onChange={e => setTexto(e.target.value)} placeholder="Buscar en Avancys por otro nombre" aria-label={`Buscar en Avancys otro nombre para ${cliente.company_name}`} />
-        <button type="button" className="secondary" onClick={() => onBuscar(texto)}>Buscar</button>
-      </div>
-    </td>
-  </tr>;
+  const meta = [cliente.customer_segment === 'cliente_actual' ? 'Cliente actual' : null, cliente.negocio_ganado ? 'negocio ganado' : null, cliente.quote_city].filter(Boolean).join(' · ');
+  return <li className="vincular-cliente">
+    <div className="vincular-cliente-nombre"><strong>{cliente.company_name}</strong>{meta ? <small>{meta}</small> : null}</div>
+    {(!busqueda || busqueda.estado === 'buscando') && <p className="vincular-nota">Buscando en Avancys…</p>}
+    {busqueda?.estado === 'error' && <p className="vincular-nota">{busqueda.error}</p>}
+    {busqueda?.estado === 'listo' && (busqueda.candidatos.length
+      ? <ul className="vincular-candidatos">{busqueda.candidatos.map(c => <li key={c.nit} className="vincular-candidato">
+        <span><b>{c.nombre}</b><small>NIT {c.nit}{c.departamento ? ` · ${c.departamento}` : ''}{c.atendido_por ? ` · ${c.atendido_por}` : ''}</small></span>
+        <button type="button" className="secondary" disabled={guardando} onClick={() => void enlazar(c)}>{guardando ? 'Guardando…' : 'Es este'}</button>
+      </li>)}</ul>
+      : <p className="vincular-nota">Avancys no tiene un cliente con ese nombre. Si tiene otra razón social, búsquela aquí.</p>)}
+    {error ? <p className="vincular-nota">{error}</p> : null}
+    <div className="vincular-buscar">
+      <input value={texto} onChange={e => setTexto(e.target.value)} placeholder="Buscar en Avancys por otro nombre" aria-label={`Buscar en Avancys otro nombre para ${cliente.company_name}`} />
+      <button type="button" className="secondary" onClick={() => onBuscar(texto)}>Buscar</button>
+    </div>
+  </li>;
 }
 
 export function VincularAvancys({ request = api }: { request?: Request }) {
@@ -94,25 +91,18 @@ export function VincularAvancys({ request = api }: { request?: Request }) {
     setDatos(actual => actual && { ...actual, pendientes: actual.pendientes.filter(item => item.id !== cliente.id), enlazados: actual.enlazados + 1 });
   };
   const fila = (cliente: Pendiente) => <Fila key={cliente.id} cliente={cliente} busqueda={busquedas[cliente.id]} onBuscar={texto => void buscar(cliente.id, texto)} onEnlazar={candidato => enlazar(cliente, candidato)} />;
-  return <section className="notice">
-    <p>
-      <strong>{pendientes.length} {pendientes.length === 1 ? 'cliente del CRM no está vinculado' : 'clientes del CRM no están vinculados'} con Avancys.</strong>{' '}
-      Un cliente debe ser el mismo en todas partes: el de Avancys, con su NIT. Confirme cuál es y desde ahí lleva el nombre de Avancys.{' '}
+  return <section className="vincular" aria-label="Vincular clientes con Avancys">
+    <div className="vincular-head">
+      <p><strong>{pendientes.length} {pendientes.length === 1 ? 'cliente del CRM no está vinculado' : 'clientes del CRM no están vinculados'} con Avancys.</strong> Un cliente es el mismo en todas partes: el de Avancys, con su NIT. Confirme cuál es; desde ahí lleva el nombre de Avancys.</p>
       <button type="button" className="secondary" onClick={() => setAbierto(v => !v)}>{abierto ? 'Ocultar' : 'Vincular'}</button>
-    </p>
-    {avisos.map(aviso => <p key={aviso} className="muted">{aviso}</p>)}
+    </div>
+    {avisos.map(aviso => <p key={aviso} className="vincular-nota">{aviso}</p>)}
     {abierto && <>
-      <div className="tablewrap"><table>
-        <thead><tr><th>Cliente en el CRM</th><th>¿Cuál es en Avancys?</th></tr></thead>
-        <tbody>{porVincular.map(fila)}</tbody>
-      </table></div>
+      {porVincular.length ? <ul className="vincular-lista">{porVincular.map(fila)}</ul> : null}
       {sinAvancys.length ? <details>
         <summary>{sinAvancys.length} {sinAvancys.length === 1 ? 'todavía no aparece' : 'todavía no aparecen'} en Avancys</summary>
-        <p className="muted">Negocios ganados que Avancys aún no tiene: entran cuando se envía el formulario de nuevo puesto. Si alguno tiene otra razón social, búsquela en su fila.</p>
-        <div className="tablewrap"><table>
-          <thead><tr><th>Cliente en el CRM</th><th>Buscar en Avancys</th></tr></thead>
-          <tbody>{sinAvancys.map(fila)}</tbody>
-        </table></div>
+        <p className="vincular-nota">Negocios ganados que Avancys aún no tiene: entran cuando se envía el formulario de nuevo puesto. Si alguno tiene otra razón social, búsquela en su tarjeta.</p>
+        <ul className="vincular-lista">{sinAvancys.map(fila)}</ul>
       </details> : null}
     </>}
   </section>;
