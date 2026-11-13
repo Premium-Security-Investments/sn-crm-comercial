@@ -539,11 +539,15 @@ const ARCHIVE_ENTRY_PARSER_BY_KIND = Object.freeze({
   unsupported: 'unsupported',
 });
 
-/** Entradas de sistema que no son documentos: carpetas y metadatos de macOS, miniaturas de Windows. */
+/**
+ * Entradas de sistema que no son documentos: carpetas y metadatos de macOS, miniaturas de Windows y los archivos de
+ * bloqueo que deja Office mientras un documento está abierto («~$Formato.docx»: 162 bytes, el nombre de quien lo abrió).
+ * Defensoría (13-nov) traía uno y dejaba el paquete incompleto.
+ */
 export function isArchiveSystemEntry(name) {
   const path = String(name || '');
   const base = path.split('/').pop() || '';
-  return path.startsWith('__MACOSX/') || base === '.DS_Store' || base.startsWith('._') || /^thumbs\.db$/i.test(base) || base === 'desktop.ini';
+  return path.startsWith('__MACOSX/') || base === '.DS_Store' || base.startsWith('._') || base.startsWith('~$') || /^thumbs\.db$/i.test(base) || base === 'desktop.ini';
 }
 
 // CP437, la página de códigos de los zip que no traen la marca UTF-8 (bit 11): los nombres en español llegan rotos
