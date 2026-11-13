@@ -158,8 +158,8 @@ export type TorreAvancys = ReturnType<typeof useTorreAvancys>;
 
 const esEstimado = (o: OpcionMes | null) => o?.fuente === 'proyeccion' || o?.fuente === 'en_vivo';
 
-// La franja de arriba: una frase con el resultado del mes, el selector y la tendencia del año, lado a lado para que
-// quepa en una franja corta (Juan, 2026-11-13: «mucho espacio para decir tan poco»). Una proyección no se presenta
+// La franja de arriba: una frase con el resultado del mes, el selector y la tendencia del año, en una franja
+// corta (Juan, 2026-11-13: «mucho espacio para decir tan poco»). Una proyección no se presenta
 // como un resultado: va en gris y lo dice.
 export function SiioPulsoMes({ t }: { t: TorreAvancys }) {
   const { estado, error, torre, opciones, mes, setMes, opcion, resumen, previo, mesPrevio, resumenDe } = t;
@@ -200,7 +200,7 @@ export function SiioPulsoMes({ t }: { t: TorreAvancys }) {
           const valor = o.r!.utilidad / o.r!.ingresos;
           return <li key={o.mes} className={[o.mes === mes ? 'actual' : '', valor < 0 ? 'negativo' : '', esEstimado(o) ? 'estimado' : '', o.fuente === 'oficial' ? 'oficial' : ''].join(' ').trim()}>
             <button type="button" onClick={() => setMes(o.mes)} aria-pressed={o.mes === mes} title={`${nombreMes(o.mes)} · ${o.etiqueta}`}>
-              <span className="barra" style={{ height: `${Math.max(4, Math.round((Math.abs(valor) / maximo) * 34))}px` }} />
+              <span className="barra" style={{ height: `${Math.max(4, Math.round((Math.abs(valor) / maximo) * 28))}px` }} />
               <span className="valor">{esEstimado(o) ? '≈' : ''}{pct(o.r!.utilidad, o.r!.ingresos).replace(' %', '%')}</span>
               <span className="mes">{nombreMes(o.mes).slice(0, 3)}</span>
             </button>
