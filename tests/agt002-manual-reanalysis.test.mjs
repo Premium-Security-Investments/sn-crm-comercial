@@ -218,17 +218,33 @@ test('sin ningún análisis todavía, el botón pide el PRIMERO y el host lo adm
   assert.equal(db.tables[REQUESTS][0].status, 'admitted');
 });
 
-test('el primero no se pide sin documentos de la entidad, ni cuando ya hubo un análisis admitido', async () => {
+test('el primero no se pide sin documentos de la entidad, ni cuando ya hubo un análisis que no falló', async () => {
   const vacia = fakeDb(sinAnalisis({ psi_tender_document_versions: [] }));
   await assert.rejects(
     requestAgt002ManualReanalysis(vacia, { opportunityId: 'opp-fgn', requestedBy: 'juan', now: NOW, inactiveReason: active }),
     error => error.reason === 'sin_documentos_legibles',
   );
-  const yaHubo = fakeDb(sinAnalisis({ psi_agt002_initial_analysis_jobs: [{ id: 'job-fallido', opportunity_id: 'opp-fgn', status: 'FAILED' }] }));
+  const yaHubo = fakeDb(sinAnalisis({ psi_agt002_initial_analysis_jobs: [{ id: 'job-terminado', opportunity_id: 'opp-fgn', status: 'COMPLETED' }] }));
   await assert.rejects(
     requestAgt002ManualReanalysis(yaHubo, { opportunityId: 'opp-fgn', requestedBy: 'juan', now: NOW, inactiveReason: active }),
     error => error.reason === 'sin_analisis_previo',
   );
+});
+
+test('Defensoría (13-nov): si todos los intentos anteriores fallaron, el botón vuelve a pedir el PRIMERO', async () => {
+  const db = fakeDb(sinAnalisis({ psi_agt002_initial_analysis_jobs: [{ id: 'job-cortado', opportunity_id: 'opp-fgn', status: 'FAILED' }] }));
+  const result = await requestAgt002ManualReanalysis(db, { opportunityId: 'opp-fgn', requestedBy: 'juan', now: NOW, inactiveReason: active });
+  assert.equal(result.requested, true);
+  const calls = [];
+  const admit = async (_db, args) => { calls.push(args); return { admissionStatus: 'admitted', jobId: 'job-nuevo' }; };
+  const events = await runAgt002ManualReanalysisRequests(db, { now: NOW, environment: ON, admit, freezeProfile: fakeProfile, selectMembers: fakeMembers, inactiveReason: active });
+  assert.deepEqual(events.map(event => event.event), ['agt002_manual_reanalysis_admitted']);
+  assert.equal(calls[0].analysisKind, 'INITIAL');
+  assert.match(calls[0].attempt, /^manual-reanalysis:/, 'otra admisión, no la del intento fallido');
+  const incremental = fakeDb(sinAnalisis({ psi_agt002_initial_analysis_jobs: [{ id: 'job-cortado', opportunity_id: 'opp-fgn', status: 'FAILED' }] }));
+  await assert.rejects(
+    requestAgt002ManualReanalysis(incremental, { opportunityId: 'opp-fgn', requestedBy: 'juan', mode: 'incremental', now: NOW, inactiveReason: active }),
+    error => error.reason === 'sin_analisis_previo', 'el incremental sigue necesitando uno vigente');
 });
 
 test('el incremental sigue necesitando un análisis vigente que comparar', async () => {
