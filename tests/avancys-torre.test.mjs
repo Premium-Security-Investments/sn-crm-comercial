@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calcularTorre, marcarMeses, mesDeEtiqueta, olvidarTorre, resultadoPorMes, torreAvancys } from '../avancys-torre.js';
+import { calcularTorre, carteraVencida, marcarMeses, mesDeEtiqueta, olvidarTorre, resultadoPorMes, torreAvancys } from '../avancys-torre.js';
 
 test('etiqueta de mes de Odoo: en español o en inglés; lo demás no es un mes', () => {
   assert.equal(mesDeEtiqueta('agosto 2026'), '2026-08');
@@ -95,4 +95,32 @@ test('lo calculado se guarda 30 minutos y "refrescar" lo vuelve a pedir', async 
   assert.equal((await torreAvancys({ config, fetchImpl, ahora })).desde_memoria, false);
   assert.equal(logins, 3);
   olvidarTorre();
+});
+
+test('cartera: saldo, vencido, tramos por antigüedad del vencimiento y quién debe más', async () => {
+  // Facturas de mentira: [vence, saldo, cliente].
+  const FACTURAS = [
+    ['2026-12-01', 50, [1, 'A']], ['2026-11-01', 30, [1, 'A']], ['2026-10-01', 20, [2, '[900] B']],
+    ['2026-09-01', 10, [2, '[900] B']], ['2026-07-01', 5, [3, 'C']],
+  ];
+  const llamadas = [];
+  const ejecutar = async (modelo, metodo, args, kwargs) => {
+    llamadas.push({ modelo, args, kwargs });
+    const filtro = args[0];
+    const pasa = ([vence]) => filtro.every(([campo, op, valor]) => campo !== 'invoice_date_due' || (op === '<' ? vence < valor : vence >= valor));
+    const filas = FACTURAS.filter(pasa);
+    if (!args[2].length) return [{ amount_residual: filas.reduce((s, f) => s + f[1], 0), __count: filas.length }];
+    const por = new Map();
+    for (const [, saldo, cliente] of filas) {
+      const g = por.get(cliente[0]) || { partner_id: cliente, amount_residual: 0, __count: 0 };
+      g.amount_residual += saldo; g.__count += 1; por.set(cliente[0], g);
+    }
+    return [...por.values()].sort((a, b) => b.amount_residual - a.amount_residual);
+  };
+  const r = await carteraVencida(ejecutar, { hoy: '2026-11-13' });
+  assert.deepEqual(r.total, { saldo: 115, facturas: 5 });
+  assert.deepEqual(r.vencido, { saldo: 65, facturas: 4 });
+  assert.deepEqual(r.tramos.map(t => [t.tramo, t.saldo]), [['1 a 30 días', 30], ['31 a 60 días', 20], ['61 a 90 días', 10], ['Más de 90 días', 5]]);
+  assert.deepEqual(r.deudores.map(d => [d.cliente, d.vencido]), [['A', 30], ['[900] B', 30], ['C', 5]]);
+  assert.ok(llamadas.every(l => l.modelo === 'account.move' && l.args[0][0][2] === 'out_invoice'));
 });

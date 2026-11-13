@@ -109,7 +109,7 @@ function TenderFigures({ summary, state }: { summary: CommercialSummary | null; 
 export function SiioKeyFigures({ pulse, pulseState, summary, summaryState, financialRows }: { pulse: FinancialPulse | null; pulseState: LoadState; summary: CommercialSummary | null; summaryState: LoadState; financialRows: SiioFinancialMetric[] }) {
   return <section className="siio-key-figures" aria-label="Cifras clave">
     <div className="siio-key-group">
-      <h3>Finanzas · {pulse ? `${longMonth(pulse.month)} ${pulse.year}` : 'último corte'}</h3>
+      <h3>Estado de resultados de Contabilidad (Excel) · {pulse ? `${longMonth(pulse.month)} ${pulse.year}` : 'último corte'}</h3>
       <FinancialFigures pulse={pulse} state={pulseState} financialRows={financialRows} />
     </div>
     <div className="siio-key-row">
