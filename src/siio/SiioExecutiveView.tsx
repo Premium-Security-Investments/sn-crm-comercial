@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../apiClient';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, navigateSiioView, uniqueOptions } from './selectors';
@@ -22,7 +22,7 @@ import { SiioHorasPorCliente } from './SiioHorasPorCliente';
 import { SiioLoQueFalta } from './SiioLoQueFalta';
 import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
 import { SiioRecommendations } from './SiioRecommendations';
-import { SiioTorreAvancys } from './SiioTorreAvancys';
+import { alertasDeAvancys, SiioPestanaCartera, SiioPestanaClientes, SiioPestanaResultados, SiioPulsoMes, SiioRequiereDecision, useTorreAvancys, type AlertaTorre, type PestanaTorre } from './SiioTorreAvancys';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState } from './types';
 
@@ -96,6 +96,10 @@ function metricChange(metric: SiioFinancialMetric) {
   return `${sign}${new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(Math.abs(difference / Number(comparison)))}`;
 }
 
+const PESTANAS: ReadonlyArray<[PestanaTorre, string]> = [
+  ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['vigia', 'Vig-IA'], ['fuentes', 'Fuentes y detalle'],
+];
+
 export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload: SiioBootstrapPayload; routeState: Extract<SiioRouteState, { view: 'resumen' }>; onNavigate: (state: SiioRouteState) => void }) {
   const snapshot = useMemo(() => deriveSiioExecutiveSnapshot({
     financialMetrics: payload.financialMetrics,
@@ -143,47 +147,70 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const alertBasis = (recommendation: { id: string; period?: string | null }) => recommendation.id === 'payroll-source-alert'
     ? `Nómina de ${formatPeriod(recommendation.period || snapshot.payrollPeriod).toLowerCase()}`
     : financialRows[0] ? `Estado de resultados, ${metricBasis(financialRows[0], selectedPeriod).current.toLowerCase()}` : 'Periodo financiero seleccionado';
+  const torre = useTorreAvancys(pulse);
+  const [pestana, setPestana] = useState<PestanaTorre>('resultados');
+  const refPestanas = useRef<HTMLElement | null>(null);
+  const irA = (destino: PestanaTorre) => { setPestana(destino); refPestanas.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  // Lo que requiere decisión: lo de Avancys (clientes, cartera, mes abierto) y lo comercial, en frases.
+  const alertas: AlertaTorre[] = (() => {
+    const lista: AlertaTorre[] = [];
+    if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', texto: <><strong>{estaSemana.vencidos === 1 ? '1 decisión con fecha ya venció' : `${estaSemana.vencidos} decisiones con fecha ya vencieron`}</strong> sin registrarse.</> });
+    lista.push(...alertasDeAvancys(torre));
+    const porDecidir = (commercial?.tenders.calendar || []).filter(item => item.attention === 'requiere_decision');
+    if (porDecidir.length) lista.push({ clave: 'licitaciones', pestana: 'comercial', texto: <><strong>{porDecidir.length} licitaciones esperan decisión</strong> de presentarse.</> });
+    const paradas = commercial?.pipeline.stale_large || [];
+    if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', texto: <><strong>{paradas.length} ofertas grandes paradas</strong> más de 30 días ({millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0))} al mes).</> });
+    return lista.slice(0, 5);
+  })();
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
-    <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
+    {/* Plan de la Torre (Juan, 2026-11-13): una frase con el resultado del mes, lo que requiere decisión
+        y pestañas. Cada tabla vive en su pestaña; lo que no ayuda a decidir no entra. */}
+    <SiioPulsoMes t={torre} />
 
-    <SiioTorreAvancys oficial={pulse} />
+    <SiioRequiereDecision alertas={alertas} onIr={irA} />
 
-    <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} conFinanzas={false} />
+    <nav className="siio-navigation module-segmented-nav siio-pestanas" role="tablist" aria-label="Detalle de la Torre" ref={refPestanas}>
+      {PESTANAS.map(([clave, etiqueta]) => <button key={clave} type="button" role="tab" aria-selected={pestana === clave}
+        className={pestana === clave ? 'active' : ''} onClick={() => setPestana(clave)}>{etiqueta}</button>)}
+    </nav>
 
-    <SiioTrendCharts pulse={pulse} summary={commercial} conMargen={false} />
-
-    <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
-    {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
-
-    <Panel title="Lo que viene y requiere atención">
-      {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
-      {licitacionesArriba || quedanLicitaciones ? <section className="siio-attention-section" aria-label="Licitaciones públicas">
-        <h3>Licitaciones públicas</h3>
-        {tenderNotes.length ? <div className="siio-pulse-readings"><ul>{tenderNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
-        {licitacionesArriba ? <p className="siio-pulse-footnote">Las que cierran dentro de {estaSemana.ventanaDias} días o ya cerraron están arriba, en Decisiones con fecha.</p> : null}
-        {licitacionesRestantes && quedanLicitaciones ? <TenderAttentionTable summary={licitacionesRestantes} followups={attentionFollowups} today={today} /> : null}
-      </section> : null}
-      {commercial?.pipeline.stale_large.length || privateNotes.length ? <section className="siio-attention-section" aria-label="Comercial privado">
-        <h3>Comercial privado</h3>
-        {privateNotes.length ? <div className="siio-pulse-readings"><ul>{privateNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
-        {commercial ? <PrivateAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
-      </section> : null}
-      <SiioOperationsAttention summary={operations} />
-      {followups.data?.permissions.view ? <section className="siio-attention-section" aria-label="Seguimiento gerencial">
-        <h3>Seguimiento gerencial</h3>
-        <p className="siio-secondary">
-          {openFollowups.length ? `${openFollowups.length} seguimientos abiertos` : 'Sin seguimientos abiertos'}{lateFollowups.length ? <> · <span className="siio-alert-text">{lateFollowups.length} vencidos</span></> : null}{' '}
-          <button type="button" className="siio-link-button" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Ver seguimiento</button>
-        </p>
-      </section> : null}
-    </Panel>
-
-    {/* Plan de la Torre (2026-11-13): la vista de gerencia se lee por decisiones; lo que sirve
-        para revisar el origen de las cifras —el Excel de Finanzas por periodo, sus alertas, los
-        detalles y las mediciones— queda aquí, plegado. */}
-    <DetailSection title="Fuentes y detalle" hint="Excel de Finanzas por periodo, alertas contables, detalles por área, nómina agregada y mediciones de Avancys">
+    {pestana === 'resultados' ? <section className="panel" role="tabpanel" aria-label="Resultados"><SiioPestanaResultados t={torre} /></section> : null}
+    {pestana === 'clientes' ? <section className="panel" role="tabpanel" aria-label="Clientes"><SiioPestanaClientes t={torre} /></section> : null}
+    {pestana === 'cartera' ? <section className="panel" role="tabpanel" aria-label="Cartera"><SiioPestanaCartera t={torre} /></section> : null}
+    {pestana === 'comercial' ? <>
+      <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
+      <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} conFinanzas={false} />
+      <SiioTrendCharts pulse={pulse} summary={commercial} conMargen={false} />
+      <Panel title="Lo que viene y requiere atención">
+        {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
+        {licitacionesArriba || quedanLicitaciones ? <section className="siio-attention-section" aria-label="Licitaciones públicas">
+          <h3>Licitaciones públicas</h3>
+          {tenderNotes.length ? <div className="siio-pulse-readings"><ul>{tenderNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
+          {licitacionesArriba ? <p className="siio-pulse-footnote">Las que cierran dentro de {estaSemana.ventanaDias} días o ya cerraron están arriba, en Decisiones con fecha.</p> : null}
+          {licitacionesRestantes && quedanLicitaciones ? <TenderAttentionTable summary={licitacionesRestantes} followups={attentionFollowups} today={today} /> : null}
+        </section> : null}
+        {commercial?.pipeline.stale_large.length || privateNotes.length ? <section className="siio-attention-section" aria-label="Comercial privado">
+          <h3>Comercial privado</h3>
+          {privateNotes.length ? <div className="siio-pulse-readings"><ul>{privateNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
+          {commercial ? <PrivateAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
+        </section> : null}
+        <SiioOperationsAttention summary={operations} />
+        {followups.data?.permissions.view ? <section className="siio-attention-section" aria-label="Seguimiento gerencial">
+          <h3>Seguimiento gerencial</h3>
+          <p className="siio-secondary">
+            {openFollowups.length ? `${openFollowups.length} seguimientos abiertos` : 'Sin seguimientos abiertos'}{lateFollowups.length ? <> · <span className="siio-alert-text">{lateFollowups.length} vencidos</span></> : null}{' '}
+            <button type="button" className="siio-link-button" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Ver seguimiento</button>
+          </p>
+        </section> : null}
+      </Panel>
+    </> : null}
+    {pestana === 'vigia' ? <>
+      <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
+      {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
+    </> : null}
+    {pestana === 'fuentes' ? <>
       <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">
         <span className="siio-eyebrow">Resumen ejecutivo</span>
         <label>Periodo financiero
@@ -288,7 +315,6 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       </>}
     </Panel>
     </DetailSection>
-    </DetailSection>
-
+    </> : null}
   </div>;
 }
