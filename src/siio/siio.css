@@ -1325,3 +1325,6 @@
 .siio-decide li{min-width:0}
 .siio-decide button,.siio-pulso-tendencia button,.siio-clientes-meses button{box-shadow:none;white-space:normal}
 .siio-decide button span{overflow-wrap:anywhere}
+.siio-clientes-meses button:hover,.siio-clientes-meses button:focus{background:#eef4fd;color:#1b355f}
+.siio-clientes-meses button.active,.siio-clientes-meses button.active:hover,.siio-clientes-meses button.active:focus{background:#174ea6;border-color:#174ea6;color:#fff}
+.siio-clientes-meses button:focus-visible{outline:2px solid #1b64f2;outline-offset:2px}
