@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import type React from 'react';
 import { api } from '../apiClient';
 import { Badge } from './SiioUi';
-import { SiioPresupuesto } from './SiioPresupuesto';
+import { mesComparable, SiioPresupuesto } from './SiioPresupuesto';
 import type { FinancialPulse } from './financialPulse';
 
 // Las dos preguntas de plata de la Torre (plan del 2026-11-12), en vivo desde Avancys:
@@ -170,7 +170,7 @@ export function SiioPulsoMes({ t }: { t: TorreAvancys }) {
   const oficiales = tendencia.filter(o => o.fuente === 'oficial');
   const deAvancys = tendencia.filter(o => o.fuente !== 'oficial');
   const tramo = (lista: typeof tendencia) => (lista.length ? `${nombreMes(lista[0].mes).split(' ')[0]}${lista.length > 1 ? `–${nombreMes(lista[lista.length - 1].mes).split(' ')[0]}` : ''}` : '');
-  return <section className="panel siio-pulso" aria-label="Resultado del mes">
+  return <section className="siio-pulso" aria-label="Resultado del mes">
     <div className="siio-pulso-texto">
       <div className="siio-pulso-cabeza">
         <label className="siio-pulso-mes">Mes
@@ -219,7 +219,7 @@ export function SiioPulsoMes({ t }: { t: TorreAvancys }) {
 
 // Lo que pide una decisión hoy: no depende del mes elegido arriba (Juan, 2026-11-13: «se ve una nota que va y viene»).
 // Cada tarjeta es una cifra y una línea; «Ver» lleva a su pestaña.
-export type AlertaTorre = { clave: string; cifra: string; texto: string; pestana: PestanaTorre };
+export type AlertaTorre = { clave: string; cifra: string; texto: string; pestana: PestanaTorre; prioridad: 'alta' | 'media' | 'baja'; responsable: string };
 export type PestanaTorre = 'resultados' | 'clientes' | 'cartera' | 'comercial' | 'vigia' | 'parametros' | 'fuentes';
 
 const sinCodigo = (nombre: string) => nombre.replace(/^\[\d+\]\s*/, '').replace(/\s+(S\.?A\.?S?\.?|LTDA\.?)$/i, '');
@@ -231,37 +231,146 @@ export function alertasDeAvancys(t: TorreAvancys): AlertaTorre[] {
   const enPerdida = (k?.clientes || []).filter(fila => fila.ingresos > 0 && fila.margen < 0);
   if (enPerdida.length) {
     const mayor = [...enPerdida].sort((a, b) => b.ingresos - a.ingresos)[0];
-    salida.push({ clave: 'clientes', pestana: 'clientes', cifra: `${enPerdida.length} clientes`,
+    salida.push({ clave: 'clientes', pestana: 'clientes', prioridad: 'alta', responsable: 'Gerencia · Comercial', cifra: `${enPerdida.length} clientes`,
       texto: `pierden plata en ${nombreMes(t.torre?.mes_cerrado)} (${millones(enPerdida.reduce((s, f) => s + f.margen, 0))}); el más grande, ${sinCodigo(mayor.cliente)}.` });
   }
   const c = t.torre?.cartera;
   if (c?.total && c.vencido && c.total.saldo) {
-    salida.push({ clave: 'cartera', pestana: 'cartera', cifra: millones(c.vencido.saldo), texto: `de cartera vencida, el ${pct(c.vencido.saldo, c.total.saldo)} de lo que nos deben.` });
+    salida.push({ clave: 'cartera', pestana: 'cartera', prioridad: 'alta', responsable: 'Cartera', cifra: millones(c.vencido.saldo), texto: `de cartera vencida, el ${pct(c.vencido.saldo, c.total.saldo)} de lo que nos deben.` });
   }
   const parcial = (t.torre?.pyg || []).find(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso');
-  if (parcial) salida.push({ clave: 'nomina', pestana: 'resultados', cifra: nombreMes(parcial.mes).split(' ')[0].replace(/^./, letra => letra.toUpperCase()),
+  if (parcial) salida.push({ clave: 'nomina', pestana: 'resultados', prioridad: 'baja', responsable: 'Contabilidad', cifra: nombreMes(parcial.mes).split(' ')[0].replace(/^./, letra => letra.toUpperCase()),
     texto: `sigue abierto en la contabilidad (${(parcial.motivo || '').toLowerCase()}): su resultado es una proyección.` });
   return salida;
 }
 
+const ORDEN_PRIORIDAD = { alta: 0, media: 1, baja: 2 } as const;
+
 export function SiioRequiereDecision({ alertas, onIr }: { alertas: AlertaTorre[]; onIr: (pestana: PestanaTorre) => void }) {
   if (!alertas.length) return null;
+  const ordenadas = [...alertas].sort((a, b) => ORDEN_PRIORIDAD[a.prioridad] - ORDEN_PRIORIDAD[b.prioridad]);
   return <section className="panel siio-decide" aria-label="Requiere decisión hoy">
     <h2>Requiere decisión hoy</h2>
-    <ul>{alertas.map(alerta => <li key={alerta.clave}>
-      <button type="button" onClick={() => onIr(alerta.pestana)}>
-        <strong>{alerta.cifra}</strong>
-        <span>{alerta.texto}</span>
-        <small>Ver</small>
-      </button>
-    </li>)}</ul>
+    <ol>{ordenadas.map(alerta => <li key={alerta.clave}>
+      <span className={`siio-decide-punto ${alerta.prioridad}`} aria-label={`Prioridad ${alerta.prioridad}`} />
+      <strong>{alerta.cifra}</strong>
+      <span className="siio-decide-texto">{alerta.texto}</span>
+      <small>{alerta.responsable}</small>
+      <button type="button" className="siio-link-button" onClick={() => onIr(alerta.pestana)}>Ver</button>
+    </li>)}</ol>
   </section>;
+}
+
+// La portada (maqueta aprobada por Juan el 2026-11-13): la frase del último mes cerrado con el mes en curso como
+// estimado, y tres bloques, uno por pregunta. El selector de mes y la tendencia completa viven en Resultados.
+export function SiioPortada({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre, mes?: string) => void }) {
+  const { torre, estado, error } = t;
+  const cerrado = torre?.mes_cerrado || null;
+  const resumen = cerrado ? t.resumenDe(cerrado) : null;
+  const abiertos = (torre?.pyg || []).filter(fila => fila.estado === 'parcial' && (!cerrado || fila.mes > cerrado)).sort((a, b) => b.mes.localeCompare(a.mes));
+  const tendencia = t.opciones.map(o => ({ ...o, r: t.resumenDe(o.mes) })).filter(o => o.r && o.r.ingresos);
+  const maximo = Math.max(0.01, ...tendencia.map(o => Math.abs(o.r!.utilidad / o.r!.ingresos)));
+  return <>
+    <section className="panel siio-portada-frase" aria-label="Resultado del último mes cerrado">
+      <div>
+        {estado === 'cargando' && !resumen ? <p className="siio-pulso-frase siio-secondary">Leyendo la contabilidad de Avancys…</p> : null}
+        {estado === 'error' ? <p className="siio-alert-text">No se pudo leer Avancys: {error}</p> : null}
+        {resumen && cerrado ? <h2 className="siio-pulso-frase">
+          En {nombreMes(cerrado).split(' ')[0]} {resumen.utilidad >= 0 ? 'ganamos' : 'perdimos'} <strong>{millones(Math.abs(resumen.utilidad))}</strong>,
+          {' '}<span className={resumen.utilidad >= 0 ? 'siio-pulso-ok' : 'siio-pulso-mal'}>{pct(resumen.utilidad, resumen.ingresos)} de los ingresos</span>
+        </h2> : null}
+        {abiertos.length ? <p className="siio-pulso-apoyo"><Badge tone="amber">En curso</Badge> {abiertos.map((fila, indice) => {
+          const r = t.resumenDe(fila.mes);
+          if (!r) return null;
+          const nombre = nombreMes(fila.mes).split(' ')[0];
+          return <Fragment key={fila.mes}>{indice ? ' · ' : ''}{fila.motivo === 'Mes en curso'
+            ? <>{nombre.replace(/^./, letra => letra.toUpperCase())} va en ≈ {millones(r.utilidad)} ({pct(r.utilidad, r.ingresos)})</>
+            : <>{nombre} sigue abierto en la contabilidad (≈ {pct(r.utilidad, r.ingresos)})</>}</Fragment>;
+        })}.</p> : null}
+        {torre?.medido_en ? <p className="siio-pulse-footnote">Avancys leído el {hora(torre.medido_en).replace(/\.$/, '')}{torre.desde_memoria ? ' (guardado)' : ''} · <button type="button" className="siio-link-button" onClick={() => void t.cargar(true)}>Volver a leer</button></p> : null}
+      </div>
+      {tendencia.length > 1 ? <ol className="siio-portada-meses" aria-label="Margen de cada mes; pulse un mes para verlo en Resultados">
+        {tendencia.map(o => {
+          const valor = o.r!.utilidad / o.r!.ingresos;
+          return <li key={o.mes} className={[o.mes === cerrado ? 'actual' : '', valor < 0 ? 'negativo' : '', esEstimado(o) ? 'estimado' : ''].join(' ').trim()}>
+            <button type="button" title={`${nombreMes(o.mes)} · ${o.etiqueta} · ${pct(o.r!.utilidad, o.r!.ingresos)}`} onClick={() => onIr('resultados', o.mes)}>
+              <span className="barra" style={{ height: `${Math.max(3, Math.round((Math.abs(valor) / maximo) * 32))}px` }} />
+              <span className="mes">{nombreMes(o.mes).slice(0, 3)}</span>
+            </button>
+          </li>;
+        })}
+      </ol> : null}
+    </section>
+    <div className="siio-portada-bloques">
+      <BloqueClientes t={t} onIr={onIr} />
+      <BloqueCartera t={t} onIr={onIr} />
+      <BloquePresupuesto t={t} onIr={onIr} />
+    </div>
+  </>;
+}
+
+function Bloque({ pregunta, cifra, children, ver, onVer }: { pregunta: string; cifra: React.ReactNode; children: React.ReactNode; ver: string; onVer: () => void }) {
+  return <section className="siio-portada-bloque" aria-label={pregunta}>
+    <small>{pregunta}</small>
+    {cifra ? <strong>{cifra}</strong> : null}
+    {children}
+    <button type="button" className="siio-link-button" onClick={onVer}>{ver} →</button>
+  </section>;
+}
+
+function BloqueClientes({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre) => void }) {
+  const k = t.torre?.clientes;
+  const conIngreso = (k?.clientes || []).filter(fila => fila.ingresos > 0);
+  const pierden = conIngreso.filter(fila => fila.margen < 0).sort((a, b) => b.ingresos - a.ingresos);
+  const mes = nombreMes(t.torre?.mes_cerrado).split(' ')[0];
+  if (!k?.legible) return <Bloque pregunta="¿Quién nos hace perder?" cifra="—" ver="Ver clientes" onVer={() => onIr('clientes')}><p>Sin el detalle por cliente del último mes cerrado.</p></Bloque>;
+  return <Bloque pregunta="¿Quién nos hace perder?" cifra={pierden.length === 1 ? '1 cliente' : `${pierden.length} clientes`} ver="Ver clientes" onVer={() => onIr('clientes')}>
+    <p>{pierden.length ? <>pierden {millones(Math.abs(pierden.reduce((suma, fila) => suma + fila.margen, 0)))} en {mes}. El más grande: {sinCodigo(pierden[0].cliente)} ({pct(pierden[0].ingresos, k.ingresos_clientes ?? 0)} del ingreso).</> : <>Ningún cliente pierde plata en {mes}.</>}</p>
+  </Bloque>;
+}
+
+const COLOR_TRAMO = ['#f3c784', '#e9925a', '#d0603f', '#a8261f'];
+
+function BloqueCartera({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre) => void }) {
+  const c = t.torre?.cartera;
+  if (!c?.total || !c.vencido) return <Bloque pregunta="¿Nos están pagando?" cifra="—" ver="Ver cartera" onVer={() => onIr('cartera')}><p>{c?.error ? `No se pudo leer la cartera: ${c.error}` : 'Sin datos de cartera.'}</p></Bloque>;
+  const total = c.total.saldo || 1;
+  return <Bloque pregunta="¿Nos están pagando?" cifra={`${millones(c.vencido.saldo)} vencidos`} ver="Ver cartera" onVer={() => onIr('cartera')}>
+    <div className="siio-portada-tramos" role="img" aria-label={`Cartera por antigüedad: ${[{ tramo: 'Al día', saldo: total - c.vencido.saldo }, ...(c.tramos || [])].map(x => `${x.tramo} ${millones(x.saldo)}`).join(', ')}`}>
+      <span style={{ width: `${((total - c.vencido.saldo) / total) * 100}%`, background: '#cbd5e1' }} />
+      {(c.tramos || []).map((tramo, indice) => <span key={tramo.tramo} style={{ width: `${(tramo.saldo / total) * 100}%`, background: COLOR_TRAMO[indice] || '#a8261f' }} />)}
+    </div>
+    <p>{pct(c.vencido.saldo, c.total.saldo)} de lo que nos deben ({millones(c.total.saldo)}).{(c.tramos || []).slice(1).some(tramo => tramo.saldo > 0) ? ` Más de 30 días: ${millones((c.tramos || []).slice(1).reduce((suma, tramo) => suma + tramo.saldo, 0))}.` : ''}</p>
+  </Bloque>;
+}
+
+function BloquePresupuesto({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre) => void }) {
+  const fila = mesComparable(t.torre?.presupuesto || null, t.torre?.mes_cerrado || '9999-12');
+  if (!fila) return <Bloque pregunta="¿Vamos dentro del presupuesto?" cifra="—" ver="Ver presupuesto" onVer={() => onIr('resultados')}><p>{t.torre?.presupuesto?.motivo || 'Todavía no hay un mes cerrado para comparar.'}</p></Bloque>;
+  const unidades = [['Vigilancia', fila.vigilancia], ['Tecnología', fila.tecnologia]] as const;
+  const pasados = fila.vigilancia.rubros.filter(rubro => rubro.diferencia !== null && rubro.diferencia >= 0.5).sort((a, b) => (b.diferencia || 0) - (a.diferencia || 0)).slice(0, 4);
+  return <Bloque pregunta={`¿Vamos dentro del presupuesto? · ${nombreMes(fila.mes).split(' ')[0]}`} cifra={null} ver="Ver presupuesto" onVer={() => onIr('resultados')}>
+    <div className="siio-portada-presupuesto">
+      {unidades.map(([nombre, u]) => {
+        const real = u.rentabilidad ?? 0;
+        const meta = u.rentabilidad_presupuesto;
+        const escala = Math.max(Math.abs(real), Math.abs(meta ?? 0), 1);
+        return <Fragment key={nombre}>
+          <span>{nombre}</span>
+          <span className="siio-portada-linea"><b className={meta !== null && real < meta ? 'mal' : ''} style={{ width: `${Math.max(0, (real / escala) * 100)}%` }} />{meta !== null ? <u style={{ left: `${(meta / escala) * 100}%` }} /> : null}</span>
+          <span><strong>{u.rentabilidad === null ? '—' : `${u.rentabilidad.toLocaleString('es-CO')} %`}</strong>{meta !== null ? ` / ${meta.toLocaleString('es-CO')} %` : ''}</span>
+        </Fragment>;
+      })}
+    </div>
+    <p>{pasados.length ? <>Se pasan en vigilancia: {pasados.map(rubro => `${rubro.etiqueta.toLowerCase()} (+${(rubro.diferencia || 0).toLocaleString('es-CO')} pts)`).join(', ')}.</> : 'Ningún rubro de vigilancia se pasa del presupuesto.'}</p>
+  </Bloque>;
 }
 
 export function SiioPestanaResultados({ t }: { t: TorreAvancys }) {
   const { torre } = t;
   if (!torre?.pyg?.length || !torre.lineas_pyg) return <p className="siio-secondary">Sin datos de Avancys todavía.</p>;
   return <>
+    <SiioPulsoMes t={t} />
     <EstadoDeResultados lineas={torre.lineas_pyg} meses={torre.pyg} oficial={t.oficial} />
     <SiioPresupuesto presupuesto={torre.presupuesto || null} mes={t.mes} />
   </>;
