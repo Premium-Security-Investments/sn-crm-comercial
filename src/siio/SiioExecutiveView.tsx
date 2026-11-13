@@ -146,31 +146,18 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
-    <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">
-      <span className="siio-eyebrow">Resumen ejecutivo</span>
-      <label>Periodo financiero
-        <select value={routeState.filters.period} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, period: event.target.value }))}>
-          <option value="">Último periodo publicado ({formatPeriod(selectedPeriod)})</option>
-          {periodOptions.map(period => <option key={period} value={period}>{formatPeriod(period)}</option>)}
-        </select>
-      </label>
-      <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
-    </section>
-
-    {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
-
     <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
 
     <SiioTorreAvancys oficial={pulse} />
 
-    <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} />
+    <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} conFinanzas={false} />
 
-    <SiioTrendCharts pulse={pulse} summary={commercial} />
+    <SiioTrendCharts pulse={pulse} summary={commercial} conMargen={false} />
 
     <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
     {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
 
-    <Panel title="Requiere atención">
+    <Panel title="Lo que viene y requiere atención">
       {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
       {licitacionesArriba || quedanLicitaciones ? <section className="siio-attention-section" aria-label="Licitaciones públicas">
         <h3>Licitaciones públicas</h3>
@@ -183,6 +170,34 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
         {privateNotes.length ? <div className="siio-pulse-readings"><ul>{privateNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
         {commercial ? <PrivateAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
       </section> : null}
+      <SiioOperationsAttention summary={operations} />
+      {followups.data?.permissions.view ? <section className="siio-attention-section" aria-label="Seguimiento gerencial">
+        <h3>Seguimiento gerencial</h3>
+        <p className="siio-secondary">
+          {openFollowups.length ? `${openFollowups.length} seguimientos abiertos` : 'Sin seguimientos abiertos'}{lateFollowups.length ? <> · <span className="siio-alert-text">{lateFollowups.length} vencidos</span></> : null}{' '}
+          <button type="button" className="siio-link-button" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Ver seguimiento</button>
+        </p>
+      </section> : null}
+    </Panel>
+
+    {/* Plan de la Torre (2026-11-13): la vista de gerencia se lee por decisiones; lo que sirve
+        para revisar el origen de las cifras —el Excel de Finanzas por periodo, sus alertas, los
+        detalles y las mediciones— queda aquí, plegado. */}
+    <DetailSection title="Fuentes y detalle" hint="Excel de Finanzas por periodo, alertas contables, detalles por área, nómina agregada y mediciones de Avancys">
+      <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">
+        <span className="siio-eyebrow">Resumen ejecutivo</span>
+        <label>Periodo financiero
+          <select value={routeState.filters.period} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, period: event.target.value }))}>
+            <option value="">Último periodo publicado ({formatPeriod(selectedPeriod)})</option>
+            {periodOptions.map(period => <option key={period} value={period}>{formatPeriod(period)}</option>)}
+          </select>
+        </label>
+        <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
+      </section>
+
+      {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
+
+      <Panel title="Alertas del Excel de Finanzas">
       <section className="siio-attention-section" aria-label="Finanzas">
         <h3>Finanzas y nómina</h3>
         {financeNotes.length ? <div className="siio-pulse-readings"><ul>{financeNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
@@ -197,16 +212,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           </li>)}</ul>
         </> : null}
       </section>
-      <SiioOperationsAttention summary={operations} />
-      {followups.data?.permissions.view ? <section className="siio-attention-section" aria-label="Seguimiento gerencial">
-        <h3>Seguimiento gerencial</h3>
-        <p className="siio-secondary">
-          {openFollowups.length ? `${openFollowups.length} seguimientos abiertos` : 'Sin seguimientos abiertos'}{lateFollowups.length ? <> · <span className="siio-alert-text">{lateFollowups.length} vencidos</span></> : null}{' '}
-          <button type="button" className="siio-link-button" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Ver seguimiento</button>
-        </p>
-      </section> : null}
-    </Panel>
-
+      </Panel>
     <DetailSection title={`Finanzas · detalle de ${pulse ? formatPeriod(selectedPeriod).toLowerCase() : 'periodo'}`} hint="Lectura del mes, tendencia, desglose por rubro y acumulado del año">
       {financialRows.length ? <SiioFinancialPulse pulse={pulse} state={pulseState} financialRows={financialRows} /> : <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." />}
       {financialRows.length ? <div className="siio-pulse-block">
@@ -281,6 +287,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
         </div>
       </>}
     </Panel>
+    </DetailSection>
     </DetailSection>
 
   </div>;

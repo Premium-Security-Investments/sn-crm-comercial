@@ -34,6 +34,7 @@ type Torre = {
   meses?: Mes[];
   mes_cerrado?: string | null;
   mes_anterior?: string | null;
+  primera_linea?: string | null;
   clientes?: Clientes | null;
   cartera?: Cartera | null;
   lineas_pyg?: LineaPyg[];
@@ -72,10 +73,20 @@ function cambio(actual: number, anterior: number | undefined, etiqueta: string) 
   return `${diferencia >= 0 ? 'Sube' : 'Baja'} ${millones(Math.abs(diferencia))} frente a ${etiqueta} (${millones(anterior)})`;
 }
 
+type OpcionMes = { mes: string; etiqueta: string; fuente: 'oficial' | 'automatico' | 'proyeccion' | 'en_vivo' };
+// Lo que muestran las cuatro cifras de un mes, venga del automático o del Excel de Finanzas.
+type Resumen = { ingresos: number; costos: number; gastos: number; utilidad: number; utilidadEtiqueta: string; fuente: string };
+
+const ETIQUETA_FUENTE: Record<OpcionMes['fuente'], string> = {
+  oficial: 'Cierre Finanzas', automatico: 'Automático', proyeccion: 'Proyección', en_vivo: 'En vivo',
+};
+
 export function SiioTorreAvancys({ oficial = null }: { oficial?: FinancialPulse | null }) {
   const [estado, setEstado] = useState<'cargando' | 'listo' | 'error'>('cargando');
   const [torre, setTorre] = useState<Torre | null>(null);
   const [error, setError] = useState('');
+  const [mesElegido, setMesElegido] = useState('');
+  const [clientesDelMes, setClientesDelMes] = useState<{ mes: string; datos: Clientes | null; estado: 'cargando' | 'listo' | 'error' } | null>(null);
 
   async function cargar(refrescar = false) {
     setEstado('cargando');
@@ -91,13 +102,68 @@ export function SiioTorreAvancys({ oficial = null }: { oficial?: FinancialPulse 
 
   useEffect(() => { void cargar(); }, []);
 
-  const meses = torre?.meses || [];
-  const actual = meses.find(fila => fila.mes === torre?.mes_cerrado);
-  const anterior = meses.find(fila => fila.mes === torre?.mes_anterior);
-  const k = torre?.clientes;
+  // Un solo selector de mes para todo el bloque (plan del 2026-11-13). Cada mes dice de dónde sale:
+  // el cierre oficial de Finanzas (Excel cargado), el automático de Avancys, una proyección o en vivo.
+  const pyg = torre?.pyg || [];
+  const opciones: OpcionMes[] = (() => {
+    const porMes = new Map<string, OpcionMes>();
+    for (const m of oficial?.months || []) {
+      if (m.year !== oficial?.year) continue;
+      const mes = `${m.year}-${String(m.month).padStart(2, '0')}`;
+      porMes.set(mes, { mes, etiqueta: ETIQUETA_FUENTE.oficial, fuente: 'oficial' });
+    }
+    for (const fila of pyg) {
+      const fuente: OpcionMes['fuente'] = fila.estado === 'cerrado' ? 'automatico' : fila.motivo === 'Mes en curso' ? 'en_vivo' : 'proyeccion';
+      const previa = porMes.get(fila.mes);
+      porMes.set(fila.mes, previa ? { ...previa, etiqueta: `${ETIQUETA_FUENTE.oficial} · también automático` } : { mes: fila.mes, etiqueta: ETIQUETA_FUENTE[fuente], fuente });
+    }
+    return [...porMes.values()].sort((x, y) => x.mes.localeCompare(y.mes));
+  })();
+  const mes = mesElegido || torre?.mes_cerrado || opciones[opciones.length - 1]?.mes || '';
+  const opcion = opciones.find(o => o.mes === mes);
+  const filaPyg = pyg.find(fila => fila.mes === mes);
+  const oficialDe = (m: string) => {
+    const [anio, numero] = m.split('-').map(Number);
+    return oficial?.months.find(x => x.year === anio && x.month === numero)?.totals || null;
+  };
+  const resumenDe = (m: string): Resumen | null => {
+    const f = pyg.find(fila => fila.mes === m);
+    const o = oficialDe(m);
+    // El cierre oficial manda cuando existe; si no, el automático (o su proyección).
+    if (o) return { ingresos: o.ingresos, costos: -Math.abs(o.costos), gastos: -Math.abs(o.gastos_operacionales), utilidad: o.utilidad_operacional, utilidadEtiqueta: 'Utilidad operacional', fuente: 'Cierre de Finanzas (Excel cargado)' };
+    if (f) {
+      const t = f.proyeccion ? f.proyeccion.totales : f.totales;
+      return { ingresos: t.ingresos, costos: t.costos, gastos: t.gastos, utilidad: t.utilidad_ordinaria, utilidadEtiqueta: 'Utilidad operacional', fuente: f.proyeccion ? 'Proyección con Avancys' : 'Automático desde Avancys' };
+    }
+    return null;
+  };
+  const indice = opciones.findIndex(o => o.mes === mes);
+  const mesPrevio = indice > 0 ? opciones[indice - 1].mes : null;
+  const resumen = resumenDe(mes);
+  const previo = mesPrevio ? resumenDe(mesPrevio) : null;
+  const aprox = opcion?.fuente === 'proyeccion' || opcion?.fuente === 'en_vivo' ? '≈ ' : '';
+
+  // Clientes del mes elegido: el último mes cerrado viene con la Torre; los demás se piden aparte.
+  useEffect(() => {
+    if (!mes || !torre?.primera_linea || mes === torre.mes_cerrado) { setClientesDelMes(null); return; }
+    if (mes < torre.primera_linea.slice(0, 7)) { setClientesDelMes(null); return; }
+    let vigente = true;
+    setClientesDelMes({ mes, datos: null, estado: 'cargando' });
+    api<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`)
+      .then(datos => { if (vigente) setClientesDelMes({ mes, datos, estado: 'listo' }); })
+      .catch(() => { if (vigente) setClientesDelMes({ mes, datos: null, estado: 'error' }); });
+    return () => { vigente = false; };
+  }, [mes, torre?.mes_cerrado, torre?.primera_linea]);
+
+  const k = mes === torre?.mes_cerrado ? torre?.clientes : clientesDelMes?.datos;
+  const antesDeAvancys = Boolean(torre?.primera_linea && mes && mes < torre.primera_linea.slice(0, 7));
   const costoHora = Math.abs(k?.costo_por_hora ?? 0);
   const filas = (k?.clientes || []).filter(fila => fila.ingresos > 0).slice(0, MAX_CLIENTES);
   const enPerdida = (k?.clientes || []).filter(fila => fila.ingresos > 0 && fila.margen < 0);
+  const ingresoCerrado = torre?.clientes?.clientes || [];
+
+  // Tendencia del año: margen operacional de cada mes, oficial donde hay cierre y automático donde no.
+  const tendencia = opciones.map(o => ({ ...o, resumen: resumenDe(o.mes) })).filter(o => o.resumen);
 
   return <section className="panel" aria-label="Resultado y clientes en vivo">
     <h2>¿Ganamos plata? · Avancys en vivo</h2>
@@ -106,37 +172,50 @@ export function SiioTorreAvancys({ oficial = null }: { oficial?: FinancialPulse 
     {torre && torre.configurado === false ? <p className="siio-secondary">{torre.motivo}</p> : null}
     {torre && torre.autenticado === false ? <p className="siio-alert-text">Avancys no aceptó la conexión: {torre.motivo}</p> : null}
 
-    {estado === 'listo' && actual ? <>
-      <p className="siio-pulse-footnote">
-        Último mes cerrado: <strong>{nombreMes(actual.mes)}</strong>. Fuente: contabilidad de Avancys con las líneas del PYG de Finanzas y la provisión de ingresos mes vencido; abajo, el estado de resultados completo.
-        {' '}Leído el {hora(torre?.medido_en).replace(/\.$/, '')}{torre?.desde_memoria ? ' (guardado)' : ''}.
-        {' '}<button type="button" className="siio-link-button" onClick={() => void cargar(true)}>Volver a leer</button>
-      </p>
-      <div className="siio-key-grid siio-key-grid-4">
-        <Cifra etiqueta={`Ingresos ${nombreMes(actual.mes)}`} valor={millones(actual.ingresos)} comparacion={cambio(actual.ingresos, anterior?.ingresos, nombreMes(anterior?.mes))} />
-        <Cifra etiqueta="Nómina y costo de personal" valor={millones(actual.personal)} comparacion={`${pct(Math.abs(actual.personal), actual.ingresos)} de los ingresos`} />
-        <Cifra etiqueta="Otros costos y gastos" valor={millones(actual.otros_costos)} comparacion={`${pct(Math.abs(actual.otros_costos), actual.ingresos)} de los ingresos`} />
-        <Cifra etiqueta="Utilidad antes de impuestos" valor={`${millones(actual.margen)} · ${pct(actual.margen, actual.ingresos)}`} alerta={actual.margen < 0}
-          comparacion={anterior ? `${nombreMes(anterior.mes)}: ${pct(anterior.margen, anterior.ingresos)}` : null} />
-      </div>
-      <div className="siio-table-wrap"><table>
-        <thead><tr><th>Mes</th><th>Ingresos</th><th>Personal</th><th>Otros costos y gastos</th><th>Antes de impuestos</th><th>Estado</th></tr></thead>
-        <tbody>{meses.map(fila => <tr key={fila.mes}>
-          <td>{nombreMes(fila.mes)}</td>
-          <td>{millones(fila.ingresos)}</td>
-          <td>{millones(fila.personal)}</td>
-          <td>{millones(fila.otros_costos)}</td>
-          <td>{fila.estado === 'cerrado' ? `${millones(fila.margen)} · ${pct(fila.margen, fila.ingresos)}` : '—'}</td>
-          <td>{fila.estado === 'cerrado' ? <Badge tone="green">Cerrado</Badge> : <Badge tone="amber">{fila.motivo === 'Mes en curso' ? 'En curso' : 'Nómina incompleta'}</Badge>}</td>
-        </tr>)}</tbody>
-      </table></div>
+    {estado === 'listo' && opciones.length ? <>
+      <section className="siio-view-filters" aria-label="Mes de la Torre">
+        <label>Mes
+          <select value={mes} onChange={evento => setMesElegido(evento.target.value)}>
+            {opciones.map(o => <option key={o.mes} value={o.mes}>{nombreMes(o.mes)} · {o.etiqueta}</option>)}
+          </select>
+        </label>
+        {opcion ? <Badge tone={opcion.fuente === 'oficial' ? 'green' : opcion.fuente === 'automatico' ? 'blue' : 'amber'}>{opcion.etiqueta}</Badge> : null}
+        <span className="siio-pulse-footnote">
+          Leído de Avancys el {hora(torre?.medido_en).replace(/\.$/, '')}{torre?.desde_memoria ? ' (guardado)' : ''}.
+          {' '}<button type="button" className="siio-link-button" onClick={() => void cargar(true)}>Volver a leer</button>
+        </span>
+      </section>
 
-      <h3>¿Qué clientes dejan y cuáles quitan plata? · {nombreMes(actual.mes)}</h3>
+      {resumen ? <>
+        <div className="siio-key-grid siio-key-grid-4">
+          <Cifra etiqueta={`Ingresos ${nombreMes(mes)}`} valor={`${aprox}${millones(resumen.ingresos)}`} comparacion={previo ? cambio(resumen.ingresos, previo.ingresos, nombreMes(mesPrevio)) : null} />
+          <Cifra etiqueta="Costos de operación" valor={`${aprox}${millones(resumen.costos)}`} comparacion={`${pct(Math.abs(resumen.costos), resumen.ingresos)} de los ingresos`} />
+          <Cifra etiqueta="Gastos operativos" valor={`${aprox}${millones(resumen.gastos)}`} comparacion={`${pct(Math.abs(resumen.gastos), resumen.ingresos)} de los ingresos`} />
+          <Cifra etiqueta={resumen.utilidadEtiqueta} valor={`${aprox}${millones(resumen.utilidad)} · ${pct(resumen.utilidad, resumen.ingresos)}`} alerta={resumen.utilidad < 0}
+            comparacion={previo ? `${nombreMes(mesPrevio)}: ${pct(previo.utilidad, previo.ingresos)}` : null} />
+        </div>
+        <p className="siio-pulse-footnote">Fuente de {nombreMes(mes)}: {resumen.fuente}.{filaPyg && oficialDe(mes) ? ` El automático de Avancys para este mes da ${millones(filaPyg.totales.utilidad_ordinaria)} de utilidad operacional; la diferencia son los ajustes de cierre de Finanzas.` : ''}</p>
+      </> : null}
+
+      {tendencia.length > 1 ? <div className="siio-table-wrap"><table>
+        <thead><tr><th>Margen operacional</th>{tendencia.map(o => <th key={o.mes}>{nombreMes(o.mes).split(' ')[0].slice(0, 3)}</th>)}</tr></thead>
+        <tbody>
+          <tr><td>{oficial?.year ?? ''}</td>{tendencia.map(o => <td key={o.mes} className={o.mes === mes ? 'siio-cell-selected' : undefined}>
+            {o.fuente === 'proyeccion' || o.fuente === 'en_vivo' ? '≈ ' : ''}{pct(o.resumen!.utilidad, o.resumen!.ingresos)}</td>)}</tr>
+          <tr><td className="siio-secondary">Fuente</td>{tendencia.map(o => <td key={o.mes} className="siio-secondary">{o.fuente === 'oficial' ? 'Finanzas' : o.fuente === 'automatico' ? 'Avancys' : o.fuente === 'en_vivo' ? 'en vivo' : 'proyección'}</td>)}</tr>
+        </tbody>
+      </table></div> : null}
+
+      <h3>¿Qué clientes dejan y cuáles quitan plata? · {nombreMes(mes)}</h3>
+      {antesDeAvancys ? <p className="siio-secondary">Antes de agosto de 2026 la contabilidad estaba en Yeminus: no hay detalle por cliente para {nombreMes(mes)}.</p> : null}
+      {clientesDelMes?.estado === 'cargando' ? <p className="siio-secondary">Calculando los clientes de {nombreMes(mes)}…</p> : null}
+      {clientesDelMes?.estado === 'error' ? <p className="siio-alert-text">No se pudieron calcular los clientes de {nombreMes(mes)}.</p> : null}
       {k && k.legible === false ? <p className="siio-alert-text">No se pudo calcular por cliente: {k.motivo}</p> : null}
-      {k?.legible ? <>
+      {k?.legible && !antesDeAvancys ? <>
         <p className="siio-pulse-footnote">
           <strong>Aproximado.</strong> Ingreso real de cada cliente. Costo de vigilantes: {pesos(costoHora)} por hora (promedio de la empresa) por las horas de sus puestos de vigilancia física;
           {' '}supervisión, operaciones y administración repartidas por facturación.
+          {opcion && opcion.fuente !== 'automatico' && opcion.fuente !== 'oficial' ? ' El mes no está completo en la contabilidad: los márgenes se van a mover.' : ''}
           {enPerdida.length ? <> <strong>{enPerdida.length} clientes con ingreso quedan en pérdida</strong> ({millones(enPerdida.reduce((suma, fila) => suma + fila.margen, 0))}).</> : null}
         </p>
         <div className="siio-table-wrap"><table>
@@ -151,22 +230,25 @@ export function SiioTorreAvancys({ oficial = null }: { oficial?: FinancialPulse 
         </table></div>
         <p className="siio-pulse-footnote">
           Los {filas.length} clientes de mayor ingreso de {(k.clientes_con_ingreso ?? 0).toLocaleString('es-CO')}. Ingresos en cuentas de la empresa, sin cliente: {millones(k.fondo?.ingresos_sin_cliente ?? 0)}.
-          {' '}El detalle y cómo se calcula están en "Lo que falta para completar la Torre".
+          {' '}Para los que se facturan mes vencido, el ingreso de un mes corresponde al servicio del anterior.
         </p>
       </> : null}
 
-      {torre?.pyg?.length && torre.lineas_pyg ? <EstadoDeResultados lineas={torre.lineas_pyg} meses={torre.pyg} oficial={oficial} /> : null}
+      {pyg.length && torre?.lineas_pyg ? <EstadoDeResultados lineas={torre.lineas_pyg} meses={pyg} oficial={oficial} /> : null}
 
-      <h3>¿Nos están pagando?</h3>
+      <h3>¿Nos están pagando? · hoy</h3>
       {torre?.cartera?.error ? <p className="siio-alert-text">No se pudo leer la cartera: {torre.cartera.error}</p> : null}
       {torre?.cartera?.total && torre.cartera.vencido ? (() => {
         const c = torre.cartera;
         const total = c.total!;
         const vencido = c.vencido!;
-        const ingresoMes = new Map((k?.clientes || []).map(fila => [nitDe(fila.cliente), fila.ingresos]));
+        const ingresoMes = new Map(ingresoCerrado.map(fila => [nitDe(fila.cliente), fila.ingresos]));
+        const cerrado = torre.mes_cerrado ? resumenDe(torre.mes_cerrado) : null;
+        // Días de cartera: saldo por cobrar sobre la facturación de un mes (con IVA del 19 % aprox.).
+        const dias = cerrado?.ingresos ? Math.round((total.saldo / (cerrado.ingresos * 1.19)) * 30) : null;
         return <>
           <div className="siio-key-grid siio-key-grid-4">
-            <Cifra etiqueta="Cartera por cobrar" valor={millones(total.saldo)} comparacion={`${total.facturas.toLocaleString('es-CO')} facturas con saldo (con IVA)`} />
+            <Cifra etiqueta="Cartera por cobrar" valor={millones(total.saldo)} comparacion={`${total.facturas.toLocaleString('es-CO')} facturas con saldo (con IVA)${dias ? ` · ≈ ${dias} días de facturación` : ''}`} />
             <Cifra etiqueta="Vencida" valor={millones(vencido.saldo)} alerta={vencido.saldo > total.saldo / 2}
               comparacion={`${pct(vencido.saldo, total.saldo)} de la cartera · ${vencido.facturas.toLocaleString('es-CO')} facturas`} />
             {(c.tramos || []).slice(1).map(tramo => <Cifra key={tramo.tramo} etiqueta={`Vencida ${tramo.tramo}`} valor={millones(tramo.saldo)} alerta={tramo.tramo.startsWith('61') && tramo.saldo > 0}
@@ -185,13 +267,13 @@ export function SiioTorreAvancys({ oficial = null }: { oficial?: FinancialPulse 
             })}</tbody>
           </table></div>
           <p className="siio-pulse-footnote">
-            Facturas de cliente publicadas en Avancys, por fecha de vencimiento al {c.hoy}. Más de 90 días: {millones(c.tramos?.find(t => t.tramo.startsWith('Más'))?.saldo ?? 0)}.
-            {' '}La historia de Avancys empieza en agosto de 2026: la cartera anterior no está aquí. "Meses de facturación" compara con el ingreso del cliente en {nombreMes(actual.mes)}.
+            Facturas de cliente publicadas en Avancys, por fecha de vencimiento al {c.hoy}; la cartera es siempre la de hoy, no la del mes elegido. Más de 90 días: {millones(c.tramos?.find(t => t.tramo.startsWith('Más'))?.saldo ?? 0)}.
+            {' '}La historia de Avancys empieza en agosto de 2026: la cartera anterior no está aquí. "Meses de facturación" compara con el ingreso del cliente en {nombreMes(torre.mes_cerrado)}.
           </p>
         </>;
       })() : null}
     </> : null}
-    {estado === 'listo' && torre?.autenticado && !actual ? <p className="siio-secondary">Avancys todavía no tiene un mes cerrado con la nómina completa.</p> : null}
+    {estado === 'listo' && torre?.autenticado && !opciones.length ? <p className="siio-secondary">Todavía no hay meses con datos en Avancys ni cierres de Finanzas cargados.</p> : null}
   </section>;
 }
 

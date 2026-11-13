@@ -156,13 +156,16 @@ test('los nombres de entidad llegan sin asteriscos de SECOP', () => {
   assert.equal(cleanEntityName('Rama Judicial \u0096 Dirección Seccional de Barranquilla'), 'Rama Judicial – Dirección Seccional de Barranquilla');
 });
 
-test('la Torre pone primero las cifras clave y la atención, y pliega el detalle', async () => {
+test('la Torre se lee por decisiones: plata en vivo, lo que viene, y el detalle plegado al final', async () => {
   const { readFileSync } = await import('node:fs');
   const view = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
+  const enVivo = view.indexOf('<SiioTorreAvancys');
   const keyFigures = view.indexOf('<SiioKeyFigures');
-  const attention = view.indexOf('<Panel title="Requiere atención">');
+  const attention = view.indexOf('<Panel title="Lo que viene y requiere atención">');
   const firstDetail = view.indexOf('<DetailSection');
-  assert.ok(keyFigures > 0 && keyFigures < attention && attention < firstDetail, 'orden: cifras clave, requiere atención, detalle');
+  assert.ok(enVivo > 0 && enVivo < keyFigures && keyFigures < attention && attention < firstDetail, 'orden: plata en vivo, cifras comerciales, lo que viene, detalle');
+  assert.match(view, /<DetailSection title="Fuentes y detalle"/, 'el Excel por periodo, sus alertas y los detalles quedan plegados en Fuentes y detalle');
+  assert.match(view, /conFinanzas=\{false\}/, 'las tarjetas del Excel salen de la vista de gerencia');
   assert.match(view, /<details className="panel siio-detail">/);
   assert.equal((view.match(/api<T>\(path\)/g) || []).length, 1, 'la vista carga cada fuente una sola vez y la comparte');
   const figures = readFileSync(new URL('../src/siio/SiioKeyFigures.tsx', import.meta.url), 'utf8');

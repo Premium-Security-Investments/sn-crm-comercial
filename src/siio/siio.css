@@ -1228,3 +1228,6 @@
 .siio-avancys-clave-ok{border-color:#cdeacb;border-left-color:#15803d;background:#f5fbf4}
 .siio-avancys-clave strong{color:#10213d;font-size:15px}
 .siio-avancys-clave span{color:#40516b;font-size:13px}
+
+/* Torre: mes elegido en la tendencia del año. */
+.siio-cell-selected{font-weight:700;background:var(--siio-selected-bg,rgba(23,65,116,.08))}

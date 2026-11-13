@@ -106,12 +106,12 @@ function TenderFigures({ summary, state }: { summary: CommercialSummary | null; 
 }
 
 // Top strip of the Torre: few figures, each with its reference and trend (Few; IBCS: prior year and goal in grey).
-export function SiioKeyFigures({ pulse, pulseState, summary, summaryState, financialRows }: { pulse: FinancialPulse | null; pulseState: LoadState; summary: CommercialSummary | null; summaryState: LoadState; financialRows: SiioFinancialMetric[] }) {
+export function SiioKeyFigures({ pulse, pulseState, summary, summaryState, financialRows, conFinanzas = true }: { pulse: FinancialPulse | null; pulseState: LoadState; summary: CommercialSummary | null; summaryState: LoadState; financialRows: SiioFinancialMetric[]; conFinanzas?: boolean }) {
   return <section className="siio-key-figures" aria-label="Cifras clave">
-    <div className="siio-key-group">
+    {conFinanzas ? <div className="siio-key-group">
       <h3>Estado de resultados de Contabilidad (Excel) · {pulse ? `${longMonth(pulse.month)} ${pulse.year}` : 'último corte'}</h3>
       <FinancialFigures pulse={pulse} state={pulseState} financialRows={financialRows} />
-    </div>
+    </div> : null}
     <div className="siio-key-row">
       <div className="siio-key-group">
         <h3>Comercial privado · al {summary ? `${closingDateLabel(`${summary.as_of}T12:00:00Z`)} ${summary.as_of.slice(0, 4)}` : 'día'}</h3>
@@ -130,21 +130,21 @@ const axisMillions = (value: number) => `${value < 0 ? '−' : ''}${Math.abs(Mat
 const axisPercent = (value: number) => `${(value * 100).toLocaleString('es-CO', { maximumFractionDigits: 0 })}%`.replace('-', '−');
 
 // Trend block under the key figures: real charts with months, scale and values.
-export function SiioTrendCharts({ pulse, summary }: { pulse: FinancialPulse | null; summary: CommercialSummary | null }) {
+export function SiioTrendCharts({ pulse, summary, conMargen = true }: { pulse: FinancialPulse | null; summary: CommercialSummary | null; conMargen?: boolean }) {
   const months = pulse ? Array.from({ length: pulse.month }, (_, index) => MONTHS_SHORT[index]) : [];
   const yearSeries = (key: keyof FinancialPulseTotals): ChartSeries[] => pulse ? [
     { name: String(pulse.year), values: monthSeries(pulse, pulse.year, key), tone: 'accent' },
     { name: String(pulse.year - 1), values: monthSeries(pulse, pulse.year - 1, key), tone: 'reference' },
   ] : [];
   const closed = summary ? summary.sales.by_month.slice(0, summary.sales.closed_months) : [];
-  if (!pulse && !closed.length) return null;
+  if ((!pulse || !conMargen) && !closed.length) return null;
   return <section className="panel siio-trends" aria-label="Tendencia">
     <h2>Tendencia</h2>
     <div className="siio-chart-grid-layout">
       {/* Ingresos y utilidad por mes salieron de aquí: el margen ya combina las dos, y la tabla
           mes a mes con las cifras exactas está en el detalle de Finanzas. Cuatro gráficas de la
           misma serie llenan la pantalla sin agregar una lectura. */}
-      {pulse ? <SiioLineChart title="Margen operacional por mes" note={`Utilidad operacional sobre ingresos${caveatNote(pulse)}`} categories={months} series={yearSeries('margen_operacional')} format={percentText} axisFormat={axisPercent} /> : null}
+      {pulse && conMargen ? <SiioLineChart title="Margen operacional por mes" note={`Utilidad operacional sobre ingresos${caveatNote(pulse)}`} categories={months} series={yearSeries('margen_operacional')} format={percentText} axisFormat={axisPercent} /> : null}
       {closed.length ? <SiioColumnChart title="Ventas nuevas a privados por mes" note="Valor mensual del servicio, por mes de cotización · millones · sin licitaciones" categories={closed.map((_, index) => MONTHS_SHORT[index])} series={[{ name: `Ventas ${summary?.sales.year}`, values: closed.map(item => item.approved_monthly_value), tone: 'accent' }, { name: 'Meta del mes', values: closed.map(item => item.goal || null), tone: 'reference' }]} format={millions} axisFormat={axisMillions} labelAll={false} /> : null}
     </div>
   </section>;
