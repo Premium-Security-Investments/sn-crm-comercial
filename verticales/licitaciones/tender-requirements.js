@@ -31,9 +31,58 @@ async function loadCrmRequirements(database) {
 
 async function loadTenders(database, opportunityIds) {
   if (!opportunityIds.length) return new Map();
-  const { data, error } = await database.from('psi_public_tenders').select('ref,entity,url,converted_opportunity_id').in('converted_opportunity_id', opportunityIds);
+  const { data, error } = await database.from('psi_public_tenders').select('ref,entity,city,url,deadline_at,converted_opportunity_id').in('converted_opportunity_id', opportunityIds);
   if (error) throw error;
   return new Map((data || []).map(row => [row.converted_opportunity_id, row]));
+}
+
+// El día de cierre en Colombia. Un cierre a las 00:00Z es una fecha sin hora (memoria «cierre de sólo fecha»): se toma tal
+// cual; con hora, se pasa a la hora de Colombia (UTC−5).
+export function closingDay(deadlineAt) {
+  if (!deadlineAt) return null;
+  const time = new Date(deadlineAt);
+  if (Number.isNaN(time.getTime())) return null;
+  const utc = time.toISOString();
+  return utc.slice(11, 19) === '00:00:00' ? utc.slice(0, 10) : new Date(time.getTime() - 5 * 3600e3).toISOString().slice(0, 10);
+}
+const TERMINAL_OFFER = new Set(['cerrada_no_go', 'adjudicada', 'no_adjudicada', 'presentada']);
+
+/**
+ * Por oportunidad: si sigue abierta (no archivada, sin NO GO, sin oferta presentada ni resultado, y con cierre de hoy en
+ * adelante) y el día de cierre. Es lo que separa en la tarjeta los procesos próximos de los pasados.
+ */
+export async function loadOpportunityWindows(database, tenders, today = new Date(Date.now() - 5 * 3600e3).toISOString().slice(0, 10)) {
+  const ids = [...tenders.keys()];
+  if (!ids.length) return new Map();
+  const [opportunities, decisions] = await Promise.all([
+    database.from('psi_sales_opportunities').select('id,archived_at,tender_offer_status').in('id', ids),
+    database.from('psi_tender_go_no_go_decisions').select('opportunity_id,decision,decided_at').in('opportunity_id', ids),
+  ]);
+  if (opportunities.error) throw opportunities.error;
+  if (decisions.error && !absent(decisions.error)) throw decisions.error;
+  const latest = new Map();
+  for (const row of decisions.data || []) {
+    const current = latest.get(row.opportunity_id);
+    if (!current || String(row.decided_at) > String(current.decided_at)) latest.set(row.opportunity_id, row);
+  }
+  const windows = new Map();
+  for (const row of opportunities.data || []) {
+    const deadline = closingDay(tenders.get(row.id)?.deadline_at);
+    const open = !row.archived_at && !TERMINAL_OFFER.has(String(row.tender_offer_status || '')) && latest.get(row.id)?.decision !== 'no_go'
+      && Boolean(deadline) && deadline >= today;
+    windows.set(row.id, { deadline, open });
+  }
+  return windows;
+}
+
+/** Los bloqueos que una persona dejó anotados y siguen abiertos (migración 218). Sin la tabla, ninguno. */
+async function loadAnnotatedBlocks(database) {
+  const { data, error } = await database.from('psi_tender_requirement_blocks').select('id,opportunity_id,focus_key,reason,citation,source').is('resolved_at', null);
+  if (error) {
+    if (absent(error)) return [];
+    throw error;
+  }
+  return data || [];
 }
 
 const numberFrom = raw => {
@@ -94,7 +143,10 @@ export async function loadRequirementsBoard(database) {
   const latest = await loadCrmRequirements(database);
   const { data: actas, error: actasError } = await database.from('psi_tender_closure_acta').select('opportunity_id,requirements_unmet');
   if (actasError && !absent(actasError)) throw actasError;
-  const tenders = await loadTenders(database, [...new Set([...latest.keys(), ...(actas || []).map(acta => acta.opportunity_id)])]);
+  const annotated = await loadAnnotatedBlocks(database);
+  const tenders = await loadTenders(database, [...new Set([...latest.keys(), ...(actas || []).map(acta => acta.opportunity_id), ...annotated.map(item => item.opportunity_id)])]);
+  const windows = await loadOpportunityWindows(database, tenders);
+  const blocks = annotated.map(item => ({ ...item, process: processLabel(tenders.get(item.opportunity_id)), url: tenders.get(item.opportunity_id)?.url || null }));
 
   const crm = [];
   for (const [opportunityId, version] of latest) {
@@ -102,7 +154,7 @@ export async function loadRequirementsBoard(database) {
     const claims = new Map((Array.isArray(version.claims) ? version.claims : []).map(claim => [claim.claim_id, claim]));
     for (const requirement of Array.isArray(version.requirements) ? version.requirements : []) {
       if (requirement?.applicability === 'NOT_APPLICABLE') continue;
-      crm.push({ opportunity_id: opportunityId, process: processLabel(tender), url: tender?.url || null, requirement_id: requirement.requirement_id,
+      crm.push({ opportunity_id: opportunityId, process: processLabel(tender), city: tender?.city || null, url: tender?.url || null, requirement_id: requirement.requirement_id,
         category: requirement.category, text: claims.get(requirement.text_claim_id)?.display_text || null, validity: requirement.validity_rule || null,
         blocker: requirement.blocker === true, evaluation: requirement.company_evaluation || null });
     }
@@ -115,11 +167,13 @@ export async function loadRequirementsBoard(database) {
     .select('id,kind,categoria,requisito,umbral,puntos,cita,procesos,url,source_modified_at,loaded_at').order('id').range(0, 4999);
   if (matrizError && !absent(matrizError)) throw matrizError;
   const company = await loadCompany(database);
-  const assess = occurrence => assessRequirement({ type: occurrence.type, process: occurrence.process, text: [occurrence.text, occurrence.threshold].filter(Boolean).join(' '), quote: occurrence.quote || '' }, company.facts);
-  const catalog = buildRequirementCatalog({ matriz: matriz || [], crm, actas: actaGaps, assess });
+  // La ciudad del proceso va con el nombre: «Dirección Ejecutiva · LP-07-2026» no dice que la sede es en Bogotá.
+  const assess = occurrence => assessRequirement({ type: occurrence.type, process: [occurrence.process, occurrence.city].filter(Boolean).join(' · '),
+    text: [occurrence.text, occurrence.threshold].filter(Boolean).join(' '), quote: occurrence.quote || '' }, company.facts);
+  const catalog = buildRequirementCatalog({ matriz: matriz || [], crm, actas: actaGaps, blocks, assess });
   const { data: state, error: stateError } = await database.from('psi_tender_requirement_focus').select('focus_key,status,owner,note,current_state,fix_action,updated_at');
   if (stateError && !absent(stateError)) throw stateError;
-  const focus = buildRequirementFocus(catalog, { state: state || [] }).map(item => ({ ...item, live_state: item.live ? company.live[item.live] || null : null }));
+  const focus = buildRequirementFocus(catalog, { state: state || [], opportunities: windows }).map(item => ({ ...item, live_state: item.live ? company.live[item.live] || null : null }));
   const loaded = (matriz || [])[0] || null;
   return { installed: !stateError, crm_processes: latest.size, focus, pending: buildRequirementPending(catalog), catalog,
     matrix: { path: REQUIREMENT_MATRIX_PATH, rows: (matriz || []).length, loaded_at: loaded?.loaded_at || null, source_modified_at: loaded?.source_modified_at || null } };
@@ -137,6 +191,7 @@ export async function saveRequirementFocus(database, input, actorId) {
     .select('focus_key,status,owner,note,current_state,fix_action,updated_at').single();
   if (error) {
     if (absent(error)) throw fail('La pestaña de requisitos aún no está habilitada (falta aplicar la migración 215).', 409);
+    if (String(error?.code || '') === '23514') throw fail('Este grupo todavía no se puede guardar (falta aplicar la migración 218).', 409);
     throw error;
   }
   return data;

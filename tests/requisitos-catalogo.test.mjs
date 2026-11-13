@@ -5,7 +5,7 @@ import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import AdmZip from 'adm-zip';
 import { parseRequirementMatrix, runRequirementMatrixSync } from '../verticales/licitaciones/requirement-history-import.js';
-import { REQUIREMENT_FOCUS, REQUIREMENT_TYPES, buildRequirementCatalog, buildRequirementFocus, classifyRequirement, isRequirementFragment } from '../verticales/licitaciones/requirement-catalog.js';
+import { REQUIREMENT_FOCUS, REQUIREMENT_TYPES, buildRequirementCatalog, buildRequirementFocus, buildRequirementPending, classifyRequirement, isRequirementFragment } from '../verticales/licitaciones/requirement-catalog.js';
 import { saveRequirementFocus } from '../verticales/licitaciones/tender-requirements.js';
 import { assessRequirement } from '../verticales/licitaciones/requirement-assessment.js';
 
@@ -174,6 +174,47 @@ test('la pestaña muestra sólo los hechos que nos inhabilitan, con cada proceso
   assert.ok(REQUIREMENT_FOCUS.every(item => item.fix.length > 20));
 });
 
+test('la tarjeta separa los procesos próximos (por fecha de cierre) de los pasados, y lo anotado manda', () => {
+  const crm = [
+    { opportunity_id: 'abierto-tarde', process: 'Rama Judicial Dirección Seccional de Administración Judicial de Bogotá · DSAJBO-LP-01-2026', requirement_id: 'REQ-SEDE-BOGOTA', category: 'LEGAL', text: 'El pliego exige sede o sucursal en el Área Metropolitana de Bogotá', blocker: false },
+    { opportunity_id: 'cerrado', process: 'Terminal · TT-SPO-07-2026', requirement_id: 'REQ-SEDE', category: 'LEGAL', text: 'Sede principal o sucursal en Bogotá', blocker: true },
+    { opportunity_id: 'abierto-pronto', process: 'Rama Judicial Dirección Ejecutiva · LP-07-2026', city: 'Bogotá', requirement_id: 'REQ-LIQUIDEZ', category: 'FINANCIAL', text: 'Liquidez mayor o igual a 2,73', blocker: false },
+    { opportunity_id: 'abierto-pronto', process: 'Rama Judicial Dirección Ejecutiva · LP-07-2026', city: 'Bogotá', requirement_id: 'REQ-CAPITAL', category: 'FINANCIAL', text: 'Capital de trabajo', blocker: false },
+  ];
+  const matriz = [{ id: 'H-9', kind: 'habilitante', categoria: 'presencia', requisito: 'Contar con sede principal o sucursal en Manizales.', procesos: ['Villamaría (Caldas) · vigilancia física'] }];
+  const blocks = [{ id: 'b1', opportunity_id: 'abierto-pronto', process: 'Rama Judicial Dirección Ejecutiva · LP-07-2026', focus_key: 'presencia', reason: 'Piden sede principal o sucursal en Bogotá (5.3 num. 1); tenemos agencia. La entidad no acogió la observación.' },
+    { id: 'b2', opportunity_id: 'abierto-tarde', process: 'Rama Bogotá', focus_key: 'experiencia', reason: 'Falta el certificado del contrato 070 con los campos del 1.5.' }];
+  const catalog = buildRequirementCatalog({ matriz, crm, blocks, assess: item => assessRequirement({ type: item.type, process: [item.process, item.city].filter(Boolean).join(' · '), text: item.text }, COMPANY) });
+  const opportunities = new Map([['abierto-pronto', { deadline: '2026-11-24', open: true }], ['abierto-tarde', { deadline: '2026-12-09', open: true }], ['cerrado', { deadline: '2026-11-04', open: false }]]);
+  const focus = buildRequirementFocus(catalog, { opportunities });
+  const presencia = focus.find(item => item.key === 'presencia');
+  assert.deepEqual(presencia.upcoming.map(item => item.opportunity_id), ['abierto-pronto', 'abierto-tarde'], 'por fecha de cierre');
+  assert.match(presencia.upcoming[0].reason, /La entidad no acogió/, 'el motivo anotado gana sobre el del análisis');
+  assert.match(presencia.upcoming[1].reason, /agencia y piden sede principal o sucursal/, 'la regla fija corrige el «no bloqueante» del análisis');
+  assert.deepEqual(presencia.past.map(item => item.process).sort(), ['Terminal · TT-SPO-07-2026', 'Villamaría (Caldas) · vigilancia física']);
+  assert.deepEqual(focus.find(item => item.key === 'financiero').upcoming.map(item => item.opportunity_id), ['abierto-pronto'], 'la ciudad sale del proceso y el capital de trabajo cuenta como financiero');
+  assert.equal(focus.find(item => item.key === 'experiencia').upcoming.length, 1, 'experiencia entra sólo por lo anotado');
+  assert.equal(focus[0].key, 'presencia', 'primero los grupos con más procesos próximos');
+  assert.ok(!buildRequirementPending(catalog).some(item => ['experiencia_general', 'experiencia_especifica', 'personal_minimo', 'armas'].includes(item.key)), 'personal y experiencia no inundan «por confirmar»');
+});
+
+test('el día de cierre y la ventana de cada oportunidad', async () => {
+  const { closingDay, loadOpportunityWindows } = await import('../verticales/licitaciones/tender-requirements.js');
+  assert.equal(closingDay('2026-11-24T00:00:00+00:00'), '2026-11-24', 'a medianoche UTC es una fecha, no se corre un día');
+  assert.equal(closingDay('2026-11-26T02:00:00Z'), '2026-11-25', 'con hora, la de Colombia');
+  assert.equal(closingDay(null), null);
+  const rows = {
+    psi_sales_opportunities: [{ id: 'a', archived_at: null, tender_offer_status: 'en_preparacion' }, { id: 'b', archived_at: null, tender_offer_status: 'presentada' },
+      { id: 'c', archived_at: null, tender_offer_status: 'pendiente_decision' }, { id: 'd', archived_at: '2026-11-01', tender_offer_status: null }, { id: 'e', archived_at: null, tender_offer_status: null }],
+    psi_tender_go_no_go_decisions: [{ opportunity_id: 'c', decision: 'go', decided_at: '2026-11-01' }, { opportunity_id: 'c', decision: 'no_go', decided_at: '2026-11-05' }],
+  };
+  const database = { from: table => ({ select: () => ({ in: async () => ({ data: rows[table], error: null }) }) }) };
+  const tenders = new Map(['a', 'b', 'c', 'd', 'e'].map(id => [id, { deadline_at: id === 'e' ? '2026-11-10T00:00:00Z' : '2026-11-24T00:00:00Z' }]));
+  const windows = await loadOpportunityWindows(database, tenders, '2026-11-13');
+  assert.deepEqual([...windows].filter(([, value]) => value.open).map(([id]) => id), ['a'], 'presentada, NO GO, archivada y ya cerrada no son próximas');
+  assert.equal(windows.get('a').deadline, '2026-11-24');
+});
+
 test('guardar valida el foco y el estado, y avisa si falta la migración', async () => {
   const saved = [];
   const db = missing => ({ from: () => ({ upsert: row => { saved.push(row); return { select: () => ({ single: async () => missing ? { error: { code: '42P01' } } : { data: row, error: null } }) }; } }) });
@@ -186,14 +227,17 @@ test('guardar valida el foco y el estado, y avisa si falta la migración', async
   await assert.rejects(saveRequirementFocus(db(true), { focus_key: 'canino', status: 'por_decidir' }, 'p1'), /migración 215/);
 });
 
-test('migraciones 210 y 215: sólo el servidor, los grupos de hechos y sus decisiones, sin pisar lo escrito', async () => {
+test('migraciones 210, 215 y 218: sólo el servidor, los grupos de hechos y sus decisiones, sin pisar lo escrito', async () => {
   const pg = new PGlite();
-  await pg.exec("create role anon; create role authenticated; create role service_role; create table public.psi_sales_profiles (id uuid primary key);");
+  await pg.exec("create role anon; create role authenticated; create role service_role; create table public.psi_sales_profiles (id uuid primary key); create table public.psi_sales_opportunities (id uuid primary key);");
   await pg.exec(read('supabase/migrations/210_requisitos_que_nos_frenan.sql'));
   await pg.exec("update public.psi_tender_requirement_focus set note = 'escrito por una persona', status = 'en_tramite' where focus_key = 'codigos'");
   const sql = read('supabase/migrations/215_requisitos_que_nos_inhabilitan.sql');
   await pg.exec(sql);
   await pg.exec(sql);
+  const sql218 = read('supabase/migrations/218_requisitos_proximos_y_bloqueos_anotados.sql');
+  await pg.exec(sql218);
+  await pg.exec(sql218);
   const { rows } = await pg.query('select focus_key, status, owner, note from public.psi_tender_requirement_focus');
   assert.deepEqual(rows.map(row => row.focus_key).sort(), REQUIREMENT_FOCUS.map(focus => focus.key).sort());
   const codigos = rows.find(row => row.focus_key === 'codigos');
@@ -202,6 +246,17 @@ test('migraciones 210 y 215: sólo el servidor, los grupos de hechos y sus decis
   assert.ok(rows.filter(row => row.focus_key !== 'codigos').every(row => row.status === 'por_decidir' && row.owner === 'Katherine'));
   await assert.rejects(pg.exec("insert into public.psi_tender_requirement_focus (focus_key) values ('seriedad')"));
   await assert.rejects(pg.exec("update public.psi_tender_requirement_focus set status = 'pendiente' where focus_key = 'canino'"));
+  // Bloqueos anotados: uno por proceso, grupo y motivo mientras siga abierto; un grupo que no existe no entra.
+  await pg.exec("insert into public.psi_sales_opportunities (id) values ('00000000-0000-0000-0000-000000000001')");
+  const block = "insert into public.psi_tender_requirement_blocks (opportunity_id, focus_key, reason, source) values ('00000000-0000-0000-0000-000000000001', 'presencia', 'Piden sede principal o sucursal en Bogotá; tenemos agencia.', 'revision')";
+  await pg.exec(block);
+  await assert.rejects(pg.exec(block), /unique|duplicate/i);
+  await pg.exec("update public.psi_tender_requirement_blocks set resolved_at = now()");
+  await pg.exec(block);
+  await assert.rejects(pg.exec("insert into public.psi_tender_requirement_blocks (opportunity_id, focus_key, reason, source) values ('00000000-0000-0000-0000-000000000001', 'seriedad', 'Garantía de seriedad', 'revision')"));
+  const grants = await pg.query("select grantee, privilege_type from information_schema.role_table_grants where table_name = 'psi_tender_requirement_blocks'");
+  assert.ok(grants.rows.every(row => row.grantee === 'service_role' || row.grantee === 'postgres'), JSON.stringify(grants.rows));
+  await pg.exec(read('supabase/rollbacks/218_requisitos_proximos_y_bloqueos_anotados_rollback.sql'));
   await pg.exec(read('supabase/rollbacks/215_requisitos_que_nos_inhabilitan_rollback.sql'));
   await pg.exec(read('supabase/rollbacks/210_requisitos_que_nos_frenan_rollback.sql'));
 });

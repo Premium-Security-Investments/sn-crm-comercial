@@ -8,14 +8,40 @@ import type { TendersModuleProps } from './types';
  * futuro no nos inhabiliten por eso. Sale de cruzar con la ficha de la empresa los requisitos de la matriz histórica, de
  * los análisis del CRM y de las actas de cierre. Los papeles que se renuevan no aparecen.
  */
-type Process = { opportunity_id: string | null; process: string; reason: string; blocked?: boolean };
+type Process = { opportunity_id: string | null; process: string; reason: string; blocked?: boolean; deadline?: string | null; upcoming?: boolean };
 type Status = 'por_decidir' | 'iniciar' | 'en_tramite' | 'resuelto' | 'no_por_ahora';
-type Focus = { key: string; title: string; live: string | null; live_state: string | null; processes: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
+type Focus = { key: string; title: string; live: string | null; live_state: string | null; processes: Process[]; upcoming: Process[]; past: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
 type Pending = { key: string; title: string; processes: Process[] };
 type Payload = { installed: boolean; matrix: { rows: number; loaded_at: string | null }; crm_processes: number; focus: Focus[]; pending: Pending[]; catalog: { totals: { processes: number } } };
 
 const STATUSES: [Status, string][] = [['por_decidir', 'Por decidir'], ['iniciar', 'Iniciar trámite'], ['en_tramite', 'En trámite'], ['resuelto', 'Resuelto'], ['no_por_ahora', 'No por ahora']];
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const day = (date?: string | null) => (date && /^\d{4}-\d{2}-\d{2}/.test(date) ? `${Number(date.slice(8, 10))}-${MONTHS[Number(date.slice(5, 7)) - 1]}` : '');
+// El nombre corto del proceso para la línea de próximos: la entidad sin «Rama Judicial · Dirección Seccional de…».
+const shortName = (process: string) => {
+  const [entity, ref] = process.split(' · ');
+  const city = entity.match(/(?:Administraci[oó]n Judicial|Seccional)(?: de)? ([A-ZÁÉÍÓÚÑ][\wáéíóúñ]+)\s*$/)?.[1];
+  const plain = entity.replace(/^SUPERINTENDENCIA (NACIONAL )?DE /i, '').trim();
+  const acronym = plain.match(/^([A-ZÁÉÍÓÚÑ]{2,5}) [A-ZÁÉÍÓÚÑ]/)?.[1];
+  const name = /Direcci[oó]n Ejecutiva de Administraci[oó]n Judicial/i.test(entity) ? 'DEAJ' : city ? `Rama ${city}` : acronym
+    || (plain.length > 28 ? `${plain.slice(0, 26)}…` : plain);
+  return ref && !city && name.length < 12 ? `${name} ${ref}` : name;
+};
+
+/**
+ * Los procesos abiertos que este requisito bloquea, en una línea y por fecha de cierre (Juan, 2026-11-13: «que no se
+ * vaya a volver una tarjeta pesada»). El motivo sale al pasar el mouse; los que no caben quedan en «+N».
+ */
+function UpcomingLine({ items }: { items: Process[] }) {
+  if (!items.length) return <p className="tender-requirements-upcoming muted">Ningún proceso abierto lo pide hoy.</p>;
+  const shown = items.slice(0, 4);
+  return <p className="tender-requirements-upcoming"><strong>Próximos: </strong>{shown.map((item, index) => <span key={item.opportunity_id || item.process}>
+    {index > 0 && ' · '}
+    {item.opportunity_id ? <a href={`#/detail/${item.opportunity_id}`} title={item.reason}>{shortName(item.process)} {day(item.deadline)}</a>
+      : <span title={item.reason}>{shortName(item.process)} {day(item.deadline)}</span>}
+  </span>)}{items.length > shown.length && <span className="muted" title={items.slice(4).map(item => `${shortName(item.process)} ${day(item.deadline)}`).join(' · ')}> · +{items.length - shown.length}</span>}</p>;
+}
 
 function ProcessList({ items }: { items: Process[] }) {
   return <ul className="tender-requirements-processes">{items.map(item => <li key={item.opportunity_id || item.process}>
@@ -44,8 +70,7 @@ function FocusCard({ focus, canEdit, request, onSaved }: { focus: Focus; canEdit
       <h4>{focus.title}</h4>
       <span className={`tender-requirements-status is-${focus.status}`}>{STATUSES.find(([value]) => value === focus.status)?.[1]}</span>
     </header>
-    <p className="tender-requirements-count"><strong>Nos inhabilita en {plural(focus.processes.length, 'proceso', 'procesos')}</strong>{focus.blocked ? ` · nos frenó en ${focus.blocked}` : ''}</p>
-    <details><summary>En cuáles y por qué</summary><ProcessList items={focus.processes} /></details>
+    <UpcomingLine items={focus.upcoming} />
     {!editing ? <>
       <dl>
         {state && <><dt>Cómo estamos hoy{focus.live ? ' (de la ficha de la empresa)' : ''}</dt><dd>{state}</dd></>}
@@ -54,6 +79,7 @@ function FocusCard({ focus, canEdit, request, onSaved }: { focus: Focus; canEdit
         <dt>Responsable</dt><dd>{focus.owner || <span className="muted">Sin asignar.</span>}</dd>
       </dl>
       {canEdit && <button type="button" className="secondary" onClick={() => setEditing(true)}>Decidir</button>}
+      {focus.past.length > 0 && <details className="tender-requirements-past"><summary>Procesos pasados ({focus.past.length})</summary><ProcessList items={focus.past} /></details>}
     </> : <div className="tender-requirements-form">
       <label>Decisión<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as Status })}>{STATUSES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
       <label>Responsable<input value={draft.owner || ''} onChange={event => setDraft({ ...draft, owner: event.target.value })} /></label>

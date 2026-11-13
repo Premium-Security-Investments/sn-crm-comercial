@@ -155,7 +155,8 @@ export function assessRequirement({ type, text, quote = '', process = '' }, comp
       if (/criadero|sede canina|resolucion de (la )?sede|centro de (adiestramiento|entrenamiento)|caninos? propios/.test(folded)) return { verdict: 'inhabilita', reason: 'Piden sede canina (criadero) autorizada o caninos propios; no la tenemos.' };
       return /explosivos|disponibilidad/.test(folded) ? { verdict: 'verificar', reason: 'La licencia incluye medio canino; la ficha no dice cuántos caninos propios ni su especialidad.' } : { verdict: 'cumple', reason: 'La licencia incluye medio canino.' };
     case 'horas_extras': return { verdict: 'verificar', reason: 'La ficha no tiene la autorización del Ministerio del Trabajo para horas extras.' };
-    case 'red_apoyo': return { verdict: 'se_prepara', reason: 'Certificado de vinculación a la red de apoyo de la Policía.' };
+    // Juan, 2026-11-13: no es un papel que se saque para el cierre; en Manizales hay que estar inscritos antes.
+    case 'red_apoyo': return { verdict: 'verificar', reason: 'La ficha no dice en qué ciudades estamos inscritos en la Red de Apoyo de la Policía.' };
     case 'registro_tecnologia':
       if (/importador|comercializador|distribuidor|productores/.test(folded)) return { verdict: 'inhabilita', reason: 'Piden el registro de importador, comercializador o distribuidor de equipos ante la Supervigilancia; no lo tenemos.' };
       return /carta|certificado del fabricante|autorice/.test(folded) ? { verdict: 'se_prepara', reason: 'Carta del fabricante para el proceso.' } : { verdict: 'verificar', reason: 'La ficha no tiene taller ni soporte técnico registrado.' };
