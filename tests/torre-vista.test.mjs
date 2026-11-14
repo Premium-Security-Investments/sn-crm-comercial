@@ -43,7 +43,14 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   assert.match(torre, /cierre de Finanzas/);
   // Los que pierden: últimos tres meses cerrados y acumulado del año; el mes elegido sólo cambia el detalle.
   assert.match(torre, /const MESES_PIERDEN = 3;/);
-  assert.match(torre, /<th>Acumulado \{anio\}<\/th>/);
+  assert.match(torre, /<th className="num total">Acumulado \{anio\}<\/th>/);
+  // Clientes (PR 3 de la Fase 4): tablas del kit, marcas con chip, concentración en vivo y ver todos.
+  assert.match(torre, /<span className="siio-chip marca">pierde todos los meses<\/span>/);
+  assert.match(torre, /Los 5 mayores concentran el/);
+  assert.match(torre, /const CLIENTES_A_LA_VISTA = 12;/);
+  const vista = read('src/siio/SiioExecutiveView.tsx');
+  assert.match(vista, /aria-label="Cumplimiento del servicio"[\s\S]*<SiioOperationsDetail summary=\{operations\} \/>/);
+  assert.doesNotMatch(vista, /title="Operaciones · detalle"/);
   assert.match(torre, /aria-label="Cliente por cliente"[\s\S]*<select value=\{mesClientes\}/);
   // El selector general ya no pide clientes de un mes abierto.
   assert.doesNotMatch(torre, /clientesDelMes/);
