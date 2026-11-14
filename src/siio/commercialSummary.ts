@@ -16,6 +16,7 @@ export type CommercialSummary = {
     open_count: number; monthly_value: number; weighted_monthly_value: number; remaining_goal: number; coverage_of_remaining_goal: number | null;
     stale_count: number; without_value_count: number; stale_days: number;
     by_stage: Array<{ code: string; name: string; probability: number; count: number; monthly_value: number; weighted_monthly_value: number; stale: number; without_value: number }>;
+    by_owner?: Array<{ owner_id: string | null; owner_name: string | null; open: number; stale: number; monthly_value: number; stale_monthly_value: number }>;
     stale_large: Array<{ id: string; company_name: string; stage: string; monthly_value: number; days_without_activity: number; owner_name: string | null }>;
   };
   tenders: { open_count: number; total_value: number; requires_decision: number; overdue_status: number; decision_window_days: number; award_rate: number | null; awarded: number; not_awarded: number; calendar: CommercialTender[] };
@@ -54,16 +55,6 @@ export function commercialReadings(summary: CommercialSummary): string[] {
   const advancedTotal = advanced.reduce((total, stage) => total + stage.count, 0);
   if (advancedStale) readings.push(`${advancedStale} de ${advancedTotal} oportunidades con oferta enviada o más avanzadas llevan más de ${pipeline.stale_days} días sin actividad.`);
   return readings;
-}
-
-// Public tenders and private sales are different businesses (total contract value vs monthly
-// service value), so their readings are shown apart.
-export function tenderReadings(summary: CommercialSummary): string[] {
-  return commercialReadings(summary).filter(text => /licitaci|fecha de cierre/i.test(text));
-}
-
-export function privateReadings(summary: CommercialSummary): string[] {
-  return commercialReadings(summary).filter(text => !/licitaci|fecha de cierre/i.test(text));
 }
 
 // Orange marks only what is truly urgent: overdue status or a close within a week.

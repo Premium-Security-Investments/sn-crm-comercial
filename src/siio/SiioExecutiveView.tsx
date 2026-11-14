@@ -4,13 +4,12 @@ import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, navigateSiioView, uniqueOptions } from './selectors';
 import { Badge, EmptyState, Panel } from './SiioUi';
 import { SiioFinancialPulse } from './SiioFinancialPulse';
-import { PrivateAttentionTable, SiioPrivateDetail, SiioTenderDetail, TenderAttentionTable, millions } from './SiioCommercialPanel';
-import { SiioKeyFigures, SiioTrendCharts } from './SiioKeyFigures';
+import { millions } from './SiioCommercialPanel';
+import { PLAZO_ALTO, SiioPestanaComercial } from './SiioPestanaComercial';
 import { FollowupCell, FollowupComposer } from './SiioFollowups';
 import { addDays, isOverdue, openFollowupFor, todayIso, useFollowups, type FollowupDraft } from './followups';
-import { privateReadings, tenderReadings, type CommercialSummary } from './commercialSummary';
-import { deriveEstaSemana, sinLoUrgente } from './estaSemana';
-import { SiioEstaSemana } from './SiioEstaSemana';
+import type { CommercialSummary } from './commercialSummary';
+import { deriveEstaSemana } from './estaSemana';
 import { pulseReadings, type FinancialPulse } from './financialPulse';
 import { deriveOperationsSummary } from './operationsSummary';
 import { deriveRevenueByClient } from './revenueByClient';
@@ -134,16 +133,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
   const lateFollowups = openFollowups.filter(item => isOverdue(item, today));
   const [pulse, pulseState] = useSiioData<FinancialPulse | null>(`/api/siio/financial-pulse${selectedPeriod ? `?period=${encodeURIComponent(selectedPeriod)}` : ''}`);
   const [commercial, commercialState] = useSiioData<CommercialSummary>('/api/siio/commercial-summary');
-  // Lo que tiene plazo sube a la franja de arriba; el bloque de licitaciones muestra el resto,
-  // para que un mismo hecho no aparezca dos veces en la misma pantalla.
+  // Lo que tiene fecha: seguimientos vencidos o por vencer (y su conteo de vencidos para la Portada).
   const estaSemana = useMemo(() => deriveEstaSemana({ commercial, followups: followups.data, today }), [commercial, followups.data, today]);
-  const licitacionesRestantes = useMemo(() => (commercial ? sinLoUrgente(commercial) : null), [commercial]);
-  const licitacionesArriba = estaSemana.asuntos.some(item => item.tipo === 'licitacion');
-  const quedanLicitaciones = Boolean(licitacionesRestantes?.tenders.calendar.some(item => item.attention));
-
-  // Each business reads apart: tenders (total contract value), private sales (monthly value), finance.
-  const tenderNotes = licitacionesRestantes ? tenderReadings(licitacionesRestantes) : [];
-  const privateNotes = commercial ? privateReadings(commercial).filter(text => !/^(Ventas nuevas|El pipeline ponderado)/.test(text)) : [];
   const financeNotes = pulse ? pulseReadings(pulse).filter(text => !/provisión|^Enero cerró/.test(text)).slice(0, 2) : [];
   const alertBasis = (recommendation: { id: string; period?: string | null }) => recommendation.id === 'payroll-source-alert'
     ? `Nómina de ${formatPeriod(recommendation.period || snapshot.payrollPeriod).toLowerCase()}`
@@ -159,7 +150,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
     if (porDecidir.length) {
       const dias = porDecidir.map(item => item.days_to_deadline).filter((valor): valor is number => valor !== null && valor >= 0);
       const minimo = dias.length ? Math.min(...dias) : null;
-      lista.push({ clave: 'licitaciones', pestana: 'comercial', prioridad: minimo !== null && minimo <= 12 ? 'alta' : 'media', responsable: 'Licitaciones',
+      lista.push({ clave: 'licitaciones', pestana: 'comercial', prioridad: minimo !== null && minimo <= PLAZO_ALTO ? 'alta' : 'media', responsable: 'Licitaciones',
         ficha: minimo !== null ? { valor: `${minimo} días`, unidad: 'cierra' } : { valor: `${porDecidir.length}`, unidad: 'por decidir' },
         frase: <><strong>{porDecidir.length === 1 ? '1 licitación espera' : `${porDecidir.length} licitaciones esperan`} la decisión de presentarse</strong>{minimo !== null ? `; la primera cierra en ${minimo} días` : ''}.</> });
     }
@@ -204,26 +195,11 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
       </section>
     </section> : null}
     {pestana === 'cartera' ? <section className="siio-pantalla" role="tabpanel" aria-label="Cartera"><SiioPestanaCartera t={torre} /></section> : null}
-    {pestana === 'comercial' ? <>
-      <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
-      <Panel title="Lo que hay que decidir">
-        {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
-        {licitacionesArriba || quedanLicitaciones ? <section className="siio-attention-section" aria-label="Licitaciones públicas">
-          <h3>Licitaciones públicas</h3>
-          {tenderNotes.length ? <div className="siio-pulse-readings"><ul>{tenderNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
-          {licitacionesArriba ? <p className="siio-pulse-footnote">Las que cierran dentro de {estaSemana.ventanaDias} días o ya cerraron están arriba, en Decisiones con fecha.</p> : null}
-          {licitacionesRestantes && quedanLicitaciones ? <TenderAttentionTable summary={licitacionesRestantes} followups={attentionFollowups} today={today} /> : null}
-        </section> : null}
-        {commercial?.pipeline.stale_large.length || privateNotes.length ? <section className="siio-attention-section" aria-label="Comercial privado">
-          <h3>Comercial privado</h3>
-          {privateNotes.length ? <div className="siio-pulse-readings"><ul>{privateNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
-          {commercial ? <PrivateAttentionTable summary={commercial} followups={attentionFollowups} today={today} /> : null}
-        </section> : null}
-        <p className="siio-pulse-footnote"><button type="button" className="siio-link-button" onClick={() => onNavigate(navigateSiioView('seguimiento'))}>Ver los seguimientos abiertos{openFollowups.length ? ` (${openFollowups.length}${lateFollowups.length ? `, ${lateFollowups.length} vencidos` : ''})` : ''}</button></p>
-      </Panel>
-      <SiioKeyFigures pulse={pulse} pulseState={pulseState} summary={commercial} summaryState={commercialState} financialRows={financialRows} conFinanzas={false} />
-      <SiioTrendCharts pulse={pulse} summary={commercial} conMargen={false} />
-    </> : null}
+    {pestana === 'comercial' ? <section className="siio-pantalla" role="tabpanel" aria-label="Comercial y licitaciones">
+      {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
+      <SiioPestanaComercial summary={commercial} state={commercialState} semana={estaSemana} followups={attentionFollowups} today={today}
+        abiertos={openFollowups.length} vencidos={lateFollowups.length} onVerSeguimientos={() => onNavigate(navigateSiioView('seguimiento'))} />
+    </section> : null}
     {pestana === 'vigia' ? <>
       <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
       {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
@@ -279,14 +255,6 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
       <SiioConcentracionClientes period={selectedPeriod} />
       <SiioDevengado period={selectedPeriod} />
       <SiioHorasPorCliente summary={horasPorCliente} />
-    </DetailSection>
-
-    <DetailSection title="Comercial privado · detalle" hint="Pipeline por etapa, indicadores en construcción y calidad del dato del CRM">
-      <SiioPrivateDetail summary={commercial} state={commercialState} />
-    </DetailSection>
-
-    <DetailSection title="Licitaciones públicas · detalle" hint="Otras licitaciones activas e indicadores en construcción">
-      <SiioTenderDetail summary={commercial} state={commercialState} />
     </DetailSection>
 
     <DetailSection title="Lo que falta para completar la Torre" hint="Lo que todavía no se puede mostrar y el dato que destraba cada cosa">

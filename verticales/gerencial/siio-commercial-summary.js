@@ -69,7 +69,9 @@ export function buildCommercialSummary({ opportunities = [], stages = [], goals 
     const stage = stageByCode.get(item.stage_code);
     return stage && !stage.is_terminal;
   });
-  const lastActivity = item => new Date(item.last_interaction_at || item.updated_at || item.created_at);
+  // La actividad es la última interacción registrada; si nunca hubo una, cuenta desde que se creó. La fecha de
+  // modificación no sirve: procesos automáticos tocan todas las filas y un lead nunca gestionado parecía al día.
+  const lastActivity = item => new Date(item.last_interaction_at || item.created_at);
   const pipelineByStage = stages
     .filter(stage => !stage.is_terminal)
     .sort((a, b) => a.stage_order - b.stage_order)
@@ -86,6 +88,19 @@ export function buildCommercialSummary({ opportunities = [], stages = [], goals 
         without_value: rows.filter(item => !amount(item.offer_value)).length,
       };
     });
+  // ¿El forecast está al día? Lo mismo por comercial: si sus leads llevan más de 30 días sin actividad,
+  // la Torre lo dice con nombre (Juan, 2026-11-14). Valores mensuales del servicio.
+  const byOwner = new Map();
+  for (const item of open) {
+    const key = item.owner_id || null;
+    const row = byOwner.get(key) || { owner_id: key, owner_name: ownerName.get(key) || null, open: 0, stale: 0, monthly_value: 0, stale_monthly_value: 0 };
+    const stale = daysBetween(lastActivity(item), today) > STALE_DAYS;
+    row.open += 1;
+    row.monthly_value += amount(item.offer_value);
+    if (stale) { row.stale += 1; row.stale_monthly_value += amount(item.offer_value); }
+    byOwner.set(key, row);
+  }
+  const pipelineByOwner = [...byOwner.values()].sort((a, b) => b.stale - a.stale || b.open - a.open);
   const weighted = pipelineByStage.reduce((total, stage) => total + stage.weighted_monthly_value, 0);
   const remainingGoal = Math.max(0, goalYear - salesYear);
   const staleLarge = open
@@ -155,6 +170,7 @@ export function buildCommercialSummary({ opportunities = [], stages = [], goals 
       without_value_count: pipelineByStage.reduce((total, stage) => total + stage.without_value, 0),
       stale_days: STALE_DAYS,
       by_stage: pipelineByStage,
+      by_owner: pipelineByOwner,
       stale_large: staleLarge,
     },
     tenders: {
