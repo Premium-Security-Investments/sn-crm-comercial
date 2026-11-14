@@ -60,7 +60,7 @@ const MATRIX = workbook({
 
 test('la matriz se limpia: sólo Habilitantes y Puntuables, proceso legible, sin columnas técnicas', () => {
   const rows = parseRequirementMatrix(MATRIX);
-  assert.deepEqual(rows.slice(0, 4).map(row => row.id), ['H-001', 'H-002', 'H-003', 'PUN-001']);
+  assert.deepEqual(rows.filter(row => !row.id.startsWith('crm-')).slice(0, 4).map(row => row.id), ['H-001', 'H-002', 'H-003', 'PUN-001']);
   assert.equal(new Set(rows.map(row => row.id)).size, rows.length, 'los IDs largos no se repiten al acortarlos');
   assert.ok(rows.every(row => row.id.length <= 40));
   assert.deepEqual(rows[0].procesos, ['Ibagué (Tolima) · vigilancia híbrida', 'Pereira (Risaralda) · seguridad electrónica']);
@@ -82,11 +82,13 @@ test('el puente sólo baja la matriz si cambió, y la tabla queda igual al Excel
   await pg.exec('create role anon; create role authenticated; create role service_role;');
   await pg.exec(read('supabase/migrations/211_matriz_historica_requisitos.sql'));
   await pg.exec("insert into public.psi_tender_requirement_history (id, kind, requisito, loaded_at) values ('H-999', 'habilitante', 'Ya no está en el Excel', now() - interval '1 day')");
+  await pg.exec("insert into public.psi_tender_requirement_history (id, kind, requisito, procesos, loaded_at) values ('crm-terminal-H-001', 'habilitante', 'Liquidez ≥ 1,5', '{\"TERMINAL · TT-SPO-07-2026\"}', now() - interval '1 day')");
   const database = pgliteRest(pg);
   let downloads = 0;
   const file = { nombre: 'Matriz_Historica_Requisitos_Habilitantes_y_Puntuables.xlsx', modificado_en: '2026-10-27T10:54:58Z' };
   const deps = { listFolder: async () => [file], download: async () => { downloads += 1; return MATRIX; } };
   assert.deepEqual(await runRequirementMatrixSync(database, deps), { event: 'requirement_matrix_loaded', filas: 6, retiradas: 1 });
+  assert.equal((await pg.query("select count(*)::int n from public.psi_tender_requirement_history where id = 'crm-terminal-H-001'")).rows[0].n, 1, 'recargar el Excel no borra los procesos del CRM');
   assert.deepEqual(await runRequirementMatrixSync(database, deps), { event: 'requirement_matrix_unchanged' });
   assert.equal(downloads, 1);
   assert.equal((await runRequirementMatrixSync(database, { ...deps, force: true })).event, 'requirement_matrix_loaded', 'la carga a mano no mira la fecha');
