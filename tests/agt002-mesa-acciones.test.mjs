@@ -122,3 +122,54 @@ test('un presupuesto absurdo de SECOP se reemplaza con el del proyecto, como pro
   const sano = tenderOfficialValuesPlan({ opportunity: { offer_value: '8000000000' }, secopValue: '8000000000', documents: documentos, deadlines: [] });
   assert.equal(sano.updates.offer_value, undefined, 'con un valor razonable, el proyecto sigue sin contar');
 });
+
+// Rama Pereira (2026-11-14): al publicar el definitivo SECOP cambió de aviso (11107533 → 11222448) y los datos abiertos
+// tardaron días. La persona pega el enlace nuevo en la Mesa y queda igual que si lo hubiera cambiado el Radar.
+test('la Mesa cambia el enlace de SECOP que la persona pega: licitación, «Link fuente», seguimiento y constancia', async () => {
+  const { enlaceSecopOficial } = await import('../verticales/licitaciones/agt002-mesa-acciones.js');
+  const VIEJO = 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.11107533';
+  const NUEVO = 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.11222448';
+  assert.equal(enlaceSecopOficial(`  ${NUEVO} `), NUEVO);
+  assert.equal(enlaceSecopOficial('https://www.secop.gov.co/CO1BusinessLine/Tendering/ContractNoticeView/Index?notice=CO1.NTC.11217040'), 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.11217040', 'el enlace de la entidad se lleva al público');
+  assert.equal(enlaceSecopOficial('https://otro.sitio/?noticeUID=CO1.NTC.11222448'), null);
+  assert.equal(enlaceSecopOficial('CO1.REQ.11251632'), null);
+
+  const hecho = { updates: [], inserts: [], lineas: [] };
+  const filas = {
+    psi_public_tenders: { id: 't1', url: VIEJO, ref: 'LP-01-2026', status: 'Presentación de observaciones', deadline_at: '2026-11-26T00:00:00Z' },
+    psi_sales_opportunities: { id: 'o1', observaciones: `Origen: SECOP II\nLink fuente: ${VIEJO}`, tender_offer_status: null },
+  };
+  const database = {
+    rpc: async (_name, args) => { hecho.lineas.push(args.p_line); return { error: null }; },
+    from: tabla => {
+      const q = {
+        select: () => q, eq: () => q, like: async () => ({ data: [], error: null }),
+        maybeSingle: async () => ({ data: filas[tabla], error: null }),
+        insert: async fila => { hecho.inserts.push({ tabla, ...fila }); return { error: null }; },
+        update: cambios => ({ eq: async () => { hecho.updates.push({ tabla, ...cambios }); return { error: null }; } }),
+      };
+      return q;
+    },
+  };
+  const mensaje = `El proceso cambió de link, este es el enlace nuevo: ${NUEVO}`;
+  const accion = { tipo: 'corregir', campo: 'enlace_secop', valor: NUEVO, fuente: '', pedido_literal: 'este es el enlace nuevo' };
+  const lineas = await ejecutarAgt002AccionesDeLaMesa(database, { ...BASE, mensaje, acciones: [accion] });
+  assert.match(lineas[0], /Cambié el enlace de SECOP del aviso CO1\.NTC\.11107533 al CO1\.NTC\.11222448/);
+  assert.equal(hecho.updates.find(row => row.tabla === 'psi_public_tenders').url, NUEVO);
+  const obs = hecho.updates.find(row => row.tabla === 'psi_sales_opportunities').observaciones;
+  assert.match(obs, /^Link fuente: .*CO1\.NTC\.11222448$/m);
+  assert.match(obs, /^Link fuente histórico: .*CO1\.NTC\.11107533$/m);
+  const marca = JSON.parse(hecho.inserts.find(row => row.tabla === 'psi_sales_interactions').notes);
+  assert.equal(marca.kind, 'tender_phase_change_detected');
+  assert.equal(marca.notice_uid, 'CO1.NTC.11222448');
+  assert.equal(marca.origin, 'mesa');
+  assert.match(hecho.lineas[0], /pasó del aviso CO1\.NTC\.11107533 al CO1\.NTC\.11222448/);
+
+  filas.psi_public_tenders = { ...filas.psi_public_tenders, url: NUEVO };
+  assert.match((await ejecutarAgt002AccionesDeLaMesa(database, { ...BASE, mensaje, acciones: [accion] }))[0], /ya era/);
+  filas.psi_sales_opportunities = { ...filas.psi_sales_opportunities, tender_offer_status: 'presentada' };
+  filas.psi_public_tenders = { ...filas.psi_public_tenders, url: VIEJO };
+  assert.match((await ejecutarAgt002AccionesDeLaMesa(database, { ...BASE, mensaje, acciones: [accion] }))[0], /ya está presentada/);
+  assert.match((await ejecutarAgt002AccionesDeLaMesa(database, { ...BASE, mensaje, acciones: [{ ...accion, valor: 'no sé' }] }))[0], /no es el enlace de un proceso/);
+  assert.match(AGT002_MESA_ACCIONES_POLICY, /campo enlace_secop/);
+});
