@@ -137,7 +137,7 @@ test('la interfaz oculta las acciones de escritura al rol de solo consulta', () 
   assert.match(main, /Solo consulta: ve, pero no cambia nada/, 'Usuarios ofrece solo consulta');
   assert.match(main, /consulta: 'Directivo de solo consulta'/);
   const siio = readFileSync(new URL('../src/siio/SiioDashboard.tsx', import.meta.url), 'utf8');
-  assert.match(siio, /\{!readOnly && <button type="button" onClick=\{\(\) => setBoardDraftOpen\(true\)\}>Preparar informe de Junta<\/button>\}/);
+  assert.match(siio, /\{!readOnly && <button type="button"(?: className="[^"]+")? onClick=\{\(\) => setBoardDraftOpen\(true\)\}>Preparar informe de Junta<\/button>\}/);
   const tenderPermissions = readFileSync(new URL('../src/tenders/permissions.ts', import.meta.url), 'utf8');
   assert.match(tenderPermissions, /export function isTenderReadOnlyProfile/);
   for (const file of ['../src/tenders/TenderRadarView.tsx', '../src/tenders/TenderTrackingView.tsx']) {
