@@ -171,10 +171,10 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
       <SiioPestanaComercial summary={commercial} state={commercialState} semana={estaSemana} followups={attentionFollowups} today={today}
         abiertos={openFollowups.length} vencidos={lateFollowups.length} onVerSeguimientos={() => onNavigate(navigateSiioView('seguimiento'))} />
     </section> : null}
-    {pestana === 'vigia' ? <>
+    {pestana === 'vigia' ? <section className="siio-pantalla" role="tabpanel" aria-label="Vig-IA">
       <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
       {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
-    </> : null}
+    </section> : null}
     {pestana === 'parametros' ? <section className="siio-pantalla" role="tabpanel" aria-label="Parámetros"><SiioPestanaParametros creditos={torre.torre?.creditos ?? null} /></section> : null}
     {pestana === 'fuentes' ? <section className="siio-pantalla" role="tabpanel" aria-label="Fuentes y detalle">
       {/* Fuentes (contrato de la maqueta, Fase 3): primero quién tiene atrasado qué; después el Excel de Finanzas, que sigue
