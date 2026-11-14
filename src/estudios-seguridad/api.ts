@@ -211,10 +211,15 @@ export type FieldNoteRisk = {
   zone_id: string | null; zone_ref: string | null; catalog_risk_code: string | null; process_code: string | null; title: string;
   causes: string | null; consequences: string | null; current_control: string | null; proposed_control: string | null; evidence_quote: string;
 };
-export type FieldNoteProposal = { respuesta: string; zonas_nuevas: Array<{ ref: string; nombre: string }>; riesgos: FieldNoteRisk[]; avisos: string[] };
+// Conversación (2026-11-14): Vig-IA también propone respuestas del recorrido guiado, cada una con su cita.
+export type FieldNoteAnswer = {
+  codigo: string; area: string; tipo: 'verificacion' | 'escenario'; pregunta: string; value: 'si' | 'no' | 'na' | null; note: string | null;
+  favorable: boolean | null; reemplaza: { value: string | null; note: string | null } | null; evidence_quote: string;
+};
+export type FieldNoteProposal = { respuesta: string; zonas_nuevas: Array<{ ref: string; nombre: string }>; riesgos: FieldNoteRisk[]; respuestas_recorrido: FieldNoteAnswer[]; avisos: string[] };
 export const proposeFromNote = (studyId: string, nota: string) => api<FieldNoteProposal>(`${BASE}/${encodeURIComponent(studyId)}/agente/proponer`, json('POST', { nota }));
-export const confirmFromNote = (studyId: string, body: { zonas_nuevas: Array<{ ref: string; nombre: string }>; riesgos: Array<FieldNoteRisk & { probability: number; impact_company: number; impact_people: number }> }) =>
-  api<{ zonas: Zone[]; riesgos: Risk[] }>(`${BASE}/${encodeURIComponent(studyId)}/agente/confirmar`, json('POST', body));
+export const confirmFromNote = (studyId: string, body: { zonas_nuevas: Array<{ ref: string; nombre: string }>; riesgos: Array<FieldNoteRisk & { probability: number; impact_company: number; impact_people: number }>; respuestas_recorrido: FieldNoteAnswer[] }) =>
+  api<{ zonas: Zone[]; riesgos: Risk[]; respuestas: unknown[] }>(`${BASE}/${encodeURIComponent(studyId)}/agente/confirmar`, json('POST', body));
 
 // Caracterización de la sede (tramo 5).
 export const addCharacterizationRow = (studyId: string, section: CharacterizationSection, body: Record<string, unknown>) =>

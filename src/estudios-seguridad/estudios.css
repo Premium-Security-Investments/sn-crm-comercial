@@ -152,3 +152,10 @@
 .es-bt-gap > span{color:#b42318;font-weight:600}
 .es-bt-gap > small{color:#b42318}
 @media (max-width:760px){.es-bt-grid{grid-template-columns:1fr}.es-bt-knot{border-radius:11px;min-height:0}}
+/* Conversar con Vig-IA (2026-11-14): los turnos anteriores quedan a la vista. */
+.es-chat{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.es-chat-yo,.es-chat-vigia{margin:0;padding:8px 12px;border-radius:10px}
+.es-chat-yo{background:#fff;border:1px solid #e2e8f0}
+.es-chat-vigia{background:#f3effd;border:1px solid #e4dcf8}
+.es-chat-vigia em{font-style:normal;color:#40516b}
+.es-subtitle{margin:4px 0 0;font-size:15px;color:#40516b}
