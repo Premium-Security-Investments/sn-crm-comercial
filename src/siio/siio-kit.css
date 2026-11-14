@@ -203,3 +203,12 @@
 /* En pantallas angostas la tabla se desliza de lado en vez de aplastar la primera columna: las palabras no se parten. */
 .siio-dashboard .siio-tabla th,.siio-dashboard .siio-tabla td{overflow-wrap:normal;word-break:normal;hyphens:manual}
 .siio-dashboard .siio-tabla th:first-child,.siio-dashboard .siio-tabla td:first-child{min-width:9.5rem}
+
+/* ---- 12 · Filas de cifras ---- */
+.siio-dashboard .siio-cifras{display:grid;gap:10px}
+.siio-dashboard .siio-cifras-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.siio-dashboard .siio-cifras-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.siio-dashboard .siio-cifras-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.siio-dashboard .siio-cifra small strong{color:var(--tinta)}
+@media(max-width:1020px){.siio-dashboard .siio-cifras-3,.siio-dashboard .siio-cifras-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.siio-dashboard .siio-cifras-2,.siio-dashboard .siio-cifras-3,.siio-dashboard .siio-cifras-4{grid-template-columns:1fr}}

@@ -59,8 +59,12 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
 test('cartera: lo vencido con todos sus tramos y los meses de deuda comparados con IVA', () => {
   const torre = read('src/siio/SiioTorreAvancys.tsx');
   assert.match(torre, /const IVA = 1\.19;/);
-  assert.match(torre, /const meses = mensual \? fila\.vencido \/ \(mensual \* IVA\) : null;/);
-  assert.match(torre, /\(c\.tramos \|\| \[\]\)\.map\(tramo => <Cifra/);
+  assert.match(torre, /meses: mensual \? fila\.vencido \/ \(mensual \* IVA\) : null/);
+  assert.match(torre, /\(c\.tramos \|\| \[\]\)\.map\(tramo => <CifraKit/);
+  // Cartera (PR 4): el cruce por NIT no empareja nombres sin NIT entre sí, y la pestaña no es tarjeta dentro de tarjeta.
+  assert.match(torre, /const nitDeudor = \(nombre: string\) => nitDe\(nombre\) \|\| `sin-nit:\$\{nombre\}`;/);
+  assert.match(torre, /además pierde plata/);
+  assert.match(read('src/siio/SiioExecutiveView.tsx'), /className="siio-pantalla" role="tabpanel" aria-label="Cartera"/);
   assert.match(torre, /etiqueta="Sin vencer"/);
 });
 
