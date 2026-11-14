@@ -73,20 +73,6 @@ const MAX_CLIENTES = 15;
 const MESES_PIERDEN = 3;
 const IVA = 1.19;
 
-function Cifra({ etiqueta, valor, comparacion, alerta }: { etiqueta: string; valor: string; comparacion?: string | null; alerta?: boolean }) {
-  return <div className={`siio-key-figure${alerta ? ' siio-card-alert' : ''}`}>
-    <small>{etiqueta}</small>
-    <strong>{valor}</strong>
-    {comparacion ? <span className="siio-key-comparison">{comparacion}</span> : null}
-  </div>;
-}
-
-function cambio(actual: number, anterior: number | undefined, etiqueta: string) {
-  if (anterior === undefined) return null;
-  const diferencia = actual - anterior;
-  return `${diferencia >= 0 ? 'Sube' : 'Baja'} ${millones(Math.abs(diferencia))} frente a ${etiqueta} (${millones(anterior)})`;
-}
-
 type OpcionMes = { mes: string; etiqueta: string; fuente: 'oficial' | 'automatico' | 'proyeccion' | 'en_vivo' };
 // Lo que muestran las cifras de un mes, venga del automático o del Excel de Finanzas.
 type Resumen = { ingresos: number; costos: number; gastos: number; utilidad: number; fuente: string };
@@ -487,47 +473,70 @@ function DetalleClientes({ mes, datos }: { mes: string; datos: Clientes | 'carga
   </>;
 }
 
+// Una cifra del kit: etiqueta, valor tabular y nota; en rojo cuando es pérdida o vencido; atenuada sin dato.
+function CifraKit({ etiqueta, valor, nota, tono, chip }: { etiqueta: string; valor: string; nota?: React.ReactNode; tono?: 'mal' | 'vacia'; chip?: React.ReactNode }) {
+  return <div className={`siio-cifra${tono ? ` ${tono}` : ''}`}>
+    <span>{etiqueta}{chip}</span>
+    <strong>{valor}</strong>
+    {nota ? <small>{nota}</small> : null}
+  </div>;
+}
+
+// Cartera (contrato de la maqueta, Fase 3). La cartera sale de la contabilidad (cuentas 1305), con la que vino de
+// Yeminus; lo heredado y la plata recibida sin identificar se dicen con su responsable.
 export function SiioPestanaCartera({ t }: { t: TorreAvancys }) {
   const c = t.torre?.cartera;
   if (c?.error) return <p className="siio-alert-text">No se pudo leer la cartera: {c.error}</p>;
   if (!c?.total || !c.vencido) return <p className="siio-secondary">Sin datos de cartera todavía.</p>;
-  const ingresoMes = new Map((t.torre?.clientes?.clientes || []).map(fila => [nitDe(fila.cliente), fila.ingresos]));
+  const clientesMes = t.torre?.clientes?.clientes || [];
+  // El cruce es por NIT; un nombre sin NIT no se empareja con nada (si no, todos los «sin NIT» serían el mismo).
+  const ingresoMes = new Map(clientesMes.filter(fila => nitDe(fila.cliente)).map(fila => [nitDe(fila.cliente), fila.ingresos]));
+  const pierdePlata = new Set(clientesMes.filter(fila => fila.ingresos > 0 && fila.margen < 0).map(fila => nitDe(fila.cliente)).filter(Boolean));
+  const nitDeudor = (nombre: string) => nitDe(nombre) || `sin-nit:${nombre}`;
   const cerrado = t.torre?.mes_cerrado ? t.resumenDe(t.torre.mes_cerrado) : null;
   const dias = cerrado?.ingresos ? Math.round((c.total.saldo / (cerrado.ingresos * IVA)) * 30) : null;
+  // La deuda viene con IVA y el ingreso del cliente sin IVA: se lleva el ingreso a valor facturado (con IVA).
+  const deudores = (c.deudores || []).map(fila => {
+    const mensual = ingresoMes.get(nitDeudor(fila.cliente));
+    return { ...fila, meses: mensual ? fila.vencido / (mensual * IVA) : null };
+  });
+  const masMeses = Math.max(1, ...deudores.map(fila => fila.meses || 0));
+  const viejos = (c.tramos || []).filter(tramo => tramo.tramo.startsWith('61') || tramo.tramo.startsWith('Más'));
   return <>
     {/* Lo vencido y todos sus tramos, para que se vea que suman (Juan, 2026-11-13). Vencida = pasó la fecha de
-        vencimiento de la factura, aunque sea por un día; los tramos se cuentan desde esa fecha. */}
-    <div className="siio-key-grid siio-key-grid-3">
-      <Cifra etiqueta="Por cobrar hoy" valor={millones(c.total.saldo)} comparacion={dias ? `≈ ${dias} días de facturación` : null} />
-      <Cifra etiqueta="Sin vencer" valor={millones(c.total.saldo - c.vencido.saldo)} comparacion="todavía no llega a su fecha de pago" />
-      <Cifra etiqueta="Vencida" valor={millones(c.vencido.saldo)} alerta={c.vencido.saldo > c.total.saldo / 2} comparacion={`${pct(c.vencido.saldo, c.total.saldo)} de la cartera, aunque sea por un día`} />
+        vencimiento, aunque sea por un día; los tramos se cuentan desde esa fecha. */}
+    <div className="siio-cifras siio-cifras-3">
+      <CifraKit etiqueta="Por cobrar hoy" valor={millones(c.total.saldo)} nota={dias ? `≈ ${dias} días de facturación` : null} />
+      <CifraKit etiqueta="Sin vencer" valor={millones(c.total.saldo - c.vencido.saldo)} nota="todavía no llega a su fecha de pago" />
+      <CifraKit etiqueta="Vencida" valor={millones(c.vencido.saldo)} tono="mal" nota={`${pct(c.vencido.saldo, c.total.saldo)} de la cartera, aunque sea por un día`} />
     </div>
-    <div className="siio-key-grid siio-key-grid-4">
-      {(c.tramos || []).map(tramo => <Cifra key={tramo.tramo} etiqueta={`Vencida ${tramo.tramo.toLowerCase()}`} valor={millones(tramo.saldo)}
-        comparacion={c.vencido?.saldo ? `${pct(tramo.saldo, c.vencido.saldo)} de lo vencido` : null} alerta={tramo.saldo > 0 && (tramo.tramo.startsWith('61') || tramo.tramo.startsWith('Más'))} />)}
+    <div className="siio-cifras siio-cifras-4">
+      {(c.tramos || []).map(tramo => <CifraKit key={tramo.tramo} etiqueta={`Vencida ${tramo.tramo.toLowerCase()}`} valor={millones(tramo.saldo)}
+        tono={viejos.includes(tramo) && tramo.saldo > 0 ? 'mal' : undefined} nota={c.vencido?.saldo ? `${pct(tramo.saldo, c.vencido.saldo)} de lo vencido` : null} />)}
     </div>
-    {/* La cartera sale de la contabilidad (cuentas 1305), con la que vino de Yeminus. Lo heredado y la plata
-        recibida sin identificar se dicen con su responsable (Juan, 2026-11-14: «la Torre muestra quién no está al día»). */}
-    {c.heredado_yeminus?.saldo || c.consignaciones_sin_identificar?.saldo ? <div className="siio-key-grid siio-key-grid-2">
-      {c.heredado_yeminus?.saldo ? <Cifra etiqueta="Viene de antes de agosto (Yeminus)" valor={millones(c.heredado_yeminus.saldo)} alerta
-        comparacion={`${c.heredado_yeminus.facturas.toLocaleString('es-CO')} facturas cargadas como saldo inicial y sin cobrar · Cartera`} /> : null}
-      {c.consignaciones_sin_identificar?.saldo ? <Cifra etiqueta="Consignaciones sin identificar" valor={millones(c.consignaciones_sin_identificar.saldo)} alerta
-        comparacion={`${c.consignaciones_sin_identificar.partidas.toLocaleString('es-CO')} pagos recibidos que no se han aplicado a ningún cliente · Tesorería y Cartera`} /> : null}
+    {c.heredado_yeminus?.saldo || c.consignaciones_sin_identificar?.saldo ? <div className="siio-cifras siio-cifras-2">
+      {c.heredado_yeminus?.saldo ? <CifraKit etiqueta="Viene de antes de agosto (Yeminus)" valor={millones(c.heredado_yeminus.saldo)} tono="mal"
+        nota={<>{c.heredado_yeminus.facturas.toLocaleString('es-CO')} facturas cargadas como saldo inicial y sin cobrar · <strong>Cartera</strong></>} /> : null}
+      {c.consignaciones_sin_identificar?.saldo ? <CifraKit etiqueta="Consignaciones sin identificar" valor={millones(c.consignaciones_sin_identificar.saldo)} tono="mal"
+        nota={<>{c.consignaciones_sin_identificar.partidas.toLocaleString('es-CO')} pagos recibidos sin aplicar a ningún cliente · <strong>Tesorería y Cartera</strong></>} /> : null}
     </div> : null}
-    <div className="siio-table-wrap"><table>
-      <thead><tr><th>Quién debe más (vencido)</th><th>Vencido</th><th>Equivale a</th></tr></thead>
-      <tbody>{(c.deudores || []).map(fila => {
-        // La deuda viene con IVA y el ingreso del cliente sin IVA: se lleva el ingreso a valor facturado (con IVA).
-        const mensual = ingresoMes.get(nitDe(fila.cliente));
-        const meses = mensual ? fila.vencido / (mensual * IVA) : null;
-        return <tr key={fila.cliente} className={meses !== null && meses >= 2 ? 'siio-fila-alerta' : undefined}>
-          <td>{fila.cliente.replace(/^(\[[^\]]+\]\s*)+/, '')}</td>
-          <td>{millones(fila.vencido)}</td>
-          <td>{meses !== null ? `${(Math.round(meses * 10) / 10).toLocaleString('es-CO')} meses de facturación` : <span className="siio-secondary">—</span>}</td>
-        </tr>;
-      })}</tbody>
-    </table></div>
-    <p className="siio-pulse-footnote">Partidas abiertas de las cuentas de clientes en la contabilidad de Avancys al {c.hoy}, incluida la cartera que vino de Yeminus con su vencimiento original.</p>
+    <section className="siio-panel" aria-label="Quién debe más">
+      <h2>Quién debe más (vencido)</h2>
+      <div className="siio-tabla-wrap"><table className="siio-tabla">
+        <thead><tr><th>Cliente</th><th className="num">Vencido</th><th className="num total">Equivale a</th></tr></thead>
+        <tbody>{deudores.map(fila => {
+          const enRojo = fila.meses !== null && fila.meses >= 2;
+          return <tr key={fila.cliente}>
+            <td><span className="nombre">{sinCodigo(fila.cliente)}</span>{pierdePlata.has(nitDeudor(fila.cliente)) ? <span className="siio-chip marca">además pierde plata</span> : null}</td>
+            <td className="num mal"><strong>{millones(fila.vencido)}</strong></td>
+            <td className={`num total${enRojo ? ' mal' : ''}`}>{fila.meses !== null
+              ? <><strong>{(Math.round(fila.meses * 10) / 10).toLocaleString('es-CO')} {fila.meses >= 0.95 && fila.meses < 1.05 ? 'mes' : 'meses'}</strong><span className="siio-magnitud"><i style={{ width: `${Math.round((fila.meses / masMeses) * 100)}%` }} /></span></>
+              : <><strong>—</strong><small>sin facturación en el último mes cerrado</small></>}</td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+      <p className="siio-nota" style={{ marginTop: 6 }}>«Equivale a»: la deuda vencida sobre lo que se le factura al mes a ese cliente, ambas con IVA; en rojo, dos meses o más. Partidas abiertas de las cuentas de clientes en la contabilidad de Avancys al {c.hoy ? new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${c.hoy}T12:00:00Z`)) : '—'}, incluida la cartera que vino de Yeminus con su vencimiento original.</p>
+    </section>
   </>;
 }
 

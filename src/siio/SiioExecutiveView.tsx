@@ -203,7 +203,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
         </details>
       </section>
     </section> : null}
-    {pestana === 'cartera' ? <section className="panel" role="tabpanel" aria-label="Cartera"><SiioPestanaCartera t={torre} /></section> : null}
+    {pestana === 'cartera' ? <section className="siio-pantalla" role="tabpanel" aria-label="Cartera"><SiioPestanaCartera t={torre} /></section> : null}
     {pestana === 'comercial' ? <>
       <SiioEstaSemana summary={estaSemana} followups={attentionFollowups} today={today} />
       <Panel title="Lo que hay que decidir">
