@@ -99,40 +99,38 @@ export function SiioRecommendations({ canGenerate, followups, today, onCreateFol
   const remaining = state?.button.remaining_today ?? 0;
   const items = [...(state?.recommendations || [])].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.position - b.position);
 
-  return <section className="panel siio-recommendations" aria-labelledby="siio-recommendations-title">
-    <header className="siio-recommendations-head">
+  // Vig-IA (contrato de la maqueta, Fase 3): cabecera con la fecha y el botón; cada recomendación con la ficha de su
+  // prioridad, la acción, el porqué y sus fuentes; al final, lo que no pudo evaluar.
+  return <>
+    <div className="siio-sub">
       <div>
-        <span className="siio-eyebrow">Vig-IA Gerencia</span>
-        <h2 id="siio-recommendations-title">Recomendaciones de la semana</h2>
-        <p className="siio-secondary">{state?.run ? generatedLabel(state.run) : 'Se generan cada lunes a las 6:30 a. m. y cuando alguien presiona el botón.'}</p>
+        <h2 className="siio-titulo-pantalla">Recomendaciones de la semana</h2>
+        <p className="siio-nota">{state?.run ? generatedLabel(state.run) : 'Se generan cada lunes a las 6:30 a. m. y cuando alguien presiona el botón.'}</p>
       </div>
-      {canGenerate ? <div className="siio-recommendations-action">
-        <button type="button" onClick={() => void generate()} disabled={busy || state?.in_progress || remaining === 0}>
+      {canGenerate ? <div className="siio-reco-accion">
+        <button type="button" className="siio-boton-primario" onClick={() => void generate()} disabled={busy || state?.in_progress || remaining === 0}>
           {busy || state?.in_progress ? 'Vig-IA está analizando… (hasta 2 minutos)' : 'Generar recomendaciones'}
         </button>
-        <small>{remaining === 0 ? 'Ya se generaron 3 veces hoy. Vuelva mañana.' : `Quedan ${remaining} de ${state?.button.limit ?? 3} por hoy`}</small>
+        <p className="siio-nota">{remaining === 0 ? 'Ya se generaron 3 veces hoy. Vuelva mañana.' : `Quedan ${remaining} de ${state?.button.limit ?? 3} por hoy`}</p>
       </div> : null}
-    </header>
+    </div>
 
-    {message ? <p className="siio-followup-error" role="alert">{message}</p> : null}
-    {loadError ? <p className="siio-secondary">No se pudieron cargar las recomendaciones.</p> : null}
-    {state && !state.run && !loadError ? <p className="siio-secondary">Todavía no hay recomendaciones. {canGenerate ? 'Presione "Generar recomendaciones" para la primera.' : ''}</p> : null}
+    {message ? <p className="siio-alert-text" role="alert">{message}</p> : null}
+    {loadError ? <p className="siio-nota">No se pudieron cargar las recomendaciones.</p> : null}
+    {state && !state.run && !loadError ? <p className="siio-nota">Todavía no hay recomendaciones. {canGenerate ? 'Presione «Generar recomendaciones» para la primera.' : ''}</p> : null}
+    {state?.run?.summary ? <p className="siio-reco-resumen">{state.run.summary}</p> : null}
 
-    {state?.run?.summary ? <p className="siio-recommendations-summary">{state.run.summary}</p> : null}
-
-    {items.length ? <ol className="siio-recommendation-list">{items.map(item => <li key={item.id} className={`siio-recommendation siio-recommendation-${item.priority}`}>
-      <div className="siio-recommendation-tags">
-        <span className="siio-recommendation-area">{AREA_LABELS[item.area]}</span>
-        <span className="siio-recommendation-priority">Prioridad {item.priority}</span>
-      </div>
-      <strong>{item.title}</strong>
+    {items.map(item => <article key={item.id} className="siio-panel siio-reco" aria-label={item.title}>
+      <header>
+        <span className={`siio-plazo ${item.priority === 'baja' ? '' : item.priority}`}><strong>{item.priority === 'alta' ? 'Alta' : item.priority === 'media' ? 'Media' : 'Baja'}</strong><small>{AREA_LABELS[item.area]}</small></span>
+        <h3>{item.title}</h3>
+      </header>
       <p>{item.recommendation}</p>
-      <p className="siio-recommendation-why"><span>Por qué:</span> {item.rationale}</p>
-      <small>Fuentes: {item.sources.map(source => SOURCE_LABELS[source] || source).join(' · ')} · Responsable sugerido: {item.suggested_owner}</small>
-      <div className="siio-recommendation-actions">
+      <p className="siio-reco-porque"><strong>Por qué:</strong> {item.rationale}</p>
+      <footer>
         <span role="group" aria-label="¿Le sirvió esta recomendación?">
-          <button type="button" className={`secondary${item.feedback === 'util' ? ' is-selected' : ''}`} aria-pressed={item.feedback === 'util'} onClick={() => void giveFeedback(item, 'util')}>Útil</button>
-          <button type="button" className={`secondary${item.feedback === 'no_util' ? ' is-selected' : ''}`} aria-pressed={item.feedback === 'no_util'} onClick={() => void giveFeedback(item, 'no_util')}>No útil</button>
+          <button type="button" className={`siio-enlace${item.feedback === 'util' ? ' activo' : ''}`} aria-pressed={item.feedback === 'util'} onClick={() => void giveFeedback(item, 'util')}>Útil</button>
+          <button type="button" className={`siio-enlace${item.feedback === 'no_util' ? ' activo' : ''}`} aria-pressed={item.feedback === 'no_util'} onClick={() => void giveFeedback(item, 'no_util')}>No útil</button>
         </span>
         {followups?.permissions.view ? <FollowupCell
           existing={openFollowupFor(followups, recommendationOriginRef(item))}
@@ -140,13 +138,14 @@ export function SiioRecommendations({ canGenerate, followups, today, onCreateFol
           canCreate={Boolean(followups.permissions.create)}
           onCreate={() => onCreateFollowup({ title: item.title, owner_label: item.suggested_owner, due_date: addDays(today, item.due_in_days), origin_type: 'recomendacion_ia', origin_ref: recommendationOriginRef(item), origin_label: `Recomendación de Vig-IA: ${item.title}`.slice(0, 300) })}
         /> : null}
-      </div>
-    </li>)}</ol> : null}
+        <span className="siio-nota">Fuentes: {item.sources.map(source => SOURCE_LABELS[source] || source).join(' · ')} · Responsable sugerido: <strong>{item.suggested_owner}</strong></span>
+      </footer>
+    </article>)}
 
-    {state?.run?.missing_data?.length ? <div className="siio-recommendations-missing">
-      <h4>Lo que Vig-IA no pudo evaluar</h4>
-      <ul>{state.run.missing_data.map(entry => <li key={entry}>{entry}</li>)}</ul>
-    </div> : null}
-    {state?.run ? <p className="siio-pulse-footnote">Las escribe la IA con las cifras publicadas en la Torre (sin nombres de personas). Son propuestas: una persona decide si se vuelven un seguimiento.</p> : null}
-  </section>;
+    {state?.run?.missing_data?.length ? <section className="siio-panel" aria-label="Lo que Vig-IA no pudo evaluar">
+      <h2>Lo que Vig-IA no pudo evaluar (y quién lo destraba)</h2>
+      <ul className="siio-lista">{state.run.missing_data.map(entry => <li key={entry}>{entry}</li>)}</ul>
+    </section> : null}
+    {state?.run ? <p className="siio-nota">Las escribe la IA con las cifras publicadas en la Torre (sin nombres de personas). Son propuestas: una persona decide si se vuelven un seguimiento.</p> : null}
+  </>;
 }

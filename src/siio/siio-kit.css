@@ -250,3 +250,18 @@
 .siio-dashboard .siio-parametro-subtitulo{display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:13px;color:var(--tinta)}
 .siio-dashboard .siio-parametro-pendiente{margin-top:8px;padding:10px 12px;border-radius:var(--radio-interno);background:var(--mal-fondo);color:var(--mal-texto);font-size:13px;line-height:1.45}
 .siio-dashboard .siio-parametro-pendiente strong{color:var(--mal)}
+
+/* ---- 16 · Vig-IA ---- */
+.siio-dashboard .siio-titulo-pantalla{margin:0;font-size:16px;color:var(--tinta)}
+.siio-dashboard .siio-reco-accion{display:grid;gap:3px;justify-items:end}
+.siio-dashboard .siio-reco-resumen{margin:0;color:var(--tinta);font-size:15px;line-height:1.5}
+.siio-dashboard .siio-reco{display:grid;gap:8px}
+.siio-dashboard .siio-reco header{display:flex;align-items:center;gap:12px}
+.siio-dashboard .siio-reco h3{margin:0;font-size:15.5px;color:var(--tinta);line-height:1.35}
+.siio-dashboard .siio-reco p{margin:0;color:var(--texto);font-size:14px;line-height:1.5}
+.siio-dashboard .siio-reco .siio-reco-porque{color:var(--suave)}
+.siio-dashboard .siio-reco footer{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding-top:8px;border-top:1px solid var(--linea)}
+.siio-dashboard .siio-reco footer [role=group]{display:inline-flex;gap:12px}
+.siio-dashboard .siio-reco footer>.siio-nota{margin-left:auto}
+.siio-dashboard .siio-enlace.activo{text-decoration:underline;text-underline-offset:3px}
+@media(max-width:560px){.siio-dashboard .siio-reco-accion{justify-items:start}.siio-dashboard .siio-reco header{align-items:flex-start}.siio-dashboard .siio-reco footer>.siio-nota{margin-left:0}}

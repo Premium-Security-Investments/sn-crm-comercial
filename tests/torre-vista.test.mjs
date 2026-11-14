@@ -120,3 +120,14 @@ test('parámetros calca la maqueta y los créditos salen de Avancys; a mano solo
   assert.match(read('src/siio/SiioExecutiveView.tsx'), /<SiioPestanaParametros creditos=\{torre\.torre\?\.creditos \?\? null\} \/>/);
   assert.match(read('avancys-torre.js'), /creditos = await creditosAvancys\(ejecutar, \{ hoy: ahora\(\)\.toISOString\(\)\.slice\(0, 10\) \}\);/);
 });
+
+test('vig-ia calca la maqueta: ficha de prioridad, porqué, fuentes y lo que no pudo evaluar', () => {
+  const reco = read('src/siio/SiioRecommendations.tsx');
+  assert.match(read('src/siio/SiioExecutiveView.tsx'), /className="siio-pantalla" role="tabpanel" aria-label="Vig-IA"/);
+  assert.match(reco, /<article key=\{item\.id\} className="siio-panel siio-reco"/);
+  assert.match(reco, /className=\{`siio-plazo \$\{item\.priority === 'baja' \? '' : item\.priority\}`\}/);
+  assert.match(reco, /<strong>Por qué:<\/strong>/);
+  assert.match(reco, /Lo que Vig-IA no pudo evaluar \(y quién lo destraba\)/);
+  assert.match(reco, /className="siio-boton-primario"/);
+  assert.doesNotMatch(read('src/siio/siio.css'), /siio-recommendation/, 'sin el CSS de la versión anterior');
+});
