@@ -262,6 +262,10 @@ export function bloqueAvancys(torre) {
       vencida: enMillones(c.vencido.saldo),
       tramos: (c.tramos || []).map(t => ({ tramo: t.tramo, saldo: enMillones(t.saldo) })),
       deudores: (c.deudores || []).slice(0, 6).map(d => ({ cliente: String(d.cliente).replace(/^(\[[^\]]+\]\s*)+/, ''), vencido: enMillones(d.vencido) })),
+      // Desde la contabilidad: lo que viene de Yeminus (antes de agosto de 2026) y la plata recibida sin aplicar.
+      heredada_de_yeminus: c.heredado_yeminus ? enMillones(c.heredado_yeminus.saldo) : null,
+      consignaciones_sin_identificar: c.consignaciones_sin_identificar ? enMillones(c.consignaciones_sin_identificar.saldo) : null,
+      fuente: 'partidas abiertas de las cuentas de clientes (1305) en la contabilidad de Avancys, incluida la cartera cargada de Yeminus con su vencimiento original',
     } : null,
   };
 }

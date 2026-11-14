@@ -161,34 +161,63 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
   };
 }
 
-// ¿Nos están pagando? Facturas de cliente publicadas con saldo, por antigüedad del vencimiento.
-// `amount_residual` viene con IVA. La historia de Avancys empieza en agosto de 2026: lo anterior no
-// está aquí.
-const FACTURAS = 'account.move';
+// ¿Nos están pagando? La cartera sale de la contabilidad, no de las facturas: las partidas abiertas de
+// las cuentas de clientes (1305), con su fecha de vencimiento. Así entra la cartera que venía de
+// Yeminus, que se cargó el 2026-07-31 como «saldos iniciales» (un asiento por factura original, con
+// su vencimiento) y que las facturas de Avancys no muestran. `amount_residual` viene con IVA.
+// Las consignaciones recibidas que nadie ha aplicado a un cliente (13051500) van aparte: es plata que
+// entró y no se identificó.
+const LINEAS_CONTABLES = 'account.move.line';
+export const CUENTA_CONSIGNACIONES = '13051500';
 export const MAX_DEUDORES = 10;
 const diaMenos = (hoy, dias) => new Date(Date.parse(`${hoy}T00:00:00Z`) - dias * 86400000).toISOString().slice(0, 10);
+const abiertas = [['parent_state', '=', 'posted'], ['reconciled', '=', false], ['amount_residual', '!=', 0]];
+const deClientes = [['account_id.code', '=like', '1305%'], ['account_id.code', '!=', CUENTA_CONSIGNACIONES], ['account_id.internal_type', '=', 'receivable']];
+// El tercero sale como «[SEDE] [NIT] NOMBRE»: se agrupa por NIT para juntar las sedes de un mismo cliente.
+const nitDeNombre = nombre => (String(nombre).match(/\[(\d{6,})\]/) || [])[1] || null;
+const nombreLimpio = nombre => String(nombre).replace(/^(\s*\[[^\]]*\]\s*)+/, '').trim();
 
 export async function carteraVencida(ejecutar, { hoy }) {
-  const conSaldo = [['move_type', '=', 'out_invoice'], ['state', '=', 'posted'], ['amount_residual', '>', 0]];
-  const sumar = async filtro => {
-    const [grupo] = (await ejecutar(FACTURAS, 'read_group', [[...conSaldo, ...filtro], ['amount_residual:sum'], []], { lazy: false })) || [];
+  // La fecha de vencimiento manda; una partida sin ella (notas, cruces) cuenta desde su fecha contable.
+  const vence = (desde, hasta) => ['|', '&', ['date_maturity', '!=', false], ...rango('date_maturity', desde, hasta), '&', ['date_maturity', '=', false], ...rango('date', desde, hasta)];
+  const rango = (campo, desde, hasta) => {
+    const filtro = [];
+    if (hasta !== null) filtro.push([campo, '<', hasta]);
+    if (desde !== null) filtro.push([campo, '>=', desde]);
+    return filtro.length === 2 ? ['&', ...filtro] : filtro.length === 1 ? filtro : [[campo, '!=', false]];
+  };
+  const sumar = async (filtro = []) => {
+    const [grupo] = (await ejecutar(LINEAS_CONTABLES, 'read_group', [[...abiertas, ...deClientes, ...filtro], ['amount_residual:sum'], []], { lazy: false })) || [];
     return { saldo: Number(grupo?.amount_residual) || 0, facturas: grupo?.__count || 0 };
   };
-  const total = await sumar([]);
-  const vencido = await sumar([['invoice_date_due', '<', hoy]]);
+  const total = await sumar();
+  const vencido = await sumar(vence(null, hoy));
   const tramos = [];
   for (const [etiqueta, desde, hasta] of [['1 a 30 días', 30, 0], ['31 a 60 días', 60, 30], ['61 a 90 días', 90, 60], ['Más de 90 días', null, 90]]) {
-    const filtro = [['invoice_date_due', '<', diaMenos(hoy, hasta)]];
-    if (desde !== null) filtro.push(['invoice_date_due', '>=', diaMenos(hoy, desde)]);
-    tramos.push({ tramo: etiqueta, ...(await sumar(filtro)) });
+    tramos.push({ tramo: etiqueta, ...(await sumar(vence(desde === null ? null : diaMenos(hoy, desde), diaMenos(hoy, hasta)))) });
   }
-  const grupos = (await ejecutar(FACTURAS, 'read_group',
-    [[...conSaldo, ['invoice_date_due', '<', hoy]], ['amount_residual:sum'], ['partner_id']],
-    { lazy: false, orderby: 'amount_residual desc', limit: MAX_DEUDORES })) || [];
-  const deudores = grupos
-    .filter(grupo => Array.isArray(grupo.partner_id))
-    .map(grupo => ({ cliente: String(grupo.partner_id[1]), vencido: Number(grupo.amount_residual) || 0, facturas: grupo.__count || 0 }));
-  return { hoy, total, vencido, tramos, deudores };
+  // Lo que viene de Yeminus (antes de agosto de 2026), para decir cuánto de lo vencido es herencia.
+  const heredado = await sumar([['date', '<', '2026-08-01']]);
+  const [consignacion] = (await ejecutar(LINEAS_CONTABLES, 'read_group',
+    [[...abiertas, ['account_id.code', '=', CUENTA_CONSIGNACIONES]], ['amount_residual:sum'], []], { lazy: false })) || [];
+  const grupos = (await ejecutar(LINEAS_CONTABLES, 'read_group',
+    [[...abiertas, ...deClientes, ...vence(null, hoy)], ['amount_residual:sum'], ['partner_id']], { lazy: false })) || [];
+  const porCliente = new Map();
+  for (const grupo of grupos) {
+    if (!Array.isArray(grupo.partner_id)) continue;
+    const nombre = String(grupo.partner_id[1]);
+    const clave = nitDeNombre(nombre) || nombreLimpio(nombre);
+    const actual = porCliente.get(clave) || { cliente: nombre, vencido: 0, facturas: 0 };
+    actual.vencido += Number(grupo.amount_residual) || 0;
+    actual.facturas += grupo.__count || 0;
+    porCliente.set(clave, actual);
+  }
+  const deudores = [...porCliente.values()].filter(fila => fila.vencido > 0).sort((a, b) => b.vencido - a.vencido).slice(0, MAX_DEUDORES);
+  return {
+    hoy, total, vencido, tramos, deudores,
+    heredado_yeminus: heredado,
+    consignaciones_sin_identificar: { saldo: -(Number(consignacion?.amount_residual) || 0), partidas: consignacion?.__count || 0 },
+  };
 }
 
 let guardado = null;
