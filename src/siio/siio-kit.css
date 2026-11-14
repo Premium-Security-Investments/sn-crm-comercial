@@ -145,8 +145,8 @@
 .siio-tabla .vacio{padding:18px 10px;text-align:center;color:var(--sutil)}
 
 /* ---- 8 · Selector de mes ---- */
-.siio-selector{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--suave);max-width:240px}
-.siio-selector select{appearance:none;font:inherit;font-size:14px;font-weight:650;color:var(--tinta);padding:8px 32px 8px 10px;border:1px solid var(--linea-fuerte);border-radius:var(--radio-interno);background:var(--panel) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="%231b64f2" stroke-width="1.8" stroke-linecap="round"/></svg>') no-repeat right 11px center;cursor:pointer}
+.siio-selector{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--suave);max-width:100%}
+.siio-selector select{min-width:260px;max-width:100%;appearance:none;font:inherit;font-size:14px;font-weight:650;color:var(--tinta);padding:8px 32px 8px 10px;border:1px solid var(--linea-fuerte);border-radius:var(--radio-interno);background:var(--panel) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="%231b64f2" stroke-width="1.8" stroke-linecap="round"/></svg>') no-repeat right 11px center;cursor:pointer}
 .siio-selector select:hover{border-color:var(--accion)}
 
 
@@ -182,3 +182,24 @@
 .siio-dashboard .siio-pestanas.module-segmented-nav button{flex:none;width:auto;min-height:0;padding:8px 14px;border:1px solid var(--linea);border-radius:9px;background:var(--panel);box-shadow:none;font-size:13px;font-weight:700;color:var(--suave);white-space:nowrap}
 .siio-dashboard .siio-pestanas.module-segmented-nav button:hover{border-color:var(--linea-fuerte);color:var(--tinta)}
 .siio-dashboard .siio-pestanas.module-segmented-nav button.active{background:var(--tinta);border-color:var(--tinta);color:#fff}
+
+/* ---- 11 · Pantallas internas: sub-cabecera, plegados, dos columnas ---- */
+.siio-dashboard .siio-sub{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:10px}
+.siio-dashboard .siio-dos-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:8px}
+.siio-dashboard .siio-presupuesto{display:grid;gap:10px}
+.siio-dashboard .siio-presupuesto-unidad{display:grid;gap:8px;align-content:start;min-width:0}
+.siio-dashboard .siio-plegado{margin-top:8px;border:1px solid var(--linea);border-radius:var(--radio-interno);background:var(--fondo-suave)}
+.siio-dashboard .siio-plegado>summary{padding:10px 14px;cursor:pointer;list-style:none;font-size:13px;font-weight:650;color:var(--suave)}
+.siio-dashboard .siio-plegado>summary::-webkit-details-marker{display:none}
+.siio-dashboard .siio-plegado>summary::after{content:' · Ver ▾';color:var(--accion);font-weight:700}
+.siio-dashboard .siio-plegado[open]>summary::after{content:' · Ocultar ▴'}
+.siio-dashboard .siio-plegado[open]{background:var(--panel)}
+.siio-dashboard .siio-plegado>:not(summary){margin:0 14px 12px}
+.siio-dashboard .siio-tabla th .siio-chip{margin-left:4px;vertical-align:1px;text-transform:none;letter-spacing:0}
+.siio-dashboard .siio-tabla td small.siio-nota{font-size:11px}
+@media(max-width:1020px){.siio-dashboard .siio-dos-col{grid-template-columns:1fr}}
+/* Cada pestaña es una pila de paneles del kit, sin tarjeta alrededor (nada de tarjetas dentro de tarjetas). */
+.siio-dashboard .siio-pantalla{display:grid;gap:14px;min-width:0}
+/* En pantallas angostas la tabla se desliza de lado en vez de aplastar la primera columna: las palabras no se parten. */
+.siio-dashboard .siio-tabla th,.siio-dashboard .siio-tabla td{overflow-wrap:normal;word-break:normal;hyphens:manual}
+.siio-dashboard .siio-tabla th:first-child,.siio-dashboard .siio-tabla td:first-child{min-width:9.5rem}

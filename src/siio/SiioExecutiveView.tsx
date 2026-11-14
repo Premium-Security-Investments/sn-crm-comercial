@@ -189,7 +189,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
       <SiioRequiereDecision alertas={alertas} onIr={irA} />
     </section> : null}
 
-    {pestana === 'resultados' ? <section className="panel" role="tabpanel" aria-label="Resultados"><SiioPestanaResultados t={torre} /></section> : null}
+    {pestana === 'resultados' ? <section className="siio-pantalla" role="tabpanel" aria-label="Resultados"><SiioPestanaResultados t={torre} /></section> : null}
     {pestana === 'clientes' ? <>
       <section className="panel" role="tabpanel" aria-label="Clientes"><SiioPestanaClientes t={torre} /></section>
       {/* El servicio que se le presta al cliente va al lado de lo que deja: ARA en Bogotá, por ejemplo. */}

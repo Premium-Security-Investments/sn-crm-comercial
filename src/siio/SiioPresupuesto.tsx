@@ -1,5 +1,4 @@
 import type { Presupuesto, UnidadEjecucion } from './SiioTorreAvancys';
-import { Badge } from './SiioUi';
 
 // Presupuesto contra ejecución: el «Mapa de ejecución» de Finanzas (hoja AnVal11) calculado con Avancys y con el
 // mapeo y el presupuesto de Parámetros. Sólo se compara un mes cerrado: con la nómina a medias los rubros no dicen nada.
@@ -20,51 +19,61 @@ export function mesComparable(presupuesto: Presupuesto | null, mes: string) {
 
 export function SiioPresupuesto({ presupuesto, mes }: { presupuesto: Presupuesto | null; mes: string }) {
   if (!presupuesto) return null;
-  if (!presupuesto.disponible) return <section className="siio-presupuesto" aria-label="Presupuesto contra ejecución">
-    <h3>Presupuesto contra ejecución</h3>
+  const encabezado = (texto: string) => <h2>{texto} <span className="siio-chip confirmar">Por confirmar</span></h2>;
+  if (!presupuesto.disponible) return <section className="siio-panel siio-presupuesto" aria-label="Presupuesto contra ejecución">
+    {encabezado('Presupuesto contra ejecución')}
     <p className="siio-secondary">No se pudo calcular: {presupuesto.motivo}</p>
   </section>;
   const fila = mesComparable(presupuesto, mes);
-  if (!fila) return <section className="siio-presupuesto" aria-label="Presupuesto contra ejecución">
-    <h3>Presupuesto contra ejecución</h3>
+  if (!fila) return <section className="siio-panel siio-presupuesto" aria-label="Presupuesto contra ejecución">
+    {encabezado('Presupuesto contra ejecución')}
     <p className="siio-secondary">Todavía no hay un mes cerrado en Avancys hasta {nombreMes(mes)} para comparar.</p>
   </section>;
-  const sinConfirmar = presupuesto.sin_confirmar || [];
-  return <section className="siio-presupuesto" aria-label="Presupuesto contra ejecución">
-    <h3>Presupuesto contra ejecución</h3>
-    {fila.mes !== mes ? <p className="siio-pulse-footnote">{nombreMes(mes)} no está cerrado en la contabilidad: se compara {nombreMes(fila.mes)}, el último mes cerrado.</p> : null}
-    <Unidad nombre="Vigilancia" mes={fila.mes} u={fila.vigilancia} />
-    <Unidad nombre="Tecnología" mes={fila.mes} u={fila.tecnologia} />
-    <p className="siio-pulse-footnote">
-      Cada rubro es el % del ingreso de su unidad, como en el Mapa de ejecución de Finanzas; el de vigilancia lleva la provisión de mes vencido. No incluye los ajustes de cierre que no están en Avancys.
-    </p>
-    {sinConfirmar.length ? <p className="siio-pulse-footnote"><Badge tone="amber">Sin confirmar</Badge> El presupuesto y el mapeo de cuentas se sembraron del Excel; Finanzas los confirma en Parámetros.</p> : null}
-    {fila.sin_mapeo_cuentas ? <p className="siio-pulse-footnote">
+  return <section className="siio-panel siio-presupuesto" aria-label="Presupuesto contra ejecución">
+    {encabezado(`Presupuesto contra ejecución · ${nombreMes(fila.mes).split(' ')[0]}`)}
+    {fila.mes !== mes ? <p className="siio-nota">{nombreMes(mes)} no está cerrado en la contabilidad: se compara {nombreMes(fila.mes)}, el último mes cerrado.</p> : null}
+    <div className="siio-dos-col">
+      <Unidad nombre="Vigilancia" mes={fila.mes} u={fila.vigilancia} />
+      <Unidad nombre="Tecnología" mes={fila.mes} u={fila.tecnologia} />
+    </div>
+    <p className="siio-nota">Cada rubro es el % del ingreso de su unidad, como en el Mapa de ejecución de Finanzas; el de vigilancia lleva la provisión de mes vencido. El presupuesto y el mapeo de cuentas se sembraron del Excel de Finanzas; Finanzas los confirma en Parámetros. No incluye ajustes de cierre que no estén en Avancys.</p>
+    {fila.sin_mapeo_cuentas ? <p className="siio-nota">
       {fila.sin_mapeo_cuentas === 1 ? '1 cuenta con movimiento no tiene rubro' : `${fila.sin_mapeo_cuentas} cuentas con movimiento no tienen rubro`}: {fila.sin_mapeo.map(item => `${item.cuenta} (${millones(item.valor)})`).join(', ')}. Se asignan en Parámetros.
     </p> : null}
   </section>;
 }
 
+// Una unidad de negocio: la frase con la rentabilidad contra lo presupuestado, los rubros que se pasan con la
+// diferencia como columna protagonista, y los rubros completos plegados.
 function Unidad({ nombre, mes, u }: { nombre: string; mes: string; u: UnidadEjecucion }) {
-  if (!u.ingresos) return <p className="siio-secondary">{nombre}: sin ingresos registrados en {nombreMes(mes)}.</p>;
-  const pasados = u.rubros.filter(rubro => rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA);
+  if (!u.ingresos) return <div className="siio-presupuesto-unidad"><h3>{nombre}</h3><p className="siio-secondary">Sin ingresos registrados en {nombreMes(mes)}.</p></div>;
+  const pasados = u.rubros.filter(rubro => rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA).sort((a, b) => (b.diferencia || 0) - (a.diferencia || 0));
+  const mayor = Math.max(0.1, ...pasados.map(rubro => rubro.diferencia || 0));
+  const conDato = u.rubros.filter(rubro => rubro.ejecutado || rubro.presupuesto);
   return <div className="siio-presupuesto-unidad">
-    <h4>{nombre}</h4>
-    <p>
-      En {nombreMes(mes)} dejó <strong>{porcentaje(u.rentabilidad)}</strong>
-      {u.rentabilidad_presupuesto !== null ? <> contra <strong>{porcentaje(u.rentabilidad_presupuesto)}</strong> presupuestado</> : null}.
-      {pasados.length ? <> Se pasan {pasados.length === 1 ? 'un rubro' : `${pasados.length} rubros`}: {pasados.map(rubro => rubro.etiqueta.toLowerCase()).join(', ')}.</> : null}
-    </p>
-    <div className="siio-table-wrap"><table>
-      <thead><tr><th>Rubro</th><th>Presupuesto</th><th>Ejecutado</th><th>Diferencia</th><th>Valor del mes</th></tr></thead>
-      <tbody>{u.rubros.filter(rubro => rubro.ejecutado || rubro.presupuesto).map(rubro => <tr key={rubro.clave} className={rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA ? 'siio-fila-alerta' : undefined}>
+    <h3>{nombre} · dejó {porcentaje(u.rentabilidad)}{u.rentabilidad_presupuesto !== null ? <> contra {porcentaje(u.rentabilidad_presupuesto)} presupuestado</> : null}</h3>
+    {pasados.length ? <div className="siio-tabla-wrap"><table className="siio-tabla">
+      <thead><tr><th>Rubro que se pasa</th><th className="num">Presupuesto</th><th className="num">Ejecutado</th><th className="num total">Diferencia</th></tr></thead>
+      <tbody>{pasados.map(rubro => <tr key={rubro.clave}>
         <td>{rubro.etiqueta}</td>
-        <td>{porcentaje(rubro.presupuesto)}</td>
-        <td>{porcentaje(rubro.pct)}</td>
-        <td>{puntos(rubro.diferencia)}</td>
-        <td>{millones(rubro.ejecutado)}</td>
+        <td className="num"><strong>{porcentaje(rubro.presupuesto)}</strong></td>
+        <td className="num mal"><strong>{porcentaje(rubro.pct)}</strong></td>
+        <td className="num total mal"><strong>{puntos(rubro.diferencia)}</strong><span className="siio-magnitud"><i style={{ width: `${Math.round(((rubro.diferencia || 0) / mayor) * 100)}%` }} /></span></td>
       </tr>)}</tbody>
-      <tfoot><tr><th>Ingresos de {nombre.toLowerCase()}</th><th /><th /><th /><th>{millones(u.ingresos)}</th></tr></tfoot>
-    </table></div>
+    </table></div> : <p className="siio-nota">Ningún rubro se pasa del presupuesto.</p>}
+    <details className="siio-plegado">
+      <summary>Los {u.rubros.length} rubros de {nombre.toLowerCase()}</summary>
+      <div className="siio-tabla-wrap"><table className="siio-tabla">
+        <thead><tr><th>Rubro</th><th className="num">Presupuesto</th><th className="num">Ejecutado</th><th className="num">Diferencia</th><th className="num">Valor del mes</th></tr></thead>
+        <tbody>{conDato.map(rubro => { const pasa = rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA; return <tr key={rubro.clave}>
+          <td>{rubro.etiqueta}</td>
+          <td className="num"><strong>{porcentaje(rubro.presupuesto)}</strong></td>
+          <td className={`num${pasa ? ' mal' : ''}`}><strong>{porcentaje(rubro.pct)}</strong></td>
+          <td className={`num${pasa ? ' mal' : ''}`}><strong>{puntos(rubro.diferencia)}</strong></td>
+          <td className="num"><strong>{millones(rubro.ejecutado)}</strong></td>
+        </tr>; })}</tbody>
+        <tfoot><tr><th>Ingresos de {nombre.toLowerCase()}</th><th className="num" /><th className="num" /><th className="num" /><th className="num">{millones(u.ingresos)}</th></tr></tfoot>
+      </table></div>
+    </details>
   </div>;
 }
