@@ -52,8 +52,9 @@ test('el catálogo tiene los 11 puntos acordados, numerados y con encargado', ()
   assert.equal(RUBROS.length, 18);
   // Tecnología tiene sus propios rubros (21–40 en el Excel), no los de vigilancia.
   assert.deepEqual(RUBROS_TECNOLOGIA.map(rubro => rubro.numero), Array.from({ length: 20 }, (_, i) => 21 + i));
-  // Los dos que ya tienen su pantalla sólo se señalan.
-  assert.deepEqual(PARAMETROS.filter(parametro => parametro.forma === 'externo').map(parametro => parametro.clave), ['clientes_mes_vencido', 'historico']);
+  // Lo que ya vive en otra plataforma sólo se señala (regla de Juan, 2026-11-14): los clientes mes vencido en su
+  // ficha, los indicadores de las licitaciones en Licitaciones y el histórico en el Excel publicado.
+  assert.deepEqual(PARAMETROS.filter(parametro => parametro.forma === 'externo').map(parametro => parametro.clave), ['clientes_mes_vencido', 'requisitos_licitaciones', 'historico']);
   // Las claves guardables son exactamente las que acepta la migración.
   const sql = read('supabase/migrations/219_siio_parametros.sql');
   for (const parametro of PARAMETROS.filter(item => item.forma !== 'externo')) assert.match(sql, new RegExp(`'${parametro.clave}'`));
