@@ -119,3 +119,36 @@ test('cupo: la reserva de la 181 cuenta por equipo y por persona, y una a la vez
   const sql = readFileSync(new URL('../supabase/migrations/181_estudios_seguridad_agente.sql', import.meta.url), 'utf8');
   assert.match(sql, /revoke all on function public\.psi_claim_security_study_agent_run\(uuid, uuid, integer, timestamptz, integer, timestamptz\) from public, anon, authenticated/);
 });
+
+// Conversación (Juan, 2026-11-14): además de riesgos, Vig-IA propone las respuestas del recorrido que la nota contesta.
+test('recorrido: sólo responde lo que la nota dice, con cita; lo ya respondido igual no se repite; confirmar lo guarda', async () => {
+  const { db, detail, study } = await setup();
+  const { input, zoneRefs } = buildFieldNoteInput(detail, NOTE, '2026-11-10');
+  assert.equal(input.recorrido.preguntas.length, 92, 'van las preguntas del recorrido');
+  assert.ok(fieldNoteOutputSchema(CATALOG).properties.respuestas_recorrido.items.properties.codigo.enum.includes('PER-01'));
+  const out = normalizeFieldNoteOutput({
+    ...MODEL_OUTPUT,
+    respuestas_recorrido: [
+      { codigo: 'PER-01', respuesta: 'no', nota: 'Malla rota en el costado norte de la bodega 3.', evidencia_en_nota: 'la malla del costado norte está rota' },
+      { codigo: 'ACC-01', respuesta: 'si', nota: '', evidencia_en_nota: 'hay torniquetes en la entrada' },
+      { codigo: 'SWI-01', respuesta: '', nota: 'Entrarían por la malla rota; lo detecta la ronda, que pasa cada 2 horas.', evidencia_en_nota: 'el vigilante hace ronda cada 2 horas' },
+      { codigo: 'PER-01', respuesta: 'si', nota: '', evidencia_en_nota: 'la malla del costado norte está rota' },
+      { codigo: 'XXX-99', respuesta: 'si', nota: '', evidencia_en_nota: 'la malla' },
+    ],
+  }, { zoneRefs, zones: detail.zones, catalog: CATALOG, note: NOTE, answers: [] });
+  assert.deepEqual(out.respuestas_recorrido.map(item => [item.codigo, item.value]), [['PER-01', 'no'], ['SWI-01', null]], 'sin cita (ACC-01), repetida y desconocida no pasan');
+  assert.equal(out.respuestas_recorrido[0].favorable, false);
+  assert.match(out.avisos.join(' '), /No se respondió ACC-01/);
+
+  await assert.rejects(confirmFieldNote(db, study.id, { respuestas_recorrido: [{ codigo: 'PER-01', value: 'tal vez' }] }, PREPARER), /sí, no o no aplica/);
+  const saved = await confirmFieldNote(db, study.id, { respuestas_recorrido: out.respuestas_recorrido }, PREPARER);
+  assert.equal(saved.respuestas.length, 2);
+  const after = await getStudy(db, study.id);
+  assert.equal(after.recorrido.respondidas, 2);
+  assert.ok(after.recorrido.propuestas.some(item => item.codigo === 'RB-03'), 'la respuesta desfavorable propone su riesgo');
+
+  // Con PER-01 ya en "no", la misma respuesta no se vuelve a proponer.
+  const again = normalizeFieldNoteOutput({ ...MODEL_OUTPUT, respuestas_recorrido: [{ codigo: 'PER-01', respuesta: 'no', nota: 'x', evidencia_en_nota: 'la malla del costado norte está rota' }] },
+    { zoneRefs, zones: detail.zones, catalog: CATALOG, note: NOTE, answers: after.guided_answers });
+  assert.deepEqual(again.respuestas_recorrido, []);
+});
