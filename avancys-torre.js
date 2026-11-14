@@ -109,6 +109,13 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     const [empresa] = (await ejecutar('res.company', 'search_read', [[]], { fields: ['period_lock_date'], limit: 1 })) || [];
     bloqueo = empresa?.period_lock_date || null;
   } catch { bloqueo = null; }
+  // ¿Hay turnos programados en Avancys? Sin programación no hay costo por puesto ni por cliente: la Torre lo dice
+  // en «¿Las fuentes están al día?». El módulo está instalado; si la consulta falla, no se afirma nada.
+  let programaciones = null;
+  try {
+    const cuenta = await ejecutar('hr.roster.programacion', 'search_count', [[]]);
+    programaciones = Number.isFinite(cuenta) ? cuenta : null;
+  } catch { programaciones = null; }
   const meses = marcarMeses(pyg.map(fila => ({
     mes: fila.mes,
     ingresos: fila.totales.ingresos,
@@ -155,6 +162,7 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     mes_anterior: cerrados.at(-2)?.mes || null,
     primera_linea: primerDia,
     bloqueo_contable: bloqueo,
+    programaciones_avancys: programaciones,
     clientes,
     cartera,
     saldos_cuentas: saldosCuentas,

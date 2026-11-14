@@ -190,12 +190,7 @@ test('la Torre se lee por decisiones: la frase del mes, lo que requiere decisió
   assert.ok(pestanas > 0 && pestanas < pulso && pulso < decide && decide < comercial, 'orden: pestañas y la Portada como primera pantalla (frase, bloques, requiere decisión)');
   assert.match(view, /'fuentes', 'Fuentes y detalle'/, 'el Excel por periodo, sus alertas y los detalles quedan en la pestaña Fuentes y detalle');
   assert.doesNotMatch(view, /SiioKeyFigures|SiioTrendCharts|SiioEstaSemana/, 'las cifras clave, las gráficas y la franja semanal del Excel salen de la Torre (Fase 4, PR 5)');
-  assert.match(view, /<details className="panel siio-detail">/);
+  assert.match(view, /<details className="siio-plegado">/, 'el detalle va en plegados del kit');
   assert.equal((view.match(/api<T>\(path\)/g) || []).length, 1, 'la vista carga cada fuente una sola vez y la comparte');
 });
 
-test('las cifras acumuladas se muestran en millones, no en pesos completos', async () => {
-  const { readFileSync } = await import('node:fs');
-  const view = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
-  assert.match(view, /: millions\(Number\(value\)\)/);
-});

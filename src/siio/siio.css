@@ -287,8 +287,7 @@
 
 .siio-dashboard .siio-insight,
 .siio-dashboard .siio-management-signal-static,
-.siio-dashboard .siio-executive-status,
-.siio-dashboard .siio-period-line{
+.siio-dashboard .siio-executive-status{
   overflow-wrap:anywhere;
 }
 
@@ -631,42 +630,6 @@
   }
 }
 
-.siio-key-grid{
-  display:grid;
-  gap:10px;
-}
-
-.siio-key-figure{
-  display:grid;
-  gap:4px;
-  align-content:start;
-  min-width:0;
-  padding:12px;
-  border:1px solid #dbe6f4;
-  border-radius:14px;
-  background:#fff;
-}
-
-.siio-key-figure small{
-  color:#526173;
-  font-size:11px;
-  font-weight:900;
-  text-transform:uppercase;
-  letter-spacing:.05em;
-}
-
-.siio-key-figure strong{
-  color:#10213d;
-  font-size:22px;
-  white-space:nowrap;
-}
-
-.siio-key-figure span{
-  color:#40516b;
-  font-size:12px;
-  overflow-wrap:anywhere;
-}
-
 .siio-attention-readings{margin-top:0}
 
 .siio-attention-signals{
@@ -676,56 +639,6 @@
   gap:8px 16px;
   margin-top:12px;
   font-size:13px;
-}
-
-.siio-detail{
-  padding:0;
-  border:1px solid #dbe6f4;
-  border-radius:14px;
-  box-shadow:none;
-}
-
-.siio-detail > summary{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:baseline;
-  gap:4px 12px;
-  padding:16px 20px;
-  cursor:pointer;
-  list-style:none;
-}
-
-.siio-detail > summary::-webkit-details-marker{display:none}
-
-.siio-detail > summary::before{
-  content:'▸';
-  color:#10213d;
-  font-size:14px;
-}
-
-.siio-detail > summary:hover{background:#f8fafc;border-radius:14px}
-
-.siio-detail[open] > summary::before{content:'▾'}
-
-.siio-detail > summary:focus-visible{
-  outline:3px solid #1b64f2;
-  outline-offset:2px;
-  border-radius:12px;
-}
-
-.siio-detail-title{
-  color:#10213d;
-  font-size:17px;
-  font-weight:800;
-}
-
-.siio-detail-hint{
-  color:#526173;
-  font-size:13px;
-}
-
-.siio-detail[open] > :not(summary){
-  margin:0 20px 20px;
 }
 
 .siio-detail-body > :first-child{margin-top:0}
@@ -740,28 +653,10 @@
   .siio-commercial-pending-grid{grid-template-columns:1fr}
 }
 
-.siio-detail .panel{
-  padding:0;
-  overflow:visible;
-  border:0;
-  box-shadow:none;
-  background:transparent;
-}
-
-.siio-detail .panel + .panel{margin-top:20px}
-
-.siio-detail .panel h2{font-size:16px}
-
 /* Design pass (Impeccable critique): tables read as text, color only for alerts, figures align. */
-.siio-key-figure strong,
 .siio-pulse-table td,
 .siio-pulse-table td strong{
   font-variant-numeric:tabular-nums lining-nums;
-}
-
-.siio-key-figure .siio-key-comparison{
-  color:#40516b;
-  font-size:13px;
 }
 
 .siio-pulse-table th[scope="row"]{
@@ -790,65 +685,14 @@
 
 .siio-pulse-table em{color:#526173}
 
-.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static){
-  background:#fff;
-  border:1px solid #dbe6f4;
-  box-shadow:none;
-  color:#10213d;
-}
-
-.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static) span{color:#526173}
-.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static) strong{color:#10213d}
-.siio-dashboard .siio-detail .siio-management-signals button:not(.siio-management-signal-static):hover{background:#f8fafc}
-
 .siio-quiet-empty{margin:8px 0 0}
 .siio-quiet-empty strong{color:#10213d}
 
 .siio-dashboard .siio-view-filters[aria-label="Filtros del resumen ejecutivo"]{align-items:center}
 
-.siio-key-grid > *{min-width:0}
-
 .siio-dashboard .stack > *{min-width:0}
 
 /* Collapsible sections: an explicit button instead of a tiny disclosure triangle. */
-.siio-detail > summary{
-  align-items:center;
-  justify-content:space-between;
-  flex-wrap:nowrap;
-  gap:16px;
-}
-
-.siio-detail > summary::before{content:none}
-.siio-detail[open] > summary::before{content:none}
-
-.siio-detail-text{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:baseline;
-  gap:2px 12px;
-  min-width:0;
-}
-
-.siio-detail-action{
-  flex:none;
-  padding:8px 14px;
-  border:1px solid #cbdcf2;
-  border-radius:999px;
-  background:#fff;
-  color:#174ea6;
-  font-size:14px;
-  font-weight:800;
-  white-space:nowrap;
-}
-
-.siio-detail > summary:hover .siio-detail-action{background:#eef4ff;border-color:#9dbbe8}
-.siio-detail-close{display:none}
-.siio-detail[open] .siio-detail-open{display:none}
-.siio-detail[open] .siio-detail-close{display:inline}
-
-@media(max-width:600px){
-  .siio-detail > summary{flex-wrap:wrap}
-}
 
 /* Private sales and public tenders sit side by side as separate groups. */
 
@@ -866,19 +710,9 @@
 
 .siio-more-links{display:flex;flex-wrap:wrap;gap:10px}
 
-.siio-detail > summary:focus-visible{outline:2px solid #9dbbe8;outline-offset:-2px}
-
 .siio-alerts-title{margin:8px 0 0;color:#10213d;font-size:14px}
 
 /* The app shell's .panel rules load after this sheet in production; scope overrides to the Torre. */
-.siio-dashboard details.siio-detail{
-  padding:0;
-  border:1px solid #dbe6f4;
-  border-radius:14px;
-  box-shadow:none;
-}
-
-.siio-dashboard .siio-detail > summary{padding:14px 20px}
 
 .siio-dashboard .siio-alert-list button{
   padding:4px 0;
@@ -945,8 +779,6 @@
 .siio-followup-note{display:flex;gap:6px;width:100%}
 .siio-followup-note input{flex:1;min-width:0}
 .siio-followup-closed .siio-followup-item{opacity:.85}
-
-.siio-payroll-signal{margin-bottom:16px}
 
 @media(max-width:760px){
   .siio-followup-row{grid-template-columns:1fr}
@@ -1046,4 +878,4 @@
 .siio-dashboard .siio-header-bar .siio-navigation.module-segmented-nav{display:inline-flex;flex-direction:row;flex-wrap:nowrap;grid-template-columns:none;width:auto;gap:2px;padding:3px}
 .siio-dashboard .siio-header-bar .siio-navigation.module-segmented-nav button{flex:none;min-height:34px;padding:6px 14px;font-size:13px;white-space:nowrap}
 .siio-header-bar .siio-header-profile{margin-left:auto}
-.siio-key-grid + .siio-key-grid{margin-top:10px}
+

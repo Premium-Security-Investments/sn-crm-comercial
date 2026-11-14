@@ -2,23 +2,18 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../apiClient';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
 import { deriveRecommendations, navigateSiioView, uniqueOptions } from './selectors';
-import { Badge, EmptyState, Panel } from './SiioUi';
+import { EmptyState } from './SiioUi';
 import { SiioFinancialPulse } from './SiioFinancialPulse';
 import { millions } from './SiioCommercialPanel';
-import { PLAZO_ALTO, SiioPestanaComercial } from './SiioPestanaComercial';
+import { PLAZO_ALTO, SIN_GESTION_MAL, SiioPestanaComercial } from './SiioPestanaComercial';
 import { FollowupCell, FollowupComposer } from './SiioFollowups';
 import { addDays, isOverdue, openFollowupFor, todayIso, useFollowups, type FollowupDraft } from './followups';
 import type { CommercialSummary } from './commercialSummary';
 import { deriveEstaSemana } from './estaSemana';
 import { pulseReadings, type FinancialPulse } from './financialPulse';
 import { deriveOperationsSummary } from './operationsSummary';
-import { deriveRevenueByClient } from './revenueByClient';
-import { deriveHorasPorCliente } from './horasPorCliente';
-import { SiioConcentracionClientes } from './SiioConcentracionClientes';
-import { SiioDevengado } from './SiioDevengado';
-import { SiioRevenueByClient } from './SiioRevenueByClient';
-import { SiioHorasPorCliente } from './SiioHorasPorCliente';
 import { SiioLoQueFalta } from './SiioLoQueFalta';
+import { SiioFuentesAlDia } from './SiioFuentesAlDia';
 import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
 import { SiioRecommendations } from './SiioRecommendations';
 import { SiioPestanaParametros } from './SiioParametros';
@@ -33,13 +28,6 @@ function formatPeriod(period: string | null | undefined) {
 }
 
 const payrollMillions = (value: number | null | undefined) => `$${(Number(value || 0) / 1e6).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M`;
-
-function formatMetric(value: number | null | undefined, percent = false) {
-  if (value === null || value === undefined) return 'Sin datos';
-  return percent
-    ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(value).replace('-', '−')
-    : millions(Number(value));
-}
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -57,17 +45,6 @@ function useSiioData<T>(path: string) {
   return [data, state] as const;
 }
 
-// Detail on demand: the first screen monitors, the folded sections hold the tables.
-function DetailSection({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
-  return <details className="panel siio-detail">
-    <summary>
-      <span className="siio-detail-text"><span className="siio-detail-title">{title}</span><span className="siio-detail-hint">{hint}</span></span>
-      <span className="siio-detail-action" aria-hidden="true"><span className="siio-detail-open">Ver detalle ▾</span><span className="siio-detail-close">Ocultar ▴</span></span>
-    </summary>
-    {children}
-  </details>;
-}
-
 function monthName(month: number) {
   return new Intl.DateTimeFormat('es-CO', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2000, month - 1, 15))).replace('.', '');
 }
@@ -79,21 +56,6 @@ function metricBasis(metric: SiioFinancialMetric, period: string) {
   if (metric.base_value !== 'acumulado') return { current: formatPeriod(period), comparison: `${monthName(month)} ${year - 1}` };
   const range = month === 1 ? monthName(1) : `${monthName(1)}–${monthName(month)}`;
   return { current: `Acumulado ${range} ${year}`, comparison: `${range} ${year - 1}` };
-}
-
-function metricChange(metric: SiioFinancialMetric) {
-  const current = metric.value_current;
-  const comparison = metric.value_comparison;
-  if (current === null || current === undefined || comparison === null || comparison === undefined) {
-    return metric.variation_pct === null || metric.variation_pct === undefined ? null : `${formatMetric(metric.variation_pct, true)}`;
-  }
-  const difference = Number(current) - Number(comparison);
-  const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
-  if (metric.category === 'margen') return `${sign}${new Intl.NumberFormat('es-CO', { maximumFractionDigits: 1 }).format(Math.abs(difference) * 100)} puntos`;
-  // A percentage over a negative base reads backwards, so negative results show the change in pesos.
-  if (Number(current) < 0 || Number(comparison) < 0) return `${difference < 0 ? 'Empeoró' : 'Mejoró'} ${millions(Math.abs(difference))}`;
-  if (!Number(comparison)) return null;
-  return `${sign}${new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(Math.abs(difference / Number(comparison)))}`;
 }
 
 const PESTANAS: ReadonlyArray<[PestanaTorre, string]> = [
@@ -109,6 +71,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
   const periodOptions = useMemo(() => uniqueOptions(payload.financialMetrics.map(metric => metric.period_month)), [payload.financialMetrics]);
   const areaOptions = useMemo(() => uniqueOptions(payload.payrollAggregates.map(row => row.area)), [payload.payrollAggregates]);
   const selectedPeriod = snapshot.financialPeriod || '';
+  // El último mes del Excel de Finanzas: hasta ahí manda su cierre; lo de después es de Avancys.
+  const ultimoExcel = useMemo(() => payload.financialMetrics.map(metric => metric.period_month).filter(Boolean).sort().pop() || null, [payload.financialMetrics]);
   const financialRows = snapshot.financialRows;
   const payrollRows = useMemo(() => payload.payrollAggregates.filter(row =>
     (!routeState.filters.area || row.area === routeState.filters.area)
@@ -123,8 +87,6 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
   }), { people: 0, accrued: 0, deductions: 0, net: 0, alerts: 0 }), [payrollRows]);
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
   const operations = useMemo(() => deriveOperationsSummary(payload.operationsMetrics || []), [payload.operationsMetrics]);
-  const revenueByClient = useMemo(() => deriveRevenueByClient(payload.revenueLines || [], selectedPeriod), [payload.revenueLines, selectedPeriod]);
-  const horasPorCliente = useMemo(() => deriveHorasPorCliente(payload.programacionHoras || []), [payload.programacionHoras]);
   const followups = useFollowups();
   const [followupDraft, setFollowupDraft] = useState<FollowupDraft | null>(null);
   const today = followups.data?.today || todayIso();
@@ -157,6 +119,15 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
     if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', prioridad: 'alta', responsable: 'Comercial',
       ficha: { valor: `${estaSemana.vencidos}`, unidad: estaSemana.vencidos === 1 ? 'vencida' : 'vencidas' },
       frase: <><strong>{estaSemana.vencidos === 1 ? '1 decisión con fecha ya venció' : `${estaSemana.vencidos} decisiones con fecha ya vencieron`}</strong> sin registrarse.</> });
+    // El forecast desactualizado se dice en la Portada con el área responsable; el detalle por persona, en Comercial.
+    const pipeline = commercial?.pipeline;
+    if (pipeline?.open_count && pipeline.stale_count) {
+      const parte = pipeline.stale_count / pipeline.open_count;
+      const nadie = (pipeline.by_owner || []).filter(fila => fila.owner_name && fila.open > 0 && fila.stale === fila.open).length;
+      lista.push({ clave: 'forecast', pestana: 'comercial', prioridad: parte >= SIN_GESTION_MAL ? 'alta' : 'media', responsable: 'Comercial',
+        ficha: { valor: `${Math.round(parte * 100)} %`, unidad: 'sin gestión' },
+        frase: <><strong>{pipeline.stale_count} de {pipeline.open_count} leads del forecast</strong> sin gestión en {pipeline.stale_days} días{nadie ? `; ${nadie === 1 ? 'un comercial no tiene' : `${nadie} comerciales no tienen`} ningún lead al día` : ''}.</> });
+    }
     lista.push(...alertasDeAvancys(torre));
     const paradas = commercial?.pipeline.stale_large || [];
     if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', prioridad: 'media', responsable: 'Comercial',
@@ -205,100 +176,75 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
       {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
     </> : null}
     {pestana === 'parametros' ? <section className="panel" role="tabpanel" aria-label="Parámetros"><SiioPestanaParametros /></section> : null}
-    {pestana === 'fuentes' ? <>
-      {fuentesExtra}
-      <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">
-        <span className="siio-eyebrow">Resumen ejecutivo</span>
-        <label>Periodo financiero
-          <select value={routeState.filters.period} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, period: event.target.value }))}>
-            <option value="">Último periodo publicado ({formatPeriod(selectedPeriod)})</option>
-            {periodOptions.map(period => <option key={period} value={period}>{formatPeriod(period)}</option>)}
-          </select>
-        </label>
-        <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
-      </section>
-
-      {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
-
-      <Panel title="Alertas del Excel de Finanzas">
-      <section className="siio-attention-section" aria-label="Finanzas">
-        <h3>Finanzas y nómina</h3>
-        {financeNotes.length ? <div className="siio-pulse-readings"><ul>{financeNotes.map(note => <li key={note}>{note}</li>)}</ul></div> : null}
-        {recommendations.length ? <>
-          <h4 className="siio-alerts-title">Alertas automáticas</h4>
-          <p className="siio-pulse-footnote">Reglas fijas del SIIO que se encienden cuando se cumple una condición; no son recomendaciones de una persona ni de la IA.</p>
-          <ul className="siio-alert-list">{recommendations.map(recommendation => <li key={recommendation.id}>
-            <strong>{recommendation.title}</strong>
-            <span>{recommendation.finding}</span>
-            <small>{alertBasis(recommendation)}</small>
-            {attentionFollowups ? <FollowupCell existing={openFollowupFor(followups.data, `alerta:${recommendation.id}:${recommendation.period || ''}`)} today={today} canCreate={Boolean(followups.data?.permissions.create)} onCreate={() => setFollowupDraft({ title: `Revisar: ${recommendation.title.replace(/^Lectura preliminar: /, '')}`, owner_label: recommendation.id === 'payroll-source-alert' ? 'Gestión Humana' : 'Finanzas', due_date: addDays(today, 14), origin_type: 'finanzas', origin_ref: `alerta:${recommendation.id}:${recommendation.period || ''}`, origin_label: alertBasis(recommendation) })} /> : null}
-          </li>)}</ul>
-        </> : null}
-      </section>
-      </Panel>
-    <DetailSection title={`Finanzas · detalle de ${pulse ? formatPeriod(selectedPeriod).toLowerCase() : 'periodo'}`} hint="Lectura del mes, tendencia, desglose por rubro y acumulado del año">
-      {financialRows.length ? <SiioFinancialPulse pulse={pulse} state={pulseState} financialRows={financialRows} /> : <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." />}
-      {financialRows.length ? <div className="siio-pulse-block">
-        <h4>Acumulado del año según el estado de resultados reportado</h4>
-        <div className="siio-executive-grid siio-key-grid">
-          {financialRows.map(metric => <div className="siio-key-figure" key={metric.concept}>
-            <small>{metric.concept}</small>
-            <strong>{formatMetric(metric.value_current, metric.category === 'margen')}</strong>
-            <span className="siio-key-comparison">{metric.value_comparison === null || metric.value_comparison === undefined
-              ? 'Comparativo pendiente'
-              : `${metricBasis(metric, selectedPeriod).comparison}: ${formatMetric(metric.value_comparison, metric.category === 'margen')}${metricChange(metric) ? ` · ${metricChange(metric)}` : ''}`}</span>
-            <span>{metricBasis(metric, selectedPeriod).current}</span>
-          </div>)}
-        </div>
-      </div> : null}
-      <SiioRevenueByClient summary={revenueByClient} period={selectedPeriod} />
-      <SiioConcentracionClientes period={selectedPeriod} />
-      <SiioDevengado period={selectedPeriod} />
-      <SiioHorasPorCliente summary={horasPorCliente} />
-    </DetailSection>
-
-    <DetailSection title="Lo que falta para completar la Torre" hint="Lo que todavía no se puede mostrar y el dato que destraba cada cosa">
-      <SiioLoQueFalta summary={commercial} />
-    </DetailSection>
-
-    <DetailSection title="Nómina agregada" hint="Personas, devengado y neto por área, sin datos individuales">
-    <div className="siio-management-signals siio-payroll-signal">
-      <div className="siio-management-signal-static"><span>Alertas de nómina agregadas</span><strong>{payrollTotals.alerts}</strong></div>
-    </div>
-
-    <Panel title="Nómina agregada">
-      <div className="siio-period-line"><span>Periodo de nómina</span><strong>{formatPeriod(snapshot.payrollPeriod)}</strong></div>
-      {snapshot.payrollPeriod && selectedPeriod && snapshot.payrollPeriod !== selectedPeriod ? <p className="siio-pulse-footnote">La nómina va a {formatPeriod(snapshot.payrollPeriod).toLowerCase()}; las cifras financieras, a {formatPeriod(selectedPeriod).toLowerCase()}. Valores en millones de pesos.</p> : <p className="siio-pulse-footnote">Valores en millones de pesos.</p>}
-      <section className="siio-view-filters" aria-label="Filtro de nómina agregada">
-        <label>Área de nómina
-          <select value={routeState.filters.area} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, area: event.target.value }))}>
-            <option value="">Todas las áreas</option>
-            {areaOptions.map(area => <option key={area} value={area}>{area}</option>)}
-          </select>
-        </label>
-      </section>
-      {!payrollRows.length ? <p className="siio-secondary siio-quiet-empty"><strong>Sin agregados de nómina publicados.</strong> No se muestran datos individuales.</p> : <>
-        <div className="siio-table-wrap siio-payroll-table"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{payrollMillions(row.total_accrued)}</td><td>{payrollMillions(row.total_deductions)}</td><td>{payrollMillions(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{payrollMillions(payrollTotals.accrued)}</th><th>{payrollMillions(payrollTotals.deductions)}</th><th>{payrollMillions(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>
-        <div className="siio-payroll-cards">{payrollRows.map(row => <article className="siio-payroll-card" key={`${row.period_month}:${row.area || 'sin-area'}:card`}>
-          <div><span className="siio-secondary">Área</span><strong>{row.area || 'Área pendiente'}</strong></div>
-          <div><span className="siio-secondary">Personas</span><strong>{row.total_people || 0}</strong></div>
-          <div><span className="siio-secondary">Devengado</span><strong>{payrollMillions(row.total_accrued)}</strong></div>
-          <div><span className="siio-secondary">Deducciones</span><strong>{payrollMillions(row.total_deductions)}</strong></div>
-          <div><span className="siio-secondary">Neto</span><strong>{payrollMillions(row.net_total)}</strong></div>
-          <div><span className="siio-secondary">Control</span>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</div>
-        </article>)}
-        <article className="siio-payroll-card siio-payroll-total-card">
-          <div><span className="siio-secondary">Área</span><strong>Total</strong></div>
-          <div><span className="siio-secondary">Personas</span><strong>{payrollTotals.people}</strong></div>
-          <div><span className="siio-secondary">Devengado</span><strong>{payrollMillions(payrollTotals.accrued)}</strong></div>
-          <div><span className="siio-secondary">Deducciones</span><strong>{payrollMillions(payrollTotals.deductions)}</strong></div>
-          <div><span className="siio-secondary">Neto</span><strong>{payrollMillions(payrollTotals.net)}</strong></div>
-          <div><span className="siio-secondary">Control</span><strong>Control agregado</strong></div>
-        </article>
-        </div>
-      </>}
-    </Panel>
-    </DetailSection>
-    </> : null}
+    {pestana === 'fuentes' ? <section className="siio-pantalla" role="tabpanel" aria-label="Fuentes y detalle">
+      {/* Fuentes (contrato de la maqueta, Fase 3): primero quién tiene atrasado qué; después el Excel de Finanzas, que sigue
+          siendo la fuente del cierre de los meses anteriores a Avancys, y el detalle plegado. Lo que duplicaba una
+          pantalla en vivo salió en la poda de la Fase 1 (acumulado, ingreso y horas por cliente, concentración, devengado). */}
+      <SiioFuentesAlDia t={torre} excelHasta={ultimoExcel ? ultimoExcel.slice(0, 7) : null}
+        forecast={commercial ? { abiertas: commercial.pipeline.open_count, sin_gestion: commercial.pipeline.stale_count, dias: commercial.pipeline.stale_days } : null} />
+      <div className="siio-dos-col">
+        <section className="siio-panel" aria-label="El Excel de Finanzas">
+          <h2>El Excel de Finanzas</h2>
+          <p className="siio-nota" style={{ marginTop: 4 }}>Fuente del cierre oficial de los meses anteriores a Avancys y de la provisión de ingresos. Último publicado: <strong>{formatPeriod(ultimoExcel)}</strong>.</p>
+          {fuentesExtra}
+          <details className="siio-plegado">
+            <summary>Detalle del Excel: lectura del mes y alertas</summary>
+            <section className="siio-view-filters" aria-label="Periodo del Excel de Finanzas">
+              <label>Periodo financiero
+                <select value={routeState.filters.period} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, period: event.target.value }))}>
+                  <option value="">Último periodo publicado ({formatPeriod(selectedPeriod)})</option>
+                  {periodOptions.map(period => <option key={period} value={period}>{formatPeriod(period)}</option>)}
+                </select>
+              </label>
+              <span className={`siio-chip ${snapshot.financialValidationStatus === 'validado' ? 'finanzas' : 'confirmar'}`}>{validationLabel}</span>
+            </section>
+            {snapshot.financialValidationStatus !== 'validado' ? <p className="siio-nota siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</p> : null}
+            {financeNotes.length ? <ul className="siio-lista">{financeNotes.map(note => <li key={note}>{note}</li>)}</ul> : null}
+            {recommendations.length ? <>
+              <h3 className="siio-alerts-title">Alertas automáticas</h3>
+              <p className="siio-nota">Reglas fijas del SIIO que se encienden cuando se cumple una condición; no son recomendaciones de una persona ni de la IA.</p>
+              <ul className="siio-alert-list">{recommendations.map(recommendation => <li key={recommendation.id}>
+                <strong>{recommendation.title}</strong>
+                <span>{recommendation.finding}</span>
+                <small>{alertBasis(recommendation)}</small>
+                {attentionFollowups ? <FollowupCell existing={openFollowupFor(followups.data, `alerta:${recommendation.id}:${recommendation.period || ''}`)} today={today} canCreate={Boolean(followups.data?.permissions.create)} onCreate={() => setFollowupDraft({ title: `Revisar: ${recommendation.title.replace(/^Lectura preliminar: /, '')}`, owner_label: recommendation.id === 'payroll-source-alert' ? 'Gestión Humana' : 'Finanzas', due_date: addDays(today, 14), origin_type: 'finanzas', origin_ref: `alerta:${recommendation.id}:${recommendation.period || ''}`, origin_label: alertBasis(recommendation) })} /> : null}
+              </li>)}</ul>
+            </> : null}
+            {financialRows.length ? <SiioFinancialPulse pulse={pulse} state={pulseState} financialRows={financialRows} /> : <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." />}
+          </details>
+        </section>
+        <section className="siio-panel" aria-label="Más detalle">
+          <h2>Más detalle</h2>
+          <details className="siio-plegado">
+            <summary>Nómina agregada por área (sin datos individuales)</summary>
+            <p className="siio-nota">Periodo de nómina: <strong>{formatPeriod(snapshot.payrollPeriod)}</strong> · millones de pesos{snapshot.payrollPeriod && selectedPeriod && snapshot.payrollPeriod !== selectedPeriod ? ` · el Excel va a ${formatPeriod(selectedPeriod).toLowerCase()}` : ''} · alertas de nómina agregadas: <strong>{payrollTotals.alerts}</strong>.</p>
+            <section className="siio-view-filters" aria-label="Filtro de nómina agregada">
+              <label>Área de nómina
+                <select value={routeState.filters.area} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, area: event.target.value }))}>
+                  <option value="">Todas las áreas</option>
+                  {areaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                </select>
+              </label>
+            </section>
+            {/* Una sola representación (poda de la Fase 1): la tabla del kit, que en el celular se apila. */}
+            {!payrollRows.length ? <p className="siio-nota"><strong>Sin agregados de nómina publicados.</strong> No se muestran datos individuales.</p> : <div className="siio-tabla-wrap"><table className="siio-tabla apilable">
+              <thead><tr><th>Área</th><th className="num">Personas</th><th className="num">Devengado</th><th className="num">Deducciones</th><th className="num total">Neto</th></tr></thead>
+              <tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}>
+                <td><span className="nombre">{row.area || 'Área pendiente'}</span>{row.alert ? <span className="siio-chip marca">validar fuente</span> : null}</td>
+                <td className="num" data-etiqueta="Personas"><strong>{row.total_people || 0}</strong></td>
+                <td className="num" data-etiqueta="Devengado"><strong>{payrollMillions(row.total_accrued)}</strong></td>
+                <td className="num" data-etiqueta="Deducciones"><strong>{payrollMillions(row.total_deductions)}</strong></td>
+                <td className="num total"><strong>{payrollMillions(row.net_total)}</strong></td>
+              </tr>)}</tbody>
+              <tfoot><tr><th>Total</th><th className="num" data-etiqueta="Personas">{payrollTotals.people}</th><th className="num" data-etiqueta="Devengado">{payrollMillions(payrollTotals.accrued)}</th><th className="num" data-etiqueta="Deducciones">{payrollMillions(payrollTotals.deductions)}</th><th className="num total">{payrollMillions(payrollTotals.net)}</th></tr></tfoot>
+            </table></div>}
+          </details>
+          <details className="siio-plegado">
+            <summary>Lo que falta para completar la Torre, y el dato que destraba cada cosa</summary>
+            <SiioLoQueFalta summary={commercial} />
+          </details>
+        </section>
+      </div>
+    </section> : null}
   </div>;
 }

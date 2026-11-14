@@ -11,7 +11,7 @@ import type { EstaSemana } from './estaSemana';
 // Una licitación que cierra en 12 días o menos va en rojo, aquí y en la Portada.
 export const PLAZO_ALTO = 12;
 // Un comercial con la mitad o más de sus leads sin gestión se marca.
-const SIN_GESTION_MAL = 0.5;
+export const SIN_GESTION_MAL = 0.5;
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const porcentaje = (parte: number, base: number) => (base ? `${Math.round((parte / base) * 100)} %` : '—');
 const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`;

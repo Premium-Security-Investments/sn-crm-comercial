@@ -83,6 +83,15 @@ test('la Torre salta el mes de la carga inicial y toma el último mes con la nó
   assert.equal(r.pyg.length, 4);
   assert.equal(r.pyg[1].totales.antes_de_impuestos, 110);
   assert.ok(r.lineas_pyg.length > 10);
+  // Si la consulta de turnos no devuelve un número, la Torre no afirma nada sobre la programación.
+  assert.equal(r.programaciones_avancys, null);
+});
+
+test('turnos programados en Avancys: se cuentan las programaciones del módulo de turnos', async () => {
+  const { ejecutar: base } = odoo();
+  const ejecutar = async (modelo, metodo, ...resto) => (modelo === 'hr.roster.programacion' && metodo === 'search_count' ? 0 : base(modelo, metodo, ...resto));
+  const r = await calcularTorre(ejecutar, { ahora: () => new Date('2026-11-13T12:00:00Z') });
+  assert.equal(r.programaciones_avancys, 0);
 });
 
 test('lo calculado se guarda 30 minutos y "refrescar" lo vuelve a pedir', async () => {

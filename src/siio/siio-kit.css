@@ -234,3 +234,12 @@
   .siio-dashboard .siio-tabla.apilable [data-etiqueta]::before{content:attr(data-etiqueta) ': ';font-size:11.5px;color:var(--sutil)}
   .siio-dashboard .siio-seguimientos .siio-decision button{grid-template-columns:auto minmax(0,1fr)}
 }
+
+/* ---- 14 · Fuentes ---- */
+.siio-dashboard .siio-lista{margin:8px 0 0;padding-left:18px;color:var(--suave);font-size:13.5px;line-height:1.45;display:grid;gap:4px}
+/* El cargue del Excel vive dentro de su panel: sin tarjeta dentro de tarjeta. */
+.siio-dashboard .siio-panel .siio-financial-import-panel{margin-top:10px;border:1px solid var(--linea);border-radius:var(--radio-interno);box-shadow:none;background:var(--fondo-suave)}
+.siio-dashboard .siio-plegado .siio-view-filters{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin-top:4px}
+.siio-dashboard .siio-plegado>.siio-alerts-title{margin:12px 14px 2px;font-size:14px;color:var(--tinta)}
+/* Aislamiento: la regla global del CRM alinea a la derecha y no parte la última celda; en el kit solo las numéricas. */
+.siio-dashboard .siio-tabla td:last-child:not(.num){text-align:left;white-space:normal}

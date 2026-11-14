@@ -34,7 +34,9 @@ const tracking = readFileSync(new URL('../src/siio/SiioManagementTrackingView.ts
 const intelligence = readFileSync(new URL('../src/siio/SiioSourcesIntelligenceView.tsx', import.meta.url), 'utf8');
 const agentsView = readFileSync(new URL('../src/siio/SiioAgentsView.tsx', import.meta.url), 'utf8');
 
-for (const [name, source] of [['SiioExecutiveView', executive], ['SiioSourcesIntelligenceView', intelligence], ['SiioAgentsView', agentsView]]) {
+// La vista ejecutiva usa el kit de la Torre (siio-kit.css), sin la etiqueta eyebrow; las demás vistas la conservan.
+assert.doesNotMatch(executive, /className="eyebrow"/, 'SiioExecutiveView must not render the low-contrast global eyebrow');
+for (const [name, source] of [['SiioSourcesIntelligenceView', intelligence], ['SiioAgentsView', agentsView]]) {
   assert.match(source, /siio-eyebrow/, `${name} must use the locally-contrasted siio-eyebrow token`);
   assert.doesNotMatch(source, /className="eyebrow"/, `${name} must not render the low-contrast global eyebrow on a light SIIO surface`);
 }

@@ -8,14 +8,14 @@ const board = readFileSync(new URL('../src/siio/SiioBoardDraftAction.tsx', impor
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 assert.match(executive, /deriveSiioExecutiveSnapshot/, 'Dashboard must derive a period-aware executive snapshot');
-assert.match(executive, /Resumen ejecutivo/, 'Dashboard must expose a permanent executive summary');
+assert.match(executive, /¿Las fuentes están al día\?|SiioFuentesAlDia/, 'Fuentes opens with who is late on which source (Fase 4, PR 6)');
 assert.match(executive, /Periodo financiero/, 'Dashboard must label the financial period');
 assert.match(executive, /Nómina agregada/, 'Dashboard must show aggregate payroll only');
 assert.match(executive, /Alertas automáticas/, 'Dashboard must show derived management alerts, labelled as fixed rules');
 assert.match(executive, /navigateSiioView\('seguimiento'/, 'Actionable executive controls must drill into tracking');
-assert.equal((executive.match(/financialRows\.map/g) || []).length, 1, 'Each financial KPI must have one presentation, not cards plus a duplicate detail panel');
+assert.equal((executive.match(/financialRows\.map/g) || []).length, 0, 'The Excel year-to-date grid left the Torre: Resultados shows it live (Fase 1 pruning)');
 assert.match(executive, /useFollowups\(\)/, 'The Torre reads the follow-up register (Seguimiento gerencial) instead of the legacy tracking counters');
-assert.match(executive, /<div className="siio-management-signal-static"><span>Alertas de nómina agregadas<\/span><strong>\{payrollTotals\.alerts\}<\/strong><\/div>/, 'Payroll alerts must be a separate, non-clickable aggregate indicator');
+assert.match(executive, /alertas de nómina agregadas: <strong>\{payrollTotals\.alerts\}<\/strong>/, 'Payroll alerts are a plain, non-clickable aggregate figure');
 assert.equal((executive.match(/payrollTotals\.alerts/g) || []).length, 1, 'The aggregate payroll alert metric must not be duplicated');
 assert.match(tracking, /deriveTrackingItems/, 'Tracking must derive deduplicated records and decisions');
 assert.match(tracking, /filterTrackingItems/, 'Tracking must apply contextual route filters');
@@ -35,25 +35,12 @@ assert.match(styles, /\.siio-executive-grid/, 'Executive dashboard layout styles
 assert.match(styles, /\.siio-source-freshness/, 'Source freshness styles must exist');
 assert.match(styles, /\.siio-insight-list/, 'F5 management insight styles must exist');
 
-assert.match(executive, /siio-payroll-table/, 'Executive view must mark the desktop payroll table for responsive hiding');
-assert.match(executive, /siio-payroll-cards/, 'Executive view must render mobile payroll cards');
-assert.equal((executive.match(/payrollRows\.map/g) || []).length, 2, 'Payroll must render exactly one desktop and one mobile presentation of the same rows, no duplicated business logic');
-assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.siio-payroll-table\{display:none\}/, 'Mobile must hide the desktop payroll table');
-assert.match(styles, /\.siio-payroll-cards\{display:none\}/, 'Payroll cards must be hidden by default on desktop');
-assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.siio-payroll-cards\{display:grid[^}]*\}/, 'Mobile must show the payroll cards');
+// Nómina agregada: una sola representación (poda de la Fase 1), la tabla del kit que se apila en el celular.
+assert.equal((executive.match(/payrollRows\.map/g) || []).length, 1, 'Payroll renders its rows once: no duplicated desktop table and mobile cards');
+assert.match(executive, /<table className="siio-tabla apilable">[\s\S]*?payrollRows\.map/, 'The payroll table stacks on narrow screens instead of a duplicated card list');
+assert.match(executive, /<tfoot><tr><th>Total<\/th>[\s\S]*?payrollTotals\.people[\s\S]*?payrollTotals\.accrued[\s\S]*?payrollTotals\.deductions[\s\S]*?payrollTotals\.net/, 'The payroll total keeps people, accrued, deductions and net');
 
 assert.match(executive, /openFollowups\.filter\(item => isOverdue\(item, today\)\)/, 'Overdue counts come only from open follow-ups');
-
-assert.match(executive, /siio-payroll-total-card/, 'Mobile payroll cards must retain the hidden desktop total via a dedicated total card');
-const totalCard = executive.match(/<article className="siio-payroll-card siio-payroll-total-card">[\s\S]*?<\/article>/)?.[0] || '';
-assert.match(totalCard, /<span className="siio-secondary">Área<\/span><strong>Total<\/strong>/, 'The mobile payroll total card must keep the same Área row schema as the other payroll cards, labeled Total');
-assert.ok(totalCard.indexOf('Área') < totalCard.indexOf('Personas'), 'The Área row must come before Personas to match the other payroll cards field order');
-assert.match(totalCard, /payrollTotals\.people/, 'The mobile payroll total card must show aggregated people');
-assert.match(totalCard, /payrollTotals\.accrued/, 'The mobile payroll total card must show aggregated accrued pay');
-assert.match(totalCard, /payrollTotals\.deductions/, 'The mobile payroll total card must show aggregated deductions');
-assert.match(totalCard, /payrollTotals\.net/, 'The mobile payroll total card must show aggregated net pay');
-assert.match(totalCard, />Control</, 'The mobile payroll total card must show an aggregated control indicator');
-assert.ok(executive.indexOf('siio-payroll-total-card') > executive.indexOf('siio-payroll-cards'), 'The total card must live inside the mobile payroll cards container');
 
 assert.match(dashboard, /Preparar informe de Junta/, 'SIIO header must expose the governed Board action');
 assert.match(dashboard, /useState\(false\)/, 'The Board action must have local open state');

@@ -465,7 +465,7 @@ test('si nadie pide datos de Avancys, no se abre sesión contra Odoo', async () 
 // Lo que se fija aquí es lo que se rompería en silencio: que la fuente esté en la lista del lector,
 // que el NIT se lea de donde vive, y que no se lea de donde no está.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -829,17 +829,14 @@ test('al paginar, el orden tiene que ser único o la suma cambia', () => {
   assert.match(lector, /El orden al paginar tiene que ser ÚNICO/);
 });
 
-test('la concentración de clientes llegó a la Torre, y dice que no es la provisión', () => {
-  const panel = leer('src/siio/SiioConcentracionClientes.tsx');
-  assert.match(panel, /\/api\/siio\/avancys\/facturacion-por-cliente\?mes=/);
-  // El error de toda la semana fue confundir facturado con provisionado: la pantalla lo separa.
-  assert.match(panel, /No es la provisión de cierre que detalla la hoja/);
-  assert.match(panel, /neto de notas crédito/);
+test('la concentración de clientes vive en Clientes, en vivo; el servicio de facturación por cliente sigue', () => {
+  // Poda de la Fase 1 (Juan, 2026-11-13): el panel de Fuentes se fundió en Clientes («los 5 mayores concentran…»).
+  assert.equal(existsSync(new URL('../src/siio/SiioConcentracionClientes.tsx', import.meta.url)), false);
+  assert.match(leer('src/siio/SiioTorreAvancys.tsx'), /Los 5 mayores concentran el/);
   for (const archivo of BACKENDS) {
     assert.match(leer(archivo), /'GET \/api\/siio\/avancys\/facturacion-por-cliente': \['siio', ACTIONS\.SIIO_AREA_VIEW\]/, archivo);
   }
-  // Y queda enganchada donde vive el detalle de finanzas.
-  assert.match(leer('src/siio/SiioExecutiveView.tsx'), /<SiioConcentracionClientes period=\{selectedPeriod\} \/>/);
+  assert.doesNotMatch(leer('src/siio/SiioExecutiveView.tsx'), /SiioConcentracionClientes/);
 });
 
 test('el devengado prorratea por los días vigentes y sólo toma los clientes declarados', async () => {
@@ -886,11 +883,9 @@ test('un cliente declarado que Avancys no conoce se dice, no se calla', async ()
   await assert.rejects(() => lector.devengadoDelMes({ mes: '2026-08', identificaciones: [] }), AvancysLecturaError);
 });
 
-test('el devengado se presenta como cálculo propio, no como la provisión de Contabilidad', () => {
-  const panel = leer('src/siio/SiioDevengado.tsx');
-  // Confundir lo calculado con lo que registra Contabilidad es el error que costó toda la semana.
-  assert.match(panel, /Es un cálculo propio, no la provisión que registra Contabilidad/);
-  assert.match(panel, /tres clientes se separan y todavía no se\s+sabe qué excluyen/);
+test('el devengado alimenta la provisión de Resultados desde la lista declarada; su panel de Fuentes se retiró', () => {
+  // Poda de la Fase 1: la provisión ya se muestra en Resultados y los clientes se marcan en su ficha.
+  assert.equal(existsSync(new URL('../src/siio/SiioDevengado.tsx', import.meta.url)), false);
   for (const archivo of BACKENDS) {
     const texto = leer(archivo);
     assert.match(texto, /'GET \/api\/siio\/avancys\/devengado': \['siio', ACTIONS\.SIIO_AREA_VIEW\]/, archivo);
