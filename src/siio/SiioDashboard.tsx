@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import './siio.css';
+import './siio-kit.css';
 import { api } from '../apiClient';
 import { isReadOnlyRole } from '../../access-control.js';
 import { isDirectiveViewerRole } from '../navPermissions';

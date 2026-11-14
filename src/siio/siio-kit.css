@@ -1,0 +1,169 @@
+/* ============================================================
+   TORRE DE CONTROL — sistema de diseño mínimo (Fase 2)
+   Este CSS es la base de la reescritura de siio.css (Fase 4).
+   Todo vive bajo .siio-dashboard: la Torre no hereda nada del
+   CRM salvo la tipografía y el azul de acción.
+   ============================================================ */
+
+/* ---- 1 · Tokens ---- */
+.siio-dashboard{
+  /* texto */
+  --tinta:#10213d;          /* títulos y cifras */
+  --texto:#36465e;          /* cuerpo */
+  --suave:#52627a;          /* secundario (6,2:1 sobre blanco) */
+  --sutil:#5d6b80;          /* notas y metadatos (5,3:1) */
+  /* superficies */
+  --panel:#fff;
+  --fondo-suave:#f4f7fb;
+  --linea:#e3e9f2;
+  --linea-fuerte:#c9d6e6;
+  /* acción (el azul del CRM) */
+  --accion:#1b64f2;
+  --accion-oscuro:#174ea6;
+  /* semántica: el color significa lo mismo siempre */
+  --bien:#166534;        --bien-fondo:#e7f3ec;
+  --mal:#b91c1c;         --mal-texto:#991b1b;   --mal-fondo:#fcefee;
+  --estimado:#92400e;    --estimado-fondo:#fdf1dd; --estimado-borde:#ecd9b0;
+  --neutro:#5d6b80;      --neutro-fondo:#eef2f7;
+  --info:#174ea6;        --info-fondo:#e7effc;
+  /* forma */
+  --radio-panel:14px; --radio-interno:8px;
+  --sombra:0 1px 2px rgba(16,33,61,.05),0 8px 24px rgba(16,33,61,.06);
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:var(--texto);
+  font-size:14px;
+  line-height:1.5;
+}
+
+/* ---- 2 · Base y aislamiento ----
+   Los button/select del CRM traen degradado, sombra y nowrap:
+   aquí se neutralizan una sola vez y cada componente viste el suyo. */
+.siio-dashboard button{background:none;border:0;box-shadow:none;padding:0;margin:0;font:inherit;color:inherit;white-space:normal;border-radius:0;cursor:pointer;text-align:inherit}
+.siio-dashboard :focus-visible{outline:2px solid var(--accion);outline-offset:2px;border-radius:4px}
+.siio-dashboard ::selection{background:rgba(27,100,242,.16)}
+.siio-dashboard h2,.siio-dashboard h3,.siio-dashboard h4{margin:0;color:var(--tinta);line-height:1.25}
+.siio-dashboard h2{font-size:16px;font-weight:700}
+.siio-dashboard h3{font-size:14px;font-weight:650}
+.siio-dashboard p{margin:0}
+.siio-dashboard .siio-panel{min-width:0;background:var(--panel);border:1px solid var(--linea);border-radius:var(--radio-panel);box-shadow:var(--sombra);padding:18px 20px}
+.siio-dashboard .siio-nota{color:var(--sutil);font-size:12px;line-height:1.45}
+.siio-dashboard .siio-enlace{color:var(--accion);font-weight:700;font-size:13px}
+.siio-dashboard .siio-enlace:hover{color:var(--accion-oscuro);text-decoration:underline;text-underline-offset:3px}
+.siio-dashboard .siio-num{font-variant-numeric:tabular-nums}
+
+/* ---- 3 · Chip de estado (vocabulario único, 5 valores) ---- */
+.siio-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;border:1px solid transparent;font-size:11px;font-weight:700;line-height:1.5;white-space:nowrap}
+.siio-chip.cerrado{background:var(--bien-fondo);color:var(--bien)}
+.siio-chip.finanzas{background:var(--info-fondo);color:var(--info)}
+.siio-chip.vivo{background:var(--panel);color:var(--info);border-color:#b3c9ec}
+.siio-chip.proyeccion{background:var(--estimado-fondo);color:var(--estimado)}
+.siio-chip.confirmar{background:var(--panel);color:var(--estimado);border-color:var(--estimado-borde)}
+/* marca de alerta: señala un hecho malo dentro de una tabla; NO es un estado del dato */
+.siio-chip.marca{background:var(--mal-fondo);color:var(--mal-texto)}
+
+/* ---- 4 · Cifra ---- */
+.siio-cifra{display:grid;gap:3px;align-content:start;min-width:0;padding:14px 16px;border:1px solid var(--linea);border-radius:var(--radio-interno);background:var(--panel)}
+.siio-cifra>span{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--suave)}
+.siio-cifra>strong{font-size:24px;font-weight:700;letter-spacing:-.015em;color:var(--tinta);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.siio-cifra>small{font-size:12px;color:var(--sutil);line-height:1.4}
+.siio-cifra.mal>strong{color:var(--mal)}
+.siio-cifra.vacia>strong{color:var(--sutil);font-weight:600}
+
+/* ---- 5 · Bloque de pregunta ---- */
+.siio-bloque{display:grid;gap:8px;align-content:start;min-width:0;background:var(--panel);border:1px solid var(--linea);border-radius:var(--radio-panel);box-shadow:var(--sombra);padding:16px 18px}
+.siio-bloque>h3{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.siio-bloque>strong{font-size:24px;font-weight:700;letter-spacing:-.015em;color:var(--tinta);font-variant-numeric:tabular-nums}
+.siio-bloque>strong em{font-style:normal;color:var(--mal)}
+.siio-bloque>p{font-size:13px;color:var(--suave)}
+.siio-bloque>.siio-enlace{justify-self:start;margin-top:2px}
+/* barra apilada (cartera por antigüedad) */
+.siio-barra{display:flex;height:8px;border-radius:5px;overflow:hidden;background:var(--fondo-suave)}
+.siio-barra span{display:block}
+.siio-barra .al-dia{background:#cbd7e6}
+.siio-barra .t1{background:#efc98c}.siio-barra .t2{background:#e59d63}.siio-barra .t3{background:#d26a49}.siio-barra .t4{background:#a8261f}
+/* real contra meta (presupuesto) */
+.siio-metas{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px 10px;align-items:center;font-size:13px}
+.siio-metas>span:first-child{color:var(--suave)}
+.siio-meta-linea{position:relative;height:6px;border-radius:4px;background:var(--fondo-suave)}
+.siio-meta-linea b{position:absolute;inset:0 auto 0 0;max-width:100%;border-radius:4px;background:#79b78f}
+.siio-meta-linea b.mal{background:#df9d97}
+.siio-meta-linea u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--tinta)}
+.siio-metas .siio-num{font-weight:700;color:var(--tinta);white-space:nowrap}
+.siio-metas .meta{color:var(--sutil);font-weight:400}
+
+/* ---- 6 · Lista de decisión ----
+   Cada fila arranca con la ficha del plazo (lo que vence manda) en el color de su urgencia,
+   sigue la frase de acción con lo clave en tinta, y cierra con responsable y Ver. */
+.siio-decision{display:grid;margin:0;padding:0;list-style:none}
+.siio-decision li{border-top:1px solid var(--linea)}
+.siio-decision li:first-child{border-top:0}
+.siio-decision button{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:4px 14px;align-items:center;width:100%;padding:9px 8px;border-radius:var(--radio-interno)}
+.siio-decision button:hover{background:var(--fondo-suave)}
+.siio-plazo{display:grid;justify-items:center;gap:1px;min-width:88px;padding:7px 10px;border-radius:10px;background:var(--neutro-fondo)}
+.siio-plazo strong{font-size:16px;line-height:1.05;font-weight:750;letter-spacing:-.01em;color:var(--tinta);font-variant-numeric:tabular-nums}
+.siio-plazo small{font-size:10.5px;font-weight:650;color:var(--sutil)}
+.siio-plazo.alta{background:var(--mal-fondo)}
+.siio-plazo.alta strong{color:var(--mal)}
+.siio-plazo.media{background:var(--estimado-fondo)}
+.siio-plazo.media strong{color:var(--estimado)}
+.siio-decision .frase{min-width:0;font-size:14px;line-height:1.45;color:var(--suave)}
+.siio-decision .frase strong{font-size:15px;color:var(--tinta);font-variant-numeric:tabular-nums}
+.siio-decision .quien{font-size:12px;color:var(--sutil);white-space:nowrap}
+.siio-decision .ver{color:var(--accion);font-weight:700;font-size:13px;white-space:nowrap}
+.siio-conteo{display:inline-grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--mal);color:#fff;font-size:12px;font-weight:700;vertical-align:3px;margin-left:4px}
+@media(max-width:560px){
+  .siio-decision button{grid-template-columns:auto minmax(0,1fr)}
+  .siio-decision .quien{grid-column:2}
+  .siio-decision .ver{grid-column:2;justify-self:start}
+}
+
+/* ---- 7 · Tabla ----
+   El valor y su % van apilados; la columna protagonista (el acumulado) lleva fondo propio,
+   cifra mayor y una barra de magnitud que compara las filas de un vistazo. El rojo vive en
+   los valores, no en fondos de fila. */
+.siio-tabla-wrap{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--linea-fuerte) transparent}
+.siio-tabla-wrap::-webkit-scrollbar{height:8px}
+.siio-tabla-wrap::-webkit-scrollbar-thumb{background:var(--linea-fuerte);border-radius:4px}
+.siio-tabla{width:100%;border-collapse:collapse;font-size:13px}
+.siio-tabla th{padding:7px 10px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--sutil);border-bottom:1px solid var(--linea-fuerte)}
+.siio-tabla td{padding:8px 10px;border-bottom:1px solid var(--linea);color:var(--texto);vertical-align:top}
+.siio-tabla tbody tr:hover td{background:var(--fondo-suave)}
+.siio-tabla th.num,.siio-tabla td.num{text-align:right;white-space:nowrap}
+.siio-tabla td.num strong{display:block;font-weight:650;color:var(--tinta);font-variant-numeric:tabular-nums}
+.siio-tabla td.num small{display:block;margin-top:1px;font-size:11.5px;color:var(--sutil);font-variant-numeric:tabular-nums}
+.siio-tabla td.num.mal strong{color:var(--mal)}
+.siio-tabla td.num.mal small{color:var(--mal-texto)}
+.siio-tabla td .nombre{display:block;color:var(--tinta);font-weight:600}
+.siio-tabla td .siio-chip{margin-top:3px}
+.siio-tabla th.total,.siio-tabla td.total{background:#f6f8fc;border-left:1px solid var(--linea-fuerte)}
+.siio-tabla td.total strong{font-size:15px;font-weight:750}
+.siio-magnitud{display:block;width:96px;height:3px;margin:5px 0 0 auto;border-radius:2px;background:var(--linea)}
+.siio-magnitud i{display:block;height:100%;margin-left:auto;border-radius:2px;background:var(--mal)}
+.siio-tabla tfoot th{font-size:13px;text-transform:none;letter-spacing:0;color:var(--tinta);border-bottom:0;border-top:1px solid var(--linea-fuerte)}
+.siio-tabla tfoot th.total{font-size:15px}
+.siio-tabla .mal{color:var(--mal-texto)}
+.siio-tabla .vacio{padding:18px 10px;text-align:center;color:var(--sutil)}
+
+/* ---- 8 · Selector de mes ---- */
+.siio-selector{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--suave);max-width:240px}
+.siio-selector select{appearance:none;font:inherit;font-size:14px;font-weight:650;color:var(--tinta);padding:8px 32px 8px 10px;border:1px solid var(--linea-fuerte);border-radius:var(--radio-interno);background:var(--panel) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="%231b64f2" stroke-width="1.8" stroke-linecap="round"/></svg>') no-repeat right 11px center;cursor:pointer}
+.siio-selector select:hover{border-color:var(--accion)}
+
+
+/* ---- 9 · Portada (composición aprobada en la maqueta de la Fase 3) ---- */
+.siio-frase-mes{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 26px;align-items:center}
+.siio-frase-mes h2{font-size:26px;font-weight:650;letter-spacing:-.015em;line-height:1.2}
+.siio-frase-mes h2 .pct-bien{color:var(--bien)}
+.siio-frase-mes h2 .pct-mal{color:var(--mal)}
+.siio-frase-mes .encurso{font-size:13.5px;color:var(--suave)}
+.siio-frase-mes .encurso .plazo{font-weight:700;color:var(--estimado)}
+.siio-meses-mini{display:flex;align-items:end;gap:3px;margin:0;padding:0;list-style:none}
+.siio-meses-mini button{display:grid;justify-items:center;gap:2px;width:25px;padding:2px 0;border-radius:6px;color:var(--sutil);font-size:9.5px}
+.siio-meses-mini button:hover{background:var(--fondo-suave)}
+.siio-meses-mini .barra{width:13px;border-radius:3px 3px 0 0;background:#b9cdf0}
+.siio-meses-mini .neg .barra{background:#f2b8b5}
+.siio-meses-mini .act .barra{background:var(--tinta)}
+.siio-meses-mini .est .barra{background:repeating-linear-gradient(135deg,#b9cdf0 0 3px,#e3ebf8 3px 6px)}
+.siio-bloques{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:14px}
+.siio-panel-decision{margin-top:14px}
+@media(max-width:1020px){.siio-bloques{grid-template-columns:1fr}.siio-frase-mes{grid-template-columns:1fr}}
