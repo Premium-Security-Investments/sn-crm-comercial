@@ -134,6 +134,12 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     // La cartera no tumba el resultado ni los clientes: se dice que no se pudo leer.
     cartera = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
   }
+  let creditos = null;
+  try {
+    creditos = await creditosAvancys(ejecutar, { hoy: ahora().toISOString().slice(0, 10) });
+  } catch (error) {
+    creditos = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
+  }
   // Los meses incompletos se proyectan sobre el último mes cerrado; el mes en curso, además, con lo
   // contratado en las órdenes de servicio. Es una proyección y así se muestra.
   const base = pyg.find(fila => fila.mes === mesCerrado) || null;
@@ -163,6 +169,7 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     primera_linea: primerDia,
     bloqueo_contable: bloqueo,
     programaciones_avancys: programaciones,
+    creditos,
     clientes,
     cartera,
     saldos_cuentas: saldosCuentas,
@@ -232,6 +239,56 @@ let guardado = null;
 
 // Los clientes de mes vencido son los que una persona marca en la ficha del cliente (`psi_cliente_provision`); Juan
 // decidió el 2026-11-13 que esa lista manda. La lista fija de avancys-pyg.js queda sólo si la base no responde.
+// Créditos (Juan, 2026-11-14: «si están en Avancys, tráigala de allá; si no, a Parámetros»). Las obligaciones
+// registradas en Avancys traen banco, monto, saldo, tasa y plan de cuotas; se cruzan con la deuda que la contabilidad
+// tiene en las cuentas 21 por tercero. Lo que está en la contabilidad y no como obligación se dice, con su banco.
+const TOLERANCIA_CREDITOS = 1e6;
+export async function creditosAvancys(ejecutar, { hoy }) {
+  const obligaciones = (await ejecutar('account.loan', 'search_read', [[['state', '=', 'in_progress'], ['loan_type', '=', 'por_pagar']]], {
+    fields: ['loan_no', 'partner_id', 'balance', 'balance_debt', 'intrest_per_period', 'period_no', 'periods_to_pay', 'remain_period', 'payment_date'],
+  })) || [];
+  const ids = obligaciones.map(fila => fila.id);
+  const cuotas = ids.length ? ((await ejecutar('loan.move.line', 'search_read', [[['loan_id', 'in', ids]]], { fields: ['loan_id', 'date', 'total_payment'], order: 'date asc' })) || []) : [];
+  const contable = (await ejecutar(LINEAS_CONTABLES, 'read_group', [[['account_id.code', '=like', '21%'], ['parent_state', '=', 'posted']], ['balance'], ['partner_id']], { lazy: false })) || [];
+  const registradas = obligaciones.map(fila => {
+    const propias = cuotas.filter(cuota => (Array.isArray(cuota.loan_id) ? cuota.loan_id[0] : cuota.loan_id) === fila.id);
+    const proxima = propias.find(cuota => cuota.date >= hoy) || null;
+    const tasaMes = Number(fila.intrest_per_period) || 0;
+    const meses = Number(fila.period_no) || 1;
+    return {
+      numero: fila.loan_no || null,
+      banco: Array.isArray(fila.partner_id) ? nombreLimpio(fila.partner_id[1]) : null,
+      nit: Array.isArray(fila.partner_id) ? nitDeNombre(fila.partner_id[1]) : null,
+      monto: Number(fila.balance) || 0,
+      saldo: Number(fila.balance_debt) || 0,
+      tasa_periodo: tasaMes,
+      meses_por_periodo: meses,
+      tasa_ea: tasaMes ? Math.round((((1 + tasaMes / 100) ** (12 / meses)) - 1) * 10000) / 100 : null,
+      cuotas_por_pagar: Number(fila.remain_period) || 0,
+      desembolso: fila.payment_date || null,
+      fecha_final: propias.length ? propias[propias.length - 1].date : null,
+      proxima_cuota: proxima ? { fecha: proxima.date, valor: Number(proxima.total_payment) || 0 } : null,
+    };
+  });
+  const registradoPorNit = new Map();
+  for (const fila of registradas) if (fila.nit) registradoPorNit.set(fila.nit, (registradoPorNit.get(fila.nit) || 0) + fila.saldo);
+  const sinRegistrar = contable
+    .map(grupo => {
+      const nombre = Array.isArray(grupo.partner_id) ? grupo.partner_id[1] : null;
+      const deuda = -(Number(grupo.balance) || 0);
+      const registrado = registradoPorNit.get(nitDeNombre(nombre)) || 0;
+      return { tercero: nombre ? nombreLimpio(nombre) : 'Sin tercero', contable: deuda, registrado, diferencia: deuda - registrado };
+    })
+    .filter(fila => fila.diferencia > TOLERANCIA_CREDITOS)
+    .sort((a, b) => b.diferencia - a.diferencia);
+  return {
+    registradas,
+    saldo_registrado: registradas.reduce((suma, fila) => suma + fila.saldo, 0),
+    deuda_contable: contable.reduce((suma, grupo) => suma - (Number(grupo.balance) || 0), 0),
+    sin_registrar: sinRegistrar,
+  };
+}
+
 export async function clientesMesVencido(db) {
   if (!db) return CLIENTES_MES_VENCIDO;
   try {

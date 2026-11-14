@@ -27,6 +27,8 @@ type MesPyg = {
   proyeccion: { lineas: Record<string, number>; totales: Totales; estimadas: string[]; base_mes: string; ingresos_ordenes: number | null } | null;
 };
 type Saldo = { saldo: number; facturas: number };
+export type CreditoAvancys = { numero: string | null; banco: string | null; monto: number; saldo: number; tasa_periodo: number; meses_por_periodo: number; tasa_ea: number | null; cuotas_por_pagar: number; desembolso: string | null; fecha_final: string | null; proxima_cuota: { fecha: string; valor: number } | null };
+export type Creditos = { error?: string; registradas?: CreditoAvancys[]; saldo_registrado?: number; deuda_contable?: number; sin_registrar?: { tercero: string; contable: number; registrado: number; diferencia: number }[] };
 type Cartera = { error?: string; hoy?: string; total?: Saldo; vencido?: Saldo; tramos?: ({ tramo: string } & Saldo)[]; deudores?: { cliente: string; vencido: number; facturas: number }[]; heredado_yeminus?: Saldo; consignaciones_sin_identificar?: { saldo: number; partidas: number } };
 type RubroEjecucion = { clave: string; etiqueta: string; ejecutado: number; pct: number | null; presupuesto: number | null; diferencia: number | null };
 export type UnidadEjecucion = { ingresos: number; costos: number; rentabilidad: number | null; rentabilidad_presupuesto: number | null; rubros: RubroEjecucion[] };
@@ -52,6 +54,7 @@ type Torre = {
   pyg?: MesPyg[];
   bloqueo_contable?: string | null;
   programaciones_avancys?: number | null;
+  creditos?: Creditos | null;
   presupuesto?: Presupuesto | null;
 };
 

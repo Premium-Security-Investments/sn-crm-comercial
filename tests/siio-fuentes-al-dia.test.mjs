@@ -7,7 +7,7 @@ async function loadModule(relativePath) {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
 }
 
-const { diasDesdeFinDeMes, fuentesAlDia } = await loadModule('../src/siio/fuentesAlDia.ts');
+const { deudaSinRegistrar, diasDesdeFinDeMes, fuentesAlDia } = await loadModule('../src/siio/fuentesAlDia.ts');
 const hoy = new Date('2026-11-14T15:00:00Z');
 const mes = (m, estado = 'cerrado', motivo = null, impuestos = 0) => ({ mes: m, estado, motivo, totales: { impuestos } });
 const torre = {
@@ -66,4 +66,22 @@ test('un solo conteo de días para la Portada, Resultados y Fuentes', async () =
   const torre = readFileSync(new URL('../src/siio/SiioTorreAvancys.tsx', import.meta.url), 'utf8');
   assert.equal((torre.match(/diasDesdeFinDeMes\(/g) || []).length, 2, 'la alerta de bloqueo y la nota de Resultados usan el mismo conteo');
   assert.doesNotMatch(torre, /finDeMes = /);
+});
+
+test('créditos: la deuda que no está como obligación en Avancys es atraso de Tesorería, salvo lo que dejó en Parámetros', () => {
+  const pendiente = [
+    { tercero: 'BANCO DEMO UNO', contable: 900e6, registrado: 0, diferencia: 900e6 },
+    { tercero: 'BANCO DOS S.A.', contable: 3000e6, registrado: 2800e6, diferencia: 200e6 },
+  ];
+  const conCreditos = { ...torre, creditos: { sin_registrar: pendiente } };
+  const fila = fuentesAlDia({ hoy, torre: conCreditos, excelHasta: '2026-08', forecast: null, historico: null }).find(f => f.clave === 'creditos');
+  assert.deepEqual(fila.ficha, { valor: '$1.100 M', unidad: 'sin registrar' });
+  assert.equal(fila.responsable, 'Tesorería');
+  assert.equal(fila.detalle, 'en la contabilidad y no como obligación: BANCO DEMO UNO $900 M, BANCO DOS S.A. $200 M');
+  // Lo escrito a mano en Parámetros cubre su banco aunque se escriba distinto (sin «banco», minúsculas, tildes).
+  assert.deepEqual(deudaSinRegistrar(pendiente, [{ banco: 'Demo Uno' }]).map(f => f.tercero), ['BANCO DOS S.A.']);
+  assert.deepEqual(deudaSinRegistrar(pendiente, [{ banco: 'demo uno' }, { banco: 'Dós' }]), []);
+  assert.deepEqual(deudaSinRegistrar(pendiente, [{ banco: '' }]).length, 2);
+  const cubiertos = fuentesAlDia({ hoy, torre: conCreditos, excelHasta: '2026-08', forecast: null, historico: null, creditosManuales: [{ banco: 'Demo Uno' }, { banco: 'Dos' }] });
+  assert.equal(cubiertos.some(f => f.clave === 'creditos'), false);
 });
