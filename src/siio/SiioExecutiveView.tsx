@@ -98,7 +98,7 @@ function metricChange(metric: SiioFinancialMetric) {
 }
 
 const PESTANAS: ReadonlyArray<[PestanaTorre, string]> = [
-  ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['vigia', 'Vig-IA'], ['parametros', 'Parámetros'], ['fuentes', 'Fuentes y detalle'],
+  ['portada', 'Portada'], ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['vigia', 'Vig-IA'], ['parametros', 'Parámetros'], ['fuentes', 'Fuentes y detalle'],
 ];
 
 export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtra = null }: { payload: SiioBootstrapPayload; routeState: Extract<SiioRouteState, { view: 'resumen' }>; onNavigate: (state: SiioRouteState) => void; fuentesExtra?: ReactNode }) {
@@ -149,33 +149,45 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
     ? `Nómina de ${formatPeriod(recommendation.period || snapshot.payrollPeriod).toLowerCase()}`
     : financialRows[0] ? `Estado de resultados, ${metricBasis(financialRows[0], selectedPeriod).current.toLowerCase()}` : 'Periodo financiero seleccionado';
   const torre = useTorreAvancys(pulse);
-  const [pestana, setPestana] = useState<PestanaTorre>('resultados');
+  const [pestana, setPestana] = useState<PestanaTorre>('portada');
   const refPestanas = useRef<HTMLElement | null>(null);
   const irA = (destino: PestanaTorre) => { setPestana(destino); refPestanas.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   // Lo que requiere decisión hoy: lo de Avancys (clientes, cartera, mes abierto) y lo comercial, en tarjetas.
   const alertas: AlertaTorre[] = (() => {
     const lista: AlertaTorre[] = [];
-    if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', prioridad: 'media', responsable: 'Gerencia', cifra: estaSemana.vencidos === 1 ? '1 decisión' : `${estaSemana.vencidos} decisiones`, texto: 'con fecha ya vencida, sin registrarse.' });
-    lista.push(...alertasDeAvancys(torre));
     const porDecidir = (commercial?.tenders.calendar || []).filter(item => item.attention === 'requiere_decision');
-    if (porDecidir.length) lista.push({ clave: 'licitaciones', pestana: 'comercial', prioridad: 'media', responsable: 'Licitaciones', cifra: porDecidir.length === 1 ? '1 licitación' : `${porDecidir.length} licitaciones`, texto: 'esperan la decisión de presentarse.' });
+    if (porDecidir.length) {
+      const dias = porDecidir.map(item => item.days_to_deadline).filter((valor): valor is number => valor !== null && valor >= 0);
+      const minimo = dias.length ? Math.min(...dias) : null;
+      lista.push({ clave: 'licitaciones', pestana: 'comercial', prioridad: minimo !== null && minimo <= 12 ? 'alta' : 'media', responsable: 'Licitaciones',
+        ficha: minimo !== null ? { valor: `${minimo} días`, unidad: 'cierra' } : { valor: `${porDecidir.length}`, unidad: 'por decidir' },
+        frase: <><strong>{porDecidir.length === 1 ? '1 licitación espera' : `${porDecidir.length} licitaciones esperan`} la decisión de presentarse</strong>{minimo !== null ? `; la primera cierra en ${minimo} días` : ''}.</> });
+    }
+    if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', prioridad: 'alta', responsable: 'Comercial',
+      ficha: { valor: `${estaSemana.vencidos}`, unidad: estaSemana.vencidos === 1 ? 'vencida' : 'vencidas' },
+      frase: <><strong>{estaSemana.vencidos === 1 ? '1 decisión con fecha ya venció' : `${estaSemana.vencidos} decisiones con fecha ya vencieron`}</strong> sin registrarse.</> });
+    lista.push(...alertasDeAvancys(torre));
     const paradas = commercial?.pipeline.stale_large || [];
-    if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', prioridad: 'media', responsable: 'Comercial', cifra: paradas.length === 1 ? '1 oferta grande' : `${paradas.length} ofertas grandes`, texto: `paradas más de 30 días (${millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0))} al mes).` });
-    return lista.slice(0, 5);
+    if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', prioridad: 'media', responsable: 'Comercial',
+      ficha: { valor: '30+ días', unidad: 'paradas' },
+      frase: <><strong>{paradas.length === 1 ? '1 oferta grande' : `${paradas.length} ofertas grandes`} sin moverse</strong>, con {millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0))} al mes en juego.</> });
+    return lista;
   })();
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
-    {/* Portada de la Torre (maqueta aprobada por Juan, 2026-11-13): la frase del último mes cerrado, tres bloques
-        (clientes, cartera, presupuesto), lo que requiere decisión y pestañas. Lo que no ayuda a decidir no entra. */}
-    <SiioPortada t={torre} onIr={(destino, mes) => { if (mes) torre.setMes(mes); irA(destino); }} />
-
-    <SiioRequiereDecision alertas={alertas} onIr={irA} />
-
-    <nav className="siio-navigation module-segmented-nav siio-pestanas" role="tablist" aria-label="Detalle de la Torre" ref={refPestanas}>
+    {/* La Torre por pantallas (contrato de la maqueta, Fase 3): la Portada es la primera pestaña — la frase del
+        último mes cerrado, los tres bloques y lo que requiere decisión con fichas de plazo. Lo demás, una pestaña
+        por pregunta. Lo que no ayuda a decidir no entra. */}
+    <nav className="siio-navigation module-segmented-nav siio-pestanas" role="tablist" aria-label="Pantallas de la Torre" ref={refPestanas}>
       {PESTANAS.map(([clave, etiqueta]) => <button key={clave} type="button" role="tab" aria-selected={pestana === clave}
         className={pestana === clave ? 'active' : ''} onClick={() => setPestana(clave)}>{etiqueta}</button>)}
     </nav>
+
+    {pestana === 'portada' ? <section role="tabpanel" aria-label="Portada">
+      <SiioPortada t={torre} onIr={(destino, mes) => { if (mes) torre.setMes(mes); irA(destino); }} />
+      <SiioRequiereDecision alertas={alertas} onIr={irA} />
+    </section> : null}
 
     {pestana === 'resultados' ? <section className="panel" role="tabpanel" aria-label="Resultados"><SiioPestanaResultados t={torre} /></section> : null}
     {pestana === 'clientes' ? <>
