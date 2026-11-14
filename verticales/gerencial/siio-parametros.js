@@ -61,11 +61,6 @@ export const UNIDADES = Object.freeze([
   { clave: 'tecnologia', etiqueta: 'Tecnología', ingresos: 20, rubros: RUBROS_TECNOLOGIA },
 ]);
 
-const INDICADORES = [
-  ['liquidez', 'Índice de liquidez'], ['endeudamiento', 'Nivel de endeudamiento'], ['capital_trabajo', 'Capital de trabajo'],
-  ['cobertura_intereses', 'Razón de cobertura de intereses'], ['rentabilidad_patrimonio', 'Rentabilidad del patrimonio'],
-  ['rentabilidad_activo', 'Rentabilidad del activo'],
-];
 const LINEAS_PYG = LINEAS.map(linea => [linea.clave, linea.etiqueta]);
 
 // forma: 'campos' (un objeto), 'filas' (una lista), 'secciones' (un % por fila fija, en varias tablas) o 'externo'
@@ -95,8 +90,9 @@ export const PARAMETROS = Object.freeze([
     forma: 'campos', campos: [{ clave: 'vigilancia', etiqueta: 'Vigilancia', tipo: 'pct' }, { clave: 'monitoreo', etiqueta: 'Monitoreo', tipo: 'pct' }] },
   { numero: 8, clave: 'requisitos_licitaciones', grupo: 'persona', nombre: 'Indicadores financieros que piden las licitaciones', encargado: 'Licitaciones', frecuencia: 'Cuando cambian', periodo: 'ninguno',
     para: 'Semáforo cumple / no cumple contra los indicadores del balance.',
-    forma: 'filas', campos: [{ clave: 'indicador', etiqueta: 'Indicador', tipo: 'opcion', opciones: INDICADORES, requerido: true },
-      { clave: 'minimo', etiqueta: 'Mínimo', tipo: 'numero' }, { clave: 'maximo', etiqueta: 'Máximo', tipo: 'numero' }, { clave: 'nota', etiqueta: 'Nota', tipo: 'texto' }] },
+    // Regla de Juan (2026-11-14): lo que ya está en una de nuestras plataformas se trae de allá. Los indicadores que
+    // exige cada pliego los extrae Vig-IA en Licitaciones y los de la empresa están en su ficha (RUP).
+    forma: 'externo', donde: 'Vive en Licitaciones: Vig-IA saca de cada pliego los indicadores que exige y los compara con los del RUP en la ficha de la empresa.' },
   { numero: 9, clave: 'ajustes_cierre', grupo: 'temporal', nombre: 'Ajustes de cierre que aún no están en Avancys', encargado: 'Contabilidad', frecuencia: 'Al cerrar el mes', periodo: 'mes',
     para: 'Comodatos y reclasificaciones con su motivo. La meta es que quede en cero: que se registren en Avancys.',
     forma: 'filas', campos: [{ clave: 'linea', etiqueta: 'Línea del estado de resultados', tipo: 'opcion', opciones: LINEAS_PYG, requerido: true },
