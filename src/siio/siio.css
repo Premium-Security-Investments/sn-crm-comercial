@@ -1234,35 +1234,6 @@
 
 /* Torre por decisiones (Juan, 2026-11-13): una frase con el resultado del mes, lo que requiere
    decisión y pestañas. Un solo elemento fuerte por pantalla: la frase del resultado. */
-.siio-pulso{display:grid;gap:10px}
-.siio-pulso-texto{display:grid;gap:8px;min-width:0}
-.siio-pulso-grafico{display:grid;gap:4px;min-width:0}
-.siio-pulso-estimado{color:#40516b}
-.siio-pulso-estimado strong{color:#40516b}
-.siio-pulso-leyenda{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin:0;color:#64748b;font-size:11px}
-.siio-pulso-leyenda .muestra{display:inline-block;width:10px;height:10px;border-radius:2px;background:#b9cdf0}
-.siio-pulso-leyenda .muestra.oficial,.siio-pulso-tendencia .oficial .barra{background:#9fb6dc}
-.siio-pulso-leyenda .muestra.estimado{background:repeating-linear-gradient(135deg,#b9cdf0 0 3px,#dde7f7 3px 6px)}
-.siio-pulso-cabeza{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:8px 16px;font-size:13px}
-.siio-pulso-mes{display:grid;gap:4px;font-size:12px;font-weight:700;color:#40516b}
-.siio-pulso-mes select{min-width:220px;font-weight:700}
-.siio-pulso-frase{margin:2px 0 0;font-size:clamp(20px,2.2vw,28px);line-height:1.2;letter-spacing:-.01em;color:#10213d;font-weight:600;text-wrap:balance}
-.siio-pulso-frase strong{font-weight:800}
-.siio-pulso-ok{color:#166534;font-weight:700}
-.siio-pulso-mal{color:#b91c1c;font-weight:700}
-.siio-pulso-apoyo{margin:0;color:#40516b;font-size:14px}
-.siio-pulso-tendencia{display:flex;align-items:end;gap:6px;margin:6px 0 0;padding:0;list-style:none;overflow-x:auto}
-.siio-pulso-tendencia li{flex:1 0 34px}
-.siio-pulso-tendencia button{display:grid;justify-items:center;gap:3px;width:100%;min-height:44px;padding:4px 2px;border:0;border-radius:8px;background:transparent;color:#40516b;font:inherit;cursor:pointer}
-.siio-pulso-tendencia button:hover{background:#eef4fd}
-.siio-pulso-tendencia button:focus-visible{outline:2px solid #1b64f2;outline-offset:2px}
-.siio-pulso-tendencia .barra{width:70%;max-width:28px;border-radius:4px 4px 0 0;background:#b9cdf0}
-.siio-pulso-tendencia .actual .barra{background:#1b64f2}
-.siio-pulso-tendencia .negativo .barra{background:#f2b8b5}
-.siio-pulso-tendencia .estimado .barra{background:repeating-linear-gradient(135deg,#b9cdf0 0 4px,#dde7f7 4px 8px)}
-.siio-pulso-tendencia .valor{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:#10213d}
-.siio-pulso-tendencia .mes{font-size:11px;text-transform:capitalize}
-.siio-pulso-tendencia .actual .mes{color:#1b64f2;font-weight:800}
 
 
 .siio-pestanas{position:sticky;top:0;z-index:2;overflow-x:auto}
@@ -1271,10 +1242,6 @@
 .siio-pestanas.module-segmented-nav{grid-template-columns:repeat(7,minmax(110px,1fr))}
 
 .siio-chart-grid-layout.siio-chart-sola{grid-template-columns:1fr}
-.siio-pyg-cabeza{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px}
-.siio-pyg-cabeza h3{margin:0}
-.siio-como{margin-top:8px}
-.siio-como summary{cursor:pointer;color:#1b4f9c;font-weight:700;font-size:13px;min-height:44px;display:flex;align-items:center}
 
 /* Pestaña «Parámetros» de la Torre */
 .siio-parametros h3{margin:18px 0 8px}
@@ -1298,8 +1265,6 @@
 @media(max-width:640px){.siio-parametro-fila{grid-template-columns:1fr;justify-items:start}}
 
 /* Presupuesto contra ejecución, en Resultados */
-.siio-presupuesto{display:grid;gap:8px;margin-top:22px;padding-top:18px;border-top:1px solid #e2eaf5}
-.siio-presupuesto h3{margin:0}
 
 /* Clientes: su propio mes y la historia de los que pierden */
 .siio-clientes-meses{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:12px;font-size:13px;color:#40516b;font-weight:700}
@@ -1309,12 +1274,9 @@
 
 .siio-parametro-secciones{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;align-items:start}
 .siio-parametro-secciones td:last-child{width:150px}
-.siio-presupuesto-unidad{display:grid;gap:6px}
-.siio-presupuesto-unidad h4{margin:8px 0 0;font-size:15px}
-.siio-presupuesto-unidad p{margin:0}
 
 /* Los botones de la Torre no llevan la sombra ni el texto en una sola línea de los botones generales. */
-.siio-pulso-tendencia button,.siio-clientes-meses button{box-shadow:none;white-space:normal}
+.siio-clientes-meses button{box-shadow:none;white-space:normal}
 .siio-clientes-meses button:hover,.siio-clientes-meses button:focus{background:#eef4fd;color:#1b355f}
 .siio-clientes-meses button.active,.siio-clientes-meses button.active:hover,.siio-clientes-meses button.active:focus{background:#174ea6;border-color:#174ea6;color:#fff}
 .siio-clientes-meses button:focus-visible{outline:2px solid #1b64f2;outline-offset:2px}

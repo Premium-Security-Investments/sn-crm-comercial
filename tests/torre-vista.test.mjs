@@ -27,7 +27,17 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   assert.match(torre, /Ningún mes tiene bloqueo contable en Avancys/);
   assert.match(read('src/siio/SiioExecutiveView.tsx'), /\['portada', 'Portada'\], \['resultados', 'Resultados'\]/);
   for (const pregunta of ['¿Quién nos hace perder?', '¿Nos están pagando?', '¿Vamos dentro del presupuesto?']) assert.ok(torre.includes(pregunta), pregunta);
-  assert.match(torre, /<SiioPulsoMes t=\{t\} \/>\n    <EstadoDeResultados/);
+  // Resultados (PR 2 de la Fase 4): selector de mes del kit, estado de resultados por columnas con chip de estado y
+  // el atraso contable con nombre; la franja vieja del mes desaparece.
+  assert.doesNotMatch(torre, /SiioPulsoMes|siio-pulso/);
+  assert.match(torre, /<EstadoDeResultados t=\{t\} lineas=\{torre\.lineas_pyg\} meses=\{torre\.pyg\} \/>/);
+  assert.match(torre, /Contabilidad lleva \{a\.dias\} días sin cerrar/);
+  assert.match(torre, /<details className="siio-plegado">/);
+  assert.match(torre, /automatico: 'Cerrado'/);
+  const presupuesto = read('src/siio/SiioPresupuesto.tsx');
+  assert.match(presupuesto, /Rubro que se pasa/);
+  assert.match(presupuesto, /className="siio-dos-col"/);
+  assert.match(read('src/siio/SiioExecutiveView.tsx'), /className="siio-pantalla" role="tabpanel" aria-label="Resultados"/);
   assert.match(read('src/siio/SiioDashboard.tsx'), /<div className="siio-header-bar">\n      <SiioNavigation/);
   assert.match(torre, /Requiere decisión hoy/);
   assert.match(torre, /cierre de Finanzas/);
