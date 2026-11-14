@@ -79,7 +79,6 @@ assert.equal(toSiioHash(intelligenceRoute), '#/siio?view=inteligencia&period=202
 
 const executiveSource = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
 const dashboardSource = readFileSync(new URL('../src/siio/SiioDashboard.tsx', import.meta.url), 'utf8');
-const intelligenceSource = readFileSync(new URL('../src/siio/SiioSourcesIntelligenceView.tsx', import.meta.url), 'utf8');
 const officialName = 'SIIO — Sistema Interno de Inteligencia Operativa';
 assert.match(dashboardSource, new RegExp(officialName), 'the dashboard must use the official SIIO name');
 assert.doesNotMatch(dashboardSource, /Sistema Integrado de Información Operativa/, 'the former institutional name must not remain visible');
@@ -89,8 +88,6 @@ assert.match(globalFilters, />Periodo financiero\s*</, 'the financial selector m
 assert.doesNotMatch(globalFilters, />Área(?: de nómina)?\s*</, 'the payroll area selector must not appear as a global executive filter');
 const payrollPanel = executiveSource.slice(executiveSource.indexOf('Nómina agregada por área'));
 assert.match(payrollPanel, />Área de nómina\s*</, 'the area selector must live inside the aggregate payroll panel');
-assert.match(intelligenceSource, /routeState\.filters\.period/, 'the evidence view must derive recommendations for the carried financial period');
-assert.match(intelligenceSource, /snapshot\.evidenceSourceIds/, 'the evidence catalogue must be constrained to sources supporting the periods shown');
 assert.match(dashboardSource, /routeState\.filters\.period/, 'the Board draft snapshot must follow the selected financial period');
 const executiveLogicSource = readFileSync(new URL('../src/siioExecutive.ts', import.meta.url), 'utf8');
 const boardSource = readFileSync(new URL('../src/siio/SiioBoardDraftAction.tsx', import.meta.url), 'utf8');

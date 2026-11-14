@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const main = readFileSync('src/main.tsx', 'utf8');
 const dashboard = readFileSync('src/siio/SiioDashboard.tsx', 'utf8');
@@ -18,30 +18,17 @@ assert.match(main, /if \(route\.page === 'siio'\) return <SiioDashboard currentP
 assert.doesNotMatch(main, /function SiioDashboard\(/);
 
 const executive = readFileSync('src/siio/SiioExecutiveView.tsx', 'utf8');
-const tracking = readFileSync('src/siio/SiioManagementTrackingView.tsx', 'utf8');
 assert.match(executive, /period/);
 assert.match(executive, /area/);
-assert.match(tracking, /kind/);
-assert.match(tracking, /semaphore/);
-assert.match(tracking, /owner/);
-assert.match(tracking, /Todos.*Decisiones.*Bloqueos.*Riesgos.*Compromisos/s);
 assert.match(executive, /navigateSiioView\('seguimiento'/);
 assert.doesNotMatch(navigation, /Fuentes e inteligencia|'agentes'/, 'Fuentes y Agentes salen de la Torre (Juan 2026-10-11)');
 assert.doesNotMatch(dashboard, /global.*filter/i);
 
-const intelligence = readFileSync('src/siio/SiioSourcesIntelligenceView.tsx', 'utf8');
+// Las vistas viejas de Fuentes e inteligencia y de seguimiento por frentes ya no se montan: se borraron (limpieza de la
+// Fase 4). Fuentes vive en la pestaña «Fuentes y detalle» y el seguimiento en Seguimiento gerencial.
+assert.equal(existsSync('src/siio/SiioSourcesIntelligenceView.tsx'), false);
+assert.equal(existsSync('src/siio/SiioManagementTrackingView.tsx'), false);
 const agents = readFileSync('src/siio/SiioAgentsView.tsx', 'utf8');
-// "Vigencia" y "Próxima revisión" salieron: la vigencia se calcula contra el último dato real de
-// cada fuente, no contra una fecha escrita a mano que nadie llenaba (17 de 17 vacías).
-for (const marker of ['Estado del dato', 'Confianza', 'Tipo de fuente', 'Restricciones', 'Último dato en la Torre', 'Registrada el', 'Frentes relacionados', 'Pendiente de evidencia', 'Periodo pendiente', 'Evidencia', 'Fuentes', 'Periodo de origen', 'Acción recomendada']) {
-  assert.match(intelligence, new RegExp(marker));
-}
-assert.match(intelligence, /filterSources/);
-assert.match(intelligence, /deriveCalidadFuentes/);
-assert.match(intelligence, /deriveRecommendations/);
-assert.equal((intelligence.match(/<select/g) || []).length, 3, 'intelligence must expose only its three contextual filters');
-assert.match(intelligence, /source\.url \?/);
-assert.doesNotMatch(intelligence, /\bonClick\b|\bapi\b/);
 for (const marker of ['Propósito', 'Responsable institucional', 'Estado', 'Fuentes autorizadas', 'Acciones permitidas', 'Acciones prohibidas', 'Revisión humana obligatoria', 'Regla de auditoría', 'Siguiente gate', 'Sin escritura automática en producción']) {
   assert.match(agents, new RegExp(marker));
 }

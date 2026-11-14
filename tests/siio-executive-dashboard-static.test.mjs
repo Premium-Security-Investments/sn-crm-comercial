@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 
 const dashboard = readFileSync(new URL('../src/siio/SiioDashboard.tsx', import.meta.url), 'utf8');
 const executive = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
-const tracking = readFileSync(new URL('../src/siio/SiioManagementTrackingView.tsx', import.meta.url), 'utf8');
 const board = readFileSync(new URL('../src/siio/SiioBoardDraftAction.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -17,13 +16,6 @@ assert.equal((executive.match(/financialRows\.map/g) || []).length, 0, 'The Exce
 assert.match(executive, /useFollowups\(\)/, 'The Torre reads the follow-up register (Seguimiento gerencial) instead of the legacy tracking counters');
 assert.match(executive, /alertas de nómina agregadas: <strong>\{payrollTotals\.alerts\}<\/strong>/, 'Payroll alerts are a plain, non-clickable aggregate figure');
 assert.equal((executive.match(/payrollTotals\.alerts/g) || []).length, 1, 'The aggregate payroll alert metric must not be duplicated');
-assert.match(tracking, /deriveTrackingItems/, 'Tracking must derive deduplicated records and decisions');
-assert.match(tracking, /filterTrackingItems/, 'Tracking must apply contextual route filters');
-assert.match(tracking, /Todos.*Decisiones.*Bloqueos.*Riesgos.*Compromisos/s, 'Tracking must expose its five internal kinds');
-assert.match(tracking, /Estado operativo sujeto al corte y confirmación del responsable/, 'Tracking must disclose that unconfirmed status requires owner review');
-assert.match(tracking, /Histórico/, 'Tracking must label terminal items as history');
-assert.match(tracking, /Vigencia no confirmada/, 'Tracking must label undated non-terminal items as unconfirmed');
-assert.match(tracking, /activityState/, 'Tracking badges must be driven by the derived activity state');
 assert.match(dashboard, /SiioExecutiveView/, 'SIIO dashboard must compose the extracted executive view');
 assert.match(dashboard, /SiioFollowupsView/, 'SIIO dashboard must compose the follow-up view');
 assert.doesNotMatch(executive, /payroll.*cedula|nomina.*cedula/i, 'Dashboard must never render payroll IDs');
