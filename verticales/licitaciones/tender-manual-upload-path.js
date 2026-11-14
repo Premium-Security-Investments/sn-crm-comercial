@@ -37,7 +37,9 @@ export function tenderManualUploadStoragePath({ opportunityId, profileId, name, 
 export function isTenderManualUploadStoragePath(storagePath, opportunityId) {
   const path = String(storagePath || '');
   if (!path || !opportunityId) return false;
-  if (path.includes('..') || path.startsWith('/') || path.includes('\\')) return false;
+  // `..` sólo es salirse de la carpeta cuando es un tramo entero de la ruta. Dentro de un nombre («Oferta 2026-2027..xlsx»,
+  // Rama Pereira 14-nov) no lo es: el nombre no puede traer `/`, así que no sube de nivel.
+  if (path.split('/').some(part => part === '..' || part === '.') || path.startsWith('/') || path.includes('\\')) return false;
   const folder = tenderManualUploadFolder(opportunityId);
   if (!path.startsWith(folder)) return false;
   // Un solo nivel: el archivo va en la carpeta de la oportunidad, no en una subcarpeta inventada.

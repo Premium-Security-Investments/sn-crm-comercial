@@ -30,6 +30,10 @@ test('la ruta queda dentro de la carpeta de SU oportunidad y es única por carga
 test('la ruta que firmó esta API para esta oportunidad se acepta', () => {
   const path = tenderManualUploadStoragePath({ opportunityId: OPP, profileId: 'perfil-1', name: 'super.pdf', size: 10 });
   assert.equal(isTenderManualUploadStoragePath(path, OPP), true);
+  // Rama Pereira (14-nov): «Anexo No. 7 Comp Valor a Pagar y Oferta economica 2026-2027..xlsx» se rechazaba por los dos
+  // puntos dentro del nombre. `..` sólo es salirse de la carpeta cuando es un tramo entero de la ruta.
+  const puntos = tenderManualUploadStoragePath({ opportunityId: OPP, profileId: 'perfil-1', name: 'Anexo No. 7 Comp Valor a Pagar y Oferta economica 2026-2027..xlsx', size: 10 });
+  assert.equal(isTenderManualUploadStoragePath(puntos, OPP), true);
 });
 
 test('no se acepta la carpeta de otra oportunidad, ni salirse de la carpeta', () => {
@@ -37,6 +41,8 @@ test('no se acepta la carpeta de otra oportunidad, ni salirse de la carpeta', ()
   assert.equal(isTenderManualUploadStoragePath(ajena, OPP), false, 'la carpeta de Supersalud no sirve para Pereira');
   for (const malo of [
     `${tenderManualUploadFolder(OPP)}../${OTRA}/robado.pdf`,
+    `${tenderManualUploadFolder(OPP)}..`,
+    `${tenderManualUploadFolder(OPP)}./x.pdf`,
     `${tenderManualUploadFolder(OPP)}sub/carpeta.pdf`,
     `/${tenderManualUploadFolder(OPP)}absoluto.pdf`,
     `${tenderManualUploadFolder(OPP)}carpeta\\windows.pdf`,
