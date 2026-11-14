@@ -593,36 +593,6 @@
   vertical-align:middle;
 }
 
-.siio-goal-bar{
-  position:relative;
-  height:8px;
-  margin-top:4px;
-  border-radius:999px;
-  background:#e2e8f0;
-  overflow:hidden;
-}
-
-.siio-goal-bar i{
-  position:absolute;
-  inset:0 auto 0 0;
-  border-radius:999px;
-  background:#475569;
-}
-
-.siio-goal-bar i.below{
-  background:#b45309;
-}
-
-.siio-pulse-card.siio-card-alert{
-  border-color:#f59e0b;
-  background:#fffbeb;
-}
-
-.siio-commercial-table th[scope="row"]{
-  white-space:normal;
-  min-width:220px;
-}
-
 .siio-commercial-pending-grid{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
@@ -661,33 +631,10 @@
   }
 }
 
-.siio-key-figures{
-  display:grid;
-  grid-template-columns:1fr;
-  gap:14px;
-}
-
-.siio-key-group{
-  display:grid;
-  gap:8px;
-  align-content:start;
-  min-width:0;
-}
-
-.siio-key-group h3{
-  margin:0;
-  color:#334155;
-  font-size:13px;
-  font-weight:800;
-}
-
 .siio-key-grid{
   display:grid;
   gap:10px;
 }
-
-.siio-key-grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
-.siio-key-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
 
 .siio-key-figure{
   display:grid;
@@ -719,12 +666,6 @@
   font-size:12px;
   overflow-wrap:anywhere;
 }
-
-.siio-key-figure.siio-card-alert{
-  border-color:#f59e0b;
-  background:#fffbeb;
-}
-
 
 .siio-attention-readings{margin-top:0}
 
@@ -791,19 +732,11 @@
 
 .siio-commercial-pending-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 
-@media(min-width:1700px){
-  .siio-key-figures{grid-template-columns:4fr 3fr}
-}
-
 @media(max-width:900px){
-  .siio-key-grid-4,
-  .siio-key-grid-3{grid-template-columns:repeat(2,minmax(0,1fr))}
   .siio-commercial-pending-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 @media(max-width:600px){
-  .siio-key-grid-4,
-  .siio-key-grid-3,
   .siio-commercial-pending-grid{grid-template-columns:1fr}
 }
 
@@ -831,14 +764,6 @@
   font-size:13px;
 }
 
-.siio-key-group h3{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:center;
-  gap:4px 14px;
-}
-
-
 .siio-pulse-table th[scope="row"]{
   text-transform:none;
   letter-spacing:0;
@@ -856,17 +781,6 @@
   font-weight:700;
   text-transform:uppercase;
   letter-spacing:.05em;
-}
-
-.siio-commercial-table th:nth-child(n+3),
-.siio-commercial-table td:nth-child(n+3){
-  text-align:left;
-  white-space:normal;
-}
-
-.siio-row-alert,
-.siio-row-alert th[scope="row"]{
-  background:#fffbeb;
 }
 
 .siio-alert-text{
@@ -892,126 +806,9 @@
 
 .siio-dashboard .siio-view-filters[aria-label="Filtros del resumen ejecutivo"]{align-items:center}
 
-.siio-key-figures,
-.siio-key-group,
 .siio-key-grid > *{min-width:0}
 
-
 .siio-dashboard .stack > *{min-width:0}
-
-.siio-commercial-table th[scope="row"]{
-  width:34%;
-  min-width:240px;
-}
-
-.siio-commercial-table th[scope="row"],
-.siio-commercial-table td{vertical-align:top}
-
-/* Narrow screens: each row becomes a stacked entry instead of a squeezed table. */
-@media(max-width:600px){
-  .siio-dashboard .siio-table-wrap table.siio-commercial-table{min-width:0}
-  .siio-commercial-table thead{display:none}
-  .siio-commercial-table tr{
-    display:grid;
-    grid-template-columns:1fr;
-    gap:4px;
-    padding:12px;
-    border-bottom:1px solid #e7edf5;
-  }
-  .siio-commercial-table th[scope="row"],
-  .siio-commercial-table td{
-    display:block;
-    width:auto;
-    min-width:0;
-    padding:0;
-    border:0;
-    text-align:left;
-    white-space:normal;
-  }
-  .siio-commercial-table td:last-child{text-align:left}
-}
-
-/* Trend charts: accent blue for the current period, grey for the reference, hairline grid. */
-.siio-chart-grid-layout{
-  display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:20px 28px;
-}
-
-.siio-chart{margin:0;min-width:0}
-
-.siio-chart figcaption{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:baseline;
-  gap:2px 10px;
-}
-
-.siio-chart figcaption strong{color:#10213d;font-size:15px}
-.siio-chart figcaption span{color:#526173;font-size:12px}
-
-.siio-chart-legend{
-  display:flex;
-  flex-wrap:wrap;
-  gap:4px 14px;
-  margin:6px 0 2px;
-  color:#40516b;
-  font-size:12px;
-}
-
-.siio-chart-legend span{display:inline-flex;align-items:center;gap:6px}
-.siio-chart-key{display:inline-block;width:12px;height:12px;border-radius:3px}
-.siio-chart-key-accent{background:#1b64f2}
-.siio-chart-key-reference{background:#94a3b8}
-.siio-chart-key-goal{height:0;width:16px;border-radius:0;border-top:2px dashed #475569}
-
-.siio-chart-frame{position:relative}
-.siio-chart-frame svg{display:block;width:100%;height:auto;overflow:visible}
-
-.siio-chart-grid{stroke:#e8eef6;stroke-width:1}
-.siio-chart-baseline{stroke:#94a3b8;stroke-width:1}
-.siio-chart-goal{stroke:#475569;stroke-width:1.5;stroke-dasharray:5 4}
-.siio-chart-crosshair{stroke:#cbd5e1;stroke-width:1}
-.siio-chart-axis{fill:#526173;font-size:12px;font-variant-numeric:tabular-nums}
-.siio-chart-value{fill:#10213d;font-size:12px;font-weight:700}
-.siio-chart-bar.siio-chart-accent{fill:#1b64f2}
-.siio-chart-bar.siio-chart-reference{fill:#94a3b8}
-.siio-chart-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
-.siio-chart-line.siio-chart-accent{stroke:#1b64f2}
-.siio-chart-line.siio-chart-reference{stroke:#94a3b8}
-.siio-chart-dot{stroke:#fff;stroke-width:2}
-.siio-chart-dot.siio-chart-accent{fill:#1b64f2}
-.siio-chart-dot.siio-chart-reference{fill:#94a3b8}
-.siio-chart-hit{fill:transparent}
-.siio-chart-active .siio-chart-hit{fill:#f1f5fb}
-.siio-chart-frame g[tabindex]:focus{outline:none}
-.siio-chart-frame g[tabindex]:focus-visible .siio-chart-hit{fill:#e8effc}
-
-.siio-chart-tooltip{
-  position:absolute;
-  top:-6px;
-  transform:translate(-50%,-100%);
-  width:max-content;
-  max-width:280px;
-  padding:6px 9px;
-  border-radius:8px;
-  background:#10213d;
-  color:#fff;
-  font-size:12px;
-  line-height:1.35;
-  pointer-events:none;
-  white-space:normal;
-  box-shadow:0 4px 12px rgba(16,33,61,.18);
-}
-
-@media(max-width:900px){
-  .siio-chart-grid-layout{grid-template-columns:1fr}
-}
-
-@media(max-width:600px){
-  .siio-chart-axis,
-  .siio-chart-value{font-size:14px}
-}
 
 /* Collapsible sections: an explicit button instead of a tiny disclosure triangle. */
 .siio-detail > summary{
@@ -1054,13 +851,6 @@
 }
 
 /* Private sales and public tenders sit side by side as separate groups. */
-.siio-key-row{
-  display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:14px 20px;
-}
-
-.siio-key-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
 
 .siio-attention-section{display:grid;gap:8px}
 .siio-attention-section + .siio-attention-section{margin-top:20px;padding-top:16px;border-top:1px solid #e7edf5}
@@ -1077,14 +867,6 @@
 .siio-more-links{display:flex;flex-wrap:wrap;gap:10px}
 
 .siio-detail > summary:focus-visible{outline:2px solid #9dbbe8;outline-offset:-2px}
-
-@media(max-width:900px){
-  .siio-key-row{grid-template-columns:1fr}
-}
-
-@media(max-width:600px){
-  .siio-key-grid-2{grid-template-columns:1fr}
-}
 
 .siio-alerts-title{margin:8px 0 0;color:#10213d;font-size:14px}
 
@@ -1209,15 +991,6 @@
 
 /* Decisiones con fecha: lo primero de la pantalla. Una línea por asunto, el plazo primero,
    porque es lo que decide si se mira ahora o después. */
-.siio-semana-list{display:grid;gap:8px;margin:10px 0 0;padding:0;list-style:none}
-.siio-semana-item{display:grid;grid-template-columns:200px 1fr auto;gap:14px;align-items:center;padding:12px 14px;border:1px solid #e7edf5;border-left:4px solid #9fb3cc;border-radius:12px;background:#fff}
-.siio-semana-vencido{border-left-color:#ea580c;background:#fffaf5}
-.siio-semana-cuando{display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:#24344d;font-size:14px}
-.siio-semana-que{display:grid;gap:2px;min-width:0}
-.siio-semana-que strong{color:#10213d;font-size:15px}
-.siio-semana-que span{color:#40516b;font-size:13px}
-.siio-semana-accion{justify-self:end}
-@media (max-width:720px){.siio-semana-item{grid-template-columns:1fr;gap:6px}.siio-semana-accion{justify-self:start}}
 
 /* Medición de acceso a Avancys: el veredicto sobre rentabilidad primero, la lista después. */
 .siio-avancys-acceso button{margin:4px 0 10px}
@@ -1235,13 +1008,10 @@
 /* Torre por decisiones (Juan, 2026-11-13): una frase con el resultado del mes, lo que requiere
    decisión y pestañas. Un solo elemento fuerte por pantalla: la frase del resultado. */
 
-
 .siio-pestanas{position:sticky;top:0;z-index:2;overflow-x:auto}
 .siio-dashboard .siio-table-wrap tr.siio-fila-alerta td{background:#fef2f2}
 .siio-dashboard .siio-table-wrap td{font-variant-numeric:tabular-nums}
 .siio-pestanas.module-segmented-nav{grid-template-columns:repeat(7,minmax(110px,1fr))}
-
-.siio-chart-grid-layout.siio-chart-sola{grid-template-columns:1fr}
 
 /* Pestaña «Parámetros» de la Torre */
 .siio-parametros h3{margin:18px 0 8px}
@@ -1265,7 +1035,6 @@
 @media(max-width:640px){.siio-parametro-fila{grid-template-columns:1fr;justify-items:start}}
 
 /* Presupuesto contra ejecución, en Resultados */
-
 
 .siio-parametro-secciones{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;align-items:start}
 .siio-parametro-secciones td:last-child{width:150px}

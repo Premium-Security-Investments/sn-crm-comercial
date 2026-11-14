@@ -77,3 +77,23 @@ test('cabecera y pestañas calcan la maqueta: botón primario, pestañas en fila
   assert.match(torre, /replace\(\/\^\(\\s\*\\\[\[\^\\\]\]\*\\\]\\s\*\)\+\//);
   assert.doesNotMatch(torre, /<>pierden \{millones/);
 });
+
+test('comercial y licitaciones calcan la maqueta: plazo en ficha, forecast por comercial y nada del Excel', () => {
+  const comercial = read('src/siio/SiioPestanaComercial.tsx');
+  const vista = read('src/siio/SiioExecutiveView.tsx');
+  assert.match(vista, /className="siio-pantalla" role="tabpanel" aria-label="Comercial y licitaciones"/);
+  // El mismo umbral de rojo para la licitación en la Portada y en su tabla.
+  assert.match(comercial, /export const PLAZO_ALTO = 12;/);
+  assert.match(vista, /minimo <= PLAZO_ALTO \? 'alta'/);
+  assert.match(comercial, /<FichaPlazo item=\{item\} \/>/);
+  // ¿El forecast está al día? con nombre: la columna protagonista es lo que lleva más de 30 días sin gestión.
+  assert.match(comercial, /¿El forecast está al día\?/);
+  assert.match(comercial, /summary\.pipeline\.by_owner/);
+  assert.match(comercial, /ningún lead al día/);
+  // Los seguimientos con fecha no repiten las licitaciones, que ya están en su tabla.
+  assert.match(comercial, /asunto\.tipo === 'seguimiento'/);
+  // Lo de privados y licitaciones que estaba en Fuentes va plegado en su pestaña.
+  assert.doesNotMatch(vista, /Comercial privado · detalle|Licitaciones públicas · detalle/);
+  assert.match(comercial, /<SiioPrivateDetail summary=\{summary\} state="ready" \/>/);
+  assert.match(read('src/siio/siio-kit.css'), /\.siio-magnitud\.neutra i\{background:var\(--accion\)\}/);
+});

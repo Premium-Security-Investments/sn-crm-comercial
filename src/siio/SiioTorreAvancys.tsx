@@ -474,7 +474,7 @@ function DetalleClientes({ mes, datos }: { mes: string; datos: Clientes | 'carga
 }
 
 // Una cifra del kit: etiqueta, valor tabular y nota; en rojo cuando es pérdida o vencido; atenuada sin dato.
-function CifraKit({ etiqueta, valor, nota, tono, chip }: { etiqueta: string; valor: string; nota?: React.ReactNode; tono?: 'mal' | 'vacia'; chip?: React.ReactNode }) {
+export function CifraKit({ etiqueta, valor, nota, tono, chip }: { etiqueta: string; valor: string; nota?: React.ReactNode; tono?: 'mal' | 'vacia'; chip?: React.ReactNode }) {
   return <div className={`siio-cifra${tono ? ` ${tono}` : ''}`}>
     <span>{etiqueta}{chip}</span>
     <strong>{valor}</strong>

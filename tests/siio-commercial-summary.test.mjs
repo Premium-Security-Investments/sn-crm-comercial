@@ -106,6 +106,30 @@ test('pipeline ponderado, cobertura y oportunidades quietas', () => {
   assert.deepEqual(pipeline.stale_large.map(item => [item.company_name, item.days_without_activity, item.owner_name]), [['Cliente o1', 71, 'Comercial Uno']]);
 });
 
+// Caso real (2026-11-14): un proceso automático toca la fecha de modificación de todas las oportunidades, y los leads
+// que nadie había gestionado nunca parecían al día. La actividad es la última interacción, o la creación si no hay.
+test('¿el forecast está al día?: por comercial, y la fecha de modificación no cuenta como gestión', () => {
+  const summary = buildCommercialSummary({
+    ...fixture,
+    profiles: [...fixture.profiles, { id: 'u2', full_name: 'Comercial Dos' }],
+    opportunities: [
+      ...fixture.opportunities,
+      opp('n1', { owner_id: 'u2', stage_code: 'prospecto', offer_value: 30, last_interaction_at: null, created_at: '2026-06-01T00:00:00Z', updated_at: '2026-10-10T00:00:00Z' }),
+      opp('n2', { owner_id: 'u2', stage_code: 'envio_oferta', offer_value: 20, last_interaction_at: null, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-10T00:00:00Z' }),
+      opp('n3', { owner_id: null, stage_code: 'prospecto', offer_value: 5, last_interaction_at: '2026-07-01T00:00:00Z' }),
+    ],
+  }, { now });
+  const porComercial = Object.fromEntries(summary.pipeline.by_owner.map(row => [row.owner_name ?? 'sin comercial', [row.open, row.stale, row.monthly_value, row.stale_monthly_value]]));
+  assert.deepEqual(porComercial, {
+    'Comercial Uno': [3, 2, 500, 400],
+    'Comercial Dos': [2, 1, 50, 30],
+    'sin comercial': [1, 1, 5, 5],
+  });
+  assert.deepEqual(summary.pipeline.by_owner.map(row => row.stale), [2, 1, 1], 'primero quien tiene más leads sin gestión');
+  assert.equal(summary.pipeline.by_owner.reduce((total, row) => total + row.open, 0), summary.pipeline.open_count);
+  assert.equal(summary.pipeline.by_owner.reduce((total, row) => total + row.stale, 0), summary.pipeline.stale_count);
+});
+
 test('licitaciones: sólo procesos vivos, con decisión pendiente o cierre vencido', () => {
   const { tenders } = buildCommercialSummary(fixture, { now });
   assert.deepEqual(tenders.calendar.map(item => item.entity), ['Instituto B', 'Gobernación A', 'Fiscalía D'], 'excluye cerradas, descartadas y las que terminaron en no_go');
@@ -162,18 +186,12 @@ test('la Torre se lee por decisiones: la frase del mes, lo que requiere decisió
   const pestanas = view.indexOf('role="tablist"');
   const pulso = view.indexOf('<SiioPortada');
   const decide = view.indexOf('<SiioRequiereDecision');
-  const keyFigures = view.indexOf('<SiioKeyFigures');
-  assert.ok(pestanas > 0 && pestanas < pulso && pulso < decide && decide < keyFigures, 'orden: pestañas y la Portada como primera pantalla (frase, bloques, requiere decisión)');
+  const comercial = view.indexOf('<SiioPestanaComercial');
+  assert.ok(pestanas > 0 && pestanas < pulso && pulso < decide && decide < comercial, 'orden: pestañas y la Portada como primera pantalla (frase, bloques, requiere decisión)');
   assert.match(view, /'fuentes', 'Fuentes y detalle'/, 'el Excel por periodo, sus alertas y los detalles quedan en la pestaña Fuentes y detalle');
-  assert.match(view, /conFinanzas=\{false\}/, 'las tarjetas del Excel salen de la vista de gerencia');
+  assert.doesNotMatch(view, /SiioKeyFigures|SiioTrendCharts|SiioEstaSemana/, 'las cifras clave, las gráficas y la franja semanal del Excel salen de la Torre (Fase 4, PR 5)');
   assert.match(view, /<details className="panel siio-detail">/);
   assert.equal((view.match(/api<T>\(path\)/g) || []).length, 1, 'la vista carga cada fuente una sola vez y la comparte');
-  const figures = readFileSync(new URL('../src/siio/SiioKeyFigures.tsx', import.meta.url), 'utf8');
-  assert.equal((figures.match(/<Figure /g) || []).length, 8, 'ocho cifras clave: 4 de finanzas, 2 de privados y 2 de licitaciones');
-  assert.match(figures, /Comercial privado/);
-  assert.match(figures, /Licitaciones públicas/);
-  assert.match(figures, /tone: 'reference'/, 'la referencia (año anterior) va en gris en las gráficas de tendencia');
-  assert.match(view, /<SiioTrendCharts/, 'la tendencia va como gráficas con escala, no como minigráficas');
 });
 
 test('las cifras acumuladas se muestran en millones, no en pesos completos', async () => {
