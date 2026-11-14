@@ -110,30 +110,61 @@ test('lo calculado se guarda 30 minutos y "refrescar" lo vuelve a pedir', async 
   olvidarTorre();
 });
 
-test('cartera: saldo, vencido, tramos por antigüedad del vencimiento y quién debe más', async () => {
-  // Facturas de mentira: [vence, saldo, cliente].
-  const FACTURAS = [
-    ['2026-12-01', 50, [1, 'A']], ['2026-11-01', 30, [1, 'A']], ['2026-10-01', 20, [2, '[900] B']],
-    ['2026-09-01', 10, [2, '[900] B']], ['2026-07-01', 5, [3, 'C']],
+// Evalúa un dominio de Odoo (notación polaca con '|' y '&') sobre una partida de mentira.
+function cumple(dominio, fila) {
+  let i = 0;
+  const hoja = ([campo, op, valor]) => {
+    const v = fila[campo];
+    if (op === '=') return valor === false ? v === false || v === undefined || v === null : v === valor;
+    if (op === '!=') return valor === false ? !(v === false || v === undefined || v === null) : v !== valor;
+    if (op === '<') return v !== false && v < valor;
+    if (op === '>=') return v !== false && v >= valor;
+    if (op === '=like') return String(v).startsWith(valor.replace('%', ''));
+    throw new Error(`operador ${op}`);
+  };
+  const expr = () => {
+    const t = dominio[i++];
+    if (t === '|') { const a = expr(); const b = expr(); return a || b; }
+    if (t === '&') { const a = expr(); const b = expr(); return a && b; }
+    return hoja(t);
+  };
+  let todo = true;
+  while (i < dominio.length) todo = expr() && todo;
+  return todo;
+}
+
+test('cartera: sale de la contabilidad (incluye lo que vino de Yeminus), por antigüedad del vencimiento, por NIT y con las consignaciones sin identificar', async () => {
+  // Partidas abiertas de mentira; las de julio son saldos iniciales de Yeminus con su vencimiento original.
+  const base = { parent_state: 'posted', reconciled: false, 'account_id.internal_type': 'receivable' };
+  const PARTIDAS = [
+    { ...base, 'account_id.code': '13050500', date: '2026-11-05', date_maturity: '2026-12-01', amount_residual: 50, partner_id: [1, 'A'] },
+    { ...base, 'account_id.code': '13050500', date: '2026-10-01', date_maturity: '2026-11-01', amount_residual: 30, partner_id: [1, 'A'] },
+    { ...base, 'account_id.code': '13051000', date: '2026-09-01', date_maturity: '2026-10-01', amount_residual: 20, partner_id: [2, '[SEDE NORTE] [900111222] B'] },
+    { ...base, 'account_id.code': '13050500', date: '2026-08-10', date_maturity: '2026-09-01', amount_residual: 10, partner_id: [3, '[900111222] B'] },
+    { ...base, 'account_id.code': '13050500', date: '2026-07-31', date_maturity: '2025-01-15', amount_residual: 400, partner_id: [4, '[UND 1] [800333444] C'] },
+    { ...base, 'account_id.code': '13050500', date: '2026-07-31', date_maturity: false, amount_residual: -8, partner_id: [4, '[UND 1] [800333444] C'] },
+    { ...base, 'account_id.code': '13051500', date: '2026-10-20', date_maturity: false, amount_residual: -77, partner_id: false },
   ];
   const llamadas = [];
   const ejecutar = async (modelo, metodo, args, kwargs) => {
-    llamadas.push({ modelo, args, kwargs });
-    const filtro = args[0];
-    const pasa = ([vence]) => filtro.every(([campo, op, valor]) => campo !== 'invoice_date_due' || (op === '<' ? vence < valor : vence >= valor));
-    const filas = FACTURAS.filter(pasa);
-    if (!args[2].length) return [{ amount_residual: filas.reduce((s, f) => s + f[1], 0), __count: filas.length }];
+    llamadas.push({ modelo });
+    const filas = PARTIDAS.filter(fila => cumple(args[0], fila));
+    if (!args[2].length) return [{ amount_residual: filas.reduce((suma, f) => suma + f.amount_residual, 0), __count: filas.length }];
     const por = new Map();
-    for (const [, saldo, cliente] of filas) {
-      const g = por.get(cliente[0]) || { partner_id: cliente, amount_residual: 0, __count: 0 };
-      g.amount_residual += saldo; g.__count += 1; por.set(cliente[0], g);
+    for (const f of filas) {
+      const g = por.get(f.partner_id[0]) || { partner_id: f.partner_id, amount_residual: 0, __count: 0 };
+      g.amount_residual += f.amount_residual; g.__count += 1; por.set(f.partner_id[0], g);
     }
-    return [...por.values()].sort((a, b) => b.amount_residual - a.amount_residual);
+    return [...por.values()];
   };
   const r = await carteraVencida(ejecutar, { hoy: '2026-11-13' });
-  assert.deepEqual(r.total, { saldo: 115, facturas: 5 });
-  assert.deepEqual(r.vencido, { saldo: 65, facturas: 4 });
-  assert.deepEqual(r.tramos.map(t => [t.tramo, t.saldo]), [['1 a 30 días', 30], ['31 a 60 días', 20], ['61 a 90 días', 10], ['Más de 90 días', 5]]);
-  assert.deepEqual(r.deudores.map(d => [d.cliente, d.vencido]), [['A', 30], ['[900] B', 30], ['C', 5]]);
-  assert.ok(llamadas.every(l => l.modelo === 'account.move' && l.args[0][0][2] === 'out_invoice'));
+  assert.deepEqual(r.total, { saldo: 502, facturas: 6 });
+  // La nota sin vencimiento de julio cuenta desde su fecha contable: está vencida, más de 90 días.
+  assert.deepEqual(r.vencido, { saldo: 452, facturas: 5 });
+  assert.deepEqual(r.tramos.map(t => [t.tramo, t.saldo]), [['1 a 30 días', 30], ['31 a 60 días', 20], ['61 a 90 días', 10], ['Más de 90 días', 392]]);
+  assert.deepEqual(r.heredado_yeminus, { saldo: 392, facturas: 2 });
+  assert.deepEqual(r.consignaciones_sin_identificar, { saldo: 77, partidas: 1 });
+  // Las sedes de un mismo NIT se suman: B debe 30 entre sus dos sedes.
+  assert.deepEqual(r.deudores.map(d => [d.cliente, d.vencido]), [['[UND 1] [800333444] C', 392], ['A', 30], ['[SEDE NORTE] [900111222] B', 30]]);
+  assert.ok(llamadas.every(l => l.modelo === 'account.move.line'));
 });

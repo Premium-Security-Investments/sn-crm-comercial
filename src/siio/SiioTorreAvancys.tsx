@@ -26,7 +26,7 @@ type MesPyg = {
   proyeccion: { lineas: Record<string, number>; totales: Totales; estimadas: string[]; base_mes: string; ingresos_ordenes: number | null } | null;
 };
 type Saldo = { saldo: number; facturas: number };
-type Cartera = { error?: string; hoy?: string; total?: Saldo; vencido?: Saldo; tramos?: ({ tramo: string } & Saldo)[]; deudores?: { cliente: string; vencido: number; facturas: number }[] };
+type Cartera = { error?: string; hoy?: string; total?: Saldo; vencido?: Saldo; tramos?: ({ tramo: string } & Saldo)[]; deudores?: { cliente: string; vencido: number; facturas: number }[]; heredado_yeminus?: Saldo; consignaciones_sin_identificar?: { saldo: number; partidas: number } };
 type RubroEjecucion = { clave: string; etiqueta: string; ejecutado: number; pct: number | null; presupuesto: number | null; diferencia: number | null };
 export type UnidadEjecucion = { ingresos: number; costos: number; rentabilidad: number | null; rentabilidad_presupuesto: number | null; rubros: RubroEjecucion[] };
 type MesPresupuesto = {
@@ -498,6 +498,14 @@ export function SiioPestanaCartera({ t }: { t: TorreAvancys }) {
       {(c.tramos || []).map(tramo => <Cifra key={tramo.tramo} etiqueta={`Vencida ${tramo.tramo.toLowerCase()}`} valor={millones(tramo.saldo)}
         comparacion={c.vencido?.saldo ? `${pct(tramo.saldo, c.vencido.saldo)} de lo vencido` : null} alerta={tramo.saldo > 0 && (tramo.tramo.startsWith('61') || tramo.tramo.startsWith('Más'))} />)}
     </div>
+    {/* La cartera sale de la contabilidad (cuentas 1305), con la que vino de Yeminus. Lo heredado y la plata
+        recibida sin identificar se dicen con su responsable (Juan, 2026-11-14: «la Torre muestra quién no está al día»). */}
+    {c.heredado_yeminus?.saldo || c.consignaciones_sin_identificar?.saldo ? <div className="siio-key-grid siio-key-grid-2">
+      {c.heredado_yeminus?.saldo ? <Cifra etiqueta="Viene de antes de agosto (Yeminus)" valor={millones(c.heredado_yeminus.saldo)} alerta
+        comparacion={`${c.heredado_yeminus.facturas.toLocaleString('es-CO')} facturas cargadas como saldo inicial y sin cobrar · Cartera`} /> : null}
+      {c.consignaciones_sin_identificar?.saldo ? <Cifra etiqueta="Consignaciones sin identificar" valor={millones(c.consignaciones_sin_identificar.saldo)} alerta
+        comparacion={`${c.consignaciones_sin_identificar.partidas.toLocaleString('es-CO')} pagos recibidos que no se han aplicado a ningún cliente · Tesorería y Cartera`} /> : null}
+    </div> : null}
     <div className="siio-table-wrap"><table>
       <thead><tr><th>Quién debe más (vencido)</th><th>Vencido</th><th>Equivale a</th></tr></thead>
       <tbody>{(c.deudores || []).map(fila => {
@@ -511,7 +519,7 @@ export function SiioPestanaCartera({ t }: { t: TorreAvancys }) {
         </tr>;
       })}</tbody>
     </table></div>
-    <p className="siio-pulse-footnote">Facturas publicadas en Avancys al {c.hoy}. La historia de Avancys empieza en agosto de 2026.</p>
+    <p className="siio-pulse-footnote">Partidas abiertas de las cuentas de clientes en la contabilidad de Avancys al {c.hoy}, incluida la cartera que vino de Yeminus con su vencimiento original.</p>
   </>;
 }
 
