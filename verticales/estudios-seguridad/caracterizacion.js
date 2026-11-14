@@ -40,9 +40,9 @@ async function must(promise) {
   return data;
 }
 
-async function editableStudy(db, studyId) {
+export async function editableStudy(db, studyId) {
   if (typeof studyId !== 'string' || !UUID.test(studyId)) throw invalid('Estudio: identificador inválido.');
-  const study = await must(db.from('psi_security_studies').select('id, status, client_source, client_ref, client_nit').eq('id', studyId).maybeSingle());
+  const study = await must(db.from('psi_security_studies').select('id, status, client_source, client_ref, client_nit, site_city').eq('id', studyId).maybeSingle());
   if (!study) throw invalid('Estudio no encontrado.', 404);
   if (!EDITABLE_STATUSES.has(study.status)) throw invalid('El estudio no está en borrador: no se puede modificar.', 409);
   return study;
