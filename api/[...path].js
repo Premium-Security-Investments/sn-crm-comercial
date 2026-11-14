@@ -10,7 +10,8 @@ import { createFollowup, listFollowups, updateFollowup } from '../verticales/ger
 import { guardarParametro, listarParametros } from '../verticales/gerencial/siio-parametros.js';
 import { agregarPresupuesto } from '../verticales/gerencial/siio-presupuesto.js';
 import { addAction as addSecurityStudyAction, addRisk as addSecurityStudyRisk, addZone as addSecurityStudyZone, createStudy as createSecurityStudy, deleteAction as deleteSecurityStudyAction, deleteRisk as deleteSecurityStudyRisk, deleteZone as deleteSecurityStudyZone, getStudy as getSecurityStudy, listStudies as listSecurityStudies, updateAction as updateSecurityStudyAction, updateRisk as updateSecurityStudyRisk, updateStudy as updateSecurityStudy, updateZone as updateSecurityStudyZone } from '../verticales/estudios-seguridad/estudios.js';
-import { addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys, updateCharacterizationRow } from '../verticales/estudios-seguridad/caracterizacion.js';
+import { addCharacterizationRow, deleteCharacterizationRow, editableStudy as editableSecurityStudy, seedPostsFromAvancys, updateCharacterizationRow } from '../verticales/estudios-seguridad/caracterizacion.js';
+import { traerEstadisticaPolicia } from '../verticales/estudios-seguridad/estadistica-policia.js';
 import { claimFieldNoteRun, confirmFieldNote as confirmSecurityStudyFieldNote, runFieldNote } from '../verticales/estudios-seguridad/agente.js';
 import { loadWorkflow as loadSecurityStudyWorkflow, transitionStudy as transitionSecurityStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { reviewStudy as reviewSecurityStudy } from '../verticales/estudios-seguridad/revisor.js';
@@ -3791,6 +3792,8 @@ for (const section of ['estadisticas', 'contactos', 'dispositivo']) {
   securityStudyRoute('patch', `/api/estudios-seguridad/:id/${section}/:rowId`, (db, req) => updateCharacterizationRow(db, req.params.id, section, req.params.rowId, req.body || {}));
   securityStudyRoute('delete', `/api/estudios-seguridad/:id/${section}/:rowId`, (db, req) => deleteCharacterizationRow(db, req.params.id, section, req.params.rowId));
 }
+// Estadística de delitos del municipio desde los datos abiertos de la Policía (Juan, 2026-11-14: "esto me gusta").
+securityStudyRoute('post', '/api/estudios-seguridad/:id/estadistica-policia', (db, req) => traerEstadisticaPolicia(db, req.params.id, req.body || {}, { editableStudy: editableSecurityStudy }));
 securityStudyRoute('post', '/api/estudios-seguridad/:id/dispositivo-desde-avancys', (db, req) => seedPostsFromAvancys(db, req.params.id, crearLectorAvancys()));
 // Tramo 2: fotos y evidencias. Permiso firmado para subir → el navegador sube → el servidor verifica y registra.
 securityStudyRoute('post', '/api/estudios-seguridad/:id/evidencias/upload-url', (db, req) => requestSecurityStudyEvidenceUpload(db, req.params.id, req.body || {}));

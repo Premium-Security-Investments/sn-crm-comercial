@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { EvidenceStrip } from './EvidenceStrip';
 import {
-  addCharacterizationRow, deleteCharacterizationRow, seedPostsFromAvancys, updateStudy,
+  addCharacterizationRow, deleteCharacterizationRow, fetchPoliceStats, seedPostsFromAvancys, updateStudy, type MunicipioPolicia,
   type Characterization, type CharacterizationSection, type Evidence, type Study,
 } from './api';
 
@@ -80,7 +80,8 @@ export function CharacterizationPanel({ study, characterization, evidence, urls,
       <RowsEditor studyId={study.id} section="estadisticas" title="Estadística de delitos" editable={editable} onChanged={onChanged}
         rows={characterization.estadisticas.map(row => ({ id: row.id, cells: [row.crime, row.count.toLocaleString('es-CO'), row.source, row.cutoff_date || '—'] }))}
         header={['Delito', 'Cantidad', 'Fuente', 'Fecha de corte']}
-        fields={[{ key: 'crime', label: 'Delito' }, { key: 'count', label: 'Cantidad', type: 'number' }, { key: 'source', label: 'Fuente', placeholder: 'Policía Nacional' }, { key: 'cutoff_date', label: 'Fecha de corte', type: 'date' }]} />
+        fields={[{ key: 'crime', label: 'Delito' }, { key: 'count', label: 'Cantidad', type: 'number' }, { key: 'source', label: 'Fuente', placeholder: 'Policía Nacional' }, { key: 'cutoff_date', label: 'Fecha de corte', type: 'date' }]}
+        extra={editable ? <FromPolice studyId={study.id} city={study.site_city} onChanged={onChanged} /> : null} />
 
       <RowsEditor studyId={study.id} section="dispositivo" title="Dispositivo de seguridad" editable={editable} onChanged={onChanged}
         rows={characterization.dispositivo.map(row => ({ id: row.id, cells: [row.name, MODALITY_LABELS[row.modality], row.schedule || '—', row.armed === true ? 'Sí' : row.armed === false ? 'No' : '—', String(row.quantity), row.source === 'avancys' ? `Avancys ${row.source_ref}` : 'Escrito'] }))}
@@ -152,6 +153,30 @@ function RowsEditor({ studyId, section, title, header, rows, fields, editable, e
     </form> : null}
     {error ? <p className="es-error" role="alert">{error}</p> : null}
   </div>;
+}
+
+// Trae los delitos del municipio de los datos abiertos de la Policía: 12 meses al último corte y su comparación con el
+// año anterior. Reemplaza lo que vino de esa fuente antes; lo escrito a mano se queda.
+function FromPolice({ studyId, city, onChanged }: { studyId: string; city: string | null; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const [options, setOptions] = useState<MunicipioPolicia[]>([]);
+  const run = async (choice?: MunicipioPolicia) => {
+    setBusy(true); setNote('');
+    try {
+      const result = await fetchPoliceStats(studyId, choice ? { cod_muni: choice.cod_muni, municipio: choice.municipio } : {});
+      if ('escoger' in result && result.escoger) { setOptions(result.opciones); setNote('Hay varios municipios con ese nombre: escoja cuál.'); return; }
+      setOptions([]);
+      if (!('municipio' in result)) return;
+      setNote(`Delitos de ${result.municipio.municipio} entre ${result.desde} y ${result.corte}, según la Policía.${result.reemplazadas ? ' Reemplazó la consulta anterior.' : ''}`);
+      onChanged();
+    } catch (reason) { setNote(message(reason)); } finally { setBusy(false); }
+  };
+  return <span className="es-actions">
+    <button type="button" className="secondary" onClick={() => void run()} disabled={busy || !city}>{busy ? 'Consultando a la Policía…' : `Traer de la Policía${city ? ` (${city})` : ''}`}</button>
+    {options.map(option => <button key={option.cod_muni} type="button" className="es-link" disabled={busy} onClick={() => void run(option)}>{option.municipio} · {option.departamento}</button>)}
+    {note ? <small className="es-muted">{note}</small> : !city ? <small className="es-muted">Escriba la ciudad de la sede para traer la estadística.</small> : null}
+  </span>;
 }
 
 function SeedFromAvancys({ studyId, onChanged }: { studyId: string; onChanged: () => void }) {
