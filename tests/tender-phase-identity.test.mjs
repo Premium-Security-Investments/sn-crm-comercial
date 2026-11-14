@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   applyOfficialSourceLink,
   planRadarPhaseIdentitySync,
+  usableTenderSourceUrl,
 } from '../verticales/licitaciones/tender-phase-identity.js';
 
 const HISTORICAL_URL = 'https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.HISTORICAL';
@@ -254,6 +255,25 @@ assert.equal(
   applyOfficialSourceLink(notes, { officialUrl: OFFICIAL_URL, historicalUrl: HISTORICAL_URL }),
   'identical previous/new phase must not be treated as a transition',
 );
+
+// Rama Pereira, 2026-11-14: la fila de la fase nueva trae el enlace de inicio de sesión de SECOP. Se adoptan su fase y
+// su cierre, pero el enlace de la oportunidad no cambia.
+const LOGIN_URL = 'https://community.secop.gov.co/STS/Users/Login/Index';
+assert.equal(usableTenderSourceUrl(LOGIN_URL), null);
+assert.equal(usableTenderSourceUrl(OFFICIAL_URL), OFFICIAL_URL);
+assert.equal(usableTenderSourceUrl('https://www.contratos.gov.co/consultas/detalleProceso.do?numConstancia=26-1-1'), 'https://www.contratos.gov.co/consultas/detalleProceso.do?numConstancia=26-1-1');
+const loginPlan = planRadarPhaseIdentitySync({
+  fetched: [fetchedHistorical(), { ...fetchedOfficial(), url: LOGIN_URL }],
+  existing: [convertedHistorical()],
+  now: '2026-09-28T00:00:00.000Z',
+});
+const loginOverride = loginPlan.convertedOverrides.find(row => row.stable_key === 'converted-historical-key');
+assert.equal(loginOverride.url, HISTORICAL_URL, 'a login link must never replace the opportunity source link');
+assert.equal(loginOverride.status, 'Presentación de oferta', 'the new phase is still adopted');
+assert.equal(loginOverride.deadline_at, '2026-10-02T15:00:00.000Z');
+const loginPatch = loginPlan.opportunityPatches.find(row => row.converted_opportunity_id === 'opp-converted-1');
+assert.equal(loginPatch.officialUrl, HISTORICAL_URL, 'the observaciones keep the real SECOP link');
+assert.equal(loginPatch.sourceChange, null, 'no document follow-up is triggered by a login link');
 
 const backendPaths = ['../server/index.js', '../api/[...path].js'];
 for (const path of backendPaths) {

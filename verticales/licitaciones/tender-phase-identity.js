@@ -106,6 +106,16 @@ function preferOfficialIdentity(current, candidate, rankOf = officialPhaseRank) 
   return deadlineMs(candidate) > deadlineMs(current) ? candidate : current;
 }
 
+// Datos abiertos a veces publica la fila de una fase nueva con `urlproceso` apuntando al inicio de sesión de SECOP
+// (Rama Pereira LP-01-2026, 2026-11-14: CO1.REQ.11362018 → «/STS/Users/Login/Index»). Un enlace de SECOP II sin
+// `noticeUID` no lleva a ningún proceso: no se adopta y se conserva el que ya tenía la oportunidad.
+export function usableTenderSourceUrl(url) {
+  const text = String(url || '').trim();
+  if (!text) return null;
+  if (/secop\.gov\.co/i.test(text) && !/noticeUID=CO1\.NTC\.\w+/i.test(text)) return null;
+  return text;
+}
+
 function uniqueStrings(values) {
   return [...new Set((values || []).filter(Boolean))];
 }
@@ -207,14 +217,14 @@ export function planRadarPhaseIdentitySync({ fetched = [], existing = [], now } 
 
     convertedOverrides.push({
       stable_key: convertedRow.stable_key,
-      url: official.url || convertedRow.url || null,
+      url: usableTenderSourceUrl(official.url) || convertedRow.url || null,
       process_id: official.process_id || convertedRow.process_id || null,
       status: official.status || convertedRow.status || null,
       deadline_at: deadlineValue(official) || deadlineValue(convertedRow) || null,
       known_phases: knownPhases,
     });
 
-    const officialUrl = official.url || null;
+    const officialUrl = usableTenderSourceUrl(official.url);
     const officialStatus = official.status || convertedRow.status || null;
     const urlChanged = Boolean(officialUrl) && officialUrl !== convertedRow.url;
     const phaseChanged = Boolean(officialStatus) && officialStatus !== convertedRow.status;
