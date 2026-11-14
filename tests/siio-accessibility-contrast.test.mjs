@@ -30,17 +30,14 @@ assert.match(eyebrowRule, /font-weight:/, 'the SIIO eyebrow token must define it
 assert.match(styles, /\.siio-secondary\{color:#475569\}/, 'the SIIO secondary text token must be defined locally with an AA-compliant color');
 
 const executive = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
-const tracking = readFileSync(new URL('../src/siio/SiioManagementTrackingView.tsx', import.meta.url), 'utf8');
-const intelligence = readFileSync(new URL('../src/siio/SiioSourcesIntelligenceView.tsx', import.meta.url), 'utf8');
 const agentsView = readFileSync(new URL('../src/siio/SiioAgentsView.tsx', import.meta.url), 'utf8');
 
 // La vista ejecutiva usa el kit de la Torre (siio-kit.css), sin la etiqueta eyebrow; las demás vistas la conservan.
 assert.doesNotMatch(executive, /className="eyebrow"/, 'SiioExecutiveView must not render the low-contrast global eyebrow');
-for (const [name, source] of [['SiioSourcesIntelligenceView', intelligence], ['SiioAgentsView', agentsView]]) {
+for (const [name, source] of [['SiioAgentsView', agentsView]]) {
   assert.match(source, /siio-eyebrow/, `${name} must use the locally-contrasted siio-eyebrow token`);
   assert.doesNotMatch(source, /className="eyebrow"/, `${name} must not render the low-contrast global eyebrow on a light SIIO surface`);
 }
-assert.match(tracking, /siio-secondary/, 'SiioManagementTrackingView must use the locally-contrasted siio-secondary token for secondary text');
 
 assert.ok(contrast('#ffffff', '#1b64f2') >= 4.5, 'white text must meet WCAG AA against the management-signal button gradient start');
 assert.ok(contrast('#ffffff', '#174ea6') >= 4.5, 'white text must meet WCAG AA against the management-signal button gradient end');

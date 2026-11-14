@@ -2,17 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
-import { build } from 'esbuild';
 
 const migration = readFileSync(new URL('../supabase/migrations/143_siio_programacion_horas_cliente.sql', import.meta.url), 'utf8');
 const rollback = readFileSync(new URL('../supabase/rollbacks/143_siio_programacion_horas_cliente_rollback.sql', import.meta.url), 'utf8');
 
-async function loadModule(relativePath) {
-  const result = await build({ entryPoints: [new URL(relativePath, import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', write: false });
-  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
-}
-
-const { deriveHorasPorCliente, pickPeriodo } = await loadModule('../src/siio/horasPorCliente.ts');
 
 // Esquema mínimo de Programación, con los campos que lee la vista.
 const PROGRAMACION = `
@@ -95,56 +88,4 @@ test('sin el esquema de Programación la vista existe vacía y la Torre no se ca
   await db.exec(rollback);
   assert.equal((await db.query("select to_regclass('public.siio_programacion_horas_cliente') as relation")).rows[0].relation, null);
   await db.close();
-});
-
-const fila = (overrides = {}) => ({
-  periodo_id: 1, ciudad: 'Pereira', periodo_inicio: '2026-07-24', periodo_fin: '2026-08-23', periodo_estado: 'cerrado',
-  cliente_id: 1, cliente: 'HOSPITAL SAN JORGE', nit: '800231235', puestos: 2, guardas: 4,
-  horas_programadas: 1000, horas_realizadas: 900, turnos_programados: 80, turnos_realizados: 72,
-  turnos_sin_programado: 12, ...overrides,
-});
-
-test('la Torre elige el último periodo cerrado y ordena los clientes por horas realizadas', () => {
-  const rows = [
-    fila(),
-    fila({ cliente_id: 2, cliente: 'INGENIO RISARALDA', nit: '891401705', horas_realizadas: 2000, horas_programadas: 1500, puestos: 3 }),
-    fila({ periodo_id: 2, periodo_estado: 'abierto', periodo_inicio: '2026-10-24', periodo_fin: '2026-11-23', horas_realizadas: 10, horas_programadas: 100 }),
-  ];
-  const summary = deriveHorasPorCliente(rows);
-  assert.equal(summary.periodoId, 1);
-  assert.equal(summary.abierto, false);
-  assert.deepEqual(summary.clientes.map(row => row.cliente), ['INGENIO RISARALDA', 'HOSPITAL SAN JORGE']);
-  assert.equal(summary.totalRealizadas, 2900);
-  assert.equal(summary.totalProgramadas, 2500);
-  assert.equal(summary.totalPuestos, 5);
-  assert.equal(summary.clientes[1].relacion, 0.9);
-  assert.equal(Math.round(summary.clientes[0].share * 100), 69);
-  assert.equal(summary.periodos.length, 2);
-  assert.match(summary.readings[0], /INGENIO RISARALDA concentra el 69 %/);
-  assert.equal(summary.readings.some(text => /no tiene un turno programado asociado/.test(text)), true);
-  assert.equal(summary.readings.some(text => /separados más de 10 %/.test(text)), true);
-});
-
-test('si no hay periodo cerrado usa el más reciente y avisa que está abierto', () => {
-  const abierto = [fila({ periodo_id: 2, periodo_estado: 'abierto', periodo_inicio: '2026-10-24' })];
-  const summary = deriveHorasPorCliente(abierto);
-  assert.equal(summary.periodoId, 2);
-  assert.equal(summary.abierto, true);
-  assert.equal(summary.readings.some(text => /periodo está abierto/.test(text)), true);
-  assert.equal(deriveHorasPorCliente([]), null);
-  assert.equal(pickPeriodo([]), null);
-});
-
-test('un cliente sin nada programado no inventa una relación', () => {
-  const summary = deriveHorasPorCliente([fila({ horas_programadas: 0, horas_realizadas: 50 })]);
-  assert.equal(summary.clientes[0].relacion, null);
-  assert.equal(summary.relacion, null);
-});
-
-test('más horas realizadas que programadas no se presenta como cumplimiento', () => {
-  // Caso real de ARA en el periodo cerrado: 23.107 programadas y 41.298 realizadas.
-  const summary = deriveHorasPorCliente([fila({ cliente: 'JERONIMO MARTINS', horas_programadas: 23107, horas_realizadas: 41298, turnos_realizados: 3000, turnos_sin_programado: 1200 })]);
-  assert.equal(Math.round(summary.clientes[0].relacion * 100), 179);
-  assert.equal(summary.readings.some(text => /dato incompleto, no incumplimiento/.test(text)), true);
-  assert.equal(summary.readings.some(text => /cumplimiento del servicio/.test(text)), false);
 });

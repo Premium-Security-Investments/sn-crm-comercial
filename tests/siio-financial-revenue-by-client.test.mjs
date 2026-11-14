@@ -1,15 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import AdmZip from 'adm-zip';
-import { build } from 'esbuild';
 import { parseSiioFinancialWorkbook } from '../verticales/gerencial/siio-financial-workbook.js';
 
-async function loadModule(relativePath) {
-  const result = await build({ entryPoints: [new URL(relativePath, import.meta.url).pathname], bundle: true, format: 'esm', platform: 'node', write: false });
-  return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
-}
-
-const { deriveRevenueByClient } = await loadModule('../src/siio/revenueByClient.ts');
 
 const xmlEscape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const inline = (ref, value) => `<c r="${ref}" t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>`;
@@ -131,35 +124,4 @@ test('un libro sin la hoja Ingresos se sigue leyendo igual', () => {
   assert.equal(result.revenue_provision, null);
   assert.equal(result.validations.some(item => item.rule === 'V17_PROVISION_POR_TERCERO'), false);
   assert.equal(result.status, 'listo_revision');
-});
-
-const line = (client_label, amount, overrides = {}) => ({
-  period_month: '2026-08-01', line_type: 'servicio', client_label, amount,
-  service_month: 'AGOSTO', excluded_from_total: false, source_sheet: 'Ingresos', source_row: 5, ...overrides,
-});
-
-test('la Torre ordena por valor, calcula participación y deja la fila excluida sin sumar', () => {
-  const summary = deriveRevenueByClient([
-    line('HOSPITAL SAN JORGE', 300),
-    line('ESU', 600),
-    line('MARIANO OSPINA', 50, { excluded_from_total: true }),
-    line('INGENIO MARZO', 100, { line_type: 'ajuste', service_month: null }),
-  ], '2026-08-01');
-  assert.equal(summary.period, '2026-08-01');
-  assert.deepEqual(summary.services.map(row => row.label), ['ESU', 'HOSPITAL SAN JORGE', 'MARIANO OSPINA']);
-  assert.equal(summary.total, 1000);
-  assert.equal(summary.servicesTotal, 900);
-  assert.equal(summary.adjustmentsTotal, 100);
-  assert.equal(summary.excludedTotal, 50);
-  assert.equal(summary.services[0].share, 0.6);
-  assert.equal(summary.services[2].share, null);
-  assert.match(summary.readings[0], /ESU concentra el 60 %/);
-  assert.equal(summary.readings.some(text => /MARIANO OSPINA .*fuera del total/.test(text)), true);
-});
-
-test('la Torre usa el último mes disponible cuando el periodo pedido no tiene líneas', () => {
-  const rows = [line('ESU', 600), line('HOSPITAL SAN JORGE', 300, { period_month: '2026-09-01' })];
-  assert.equal(deriveRevenueByClient(rows, '2026-07-01').period, '2026-09-01');
-  assert.equal(deriveRevenueByClient(rows, '2026-08-01').period, '2026-08-01');
-  assert.equal(deriveRevenueByClient([], '2026-08-01'), null);
 });
