@@ -97,3 +97,16 @@ test('comercial y licitaciones calcan la maqueta: plazo en ficha, forecast por c
   assert.match(comercial, /<SiioPrivateDetail summary=\{summary\} state="ready" \/>/);
   assert.match(read('src/siio/siio-kit.css'), /\.siio-magnitud\.neutra i\{background:var\(--accion\)\}/);
 });
+
+test('fuentes calca la maqueta: quién tiene atrasado qué, el Excel con su detalle plegado y la nómina una sola vez', () => {
+  const vista = read('src/siio/SiioExecutiveView.tsx');
+  assert.match(vista, /className="siio-pantalla" role="tabpanel" aria-label="Fuentes y detalle"/);
+  assert.ok(vista.indexOf('<SiioFuentesAlDia') < vista.indexOf('aria-label="El Excel de Finanzas"'), 'primero el tablero de atrasos');
+  // Poda de la Fase 1: fuera lo que duplicaba una pantalla en vivo.
+  assert.doesNotMatch(vista, /SiioRevenueByClient|SiioConcentracionClientes|SiioDevengado|SiioHorasPorCliente|Acumulado del año según/);
+  // El forecast atrasado sube a la Portada con su responsable.
+  assert.match(vista, /clave: 'forecast', pestana: 'comercial', prioridad: parte >= SIN_GESTION_MAL \? 'alta' : 'media', responsable: 'Comercial'/);
+  const fuentes = read('src/siio/SiioFuentesAlDia.tsx');
+  assert.match(fuentes, /<th>Atraso<\/th><th>Qué falta<\/th><th>Responsable<\/th><th>Efecto en la Torre<\/th>/);
+  assert.match(read('src/siio/siio-kit.css'), /\.siio-dashboard \.siio-tabla td:last-child:not\(\.num\)\{text-align:left;white-space:normal\}/);
+});

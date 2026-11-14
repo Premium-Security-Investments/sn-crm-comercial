@@ -87,7 +87,7 @@ assert.doesNotMatch(dashboardSource, /Sistema Integrado de Información Operativ
 const globalFilters = executiveSource.match(/<section className="siio-view-filters"[\s\S]*?<\/section>/)?.[0] || '';
 assert.match(globalFilters, />Periodo financiero\s*</, 'the financial selector must be named for its true scope');
 assert.doesNotMatch(globalFilters, />Área(?: de nómina)?\s*</, 'the payroll area selector must not appear as a global executive filter');
-const payrollPanel = executiveSource.slice(executiveSource.indexOf('<Panel title="Nómina agregada">'));
+const payrollPanel = executiveSource.slice(executiveSource.indexOf('Nómina agregada por área'));
 assert.match(payrollPanel, />Área de nómina\s*</, 'the area selector must live inside the aggregate payroll panel');
 assert.match(intelligenceSource, /routeState\.filters\.period/, 'the evidence view must derive recommendations for the carried financial period');
 assert.match(intelligenceSource, /snapshot\.evidenceSourceIds/, 'the evidence catalogue must be constrained to sources supporting the periods shown');

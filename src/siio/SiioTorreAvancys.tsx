@@ -4,6 +4,7 @@ import { api } from '../apiClient';
 import { Badge } from './SiioUi';
 import { mesComparable, SiioPresupuesto } from './SiioPresupuesto';
 import type { FinancialPulse } from './financialPulse';
+import { diasDesdeFinDeMes } from './fuentesAlDia';
 
 // Las dos preguntas de plata de la Torre (plan del 2026-11-12), en vivo desde Avancys:
 // ¿ganamos plata el mes pasado? y ¿qué clientes dejan y cuáles quitan?
@@ -50,6 +51,7 @@ type Torre = {
   lineas_pyg?: LineaPyg[];
   pyg?: MesPyg[];
   bloqueo_contable?: string | null;
+  programaciones_avancys?: number | null;
   presupuesto?: Presupuesto | null;
 };
 
@@ -168,7 +170,6 @@ const sinCodigo = (nombre: string) => {
   if (limpio !== limpio.toUpperCase()) return limpio;
   return limpio.toLowerCase().split(/\s+/).map((palabra, i) => (i && PALABRAS_MENORES.has(palabra) ? palabra : palabra.charAt(0).toUpperCase() + palabra.slice(1))).join(' ');
 };
-const finDeMes = (mes: string) => new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1));
 
 // Señales de Avancys para la lista de decisión: el cierre contable que no llega y los clientes que
 // deben dos meses o más. Clientes en pérdida y cartera vencida viven en los bloques, no aquí.
@@ -178,7 +179,7 @@ export function alertasDeAvancys(t: TorreAvancys, hoy = new Date()): AlertaTorre
   if (torre?.mes_cerrado) {
     const bloqueo = torre.bloqueo_contable || null;
     if (!bloqueo || bloqueo.slice(0, 7) < torre.mes_cerrado) {
-      const dias = Math.max(0, Math.floor((hoy.getTime() - finDeMes(torre.mes_cerrado).getTime()) / 86400000));
+      const dias = diasDesdeFinDeMes(torre.mes_cerrado, hoy);
       const abiertos = (torre.pyg || []).filter(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso').map(fila => nombreMes(fila.mes).split(' ')[0]);
       salida.push({ clave: 'bloqueo', prioridad: 'alta', pestana: 'fuentes', responsable: 'Contabilidad',
         ficha: { valor: `${dias} días`, unidad: 'sin cierre' },
@@ -575,11 +576,9 @@ function EstadoDeResultados({ t, lineas, meses }: { t: TorreAvancys; lineas: Lin
   const resumen = (fila: MesPyg) => t.resumenDe(fila.mes);
   const protagonista = (fila: MesPyg) => (fila.mes === t.mes ? 'num total' : 'num');
   // Los meses que la contabilidad no ha cerrado, con los días que llevan (Juan, 2026-11-14: «la Torre muestra quién no está al día»).
-  const hoy = Date.now();
-  const abiertos = meses.filter(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso').map(fila => {
-    const fin = Date.UTC(Number(fila.mes.slice(0, 4)), Number(fila.mes.slice(5, 7)), 1);
-    return { mes: fila.mes, dias: Math.max(0, Math.floor((hoy - fin) / 86400000)), motivo: fila.motivo };
-  });
+  const hoy = new Date();
+  const abiertos = meses.filter(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso')
+    .map(fila => ({ mes: fila.mes, dias: diasDesdeFinDeMes(fila.mes, hoy), motivo: fila.motivo }));
   return <section className="siio-panel" aria-label="Estado de resultados">
     <h2>Estado de resultados</h2>
     <div className="siio-tabla-wrap"><table className="siio-tabla">
