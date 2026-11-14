@@ -167,3 +167,18 @@
 .siio-bloques{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:14px}
 .siio-panel-decision{margin-top:14px}
 @media(max-width:1020px){.siio-bloques{grid-template-columns:1fr}.siio-frase-mes{grid-template-columns:1fr}}
+
+/* ---- 10 · Cabecera y pestañas (calco de la maqueta de la Fase 3) ----
+   Las reglas viejas del menú segmentado (grilla, píldoras grandes, posición pegajosa) se anulan aquí. */
+.siio-dashboard .siio-header-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.siio-dashboard .siio-header-bar .siio-header-profile{margin-left:auto;font-size:12px;color:var(--sutil)}
+.siio-dashboard .siio-header-bar .siio-navigation.module-segmented-nav{display:inline-flex;flex-wrap:nowrap;grid-template-columns:none;width:auto;gap:2px;padding:3px;border:1px solid var(--linea);border-radius:10px;background:var(--panel);box-shadow:none}
+.siio-dashboard .siio-header-bar .siio-navigation.module-segmented-nav button{flex:none;width:auto;min-height:0;padding:6px 13px;border:0;border-radius:7px;background:none;box-shadow:none;font-size:13px;font-weight:700;color:var(--suave);white-space:nowrap}
+.siio-dashboard .siio-header-bar .siio-navigation.module-segmented-nav button:hover{color:var(--tinta);background:var(--fondo-suave)}
+.siio-dashboard .siio-header-bar .siio-navigation.module-segmented-nav button.active{background:var(--tinta);color:#fff}
+.siio-dashboard .siio-boton-primario{background:var(--accion);color:#fff;border-radius:9px;padding:8px 14px;font-weight:700;font-size:13px;white-space:nowrap}
+.siio-dashboard .siio-boton-primario:hover{background:var(--accion-oscuro)}
+.siio-dashboard .siio-pestanas.module-segmented-nav{position:static;display:flex;flex-direction:row;flex-wrap:wrap;grid-template-columns:none;gap:6px;width:auto;margin:4px 0 2px;padding:0;border:0;border-radius:0;background:none;box-shadow:none;overflow:visible}
+.siio-dashboard .siio-pestanas.module-segmented-nav button{flex:none;width:auto;min-height:0;padding:8px 14px;border:1px solid var(--linea);border-radius:9px;background:var(--panel);box-shadow:none;font-size:13px;font-weight:700;color:var(--suave);white-space:nowrap}
+.siio-dashboard .siio-pestanas.module-segmented-nav button:hover{border-color:var(--linea-fuerte);color:var(--tinta)}
+.siio-dashboard .siio-pestanas.module-segmented-nav button.active{background:var(--tinta);border-color:var(--tinta);color:#fff}

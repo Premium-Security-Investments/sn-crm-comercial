@@ -77,7 +77,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
     <div className="siio-header-bar">
       <SiioNavigation activeView={routeState.view === 'seguimiento' ? 'seguimiento' : 'resumen'} onSelect={selectView} />
       <span className="siio-header-profile">SIIO — Sistema Interno de Inteligencia Operativa · Perfil: <strong>{SIIO_ROLE_LABELS[currentProfile.role] || currentProfile.role}</strong></span>
-      {!readOnly && <button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}
+      {!readOnly && <button type="button" className="siio-boton-primario" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button>}
     </div>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     {/* Only the Torre and Seguimiento are offered; old links to Fuentes or Agentes fall back to the Torre. */}

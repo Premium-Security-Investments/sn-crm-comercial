@@ -46,3 +46,13 @@ test('cartera: lo vencido con todos sus tramos y los meses de deuda comparados c
   assert.match(torre, /\(c\.tramos \|\| \[\]\)\.map\(tramo => <Cifra/);
   assert.match(torre, /etiqueta="Sin vencer"/);
 });
+
+test('cabecera y pestañas calcan la maqueta: botón primario, pestañas en fila y nombres de cliente sin códigos', () => {
+  const kit = read('src/siio/siio-kit.css');
+  assert.match(kit, /\.siio-dashboard \.siio-pestanas\.module-segmented-nav\{position:static;display:flex;flex-direction:row;flex-wrap:wrap;/);
+  assert.match(kit, /\.siio-pestanas\.module-segmented-nav button\{flex:none;width:auto;/);
+  assert.match(read('src/siio/SiioDashboard.tsx'), /className="siio-boton-primario"/);
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  assert.match(torre, /replace\(\/\^\(\\s\*\\\[\[\^\\\]\]\*\\\]\\s\*\)\+\//);
+  assert.doesNotMatch(torre, /<>pierden \{millones/);
+});
