@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { readWorkbook } from './tender-economic-offer-check.js';
 
+export const CRM_ROW_PREFIX = 'crm-';
 export const REQUIREMENT_MATRIX_PATH = '06_Productos_PSI/Licitaciones/01_Base_Maestra_y_Taxonomia/01_Bases_de_datos_historica/Matriz_Historica_Requisitos_Habilitantes_y_Puntuables.xlsx';
 
 // Los nombres de los procesos de la matriz, legibles. Lo que no esté aquí se muestra con el identificador tal cual.
@@ -101,8 +102,11 @@ export async function syncRequirementHistory(database, rows, { sourceModifiedAt 
     const { error } = await database.from('psi_tender_requirement_history').upsert(payload.slice(start, start + 200), { onConflict: 'id' });
     if (error) throw error;
   }
-  const { data: stale, error } = await database.from('psi_tender_requirement_history').select('id').lt('loaded_at', loadedAt);
+  const { data: older, error } = await database.from('psi_tender_requirement_history').select('id').lt('loaded_at', loadedAt);
   if (error) throw error;
+  // Las filas de los procesos analizados en el CRM (ID «crm-…») no vienen del Excel: desde el 12-nov el CRM es la fuente
+  // del listado (Juan) y el 14-nov se le sumaron los procesos analizados. Recargar el Excel no las borra.
+  const stale = (older || []).filter(row => !String(row.id).startsWith(CRM_ROW_PREFIX));
   if (stale?.length) {
     const { error: deleteError } = await database.from('psi_tender_requirement_history').delete().in('id', stale.map(row => row.id));
     if (deleteError) throw deleteError;
@@ -119,7 +123,8 @@ export async function runRequirementMatrixSync(database, { listFolder, download,
   const name = path.split('/').pop();
   const file = (await listFolder(folder)).find(item => item?.nombre === name);
   if (!file) return { event: 'requirement_matrix_missing' };
-  const { data: current, error } = await database.from('psi_tender_requirement_history').select('source_modified_at').limit(1);
+  const { data: loadedRows, error } = await database.from('psi_tender_requirement_history').select('id,source_modified_at');
+  const current = (loadedRows || []).filter(row => !String(row.id).startsWith(CRM_ROW_PREFIX)).slice(0, 1);
   if (error) return { event: ['PGRST205', '42P01'].includes(String(error.code || '')) ? 'requirement_matrix_unavailable' : 'requirement_matrix_failed', code: String(error.code || 'lectura') };
   const modifiedAt = file.modificado_en ? new Date(file.modificado_en).toISOString() : null;
   const stored = current?.[0]?.source_modified_at ? new Date(current[0].source_modified_at).toISOString() : null;
