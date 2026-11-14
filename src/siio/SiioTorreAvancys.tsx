@@ -232,7 +232,14 @@ export type AlertaTorre = {
 };
 export type PestanaTorre = 'portada' | 'resultados' | 'clientes' | 'cartera' | 'comercial' | 'vigia' | 'parametros' | 'fuentes';
 
-const sinCodigo = (nombre: string) => nombre.replace(/^\[\d+\]\s*/, '').replace(/\s+(S\.?A\.?S?\.?|LTDA\.?)$/i, '');
+// Nombre de cliente para leer: sin los códigos de Avancys («[AREA ADMINISTRACION] [891411663] …»), sin la
+// sociedad al final y, si viene en mayúscula sostenida, en tipo oración con las palabras cortas en minúscula.
+const PALABRAS_MENORES = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'el', 'en', 'para']);
+const sinCodigo = (nombre: string) => {
+  const limpio = nombre.replace(/^(\s*\[[^\]]*\]\s*)+/, '').replace(/\s+(S\.?\s?A\.?\s?S?\.?|LTDA\.?|E\.?S\.?P\.?)$/i, '').trim();
+  if (limpio !== limpio.toUpperCase()) return limpio;
+  return limpio.toLowerCase().split(/\s+/).map((palabra, i) => (i && PALABRAS_MENORES.has(palabra) ? palabra : palabra.charAt(0).toUpperCase() + palabra.slice(1))).join(' ');
+};
 const finDeMes = (mes: string) => new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1));
 
 // Señales de Avancys para la lista de decisión: el cierre contable que no llega y los clientes que
@@ -350,7 +357,7 @@ function BloqueClientes({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaT
   const mes = nombreMes(t.torre?.mes_cerrado).split(' ')[0];
   if (!k?.legible) return <Bloque pregunta="¿Quién nos hace perder?" cifra="—" ver="Ver clientes" onVer={() => onIr('clientes')}><p>Sin el detalle por cliente del último mes cerrado.</p></Bloque>;
   return <Bloque pregunta="¿Quién nos hace perder?" cifra={<>{pierden.length === 1 ? '1 cliente' : `${pierden.length} clientes`} · <em style={{ fontStyle: 'normal', color: 'var(--mal)' }}>{millones(pierden.reduce((suma, fila) => suma + fila.margen, 0))}</em></>} ver="Ver clientes" onVer={() => onIr('clientes')}>
-    <p>{pierden.length ? <>pierden {millones(Math.abs(pierden.reduce((suma, fila) => suma + fila.margen, 0)))} en {mes}. El más grande: {sinCodigo(pierden[0].cliente)} ({pct(pierden[0].ingresos, k.ingresos_clientes ?? 0)} del ingreso).</> : <>Ningún cliente pierde plata en {mes}.</>}</p>
+    <p>{pierden.length ? <>En {mes}. El más grande: {sinCodigo(pierden[0].cliente)} ({pct(pierden[0].ingresos, k.ingresos_clientes ?? 0)} del ingreso).</> : <>Ningún cliente pierde plata en {mes}.</>}</p>
   </Bloque>;
 }
 
