@@ -5,7 +5,7 @@
 // Limpieza: una fila por ocurrencia de las hojas Habilitantes y Puntuables, sin las columnas constantes, vacías o
 // técnicas (estado metodológico, revisión humana, confianza, huella del pliego, alcance de la fuente, fecha de ingreso)
 // y con el proceso de origen sacado de OBSERVACIONES («Fuentes consolidadas: pereira-risaralda-electronica-H-0…») o de
-// la huella del pliego. La hoja «Alistamiento SN» no se carga: su lugar lo ocupa la evaluación de la empresa del CRM.
+// la huella del pliego, o de la columna PROCESO si la fila la trae. La hoja «Alistamiento SN» no se carga: su lugar lo ocupa la evaluación de la empresa del CRM.
 import { createHash } from 'node:crypto';
 import { readWorkbook } from './tender-economic-offer-check.js';
 
@@ -78,13 +78,16 @@ export function parseRequirementMatrix(bytes) {
       const slug = rawId.match(/^([a-z]+(?:-[a-z]+)+)-[A-Z]/)?.[1];
       if (!slugs.length && secop) slugs.push(`SECOP ${secop}`);
       if (!slugs.length && slug) slugs.push(slug);
+      // Los procesos del CRM que se suman a la matriz traen su nombre en la columna PROCESO, igual al que usa el CRM
+      // («Entidad · Referencia»), para que la pestaña los cuente como un solo proceso (Juan, 2026-11-14).
+      const named = clip(get(cells, 'PROCESO'), 200);
       const points = get(cells, 'PUNTOS_MAXIMOS_OPCION');
       rows.push({
         id, kind, categoria: clip(get(cells, 'CATEGORIA'), 80) || null, requisito,
         umbral: clip(get(cells, 'UMBRAL_O_CONDICION') ?? get(cells, 'REGLA_DE_PUNTUACION'), 300) || null,
         puntos: points === null || points === undefined || points === '' ? null : clip(points, 20),
         cita: clip(get(cells, 'CITA_TEXTUAL'), 400) || null,
-        procesos: slugs.map(slug => PROCESS_LABELS[slug] || slug),
+        procesos: named ? [named] : slugs.map(slug => PROCESS_LABELS[slug] || slug),
         url: clip(get(cells, 'URL_PROCESO'), 500) || null,
       });
     }

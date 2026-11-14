@@ -77,6 +77,18 @@ test('la matriz se limpia: sólo Habilitantes y Puntuables, proceso legible, sin
   assert.ok(catalog.types.some(type => type.key === 'p_industria_nacional'));
 });
 
+test('las filas de procesos del CRM traen su nombre en PROCESO y cuentan como el mismo proceso', () => {
+  const crmLabel = 'TERMINAL DE TRANSPORTE S.A · TT-SPO-07-2026';
+  const rows = parseRequirementMatrix(workbook({
+    Habilitantes: [['Matriz'], ['Nota'], ['ID_OCURRENCIA', 'CATEGORIA', 'REQUISITO', 'OBSERVACIONES', 'PROCESO'],
+      ['crm-terminal-tt-spo-07-2026-H-001', 'Financiero', 'Índice de liquidez mayor o igual a 1,5.', 'Fuentes consolidadas: crm-terminal-tt-spo-07-2026-H-001', crmLabel],
+      ['H-010', 'Financiero', 'Índice de liquidez mayor o igual a 2.', 'Fuentes consolidadas: neiva-huila-vigilancia-H-0001', null]],
+  }));
+  assert.deepEqual(rows.map(row => row.procesos), [[crmLabel], ['Neiva (Huila) · vigilancia']]);
+  const catalog = buildRequirementCatalog({ matriz: rows, crm: [{ opportunity_id: 'o1', process: crmLabel, requirement_id: 'REQ-LIQUIDEZ', text: 'Liquidez ≥ 1,5', category: 'FINANCIAL' }] });
+  assert.equal(catalog.types.find(type => type.key === 'liquidez').processes, 2, 'la fila de la matriz y el análisis del CRM son el mismo proceso');
+});
+
 test('el puente sólo baja la matriz si cambió, y la tabla queda igual al Excel', async () => {
   const pg = new PGlite();
   await pg.exec('create role anon; create role authenticated; create role service_role;');
