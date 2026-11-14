@@ -65,7 +65,7 @@ const nombreMes = (mes?: string | null) => {
 };
 const millones = (valor: number) => `${valor < 0 ? '−' : ''}$${Math.round(Math.abs(valor) / 1e6).toLocaleString('es-CO')} M`;
 const pesos = (valor: number) => `$${Math.round(Math.abs(valor)).toLocaleString('es-CO')}`;
-const pct = (parte: number, base: number) => (base ? `${(Math.round((parte / base) * 1000) / 10).toLocaleString('es-CO')} %` : '—');
+const pct = (parte: number, base: number) => (base ? `${(Math.round((parte / base) * 1000) / 10).toLocaleString('es-CO').replace('-', '−')} %` : '—');
 const hora = (valor?: string) => (valor
   ? new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }).format(new Date(valor))
   : '');
@@ -178,7 +178,7 @@ export type PestanaTorre = 'portada' | 'resultados' | 'clientes' | 'cartera' | '
 // sociedad al final y, si viene en mayúscula sostenida, en tipo oración con las palabras cortas en minúscula.
 const PALABRAS_MENORES = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'el', 'en', 'para']);
 const sinCodigo = (nombre: string) => {
-  const limpio = nombre.replace(/^(\s*\[[^\]]*\]\s*)+/, '').replace(/\s+(S\.?\s?A\.?\s?S?\.?|LTDA\.?|E\.?S\.?P\.?)$/i, '').trim();
+  const limpio = nombre.replace(/^(\s*\[[^\]]*\]\s*)+/, '').replace(/(\s+(S\.?\s?A\.?\s?S?\.?|LTDA\.?|E\.?S\.?P\.?))+$/i, '').trim();
   if (limpio !== limpio.toUpperCase()) return limpio;
   return limpio.toLowerCase().split(/\s+/).map((palabra, i) => (i && PALABRAS_MENORES.has(palabra) ? palabra : palabra.charAt(0).toUpperCase() + palabra.slice(1))).join(' ');
 };
@@ -388,7 +388,6 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
   const legibles = cerrados.map(mes => ({ mes, datos: datosDe(mes) })).filter((x): x is { mes: string; datos: Clientes } => typeof x.datos === 'object' && Boolean(x.datos?.legible));
   const ultimos = legibles.slice(-MESES_PIERDEN);
   const anio = cerrados[cerrados.length - 1].slice(0, 4);
-  const delAnio = legibles.filter(({ mes }) => mes.startsWith(anio));
   const historia = new Map<string, { nombre: string; meses: Record<string, Cliente>; ingresos: number; margen: number }>();
   for (const { mes, datos } of legibles) {
     for (const fila of datos.clientes || []) {
@@ -405,61 +404,87 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
     .map(fila => ({ ...fila, todos: ultimos.length > 1 && ultimos.every(({ mes }) => pierde(fila.meses[mes])) }))
     .sort((a, b) => a.margen - b.margen);
   const cargando = cerrados.some(mes => datosDe(mes) === 'cargando');
-  const desde = delAnio.length ? nombreMes(delAnio[0].mes).split(' ')[0] : '';
+  // Avancys empieza con su primer mes completo (la carga del 31 de julio no es un mes de operación).
+  const primerCerrado = cerrados.find(mes => mes.startsWith(anio));
+  const desde = primerCerrado ? nombreMes(primerCerrado).split(' ')[0] : '';
+  const mostrados = pierden.slice(0, MAX_CLIENTES);
+  const peorAnio = Math.max(1, ...mostrados.map(fila => Math.abs(Math.min(0, fila.margen))));
+  // El precio por hora bajo el costo se marca con el último mes cerrado que tenga dato.
+  const costoHora = Math.abs(datosDe(torre?.mes_cerrado || '') && typeof datosDe(torre?.mes_cerrado || '') === 'object' ? (datosDe(torre?.mes_cerrado || '') as Clientes).costo_por_hora ?? 0 : 0);
+  const bajoCosto = (fila: { meses: Record<string, Cliente> }) => {
+    const ultimo = [...ultimos].reverse().map(({ mes }) => fila.meses[mes]).find(Boolean);
+    return Boolean(costoHora && ultimo?.precio_hora && ultimo.precio_hora < costoHora);
+  };
   return <>
-    <section aria-label="Clientes que pierden">
-      <h3>Los que pierden</h3>
-      <p className="siio-pulse-footnote">Últimos {ultimos.length === 1 ? 'mes cerrado' : `${ultimos.length} meses cerrados`} y lo acumulado en {anio}{desde ? ` (desde ${desde}, cuando empieza Avancys)` : ''}. Primero los que más pierden en el año.</p>
-      {cargando ? <p className="siio-pulse-footnote">Calculando los otros meses…</p> : null}
-      {pierden.length ? <div className="siio-table-wrap"><table>
-        <thead><tr><th>Cliente</th>{ultimos.map(({ mes }) => <th key={mes}>{nombreMes(mes).split(' ')[0]}</th>)}<th>Acumulado {anio}</th></tr></thead>
-        <tbody>{pierden.slice(0, MAX_CLIENTES).map(fila => <tr key={fila.nombre}>
-          <td>{fila.nombre.replace(/^\[\d+\]\s*/, '')}{fila.todos ? <> <Badge tone="danger">todos los meses</Badge></> : null}</td>
+    <section className="siio-panel" aria-label="Clientes que pierden">
+      <h2>Los que pierden</h2>
+      <p className="siio-nota" style={{ margin: '4px 0 8px' }}>{ultimos.length === 1 ? 'Último mes cerrado' : `Últimos ${ultimos.length} meses cerrados`} y lo acumulado en {anio}{desde ? ` desde ${desde}, cuando empieza Avancys` : ''}. Primero los que más pierden en el año.</p>
+      {cargando ? <p className="siio-nota">Calculando los otros meses…</p> : null}
+      {mostrados.length ? <div className="siio-tabla-wrap"><table className="siio-tabla">
+        <thead><tr><th>Cliente</th>{ultimos.map(({ mes }) => <th key={mes} className="num">{nombreMes(mes).split(' ')[0]}</th>)}<th className="num total">Acumulado {anio}</th></tr></thead>
+        <tbody>{mostrados.map(fila => <tr key={fila.nombre}>
+          <td><span className="nombre">{sinCodigo(fila.nombre)}</span>{fila.todos ? <span className="siio-chip marca">pierde todos los meses</span> : bajoCosto(fila) ? <span className="siio-chip marca">precio bajo el costo</span> : null}</td>
           {ultimos.map(({ mes }) => {
             const m = fila.meses[mes];
-            return <td key={mes} className={pierde(m) ? 'siio-celda-mal' : undefined}>{m ? <>{millones(m.margen)} · {pct(m.margen, m.ingresos)}</> : '—'}</td>;
+            return <td key={mes} className={`num${pierde(m) ? ' mal' : ''}`}>{m ? <><strong>{millones(m.margen)}</strong><small>{pct(m.margen, m.ingresos)}</small></> : <strong>—</strong>}</td>;
           })}
-          <td className={fila.margen < 0 ? 'siio-celda-mal siio-celda-total' : 'siio-celda-total'}>{fila.ingresos ? <>{millones(fila.margen)} · {pct(fila.margen, fila.ingresos)}</> : '—'}</td>
+          <td className={`num total${fila.margen < 0 ? ' mal' : ''}`}>{fila.ingresos ? <><strong>{millones(fila.margen)}</strong>{fila.margen < 0 ? <span className="siio-magnitud"><i style={{ width: `${Math.round((Math.abs(fila.margen) / peorAnio) * 100)}%` }} /></span> : null}</> : <strong>—</strong>}</td>
         </tr>)}</tbody>
+        <tfoot><tr><th>Total de los que se muestran</th>{ultimos.map(({ mes }) => <th key={mes} className="num" />)}<th className="num total mal">{millones(mostrados.reduce((suma, fila) => suma + fila.margen, 0))}</th></tr></tfoot>
       </table></div> : <p className="siio-secondary">Ningún cliente pierde en los meses cerrados.</p>}
     </section>
-    <section aria-label="Cliente por cliente" className="siio-clientes-detalle">
-      <label className="siio-selector">Mes cerrado
-        <select value={mesClientes} onChange={evento => setElegido(evento.target.value)}>
-          {[...cerrados].reverse().map(mes => <option key={mes} value={mes}>{nombreMes(mes)}</option>)}
-        </select>
-      </label>
+    <section className="siio-panel" aria-label="Cliente por cliente">
+      <div className="siio-sub" style={{ marginBottom: 8 }}>
+        <h2>Cliente por cliente</h2>
+        <label className="siio-selector">Mes cerrado
+          <select value={mesClientes} onChange={evento => setElegido(evento.target.value)}>
+            {[...cerrados].reverse().map(mes => <option key={mes} value={mes}>{nombreMes(mes)} · Cerrado</option>)}
+          </select>
+        </label>
+      </div>
       <DetalleClientes mes={mesClientes} datos={datosDe(mesClientes)} />
     </section>
   </>;
 }
 
+const CLIENTES_A_LA_VISTA = 12;
+
 function DetalleClientes({ mes, datos }: { mes: string; datos: Clientes | 'cargando' | 'error' | undefined }) {
+  const [todos, setTodos] = useState(false);
   if (datos === 'cargando' || datos === undefined) return <p className="siio-secondary">Calculando los clientes de {nombreMes(mes)}…</p>;
   if (datos === 'error' || datos.legible === false) return <p className="siio-alert-text">No se pudieron calcular los clientes de {nombreMes(mes)}{datos !== 'error' && datos.motivo ? `: ${datos.motivo}` : ''}.</p>;
   const k = datos;
   const costoHora = Math.abs(k.costo_por_hora ?? 0);
   const conIngreso = (k.clientes || []).filter(fila => fila.ingresos > 0);
   const pierden = conIngreso.filter(fila => fila.margen < 0);
-  const filas = [...pierden, ...conIngreso.filter(fila => fila.margen >= 0)].slice(0, MAX_CLIENTES);
-  return <section aria-label={`Clientes de ${nombreMes(mes)}`}>
-    <h3>{nombreMes(mes).replace(/^./, letra => letra.toUpperCase())}, cliente por cliente</h3>
-    <p className="siio-pulse-footnote">
-      <strong>Aproximado</strong>: ingreso real de cada cliente; costo de vigilantes a {pesos(costoHora)} la hora por las horas de sus puestos; supervisión y administración por facturación.
-      {' '}Primero los que pierden; luego los de mayor ingreso.
+  const ordenados = [...pierden, ...conIngreso.filter(fila => fila.margen >= 0)];
+  const filas = todos ? ordenados : ordenados.slice(0, CLIENTES_A_LA_VISTA);
+  const total = k.ingresos_clientes ?? conIngreso.reduce((suma, fila) => suma + fila.ingresos, 0);
+  const cinco = [...conIngreso].sort((a, b) => b.ingresos - a.ingresos).slice(0, 5).reduce((suma, fila) => suma + fila.ingresos, 0);
+  return <>
+    <p className="siio-nota" style={{ marginBottom: 8 }}>
+      Aproximado: ingreso real por cliente; costo de vigilantes a {pesos(costoHora)} la hora por las horas de sus puestos; supervisión y administración repartidas por facturación.
+      {' '}Los 5 mayores concentran el {pct(cinco, total)} del ingreso. Primero los que pierden.
     </p>
-    <div className="siio-table-wrap"><table>
-      <thead><tr><th>Cliente</th><th>Ingreso</th><th>Peso</th><th>Precio por hora</th><th>Margen (est.)</th></tr></thead>
-      <tbody>{filas.map(fila => <tr key={fila.cliente} className={fila.margen < 0 ? 'siio-fila-alerta' : undefined}>
-        <td>{fila.cliente.replace(/^\[\d+\]\s*/, '')}</td>
-        <td>{millones(fila.ingresos)}</td>
-        <td>{pct(fila.ingresos, k.ingresos_clientes ?? 0)}</td>
-        <td>{fila.precio_hora ? <>{pesos(fila.precio_hora)}{costoHora && fila.precio_hora < costoHora ? <> <Badge tone="danger">bajo el costo</Badge></> : null}</> : <span className="siio-secondary">sin horas</span>}</td>
-        <td>{millones(fila.margen)} · {pct(fila.margen, fila.ingresos)}</td>
-      </tr>)}</tbody>
+    <div className="siio-tabla-wrap"><table className="siio-tabla">
+      <thead><tr><th>Cliente</th><th className="num">Ingreso</th><th className="num">Peso</th><th className="num">Precio por hora</th><th className="num total">Margen (est.)</th></tr></thead>
+      <tbody>{filas.map(fila => {
+        const bajo = Boolean(costoHora && fila.precio_hora && fila.precio_hora < costoHora);
+        return <tr key={fila.cliente}>
+          <td><span className="nombre">{sinCodigo(fila.cliente)}</span>{bajo ? <span className="siio-chip marca">bajo el costo</span> : null}</td>
+          <td className="num"><strong>{millones(fila.ingresos)}</strong></td>
+          <td className="num"><strong>{pct(fila.ingresos, total)}</strong></td>
+          <td className={`num${bajo ? ' mal' : ''}`}>{fila.precio_hora ? <strong>{pesos(fila.precio_hora)}</strong> : <small>sin horas</small>}</td>
+          <td className={`num total${fila.margen < 0 ? ' mal' : ''}`}><strong>{millones(fila.margen)}</strong><small>{pct(fila.margen, fila.ingresos)}</small></td>
+        </tr>;
+      })}</tbody>
     </table></div>
-    <p className="siio-pulse-footnote">{conIngreso.length.toLocaleString('es-CO')} clientes con ingreso; se muestran {filas.length}. Para los que se facturan mes vencido, el ingreso de un mes corresponde al servicio del anterior.</p>
-  </section>;
+    <p className="siio-nota" style={{ marginTop: 6 }}>
+      {conIngreso.length.toLocaleString('es-CO')} clientes con ingreso{filas.length < ordenados.length ? `; se muestran los que pierden y los mayores (${filas.length})` : ''}.
+      {' '}{ordenados.length > CLIENTES_A_LA_VISTA ? <button type="button" className="siio-enlace" onClick={() => setTodos(!todos)}>{todos ? 'Ver menos' : 'Ver todos'}</button> : null}
+      {' '}Para los que se facturan mes vencido, el ingreso de un mes corresponde al servicio del anterior.
+    </p>
+  </>;
 }
 
 export function SiioPestanaCartera({ t }: { t: TorreAvancys }) {
