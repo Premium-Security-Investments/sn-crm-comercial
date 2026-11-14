@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calcularTorre, carteraVencida, marcarMeses, mesDeEtiqueta, olvidarTorre, resultadoPorMes, torreAvancys } from '../avancys-torre.js';
+import { calcularTorre, carteraVencida, creditosAvancys, marcarMeses, mesDeEtiqueta, olvidarTorre, resultadoPorMes, torreAvancys } from '../avancys-torre.js';
 
 test('etiqueta de mes de Odoo: en español o en inglés; lo demás no es un mes', () => {
   assert.equal(mesDeEtiqueta('agosto 2026'), '2026-08');
@@ -176,4 +176,35 @@ test('cartera: sale de la contabilidad (incluye lo que vino de Yeminus), por ant
   // Las sedes de un mismo NIT se suman: B debe 30 entre sus dos sedes.
   assert.deepEqual(r.deudores.map(d => [d.cliente, d.vencido]), [['[UND 1] [800333444] C', 392], ['A', 30], ['[SEDE NORTE] [900111222] B', 30]]);
   assert.ok(llamadas.every(l => l.modelo === 'account.move.line'));
+});
+
+test('créditos: los registrados salen de Avancys con tasa, cuota y vencimiento; la deuda contable sin obligación se dice', async () => {
+  const llamadas = [];
+  const ejecutar = async (modelo, metodo, args) => {
+    llamadas.push({ modelo, metodo, dominio: args[0] });
+    if (modelo === 'account.loan') return [{ id: 7, loan_no: 'OB-1', partner_id: [3, '[900111222] BANCO DEMO'], balance: 1200e6, balance_debt: 1000e6, intrest_per_period: 1, period_no: 1, periods_to_pay: 12, remain_period: 10, payment_date: '2026-08-01' }];
+    if (modelo === 'loan.move.line') return [
+      { loan_id: [7, 'OB-1'], date: '2026-10-01', total_payment: 110 },
+      { loan_id: [7, 'OB-1'], date: '2026-12-01', total_payment: 105 },
+      { loan_id: [7, 'OB-1'], date: '2027-07-01', total_payment: 101 },
+    ];
+    if (modelo === 'account.move.line') return [
+      { partner_id: [3, '[900111222] BANCO DEMO'], balance: -1000.5e6 },
+      { partner_id: [4, '[900333444] OTRO BANCO'], balance: -300e6 },
+      { partner_id: [5, '[900555666] CASI NADA'], balance: -0.5e6 },
+    ];
+    return [];
+  };
+  const r = await creditosAvancys(ejecutar, { hoy: '2026-11-14' });
+  assert.deepEqual(llamadas[0].dominio, [['state', '=', 'in_progress'], ['loan_type', '=', 'por_pagar']]);
+  assert.deepEqual(llamadas[2].dominio, [['account_id.code', '=like', '21%'], ['parent_state', '=', 'posted']]);
+  const [ob] = r.registradas;
+  assert.equal(ob.banco, 'BANCO DEMO');
+  assert.equal(ob.tasa_ea, 12.68, '1 % mensual compuesto doce veces');
+  assert.deepEqual(ob.proxima_cuota, { fecha: '2026-12-01', valor: 105 });
+  assert.equal(ob.fecha_final, '2027-07-01');
+  // La obligación registrada cubre su banco (por NIT) hasta un millón de diferencia; lo demás se dice, y los saldos menores no.
+  assert.deepEqual(r.sin_registrar.map(fila => [fila.tercero, fila.diferencia]), [['OTRO BANCO', 300e6]]);
+  assert.equal(r.saldo_registrado, 1000e6);
+  assert.equal(r.deuda_contable, 1301e6);
 });

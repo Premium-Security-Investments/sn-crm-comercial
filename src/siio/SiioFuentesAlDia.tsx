@@ -7,14 +7,20 @@ import type { TorreAvancys } from './SiioTorreAvancys';
 // mostrar la Torre por eso. El histórico de Finanzas sale de Parámetros; se pide solo al abrir esta pestaña.
 export function SiioFuentesAlDia({ t, excelHasta, forecast }: { t: TorreAvancys; excelHasta: string | null; forecast: EntradaFuentes['forecast'] }) {
   const [historico, setHistorico] = useState<EntradaFuentes['historico']>(null);
+  const [creditosManuales, setCreditosManuales] = useState<{ banco?: unknown }[]>([]);
   useEffect(() => {
     let vivo = true;
-    api<{ historico: EntradaFuentes['historico'] }>('/api/siio/parametros')
-      .then(datos => { if (vivo) setHistorico(datos.historico || null); })
+    api<{ historico: EntradaFuentes['historico']; vigentes?: { clave: string; valor?: unknown }[] }>('/api/siio/parametros')
+      .then(datos => {
+        if (!vivo) return;
+        setHistorico(datos.historico || null);
+        const creditos = (datos.vigentes || []).find(item => item.clave === 'creditos')?.valor;
+        setCreditosManuales(Array.isArray(creditos) ? creditos : []);
+      })
       .catch(() => { if (vivo) setHistorico(null); });
     return () => { vivo = false; };
   }, []);
-  const filas = fuentesAlDia({ hoy: new Date(), torre: t.torre as EntradaFuentes['torre'], excelHasta, forecast, historico });
+  const filas = fuentesAlDia({ hoy: new Date(), torre: t.torre as EntradaFuentes['torre'], excelHasta, forecast, historico, creditosManuales });
   const altas = filas.filter(fila => fila.prioridad === 'alta').length;
   return <section className="siio-panel" aria-label="¿Las fuentes están al día?">
     <h2>¿Las fuentes están al día? {altas ? <span className="siio-conteo">{altas}</span> : null}</h2>

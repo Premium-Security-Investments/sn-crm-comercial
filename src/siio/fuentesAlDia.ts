@@ -15,6 +15,20 @@ export type FuenteAlDia = {
   dias: number | null;
 };
 
+export type DeudaSinRegistrar = { tercero: string; contable: number; registrado: number; diferencia: number };
+
+// Lo que la contabilidad tiene como deuda financiera y Avancys no como obligación, menos lo que Tesorería ya dejó a
+// mano en Parámetros (el banco escrito ahí se compara con el tercero, sin tildes ni «banco»).
+const normalizarBanco = (texto: string) => texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+  .replace(/\b(BANCO|S\.?A\.?S?\.?|LTDA\.?)\b/g, ' ').replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+export function deudaSinRegistrar(pendiente: DeudaSinRegistrar[] | undefined, manuales: { banco?: unknown }[] = []) {
+  const bancos = manuales.map(fila => normalizarBanco(String(fila.banco || ''))).filter(Boolean);
+  return (pendiente || []).filter(fila => {
+    const tercero = normalizarBanco(fila.tercero);
+    return !bancos.some(banco => tercero.includes(banco) || banco.includes(tercero));
+  });
+}
+
 export type EntradaFuentes = {
   hoy: Date;
   torre: {
@@ -23,7 +37,10 @@ export type EntradaFuentes = {
     pyg?: { mes: string; estado: 'cerrado' | 'parcial'; motivo: string | null; totales: { impuestos: number } }[];
     programaciones_avancys?: number | null;
     cartera?: { consignaciones_sin_identificar?: { saldo: number; partidas: number } } | null;
+    creditos?: { sin_registrar?: DeudaSinRegistrar[] } | null;
   } | null;
+  // Créditos que Tesorería dejó a mano en Parámetros (punto 3).
+  creditosManuales?: { banco?: unknown }[];
   // Último mes del Excel de Finanzas (AAAA-MM): hasta ahí el cierre es el oficial de Finanzas, no el de Avancys.
   excelHasta: string | null;
   forecast: { abiertas: number; sin_gestion: number; dias: number } | null;
@@ -41,7 +58,7 @@ const diasDesde = (fecha: string, hoy: Date) => Math.max(0, Math.floor((Date.UTC
 export const diasDesdeFinDeMes = (mes: string, hoy: Date) => diasDesde(ultimoDia(mes), hoy);
 const millones = (valor: number) => `$${Math.round(Math.abs(valor) / 1e6).toLocaleString('es-CO')} M`;
 
-export function fuentesAlDia({ hoy, torre, excelHasta, forecast, historico }: EntradaFuentes): FuenteAlDia[] {
+export function fuentesAlDia({ hoy, torre, excelHasta, forecast, historico, creditosManuales = [] }: EntradaFuentes): FuenteAlDia[] {
   const filas: FuenteAlDia[] = [];
   const mesActual = hoy.toISOString().slice(0, 7);
 
@@ -111,6 +128,18 @@ export function fuentesAlDia({ hoy, torre, excelHasta, forecast, historico }: En
       detalle: `${consignaciones.partidas.toLocaleString('es-CO')} pagos recibidos sin aplicar a ningún cliente`,
       responsable: 'Tesorería y Cartera',
       efecto: 'La cartera de cada cliente puede estar inflada en esa plata',
+    });
+  }
+
+  const sinRegistrar = deudaSinRegistrar(torre?.creditos?.sin_registrar, creditosManuales);
+  if (sinRegistrar.length) {
+    filas.push({
+      clave: 'creditos', prioridad: 'media', dias: null,
+      ficha: { valor: millones(sinRegistrar.reduce((suma, fila) => suma + fila.diferencia, 0)), unidad: 'sin registrar' },
+      que: 'Créditos registrados como obligación en Avancys',
+      detalle: `en la contabilidad y no como obligación: ${sinRegistrar.map(fila => `${fila.tercero} ${millones(fila.diferencia)}`).join(', ')}`,
+      responsable: 'Tesorería',
+      efecto: 'Sin tasa, cuotas ni vencimiento de esa deuda: regístrela en Avancys o déjela en Parámetros',
     });
   }
 

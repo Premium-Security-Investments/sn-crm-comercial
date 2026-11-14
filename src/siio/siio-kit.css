@@ -243,3 +243,10 @@
 .siio-dashboard .siio-plegado>.siio-alerts-title{margin:12px 14px 2px;font-size:14px;color:var(--tinta)}
 /* Aislamiento: la regla global del CRM alinea a la derecha y no parte la última celda; en el kit solo las numéricas. */
 .siio-dashboard .siio-tabla td:last-child:not(.num){text-align:left;white-space:normal}
+
+/* ---- 15 · Parámetros ---- */
+.siio-dashboard .siio-tabla-parametros td .siio-chip{margin:0 4px 3px 0}
+.siio-dashboard .siio-tabla-parametros tr.siio-parametro-abierto td,.siio-dashboard .siio-tabla-parametros tr.siio-parametro-abierto:hover td{background:var(--fondo-suave)}
+.siio-dashboard .siio-parametro-subtitulo{display:flex;align-items:center;gap:6px;margin:12px 0 6px;font-size:13px;color:var(--tinta)}
+.siio-dashboard .siio-parametro-pendiente{margin-top:8px;padding:10px 12px;border-radius:var(--radio-interno);background:var(--mal-fondo);color:var(--mal-texto);font-size:13px;line-height:1.45}
+.siio-dashboard .siio-parametro-pendiente strong{color:var(--mal)}

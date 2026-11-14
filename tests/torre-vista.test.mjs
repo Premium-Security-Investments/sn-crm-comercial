@@ -110,3 +110,13 @@ test('fuentes calca la maqueta: quién tiene atrasado qué, el Excel con su deta
   assert.match(fuentes, /<th>Atraso<\/th><th>Qué falta<\/th><th>Responsable<\/th><th>Efecto en la Torre<\/th>/);
   assert.match(read('src/siio/siio-kit.css'), /\.siio-dashboard \.siio-tabla td:last-child:not\(\.num\)\{text-align:left;white-space:normal\}/);
 });
+
+test('parámetros calca la maqueta y los créditos salen de Avancys; a mano solo lo que no está', () => {
+  const parametros = read('src/siio/SiioParametros.tsx');
+  assert.match(parametros, /<thead><tr><th>Parámetro<\/th><th>Encargado<\/th><th>Estado<\/th>/);
+  assert.match(parametros, /parametro\.clave === 'creditos' \? <CreditosDeAvancys creditos=\{creditos\} manuales=\{filas\} \/>/);
+  assert.match(parametros, /Lo que no está en Avancys \(lo deja aquí Tesorería\)/);
+  assert.doesNotMatch(parametros, /Badge/, 'estados con el chip del kit');
+  assert.match(read('src/siio/SiioExecutiveView.tsx'), /<SiioPestanaParametros creditos=\{torre\.torre\?\.creditos \?\? null\} \/>/);
+  assert.match(read('avancys-torre.js'), /creditos = await creditosAvancys\(ejecutar, \{ hoy: ahora\(\)\.toISOString\(\)\.slice\(0, 10\) \}\);/);
+});
