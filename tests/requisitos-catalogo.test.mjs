@@ -5,7 +5,7 @@ import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import AdmZip from 'adm-zip';
 import { parseRequirementMatrix, runRequirementMatrixSync } from '../verticales/licitaciones/requirement-history-import.js';
-import { REQUIREMENT_FOCUS, REQUIREMENT_TYPES, buildRequirementCatalog, buildRequirementFocus, buildRequirementPending, classifyRequirement, isRequirementFragment } from '../verticales/licitaciones/requirement-catalog.js';
+import { REQUIREMENT_FOCUS, REQUIREMENT_TYPES, buildRequirementCatalog, buildRequirementFocus, classifyRequirement, isRequirementFragment } from '../verticales/licitaciones/requirement-catalog.js';
 import { saveRequirementFocus } from '../verticales/licitaciones/tender-requirements.js';
 import { assessRequirement } from '../verticales/licitaciones/requirement-assessment.js';
 
@@ -199,10 +199,10 @@ test('la tarjeta separa los procesos próximos (por fecha de cierre) de los pasa
   assert.equal(focus[0].key, 'presencia', 'a igual cierre (24-nov), primero el que bloquea más procesos abiertos');
   assert.deepEqual(focus.map(item => item.key).slice(0, 2), ['presencia', 'financiero'], 'por fecha del primer cierre');
   assert.ok(focus.findIndex(item => !item.upcoming.length) === -1 || focus.slice(focus.findIndex(item => !item.upcoming.length)).every(item => !item.upcoming.length), 'las tarjetas sin procesos abiertos van al final');
-  assert.ok(!buildRequirementPending(catalog).some(item => ['experiencia_general', 'experiencia_especifica', 'personal_minimo', 'armas'].includes(item.key)), 'personal y experiencia no inundan «por confirmar»');
+  assert.ok(!focus.some(item => ['personal', 'armas'].includes(item.key)), 'personal y armas sin dato en la ficha no suben solos');
 });
 
-test('«por confirmar» pone primero los abiertos, deja atrás los pasados y no repite lo que ya está en una tarjeta', () => {
+test('lo que la ficha no registra sube a la tarjeta como «sin dato en la ficha»; lo anotado va primero (2026-11-15)', () => {
   const crm = [
     { opportunity_id: 'manizales', process: 'Rama Manizales · LP-01-2026', requirement_id: 'REQ-MINTIC', category: 'LEGAL', text: 'Frecuencias mínimas para la cobertura en Caldas', blocker: false },
     { opportunity_id: 'ibague', process: 'Rama Ibagué · LP-01-2026', requirement_id: 'REQ-MINTIC', category: 'LEGAL', text: 'Frecuencias mínimas para la cobertura en Tolima', blocker: false },
@@ -213,9 +213,11 @@ test('«por confirmar» pone primero los abiertos, deja atrás los pasados y no 
   const catalog = buildRequirementCatalog({ crm, blocks, assess: item => assessRequirement({ type: item.type, text: item.text }, COMPANY) });
   const opportunities = new Map([['manizales', { deadline: '2026-11-25', open: true }], ['pereira', { deadline: '2026-11-26', open: true }], ['ibague', { deadline: '2026-11-27', open: true }], ['terminal', { deadline: '2026-11-04', open: false }]]);
   const focus = buildRequirementFocus(catalog, { opportunities });
-  const pending = buildRequirementPending(catalog, { opportunities, focus }).find(item => item.key === 'licencia_comunicaciones');
-  assert.deepEqual(pending.upcoming.map(item => item.opportunity_id), ['ibague'], 'Manizales ya está en la tarjeta y Pereira cumple: el permiso es de Risaralda');
-  assert.deepEqual(pending.past.map(item => item.opportunity_id), ['terminal']);
+  const card = focus.find(item => item.key === 'comunicaciones');
+  assert.deepEqual(card.upcoming.map(item => item.opportunity_id), ['manizales', 'ibague'], 'Pereira cumple: el permiso es de Risaralda');
+  assert.equal(card.upcoming[0].unknown, false, 'Manizales está anotado');
+  assert.equal(card.upcoming[1].unknown, true, 'Ibagué: sin dato en la ficha');
+  assert.ok(card.past.some(item => item.opportunity_id === 'terminal'));
   assert.match(read('src/tenders/TenderRequirementsView.tsx'), /startsWith\(foldName\(name\)\) \? ref/, '«SIC SIC 23 DE 2026» sale como «SIC 23 DE 2026»');
 });
 

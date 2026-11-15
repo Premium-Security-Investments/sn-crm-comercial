@@ -173,10 +173,10 @@ export const REQUIREMENT_FOCUS = Object.freeze([
     asks: 'Permiso de MinTIC para usar frecuencias de radio que cubra las ciudades del contrato, o cobertura nacional. Algunos pliegos aceptan en su lugar el contrato con un operador de cobertura nacional (celular o radio por internet, PoC).',
     today: 'Tenemos permiso de espectro MinTIC (Res. 01535 de 2026) y Registro TIC, solo para Risaralda.',
     fix: 'Solicitar a MinTIC la ampliación del permiso de espectro a las zonas donde más licitamos (Bogotá primero, o cobertura nacional). Mientras sale: en cada proceso que lo admita, contrato con un operador de cobertura nacional; si no lo admite, socio con permiso en esa zona.' },
-  { key: 'importador', title: 'Registro de importador, comercializador o distribuidor de equipos', types: ['registro_tecnologia'], live: null,
-    asks: 'Registro ante la Supervigilancia como importador, comercializador o distribuidor de equipos de vigilancia. Lo piden los procesos de tecnología.',
-    today: 'La ficha no tiene ese registro.',
-    fix: 'Si vamos a licitar procesos de tecnología: inscribirse ante la Supervigilancia como comercializador de equipos de vigilancia.' },
+  { key: 'importador', title: 'Registro de comercializador o soporte técnico de equipos', types: ['registro_tecnologia'], live: null,
+    asks: 'Lo piden los procesos de tecnología: el registro ante la Supervigilancia como importador, comercializador o distribuidor de equipos de vigilancia, o un taller u oficina de soporte técnico en la región con certificación del fabricante.',
+    today: 'La ficha no tiene ese registro ni un taller de soporte técnico registrado.',
+    fix: 'Si vamos a licitar procesos de tecnología: inscribirse ante la Supervigilancia como comercializador de equipos de vigilancia; para el soporte en otra región, un aliado con taller y certificación del fabricante.' },
   { key: 'canino', title: 'Unidad o sede canina autorizada', types: ['canina'], live: null,
     asks: 'Una unidad canina con resolución de la Supervigilancia y un mínimo de perros, a veces a pocos kilómetros de la ciudad del contrato, y perros de detección certificados.',
     today: 'La licencia incluye el medio canino, pero la ficha no registra una sede canina propia autorizada.',
@@ -193,7 +193,8 @@ export const REQUIREMENT_FOCUS = Object.freeze([
     today: 'La ficha no tiene esa autorización.',
     fix: 'Confirmar con Talento Humano si la tenemos; si no, solicitarla al Ministerio del Trabajo.' },
   // Juan, 2026-11-13. Estos tres no se pueden medir contra la ficha: entran cuando un análisis, un acta o una persona
-  // (bloqueo anotado) dicen que nos inhabilitan, y no van a «por confirmar» (casi todo pliego pide personal).
+  // (bloqueo anotado) dicen que nos inhabilitan; `pending: false` hace que «sin dato en la ficha» no los suba solo
+  // (casi todo pliego pide personal).
   // La experiencia no tiene tarjeta (Juan, 2026-11-15): acreditarla es pedir el certificado de cada contrato, o no hay
   // nada que tramitar; se trabaja en cada proceso.
   { key: 'personal', title: 'Personal con credencial o perfil acreditado', types: ['personal_minimo', 'responsable_sst'], live: null, pending: false,
@@ -284,6 +285,9 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], blo
 const stakesOf = items => ({ count: items.length, total: items.reduce((sum, item) => sum + (item.budget || 0), 0),
   unknown: items.filter(item => !item.budget).length });
 
+// Un bloqueo que sale de no tener el dato en la ficha, no de saber que nos falta.
+const isUnknown = item => !item.blocked && item.assessment?.verdict === 'verificar';
+
 // El primer cierre de los procesos abiertos de una tarjeta; sin procesos abiertos, al final.
 const nextClosing = focus => (focus.upcoming.length ? String(focus.upcoming[0].deadline || '9999-12-31') : '9999-12-31~');
 // Orden de fechas por código de carácter: localeCompare pone «~» antes que los dígitos y subía las tarjetas sin abiertos.
@@ -302,9 +306,13 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
   const byKey = new Map((catalog?.types || []).map(type => [type.key, type]));
   const saved = new Map(state.map(row => [row.focus_key, row]));
   return REQUIREMENT_FOCUS.map(focus => {
+    // Lo que la ficha no registra cuenta como que no lo tenemos (Juan, 2026-11-15): sube a la tarjeta como bloqueo «sin dato
+    // en la ficha», para que se cargue en la ficha o se tramite. Personal y armas no suben así: casi todo pliego pide
+    // personal y la ficha no lo puede medir; entran sólo cuando un análisis, un acta o una persona dicen que bloquean.
+    const unknownCounts = focus.pending !== false;
     const occurrences = focus.types.flatMap(key => byKey.get(key)?.occurrences || [])
-      .filter(item => item.assessment?.verdict === 'inhabilita' || item.blocked)
-      .sort((a, b) => Number(Boolean(b.annotated)) - Number(Boolean(a.annotated)));
+      .filter(item => item.assessment?.verdict === 'inhabilita' || item.blocked || (unknownCounts && item.assessment?.verdict === 'verificar'))
+      .sort((a, b) => Number(Boolean(b.annotated)) - Number(Boolean(a.annotated)) || Number(isUnknown(a)) - Number(isUnknown(b)));
     const processes = new Map();
     for (const item of occurrences) {
       // Un proceso una vez aunque llegue por dos fuentes (el análisis trae la oportunidad; la revisión cargada como fila
@@ -317,7 +325,8 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
       }
       const opportunity = item.opportunity_id ? opportunities.get(item.opportunity_id) : null;
       processes.set(id, { opportunity_id: item.opportunity_id || null, process: item.process,
-        reason: item.assessment?.verdict === 'inhabilita' ? item.assessment.reason : item.text, blocked: item.blocked, annotated: Boolean(item.annotated),
+        reason: ['inhabilita', 'verificar'].includes(item.assessment?.verdict) && !item.blocked ? item.assessment.reason : item.text,
+        unknown: isUnknown(item), blocked: item.blocked, annotated: Boolean(item.annotated),
         deadline: opportunity?.deadline || null, upcoming: Boolean(opportunity?.open), budget: opportunity?.budget || null });
     }
     const list = [...processes.values()];
@@ -335,24 +344,3 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
     .sort((a, b) => byText(nextClosing(a), nextClosing(b)) || b.upcoming.length - a.upcoming.length || b.processes.length - a.processes.length);
 }
 
-/**
- * «Por confirmar»: hechos de los mismos grupos que la ficha no deja decidir. Como en las tarjetas (Juan, 2026-11-13), los
- * procesos abiertos van primero por fecha de cierre y el resto en `past`; y un proceso que ya está en la tarjeta de su
- * grupo como bloqueo no se repite aquí. Pura.
- */
-export function buildRequirementPending(catalog, { opportunities = new Map(), focus = [] } = {}) {
-  const groups = REQUIREMENT_FOCUS.filter(entry => entry.pending !== false);
-  const groupOf = new Map(groups.flatMap(entry => entry.types.map(type => [type, entry.key])));
-  const inCard = new Set(focus.flatMap(card => card.processes.map(item => `${card.key}|${item.opportunity_id || foldText(item.process || '')}`)));
-  return (catalog?.types || []).filter(type => groupOf.has(type.key)).map(type => {
-    const items = type.occurrences.filter(item => item.assessment?.verdict === 'verificar');
-    const processes = [...new Map(items.map(item => {
-      const id = item.opportunity_id || processKeyOf(item);
-      const opportunity = item.opportunity_id ? opportunities.get(item.opportunity_id) : null;
-      return [id, { opportunity_id: item.opportunity_id || null, process: item.process, reason: item.assessment.reason,
-        deadline: opportunity?.deadline || null, upcoming: Boolean(opportunity?.open) }];
-    })).entries()].filter(([id]) => !inCard.has(`${groupOf.get(type.key)}|${id}`)).map(([, value]) => value);
-    const upcoming = processes.filter(item => item.upcoming).sort((a, b) => String(a.deadline || '9999').localeCompare(String(b.deadline || '9999')));
-    return { key: type.key, title: type.title, processes, upcoming, past: processes.filter(item => !item.upcoming) };
-  }).filter(item => item.processes.length).sort((a, b) => b.upcoming.length - a.upcoming.length);
-}

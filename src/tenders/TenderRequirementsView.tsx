@@ -8,12 +8,11 @@ import type { TendersModuleProps } from './types';
  * futuro no nos inhabiliten por eso. Sale de cruzar con la ficha de la empresa los requisitos de la matriz histórica, de
  * los análisis del CRM y de las actas de cierre. Los papeles que se renuevan no aparecen.
  */
-type Process = { opportunity_id: string | null; process: string; reason: string; blocked?: boolean; deadline?: string | null; upcoming?: boolean; budget?: number | null };
+type Process = { opportunity_id: string | null; process: string; reason: string; unknown?: boolean; blocked?: boolean; deadline?: string | null; upcoming?: boolean; budget?: number | null };
 type Stakes = { count: number; total: number; unknown: number };
 type Status = 'por_decidir' | 'iniciar' | 'en_tramite' | 'resuelto' | 'no_por_ahora';
 type Focus = { key: string; title: string; live: string | null; asks?: string; stakes?: { open: Stakes; past: Stakes }; live_state: string | null; processes: Process[]; upcoming: Process[]; past: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
-type Pending = { key: string; title: string; processes: Process[]; upcoming: Process[]; past: Process[] };
-type Payload = { installed: boolean; matrix: { rows: number; loaded_at: string | null }; crm_processes: number; focus: Focus[]; pending: Pending[]; catalog: { totals: { processes: number } } };
+type Payload = { installed: boolean; matrix: { rows: number; loaded_at: string | null }; crm_processes: number; focus: Focus[]; catalog: { totals: { processes: number } } };
 
 const STATUSES: [Status, string][] = [['por_decidir', 'Por decidir'], ['iniciar', 'Iniciar trámite'], ['en_tramite', 'En trámite'], ['resuelto', 'Resuelto'], ['no_por_ahora', 'No por ahora']];
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -46,6 +45,7 @@ function AsksBlock({ asks, items }: { asks?: string; items: Process[] }) {
       {items.length ? <ul className="tender-requirements-upcoming">{items.map(item => <li key={item.opportunity_id || item.process}>
         {item.opportunity_id ? <a href={`#/detail/${item.opportunity_id}`}>{shortName(item.process)}</a> : <strong>{shortName(item.process)}</strong>}
         {item.deadline && <span className="muted"> · cierra {day(item.deadline)}</span>}
+        {item.unknown && <span className="tender-requirements-tag is-unknown">Sin dato en la ficha</span>}
         {item.reason && <>: {item.reason}</>}
       </li>)}</ul> : <p className="muted">Ningún proceso abierto lo pide hoy.</p>}
     </dd>
@@ -56,6 +56,7 @@ function ProcessList({ items }: { items: Process[] }) {
   return <ul className="tender-requirements-processes">{items.map(item => <li key={item.opportunity_id || item.process}>
     {item.opportunity_id ? <a href={`#/detail/${item.opportunity_id}`}>{item.process}</a> : <strong>{item.process}</strong>}
     {item.blocked && <span className="tender-requirements-tag is-blocked">Nos frenó</span>}
+    {item.unknown && <span className="tender-requirements-tag is-unknown">Sin dato en la ficha</span>}
     <span className="muted"> — {item.reason}</span>
   </li>)}</ul>;
 }
@@ -140,14 +141,6 @@ export function TenderRequirementsView({ request, data, moduleNavigation }: Tend
         {!payload.focus.length ? <div className="notice">Con la ficha de hoy, ningún requisito revisado nos inhabilita.</div>
           : <div className="tender-requirements-focus-grid">{payload.focus.map(focus => <FocusCard key={focus.key} focus={focus} canEdit={canEdit && payload.installed} request={request} onSaved={load} />)}</div>}
       </section>
-      {payload.pending.length > 0 && <details className="tender-requirements-pending">
-        <summary>Por confirmar: {plural(payload.pending.length, 'requisito que la ficha no deja decidir', 'requisitos que la ficha no deja decidir')}</summary>
-        {payload.pending.map(item => <div key={item.key}><h4>{item.title}</h4>
-          {item.upcoming.length ? <ProcessList items={item.upcoming.map(process => ({ ...process, process: `${process.process}${process.deadline ? ` (cierra ${day(process.deadline)})` : ''}` }))} />
-            : <p className="muted">Ningún proceso abierto.</p>}
-          {item.past.length > 0 && <details className="tender-requirements-past"><summary>Procesos pasados ({item.past.length})</summary><ProcessList items={item.past} /></details>}
-        </div>)}
-      </details>}
       <p className="muted">Fuentes: {payload.matrix.rows ? `la matriz histórica de SharePoint (${payload.matrix.rows} filas)` : 'la matriz histórica de SharePoint todavía no se ha cargado'}, {payload.crm_processes} procesos analizados en el CRM y las actas de cierre. Cada análisis nuevo entra solo.</p>
     </>}
   </section>;
