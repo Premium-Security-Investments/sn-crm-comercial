@@ -70,7 +70,7 @@ test('lleva a Requisitos el bloqueo que la persona pide, en su grupo y con la ci
   const lineas = await ejecutarAgt002AccionesDeLaMesa(db, { ...BASE, mensaje, acciones: [accion, { ...accion, campo: 'seriedad' }] });
   assert.equal(db.hecho.clarifications.length, 1);
   assert.deepEqual(db.hecho.clarifications[0], { tabla: 'psi_tender_requirement_blocks', opportunity_id: 'o1', focus_key: 'presencia', reason: accion.valor, citation: accion.fuente, source: 'mesa', created_by: 'p1' });
-  assert.match(lineas[0], /Llevé a Requisitos, en «Sede, sucursal o agencia en la ciudad»/);
+  assert.match(lineas[0], /Llevé a Requisitos, en «Sede principal o sucursal en la ciudad del contrato»/);
   assert.match(lineas[1], /falta el grupo/, 'un grupo que no existe no se anota');
   const repetido = baseDeDatos({ id: 'o1' });
   repetido.from = () => ({ insert: async () => ({ error: { code: '23505' } }) });

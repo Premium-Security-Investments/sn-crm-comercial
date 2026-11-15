@@ -10,7 +10,7 @@ import type { TendersModuleProps } from './types';
  */
 type Process = { opportunity_id: string | null; process: string; reason: string; blocked?: boolean; deadline?: string | null; upcoming?: boolean };
 type Status = 'por_decidir' | 'iniciar' | 'en_tramite' | 'resuelto' | 'no_por_ahora';
-type Focus = { key: string; title: string; live: string | null; live_state: string | null; processes: Process[]; upcoming: Process[]; past: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
+type Focus = { key: string; title: string; live: string | null; asks?: string; live_state: string | null; processes: Process[]; upcoming: Process[]; past: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
 type Pending = { key: string; title: string; processes: Process[]; upcoming: Process[]; past: Process[] };
 type Payload = { installed: boolean; matrix: { rows: number; loaded_at: string | null }; crm_processes: number; focus: Focus[]; pending: Pending[]; catalog: { totals: { processes: number } } };
 
@@ -33,17 +33,22 @@ const shortName = (process: string) => {
 };
 
 /**
- * Los procesos abiertos que este requisito bloquea, en una línea y por fecha de cierre (Juan, 2026-11-13: «que no se
- * vaya a volver una tarjeta pesada»). El motivo sale al pasar el mouse; los que no caben quedan en «+N».
+ * «Qué nos piden» (Juan, 2026-11-15: «que la encargada no tenga que ir a revisar los requisitos del proceso para entender
+ * la tarjeta»): el requisito en palabras simples y, debajo, cada proceso abierto que lo pide, por fecha de cierre, con lo
+ * que exige ese pliego en una línea.
  */
-function UpcomingLine({ items }: { items: Process[] }) {
-  if (!items.length) return <p className="tender-requirements-upcoming muted">Ningún proceso abierto lo pide hoy.</p>;
-  const shown = items.slice(0, 4);
-  return <p className="tender-requirements-upcoming"><strong>Próximos: </strong>{shown.map((item, index) => <span key={item.opportunity_id || item.process}>
-    {index > 0 && ' · '}
-    {item.opportunity_id ? <a href={`#/detail/${item.opportunity_id}`} title={item.reason}>{shortName(item.process)} {day(item.deadline)}</a>
-      : <span title={item.reason}>{shortName(item.process)} {day(item.deadline)}</span>}
-  </span>)}{items.length > shown.length && <span className="muted" title={items.slice(4).map(item => `${shortName(item.process)} ${day(item.deadline)}`).join(' · ')}> · +{items.length - shown.length}</span>}</p>;
+function AsksBlock({ asks, items }: { asks?: string; items: Process[] }) {
+  return <>
+    <dt>Qué nos piden</dt>
+    <dd>
+      {asks && <p>{asks}</p>}
+      {items.length ? <ul className="tender-requirements-upcoming">{items.map(item => <li key={item.opportunity_id || item.process}>
+        {item.opportunity_id ? <a href={`#/detail/${item.opportunity_id}`}>{shortName(item.process)}</a> : <strong>{shortName(item.process)}</strong>}
+        {item.deadline && <span className="muted"> · cierra {day(item.deadline)}</span>}
+        {item.reason && <>: {item.reason}</>}
+      </li>)}</ul> : <p className="muted">Ningún proceso abierto lo pide hoy.</p>}
+    </dd>
+  </>;
 }
 
 function ProcessList({ items }: { items: Process[] }) {
@@ -73,10 +78,10 @@ function FocusCard({ focus, canEdit, request, onSaved }: { focus: Focus; canEdit
       <h4>{focus.title}</h4>
       <span className={`tender-requirements-status is-${focus.status}`}>{STATUSES.find(([value]) => value === focus.status)?.[1]}</span>
     </header>
-    <UpcomingLine items={focus.upcoming} />
     {!editing ? <>
       <dl>
-        {state && <><dt>Cómo estamos hoy{focus.live ? ' (de la ficha de la empresa)' : ''}</dt><dd>{state}</dd></>}
+        <AsksBlock asks={focus.asks} items={focus.upcoming} />
+        <dt>Cómo estamos hoy{focus.live ? ' (de la ficha de la empresa)' : ''}</dt><dd>{state || <span className="muted">Sin dato en la ficha.</span>}</dd>
         <dt>Qué lo resuelve</dt><dd>{focus.fix_action}</dd>
         {focus.note && <><dt>Nota</dt><dd>{focus.note}</dd></>}
         <dt>Responsable</dt><dd>{focus.owner || <span className="muted">Sin asignar.</span>}</dd>
