@@ -279,6 +279,9 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], blo
   return { types, totals: { occurrences: occurrences.length, excluded_fragments: excluded, processes: allProcesses.size, types: types.length } };
 }
 
+// El primer cierre de los procesos abiertos de una tarjeta; sin procesos abiertos, al final.
+const nextClosing = focus => (focus.upcoming.length ? String(focus.upcoming[0].deadline || '9999-12-31') : '~');
+
 /**
  * «Lo que nos inhabilita»: un grupo por hecho que nos falta, sólo si algún requisito suyo nos inhabilita según la ficha o
  * un análisis, un acta o una persona lo marcó como bloqueo. Cada proceso una vez, con el motivo.
@@ -286,7 +289,7 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], blo
  * Próximos y pasados (Juan, 2026-11-13: «mostrar en la tarjeta los procesos futuros que nos bloquea ese requisito y tal
  * vez con un desplegable ver los pasados»): `opportunities` dice, por oportunidad del CRM, si sigue abierta y cuándo
  * cierra. Los abiertos van en `upcoming` por fecha de cierre; el resto (cerrados, archivados y los de la matriz
- * histórica) en `past`. Los grupos con procesos próximos van primero. Pura.
+ * histórica) en `past`. Las tarjetas van por urgencia: primero la que tiene el cierre más próximo. Pura.
  */
 export function buildRequirementFocus(catalog, { state = [], opportunities = new Map() } = {}) {
   const byKey = new Map((catalog?.types || []).map(type => [type.key, type]));
@@ -312,7 +315,9 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
       status: row.status || 'por_decidir', owner: row.owner || null, note: row.note || null, current_state: row.current_state || focus.today || null,
       fix_action: row.fix_action || focus.fix, updated_at: row.updated_at || null };
   }).filter(focus => focus.processes.length)
-    .sort((a, b) => b.upcoming.length - a.upcoming.length || b.processes.length - a.processes.length);
+    // Por urgencia (Juan, 2026-11-15): primero la tarjeta cuyo proceso abierto cierra antes; las que no tienen procesos
+    // abiertos, al final. A igual fecha, la que bloquea más procesos abiertos y luego más en total.
+    .sort((a, b) => nextClosing(a).localeCompare(nextClosing(b)) || b.upcoming.length - a.upcoming.length || b.processes.length - a.processes.length);
 }
 
 /**
