@@ -196,14 +196,18 @@ export function canUseCommercialView(profile?: NavProfile) {
 
 /**
  * Perfil efectivo para la PRESENTACIÓN (menú, rutas, pantalla de llegada). En Vista Comercial se comporta como rol
- * comercial con sólo Oportunidades: Mi día + Oportunidades. El servidor sigue autorizando con el perfil real; esto no
+ * comercial con Oportunidades (y Licitaciones, si la persona la tiene). El servidor sigue autorizando con el perfil real; esto no
  * concede ni retira ningún permiso del lado del servidor.
  */
+/** Los permisos de Licitaciones que la Vista Comercial conserva: los mismos con que trabaja quien licita. */
+export const COMMERCIAL_VIEW_TENDER_PERMISSIONS = ['licitaciones', 'licitaciones_custodia', 'licitaciones_lecciones', 'licitaciones_empresa'];
+
 export function effectiveNavProfile<T extends NonNullable<NavProfile>>(profile: T | null | undefined, viewMode: NavViewMode): T | null | undefined {
   if (viewMode !== 'comercial' || !canUseCommercialView(profile)) return profile;
   // Conserva sólo lo que tiene un comercial: Oportunidades y, si la persona lo tiene, el permiso de la IA comercial en la
   // ficha (copiloto y premio "análisis profundo"). Sin él, la Vista Comercial escondía la IA (Juan, 2026-10-08).
-  const COMMERCIAL_VIEW_PERMISSIONS = ['modulo_oportunidades', 'vigia_copilot_pilot'];
+  // Y Licitaciones, si la tiene (Juan, 2026-11-15): «quiero ver Mi día como lo ve Katherine», que también es comercial.
+  const COMMERCIAL_VIEW_PERMISSIONS = ['modulo_oportunidades', 'vigia_copilot_pilot', ...COMMERCIAL_VIEW_TENDER_PERMISSIONS];
   const owned = new Set(profile!.permissions || []);
   const permissions = owned.has('modulo_oportunidades') ? COMMERCIAL_VIEW_PERMISSIONS.filter(code => owned.has(code)) : [];
   return { ...profile!, role: 'comercial', permissions };
