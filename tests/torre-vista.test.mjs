@@ -161,3 +161,23 @@ test('los bloques de la Portada hablan del mismo mes que la frase y tecnología 
   // Ninguna cifra real de la empresa escrita en el código: el historial sale de los datos.
   assert.doesNotMatch(torre, /8,7 %|48 %/);
 });
+
+test('resultados revisado con Juan (15-nov): lo que Avancys tiene hoy, sin proyecciones, una cifra por mes', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  // Sin proyecciones en el estado de resultados: ni «≈» ni septiembre copiado en los meses abiertos.
+  assert.doesNotMatch(torre, /fila\.proyeccion \? fila\.proyeccion\.lineas : fila\.lineas/);
+  assert.doesNotMatch(torre, /siio-chip proyeccion">≈/);
+  // Las líneas que parecen incompletas llevan su referencia del último mes cerrado, sin reemplazarla.
+  assert.match(torre, /className="siio-incompleta"/);
+  // El mes en curso: a hoy, con sus totales al cierre.
+  assert.match(torre, /if \(enCurso\(fila\) && total !== 'ingresos'\) return <span className="siio-secondary">al cierre<\/span>;/);
+  // Una cifra por mes (Avancys) y la diferencia con el cierre de Finanzas dicha, con responsable.
+  assert.match(torre, /Avancys y el cierre de Finanzas \(Excel\) no coinciden/);
+  assert.match(torre, /if \(f\) return \{ ingresos: f\.totales\.ingresos/);
+  // La renta que no se registra no se presenta como cero.
+  assert.match(torre, /if \(clave === 'renta' && sinRenta\(fila\)\) return <span className="siio-secondary">no registrado<\/span>;/);
+  // Presupuesto: el mes elegido con su chip; tecnología por confirmar.
+  const presupuesto = read('src/siio/SiioPresupuesto.tsx');
+  assert.match(presupuesto, /fila\.mes <= mes && fila\.mes < enCurso/);
+  assert.match(presupuesto, /<Unidad nombre="Tecnología" mes=\{fila\.mes\} u=\{fila\.tecnologia\} porConfirmar \/>/);
+});

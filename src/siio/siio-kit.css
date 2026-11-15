@@ -280,3 +280,9 @@
 @media(max-width:560px){.siio-dashboard .siio-reco-accion{justify-items:start}.siio-dashboard .siio-reco header{align-items:flex-start}.siio-dashboard .siio-reco footer>.siio-nota{margin-left:0}}
 /* Portada: una cifra que todavía hay que confirmar con su dueño (tecnología en el presupuesto). */
 .siio-dashboard .siio-num .por-confirmar{color:var(--estimado);font-weight:650}
+
+/* ---- 17 · Resultados ---- */
+/* Una línea que parece incompleta lleva debajo su valor del último mes cerrado, en el tono de lo estimado. */
+.siio-dashboard .siio-tabla td small.siio-incompleta{display:block;margin-top:1px;font-size:11px;font-weight:650;color:var(--estimado)}
+/* El chip de cierre va debajo del nombre del mes: con varios meses, al lado ensancha la tabla. */
+.siio-dashboard .siio-tabla thead th.num .siio-chip{display:flex;width:fit-content;margin:4px 0 0 auto}
