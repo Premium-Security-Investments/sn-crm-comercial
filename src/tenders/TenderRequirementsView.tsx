@@ -8,9 +8,10 @@ import type { TendersModuleProps } from './types';
  * futuro no nos inhabiliten por eso. Sale de cruzar con la ficha de la empresa los requisitos de la matriz histórica, de
  * los análisis del CRM y de las actas de cierre. Los papeles que se renuevan no aparecen.
  */
-type Process = { opportunity_id: string | null; process: string; reason: string; blocked?: boolean; deadline?: string | null; upcoming?: boolean };
+type Process = { opportunity_id: string | null; process: string; reason: string; blocked?: boolean; deadline?: string | null; upcoming?: boolean; budget?: number | null };
+type Stakes = { count: number; total: number; unknown: number };
 type Status = 'por_decidir' | 'iniciar' | 'en_tramite' | 'resuelto' | 'no_por_ahora';
-type Focus = { key: string; title: string; live: string | null; asks?: string; live_state: string | null; processes: Process[]; upcoming: Process[]; past: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
+type Focus = { key: string; title: string; live: string | null; asks?: string; stakes?: { open: Stakes; past: Stakes }; live_state: string | null; processes: Process[]; upcoming: Process[]; past: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
 type Pending = { key: string; title: string; processes: Process[]; upcoming: Process[]; past: Process[] };
 type Payload = { installed: boolean; matrix: { rows: number; loaded_at: string | null }; crm_processes: number; focus: Focus[]; pending: Pending[]; catalog: { totals: { processes: number } } };
 
@@ -59,6 +60,17 @@ function ProcessList({ items }: { items: Process[] }) {
   </li>)}</ul>;
 }
 
+// «Lo que está en juego» (Juan, 2026-11-15): procesos y presupuesto que bloquea el requisito, para decidir qué trámite
+// rinde más. El presupuesto sale del CRM; los procesos de la matriz histórica no lo traen y se dicen aparte.
+const millions = (value: number) => `$${Math.round(value / 1e6).toLocaleString('es-CO')} M`;
+function stakesText(stakes: Stakes, open: boolean) {
+  if (!stakes.count) return '';
+  const known = stakes.count - stakes.unknown;
+  const head = open ? `Hoy bloquea ${plural(stakes.count, 'proceso abierto', 'procesos abiertos')}` : `Nos bloqueó en ${plural(stakes.count, 'proceso pasado', 'procesos pasados')}`;
+  if (!known) return `${head} (sin presupuesto en el CRM).`;
+  return `${head} por ${millions(stakes.total)}${stakes.unknown ? ` (${plural(stakes.unknown, 'sin presupuesto', 'sin presupuesto')} en el CRM)` : ''}.`;
+}
+
 function FocusCard({ focus, canEdit, request, onSaved }: { focus: Focus; canEdit: boolean; request: TendersModuleProps['request']; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(focus);
@@ -81,6 +93,8 @@ function FocusCard({ focus, canEdit, request, onSaved }: { focus: Focus; canEdit
     {!editing ? <>
       <dl>
         <AsksBlock asks={focus.asks} items={focus.upcoming} />
+        {focus.stakes && (focus.stakes.open.count + focus.stakes.past.count) > 0 && <><dt>Lo que está en juego</dt>
+          <dd>{[stakesText(focus.stakes.open, true), stakesText(focus.stakes.past, false)].filter(Boolean).join(' ')}</dd></>}
         <dt>Cómo estamos hoy{focus.live ? ' (de la ficha de la empresa)' : ''}</dt><dd>{state || <span className="muted">Sin dato en la ficha.</span>}</dd>
         <dt>Qué lo resuelve</dt><dd>{focus.fix_action}</dd>
         {focus.note && <><dt>Nota</dt><dd>{focus.note}</dd></>}

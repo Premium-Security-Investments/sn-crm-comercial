@@ -279,6 +279,11 @@ export function buildRequirementCatalog({ matriz = [], crm = [], actas = [], blo
   return { types, totals: { occurrences: occurrences.length, excluded_fragments: excluded, processes: allProcesses.size, types: types.length } };
 }
 
+// «Lo que está en juego» (Juan, 2026-11-15): cuántos procesos y cuánta plata (el presupuesto del CRM) bloquea el requisito,
+// para decidir qué trámite rinde más. Los procesos sin presupuesto (la matriz histórica no lo trae) se cuentan aparte.
+const stakesOf = items => ({ count: items.length, total: items.reduce((sum, item) => sum + (item.budget || 0), 0),
+  unknown: items.filter(item => !item.budget).length });
+
 // El primer cierre de los procesos abiertos de una tarjeta; sin procesos abiertos, al final.
 const nextClosing = focus => (focus.upcoming.length ? String(focus.upcoming[0].deadline || '9999-12-31') : '~');
 
@@ -305,12 +310,14 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
       const opportunity = item.opportunity_id ? opportunities.get(item.opportunity_id) : null;
       processes.set(id, { opportunity_id: item.opportunity_id || null, process: item.process,
         reason: item.assessment?.verdict === 'inhabilita' ? item.assessment.reason : item.text, blocked: item.blocked, annotated: Boolean(item.annotated),
-        deadline: opportunity?.deadline || null, upcoming: Boolean(opportunity?.open) });
+        deadline: opportunity?.deadline || null, upcoming: Boolean(opportunity?.open), budget: opportunity?.budget || null });
     }
     const list = [...processes.values()];
     const upcoming = list.filter(item => item.upcoming).sort((a, b) => String(a.deadline || '9999').localeCompare(String(b.deadline || '9999')));
     const row = saved.get(focus.key) || {};
-    return { key: focus.key, title: focus.title, types: focus.types, live: focus.live, asks: focus.asks, processes: list, upcoming, past: list.filter(item => !item.upcoming),
+    const past = list.filter(item => !item.upcoming);
+    return { key: focus.key, title: focus.title, types: focus.types, live: focus.live, asks: focus.asks, processes: list, upcoming, past,
+      stakes: { open: stakesOf(upcoming), past: stakesOf(past) },
       blocked: list.filter(item => item.blocked).length,
       status: row.status || 'por_decidir', owner: row.owner || null, note: row.note || null, current_state: row.current_state || focus.today || null,
       fix_action: row.fix_action || focus.fix, updated_at: row.updated_at || null };
