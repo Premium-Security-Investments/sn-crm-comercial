@@ -285,7 +285,9 @@ const stakesOf = items => ({ count: items.length, total: items.reduce((sum, item
   unknown: items.filter(item => !item.budget).length });
 
 // El primer cierre de los procesos abiertos de una tarjeta; sin procesos abiertos, al final.
-const nextClosing = focus => (focus.upcoming.length ? String(focus.upcoming[0].deadline || '9999-12-31') : '~');
+const nextClosing = focus => (focus.upcoming.length ? String(focus.upcoming[0].deadline || '9999-12-31') : '9999-12-31~');
+// Orden de fechas por código de carácter: localeCompare pone «~» antes que los dígitos y subía las tarjetas sin abiertos.
+const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * «Lo que nos inhabilita»: un grupo por hecho que nos falta, sólo si algún requisito suyo nos inhabilita según la ficha o
@@ -305,8 +307,14 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
       .sort((a, b) => Number(Boolean(b.annotated)) - Number(Boolean(a.annotated)));
     const processes = new Map();
     for (const item of occurrences) {
-      const id = item.opportunity_id || processKeyOf(item);
-      if (processes.has(id)) continue;
+      // Un proceso una vez aunque llegue por dos fuentes (el análisis trae la oportunidad; la revisión cargada como fila
+      // `crm-…` sólo el nombre): se junta por el nombre, y si alguna fuente trae la oportunidad, se conserva.
+      const id = processKeyOf(item);
+      if (processes.has(id)) {
+        const seen = processes.get(id);
+        if (!seen.opportunity_id && item.opportunity_id) Object.assign(seen, { opportunity_id: item.opportunity_id });
+        continue;
+      }
       const opportunity = item.opportunity_id ? opportunities.get(item.opportunity_id) : null;
       processes.set(id, { opportunity_id: item.opportunity_id || null, process: item.process,
         reason: item.assessment?.verdict === 'inhabilita' ? item.assessment.reason : item.text, blocked: item.blocked, annotated: Boolean(item.annotated),
@@ -324,7 +332,7 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
   }).filter(focus => focus.processes.length)
     // Por urgencia (Juan, 2026-11-15): primero la tarjeta cuyo proceso abierto cierra antes; las que no tienen procesos
     // abiertos, al final. A igual fecha, la que bloquea más procesos abiertos y luego más en total.
-    .sort((a, b) => nextClosing(a).localeCompare(nextClosing(b)) || b.upcoming.length - a.upcoming.length || b.processes.length - a.processes.length);
+    .sort((a, b) => byText(nextClosing(a), nextClosing(b)) || b.upcoming.length - a.upcoming.length || b.processes.length - a.processes.length);
 }
 
 /**

@@ -350,3 +350,25 @@ test('«un celular por sede» no es exigir sede: Defensoría no entra a la tarje
   const sucursal = assessRequirement({ type: 'presencia_local', process: 'DEAJ · Bogotá', text: 'El proponente debe contar con sede principal o sucursal en la ciudad de Bogotá.' }, company);
   assert.equal(sucursal.verdict, 'inhabilita');
 });
+
+test('chequeo final 2026-11-15: fecha de corte, compromiso de Red de Apoyo, un proceso por tarjeta y orden', () => {
+  const corte = assessRequirement({ type: 'liquidez', process: 'Cali', text: 'Índice de liquidez (corte 31-dic-2025) ≥ 2' }, COMPANY);
+  assert.equal(corte.verdict, 'cumple', 'el 31 de la fecha no es el umbral');
+  const compromiso = assessRequirement({ type: 'red_apoyo', process: 'Defensoría', text: 'Cada integrante debe aportar el compromiso de vinculación a redes de apoyo: Policía (6.3.7).' }, COMPANY);
+  assert.equal(compromiso.verdict, 'se_prepara');
+  const inscritos = assessRequirement({ type: 'red_apoyo', process: 'Manizales', text: 'Certificación juramentada de estar inscrito en la Red de Apoyo de la Policía Metropolitana de Manizales.' }, COMPANY);
+  assert.equal(inscritos.verdict, 'verificar');
+  const name = 'MUNICIPIO DE PEREIRA- OFICIAL · SMGA-LP-220-2026';
+  const crm = [{ opportunity_id: 'smga', process: name, requirement_id: 'REQ-LIQ', category: 'FINANCIAL', text: 'Liquidez mayor o igual a 3,06', blocker: false }];
+  const matriz = [{ id: 'crm-pereira-smga-lp-220-H-020', kind: 'habilitante', categoria: 'Financiero', requisito: 'Índice de liquidez', umbral: '≥ 3,06', procesos: [name] },
+    { id: 'H-7', kind: 'habilitante', categoria: 'presencia', requisito: 'Contar con sede principal o sucursal en Manizales.', procesos: ['Villamaría (Caldas) · vigilancia física'] }];
+  const catalog = buildRequirementCatalog({ matriz, crm, assess: item => assessRequirement({ type: item.type, process: item.process, text: [item.text, item.threshold].filter(Boolean).join(' ') }, COMPANY) });
+  const focus = buildRequirementFocus(catalog, { opportunities: new Map([['smga', { deadline: '2026-11-05', open: false }]]) });
+  const financiero = focus.find(item => item.key === 'financiero');
+  assert.equal(financiero.processes.length, 1, 'el análisis y la fila crm-… del mismo proceso cuentan una vez');
+  assert.equal(financiero.processes[0].opportunity_id, 'smga');
+  const blocks = [{ id: 'b', opportunity_id: 'deaj', process: 'DEAJ · LP-07-2026', focus_key: 'comunicaciones', reason: 'Piden frecuencia en Bogotá; tenemos Risaralda.' }];
+  const ordered = buildRequirementFocus(buildRequirementCatalog({ matriz, blocks, assess: item => assessRequirement({ type: item.type, process: item.process, text: [item.text, item.threshold].filter(Boolean).join(' ') }, COMPANY) }),
+    { opportunities: new Map([['deaj', { deadline: '2026-11-24', open: true }]]) });
+  assert.equal(ordered[0].key, 'comunicaciones', 'la tarjeta con un proceso abierto va antes que las que sólo tienen pasados');
+});
