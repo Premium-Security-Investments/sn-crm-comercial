@@ -1,4 +1,4 @@
-import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderLesson, TenderLessonStatus, TenderOfferIndicators, TenderOfferRecord, TenderOfferResult, TenderOfferSubmission, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOpenBoard, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate, TenderSemana } from './types';
+import type { TenderClosureActa, TenderClosureActaInput, TenderClosureActaView, TenderCompanyDocumentBridge, TenderComplianceMatrix, TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderLesson, TenderLessonStatus, TenderOfferIndicators, TenderOfferRecord, TenderOfferResult, TenderOfferSubmission, TenderManualProcessCreated, TenderManualProcessInput, TenderOfferPackage, TenderOfferStatusPayload, TenderOpenBoard, TenderOfferStatusTransitionInput, TenderRadarRunDeltaPayload, TenderRadarRunReceiptHistoryPayload, TenderRadarRunReceiptLatestPayload, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate, TenderSemana, TenderMiDia } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -210,6 +210,16 @@ export async function loadTenderOpenBoard(request: TenderRequest): Promise<Tende
 /** La semana de licitaciones (Mi día, Juan 2026-11-10). */
 export async function loadTenderSemana(request: TenderRequest): Promise<TenderSemana> {
   return request<TenderSemana>('/api/tender-semana');
+}
+
+/** Mi día de licitaciones (Juan, 2026-11-15): las cuatro actividades y el día a día, sólo alertas. */
+export async function loadTenderMiDia(request: TenderRequest): Promise<TenderMiDia> {
+  return request<TenderMiDia>('/api/tender-mi-dia');
+}
+
+/** «Hecho» en una acción del día a día (o desmarcarla). */
+export async function markTenderMiDiaHecho(request: TenderRequest, input: { item_key: string; opportunity_id: string; hecho: boolean }): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>('/api/tender-mi-dia/hecho', { method: 'POST', body: JSON.stringify(input) });
 }
 
 /** Mejora 5: estado de las copias de trabajo en SharePoint de los borradores del expediente. */

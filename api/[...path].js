@@ -69,7 +69,8 @@ import { checkEconomicOffer, ECONOMIC_OFFER_MAX_BYTES } from '../verticales/lici
 import { buildTenderOpenBoard } from '../verticales/licitaciones/tender-open-board.js';
 import { buildTenderSemana } from '../verticales/licitaciones/tender-semana.js';
 import { cronogramaFaltante } from '../verticales/licitaciones/tender-cronograma-faltante.js';
-import { overdueSummary } from '../verticales/licitaciones/tender-dossier-vencidos.js';
+import { dossierItemConsequence, isOpenDossierItem, overdueSummary } from '../verticales/licitaciones/tender-dossier-vencidos.js';
+import { buildTenderMiDia } from '../verticales/licitaciones/tender-mi-dia.js';
 import { AGT002_DRAFT_BUCKET, isAgt002DraftStoragePath } from '../verticales/licitaciones/agt002-workbench-document.js';
 import { TENDER_OFFER_PACKAGE_MATRIX_NAME, buildTenderOfferPackageManifest, tenderOfferPackageIndex } from '../verticales/licitaciones/tender-offer-package.js';
 import { buildTenderOfferPreparation } from '../verticales/licitaciones/tender-offer-preparation.js';
@@ -545,6 +546,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   // Tablero de procesos abiertos: el cruce de todos los expedientes con cierre por delante. Sólo lectura.
   'GET /api/tender-open-board': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-semana': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/tender-mi-dia': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'POST /api/tender-mi-dia/hecho': ['tenders', ACTIONS.LICITACIONES_VIEW],
   // Ofertas presentadas (encargo del 2026-11-07): registrar presentada o no con evidencia, su resultado, los
   // indicadores del año y el aviso de cierres con GO sin registro.
   'GET /api/tender-offer-record': ['tenders', ACTIONS.LICITACIONES_VIEW],
@@ -7830,6 +7833,97 @@ app.get('/api/tender-semana', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
     res.json(await readTenderSemana(requireDb(), currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+/**
+ * Mi día de licitaciones (Juan, 2026-11-15, maqueta aprobada): alertas, no listas. Junta, de cada licitación abierta que
+ * la persona puede ver, el cronograma del último análisis (lo que hace ella y lo que publica la entidad), lo crítico del
+ * expediente (lo que no se subsana, y lo que causa rechazo ya vencido), la recomendación «solo en unión temporal» y la
+ * pestaña Requisitos; más lo marcado como «Hecho» (migración 224). Sin la tabla de «Hecho», todo funciona igual y el
+ * botón no se ofrece. Sólo lectura, salvo «Hecho».
+ */
+async function readTenderMiDia(database, currentProfile, now = new Date()) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(now);
+  const opportunities = await must(database.from('psi_sales_opportunities')
+    .select('id,sede,company_name,owner_id,tender_offer_status,stage_code,expected_close_date,archive_note,archived_at,discarded_at,lost_at,deleted_at')
+    .eq('service_type_code', 'licitacion_publica'));
+  const open = opportunities.filter(row => !row.archive_note && !row.archived_at && !row.discarded_at && !row.lost_at && !row.deleted_at
+    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
+  const ids = open.map(row => row.id);
+  const { data: results } = ids.length ? await database.from('psi_tender_offer_results').select('opportunity_id').in('opportunity_id', ids) : { data: [] };
+  const withResult = new Set((results || []).map(row => row.opportunity_id));
+  const tenders = ids.length ? await must(database.from('psi_public_tenders').select('ref,converted_opportunity_id').in('converted_opportunity_id', ids)) : [];
+  const refByOpportunity = new Map(tenders.map(row => [row.converted_opportunity_id, row.ref]));
+  const ownerIds = [...new Set(open.map(row => row.owner_id).filter(Boolean))];
+  const owners = ownerIds.length ? await must(database.from('psi_sales_profiles').select('id,full_name').in('id', ownerIds)) : [];
+  const ownerName = new Map(owners.map(row => [row.id, String(row.full_name || '').trim().split(/\s+/)[0] || null]));
+  let withoutAccess = 0;
+  const processes = [];
+  for (const row of open) {
+    if (withResult.has(row.id)) continue;
+    try { await ensureTenderOpportunity(database, row.id, currentProfile); }
+    catch (error) { if (error?.status === 403 || error?.status === 404) { withoutAccess += 1; continue; } throw error; }
+    const report = await readAgt002InitialAnalysisReport(database, row.id);
+    const { data: workspace } = await database.rpc('psi_get_tender_dossier_workspace', { p_opportunity_id: row.id });
+    const checklist = Array.isArray(workspace?.checklist) ? workspace.checklist : [];
+    // Crítico: lo que no se subsana, abierto; y lo que causa rechazo, abierto y ya vencido. El resto del expediente se
+    // trabaja en el proceso.
+    const criticos = checklist.filter(isOpenDossierItem).map(item => ({ item, consecuencia: dossierItemConsequence(item) }))
+      .filter(({ item, consecuencia }) => consecuencia === 'no_subsanable'
+        || (consecuencia === 'causa_rechazo' && item.target_date && String(item.target_date).slice(0, 10) < today))
+      .map(({ item, consecuencia }) => ({ titulo: String(item.title || '').replace(/\s*[—-]\s*CAUSA RECHAZO\s*$/i, '').trim().slice(0, 160),
+        consecuencia, target_date: item.target_date || null, responsable: item.assignee_name || null }));
+    processes.push({
+      opportunity_id: row.id, entity: row.company_name || null, ref: refByOpportunity.get(row.id) || row.sede || null,
+      responsable: ownerName.get(row.owner_id) || null, offer_status: row.tender_offer_status || null, close_date: row.expected_close_date || null,
+      deadlines: report?.available && report.report ? report.report.deadlines || [] : [],
+      recomendacion: report?.available && report.report ? report.report.recommendation?.label || null : null,
+      cronograma_faltante: Boolean(report?.available && cronogramaFaltante(report.report)),
+      criticos,
+    });
+  }
+  let requisitos = [];
+  try { requisitos = (await loadRequirementsBoard(database)).focus || []; } catch { requisitos = []; }
+  const { data: hechos, error: hechosError } = await database.from('psi_tender_mi_dia_hechos').select('item_key,done_at,done_by');
+  const hechosDisponible = !hechosError;
+  const doneBy = [...new Set((hechos || []).map(row => row.done_by).filter(Boolean))];
+  const doneNames = doneBy.length ? await must(database.from('psi_sales_profiles').select('id,full_name').in('id', doneBy)) : [];
+  const doneName = new Map(doneNames.map(row => [row.id, String(row.full_name || '').trim().split(/\s+/)[0] || null]));
+  return {
+    without_access: withoutAccess, procesos: processes.length, hechos_disponible: hechosDisponible,
+    ...buildTenderMiDia({ processes, requisitos, today,
+      hechos: (hechos || []).map(row => ({ item_key: row.item_key, done_at: row.done_at, done_by_name: doneName.get(row.done_by) || null })) }),
+  };
+}
+
+app.get('/api/tender-mi-dia', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(await readTenderMiDia(requireDb(), currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// «Hecho» deja constancia de quién y cuándo; desmarcar borra la constancia (se marcó por error).
+app.post('/api/tender-mi-dia/hecho', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    const database = requireDb();
+    const itemKey = String(req.body?.item_key || '').slice(0, 400);
+    const opportunityId = String(req.body?.opportunity_id || '');
+    if (!itemKey || !opportunityId || !itemKey.startsWith(`${opportunityId}|`)) throw clientInputError('Falta la acción que se marcó.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const result = req.body?.hecho === false
+      ? await database.from('psi_tender_mi_dia_hechos').delete().eq('item_key', itemKey)
+      : await database.from('psi_tender_mi_dia_hechos').upsert({ item_key: itemKey, opportunity_id: opportunityId, done_by: currentProfile.id, done_at: new Date().toISOString() }, { onConflict: 'item_key' });
+    if (result.error) {
+      if (['42P01', 'PGRST205'].includes(String(result.error.code || ''))) throw Object.assign(new Error('«Hecho» aún no está habilitado (falta aplicar la migración 224).'), { status: 409 });
+      throw result.error;
+    }
+    res.json({ ok: true });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
