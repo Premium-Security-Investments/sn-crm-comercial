@@ -1,0 +1,29 @@
+[Unit]
+Description=AGT-002 Aliados: proponentes de los procesos del CRM desde SECOP (semanal, lunes)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=psi-comercial
+Group=psi-comercial
+# Las mismas variables que la conciliación del Radar (URL de la base y llave de servicio); sin valores aquí.
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+# Release path is set by the deploy drop-in (10-release.conf).
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-aliados-proponentes/run-agt002-aliados-proponentes.mjs
+TimeoutStartSec=20min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native

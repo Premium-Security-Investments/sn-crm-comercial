@@ -82,7 +82,8 @@ function AllyRow({ company, isOpen, onToggle, children }: { company: Company; is
   const shown = company.cities.slice(0, 5).map(city => city.city).filter(Boolean).join(', ');
   return <>
     <tr className={isOpen ? 'is-open' : ''}>
-      <th scope="row"><button type="button" className="tender-allies-name" aria-expanded={isOpen} onClick={onToggle}>{company.name}</button>{company.acronyms ? <small>{company.acronyms}</small> : null}</th>
+      <th scope="row"><button type="button" className="tender-allies-name" aria-expanded={isOpen} onClick={onToggle}>{company.name}</button>{company.acronyms ? <small>{company.acronyms}</small> : null}
+        {/^SECOP/i.test(company.listing_source || '') && <small className="tender-allies-from-process">Entró desde un proceso (SECOP)</small>}</th>
       <td>{shown}{company.cities.length > 5 ? ` y ${company.cities.length - 5} más` : ''}</td>
       <td>{label(ROLES, company.role)}</td>
       <td>{company.participations.length || ''}</td>
