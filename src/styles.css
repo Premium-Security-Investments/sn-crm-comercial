@@ -1168,7 +1168,7 @@ td.numeric-value{white-space:nowrap}
 .tender-requirements-focus>button{justify-self:start;padding:7px 12px;font-size:13px}
 .tender-requirements-processes{margin:6px 0 0;padding-left:18px;display:grid;gap:3px;font-size:13px}
 .tender-requirements-form{display:grid;gap:10px}.tender-requirements-form label{display:flex;flex-direction:column;gap:5px;font-weight:700;color:#40516b;font-size:13px}.tender-requirements-form textarea,.tender-requirements-form input,.tender-requirements-form select{font-weight:400}
-.tender-requirements-actions{display:flex;gap:8px}
+.tender-requirements-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.tender-requirements-to-company{flex-basis:100%;margin:2px 0 0;font-size:14px}
 .tenders-page .tender-requirements-table{width:100%;min-width:640px;table-layout:fixed;border-collapse:collapse;font-size:13px}
 .tender-requirements-table .col-title{width:52%}.tender-requirements-table .col-category{width:22%}.tender-requirements-table .col-count{width:13%}
 .tender-requirements-table th,.tender-requirements-table td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top;overflow-wrap:anywhere;white-space:normal}
