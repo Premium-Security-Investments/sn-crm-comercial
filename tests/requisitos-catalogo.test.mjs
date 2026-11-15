@@ -372,3 +372,21 @@ test('chequeo final 2026-11-15: fecha de corte, compromiso de Red de Apoyo, un p
     { opportunities: new Map([['deaj', { deadline: '2026-11-24', open: true }]]) });
   assert.equal(ordered[0].key, 'comunicaciones', 'la tarjeta con un proceso abierto va antes que las que sólo tienen pasados');
 });
+
+test('la matriz se lee completa aunque la base entregue de a 1.000 filas (2026-11-15)', async () => {
+  const { loadRequirementsBoard } = await import('../verticales/licitaciones/tender-requirements.js');
+  const matriz = Array.from({ length: 2310 }, (_, index) => ({ id: `H-${String(index).padStart(5, '0')}`, kind: 'habilitante', categoria: 'otro', requisito: `Requisito ${index}`, procesos: [`Proceso ${index % 60}`] }));
+  const query = table => {
+    let rows = table === 'psi_tender_requirement_history' ? matriz : [];
+    let single = false;
+    const chain = {
+      select: () => chain, order: () => chain, limit: () => chain, in: () => chain, eq: () => chain, is: () => chain,
+      range: (from, to) => { rows = rows.slice(from, Math.min(to + 1, from + 1000)); return chain; },
+      maybeSingle: () => { single = true; return chain; },
+      then: (ok, ko) => Promise.resolve({ data: single ? rows[0] || null : rows, error: null }).then(ok, ko),
+    };
+    return chain;
+  };
+  const board = await loadRequirementsBoard({ from: query });
+  assert.equal(board.matrix.rows, 2310);
+});

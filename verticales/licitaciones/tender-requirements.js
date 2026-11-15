@@ -144,6 +144,21 @@ async function loadCompany(database) {
   return { live, facts };
 }
 
+// La base entrega a lo sumo 1.000 filas por consulta aunque se pidan más: con las filas `crm-…` la matriz pasó de 1.000
+// y la pantalla dejaba por fuera 310 requisitos del Excel (2026-11-15). Se lee por páginas hasta que no venga más.
+const MATRIX_PAGE = 1000;
+async function loadMatrixRows(database) {
+  const rows = [];
+  for (let from = 0; from < 50 * MATRIX_PAGE; from += MATRIX_PAGE) {
+    const { data, error } = await database.from('psi_tender_requirement_history')
+      .select('id,kind,categoria,requisito,umbral,puntos,cita,procesos,url,source_modified_at,loaded_at').order('id').range(from, from + MATRIX_PAGE - 1);
+    if (error) return { rows, error };
+    rows.push(...(data || []));
+    if (!data || data.length < MATRIX_PAGE) break;
+  }
+  return { rows, error: null };
+}
+
 /** Todo lo que muestra la pestaña. */
 export async function loadRequirementsBoard(database) {
   const latest = await loadCrmRequirements(database);
@@ -169,8 +184,7 @@ export async function loadRequirementsBoard(database) {
     opportunity_id: acta.opportunity_id, process: processLabel(tenders.get(acta.opportunity_id)), url: tenders.get(acta.opportunity_id)?.url || null,
     title: item?.titulo || '', text: item?.detalle || '' })));
 
-  const { data: matriz, error: matrizError } = await database.from('psi_tender_requirement_history')
-    .select('id,kind,categoria,requisito,umbral,puntos,cita,procesos,url,source_modified_at,loaded_at').order('id').range(0, 4999);
+  const { rows: matriz, error: matrizError } = await loadMatrixRows(database);
   if (matrizError && !absent(matrizError)) throw matrizError;
   const company = await loadCompany(database);
   // La ciudad del proceso va con el nombre: «Dirección Ejecutiva · LP-07-2026» no dice que la sede es en Bogotá.
