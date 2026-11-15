@@ -29,7 +29,10 @@ const pct = (value: number) => `${Math.round(value * 100)}%`;
 
 export function closingDateLabel(value: string | null) {
   if (!value) return 'sin fecha';
-  return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' }).format(new Date(value));
+  const fecha = new Date(value);
+  // Un cierre guardado como fecha sola llega a medianoche UTC: es esa fecha, no las 7 p. m. del día anterior en Colombia.
+  const soloFecha = fecha.getUTCHours() === 0 && fecha.getUTCMinutes() === 0 && fecha.getUTCSeconds() === 0;
+  return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', timeZone: soloFecha ? 'UTC' : 'America/Bogota' }).format(fecha);
 }
 
 // Deterministic reading for the commercial block: every sentence states its own figures.

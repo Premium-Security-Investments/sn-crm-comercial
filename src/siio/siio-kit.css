@@ -157,13 +157,26 @@
 .siio-frase-mes h2 .pct-mal{color:var(--mal)}
 .siio-frase-mes .encurso{font-size:13.5px;color:var(--suave)}
 .siio-frase-mes .encurso .plazo{font-weight:700;color:var(--estimado)}
-.siio-meses-mini{display:flex;align-items:end;gap:3px;margin:0;padding:0;list-style:none}
-.siio-meses-mini button{display:grid;justify-items:center;gap:2px;width:25px;padding:2px 0;border-radius:6px;color:var(--sutil);font-size:9.5px}
-.siio-meses-mini button:hover{background:var(--fondo-suave)}
-.siio-meses-mini .barra{width:13px;border-radius:3px 3px 0 0;background:#b9cdf0}
-.siio-meses-mini .neg .barra{background:#f2b8b5}
-.siio-meses-mini .act .barra{background:var(--tinta)}
-.siio-meses-mini .est .barra{background:repeating-linear-gradient(135deg,#b9cdf0 0 3px,#e3ebf8 3px 6px)}
+.siio-frase-mes .encurso strong{color:var(--tinta)}
+/* Margen de cada mes con su cifra escrita: lo que gana sube, lo que pierde baja en rojo; los meses del Excel de
+   Finanzas en tono más claro que los de Avancys; el mes de la frase, en tinta. */
+.siio-margenes{margin:0;display:grid;gap:4px;justify-items:end}
+.siio-margenes ol{display:flex;gap:2px;margin:0;padding:0;list-style:none}
+.siio-margenes button{display:grid;grid-template-rows:auto 26px 0 auto;justify-items:center;width:34px;padding:2px 0;border-radius:6px;color:var(--sutil)}
+.siio-margenes button:hover{background:var(--fondo-suave)}
+.siio-margenes .con-perdidas button{grid-template-rows:auto 26px 26px auto}
+.siio-margenes .cifra{font-size:10.5px;font-weight:700;color:var(--suave);font-variant-numeric:tabular-nums}
+.siio-margenes .arriba{display:flex;align-items:flex-end;border-bottom:1px solid var(--linea-fuerte)}
+.siio-margenes .abajo{display:flex;align-items:flex-start}
+.siio-margenes i{display:block;width:14px;background:#9db8e6}
+.siio-margenes .arriba i{border-radius:3px 3px 0 0}
+.siio-margenes .abajo i{border-radius:0 0 3px 3px;background:var(--mal)}
+.siio-margenes .excel .arriba i{background:#cbd9f1}
+.siio-margenes .act .arriba i{background:var(--tinta)}
+.siio-margenes .neg .cifra{color:var(--mal)}
+.siio-margenes .act .cifra{color:var(--tinta)}
+.siio-margenes .nombre{font-size:10px}
+.siio-margenes figcaption{font-size:11px;color:var(--sutil)}
 .siio-bloques{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:14px}
 .siio-panel-decision{margin-top:14px}
 @media(max-width:1020px){.siio-bloques{grid-template-columns:1fr}.siio-frase-mes{grid-template-columns:1fr}}

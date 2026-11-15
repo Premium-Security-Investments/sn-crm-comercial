@@ -194,3 +194,10 @@ test('la Torre se lee por decisiones: la frase del mes, lo que requiere decisió
   assert.equal((view.match(/api<T>\(path\)/g) || []).length, 1, 'la vista carga cada fuente una sola vez y la comparte');
 });
 
+
+test('un cierre guardado como fecha sola se muestra en esa fecha, no el día anterior', async () => {
+  const { closingDateLabel } = await loadModule('../src/siio/commercialSummary.ts');
+  assert.match(closingDateLabel('2026-12-02T00:00:00Z'), /^2\D+dic/);
+  assert.match(closingDateLabel('2026-11-24T14:00:00Z'), /^24\D+nov/);
+  assert.match(closingDateLabel('2026-11-25T02:00:00Z'), /^24\D+nov/, 'una hora real se lee en hora de Colombia');
+});

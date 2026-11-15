@@ -51,7 +51,7 @@ export type EntradaFuentes = {
 export const DIAS_PARA_CERRAR = 30;
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const nombreMes = (mes: string) => MESES[Number(mes.slice(5, 7)) - 1];
-const ultimoDia = (mes: string) => new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0)).toISOString().slice(0, 10);
+export const ultimoDia = (mes: string) => new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0)).toISOString().slice(0, 10);
 const diasDesde = (fecha: string, hoy: Date) => Math.max(0, Math.floor((Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate()) - Date.parse(`${fecha}T00:00:00Z`)) / 86400000));
 // Días desde el último día del mes: «septiembre lleva 45 días» el 14 de noviembre. Un solo cálculo para la Portada,
 // Resultados y Fuentes, para que el mismo atraso no diga dos números distintos.

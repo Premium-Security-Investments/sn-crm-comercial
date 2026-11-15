@@ -22,8 +22,9 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   assert.match(torre, /prioridad: 'alta' \| 'media' \| 'baja';/);
   assert.match(torre, /Requiere decisión hoy <span className="siio-conteo">/);
   assert.match(torre, /className=\{`siio-plazo /);
-  // Portada aprobada: frase del último mes cerrado, tres bloques y el selector de mes en Resultados.
-  assert.match(torre, /aria-label="Resultado del último mes cerrado"/);
+  // Portada (revisada con Juan el 15-nov): frase del mes anterior con su estado de cierre, tres bloques y el selector de
+  // mes en Resultados.
+  assert.match(torre, /aria-label="Resultado del mes anterior"/);
   assert.match(torre, /Ningún mes tiene bloqueo contable en Avancys/);
   assert.match(read('src/siio/SiioExecutiveView.tsx'), /\['portada', 'Portada'\], \['resultados', 'Resultados'\]/);
   for (const pregunta of ['¿Quién nos hace perder?', '¿Nos están pagando?', '¿Vamos dentro del presupuesto?']) assert.ok(torre.includes(pregunta), pregunta);
@@ -130,4 +131,23 @@ test('vig-ia calca la maqueta: ficha de prioridad, porqué, fuentes y lo que no 
   assert.match(reco, /Lo que Vig-IA no pudo evaluar \(y quién lo destraba\)/);
   assert.match(reco, /className="siio-boton-primario"/);
   assert.doesNotMatch(read('src/siio/siio.css'), /siio-recommendation/, 'sin el CSS de la versión anterior');
+});
+
+test('portada revisada con Juan (15-nov): el mes anterior con su estado de cierre, el mes en curso solo con lo facturado', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  // «Sin cierre formal · N días» en vez de «Cerrado» por la regla de los 30 días.
+  assert.match(torre, /texto: `Sin cierre formal · \$\{dias\} \$\{dias === 1 \? 'día' : 'días'\}`/);
+  assert.match(torre, /if \(bloqueo && bloqueo >= ultimoDia\(mes\)\) return \{ tono: 'cerrado', texto: 'Cerrado' \};/);
+  // El mes principal es el anterior, con lo que el sistema tiene hoy (sin proyección).
+  assert.match(torre, /const principal = t\.realDe\(anterior\) \? anterior : torre\?\.mes_cerrado \|\| null;/);
+  // El mes en curso no muestra utilidad (la nómina se causa al cierre): solo lo facturado.
+  assert.match(torre, /a hoy: <strong>\{millones\(enCurso\.totales\.ingresos\)\} facturados<\/strong>/);
+  assert.doesNotMatch(torre, /va en ≈/);
+  // El gráfico dice algo: la cifra de cada mes escrita y las pérdidas hacia abajo.
+  assert.match(torre, /<span className="cifra">/);
+  assert.match(torre, /<span className="abajo"><i style=\{\{ height: valor < 0/);
+  const vista = read('src/siio/SiioExecutiveView.tsx');
+  assert.match(vista, /frase: fraseLicitaciones\(porDecidir\)/);
+  assert.match(vista, /hay que decidir antes del/);
+  assert.match(vista, /\{enumerar\(nadie\)\}/, 'los comerciales sin ningún lead al día, con nombre');
 });
