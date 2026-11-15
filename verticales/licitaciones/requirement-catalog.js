@@ -175,10 +175,10 @@ export const REQUIREMENT_FOCUS = Object.freeze([
     fix: 'Decidir si se tramita la certificación que piden.' },
   { key: 'horas_extras', title: 'Autorización de horas extras del Ministerio del Trabajo', types: ['horas_extras'], live: null,
     fix: 'Confirmar si la tenemos; si no, solicitarla al Ministerio del Trabajo.' },
-  // Juan, 2026-11-13. Estos cuatro no se pueden medir contra la ficha: entran cuando un análisis, un acta o una persona
-  // (bloqueo anotado) dicen que nos inhabilitan, y no van a «por confirmar» (casi todo pliego pide personal y experiencia).
-  { key: 'experiencia', title: 'Experiencia que no podemos acreditar', types: ['experiencia_especifica', 'experiencia_general'], live: null, pending: false,
-    fix: 'Pedir ya los certificados de los contratos que más se repiten (Jerónimo Martins 070 y 089, Megabús 088, Terminales de Medellín 086); si el objeto o el alcance no alcanza, socio en unión temporal.' },
+  // Juan, 2026-11-13. Estos tres no se pueden medir contra la ficha: entran cuando un análisis, un acta o una persona
+  // (bloqueo anotado) dicen que nos inhabilitan, y no van a «por confirmar» (casi todo pliego pide personal).
+  // La experiencia no tiene tarjeta (Juan, 2026-11-15): acreditarla es pedir el certificado de cada contrato, o no hay
+  // nada que tramitar; se trabaja en cada proceso.
   { key: 'personal', title: 'Personal acreditado que no tenemos', types: ['personal_minimo', 'responsable_sst'], live: null, pending: false,
     fix: 'Con Talento Humano: quién tiene credencial de consultor de la Supervigilancia, los años de vínculo y los cursos que piden; tramitar lo que falte.' },
   { key: 'armas', title: 'Armas y salvoconductos a nombre de la empresa', types: ['armas'], live: null, pending: false,

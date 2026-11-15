@@ -195,7 +195,7 @@ test('la tarjeta separa los procesos próximos (por fecha de cierre) de los pasa
   assert.match(presencia.upcoming[1].reason, /agencia y piden sede principal o sucursal/, 'la regla fija corrige el «no bloqueante» del análisis');
   assert.deepEqual(presencia.past.map(item => item.process).sort(), ['Terminal · TT-SPO-07-2026', 'Villamaría (Caldas) · vigilancia física']);
   assert.deepEqual(focus.find(item => item.key === 'financiero').upcoming.map(item => item.opportunity_id), ['abierto-pronto'], 'la ciudad sale del proceso y el capital de trabajo cuenta como financiero');
-  assert.equal(focus.find(item => item.key === 'experiencia').upcoming.length, 1, 'experiencia entra sólo por lo anotado');
+  assert.ok(!focus.some(item => item.key === 'experiencia'), 'la experiencia no tiene tarjeta: se trabaja en cada proceso');
   assert.equal(focus[0].key, 'presencia', 'primero los grupos con más procesos próximos');
   assert.ok(!buildRequirementPending(catalog).some(item => ['experiencia_general', 'experiencia_especifica', 'personal_minimo', 'armas'].includes(item.key)), 'personal y experiencia no inundan «por confirmar»');
 });
@@ -257,7 +257,8 @@ test('migraciones 210, 215 y 218: sólo el servidor, los grupos de hechos y sus 
   await pg.exec(sql218);
   await pg.exec(sql218);
   const { rows } = await pg.query('select focus_key, status, owner, note from public.psi_tender_requirement_focus');
-  assert.deepEqual(rows.map(row => row.focus_key).sort(), REQUIREMENT_FOCUS.map(focus => focus.key).sort());
+  // La fila de «experiencia» sigue en la base (215) pero ya no tiene tarjeta (Juan, 2026-11-15): la pantalla la ignora.
+  assert.deepEqual(rows.map(row => row.focus_key).sort(), [...REQUIREMENT_FOCUS.map(focus => focus.key), 'experiencia'].sort());
   const codigos = rows.find(row => row.focus_key === 'codigos');
   assert.equal(codigos.note, 'escrito por una persona');
   assert.equal(codigos.status, 'en_tramite');
