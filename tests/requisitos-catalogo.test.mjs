@@ -196,7 +196,9 @@ test('la tarjeta separa los procesos próximos (por fecha de cierre) de los pasa
   assert.deepEqual(presencia.past.map(item => item.process).sort(), ['Terminal · TT-SPO-07-2026', 'Villamaría (Caldas) · vigilancia física']);
   assert.deepEqual(focus.find(item => item.key === 'financiero').upcoming.map(item => item.opportunity_id), ['abierto-pronto'], 'la ciudad sale del proceso y el capital de trabajo cuenta como financiero');
   assert.ok(!focus.some(item => item.key === 'experiencia'), 'la experiencia no tiene tarjeta: se trabaja en cada proceso');
-  assert.equal(focus[0].key, 'presencia', 'primero los grupos con más procesos próximos');
+  assert.equal(focus[0].key, 'presencia', 'a igual cierre (24-nov), primero el que bloquea más procesos abiertos');
+  assert.deepEqual(focus.map(item => item.key).slice(0, 2), ['presencia', 'financiero'], 'por fecha del primer cierre');
+  assert.ok(focus.findIndex(item => !item.upcoming.length) === -1 || focus.slice(focus.findIndex(item => !item.upcoming.length)).every(item => !item.upcoming.length), 'las tarjetas sin procesos abiertos van al final');
   assert.ok(!buildRequirementPending(catalog).some(item => ['experiencia_general', 'experiencia_especifica', 'personal_minimo', 'armas'].includes(item.key)), 'personal y experiencia no inundan «por confirmar»');
 });
 
