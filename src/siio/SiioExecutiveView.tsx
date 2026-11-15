@@ -5,7 +5,7 @@ import { deriveRecommendations, navigateSiioView, uniqueOptions } from './select
 import { EmptyState } from './SiioUi';
 import { SiioFinancialPulse } from './SiioFinancialPulse';
 import { millions } from './SiioCommercialPanel';
-import { PLAZO_ALTO, SIN_GESTION_MAL, SiioPestanaComercial } from './SiioPestanaComercial';
+import { PLAZO_ALTO, SiioPestanaComercial } from './SiioPestanaComercial';
 import { FollowupCell, FollowupComposer } from './SiioFollowups';
 import { addDays, isOverdue, openFollowupFor, todayIso, useFollowups, type FollowupDraft } from './followups';
 import { closingDateLabel, type CommercialSummary } from './commercialSummary';
@@ -65,19 +65,37 @@ const PESTANAS: ReadonlyArray<[PestanaTorre, string]> = [
   ['portada', 'Portada'], ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['vigia', 'Vig-IA'], ['parametros', 'Parámetros'], ['fuentes', 'Fuentes y detalle'],
 ];
 
-// Licitaciones en la Portada (Juan, 2026-11-15): cuáles son las primeras, cuándo cierran, cuánto hay en juego y hasta
-// cuándo hay que decidir; «6 licitaciones esperan» solo no lleva a ninguna decisión.
-function fraseLicitaciones(porDecidir: CommercialSummary['tenders']['calendar']) {
+// Nombres cortos para la Portada: «Rama Judicial – Dirección Ejecutiva…» → «Rama Judicial»; «SIC SUPERINTENDENCIA DE
+// INDUSTRIA Y COMERCIO» → «SIC»; lo escrito en mayúsculas sostenidas, en tipo título.
+const MENORES = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'el', 'en', 'para']);
+export function nombreCorto(nombre: string) {
+  const base = nombre.split(/\s+[–-]\s+/)[0].trim();
+  const palabras = base.split(/\s+/);
+  const mayusculas = base === base.toUpperCase();
+  if (mayusculas && palabras.length > 2 && /^[A-ZÁÉÍÓÚÑ]{2,4}$/.test(palabras[0])) return palabras[0];
+  if (!mayusculas) return base;
+  return palabras.map((palabra, indice) => {
+    const minuscula = palabra.toLowerCase();
+    return indice && MENORES.has(minuscula) ? minuscula : minuscula.replace(/^./, letra => letra.toUpperCase());
+  }).join(' ');
+}
+
+// Licitaciones en la Portada (Juan, 2026-11-15): la decisión como pregunta, con las primeras que cierran, cuándo,
+// cuántas hay por decidir y cuánto hay en juego; la ficha dice cuántos días quedan para decidir.
+function licitacionesPorDecidir(porDecidir: CommercialSummary['tenders']['calendar']): Pick<AlertaTorre, 'ficha' | 'frase'> {
   const orden = [...porDecidir].sort((a, b) => (a.days_to_deadline ?? 9999) - (b.days_to_deadline ?? 9999));
   const primeras = orden.slice(0, 2).filter(item => item.deadline_at);
   const enJuego = porDecidir.reduce((suma, item) => suma + (item.total_value || 0), 0);
-  const cuando = primeras.length === 2 && closingDateLabel(primeras[0].deadline_at) === closingDateLabel(primeras[1].deadline_at)
-    ? <><strong>{primeras[0].entity}</strong> y <strong>{primeras[1].entity}</strong> cierran el {closingDateLabel(primeras[0].deadline_at)}</>
-    : primeras.length === 2
-      ? <><strong>{primeras[0].entity}</strong> cierra el {closingDateLabel(primeras[0].deadline_at)} y <strong>{primeras[1].entity}</strong> el {closingDateLabel(primeras[1].deadline_at)}</>
-      : primeras.length === 1 ? <><strong>{primeras[0].entity}</strong> cierra el {closingDateLabel(primeras[0].deadline_at)}</> : null;
+  const mismoDia = primeras.length === 2 && closingDateLabel(primeras[0].deadline_at) === closingDateLabel(primeras[1].deadline_at);
+  const nombres = primeras.map(item => nombreCorto(item.entity));
+  const cierre = !primeras.length ? '' : mismoDia ? `Cierran el ${closingDateLabel(primeras[0].deadline_at)}`
+    : primeras.length === 2 ? `Cierran el ${closingDateLabel(primeras[0].deadline_at)} y el ${closingDateLabel(primeras[1].deadline_at)}` : `Cierra el ${closingDateLabel(primeras[0].deadline_at)}`;
+  const dias = orden[0]?.days_to_deadline;
   const limite = primeras[0]?.deadline_at ? closingDateLabel(new Date(Date.parse(primeras[0].deadline_at) - 86400000).toISOString()) : null;
-  return <><strong>{porDecidir.length === 1 ? '1 licitación espera' : `${porDecidir.length} licitaciones esperan`} la decisión de presentarse</strong>{cuando ? <>: {cuando}</> : null}. En juego {millions(enJuego)}{limite ? `; hay que decidir antes del ${limite}` : ''}.</>;
+  return {
+    ficha: dias !== null && dias !== undefined && dias >= 1 ? { valor: `${dias - 1} ${dias - 1 === 1 ? 'día' : 'días'}`, unidad: limite ? `decidir antes del ${limite.split(' ')[0]}` : 'para decidir' } : { valor: `${porDecidir.length}`, unidad: 'por decidir' },
+    frase: <><strong>{nombres.length ? `¿Nos presentamos a ${enumerar(nombres)}?` : `${porDecidir.length} licitaciones esperan la decisión de presentarse.`}</strong>{nombres.length ? ` ${cierre}; ` : ' '}{porDecidir.length === 1 ? 'es la única por decidir' : `hay ${porDecidir.length} licitaciones por decidir`}, {millions(enJuego)} en juego.</>,
+  };
 }
 
 export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtra = null }: { payload: SiioBootstrapPayload; routeState: Extract<SiioRouteState, { view: 'resumen' }>; onNavigate: (state: SiioRouteState) => void; fuentesExtra?: ReactNode }) {
@@ -131,28 +149,24 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
       const dias = porDecidir.map(item => item.days_to_deadline).filter((valor): valor is number => valor !== null && valor >= 0);
       const minimo = dias.length ? Math.min(...dias) : null;
       lista.push({ clave: 'licitaciones', pestana: 'comercial', prioridad: minimo !== null && minimo <= PLAZO_ALTO ? 'alta' : 'media', responsable: 'Licitaciones',
-        ficha: minimo !== null ? { valor: `${minimo} días`, unidad: 'cierra' } : { valor: `${porDecidir.length}`, unidad: 'por decidir' },
-        frase: fraseLicitaciones(porDecidir) });
+        ...licitacionesPorDecidir(porDecidir) });
     }
     if (estaSemana.vencidos) lista.push({ clave: 'vencidos', pestana: 'comercial', prioridad: 'alta', responsable: 'Comercial',
       ficha: { valor: `${estaSemana.vencidos}`, unidad: estaSemana.vencidos === 1 ? 'vencida' : 'vencidas' },
-      frase: <><strong>{estaSemana.vencidos === 1 ? '1 decisión con fecha ya venció' : `${estaSemana.vencidos} decisiones con fecha ya vencieron`}</strong> sin registrarse.</> });
-    // El forecast desactualizado se dice en la Portada con el área responsable; el detalle por persona, en Comercial.
-    const pipeline = commercial?.pipeline;
-    if (pipeline?.open_count && pipeline.stale_count) {
-      const parte = pipeline.stale_count / pipeline.open_count;
-      const nadie = (pipeline.by_owner || []).filter(fila => fila.owner_name && fila.open > 0 && fila.stale === fila.open).map(fila => fila.owner_name as string);
-      lista.push({ clave: 'forecast', pestana: 'comercial', prioridad: parte >= SIN_GESTION_MAL ? 'alta' : 'media', responsable: 'Comercial',
-        ficha: { valor: `${Math.round(parte * 100)} %`, unidad: 'sin gestión' },
-        frase: <><strong>{pipeline.stale_count} de {pipeline.open_count} leads del forecast</strong> sin gestión en {pipeline.stale_days} días{nadie.length ? <>; <strong>{enumerar(nadie)}</strong> {nadie.length === 1 ? 'no tiene' : 'no tienen'} ningún lead al día</> : null}. Cada comercial actualiza los suyos en el CRM.</> });
-    }
+      frase: <><strong>Registrar {estaSemana.vencidos === 1 ? 'la decisión que ya venció' : `las ${estaSemana.vencidos} decisiones que ya vencieron`}.</strong> Tenían fecha y no se registró qué se decidió.</> });
+    // El forecast desactualizado es una de las cuatro cifras de la Portada (opción A): no se repite en esta lista.
     lista.push(...alertasDeAvancys(torre));
     const paradas = commercial?.pipeline.stale_large || [];
     if (paradas.length) lista.push({ clave: 'ofertas', pestana: 'comercial', prioridad: 'media', responsable: 'Comercial',
-      ficha: { valor: '30+ días', unidad: 'paradas' },
-      frase: <><strong>{paradas.length === 1 ? '1 oferta grande' : `${paradas.length} ofertas grandes`} sin moverse</strong> hace más de 30 días, con {millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0))} al mes en juego{paradas.length > 1 ? <>; las mayores, {enumerar([...paradas].sort((a, b) => b.monthly_value - a.monthly_value).slice(0, 2).map(item => `${item.company_name} (${millions(item.monthly_value)})`))}</> : null}. Retomarlas o descartarlas.</> });
+      ficha: { valor: millions(paradas.reduce((suma, item) => suma + (item.monthly_value || 0), 0)), unidad: 'al mes, paradas' },
+      frase: <><strong>Retomar o descartar {paradas.length === 1 ? '1 oferta grande' : `${paradas.length} ofertas grandes`}.</strong> {enumerar([...paradas].sort((a, b) => b.monthly_value - a.monthly_value).slice(0, 2).map(item => `${nombreCorto(item.company_name)} (${millions(item.monthly_value)})`))}{paradas.length > 2 ? ', las mayores' : ''}; más de 30 días sin moverse.</> });
     return lista;
   })();
+  const pipelinePortada = commercial?.pipeline;
+  const forecastPortada = pipelinePortada?.open_count ? {
+    abiertas: pipelinePortada.open_count, sinGestion: pipelinePortada.stale_count, dias: pipelinePortada.stale_days,
+    nadie: (pipelinePortada.by_owner || []).filter(fila => fila.owner_name && fila.open > 0 && fila.stale === fila.open).map(fila => fila.owner_name as string),
+  } : null;
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validación humana registrada' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
@@ -165,7 +179,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
     </nav>
 
     {pestana === 'portada' ? <section role="tabpanel" aria-label="Portada">
-      <SiioPortada t={torre} onIr={(destino, mes) => { if (mes) torre.setMes(mes); irA(destino); }} />
+      <SiioPortada t={torre} onIr={(destino, mes) => { if (mes) torre.setMes(mes); irA(destino); }} forecast={forecastPortada} />
       <SiioRequiereDecision alertas={alertas} onIr={irA} />
     </section> : null}
 
