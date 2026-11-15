@@ -102,7 +102,8 @@ export async function listAllies(database, { participationsSeed = [] } = {}) {
       all(database, 'psi_vigilance_participations', 'id,nit,company_label,entity,process_ref,opportunity_id,kind,detail,source,occurred_on,created_at'),
       loadParticipationLinks(database),
     ]);
-    const participations = loaded.map(part => linkParticipation(part, links));
+    // Una unión temporal no se muestra aunque quede alguna en la base (Juan, 2026-11-15).
+    const participations = loaded.filter(part => !isJointVenture(part.company_label)).map(part => linkParticipation(part, links));
     const citiesByNit = new Map();
     for (const office of offices) {
       if (!String(office.city || '').trim() || !office.city_key) continue;
@@ -142,7 +143,7 @@ export async function getAlly(database, nit) {
   if (partsError) throw mapError(partsError);
   // Las que se cargaron sin NIT y una corrección une a esta empresa.
   const labels = [...links].filter(([, linked]) => linked === key).map(([label]) => label);
-  let participations = own || [];
+  let participations = (own || []).filter(part => !isJointVenture(part.company_label));
   if (labels.length) {
     const { data: unlinked, error: unlinkedError } = await database.from('psi_vigilance_participations')
       .select('id,nit,company_label,entity,process_ref,kind,detail,source,occurred_on,created_at').is('nit', null).in('company_label', labels);
@@ -175,7 +176,7 @@ export async function loadAlliesListing(database, { actorId, listing, source, pa
   const existing = await all(database, 'psi_vigilance_participations', 'process_ref,company_label,kind');
   const seen = new Set(existing.map(participationKey));
   let seeded = 0;
-  for (const part of participationsSeed.map(normalizeSeedParticipation)) {
+  for (const part of companiesOnly(participationsSeed)) {
     if (seen.has(participationKey(part))) continue;
     const { error } = await database.rpc('psi_add_vigilance_participation', { p_actor_id: actorId, p_payload: part });
     if (error) throw mapError(error);
@@ -188,8 +189,12 @@ export async function loadAlliesListing(database, { actorId, listing, source, pa
 /** Cuántas participaciones de la semilla no están en la base (por proceso, empresa y tipo). */
 export function missingSeedCount(participations, participationsSeed) {
   const seen = new Set(participations.map(participationKey));
-  return participationsSeed.map(normalizeSeedParticipation).filter(part => !seen.has(participationKey(part))).length;
+  return companiesOnly(participationsSeed).filter(part => !seen.has(participationKey(part))).length;
 }
+
+// Las uniones temporales y consorcios no van al CRM (Juan, 2026-11-15; migración 222): sólo empresas.
+export const isJointVenture = label => /uni[oó]n\s+temporal|\bu\.?\s?t\b|consorcio/i.test(String(label || ''));
+const companiesOnly = participationsSeed => participationsSeed.filter(part => !isJointVenture(part?.company_label)).map(normalizeSeedParticipation);
 
 const participationKey = part => [part.process_ref, part.company_label, part.kind].map(value => String(value || '').trim().toUpperCase()).join('|');
 
@@ -224,6 +229,7 @@ export async function addParticipation(database, { actorId, body }) {
   const label = String(body?.company_label || '').trim();
   const processRef = String(body?.process_ref || '').trim();
   if (!label || !processRef) throw fail('Falta la empresa o el proceso.', 400);
+  if (isJointVenture(label)) throw fail('Las uniones temporales y consorcios no se registran: sólo empresas.', 400);
   if (!Object.hasOwn(PARTICIPATION_KINDS, body?.kind || '')) throw fail('El tipo de participación no es válido.', 400);
   const payload = {
     nit: String(body?.nit || '').replace(/\D/g, '') || null, company_label: label.slice(0, 300), entity: String(body?.entity || '').trim().slice(0, 300) || null,

@@ -89,7 +89,7 @@ test('pantalla y rutas: Empresa, Aliados y Lecciones juntos a la derecha; candid
 
 // 2026-11-10: la primera carga en producción se cayó en la participación 42, que traía sólo el año («2023»).
 test('una fecha que sólo trae el año va al detalle, y la recarga sólo agrega las participaciones que faltan', async () => {
-  const { normalizeSeedParticipation, loadAlliesListing } = await import('../verticales/licitaciones/tender-allies.js');
+  const { normalizeSeedParticipation, loadAlliesListing, isJointVenture } = await import('../verticales/licitaciones/tender-allies.js');
   assert.deepEqual(normalizeSeedParticipation({ occurred_on: '2023', detail: 'Adjudicatario' }), { occurred_on: null, detail: 'Año 2023. Adjudicatario' });
   assert.equal(VIGILANCE_PARTICIPATIONS_SEED.map(normalizeSeedParticipation).filter(part => part.occurred_on && !/^\d{4}-\d{2}-\d{2}$/.test(part.occurred_on)).length, 0);
   const inserted = VIGILANCE_PARTICIPATIONS_SEED.slice(0, 41).map(part => ({ process_ref: part.process_ref, company_label: part.company_label, kind: part.kind }));
@@ -99,14 +99,15 @@ test('una fecha que sólo trae el año va al detalle, y la recarga sólo agrega 
     from: () => ({ select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: { role: 'nosotros' } }), range: async () => ({ data: inserted.slice(0, 41), error: null }) }),
   };
   const result = await loadAlliesListing(database, { actorId: 'k', listing: [], source: 's', participationsSeed: VIGILANCE_PARTICIPATIONS_SEED });
-  assert.equal(result.participations_seeded, 19);
+  // Las uniones temporales de la semilla no entran (migración 222).
+  assert.equal(result.participations_seeded, VIGILANCE_PARTICIPATIONS_SEED.slice(41).filter(part => !isJointVenture(part.company_label)).length);
 });
 
 test('la pantalla sabe cuántas participaciones de la semilla faltan y no muestra ciudades vacías', async () => {
-  const { missingSeedCount, listAllies } = await import('../verticales/licitaciones/tender-allies.js');
+  const { missingSeedCount, listAllies, isJointVenture } = await import('../verticales/licitaciones/tender-allies.js');
   const { normalizeSeedParticipation } = await import('../verticales/licitaciones/tender-allies.js');
   const loaded = VIGILANCE_PARTICIPATIONS_SEED.slice(0, 41).map(normalizeSeedParticipation);
-  assert.equal(missingSeedCount(loaded, VIGILANCE_PARTICIPATIONS_SEED), VIGILANCE_PARTICIPATIONS_SEED.length - 41);
+  assert.equal(missingSeedCount(loaded, VIGILANCE_PARTICIPATIONS_SEED), VIGILANCE_PARTICIPATIONS_SEED.slice(41).filter(part => !isJointVenture(part.company_label)).length);
   assert.equal(missingSeedCount(VIGILANCE_PARTICIPATIONS_SEED.map(normalizeSeedParticipation), VIGILANCE_PARTICIPATIONS_SEED), 0);
   const rows = {
     psi_vigilance_companies: [{ nit: '900000001', name: 'Uno', role: 'sin_clasificar' }],
@@ -116,7 +117,7 @@ test('la pantalla sabe cuántas participaciones de la semilla faltan y no muestr
   const database = { from: table => ({ select() { return this; }, range: async () => ({ data: rows[table], error: null }) }) };
   const result = await listAllies(database, { participationsSeed: VIGILANCE_PARTICIPATIONS_SEED });
   assert.deepEqual(result.companies[0].cities.map(city => city.city), ['CALI', 'TULUÁ']);
-  assert.equal(result.seed_missing, VIGILANCE_PARTICIPATIONS_SEED.length);
+  assert.equal(result.seed_missing, VIGILANCE_PARTICIPATIONS_SEED.filter(part => !isJointVenture(part.company_label)).length);
 });
 
 // 2026-11-10 (Juan): el contacto en cuatro campos (197) y los correos del PDF sin el espacio partido.
@@ -186,7 +187,7 @@ test('«este nombre es esta empresa»: la participación sin NIT sale en la fich
     psi_vigilance_companies: [{ nit: '900422632', name: 'SEGURIDAD CAMALEON LTDA', role: 'sin_clasificar' }],
     psi_vigilance_company_offices: [],
     psi_vigilance_participations: [{ id: 'a', nit: null, company_label: 'Seguridad Camaleón Ltda.', process_ref: 'SIC 23 DE 2026', kind: 'observo_proyecto' },
-      { id: 'b', nit: null, company_label: 'UNION TEMPORAL X', process_ref: 'SNS-LP-2-2026', kind: 'oferto' }],
+      { id: 'b', nit: null, company_label: 'Cooperativa de Vigilancia de Santander COOPVIGSAN CTA', process_ref: 'LP-07-2026', kind: 'observo_proyecto' }],
     psi_vigilance_participation_links: [{ company_label: 'Seguridad Camaleón Ltda.', nit: '900422632' }],
   };
   const list = { from: table => ({ select() { return this; }, range: async () => ({ data: rows[table], error: null }) }) };
@@ -204,4 +205,19 @@ test('«este nombre es esta empresa»: la participación sin NIT sale en la fich
   assert.deepEqual(company.participations.map(part => [part.id, part.nit]), [['a', '900422632']]);
   const sql = read('supabase/migrations/221_aliados_participaciones_por_nombre.sql');
   assert.match(sql, /grant select, insert, update on table public\.psi_vigilance_participation_links to service_role/);
+});
+
+// Juan, 2026-11-15 (migración 222): las uniones temporales y consorcios no van al CRM.
+test('las uniones temporales no entran ni se muestran; las empresas sin NIT sí siguen', async () => {
+  const { isJointVenture, missingSeedCount, addParticipation, listAllies } = await import('../verticales/licitaciones/tender-allies.js');
+  for (const label of ['UNION TEMPORAL REDSEGURIDAD', 'UNION  TEMPORAL SEGURIDAD SALUD 2026', 'U.T SEGURA NVH', 'UT VIGILANCIA 2026', 'Consorcio Vigilar']) assert.ok(isJointVenture(label), label);
+  for (const label of ['Seguridad Camaleón Ltda.', 'UTRASEG LTDA', 'SIMA SEGURIDAD LTDA']) assert.ok(!isJointVenture(label), label);
+  const seed = [{ nit: '900422632', company_label: 'Camaleón', process_ref: 'SIC', kind: 'observo_proyecto' }, { nit: null, company_label: 'UNION TEMPORAL X', process_ref: 'SNS', kind: 'oferto' }];
+  assert.equal(missingSeedCount([], seed), 1);
+  await assert.rejects(addParticipation({ rpc: async () => ({ data: null, error: null }) }, { actorId: 'u', body: { company_label: 'UT X', process_ref: 'P', kind: 'oferto' } }), /uniones temporales/);
+  const rows = { psi_vigilance_companies: [], psi_vigilance_company_offices: [], psi_vigilance_participation_links: [],
+    psi_vigilance_participations: [{ id: 'a', nit: null, company_label: 'SIMA SEGURIDAD LTDA' }, { id: 'b', nit: null, company_label: 'UNION TEMPORAL X' }] };
+  const result = await listAllies({ from: table => ({ select() { return this; }, range: async () => ({ data: rows[table], error: null }) }) });
+  assert.deepEqual(result.participations_without_nit.map(part => part.id), ['a']);
+  assert.match(read('supabase/migrations/222_aliados_sin_uniones_temporales.sql'), /disable trigger psi_vigilance_participations_append_only[\s\S]*enable trigger psi_vigilance_participations_append_only/);
 });
