@@ -121,9 +121,11 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
     }
     return [...porMes.values()].sort((x, y) => x.mes.localeCompare(y.mes));
   })();
-  // Se entra al mes en curso, en vivo (Juan, 2026-11-13); mientras Avancys no responde, al último mes que haya.
+  // Se entra al mes anterior, igual que la Portada (Juan, 2026-11-15); si Avancys no lo tiene, al mes en curso o al
+  // último que haya.
   const enVivo = opciones.find(o => o.fuente === 'en_vivo')?.mes;
-  const mes = mesElegido || enVivo || opciones[opciones.length - 1]?.mes || '';
+  const anterior = mesAnterior(new Date().toISOString().slice(0, 7));
+  const mes = mesElegido || (opciones.some(o => o.mes === anterior) ? anterior : enVivo) || opciones[opciones.length - 1]?.mes || '';
   const opcion = opciones.find(o => o.mes === mes) || null;
   const oficialDe = (m: string) => {
     const [anio, numero] = m.split('-').map(Number);
@@ -140,12 +142,11 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
   };
   // Lo que el sistema tiene hoy del mes, sin proyección (Juan, 2026-11-15: la Portada muestra el mes anterior con sus
   // cifras de hoy y dice si Contabilidad lo cerró).
+  // Una sola cifra por mes: la de Avancys donde existe; antes de Avancys, el cierre de Finanzas (Juan, 2026-11-15).
   const realDe = (m: string): Resumen | null => {
-    const o = oficialDe(m);
-    if (o) return resumenDe(m);
     const f = pyg.find(fila => fila.mes === m);
-    if (!f) return null;
-    return { ingresos: f.totales.ingresos, costos: f.totales.costos, gastos: f.totales.gastos, utilidad: f.totales.utilidad_ordinaria, fuente: 'Avancys' };
+    if (f) return { ingresos: f.totales.ingresos, costos: f.totales.costos, gastos: f.totales.gastos, utilidad: f.totales.utilidad_ordinaria, fuente: 'Avancys' };
+    return oficialDe(m) ? resumenDe(m) : null;
   };
   const indice = opciones.findIndex(o => o.mes === mes);
   const mesPrevio = indice > 0 ? opciones[indice - 1].mes : null;
@@ -242,10 +243,10 @@ export function cierreDe(t: TorreAvancys, mes: string, hoy = new Date()): { tono
   return { tono: dias > DIAS_SIN_CIERRE_MAL ? 'marca' : 'confirmar', texto: `Sin cierre formal · ${dias} ${dias === 1 ? 'día' : 'días'}` };
 }
 const DIAS_SIN_CIERRE_MAL = 30;
-const mesAnterior = (mes: string) => {
+function mesAnterior(mes: string) {
   const [anio, numero] = mes.split('-').map(Number);
   return numero === 1 ? `${anio - 1}-12` : `${anio}-${String(numero - 1).padStart(2, '0')}`;
-};
+}
 
 // El mes del que habla la Portada: el mes anterior si Avancys ya lo tiene; si no, el último cerrado.
 export function mesPrincipal(t: TorreAvancys, hoy = new Date()) {
@@ -397,19 +398,22 @@ function BloquePresupuesto({ t, onIr }: { t: TorreAvancys; onIr: (pestana: Pesta
 export function SiioPestanaResultados({ t }: { t: TorreAvancys }) {
   const { torre } = t;
   if (!torre?.pyg?.length || !torre.lineas_pyg) return <p className="siio-secondary">Sin datos de Avancys todavía.</p>;
-  const oficiales = t.opciones.filter(o => o.fuente === 'oficial');
-  const tramo = oficiales.length ? `${nombreMes(oficiales[0].mes).split(' ')[0]}–${nombreMes(oficiales[oficiales.length - 1].mes).split(' ')[0]}: cierre de Finanzas · ` : '';
+  // Antes de Avancys, el cierre de Finanzas; desde Avancys, una sola cifra por mes: la de Avancys.
+  const primeroAvancys = torre.pyg[0]?.mes || '';
+  const oficiales = t.opciones.filter(o => o.fuente === 'oficial' && o.mes < primeroAvancys);
+  const tramo = oficiales.length ? `${nombreMes(oficiales[0].mes).split(' ')[0]}–${nombreMes(oficiales[oficiales.length - 1].mes).split(' ')[0]}: cierre de Finanzas (Excel) · ` : '';
+  const mesActual = new Date().toISOString().slice(0, 7);
   return <>
     <div className="siio-sub">
       <label className="siio-selector">Mes
         <select value={t.mes} onChange={evento => t.setMes(evento.target.value)}>
-          {[...t.opciones].reverse().map(o => <option key={o.mes} value={o.mes}>{nombreMes(o.mes)} · {o.etiqueta}</option>)}
+          {[...t.opciones].reverse().map(o => <option key={o.mes} value={o.mes}>{nombreMes(o.mes)} · {o.mes === mesActual ? 'a hoy' : cierreDe(t, o.mes).texto}</option>)}
         </select>
       </label>
-      <p className="siio-nota">{tramo}desde agosto: Avancys · ≈ proyección</p>
+      <p className="siio-nota">{tramo}desde {primeroAvancys ? nombreMes(primeroAvancys).split(' ')[0] : 'agosto'}: Avancys, con lo que tiene registrado hoy</p>
     </div>
     <EstadoDeResultados t={t} lineas={torre.lineas_pyg} meses={torre.pyg} />
-    <SiioPresupuesto presupuesto={torre.presupuesto || null} mes={t.mes} />
+    <SiioPresupuesto presupuesto={torre.presupuesto || null} mes={t.mes} cierreDe={mes => cierreDe(t, mes)} />
   </>;
 }
 
@@ -615,77 +619,89 @@ const GRUPOS: { grupo: string; titulo: string; total: keyof Totales; totalEtique
   { grupo: 'impuestos', titulo: 'Impuestos', total: 'utilidad_neta', totalEtiqueta: 'Utilidad del ejercicio' },
 ];
 
-// El estado de resultados con las líneas del PYG de Finanzas, mes a mes, en vivo desde Avancys.
-// Modelo para afinar con las áreas (Juan, 2026-11-13): cada línea dice qué cuentas suma. Los meses
-// cerrados son automáticos; los incompletos y el mes en curso, proyectados (≈); el cierre oficial de
-// Finanzas (el Excel cargado) se muestra debajo para los meses que lo tienen.
+// El estado de resultados con las líneas del PYG de Finanzas, mes a mes, desde Avancys (revisado con Juan el
+// 2026-11-15): lo que el sistema tiene hoy, sin proyecciones; el estado de cierre de cada mes; las líneas que parecen
+// incompletas con su referencia del último mes cerrado; el mes en curso a hoy, con sus totales al cierre; y una sola
+// cifra por mes, con la diferencia frente al cierre de Finanzas dicha y con responsable.
 function EstadoDeResultados({ t, lineas, meses }: { t: TorreAvancys; lineas: LineaPyg[]; meses: MesPyg[] }) {
+  const hoy = new Date();
+  const mesActual = hoy.toISOString().slice(0, 7);
   const ultimoCerrado = [...meses].reverse().find(fila => fila.estado === 'cerrado');
   const prov = ultimoCerrado?.provision;
   const sinClasificar = meses.flatMap(fila => fila.sin_clasificar.map(c => ({ ...c, mes: fila.mes })));
-  const valores = (fila: MesPyg) => fila.proyeccion ? fila.proyeccion.lineas : fila.lineas;
-  const totalesDe = (fila: MesPyg) => fila.proyeccion ? fila.proyeccion.totales : fila.totales;
-  const oficialDe = (mes: string) => {
-    const [anio, numero] = mes.split('-').map(Number);
-    return t.oficial?.months.find(m => m.year === anio && m.month === numero)?.totals || null;
+  const enCurso = (fila: MesPyg) => fila.mes >= mesActual;
+  const conOficial = meses.some(fila => t.oficialDe(fila.mes));
+  // Lo que no se ha registrado del mes: las líneas que la contabilidad todavía no completa frente al último cerrado.
+  const base = (fila: MesPyg) => (fila.proyeccion && !enCurso(fila) ? meses.find(m => m.mes === fila.proyeccion!.base_mes) || null : null);
+  const incompleta = (fila: MesPyg, clave: string) => Boolean(base(fila) && fila.proyeccion!.estimadas.includes(clave));
+  const chip = (fila: MesPyg) => {
+    if (enCurso(fila)) return <span className="siio-chip vivo">A hoy</span>;
+    const c = cierreDe(t, fila.mes, hoy);
+    return <span className={`siio-chip ${c.tono}`}>{c.texto}</span>;
   };
-  const conOficial = meses.some(fila => oficialDe(fila.mes));
-  const celda = (fila: MesPyg, valor: number, clave?: string) => {
-    const estimada = fila.proyeccion && (!clave || fila.proyeccion.estimadas.includes(clave));
-    return <span className={estimada ? 'siio-secondary' : undefined}>{fila.proyeccion ? '≈ ' : ''}{millones(valor)}</span>;
-  };
-  // El estado de cada columna, con el vocabulario único del kit.
-  const chip = (fila: MesPyg) => oficialDe(fila.mes) ? <span className="siio-chip finanzas">Cierre de Finanzas</span>
-    : fila.estado === 'cerrado' ? <span className="siio-chip cerrado">Cerrado</span>
-      : fila.motivo === 'Mes en curso' ? <span className="siio-chip vivo">En vivo</span> : <span className="siio-chip proyeccion">≈</span>;
-  // Lo que se muestra por mes manda el cierre de Finanzas donde existe (igual que la Portada).
-  const resumen = (fila: MesPyg) => t.resumenDe(fila.mes);
   const protagonista = (fila: MesPyg) => (fila.mes === t.mes ? 'num total' : 'num');
-  // Los meses que la contabilidad no ha cerrado, con los días que llevan (Juan, 2026-11-14: «la Torre muestra quién no está al día»).
-  const hoy = new Date();
-  const abiertos = meses.filter(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso')
-    .map(fila => ({ mes: fila.mes, dias: diasDesdeFinDeMes(fila.mes, hoy), motivo: fila.motivo }));
+  const sinRenta = (fila: MesPyg) => !enCurso(fila) && !fila.totales.impuestos;
+  const abiertos = meses.filter(fila => fila.estado === 'parcial' && !enCurso(fila))
+    .map(fila => ({ mes: fila.mes, dias: diasDesdeFinDeMes(fila.mes, hoy), incompletas: base(fila) ? fila.proyeccion!.estimadas.length : 0, base: fila.proyeccion?.base_mes || null }));
+  const diferencias = meses.map(fila => ({ fila, o: t.oficialDe(fila.mes) })).filter(x => x.o)
+    .map(({ fila, o }) => ({ mes: fila.mes, ingresos: fila.totales.ingresos, oIngresos: o!.ingresos, utilidad: fila.totales.utilidad_ordinaria, oUtilidad: o!.utilidad_operacional }))
+    .filter(x => Math.abs(x.ingresos - x.oIngresos) >= 1e6 || Math.abs(x.utilidad - x.oUtilidad) >= 1e6);
+  const celdaLinea = (fila: MesPyg, clave: string) => {
+    const valor = fila.lineas[clave] || 0;
+    const ref = incompleta(fila, clave) ? base(fila)!.lineas[clave] || 0 : null;
+    if (clave === 'renta' && sinRenta(fila)) return <span className="siio-secondary">no registrado</span>;
+    return <>{<span className={enCurso(fila) ? 'siio-secondary' : undefined}>{millones(valor)}</span>}
+      {ref !== null ? <small className="siio-incompleta" title="Parece incompleta: todavía no está registrada como en el último mes cerrado">{nombreMes(base(fila)!.mes).slice(0, 3)}: {millones(ref)}</small> : null}</>;
+  };
+  const celdaTotal = (fila: MesPyg, total: keyof Totales) => {
+    if (enCurso(fila) && total !== 'ingresos') return <span className="siio-secondary">al cierre</span>;
+    if (total === 'utilidad_neta' && sinRenta(fila)) return <span className="siio-secondary">—</span>;
+    const t2 = fila.totales;
+    return <><strong>{millones(t2[total])}</strong>{total !== 'ingresos' ? <small>{pct(t2[total], t2.ingresos)}</small> : null}</>;
+  };
   return <section className="siio-panel" aria-label="Estado de resultados">
     <h2>Estado de resultados</h2>
     <div className="siio-tabla-wrap"><table className="siio-tabla">
       <thead><tr><th>Línea</th>{meses.map(fila => <th key={fila.mes} className={protagonista(fila)}>{nombreMes(fila.mes).split(' ')[0]} {chip(fila)}</th>)}</tr></thead>
       <tbody>
-        <tr><td><span className="nombre">Ingresos</span></td>{meses.map(fila => { const r = resumen(fila); return <td key={fila.mes} className={protagonista(fila)}><strong>{fila.proyeccion && !oficialDe(fila.mes) ? '≈ ' : ''}{r ? millones(r.ingresos) : '—'}</strong></td>; })}</tr>
-        <tr><td><span className="nombre">Utilidad operacional</span></td>{meses.map(fila => { const r = resumen(fila); const estimado = fila.proyeccion && !oficialDe(fila.mes); return <td key={fila.mes} className={`${protagonista(fila)}${r && r.utilidad < 0 ? ' mal' : ''}`}><strong>{estimado ? '≈ ' : ''}{r ? millones(r.utilidad) : '—'}</strong><small>{estimado ? '≈ ' : ''}{r ? pct(r.utilidad, r.ingresos) : ''}</small></td>; })}</tr>
+        <tr><td><span className="nombre">Ingresos</span></td>{meses.map(fila => <td key={fila.mes} className={protagonista(fila)}><strong>{millones(fila.totales.ingresos)}</strong>{enCurso(fila) ? <small>registrado a hoy</small> : null}</td>)}</tr>
+        <tr><td><span className="nombre">Utilidad operacional</span></td>{meses.map(fila => {
+          if (enCurso(fila)) return <td key={fila.mes} className={protagonista(fila)}><strong>—</strong><small>se lee al cierre, con la nómina</small></td>;
+          const u = fila.totales.utilidad_ordinaria;
+          return <td key={fila.mes} className={`${protagonista(fila)}${u < 0 ? ' mal' : ''}`}><strong>{millones(u)}</strong><small>{pct(u, fila.totales.ingresos)}</small></td>;
+        })}</tr>
       </tbody>
     </table></div>
-    {abiertos.length ? <p className="siio-nota" style={{ marginTop: 6 }}>
-      {abiertos.map(a => <Fragment key={a.mes}>La proyección de {nombreMes(a.mes).split(' ')[0]} no es una cifra cerrada ({(a.motivo || '').toLowerCase()}): <strong>Contabilidad lleva {a.dias} días sin cerrar {nombreMes(a.mes).split(' ')[0]}</strong>. </Fragment>)}
-    </p> : null}
+    {abiertos.length || diferencias.length ? <div className="siio-nota" style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+      {abiertos.map(a => <p key={a.mes}>{nombreMes(a.mes).split(' ')[0].replace(/^./, letra => letra.toUpperCase())} no tiene cierre formal: <strong>Contabilidad lleva {a.dias} días sin cerrar {nombreMes(a.mes).split(' ')[0]}</strong>. Las cifras son las que Avancys tiene hoy{a.incompletas && a.base ? `; ${a.incompletas === 1 ? '1 línea parece incompleta' : `${a.incompletas} líneas parecen incompletas`} frente a ${nombreMes(a.base).split(' ')[0]} (marcadas en el detalle)` : ''}.</p>)}
+      {diferencias.map(d => <p key={d.mes}>{nombreMes(d.mes).split(' ')[0].replace(/^./, letra => letra.toUpperCase())}: <strong>Avancys y el cierre de Finanzas (Excel) no coinciden</strong> — ingresos {millones(d.ingresos)} contra {millones(d.oIngresos)} (diferencia {millones(d.ingresos - d.oIngresos)}); utilidad operacional {millones(d.utilidad)} contra {millones(d.oUtilidad)}. La Torre muestra la de Avancys · <strong>Finanzas</strong> explica la diferencia.</p>)}
+    </div> : null}
     <details className="siio-plegado">
       <summary>Las 17 líneas del PYG, con las cuentas que suma cada una y el cierre oficial debajo</summary>
       <div className="siio-tabla-wrap"><table className="siio-tabla">
-        <thead><tr><th>Línea</th>{meses.map(fila => <th key={fila.mes} className="num">{nombreMes(fila.mes).split(' ')[0]}</th>)}</tr></thead>
+        <thead><tr><th>Línea</th>{meses.map(fila => <th key={fila.mes} className="num">{nombreMes(fila.mes).split(' ')[0]}{enCurso(fila) ? ' (a hoy)' : ''}</th>)}</tr></thead>
         <tbody>{GRUPOS.map(g => <Fragment key={g.grupo}>
           {lineas.filter(l => l.grupo === g.grupo).map(l => <tr key={l.clave}>
             <td title={`Cuentas ${l.cuentas}`}>{l.etiqueta}{l.clave === 'ing_vigilancia' ? ' (con provisión)' : ''}<small className="siio-nota" style={{ display: 'block' }}>cuentas {l.cuentas}</small></td>
-            {meses.map(fila => <td key={fila.mes} className="num">{celda(fila, valores(fila)[l.clave] || 0, l.clave)}</td>)}
+            {meses.map(fila => <td key={fila.mes} className="num">{celdaLinea(fila, l.clave)}</td>)}
           </tr>)}
-          <tr><td><strong>{g.totalEtiqueta}</strong></td>{meses.map(fila => <td key={fila.mes} className="num"><strong>{celda(fila, totalesDe(fila)[g.total])}</strong>
-            {g.total !== 'ingresos' ? <small>{pct(totalesDe(fila)[g.total], totalesDe(fila).ingresos)}</small> : null}</td>)}</tr>
+          <tr><td><strong>{g.totalEtiqueta}</strong></td>{meses.map(fila => <td key={fila.mes} className="num">{celdaTotal(fila, g.total)}</td>)}</tr>
         </Fragment>)}
         {conOficial ? <>
           <tr><td colSpan={meses.length + 1}><strong>Cierre oficial de Finanzas (Excel cargado)</strong></td></tr>
-          <tr><td>Ingresos</td>{meses.map(fila => <td key={fila.mes} className="num">{oficialDe(fila.mes) ? millones(oficialDe(fila.mes)!.ingresos) : <span className="siio-secondary">sin cierre</span>}</td>)}</tr>
-          <tr><td>Utilidad operacional</td>{meses.map(fila => { const o = oficialDe(fila.mes); return <td key={fila.mes} className="num">{o ? <>{millones(o.utilidad_operacional)}<small>{pct(o.utilidad_operacional, o.ingresos)}</small></> : <span className="siio-secondary">—</span>}</td>; })}</tr>
-          <tr><td>Antes de impuestos</td>{meses.map(fila => { const o = oficialDe(fila.mes); return <td key={fila.mes} className="num">{o ? millones(o.utilidad_operacional + o.resultado_no_operacional) : <span className="siio-secondary">—</span>}</td>; })}</tr>
+          <tr><td>Ingresos</td>{meses.map(fila => { const o = t.oficialDe(fila.mes); return <td key={fila.mes} className="num">{o ? millones(o.ingresos) : <span className="siio-secondary">sin cierre</span>}</td>; })}</tr>
+          <tr><td>Utilidad operacional</td>{meses.map(fila => { const o = t.oficialDe(fila.mes); return <td key={fila.mes} className="num">{o ? <>{millones(o.utilidad_operacional)}<small>{pct(o.utilidad_operacional, o.ingresos)}</small></> : <span className="siio-secondary">—</span>}</td>; })}</tr>
+          <tr><td>Antes de impuestos</td>{meses.map(fila => { const o = t.oficialDe(fila.mes); return <td key={fila.mes} className="num">{o ? millones(o.utilidad_operacional + o.resultado_no_operacional) : <span className="siio-secondary">—</span>}</td>; })}</tr>
         </> : null}</tbody>
       </table></div>
-      <p className="siio-nota">Cómo se calculó: armado solo desde la contabilidad de Avancys. Los meses cerrados son automáticos; los que no están completos y el mes en curso son proyecciones (≈): lo registrado más lo que falta, estimado con el último mes cerrado y, para el mes en curso, con lo contratado en las órdenes de servicio.</p>
+      <p className="siio-nota">Cómo se calculó: armado desde la contabilidad de Avancys con lo que tiene registrado hoy, sin proyecciones. Un mes sin cierre formal puede cambiar mientras Contabilidad registra; las líneas que parecen incompletas llevan debajo su valor del último mes cerrado como referencia. El mes en curso muestra lo registrado a hoy y sus totales se leen al cierre, cuando se cause la nómina.</p>
+      {meses.some(sinRenta) ? <p className="siio-nota">El impuesto de renta no lo registra Contabilidad cada mes en Avancys: la utilidad del ejercicio queda sin calcular hasta que lo registre o se llene la provisión de renta en Parámetros (punto 4) · <strong>Contabilidad</strong>.</p> : null}
       {prov ? <p className="siio-nota">
         <strong>Provisión de ingresos mes vencido ({nombreMes(ultimoCerrado?.mes)}):</strong> se suma el servicio prestado y no facturado ({millones(prov.del_mes)}) y se resta el del mes anterior, que se facturó en este ({millones(prov.del_mes_anterior)}): ajuste de {millones(prov.ajuste)}.
         {' '}Por cliente: {prov.clientes.map(k => `${sinCodigo(k.nombre)} ${millones(k.devengado)}`).join(' · ') || '—'}.
         {prov.error ? ` No se pudo calcular completa: ${prov.error}.` : ''}
       </p> : null}
-      <p className="siio-nota">
-        {meses.filter(fila => fila.proyeccion).map(fila => `${nombreMes(fila.mes)}: ${fila.proyeccion!.estimadas.length} líneas estimadas con ${nombreMes(fila.proyeccion!.base_mes)}${fila.proyeccion!.ingresos_ordenes !== null ? `; ingresos por lo contratado en órdenes de servicio (${millones(fila.proyeccion!.ingresos_ordenes)})` : ''}`).join('. ')}.
-        {' '}{sinClasificar.length ? `Cuentas de resultados que no caen en ninguna línea: ${sinClasificar.map(c => `${c.cuenta} (${nombreMes(c.mes)}) ${millones(c.valor)}`).join(' · ')}.` : 'Todas las cuentas de resultados quedaron clasificadas.'}
-      </p>
+      <p className="siio-nota">{sinClasificar.length ? `Cuentas de resultados que no caen en ninguna línea: ${sinClasificar.map(c => `${c.cuenta} (${nombreMes(c.mes)}) ${millones(c.valor)}`).join(' · ')}.` : 'Todas las cuentas de resultados quedaron clasificadas.'}</p>
     </details>
   </section>;
 }
