@@ -9,7 +9,9 @@
 // es el trabajo del servidor (ops/agt002-sharepoint-bridge), con sus guardas: nunca sobrescribe y relee lo que escribe.
 
 export const FILING_STRUCTURE = Object.freeze([
-  { folder: '01_Observaciones', leeme: 'Las observaciones que presentamos al pliego y las respuestas de la Entidad.' },
+  { folder: '01_Observaciones', leeme: 'Las observaciones que presentamos al pliego. Las respuestas de la Entidad quedan en el CRM.', etapa: 'observaciones' },
+  { folder: '01_Observaciones/Proyecto', leeme: 'Observaciones al proyecto de pliego: la carta para radicar y la nota para quien radica. Una sola versión.', etapa: 'observaciones' },
+  { folder: '01_Observaciones/Definitivo', leeme: 'Observaciones al pliego definitivo: la carta para radicar y la nota para quien radica. Una sola versión.', etapa: 'observaciones' },
   { folder: '02_Borradores', leeme: 'Anexos y documentos en trabajo. Lo que esté aquí NO se radica.' },
   { folder: '03_PARA_RADICAR', leeme: 'Sólo lo final y firmado, listo para subir a SECOP, en sus subcarpetas. El índice y lo que falta se ven en el CRM, pestaña Preparar del proceso.' },
   { folder: '03_PARA_RADICAR/01_Anexos_firmados', leeme: 'Los anexos y formatos del pliego, diligenciados y firmados.' },
@@ -22,6 +24,13 @@ export const FILING_STRUCTURE = Object.freeze([
   { folder: '04_Radicado', leeme: 'Lo que efectivamente quedó subido en SECOP, bajado después del cierre. El CRM lo compara con 03_PARA_RADICAR.' },
   { folder: '05_Competidores', leeme: 'Ofertas y anexos económicos de los demás oferentes, para leer la competencia y el precio de mercado.' },
 ]);
+// Por etapas (Juan, 2026-11-15; migración 225): al entrar el proceso al CRM sólo se crea lo de observaciones, que se
+// trabaja antes del GO (prepliego); con el GO, lo demás. Así no quedan carpetas de oferta vacías en procesos que no van.
+export const FILING_ETAPAS = Object.freeze(['observaciones', 'completa']);
+/** Las carpetas de una etapa: observaciones → sólo 01_Observaciones; completa → todas. Pura. */
+export function filingStructureFor(etapa) {
+  return etapa === 'observaciones' ? FILING_STRUCTURE.filter(entry => entry.etapa === 'observaciones') : FILING_STRUCTURE;
+}
 export const FILING_LEEME_NAME = '00_LEEME.md';
 export const PARA_RADICAR = '03_PARA_RADICAR';
 export const RADICADO = '04_Radicado';

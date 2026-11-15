@@ -11,6 +11,7 @@ const read = name => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'
 
 test('la estructura es la acordada: cinco carpetas y siete subcarpetas en PARA_RADICAR', () => {
   assert.deepEqual(FILING_STRUCTURE.filter(entry => !entry.folder.includes('/')).map(entry => entry.folder), ['01_Observaciones', '02_Borradores', '03_PARA_RADICAR', '04_Radicado', '05_Competidores']);
+  assert.deepEqual(FILING_STRUCTURE.filter(entry => entry.folder.startsWith('01_Observaciones/')).map(entry => entry.folder), ['01_Observaciones/Proyecto', '01_Observaciones/Definitivo']);
   assert.equal(FILING_STRUCTURE.filter(entry => entry.folder.startsWith('03_PARA_RADICAR/')).length, 7);
   assert.equal(filingProcessFolderName({ entity: 'Terminal de Transporte S.A.', ref: 'TT-SPO-07-2026' }), 'TERMINAL DE TRANSPORTE S.A. - TT-SPO-07-2026');
 });
@@ -48,8 +49,8 @@ test('comparación: «ANEXO_01…docx» preparado = «ANEXO_01…_1.pdf» radica
 function fakeDb(state) {
   return { from: table => {
     const chain = {
-      filters: [], select() { return chain; }, eq(column, value) { chain.filters.push([column, value]); return chain; }, gte() { return chain; }, in() { return chain; },
-      then(resolve) { return Promise.resolve({ data: table === 'psi_tender_filing_folders' ? state.rows : table === 'psi_tender_go_no_go_decisions' ? state.gos : state.tenders, error: null }).then(resolve); },
+      filters: [], select() { return chain; }, eq(column, value) { chain.filters.push([column, value]); return chain; }, gte() { return chain; }, in() { return chain; }, not() { return chain; },
+      then(resolve) { return Promise.resolve({ data: table === 'psi_tender_filing_folders' ? state.rows : table === 'psi_tender_go_no_go_decisions' ? state.gos : table === 'psi_sales_opportunities' ? (state.opportunities || []) : state.tenders, error: null }).then(resolve); },
       insert: async row => { state.rows.push({ status: 'pendiente', ...row }); return { error: null }; },
       update: values => ({ eq: async (_column, id) => { Object.assign(state.rows.find(row => row.opportunity_id === id), values); state.updates.push(values); return { error: null }; } }),
     };
@@ -94,3 +95,35 @@ test('la 203 sólo para el servidor y reversible; el paso va en el trabajo de bo
   assert.match(server, /'POST \/api\/tender-filing-folder\/request': \['tenders', ACTIONS\.LICITACIONES_GO_NO_GO_APPROVE\]/);
   assert.equal(server, read('api/[...path].js'));
 });
+
+// Juan, 2026-11-15 (migración 225): la carpeta se crea antes del GO, con lo de observaciones (prepliego); con el GO, lo demás.
+test('por etapas: al entrar al CRM sólo 01_Observaciones; con el GO, la completa', async () => {
+  const state = { rows: [], gos: [], updates: [],
+    tenders: [{ id: 't2', ref: 'LP-003-2026', entity: 'ANM', converted_opportunity_id: 'opp-2' }],
+    opportunities: [{ id: 'opp-2', tender_offer_status: null, stage_code: 'nuevo' }] };
+  const uploads = [];
+  const deps = { processesPath: 'P', listFolders: async () => ['ANM - LP-003-2026'], upload: async destination => { uploads.push(destination); return { ok: true }; },
+    inventory: async () => [], now: () => new Date('2026-11-16T10:00:00Z') };
+  const first = await runFilingFolderPass(fakeDb(state), deps);
+  assert.ok(first.some(event => event.event === 'tender_filing_created' && event.etapa === 'observaciones'));
+  assert.deepEqual(uploads, ['P/ANM - LP-003-2026/01_Observaciones/00_LEEME.md', 'P/ANM - LP-003-2026/01_Observaciones/Proyecto/00_LEEME.md', 'P/ANM - LP-003-2026/01_Observaciones/Definitivo/00_LEEME.md']);
+  assert.equal(state.rows[0].origin, 'ingreso');
+  assert.equal(state.rows[0].refresh_requested_at, undefined, 'sin oferta no hay índice que fotografiar');
+  uploads.length = 0;
+  state.gos.push({ opportunity_id: 'opp-2', created_at: '2026-11-20T10:00:00Z' });
+  const second = await runFilingFolderPass(fakeDb(state), deps);
+  assert.ok(second.some(event => event.event === 'tender_filing_created' && event.etapa === 'completa'));
+  assert.equal(state.rows[0].etapa, 'completa');
+  assert.equal(uploads.length, FILING_STRUCTURE.length);
+  assert.ok(uploads.some(path => path.endsWith('/03_PARA_RADICAR/07_Garantia/00_LEEME.md')));
+});
+
+test('la 225 y lo que lee la etapa', () => {
+  const sql = read('supabase/migrations/225_carpeta_del_proceso_por_etapas.sql');
+  assert.match(sql, /add column if not exists etapa text not null default 'completa'/);
+  assert.match(sql, /check \(origin in \('go', 'boton', 'ingreso'\)\)/);
+  const server = read('server/index.js');
+  assert.match(server, /const onlyObservations = current\?\.etapa === 'observaciones';/);
+  assert.match(read('src/tenders/components/TenderFilingFolder.tsx'), /folder\.etapa === 'observaciones'/);
+});
+
