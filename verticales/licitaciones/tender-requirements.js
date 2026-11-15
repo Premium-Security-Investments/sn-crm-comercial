@@ -3,7 +3,7 @@
 // histórica, de la tabla que se cargó desde SharePoint; los análisis y las actas, en vivo, así cada análisis nuevo entra
 // solo. «Cómo estamos hoy» sale de la ficha para sedes, indicadores y códigos.
 import { REQUIREMENT_MATRIX_PATH } from './requirement-history-import.js';
-import { FOCUS_STATUSES, REQUIREMENT_FOCUS, buildRequirementCatalog, buildRequirementFocus, buildRequirementPending } from './requirement-catalog.js';
+import { FOCUS_STATUSES, REQUIREMENT_FOCUS, buildRequirementCatalog, buildRequirementFocus } from './requirement-catalog.js';
 import { assessRequirement } from './requirement-assessment.js';
 import { TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES } from './tender-opportunity-stage.js';
 
@@ -181,7 +181,7 @@ export async function loadRequirementsBoard(database) {
   if (stateError && !absent(stateError)) throw stateError;
   const focus = buildRequirementFocus(catalog, { state: state || [], opportunities: windows }).map(item => ({ ...item, live_state: item.live ? company.live[item.live] || null : null }));
   const loaded = (matriz || [])[0] || null;
-  return { installed: !stateError, crm_processes: latest.size, focus, pending: buildRequirementPending(catalog, { opportunities: windows, focus }), catalog,
+  return { installed: !stateError, crm_processes: latest.size, focus, catalog,
     matrix: { path: REQUIREMENT_MATRIX_PATH, rows: (matriz || []).length, loaded_at: loaded?.loaded_at || null, source_modified_at: loaded?.source_modified_at || null } };
 }
 
