@@ -14,6 +14,7 @@
 // 120 días), así que sin este refresco una activa podía quedar sin estado ni cierre al día. Esta conciliación nunca toca
 // enlace ni proceso, así que no deshace lo que deja la revisión.
 
+import { cierreMandaElPliego } from './tender-cierre-pliego.js';
 import { isInactiveConvertedTender } from './tender-opportunity-stage.js';
 
 const SECOP_II_RESOURCE = 'https://www.datos.gov.co/resource/p6dx-8zbt.json';
@@ -73,7 +74,15 @@ export function reconcileTenderSource(existingTender, sourceRow, { now } = {}) {
   // merely ties the current persisted date). Only the earlier-source branch below overrides this.
   let rawDeadline = date;
 
-  if (sourceDeadlineAt) {
+  // El cierre lo manda el pliego (Juan, 2026-11-15): con `deadline_source = 'pliego'` la fuente no lo mueve; si trae otra
+  // fecha, se anota como diferencia (una sola vez por par de fechas).
+  if (cierreMandaElPliego(existingRaw)) {
+    rawDeadline = existingRaw.deadline;
+    if (date && date !== existingRaw.deadline) {
+      const alreadyPresent = conflicts.some(c => toInstant(c.source_deadline) === sourceInstant && toInstant(c.current_deadline) === currentInstant);
+      if (!alreadyPresent) conflicts.push({ source_deadline: sourceDeadlineAt, current_deadline: currentDeadlineAt, detected_at: now, manda: 'pliego' });
+    }
+  } else if (sourceDeadlineAt) {
     if (currentInstant === null || sourceInstant > currentInstant) {
       patch.deadline_at = sourceDeadlineAt;
     } else if (sourceInstant < currentInstant) {

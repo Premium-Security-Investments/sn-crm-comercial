@@ -68,6 +68,7 @@ import { TENDER_COMPLIANCE_MATRIX_HEADERS, buildTenderComplianceMatrix, tenderCo
 import { checkEconomicOffer, ECONOMIC_OFFER_MAX_BYTES } from '../verticales/licitaciones/tender-economic-offer-check.js';
 import { buildTenderOpenBoard } from '../verticales/licitaciones/tender-open-board.js';
 import { buildTenderSemana } from '../verticales/licitaciones/tender-semana.js';
+import { cierreMandaElPliego } from '../verticales/licitaciones/tender-cierre-pliego.js';
 import { cronogramaFaltante } from '../verticales/licitaciones/tender-cronograma-faltante.js';
 import { dossierItemConsequence, isOpenDossierItem, overdueSummary } from '../verticales/licitaciones/tender-dossier-vencidos.js';
 import { buildTenderMiDia } from '../verticales/licitaciones/tender-mi-dia.js';
@@ -2329,7 +2330,7 @@ export async function recordAgt002RadarPhaseChanges(database, opportunityPatches
 }
 // Enlace y fecha de cierre de la oportunidad convertida (comportamiento de siempre) y, después, el aviso visible del
 // cambio seguido (append atómico del lado SQL, migración 116: nunca pisa texto escrito por personas; best-effort).
-async function applyConvertedOpportunityPatches(database, opportunityPatches) {
+async function applyConvertedOpportunityPatches(database, opportunityPatches, { pliego = new Set() } = {}) {
   if (opportunityPatches.length) {
     const ids = opportunityPatches.map(patch => patch.converted_opportunity_id).filter(Boolean);
     const { data: opportunities, error: opportunityReadError } = await database.from('psi_sales_opportunities').select('id,observaciones,expected_close_date').in('id', ids);
@@ -2339,7 +2340,7 @@ async function applyConvertedOpportunityPatches(database, opportunityPatches) {
       const opportunity = byId.get(patch.converted_opportunity_id);
       if (!opportunity) continue;
       const observaciones = applyOfficialSourceLink(opportunity.observaciones, { officialUrl: patch.officialUrl, historicalUrl: patch.historicalUrl, phaseChange: patch.phaseChange });
-      const expected_close_date = patch.deadline ? String(patch.deadline).slice(0, 10) : opportunity.expected_close_date;
+      const expected_close_date = patch.deadline && !pliego.has(opportunity.id) ? String(patch.deadline).slice(0, 10) : opportunity.expected_close_date;
       const { error: opportunityWriteError } = await database.from('psi_sales_opportunities').update({ observaciones, expected_close_date }).eq('id', opportunity.id);
       if (opportunityWriteError) throw opportunityWriteError;
     }
@@ -2382,7 +2383,8 @@ export async function syncConvertedTenderPhaseLinks(database, { isActive, now = 
     if (override.url && override.url !== row.url) update.url = override.url;
     if (override.process_id && override.process_id !== row.process_id) update.process_id = override.process_id;
     if (override.status && override.status !== row.status) update.status = override.status;
-    if (override.deadline_at && Date.parse(override.deadline_at) !== Date.parse(row.deadline_at)) update.deadline_at = override.deadline_at;
+    // El cierre lo manda el pliego (2026-11-15): con `deadline_source = 'pliego'` la revisión de fases no lo mueve.
+    if (override.deadline_at && !cierreMandaElPliego(row.raw) && Date.parse(override.deadline_at) !== Date.parse(row.deadline_at)) update.deadline_at = override.deadline_at;
     // Fases conocidas del proceso (insignia del Radar): la revisión las mantiene al día, ya que el Radar diario no toca convertidas.
     const knownPhases = override.known_phases || [];
     if (knownPhases.length > 1 && JSON.stringify(knownPhases) !== JSON.stringify(row.raw?.phase_continuity?.known_phases || [])) {
@@ -2393,7 +2395,8 @@ export async function syncConvertedTenderPhaseLinks(database, { isActive, now = 
     if (updateError) throw updateError;
     changed += 1;
   }
-  await applyConvertedOpportunityPatches(database, (plan.opportunityPatches || []).filter(patch => !deferred.has(patch.converted_opportunity_id)));
+  const pliego = new Set(active.filter(row => cierreMandaElPliego(row.raw)).map(row => row.converted_opportunity_id));
+  await applyConvertedOpportunityPatches(database, (plan.opportunityPatches || []).filter(patch => !deferred.has(patch.converted_opportunity_id)), { pliego });
   return { active: active.length, changed, patches: (plan.opportunityPatches || []).length, deferred: deferred.size, other_sources: otherSources };
 }
 export async function persistTenderRadar(database, actorProfile, mode = 'manual', { deep = false } = {}) {
