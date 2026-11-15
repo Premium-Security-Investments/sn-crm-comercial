@@ -42,7 +42,7 @@ select * from (values
     'juridico_y_operaciones',
     'Uso interno exclusivo para apoyo a decisión; sin autoridad de presentación externa; sin aprobación final automática. Revalidar antes de cada oferta.',
     false, true, 'reported', 'pending_human_review', 'pending_case_validation',
-    'Sin soporte cargado al abrir el bloque.', null, true, 'v0.3.3-requisitos-20261115',
+    'Sin soporte cargado al abrir el bloque.', null::date, true, 'v0.3.3-requisitos-20261115',
     'Las ciudades de la unidad se guardan en psi_company_requirement_facts (unidad_canina_ciudades).'
   ),
   (
@@ -55,7 +55,7 @@ select * from (values
     'juridico_y_operaciones',
     'Uso interno exclusivo para apoyo a decisión; sin autoridad de presentación externa; sin aprobación final automática. Revalidar antes de cada oferta.',
     false, true, 'reported', 'pending_human_review', 'pending_case_validation',
-    'Sin soporte cargado al abrir el bloque.', null, true, 'v0.3.3-requisitos-20261115',
+    'Sin soporte cargado al abrir el bloque.', null::date, true, 'v0.3.3-requisitos-20261115',
     'Las ciudades inscritas se guardan en psi_company_requirement_facts (red_apoyo_ciudades).'
   ),
   (
@@ -68,7 +68,7 @@ select * from (values
     'juridico_y_talento_humano',
     'Uso interno exclusivo para apoyo a decisión; sin autoridad de presentación externa; sin aprobación final automática. Revalidar antes de cada oferta.',
     false, true, 'reported', 'pending_human_review', 'pending_case_validation',
-    'Sin soporte cargado al abrir el bloque.', null, true, 'v0.3.3-requisitos-20261115',
+    'Sin soporte cargado al abrir el bloque.', null::date, true, 'v0.3.3-requisitos-20261115',
     'El puntaje se guarda en psi_company_requirement_facts (sgsst_puntaje).'
   ),
   (
@@ -81,7 +81,7 @@ select * from (values
     'juridico_y_comercial',
     'Uso interno exclusivo para apoyo a decisión; sin autoridad de presentación externa; sin aprobación final automática. Revalidar antes de cada oferta.',
     false, true, 'reported', 'pending_human_review', 'pending_case_validation',
-    'Sin soporte cargado al abrir el bloque.', null, true, 'v0.3.3-requisitos-20261115',
+    'Sin soporte cargado al abrir el bloque.', null::date, true, 'v0.3.3-requisitos-20261115',
     'Con el soporte cargado y vigente, la pestaña Requisitos da el registro por cumplido.'
   )
 ) as nuevo(
