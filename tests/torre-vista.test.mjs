@@ -175,3 +175,19 @@ test('resultados revisado con Juan (15-nov): lo que Avancys tiene hoy, sin proye
   assert.match(presupuesto, /fila\.mes <= mes && fila\.mes < enCurso/);
   assert.match(presupuesto, /<Unidad nombre="Tecnología" mes=\{fila\.mes\} u=\{fila\.tecnologia\} porConfirmar \/>/);
 });
+
+test('resultados con fuerza (Juan, 15-nov): cifras contra el mes anterior, cada $100, qué cambió y presupuesto corto', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  assert.match(torre, /<HistoriaDelMes t=\{t\} lineas=\{torre\.lineas_pyg\} meses=\{torre\.pyg\} \/>/);
+  assert.match(torre, /¿A dónde se va cada \$100 que facturamos\?/);
+  // La frase del mes sale del tramo de costo que más se movió por cada $100, no de un texto escrito.
+  assert.match(torre, /\.sort\(\(a, b\) => Math\.abs\(b\.dif\) - Math\.abs\(a\.dif\)\)\[0\]/);
+  // Qué cambió: en costos y gastos, subir es malo; si sube menos que el ingreso, se dice.
+  assert.match(torre, /subió menos que el ingreso/);
+  // El mes en curso no cuenta historia: va a hoy.
+  assert.match(torre, /va a hoy<\/h2>/);
+  const presupuesto = read('src/siio/SiioPresupuesto.tsx');
+  assert.match(presupuesto, /className="siio-barras-ppto"/);
+  assert.match(presupuesto, /parece un problema de asignación de cuentas/);
+  assert.doesNotMatch(torre, /8,7 %|48 %|70,6|67,6/, 'ninguna cifra real escrita en el código');
+});

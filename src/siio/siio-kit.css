@@ -278,3 +278,44 @@
 .siio-dashboard .siio-cifra-portada svg .mes{font-size:10px;fill:var(--sutil)}
 @media(max-width:1020px){.siio-dashboard .siio-cifras-portada{grid-template-columns:1fr 1fr}.siio-dashboard .siio-cifra-portada:nth-child(3){border-left:0}.siio-dashboard .siio-cifra-portada:nth-child(n+3){border-top:1px solid var(--linea)}}
 @media(max-width:560px){.siio-dashboard .siio-cifras-portada{grid-template-columns:1fr}.siio-dashboard .siio-cifra-portada{border-left:0;border-top:1px solid var(--linea)}.siio-dashboard .siio-cifra-portada:first-child{border-top:0}}
+
+/* ---- 19 · Resultados con fuerza (maqueta aprobada por Juan, 2026-11-15) ---- */
+.siio-dashboard .siio-cifras-resultados{grid-template-columns:repeat(4,minmax(0,1fr))}
+.siio-dashboard .siio-cifras-resultados .siio-cifra-portada{cursor:default}
+.siio-dashboard .siio-cifras-resultados .siio-cifra-portada:hover{background:none}
+.siio-dashboard .siio-cifras-resultados .valor{font-size:30px}
+.siio-dashboard .siio-cifra-portada .referencia.amb{color:var(--estimado)}
+.siio-dashboard .siio-cada-100 .lead{font-size:14px;color:var(--suave);margin:4px 0 12px;max-width:110ch}
+.siio-dashboard .siio-cada-100 .bien{color:var(--bien)} .siio-dashboard .siio-cada-100 .mal{color:var(--mal)}
+.siio-dashboard .siio-cada-100 .fila{display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;align-items:center;margin-top:10px}
+.siio-dashboard .siio-cada-100 .fila .mes{font-size:13px;font-weight:700;color:var(--tinta)}
+.siio-dashboard .siio-cada-100 .fila.antes .mes{color:var(--suave);font-weight:600}
+.siio-dashboard .siio-cada-100 .barra{display:flex;height:42px;border-radius:8px;overflow:hidden;background:var(--fondo-suave)}
+.siio-dashboard .siio-cada-100 .fila.antes .barra{height:30px;opacity:.85}
+.siio-dashboard .siio-cada-100 .barra span{display:flex;flex-direction:column;justify-content:center;min-width:0;padding:0 7px;overflow:hidden;white-space:nowrap;font-size:11.5px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+.siio-dashboard .siio-cada-100 .barra small{font-size:10.5px;font-weight:500;color:#fff;opacity:.92}
+.siio-dashboard .siio-cada-100 .t-mod{background:#33507e}
+.siio-dashboard .siio-cada-100 .t-indirecta{background:#5f7ca8}
+.siio-dashboard .siio-cada-100 .t-tecnologia{background:#8aa3c6}
+.siio-dashboard .siio-cada-100 .t-personal{background:#a8603f}
+.siio-dashboard .siio-cada-100 .t-generales{background:#c98a6c}
+.siio-dashboard .siio-cada-100 .t-utilidad{background:#2f8a53}
+.siio-dashboard .siio-cada-100 .leyenda{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:10px;font-size:12px;color:var(--suave)}
+.siio-dashboard .siio-cada-100 .leyenda i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.siio-dashboard .siio-cambios{display:grid;margin:6px 0 0;padding:0;list-style:none}
+.siio-dashboard .siio-cambios li{display:grid;grid-template-columns:minmax(0,1fr) auto 64px;gap:10px;align-items:baseline;padding:10px 0;border-top:1px solid var(--linea);font-size:13.5px;color:var(--suave)}
+.siio-dashboard .siio-cambios li:first-child{border-top:0}
+.siio-dashboard .siio-cambios strong{color:var(--tinta);font-weight:650}
+.siio-dashboard .siio-cambios .valor{font-weight:750;font-variant-numeric:tabular-nums;text-align:right}
+.siio-dashboard .siio-cambios .valor.bien{color:var(--bien)} .siio-dashboard .siio-cambios .valor.mal{color:var(--mal)} .siio-dashboard .siio-cambios .valor.amb{color:var(--estimado)}
+.siio-dashboard .siio-cambios .var{font-size:12px;color:var(--sutil);text-align:right;font-variant-numeric:tabular-nums}
+.siio-dashboard .siio-presupuesto-lead{font-size:14px;color:var(--suave);margin-top:6px}
+.siio-dashboard .siio-presupuesto-lead .bien{color:var(--bien)} .siio-dashboard .siio-presupuesto-lead .mal{color:var(--mal)}
+.siio-dashboard .siio-barras-ppto{display:grid;gap:12px;margin-top:10px}
+.siio-dashboard .siio-barras-ppto .fila{display:grid;grid-template-columns:minmax(0,150px) minmax(0,1fr) 72px;gap:10px;align-items:center;font-size:13px}
+.siio-dashboard .siio-barras-ppto .pista{position:relative;height:12px;border-radius:6px;background:var(--fondo-suave)}
+.siio-dashboard .siio-barras-ppto .pista b{position:absolute;inset:0 auto 0 0;border-radius:6px;background:#df9d97}
+.siio-dashboard .siio-barras-ppto .pista u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--tinta)}
+.siio-dashboard .siio-barras-ppto .dif{text-align:right;font-weight:750;color:var(--mal);font-variant-numeric:tabular-nums}
+@media(max-width:1020px){.siio-dashboard .siio-cifras-resultados{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.siio-dashboard .siio-cifras-resultados{grid-template-columns:1fr}.siio-dashboard .siio-cada-100 .fila{grid-template-columns:1fr}}

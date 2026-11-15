@@ -33,19 +33,35 @@ export function SiioPresupuesto({ presupuesto, mes, cierreDe }: { presupuesto: P
     <p className="siio-secondary">Todavía no hay un mes terminado en Avancys hasta {nombreMes(mes)} para comparar.</p>
   </section>;
   const cierre = cierreDe ? cierreDe(fila.mes) : null;
+  // Corto (Resultados con fuerza, Juan 2026-11-15): vigilancia dice si va dentro del presupuesto y qué rubros se pasan,
+  // en barras con la raya del presupuesto; tecnología, en una nota mientras Finanzas no la confirme; el detalle, plegado.
+  const v = fila.vigilancia;
+  const pasados = v.rubros.filter(rubro => rubro.diferencia !== null && rubro.diferencia >= TOLERANCIA).sort((a, b) => (b.diferencia || 0) - (a.diferencia || 0)).slice(0, 5);
+  const escala = Math.max(1, ...pasados.flatMap(rubro => [rubro.pct || 0, rubro.presupuesto || 0])) * 1.1;
+  const dentro = v.rentabilidad !== null && v.rentabilidad_presupuesto !== null && v.rentabilidad >= v.rentabilidad_presupuesto;
+  const tec = fila.tecnologia;
+  const desvioTec = [...tec.rubros].filter(rubro => rubro.diferencia !== null).sort((a, b) => (b.diferencia || 0) - (a.diferencia || 0))[0];
   return <section className="siio-panel siio-presupuesto" aria-label="Presupuesto contra ejecución">
-    <h2>Presupuesto contra ejecución · {nombreMes(fila.mes).split(' ')[0]} {cierre ? <span className={`siio-chip ${cierre.tono}`}>{cierre.texto}</span> : null} <span className="siio-chip confirmar">Presupuesto por confirmar</span></h2>
-    {fila.mes !== mes ? <p className="siio-nota">{mes >= new Date().toISOString().slice(0, 7)
-      ? `${nombreMes(mes)} va a hoy y su nómina se registra al cierre: se compara ${nombreMes(fila.mes)}.`
-      : `${nombreMes(mes)} no tiene la ejecución calculada todavía: se compara ${nombreMes(fila.mes)}.`}</p> : null}
-    <div className="siio-dos-col">
-      <Unidad nombre="Vigilancia" mes={fila.mes} u={fila.vigilancia} />
-      <Unidad nombre="Tecnología" mes={fila.mes} u={fila.tecnologia} porConfirmar />
-    </div>
-    <p className="siio-nota">Cada rubro es el % del ingreso de su unidad, como en el Mapa de ejecución de Finanzas; el de vigilancia lleva la provisión de mes vencido. El presupuesto y el mapeo de cuentas se sembraron del Excel de Finanzas; Finanzas los confirma en Parámetros. No incluye ajustes de cierre que no estén en Avancys.</p>
-    {fila.sin_mapeo_cuentas ? <p className="siio-nota">
-      {fila.sin_mapeo_cuentas === 1 ? '1 cuenta con movimiento no tiene rubro' : `${fila.sin_mapeo_cuentas} cuentas con movimiento no tienen rubro`}: {fila.sin_mapeo.map(item => `${item.cuenta} (${millones(item.valor)})`).join(', ')}. Se asignan en Parámetros.
-    </p> : null}
+    <h2>¿Vamos dentro del presupuesto? <span className="siio-chip confirmar">Presupuesto por confirmar</span></h2>
+    <p className="siio-nota" style={{ marginTop: 4 }}>{nombreMes(fila.mes).replace(/^./, letra => letra.toUpperCase())}{cierre && cierre.tono !== 'cerrado' ? ` · ${cierre.texto.toLowerCase()}` : ''}{fila.mes !== mes ? (mes >= new Date().toISOString().slice(0, 7) ? ` (${nombreMes(mes)} va a hoy)` : ` (${nombreMes(mes)} no tiene la ejecución calculada)`) : ''}</p>
+    {v.ingresos ? <p className="siio-presupuesto-lead"><strong className={dentro ? 'bien' : 'mal'}>Vigilancia dejó {porcentaje(v.rentabilidad)}</strong>{v.rentabilidad_presupuesto !== null ? <> contra {porcentaje(v.rentabilidad_presupuesto)} presupuestado</> : null}{pasados.length ? '; estos rubros se pasan (la raya es el presupuesto, en % del ingreso):' : '; ningún rubro se pasa del presupuesto.'}</p> : null}
+    {pasados.length ? <div className="siio-barras-ppto">{pasados.map(rubro => <div key={rubro.clave} className="fila">
+      <span className="rubro">{rubro.etiqueta}</span>
+      <span className="pista" title={`Ejecutado ${porcentaje(rubro.pct)} · presupuesto ${porcentaje(rubro.presupuesto)}`}><b style={{ width: `${((rubro.pct || 0) / escala) * 100}%` }} /><u style={{ left: `${((rubro.presupuesto || 0) / escala) * 100}%` }} /></span>
+      <span className="dif">{puntos(rubro.diferencia)}</span>
+    </div>)}</div> : null}
+    {tec.ingresos ? <p className="siio-nota" style={{ marginTop: 10 }}><span className="siio-chip confirmar">Por confirmar con Finanzas</span> Tecnología dejó {porcentaje(tec.rentabilidad)}{tec.rentabilidad_presupuesto !== null ? ` contra ${porcentaje(tec.rentabilidad_presupuesto)}` : ''}{desvioTec && (desvioTec.diferencia || 0) >= 10 ? `; ${desvioTec.etiqueta.toLowerCase()} le suma ${porcentaje(desvioTec.pct)} del ingreso: parece un problema de asignación de cuentas` : ''}.</p> : null}
+    <details className="siio-plegado">
+      <summary>Todos los rubros de vigilancia y tecnología</summary>
+      <div className="siio-dos-col">
+        <Unidad nombre="Vigilancia" mes={fila.mes} u={fila.vigilancia} />
+        <Unidad nombre="Tecnología" mes={fila.mes} u={fila.tecnologia} porConfirmar />
+      </div>
+      <p className="siio-nota">Cada rubro es el % del ingreso de su unidad, como en el Mapa de ejecución de Finanzas; el de vigilancia lleva la provisión de mes vencido. El presupuesto y el mapeo de cuentas se sembraron del Excel de Finanzas; Finanzas los confirma en Parámetros. No incluye ajustes de cierre que no estén en Avancys.</p>
+      {fila.sin_mapeo_cuentas ? <p className="siio-nota">
+        {fila.sin_mapeo_cuentas === 1 ? '1 cuenta con movimiento no tiene rubro' : `${fila.sin_mapeo_cuentas} cuentas con movimiento no tienen rubro`}: {fila.sin_mapeo.map(item => `${item.cuenta} (${millones(item.valor)})`).join(', ')}. Se asignan en Parámetros.
+      </p> : null}
+    </details>
   </section>;
 }
 

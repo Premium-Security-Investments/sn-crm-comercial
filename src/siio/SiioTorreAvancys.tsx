@@ -399,8 +399,133 @@ export function SiioPestanaResultados({ t }: { t: TorreAvancys }) {
       </label>
       <p className="siio-nota">{tramo}desde {primeroAvancys ? nombreMes(primeroAvancys).split(' ')[0] : 'agosto'}: Avancys, con lo que tiene registrado hoy</p>
     </div>
+    <HistoriaDelMes t={t} lineas={torre.lineas_pyg} meses={torre.pyg} />
     <EstadoDeResultados t={t} lineas={torre.lineas_pyg} meses={torre.pyg} />
-    <SiioPresupuesto presupuesto={torre.presupuesto || null} mes={t.mes} cierreDe={mes => cierreDe(t, mes)} />
+  </>;
+}
+
+// Resultados con fuerza (Juan, 2026-11-15: «a este le falta mucha fuerza»; maqueta aprobada): cuatro cifras del mes
+// contra el anterior, a dónde se va cada $100 que facturamos con la frase que explica el mes, qué cambió y el
+// presupuesto. Las cifras son las que Avancys tiene hoy; el chip del selector dice si el mes está cerrado.
+const TRAMOS_100: { clave: string; etiqueta: string; lineas: string[] }[] = [
+  { clave: 'mod', etiqueta: 'mano de obra directa', lineas: ['mod_vigilancia'] },
+  { clave: 'indirecta', etiqueta: 'indirecta y costos de operación', lineas: ['moi_vigilancia', 'cif_vigilancia'] },
+  { clave: 'tecnologia', etiqueta: 'medios tecnológicos', lineas: ['equipos', 'mod_tecnicos', 'cif_mt'] },
+  { clave: 'personal', etiqueta: 'gastos de personal', lineas: ['personal_vigilancia', 'personal_mt'] },
+  { clave: 'generales', etiqueta: 'gastos generales', lineas: ['generales_vigilancia', 'generales_mt'] },
+];
+const CAMBIOS_A_LA_VISTA = 5;
+const variacion = (actual: number, antes: number) => (antes ? (actual - antes) / Math.abs(antes) : null);
+const pctFirmado = (valor: number | null) => (valor === null ? '' : `${valor >= 0 ? '+' : '−'}${Math.abs(Math.round(valor * 1000) / 10).toLocaleString('es-CO')} %`);
+const millonesFirmado = (valor: number) => `${valor >= 0 ? '+' : '−'}${millones(Math.abs(valor))}`;
+const pesos100 = (valor: number) => `$${(Math.round(valor * 10) / 10).toLocaleString('es-CO')}`;
+
+function HistoriaDelMes({ t, lineas, meses }: { t: TorreAvancys; lineas: LineaPyg[]; meses: MesPyg[] }) {
+  const mesActual = new Date().toISOString().slice(0, 7);
+  const fila = meses.find(m => m.mes === t.mes) || null;
+  const previo = fila ? meses.find(m => m.mes === mesAnterior(fila.mes)) || null : null;
+  const nombre = (mes: string) => nombreMes(mes).split(' ')[0];
+  if (!fila) return null;
+  if (fila.mes >= mesActual) {
+    return <section className="siio-panel" aria-label="El mes en curso">
+      <h2>{nombre(fila.mes).replace(/^./, letra => letra.toUpperCase())} va a hoy</h2>
+      <p className="siio-nota" style={{ marginTop: 4 }}>Facturado: <strong>{millones(fila.totales.ingresos)}</strong>{previo ? ` (${pct(fila.totales.ingresos, previo.totales.ingresos)} de ${nombre(previo.mes)})` : ''}. La utilidad y los costos se leen al cierre, cuando se cause la nómina: elija un mes terminado para ver su historia.</p>
+    </section>;
+  }
+  const tt = fila.totales;
+  const tp = previo?.totales || null;
+  const costo = -tt.costos, gasto = -tt.gastos;
+  const parte = (valor: number, base: number) => (base ? (valor / base) * 100 : 0);
+  const puntosDe = (valor: number, base: number, valorAntes?: number, baseAntes?: number) =>
+    (valorAntes !== undefined && baseAntes ? Math.round((parte(valor, base) - parte(valorAntes, baseAntes)) * 10) / 10 : null);
+  const flecha = (puntos: number | null) => (puntos === null ? '' : ` ${puntos >= 0 ? '▲' : '▼'} ${Math.abs(puntos).toLocaleString('es-CO')} pts`);
+  const suma = (f: MesPyg, claves: string[]) => -claves.reduce((total, clave) => total + (f.lineas[clave] || 0), 0);
+  const tramos = (f: MesPyg) => [...TRAMOS_100.map(tramo => ({ ...tramo, valor: parte(suma(f, tramo.lineas), f.totales.ingresos) })),
+    { clave: 'utilidad', etiqueta: 'utilidad operacional', lineas: [], valor: parte(f.totales.utilidad_ordinaria, f.totales.ingresos) }];
+  const actual = tramos(fila);
+  const antes = previo ? tramos(previo) : null;
+  // La frase del mes: el tramo de costo que más se movió por cada $100, con el crecimiento del ingreso y de ese costo.
+  const mayor = antes ? actual.slice(0, -1).map((tramo, i) => ({ tramo, antes: antes[i], dif: tramo.valor - antes[i].valor }))
+    .sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif))[0] : null;
+  const utilidad = actual[actual.length - 1].valor;
+  const frase = antes && mayor ? <>En {nombre(fila.mes)} nos quedaron <strong className={utilidad >= 0 ? 'bien' : 'mal'}>{pesos100(utilidad)}</strong> de cada $100, contra {pesos100(antes[antes.length - 1].valor)} en {nombre(previo!.mes)}: {mayor.tramo.etiqueta} {mayor.dif < 0 ? 'bajó' : 'subió'} de {pesos100(mayor.antes.valor)} a {pesos100(mayor.tramo.valor)} (el ingreso {pctFirmado(variacion(tt.ingresos, tp!.ingresos))}; {mayor.tramo.etiqueta}, {pctFirmado(variacion(suma(fila, mayor.tramo.lineas), suma(previo!, mayor.tramo.lineas)))}).</>
+    : <>En {nombre(fila.mes)} nos quedaron <strong className={utilidad >= 0 ? 'bien' : 'mal'}>{pesos100(utilidad)}</strong> de cada $100.</>;
+  // Qué cambió: las líneas que más se movieron frente al mes anterior; en costos y gastos, subir es malo.
+  const cambios = previo ? lineas.filter(l => ['ingresos', 'costos', 'gastos'].includes(l.grupo)).map(l => {
+    const a = fila.lineas[l.clave] || 0, b = previo.lineas[l.clave] || 0;
+    const ingreso = l.grupo === 'ingresos';
+    const cambio = ingreso ? a - b : -(a - b);
+    return { l, ingreso, cambio, variacion: variacion(Math.abs(a), Math.abs(b)) };
+  }).filter(c => Math.abs(c.cambio) >= 1e6).sort((a, b) => Math.abs(b.cambio) - Math.abs(a.cambio)).slice(0, CAMBIOS_A_LA_VISTA) : [];
+  const crecimiento = tp ? variacion(tt.ingresos, tp.ingresos) : null;
+  const tono = (c: (typeof cambios)[number]) => {
+    if (c.ingreso) return c.cambio >= 0 ? 'bien' : 'mal';
+    if (c.cambio <= 0) return 'bien';
+    return crecimiento !== null && c.variacion !== null && c.variacion < crecimiento ? 'amb' : 'mal';
+  };
+  const lectura = (c: (typeof cambios)[number]) => {
+    if (c.ingreso) return c.cambio >= 0 ? 'más ingreso' : 'menos ingreso';
+    if (c.cambio <= 0) return 'bajó';
+    return tono(c) === 'amb' ? 'subió menos que el ingreso' : 'subió';
+  };
+  const mod = suma(fila, ['mod_vigilancia']);
+  const mayorGasto = previo ? cambios.find(c => c.l.grupo === 'gastos') : null;
+  const ppCosto = puntosDe(costo, tt.ingresos, tp ? -tp.costos : undefined, tp?.ingresos);
+  const ppGasto = puntosDe(gasto, tt.ingresos, tp ? -tp.gastos : undefined, tp?.ingresos);
+  const ppUtil = puntosDe(tt.utilidad_ordinaria, tt.ingresos, tp?.utilidad_ordinaria, tp?.ingresos);
+  const antesDe = previo ? `${nombre(previo.mes).slice(0, 3)}: ` : '';
+  return <>
+    <section className="siio-panel siio-cifras-portada siio-cifras-resultados" aria-label={`Resultados de ${nombre(fila.mes)}`}>
+      <div className="siio-cifra-portada">
+        <span className="pregunta">Ingresos</span>
+        <span className="valor">{millones(tt.ingresos)}</span>
+        {tp ? <span className={`referencia ${tt.ingresos >= tp.ingresos ? 'bien' : 'mal'}`}>{tt.ingresos >= tp.ingresos ? '▲' : '▼'} {pctFirmado(crecimiento).replace(/^[+−]/, '')} frente a {nombre(previo!.mes)}</span> : null}
+        {tp ? <span className="detalle">{antesDe}{millones(tp.ingresos)}</span> : null}
+      </div>
+      <div className="siio-cifra-portada">
+        <span className="pregunta">Costo de operación</span>
+        <span className="valor">{millones(costo)}</span>
+        <span className={`referencia ${ppCosto !== null && ppCosto > 0 ? 'mal' : 'bien'}`}>{pct(costo, tt.ingresos)} del ingreso{flecha(ppCosto)}</span>
+        <span className="detalle">{tp ? `${antesDe}${pct(-tp.costos, tp.ingresos)} · ` : ''}mano de obra directa, el {pct(mod, costo)}</span>
+      </div>
+      <div className="siio-cifra-portada">
+        <span className="pregunta">Gastos operativos</span>
+        <span className="valor">{millones(gasto)}</span>
+        <span className={`referencia ${ppGasto !== null && ppGasto > 0 ? 'amb' : 'bien'}`}>{pct(gasto, tt.ingresos)} del ingreso{flecha(ppGasto)}</span>
+        <span className="detalle">{tp ? `${antesDe}${pct(-tp.gastos, tp.ingresos)}` : ''}{mayorGasto ? ` · ${mayorGasto.l.etiqueta.toLowerCase()} ${millonesFirmado(mayorGasto.cambio)}` : ''}</span>
+      </div>
+      <div className="siio-cifra-portada">
+        <span className="pregunta">Utilidad operacional</span>
+        <span className={`valor${tt.utilidad_ordinaria < 0 ? ' mal' : ''}`}>{millones(tt.utilidad_ordinaria)}</span>
+        <span className={`referencia ${tt.utilidad_ordinaria < 0 || (ppUtil !== null && ppUtil < 0) ? 'mal' : 'bien'}`}>{pct(tt.utilidad_ordinaria, tt.ingresos)} del ingreso{flecha(ppUtil)}</span>
+        {tp ? <span className="detalle">{antesDe}{millones(tp.utilidad_ordinaria)} · {pct(tp.utilidad_ordinaria, tp.ingresos)}</span> : null}
+      </div>
+    </section>
+    <section className="siio-panel siio-cada-100" aria-label="A dónde se va cada $100 que facturamos">
+      <h2>¿A dónde se va cada $100 que facturamos?</h2>
+      <p className="lead">{frase}</p>
+      {[{ f: fila, tr: actual, principal: true }, ...(previo && antes ? [{ f: previo, tr: antes, principal: false }] : [])].map(({ f, tr, principal }) => <div key={f.mes} className={`fila${principal ? '' : ' antes'}`}>
+        <span className="mes">{nombre(f.mes).replace(/^./, letra => letra.toUpperCase())}</span>
+        <div className="barra" role="img" aria-label={`${nombre(f.mes)}: ${tr.map(x => `${x.etiqueta} ${pesos100(x.valor)}`).join(', ')}`}>
+          {tr.filter(x => x.valor > 0).map(x => <span key={x.clave} className={`t-${x.clave}`} style={{ width: `${x.valor}%` }} title={`${x.etiqueta}: ${pesos100(x.valor)} de cada $100`}>
+            {x.valor >= 4 ? <>{pesos100(x.valor)}{principal && (x.clave === 'mod' || x.clave === 'utilidad') ? <small>{x.etiqueta === 'utilidad operacional' ? 'utilidad' : x.etiqueta}</small> : null}</> : null}
+          </span>)}
+        </div>
+      </div>)}
+      {utilidad < 0 ? <p className="siio-nota mal">Los costos y gastos pasan de $100: el mes deja pérdida de {pesos100(-utilidad)} por cada $100.</p> : null}
+      <p className="leyenda">{actual.map(x => <span key={x.clave}><i className={`t-${x.clave}`} />{x.etiqueta.replace(/^./, letra => letra.toUpperCase())}</span>)}</p>
+    </section>
+    <div className="siio-dos-col">
+      {cambios.length ? <section className="siio-panel" aria-label={`Qué cambió frente a ${nombre(previo!.mes)}`}>
+        <h2>Qué cambió frente a {nombre(previo!.mes)}</h2>
+        <ul className="siio-cambios">{cambios.map(c => <li key={c.l.clave}>
+          <span><strong>{c.l.etiqueta}</strong> · {lectura(c)}</span>
+          <span className={`valor ${tono(c)}`}>{millonesFirmado(c.ingreso ? c.cambio : c.cambio)}</span>
+          <span className="var">{pctFirmado(c.variacion)}</span>
+        </li>)}</ul>
+      </section> : <section className="siio-panel"><h2>Qué cambió</h2><p className="siio-nota">{previo ? `Ninguna línea se movió más de un millón frente a ${nombre(previo.mes)}.` : 'No hay un mes anterior en Avancys para comparar.'}</p></section>}
+      <SiioPresupuesto presupuesto={t.torre?.presupuesto || null} mes={t.mes} cierreDe={mes => cierreDe(t, mes)} />
+    </div>
   </>;
 }
 
@@ -647,7 +772,7 @@ function EstadoDeResultados({ t, lineas, meses }: { t: TorreAvancys; lineas: Lin
     return <><strong>{millones(t2[total])}</strong>{total !== 'ingresos' ? <small>{pct(t2[total], t2.ingresos)}</small> : null}</>;
   };
   return <section className="siio-panel" aria-label="Estado de resultados">
-    <h2>Estado de resultados</h2>
+    <h2>Mes a mes</h2>
     <div className="siio-tabla-wrap"><table className="siio-tabla">
       <thead><tr><th>Línea</th>{meses.map(fila => <th key={fila.mes} className={protagonista(fila)}>{nombreMes(fila.mes).split(' ')[0]} {chip(fila)}</th>)}</tr></thead>
       <tbody>
