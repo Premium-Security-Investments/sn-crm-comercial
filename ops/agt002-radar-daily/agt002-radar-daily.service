@@ -10,4 +10,6 @@ ExecStart=/bin/systemctl start agt002-radar-import-daily.service
 ExecStart=/bin/systemctl start agt002-radar-scan.service
 ExecStart=/bin/systemctl start agt002-radar-reconciliation.service
 ExecStart=/bin/systemctl start agt002-radar-top5.service
+# Aliados (Juan, 2026-11-15): proponentes de SECOP a la base, los lunes. El «-» hace que una falla aquí no marque la cadena.
+ExecStart=-/bin/systemctl start agt002-aliados-proponentes.service
 TimeoutStartSec=60min

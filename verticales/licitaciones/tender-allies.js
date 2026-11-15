@@ -59,7 +59,7 @@ async function all(database, table, select) {
   }
 }
 
-const COMPANY_COLUMNS = 'nit,dv,name,acronyms,representative,phone,email,license_resolution,role,contact,notes,updated_at';
+const COMPANY_COLUMNS = 'nit,dv,name,acronyms,representative,phone,email,license_resolution,listing_source,role,contact,notes,updated_at';
 const CONTACT_COLUMNS = 'contact_name,contact_title,contact_phone,contact_email';
 const missingColumn = error => String(error?.code || '') === '42703' || /contact_(name|title|phone|email)/.test(String(error?.message || ''));
 const missingFunction = error => ['42883', 'PGRST202'].includes(String(error?.code || '').toUpperCase());

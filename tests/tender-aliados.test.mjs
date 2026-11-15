@@ -221,3 +221,28 @@ test('las uniones temporales no entran ni se muestran; las empresas sin NIT sí 
   assert.deepEqual(result.participations_without_nit.map(part => part.id), ['a']);
   assert.match(read('supabase/migrations/222_aliados_sin_uniones_temporales.sql'), /disable trigger psi_vigilance_participations_append_only[\s\S]*enable trigger psi_vigilance_participations_append_only/);
 });
+
+// Juan, 2026-11-15 (migración 223): las empresas que aparecen en nuestros procesos entran solas, sólo si son individuales,
+// con NIT y, si son nuevas, con contacto.
+test('proponentes de SECOP: sólo empresas individuales con NIT, una vez cada una, y su contacto del registro de proveedores', async () => {
+  const { individualProponents, supplierContact, secopNit, registerSecopProponents } = await import('../verticales/licitaciones/aliados-proponentes-secop.js');
+  assert.equal(secopNit('900.235.103-4'), '900235103');
+  assert.equal(secopNit('No Definido'), null);
+  const rows = [{ proveedor: 'CONSORCIO TOLIMA 2019 1', nit_proveedor: 'No Definido' }, { proveedor: 'UNION TEMPORAL X', nit_proveedor: '901000001' },
+    { proveedor: 'INNVECTOR SAS', nit_proveedor: '900235103' }, { proveedor: 'INNVECTOR SAS', nit_proveedor: '900235103' }, { proveedor: 'SIN NIT LTDA', nit_proveedor: '' }];
+  assert.deepEqual(individualProponents(rows), [{ nit: '900235103', name: 'INNVECTOR SAS' }]);
+  assert.deepEqual(supplierContact({ telefono: 'No Provisto', correo: 'a@b.co', telefono_representante_legal: '3001', nombre_representante_legal: 'Ana' }), { phone: '3001', email: 'a@b.co', representative: 'Ana', name: null });
+  const calls = [];
+  const database = {
+    from: () => { const chain = { select: () => chain, not: () => chain, like: async () => ({ data: [{ process_id: 'CO1.REQ.1', entity: 'DEAJ', ref: 'LP-07-2026', converted_opportunity_id: 'o1' }], error: null }) }; return chain; },
+    rpc: async (name, args) => { calls.push(args.p_payload); return { data: { status: 'empresa_nueva' }, error: null }; },
+  };
+  const fetchImpl = async url => ({ ok: true, json: async () => (url.includes('hgi6-6wh3') ? rows : [{ telefono: '6061', correo: 'x@y.co' }]) });
+  const summary = await registerSecopProponents(database, { fetchImpl });
+  assert.equal(summary.empresas_nuevas, 1);
+  assert.deepEqual([calls[0].nit, calls[0].process_ref, calls[0].kind, calls[0].phone], ['900235103', 'LP-07-2026', 'oferto', '6061']);
+  const sql = read('supabase/migrations/223_aliados_proponentes_de_secop.sql');
+  assert.match(sql, /grant execute on function public\.psi_register_process_participant\(jsonb\) to service_role/);
+  assert.match(sql, /revoke all on function public\.psi_register_process_participant\(jsonb\) from public, anon, authenticated/);
+  assert.match(read('ops/agt002-radar-daily/agt002-radar-daily.service'), /ExecStart=-\/bin\/systemctl start agt002-aliados-proponentes\.service/);
+});

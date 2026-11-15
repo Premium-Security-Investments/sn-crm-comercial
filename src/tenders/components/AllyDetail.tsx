@@ -9,7 +9,7 @@ import type { TenderRequest } from '../types';
  */
 export type City = { city: string; city_key: string; department: string | null };
 export type Participation = { id: string; nit: string | null; company_label: string; entity: string | null; process_ref: string; kind: string; detail: string | null; source: string | null; occurred_on: string | null };
-export type Company = { nit: string; dv: string | null; name: string; acronyms: string | null; representative: string | null; phone: string | null; email: string | null; license_resolution: string | null; role: string; contact: string | null; contact_name?: string | null; contact_title?: string | null; contact_phone?: string | null; contact_email?: string | null; notes: string | null; cities: City[]; participations: Participation[] };
+export type Company = { nit: string; dv: string | null; name: string; acronyms: string | null; representative: string | null; phone: string | null; email: string | null; license_resolution: string | null; listing_source?: string | null; role: string; contact: string | null; contact_name?: string | null; contact_title?: string | null; contact_phone?: string | null; contact_email?: string | null; notes: string | null; cities: City[]; participations: Participation[] };
 
 export const ROLES: Array<[string, string]> = [['sin_clasificar', 'Sin clasificar'], ['aliado_potencial', 'Aliado potencial'], ['aliado', 'Aliado'], ['competidor', 'Competidor'], ['descartado', 'Descartado'], ['nosotros', 'Nosotros']];
 export const KINDS: Array<[string, string]> = [['oferto', 'Ofertó'], ['observo_proyecto', 'Observó el proyecto'], ['observo_definitivo', 'Observó el definitivo'], ['adjudicatario', 'Adjudicatario'], ['contratista_actual', 'Contratista actual'], ['otro', 'Otro']];
