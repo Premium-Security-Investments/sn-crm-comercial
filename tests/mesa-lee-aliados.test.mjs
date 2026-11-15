@@ -24,6 +24,7 @@ test('la competencia del proceso llega agrupada, con lo registrado en Aliados', 
     psi_vigilance_participations: { data: [{ id: 'p1', nit: '860526603', process_ref: 'FGN-REC-IPSE-0058-2026', opportunity_id: null, kind: 'observo_definitivo', detail: 'Pidió aclarar el 5.3.2.' }] },
     psi_company_sites: { data: [{ city: 'Manizales', supervigilancia_authorization: 'Resolución vigente' }] },
     psi_tender_plural_readings: { data: null },
+    psi_vigilance_participation_links: { data: [] },
   };
   const database = { from: table => { const chain = { select() { return chain; }, eq() { return chain; }, not() { return chain; }, order() { return chain; }, limit() { return chain; },
     maybeSingle: async () => tables[table], range: async () => tables[table], then: resolve => Promise.resolve(tables[table]).then(resolve) }; return chain; } };
