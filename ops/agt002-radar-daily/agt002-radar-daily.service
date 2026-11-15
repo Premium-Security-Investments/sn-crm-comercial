@@ -8,7 +8,9 @@ Type=oneshot
 # Each step is its own hardened oneshot unit; `systemctl start` blocks until it finishes and a failure stops the chain.
 ExecStart=/bin/systemctl start agt002-radar-import-daily.service
 ExecStart=/bin/systemctl start agt002-radar-scan.service
-ExecStart=/bin/systemctl start agt002-radar-reconciliation.service
+# Juan, 2026-11-15: si la conciliación con SECOP falla (datos.gov.co recargó p6dx-8zbt con 1.000 filas viejas), el Top 5
+# y Aliados corren igual. El «-» deja la falla en el journal de la conciliación sin cortar la cadena.
+ExecStart=-/bin/systemctl start agt002-radar-reconciliation.service
 ExecStart=/bin/systemctl start agt002-radar-top5.service
 # Aliados (Juan, 2026-11-15): proponentes de SECOP a la base, los lunes. El «-» hace que una falla aquí no marque la cadena.
 ExecStart=-/bin/systemctl start agt002-aliados-proponentes.service
