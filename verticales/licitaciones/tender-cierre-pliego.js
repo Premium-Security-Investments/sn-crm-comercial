@@ -64,7 +64,7 @@ export async function aplicarCierresDelPliego(database, { now = () => new Date()
     : { data: [], error: null };
   if (opportunityError) throw opportunityError;
   const open = new Map((opportunities || []).filter(row => !row.archived_at && !row.deleted_at && !row.discarded_at && !row.lost_at).map(row => [row.id, row]));
-  const summary = { revisadas: 0, aplicadas: 0, sin_cierre_confirmado: 0, errores: [] };
+  const summary = { revisadas: 0, aplicadas: 0, sin_cierre_confirmado: 0, cerradas: 0, errores: [] };
   for (const row of tenders || []) {
     const opportunity = open.get(row.converted_opportunity_id);
     if (!opportunity) continue;
@@ -73,6 +73,10 @@ export async function aplicarCierresDelPliego(database, { now = () => new Date()
       const report = await readAgt002InitialAnalysisReport(database, opportunity.id);
       const cierre = report?.available && report.report ? cierreDelPliego(report.report.deadlines) : null;
       if (!cierre) { summary.sin_cierre_confirmado += 1; continue; }
+      // Lo que ya cerró es historia: no se reescribe (Municipio de Pereira: CRM 5-nov, pliego 30-oct; se revisa a mano).
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(now()));
+      const current = String(row.raw?.deadline || row.deadline_at || opportunity.expected_close_date || '').slice(0, 10);
+      if (cierre.day < today && (!current || current < today)) { summary.cerradas += 1; continue; }
       const patch = planCierrePliego(row, cierre, { analysisRunId: report.report.runId || null, now: now() });
       if (patch) {
         const { error: writeError } = await database.from('psi_public_tenders').update(patch).eq('id', row.id);

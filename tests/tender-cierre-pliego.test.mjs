@@ -63,7 +63,7 @@ test('aplicar: escribe la fila del Radar y la fecha de cierre de la oportunidad'
   };
   const summary = await aplicarCierresDelPliego({ from: query });
   // Sin análisis listo no se escribe nada: el pliego sólo manda cuando Vig-IA lo leyó.
-  assert.deepEqual(summary, { revisadas: 1, aplicadas: 0, sin_cierre_confirmado: 1, errores: [] });
+  assert.deepEqual(summary, { revisadas: 1, aplicadas: 0, sin_cierre_confirmado: 1, cerradas: 0, errores: [] });
   assert.deepEqual(writes, []);
 });
 
