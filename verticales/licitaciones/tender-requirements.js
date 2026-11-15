@@ -56,7 +56,7 @@ export async function loadOpportunityWindows(database, tenders, today = new Date
   const ids = [...tenders.keys()];
   if (!ids.length) return new Map();
   const [opportunities, decisions] = await Promise.all([
-    database.from('psi_sales_opportunities').select('id,archived_at,tender_offer_status,stage_code').in('id', ids),
+    database.from('psi_sales_opportunities').select('id,archived_at,tender_offer_status,stage_code,offer_value').in('id', ids),
     database.from('psi_tender_go_no_go_decisions').select('opportunity_id,decision,decided_at').in('opportunity_id', ids),
   ]);
   if (opportunities.error) throw opportunities.error;
@@ -72,7 +72,8 @@ export async function loadOpportunityWindows(database, tenders, today = new Date
     const open = !row.archived_at && !TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES.has(row.stage_code)
       && !TERMINAL_OFFER.has(String(row.tender_offer_status || '')) && latest.get(row.id)?.decision !== 'no_go'
       && Boolean(deadline) && deadline >= today;
-    windows.set(row.id, { deadline, open });
+    // El presupuesto del proceso (offer_value) para «lo que está en juego» en cada tarjeta (Juan, 2026-11-15).
+    windows.set(row.id, { deadline, open, budget: Number(row.offer_value) > 0 ? Number(row.offer_value) : null });
   }
   return windows;
 }

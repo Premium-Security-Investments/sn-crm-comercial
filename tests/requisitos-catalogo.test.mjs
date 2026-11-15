@@ -328,6 +328,19 @@ test('un código de producto del pliego está dentro de la clase inscrita en el 
   assert.doesNotMatch(falta.reason, /92121500/);
 });
 
+test('lo que está en juego: procesos y presupuesto que bloquea cada tarjeta (2026-11-15)', () => {
+  const blocks = [
+    { id: 'a', opportunity_id: 'abierto', process: 'DEAJ · LP-07-2026', focus_key: 'presencia', reason: 'Piden sucursal en Bogotá; tenemos agencia.' },
+    { id: 'b', opportunity_id: 'cerrado', process: 'ANM · LP-003-2026', focus_key: 'presencia', reason: 'Piden sucursal en Bogotá; tenemos agencia.' },
+  ];
+  const matriz = [{ id: 'H-1', kind: 'habilitante', categoria: 'presencia', requisito: 'Contar con sede principal o sucursal en Manizales.', procesos: ['Villamaría (Caldas) · vigilancia física'] }];
+  const catalog = buildRequirementCatalog({ matriz, blocks, assess: item => assessRequirement({ type: item.type, process: item.process, text: item.text }, COMPANY) });
+  const opportunities = new Map([['abierto', { deadline: '2026-11-24', open: true, budget: 1000e6 }], ['cerrado', { deadline: '2026-11-01', open: false, budget: 500e6 }]]);
+  const presencia = buildRequirementFocus(catalog, { opportunities }).find(item => item.key === 'presencia');
+  assert.deepEqual(presencia.stakes.open, { count: 1, total: 1000e6, unknown: 0 });
+  assert.deepEqual(presencia.stakes.past, { count: 2, total: 500e6, unknown: 1 }, 'la fila de la matriz no trae presupuesto');
+});
+
 test('«un celular por sede» no es exigir sede: Defensoría no entra a la tarjeta de sede (2026-11-15)', () => {
   const company = { ...COMPANY };
   const celular = assessRequirement({ type: 'presencia_local', process: 'DEFENSORÍA DEL PUEBLO · DEF-LP-01-2026 · Bogotá', text: 'El anexo técnico pide radios por puesto y un celular por sede en cobertura nacional.' }, company);
