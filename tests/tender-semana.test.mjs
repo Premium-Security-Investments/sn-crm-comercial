@@ -60,15 +60,11 @@ test('la ruta y el aviso: solo con permiso de Licitaciones, primero en Mi día',
   assert.match(server, /'GET \/api\/tender-semana': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
   assert.match(server, /\['cerrada_no_go', 'adjudicada', 'no_adjudicada'\]\.includes\(row\.tender_offer_status\)/);
   assert.match(server, /row\.stage_code !== 'descartado'/);
-  const main = read('src/main.tsx');
-  assert.match(main, /LICITACIONES_VIEW\) && <TenderMyDaySemana request=\{api\}/);
-  assert.ok(main.indexOf('<TenderMyDaySemana') < main.indexOf('<TenderMyDayOverdue'));
-  assert.match(read('src/tenders/components/TenderMyDaySemana.tsx'), /is-today/);
+  // Desde el 2026-11-15 Mi día usa la vista de alertas (tender-mi-dia.test.mjs); esta ruta sigue disponible.
 });
 
 test('las tres de la Rama Judicial se distinguen con el nombre corto', () => {
-  const component = read('src/tenders/components/TenderMyDaySemana.tsx');
-  assert.match(component, /Rama Judicial · Seccional \$1/);
-  assert.match(component, /Rama Judicial · Dirección Ejecutiva/);
-  assert.match(component, /item\.ref && <small className="muted"> \(\{item\.ref\}\)<\/small>/);
+  const module = read('verticales/licitaciones/tender-mi-dia.js');
+  assert.match(module, /Rama Judicial · Seccional \$1/);
+  assert.match(module, /Rama Judicial · Dirección Ejecutiva/);
 });

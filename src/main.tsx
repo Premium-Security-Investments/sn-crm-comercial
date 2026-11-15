@@ -21,8 +21,7 @@ import { TenderDecisionExperience } from './tenders/components/TenderDecisionExp
 import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalysis';
 import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
-import { TenderMyDayOverdue } from './tenders/components/TenderMyDayOverdue';
-import { TenderMyDaySemana } from './tenders/components/TenderMyDaySemana';
+import { TenderMiDia } from './tenders/components/TenderMiDia';
 import { TenderMyDayOfferReminder } from './tenders/components/TenderMyDayOfferReminder';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
 import { TenderComplianceMatrixPanel } from './tenders/components/TenderComplianceMatrixPanel';
@@ -3084,21 +3083,26 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
     </div>
   </>;
 
+  // Quien sólo trabaja licitaciones (hoy, Katherine) no ve la parte comercial: le salía vacía y decía «Hoy está
+  // despejado» con la semana llena de plazos (Juan, 2026-11-15).
+  const tendersOnly = can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && !opportunities.some(o => isAgt003CommercialOpportunity(o));
+
   return <section className="stack my-day-home" aria-label="Mi día">
     <div className="my-day-head">
       <p className="my-day-dayline">{MY_DAY_DATE.format(now).replace(',', '')}</p>
-      <h2 className="my-day-headline">{headline}</h2>
-      {subline && <p className="my-day-subline">{subline}</p>}
+      {tendersOnly
+        ? <h2 className="my-day-headline">Mi día · {data.currentProfile.full_name?.split(/\s+/)[0] || 'licitaciones'}</h2>
+        : <><h2 className="my-day-headline">{headline}</h2>
+          {subline && <p className="my-day-subline">{subline}</p>}</>}
     </div>
-    {/* Mejora 1: sólo quien trabaja licitaciones (hoy, Katherine) ve lo vencido que puede tumbar una oferta. */}
-    {/* Juan, 2026-11-10: la semana de licitaciones, con hoy destacado, va primero. */}
-    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDaySemana request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
-    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOverdue request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
+    {/* Mi día de licitaciones (Juan, 2026-11-15, maqueta aprobada): alertas en dos niveles, las cuatro actividades y el
+        día a día. Reemplaza la semana mezclada y la tarjeta de vencidos, que ahora van dentro como lo crítico. */}
+    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMiDia request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} onGo={go} />}
     {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOfferReminder request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}
-    {!opportunities.length
+    {tendersOnly ? null : !opportunities.length
       ? <section className="panel my-day-first">
         <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
         {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}

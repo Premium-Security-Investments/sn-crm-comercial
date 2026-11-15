@@ -1120,6 +1120,37 @@ export type TenderSemanaItem = {
 };
 export type TenderSemana = { today: string; hasta: string; dias: number; hoy: number; procesos: number; without_access: number; items: TenderSemanaItem[] };
 
+/** Mi día de licitaciones (Juan, 2026-11-15): alertas en dos niveles, las cuatro actividades y el día a día. */
+export type TenderMiDiaActividad = 'observar' | 'presentar' | 'tramitar' | 'unirnos';
+export type TenderMiDiaAccion = {
+  key: string; opportunity_id: string; proceso: string; ref: string | null; actividad: TenderMiDiaActividad; texto: string;
+  value: string; day: string; tiene_hora: boolean; dias: number; responsable: string | null; hecho: { at: string | null; por: string | null } | null;
+};
+export type TenderMiDiaPendiente = {
+  opportunity_id: string | null; proceso: string | null; ref: string | null; actividad: TenderMiDiaActividad; texto: string;
+  responsable: string | null; vencido_hace: number | null; destino: 'proceso' | 'requisitos';
+};
+export type TenderMiDiaEntidad = { key: string; opportunity_id: string; proceso: string; ref: string | null; texto: string; value: string; day: string; tiene_hora: boolean };
+export type TenderMiDiaTramite = { key: string; titulo: string; estado: string; sin_dato: boolean; procesos: number; primer_cierre: string | null };
+export type TenderMiDiaUnirnos = { opportunity_id: string; proceso: string; ref: string | null; cierre: string | null; motivo: string };
+export type TenderMiDia = {
+  today: string; hasta: string; procesos: number; without_access: number; hechos_disponible: boolean;
+  frase: {
+    observaciones: number; cierres: number; manifestaciones: { proceso: string; opportunity_id: string }[];
+    primero: { proceso: string; texto: string; value: string; day: string; tiene_hora: boolean; opportunity_id: string } | null;
+  };
+  actividades: {
+    observar: { esta_semana: number; proxima: number; items: TenderMiDiaAccion[]; proximo: TenderMiDiaAccion | null };
+    presentar: { cierres: number; items: TenderMiDiaAccion[]; critico: TenderMiDiaAccion | TenderMiDiaPendiente | null };
+    tramitar: { por_tramitar: number; sin_dato: number; total: number; items: TenderMiDiaTramite[] };
+    unirnos: { total: number; items: TenderMiDiaUnirnos[] };
+  };
+  dias: { day: string; dias: number; items: TenderMiDiaAccion[] }[];
+  pendientes: TenderMiDiaPendiente[];
+  proxima: TenderMiDiaAccion[];
+  entidad: TenderMiDiaEntidad[];
+};
+
 export type TenderOpenBoard = {
   today: string;
   without_access: number;

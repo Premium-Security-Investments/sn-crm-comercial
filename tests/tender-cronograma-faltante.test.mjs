@@ -24,7 +24,7 @@ test('el tablero pasa la marca a Mi día', () => {
 });
 
 test('Mi día y la licitación muestran el aviso', () => {
-  assert.match(read('src/tenders/components/TenderMyDayOverdue.tsx'), /Falta el cronograma de SECOP/);
+  assert.match(read('verticales/licitaciones/tender-mi-dia.js'), /Falta el cronograma de SECOP/);
   const workspace = read('src/tenders/workspace/TenderWorkspace.tsx');
   assert.match(workspace, /cronogramaFaltante\(report\) \?/);
   assert.match(workspace, /if \(!rows\.length\) return missing;/);
