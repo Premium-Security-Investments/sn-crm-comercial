@@ -166,7 +166,7 @@ test('la ficha de una empresa se abre en una ventana desde «Posibles socios»',
     psi_vigilance_company_offices: [{ nit: '800010866', city: 'QUIBDO', city_key: 'quibdo' }, { nit: '800010866', city: 'ARMENIA', city_key: 'armenia' }, { nit: '800010866', city: 'ARMENIA', city_key: 'armenia' }],
     psi_vigilance_participations: [{ id: 'p1', nit: '800010866', process_ref: 'SIC 23 DE 2026', kind: 'observo_proyecto' }],
   };
-  const database = { from: table => { const chain = { select() { return chain; }, eq() { return table === 'psi_vigilance_companies' ? chain : Promise.resolve({ data: rows[table], error: null }); }, maybeSingle: async () => ({ data: rows[table], error: null }) }; return chain; } };
+  const database = { from: table => { const chain = { select() { return chain; }, range: async () => ({ data: [], error: null }), eq() { return table === 'psi_vigilance_companies' ? chain : Promise.resolve({ data: rows[table], error: null }); }, maybeSingle: async () => ({ data: rows[table], error: null }) }; return chain; } };
   const company = await getAlly(database, '800010866');
   assert.deepEqual(company.cities.map(city => city.city), ['QUIBDO', 'ARMENIA']);
   assert.equal(company.email, 'notificaciones@expertoseguridad.com.co');
@@ -177,4 +177,31 @@ test('la ficha de una empresa se abre en una ventana desde «Posibles socios»',
   assert.match(candidates, /<CandidateList candidates=\{data\.candidates\} onOpen=\{setCard\} \/>/);
   assert.match(candidates, /<AllyCardDialog nit=\{card\}/);
   assert.match(read('server/index.js'), /'GET \/api\/tender-allies\/company': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
+});
+
+// Juan, 2026-11-15 (migración 221): una participación que se cargó sin NIT se une a su empresa con una corrección, al leer.
+test('«este nombre es esta empresa»: la participación sin NIT sale en la ficha y deja la lista de sin NIT', async () => {
+  const { listAllies, getAlly } = await import('../verticales/licitaciones/tender-allies.js');
+  const rows = {
+    psi_vigilance_companies: [{ nit: '900422632', name: 'SEGURIDAD CAMALEON LTDA', role: 'sin_clasificar' }],
+    psi_vigilance_company_offices: [],
+    psi_vigilance_participations: [{ id: 'a', nit: null, company_label: 'Seguridad Camaleón Ltda.', process_ref: 'SIC 23 DE 2026', kind: 'observo_proyecto' },
+      { id: 'b', nit: null, company_label: 'UNION TEMPORAL X', process_ref: 'SNS-LP-2-2026', kind: 'oferto' }],
+    psi_vigilance_participation_links: [{ company_label: 'Seguridad Camaleón Ltda.', nit: '900422632' }],
+  };
+  const list = { from: table => ({ select() { return this; }, range: async () => ({ data: rows[table], error: null }) }) };
+  const result = await listAllies(list);
+  assert.deepEqual(result.companies[0].participations.map(part => part.id), ['a']);
+  assert.deepEqual(result.participations_without_nit.map(part => part.id), ['b']);
+  const one = { from: table => {
+    const chain = { select() { return chain; }, range: async () => ({ data: rows[table], error: null }),
+      eq: () => (table === 'psi_vigilance_companies' ? chain : Promise.resolve({ data: [], error: null })),
+      is: () => chain, in: async (_column, labels) => ({ data: rows[table].filter(part => !part.nit && labels.includes(part.company_label)), error: null }),
+      maybeSingle: async () => ({ data: rows.psi_vigilance_companies[0], error: null }) };
+    return chain;
+  } };
+  const company = await getAlly(one, '900422632');
+  assert.deepEqual(company.participations.map(part => [part.id, part.nit]), [['a', '900422632']]);
+  const sql = read('supabase/migrations/221_aliados_participaciones_por_nombre.sql');
+  assert.match(sql, /grant select, insert, update on table public\.psi_vigilance_participation_links to service_role/);
 });

@@ -77,16 +77,32 @@ export function cleanEmail(value) {
 }
 
 /**
+ * «Este nombre es esta empresa» (migración 221; Juan, 2026-11-15): las participaciones son de sólo agregar, así que una
+ * que se cargó sin NIT se une a su empresa con esta tabla, al leer. Sin la 221, ninguna.
+ */
+async function loadParticipationLinks(database) {
+  try {
+    return new Map((await all(database, 'psi_vigilance_participation_links', 'company_label,nit')).map(link => [link.company_label.trim(), link.nit]));
+  } catch (error) {
+    if (missingTable(error)) return new Map();
+    throw error;
+  }
+}
+const linkParticipation = (part, links) => (part.nit ? part : { ...part, nit: links.get(String(part.company_label || '').trim()) || null });
+
+/**
  * La base completa para la pantalla: empresas con sus ciudades y cuántas veces las vimos, y cuántas participaciones de la
  * semilla faltan por cargar (para que la pantalla lo diga). Sin la 196, vacía.
  */
 export async function listAllies(database, { participationsSeed = [] } = {}) {
   try {
-    const [companies, offices, participations] = await Promise.all([
+    const [companies, offices, loaded, links] = await Promise.all([
       allCompanies(database),
       all(database, 'psi_vigilance_company_offices', 'nit,city,city_key,department,office_type'),
       all(database, 'psi_vigilance_participations', 'id,nit,company_label,entity,process_ref,opportunity_id,kind,detail,source,occurred_on,created_at'),
+      loadParticipationLinks(database),
     ]);
+    const participations = loaded.map(part => linkParticipation(part, links));
     const citiesByNit = new Map();
     for (const office of offices) {
       if (!String(office.city || '').trim() || !office.city_key) continue;
@@ -117,18 +133,28 @@ export async function getAlly(database, nit) {
   if (error && missingColumn(error)) ({ data: company, error } = await one(COMPANY_COLUMNS));
   if (error) throw mapError(error);
   if (!company) throw fail('Esa empresa no está en la base.', 404);
-  const [{ data: offices, error: officesError }, { data: participations, error: partsError }] = await Promise.all([
+  const [{ data: offices, error: officesError }, { data: own, error: partsError }, links] = await Promise.all([
     database.from('psi_vigilance_company_offices').select('nit,city,city_key,department,office_type').eq('nit', key),
     database.from('psi_vigilance_participations').select('id,nit,company_label,entity,process_ref,kind,detail,source,occurred_on,created_at').eq('nit', key),
+    loadParticipationLinks(database),
   ]);
   if (officesError) throw mapError(officesError);
   if (partsError) throw mapError(partsError);
+  // Las que se cargaron sin NIT y una corrección une a esta empresa.
+  const labels = [...links].filter(([, linked]) => linked === key).map(([label]) => label);
+  let participations = own || [];
+  if (labels.length) {
+    const { data: unlinked, error: unlinkedError } = await database.from('psi_vigilance_participations')
+      .select('id,nit,company_label,entity,process_ref,kind,detail,source,occurred_on,created_at').is('nit', null).in('company_label', labels);
+    if (unlinkedError) throw mapError(unlinkedError);
+    participations = [...participations, ...(unlinked || []).map(part => ({ ...part, nit: key }))];
+  }
   const cities = [];
   for (const office of offices || []) {
     if (!String(office.city || '').trim() || !office.city_key || cities.some(item => item.city_key === office.city_key)) continue;
     cities.push({ city: office.city, city_key: office.city_key, department: office.department });
   }
-  return { ...company, email: cleanEmail(company.email), contact_email: cleanEmail(company.contact_email), cities, participations: participations || [] };
+  return { ...company, email: cleanEmail(company.email), contact_email: cleanEmail(company.contact_email), cities, participations };
 }
 
 /** Carga (o actualiza) el listado en tandas, sin tocar rol, contacto ni notas; la primera vez, también las participaciones. */
