@@ -314,3 +314,13 @@ test('la Mesa recibe los hechos que nos faltan con su regla; si no hay, la fuent
   assert.equal(vacia.valor, null);
   assert.match(read('verticales/licitaciones/agt002-workbench-responder.js'), /empresa\.hechos_que_nos_faltan[^']*si no los tocan, no los menciones/);
 });
+
+test('un código de producto del pliego está dentro de la clase inscrita en el RUP (Defensoría, 2026-11-15)', () => {
+  const company = { ...COMPANY, codes: ['92121500', '92121700', '46171600'] };
+  const ok = assessRequirement({ type: 'codigos_unspsc', process: 'Defensoría', text: 'Códigos del proceso: 92121504 y 92121701; adicional 46171604.' }, company);
+  assert.equal(ok.verdict, 'cumple');
+  const falta = assessRequirement({ type: 'codigos_unspsc', process: 'Pereira', text: 'Códigos requeridos: 92121500, 92121700, 46151600, 46171600 y 46101500.' }, company);
+  assert.equal(falta.verdict, 'inhabilita');
+  assert.match(falta.reason, /46101500/);
+  assert.doesNotMatch(falta.reason, /92121500/);
+});

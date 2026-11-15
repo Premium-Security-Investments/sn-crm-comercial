@@ -162,7 +162,7 @@ export const REQUIREMENT_FOCUS = Object.freeze([
   { key: 'presencia', title: 'Sede, sucursal o agencia en la ciudad', types: ['presencia_local'], live: 'sedes',
     fix: 'Decidir en qué ciudades abrir sucursal o convertir la agencia en sucursal (las agencias no sirven cuando piden sucursal), empezando por las que más se repiten; mientras tanto, socio en unión temporal.' },
   { key: 'codigos', title: 'Códigos UNSPSC que no tenemos en el RUP', types: ['codigos_unspsc'], live: 'codigos',
-    fix: 'Inscribir en el RUP los códigos que faltan (el 46101500, armas, primero) con contratos que los respalden; queda en firme 10 días hábiles después.' },
+    fix: 'Actualizar el RUP en la Cámara de Comercio de Pereira para agregar el código que falta, empezando por el 46101500 (armas de fuego). La actualización queda en firme 10 días hábiles después de publicada: hay que hacerla con tiempo antes del cierre del proceso que lo pida.' },
   { key: 'comunicaciones', title: 'Registro o permiso de telecomunicaciones nacional', types: ['licencia_comunicaciones'], live: null,
     fix: 'Tramitar ante MinTIC la ampliación del permiso de espectro a cobertura nacional.' },
   { key: 'importador', title: 'Registro de importador, comercializador o distribuidor de equipos', types: ['registro_tecnologia'], live: null,
