@@ -69,27 +69,10 @@
 .siio-cifra.mal>strong{color:var(--mal)}
 .siio-cifra.vacia>strong{color:var(--sutil);font-weight:600}
 
-/* ---- 5 · Bloque de pregunta ---- */
-.siio-bloque{display:grid;gap:8px;align-content:start;min-width:0;background:var(--panel);border:1px solid var(--linea);border-radius:var(--radio-panel);box-shadow:var(--sombra);padding:16px 18px}
-.siio-bloque>h3{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.siio-bloque>strong{font-size:24px;font-weight:700;letter-spacing:-.015em;color:var(--tinta);font-variant-numeric:tabular-nums}
-.siio-bloque>strong em{font-style:normal;color:var(--mal)}
-.siio-bloque>p{font-size:13px;color:var(--suave)}
-.siio-bloque>.siio-enlace{justify-self:start;margin-top:2px}
+
 /* barra apilada (cartera por antigüedad) */
-.siio-barra{display:flex;height:8px;border-radius:5px;overflow:hidden;background:var(--fondo-suave)}
-.siio-barra span{display:block}
-.siio-barra .al-dia{background:#cbd7e6}
-.siio-barra .t1{background:#efc98c}.siio-barra .t2{background:#e59d63}.siio-barra .t3{background:#d26a49}.siio-barra .t4{background:#a8261f}
+
 /* real contra meta (presupuesto) */
-.siio-metas{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px 10px;align-items:center;font-size:13px}
-.siio-metas>span:first-child{color:var(--suave)}
-.siio-meta-linea{position:relative;height:6px;border-radius:4px;background:var(--fondo-suave)}
-.siio-meta-linea b{position:absolute;inset:0 auto 0 0;max-width:100%;border-radius:4px;background:#79b78f}
-.siio-meta-linea b.mal{background:#df9d97}
-.siio-meta-linea u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--tinta)}
-.siio-metas .siio-num{font-weight:700;color:var(--tinta);white-space:nowrap}
-.siio-metas .meta{color:var(--sutil);font-weight:400}
 
 /* ---- 6 · Lista de decisión ----
    Cada fila arranca con la ficha del plazo (lo que vence manda) en el color de su urgencia,
@@ -149,37 +132,12 @@
 .siio-selector select{min-width:260px;max-width:100%;appearance:none;font:inherit;font-size:14px;font-weight:650;color:var(--tinta);padding:8px 32px 8px 10px;border:1px solid var(--linea-fuerte);border-radius:var(--radio-interno);background:var(--panel) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="%231b64f2" stroke-width="1.8" stroke-linecap="round"/></svg>') no-repeat right 11px center;cursor:pointer}
 .siio-selector select:hover{border-color:var(--accion)}
 
-
 /* ---- 9 · Portada (composición aprobada en la maqueta de la Fase 3) ---- */
-.siio-frase-mes{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 26px;align-items:center}
-.siio-frase-mes h2{font-size:26px;font-weight:650;letter-spacing:-.015em;line-height:1.2}
-.siio-frase-mes h2 .pct-bien{color:var(--bien)}
-.siio-frase-mes h2 .pct-mal{color:var(--mal)}
-.siio-frase-mes .encurso{font-size:13.5px;color:var(--suave)}
-.siio-frase-mes .encurso .plazo{font-weight:700;color:var(--estimado)}
-.siio-frase-mes .encurso strong{color:var(--tinta)}
+
 /* Margen de cada mes con su cifra escrita: lo que gana sube, lo que pierde baja en rojo; los meses del Excel de
    Finanzas en tono más claro que los de Avancys; el mes de la frase, en tinta. */
-.siio-margenes{margin:0;display:grid;gap:4px;justify-items:end}
-.siio-margenes ol{display:flex;gap:2px;margin:0;padding:0;list-style:none}
-.siio-margenes button{display:grid;grid-template-rows:auto 26px 0 auto;justify-items:center;width:34px;padding:2px 0;border-radius:6px;color:var(--sutil)}
-.siio-margenes button:hover{background:var(--fondo-suave)}
-.siio-margenes .con-perdidas button{grid-template-rows:auto 26px 26px auto}
-.siio-margenes .cifra{font-size:10.5px;font-weight:700;color:var(--suave);font-variant-numeric:tabular-nums}
-.siio-margenes .arriba{display:flex;align-items:flex-end;border-bottom:1px solid var(--linea-fuerte)}
-.siio-margenes .abajo{display:flex;align-items:flex-start}
-.siio-margenes i{display:block;width:14px;background:#9db8e6}
-.siio-margenes .arriba i{border-radius:3px 3px 0 0}
-.siio-margenes .abajo i{border-radius:0 0 3px 3px;background:var(--mal)}
-.siio-margenes .excel .arriba i{background:#cbd9f1}
-.siio-margenes .act .arriba i{background:var(--tinta)}
-.siio-margenes .neg .cifra{color:var(--mal)}
-.siio-margenes .act .cifra{color:var(--tinta)}
-.siio-margenes .nombre{font-size:10px}
-.siio-margenes figcaption{font-size:11px;color:var(--sutil)}
-.siio-bloques{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:14px}
+
 .siio-panel-decision{margin-top:14px}
-@media(max-width:1020px){.siio-bloques{grid-template-columns:1fr}.siio-frase-mes{grid-template-columns:1fr}}
 
 /* ---- 10 · Cabecera y pestañas (calco de la maqueta de la Fase 3) ----
    Las reglas viejas del menú segmentado (grilla, píldoras grandes, posición pegajosa) se anulan aquí. */
@@ -279,10 +237,44 @@
 .siio-dashboard .siio-enlace.activo{text-decoration:underline;text-underline-offset:3px}
 @media(max-width:560px){.siio-dashboard .siio-reco-accion{justify-items:start}.siio-dashboard .siio-reco header{align-items:flex-start}.siio-dashboard .siio-reco footer>.siio-nota{margin-left:0}}
 /* Portada: una cifra que todavía hay que confirmar con su dueño (tecnología en el presupuesto). */
-.siio-dashboard .siio-num .por-confirmar{color:var(--estimado);font-weight:650}
 
 /* ---- 17 · Resultados ---- */
 /* Una línea que parece incompleta lleva debajo su valor del último mes cerrado, en el tono de lo estimado. */
 .siio-dashboard .siio-tabla td small.siio-incompleta{display:block;margin-top:1px;font-size:11px;font-weight:650;color:var(--estimado)}
 /* El chip de cierre va debajo del nombre del mes: con varios meses, al lado ensancha la tabla. */
 .siio-dashboard .siio-tabla thead th.num .siio-chip{display:flex;width:fit-content;margin:4px 0 0 auto}
+
+/* ---- 18 · Portada, opción A (Juan, 2026-11-15) ----
+   Una línea de qué mes y su cierre; cuatro cifras en una franja, cada una con su referencia y un color que dice bien o
+   mal; la tendencia del margen junto a la utilidad. Cada cifra lleva a su pestaña. */
+.siio-dashboard .siio-portada-cabeza{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px;margin:0 2px 10px}
+.siio-dashboard .siio-portada-cabeza p{font-size:14px;color:var(--suave)}
+.siio-dashboard .siio-portada-cabeza p strong{color:var(--tinta)}
+.siio-dashboard .siio-cifras-portada{display:grid;grid-template-columns:1.3fr repeat(3,minmax(0,1fr));padding:0;overflow:hidden}
+.siio-dashboard .siio-cifra-portada{display:grid;gap:6px;align-content:start;text-align:left;padding:20px 22px 18px;border-left:1px solid var(--linea);border-radius:0;background:none;min-width:0;cursor:pointer}
+.siio-dashboard .siio-cifra-portada:first-child{border-left:0}
+.siio-dashboard .siio-cifra-portada:hover{background:var(--fondo-suave)}
+.siio-dashboard .siio-cifra-portada:focus-visible{outline:2px solid var(--accion);outline-offset:-2px}
+.siio-dashboard .siio-cifra-portada .pregunta{font-size:12.5px;font-weight:650;color:var(--suave)}
+.siio-dashboard .siio-cifra-portada .valor{font-size:34px;font-weight:750;letter-spacing:-.02em;line-height:1.05;color:var(--tinta);font-variant-numeric:tabular-nums}
+.siio-dashboard .siio-cifra-portada .valor.mal{color:var(--mal)}
+.siio-dashboard .siio-cifra-portada .referencia{font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}
+.siio-dashboard .siio-cifra-portada .referencia.bien{color:var(--bien)}
+.siio-dashboard .siio-cifra-portada .referencia.mal{color:var(--mal)}
+.siio-dashboard .siio-cifra-portada .referencia i{font-style:normal;font-size:11.5px}
+.siio-dashboard .siio-cifra-portada .detalle{font-size:12.5px;color:var(--suave);font-variant-numeric:tabular-nums}
+.siio-dashboard .siio-cifra-portada .estado{height:4px;border-radius:2px;margin-top:4px}
+.siio-dashboard .siio-cifra-portada .estado.bien{background:#2f8a53}
+.siio-dashboard .siio-cifra-portada .estado.mal{background:var(--mal)}
+.siio-dashboard .siio-cifra-portada svg{display:block;margin-top:2px;overflow:visible}
+.siio-dashboard .siio-cifra-portada svg .linea{fill:none;stroke:#9db8e6;stroke-width:2.2}
+.siio-dashboard .siio-cifra-portada svg .ppto{stroke:var(--linea-fuerte);stroke-dasharray:3 3}
+.siio-dashboard .siio-cifra-portada svg .cero{stroke:var(--linea-fuerte)}
+.siio-dashboard .siio-cifra-portada svg .ppto-texto{font-size:9.5px;fill:var(--sutil)}
+.siio-dashboard .siio-cifra-portada svg .cifra{font-size:11px;fill:var(--suave)}
+.siio-dashboard .siio-cifra-portada svg .cifra.mal{fill:var(--mal)}
+.siio-dashboard .siio-cifra-portada svg .cifra-act{font-size:12px;font-weight:700;fill:var(--tinta)}
+.siio-dashboard .siio-cifra-portada svg .punto{fill:var(--tinta)}
+.siio-dashboard .siio-cifra-portada svg .mes{font-size:10px;fill:var(--sutil)}
+@media(max-width:1020px){.siio-dashboard .siio-cifras-portada{grid-template-columns:1fr 1fr}.siio-dashboard .siio-cifra-portada:nth-child(3){border-left:0}.siio-dashboard .siio-cifra-portada:nth-child(n+3){border-top:1px solid var(--linea)}}
+@media(max-width:560px){.siio-dashboard .siio-cifras-portada{grid-template-columns:1fr}.siio-dashboard .siio-cifra-portada{border-left:0;border-top:1px solid var(--linea)}.siio-dashboard .siio-cifra-portada:first-child{border-top:0}}

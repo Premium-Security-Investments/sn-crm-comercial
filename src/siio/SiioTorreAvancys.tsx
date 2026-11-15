@@ -192,10 +192,11 @@ export function alertasDeAvancys(t: TorreAvancys, hoy = new Date()): AlertaTorre
     const bloqueo = torre.bloqueo_contable || null;
     if (!bloqueo || bloqueo.slice(0, 7) < torre.mes_cerrado) {
       const dias = diasDesdeFinDeMes(torre.mes_cerrado, hoy);
-      const abiertos = (torre.pyg || []).filter(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso').map(fila => nombreMes(fila.mes).split(' ')[0]);
+      const abiertos = (torre.pyg || []).filter(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso')
+        .map(fila => `${nombreMes(fila.mes).split(' ')[0]} lleva ${diasDesdeFinDeMes(fila.mes, hoy)}`);
       salida.push({ clave: 'bloqueo', prioridad: 'alta', pestana: 'fuentes', responsable: 'Contabilidad',
         ficha: { valor: `${dias} días`, unidad: 'sin cierre' },
-        frase: <><strong>Ningún mes tiene bloqueo contable en Avancys</strong>: {nombreMes(torre.mes_cerrado).split(' ')[0]} lleva {dias} días sin cierre formal{abiertos.length ? `; ${abiertos.join(' y ')} sigue abierto` : ''}.</> });
+        frase: <><strong>Cerrar {nombreMes(torre.mes_cerrado).split(' ')[0]} en Avancys.</strong> Ningún mes está bloqueado{abiertos.length ? `; ${abiertos.join(' y ')} días` : ''}.</> });
     }
   }
   const c = torre?.cartera;
@@ -206,8 +207,8 @@ export function alertasDeAvancys(t: TorreAvancys, hoy = new Date()): AlertaTorre
   });
   if (morosos.length) {
     salida.push({ clave: 'morosos', prioridad: 'media', pestana: 'cartera', responsable: 'Cartera',
-      ficha: { valor: '2 meses', unidad: 'sin pagar' },
-      frase: <><strong>{morosos.length === 1 ? '1 cliente debe dos meses o más' : `${morosos.length} clientes deben dos meses o más`}</strong> de su facturación; el mayor, {sinCodigo(morosos[0].cliente)}.</> });
+      ficha: { valor: `${morosos.length}`, unidad: morosos.length === 1 ? 'debe 2+ meses' : 'deben 2+ meses' },
+      frase: <><strong>Cobrar a quien debe dos meses o más.</strong> {morosos.length === 1 ? 'Es' : 'El mayor,'} {sinCodigo(morosos[0].cliente)}.</> });
   }
   return salida;
 }
@@ -218,8 +219,8 @@ export const MAX_DECISIONES = 5;
 export function SiioRequiereDecision({ alertas, onIr }: { alertas: AlertaTorre[]; onIr: (pestana: PestanaTorre) => void }) {
   if (!alertas.length) return null;
   const ordenadas = [...alertas].sort((a, b) => ORDEN_PRIORIDAD[a.prioridad] - ORDEN_PRIORIDAD[b.prioridad]).slice(0, MAX_DECISIONES);
-  return <section className="siio-panel siio-panel-decision" aria-label="Requiere decisión hoy">
-    <h2>Requiere decisión hoy <span className="siio-conteo">{ordenadas.length}</span></h2>
+  return <section className="siio-panel siio-panel-decision" aria-label="Lo que hay que decidir">
+    <h2>Lo que hay que decidir</h2>
     <ol className="siio-decision">
       {ordenadas.map(alerta => <li key={alerta.clave}>
         <button type="button" aria-label={`Prioridad ${alerta.prioridad}`} onClick={() => onIr(alerta.pestana)}>
@@ -254,143 +255,129 @@ export function mesPrincipal(t: TorreAvancys, hoy = new Date()) {
   return t.realDe(anterior) ? anterior : t.torre?.mes_cerrado || null;
 }
 
-// La portada (maqueta de la Fase 3, revisada con Juan el 2026-11-15): la frase del mes anterior con las cifras que el
-// sistema tiene hoy y su estado de cierre; el mes en curso, solo con lo facturado (la nómina se causa al cierre, así
-// que su utilidad a mitad de mes engaña); y el margen de cada mes con su cifra escrita.
-export function SiioPortada({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre, mes?: string) => void }) {
+export type ForecastPortada = { abiertas: number; sinGestion: number; dias: number; nadie: string[] } | null;
+// La cartera vencida pesa «mal» desde esta parte de lo que nos deben.
+const CARTERA_VENCIDA_MAL = 0.3;
+const MESES_TENDENCIA = 6;
+
+// La rentabilidad por cliente de un mes: la del último cerrado viene con la Torre; la de otro mes se pide con la ruta
+// de la pestaña Clientes.
+function useClientesDe(t: TorreAvancys, mes: string | null): Clientes | 'cargando' | 'error' | null {
+  const cerrado = t.torre?.mes_cerrado || null;
+  const [otro, setOtro] = useState<Clientes | 'cargando' | 'error' | null>(null);
+  useEffect(() => {
+    if (!mes || mes === cerrado) return;
+    let vivo = true;
+    setOtro('cargando');
+    api<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`)
+      .then(datos => { if (vivo) setOtro(datos); })
+      .catch(() => { if (vivo) setOtro('error'); });
+    return () => { vivo = false; };
+  }, [mes, cerrado]);
+  if (!mes) return null;
+  return mes === cerrado ? t.torre?.clientes || null : otro;
+}
+
+const quienPierde = (k: Clientes | null) => {
+  const conIngreso = (k?.clientes || []).filter(fila => fila.ingresos > 0);
+  const pierden = conIngreso.filter(fila => fila.margen < 0).sort((a, b) => b.ingresos - a.ingresos);
+  return { pierden, suma: pierden.reduce((total, fila) => total + fila.margen, 0) };
+};
+
+// La portada, opción A aprobada por Juan el 2026-11-15: arriba de qué mes se habla y su cierre; cuatro cifras, cada
+// una con su referencia y un color que dice bien o mal; la tendencia del margen al lado de la utilidad; y debajo, lo
+// que hay que decidir. El detalle vive en las pestañas.
+export function SiioPortada({ t, onIr, forecast = null }: { t: TorreAvancys; onIr: (pestana: PestanaTorre, mes?: string) => void; forecast?: ForecastPortada }) {
   const { torre, estado, error } = t;
   const hoy = new Date();
   const mesActual = hoy.toISOString().slice(0, 7);
   const principal = mesPrincipal(t, hoy);
-  const resumen = principal ? t.realDe(principal) : null;
+  const previo = principal ? mesAnterior(principal) : null;
+  const r = principal ? t.realDe(principal) : null;
+  const rPrevio = previo ? t.realDe(previo) : null;
   const cierre = principal ? cierreDe(t, principal, hoy) : null;
   const enCurso = (torre?.pyg || []).find(fila => fila.mes === mesActual) || null;
-  const tendencia = t.opciones.filter(o => o.mes < mesActual).map(o => ({ ...o, r: t.realDe(o.mes) })).filter(o => o.r && o.r.ingresos);
-  const maximo = Math.max(0.01, ...tendencia.map(o => Math.abs(o.r!.utilidad / o.r!.ingresos)));
-  const desdeAvancys = tendencia.find(o => o.fuente !== 'oficial')?.mes || null;
-  const hastaExcel = [...tendencia].reverse().find(o => o.fuente === 'oficial')?.mes || null;
+  const clientes = useClientesDe(t, principal);
+  const clientesPrevio = previo && previo === torre?.mes_cerrado ? torre?.clientes || null : null;
+  const nombre = (mes: string | null) => nombreMes(mes).split(' ')[0];
+  if (estado === 'error') return <p className="siio-alert-text">No se pudo leer Avancys: {error}</p>;
+  if (!r || !principal) return <p className="siio-secondary">Leyendo la contabilidad de Avancys…</p>;
+  const margen = r.ingresos ? r.utilidad / r.ingresos : 0;
+  const puntos = rPrevio?.ingresos ? (margen - rPrevio.utilidad / rPrevio.ingresos) * 100 : null;
+  const c = torre?.cartera;
+  const parteVencida = c?.total?.saldo && c.vencido ? c.vencido.saldo / c.total.saldo : null;
+  const mas30 = (c?.tramos || []).slice(1).reduce((suma, tramo) => suma + tramo.saldo, 0);
+  const k = typeof clientes === 'object' && clientes?.legible ? clientes : null;
+  const { pierden, suma } = quienPierde(k);
+  const antes = clientesPrevio?.legible ? quienPierde(clientesPrevio) : null;
+  const alDia = forecast && forecast.abiertas ? (forecast.abiertas - forecast.sinGestion) / forecast.abiertas : null;
   return <>
-    <section className="siio-panel siio-frase-mes" aria-label="Resultado del mes anterior">
-      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-        {estado === 'cargando' && !resumen ? <p className="siio-secondary">Leyendo la contabilidad de Avancys…</p> : null}
-        {estado === 'error' ? <p className="siio-alert-text">No se pudo leer Avancys: {error}</p> : null}
-        {resumen && principal && cierre ? <h2>
-          En {nombreMes(principal).split(' ')[0]} {resumen.utilidad >= 0 ? 'ganamos' : 'perdimos'} <strong>{millones(Math.abs(resumen.utilidad))}</strong>,
-          {' '}<span className={resumen.utilidad >= 0 ? 'pct-bien' : 'pct-mal'}>{pct(resumen.utilidad, resumen.ingresos)} de los ingresos</span>
-          {' '}<span className={`siio-chip ${cierre.tono}`}>{cierre.texto}</span>
-        </h2> : null}
-        {enCurso && resumen ? <p className="encurso">
-          {nombreMes(mesActual).split(' ')[0].replace(/^./, letra => letra.toUpperCase())} a hoy: <strong>{millones(enCurso.totales.ingresos)} facturados</strong>
-          {resumen.ingresos ? ` (${pct(enCurso.totales.ingresos, resumen.ingresos)} de lo de ${nombreMes(principal!).split(' ')[0]})` : ''}; la utilidad del mes se puede leer cuando se cause la nómina.
-        </p> : null}
-        {torre?.medido_en ? <p className="siio-nota">Avancys leído el {hora(torre.medido_en).replace(/\.$/, '')}{torre.desde_memoria ? ' (guardado)' : ''} · <button type="button" className="siio-enlace" onClick={() => void t.cargar(true)}>Volver a leer</button></p> : null}
-      </div>
-      {tendencia.length > 1 ? <figure className="siio-margenes">
-        <ol className={tendencia.some(o => o.r!.utilidad < 0) ? 'con-perdidas' : undefined} aria-label="Margen de cada mes; pulse un mes para verlo en Resultados">
-          {tendencia.map(o => {
-            const valor = o.r!.utilidad / o.r!.ingresos;
-            const alto = Math.max(2, Math.round((Math.abs(valor) / maximo) * 26));
-            return <li key={o.mes} className={[o.mes === principal ? 'act' : '', valor < 0 ? 'neg' : '', o.fuente === 'oficial' ? 'excel' : ''].join(' ').trim()}>
-              <button type="button" title={`${nombreMes(o.mes)} · ${o.etiqueta} · ${pct(o.r!.utilidad, o.r!.ingresos)}`} onClick={() => onIr('resultados', o.mes)}>
-                <span className="cifra">{(Math.round(valor * 1000) / 10).toLocaleString('es-CO').replace('-', '−')}</span>
-                <span className="arriba"><i style={{ height: valor >= 0 ? `${alto}px` : 0 }} /></span>
-                <span className="abajo"><i style={{ height: valor < 0 ? `${alto}px` : 0 }} /></span>
-                <span className="nombre">{nombreMes(o.mes).slice(0, 3)}</span>
-              </button>
-            </li>;
-          })}
-        </ol>
-        <figcaption>Margen de cada mes, %{hastaExcel && desdeAvancys ? <> · hasta {nombreMes(hastaExcel).slice(0, 3)}, cierre de Finanzas (Excel); desde {nombreMes(desdeAvancys).slice(0, 3)}, Avancys</> : null}</figcaption>
-      </figure> : null}
-    </section>
-    <div className="siio-bloques">
-      <BloqueClientes t={t} onIr={onIr} />
-      <BloqueCartera t={t} onIr={onIr} />
-      <BloquePresupuesto t={t} onIr={onIr} />
+    <div className="siio-portada-cabeza">
+      <p><strong>{nombre(principal).replace(/^./, letra => letra.toUpperCase())}</strong> · {cierre?.texto.toLowerCase()}{cierre && cierre.tono !== 'cerrado' && cierre.tono !== 'finanzas' ? ' (Contabilidad)' : ''} · cifras de Avancys{torre?.medido_en ? ` leídas el ${hora(torre.medido_en).replace(/\.$/, '')}` : ''} · <button type="button" className="siio-enlace" onClick={() => void t.cargar(true)}>Volver a leer</button></p>
+      {enCurso && r.ingresos ? <p className="siio-nota">{nombre(mesActual).replace(/^./, letra => letra.toUpperCase())} a hoy: <strong>{millones(enCurso.totales.ingresos)}</strong> facturados ({pct(enCurso.totales.ingresos, r.ingresos)} de {nombre(principal)})</p> : null}
     </div>
+    <section className="siio-panel siio-cifras-portada" aria-label={`Cómo nos fue en ${nombre(principal)}`}>
+      <button type="button" className="siio-cifra-portada" onClick={() => onIr('resultados', principal)}>
+        <span className="pregunta">¿Ganamos plata?</span>
+        <span className={`valor${r.utilidad < 0 ? ' mal' : ''}`}>{millones(r.utilidad)}</span>
+        <span className={`referencia ${r.utilidad < 0 || (puntos !== null && puntos < 0) ? 'mal' : 'bien'}`}>{pct(r.utilidad, r.ingresos)} del ingreso{puntos !== null ? <i> {puntos >= 0 ? '▲' : '▼'} {Math.abs(Math.round(puntos * 10) / 10).toLocaleString('es-CO')} pts frente a {nombre(previo)}</i> : null}</span>
+        <TendenciaMargen t={t} hasta={principal} />
+      </button>
+      <button type="button" className="siio-cifra-portada" onClick={() => onIr('cartera')}>
+        <span className="pregunta">¿Nos están pagando?</span>
+        {c?.vencido && c.total ? <>
+          <span className="valor">{millones(c.vencido.saldo)}</span>
+          <span className={`referencia ${parteVencida !== null && parteVencida >= CARTERA_VENCIDA_MAL ? 'mal' : 'bien'}`}>vencidos · {pct(c.vencido.saldo, c.total.saldo)} de lo que nos deben</span>
+          <span className="detalle">{millones(mas30)} con más de 30 días{c.heredado_yeminus?.saldo ? `; ${millones(c.heredado_yeminus.saldo)} viene de Yeminus sin cobrar` : ''}.</span>
+          <span className={`estado ${parteVencida !== null && parteVencida >= CARTERA_VENCIDA_MAL ? 'mal' : 'bien'}`} />
+        </> : <span className="detalle">{c?.error ? `No se pudo leer la cartera: ${c.error}` : 'Sin datos de cartera.'}</span>}
+      </button>
+      <button type="button" className="siio-cifra-portada" onClick={() => onIr('clientes')}>
+        <span className="pregunta">¿Quién nos hace perder?</span>
+        {clientes === 'cargando' ? <span className="detalle">Leyendo los clientes de {nombre(principal)} en Avancys…</span>
+          : !k ? <span className="detalle">Sin el detalle por cliente de {nombre(principal)}.</span>
+          : <>
+            <span className={`valor${pierden.length ? ' mal' : ''}`}>{pierden.length ? millones(suma) : '$0'}</span>
+            <span className={`referencia ${pierden.length ? 'mal' : 'bien'}`}>{pierden.length === 1 ? '1 cliente pierde plata' : `${pierden.length} clientes pierden plata`}{antes ? <i> · {nombre(previo).slice(0, 3)}: {antes.pierden.length} · {millones(antes.suma)}</i> : null}</span>
+            {pierden.length ? <span className="detalle">El mayor, {sinCodigo(pierden[0].cliente)}: {pct(pierden[0].ingresos, k.ingresos_clientes ?? 0)} del ingreso y deja {millones(pierden[0].margen)}.</span> : null}
+            <span className={`estado ${pierden.length ? 'mal' : 'bien'}`} />
+          </>}
+      </button>
+      <button type="button" className="siio-cifra-portada" onClick={() => onIr('comercial')}>
+        <span className="pregunta">¿El forecast está al día?</span>
+        {forecast && alDia !== null ? <>
+          <span className="valor">{Math.round(alDia * 100)} %</span>
+          <span className={`referencia ${alDia < 0.5 ? 'mal' : 'bien'}`}>{forecast.abiertas - forecast.sinGestion} de {forecast.abiertas} leads gestionados en {forecast.dias} días</span>
+          {forecast.nadie.length ? <span className="detalle">{forecast.nadie.length === 1 ? `${forecast.nadie[0]}: ningún lead al día.` : `${forecast.nadie.slice(0, -1).join(', ')} y ${forecast.nadie[forecast.nadie.length - 1]}: ningún lead al día.`}</span> : null}
+          <span className={`estado ${alDia < 0.5 ? 'mal' : 'bien'}`} />
+        </> : <span className="detalle">Leyendo el CRM…</span>}
+      </button>
+    </section>
   </>;
 }
 
-function Bloque({ pregunta, chip, cifra, children, ver, onVer }: { pregunta: string; chip?: React.ReactNode; cifra: React.ReactNode; children: React.ReactNode; ver: string; onVer: () => void }) {
-  return <section className="siio-bloque" aria-label={pregunta}>
-    <h3>{pregunta}{chip ? <> {chip}</> : null}</h3>
-    {cifra ? <strong>{cifra}</strong> : null}
-    {children}
-    <button type="button" className="siio-link-button" onClick={onVer}>{ver} →</button>
-  </section>;
-}
-
-// Los bloques hablan del mismo mes que la frase (Juan, 2026-11-15). La rentabilidad del último mes cerrado viene con la
-// Torre; la del mes principal, si es otro, se pide aparte con la misma ruta de la pestaña Clientes.
-function BloqueClientes({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre) => void }) {
-  const principal = mesPrincipal(t);
-  const cerrado = t.torre?.mes_cerrado || null;
-  const [otro, setOtro] = useState<Clientes | 'cargando' | 'error' | null>(null);
-  useEffect(() => {
-    if (!principal || principal === cerrado) return;
-    let vivo = true;
-    setOtro('cargando');
-    api<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(principal)}`)
-      .then(datos => { if (vivo) setOtro(datos); })
-      .catch(() => { if (vivo) setOtro('error'); });
-    return () => { vivo = false; };
-  }, [principal, cerrado]);
-  const delPrincipal = principal && principal !== cerrado && typeof otro === 'object' && otro?.legible;
-  const k = delPrincipal ? otro as Clientes : t.torre?.clientes;
-  const mesDatos = delPrincipal ? principal : cerrado;
-  const conIngreso = (k?.clientes || []).filter(fila => fila.ingresos > 0);
-  const pierden = conIngreso.filter(fila => fila.margen < 0).sort((a, b) => b.ingresos - a.ingresos);
-  const mes = nombreMes(mesDatos).split(' ')[0];
-  const cierre = mesDatos ? cierreDe(t, mesDatos) : null;
-  const chip = cierre ? <span className={`siio-chip ${cierre.tono}`}>{cierre.texto}</span> : null;
-  if (otro === 'cargando' && !delPrincipal) return <Bloque pregunta="¿Quién nos hace perder?" cifra="—" ver="Ver clientes" onVer={() => onIr('clientes')}><p>Leyendo los clientes de {nombreMes(principal).split(' ')[0]} en Avancys…</p></Bloque>;
-  if (!k?.legible) return <Bloque pregunta="¿Quién nos hace perder?" cifra="—" ver="Ver clientes" onVer={() => onIr('clientes')}><p>Sin el detalle por cliente de {nombreMes(principal).split(' ')[0]}.</p></Bloque>;
-  return <Bloque pregunta="¿Quién nos hace perder?" chip={chip} cifra={<>{pierden.length === 1 ? '1 cliente' : `${pierden.length} clientes`} · <em style={{ fontStyle: 'normal', color: 'var(--mal)' }}>{millones(pierden.reduce((suma, fila) => suma + fila.margen, 0))}</em></>} ver="Ver clientes" onVer={() => onIr('clientes')}>
-    <p>{pierden.length ? <>En {mes}. El más grande: {sinCodigo(pierden[0].cliente)} ({pct(pierden[0].ingresos, k.ingresos_clientes ?? 0)} del ingreso).</> : <>Ningún cliente pierde plata en {mes}.</>}{otro === 'error' && !delPrincipal ? ` No se pudo leer ${nombreMes(principal).split(' ')[0]}; se muestra ${mes}.` : ''}</p>
-  </Bloque>;
-}
-
-
-function BloqueCartera({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre) => void }) {
-  const c = t.torre?.cartera;
-  if (!c?.total || !c.vencido) return <Bloque pregunta="¿Nos están pagando?" cifra="—" ver="Ver cartera" onVer={() => onIr('cartera')}><p>{c?.error ? `No se pudo leer la cartera: ${c.error}` : 'Sin datos de cartera.'}</p></Bloque>;
-  const total = c.total.saldo || 1;
-  return <Bloque pregunta="¿Nos están pagando?" cifra={`${millones(c.vencido.saldo)} vencidos`} ver="Ver cartera" onVer={() => onIr('cartera')}>
-    <div className="siio-barra" role="img" aria-label={`Cartera por antigüedad: ${[{ tramo: 'Al día', saldo: total - c.vencido.saldo }, ...(c.tramos || [])].map(x => `${x.tramo} ${millones(x.saldo)}`).join(', ')}`}>
-      <span className="al-dia" style={{ width: `${((total - c.vencido.saldo) / total) * 100}%` }} />
-      {(c.tramos || []).map((tramo, indice) => <span key={tramo.tramo} className={`t${Math.min(indice + 1, 4)}`} style={{ width: `${(tramo.saldo / total) * 100}%` }} />)}
-    </div>
-    <p>{pct(c.vencido.saldo, c.total.saldo)} de lo que nos deben ({millones(c.total.saldo)}).{(c.tramos || []).slice(1).some(tramo => tramo.saldo > 0) ? ` Más de 30 días: ${millones((c.tramos || []).slice(1).reduce((suma, tramo) => suma + tramo.saldo, 0))}.` : ''}</p>
-  </Bloque>;
-}
-
-function BloquePresupuesto({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre) => void }) {
-  const principal = mesPrincipal(t);
-  const fila = (principal && t.torre?.presupuesto?.meses?.[principal]) || mesComparable(t.torre?.presupuesto || null, t.torre?.mes_cerrado || '9999-12');
-  const cierre = fila ? cierreDe(t, fila.mes) : null;
-  // La rentabilidad de tecnología mes a mes, para que se vea el salto que hay que confirmar con Finanzas.
-  const historialTecnologia = Object.values(t.torre?.presupuesto?.meses || {})
-    .filter(m => m.tecnologia?.rentabilidad !== null && m.tecnologia?.rentabilidad !== undefined && (!fila || m.mes <= fila.mes))
-    .sort((x, y) => x.mes.localeCompare(y.mes)).slice(-3)
-    .map(m => `${nombreMes(m.mes).split(' ')[0]} ${(m.tecnologia.rentabilidad as number).toLocaleString('es-CO')} %`).join(', ');
-  if (!fila) return <Bloque pregunta="¿Vamos dentro del presupuesto?" cifra="—" ver="Ver presupuesto" onVer={() => onIr('resultados')}><p>{t.torre?.presupuesto?.motivo || 'Todavía no hay un mes cerrado para comparar.'}</p></Bloque>;
-  const unidades = [['Vigilancia', fila.vigilancia], ['Tecnología', fila.tecnologia]] as const;
-  const pasados = fila.vigilancia.rubros.filter(rubro => rubro.diferencia !== null && rubro.diferencia >= 0.5).sort((a, b) => (b.diferencia || 0) - (a.diferencia || 0)).slice(0, 4);
-  return <Bloque pregunta="¿Vamos dentro del presupuesto?" chip={<span className="siio-chip confirmar">Por confirmar</span>} cifra={null} ver="Ver presupuesto" onVer={() => onIr('resultados')}>
-    <div className="siio-metas">
-      {unidades.map(([nombre, u]) => {
-        const real = u.rentabilidad ?? 0;
-        const meta = u.rentabilidad_presupuesto;
-        const escala = Math.max(Math.abs(real), Math.abs(meta ?? 0), 1);
-        return <Fragment key={nombre}>
-          <span>{nombre}</span>
-          <span className="siio-meta-linea"><b className={meta !== null && real < meta ? 'mal' : ''} style={{ width: `${Math.max(0, (real / escala) * 100)}%` }} />{meta !== null ? <u style={{ left: `${Math.min(100, (meta / escala) * 100)}%` }} /> : null}</span>
-          <span className="siio-num"><strong>{u.rentabilidad === null ? '—' : `${u.rentabilidad.toLocaleString('es-CO')} %`}</strong>{meta !== null ? <span className="meta"> / {meta.toLocaleString('es-CO')} %</span> : null}{nombre === 'Tecnología' ? <small className="por-confirmar"> · por confirmar</small> : null}</span>
-        </Fragment>;
-      })}
-    </div>
-    <p>{nombreMes(fila.mes).replace(/^./, letra => letra.toUpperCase()).split(' ')[0]}{cierre && cierre.tono !== 'cerrado' ? ` (${cierre.texto.toLowerCase()})` : ''}. {pasados.length ? <>Se pasan en vigilancia: {pasados.slice(0, 2).map(rubro => `${rubro.etiqueta.toLowerCase()} (+${(rubro.diferencia || 0).toLocaleString('es-CO')} pts)`).join(', ')}.</> : 'Ningún rubro de vigilancia se pasa del presupuesto.'} Tecnología, por confirmar con Finanzas: {historialTecnologia || 'sin meses para comparar'}; el salto sugiere costos que no están en sus cuentas.</p>
-  </Bloque>;
+// El margen de los últimos meses con la cifra de cada uno, el mes de la portada resaltado y la línea del presupuesto
+// (de vigilancia, que es casi todo el ingreso) si existe.
+function TendenciaMargen({ t, hasta }: { t: TorreAvancys; hasta: string }) {
+  const meses = t.opciones.filter(o => o.mes <= hasta).slice(-MESES_TENDENCIA)
+    .map(o => ({ mes: o.mes, r: t.realDe(o.mes) })).filter(o => o.r && o.r.ingresos)
+    .map(o => ({ mes: o.mes, v: Math.round((o.r!.utilidad / o.r!.ingresos) * 1000) / 10 }));
+  if (meses.length < 2) return null;
+  const ppto = t.torre?.presupuesto?.meses?.[hasta]?.vigilancia?.rentabilidad_presupuesto ?? null;
+  const valores = [...meses.map(m => m.v), ...(ppto !== null ? [ppto] : []), 0];
+  const alto = Math.max(...valores), bajo = Math.min(...valores);
+  const y = (v: number) => Math.round((16 + ((alto - v) / Math.max(1, alto - bajo)) * 50) * 10) / 10;
+  const x = (i: number) => Math.round(20 + (i * 260) / (meses.length - 1));
+  const cifra = (v: number) => v.toLocaleString('es-CO').replace('-', '−');
+  return <svg viewBox="0 0 300 94" width="100%" height="94" role="img" aria-label={`Margen de cada mes, %: ${meses.map(m => `${nombreMes(m.mes)} ${cifra(m.v)}`).join(', ')}`}>
+    {ppto !== null ? <><line x1="0" x2="300" y1={y(ppto)} y2={y(ppto)} className="ppto" /><text x="300" y={y(ppto) + 12} textAnchor="end" className="ppto-texto">presupuesto {cifra(ppto)} %</text></> : null}
+    {bajo < 0 ? <line x1="0" x2="300" y1={y(0)} y2={y(0)} className="cero" /> : null}
+    <polyline points={meses.map((m, i) => `${x(i)},${y(m.v)}`).join(' ')} className="linea" />
+    {meses.map((m, i) => i === meses.length - 1
+      ? <g key={m.mes}><circle cx={x(i)} cy={y(m.v)} r="4.5" className="punto" /><text x={x(i)} y={y(m.v) - 8} textAnchor="middle" className="cifra-act">{cifra(m.v)}</text></g>
+      : <text key={m.mes} x={x(i)} y={y(m.v) - 7} textAnchor="middle" className={m.v < 0 ? 'cifra mal' : 'cifra'}>{cifra(m.v)}</text>)}
+    {meses.map((m, i) => <text key={`n${m.mes}`} x={x(i)} y="90" textAnchor="middle" className="mes">{nombreMes(m.mes).slice(0, 3)}</text>)}
+  </svg>;
 }
 
 // Resultados (contrato de la maqueta, Fase 3): el selector de mes arriba; el estado de resultados con una

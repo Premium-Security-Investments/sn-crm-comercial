@@ -64,7 +64,7 @@ test('un solo conteo de días para la Portada, Resultados y Fuentes', async () =
   assert.equal(diasDesdeFinDeMes('2026-09', hoy), 45);
   assert.equal(diasDesdeFinDeMes('2026-10', hoy), 14);
   const torre = readFileSync(new URL('../src/siio/SiioTorreAvancys.tsx', import.meta.url), 'utf8');
-  assert.equal((torre.match(/diasDesdeFinDeMes\(/g) || []).length, 3, 'la alerta de bloqueo, la nota de Resultados y el chip de cierre de la Portada usan el mismo conteo');
+  assert.ok((torre.match(/diasDesdeFinDeMes\(/g) || []).length >= 3, 'la alerta de bloqueo, la nota de Resultados y el chip de cierre usan el mismo conteo');
   assert.doesNotMatch(torre, /finDeMes = /);
 });
 

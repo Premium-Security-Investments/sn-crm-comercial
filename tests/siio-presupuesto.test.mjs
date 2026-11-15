@@ -64,7 +64,7 @@ test('la Torre entra al mes anterior; la Portada juzga a los clientes en el mes 
   const torre = read('src/siio/SiioTorreAvancys.tsx');
   assert.match(torre, /const mes = mesElegido \|\| \(opciones\.some\(o => o\.mes === anterior\) \? anterior : enVivo\) \|\|/);
   // Juan, 2026-11-15: los bloques hablan del mismo mes que la frase; si ese mes no se puede leer, el último cerrado.
-  assert.match(torre, /const k = delPrincipal \? otro as Clientes : t\.torre\?\.clientes;/);
+  assert.match(torre, /return mes === cerrado \? t\.torre\?\.clientes \|\| null : otro;/);
   assert.match(read('server/index.js'), /agregarPresupuesto\(requireDb\(\), await torreAvancys\(/);
 });
 
