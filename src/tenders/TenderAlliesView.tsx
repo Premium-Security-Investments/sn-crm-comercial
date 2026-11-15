@@ -71,7 +71,7 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
             </AllyRow>)}</tbody>
           </table></div>
           <nav className="pagination" aria-label="Páginas de aliados"><button className="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</button><span className="pagination-status">Página {page + 1} de {Math.max(1, Math.ceil(filtered.length / PAGE))}</span><button className="secondary" disabled={(page + 1) * PAGE >= filtered.length} onClick={() => setPage(page + 1)}>Siguiente</button></nav>
-          {payload.participations_without_nit.length > 0 && <details><summary>Participaciones sin NIT ({payload.participations_without_nit.length}): uniones temporales sin integrantes conocidos</summary>
+          {payload.participations_without_nit.length > 0 && <details><summary>Participaciones sin empresa identificada ({payload.participations_without_nit.length})</summary>
             <ul>{payload.participations_without_nit.map(item => <li key={item.id}>{item.company_label} · {item.process_ref} · {label(KINDS, item.kind)}{item.detail ? ` · ${item.detail}` : ''}</li>)}</ul></details>}
         </>}
       </>}
