@@ -3,8 +3,8 @@
 // histórica, de la tabla que se cargó desde SharePoint; los análisis y las actas, en vivo, así cada análisis nuevo entra
 // solo. «Cómo estamos hoy» sale de la ficha para sedes, indicadores y códigos.
 import { REQUIREMENT_MATRIX_PATH } from './requirement-history-import.js';
-import { FOCUS_STATUSES, REQUIREMENT_FOCUS, buildRequirementCatalog, buildRequirementFocus } from './requirement-catalog.js';
-import { assessRequirement } from './requirement-assessment.js';
+import { FOCUS_STATUSES, REQUIREMENT_FOCUS, buildRequirementCatalog, buildRequirementFocus, foldText } from './requirement-catalog.js';
+import { DEPARTMENTS, assessRequirement } from './requirement-assessment.js';
 import { TENDER_OPPORTUNITY_CLOSED_COMMERCIAL_STAGES } from './tender-opportunity-stage.js';
 
 function fail(message, status) { return Object.assign(new Error(message), { status }); }
@@ -93,16 +93,36 @@ const numberFrom = raw => {
   return Number(/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(text) ? text.replace(/\./g, '').replace(',', '.') : text.replace(',', '.'));
 };
 
+const list = value => (Array.isArray(value) && value.length ? value.join(', ') : 'ninguna');
+/**
+ * Los datos de la ficha que se cargan desde la tarjeta (Juan, 2026-11-15; migración 220): el papel solo no los dice y
+ * deciden si un pliego nos inhabilita. `fact` es el nombre con que los lee requirement-assessment.js; `focus`, la tarjeta
+ * donde se cargan y cuyo «cómo estamos hoy» describen.
+ */
+export const REQUIREMENT_FACTS = Object.freeze([
+  { key: 'mintic_cobertura', fact: 'minticCobertura', focus: 'comunicaciones', kind: 'list', label: 'Zonas que cubre el permiso MinTIC (departamentos, o «nacional»)',
+    describe: value => `Nuestro permiso MinTIC cubre: ${list(value)}.` },
+  { key: 'red_apoyo_ciudades', fact: 'redApoyoCiudades', focus: 'red_apoyo', kind: 'list', label: 'Ciudades donde estamos inscritos en la Red de Apoyo',
+    describe: value => `Inscritos en la Red de Apoyo de: ${list(value)}.` },
+  { key: 'unidad_canina_ciudades', fact: 'caninaCiudades', focus: 'canino', kind: 'list', label: 'Ciudades con unidad canina autorizada',
+    describe: value => `Unidad canina autorizada en: ${list(value)}.` },
+  { key: 'armas_libres', fact: 'armasLibres', focus: 'armas', kind: 'number', label: 'Armas con salvoconducto a nombre de la empresa, libres para un contrato nuevo',
+    describe: value => `Tenemos ${value} armas con salvoconducto libres para un contrato nuevo.` },
+  { key: 'sgsst_puntaje', fact: 'sgsstPuntaje', focus: 'certificaciones', kind: 'number', label: 'Puntaje de la última autoevaluación del SG-SST (%)',
+    describe: value => `Autoevaluación del SG-SST: ${value} %.` },
+]);
+
 /**
  * La ficha de la empresa: el texto de «cómo estamos hoy» y los datos con que se cruzan los requisitos (indicadores,
  * códigos, sedes con el año de su resolución, licencia y documentos vigentes).
  */
 async function loadCompany(database) {
-  const [profile, sites, codes, documents] = await Promise.all([
+  const [profile, sites, codes, documents, requirementFacts] = await Promise.all([
     database.from('psi_company_procurement_profile').select('financial_capacity,organizational_capacity,supervigilancia_license').limit(1).maybeSingle(),
     database.from('psi_company_sites').select('city,is_main,supervigilancia_authorization'),
     database.from('psi_company_rup_codes').select('codigo'),
     database.from('psi_company_procurement_documents').select('document_type,display_name,expires_at').eq('current', true),
+    database.from('psi_company_requirement_facts').select('fact_key,value,note,updated_at'),
   ]);
   const live = {};
   const facts = { codes: [], mainCity: null, agencies: [], documents: [] };
@@ -141,7 +161,15 @@ async function loadCompany(database) {
   }
   if (!documents.error) facts.documents = (documents.data || []).filter(row => !row.expires_at || String(row.expires_at) >= new Date().toISOString().slice(0, 10))
     .map(row => ({ type: row.document_type, name: row.display_name || '' }));
-  return { live, facts };
+  // Los datos que se cargan desde la tarjeta (migración 220). Sin la tabla, la ficha sigue como antes.
+  const saved = {};
+  if (!requirementFacts.error) for (const row of requirementFacts.data || []) saved[row.fact_key] = row.value;
+  for (const spec of REQUIREMENT_FACTS) {
+    if (!Object.hasOwn(saved, spec.key)) continue;
+    facts[spec.fact] = saved[spec.key];
+    live[spec.focus] = spec.describe(saved[spec.key]);
+  }
+  return { live, facts, saved };
 }
 
 // La base entrega a lo sumo 1.000 filas por consulta aunque se pidan más: con las filas `crm-…` la matriz pasó de 1.000
@@ -195,7 +223,8 @@ export async function loadRequirementsBoard(database) {
   if (stateError && !absent(stateError)) throw stateError;
   const focus = buildRequirementFocus(catalog, { state: state || [], opportunities: windows }).map(item => ({ ...item, live_state: item.live ? company.live[item.live] || null : null }));
   const loaded = (matriz || [])[0] || null;
-  return { installed: !stateError, crm_processes: latest.size, focus, catalog,
+  const companyFacts = Object.fromEntries(REQUIREMENT_FACTS.map(spec => [spec.key, company.saved[spec.key] ?? null]));
+  return { installed: !stateError, crm_processes: latest.size, focus, company_facts: companyFacts, catalog,
     matrix: { path: REQUIREMENT_MATRIX_PATH, rows: (matriz || []).length, loaded_at: loaded?.loaded_at || null, source_modified_at: loaded?.source_modified_at || null } };
 }
 
@@ -212,6 +241,33 @@ export async function saveRequirementFocus(database, input, actorId) {
   if (error) {
     if (absent(error)) throw fail('La pestaña de requisitos aún no está habilitada (falta aplicar la migración 215).', 409);
     if (String(error?.code || '') === '23514') throw fail('Este grupo todavía no se puede guardar (falta aplicar la migración 218).', 409);
+    throw error;
+  }
+  return data;
+}
+
+const DEPARTMENT_NAMES = new Map(Object.keys(DEPARTMENTS).map(name => [foldText(name), name]));
+/** Guarda un dato de la ficha cargado desde la tarjeta. Las zonas MinTIC se escriben como departamentos o «nacional». */
+export async function saveRequirementFact(database, input, actorId) {
+  const spec = REQUIREMENT_FACTS.find(item => item.key === String(input?.fact_key || ''));
+  if (!spec) throw fail('El dato no es válido.', 400);
+  let value;
+  if (spec.kind === 'number') {
+    value = Number(String(input?.value ?? '').replace(',', '.'));
+    if (String(input?.value ?? '').trim() === '' || !Number.isFinite(value) || value < 0 || value > 100000) throw fail('Escriba un número.', 400);
+  } else {
+    const raw = Array.isArray(input?.value) ? input.value : String(input?.value || '').split(/[,;\n]/);
+    value = [...new Set(raw.map(item => String(item).trim()).filter(Boolean))].slice(0, 60);
+    if (spec.key === 'mintic_cobertura') {
+      const unknown = value.filter(item => foldText(item) !== 'nacional' && !DEPARTMENT_NAMES.has(foldText(item)));
+      if (unknown.length) throw fail(`No reconozco como departamento: ${unknown.join(', ')}. Escriba el departamento (p. ej. Risaralda, Bogotá D.C.) o «nacional».`, 400);
+      value = value.map(item => (foldText(item) === 'nacional' ? 'nacional' : DEPARTMENT_NAMES.get(foldText(item))));
+    }
+  }
+  const row = { fact_key: spec.key, value, note: clip(input?.note, 500), updated_by: actorId, updated_at: new Date().toISOString() };
+  const { data, error } = await database.from('psi_company_requirement_facts').upsert(row, { onConflict: 'fact_key' }).select('fact_key,value,note,updated_at').single();
+  if (error) {
+    if (absent(error)) throw fail('Todavía no se pueden guardar datos de la ficha (falta aplicar la migración 220).', 409);
     throw error;
   }
   return data;

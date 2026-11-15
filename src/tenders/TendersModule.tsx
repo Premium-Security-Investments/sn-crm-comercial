@@ -23,7 +23,7 @@ export function TendersModule(props: TendersModuleProps) {
     {props.view === 'seguimiento' && <TenderTrackingView {...props} moduleNavigation={moduleNavigation} />}
     {props.view === 'oportunidades' && <TenderOpportunitiesView {...props} moduleNavigation={moduleNavigation} />}
     {props.view === 'configuracion' && <TenderConfigurationView {...props} moduleNavigation={moduleNavigation} canConfigure={canConfigure} canManageDocuments={canManageDocuments} />}
-    {props.view === 'requisitos' && <TenderRequirementsView {...props} moduleNavigation={moduleNavigation} />}
+    {props.view === 'requisitos' && <TenderRequirementsView {...props} moduleNavigation={moduleNavigation} canConfigure={canConfigure} canManageDocuments={canManageDocuments} />}
     {props.view === 'aliados' && <TenderAlliesView {...props} moduleNavigation={moduleNavigation} />}
     {props.view === 'lecciones' && <TenderLessonsView {...props} moduleNavigation={moduleNavigation} canManageLessons={canManageTenderLessons(props.data.currentProfile)} />}
   </section>;
