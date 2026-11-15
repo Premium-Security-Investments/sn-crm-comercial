@@ -152,6 +152,9 @@ export function assessRequirement({ type, text, quote = '', process = '' }, comp
       return { verdict: 'cumple', reason: `Licencia vigente hasta ${company.licenseUntil || '2029'} con vigilancia fija, móvil, escolta, con y sin armas, medio tecnológico y canino.` };
     case 'licencia_comunicaciones':
       if (/(cobertura|nivel|registro|ambito|alcance) nacional|todo el territorio nacional/.test(folded) && !/nacional (o|y\/o) (en|del)/.test(folded)) return { verdict: 'inhabilita', reason: 'Piden cobertura o registro nacional de telecomunicaciones; nuestro permiso de espectro no es nacional (en Terminal no cubría Bogotá).' };
+      // Nuestro permiso es de Risaralda: si el pliego sólo pide cobertura allí, cumplimos (Juan, 2026-11-15: Pereira salía
+      // «por confirmar»).
+      if (/risaralda|pereira|dosquebradas/.test(folded) && !/nacional|bogota|caldas|manizales|atlantico|barranquilla|antioquia|medellin|valle|cali\b|tolima|ibague|quindio|armenia|cundinamarca|santander|boyaca|huila|meta\b|cesar|guajira|riohacha/.test(folded)) return { verdict: 'cumple', reason: 'Nuestro permiso de espectro cubre Risaralda.' };
       if (/frecuencias? (minimas|para)|cobertura en|\ben (riohacha|ibague|tolima)\b|espectro radioelectrico en/.test(folded)) return { verdict: 'verificar', reason: 'Tenemos permiso de espectro y Registro TIC; hay que confirmar la cobertura que piden (en Terminal no cubría Bogotá).' };
       return has(company, 'communications_license') ? { verdict: 'cumple', reason: 'Permiso de espectro (Res. MinTIC 01535 de 2026) y Registro TIC.' } : { verdict: 'verificar', reason: 'La ficha no tiene licencia de comunicaciones.' };
     case 'canina':

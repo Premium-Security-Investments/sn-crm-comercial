@@ -157,34 +157,57 @@ export function isRequirementFragment(text) {
 // sede o sucursal, un código en el RUP, un registro o una licencia—, para que Katherine decida si se inicia el trámite y
 // en el futuro no nos inhabiliten por eso. Los papeles que se renuevan (Cámara de Comercio, RUP con fecha nueva,
 // certificados, garantía de seriedad) no van: se sacan en minutos. Un grupo aparece sólo si algún requisito suyo nos
-// inhabilita según la ficha, o un análisis o un acta lo marcó como bloqueo. `fix` es la propuesta inicial.
+// inhabilita según la ficha, o un análisis o un acta lo marcó como bloqueo.
+//
+// Cada tarjeta se lee sola, sin abrir el pliego (Juan, 2026-11-15): `asks` dice en palabras simples qué exigen los
+// pliegos; `today`, cómo estamos (cuando no sale de la ficha, `live`); `fix`, qué hay que hacer exactamente —el trámite,
+// ante quién y cuánto demora si se sabe—. Los tres son la propuesta inicial: la persona los puede corregir en «Decidir».
 export const REQUIREMENT_FOCUS = Object.freeze([
-  { key: 'presencia', title: 'Sede, sucursal o agencia en la ciudad', types: ['presencia_local'], live: 'sedes',
-    fix: 'Decidir en qué ciudades abrir sucursal o convertir la agencia en sucursal (las agencias no sirven cuando piden sucursal), empezando por las que más se repiten; mientras tanto, socio en unión temporal.' },
+  { key: 'presencia', title: 'Sede principal o sucursal en la ciudad del contrato', types: ['presencia_local'], live: 'sedes',
+    asks: 'Que la empresa tenga su domicilio principal o una sucursal inscrita en la ciudad del contrato. Cuando el pliego dice «sucursal», una agencia no sirve: la agencia no tiene administrador propio ni representa a la empresa.',
+    fix: 'Decidir en qué ciudades abrir sucursal, empezando por la que más procesos pide (Bogotá). Abrirla requiere decisión de la junta, nombrar un administrador, inscribirla en la Cámara de Comercio y que la Supervigilancia la autorice. Mientras tanto, para cada proceso: socio en unión temporal que tenga la sucursal.' },
   { key: 'codigos', title: 'Códigos UNSPSC que no tenemos en el RUP', types: ['codigos_unspsc'], live: 'codigos',
+    asks: 'Que el RUP tenga inscritos los códigos del clasificador UNSPSC que exige el pliego (cada código es un tipo de bien o servicio), o un número mínimo de códigos.',
     fix: 'Actualizar el RUP en la Cámara de Comercio de Pereira para agregar el código que falta, empezando por el 46101500 (armas de fuego). La actualización queda en firme 10 días hábiles después de publicada: hay que hacerla con tiempo antes del cierre del proceso que lo pida.' },
-  { key: 'comunicaciones', title: 'Registro o permiso de telecomunicaciones nacional', types: ['licencia_comunicaciones'], live: null,
-    fix: 'Tramitar ante MinTIC la ampliación del permiso de espectro a cobertura nacional.' },
+  { key: 'comunicaciones', title: 'Permiso de comunicaciones (MinTIC) fuera de Risaralda', types: ['licencia_comunicaciones'], live: null,
+    asks: 'Permiso de MinTIC para usar frecuencias de radio que cubra las ciudades del contrato, o cobertura nacional. Algunos pliegos aceptan en su lugar el contrato con un operador de cobertura nacional (celular o radio por internet, PoC).',
+    today: 'Tenemos permiso de espectro MinTIC (Res. 01535 de 2026) y Registro TIC, solo para Risaralda.',
+    fix: 'Solicitar a MinTIC la ampliación del permiso de espectro a las zonas donde más licitamos (Bogotá primero, o cobertura nacional). Mientras sale: en cada proceso que lo admita, contrato con un operador de cobertura nacional; si no lo admite, socio con permiso en esa zona.' },
   { key: 'importador', title: 'Registro de importador, comercializador o distribuidor de equipos', types: ['registro_tecnologia'], live: null,
-    fix: 'Inscribirse ante la Supervigilancia como importador o comercializador de equipos de vigilancia, si vamos a licitar procesos de tecnología.' },
-  { key: 'canino', title: 'Sede canina (criadero) autorizada', types: ['canina'], live: null,
-    fix: 'Obtener la resolución de la Supervigilancia para una sede canina (criadero) en Pereira.' },
+    asks: 'Registro ante la Supervigilancia como importador, comercializador o distribuidor de equipos de vigilancia. Lo piden los procesos de tecnología.',
+    today: 'La ficha no tiene ese registro.',
+    fix: 'Si vamos a licitar procesos de tecnología: inscribirse ante la Supervigilancia como comercializador de equipos de vigilancia.' },
+  { key: 'canino', title: 'Unidad o sede canina autorizada', types: ['canina'], live: null,
+    asks: 'Una unidad canina con resolución de la Supervigilancia y un mínimo de perros, a veces a pocos kilómetros de la ciudad del contrato, y perros de detección certificados.',
+    today: 'La licencia incluye el medio canino, pero la ficha no registra una sede canina propia autorizada.',
+    fix: 'Obtener la resolución de la Supervigilancia para una sede canina propia en Pereira. Mientras tanto, cuando el pliego lo permita: subcontratar una unidad canina autorizada en la ciudad del contrato.' },
   { key: 'financiero', title: 'Indicadores financieros por debajo de lo que piden', types: ['liquidez', 'endeudamiento', 'cobertura_intereses', 'rentabilidad', 'capital_trabajo', 'patrimonio', 'capacidad_residual', 'estados_financieros'], live: 'financiero',
-    fix: 'Revisar con Financiero si al próximo corte se puede subir la liquidez a 2,5 o más y bajar el endeudamiento del 50 %; mientras tanto, socio con buenos indicadores en unión temporal.' },
-  { key: 'certificaciones', title: 'Certificaciones que no tenemos', types: ['calidad_sst'], live: null,
-    fix: 'Decidir si se tramita la certificación que piden.' },
+    asks: 'Indicadores del RUP (liquidez, endeudamiento, cobertura de intereses, rentabilidad, capital de trabajo) iguales o mejores que el mínimo del pliego. Salen de los estados financieros del último corte.',
+    fix: 'Revisar con Financiero si al próximo corte se puede subir la liquidez a 2,5 o más y bajar el endeudamiento del 50 %. Mientras tanto, para cada proceso: socio con buenos indicadores en unión temporal.' },
+  { key: 'certificaciones', title: 'Certificaciones de calidad o de seguridad y salud en el trabajo', types: ['calidad_sst'], live: null,
+    asks: 'Certificaciones de calidad (ISO 9001, ISO 45001, etc.) o el resultado de la autoevaluación del SG-SST por encima de un puntaje mínimo.',
+    today: 'La ficha no tiene el resultado de la autoevaluación del SG-SST 2025.',
+    fix: 'Pedir a SST el resultado de la autoevaluación 2025 con su porcentaje, el registro en el aplicativo del Ministerio del Trabajo y la constancia de la ARL, y cargarlos en la ficha. Si un pliego pide una ISO que no tenemos, decidir si se contrata la certificación (toma meses).' },
   { key: 'horas_extras', title: 'Autorización de horas extras del Ministerio del Trabajo', types: ['horas_extras'], live: null,
-    fix: 'Confirmar si la tenemos; si no, solicitarla al Ministerio del Trabajo.' },
+    asks: 'Resolución del Ministerio del Trabajo que autoriza a la empresa a trabajar horas extras.',
+    today: 'La ficha no tiene esa autorización.',
+    fix: 'Confirmar con Talento Humano si la tenemos; si no, solicitarla al Ministerio del Trabajo.' },
   // Juan, 2026-11-13. Estos tres no se pueden medir contra la ficha: entran cuando un análisis, un acta o una persona
   // (bloqueo anotado) dicen que nos inhabilitan, y no van a «por confirmar» (casi todo pliego pide personal).
   // La experiencia no tiene tarjeta (Juan, 2026-11-15): acreditarla es pedir el certificado de cada contrato, o no hay
   // nada que tramitar; se trabaja en cada proceso.
-  { key: 'personal', title: 'Personal acreditado que no tenemos', types: ['personal_minimo', 'responsable_sst'], live: null, pending: false,
-    fix: 'Con Talento Humano: quién tiene credencial de consultor de la Supervigilancia, los años de vínculo y los cursos que piden; tramitar lo que falte.' },
-  { key: 'armas', title: 'Armas y salvoconductos a nombre de la empresa', types: ['armas'], live: null, pending: false,
-    fix: 'Con Operaciones: cuántas armas tenemos con salvoconducto a nombre de la empresa y en qué ciudad; si no alcanzan, comprar o trasladar.' },
+  { key: 'personal', title: 'Personal con credencial o perfil acreditado', types: ['personal_minimo', 'responsable_sst'], live: null, pending: false,
+    asks: 'Personas con perfil acreditado para dirigir o coordinar el contrato: credencial de consultor o asesor de la Supervigilancia, especialización, años de experiencia y, a veces, un tiempo mínimo de vinculación con la empresa.',
+    today: 'La ficha no registra quién de la empresa tiene credencial de consultor o asesor de la Supervigilancia.',
+    fix: '1) Talento Humano confirma quién tiene credencial de consultor o asesor y desde cuándo está vinculado. 2) Si nadie la tiene: escoger a la persona que cumpla el perfil y solicitar la acreditación ante la Supervigilancia; es un trámite con tarifa, no un curso. 3) Si piden especialización, es un título que la persona ya debe tener: si no, se escoge a otra.' },
+  { key: 'armas', title: 'Armas con salvoconducto a nombre de la empresa', types: ['armas'], live: null, pending: false,
+    asks: 'Un número mínimo de armas con salvoconducto vigente a nombre de la empresa y el listado del Departamento Control Comercio de Armas (DCCAE).',
+    today: 'La ficha no registra cuántas armas tenemos con salvoconducto ni cuántas están libres para un contrato nuevo.',
+    fix: 'Con Operaciones: contar las armas con salvoconducto vigente a nombre de la empresa, en qué ciudad están y cuántas quedan libres; registrarlo en la ficha. Si no alcanzan, comprar o trasladar.' },
   { key: 'red_apoyo', title: 'Red de Apoyo de la Policía en la ciudad', types: ['red_apoyo'], live: null,
-    fix: 'Confirmar en qué ciudades estamos inscritos en la Red de Apoyo de la Policía y registrarlo en la ficha; inscribirse donde haya procesos.' },
+    asks: 'Que la empresa esté inscrita en la Red de Apoyo y Solidaridad Ciudadana de la Policía de la ciudad del contrato.',
+    today: 'La ficha no dice en qué ciudades estamos inscritos.',
+    fix: 'Confirmar con cada agencia en qué ciudades estamos inscritos, pedir la constancia a la Policía y registrarlo en la ficha; inscribirse donde haya procesos.' },
 ]);
 export const FOCUS_STATUSES = Object.freeze({ por_decidir: 'Por decidir', iniciar: 'Iniciar trámite', en_tramite: 'En trámite', resuelto: 'Resuelto', no_por_ahora: 'No por ahora' });
 
@@ -284,9 +307,9 @@ export function buildRequirementFocus(catalog, { state = [], opportunities = new
     const list = [...processes.values()];
     const upcoming = list.filter(item => item.upcoming).sort((a, b) => String(a.deadline || '9999').localeCompare(String(b.deadline || '9999')));
     const row = saved.get(focus.key) || {};
-    return { key: focus.key, title: focus.title, types: focus.types, live: focus.live, processes: list, upcoming, past: list.filter(item => !item.upcoming),
+    return { key: focus.key, title: focus.title, types: focus.types, live: focus.live, asks: focus.asks, processes: list, upcoming, past: list.filter(item => !item.upcoming),
       blocked: list.filter(item => item.blocked).length,
-      status: row.status || 'por_decidir', owner: row.owner || null, note: row.note || null, current_state: row.current_state || null,
+      status: row.status || 'por_decidir', owner: row.owner || null, note: row.note || null, current_state: row.current_state || focus.today || null,
       fix_action: row.fix_action || focus.fix, updated_at: row.updated_at || null };
   }).filter(focus => focus.processes.length)
     .sort((a, b) => b.upcoming.length - a.upcoming.length || b.processes.length - a.processes.length);
