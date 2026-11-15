@@ -4,7 +4,7 @@ import { api } from '../apiClient';
 import { Badge } from './SiioUi';
 import { mesComparable, SiioPresupuesto } from './SiioPresupuesto';
 import type { FinancialPulse } from './financialPulse';
-import { diasDesdeFinDeMes } from './fuentesAlDia';
+import { diasDesdeFinDeMes, ultimoDia } from './fuentesAlDia';
 
 // Las dos preguntas de plata de la Torre (plan del 2026-11-12), en vivo desde Avancys:
 // ¿ganamos plata el mes pasado? y ¿qué clientes dejan y cuáles quitan?
@@ -138,19 +138,27 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
     const t = f.proyeccion ? f.proyeccion.totales : f.totales;
     return { ingresos: t.ingresos, costos: t.costos, gastos: t.gastos, utilidad: t.utilidad_ordinaria, fuente: f.proyeccion ? 'proyección con Avancys' : 'Avancys' };
   };
+  // Lo que el sistema tiene hoy del mes, sin proyección (Juan, 2026-11-15: la Portada muestra el mes anterior con sus
+  // cifras de hoy y dice si Contabilidad lo cerró).
+  const realDe = (m: string): Resumen | null => {
+    const o = oficialDe(m);
+    if (o) return resumenDe(m);
+    const f = pyg.find(fila => fila.mes === m);
+    if (!f) return null;
+    return { ingresos: f.totales.ingresos, costos: f.totales.costos, gastos: f.totales.gastos, utilidad: f.totales.utilidad_ordinaria, fuente: 'Avancys' };
+  };
   const indice = opciones.findIndex(o => o.mes === mes);
   const mesPrevio = indice > 0 ? opciones[indice - 1].mes : null;
 
   const antesDeAvancys = Boolean(torre?.primera_linea && mes && mes < torre.primera_linea.slice(0, 7));
   return {
-    estado, error, torre, cargar, opciones, mes, setMes: setMesElegido, opcion, resumen: resumenDe(mes), resumenDe, mesPrevio,
+    estado, error, torre, cargar, opciones, mes, setMes: setMesElegido, opcion, resumen: resumenDe(mes), resumenDe, realDe, oficialDe, mesPrevio,
     previo: mesPrevio ? resumenDe(mesPrevio) : null,
     antesDeAvancys, oficial,
   };
 }
 export type TorreAvancys = ReturnType<typeof useTorreAvancys>;
 
-const esEstimado = (o: OpcionMes | null) => o?.fuente === 'proyeccion' || o?.fuente === 'en_vivo';
 
 // Lo que pide una decisión hoy (contrato de la maqueta, Fase 3): cada fila arranca con la ficha del
 // plazo en el color de su urgencia, sigue la frase con lo clave en tinta, y cierra con responsable y
@@ -224,46 +232,70 @@ export function SiioRequiereDecision({ alertas, onIr }: { alertas: AlertaTorre[]
   </section>;
 }
 
-// La portada aprobada: la frase del último mes cerrado con los meses abiertos como estimados y la
-// tendencia mínima a la derecha; debajo, los tres bloques de pregunta.
+// Cómo está cerrado un mes: lo bloqueó Contabilidad en Avancys, lo cerró Finanzas con su Excel, o no tiene cierre formal
+// (y cuántos días lleva). Juan, 2026-11-15: «Sin cierre formal · 46 días», no «Cerrado» por una regla de la Torre.
+export function cierreDe(t: TorreAvancys, mes: string, hoy = new Date()): { tono: 'cerrado' | 'finanzas' | 'confirmar' | 'marca'; texto: string } {
+  const bloqueo = t.torre?.bloqueo_contable || null;
+  if (bloqueo && bloqueo >= ultimoDia(mes)) return { tono: 'cerrado', texto: 'Cerrado' };
+  if (t.oficialDe(mes)) return { tono: 'finanzas', texto: 'Cierre de Finanzas' };
+  const dias = diasDesdeFinDeMes(mes, hoy);
+  return { tono: dias > DIAS_SIN_CIERRE_MAL ? 'marca' : 'confirmar', texto: `Sin cierre formal · ${dias} ${dias === 1 ? 'día' : 'días'}` };
+}
+const DIAS_SIN_CIERRE_MAL = 30;
+const mesAnterior = (mes: string) => {
+  const [anio, numero] = mes.split('-').map(Number);
+  return numero === 1 ? `${anio - 1}-12` : `${anio}-${String(numero - 1).padStart(2, '0')}`;
+};
+
+// La portada (maqueta de la Fase 3, revisada con Juan el 2026-11-15): la frase del mes anterior con las cifras que el
+// sistema tiene hoy y su estado de cierre; el mes en curso, solo con lo facturado (la nómina se causa al cierre, así
+// que su utilidad a mitad de mes engaña); y el margen de cada mes con su cifra escrita.
 export function SiioPortada({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre, mes?: string) => void }) {
   const { torre, estado, error } = t;
-  const cerrado = torre?.mes_cerrado || null;
-  const resumen = cerrado ? t.resumenDe(cerrado) : null;
-  const abiertos = (torre?.pyg || []).filter(fila => fila.estado === 'parcial' && (!cerrado || fila.mes > cerrado)).sort((a, b) => b.mes.localeCompare(a.mes));
-  const tendencia = t.opciones.map(o => ({ ...o, r: t.resumenDe(o.mes) })).filter(o => o.r && o.r.ingresos);
+  const hoy = new Date();
+  const mesActual = hoy.toISOString().slice(0, 7);
+  const anterior = mesAnterior(mesActual);
+  const principal = t.realDe(anterior) ? anterior : torre?.mes_cerrado || null;
+  const resumen = principal ? t.realDe(principal) : null;
+  const cierre = principal ? cierreDe(t, principal, hoy) : null;
+  const enCurso = (torre?.pyg || []).find(fila => fila.mes === mesActual) || null;
+  const tendencia = t.opciones.filter(o => o.mes < mesActual).map(o => ({ ...o, r: t.realDe(o.mes) })).filter(o => o.r && o.r.ingresos);
   const maximo = Math.max(0.01, ...tendencia.map(o => Math.abs(o.r!.utilidad / o.r!.ingresos)));
+  const desdeAvancys = tendencia.find(o => o.fuente !== 'oficial')?.mes || null;
+  const hastaExcel = [...tendencia].reverse().find(o => o.fuente === 'oficial')?.mes || null;
   return <>
-    <section className="siio-panel siio-frase-mes" aria-label="Resultado del último mes cerrado">
+    <section className="siio-panel siio-frase-mes" aria-label="Resultado del mes anterior">
       <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
         {estado === 'cargando' && !resumen ? <p className="siio-secondary">Leyendo la contabilidad de Avancys…</p> : null}
         {estado === 'error' ? <p className="siio-alert-text">No se pudo leer Avancys: {error}</p> : null}
-        {resumen && cerrado ? <h2>
-          En {nombreMes(cerrado).split(' ')[0]} {resumen.utilidad >= 0 ? 'ganamos' : 'perdimos'} <strong>{millones(Math.abs(resumen.utilidad))}</strong>,
+        {resumen && principal && cierre ? <h2>
+          En {nombreMes(principal).split(' ')[0]} {resumen.utilidad >= 0 ? 'ganamos' : 'perdimos'} <strong>{millones(Math.abs(resumen.utilidad))}</strong>,
           {' '}<span className={resumen.utilidad >= 0 ? 'pct-bien' : 'pct-mal'}>{pct(resumen.utilidad, resumen.ingresos)} de los ingresos</span>
-          {' '}<span className="siio-chip cerrado">Cerrado</span>
+          {' '}<span className={`siio-chip ${cierre.tono}`}>{cierre.texto}</span>
         </h2> : null}
-        {abiertos.length ? <p className="encurso">{abiertos.map((fila, indice) => {
-          const r = t.resumenDe(fila.mes);
-          if (!r) return null;
-          const nombre = nombreMes(fila.mes).split(' ')[0];
-          return <Fragment key={fila.mes}>{indice ? ' · ' : ''}{fila.motivo === 'Mes en curso'
-            ? <>{nombre.replace(/^./, letra => letra.toUpperCase())} va en ≈ {millones(r.utilidad)} ({pct(r.utilidad, r.ingresos)})</>
-            : <><span className="plazo">{nombre} sigue abierto</span> (≈ {pct(r.utilidad, r.ingresos)})</>}</Fragment>;
-        })}.</p> : null}
+        {enCurso && resumen ? <p className="encurso">
+          {nombreMes(mesActual).split(' ')[0].replace(/^./, letra => letra.toUpperCase())} a hoy: <strong>{millones(enCurso.totales.ingresos)} facturados</strong>
+          {resumen.ingresos ? ` (${pct(enCurso.totales.ingresos, resumen.ingresos)} de lo de ${nombreMes(principal!).split(' ')[0]})` : ''}; la utilidad del mes se puede leer cuando se cause la nómina.
+        </p> : null}
         {torre?.medido_en ? <p className="siio-nota">Avancys leído el {hora(torre.medido_en).replace(/\.$/, '')}{torre.desde_memoria ? ' (guardado)' : ''} · <button type="button" className="siio-enlace" onClick={() => void t.cargar(true)}>Volver a leer</button></p> : null}
       </div>
-      {tendencia.length > 1 ? <ol className="siio-meses-mini" aria-label="Margen de cada mes; pulse un mes para verlo en Resultados">
-        {tendencia.map(o => {
-          const valor = o.r!.utilidad / o.r!.ingresos;
-          return <li key={o.mes} className={[o.mes === cerrado ? 'act' : '', valor < 0 ? 'neg' : '', esEstimado(o) ? 'est' : ''].join(' ').trim()}>
-            <button type="button" title={`${nombreMes(o.mes)} · ${o.etiqueta} · ${pct(o.r!.utilidad, o.r!.ingresos)}`} onClick={() => onIr('resultados', o.mes)}>
-              <span className="barra" style={{ height: `${Math.max(3, Math.round((Math.abs(valor) / maximo) * 28))}px` }} />
-              {nombreMes(o.mes).slice(0, 3)}
-            </button>
-          </li>;
-        })}
-      </ol> : null}
+      {tendencia.length > 1 ? <figure className="siio-margenes">
+        <ol className={tendencia.some(o => o.r!.utilidad < 0) ? 'con-perdidas' : undefined} aria-label="Margen de cada mes; pulse un mes para verlo en Resultados">
+          {tendencia.map(o => {
+            const valor = o.r!.utilidad / o.r!.ingresos;
+            const alto = Math.max(2, Math.round((Math.abs(valor) / maximo) * 26));
+            return <li key={o.mes} className={[o.mes === principal ? 'act' : '', valor < 0 ? 'neg' : '', o.fuente === 'oficial' ? 'excel' : ''].join(' ').trim()}>
+              <button type="button" title={`${nombreMes(o.mes)} · ${o.etiqueta} · ${pct(o.r!.utilidad, o.r!.ingresos)}`} onClick={() => onIr('resultados', o.mes)}>
+                <span className="cifra">{(Math.round(valor * 1000) / 10).toLocaleString('es-CO').replace('-', '−')}</span>
+                <span className="arriba"><i style={{ height: valor >= 0 ? `${alto}px` : 0 }} /></span>
+                <span className="abajo"><i style={{ height: valor < 0 ? `${alto}px` : 0 }} /></span>
+                <span className="nombre">{nombreMes(o.mes).slice(0, 3)}</span>
+              </button>
+            </li>;
+          })}
+        </ol>
+        <figcaption>Margen de cada mes, %{hastaExcel && desdeAvancys ? <> · hasta {nombreMes(hastaExcel).slice(0, 3)}, cierre de Finanzas (Excel); desde {nombreMes(desdeAvancys).slice(0, 3)}, Avancys</> : null}</figcaption>
+      </figure> : null}
     </section>
     <div className="siio-bloques">
       <BloqueClientes t={t} onIr={onIr} />
