@@ -246,3 +246,33 @@ test('proponentes de SECOP: sólo empresas individuales con NIT, una vez cada un
   assert.match(sql, /revoke all on function public\.psi_register_process_participant\(jsonb\) from public, anon, authenticated/);
   assert.match(read('ops/agt002-radar-daily/agt002-radar-daily.service'), /ExecStart=-\/bin\/systemctl start agt002-aliados-proponentes\.service/);
 });
+
+// Juan, 2026-11-15: los observantes de las respuestas de la entidad entran a la base, sólo si se identifican con certeza.
+test('observantes: se identifican por NIT, nombre exacto o palabra única; lo dudoso no entra', async () => {
+  const { buildCompanyIndex, identifyInBase, companyNameKey } = await import('../verticales/licitaciones/aliados-observantes.js');
+  const index = buildCompanyIndex([
+    { nit: '860074752', name: 'SEGURIDAD ATEMPI LIMITADA' }, { nit: '890917141', name: 'SEGURIDAD ATEMPI DE COLOMBIA LIMITADA', acronyms: 'ATEMPI LTDA' },
+    { nit: '800194984', name: 'SISTEMAS DE SEGURIDAD ELECTRONICA Y MONITOREO ATEMPI SA', acronyms: 'SEMA S.A.' },
+    { nit: '890111018', name: 'SERVICONI LIMITADA (SERVICIOS PRIVADOS DE SEGURIDAD Y VIGILANCIA)', acronyms: 'SERVICONI LTDA.' },
+    { nit: '890111175', name: 'COMPANIA DE VIGILANCIA VIASERVIN LIMITADA EN REORGANIZACION' },
+    { nit: '860518862', name: 'SEGURIDAD LAS AMERICAS LTDA' }, { nit: '860526603', name: 'SEGURIDAD EL PENTAGONO COLOMBIANO SEPECOL LTDA', acronyms: 'SEPECOL LTDA.' },
+    { nit: '830015680', name: 'VIMARCO LTDA INVESTIGACIONES Y SEGURIDAD PRIVADA anteriormente "INSEP LTDA"' },
+    { nit: '810003085', name: 'VIGILANCIA TECNICA DE COLOMBIA LTDA', acronyms: 'VIGITECOL LTDA.' },
+    { nit: '813002358', name: 'EMPRESA DE SEGURIDAD Y VIGILANCIA PRIVADA PUMA LTDA' }, { nit: '900422632', name: 'SEGURIDAD CAMALEON LTDA' },
+  ]);
+  const cases = {
+    'SEGURIDAD ATEMPI LTDA.': '860074752',
+    'SEGURIDAD ATEMPI LTDA. (Oscar Augusto Estupiñán Medrano, NIT 860074752-8)': '860074752',
+    'SERVICONI LTDA': '890111018',
+    'VIASERVIN LTDA': '890111175',
+    'SEGURIDAD LAS AMÉRICAS LTDA – SEGURIAMÉRICAS LTDA': '860518862',
+    'SEGURIDAD EL PENTÁGONO COLOMBIANO LIMITADA LTDA. SEPECOL': '860526603',
+    'VIMARCO LTDA INVESTIGACIONES Y SEGURIDAD PRIVADA': '830015680',
+    'VIGITECOL LTDA': '810003085',
+    'SEGURIDAD CAMALEÓN': '900422632',
+    'PUMA LTDA': null, // «PUMA» es corta: no basta para afirmar que es la empresa
+    'COOPERATIVA DE VIGILANCIA DE SANTANDER COOPVIGSAN CTA': null,
+  };
+  for (const [label, nit] of Object.entries(cases)) assert.equal(identifyInBase(label, index), nit, label);
+  assert.equal(companyNameKey('Seguridad Camaleón Ltda.'), 'SEGURIDAD CAMALEON');
+});
