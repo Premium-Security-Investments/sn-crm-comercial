@@ -44,3 +44,16 @@ for (const path of backendPaths) {
 }
 
 console.log('backend tender process deduplication passed');
+// Juan, 2026-11-15: Notariado salía dos veces porque la referencia venía escrita distinto con el mismo CO1.REQ.
+for (const path of backendPaths) {
+  const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+  const body = ['normTenderText', 'canonicalTenderProcessReference', 'canonicalTenderProcessKey', 'tenderProcessStatusRank', 'deduplicateTenderProcesses']
+    .map(name => source.match(name === 'normTenderText' ? /function normTenderText\(value\) \{ return normalizeTenderStatusText\(value\); \}\n/ : new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}\\n`))[0]).join('');
+  const { deduplicateTenderProcesses } = new Function('normalizeTenderStatusText', 'tenderProcessFamilyKey', 'compareTenderFamilyRecency', `${body}\nreturn { deduplicateTenderProcesses };`)(value => String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(), tenderProcessFamilyKey, compareTenderFamilyRecency);
+  const result = deduplicateTenderProcesses([
+    { id: 'convertida', source: 'SECOP II', entity: 'SUPERINTENDENCIA DE NOTARIADO Y REGISTRO', ref: 'LP-005-2026', process_id: 'CO1.REQ.11343818', internal_status: 'convertida_oportunidad', converted_opportunity_id: 'o' },
+    { id: 'radar', source: 'SECOP II', entity: 'SUPERINTENDENCIA DE NOTARIADO Y REGISTRO', ref: 'LP 005 DE 2026', process_id: 'CO1.REQ.11343818', internal_status: 'nueva' },
+    { id: 'otro', source: 'SECOP II', entity: 'SUPERINTENDENCIA DE NOTARIADO Y REGISTRO', ref: 'LICITACIÓN PÚBLICA No. 005 DE 2026', process_id: 'CO1.REQ.10632400', internal_status: 'nueva' },
+  ]);
+  assert.deepEqual(result.map(row => row.id), ['convertida', 'otro'], `${path}: el mismo CO1.REQ es un solo proceso aunque la referencia cambie`);
+}
