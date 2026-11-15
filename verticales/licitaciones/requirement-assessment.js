@@ -86,9 +86,12 @@ function assessCodes(text, company) {
   // Los números de solicitud de SECOP («CO1.REQ.11051174») no son códigos.
   const codes = [...new Set(String(text).replace(/CO1\.[A-Z]+\.\d+/g, ' ').match(/\b\d{8}\b/g) || [])];
   if (codes.length) {
-    const missing = codes.filter(code => !company.codes.includes(code));
+    // El RUP se inscribe por clase (tercer nivel: 92121500). Un producto que pide el pliego (92121504) está dentro de la
+    // clase si comparten los seis primeros dígitos (Juan, 2026-11-15: Defensoría salía como bloqueo sin serlo).
+    const has = code => company.codes.some(own => String(own).slice(0, 6) === code.slice(0, 6));
+    const missing = codes.filter(code => !has(code));
     const any = /\b(o|alguno|cualquiera|al menos (uno|dos)|minimo (uno|dos))\b/.test(foldText(text));
-    if (!missing.length || (any && missing.length < codes.length)) return { verdict: 'cumple', reason: `Tenemos ${codes.filter(code => company.codes.includes(code)).join(', ')} en el RUP.` };
+    if (!missing.length || (any && missing.length < codes.length)) return { verdict: 'cumple', reason: `Tenemos ${codes.filter(has).join(', ')} en el RUP.` };
     return { verdict: 'inhabilita', reason: `No tenemos en el RUP: ${missing.join(', ')}.` };
   }
   const count = foldText(text).match(/minimo (\w+) codigos/);

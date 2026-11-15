@@ -132,7 +132,10 @@ async function loadCompany(database) {
   }
   if (!codes.error && codes.data) {
     const list = codes.data.map(row => String(row.codigo));
-    live.codigos = `${list.length} códigos inscritos en el RUP${list.some(code => code.startsWith('461015')) ? '' : '; no está el 46101500'}.`;
+    const known = [['92121500', 'guardas de seguridad'], ['92121700', 'sistemas de seguridad'], ['46171600', 'equipos de vigilancia y detección']]
+      .filter(([code]) => list.includes(code)).map(([code, name]) => `${code} ${name}`);
+    live.codigos = `Tenemos ${list.length} códigos inscritos en el RUP${known.length ? `, entre ellos ${known.join(', ')}` : ''}.`
+      + (list.some(code => code.startsWith('461015')) ? '' : ' No tenemos el 46101500 (armas de fuego), que algunos pliegos exigen como código obligatorio del RUP.');
     facts.codes = list;
   }
   if (!documents.error) facts.documents = (documents.data || []).filter(row => !row.expires_at || String(row.expires_at) >= new Date().toISOString().slice(0, 10))
