@@ -139,7 +139,7 @@ test('portada revisada con Juan (15-nov): el mes anterior con su estado de cierr
   assert.match(torre, /texto: `Sin cierre formal · \$\{dias\} \$\{dias === 1 \? 'día' : 'días'\}`/);
   assert.match(torre, /if \(bloqueo && bloqueo >= ultimoDia\(mes\)\) return \{ tono: 'cerrado', texto: 'Cerrado' \};/);
   // El mes principal es el anterior, con lo que el sistema tiene hoy (sin proyección).
-  assert.match(torre, /const principal = t\.realDe\(anterior\) \? anterior : torre\?\.mes_cerrado \|\| null;/);
+  assert.match(torre, /return t\.realDe\(anterior\) \? anterior : t\.torre\?\.mes_cerrado \|\| null;/);
   // El mes en curso no muestra utilidad (la nómina se causa al cierre): solo lo facturado.
   assert.match(torre, /a hoy: <strong>\{millones\(enCurso\.totales\.ingresos\)\} facturados<\/strong>/);
   assert.doesNotMatch(torre, /va en ≈/);
@@ -150,4 +150,14 @@ test('portada revisada con Juan (15-nov): el mes anterior con su estado de cierr
   assert.match(vista, /frase: fraseLicitaciones\(porDecidir\)/);
   assert.match(vista, /hay que decidir antes del/);
   assert.match(vista, /\{enumerar\(nadie\)\}/, 'los comerciales sin ningún lead al día, con nombre');
+});
+
+test('los bloques de la Portada hablan del mismo mes que la frase y tecnología sale por confirmar', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  assert.match(torre, /export function mesPrincipal\(t: TorreAvancys, hoy = new Date\(\)\)/);
+  assert.match(torre, /api<Clientes>\(`\/api\/siio\/avancys\/rentabilidad-aproximada\?mes=\$\{encodeURIComponent\(principal\)\}`\)/);
+  assert.match(torre, /const fila = \(principal && t\.torre\?\.presupuesto\?\.meses\?\.\[principal\]\) \|\| mesComparable/);
+  assert.match(torre, /Tecnología, por confirmar con Finanzas: \{historialTecnologia/);
+  // Ninguna cifra real de la empresa escrita en el código: el historial sale de los datos.
+  assert.doesNotMatch(torre, /8,7 %|48 %/);
 });

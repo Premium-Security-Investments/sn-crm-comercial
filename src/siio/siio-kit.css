@@ -278,3 +278,5 @@
 .siio-dashboard .siio-reco footer>.siio-nota{margin-left:auto}
 .siio-dashboard .siio-enlace.activo{text-decoration:underline;text-underline-offset:3px}
 @media(max-width:560px){.siio-dashboard .siio-reco-accion{justify-items:start}.siio-dashboard .siio-reco header{align-items:flex-start}.siio-dashboard .siio-reco footer>.siio-nota{margin-left:0}}
+/* Portada: una cifra que todavía hay que confirmar con su dueño (tecnología en el presupuesto). */
+.siio-dashboard .siio-num .por-confirmar{color:var(--estimado);font-weight:650}
