@@ -1655,10 +1655,15 @@ function tenderProcessStatusRank(tender) {
 // SECOP II republica un proceso modificado como uno nuevo con la misma referencia salvo puntuación:
 // la familia de proceso (tender-process-family.js) los agrupa y, a igual estado, gana la versión más reciente.
 function deduplicateTenderProcesses(tenders) {
-  const byKey = new Map(); const order = [];
+  const byKey = new Map(); const order = []; const keyByProcessId = new Map();
   for (const tender of Array.isArray(tenders) ? tenders : []) {
     // Una fila en revisión nunca se funde con otra versión de su familia: sigue visible.
-    const key = (tender?.internal_status !== 'en_revision' && tenderProcessFamilyKey(tender)) || canonicalTenderProcessKey(tender);
+    const ownKey = (tender?.internal_status !== 'en_revision' && tenderProcessFamilyKey(tender)) || canonicalTenderProcessKey(tender);
+    // El mismo proceso de SECOP (mismo CO1.REQ) es uno solo aunque la referencia venga escrita distinto: «LP 005 DE 2026»
+    // y «LP-005-2026» de Notariado salían en el Radar y en Oportunidades a la vez (Juan, 2026-11-15).
+    const processId = tender?.internal_status !== 'en_revision' && /^CO1\.REQ\.\d+$/.test(String(tender?.process_id || '')) ? tender.process_id : null;
+    const key = (processId && keyByProcessId.get(processId)) || ownKey;
+    if (processId && !keyByProcessId.has(processId)) keyByProcessId.set(processId, key);
     if (!byKey.has(key)) { byKey.set(key, tender); order.push(key); continue; }
     const current = byKey.get(key);
     const currentRank = tenderProcessStatusRank(current); const nextRank = tenderProcessStatusRank(tender);
