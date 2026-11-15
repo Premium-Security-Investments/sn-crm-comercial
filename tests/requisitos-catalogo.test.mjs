@@ -325,3 +325,13 @@ test('un código de producto del pliego está dentro de la clase inscrita en el 
   assert.match(falta.reason, /46101500/);
   assert.doesNotMatch(falta.reason, /92121500/);
 });
+
+test('«un celular por sede» no es exigir sede: Defensoría no entra a la tarjeta de sede (2026-11-15)', () => {
+  const company = { ...COMPANY };
+  const celular = assessRequirement({ type: 'presencia_local', process: 'DEFENSORÍA DEL PUEBLO · DEF-LP-01-2026 · Bogotá', text: 'El anexo técnico pide radios por puesto y un celular por sede en cobertura nacional.' }, company);
+  assert.equal(celular.verdict, 'cumple');
+  const apoderado = assessRequirement({ type: 'presencia_local', process: 'Defensoría · Bogotá', text: 'El apoderado debe tener domicilio permanente, para efectos de este proceso, en la República de Colombia.' }, company);
+  assert.equal(apoderado.verdict, 'cumple');
+  const sucursal = assessRequirement({ type: 'presencia_local', process: 'DEAJ · Bogotá', text: 'El proponente debe contar con sede principal o sucursal en la ciudad de Bogotá.' }, company);
+  assert.equal(sucursal.verdict, 'inhabilita');
+});
