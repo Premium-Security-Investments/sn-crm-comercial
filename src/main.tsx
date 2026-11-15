@@ -298,12 +298,14 @@ function bootstrapForViewMode(data: Bootstrap, viewMode: NavViewMode): Bootstrap
   const effective = effectiveNavProfile(data.currentProfile, viewMode);
   if (!effective || effective === data.currentProfile) return data;
   const selfId = data.currentProfile.id;
-  const own = (o: Opportunity) => o.owner_id === selfId;
+  // Con Licitaciones en la Vista Comercial, también las licitaciones (están a nombre de quien licita), como las ve ella.
+  const tenders = (effective.permissions || []).includes('licitaciones');
+  const own = (o: Opportunity) => o.owner_id === selfId || (tenders && o.service_type_code === 'licitacion_publica');
   return {
     ...data,
     currentProfile: effective,
     opportunities: data.opportunities.filter(own),
-    topClosing: data.topClosing.filter(own),
+    topClosing: data.topClosing.filter(o => o.owner_id === selfId),
     monthlyKpis: data.monthlyKpis.filter(k => k.owner_id === selfId),
     goals: data.goals.filter(g => g.user_id === selfId),
   };
