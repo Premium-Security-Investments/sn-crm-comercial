@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { supabaseBrowser } from '../supabaseBrowser';
 import { canApproveTenderGoNoGo } from './permissions';
+import { createTenderConfigurationActions } from './tenderConfigurationActions';
 import type { TendersModuleProps } from './types';
 
 /**
@@ -12,7 +14,7 @@ type Process = { opportunity_id: string | null; process: string; reason: string;
 type Stakes = { count: number; total: number; unknown: number };
 type Status = 'por_decidir' | 'iniciar' | 'en_tramite' | 'resuelto' | 'no_por_ahora';
 type Focus = { key: string; title: string; live: string | null; asks?: string; stakes?: { open: Stakes; past: Stakes }; live_state: string | null; processes: Process[]; upcoming: Process[]; past: Process[]; blocked: number; status: Status; owner: string | null; note: string | null; current_state: string | null; fix_action: string; updated_at: string | null };
-type Payload = { installed: boolean; matrix: { rows: number; loaded_at: string | null }; crm_processes: number; focus: Focus[]; catalog: { totals: { processes: number } } };
+type Payload = { installed: boolean; matrix: { rows: number; loaded_at: string | null }; crm_processes: number; focus: Focus[]; company_facts?: Record<string, unknown>; catalog: { totals: { processes: number } } };
 
 const STATUSES: [Status, string][] = [['por_decidir', 'Por decidir'], ['iniciar', 'Iniciar trámite'], ['en_tramite', 'En trámite'], ['resuelto', 'Resuelto'], ['no_por_ahora', 'No por ahora']];
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -72,7 +74,77 @@ function stakesText(stakes: Stakes, open: boolean) {
   return `${head} por ${millions(stakes.total)}${stakes.unknown ? ` (${plural(stakes.unknown, 'sin presupuesto', 'sin presupuesto')} en el CRM)` : ''}.`;
 }
 
-function FocusCard({ focus, canEdit, request, onSaved }: { focus: Focus; canEdit: boolean; request: TendersModuleProps['request']; onSaved: () => void }) {
+/**
+ * «Cargar en la ficha» (Juan, 2026-11-15: «que al Katherine revisar la ficha tenga la opción de cargar documentos y de una
+ * vez eso quede resuelto»). Por tarjeta: el dato que decide (zonas, ciudades, cantidad, puntaje) y el soporte, que entra al
+ * mismo bloque de la pestaña Empresa. Al guardar, la pantalla vuelve a cruzar los pliegos con la ficha.
+ */
+type FactSpec = { key: string; kind: 'list' | 'number'; label: string; hint: string };
+const LOAD_IN_FICHA: Record<string, { documentType?: string; documentLabel?: string; fact?: FactSpec; toCompany?: string }> = {
+  comunicaciones: { documentType: 'communications_license', documentLabel: 'Resolución o permiso MinTIC',
+    fact: { key: 'mintic_cobertura', kind: 'list', label: 'Zonas que cubre el permiso', hint: 'Departamentos separados por coma (Risaralda, Bogotá D.C., Caldas…) o «nacional».' } },
+  red_apoyo: { documentType: 'police_support_network', documentLabel: 'Constancia de inscripción en la Red de Apoyo',
+    fact: { key: 'red_apoyo_ciudades', kind: 'list', label: 'Ciudades donde estamos inscritos', hint: 'Ciudades separadas por coma (Pereira, Manizales…).' } },
+  canino: { documentType: 'canine_unit', documentLabel: 'Resolución de la unidad canina',
+    fact: { key: 'unidad_canina_ciudades', kind: 'list', label: 'Ciudades con unidad canina autorizada', hint: 'Ciudades separadas por coma. Déjelo vacío si no tenemos ninguna.' } },
+  armas: { documentType: 'authorized_weapons_list', documentLabel: 'Listado de armas del DCCAE',
+    fact: { key: 'armas_libres', kind: 'number', label: 'Armas con salvoconducto libres para un contrato nuevo', hint: 'Un número.' } },
+  certificaciones: { documentType: 'sgsst_self_assessment', documentLabel: 'Autoevaluación del SG-SST',
+    fact: { key: 'sgsst_puntaje', kind: 'number', label: 'Puntaje de la autoevaluación (%)', hint: 'Un número, por ejemplo 92.' } },
+  horas_extras: { documentType: 'overtime_authorization', documentLabel: 'Autorización de horas extras del Ministerio del Trabajo' },
+  personal: { documentType: 'personnel_credentials_vault', documentLabel: 'Credencial de consultor o asesor' },
+  importador: { documentType: 'tech_support_registry', documentLabel: 'Registro de comercializador o certificación del taller de soporte' },
+  presencia: { toCompany: 'Las sedes se registran en la pestaña Empresa, sección Sedes.' },
+  codigos: { toCompany: 'Los códigos salen del RUP: se actualizan al cargar el RUP nuevo en la pestaña Empresa.' },
+  financiero: { toCompany: 'Los indicadores salen del RUP y los estados financieros de la pestaña Empresa.' },
+};
+const factText = (value: unknown) => (Array.isArray(value) ? value.join(', ') : value === null || value === undefined ? '' : String(value));
+
+function LoadInFicha({ focusKey, facts, request, canUpload, onDone }: { focusKey: string; facts: Record<string, unknown>; request: TendersModuleProps['request']; canUpload: boolean; onDone: () => void }) {
+  const spec = LOAD_IN_FICHA[focusKey];
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(spec?.fact ? factText(facts[spec.fact.key]) : '');
+  const [file, setFile] = useState<File | null>(null);
+  const [issuedAt, setIssuedAt] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!spec) return null;
+  if (spec.toCompany) return <p className="muted tender-requirements-to-company">{spec.toCompany} <a href="#/tenders?view=configuracion">Ir a Empresa</a></p>;
+  const actions = createTenderConfigurationActions({ canConfigure: canUpload, canDecideEvidence: canUpload, request,
+    uploadToSignedUrl: (path, token, upload) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, upload) });
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      if (spec.fact && value.trim() !== factText(facts[spec.fact.key])) {
+        await request('/api/tender-requirements/facts', { method: 'POST', body: JSON.stringify({ fact_key: spec.fact.key, value: spec.fact.kind === 'number' ? value.trim() : value }) });
+      }
+      if (file && spec.documentType) {
+        if (!issuedAt) throw new Error('Falta la fecha de expedición del documento.');
+        await actions.uploadCompanyDocument(file, { documentType: spec.documentType, displayName: spec.documentLabel || file.name, issuedAt, expiresAt: expiresAt || null });
+      }
+      setOpen(false); setFile(null); onDone();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } finally { setBusy(false); }
+  };
+  if (!open) return <button type="button" className="secondary" onClick={() => setOpen(true)}>Cargar en la ficha</button>;
+  return <div className="tender-requirements-form">
+    {spec.fact && <label>{spec.fact.label}<input inputMode={spec.fact.kind === 'number' ? 'decimal' : 'text'} value={value} onChange={event => setValue(event.target.value)} /><small>{spec.fact.hint}</small></label>}
+    {spec.documentType && (canUpload ? <>
+      <label>{spec.documentLabel} (soporte)<input type="file" accept=".pdf,.docx,.txt" onChange={event => setFile(event.currentTarget.files?.[0] || null)} /></label>
+      {file && <div className="company-document-date-grid">
+        <label>Fecha de expedición<input type="date" value={issuedAt} onChange={event => setIssuedAt(event.target.value)} /></label>
+        <label>Fecha de vencimiento<input type="date" value={expiresAt} onChange={event => setExpiresAt(event.target.value)} /><small>Opcional si no vence.</small></label>
+      </div>}
+    </> : <p className="muted">Para subir el soporte se necesita permiso de configurar Licitaciones.</p>)}
+    {error && <div className="notice" role="alert">{error}</div>}
+    <div className="tender-requirements-actions">
+      <button type="button" disabled={busy || (!file && (!spec.fact || value.trim() === factText(facts[spec.fact.key])))} onClick={() => void save()}>{busy ? 'Guardando…' : 'Guardar en la ficha'}</button>
+      <button type="button" className="secondary" disabled={busy} onClick={() => { setOpen(false); setError(''); }}>Cancelar</button>
+    </div>
+  </div>;
+}
+
+function FocusCard({ focus, canEdit, canUpload, facts, request, onSaved }: { focus: Focus; canEdit: boolean; canUpload: boolean; facts: Record<string, unknown>; request: TendersModuleProps['request']; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(focus);
   const [error, setError] = useState('');
@@ -96,12 +168,15 @@ function FocusCard({ focus, canEdit, request, onSaved }: { focus: Focus; canEdit
         <AsksBlock asks={focus.asks} items={focus.upcoming} />
         {focus.stakes && (focus.stakes.open.count + focus.stakes.past.count) > 0 && <><dt>Lo que está en juego</dt>
           <dd>{[stakesText(focus.stakes.open, true), stakesText(focus.stakes.past, false)].filter(Boolean).join(' ')}</dd></>}
-        <dt>Cómo estamos hoy{focus.live ? ' (de la ficha de la empresa)' : ''}</dt><dd>{state || <span className="muted">Sin dato en la ficha.</span>}</dd>
+        <dt>Cómo estamos hoy{focus.live_state ? ' (de la ficha de la empresa)' : ''}</dt><dd>{state || <span className="muted">Sin dato en la ficha.</span>}</dd>
         <dt>Qué lo resuelve</dt><dd>{focus.fix_action}</dd>
         {focus.note && <><dt>Nota</dt><dd>{focus.note}</dd></>}
         <dt>Responsable</dt><dd>{focus.owner || <span className="muted">Sin asignar.</span>}</dd>
       </dl>
-      {canEdit && <button type="button" className="secondary" onClick={() => setEditing(true)}>Decidir</button>}
+      {canEdit && <div className="tender-requirements-actions">
+        <button type="button" className="secondary" onClick={() => setEditing(true)}>Decidir</button>
+        <LoadInFicha focusKey={focus.key} facts={facts} request={request} canUpload={canUpload} onDone={onSaved} />
+      </div>}
       {focus.past.length > 0 && <details className="tender-requirements-past"><summary>Procesos pasados ({focus.past.length})</summary><ProcessList items={focus.past} /></details>}
     </> : <div className="tender-requirements-form">
       <label>Decisión<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as Status })}>{STATUSES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
@@ -118,7 +193,7 @@ function FocusCard({ focus, canEdit, request, onSaved }: { focus: Focus; canEdit
   </article>;
 }
 
-export function TenderRequirementsView({ request, data, moduleNavigation }: TendersModuleProps & { moduleNavigation: ReactNode }) {
+export function TenderRequirementsView({ request, data, moduleNavigation, canConfigure = false }: TendersModuleProps & { moduleNavigation: ReactNode; canConfigure?: boolean; canManageDocuments?: boolean }) {
   const canEdit = canApproveTenderGoNoGo(data.currentProfile);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [message, setMessage] = useState('');
@@ -139,7 +214,7 @@ export function TenderRequirementsView({ request, data, moduleNavigation }: Tend
         <p className="muted">Cada requisito de {payload.catalog.totals.processes} procesos, cruzado con la ficha de la empresa. No aparecen los papeles que se renuevan (Cámara de Comercio, RUP con fecha nueva, certificados, pólizas).</p>
         {!payload.installed && <div className="notice">Las decisiones todavía no se pueden guardar (falta la migración 215).</div>}
         {!payload.focus.length ? <div className="notice">Con la ficha de hoy, ningún requisito revisado nos inhabilita.</div>
-          : <div className="tender-requirements-focus-grid">{payload.focus.map(focus => <FocusCard key={focus.key} focus={focus} canEdit={canEdit && payload.installed} request={request} onSaved={load} />)}</div>}
+          : <div className="tender-requirements-focus-grid">{payload.focus.map(focus => <FocusCard key={focus.key} focus={focus} canEdit={canEdit && payload.installed} canUpload={canConfigure} facts={payload.company_facts || {}} request={request} onSaved={load} />)}</div>}
       </section>
       <p className="muted">Fuentes: {payload.matrix.rows ? `la matriz histórica de SharePoint (${payload.matrix.rows} filas)` : 'la matriz histórica de SharePoint todavía no se ha cargado'}, {payload.crm_processes} procesos analizados en el CRM y las actas de cierre. Cada análisis nuevo entra solo.</p>
     </>}

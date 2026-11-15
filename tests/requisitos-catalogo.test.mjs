@@ -392,3 +392,31 @@ test('la matriz se lee completa aunque la base entregue de a 1.000 filas (2026-1
   const board = await loadRequirementsBoard({ from: query });
   assert.equal(board.matrix.rows, 2310);
 });
+
+test('con el dato cargado en la ficha, la pantalla decide sola (migración 220, 2026-11-15)', async () => {
+  const base = { ...COMPANY, documents: [] };
+  const mintic = { ...base, minticCobertura: ['Risaralda', 'Caldas'] };
+  assert.equal(assessRequirement({ type: 'licencia_comunicaciones', process: 'Rama Manizales · Manizales', text: 'Frecuencias con cobertura en Caldas' }, mintic).verdict, 'cumple');
+  const bogota = assessRequirement({ type: 'licencia_comunicaciones', process: 'DEAJ', text: 'Al menos una frecuencia autorizada en Bogotá' }, mintic);
+  assert.equal(bogota.verdict, 'inhabilita');
+  assert.match(bogota.reason, /Bogotá D\.C\./);
+  assert.equal(assessRequirement({ type: 'licencia_comunicaciones', process: 'SNR', text: 'Permiso de espectro con cubrimiento a nivel nacional' }, { ...base, minticCobertura: ['nacional'] }).verdict, 'cumple');
+  const red = { ...base, redApoyoCiudades: ['Pereira'] };
+  assert.equal(assessRequirement({ type: 'red_apoyo', process: 'Rama Manizales · Manizales', text: 'Certificar inscripción en la Red de Apoyo de la Policía Metropolitana' }, red).verdict, 'inhabilita');
+  assert.equal(assessRequirement({ type: 'red_apoyo', process: 'Rama Pereira · Pereira', text: 'Certificar inscripción en la Red de Apoyo' }, red).verdict, 'cumple');
+  assert.equal(assessRequirement({ type: 'canina', process: 'Medellín', text: 'Unidad canina con resolución SVSP a 30 km de Medellín' }, { ...base, caninaCiudades: [] }).verdict, 'inhabilita');
+  assert.equal(assessRequirement({ type: 'armas', process: 'Barranquilla', text: 'Listado de 39 armas con salvoconducto' }, { ...base, armasLibres: 45 }).verdict, 'cumple');
+  assert.equal(assessRequirement({ type: 'armas', process: 'Barranquilla', text: 'Listado de 39 armas con salvoconducto' }, { ...base, armasLibres: 20 }).verdict, 'inhabilita');
+  assert.equal(assessRequirement({ type: 'calidad_sst', process: 'Defensoría', text: 'Autoevaluación del SG-SST 2025 mayor al 85 %' }, { ...base, sgsstPuntaje: 92 }).verdict, 'cumple');
+  assert.equal(assessRequirement({ type: 'calidad_sst', process: 'Defensoría', text: 'Autoevaluación del SG-SST 2025 mayor al 85 %' }, base).verdict, 'verificar');
+  assert.equal(assessRequirement({ type: 'horas_extras', process: 'Manizales', text: 'Resolución de horas extras' }, { ...base, documents: [{ type: 'overtime_authorization', name: 'Res.' }] }).verdict, 'cumple');
+
+  const { saveRequirementFact } = await import('../verticales/licitaciones/tender-requirements.js');
+  const writes = [];
+  const database = { from: () => ({ upsert: row => { writes.push(row); return { select: () => ({ single: async () => ({ data: row, error: null }) }) }; } }) };
+  await saveRequirementFact(database, { fact_key: 'mintic_cobertura', value: 'risaralda, bogota d.c., Nacional' }, 'u');
+  assert.deepEqual(writes[0].value, ['Risaralda', 'Bogotá D.C.', 'nacional']);
+  await assert.rejects(saveRequirementFact(database, { fact_key: 'mintic_cobertura', value: 'Pereira' }, 'u'), /departamento/);
+  await assert.rejects(saveRequirementFact(database, { fact_key: 'armas_libres', value: 'muchas' }, 'u'), /número/);
+  await assert.rejects(saveRequirementFact(database, { fact_key: 'otra', value: '1' }, 'u'), /no es válido/);
+});

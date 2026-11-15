@@ -44,6 +44,32 @@ const ratio = threshold => (threshold.percent || threshold.value > 1.5 ? thresho
 const CITIES = ['Arauca', 'Armenia', 'Barranquilla', 'Bogotá', 'Bucaramanga', 'Cali', 'Cartagena', 'Cartago', 'Cúcuta', 'Dosquebradas', 'Florencia', 'Ibagué', 'Inírida', 'Leticia', 'Manizales', 'Medellín', 'Mitú', 'Mocoa', 'Montería', 'Neiva', 'Pasto', 'Pereira', 'Piedecuesta', 'Popayán', 'Puerto Carreño', 'Quibdó', 'Riohacha', 'San Andrés', 'San José del Guaviare', 'Santa Marta', 'Santa Rosa de Cabal', 'Sincelejo', 'Tunja', 'Valledupar', 'Villavicencio', 'Villamaría', 'Yopal'];
 const citiesIn = text => CITIES.filter(city => new RegExp(`\\b${foldText(city)}\\b`).test(foldText(text)));
 
+// Departamentos para la cobertura del permiso MinTIC (Juan, 2026-11-15: la ficha guarda las zonas que cubre). Bogotá va
+// aparte porque los pliegos la piden como «Distrito Capital».
+export const DEPARTMENTS = Object.freeze({
+  'Amazonas': ['Leticia'], 'Antioquia': ['Medellín'], 'Arauca': ['Arauca'], 'Atlántico': ['Barranquilla'], 'Bogotá D.C.': ['Bogotá'],
+  'Bolívar': ['Cartagena'], 'Boyacá': ['Tunja'], 'Caldas': ['Manizales', 'Villamaría'], 'Caquetá': ['Florencia'], 'Casanare': ['Yopal'],
+  'Cauca': ['Popayán'], 'Cesar': ['Valledupar'], 'Chocó': ['Quibdó'], 'Córdoba': ['Montería'], 'Cundinamarca': [], 'Guainía': ['Inírida'],
+  'Guaviare': ['San José del Guaviare'], 'Huila': ['Neiva'], 'La Guajira': ['Riohacha'], 'Magdalena': ['Santa Marta'], 'Meta': ['Villavicencio'],
+  'Nariño': ['Pasto'], 'Norte de Santander': ['Cúcuta'], 'Putumayo': ['Mocoa'], 'Quindío': ['Armenia'],
+  'Risaralda': ['Pereira', 'Dosquebradas', 'Santa Rosa de Cabal'], 'San Andrés': ['San Andrés'], 'Santander': ['Bucaramanga', 'Piedecuesta'],
+  'Sucre': ['Sincelejo'], 'Tolima': ['Ibagué'], 'Valle del Cauca': ['Cali', 'Cartago'], 'Vaupés': ['Mitú'], 'Vichada': ['Puerto Carreño'],
+});
+const departmentPattern = name => (name === 'Bogotá D.C.' ? /\bbogota\b|distrito capital/ : name === 'Valle del Cauca' ? /\bvalle( del cauca)?\b/
+  : name === 'Santander' ? /(?<!norte de )\bsantander\b/ : name === 'Cauca' ? /(?<!valle del )\bcauca\b/ : new RegExp(`\\b${foldText(name)}\\b`));
+const departmentOf = city => Object.keys(DEPARTMENTS).find(name => DEPARTMENTS[name].includes(city)) || null;
+/** Las zonas que pide un texto: «nacional», los departamentos que nombra y los de sus ciudades; si no nombra ninguna, la del proceso. */
+function zonesAsked(text, process) {
+  const folded = foldText(text);
+  if (/(cobertura|nivel|registro|ambito|alcance) nacional|todo el territorio nacional|a nivel nacional/.test(folded)) return ['nacional'];
+  const named = Object.keys(DEPARTMENTS).filter(name => departmentPattern(name).test(folded));
+  const fromCities = citiesIn(text).map(departmentOf).filter(Boolean);
+  const zones = [...new Set([...named, ...fromCities])];
+  return zones.length ? zones : [...new Set(citiesIn(process || '').map(departmentOf).filter(Boolean))];
+}
+const inList = (list, value) => list.some(item => foldText(item) === foldText(value));
+const knownList = value => (Array.isArray(value) ? value : null);
+
 const FINANCIAL = {
   liquidez: { labels: ['liquidez'], fact: 'liquidez', min: true, name: 'liquidez' },
   endeudamiento: { labels: ['endeudamiento'], fact: 'endeudamiento', min: false, name: 'endeudamiento', asRatio: true },
@@ -164,25 +190,63 @@ export function assessRequirement({ type, text, quote = '', process = '' }, comp
     case 'rup_vigente': return { verdict: 'cumple', reason: 'RUP en firme; se renueva cada año y el certificado se expide para el cierre.' };
     case 'licencia_supervigilancia':
       return { verdict: 'cumple', reason: `Licencia vigente hasta ${company.licenseUntil || '2029'} con vigilancia fija, móvil, escolta, con y sin armas, medio tecnológico y canino.` };
-    case 'licencia_comunicaciones':
+    case 'licencia_comunicaciones': {
+      // Con las zonas del permiso en la ficha, se decide: cubre todo lo que pide el pliego, o no (Juan, 2026-11-15).
+      const coverage = knownList(company.minticCobertura);
+      if (coverage?.length) {
+        const zones = zonesAsked(text, process);
+        if (!zones.length) return { verdict: 'verificar', reason: `El pliego no dice la zona; nuestro permiso cubre ${coverage.join(', ')}.` };
+        if (inList(coverage, 'nacional')) return { verdict: 'cumple', reason: 'Nuestro permiso tiene cobertura nacional.' };
+        const missing = zones.filter(zone => !inList(coverage, zone));
+        return missing.length ? { verdict: 'inhabilita', reason: `Piden cobertura ${missing.includes('nacional') ? 'nacional' : `en ${missing.join(', ')}`}; nuestro permiso cubre ${coverage.join(', ')}.` }
+          : { verdict: 'cumple', reason: `Nuestro permiso cubre ${zones.join(', ')}.` };
+      }
       if (/(cobertura|nivel|registro|ambito|alcance) nacional|todo el territorio nacional/.test(folded) && !/nacional (o|y\/o) (en|del)/.test(folded)) return { verdict: 'inhabilita', reason: 'Piden cobertura o registro nacional de telecomunicaciones; nuestro permiso de espectro no es nacional (en Terminal no cubría Bogotá).' };
       // Nuestro permiso es de Risaralda: si el pliego sólo pide cobertura allí, cumplimos (Juan, 2026-11-15: Pereira salía
       // «por confirmar»).
       if (/risaralda|pereira|dosquebradas/.test(folded) && !/nacional|bogota|caldas|manizales|atlantico|barranquilla|antioquia|medellin|valle|cali\b|tolima|ibague|quindio|armenia|cundinamarca|santander|boyaca|huila|meta\b|cesar|guajira|riohacha/.test(folded)) return { verdict: 'cumple', reason: 'Nuestro permiso de espectro cubre Risaralda.' };
       if (/frecuencias? (minimas|para)|cobertura en|\ben (riohacha|ibague|tolima)\b|espectro radioelectrico en/.test(folded)) return { verdict: 'verificar', reason: 'Tenemos permiso de espectro y Registro TIC; hay que confirmar la cobertura que piden (en Terminal no cubría Bogotá).' };
       return has(company, 'communications_license') ? { verdict: 'cumple', reason: 'Permiso de espectro (Res. MinTIC 01535 de 2026) y Registro TIC.' } : { verdict: 'verificar', reason: 'La ficha no tiene licencia de comunicaciones.' };
+    }
     case 'canina':
+      if (knownList(company.caninaCiudades) && /criadero|sede canina|unidad canina|resolucion de (la )?sede|centro de (adiestramiento|entrenamiento)|caninos? propios/.test(folded)) {
+        const cities = citiesIn(process || '').length ? citiesIn(process || '') : citiesIn(text);
+        const missing = cities.filter(city => !inList(company.caninaCiudades, city));
+        if (!cities.length) return company.caninaCiudades.length ? { verdict: 'cumple', reason: `Tenemos unidad canina autorizada en ${company.caninaCiudades.join(', ')}.` }
+          : { verdict: 'inhabilita', reason: 'Piden unidad canina autorizada; no tenemos ninguna.' };
+        return missing.length ? { verdict: 'inhabilita', reason: `Piden unidad canina en ${missing.join(', ')}; la tenemos en ${company.caninaCiudades.join(', ') || 'ninguna ciudad'}.` }
+          : { verdict: 'cumple', reason: `Tenemos unidad canina en ${cities.join(', ')}.` };
+      }
       if (/criadero|sede canina|resolucion de (la )?sede|centro de (adiestramiento|entrenamiento)|caninos? propios/.test(folded)) return { verdict: 'inhabilita', reason: 'Piden sede canina (criadero) autorizada o caninos propios; no la tenemos.' };
       return /explosivos|disponibilidad/.test(folded) ? { verdict: 'verificar', reason: 'La licencia incluye medio canino; la ficha no dice cuántos caninos propios ni su especialidad.' } : { verdict: 'cumple', reason: 'La licencia incluye medio canino.' };
-    case 'horas_extras': return { verdict: 'verificar', reason: 'La ficha no tiene la autorización del Ministerio del Trabajo para horas extras.' };
+    case 'horas_extras': if (has(company, 'overtime_authorization')) return { verdict: 'cumple', reason: 'Autorización de horas extras cargada en la ficha.' };
+      return { verdict: 'verificar', reason: 'La ficha no tiene la autorización del Ministerio del Trabajo para horas extras.' };
     // Juan, 2026-11-13: no es un papel que se saque para el cierre; en Manizales hay que estar inscritos antes.
     // Un compromiso de vincularse se firma con la oferta (Defensoría, 6.3.7); sólo exigir estar inscritos es un hecho.
-    case 'red_apoyo': if (/compromiso/.test(folded) && !/inscrit|certific|vinculad[oa] a/.test(folded)) return { verdict: 'se_prepara', reason: 'Compromiso de vinculación a la Red de Apoyo, que se firma con la oferta.' };
+    case 'red_apoyo': {
+      if (/compromiso/.test(folded) && !/inscrit|certific|vinculad[oa] a/.test(folded)) return { verdict: 'se_prepara', reason: 'Compromiso de vinculación a la Red de Apoyo, que se firma con la oferta.' };
+      const network = knownList(company.redApoyoCiudades);
+      const cities = citiesIn(process || '').length ? citiesIn(process || '') : citiesIn(text);
+      if (network && cities.length) {
+        const missing = cities.filter(city => !inList(network, city));
+        return missing.length ? { verdict: 'inhabilita', reason: `No estamos inscritos en la Red de Apoyo de ${missing.join(', ')}.` }
+          : { verdict: 'cumple', reason: `Inscritos en la Red de Apoyo de ${cities.join(', ')}.` };
+      }
+    }
       return { verdict: 'verificar', reason: 'La ficha no dice en qué ciudades estamos inscritos en la Red de Apoyo de la Policía.' };
     case 'registro_tecnologia':
+      if (has(company, 'tech_support_registry')) return { verdict: 'cumple', reason: 'Registro de comercializador o soporte técnico cargado en la ficha.' };
       if (/importador|comercializador|distribuidor|productores/.test(folded)) return { verdict: 'inhabilita', reason: 'Piden el registro de importador, comercializador o distribuidor de equipos ante la Supervigilancia; no lo tenemos.' };
       return /carta|certificado del fabricante|autorice/.test(folded) ? { verdict: 'se_prepara', reason: 'Carta del fabricante para el proceso.' } : { verdict: 'verificar', reason: 'La ficha no tiene taller ni soporte técnico registrado.' };
     case 'calidad_sst': {
+      // La autoevaluación del SG-SST con un puntaje mínimo (Res. 0312): se compara con el de la ficha; sin él, no sabemos.
+      const sgsst = /sg.?sst|seguridad y salud en el trabajo|0312/.test(folded) && /autoevaluacion|puntaje|calificacion|\d+\s*%/.test(folded);
+      const asked = sgsst ? Number(folded.match(/(\d{2,3})\s*%/)?.[1]) : NaN;
+      if (sgsst && Number.isFinite(asked)) {
+        if (!Number.isFinite(company.sgsstPuntaje)) return { verdict: 'verificar', reason: `Piden SG-SST de más de ${asked} %; la ficha no tiene el puntaje.` };
+        return company.sgsstPuntaje > asked ? { verdict: 'cumple', reason: `SG-SST: ${company.sgsstPuntaje} %.` }
+          : { verdict: 'inhabilita', reason: `Piden SG-SST de más de ${asked} %; el nuestro es ${company.sgsstPuntaje} %.` };
+      }
       const iso = [...new Set((String(text).match(/iso\s*\d{4,5}/gi) || []).map(item => item.replace(/\s+/g, ' ').toUpperCase()))];
       const ours = company.documents.filter(document => document.type === 'quality_certifications').map(document => document.name.toUpperCase());
       const missing = iso.filter(code => !ours.some(name => name.includes(code.replace('ISO ', ''))));
@@ -198,7 +262,12 @@ export function assessRequirement({ type, text, quote = '', process = '' }, comp
     case 'personal_minimo': case 'responsable_sst': case 'centro_operaciones': case 'vehiculos': case 'equipos_tecnologia': case 'muestras_fichas':
       return { verdict: 'verificar', reason: 'La ficha no trae el inventario de personal, vehículos ni equipos: se confirma con Operaciones para cada proceso.' };
     case 'uniformes': return has(company, 'uniforms_resolution') ? { verdict: 'cumple', reason: 'Resolución de uniformes de la Supervigilancia.' } : { verdict: 'verificar', reason: 'La ficha no tiene la resolución de uniformes.' };
-    case 'armas': return { verdict: 'se_prepara', reason: 'Listado de armas y permisos; se actualiza para cada cierre.' };
+    case 'armas': {
+      const asked = Number(folded.match(/(\d+)\s*armas/)?.[1]);
+      if (Number.isFinite(asked) && Number.isFinite(company.armasLibres)) return company.armasLibres >= asked ? { verdict: 'cumple', reason: `Piden ${asked} armas; tenemos ${company.armasLibres} libres.` }
+        : { verdict: 'inhabilita', reason: `Piden ${asked} armas con salvoconducto a nombre de la empresa; tenemos ${company.armasLibres} libres.` };
+      return { verdict: 'se_prepara', reason: 'Listado de armas y permisos; se actualiza para cada cierre.' };
+    }
     case 'antecedentes': case 'seguridad_social': case 'existencia_representacion': case 'rut': case 'identificacion':
     case 'inhabilidades': case 'sarlaft': case 'carta_formatos': case 'proponente_plural': case 'estructura_organizacional':
     case 'oferta_economica': case 'cronograma':
