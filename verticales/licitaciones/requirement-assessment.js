@@ -103,6 +103,16 @@ function assessCodes(text, company) {
 
 function assessPresence(text, company, process) {
   const folded = foldText(text);
+  // «Un celular por sede», «en cada sede»: son las sedes de la entidad, no una exigencia de presencia nuestra (Juan,
+  // 2026-11-15: Defensoría salía en la tarjeta de sede sin pedirla). Sólo cuenta si el texto exige domicilio, sucursal,
+  // agencia, oficina o sede propia en un lugar; un domicilio en Colombia lo cumplimos.
+  const demand = folded.replace(/\b(por|cada|las|sus|de la|de las) sedes?\b[^.;]*/g, ' ');
+  if (!/sucursal|agencia|domicilio|oficina (principal|en|local)|sede (principal|propia|local|en)|contar con (una )?sede|establecimiento de comercio/.test(demand)) {
+    return { verdict: 'cumple', reason: 'El texto no exige sede, sucursal ni agencia nuestra en la ciudad.' };
+  }
+  if (/domicilio[^.;]{0,60}(en )?(la republica de )?colombia\b/.test(demand) && !/sucursal|agencia|oficina|sede/.test(demand)) {
+    return { verdict: 'cumple', reason: 'Piden domicilio en Colombia.' };
+  }
   // Una fila de la matriz puede juntar varios procesos: cada uno se mide con su propia ciudad.
   const own = citiesIn(process || '');
   const cities = own.length ? own : citiesIn(text);
