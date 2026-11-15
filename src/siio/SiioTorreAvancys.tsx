@@ -247,6 +247,12 @@ const mesAnterior = (mes: string) => {
   return numero === 1 ? `${anio - 1}-12` : `${anio}-${String(numero - 1).padStart(2, '0')}`;
 };
 
+// El mes del que habla la Portada: el mes anterior si Avancys ya lo tiene; si no, el último cerrado.
+export function mesPrincipal(t: TorreAvancys, hoy = new Date()) {
+  const anterior = mesAnterior(hoy.toISOString().slice(0, 7));
+  return t.realDe(anterior) ? anterior : t.torre?.mes_cerrado || null;
+}
+
 // La portada (maqueta de la Fase 3, revisada con Juan el 2026-11-15): la frase del mes anterior con las cifras que el
 // sistema tiene hoy y su estado de cierre; el mes en curso, solo con lo facturado (la nómina se causa al cierre, así
 // que su utilidad a mitad de mes engaña); y el margen de cada mes con su cifra escrita.
@@ -254,8 +260,7 @@ export function SiioPortada({ t, onIr }: { t: TorreAvancys; onIr: (pestana: Pest
   const { torre, estado, error } = t;
   const hoy = new Date();
   const mesActual = hoy.toISOString().slice(0, 7);
-  const anterior = mesAnterior(mesActual);
-  const principal = t.realDe(anterior) ? anterior : torre?.mes_cerrado || null;
+  const principal = mesPrincipal(t, hoy);
   const resumen = principal ? t.realDe(principal) : null;
   const cierre = principal ? cierreDe(t, principal, hoy) : null;
   const enCurso = (torre?.pyg || []).find(fila => fila.mes === mesActual) || null;
@@ -314,14 +319,33 @@ function Bloque({ pregunta, chip, cifra, children, ver, onVer }: { pregunta: str
   </section>;
 }
 
+// Los bloques hablan del mismo mes que la frase (Juan, 2026-11-15). La rentabilidad del último mes cerrado viene con la
+// Torre; la del mes principal, si es otro, se pide aparte con la misma ruta de la pestaña Clientes.
 function BloqueClientes({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre) => void }) {
-  const k = t.torre?.clientes;
+  const principal = mesPrincipal(t);
+  const cerrado = t.torre?.mes_cerrado || null;
+  const [otro, setOtro] = useState<Clientes | 'cargando' | 'error' | null>(null);
+  useEffect(() => {
+    if (!principal || principal === cerrado) return;
+    let vivo = true;
+    setOtro('cargando');
+    api<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(principal)}`)
+      .then(datos => { if (vivo) setOtro(datos); })
+      .catch(() => { if (vivo) setOtro('error'); });
+    return () => { vivo = false; };
+  }, [principal, cerrado]);
+  const delPrincipal = principal && principal !== cerrado && typeof otro === 'object' && otro?.legible;
+  const k = delPrincipal ? otro as Clientes : t.torre?.clientes;
+  const mesDatos = delPrincipal ? principal : cerrado;
   const conIngreso = (k?.clientes || []).filter(fila => fila.ingresos > 0);
   const pierden = conIngreso.filter(fila => fila.margen < 0).sort((a, b) => b.ingresos - a.ingresos);
-  const mes = nombreMes(t.torre?.mes_cerrado).split(' ')[0];
-  if (!k?.legible) return <Bloque pregunta="¿Quién nos hace perder?" cifra="—" ver="Ver clientes" onVer={() => onIr('clientes')}><p>Sin el detalle por cliente del último mes cerrado.</p></Bloque>;
-  return <Bloque pregunta="¿Quién nos hace perder?" cifra={<>{pierden.length === 1 ? '1 cliente' : `${pierden.length} clientes`} · <em style={{ fontStyle: 'normal', color: 'var(--mal)' }}>{millones(pierden.reduce((suma, fila) => suma + fila.margen, 0))}</em></>} ver="Ver clientes" onVer={() => onIr('clientes')}>
-    <p>{pierden.length ? <>En {mes}. El más grande: {sinCodigo(pierden[0].cliente)} ({pct(pierden[0].ingresos, k.ingresos_clientes ?? 0)} del ingreso).</> : <>Ningún cliente pierde plata en {mes}.</>}</p>
+  const mes = nombreMes(mesDatos).split(' ')[0];
+  const cierre = mesDatos ? cierreDe(t, mesDatos) : null;
+  const chip = cierre ? <span className={`siio-chip ${cierre.tono}`}>{cierre.texto}</span> : null;
+  if (otro === 'cargando' && !delPrincipal) return <Bloque pregunta="¿Quién nos hace perder?" cifra="—" ver="Ver clientes" onVer={() => onIr('clientes')}><p>Leyendo los clientes de {nombreMes(principal).split(' ')[0]} en Avancys…</p></Bloque>;
+  if (!k?.legible) return <Bloque pregunta="¿Quién nos hace perder?" cifra="—" ver="Ver clientes" onVer={() => onIr('clientes')}><p>Sin el detalle por cliente de {nombreMes(principal).split(' ')[0]}.</p></Bloque>;
+  return <Bloque pregunta="¿Quién nos hace perder?" chip={chip} cifra={<>{pierden.length === 1 ? '1 cliente' : `${pierden.length} clientes`} · <em style={{ fontStyle: 'normal', color: 'var(--mal)' }}>{millones(pierden.reduce((suma, fila) => suma + fila.margen, 0))}</em></>} ver="Ver clientes" onVer={() => onIr('clientes')}>
+    <p>{pierden.length ? <>En {mes}. El más grande: {sinCodigo(pierden[0].cliente)} ({pct(pierden[0].ingresos, k.ingresos_clientes ?? 0)} del ingreso).</> : <>Ningún cliente pierde plata en {mes}.</>}{otro === 'error' && !delPrincipal ? ` No se pudo leer ${nombreMes(principal).split(' ')[0]}; se muestra ${mes}.` : ''}</p>
   </Bloque>;
 }
 
@@ -340,7 +364,14 @@ function BloqueCartera({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTo
 }
 
 function BloquePresupuesto({ t, onIr }: { t: TorreAvancys; onIr: (pestana: PestanaTorre) => void }) {
-  const fila = mesComparable(t.torre?.presupuesto || null, t.torre?.mes_cerrado || '9999-12');
+  const principal = mesPrincipal(t);
+  const fila = (principal && t.torre?.presupuesto?.meses?.[principal]) || mesComparable(t.torre?.presupuesto || null, t.torre?.mes_cerrado || '9999-12');
+  const cierre = fila ? cierreDe(t, fila.mes) : null;
+  // La rentabilidad de tecnología mes a mes, para que se vea el salto que hay que confirmar con Finanzas.
+  const historialTecnologia = Object.values(t.torre?.presupuesto?.meses || {})
+    .filter(m => m.tecnologia?.rentabilidad !== null && m.tecnologia?.rentabilidad !== undefined && (!fila || m.mes <= fila.mes))
+    .sort((x, y) => x.mes.localeCompare(y.mes)).slice(-3)
+    .map(m => `${nombreMes(m.mes).split(' ')[0]} ${(m.tecnologia.rentabilidad as number).toLocaleString('es-CO')} %`).join(', ');
   if (!fila) return <Bloque pregunta="¿Vamos dentro del presupuesto?" cifra="—" ver="Ver presupuesto" onVer={() => onIr('resultados')}><p>{t.torre?.presupuesto?.motivo || 'Todavía no hay un mes cerrado para comparar.'}</p></Bloque>;
   const unidades = [['Vigilancia', fila.vigilancia], ['Tecnología', fila.tecnologia]] as const;
   const pasados = fila.vigilancia.rubros.filter(rubro => rubro.diferencia !== null && rubro.diferencia >= 0.5).sort((a, b) => (b.diferencia || 0) - (a.diferencia || 0)).slice(0, 4);
@@ -353,11 +384,11 @@ function BloquePresupuesto({ t, onIr }: { t: TorreAvancys; onIr: (pestana: Pesta
         return <Fragment key={nombre}>
           <span>{nombre}</span>
           <span className="siio-meta-linea"><b className={meta !== null && real < meta ? 'mal' : ''} style={{ width: `${Math.max(0, (real / escala) * 100)}%` }} />{meta !== null ? <u style={{ left: `${Math.min(100, (meta / escala) * 100)}%` }} /> : null}</span>
-          <span className="siio-num"><strong>{u.rentabilidad === null ? '—' : `${u.rentabilidad.toLocaleString('es-CO')} %`}</strong>{meta !== null ? <span className="meta"> / {meta.toLocaleString('es-CO')} %</span> : null}</span>
+          <span className="siio-num"><strong>{u.rentabilidad === null ? '—' : `${u.rentabilidad.toLocaleString('es-CO')} %`}</strong>{meta !== null ? <span className="meta"> / {meta.toLocaleString('es-CO')} %</span> : null}{nombre === 'Tecnología' ? <small className="por-confirmar"> · por confirmar</small> : null}</span>
         </Fragment>;
       })}
     </div>
-    <p>{nombreMes(fila.mes).replace(/^./, letra => letra.toUpperCase()).split(' ')[0]}. {pasados.length ? <>Se pasan en vigilancia: {pasados.slice(0, 2).map(rubro => `${rubro.etiqueta.toLowerCase()} (+${(rubro.diferencia || 0).toLocaleString('es-CO')} pts)`).join(', ')}.</> : 'Ningún rubro de vigilancia se pasa del presupuesto.'}</p>
+    <p>{nombreMes(fila.mes).replace(/^./, letra => letra.toUpperCase()).split(' ')[0]}{cierre && cierre.tono !== 'cerrado' ? ` (${cierre.texto.toLowerCase()})` : ''}. {pasados.length ? <>Se pasan en vigilancia: {pasados.slice(0, 2).map(rubro => `${rubro.etiqueta.toLowerCase()} (+${(rubro.diferencia || 0).toLocaleString('es-CO')} pts)`).join(', ')}.</> : 'Ningún rubro de vigilancia se pasa del presupuesto.'} Tecnología, por confirmar con Finanzas: {historialTecnologia || 'sin meses para comparar'}; el salto sugiere costos que no están en sus cuentas.</p>
   </Bloque>;
 }
 

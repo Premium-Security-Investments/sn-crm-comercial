@@ -60,10 +60,11 @@ test('la respuesta de la Torre no lleva los saldos por cuenta y sale aunque falt
   assert.deepEqual(await agregarPresupuesto(db({ data: filas, error: null }), { configurado: false }), { configurado: false });
 });
 
-test('la Torre entra al mes en vivo y juzga a los clientes con el último mes cerrado', () => {
+test('la Torre entra al mes en vivo; la Portada juzga a los clientes en el mes anterior (o el último cerrado)', () => {
   const torre = read('src/siio/SiioTorreAvancys.tsx');
   assert.match(torre, /const mes = mesElegido \|\| enVivo \|\|/);
-  assert.match(torre, /const k = t\.torre\?\.clientes;/);
+  // Juan, 2026-11-15: los bloques hablan del mismo mes que la frase; si ese mes no se puede leer, el último cerrado.
+  assert.match(torre, /const k = delPrincipal \? otro as Clientes : t\.torre\?\.clientes;/);
   assert.match(read('server/index.js'), /agregarPresupuesto\(requireDb\(\), await torreAvancys\(/);
 });
 
