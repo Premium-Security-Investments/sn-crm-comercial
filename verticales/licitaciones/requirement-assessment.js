@@ -50,7 +50,11 @@ const FINANCIAL = {
   cobertura_intereses: { labels: ['cobertura de intereses', 'razon de cobertura'], fact: 'cobertura', min: true, name: 'cobertura de intereses' },
 };
 
-function assessFinancial(type, text, company) {
+function assessFinancial(type, rawText, company) {
+  // Las fechas de corte («corte 31-dic-2025», «31 de diciembre de 2025») no son umbrales: Cali Seguridad salía con
+  // «liquidez de al menos 31» (2026-11-15).
+  const text = String(rawText || '').replace(/\b\d{1,2}(?:[-/ ]|\s+de\s+)(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-zé]*\.?(?:[-/ ]|\s+de\s+)\d{4}\b/gi, ' ')
+    .replace(/\b\d{1,2}[/-]\d{1,2}[/-]\d{4}\b/g, ' ');
   const results = [];
   for (const [key, spec] of Object.entries(FINANCIAL)) {
     const threshold = thresholdFor(text, spec.labels) || (key === type ? firstThreshold(text) : null);
@@ -172,7 +176,9 @@ export function assessRequirement({ type, text, quote = '', process = '' }, comp
       return /explosivos|disponibilidad/.test(folded) ? { verdict: 'verificar', reason: 'La licencia incluye medio canino; la ficha no dice cuántos caninos propios ni su especialidad.' } : { verdict: 'cumple', reason: 'La licencia incluye medio canino.' };
     case 'horas_extras': return { verdict: 'verificar', reason: 'La ficha no tiene la autorización del Ministerio del Trabajo para horas extras.' };
     // Juan, 2026-11-13: no es un papel que se saque para el cierre; en Manizales hay que estar inscritos antes.
-    case 'red_apoyo': return { verdict: 'verificar', reason: 'La ficha no dice en qué ciudades estamos inscritos en la Red de Apoyo de la Policía.' };
+    // Un compromiso de vincularse se firma con la oferta (Defensoría, 6.3.7); sólo exigir estar inscritos es un hecho.
+    case 'red_apoyo': if (/compromiso/.test(folded) && !/inscrit|certific|vinculad[oa] a/.test(folded)) return { verdict: 'se_prepara', reason: 'Compromiso de vinculación a la Red de Apoyo, que se firma con la oferta.' };
+      return { verdict: 'verificar', reason: 'La ficha no dice en qué ciudades estamos inscritos en la Red de Apoyo de la Policía.' };
     case 'registro_tecnologia':
       if (/importador|comercializador|distribuidor|productores/.test(folded)) return { verdict: 'inhabilita', reason: 'Piden el registro de importador, comercializador o distribuidor de equipos ante la Supervigilancia; no lo tenemos.' };
       return /carta|certificado del fabricante|autorice/.test(folded) ? { verdict: 'se_prepara', reason: 'Carta del fabricante para el proceso.' } : { verdict: 'verificar', reason: 'La ficha no tiene taller ni soporte técnico registrado.' };
