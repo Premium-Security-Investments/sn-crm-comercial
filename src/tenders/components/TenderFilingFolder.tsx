@@ -12,7 +12,7 @@ type Snapshot = {
   indice: { secciones: Array<{ carpeta: string; archivos: File[] }>; sueltos: File[]; vacias: string[]; total: number };
   comparacion: null | { preparados: number; radicados: number; coinciden: number; no_radicados: Array<{ nombre: string; carpeta: string | null }>; radicados_sin_preparar: Array<{ nombre: string }> };
 };
-type Folder = { status: 'pendiente' | 'creada' | 'error'; origin: string; web_url: string | null; error: string | null; refresh_requested_at: string | null; snapshot: Snapshot | null; snapshot_at: string | null };
+type Folder = { status: 'pendiente' | 'creada' | 'error'; origin: string; etapa?: 'observaciones' | 'completa'; web_url: string | null; error: string | null; refresh_requested_at: string | null; snapshot: Snapshot | null; snapshot_at: string | null };
 const LABEL: Record<string, string> = {
   '01_Anexos_firmados': 'Anexos firmados', '02_Juridicos': 'Jurídicos', '03_Financieros_y_RUP': 'Financieros y RUP',
   '04_Tecnicos_habilitantes': 'Técnicos habilitantes', '05_Experiencia': 'Experiencia', '06_Ponderables': 'Ponderables', '07_Garantia': 'Garantía',
@@ -41,7 +41,13 @@ export function TenderFilingFolder({ opportunityId, request, canRequest }: { opp
     {!folder && <p>Este proceso todavía no tiene carpeta de radicación en SharePoint. {canRequest && <button type="button" className="secondary" onClick={() => void ask('crear')}>Crear carpeta de radicación</button>}</p>}
     {folder?.status === 'pendiente' && <p>Creando la carpeta en SharePoint…</p>}
     {folder?.status === 'error' && <p className="tw-reanalysis-warn">No se pudo crear: {folder.error}. {canRequest && <button type="button" className="secondary" onClick={() => void ask('crear')}>Intentar de nuevo</button>}</p>}
-    {folder?.status === 'creada' && <>
+    {/* Etapa de observaciones (Juan, 2026-11-15): antes del GO sólo existe 01_Observaciones; la de la oferta llega con el GO. */}
+    {folder?.status === 'creada' && folder.etapa === 'observaciones' && <p>
+      {folder.web_url && <a href={folder.web_url} target="_blank" rel="noreferrer">Abrir la carpeta del proceso en SharePoint ↗</a>}
+      {' '}Por ahora tiene sólo <b>01_Observaciones</b> (proyecto y definitivo). La carpeta de la oferta se crea sola con el GO.
+      {canRequest && <> <button type="button" className="secondary" onClick={() => void ask('crear')}>Crear ya la carpeta de la oferta</button></>}
+    </p>}
+    {folder?.status === 'creada' && folder.etapa !== 'observaciones' && <>
       <div className="tw-filing-head">
         {folder.web_url && <a href={folder.web_url} target="_blank" rel="noreferrer">Abrir la carpeta en SharePoint ↗</a>}
         {canRequest && <button type="button" className="secondary" disabled={Boolean(waitingIndex)} onClick={() => void ask('actualizar')}>{waitingIndex ? 'Actualizando…' : 'Actualizar índice'}</button>}

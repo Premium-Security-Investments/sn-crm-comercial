@@ -8878,12 +8878,15 @@ app.get('/api/tender-filing-folder', async (req, res) => {
     const opportunityId = String(req.query.opportunity_id || '');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
     res.set('Cache-Control', 'private, no-store');
-    const { data, error } = await database.from('psi_tender_filing_folders').select('status,origin,web_url,error,refresh_requested_at,snapshot,snapshot_at,created_at').eq('opportunity_id', opportunityId).maybeSingle();
+    // `*`: sin la migración 225 no hay `etapa` y la carpeta es la completa, como antes.
+    const { data, error } = await database.from('psi_tender_filing_folders').select('*').eq('opportunity_id', opportunityId).maybeSingle();
     if (error) {
       if (['PGRST205', '42P01'].includes(String(error.code))) return res.json({ installed: false, folder: null });
       throw error;
     }
-    res.json({ installed: true, folder: data || null });
+    const folder = data ? { status: data.status, origin: data.origin, etapa: data.etapa || 'completa', web_url: data.web_url, error: data.error,
+      refresh_requested_at: data.refresh_requested_at, snapshot: data.snapshot, snapshot_at: data.snapshot_at, created_at: data.created_at } : null;
+    res.json({ installed: true, folder });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -8896,15 +8899,17 @@ app.post('/api/tender-filing-folder/request', async (req, res) => {
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
     const action = String(req.body?.action || '');
     const nowIso = new Date().toISOString();
-    const { data: current } = await database.from('psi_tender_filing_folders').select('status').eq('opportunity_id', opportunityId).maybeSingle();
+    const { data: current } = await database.from('psi_tender_filing_folders').select('*').eq('opportunity_id', opportunityId).maybeSingle();
+    // Etapa de observaciones (migración 225): «crear» sube a la carpeta completa de la oferta.
+    const onlyObservations = current?.etapa === 'observaciones';
     if (action === 'crear') {
-      if (current?.status === 'creada') throw Object.assign(new Error('La carpeta de radicación ya está creada.'), { status: 409 });
+      if (current?.status === 'creada' && !onlyObservations) throw Object.assign(new Error('La carpeta de radicación ya está creada.'), { status: 409 });
       const { error } = current
-        ? await database.from('psi_tender_filing_folders').update({ status: 'pendiente', error: null, requested_by: currentProfile.id, updated_at: nowIso }).eq('opportunity_id', opportunityId)
+        ? await database.from('psi_tender_filing_folders').update({ status: 'pendiente', error: null, requested_by: currentProfile.id, updated_at: nowIso, ...(onlyObservations ? { etapa: 'completa' } : {}) }).eq('opportunity_id', opportunityId)
         : await database.from('psi_tender_filing_folders').insert({ opportunity_id: opportunityId, origin: 'boton', requested_by: currentProfile.id });
       if (error) throw error;
     } else if (action === 'actualizar') {
-      if (current?.status !== 'creada') throw Object.assign(new Error('Primero hay que crear la carpeta de radicación.'), { status: 409 });
+      if (current?.status !== 'creada' || onlyObservations) throw Object.assign(new Error('Primero hay que crear la carpeta de radicación.'), { status: 409 });
       const { error } = await database.from('psi_tender_filing_folders').update({ refresh_requested_at: nowIso, updated_at: nowIso }).eq('opportunity_id', opportunityId);
       if (error) throw error;
     } else throw Object.assign(new Error('Acción no válida.'), { status: 400 });
