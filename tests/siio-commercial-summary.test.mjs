@@ -185,9 +185,8 @@ test('la Torre se lee por decisiones: la frase del mes, lo que requiere decisió
   const view = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
   const pestanas = view.indexOf('role="tablist"');
   const pulso = view.indexOf('<SiioPortada');
-  const decide = view.indexOf('<SiioRequiereDecision');
   const comercial = view.indexOf('<SiioPestanaComercial');
-  assert.ok(pestanas > 0 && pestanas < pulso && pulso < decide && decide < comercial, 'orden: pestañas y la Portada como primera pantalla (frase, bloques, requiere decisión)');
+  assert.ok(pestanas > 0 && pestanas < pulso && pulso < comercial, 'orden: pestañas y la Portada como primera pantalla');
   assert.match(view, /'fuentes', 'Fuentes y detalle'/, 'el Excel por periodo, sus alertas y los detalles quedan en la pestaña Fuentes y detalle');
   assert.doesNotMatch(view, /SiioKeyFigures|SiioTrendCharts|SiioEstaSemana/, 'las cifras clave, las gráficas y la franja semanal del Excel salen de la Torre (Fase 4, PR 5)');
   assert.match(view, /<details className="siio-plegado">/, 'el detalle va en plegados del kit');

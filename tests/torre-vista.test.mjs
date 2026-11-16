@@ -17,16 +17,9 @@ test('los clientes de mes vencido son los marcados en el CRM; la lista fija sól
 
 test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resultado y Clientes tiene su propio mes', () => {
   const torre = read('src/siio/SiioTorreAvancys.tsx');
-  // v3 (contrato de la maqueta): ficha de plazo con valor y unidad, frase y responsable.
-  assert.match(torre, /ficha: \{ valor: string; unidad: string \};/);
-  assert.match(torre, /prioridad: 'alta' \| 'media' \| 'baja';/);
-  assert.match(torre, /<h2>Lo que hay que decidir<\/h2>/);
-  assert.match(torre, /className=\{`siio-plazo /);
-  // Portada (opción A, Juan 15-nov): de qué mes se habla y su cierre, cuatro cifras con referencia y lo que hay que decidir.
-  assert.match(torre, /className="siio-panel siio-cifras-portada"/);
-  assert.match(torre, /<strong>Cerrar \{nombreMes\(torre\.mes_cerrado\)\.split\(' '\)\[0\]\} en Avancys\.<\/strong> Ningún mes está bloqueado/);
+  // Portada de siete preguntas (contrato aprobado por Juan, 15-nov): cada renglón con su periodo y su comparación.
+  assert.match(torre, /className="siio-panel siio-portada"/);
   assert.match(read('src/siio/SiioExecutiveView.tsx'), /\['portada', 'Portada'\], \['resultados', 'Resultados'\]/);
-  for (const pregunta of ['¿Ganamos plata?', '¿Nos están pagando?', '¿Quién nos hace perder?', '¿El forecast está al día?']) assert.ok(torre.includes(pregunta), pregunta);
   // Resultados (PR 2 de la Fase 4): selector de mes del kit, estado de resultados por columnas con chip de estado y
   // el atraso contable con nombre; la franja vieja del mes desaparece.
   assert.doesNotMatch(torre, /SiioPulsoMes|siio-pulso/);
@@ -39,7 +32,6 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   assert.match(presupuesto, /className="siio-dos-col"/);
   assert.match(read('src/siio/SiioExecutiveView.tsx'), /className="siio-pantalla" role="tabpanel" aria-label="Resultados"/);
   assert.match(read('src/siio/SiioDashboard.tsx'), /<div className="siio-header-bar">\n      <SiioNavigation/);
-  assert.match(torre, /Lo que hay que decidir/);
   assert.match(torre, /cierre de Finanzas/);
   // Los que pierden: últimos tres meses cerrados y acumulado del año; el mes elegido sólo cambia el detalle.
   assert.match(torre, /const MESES_PIERDEN = 3;/);
@@ -82,9 +74,7 @@ test('comercial y licitaciones calcan la maqueta: plazo en ficha, forecast por c
   const comercial = read('src/siio/SiioPestanaComercial.tsx');
   const vista = read('src/siio/SiioExecutiveView.tsx');
   assert.match(vista, /className="siio-pantalla" role="tabpanel" aria-label="Comercial y licitaciones"/);
-  // El mismo umbral de rojo para la licitación en la Portada y en su tabla.
   assert.match(comercial, /export const PLAZO_ALTO = 12;/);
-  assert.match(vista, /minimo <= PLAZO_ALTO \? 'alta'/);
   assert.match(comercial, /<FichaPlazo item=\{item\} \/>/);
   // ¿El forecast está al día? con nombre: la columna protagonista es lo que lleva más de 30 días sin gestión.
   assert.match(comercial, /¿El forecast está al día\?/);
@@ -104,9 +94,8 @@ test('fuentes calca la maqueta: quién tiene atrasado qué, el Excel con su deta
   assert.ok(vista.indexOf('<SiioFuentesAlDia') < vista.indexOf('aria-label="El Excel de Finanzas"'), 'primero el tablero de atrasos');
   // Poda de la Fase 1: fuera lo que duplicaba una pantalla en vivo.
   assert.doesNotMatch(vista, /SiioRevenueByClient|SiioConcentracionClientes|SiioDevengado|SiioHorasPorCliente|Acumulado del año según/);
-  // El forecast atrasado sube a la Portada con su responsable.
-  // El forecast es una de las cuatro cifras de la Portada, con los nombres de quien no tiene ningún lead al día.
-  assert.match(vista, /forecast=\{forecastPortada\}/);
+  // Lo comercial y las licitaciones de la Portada salen del mismo resumen que su pestaña.
+  assert.match(vista, /comercial=\{commercial\} \/>/);
   const fuentes = read('src/siio/SiioFuentesAlDia.tsx');
   assert.match(fuentes, /<th>Atraso<\/th><th>Qué falta<\/th><th>Responsable<\/th><th>Efecto en la Torre<\/th>/);
   assert.match(read('src/siio/siio-kit.css'), /\.siio-dashboard \.siio-tabla td:last-child:not\(\.num\)\{text-align:left;white-space:normal\}/);
@@ -138,22 +127,32 @@ test('portada opción A (Juan, 15-nov): el mes anterior con su cierre, cuatro ci
   // «Sin cierre formal · N días» en vez de «Cerrado» por la regla de los 30 días.
   assert.match(torre, /texto: `Sin cierre formal · \$\{dias\} \$\{dias === 1 \? 'día' : 'días'\}`/);
   assert.match(torre, /return t\.realDe\(anterior\) \? anterior : t\.torre\?\.mes_cerrado \|\| null;/);
-  // El mes en curso solo con lo facturado (la nómina se causa al cierre).
-  assert.match(torre, /a hoy: <strong>\{millones\(enCurso\.totales\.ingresos\)\}<\/strong> facturados/);
-  // Cada cifra con su referencia: la utilidad contra el mes anterior en puntos; los clientes contra el mes anterior.
-  assert.match(torre, /pts frente a \{nombre\(previo\)\}/);
-  assert.match(torre, /<i> · \{nombre\(previo\)\.slice\(0, 3\)\}: \{antes\.pierden\.length\} · \{millones\(antes\.suma\)\}<\/i>/);
-  // La tendencia dice algo: cifra de cada mes, el mes de la portada resaltado y la línea del presupuesto.
-  assert.match(torre, /function TendenciaMargen/);
-  assert.match(torre, /className="ppto"/);
   // Clientes del mes de la portada: con la Torre si es el último cerrado; si no, con la ruta de la pestaña Clientes.
   assert.match(torre, /api<Clientes>\(`\/api\/siio\/avancys\/rentabilidad-aproximada\?mes=\$\{encodeURIComponent\(mes\)\}`\)/);
   // Ninguna cifra real escrita en el código.
   assert.doesNotMatch(torre, /8,7 %|48 %/);
-  const vista = read('src/siio/SiioExecutiveView.tsx');
-  assert.match(vista, /\.\.\.licitacionesPorDecidir\(porDecidir\)/);
-  assert.match(vista, /`¿Nos presentamos a \$\{enumerar\(nombres\)\}\?`/);
-  assert.match(vista, /export function nombreCorto/);
+  assert.doesNotMatch(read('src/siio/SiioExecutiveView.tsx'), /SiioRequiereDecision|licitacionesPorDecidir/, 'la lista de decisiones se volvió renglones de la Portada');
+});
+
+test('portada de siete preguntas (contrato de Juan, 15-nov): periodo, respuesta y comparación en cada renglón', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  const preguntas = ['¿Ganamos plata el mes pasado?', '¿Cuánto llevamos facturado este mes?', '¿Nos están pagando?', '¿Qué clientes nos hacen perder?', '¿Cómo va lo comercial?', '¿Qué licitaciones hay que decidir?', '¿Las fuentes están al día?'];
+  const posiciones = preguntas.map(pregunta => torre.indexOf(`pregunta="${pregunta}"`));
+  assert.ok(posiciones.every((pos, i) => pos > 0 && (i === 0 || pos > posiciones[i - 1])), 'las siete, en el orden aprobado');
+  // Cada renglón dice su periodo: el mes anterior con su cierre, o a hoy.
+  assert.match(torre, /function Renglon\(\{ pregunta, periodo, tono, ir, respuesta, comparacion \}/);
+  assert.match(torre, /className=\{`siio-periodo \$\{periodo\.tono\}`\}/);
+  // Lo facturado se compara contra el mes anterior completo, no día contra día (la facturación llega en lotes).
+  assert.match(torre, /completo: \{millones\(r\.ingresos\)\}/);
+  // Licitaciones: las que cierran en 15 días sin GO ni NO-GO.
+  assert.match(torre, /export const VENTANA_LICITACIONES = 15;/);
+  assert.match(torre, /const porDecidir = enVentana\.filter\(item => item\.offer_status === 'pendiente_decision'\);/);
+  // Los meses sin cerrar se cuentan con la misma regla de cierre que Resultados.
+  assert.match(torre, /\.filter\(fila => fila\.cierre\.tono !== 'cerrado'\)/);
+  // Ningún botón dentro de otro: «Volver a leer» va fuera de los renglones.
+  const portada = torre.slice(torre.indexOf('export function SiioPortada'), torre.indexOf('// Resultados (contrato de la maqueta'));
+  assert.equal((portada.match(/<button/g) || []).length, 1);
+  assert.equal((torre.slice(torre.indexOf('function Renglon'), torre.indexOf('function Lista')).match(/<button/g) || []).length, 1);
 });
 
 test('resultados revisado con Juan (15-nov): lo que Avancys tiene hoy, sin proyecciones, una cifra por mes', () => {
