@@ -86,6 +86,7 @@ import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
 import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, quoteTotals, ratesInEffect } from '../src/vigia/quote-engine.js';
+import { opportunityValueFromQuote } from '../src/vigia/quote-proposal.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
@@ -521,6 +522,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'PUT /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'POST /api/agt003/quote/use-in-opportunity': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'PUT /api/avancys/cliente-enlace': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
@@ -5072,6 +5074,28 @@ app.put('/api/agt003/quote', async (req, res) => {
     await must(database.from('psi_quotes').update(patch).eq('id', id).select('id').single());
     await saveQuoteItems(database, id, input);
     res.json(await loadQuote(database, id, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// AGT-003 — la cotización le pone el valor a su oportunidad (entrega 4; Juan, 2026-11-16). La oportunidad tiene un solo
+// valor: vigilancia = lo mensual antes de IVA; tecnología = el total antes de IVA; mixta = lo mensual más la tecnología
+// repartida en 12 meses (regla en src/vigia/quote-proposal.js). Se toma de la cotización GUARDADA, con sus tarifas, y
+// sólo en una oportunidad abierta: el valor de una ganada o perdida ya es historia de ventas.
+app.post('/api/agt003/quote/use-in-opportunity', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    const quote = await loadQuote(database, String(req.query.id || '').trim(), currentProfile);
+    if (!quote.opportunity_id) { const error = new Error('Primero ligue la cotización a una oportunidad.'); error.status = 400; throw error; }
+    const opportunity = await ensureOpportunityAccess(database, quote.opportunity_id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    if (opportunity.service_type_code === 'licitacion_publica') { const error = new Error('Las licitaciones toman su valor del proceso, no de una cotización.'); error.status = 400; throw error; }
+    if (CHAT_CLOSED_STAGES.has(opportunity.stage_code)) { const error = new Error('La oportunidad ya está cerrada: su valor no se cambia desde una cotización.'); error.status = 409; throw error; }
+    const computed = opportunityValueFromQuote(quote.totals);
+    if (!computed) { const error = new Error('La cotización no tiene puestos ni líneas.'); error.status = 400; throw error; }
+    const before = await must(database.from('psi_sales_opportunities').select('offer_value').eq('id', opportunity.id).single());
+    await must(database.from('psi_sales_opportunities').update({ offer_value: computed.value }).eq('id', opportunity.id).select('id').single());
+    res.json({ opportunity_id: opportunity.id, previous_value: before?.offer_value ?? null, offer_value: computed.value, basis: computed.basis, explanation: computed.explanation });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

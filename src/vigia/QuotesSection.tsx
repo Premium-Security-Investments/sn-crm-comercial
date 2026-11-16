@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import {
   DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, GUARD_DAY_TYPES, GUARD_MODALITIES, TECH_CATEGORIES, quoteGuardPost, quoteTechLine,
-  type GuardDayType, type GuardModality, type GuardPostInput, type GuardRates, type TechCategory, type TechLineInput, type TechRates,
+  type GuardDayType, type GuardModality, type GuardPostInput, type GuardRates, type QuoteTotals, type TechCategory, type TechLineInput, type TechRates,
 } from './quote-engine.js';
+import { opportunityValueFromQuote, pesos as proposalPesos, proposalContent } from './quote-proposal.js';
 
 // AGT-003 — Sección Cotizar (entrega 3; Juan, 2026-11-11). Una sola sección para los dos cotizadores: vigilancia
 // (puestos, se cobra cada mes) y tecnología (equipos, insumos y mano de obra, se paga una vez). Se entra desde el menú
@@ -13,8 +14,9 @@ import {
 type RateRow = { id?: string; kind: string; valid_from: string | null; params: Record<string, unknown>; notes?: string | null; created_at?: string };
 type RatesResponse = { today: string; canEdit: boolean; motivo: string | null; rates: { vigilancia: { current: RateRow; history: RateRow[] }; tecnologia: { current: RateRow; history: RateRow[] } } };
 type QuoteSummary = { id: string; opportunity_id: string | null; client_name: string | null; title: string | null; status: string; created_at: string; updated_at: string };
-type QuoteFull = QuoteSummary & { guardPosts: GuardPostInput[]; techLines: TechLineInput[]; totals: { monthly: { subtotal: number; iva: number; total: number }; oneTime: { subtotal: number; iva: number; total: number } } };
-type OpportunityOption = { id: string; company_name: string; service_type_code?: string | null };
+type QuoteFull = QuoteSummary & { guardPosts: GuardPostInput[]; techLines: TechLineInput[]; totals: QuoteTotals };
+type OpportunityOption = { id: string; company_name: string; service_type_code?: string | null; stage_code?: string | null };
+export type QuoteSeller = { name: string; email?: string | null; phone?: string | null };
 
 const MODALITY_LABEL: Record<GuardModality, string> = { sin_arma: 'Sin arma', con_arma: 'Con arma', canino: 'Canino' };
 const CATEGORY_LABEL: Record<TechCategory, string> = { equipo: 'Equipo', insumo: 'Insumo (tubería, cableado, fijación)', mano_de_obra: 'Mano de obra y programación' };
@@ -22,6 +24,9 @@ const pesos = (value: number) => `$ ${Math.round(value || 0).toLocaleString('es-
 const day = (iso?: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—');
 const newPost = (): GuardPostInput => ({ name: '', start: '0600', end: '1800', dayTypes: GUARD_DAY_TYPES.map(type => type.code), guards: 1, modality: 'con_arma' });
 const newLine = (): TechLineInput => ({ description: '', category: 'equipo', quantity: 1, unitCost: 0 });
+const CLOSED_STAGES = new Set(['aprobado', 'descartado', 'perdido']);
+// El día de la propuesta, en hora de Colombia.
+const bogotaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
 
 function useRates() {
   const [rates, setRates] = useState<RatesResponse | null>(null);
@@ -36,14 +41,14 @@ function useRates() {
 }
 
 /** La sección completa: lista, editor (`nueva` o un id) y tarifas (`tarifas`, sólo administrador). */
-export function QuotesSection({ id, opportunities, navigate }: { id?: string; opportunities: OpportunityOption[]; navigate: (hash: string) => void }) {
+export function QuotesSection({ id, opportunities, navigate, seller = null }: { id?: string; opportunities: OpportunityOption[]; navigate: (hash: string) => void; seller?: QuoteSeller | null }) {
   const { rates, error, guardRates, techRates, reload } = useRates();
   const tabs = <div className="quote-tabs" role="navigation" aria-label="Cotizar">
     <a className={!id || (id !== 'tarifas') ? 'is-active' : ''} href="#/cotizar">Cotizaciones</a>
     {rates?.canEdit && <a className={id === 'tarifas' ? 'is-active' : ''} href="#/cotizar/tarifas">Tarifas</a>}
   </div>;
   if (id === 'tarifas') return <section className="stack quotes-section">{tabs}<RatesPanel rates={rates} error={error} onSaved={reload} /></section>;
-  if (id) return <section className="stack quotes-section">{tabs}<QuoteEditor quoteId={id === 'nueva' ? null : id} opportunities={opportunities} guardRates={guardRates} techRates={techRates} ratesNote={rates?.motivo || null} navigate={navigate} /></section>;
+  if (id) return <section className="stack quotes-section">{tabs}<QuoteEditor quoteId={id === 'nueva' ? null : id} opportunities={opportunities} guardRates={guardRates} techRates={techRates} ratesNote={rates?.motivo || null} navigate={navigate} seller={seller} /></section>;
   return <section className="stack quotes-section">{tabs}<QuoteList navigate={navigate} opportunities={opportunities} /></section>;
 }
 
@@ -80,8 +85,8 @@ export function OpportunityQuotes({ opportunityId, opportunities, navigate }: { 
   return <QuoteList opportunityId={opportunityId} opportunities={opportunities} navigate={navigate} />;
 }
 
-function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote, navigate }: {
-  quoteId: string | null; opportunities: OpportunityOption[]; guardRates: GuardRates; techRates: TechRates; ratesNote: string | null; navigate: (hash: string) => void;
+function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote, navigate, seller }: {
+  quoteId: string | null; opportunities: OpportunityOption[]; guardRates: GuardRates; techRates: TechRates; ratesNote: string | null; navigate: (hash: string) => void; seller: QuoteSeller | null;
 }) {
   const presetOpportunity = useMemo(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.hash.split('?')[1] || '').get('opportunity') || ''), [quoteId]);
   const [clientName, setClientName] = useState('');
@@ -92,6 +97,10 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
   const [lines, setLines] = useState<TechLineInput[]>([newLine()]);
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
+  // La última versión guardada: la propuesta y el valor de la oportunidad salen de ella, nunca de lo que está a medio
+  // escribir. `savedBody` permite saber si hay cambios sin guardar.
+  const [saved, setSaved] = useState<QuoteFull | null>(null);
+  const [savedBody, setSavedBody] = useState('');
 
   useEffect(() => {
     if (!quoteId) {
@@ -108,6 +117,8 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
         setPosts(q.guardPosts.length ? q.guardPosts : [newPost()]);
         setLines(q.techLines.length ? q.techLines : [newLine()]);
         setKinds({ vigilancia: q.guardPosts.length > 0, tecnologia: q.techLines.length > 0 });
+        setSaved(q);
+        setSavedBody(bodyOf({ clientName: q.client_name || '', title: q.title || '', opportunityId: q.opportunity_id || '', kinds: { vigilancia: q.guardPosts.length > 0, tecnologia: q.techLines.length > 0 }, posts: q.guardPosts, lines: q.techLines }));
       } catch (err) { if (alive) setStatus(err instanceof Error ? err.message : String(err)); }
     })();
     return () => { alive = false; };
@@ -124,20 +135,51 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
   const setLine = (index: number, patch: Partial<TechLineInput>) => setLines(list => list.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   const toggleDay = (index: number, code: GuardDayType) => setPosts(list => list.map((p, i) => (i !== index ? p : { ...p, dayTypes: p.dayTypes.includes(code) ? p.dayTypes.filter(d => d !== code) : [...p.dayTypes, code] })));
 
-  const save = async () => {
-    if (!kinds.vigilancia && !kinds.tecnologia) { setStatus('Escoja qué va a cotizar: vigilancia, tecnología o las dos.'); return; }
-    if (hasErrors) { setStatus('Corrija los datos marcados antes de guardar.'); return; }
+  const body = bodyOf({ clientName, title, opportunityId, kinds, posts, lines });
+  const dirty = !saved || body !== savedBody;
+
+  /** Guarda si hace falta y devuelve la cotización guardada; `null` si no se pudo. */
+  const persist = async (): Promise<QuoteFull | null> => {
+    if (!kinds.vigilancia && !kinds.tecnologia) { setStatus('Escoja qué va a cotizar: vigilancia, tecnología o las dos.'); return null; }
+    if (hasErrors) { setStatus('Corrija los datos marcados antes de guardar.'); return null; }
+    if (!dirty && saved) return saved;
     setSaving(true); setStatus('Guardando…');
     try {
-      const body = JSON.stringify({ client_name: clientName, title, opportunity_id: opportunityId || undefined, guardPosts: kinds.vigilancia ? posts : [], techLines: kinds.tecnologia ? lines : [] });
-      const saved = quoteId
-        ? await api<QuoteFull>(`/api/agt003/quote?id=${encodeURIComponent(quoteId)}`, { method: 'PUT', body })
+      const result = saved
+        ? await api<QuoteFull>(`/api/agt003/quote?id=${encodeURIComponent(saved.id)}`, { method: 'PUT', body })
         : await api<QuoteFull>('/api/agt003/quotes', { method: 'POST', body });
+      setSaved(result); setSavedBody(body);
       setStatus('Guardada.');
-      if (!quoteId) navigate(`#/cotizar/${saved.id}`);
+      if (!quoteId) navigate(`#/cotizar/${result.id}`);
+      return result;
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err));
+      return null;
     } finally { setSaving(false); }
+  };
+  const save = async () => { await persist(); };
+
+  const downloadProposal = async () => {
+    const quote = await persist();
+    if (!quote) return;
+    setStatus('Armando la propuesta…');
+    try {
+      const { downloadProposalPdf } = await import('./quote-proposal-pdf');
+      await downloadProposalPdf(proposalContent({ quote, today: bogotaToday(), seller }));
+      setStatus('Propuesta descargada.');
+    } catch (err) { setStatus(`No se pudo armar la propuesta: ${err instanceof Error ? err.message : String(err)}`); }
+  };
+
+  const linkedOpportunity = opportunities.find(o => o.id === (saved?.opportunity_id || '')) || null;
+  const opportunityValue = saved ? opportunityValueFromQuote(saved.totals) : null;
+  const canUseInOpportunity = Boolean(saved?.opportunity_id && opportunityValue && !dirty && !CLOSED_STAGES.has(linkedOpportunity?.stage_code || ''));
+  const useInOpportunity = async () => {
+    if (!saved || !canUseInOpportunity) return;
+    setSaving(true); setStatus('Pasando el valor a la oportunidad…');
+    try {
+      const r = await api<{ offer_value: number; previous_value: number | null; explanation: string }>(`/api/agt003/quote/use-in-opportunity?id=${encodeURIComponent(saved.id)}`, { method: 'POST', body: '{}' });
+      setStatus(`La oportunidad quedó en ${proposalPesos(r.offer_value)}${r.previous_value !== null ? ` (antes ${proposalPesos(Number(r.previous_value))})` : ''}.`);
+    } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); } finally { setSaving(false); }
   };
 
   const commercialOptions = opportunities.filter(o => o.service_type_code !== 'licitacion_publica').sort((a, b) => a.company_name.localeCompare(b.company_name, 'es'));
@@ -214,9 +256,24 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
       <h2>Resumen</h2>
       {monthly && <p><strong>Vigilancia, cada mes:</strong> subtotal {pesos(monthly.subtotal)} · AIU {pesos(monthly.aiu)} · IVA {pesos(monthly.iva)} · <strong>{pesos(monthly.total)}</strong></p>}
       {oneTime && <p><strong>Tecnología, pago único:</strong> subtotal {pesos(oneTime.subtotal)} · IVA {pesos(oneTime.iva)} · <strong>{pesos(oneTime.total)}</strong></p>}
-      <div className="formactions"><button type="button" disabled={saving} onClick={() => void save()}>{saving ? 'Guardando…' : 'Guardar cotización'}</button>{status && <span role="status">{status}</span>}</div>
+      <div className="formactions">
+        <button type="button" disabled={saving || !dirty} onClick={() => void save()}>{saving ? 'Guardando…' : dirty ? 'Guardar cotización' : 'Guardada'}</button>
+        <button type="button" className="secondary" disabled={saving} onClick={() => void downloadProposal()}>{dirty ? 'Guardar y descargar propuesta (PDF)' : 'Descargar propuesta (PDF)'}</button>
+        {status && <span role="status">{status}</span>}
+      </div>
+      {saved?.opportunity_id && opportunityValue && <div className="quote-opportunity-value">
+        <p><strong>Valor para la oportunidad{linkedOpportunity ? ` ${linkedOpportunity.company_name}` : ''}:</strong> {proposalPesos(opportunityValue.value)}. <span className="muted">{opportunityValue.explanation}</span></p>
+        {CLOSED_STAGES.has(linkedOpportunity?.stage_code || '')
+          ? <p className="muted">La oportunidad ya está cerrada: su valor no se cambia desde aquí.</p>
+          : <button type="button" className="secondary" disabled={saving || !canUseInOpportunity} onClick={() => void useInOpportunity()}>{dirty ? 'Guarde los cambios para pasar el valor' : 'Pasar este valor a la oportunidad'}</button>}
+        {saved.guardPosts.length > 0 && <p className="muted">Los puestos se traen al formulario de cierre desde la ficha de la oportunidad, con «Traer puestos de la cotización».</p>}
+      </div>}
     </section>
   </div>;
+}
+
+function bodyOf({ clientName, title, opportunityId, kinds, posts, lines }: { clientName: string; title: string; opportunityId: string; kinds: { vigilancia: boolean; tecnologia: boolean }; posts: GuardPostInput[]; lines: TechLineInput[] }) {
+  return JSON.stringify({ client_name: clientName, title, opportunity_id: opportunityId || undefined, guardPosts: kinds.vigilancia ? posts : [], techLines: kinds.tecnologia ? lines : [] });
 }
 
 /** Tarifas con vigencia (sólo administrador). Nunca se edita una vigencia: se agrega otra con su fecha. */

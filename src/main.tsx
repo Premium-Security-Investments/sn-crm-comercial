@@ -647,7 +647,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
   if (route.page === 'agents') return <AgentsView key={route.id || 'agents'} agentId={route.id} />;
   if (route.page === 'estudios') return <EstudiosSeguridadView studyId={route.id} navigate={go} />;
-  if (route.page === 'quotes') return <QuotesSection id={route.id} opportunities={data.opportunities} navigate={go} />;
+  if (route.page === 'quotes') return <QuotesSection id={route.id} opportunities={data.opportunities} navigate={go} seller={{ name: data.currentProfile.full_name, email: data.currentProfile.microsoft_email, phone: data.currentProfile.whatsapp_phone || null }} />;
   const hasOpportunities = isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'));
   // Quien sólo entra a Programación (u otra pestaña sin Oportunidades) no ve el tablero comercial.
   if (!hasOpportunities) return <NoCommercialHome profile={data.currentProfile} />;
