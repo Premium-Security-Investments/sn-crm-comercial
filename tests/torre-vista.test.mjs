@@ -217,3 +217,10 @@ test('resultados con las reglas de la Portada (Juan, 16-nov): color por efecto, 
   assert.match(torre, /className="siio-tabla siio-pyg"/);
   assert.match(torre, /<summary>Cómo se calculó: las cuentas de cada línea y el cierre oficial de Finanzas<\/summary>/);
 });
+
+test('la barra de cada $100 lleva sus cifras en la leyenda y nada sale como −$0 M (Juan, 16-nov)', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  assert.match(torre, /<ul className="leyenda">\{actual\.map\(\(x, i\) =>/);
+  assert.match(torre, /<strong>\{pesos100\(x\.valor\)\}<\/strong>/);
+  assert.match(torre, /const millones = \(valor: number\) => `\$\{Math\.round\(valor \/ 1e6\) < 0 \? '−' : ''\}/);
+});
