@@ -10,6 +10,8 @@ import {
   closureFormValueBasis,
   type ClosureForm, type ClosureFormCatalogField, type ClosureFormPost, type ClosureFormSite,
 } from './closure-form.js';
+import { closurePostsFromQuote } from './quote-proposal.js';
+import type { GuardPostInput, QuoteTotals } from './quote-engine.js';
 
 type ClosureFormState = {
   saved: boolean;
@@ -21,6 +23,8 @@ type ClosureFormState = {
   catalog: ClosureFormCatalogField[];
   avisos?: string[];
 };
+
+type QuoteWithPosts = { id: string; title: string | null; guardPosts: GuardPostInput[]; totals: QuoteTotals };
 
 const money = (value: number) => `$${Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
 const EMPTY_SITE: ClosureFormSite = { address: '', city: '', phone: '', contact_name: '' };
@@ -40,6 +44,7 @@ export function ClosureFormPanel({ opportunityId, company, canEdit, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [quoteNote, setQuoteNote] = useState<string | null>(null);
 
   const adopt = useCallback((next: ClosureFormState) => {
     setState(next);
@@ -80,6 +85,28 @@ export function ClosureFormPanel({ opportunityId, company, canEdit, onSaved }: {
       setError(e instanceof Error ? e.message : 'No se pudo guardar.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Los puestos de la cotización más reciente de esta oportunidad que tenga vigilancia (Juan, 2026-11-16): el comercial
+  // no los vuelve a escribir. Quedan en pantalla para revisar; se guardan con "Guardar", como todo el formulario.
+  const importFromQuote = async () => {
+    setQuoteNote(null);
+    setError(null);
+    try {
+      const list = await api<{ quotes: { id: string; updated_at: string }[] }>(`/api/agt003/quotes?opportunity_id=${encodeURIComponent(opportunityId)}`);
+      let found: QuoteWithPosts | null = null;
+      for (const summary of list.quotes.slice(0, 10)) {
+        const quote = await api<QuoteWithPosts>(`/api/agt003/quote?id=${encodeURIComponent(summary.id)}`);
+        if (quote.guardPosts.length) { found = quote; break; }
+      }
+      if (!found) { setQuoteNote('Esta oportunidad no tiene cotizaciones con puestos de vigilancia.'); return; }
+      const next = closurePostsFromQuote(found.guardPosts, found.totals.posts);
+      if (posts.length && !window.confirm(`El formulario ya tiene ${posts.length === 1 ? '1 puesto' : `${posts.length} puestos`}. ¿Reemplazarlos por ${next.length === 1 ? 'el puesto' : `los ${next.length} puestos`} de la cotización?`)) return;
+      setPosts(next);
+      setQuoteNote(`Se trajeron ${next.length === 1 ? '1 puesto' : `${next.length} puestos`} de la cotización${found.title ? ` «${found.title}»` : ''}. Revíselos y guarde el formulario.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudieron traer los puestos de la cotización.');
     }
   };
 
@@ -185,6 +212,9 @@ export function ClosureFormPanel({ opportunityId, company, canEdit, onSaved }: {
           </div>;
         })}
         {canEdit && <button type="button" className="secondary" onClick={() => setPosts(current => [...current, { ...EMPTY_POST }])}>Agregar puesto</button>}
+        {/* Los valores de la cotización son mensuales: en un proyecto, donde el formulario pide el total, no aplican. */}
+        {canEdit && basis.monthly && <button type="button" className="secondary" disabled={busy} onClick={() => void importFromQuote()}>Traer puestos de la cotización</button>}
+        {quoteNote && <p className="muted" role="status">{quoteNote}</p>}
         {/* Todo esto lo calcula el sistema, incluido el AIU del 10 %: en el Word iba a mano y el ejemplar que llegó
             traía el total descuadrado y el AIU al 3,86 %. Aquí no hay nada que escribir. */}
         <dl className="closure-form-money">
