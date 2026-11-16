@@ -1155,6 +1155,12 @@ td.numeric-value{white-space:nowrap}
 .quote-line-total{margin:0;color:#172033;font-variant-numeric:tabular-nums}
 .quote-line-error{margin:0;color:#b42318;font-weight:650}
 .quote-summary p{margin:6px 0;font-variant-numeric:tabular-nums}
+.quote-summary.is-sticky{position:sticky;bottom:12px;z-index:5;background:#fff;border:1px solid #cbd7e8;border-left:5px solid #0b3ea8;box-shadow:0 -6px 24px rgba(21,38,69,.12)}
+.quote-summary.is-dirty{border-left-color:#d97706}
+.quote-summary-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.quote-summary-head h2{margin:0}
+.quote-save-state{padding:4px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;font-weight:800}
+.quote-save-state.is-dirty{background:#fef3c7;color:#92400e}
 /* Pestaña «Requisitos» (2026-11-11): lo que nos frena, en tarjetas, y el catálogo histórico, como la tabla de Aliados. */
 .tender-requirements-focus-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:start}
 .tender-requirements-focus{display:grid;gap:10px;padding:16px;border:1px solid #dbe4f0;border-left:4px solid #c2410c;border-radius:12px;background:#fff;min-width:0}

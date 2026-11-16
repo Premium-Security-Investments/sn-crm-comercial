@@ -101,6 +101,8 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
   // escribir. `savedBody` permite saber si hay cambios sin guardar.
   const [saved, setSaved] = useState<QuoteFull | null>(null);
   const [savedBody, setSavedBody] = useState('');
+  // Enlace a la última propuesta armada, por si el navegador no la descargó solo.
+  const [proposalLink, setProposalLink] = useState<{ url: string; filename: string } | null>(null);
 
   useEffect(() => {
     if (!quoteId) {
@@ -137,6 +139,17 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
 
   const body = bodyOf({ clientName, title, opportunityId, kinds, posts, lines });
   const dirty = !saved || body !== savedBody;
+  // Lo que había al abrir el editor: una cotización nueva sin tocar no está "sin guardar" para efectos de avisar.
+  const [pristineBody] = useState(body);
+  const unsavedWork = dirty && body !== pristineBody;
+  // Juan (2026-11-16) cotizó, vio el precio y cerró sin que quedara nada. Si hay trabajo sin guardar, el navegador
+  // pregunta antes de cerrar o recargar la pestaña.
+  useEffect(() => {
+    if (!unsavedWork) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [unsavedWork]);
 
   /** Guarda si hace falta y devuelve la cotización guardada; `null` si no se pudo. */
   const persist = async (): Promise<QuoteFull | null> => {
@@ -149,7 +162,7 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
         ? await api<QuoteFull>(`/api/agt003/quote?id=${encodeURIComponent(saved.id)}`, { method: 'PUT', body })
         : await api<QuoteFull>('/api/agt003/quotes', { method: 'POST', body });
       setSaved(result); setSavedBody(body);
-      setStatus('Guardada.');
+      setStatus(saved ? 'Guardada.' : 'Guardada. Queda en la lista de Cotizaciones.');
       if (!quoteId) navigate(`#/cotizar/${result.id}`);
       return result;
     } catch (err) {
@@ -165,8 +178,8 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
     setStatus('Armando la propuesta…');
     try {
       const { downloadProposalPdf } = await import('./quote-proposal-pdf');
-      await downloadProposalPdf(proposalContent({ quote, today: bogotaToday(), seller }));
-      setStatus('Propuesta descargada.');
+      setProposalLink(await downloadProposalPdf(proposalContent({ quote, today: bogotaToday(), seller })));
+      setStatus('Propuesta descargada: búsquela en las descargas del navegador.');
     } catch (err) { setStatus(`No se pudo armar la propuesta: ${err instanceof Error ? err.message : String(err)}`); }
   };
 
@@ -252,14 +265,21 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
       <button type="button" className="secondary" onClick={() => setLines(list => [...list, newLine()])}>Agregar línea</button>
     </section>}
 
-    <section className="panel quote-summary">
-      <h2>Resumen</h2>
+    {/* El cierre de la cotización queda siempre a la vista, pegado abajo: el precio y, junto a él, qué hacer con él
+        (Juan, 2026-11-16: "luego que me da el precio, ¿qué se supone que debo hacer?"). */}
+    <section className={`panel quote-summary is-sticky${dirty ? ' is-dirty' : ''}`} aria-label="Resumen y entrega">
+      <div className="quote-summary-head">
+        <h2>Resumen</h2>
+        <span className={dirty ? 'quote-save-state is-dirty' : 'quote-save-state'}>{dirty ? 'Sin guardar' : 'Guardada en Cotizaciones'}</span>
+      </div>
       {monthly && <p><strong>Vigilancia, cada mes:</strong> subtotal {pesos(monthly.subtotal)} · AIU {pesos(monthly.aiu)} · IVA {pesos(monthly.iva)} · <strong>{pesos(monthly.total)}</strong></p>}
       {oneTime && <p><strong>Tecnología, pago único:</strong> subtotal {pesos(oneTime.subtotal)} · IVA {pesos(oneTime.iva)} · <strong>{pesos(oneTime.total)}</strong></p>}
+      {dirty && <p className="muted">Siguiente paso: guárdela y descargue la propuesta para el cliente. Guardada, queda en la lista de Cotizaciones y se puede ligar después a una oportunidad.</p>}
       <div className="formactions">
-        <button type="button" disabled={saving || !dirty} onClick={() => void save()}>{saving ? 'Guardando…' : dirty ? 'Guardar cotización' : 'Guardada'}</button>
-        <button type="button" className="secondary" disabled={saving} onClick={() => void downloadProposal()}>{dirty ? 'Guardar y descargar propuesta (PDF)' : 'Descargar propuesta (PDF)'}</button>
+        <button type="button" disabled={saving} onClick={() => void downloadProposal()}>{dirty ? 'Guardar y descargar propuesta (PDF)' : 'Descargar propuesta (PDF)'}</button>
+        <button type="button" className="secondary" disabled={saving || !dirty} onClick={() => void save()}>{saving ? 'Guardando…' : dirty ? 'Solo guardar' : 'Guardada'}</button>
         {status && <span role="status">{status}</span>}
+        {proposalLink && <a href={proposalLink.url} download={proposalLink.filename} target="_blank" rel="noreferrer">¿No se descargó? Ábrala aquí</a>}
       </div>
       {saved?.opportunity_id && opportunityValue && <div className="quote-opportunity-value">
         <p><strong>Valor para la oportunidad{linkedOpportunity ? ` ${linkedOpportunity.company_name}` : ''}:</strong> {proposalPesos(opportunityValue.value)}. <span className="muted">{opportunityValue.explanation}</span></p>
