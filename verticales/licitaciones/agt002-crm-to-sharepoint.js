@@ -52,10 +52,28 @@ export function agt002ContentHashFromStoragePath(storagePath) {
  * nombre. Un proceso cuya carpeta no exista devuelve null y **no se crea**: crear carpetas de
  * procesos es decisión de quien organiza el expediente, no del puente.
  */
-export function agt002ProcessFolderForRef(folders = [], ref = '') {
+export function agt002ProcessFolderForRef(folders = [], ref = '', entity = '') {
+  return folderForRef(folders, ref, entity).folder;
+}
+
+/**
+ * La referencia tiene que estar entera en el nombre, no como pedazo de otra: «LP-01-2026» está
+ * dentro de «DEF-LP-01-2026» y de «DSAJBO-LP-01-2026». Con `includes` las tres LP-01-2026 de la
+ * semana del 16-nov (Manizales, Pereira y Defensoría) se fueron a la carpeta de Defensoría, la
+ * primera en orden alfabético. Y si dos carpetas traen la misma referencia, desempata la entidad
+ * (la que comparte más palabras con ella); si sigue el empate, es ambigua y no se escoge ninguna.
+ */
+function folderForRef(folders, ref, entity) {
   const needle = key(ref);
-  if (!needle) return null;
-  return (folders || []).find(folder => key(folder).includes(needle)) || null;
+  if (!needle) return { folder: null, ambiguous: false };
+  const pattern = new RegExp(`(^|[^a-z0-9-])${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9-])`);
+  const matches = (folders || []).filter(folder => pattern.test(key(folder)));
+  if (matches.length <= 1) return { folder: matches[0] || null, ambiguous: false };
+  const words = new Set(plain(entity).split(' ').filter(word => word.length >= 5));
+  const score = folder => plain(folder).split(' ').filter(word => words.has(word)).length;
+  const best = Math.max(...matches.map(score));
+  const winners = matches.filter(folder => score(folder) === best);
+  return best > 0 && winners.length === 1 ? { folder: winners[0], ambiguous: false } : { folder: null, ambiguous: true };
 }
 
 /** Sin acentos, sin puntuación, sin dobles espacios: «FISCALÍA ... NACIÓN» contra «FISCALIA ... NACION». */
@@ -85,8 +103,9 @@ export function agt002MapTendersToProcessFolders(folders = [], tenders = []) {
   const taken = new Set();
 
   for (const tender of tenders || []) {
-    const folder = agt002ProcessFolderForRef(folders, tender?.ref);
+    const { folder, ambiguous } = folderForRef(folders, tender?.ref, tender?.entity);
     if (folder) { result.set(tender.id, { folder, reason: 'referencia' }); taken.add(folder); }
+    else if (ambiguous) result.set(tender.id, { folder: null, reason: 'carpeta_ambigua' });
   }
 
   // Candidatos por entidad, contando en los dos sentidos antes de decidir nada.
