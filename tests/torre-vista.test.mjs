@@ -149,6 +149,12 @@ test('portada de siete preguntas (contrato de Juan, 15-nov): periodo, respuesta 
   assert.match(torre, /const porDecidir = enVentana\.filter\(item => item\.offer_status === 'pendiente_decision'\);/);
   // Los meses sin cerrar se cuentan con la misma regla de cierre que Resultados.
   assert.match(torre, /\.filter\(fila => fila\.cierre\.tono !== 'cerrado'\)/);
+  // Los nombres largos no empujan la página: cada columna del renglón y la lista corta tienen una sola pista que no crece.
+  const kit = read('src/siio/siio-kit.css');
+  assert.match(kit, /\.siio-renglon \.c\{display:grid;grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(kit, /\.siio-lista-corta\{display:grid;grid-template-columns:minmax\(0,1fr\);gap:3px;min-width:0\}/);
+  // Las entidades con nombre corto, como en Mi día de Licitaciones.
+  assert.match(torre, /'Rama Judicial · Seccional \$1'/);
   // Ningún botón dentro de otro: «Volver a leer» va fuera de los renglones.
   const portada = torre.slice(torre.indexOf('export function SiioPortada'), torre.indexOf('// Resultados (contrato de la maqueta'));
   assert.equal((portada.match(/<button/g) || []).length, 1);

@@ -332,10 +332,12 @@
 .siio-dashboard .siio-renglon.mal>button::before{background:var(--mal)}
 .siio-dashboard .siio-renglon.bien>button::before{background:var(--bien)}
 .siio-dashboard .siio-renglon.ojo>button::before{background:var(--estimado)}
-.siio-dashboard .siio-renglon .p,.siio-dashboard .siio-renglon .r,.siio-dashboard .siio-renglon .c{display:grid;gap:5px;align-content:start;min-width:0}
+/* Una sola columna que no crece con el contenido: los nombres largos se cortan con «…» dentro de su renglón, no
+   empujan la página hacia la derecha (Juan, foto del 16-nov: licitaciones se salía del panel). */
+.siio-dashboard .siio-renglon .p,.siio-dashboard .siio-renglon .r,.siio-dashboard .siio-renglon .c{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;align-content:start;min-width:0}
 .siio-dashboard .siio-renglon .p{padding-left:8px;gap:7px}
 .siio-dashboard .siio-renglon .pregunta{font-size:14.5px;font-weight:700;color:var(--tinta)}
-.siio-dashboard .siio-periodo{justify-self:start;font-size:11.5px;font-weight:650;padding:3px 8px;border-radius:999px;background:var(--neutro-fondo);color:var(--accion)}
+.siio-dashboard .siio-periodo{justify-self:start;max-width:100%;font-size:11.5px;font-weight:650;padding:3px 8px;border-radius:999px;background:var(--neutro-fondo);color:var(--accion)}
 .siio-dashboard .siio-periodo.cerrar{background:var(--estimado-fondo);color:var(--estimado)}
 .siio-dashboard .siio-renglon .valor{font-size:28px;font-weight:800;color:var(--tinta);letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums}
 .siio-dashboard .siio-renglon .valor small{font-size:15px;font-weight:650;color:var(--suave);letter-spacing:0}
@@ -346,8 +348,8 @@
 .siio-dashboard .siio-renglon .ref.bien{color:var(--bien)}
 .siio-dashboard .siio-renglon .ref.mal{color:var(--mal)}
 .siio-dashboard .siio-renglon .ver{font-size:12.5px;font-weight:700;color:var(--accion)}
-.siio-dashboard .siio-lista-corta{display:grid;gap:3px}
-.siio-dashboard .siio-lista-corta>span{display:flex;justify-content:space-between;gap:10px;font-size:12.5px}
+.siio-dashboard .siio-lista-corta{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;min-width:0}
+.siio-dashboard .siio-lista-corta>span{display:flex;justify-content:space-between;gap:10px;min-width:0;font-size:12.5px}
 .siio-dashboard .siio-lista-corta>span>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--texto)}
 .siio-dashboard .siio-lista-corta b{white-space:nowrap;color:var(--tinta)}
 .siio-dashboard .siio-lista-corta .mal b{color:var(--mal)}
