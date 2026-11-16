@@ -227,3 +227,30 @@ test('dos documentos distintos con nombres parecidos SÍ se suben los dos', () =
   });
   assert.equal(plan.length, 2);
 });
+
+test('la referencia va entera: LP-01-2026 no es la carpeta de DEF-LP-01-2026, y la entidad desempata', () => {
+  // Caso real del 16-nov: Manizales, Pereira y Defensoría tienen LP-01-2026 en la referencia. Con
+  // `includes` las tres se fueron a «DEFENSORIA DEL PUEBLO - DEF-LP-01-2026», la primera en orden.
+  const folders = [
+    'DEFENSORIA DEL PUEBLO - DEF-LP-01-2026',
+    'RAMA JUDICIAL - DESAJ MANIZALES - LP-01-2026',
+    'RAMA JUDICIAL - DSAJ BOGOTA - DSAJBO-LP-01-2026',
+    'RAMA JUDICIAL - DSAJ PEREIRA - LP-01-2026',
+  ];
+  const map = agt002MapTendersToProcessFolders(folders, [
+    { id: 'man', ref: 'LP-01-2026', entity: 'Rama Judicial  Dirección Seccional de Administración Judicial de Manizales' },
+    { id: 'per', ref: 'LP-01-2026', entity: 'Rama Judicial  Dirección Seccional de Administración Judicial de Pereira' },
+    { id: 'def', ref: 'DEF-LP-01-2026', entity: 'DEFENSORÍA DEL PUEBLO' },
+    { id: 'bog', ref: 'DSAJBO-LP-01-2026', entity: 'Rama Judicial Bogotá' },
+  ]);
+  assert.equal(map.get('man').folder, 'RAMA JUDICIAL - DESAJ MANIZALES - LP-01-2026');
+  assert.equal(map.get('per').folder, 'RAMA JUDICIAL - DSAJ PEREIRA - LP-01-2026');
+  assert.equal(map.get('def').folder, 'DEFENSORIA DEL PUEBLO - DEF-LP-01-2026');
+  assert.equal(map.get('bog').folder, 'RAMA JUDICIAL - DSAJ BOGOTA - DSAJBO-LP-01-2026');
+
+  // Si la entidad no desempata, no se escoge ninguna: es ambigua.
+  const otra = agt002MapTendersToProcessFolders(folders, [{ id: 'x', ref: 'LP-01-2026', entity: 'Otra entidad cualquiera' }]);
+  assert.equal(otra.get('x').folder, null);
+  assert.equal(otra.get('x').reason, 'carpeta_ambigua');
+  assert.equal(agt002ProcessFolderForRef(folders, 'LP-01-2026'), null);
+});
