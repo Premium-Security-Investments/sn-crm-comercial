@@ -17,6 +17,17 @@ test('Cotizar está en el menú comercial para quien trabaja oportunidades, desp
   assert.equal(canAccessRoute({ id: 'r', active: true, role: 'consulta', permissions: ['modulo_oportunidades'] }, 'quotes'), false, 'solo consulta no cotiza');
 });
 
+// Juan, 2026-11-16: "el botón cotizar en el menú izquierdo no tiene logo". Toda entrada del menú lleva su ícono.
+test('cada entrada del menú lateral tiene ícono, Cotizar incluido', () => {
+  const iconos = read('../src/shell/UserMenu.tsx');
+  const navegacion = read('../src/navPermissions.ts');
+  const destinos = [...navegacion.matchAll(/\{ href: '([^']+)', label: '[^']+', page: '\w+' \}/g)].map(m => m[1]);
+  assert.ok(destinos.includes('#/cotizar'));
+  for (const destino of destinos) {
+    assert.ok(iconos.includes(`'${destino}': `), `${destino} no tiene ícono en NAV_ICONS`);
+  }
+});
+
 test('el editor nuevo arranca con un puesto de vigilancia y calcula mientras se escribe', async () => {
   const QuotesSection = await loadReactComponent('src/vigia/QuotesSection.tsx', 'QuotesSection', 'agt003-quotes-section');
   const html = renderReactComponent(QuotesSection, { id: 'nueva', opportunities: [], navigate: () => {} });
