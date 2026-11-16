@@ -43,7 +43,7 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   const vista = read('src/siio/SiioExecutiveView.tsx');
   assert.match(vista, /aria-label="Cumplimiento del servicio"[\s\S]*<SiioOperationsDetail summary=\{operations\} \/>/);
   assert.doesNotMatch(vista, /title="Operaciones · detalle"/);
-  assert.match(torre, /aria-label="Cliente por cliente"[\s\S]*<select value=\{mesClientes\}/);
+  assert.match(torre, /aria-label="Cuánto deja cada cliente"[\s\S]*<select value=\{mesClientes\}/);
   // El selector general ya no pide clientes de un mes abierto.
   assert.doesNotMatch(torre, /clientesDelMes/);
 });
@@ -230,4 +230,18 @@ test('el mes en curso tiene la misma forma que un mes terminado (Juan, 16-nov)',
   assert.match(torre, /<span className="pregunta">Ingresos a hoy<\/span>/);
   assert.match(torre, /\{alCierre\('Utilidad operacional', p \? p\.utilidad_ordinaria : null\)\}/);
   assert.match(torre, /aria-label=\{`Resultados de \$\{nombre\(fila\.mes\)\} a hoy`\}/);
+});
+
+test('clientes con las reglas de la Portada (Juan, 16-nov): preguntas, periodo con su cierre, aviso y comparación', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  assert.match(torre, /<h2>¿Qué clientes nos hacen perder\?<\/h2>/);
+  assert.match(torre, /<h2>¿Cuánto deja cada cliente\?<\/h2>/);
+  // Ningún mes se rotula «Cerrado» por la regla de la Torre: cada uno con su cierre real.
+  assert.doesNotMatch(torre, /· Cerrado<\/option>|Mes cerrado\n/);
+  assert.match(torre, /<option key=\{mes\} value=\{mes\}>\{nombreMes\(mes\)\} · \{cierreDe\(t, mes, hoy\)\.texto\}<\/option>/);
+  // Lo aproximado va arriba en el aviso, no en letra chica.
+  assert.match(torre, /<strong>Cifras aproximadas\.<\/strong>/);
+  // Cada margen con el del mes anterior; el precio por hora con el costo de referencia.
+  assert.match(torre, /className="siio-antes"/);
+  assert.match(torre, /<small>costo: \{pesos\(costoHora\)\}<\/small>/);
 });

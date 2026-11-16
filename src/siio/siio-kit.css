@@ -368,3 +368,5 @@
 .siio-dashboard .siio-pyg tr.total td{border-top:1px solid var(--linea-fuerte);background:var(--fondo-suave)}
 .siio-dashboard .siio-pyg td.mal strong{color:var(--mal)}
 .siio-dashboard .siio-cifra-portada .valor.pendiente{color:var(--sutil);font-weight:650}
+.siio-dashboard .siio-tabla th small{display:block;font-weight:500;text-transform:none;letter-spacing:0;color:var(--sutil)}
+.siio-dashboard .siio-tabla td small.siio-antes{color:var(--sutil);font-weight:500}
