@@ -128,3 +128,19 @@ test('pantallas: la cotización descarga la propuesta y pasa el valor; el formul
   const main = read('../src/main.tsx');
   assert.match(main, /<QuotesSection [^>]*seller=\{\{ name: data\.currentProfile\.full_name/);
 });
+
+// Juan (2026-11-16): "luego que me da el precio, ¿qué se supone que debo hacer? No se descarga nada ni queda prueba".
+test('después del precio, el siguiente paso está a la vista y no se pierde lo cotizado', async () => {
+  const { loadReactComponent, renderReactComponent } = await import('./helpers/bundle-react-component.mjs');
+  const QuotesSection = await loadReactComponent('src/vigia/QuotesSection.tsx', 'QuotesSection', 'agt003-quotes-section-entrega');
+  const html = renderReactComponent(QuotesSection, { id: 'nueva', opportunities: [], navigate: () => {} });
+  assert.match(html, /class="panel quote-summary is-sticky is-dirty"/, 'el resumen queda pegado abajo');
+  assert.match(html, /Sin guardar/);
+  assert.match(html, /Siguiente paso: guárdela y descargue la propuesta/);
+  // El botón principal (el primero) es guardar y descargar; guardar solo es secundario.
+  assert.match(html, /<div class="formactions"><button type="button">Guardar y descargar propuesta \(PDF\)<\/button><button type="button" class="secondary">Solo guardar<\/button>/);
+  const quotes = read('../src/vigia/QuotesSection.tsx');
+  assert.match(quotes, /addEventListener\('beforeunload', warn\)/, 'avisa antes de cerrar con trabajo sin guardar');
+  assert.match(quotes, /¿No se descargó\? Ábrala aquí/);
+  assert.match(read('../src/styles.css'), /\.quote-summary\.is-sticky\{position:sticky;bottom:12px/);
+});

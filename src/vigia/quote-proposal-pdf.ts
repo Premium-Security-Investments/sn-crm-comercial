@@ -293,8 +293,11 @@ export async function buildProposalPdf(content: ProposalContent, logoBytes: Uint
   return doc.save();
 }
 
-/** En el navegador: trae el logo, arma el PDF y lo descarga. */
-export async function downloadProposalPdf(content: ProposalContent) {
+/**
+ * En el navegador: trae el logo, arma el PDF y lo descarga. Devuelve el enlace al archivo (vale unos minutos) para que
+ * la pantalla lo ofrezca si el navegador no descargó solo.
+ */
+export async function downloadProposalPdf(content: ProposalContent): Promise<{ url: string; filename: string }> {
   let logoBytes: ArrayBuffer | null = null;
   try {
     const response = await fetch(LOGO_URL);
@@ -305,9 +308,11 @@ export async function downloadProposalPdf(content: ProposalContent) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `Propuesta ${content.client} ${content.number}.pdf`.replace(/[\\/:*?"<>|]+/g, ' ');
+  const filename = `Propuesta ${content.client} ${content.number}.pdf`.replace(/[\\/:*?"<>|]+/g, ' ');
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+  return { url, filename };
 }
