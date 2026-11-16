@@ -257,7 +257,7 @@
 .siio-dashboard .siio-cifra-portada .pregunta{font-size:12.5px;font-weight:650;color:var(--suave)}
 .siio-dashboard .siio-cifra-portada .valor{font-size:34px;font-weight:750;letter-spacing:-.02em;line-height:1.05;color:var(--tinta);font-variant-numeric:tabular-nums}
 .siio-dashboard .siio-cifra-portada .valor.mal{color:var(--mal)}
-.siio-dashboard .siio-cifra-portada .referencia{font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}
+.siio-dashboard .siio-cifra-portada .referencia{font-size:13px;font-weight:650;color:var(--suave);font-variant-numeric:tabular-nums}
 .siio-dashboard .siio-cifra-portada .referencia.bien{color:var(--bien)}
 .siio-dashboard .siio-cifra-portada .referencia.mal{color:var(--mal)}
 .siio-dashboard .siio-cifra-portada .referencia i{font-style:normal;font-size:11.5px}
@@ -283,7 +283,6 @@
 .siio-dashboard .siio-cifras-resultados .siio-cifra-portada{cursor:default}
 .siio-dashboard .siio-cifras-resultados .siio-cifra-portada:hover{background:none}
 .siio-dashboard .siio-cifras-resultados .valor{font-size:30px}
-.siio-dashboard .siio-cifra-portada .referencia.amb{color:var(--estimado)}
 .siio-dashboard .siio-cada-100 .lead{font-size:14px;color:var(--suave);margin:4px 0 12px;max-width:110ch}
 .siio-dashboard .siio-cada-100 .bien{color:var(--bien)} .siio-dashboard .siio-cada-100 .mal{color:var(--mal)}
 .siio-dashboard .siio-cada-100 .fila{display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;align-items:center;margin-top:10px}
@@ -306,7 +305,7 @@
 .siio-dashboard .siio-cambios li:first-child{border-top:0}
 .siio-dashboard .siio-cambios strong{color:var(--tinta);font-weight:650}
 .siio-dashboard .siio-cambios .valor{font-weight:750;font-variant-numeric:tabular-nums;text-align:right}
-.siio-dashboard .siio-cambios .valor.bien{color:var(--bien)} .siio-dashboard .siio-cambios .valor.mal{color:var(--mal)} .siio-dashboard .siio-cambios .valor.amb{color:var(--estimado)}
+.siio-dashboard .siio-cambios .valor.bien{color:var(--bien)} .siio-dashboard .siio-cambios .valor.mal{color:var(--mal)} .siio-dashboard .siio-cambios .valor.igual{color:var(--tinta)}
 .siio-dashboard .siio-cambios .var{font-size:12px;color:var(--sutil);text-align:right;font-variant-numeric:tabular-nums}
 .siio-dashboard .siio-presupuesto-lead{font-size:14px;color:var(--suave);margin-top:6px}
 .siio-dashboard .siio-presupuesto-lead .bien{color:var(--bien)} .siio-dashboard .siio-presupuesto-lead .mal{color:var(--mal)}
@@ -358,3 +357,10 @@
 .siio-dashboard .siio-barra-portada.mal i{background:var(--mal)}
 @media(max-width:900px){.siio-dashboard .siio-renglon>button{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.siio-dashboard .siio-renglon .p{grid-column:1/-1}}
 @media(max-width:560px){.siio-dashboard .siio-renglon>button{grid-template-columns:minmax(0,1fr);gap:10px;padding:14px 14px 14px 12px}.siio-dashboard .siio-renglon .valor{font-size:25px}}
+
+/* Resultados con las reglas de la Portada (Juan, 2026-11-16): lo que hay que saber antes de creerle al mes va arriba en
+   ámbar (puede cambiar); «Mes a mes» es el estado de resultados completo, con sus totales marcados. */
+.siio-dashboard .siio-aviso-mes{display:grid;gap:6px;margin:0 0 12px;padding:12px 16px;border:1px solid var(--estimado-borde);border-radius:var(--radio-interno);background:var(--estimado-fondo);font-size:13.5px;line-height:1.45;color:var(--texto)}
+.siio-dashboard .siio-aviso-mes strong{color:var(--estimado)}
+.siio-dashboard .siio-pyg tr.total td{border-top:1px solid var(--linea-fuerte);background:var(--fondo-suave)}
+.siio-dashboard .siio-pyg td.mal strong{color:var(--mal)}

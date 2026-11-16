@@ -175,14 +175,14 @@ const sinCodigo = (nombre: string) => {
 
 // Cómo está cerrado un mes: lo bloqueó Contabilidad en Avancys, lo cerró Finanzas con su Excel, o no tiene cierre formal
 // (y cuántos días lleva). Juan, 2026-11-15: «Sin cierre formal · 46 días», no «Cerrado» por una regla de la Torre.
-export function cierreDe(t: TorreAvancys, mes: string, hoy = new Date()): { tono: 'cerrado' | 'finanzas' | 'confirmar' | 'marca'; texto: string } {
+// Sin cierre va en ámbar por largo que sea (puede cambiar); el rojo queda para lo que está peor que su referencia.
+export function cierreDe(t: TorreAvancys, mes: string, hoy = new Date()): { tono: 'cerrado' | 'finanzas' | 'confirmar'; texto: string } {
   const bloqueo = t.torre?.bloqueo_contable || null;
   if (bloqueo && bloqueo >= ultimoDia(mes)) return { tono: 'cerrado', texto: 'Cerrado' };
   if (t.oficialDe(mes)) return { tono: 'finanzas', texto: 'Cierre de Finanzas' };
   const dias = diasDesdeFinDeMes(mes, hoy);
-  return { tono: dias > DIAS_SIN_CIERRE_MAL ? 'marca' : 'confirmar', texto: `Sin cierre formal · ${dias} ${dias === 1 ? 'día' : 'días'}` };
+  return { tono: 'confirmar', texto: `Sin cierre formal · ${dias} ${dias === 1 ? 'día' : 'días'}` };
 }
-const DIAS_SIN_CIERRE_MAL = 30;
 function mesAnterior(mes: string) {
   const [anio, numero] = mes.split('-').map(Number);
   return numero === 1 ? `${anio - 1}-12` : `${anio}-${String(numero - 1).padStart(2, '0')}`;
@@ -407,9 +407,28 @@ export function SiioPestanaResultados({ t }: { t: TorreAvancys }) {
       </label>
       <p className="siio-nota">{tramo}desde {primeroAvancys ? nombreMes(primeroAvancys).split(' ')[0] : 'agosto'}: Avancys, con lo que tiene registrado hoy</p>
     </div>
+    <AvisoDelMes t={t} meses={torre.pyg} />
     <HistoriaDelMes t={t} lineas={torre.lineas_pyg} meses={torre.pyg} />
     <EstadoDeResultados t={t} lineas={torre.lineas_pyg} meses={torre.pyg} />
   </>;
+}
+
+// Lo que hay que saber antes de creerle al mes elegido, arriba y no en letra chica: sin cierre y con líneas que parecen
+// incompletas, o Avancys y el cierre de Finanzas que no coinciden. Ámbar: son cifras que todavía pueden cambiar.
+function AvisoDelMes({ t, meses }: { t: TorreAvancys; meses: MesPyg[] }) {
+  const hoy = new Date();
+  const fila = meses.find(m => m.mes === t.mes) || null;
+  if (!fila || fila.mes >= hoy.toISOString().slice(0, 7)) return null;
+  const nombre = (mes: string) => nombreMes(mes).split(' ')[0];
+  const cierre = cierreDe(t, fila.mes, hoy);
+  const incompletas = fila.proyeccion && fila.estado === 'parcial' ? fila.proyeccion.estimadas.length : 0;
+  const o = t.oficialDe(fila.mes);
+  const difiere = o && (Math.abs(fila.totales.ingresos - o.ingresos) >= 1e6 || Math.abs(fila.totales.utilidad_ordinaria - o.utilidad_operacional) >= 1e6);
+  const frases: React.ReactNode[] = [];
+  if (cierre.tono === 'confirmar') frases.push(<Fragment key="cierre"><strong>Contabilidad lleva {diasDesdeFinDeMes(fila.mes, hoy)} días sin cerrar {nombre(fila.mes)}.</strong> Las cifras son las que Avancys tiene hoy{incompletas ? <> y <strong>{incompletas === 1 ? '1 línea parece incompleta' : `${incompletas} líneas parecen incompletas`}</strong> frente a {nombre(fila.proyeccion!.base_mes)} (marcadas en «Mes a mes»)</> : null}.</Fragment>);
+  if (difiere && o) frases.push(<Fragment key="finanzas"><strong>Avancys y el cierre de Finanzas (Excel) no coinciden:</strong> ingresos {millones(fila.totales.ingresos)} contra {millones(o.ingresos)}; utilidad operacional {millones(fila.totales.utilidad_ordinaria)} contra {millones(o.utilidad_operacional)}. La Torre muestra la de Avancys; Finanzas explica la diferencia.</Fragment>);
+  if (!frases.length) return null;
+  return <div className="siio-aviso-mes" role="note">{frases.map((frase, i) => <p key={i}>{frase}</p>)}</div>;
 }
 
 // Resultados con fuerza (Juan, 2026-11-15: «a este le falta mucha fuerza»; maqueta aprobada): cuatro cifras del mes
@@ -423,6 +442,7 @@ const TRAMOS_100: { clave: string; etiqueta: string; lineas: string[] }[] = [
   { clave: 'generales', etiqueta: 'gastos generales', lineas: ['generales_vigilancia', 'generales_mt'] },
 ];
 const CAMBIOS_A_LA_VISTA = 5;
+const PUNTOS_SIN_CAMBIO = 0.5;
 const variacion = (actual: number, antes: number) => (antes ? (actual - antes) / Math.abs(antes) : null);
 const pctFirmado = (valor: number | null) => (valor === null ? '' : `${valor >= 0 ? '+' : '−'}${Math.abs(Math.round(valor * 1000) / 10).toLocaleString('es-CO')} %`);
 const millonesFirmado = (valor: number) => `${valor >= 0 ? '+' : '−'}${millones(Math.abs(valor))}`;
@@ -447,6 +467,8 @@ function HistoriaDelMes({ t, lineas, meses }: { t: TorreAvancys; lineas: LineaPy
   const puntosDe = (valor: number, base: number, valorAntes?: number, baseAntes?: number) =>
     (valorAntes !== undefined && baseAntes ? Math.round((parte(valor, base) - parte(valorAntes, baseAntes)) * 10) / 10 : null);
   const flecha = (puntos: number | null) => (puntos === null ? '' : ` ${puntos >= 0 ? '▲' : '▼'} ${Math.abs(puntos).toLocaleString('es-CO')} pts`);
+  // Bien o mal según el efecto: en costos y gastos subir es malo, en la utilidad bajar. Menos de medio punto no pinta.
+  const tonoPuntos = (puntos: number | null, subirEsMalo: boolean) => (puntos === null || Math.abs(puntos) < PUNTOS_SIN_CAMBIO ? '' : (puntos > 0) === subirEsMalo ? 'mal' : 'bien');
   const suma = (f: MesPyg, claves: string[]) => -claves.reduce((total, clave) => total + (f.lineas[clave] || 0), 0);
   const tramos = (f: MesPyg) => [...TRAMOS_100.map(tramo => ({ ...tramo, valor: parte(suma(f, tramo.lineas), f.totales.ingresos) })),
     { clave: 'utilidad', etiqueta: 'utilidad operacional', lineas: [], valor: parte(f.totales.utilidad_ordinaria, f.totales.ingresos) }];
@@ -469,44 +491,44 @@ function HistoriaDelMes({ t, lineas, meses }: { t: TorreAvancys; lineas: LineaPy
   const tono = (c: (typeof cambios)[number]) => {
     if (c.ingreso) return c.cambio >= 0 ? 'bien' : 'mal';
     if (c.cambio <= 0) return 'bien';
-    return crecimiento !== null && c.variacion !== null && c.variacion < crecimiento ? 'amb' : 'mal';
+    return crecimiento !== null && c.variacion !== null && c.variacion < crecimiento ? 'igual' : 'mal';
   };
   const lectura = (c: (typeof cambios)[number]) => {
     if (c.ingreso) return c.cambio >= 0 ? 'más ingreso' : 'menos ingreso';
     if (c.cambio <= 0) return 'bajó';
-    return tono(c) === 'amb' ? 'subió menos que el ingreso' : 'subió';
+    return tono(c) === 'igual' ? 'subió menos que el ingreso' : 'subió';
   };
   const mod = suma(fila, ['mod_vigilancia']);
   const mayorGasto = previo ? cambios.find(c => c.l.grupo === 'gastos') : null;
   const ppCosto = puntosDe(costo, tt.ingresos, tp ? -tp.costos : undefined, tp?.ingresos);
   const ppGasto = puntosDe(gasto, tt.ingresos, tp ? -tp.gastos : undefined, tp?.ingresos);
   const ppUtil = puntosDe(tt.utilidad_ordinaria, tt.ingresos, tp?.utilidad_ordinaria, tp?.ingresos);
-  const antesDe = previo ? `${nombre(previo.mes).slice(0, 3)}: ` : '';
+  const antesDe = previo ? `${nombre(previo.mes).replace(/^./, letra => letra.toUpperCase())}: ` : '';
   return <>
     <section className="siio-panel siio-cifras-portada siio-cifras-resultados" aria-label={`Resultados de ${nombre(fila.mes)}`}>
       <div className="siio-cifra-portada">
         <span className="pregunta">Ingresos</span>
         <span className="valor">{millones(tt.ingresos)}</span>
         {tp ? <span className={`referencia ${tt.ingresos >= tp.ingresos ? 'bien' : 'mal'}`}>{tt.ingresos >= tp.ingresos ? '▲' : '▼'} {pctFirmado(crecimiento).replace(/^[+−]/, '')} frente a {nombre(previo!.mes)}</span> : null}
-        {tp ? <span className="detalle">{antesDe}{millones(tp.ingresos)}</span> : null}
+        {tp ? <span className="detalle">{antesDe}{millones(tp.ingresos)}.</span> : null}
       </div>
       <div className="siio-cifra-portada">
         <span className="pregunta">Costo de operación</span>
         <span className="valor">{millones(costo)}</span>
-        <span className={`referencia ${ppCosto !== null && ppCosto > 0 ? 'mal' : 'bien'}`}>{pct(costo, tt.ingresos)} del ingreso{flecha(ppCosto)}</span>
-        <span className="detalle">{tp ? `${antesDe}${pct(-tp.costos, tp.ingresos)} · ` : ''}mano de obra directa, el {pct(mod, costo)}</span>
+        <span className={`referencia ${tonoPuntos(ppCosto, true)}`}>{pct(costo, tt.ingresos)} del ingreso{flecha(ppCosto)}</span>
+        <span className="detalle">{tp ? `${antesDe}${pct(-tp.costos, tp.ingresos)} del ingreso. ` : ''}Mano de obra directa: {millones(mod)}.</span>
       </div>
       <div className="siio-cifra-portada">
         <span className="pregunta">Gastos operativos</span>
         <span className="valor">{millones(gasto)}</span>
-        <span className={`referencia ${ppGasto !== null && ppGasto > 0 ? 'amb' : 'bien'}`}>{pct(gasto, tt.ingresos)} del ingreso{flecha(ppGasto)}</span>
-        <span className="detalle">{tp ? `${antesDe}${pct(-tp.gastos, tp.ingresos)}` : ''}{mayorGasto ? ` · ${mayorGasto.l.etiqueta.toLowerCase()} ${millonesFirmado(mayorGasto.cambio)}` : ''}</span>
+        <span className={`referencia ${tonoPuntos(ppGasto, true)}`}>{pct(gasto, tt.ingresos)} del ingreso{flecha(ppGasto)}</span>
+        <span className="detalle">{tp ? `${antesDe}${pct(-tp.gastos, tp.ingresos)} del ingreso.` : ''}{mayorGasto ? ` El que más se movió: ${mayorGasto.l.etiqueta.toLowerCase()}, ${mayorGasto.cambio > 0 ? 'subió' : 'bajó'} ${millones(Math.abs(mayorGasto.cambio))}.` : ''}</span>
       </div>
       <div className="siio-cifra-portada">
         <span className="pregunta">Utilidad operacional</span>
         <span className={`valor${tt.utilidad_ordinaria < 0 ? ' mal' : ''}`}>{millones(tt.utilidad_ordinaria)}</span>
-        <span className={`referencia ${tt.utilidad_ordinaria < 0 || (ppUtil !== null && ppUtil < 0) ? 'mal' : 'bien'}`}>{pct(tt.utilidad_ordinaria, tt.ingresos)} del ingreso{flecha(ppUtil)}</span>
-        {tp ? <span className="detalle">{antesDe}{millones(tp.utilidad_ordinaria)} · {pct(tp.utilidad_ordinaria, tp.ingresos)}</span> : null}
+        <span className={`referencia ${tt.utilidad_ordinaria < 0 ? 'mal' : tonoPuntos(ppUtil, false)}`}>{pct(tt.utilidad_ordinaria, tt.ingresos)} del ingreso{flecha(ppUtil)}</span>
+        {tp ? <span className="detalle">{antesDe}{millones(tp.utilidad_ordinaria)}, el {pct(tp.utilidad_ordinaria, tp.ingresos)} del ingreso.</span> : null}
       </div>
     </section>
     <section className="siio-panel siio-cada-100" aria-label="A dónde se va cada $100 que facturamos">
@@ -757,15 +779,12 @@ function EstadoDeResultados({ t, lineas, meses }: { t: TorreAvancys; lineas: Lin
   const chip = (fila: MesPyg) => {
     if (enCurso(fila)) return <span className="siio-chip vivo">A hoy</span>;
     const c = cierreDe(t, fila.mes, hoy);
+    // Desde agosto las cifras son de Avancys aunque Finanzas haya cerrado el mes en su Excel: el chip no lo esconde.
+    if (c.tono === 'finanzas') return <span className="siio-chip finanzas">Finanzas cerró · cifras de Avancys</span>;
     return <span className={`siio-chip ${c.tono}`}>{c.texto}</span>;
   };
   const protagonista = (fila: MesPyg) => (fila.mes === t.mes ? 'num total' : 'num');
   const sinRenta = (fila: MesPyg) => !enCurso(fila) && !fila.totales.impuestos;
-  const abiertos = meses.filter(fila => fila.estado === 'parcial' && !enCurso(fila))
-    .map(fila => ({ mes: fila.mes, dias: diasDesdeFinDeMes(fila.mes, hoy), incompletas: base(fila) ? fila.proyeccion!.estimadas.length : 0, base: fila.proyeccion?.base_mes || null }));
-  const diferencias = meses.map(fila => ({ fila, o: t.oficialDe(fila.mes) })).filter(x => x.o)
-    .map(({ fila, o }) => ({ mes: fila.mes, ingresos: fila.totales.ingresos, oIngresos: o!.ingresos, utilidad: fila.totales.utilidad_ordinaria, oUtilidad: o!.utilidad_operacional }))
-    .filter(x => Math.abs(x.ingresos - x.oIngresos) >= 1e6 || Math.abs(x.utilidad - x.oUtilidad) >= 1e6);
   const celdaLinea = (fila: MesPyg, clave: string) => {
     const valor = fila.lineas[clave] || 0;
     const ref = incompleta(fila, clave) ? base(fila)!.lineas[clave] || 0 : null;
@@ -781,39 +800,31 @@ function EstadoDeResultados({ t, lineas, meses }: { t: TorreAvancys; lineas: Lin
   };
   return <section className="siio-panel" aria-label="Estado de resultados">
     <h2>Mes a mes</h2>
-    <div className="siio-tabla-wrap"><table className="siio-tabla">
+    <p className="siio-nota">Las {lineas.length} líneas del estado de resultados, con lo que Avancys tiene registrado hoy. Una línea que parece incompleta lleva debajo su valor del último mes cerrado.</p>
+    <div className="siio-tabla-wrap"><table className="siio-tabla siio-pyg">
       <thead><tr><th>Línea</th>{meses.map(fila => <th key={fila.mes} className={protagonista(fila)}>{nombreMes(fila.mes).split(' ')[0]} {chip(fila)}</th>)}</tr></thead>
-      <tbody>
-        <tr><td><span className="nombre">Ingresos</span></td>{meses.map(fila => <td key={fila.mes} className={protagonista(fila)}><strong>{millones(fila.totales.ingresos)}</strong>{enCurso(fila) ? <small>registrado a hoy</small> : null}</td>)}</tr>
-        <tr><td><span className="nombre">Utilidad operacional</span></td>{meses.map(fila => {
-          if (enCurso(fila)) return <td key={fila.mes} className={protagonista(fila)}><strong>—</strong><small>se lee al cierre, con la nómina</small></td>;
-          const u = fila.totales.utilidad_ordinaria;
-          return <td key={fila.mes} className={`${protagonista(fila)}${u < 0 ? ' mal' : ''}`}><strong>{millones(u)}</strong><small>{pct(u, fila.totales.ingresos)}</small></td>;
-        })}</tr>
-      </tbody>
+      <tbody>{GRUPOS.map(g => <Fragment key={g.grupo}>
+        {lineas.filter(l => l.grupo === g.grupo).map(l => <tr key={l.clave}>
+          <td title={`Cuentas ${l.cuentas}`}>{l.etiqueta}{l.clave === 'ing_vigilancia' ? ' (con provisión)' : ''}</td>
+          {meses.map(fila => <td key={fila.mes} className={protagonista(fila)}>{celdaLinea(fila, l.clave)}</td>)}
+        </tr>)}
+        <tr className="total"><td><strong>{g.totalEtiqueta}</strong></td>{meses.map(fila => <td key={fila.mes} className={`${protagonista(fila)}${g.total === 'utilidad_ordinaria' && !enCurso(fila) && fila.totales.utilidad_ordinaria < 0 ? ' mal' : ''}`}>{celdaTotal(fila, g.total)}</td>)}</tr>
+      </Fragment>)}</tbody>
     </table></div>
-    {abiertos.length || diferencias.length ? <div className="siio-nota" style={{ marginTop: 6, display: 'grid', gap: 4 }}>
-      {abiertos.map(a => <p key={a.mes}>{nombreMes(a.mes).split(' ')[0].replace(/^./, letra => letra.toUpperCase())} no tiene cierre formal: <strong>Contabilidad lleva {a.dias} días sin cerrar {nombreMes(a.mes).split(' ')[0]}</strong>. Las cifras son las que Avancys tiene hoy{a.incompletas && a.base ? `; ${a.incompletas === 1 ? '1 línea parece incompleta' : `${a.incompletas} líneas parecen incompletas`} frente a ${nombreMes(a.base).split(' ')[0]} (marcadas en el detalle)` : ''}.</p>)}
-      {diferencias.map(d => <p key={d.mes}>{nombreMes(d.mes).split(' ')[0].replace(/^./, letra => letra.toUpperCase())}: <strong>Avancys y el cierre de Finanzas (Excel) no coinciden</strong> — ingresos {millones(d.ingresos)} contra {millones(d.oIngresos)} (diferencia {millones(d.ingresos - d.oIngresos)}); utilidad operacional {millones(d.utilidad)} contra {millones(d.oUtilidad)}. La Torre muestra la de Avancys · <strong>Finanzas</strong> explica la diferencia.</p>)}
-    </div> : null}
     <details className="siio-plegado">
-      <summary>Las 17 líneas del PYG, con las cuentas que suma cada una y el cierre oficial debajo</summary>
+      <summary>Cómo se calculó: las cuentas de cada línea y el cierre oficial de Finanzas</summary>
       <div className="siio-tabla-wrap"><table className="siio-tabla">
-        <thead><tr><th>Línea</th>{meses.map(fila => <th key={fila.mes} className="num">{nombreMes(fila.mes).split(' ')[0]}{enCurso(fila) ? ' (a hoy)' : ''}</th>)}</tr></thead>
-        <tbody>{GRUPOS.map(g => <Fragment key={g.grupo}>
-          {lineas.filter(l => l.grupo === g.grupo).map(l => <tr key={l.clave}>
-            <td title={`Cuentas ${l.cuentas}`}>{l.etiqueta}{l.clave === 'ing_vigilancia' ? ' (con provisión)' : ''}<small className="siio-nota" style={{ display: 'block' }}>cuentas {l.cuentas}</small></td>
-            {meses.map(fila => <td key={fila.mes} className="num">{celdaLinea(fila, l.clave)}</td>)}
-          </tr>)}
-          <tr><td><strong>{g.totalEtiqueta}</strong></td>{meses.map(fila => <td key={fila.mes} className="num">{celdaTotal(fila, g.total)}</td>)}</tr>
-        </Fragment>)}
-        {conOficial ? <>
-          <tr><td colSpan={meses.length + 1}><strong>Cierre oficial de Finanzas (Excel cargado)</strong></td></tr>
+        <thead><tr><th>Línea</th><th>Cuentas de Avancys que suma</th></tr></thead>
+        <tbody>{lineas.map(l => <tr key={l.clave}><td>{l.etiqueta}</td><td className="siio-nota">{l.cuentas}</td></tr>)}</tbody>
+      </table></div>
+      {conOficial ? <div className="siio-tabla-wrap"><table className="siio-tabla">
+        <thead><tr><th>Cierre oficial de Finanzas (Excel cargado)</th>{meses.map(fila => <th key={fila.mes} className="num">{nombreMes(fila.mes).split(' ')[0]}</th>)}</tr></thead>
+        <tbody>{conOficial ? <>
           <tr><td>Ingresos</td>{meses.map(fila => { const o = t.oficialDe(fila.mes); return <td key={fila.mes} className="num">{o ? millones(o.ingresos) : <span className="siio-secondary">sin cierre</span>}</td>; })}</tr>
           <tr><td>Utilidad operacional</td>{meses.map(fila => { const o = t.oficialDe(fila.mes); return <td key={fila.mes} className="num">{o ? <>{millones(o.utilidad_operacional)}<small>{pct(o.utilidad_operacional, o.ingresos)}</small></> : <span className="siio-secondary">—</span>}</td>; })}</tr>
           <tr><td>Antes de impuestos</td>{meses.map(fila => { const o = t.oficialDe(fila.mes); return <td key={fila.mes} className="num">{o ? millones(o.utilidad_operacional + o.resultado_no_operacional) : <span className="siio-secondary">—</span>}</td>; })}</tr>
         </> : null}</tbody>
-      </table></div>
+      </table></div> : null}
       <p className="siio-nota">Cómo se calculó: armado desde la contabilidad de Avancys con lo que tiene registrado hoy, sin proyecciones. Un mes sin cierre formal puede cambiar mientras Contabilidad registra; las líneas que parecen incompletas llevan debajo su valor del último mes cerrado como referencia. El mes en curso muestra lo registrado a hoy y sus totales se leen al cierre, cuando se cause la nómina.</p>
       {meses.some(sinRenta) ? <p className="siio-nota">El impuesto de renta no lo registra Contabilidad cada mes en Avancys: la utilidad del ejercicio queda sin calcular hasta que lo registre o se llene la provisión de renta en Parámetros (punto 4) · <strong>Contabilidad</strong>.</p> : null}
       {prov ? <p className="siio-nota">

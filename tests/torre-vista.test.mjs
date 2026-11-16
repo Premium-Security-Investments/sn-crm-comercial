@@ -24,7 +24,7 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   // el atraso contable con nombre; la franja vieja del mes desaparece.
   assert.doesNotMatch(torre, /SiioPulsoMes|siio-pulso/);
   assert.match(torre, /<EstadoDeResultados t=\{t\} lineas=\{torre\.lineas_pyg\} meses=\{torre\.pyg\} \/>/);
-  assert.match(torre, /Contabilidad lleva \{a\.dias\} días sin cerrar/);
+  assert.match(torre, /<strong>Contabilidad lleva \{diasDesdeFinDeMes\(fila\.mes, hoy\)\} días sin cerrar \{nombre\(fila\.mes\)\}\.<\/strong>/);
   assert.match(torre, /<details className="siio-plegado">/);
   assert.match(torre, /automatico: 'Cerrado'/);
   const presupuesto = read('src/siio/SiioPresupuesto.tsx');
@@ -195,4 +195,25 @@ test('resultados con fuerza (Juan, 15-nov): cifras contra el mes anterior, cada 
   assert.match(presupuesto, /className="siio-barras-ppto"/);
   assert.match(presupuesto, /parece un problema de asignación de cuentas/);
   assert.doesNotMatch(torre, /8,7 %|48 %|70,6|67,6/, 'ninguna cifra real escrita en el código');
+});
+
+test('resultados con las reglas de la Portada (Juan, 16-nov): color por efecto, ámbar solo para lo que puede cambiar', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  const kit = read('src/siio/siio-kit.css');
+  // Sin cierre va en ámbar por largo que sea: el rojo es para lo que está peor que su referencia.
+  assert.doesNotMatch(torre, /'marca' : 'confirmar'|DIAS_SIN_CIERRE_MAL/);
+  // Un costo que sube menos que el ingreso no se pinta: el ámbar ya significa «puede cambiar».
+  assert.doesNotMatch(torre, /\? 'amb' :/);
+  assert.match(kit, /\.siio-cambios \.valor\.igual\{color:var\(--tinta\)\}/);
+  // Los puntos se pintan por efecto y con un umbral: subir en costos es malo; en la utilidad, bajar.
+  assert.match(torre, /const tonoPuntos = \(puntos: number \| null, subirEsMalo: boolean\)/);
+  assert.match(torre, /tonoPuntos\(ppCosto, true\)/);
+  assert.match(torre, /tonoPuntos\(ppUtil, false\)/);
+  // El chip de un mes que cerró Finanzas no esconde que las cifras son de Avancys.
+  assert.match(torre, /Finanzas cerró · cifras de Avancys/);
+  // Lo que hay que saber antes de creerle al mes va arriba, no en letra chica bajo la tabla.
+  assert.ok(torre.indexOf('<AvisoDelMes') < torre.indexOf('<HistoriaDelMes t={t}'));
+  // «Mes a mes» es el estado de resultados completo, abierto; las cuentas van en «Cómo se calculó».
+  assert.match(torre, /className="siio-tabla siio-pyg"/);
+  assert.match(torre, /<summary>Cómo se calculó: las cuentas de cada línea y el cierre oficial de Finanzas<\/summary>/);
 });
