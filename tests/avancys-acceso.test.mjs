@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claseDeCuenta, horasDelTurno, horasPorDiaDelProducto, rentabilidadAproximada, medirAccesoAvancys, mesCerradoAnterior, mirarInformeRentabilidad, mirarLineasAnaliticas, pygPorCliente, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
+import { claseDeCuenta, horasDeLaModalidad, horasDelTurno, horasPorDiaDelProducto, lineaCuentaEnElMes, rentabilidadAproximada, medirAccesoAvancys, mesCerradoAnterior, mirarInformeRentabilidad, mirarLineasAnaliticas, pygPorCliente, MODELOS_EN_USO, MODELOS_PEDIDOS } from '../avancys-acceso.js';
 
 const config = Object.freeze({ origen: 'https://odoo.prueba', database: 'db', username: 'u', clave: 'k', companyId: null });
 
@@ -315,7 +315,26 @@ test('rentabilidad aproximada: horas del horario de la orden, promedio a la que 
   const lectura = llamadas.find(l => l.modelo === 'project.service.order.line' && l.metodo === 'search_read');
   assert.deepEqual(lectura.args[0], [['state', '=', 'active']]);
   assert.deepEqual(lectura.kwargs.fields, ['partner_id', 'project_id', 'product_id', 'time_in', 'time_out', 'duration', 'dias_facturables']);
-  assert.deepEqual(r.lectura_de_ordenes, { leidas: 6, cliente_por_contrato: 1, sin_cliente: 1, sin_producto: 0, sin_puesto: 0 });
+  assert.deepEqual(r.lectura_de_ordenes, { leidas: 6, cliente_por_contrato: 1, sin_cliente: 1, sin_producto: 0, sin_puesto: 0, fuera_del_mes: 0, novedades_sin_horas: 0, por_modalidad: 0 });
+});
+
+test('horas reales (caso ARA, 16-nov): turnos partidos por la modalidad y sólo lo que estuvo en servicio en el mes', () => {
+  // La modalidad dice las horas de un turno partido; `duration` mide de la entrada a la salida.
+  assert.equal(horasDeLaModalidad('JMC 5X1 08 HORAS LUN-DOM 09-13/17-21'), 8);
+  assert.equal(horasDeLaModalidad('JMC 5X1 10 HORAS LUN-DOM 09-13/15-21'), 10);
+  assert.equal(horasDeLaModalidad('4X2 24 HORAS 06'), 24);
+  assert.equal(horasDeLaModalidad('4X2 12 HORAS 18:00 - 06:00'), 12);
+  assert.equal(horasDeLaModalidad(null), null);
+  // Las cancelaciones y las novedades en dinero no son horas; las adiciones cuentan en el mes en que empiezan.
+  assert.equal(lineaCuentaEnElMes({ operation: 'cancelacion', start_date: '2026-10-03 05:00:00' }, '2026-10'), false);
+  assert.equal(lineaCuentaEnElMes({ operation: 'en_dinero', start_date: '2026-10-03 05:00:00' }, '2026-10'), false);
+  assert.equal(lineaCuentaEnElMes({ operation: 'adicion', start_date: '2026-10-03 05:00:00' }, '2026-10'), true);
+  assert.equal(lineaCuentaEnElMes({ operation: 'adicion', start_date: '2026-09-03 05:00:00' }, '2026-10'), false);
+  // El servicio base cuenta mientras estuvo vigente; las fechas de Odoo son UTC: «2026-11-01 04:59:59» es 31-oct.
+  assert.equal(lineaCuentaEnElMes({ start_date: '2026-08-01 05:00:00', end_date: '2026-11-01 04:59:59' }, '2026-10'), true);
+  assert.equal(lineaCuentaEnElMes({ start_date: '2026-08-01 05:00:00', end_date: '2026-11-01 04:59:59' }, '2026-11'), false);
+  assert.equal(lineaCuentaEnElMes({ start_date: '2026-11-01 05:00:00', end_date: '2031-01-01 04:59:59' }, '2026-10'), false);
+  assert.equal(lineaCuentaEnElMes({ start_date: false, end_date: false }, '2026-10'), true);
 });
 
 test('rentabilidad aproximada: mes mal escrito no consulta', async () => {
