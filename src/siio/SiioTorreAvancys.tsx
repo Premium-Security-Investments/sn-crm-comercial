@@ -225,7 +225,18 @@ const quienPierde = (k: Clientes | null) => {
 };
 
 const mayuscula = (texto: string) => texto.replace(/^./, letra => letra.toUpperCase());
-const entidad = (nombre: string) => nombre.replace(/\s+/g, ' ').trim();
+// Nombre corto de la entidad, como en Mi día de Licitaciones: «Rama Judicial · Seccional Pereira»; lo de SECOP en
+// mayúscula sostenida, en tipo título y sin la sociedad («METRO DE BOGOTA SA» → «Metro de Bogota»), y la sigla sola
+// cuando el nombre arranca con ella («SIC SUPERINTENDENCIA DE …» → «SIC»).
+const entidad = (nombre: string) => {
+  const base = nombre.replace(/[\u0080-\u009f]/g, ' - ').replace(/\s+/g, ' ').trim()
+    .replace(/^Rama Judicial\s*[-–]?\s*Dirección Seccional de Administración Judicial de (.+)$/i, 'Rama Judicial · Seccional $1')
+    .replace(/^Rama Judicial\s*[-–]?\s*Dirección Ejecutiva de Administración Judicial$/i, 'Rama Judicial · Dirección Ejecutiva');
+  if (base !== base.toUpperCase()) return base;
+  const palabras = base.replace(/(\s+(S\.?\s?A\.?\s?S?\.?|LTDA\.?|E\.?S\.?P\.?))+$/i, '').split(/\s+/);
+  if (/^[A-ZÁÉÍÓÚÑ]{2,4}$/.test(palabras[0]) && palabras.length !== 2) return palabras[0];
+  return palabras.map((palabra, i) => (i && PALABRAS_MENORES.has(palabra.toLowerCase()) ? palabra.toLowerCase() : palabra.charAt(0) + palabra.slice(1).toLowerCase())).join(' ');
+};
 const fechaCorta = (valor: string | null) => {
   if (!valor) return 'sin fecha';
   const fecha = new Date(valor);
@@ -289,7 +300,7 @@ export function SiioPortada({ t, onIr, comercial = null }: { t: TorreAvancys; on
   if (enCurso) {
     const parte = r.ingresos ? enCurso.totales.ingresos / r.ingresos : null;
     renglones.push(<Renglon key="facturado" pregunta="¿Cuánto llevamos facturado este mes?" periodo={aHoy(`${mayuscula(nombre(mesActual))} · a hoy`)} tono="info" ir={() => onIr('resultados', mesActual)}
-      respuesta={<><span className="valor">{millones(enCurso.totales.ingresos)}</span>{parte !== null ? <><span className="frase">El <b>{pct(enCurso.totales.ingresos, r.ingresos)}</b> de lo de todo {nombre(principal)}.</span>
+      respuesta={<><span className="valor">{millones(enCurso.totales.ingresos)}</span>{parte !== null ? <><span className="frase">El <b>{pct(enCurso.totales.ingresos, r.ingresos)}</b> de lo facturado en todo {nombre(principal)}.</span>
         <span className="siio-barra-portada" aria-hidden="true"><i style={{ width: `${Math.min(100, Math.round(parte * 100))}%` }} /></span></> : null}</>}
       comparacion={<><span className="ref">{mayuscula(nombre(principal))} completo: {millones(r.ingresos)}</span><span>Se compara contra el mes completo: la facturación llega en lotes y la comparación día contra día engañaría.</span></>} />);
   }
@@ -350,7 +361,7 @@ export function SiioPortada({ t, onIr, comercial = null }: { t: TorreAvancys; on
       respuesta={<><span className="valor">{porDecidir.length || 'Ninguna'} {porDecidir.length ? <small>sin decidir si nos presentamos</small> : null}</span>
         <span className="frase">{porDecidir.length ? 'Hay que decir GO o NO-GO antes del cierre.' : `Todas las que cierran en ${VENTANA_LICITACIONES} días ya tienen decisión.`}</span></>}
       comparacion={<><Lista filas={porDecidir.slice(0, A_LA_VISTA).map(item => ({ nombre: `${entidad(item.entity)} · ${fechaCorta(item.deadline_at)} (${item.days_to_deadline} ${item.days_to_deadline === 1 ? 'día' : 'días'})`, valor: millones(item.total_value), mal: true }))} />
-        {conGo.length ? <span>Con GO: {conGo.map(item => `${entidad(item.entity)} (${fechaCorta(item.deadline_at)})`).join('; ')}.</span> : null}
+        {conGo.length ? <span>Con GO y en preparación: {conGo.map(item => `${entidad(item.entity)} (${fechaCorta(item.deadline_at)})`).join('; ')}.</span> : null}
         <span className="ver">Ver Licitaciones →</span></>} />);
   } else {
     const leyendo = <span className="frase">Leyendo el CRM…</span>;
@@ -370,7 +381,7 @@ export function SiioPortada({ t, onIr, comercial = null }: { t: TorreAvancys; on
       <span>Facturación, cartera y CRM: leídos hoy.</span><span className="ver">Ver Fuentes →</span></>} />);
 
   return <>
-    <p className="siio-portada-cabeza siio-nota">Avancys y CRM{torre?.medido_en ? ` leídos el ${hora(torre.medido_en).replace(/\.$/, '')}` : ''} · <button type="button" className="siio-enlace" onClick={() => void t.cargar(true)}>Volver a leer</button></p>
+    <p className="siio-portada-cabeza siio-nota">Avancys y CRM{torre?.medido_en ? ` leídos el ${hora(torre.medido_en).replace(/\.$/, '')}` : ''}<button type="button" className="siio-enlace" onClick={() => void t.cargar(true)}>Volver a leer</button></p>
     <section className="siio-panel siio-portada" aria-label="Portada: siete preguntas">
       <ol>{renglones}</ol>
     </section>
