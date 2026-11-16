@@ -248,7 +248,7 @@ function Renglon({ pregunta, periodo, tono, ir, respuesta, comparacion }: { preg
 }
 
 function Lista({ filas }: { filas: { nombre: string; valor: string; mal?: boolean }[] }) {
-  return <span className="siio-lista-corta">{filas.map(fila => <span key={fila.nombre} className={fila.mal ? 'mal' : ''}><span>{fila.nombre}</span><b>{fila.valor}</b></span>)}</span>;
+  return <span className="siio-lista-corta">{filas.map((fila, i) => <span key={`${i}-${fila.nombre}`} className={fila.mal ? 'mal' : ''}><span>{fila.nombre}</span><b>{fila.valor}</b></span>)}</span>;
 }
 
 // La Portada (contrato aprobado por Juan el 2026-11-15): una pantalla con siete preguntas. Cada renglón dice de qué
@@ -331,10 +331,11 @@ export function SiioPortada({ t, onIr, comercial = null }: { t: TorreAvancys; on
     const atrasados = (p.by_owner || []).filter(fila => fila.owner_name && fila.stale > 0).sort((a, b) => b.stale - a.stale).slice(0, A_LA_VISTA - 1);
     const cumplimiento = delMes?.goal ? delMes.approved_monthly_value / delMes.goal : null;
     renglones.push(<Renglon key="comercial" pregunta="¿Cómo va lo comercial?" periodo={aHoy(`${mayuscula(nombre(mesActual))} · a hoy`)}
-      tono={(cumplimiento !== null && cumplimiento < 0.5) || (p.open_count && p.stale_count / p.open_count >= 0.5) ? 'mal' : 'bien'} ir={() => onIr('comercial')}
+      // El mes va en curso: lo vendido contra la meta todavía puede cambiar; rojo solo por los leads sin gestión.
+      tono={p.open_count && p.stale_count / p.open_count >= 0.5 ? 'mal' : 'info'} ir={() => onIr('comercial')}
       respuesta={<><span className="valor">{millones(delMes?.approved_monthly_value || 0)} {delMes?.goal ? <small>de {millones(delMes.goal)} de meta</small> : <small>sin meta cargada</small>}</span>
         <span className="frase">Vendido en el mes, en valor mensual del servicio{cumplimiento !== null ? <>: el <b>{Math.round(cumplimiento * 100)} %</b> de la meta</> : null}.</span>
-        {cumplimiento !== null ? <span className="siio-barra-portada mal" aria-hidden="true"><i style={{ width: `${Math.min(100, Math.round(cumplimiento * 100))}%` }} /></span> : null}</>}
+        {cumplimiento !== null ? <span className="siio-barra-portada" aria-hidden="true"><i style={{ width: `${Math.min(100, Math.round(cumplimiento * 100))}%` }} /></span> : null}</>}
       comparacion={<>{p.open_count ? <span className={`ref ${p.stale_count / p.open_count >= 0.5 ? 'mal' : ''}`}>{p.stale_count} de {p.open_count} leads sin gestión en {p.stale_days} días</span> : null}
         <Lista filas={atrasados.map(fila => ({ nombre: fila.owner_name as string, valor: `${fila.stale} de ${fila.open}`, mal: fila.stale / fila.open >= 0.5 }))} />
         {delPrevio?.goal ? <span>{mayuscula(nombre(principal))} cerró en {millones(delPrevio.approved_monthly_value)} de {millones(delPrevio.goal)} ({Math.round((delPrevio.approved_monthly_value / delPrevio.goal) * 100)} %).</span> : null}
@@ -342,7 +343,8 @@ export function SiioPortada({ t, onIr, comercial = null }: { t: TorreAvancys; on
 
     // 6. ¿Qué licitaciones hay que decidir?
     const enVentana = comercial.tenders.calendar.filter(item => item.days_to_deadline !== null && item.days_to_deadline >= 0 && item.days_to_deadline <= VENTANA_LICITACIONES);
-    const porDecidir = enVentana.filter(item => !item.decision);
+    // Sin GO ni NO-GO y sin estado de oferta: lo que el servidor marca «pendiente_decision».
+    const porDecidir = enVentana.filter(item => item.offer_status === 'pendiente_decision');
     const conGo = enVentana.filter(item => item.decision === 'go');
     renglones.push(<Renglon key="licitaciones" pregunta="¿Qué licitaciones hay que decidir?" periodo={aHoy(`Cierran en ${VENTANA_LICITACIONES} días o menos`)} tono={porDecidir.length ? 'mal' : 'bien'} ir={() => onIr('comercial')}
       respuesta={<><span className="valor">{porDecidir.length || 'Ninguna'} {porDecidir.length ? <small>sin decidir si nos presentamos</small> : null}</span>
@@ -350,11 +352,16 @@ export function SiioPortada({ t, onIr, comercial = null }: { t: TorreAvancys; on
       comparacion={<><Lista filas={porDecidir.slice(0, A_LA_VISTA).map(item => ({ nombre: `${entidad(item.entity)} · ${fechaCorta(item.deadline_at)} (${item.days_to_deadline} ${item.days_to_deadline === 1 ? 'día' : 'días'})`, valor: millones(item.total_value), mal: true }))} />
         {conGo.length ? <span>Con GO: {conGo.map(item => `${entidad(item.entity)} (${fechaCorta(item.deadline_at)})`).join('; ')}.</span> : null}
         <span className="ver">Ver Licitaciones →</span></>} />);
+  } else {
+    const leyendo = <span className="frase">Leyendo el CRM…</span>;
+    renglones.push(<Renglon key="comercial" pregunta="¿Cómo va lo comercial?" periodo={aHoy(`${mayuscula(nombre(mesActual))} · a hoy`)} tono="info" ir={() => onIr('comercial')} respuesta={leyendo} comparacion={null} />);
+    renglones.push(<Renglon key="licitaciones" pregunta="¿Qué licitaciones hay que decidir?" periodo={aHoy(`Cierran en ${VENTANA_LICITACIONES} días o menos`)} tono="info" ir={() => onIr('comercial')} respuesta={leyendo} comparacion={null} />);
   }
 
   // 7. ¿Las fuentes están al día? Los meses que Contabilidad no ha cerrado, con sus días.
   const abiertos = (torre?.pyg || []).filter(fila => fila.mes < mesActual).map(fila => ({ mes: fila.mes, cierre: cierreDe(t, fila.mes, hoy) }))
-    .filter(fila => fila.cierre.tono === 'confirmar' || fila.cierre.tono === 'marca');
+    // Un mes con el cierre de Finanzas (Excel) tampoco está bloqueado en Avancys: cuenta como abierto.
+    .filter(fila => fila.cierre.tono !== 'cerrado');
   renglones.push(<Renglon key="fuentes" pregunta="¿Las fuentes están al día?" periodo={aHoy('A hoy')} tono={abiertos.length ? 'ojo' : 'bien'} ir={() => onIr('fuentes')}
     respuesta={abiertos.length ? <><span className="valor">{abiertos.length === 1 ? '1 mes' : `${abiertos.length} meses`} <small>sin cerrar en Avancys</small></span>
       <span className="frase">Contabilidad no ha cerrado {abiertos.map((fila, i) => <Fragment key={fila.mes}>{i ? (i === abiertos.length - 1 ? ' ni ' : ', ') : ''}<b>{nombre(fila.mes)} ({diasDesdeFinDeMes(fila.mes, hoy)} días)</b></Fragment>)}.</span></>

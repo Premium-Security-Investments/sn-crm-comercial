@@ -146,9 +146,9 @@ test('portada de siete preguntas (contrato de Juan, 15-nov): periodo, respuesta 
   assert.match(torre, /completo: \{millones\(r\.ingresos\)\}/);
   // Licitaciones: las que cierran en 15 días sin GO ni NO-GO.
   assert.match(torre, /export const VENTANA_LICITACIONES = 15;/);
-  assert.match(torre, /const porDecidir = enVentana\.filter\(item => !item\.decision\);/);
+  assert.match(torre, /const porDecidir = enVentana\.filter\(item => item\.offer_status === 'pendiente_decision'\);/);
   // Los meses sin cerrar se cuentan con la misma regla de cierre que Resultados.
-  assert.match(torre, /\.filter\(fila => fila\.cierre\.tono === 'confirmar' \|\| fila\.cierre\.tono === 'marca'\)/);
+  assert.match(torre, /\.filter\(fila => fila\.cierre\.tono !== 'cerrado'\)/);
   // Ningún botón dentro de otro: «Volver a leer» va fuera de los renglones.
   const portada = torre.slice(torre.indexOf('export function SiioPortada'), torre.indexOf('// Resultados (contrato de la maqueta'));
   assert.equal((portada.match(/<button/g) || []).length, 1);
