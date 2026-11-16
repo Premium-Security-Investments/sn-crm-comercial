@@ -367,3 +367,4 @@
 .siio-dashboard .siio-aviso-mes strong{color:var(--estimado)}
 .siio-dashboard .siio-pyg tr.total td{border-top:1px solid var(--linea-fuerte);background:var(--fondo-suave)}
 .siio-dashboard .siio-pyg td.mal strong{color:var(--mal)}
+.siio-dashboard .siio-cifra-portada .valor.pendiente{color:var(--sutil);font-weight:650}

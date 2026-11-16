@@ -190,7 +190,7 @@ test('resultados con fuerza (Juan, 15-nov): cifras contra el mes anterior, cada 
   // Qué cambió: en costos y gastos, subir es malo; si sube menos que el ingreso, se dice.
   assert.match(torre, /subió menos que el ingreso/);
   // El mes en curso no cuenta historia: va a hoy.
-  assert.match(torre, /va a hoy<\/h2>/);
+  assert.match(torre, /va a hoy\.<\/strong>/);
   const presupuesto = read('src/siio/SiioPresupuesto.tsx');
   assert.match(presupuesto, /className="siio-barras-ppto"/);
   assert.match(presupuesto, /parece un problema de asignación de cuentas/);
@@ -223,4 +223,11 @@ test('la barra de cada $100 lleva sus cifras en la leyenda y nada sale como −$
   assert.match(torre, /<ul className="leyenda">\{actual\.map\(\(x, i\) =>/);
   assert.match(torre, /<strong>\{pesos100\(x\.valor\)\}<\/strong>/);
   assert.match(torre, /const millones = \(valor: number\) => `\$\{Math\.round\(valor \/ 1e6\) < 0 \? '−' : ''\}/);
+});
+
+test('el mes en curso tiene la misma forma que un mes terminado (Juan, 16-nov)', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  assert.match(torre, /<span className="pregunta">Ingresos a hoy<\/span>/);
+  assert.match(torre, /\{alCierre\('Utilidad operacional', p \? p\.utilidad_ordinaria : null\)\}/);
+  assert.match(torre, /aria-label=\{`Resultados de \$\{nombre\(fila\.mes\)\} a hoy`\}/);
 });

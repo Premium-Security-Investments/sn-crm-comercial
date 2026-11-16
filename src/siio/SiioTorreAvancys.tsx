@@ -455,11 +455,31 @@ function HistoriaDelMes({ t, lineas, meses }: { t: TorreAvancys; lineas: LineaPy
   const previo = fila ? meses.find(m => m.mes === mesAnterior(fila.mes)) || null : null;
   const nombre = (mes: string) => nombreMes(mes).split(' ')[0];
   if (!fila) return null;
+  // El mes en curso con la misma forma que un mes terminado (Juan, 16-nov: «noviembre se ve muy diferente»): el aviso
+  // arriba, las mismas cuatro cifras; lo que se lee al cierre lo dice en su lugar, con la referencia del mes anterior.
   if (fila.mes >= mesActual) {
-    return <section className="siio-panel" aria-label="El mes en curso">
-      <h2>{nombre(fila.mes).replace(/^./, letra => letra.toUpperCase())} va a hoy</h2>
-      <p className="siio-nota" style={{ marginTop: 4 }}>Facturado: <strong>{millones(fila.totales.ingresos)}</strong>{previo ? ` (${pct(fila.totales.ingresos, previo.totales.ingresos)} de ${nombre(previo.mes)})` : ''}. La utilidad y los costos se leen al cierre, cuando se cause la nómina: elija un mes terminado para ver su historia.</p>
-    </section>;
+    const p = previo?.totales || null;
+    const Mes = (mes: string) => nombre(mes).replace(/^./, letra => letra.toUpperCase());
+    const alCierre = (etiqueta: string, valorPrevio: number | null) => <div className="siio-cifra-portada">
+      <span className="pregunta">{etiqueta}</span>
+      <span className="valor pendiente">Al cierre</span>
+      <span className="referencia">Se lee cuando se cause la nómina</span>
+      {p && valorPrevio !== null ? <span className="detalle">{Mes(previo!.mes)}: {millones(valorPrevio)}, el {pct(valorPrevio, p.ingresos)} del ingreso.</span> : null}
+    </div>;
+    return <>
+      <div className="siio-aviso-mes" role="note"><p><strong>{Mes(fila.mes)} va a hoy.</strong> Lo facturado se ve desde ya; los costos, los gastos y la utilidad se leen al cierre, cuando Contabilidad cause la nómina.</p></div>
+      <section className="siio-panel siio-cifras-portada siio-cifras-resultados" aria-label={`Resultados de ${nombre(fila.mes)} a hoy`}>
+        <div className="siio-cifra-portada">
+          <span className="pregunta">Ingresos a hoy</span>
+          <span className="valor">{millones(fila.totales.ingresos)}</span>
+          {p ? <span className="referencia">{pct(fila.totales.ingresos, p.ingresos)} de {nombre(previo!.mes)} completo</span> : null}
+          {p ? <span className="detalle">{Mes(previo!.mes)} completo: {millones(p.ingresos)}.</span> : null}
+        </div>
+        {alCierre('Costo de operación', p ? -p.costos : null)}
+        {alCierre('Gastos operativos', p ? -p.gastos : null)}
+        {alCierre('Utilidad operacional', p ? p.utilidad_ordinaria : null)}
+      </section>
+    </>;
   }
   const tt = fila.totales;
   const tp = previo?.totales || null;
