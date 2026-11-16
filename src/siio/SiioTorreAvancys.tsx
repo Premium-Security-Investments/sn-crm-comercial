@@ -69,7 +69,8 @@ const nombreMes = (mes?: string | null) => {
   const [anio, numero] = mes.split('-').map(Number);
   return `${MESES[numero - 1]} ${anio}`;
 };
-const millones = (valor: number) => `${valor < 0 ? '−' : ''}$${Math.round(Math.abs(valor) / 1e6).toLocaleString('es-CO')} M`;
+// Lo que redondea a cero millones se escribe $0 M, sin el signo menos.
+const millones = (valor: number) => `${Math.round(valor / 1e6) < 0 ? '−' : ''}$${Math.round(Math.abs(valor) / 1e6).toLocaleString('es-CO')} M`;
 const pesos = (valor: number) => `$${Math.round(Math.abs(valor)).toLocaleString('es-CO')}`;
 const pct = (parte: number, base: number) => (base ? `${(Math.round((parte / base) * 1000) / 10).toLocaleString('es-CO').replace('-', '−')} %` : '—');
 const hora = (valor?: string) => (valor
@@ -543,7 +544,14 @@ function HistoriaDelMes({ t, lineas, meses }: { t: TorreAvancys; lineas: LineaPy
         </div>
       </div>)}
       {utilidad < 0 ? <p className="siio-nota mal">Los costos y gastos pasan de $100: el mes deja pérdida de {pesos100(-utilidad)} por cada $100.</p> : null}
-      <p className="leyenda">{actual.map(x => <span key={x.clave}><i className={`t-${x.clave}`} />{x.etiqueta.replace(/^./, letra => letra.toUpperCase())}</span>)}</p>
+      {/* La leyenda lleva las cifras: las franjas delgadas no caben con su número (Juan, 16-nov: «no se ve el valor de
+          medios tecnológicos»). Cada tramo con lo de este mes y lo del anterior. */}
+      <ul className="leyenda">{actual.map((x, i) => <li key={x.clave}>
+        <i className={`t-${x.clave}`} />
+        <span className="nombre">{x.etiqueta.replace(/^./, letra => letra.toUpperCase())}</span>
+        <strong>{pesos100(x.valor)}</strong>
+        {antes ? <small>{nombre(previo!.mes).slice(0, 3)}: {pesos100(antes[i].valor)}</small> : null}
+      </li>)}</ul>
     </section>
     <div className="siio-dos-col">
       {cambios.length ? <section className="siio-panel" aria-label={`Qué cambió frente a ${nombre(previo!.mes)}`}>
