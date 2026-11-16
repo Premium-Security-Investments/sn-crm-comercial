@@ -52,12 +52,48 @@ test('cartera: lo vencido con todos sus tramos y los meses de deuda comparados c
   const torre = read('src/siio/SiioTorreAvancys.tsx');
   assert.match(torre, /const IVA = 1\.19;/);
   assert.match(torre, /meses: mensual \? fila\.vencido \/ \(mensual \* IVA\) : null/);
-  assert.match(torre, /\(c\.tramos \|\| \[\]\)\.map\(tramo => <CifraKit/);
+  assert.match(torre, /\(c\.tramos \|\| \[\]\)\.map\(tramo => <div key=\{tramo\.tramo\}>/);
   // Cartera (PR 4): el cruce por NIT no empareja nombres sin NIT entre sí, y la pestaña no es tarjeta dentro de tarjeta.
   assert.match(torre, /const nitDeudor = \(nombre: string\) => nitDe\(nombre\) \|\| `sin-nit:\$\{nombre\}`;/);
   assert.match(torre, /además pierde plata/);
   assert.match(read('src/siio/SiioExecutiveView.tsx'), /className="siio-pantalla" role="tabpanel" aria-label="Cartera"/);
-  assert.match(torre, /etiqueta="Sin vencer"/);
+  assert.match(torre, /Sin vencer: \{millones\(c\.total\.saldo - c\.vencido\.saldo\)\}/);
+});
+
+test('cartera con las reglas de la Portada (Juan, 16-nov): a hoy, contra hace un mes y el rojo solo con umbral', () => {
+  const torre = read('src/siio/SiioTorreAvancys.tsx');
+  assert.match(torre, /<h2>¿Nos están pagando\?<\/h2>/);
+  assert.match(torre, /<h2>¿Quién debe más\?<\/h2>/);
+  // La comparación contra hace un mes, en la pestaña y en la Portada, con la foto diaria.
+  assert.equal((torre.match(/<ContraHaceUnMes c=\{c\} \/>/g) || []).length, 2);
+  assert.match(torre, /tono=\{parteVencida >= CARTERA_VENCIDA_MAL \? 'mal' : undefined\}/);
+  // Lo que puede mover la cifra va arriba en ámbar; los tramos ya no se pintan de rojo.
+  assert.match(torre, /en consignaciones sin identificar\.<\/strong>/);
+  assert.doesNotMatch(torre, /tono=\{viejos\.includes\(tramo\)/);
+  assert.match(torre, /className="siio-tabla apilable">\s*<thead><tr><th>Cliente<\/th><th className="num">Vencido<\/th>/);
+});
+
+test('la foto diaria de la cartera: se guarda la de hoy y se compara con la de hace un mes; sin tabla, sigue', async () => {
+  const { fotoDeCartera } = await import('../avancys-torre.js');
+  const filas = [];
+  const db = {
+    from: () => ({
+      upsert: async fila => { filas.push(fila); return { error: null }; },
+      select: () => ({ lte: (_c, limite) => ({ order: () => ({ limit: async () => ({ data: limite >= '2026-10-16' ? [{ fecha: '2026-10-15', total: '100', vencido: '40', mas_30: '10' }] : [], error: null }) }) }) }),
+    }),
+  };
+  const cartera = { total: { saldo: 120 }, vencido: { saldo: 50 }, tramos: [{ tramo: '1 a 30 días', saldo: 20 }, { tramo: '31 a 60 días', saldo: 30 }] };
+  const foto = await fotoDeCartera(db, cartera, new Date('2026-11-16T15:00:00Z'));
+  assert.deepEqual(foto, { fecha: '2026-10-15', total: 100, vencido: 40, mas_30: 10 });
+  assert.equal(filas[0].fecha, '2026-11-16');
+  assert.equal(filas[0].mas_30, 30);
+  // La fecha es la de Bogotá: a las 2 a. m. UTC todavía es el día anterior.
+  await fotoDeCartera(db, cartera, new Date('2026-11-17T02:00:00Z'));
+  assert.equal(filas[1].fecha, '2026-11-16');
+  // Sin base o con la tabla ausente, no tumba la Torre.
+  assert.equal(await fotoDeCartera(null, cartera), null);
+  assert.equal(await fotoDeCartera({ from: () => { throw new Error('relation does not exist'); } }, cartera), null);
+  assert.match(read('supabase/migrations/226_cartera_foto_diaria.sql'), /revoke all on table public\.psi_siio_cartera_fotos from public, anon, authenticated, service_role;/);
 });
 
 test('cabecera y pestañas calcan la maqueta: botón primario, pestañas en fila y nombres de cliente sin códigos', () => {

@@ -370,3 +370,15 @@
 .siio-dashboard .siio-cifra-portada .valor.pendiente{color:var(--sutil);font-weight:650}
 .siio-dashboard .siio-tabla th small{display:block;font-weight:500;text-transform:none;letter-spacing:0;color:var(--sutil)}
 .siio-dashboard .siio-tabla td small.siio-antes{color:var(--sutil);font-weight:500}
+/* Cartera: lo vencido por antigüedad en una franja de cuatro, con su barra de proporción (sin rojo: no es comparación). */
+.siio-dashboard .siio-tramos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 20px;margin-top:14px;padding-top:12px;border-top:1px solid var(--linea)}
+.siio-dashboard .siio-tramos>div{display:grid;gap:3px;min-width:0}
+.siio-dashboard .siio-tramos .etiqueta{font-size:12.5px;font-weight:650;color:var(--suave)}
+.siio-dashboard .siio-tramos strong{font-size:18px;color:var(--tinta);font-variant-numeric:tabular-nums}
+.siio-dashboard .siio-tramos small{font-size:12px;color:var(--sutil)}
+@media(max-width:560px){.siio-dashboard .siio-tramos{grid-template-columns:1fr 1fr}}
+.siio-dashboard .siio-tramos .siio-magnitud{width:100%;margin:4px 0 0}
+.siio-dashboard .siio-cifras .ref{display:block;margin-top:2px;font-weight:650}
+.siio-dashboard .siio-cifras .ref.bien{color:var(--bien)}
+.siio-dashboard .siio-cifras .ref.mal{color:var(--mal)}
+.siio-dashboard .siio-tramos .siio-magnitud i{margin-left:0}

@@ -311,8 +311,33 @@ export async function torreAvancys({ refrescar = false, config = configuracionDe
   const sesion = await abrirSesion({ config, fetchImpl, ahora });
   if (!sesion.ejecutar) return sesion.estado;
   const datos = { ...(await calcularTorre(sesion.ejecutar, { ahora, devengado: devengado || devengadoDeAvancys(await clientesMesVencido(db)) })), configurado: true, autenticado: true, origen: config.origen, medido_en: new Date(momento).toISOString() };
+  if (datos.cartera && !datos.cartera.error) datos.cartera = { ...datos.cartera, hace_un_mes: await fotoDeCartera(db, datos.cartera, ahora()) };
   guardado = { en: momento, datos };
   return { ...datos, desde_memoria: false };
 }
 
 export function olvidarTorre() { guardado = null; }
+
+// La foto diaria de la cartera (migración 226): se guarda la de hoy y se devuelve la más reciente de hace un mes o más.
+// Avancys no guarda la cartera de fechas pasadas. Sin la tabla o sin base, la Torre sigue y dice que no hay registro.
+export const DIAS_COMPARACION_CARTERA = 30;
+const diaBogota = fecha => new Date(fecha.getTime() - 5 * 3600000).toISOString().slice(0, 10);
+export async function fotoDeCartera(db, cartera, ahora = new Date()) {
+  if (!db?.from || !cartera?.total || !cartera?.vencido) return null;
+  const hoy = diaBogota(ahora);
+  const mas30 = (cartera.tramos || []).slice(1).reduce((suma, tramo) => suma + (Number(tramo.saldo) || 0), 0);
+  try {
+    await db.from('psi_siio_cartera_fotos').upsert({
+      fecha: hoy, total: cartera.total.saldo, vencido: cartera.vencido.saldo, mas_30: mas30,
+      heredado_yeminus: cartera.heredado_yeminus?.saldo ?? null,
+      tramos: (cartera.tramos || []).map(tramo => ({ tramo: tramo.tramo, saldo: tramo.saldo })), medido_en: ahora.toISOString(),
+    }, { onConflict: 'fecha' });
+    const limite = diaBogota(new Date(ahora.getTime() - DIAS_COMPARACION_CARTERA * 86400000));
+    const { data, error } = await db.from('psi_siio_cartera_fotos').select('fecha,total,vencido,mas_30').lte('fecha', limite).order('fecha', { ascending: false }).limit(1);
+    if (error || !data?.length) return null;
+    const [foto] = data;
+    return { fecha: foto.fecha, total: Number(foto.total), vencido: Number(foto.vencido), mas_30: Number(foto.mas_30) };
+  } catch {
+    return null;
+  }
+}
