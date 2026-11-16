@@ -468,13 +468,51 @@ export function horasDelTurno(entrada, salida) {
 }
 
 const VIGILANCIA_FISICA = /^\s*\[VI\d+\]/i;
+
+// Las horas reales de un turno partido salen de la modalidad: «JMC 5X1 08 HORAS LUN-DOM 09-13/17-21» son 8 horas, y
+// `duration` mide de la entrada a la salida (12). Medido el 2026-11-16 en ARA (caso Jerónimo Martins). Sin tramos, las
+// «NN HORAS» de la modalidad; sin nada, null y manda `duration`.
+export function horasDeLaModalidad(nombre) {
+  const texto = String(nombre || '').toUpperCase();
+  const tramos = texto.match(/\b(\d{1,2})(?::\d{2})?\s*-\s*(\d{1,2})(?::\d{2})?\s*\/\s*(\d{1,2})(?::\d{2})?\s*-\s*(\d{1,2})(?::\d{2})?\b/);
+  if (tramos) {
+    const [, a, b, c, d] = tramos.map(Number);
+    const tramo = (desde, hasta) => (hasta > desde ? hasta - desde : 24 - desde + hasta);
+    const horas = tramo(a, b) + tramo(c, d);
+    return horas > 0 && horas <= 24 ? horas : null;
+  }
+  const encontrado = texto.match(/\b(\d{1,2})\s*HORAS\b/);
+  const horas = encontrado ? Number(encontrado[1]) : null;
+  return horas && horas <= 24 ? horas : null;
+}
+
+// Qué líneas cuentan en un mes (caso ARA, 2026-11-16): el servicio base que estuvo vigente en el mes; las adiciones y
+// los reemplazos sólo en el mes en que empiezan; las cancelaciones y las novedades en dinero no son horas. Antes se
+// sumaban todas las líneas activas hoy, iguales en todos los meses, y las cancelaciones agregaban horas en vez de quitar.
+export function lineaCuentaEnElMes(fila, mes) {
+  if (!mes) return true;
+  // Odoo guarda las fechas en UTC: «2026-11-01 04:59:59» es el 31 de octubre en Bogotá.
+  const mesBogota = valor => {
+    if (!valor) return '';
+    const fecha = new Date(`${String(valor).replace(' ', 'T')}Z`);
+    return Number.isNaN(fecha.getTime()) ? String(valor).slice(0, 7) : new Date(fecha.getTime() - 5 * 3600000).toISOString().slice(0, 7);
+  };
+  const inicio = mesBogota(fila.start_date);
+  const fin = mesBogota(fila.end_date);
+  const operacion = fila.operation || null;
+  if (operacion === 'cancelacion' || operacion === 'en_dinero') return false;
+  if (operacion) return inicio === mes;
+  if (inicio && inicio > mes) return false;
+  if (fin && fin < mes) return false;
+  return true;
+}
 // Medido el 2026-11-12 sobre las 6.329 líneas activas: `duration` (horas por día) y
 // `dias_facturables` (días del mes) vienen en casi todas; `partner_id` solo en 8, por eso el cliente
 // sale del contrato; `horas_facturables` está vacío.
-const CAMPOS_HORARIO = ['partner_id', 'project_id', 'puesto_id', 'product_id', 'time_in', 'time_out', 'duration', 'dias_facturables', 'cantidad_vigilantes'];
+const CAMPOS_HORARIO = ['partner_id', 'project_id', 'puesto_id', 'product_id', 'time_in', 'time_out', 'duration', 'dias_facturables', 'cantidad_vigilantes', 'operation', 'start_date', 'end_date', 'modality_id'];
 const PAGINA_ORDENES = 2000;
 
-export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
+export async function horariosDeVigilancia(ejecutar, { diasDelMes, mes = null }) {
   const modelo = 'project.service.order.line';
   const existentes = await ejecutar(modelo, 'fields_get', [CAMPOS_HORARIO], { attributes: ['type'] }) || {};
   const campos = CAMPOS_HORARIO.filter(campo => existentes[campo]);
@@ -500,9 +538,14 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
       if (Array.isArray(p.partner_id)) clienteDelProyecto.set(p.id, p.partner_id);
     }
   }
-  const cuenta = { leidas: filas.length, cliente_por_contrato: 0, sin_cliente: 0, sin_producto: 0, sin_puesto: 0 };
+  const cuenta = { leidas: filas.length, cliente_por_contrato: 0, sin_cliente: 0, sin_producto: 0, sin_puesto: 0, fuera_del_mes: 0, novedades_sin_horas: 0, por_modalidad: 0 };
 
   for (const fila of filas) {
+    if (!lineaCuentaEnElMes(fila, mes)) {
+      if (fila.operation === 'cancelacion' || fila.operation === 'en_dinero') cuenta.novedades_sin_horas += 1;
+      else cuenta.fuera_del_mes += 1;
+      continue;
+    }
     let cliente = Array.isArray(fila.partner_id) ? fila.partner_id : null;
     if (!cliente && Array.isArray(fila.project_id)) {
       cliente = clienteDelProyecto.get(fila.project_id[0]) || null;
@@ -520,7 +563,9 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes }) {
       continue;
     }
     fila.partner_id = cliente;
-    let horas = Number(fila.duration) > 0 && Number(fila.duration) <= 24 ? Number(fila.duration) : null;
+    const modalidad = Array.isArray(fila.modality_id) ? horasDeLaModalidad(fila.modality_id[1]) : null;
+    if (modalidad) cuenta.por_modalidad += 1;
+    let horas = modalidad || (Number(fila.duration) > 0 && Number(fila.duration) <= 24 ? Number(fila.duration) : null);
     let fuente = horas ? 'duracion' : null;
     if (!horas) { horas = horasDelTurno(fila.time_in, fila.time_out); fuente = horas ? 'horario' : null; }
     if (!horas) { horas = horasPorDiaDelProducto(producto); fuente = horas ? 'nombre' : null; }
@@ -601,8 +646,8 @@ export async function rentabilidadAproximada(ejecutar, { mes }) {
     // 2. Lo que se estima: horas de vigilancia física vendidas a cada cliente. El producto no dice
     // las horas (medido el 2026-11-12: "VIGILANCIA FISICA SIN ARMA", "CON ARMA"…); el horario
     // vive en la línea de la orden de servicio (`time_in`, `time_out`, `duration`, `weekdays`).
-    // Se leen las líneas activas hoy: es el mismo servicio del mes salvo altas y retiros recientes.
-    const horario = await horariosDeVigilancia(ejecutar, { diasDelMes });
+    // Se leen las líneas activas hoy y cuentan las que estuvieron en servicio en el mes (lineaCuentaEnElMes).
+    const horario = await horariosDeVigilancia(ejecutar, { diasDelMes, mes });
     for (const linea of horario.lineas) {
       const fila = clientes.get(linea.cliente_id) || { cliente: linea.cliente, ingresos: 0, costo_directo: 0, horas: 0, lineas: 0, lineas_sin_horas: 0 };
       fila.lineas += 1;
