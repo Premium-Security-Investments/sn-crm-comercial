@@ -91,6 +91,7 @@ export function buildSnapshot(detail) {
       sede: { fuente: study.site_source, referencia: study.site_ref, nombre: study.site_name, ciudad: study.site_city, direccion: study.site_address },
       alcance: study.scope, fecha_visita: study.visit_date, preparado_por: study.prepared_by,
       renovacion_meses: study.renewal_months ?? 24,
+      fecha_estudio_original: study.original_study_date ? String(study.original_study_date instanceof Date ? study.original_study_date.toISOString() : study.original_study_date).slice(0, 10) : null,
     },
     // Tramo 5 (migración 187): la caracterización de la sede, como la trae el capítulo I-A del informe real.
     caracterizacion: {

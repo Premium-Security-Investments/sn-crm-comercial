@@ -446,7 +446,9 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   chapter('Informes, registro y seguimiento');
   p(`Una vez socializado el estudio en comité de seguridad con las directivas de ${clientName}, se dispondrá de un plan de trabajo conjunto para su seguimiento. Los avances se revisarán de manera bimensual en comité de seguridad, con base en el plan de tratamiento y en los indicadores de gestión.`);
   // Migración 209: vigencia del estudio (Héctor: mínimo cada 6 meses, máximo cada 3 años, y antes ante un siniestro).
-  const validity = studyValidity({ renewal_months: study.renovacion_meses }, { approvedAt: meta.approvedAt });
+  const validity = studyValidity({ renewal_months: study.renovacion_meses, original_study_date: study.fecha_estudio_original }, { approvedAt: meta.approvedAt });
+  // Migración 228: el estudio incorporado de una matriz anterior se dice como tal; no es una visita nueva.
+  if (study.fecha_estudio_original) p(`Este estudio corresponde al realizado el ${longDate(study.fecha_estudio_original)}, incorporado a la plataforma de Seguridad Nacional y revisado y aprobado el ${longDate(String(meta.approvedAt).slice(0, 10))}; su vigencia se cuenta desde la fecha del estudio original.`);
   if (validity.vence) p(`Vigencia: este estudio se renueva ${RENEWAL_OPTIONS.find(item => item.meses === validity.meses)?.etiqueta.toLowerCase() || `cada ${validity.meses} meses`}, a más tardar el ${longDate(validity.vence)}, o antes si cambian las instalaciones o se presenta un siniestro.`);
 
   // Migración 214: la lista de verificación y los escenarios del recorrido (IEC 31010: listas de verificación y SWIFT).

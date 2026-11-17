@@ -29,13 +29,16 @@ function addMonths(isoDay, months) {
 /**
  * La vigencia de un estudio.
  * `approvedAt`: la aprobación de la última versión (o null). `securityops`: lo traído para el estudio (summary.altas_fechas).
- * Devuelve { estado: 'sin_aprobar' | 'vigente' | 'por_vencer' | 'vencido', aprobado, vence, dias, meses, revalorar: [...] }.
+ * Devuelve { estado: 'sin_aprobar' | 'vigente' | 'por_vencer' | 'vencido', aprobado, vence, dias, meses, revalorar: [...], original }.
+ * `study.original_study_date` (migración 228): si el estudio se incorporó de una matriz anterior, la vigencia corre desde ahí.
  */
 export function studyValidity(study, { approvedAt = null, securityops = null, risks = null, catalog = null, now = new Date() } = {}) {
   const meses = RENEWAL_MONTHS.has(Number(study.renewal_months)) ? Number(study.renewal_months) : 24;
-  if (!approvedAt) return { estado: 'sin_aprobar', aprobado: null, vence: null, dias: null, meses, revalorar: [] };
+  if (!approvedAt) return { estado: 'sin_aprobar', aprobado: null, vence: null, dias: null, meses, revalorar: [], original: null };
   const aprobado = bogotaDay(approvedAt);
-  const vence = addMonths(aprobado, meses);
+  // Migración 228: un estudio incorporado de una matriz anterior vence contando desde la fecha del estudio original.
+  const original = study.original_study_date ? String(study.original_study_date instanceof Date ? study.original_study_date.toISOString() : study.original_study_date).slice(0, 10) : null;
+  const vence = addMonths(original || aprobado, meses);
   const today = bogotaDay(now);
   const dias = Math.round((Date.parse(`${vence}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / DAY);
   const estado = dias < 0 ? 'vencido' : dias <= WARNING_DAYS ? 'por_vencer' : 'vigente';
@@ -52,7 +55,7 @@ export function studyValidity(study, { approvedAt = null, securityops = null, ri
   for (const item of risks ? riskIndicators({ risks, catalog, securityops }) : []) {
     revalorar.push({ motivo: 'indicador', fecha: today, riesgo: item.riesgo, detalle: item.detalle });
   }
-  return { estado, aprobado, vence, dias, meses, revalorar };
+  return { estado, aprobado, vence, dias, meses, revalorar, original };
 }
 
 /** Pedir revaloración (cambio de instalaciones u otro motivo). Lo decide la ruta: quien prepara, revisa o aprueba. */
