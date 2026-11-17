@@ -7,9 +7,10 @@
 // anterior del mismo nombre y el reanálisis incremental.
 //
 // Sólo lee SharePoint: nunca escribe ni mueve nada allá. De cada carta va el PDF (lo que se radica); si no hay PDF, el
-// Word. La nota para quien radica, el «léeme» y la constancia no son cartas y no se cargan.
+// Word. También la constancia de radicación, que es la prueba de que la carta se presentó. La nota para quien radica y el
+// «léeme» no se cargan.
 import { createHash } from 'node:crypto';
-import { isAgt002OurObservationLetter } from './agt002-nuestras-observaciones.js';
+import { isAgt002OurObservationLetter, isAgt002OurRadicationReceipt } from './agt002-nuestras-observaciones.js';
 
 const SUBFOLDERS = ['Proyecto', 'Definitivo'];
 const EXTENSIONS = /\.(pdf|docx)$/i;
@@ -32,7 +33,9 @@ export function selectAgt002OurLettersToIngest(files, existing = []) {
     const parts = String(file?.ruta || '').split('/');
     const name = String(file?.nombre || parts.at(-1) || '');
     if (!SUBFOLDERS.includes(parts.at(-2)) || parts.at(-3) !== '01_Observaciones') continue;
-    if (!EXTENSIONS.test(name) || !isAgt002OurObservationLetter({ name, origin: 'propio', current: true })) continue;
+    // Las cartas y las constancias de radicación (17-nov: sin la constancia, Vig-IA no sabe si la carta se presentó).
+    const candidate = { name, origin: 'propio', current: true };
+    if (!EXTENSIONS.test(name) || !(isAgt002OurObservationLetter(candidate) || isAgt002OurRadicationReceipt(candidate))) continue;
     const key = `${parts.at(-2)}/${stem(name)}`;
     const current = byStem.get(key);
     if (!current || (/\.pdf$/i.test(name) && !/\.pdf$/i.test(current.nombre))) byStem.set(key, { ...file, nombre: name });
