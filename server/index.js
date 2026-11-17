@@ -8455,7 +8455,7 @@ app.post('/api/tender-documents-upload-url', async (req, res) => {
 // cadena lo trata como `third_party`, que es lo prudente.
 const TENDER_DOCUMENTS_PER_UPLOAD = 8;
 
-export async function ingestTenderDossierDocuments(database, { opportunityId, opportunity, actorProfileId, files: incomingFiles } = {}) {
+export async function ingestTenderDossierDocuments(database, { opportunityId, opportunity, actorProfileId, files: incomingFiles, proposeCompanyFacts = true } = {}) {
   // El guard viaja con el trabajo, no con la ruta: así ningún llamador —tampoco el runner del servidor de tareas—
   // puede tocar Storage ni el expediente antes de que la fundación de análisis documental esté disponible.
   await requireTenderAnalysisFoundation(database);
@@ -8566,7 +8566,9 @@ export async function ingestTenderDossierDocuments(database, { opportunityId, op
   let companyFactProposals = null;
   const ownIds = preparedFiles.map(({ file, buffer }, index) => ({ origin: normalizeTenderDocumentOrigin(file.origin), id: tenderManualUploadDocumentId(buffer), status: results[index]?.status }))
     .filter(item => item.origin === 'propio' && (item.status === 'new' || item.status === 'updated')).map(item => item.id);
-  if (ownIds.length) {
+  // Nuestras cartas de observaciones que trae el trabajo de borradores desde SharePoint no pasan por aquí
+  // (proposeCompanyFacts: false): son argumentos ante la entidad, no fuente de datos de la ficha.
+  if (ownIds.length && proposeCompanyFacts) {
     try {
       const { data: ownDocuments } = await database.from('psi_tender_document_versions').select('id,name,extracted_text')
         .eq('opportunity_id', opportunityId).eq('source', TENDER_MANUAL_UPLOAD_SOURCE).eq('current', true).in('source_document_id', ownIds);

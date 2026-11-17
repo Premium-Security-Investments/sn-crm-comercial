@@ -15,7 +15,7 @@ const RUNNER = 'ops/agt002-dossier-upload/run-agt002-dossier-upload.mjs';
 test('la secuencia gobernada vive en UNA función, y la ruta web la llama', async () => {
   for (const path of ['server/index.js', 'api/[...path].js']) {
     const source = await readFile(path, 'utf8');
-    assert.match(source, /export async function ingestTenderDossierDocuments\(database, \{ opportunityId, opportunity, actorProfileId, files: incomingFiles \} = \{\}\)/, `${path}: la función existe y es exportable`);
+    assert.match(source, /export async function ingestTenderDossierDocuments\(database, \{ opportunityId, opportunity, actorProfileId, files: incomingFiles, proposeCompanyFacts = true \} = \{\}\)/, `${path}: la función existe y es exportable`);
     assert.match(source, /res\.status\(201\)\.json\(await ingestTenderDossierDocuments\(database, \{/, `${path}: la ruta delega, no duplica`);
     // Las piezas gobernadas aparecen una sola vez: si alguien vuelve a escribirlas dentro de la ruta, las dos
     // secuencias se pueden desviar y el expediente del agente deja de ser el mismo que el de la persona.

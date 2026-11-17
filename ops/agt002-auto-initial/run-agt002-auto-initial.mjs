@@ -10,11 +10,12 @@
 //   3. "Volver a analizar": admits the reanalysis a person asked for from the opportunity (agt002-manual-reanalysis.js),
 //      outside the daily cap of first analyses; the same worker timer runs it.
 //   (New SECOP phases of converted tenders have their own review service: agt002-phase-change-review.)
-// Entre 1 y 2: OCR de los PDF escaneados (Juan, 2026-11-08), antes de admitir análisis, para que el texto ya esté.
+// Entre 1 y 2: OCR de los PDF escaneados (Juan, 2026-11-08) y de las imágenes de las cartas de terceros (2026-11-17),
+// antes de admitir análisis, para que el texto ya esté.
 import { createClient } from '@supabase/supabase-js';
 import { filterAgt002ActiveProcessingJobs, runAgt002AutoInitialAdmissions } from '../../verticales/licitaciones/agt002-auto-initial.js';
 import { runAgt002ManualReanalysisRequests } from '../../verticales/licitaciones/agt002-manual-reanalysis.js';
-import { runExperienceCertificateOcrPass, runTenderDocumentOcrPass } from '../../verticales/licitaciones/tender-document-ocr.js';
+import { runExperienceCertificateOcrPass, runTenderDocumentImageTextPass, runTenderDocumentOcrPass } from '../../verticales/licitaciones/tender-document-ocr.js';
 import { runTenderDocumentLegacyOfficePass } from '../../verticales/licitaciones/tender-document-legacy-office.js';
 import { reviewExperienceCertificate } from '../../verticales/licitaciones/experience-certificate-review.js';
 import { proposeCompanyFactsFromDocuments } from '../../verticales/licitaciones/agt002-company-fact-proposals.js';
@@ -75,6 +76,12 @@ try {
   for (const event of await runTenderDocumentOcrPass(database, { limit: Number(env.TENDER_OCR_PER_PASS || 2), onText })) log(event);
 } catch (error) {
   log({ event: 'tender_ocr_pass_failed', message: String(error?.message || error).slice(0, 200) });
+}
+try {
+  // Cartas de terceros (Juan, 2026-11-17): el texto del membrete y los logos, para saber de qué empresa es la carta.
+  for (const event of await runTenderDocumentImageTextPass(database, { limit: Number(env.TENDER_IMAGE_TEXT_PER_PASS || 3) })) log(event);
+} catch (error) {
+  log({ event: 'tender_image_text_pass_failed', message: String(error?.message || error).slice(0, 200) });
 }
 try {
   // Formatos viejos de Office (Juan, 2026-11-13): .doc y .xls, sueltos o dentro de un zip, se convierten con LibreOffice y

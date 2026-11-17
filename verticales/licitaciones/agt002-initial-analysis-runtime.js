@@ -11,6 +11,7 @@ import { AGT002_DONDE_BUSCO_POLICY, AGT002_SECCIONES_POLICY, agt002NumeralesPend
 import { AGT002_PLURALES_POLICY, agt002ReglasParaPlurales } from './agt002-reglas-plurales.js';
 import { AGT002_HECHOS_QUE_FALTAN_POLICY, loadRequirementGapsForPrompt } from './tender-requirements.js';
 import { selectCanonicalExtractionsByDocumentVersion } from './tender-document-extraction-persistence.js';
+import { AGT002_NUESTRAS_OBSERVACIONES_POLICY, loadAgt002NuestrasObservaciones } from './agt002-nuestras-observaciones.js';
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
@@ -117,6 +118,9 @@ const OFFICIAL_CONTEXT_POLICY = ' Datos oficiales del CRM (official_crm_data, ca
 const INCREMENTAL_POLICY = 'MODO INCREMENTAL. prior_analysis es el análisis vigente de esta licitación, hecho con los documentos que ya estaban en el expediente. Las notas de lote (members) vienen SÓLO de los documentos nuevos que una persona cargó. Actualice prior_analysis con lo que aportan esos documentos nuevos y devuelva el análisis COMPLETO actualizado (todas las secciones, no sólo lo que cambió). Conserve lo que los documentos nuevos no tocan, con sus mismos identificadores (claim_id, requirement ids, finding ids), sus textos y sus fuentes. Cuando un documento nuevo confirme, aclare, modifique o contradiga algo, ajústelo, cítelo con su {document_id, locator} y explique en el hallazgo afectado qué cambió y por qué ("Con las respuestas a observaciones: ..."). Las afirmaciones cuyas fuentes estaban en retired_document_ids perdieron esas citas porque esos documentos salieron del expediente: vuelva a sustentarlas con documentos vigentes o retírelas junto con lo que dependía de ellas. Un documento de un tercero (por ejemplo, la carta de otro proponente) no es una regla del proceso: úselo como contexto y nunca como requisito. ';
 // Aclaraciones del encargado (Juan, 2026-10-21): datos que aporta la empresa, no reglas del proceso.
 const CLARIFICATIONS_POLICY = 'ACLARACIONES. human_clarifications son aclaraciones que escribió el encargado de la licitación (autor, fecha, punto al que se refieren y texto). Son información declarada por la empresa o correcciones a lo que usted concluyó: úselas para actualizar la evaluación de la empresa y lo que dependa de ellas, y nunca como reglas del pliego (si una aclaración contradice el pliego, manda el pliego y registre la diferencia como contradicción). En cada hallazgo o requisito que cambie por una aclaración, dígalo en el texto ("Según aclaración de <autor> del <fecha>: ...") y regístrelo como afirmación marked_inference cuya inference_basis cite esa aclaración. ';
+// Quién escribe (Juan, 2026-11-17): la carta de Atlas a la DEAJ llevaba el nombre sólo en el logo, que ahora llega como
+// texto al final del documento; metadata.name es el nombre del archivo.
+const MEMBER_AUTHOR_POLICY = ' Si el documento es de un tercero (metadata.sourceClassification "third_party"), anote en una nota propia quién lo presenta: la empresa y su NIT si aparecen, y quién firma. Búsquelo en todo el documento: el encabezado, la firma, el pie de página, el nombre del archivo (metadata.name) y el texto leído en las imágenes del membrete, que va al final bajo "Texto dentro de las imágenes del documento". Diga de dónde lo sacó; si de ninguna parte se puede saber, dígalo así.';
 const MEMBER_POLICY = 'Analice únicamente la evidencia suministrada. Cada nota debe indicar el documento del que sale (document_id) y dónde lo encontró (locator). No invente datos que el documento no contenga; separe lo hallado de lo pendiente. Si el documento trae un cronograma (tabla de trámites con fechas), transcríbalo completo en una nota propia: una línea por fila con el trámite tal como está escrito, la fecha y la hora si la hay, sin resumir ni omitir filas aunque la fecha ya haya pasado. Si un documento trae metadata.part (por ejemplo "1/2"), es un documento largo que el sistema partió para leerlo y las demás partes se leen en otras llamadas: no diga que el documento está incompleto ni pida la parte que falta, y si un tema queda cortado al borde de la parte, anote sólo lo que ve. No decida GO/NO-GO ni ejecute acciones.';
 // Writing rules for what a person reads (owner review 2026-10-06): every note must stand on its own, without opening
 // the sources, and each topic is told once.
@@ -191,6 +195,8 @@ export function createAgt002InitialAnalysisRuntime({
   loadLessons = loadAgt002LessonsForPrompt,
   // Los hechos que nos faltan (pestaña «Requisitos», 2026-11-12): si fallan, el análisis sigue sin ellos.
   loadRequirementGaps = loadRequirementGapsForPrompt,
+  // Nuestras cartas de observaciones del proceso (2026-11-17): si fallan, el análisis sigue sin ellas.
+  loadOurObservations = loadAgt002NuestrasObservaciones,
   // F12: el texto de los documentos que citó el análisis anterior, para leer completos los numerales pendientes.
   loadDocumentTexts = defaultLoadDocumentTexts,
   executorVersion = process.env.AGT002_DEPLOYED_VERSION || 'agt002-initial-analysis-worker',
@@ -231,6 +237,7 @@ export function createAgt002InitialAnalysisRuntime({
             extractionTextHash: binding.extraction_text_hash,
             sourceClassification: binding.source_classification,
             inclusionReason: binding.inclusion_reason,
+            ...(document.name ? { name: document.name } : {}),
           },
         });
       }
@@ -289,6 +296,8 @@ export function createAgt002InitialAnalysisRuntime({
         if (Array.isArray(lecciones) && lecciones.length) extraInput.lecciones_de_la_empresa = lecciones;
         const hechos = await loadRequirementGaps(database);
         if (Array.isArray(hechos) && hechos.length) extraInput.hechos_que_nos_faltan = hechos;
+        const nuestras = await loadOurObservations(database, { opportunityId: job.opportunityId });
+        if (Array.isArray(nuestras) && nuestras.length) extraInput.nuestras_observaciones = nuestras;
         extraInput.evidence_catalog = pkg.members.map(member => ({
           document_id: member.document_version_id,
           source_classification: member.source_classification,
@@ -308,7 +317,7 @@ export function createAgt002InitialAnalysisRuntime({
           if (index > 0 && typeof heartbeat === 'function') await heartbeat();
           const callResponse = await bridgeClient.run({
             model: modelId,
-            policy: MEMBER_POLICY,
+            policy: MEMBER_POLICY + MEMBER_AUTHOR_POLICY,
             input: {
               analysis_kind: 'INITIAL', phase: batch.phase,
               opportunity_id: job.opportunityId, tender_id: job.tenderId,
@@ -345,7 +354,7 @@ export function createAgt002InitialAnalysisRuntime({
 
       const response = await bridgeClient.run({
         model: modelId,
-        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : '') + (extraInput.secciones_del_pliego ? AGT002_SECCIONES_POLICY : '') + (extraInput.reglas_para_plurales ? AGT002_PLURALES_POLICY : '') + (extraInput.hechos_que_nos_faltan ? AGT002_HECHOS_QUE_FALTAN_POLICY : '') + AGT002_DONDE_BUSCO_POLICY,
+        policy: (batch.mode === 'incremental' ? INCREMENTAL_POLICY + (extraInput.human_clarifications ? CLARIFICATIONS_POLICY : '') : '') + (company ? SYNTHESIS_COMPANY_POLICY + PARTICIPATION_POLICY : SYNTHESIS_POLICY) + WRITING_POLICY + DEADLINES_POLICY + (extraInput.official_crm_data ? OFFICIAL_CONTEXT_POLICY : '') + (extraInput.lecciones_de_la_empresa ? ` ${AGT002_LESSONS_POLICY}` : '') + (extraInput.secciones_del_pliego ? AGT002_SECCIONES_POLICY : '') + (extraInput.reglas_para_plurales ? AGT002_PLURALES_POLICY : '') + (extraInput.hechos_que_nos_faltan ? AGT002_HECHOS_QUE_FALTAN_POLICY : '') + (extraInput.nuestras_observaciones ? AGT002_NUESTRAS_OBSERVACIONES_POLICY : '') + AGT002_DONDE_BUSCO_POLICY,
         input: {
           analysis_kind: 'INITIAL', phase: batch.phase,
           opportunity_id: job.opportunityId, tender_id: job.tenderId,

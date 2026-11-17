@@ -68,10 +68,18 @@ export function selectAgt002InitialDocuments(versions, extractions) {
  * carta de otra empresa en Pereira entraron con el peso del pliego de la entidad. Lo no declarado cae en
  * `third_party` (tender-document-origin.js): falla hacia "esto no es una regla del proceso".
  */
+// La razón dice qué ES el documento. Una carta de otro proponente se llama «observaciones…» y la regla por nombre la
+// presentaba como «Respuestas a observaciones: aclaran o modifican requisitos» (DEAJ, 17-nov): con origen declarado, la
+// razón lo dice. Lo no declarado conserva la razón de la regla: su clase ya falla hacia tercero.
+const REASON_BY_ORIGIN = Object.freeze({
+  tercero: 'Carta u observación de un tercero (otro proponente o interesado): contexto del proceso, nunca regla.',
+  propio: 'Documento nuestro (de la empresa): lo que ya presentamos o preparamos; nunca regla del proceso.',
+});
+
 export function agt002InitialRequestedMembers(included) {
   return included.map(row => ({
     document_version_id: row.version.id,
     source_classification: tenderDocumentSourceClassification(row.version.origin),
-    inclusion_reason: row.reason.slice(0, 500),
+    inclusion_reason: (REASON_BY_ORIGIN[row.version.origin] || row.reason).slice(0, 500),
   }));
 }
