@@ -138,6 +138,115 @@ export async function runTenderDocumentOcrPass(database, { limit = 3, bucket = '
   return events;
 }
 
+// --- Texto dentro de las imágenes de una carta de un tercero (Juan, 2026-11-17) ------------------------------------
+// Una carta de otro proponente puede traer el nombre de la empresa sólo en el logo del membrete: el 17-nov, la de
+// Seguridad Atlas al pliego definitivo de la DEAJ decía «Atlas» únicamente en la imagen, y Vig-IA la reportó «sin empresa
+// identificada». El agente la identificó mirando la página. Este paso le da a Vig-IA esa misma lectura: el texto de las
+// imágenes del PDF (logo, pie de página, sellos), leído con OCR y agregado DESPUÉS del texto del documento, que no se
+// toca. Sólo para documentos de terceros: ahí es donde importa quién escribe. Corre en el mismo pase que el OCR, antes de
+// admitir análisis.
+export const TENDER_DOCUMENT_IMAGE_TEXT_EXTRACTOR_VERSION = `tender-document-texto-e-imagenes@${generation + 3}`;
+export const TENDER_DOCUMENT_IMAGE_TEXT_PARSER = 'pdf-parse+tesseract-imagenes';
+export const TENDER_DOCUMENT_IMAGE_TEXT_HEADING = '--- Texto dentro de las imágenes del documento (membrete, logos, sellos), leído con OCR ---';
+const MIN_IMAGE_SIDE = 60;
+
+/**
+ * Versiones vigentes de PDF de un tercero cuya lectura canónica es la del extractor de texto (con texto) y a las que no
+ * se les han leído las imágenes. Lo escaneado ya lo cubre el OCR de página completa. Pura.
+ */
+export function selectImageTextCandidates(versions, extractionRows, { limit = 3 } = {}) {
+  const canonical = selectCanonicalExtractionsByDocumentVersion(extractionRows);
+  const tried = new Set(extractionRows.filter(row => row.extractor_version === TENDER_DOCUMENT_IMAGE_TEXT_EXTRACTOR_VERSION).map(row => row.document_version_id));
+  return versions
+    .filter(version => version.current && version.origin === 'tercero' && isPdf(version) && version.storage_path && !tried.has(version.id))
+    .filter(version => {
+      const row = canonical.get(version.id);
+      return row?.status === 'ok' && row.extractor_version === TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION && String(row.extracted_text || '').trim();
+    })
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, limit);
+}
+
+/** Las imágenes incrustadas del PDF → texto (pdfimages + tesseract). Se descartan los íconos diminutos. */
+export async function ocrPdfImages(buffer, { maxPages = 5, timeoutMs = 300_000, runner = run } = {}) {
+  const dir = await mkdtemp(join(tmpdir(), 'ocr-img-'));
+  try {
+    const pdf = join(dir, 'in.pdf');
+    await writeFile(pdf, buffer);
+    await runner('pdfimages', ['-l', String(maxPages), '-png', pdf, join(dir, 'i')], { timeout: timeoutMs });
+    const images = (await readdir(dir)).filter(name => name.endsWith('.png')).sort();
+    const texts = [];
+    for (const image of images) {
+      const path = join(dir, image);
+      try {
+        const { stdout: size } = await runner('python3', ['-c', 'import sys\nfrom PIL import Image\nprint(*Image.open(sys.argv[1]).size)', path], { timeout: 30_000 });
+        const [width, height] = String(size).trim().split(/\s+/).map(Number);
+        if (!(width >= MIN_IMAGE_SIDE && height >= MIN_IMAGE_SIDE)) continue;
+        const { stdout } = await runner('tesseract', [path, 'stdout', '-l', 'spa'], { timeout: 120_000, maxBuffer: 20 * 1024 * 1024 });
+        const text = String(stdout || '').replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
+        if (text) texts.push(text);
+      } catch { /* una imagen que no se lee no frena las demás */ }
+    }
+    return { text: texts.join('\n\n'), images: images.length };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/** El texto del documento, intacto, y después lo que dicen sus imágenes (si dicen algo legible). Pura. */
+export function combineTextAndImageText(documentText, imageText) {
+  const extra = String(imageText || '').trim();
+  const words = extra.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3,}/g) || [];
+  if (!words.length) return documentText;
+  return `${documentText.trimEnd()}\n\n${TENDER_DOCUMENT_IMAGE_TEXT_HEADING}\n${extra}`;
+}
+
+/**
+ * Un pase: hasta `limit` cartas de terceros en PDF. Siempre deja una extracción de esta versión, con o sin texto de
+ * imágenes, para no volver a intentarlo cada 2 minutos. Devuelve eventos; nunca lanza por un documento.
+ */
+export async function runTenderDocumentImageTextPass(database, { limit = 3, bucket = 'tender-documents', ocr = ocrPdfImages } = {}) {
+  const { data: opportunities, error: oppError } = await database.from('psi_sales_opportunities').select('id')
+    .eq('service_type_code', 'licitacion_publica').is('archived_at', null);
+  if (oppError) throw oppError;
+  const ids = (opportunities || []).map(row => row.id);
+  if (!ids.length) return [{ event: 'tender_image_text_idle' }];
+  const { data: versions, error: vError } = await database.from('psi_tender_document_versions')
+    .select('id,opportunity_id,tender_id,name,mime_type,storage_path,current,actor_id,created_at,origin')
+    .eq('current', true).eq('origin', 'tercero').in('opportunity_id', ids);
+  if (vError) throw vError;
+  const pdfIds = (versions || []).filter(isPdf).map(row => row.id);
+  if (!pdfIds.length) return [{ event: 'tender_image_text_idle' }];
+  const { data: extractions, error: eError } = await database.from('psi_tender_document_extractions')
+    .select('id,document_version_id,extractor_version,status,extracted_text,text_hash,char_count,created_at').in('document_version_id', pdfIds);
+  if (eError) throw eError;
+  const candidates = selectImageTextCandidates(versions || [], extractions || [], { limit });
+  if (!candidates.length) return [{ event: 'tender_image_text_idle' }];
+  const canonical = selectCanonicalExtractionsByDocumentVersion(extractions || []);
+  const events = [];
+  for (const version of candidates) {
+    try {
+      const { data: blob, error } = await database.storage.from(bucket).download(version.storage_path);
+      if (error) throw error;
+      const result = await ocr(Buffer.from(await blob.arrayBuffer()));
+      const text = combineTextAndImageText(canonical.get(version.id).extracted_text, result.text);
+      const { error: rpcError } = await database.rpc('psi_record_tender_document_extraction', {
+        p_opportunity_id: version.opportunity_id, p_tender_id: version.tender_id, p_document_version_id: version.id,
+        p_extractor_version: TENDER_DOCUMENT_IMAGE_TEXT_EXTRACTOR_VERSION, p_parser: TENDER_DOCUMENT_IMAGE_TEXT_PARSER,
+        p_metadata: { imagenes: result.images, texto_en_imagenes: text.length > canonical.get(version.id).extracted_text.length, engine: 'tesseract', language: 'spa' },
+        p_actor_id: version.actor_id, p_status: 'ok', p_extracted_text: text,
+        p_text_hash: createHash('sha256').update(text, 'utf8').digest('hex'),
+        p_char_count: [...text].length, p_text_byte_count: Buffer.byteLength(text, 'utf8'), p_gap_reason: null,
+      });
+      if (rpcError) throw rpcError;
+      events.push({ event: 'tender_image_text_recorded', document_version_id: version.id, opportunity_id: version.opportunity_id, images: result.images, added_chars: text.length - canonical.get(version.id).extracted_text.length });
+    } catch (cause) {
+      events.push({ event: 'tender_image_text_failed', document_version_id: version.id, code: String(cause?.code || cause?.message || 'error').slice(0, 80) });
+    }
+  }
+  return events;
+}
+
 /**
  * Mejora 9 (migración 199): el mismo OCR para los certificados de experiencia subidos en Empresa que llegaron escaneados.
  * Guarda el texto (o «sin_texto») en la experiencia; `onText` dispara la revisión de Vig-IA. Sin la 199, no hace nada.

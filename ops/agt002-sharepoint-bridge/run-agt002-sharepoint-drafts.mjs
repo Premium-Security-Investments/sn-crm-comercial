@@ -2,7 +2,8 @@
 // AGT-002 — sube a SharePoint la copia de trabajo de los borradores que una persona pidió con el botón (mejora 5,
 // migración 177). **Autorizado por Juan el 2026-11-04**: el botón, no un horario, decide qué sube.
 //
-// Corre cada 5 minutos, pero sin pedidos no hace nada: ni lista SharePoint ni toca Microsoft. Corre como root por lo mismo
+// Corre cada 5 minutos. Sin pedidos no sube nada; desde el 2026-11-17 sí lista `01_Observaciones` de cada proceso para
+// traer al CRM nuestras cartas de observaciones (sólo lectura en SharePoint). Corre como root por lo mismo
 // que el puente SharePoint: la sesión delegada de Graph vive en /root/.vigia-graph con permisos 700, y no se copia a un
 // usuario de servicio (ver el handoff del 2026-11-03, §6).
 //
@@ -14,7 +15,7 @@
 import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
 import { agt002MapTendersToProcessFolders, agt002StorageObjectPaths } from '../../verticales/licitaciones/agt002-crm-to-sharepoint.js';
@@ -22,6 +23,8 @@ import {
   AGT002_DRAFT_SHAREPOINT_ERRORS, agt002DraftSharepointPath, agt002ParseUploadOutput,
 } from '../../verticales/licitaciones/agt002-draft-sharepoint-copy.js';
 import { runFilingFolderPass } from '../../verticales/licitaciones/tender-filing-folder-run.js';
+import { runAgt002OurObservationsPass } from '../../verticales/licitaciones/agt002-nuestras-observaciones-sharepoint.js';
+import { readFile, rm, mkdtemp } from 'node:fs/promises';
 
 const run = promisify(execFile);
 const log = event => console.log(JSON.stringify(event));
@@ -126,5 +129,35 @@ if (!supabaseUrl || !serviceRoleKey || !inventory || !uploader || !drive || !pro
     } finally { rmSync(work, { recursive: true, force: true }); }
   } catch {
     log({ event: 'tender_filing_failed', motivo: 'corrida' });
+  }
+  // Nuestras cartas de observaciones (Juan, 2026-11-17): de 01_Observaciones al expediente del CRM, para que Vig-IA sepa
+  // qué pedimos. Sólo lee SharePoint. La secuencia de carga del CRM se importa únicamente si hay algo que cargar.
+  try {
+    const listing = async (path, depth) => {
+      try {
+        const { stdout } = await run('/usr/bin/python3', [inventory, drive, path, String(depth)], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
+        return JSON.parse(stdout)?.archivos || [];
+      } catch { return []; }
+    };
+    const download = async path => {
+      const dir = await mkdtemp(join(tmpdir(), 'agt002-carta-'));
+      try {
+        await run('/usr/bin/python3', [join(dirname(inventory), 'bajar.py'), drive, path, join(dir, 'carta')], { timeout: 120_000 });
+        return await readFile(join(dir, 'carta'));
+      } finally { await rm(dir, { recursive: true, force: true }); }
+    };
+    let api = null;
+    const ingest = async args => {
+      if (!api) {
+        process.env.CRM_SKIP_LISTEN = '1';
+        process.env.NEXT_PUBLIC_SUPABASE_URL ||= supabaseUrl;
+        api = await import('../../api/[...path].js');
+      }
+      return api.ingestTenderDossierDocuments(database, args);
+    };
+    const { AGT002_VIGIA_AGENT_PROFILE_ID } = await import('../../verticales/licitaciones/agt002-phase-change-followup.js');
+    for (const event of await runAgt002OurObservationsPass(database, { listing, download, ingest, actorProfileId: AGT002_VIGIA_AGENT_PROFILE_ID })) log(event);
+  } catch {
+    log({ event: 'agt002_nuestras_observaciones_failed', motivo: 'corrida' });
   }
 }

@@ -280,3 +280,42 @@ test('la síntesis recibe los hechos que nos faltan y la regla de usarlos; sin e
     assert.doesNotMatch(request.policy, /hechos_que_nos_faltan/);
   }
 });
+
+// Leer como el agente (Juan, 2026-11-17): cada documento llega con su nombre y la regla de decir quién escribe una carta
+// de un tercero; la síntesis recibe nuestras cartas de observaciones para no pedir dos veces lo mismo.
+test('el miembro llega con el nombre del archivo y la regla de identificar a quien escribe una carta de tercero', async () => {
+  const configured = runtime({ resolveDocument: async () => ({ text, extraction_text_hash: textHash, name: 'OBS PCD RJ Bogota.pdf' }) });
+  const [member] = await configured.rehydrateMembers({}, ['doc-1'], { job });
+  assert.equal(member.metadata.name, 'OBS PCD RJ Bogota.pdf');
+  let request;
+  await runtime({ bridgeClient: { run: async value => {
+    request = value;
+    return { content: JSON.stringify(memberOutput), usage: { input_tokens: 1, output_tokens: 1 } };
+  } } }).callModel({ job, batch: memberBatch, modelId: 'model-a', members: [{ ...oneMember[0], metadata: member.metadata }] });
+  assert.equal(request.input.members[0].metadata.name, 'OBS PCD RJ Bogota.pdf');
+  assert.match(request.policy, /quién lo presenta/);
+  assert.match(request.policy, /Texto dentro de las imágenes del documento/);
+});
+
+test('la síntesis recibe nuestras cartas de observaciones y la regla de usarlas; sin cartas no cambia nada', async () => {
+  const requests = [];
+  const respuesta = { content: JSON.stringify({ claims: [], process_analysis: {}, requirements: [], findings: [], contradictions: [], coverage: [], recommendation: {}, open_items: [], process_deadlines: [] }), usage: { input_tokens: 1, output_tokens: 1 } };
+  const cartas = [{ nombre: 'OBSERVACIONES_PLIEGO_DEFINITIVO_LP-07-2026_DEAJ_SEGURIDAD_NACIONAL.pdf', cargada_el: '2026-11-17T20:00:00Z', texto: 'OBSERVACIÓN 2 … por lo menos uno de sus integrantes …' }];
+  const pedidas = [];
+  for (const loadOurObservations of [async (_db, args) => { pedidas.push(args); return cartas; }, async () => []]) {
+    const configured = runtime({
+      loadPackage: async () => stubPackage(),
+      loadLessons: async () => [],
+      loadRequirementGaps: async () => [],
+      loadOurObservations,
+      bridgeClient: { run: async value => { requests.push(value); return respuesta; } },
+      validateEnvelope: () => ({ ok: true, errors: [] }),
+    });
+    await configured.callModel({ job: synthesisJob, batch: synthesisBatch, modelId: 'model-a', members: batchMember });
+  }
+  assert.deepEqual(pedidas, [{ opportunityId: synthesisJob.opportunityId }]);
+  assert.deepEqual(requests[0].input.nuestras_observaciones, cartas);
+  assert.match(requests[0].policy, /lo mismo pide nuestra observación/);
+  assert.equal('nuestras_observaciones' in requests[1].input, false);
+  assert.doesNotMatch(requests[1].policy, /nuestras_observaciones/);
+});
