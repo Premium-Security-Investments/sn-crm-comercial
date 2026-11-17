@@ -17,7 +17,7 @@ import { TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION } from '../verticales/licitacion
 import { selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 import { agt002InitialRequestedMembers } from '../verticales/licitaciones/agt002-initial-document-rule.js';
 import { agt002CrmFileName, agt002ManualUploadDocumentId, runAgt002OurObservationsPass, selectAgt002OurLettersToIngest } from '../verticales/licitaciones/agt002-nuestras-observaciones-sharepoint.js';
-import { agt002NuestrasObservacionesForModel, isAgt002OurObservationLetter, loadAgt002NuestrasObservaciones } from '../verticales/licitaciones/agt002-nuestras-observaciones.js';
+import { AGT002_NUESTRAS_OBSERVACIONES_POLICY, agt002NuestrasObservacionesForModel, isAgt002OurObservationLetter, isAgt002OurRadicationReceipt, loadAgt002NuestrasObservaciones } from '../verticales/licitaciones/agt002-nuestras-observaciones.js';
 
 const sha = text => createHash('sha256').update(text, 'utf8').digest('hex');
 const V = (id, extra = {}) => ({ id, opportunity_id: 'o1', tender_id: 't1', name: `${id}.pdf`, mime_type: 'application/pdf', storage_path: `manual-uploads/o1/${id}.pdf`, current: true, actor_id: 'k', created_at: '2026-11-17T19:11:00Z', origin: 'tercero', ...extra });
@@ -135,6 +135,20 @@ test('nuestras cartas: sólo las propias y vigentes que son cartas de observacio
   assert.equal(isAgt002OurObservationLetter(L('f', 'OBSERVACIONES_viejas.pdf', { current: false })), false);
 });
 
+// Juan, 17-nov: «¿de dónde sacó que ya se habían presentado las observaciones?». Una carta en el expediente no prueba que
+// se radicó; la constancia sí, y va aparte para que el modelo la vea.
+test('las constancias de radicación van con su tipo, después de las cartas; sin cartas no va nada', () => {
+  const versions = [L('carta', 'OBSERVACIONES_DEFINITIVO.pdf'), L('const', 'CONSTANCIA_RADICACION_2026-11-17.pdf', { created_at: '2026-11-17T22:00:00Z' })];
+  const rows = [OK('carta', 'OBSERVACIÓN 2 …'), OK('const', 'SECOP II Mensaje enviado 17/11/2026 4:12 p. m. LP-07-2026')];
+  const items = agt002NuestrasObservacionesForModel(versions, rows);
+  assert.deepEqual(items.map(item => [item.tipo, item.nombre]), [['carta', 'OBSERVACIONES_DEFINITIVO.pdf'], ['constancia_de_radicacion', 'CONSTANCIA_RADICACION_2026-11-17.pdf']]);
+  assert.equal(isAgt002OurObservationLetter(versions[1]), false);
+  assert.equal(isAgt002OurRadicationReceipt(versions[1]), true);
+  assert.deepEqual(agt002NuestrasObservacionesForModel([versions[1]], rows), []);
+  assert.match(AGT002_NUESTRAS_OBSERVACIONES_POLICY, /NO prueba que se haya presentado/);
+  assert.match(AGT002_NUESTRAS_OBSERVACIONES_POLICY, /radicación por confirmar/);
+});
+
 test('nuestras cartas para el modelo: la más reciente primero, con su texto canónico; sin texto no van', () => {
   const versions = [L('vieja', 'OBSERVACIONES_PROYECTO.pdf', { created_at: '2026-11-10T00:00:00Z' }), L('nueva', 'OBSERVACIONES_DEFINITIVO.pdf'), L('vacia', 'OBSERVACIONES_X.pdf')];
   const rows = [OK('vieja', 'OBSERVACIÓN 1 …'), OK('nueva', 'OBSERVACIÓN 2 … por lo menos uno de sus integrantes'), { id: 'g', document_version_id: 'vacia', extractor_version: TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION, status: 'gap', created_at: '2026-11-17T20:00:01Z' }];
@@ -162,13 +176,13 @@ test('cartas a cargar: PDF antes que Word, sin nota, léeme ni constancia, y só
     F('Proyecto', 'OBSERVACIONES_LP-07-2026_DEAJ.docx', 300, '2026-11-06T15:00:00Z'),
     { ruta: `${BASE}/05_Competidores/OBSERVACION_TAC_SEGURIDAD.pdf`, nombre: 'OBSERVACION_TAC_SEGURIDAD.pdf', bytes: 1 },
   ];
-  assert.deepEqual(selectAgt002OurLettersToIngest(files).map(file => file.nombre), [
-    'OBSERVACIONES_PLIEGO_DEFINITIVO_LP-07-2026_DEAJ_SEGURIDAD_NACIONAL.pdf', 'OBSERVACIONES_LP-07-2026_DEAJ.docx',
+  assert.deepEqual(selectAgt002OurLettersToIngest(files).map(file => file.nombre).sort(), [
+    'CONSTANCIA_RADICACION_2026-11-17.pdf', 'OBSERVACIONES_LP-07-2026_DEAJ.docx', 'OBSERVACIONES_PLIEGO_DEFINITIVO_LP-07-2026_DEAJ_SEGURIDAD_NACIONAL.pdf',
   ]);
   const existing = [{ name: agt002CrmFileName('OBSERVACIONES_PLIEGO_DEFINITIVO_LP-07-2026_DEAJ_SEGURIDAD_NACIONAL.pdf'), size_bytes: 200 }];
-  assert.deepEqual(selectAgt002OurLettersToIngest(files, existing).map(file => file.nombre), ['OBSERVACIONES_LP-07-2026_DEAJ.docx']);
+  assert.deepEqual(selectAgt002OurLettersToIngest(files, existing).map(file => file.nombre).sort(), ['CONSTANCIA_RADICACION_2026-11-17.pdf', 'OBSERVACIONES_LP-07-2026_DEAJ.docx']);
   // Si cambió (otro tamaño), se vuelve a cargar: la carga del CRM reemplaza la versión del mismo nombre.
-  assert.equal(selectAgt002OurLettersToIngest(files, [{ ...existing[0], size_bytes: 201 }]).length, 2);
+  assert.equal(selectAgt002OurLettersToIngest(files, [{ ...existing[0], size_bytes: 201 }]).length, 3);
 });
 
 function syncDb({ versions = [] } = {}) {
