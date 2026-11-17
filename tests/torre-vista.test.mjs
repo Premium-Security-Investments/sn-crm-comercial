@@ -41,7 +41,9 @@ test('la portada: lo de hoy en tarjetas, la proyección no se presenta como resu
   assert.match(torre, /Los 5 mayores concentran el/);
   assert.match(torre, /const CLIENTES_A_LA_VISTA = 12;/);
   const vista = read('src/siio/SiioExecutiveView.tsx');
-  assert.match(vista, /aria-label="Cumplimiento del servicio"[\s\S]*<SiioOperationsDetail summary=\{operations\} \/>/);
+  // El cumplimiento del servicio salió de Clientes a su pestaña Operación (17-nov).
+  assert.doesNotMatch(vista, /aria-label="Cumplimiento del servicio"/);
+  assert.match(vista, /<SiioPestanaOperacion notas=\{torre\.torre\?\.notas_credito\} ops=\{operations\} \/>/);
   assert.doesNotMatch(vista, /title="Operaciones · detalle"/);
   assert.match(torre, /aria-label="Cuánto deja cada cliente"[\s\S]*<select value=\{mesClientes\}/);
   // El selector general ya no pide clientes de un mes abierto.
@@ -302,4 +304,40 @@ test('comercial y licitaciones con las reglas de la Portada (Juan, 17-nov): su o
   assert.match(comercial, /<summary>Presentadas, esperando resultado/);
   // El ámbar no se usa para urgencia: la ficha de plazo es roja o neutra.
   assert.doesNotMatch(comercial, /'alta' : 'media'/);
+});
+
+test('operación (Juan, 17-nov): cinco preguntas; la 1 reservada sin inventar y las notas crédito separadas por motivo', async () => {
+  const op = read('src/siio/SiioPestanaOperacion.tsx');
+  const preguntas = ['¿Estamos prestando el servicio que cobramos?', '¿Cuánto nos descuentan por servicio no prestado?', '¿Qué falló?', '¿La atención técnica está al día?', '¿Dónde no estamos midiendo?'];
+  const pos = preguntas.map(p => op.indexOf(`pregunta="${p}"`));
+  assert.ok(pos.every((p, i) => p > 0 && (i === 0 || p > pos[i - 1])), 'las cinco, en orden');
+  assert.match(op, /periodo="Sin fuente todavía"/);
+  assert.doesNotMatch(op, /programacion_horas|siio_programacion/, 'la Programación del SIIO no se usa');
+  assert.match(op, /export const DIAS_EXTRACCION_VIEJA = 2;/);
+  const { motivoDeNotaCredito } = await import('../avancys-torre.js');
+  assert.equal(motivoDeNotaCredito('Reversión de: SN386222 SERVICIO NO PRESTADO 16 AL 31/10'), 'no_prestado');
+  assert.equal(motivoDeNotaCredito('Reversión de: SN387970 SE FACTURA NUEVAMENTE'), 'correccion');
+  assert.equal(motivoDeNotaCredito('NOTA CREDITO 380514 / ERROR EN TARIFA'), 'correccion');
+  assert.equal(motivoDeNotaCredito('Reversión de: SN382555'), 'sin_motivo');
+  assert.equal(motivoDeNotaCredito('Reversión de: SN382555', true), 'correccion', 'anula la factura completa: se refactura');
+  assert.equal(motivoDeNotaCredito('4400229224'), 'otro');
+});
+
+test('notas crédito por mes: clasifica, detecta la refacturación con redondeo y agrupa por cliente', async () => {
+  const { notasCreditoPorMes } = await import('../avancys-torre.js');
+  const ejecutar = async (modelo, metodo, args) => {
+    if (metodo === 'read') return [{ id: 9, amount_untaxed_signed: 500 }];
+    const tipo = args[0].find(f => f[0] === 'move_type')[2];
+    if (tipo === 'out_invoice') return [{ invoice_date: '2026-10-02', amount_untaxed_signed: 1000000005, commercial_partner_id: [2, 'CLIENTE B'] }];
+    return [
+      { ref: 'SERVICIO NO PRESTADO', invoice_date: '2026-10-05', amount_untaxed_signed: -3000000, commercial_partner_id: [1, 'CLIENTE A'], reversed_entry_id: false },
+      { ref: '', invoice_date: '2026-10-02', amount_untaxed_signed: -1000000000, commercial_partner_id: [2, 'CLIENTE B'], reversed_entry_id: false },
+      { ref: 'Reversión de: SN1', invoice_date: '2026-10-06', amount_untaxed_signed: -500, commercial_partner_id: [1, 'CLIENTE A'], reversed_entry_id: [9, 'SN1'] },
+      { ref: '', invoice_date: '2026-10-07', amount_untaxed_signed: -2000000, commercial_partner_id: [1, 'CLIENTE A'], reversed_entry_id: false },
+    ];
+  };
+  const r = await notasCreditoPorMes(ejecutar, { desde: '2026-10-01' });
+  const oct = r.meses['2026-10'];
+  assert.deepEqual([oct.no_prestado.valor, oct.correccion.valor, oct.sin_motivo.valor], [3000000, 1000000500, 2000000]);
+  assert.deepEqual(oct.clientes.map(c => [c.cliente, c.no_prestado, c.sin_motivo]), [['CLIENTE A', 3000000, 2000000]]);
 });

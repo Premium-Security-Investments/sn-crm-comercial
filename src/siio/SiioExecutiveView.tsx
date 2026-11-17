@@ -13,7 +13,7 @@ import { pulseReadings, type FinancialPulse } from './financialPulse';
 import { deriveOperationsSummary } from './operationsSummary';
 import { SiioLoQueFalta } from './SiioLoQueFalta';
 import { SiioFuentesAlDia } from './SiioFuentesAlDia';
-import { SiioOperationsAttention, SiioOperationsDetail } from './SiioOperationsPanel';
+import { SiioPestanaOperacion } from './SiioPestanaOperacion';
 import { SiioRecommendations } from './SiioRecommendations';
 import { SiioPestanaParametros } from './SiioParametros';
 import { SiioPestanaCartera, SiioPestanaClientes, SiioPestanaResultados, SiioPortada, useTorreAvancys, type PestanaTorre } from './SiioTorreAvancys';
@@ -59,7 +59,7 @@ function metricBasis(metric: SiioFinancialMetric, period: string) {
 
 
 const PESTANAS: ReadonlyArray<[PestanaTorre, string]> = [
-  ['portada', 'Portada'], ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['vigia', 'Vig-IA'], ['parametros', 'Parámetros'], ['fuentes', 'Fuentes y detalle'],
+  ['portada', 'Portada'], ['resultados', 'Resultados'], ['clientes', 'Clientes'], ['cartera', 'Cartera'], ['comercial', 'Comercial y licitaciones'], ['operacion', 'Operación'], ['vigia', 'Vig-IA'], ['parametros', 'Parámetros'], ['fuentes', 'Fuentes y detalle'],
 ];
 
 
@@ -124,18 +124,10 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
     {pestana === 'resultados' ? <section className="siio-pantalla" role="tabpanel" aria-label="Resultados"><SiioPestanaResultados t={torre} /></section> : null}
     {pestana === 'clientes' ? <section className="siio-pantalla" role="tabpanel" aria-label="Clientes">
       <SiioPestanaClientes t={torre} />
-      {/* El servicio que se le presta al cliente va al lado de lo que deja: ARA en Bogotá, por ejemplo. El detalle de
-          operaciones se mudó aquí desde Fuentes (poda de la Fase 1). */}
-      <section className="siio-panel" aria-label="Cumplimiento del servicio">
-        <h2>Cumplimiento del servicio</h2>
-        <SiioOperationsAttention summary={operations} />
-        <details className="siio-plegado">
-          <summary>Operaciones · detalle por cliente y uso por regional</summary>
-          <SiioOperationsDetail summary={operations} />
-        </details>
-      </section>
     </section> : null}
     {pestana === 'cartera' ? <section className="siio-pantalla" role="tabpanel" aria-label="Cartera"><SiioPestanaCartera t={torre} /></section> : null}
+    {/* Operación (Juan, 2026-11-17): el cumplimiento del servicio tiene su pestaña; antes era un bloque en Clientes. */}
+    {pestana === 'operacion' ? <section className="siio-pantalla" role="tabpanel" aria-label="Operación"><SiioPestanaOperacion notas={torre.torre?.notas_credito} ops={operations} /></section> : null}
     {pestana === 'comercial' ? <section className="siio-pantalla" role="tabpanel" aria-label="Comercial y licitaciones">
       {followupDraft && followupDraft.origin_type !== 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
       <SiioPestanaComercial summary={commercial} state={commercialState} semana={estaSemana} followups={attentionFollowups} today={today}

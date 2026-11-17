@@ -134,6 +134,12 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     // La cartera no tumba el resultado ni los clientes: se dice que no se pudo leer.
     cartera = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
   }
+  let notasCredito = null;
+  try {
+    notasCredito = await notasCreditoPorMes(ejecutar, { desde: `${sumarMeses(mesActual, -3)}-01` });
+  } catch (error) {
+    notasCredito = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
+  }
   let creditos = null;
   try {
     creditos = await creditosAvancys(ejecutar, { hoy: ahora().toISOString().slice(0, 10) });
@@ -172,8 +178,63 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     creditos,
     clientes,
     cartera,
+    notas_credito: notasCredito,
     saldos_cuentas: saldosCuentas,
   };
+}
+
+// ¿Cuánto nos descuentan por servicio no prestado? (pestaña Operación, Juan 2026-11-17). Avancys no tiene un campo de
+// motivo: el motivo, cuando está, va en la referencia de la nota crédito («SERVICIO NO PRESTADO 16 AL 31/10…»). Medido el
+// 2026-11-17: en octubre 64 de 80 notas no traen motivo. Se separan en tres: servicio no prestado (lo dice), corrección
+// de facturación (lo dice, o anula la factura completa: se refactura) y sin motivo escrito, que se señala a Facturación.
+export const MOTIVO_NO_PRESTADO = /NO\s+PRESTAD|NO\s+SE\s+PREST|HORAS?\s+DESCONTAD|\bHD\b|\bHN\b|LLEGADA\s+TARDE|INASISTENCIA|AUSENCIA/i;
+export const MOTIVO_CORRECCION = /FACTURA(R)?\s+NUEV[AE]MENTE|REFACTUR|ERROR|YA\s+FACTURAD|SEPARAD|DUPLICAD|ANULA|TERCERO\s+INCORRECTO|RAZ[OÓ]N\s+SOCIAL|DIRECCI[OÓ]N/i;
+export function motivoDeNotaCredito(referencia, anulaCompleta = false) {
+  const texto = String(referencia || '').replace(/^\s*Reversi[oó]n de:\s*\S+\s*/i, '').trim();
+  if (MOTIVO_NO_PRESTADO.test(texto)) return 'no_prestado';
+  if (MOTIVO_CORRECCION.test(texto) || anulaCompleta) return 'correccion';
+  return texto ? 'otro' : 'sin_motivo';
+}
+const MAX_CLIENTES_NOTAS = 8;
+// Mismo valor con diferencias de redondeo (medido: $5 en una reemisión de más de mil millones).
+const tolerancia = valor => Math.max(1000, Math.abs(Number(valor) || 0) * 0.0001);
+export async function notasCreditoPorMes(ejecutar, { desde }) {
+  const notas = (await ejecutar('account.move', 'search_read', [[['move_type', '=', 'out_refund'], ['state', '=', 'posted'], ['invoice_date', '>=', desde]]],
+    { fields: ['ref', 'invoice_date', 'amount_untaxed_signed', 'commercial_partner_id', 'reversed_entry_id'], limit: 5000 })) || [];
+  const originales = [...new Set(notas.map(n => (Array.isArray(n.reversed_entry_id) ? n.reversed_entry_id[0] : null)).filter(Boolean))];
+  const valorOriginal = new Map();
+  for (let i = 0; i < originales.length; i += 200) {
+    const lote = originales.slice(i, i + 200);
+    for (const f of (await ejecutar('account.move', 'read', [lote], { fields: ['amount_untaxed_signed'] })) || []) valorOriginal.set(f.id, Math.abs(Number(f.amount_untaxed_signed) || 0));
+  }
+  // Una factura nueva al mismo cliente, por el mismo valor y en la misma semana, es una refacturación (caso medido: una
+  // factura de un cliente grande anulada y reemitida el mismo día, sin motivo escrito ni enlace de reversión).
+  const facturas = (await ejecutar('account.move', 'search_read', [[['move_type', '=', 'out_invoice'], ['state', '=', 'posted'], ['invoice_date', '>=', desde]]],
+    { fields: ['invoice_date', 'amount_untaxed_signed', 'commercial_partner_id'], limit: 20000 })) || [];
+  const refacturada = nota => facturas.some(f => Array.isArray(f.commercial_partner_id) && Array.isArray(nota.commercial_partner_id)
+    && f.commercial_partner_id[0] === nota.commercial_partner_id[0]
+    && Math.abs(Math.abs(Number(f.amount_untaxed_signed) || 0) - Math.abs(Number(nota.amount_untaxed_signed) || 0)) <= tolerancia(nota.amount_untaxed_signed)
+    && Math.abs(Date.parse(f.invoice_date) - Date.parse(nota.invoice_date)) <= 7 * 86400000);
+  const meses = {};
+  for (const nota of notas) {
+    const mes = String(nota.invoice_date || '').slice(0, 7);
+    if (!mes) continue;
+    const valor = Math.abs(Number(nota.amount_untaxed_signed) || 0);
+    const original = Array.isArray(nota.reversed_entry_id) ? valorOriginal.get(nota.reversed_entry_id[0]) : null;
+    const motivo = motivoDeNotaCredito(nota.ref, (original != null && Math.abs(original - valor) <= tolerancia(valor)) || refacturada(nota));
+    const fila = meses[mes] || (meses[mes] = { no_prestado: { valor: 0, notas: 0 }, correccion: { valor: 0, notas: 0 }, otro: { valor: 0, notas: 0 }, sin_motivo: { valor: 0, notas: 0 }, clientes: {} });
+    fila[motivo].valor += valor;
+    fila[motivo].notas += 1;
+    if (motivo === 'no_prestado' || motivo === 'sin_motivo') {
+      const cliente = Array.isArray(nota.commercial_partner_id) ? String(nota.commercial_partner_id[1]) : 'Sin cliente';
+      const c = fila.clientes[cliente] || (fila.clientes[cliente] = { cliente, no_prestado: 0, sin_motivo: 0 });
+      c[motivo] += valor;
+    }
+  }
+  for (const fila of Object.values(meses)) {
+    fila.clientes = Object.values(fila.clientes).sort((a, b) => (b.no_prestado + b.sin_motivo) - (a.no_prestado + a.sin_motivo)).slice(0, MAX_CLIENTES_NOTAS);
+  }
+  return { desde, meses };
 }
 
 // ¿Nos están pagando? La cartera sale de la contabilidad, no de las facturas: las partidas abiertas de
