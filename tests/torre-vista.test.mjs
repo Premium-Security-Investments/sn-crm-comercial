@@ -153,7 +153,11 @@ test('vig-ia calca la maqueta: ficha de prioridad, porqué, fuentes y lo que no 
   const reco = read('src/siio/SiioRecommendations.tsx');
   assert.match(read('src/siio/SiioExecutiveView.tsx'), /className="siio-pantalla" role="tabpanel" aria-label="Vig-IA"/);
   assert.match(reco, /<article key=\{item\.id\} className="siio-panel siio-reco"/);
-  assert.match(reco, /className=\{`siio-plazo \$\{item\.priority === 'baja' \? '' : item\.priority\}`\}/);
+  // Prioridad alta en rojo; media y baja sin color: el ámbar queda para lo que puede cambiar (17-nov).
+  assert.match(reco, /className=\{`siio-plazo\$\{item\.priority === 'alta' \? ' alta' : ''\}`\}/);
+  assert.match(reco, /<h2 className="siio-titulo-pantalla">¿Qué recomienda Vig-IA esta semana\?<\/h2>/);
+  assert.match(reco, /export const DIAS_VIGENTES = 3;/);
+  assert.match(reco, /Estas recomendaciones tienen \{edad\} días\./);
   assert.match(reco, /<strong>Por qué:<\/strong>/);
   assert.match(reco, /Lo que Vig-IA no pudo evaluar \(y quién lo destraba\)/);
   assert.match(reco, /className="siio-boton-primario"/);

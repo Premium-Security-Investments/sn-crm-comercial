@@ -51,6 +51,14 @@ function generatedLabel(run: NonNullable<RecommendationsState['run']>) {
   return `${run.trigger === 'semanal' ? 'Corrida del lunes' : 'Generadas con el botón'} · ${when}`;
 }
 
+// Cuántos días tienen las recomendaciones: desde DIAS_VIGENTES, las cifras de la Torre ya pueden ser otras y se dice
+// arriba en ámbar (reglas de la Portada, Juan 2026-11-17: lo que puede haber cambiado va arriba).
+export const DIAS_VIGENTES = 3;
+export function diasDesde(run: NonNullable<RecommendationsState['run']>, ahora = new Date()) {
+  const at = new Date(run.finished_at || run.requested_at).getTime();
+  return Number.isFinite(at) ? Math.max(0, Math.floor((ahora.getTime() - at) / 86400000)) : null;
+}
+
 export function recommendationOriginRef(item: Pick<Recommendation, 'id'>) {
   return `ia:${item.id}`;
 }
@@ -99,13 +107,14 @@ export function SiioRecommendations({ canGenerate, followups, today, onCreateFol
   const remaining = state?.button.remaining_today ?? 0;
   const items = [...(state?.recommendations || [])].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || a.position - b.position);
 
-  // Vig-IA (contrato de la maqueta, Fase 3): cabecera con la fecha y el botón; cada recomendación con la ficha de su
-  // prioridad, la acción, el porqué y sus fuentes; al final, lo que no pudo evaluar.
+  // Vig-IA con las reglas de la Portada (Juan, 2026-11-17): la pregunta como título, de cuándo son las recomendaciones
+  // y, si ya tienen días, el aviso arriba; la prioridad alta en rojo y las demás sin color (el ámbar es «puede cambiar»).
+  const edad = state?.run ? diasDesde(state.run) : null;
   return <>
     <div className="siio-sub">
       <div>
-        <h2 className="siio-titulo-pantalla">Recomendaciones de la semana</h2>
-        <p className="siio-nota">{state?.run ? generatedLabel(state.run) : 'Se generan cada lunes a las 6:30 a. m. y cuando alguien presiona el botón.'}</p>
+        <h2 className="siio-titulo-pantalla">¿Qué recomienda Vig-IA esta semana?</h2>
+        <p className="siio-nota">{state?.run ? <>{generatedLabel(state.run)}{edad !== null ? ` · ${edad === 0 ? 'hoy' : edad === 1 ? 'hace 1 día' : `hace ${edad} días`}` : ''}</> : 'Se generan cada lunes a las 6:30 a. m. y cuando alguien presiona el botón.'}</p>
       </div>
       {canGenerate ? <div className="siio-reco-accion">
         <button type="button" className="siio-boton-primario" onClick={() => void generate()} disabled={busy || state?.in_progress || remaining === 0}>
@@ -118,11 +127,12 @@ export function SiioRecommendations({ canGenerate, followups, today, onCreateFol
     {message ? <p className="siio-alert-text" role="alert">{message}</p> : null}
     {loadError ? <p className="siio-nota">No se pudieron cargar las recomendaciones.</p> : null}
     {state && !state.run && !loadError ? <p className="siio-nota">Todavía no hay recomendaciones. {canGenerate ? 'Presione «Generar recomendaciones» para la primera.' : ''}</p> : null}
+    {edad !== null && edad >= DIAS_VIGENTES ? <div className="siio-aviso-mes" role="note"><p><strong>Estas recomendaciones tienen {edad} días.</strong> Se escribieron con las cifras de la Torre de ese momento, y desde entonces pueden haber cambiado.{canGenerate && remaining > 0 ? ' Genere de nuevo para que Vig-IA lea las de hoy.' : ' Las del lunes se generan solas.'}</p></div> : null}
     {state?.run?.summary ? <p className="siio-reco-resumen">{state.run.summary}</p> : null}
 
     {items.map(item => <article key={item.id} className="siio-panel siio-reco" aria-label={item.title}>
       <header>
-        <span className={`siio-plazo ${item.priority === 'baja' ? '' : item.priority}`}><strong>{item.priority === 'alta' ? 'Alta' : item.priority === 'media' ? 'Media' : 'Baja'}</strong><small>{AREA_LABELS[item.area]}</small></span>
+        <span className={`siio-plazo${item.priority === 'alta' ? ' alta' : ''}`}><strong>{item.priority === 'alta' ? 'Alta' : item.priority === 'media' ? 'Media' : 'Baja'}</strong><small>{AREA_LABELS[item.area]}</small></span>
         <h3>{item.title}</h3>
       </header>
       <p>{item.recommendation}</p>
