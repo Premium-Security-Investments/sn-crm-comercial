@@ -137,7 +137,7 @@ test('licitaciones: sólo procesos vivos, con decisión pendiente o cierre venci
   assert.equal(byEntity['Gobernación A'].attention, 'requiere_decision');
   assert.equal(byEntity['Gobernación A'].days_to_deadline, 3);
   assert.equal(byEntity['Instituto B'].attention, 'cierre_vencido_sin_actualizar');
-  assert.equal(byEntity['Fiscalía D'].attention, null, 'fuera de la ventana de 21 días');
+  assert.equal(byEntity['Fiscalía D'].attention, null, 'fuera de la ventana de 15 días');
   assert.equal(tenders.total_value, 22000);
   assert.equal(tenders.award_rate, null);
 });
@@ -146,7 +146,7 @@ test('la lectura comercial cita sus cifras', async () => {
   const { commercialReadings } = await loadModule('../src/siio/commercialSummary.ts');
   const readings = commercialReadings(buildCommercialSummary(fixture, { now }));
   assert.ok(readings.some(text => /enero a septiembre/.test(text) && /93%/.test(text)), readings.join('\n'));
-  assert.ok(readings.some(text => /1 licitación cierra en los próximos 21 días/.test(text) && /Gobernación A/.test(text)), readings.join('\n'));
+  assert.ok(readings.some(text => /1 licitación cierra en los próximos 15 días/.test(text) && /Gobernación A/.test(text)), readings.join('\n'));
   assert.ok(readings.some(text => /Instituto B: la fecha de cierre ya pasó/.test(text)), readings.join('\n'));
 });
 

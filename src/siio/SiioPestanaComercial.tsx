@@ -5,11 +5,12 @@ import { closingDateLabel, type CommercialSummary, type CommercialTender } from 
 import { addDays, openFollowupFor } from './followups';
 import type { EstaSemana } from './estaSemana';
 
-// Comercial y licitaciones (contrato de la maqueta, Fase 3): las licitaciones que esperan decisión con la ficha de su
-// plazo; si el forecast está al día, por comercial y con nombre; lo privado y los seguimientos con fecha.
+// Comercial y licitaciones con las reglas de la Portada (Juan, 2026-11-17): en el orden de la Portada (cómo va lo
+// comercial, si el forecast está al día, qué licitaciones hay que decidir), las preguntas como títulos, el periodo de
+// cada cifra y el rojo sólo para lo que está peor que su referencia. El ámbar queda para lo que puede cambiar.
 
-// Una licitación que cierra en 12 días o menos va en rojo, aquí y en la Portada.
-export const PLAZO_ALTO = 12;
+// Una licitación que cierra en 15 días o menos sin decisión va en rojo: la misma ventana de la Portada.
+export const PLAZO_ALTO = 15;
 // Un comercial con la mitad o más de sus leads sin gestión se marca.
 export const SIN_GESTION_MAL = 0.5;
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -29,41 +30,54 @@ function FichaPlazo({ item }: { item: CommercialTender }) {
     return <span className="siio-plazo alta"><strong>{d === null ? '—' : `hace ${dias(-d)}`}</strong><small>cerró</small></span>;
   }
   if (d === null) return <span className="siio-plazo"><strong>—</strong><small>sin fecha</small></span>;
-  return <span className={`siio-plazo ${d <= PLAZO_ALTO ? 'alta' : 'media'}`}><strong>{d === 0 ? 'hoy' : dias(d)}</strong><small>{closingDateLabel(item.deadline_at)}</small></span>;
+  // Rojo sólo lo que nadie ha decidido y cierra pronto; lo que ya tiene GO lleva la fecha sin alarma.
+  const urgente = !item.decision && d <= PLAZO_ALTO;
+  return <span className={`siio-plazo${urgente ? ' alta' : ''}`}><strong>{d === 0 ? 'hoy' : dias(d)}</strong><small>{closingDateLabel(item.deadline_at)}</small></span>;
 }
 
+// La decisión de cada proceso, en una ficha: por decidir (rojo si cierra en la ventana), con GO y su estado, o cerrado
+// sin que nadie actualizara el estado.
+function Decision({ item }: { item: CommercialTender }) {
+  if (item.attention === 'cierre_vencido_sin_actualizar') return <span className="siio-chip marca">cerró y nadie actualizó el estado</span>;
+  if (!item.decision) {
+    const urgente = item.days_to_deadline !== null && item.days_to_deadline <= PLAZO_ALTO;
+    return <span className={`siio-chip${urgente ? ' marca' : ''}`}>Por decidir GO / NO-GO</span>;
+  }
+  return <span className="siio-chip vivo">GO · {ESTADO_OFERTA[item.offer_status || ''] || 'sin estado'}</span>;
+}
+
+// Licitaciones (Juan, 2026-11-17: «el orden es la fecha»): una sola lista por fecha de cierre, con la decisión de cada
+// una a la vista. Arriba lo que cerró sin actualizar; las presentadas que ya cerraron esperan resultado en un plegado.
 function Licitaciones({ summary, followups, today }: { summary: CommercialSummary; followups?: AttentionFollowups; today: string }) {
-  const piden = summary.tenders.calendar.filter(item => item.attention);
-  const resto = summary.tenders.calendar.filter(item => !item.attention);
-  const mayor = Math.max(1, ...piden.map(item => item.total_value));
-  const pronto = resto.filter(item => item.days_to_deadline !== null && item.days_to_deadline >= 0 && item.days_to_deadline <= 14);
-  return <section className="siio-panel" aria-label="Licitaciones que esperan una decisión">
-    <h2>Licitaciones que esperan una decisión {piden.length ? <span className="siio-conteo">{piden.length}</span> : null}</h2>
-    {piden.length ? <div className="siio-tabla-wrap"><table className="siio-tabla apilable">
+  const calendario = summary.tenders.calendar;
+  const presentadas = calendario.filter(item => item.offer_status === 'presentada' && item.attention !== 'cierre_vencido_sin_actualizar' && (item.days_to_deadline ?? 1) < 0);
+  const lista = calendario.filter(item => !presentadas.includes(item))
+    .sort((x, y) => Number(y.attention === 'cierre_vencido_sin_actualizar') - Number(x.attention === 'cierre_vencido_sin_actualizar') || String(x.deadline_at || '9999').localeCompare(String(y.deadline_at || '9999')));
+  const porDecidir = lista.filter(item => !item.decision && item.attention !== 'cierre_vencido_sin_actualizar');
+  const urgentes = porDecidir.filter(item => item.days_to_deadline !== null && item.days_to_deadline <= PLAZO_ALTO).length + lista.filter(item => item.attention === 'cierre_vencido_sin_actualizar').length;
+  const mayor = Math.max(1, ...lista.map(item => item.total_value));
+  return <section className="siio-panel" aria-label="¿Qué licitaciones hay que decidir?">
+    <div className="siio-sub" style={{ marginBottom: 2 }}>
+      <h2>¿Qué licitaciones hay que decidir? {urgentes ? <span className="siio-conteo">{urgentes}</span> : null}</h2>
+      <span className="siio-chip vivo">A hoy</span>
+    </div>
+    <p className="siio-nota" style={{ margin: '0 0 8px' }}>Todos los procesos activos por fecha de cierre. En rojo, los que nadie ha decidido y cierran en {PLAZO_ALTO} días o menos. Valor total del proceso · responsable: <strong>Licitaciones</strong>.</p>
+    {lista.length ? <div className="siio-tabla-wrap"><table className="siio-tabla apilable">
       <thead><tr><th>Cierra</th><th>Proceso</th><th className="num total">Valor del contrato</th>{followups ? <th>Seguimiento</th> : null}</tr></thead>
-      <tbody>{piden.map(item => <tr key={item.id}>
+      <tbody>{lista.map(item => <tr key={item.id}>
         <td><FichaPlazo item={item} /></td>
-        <td><span className="nombre">{item.entity}</span>{item.attention === 'cierre_vencido_sin_actualizar'
-          ? <span className="siio-chip marca">cerró y nadie actualizó el estado</span>
-          : <small className="siio-nota">sin decisión de presentarse</small>}</td>
+        <td><span className="nombre">{item.entity}</span><Decision item={item} /></td>
         <td className="num total"><strong>{millions(item.total_value)}</strong><span className="siio-magnitud neutra"><i style={{ width: `${Math.max(2, Math.round((item.total_value / mayor) * 100))}%` }} /></span></td>
         {followups ? <td><FollowupCell existing={openFollowupFor(followups.list, item.id)} today={today} canCreate={Boolean(followups.list?.permissions.create)} onCreate={() => followups.onCreate(tenderFollowupDraft(item, today))} /></td> : null}
       </tr>)}</tbody>
-    </table></div> : <p className="siio-nota">Ninguna licitación espera decisión de presentarse en los próximos {summary.tenders.decision_window_days} días.</p>}
-    {resto.length ? <p className="siio-nota" style={{ marginTop: 6 }}>
-      Además hay {resto.length === 1 ? '1 proceso en curso' : `${resto.length} procesos en curso`} por {millions(resto.reduce((suma, item) => suma + item.total_value, 0))}
-      {pronto.length ? <>; {pronto.map(item => `${item.entity} (${millions(item.total_value)})`).join(', ')} {pronto.length === 1 ? 'cierra' : 'cierran'} en {pronto.map(item => item.days_to_deadline).join(', ')} días</> : null}.
-      {' '}Valor total del proceso · responsable: <strong>Licitaciones</strong>.
-    </p> : null}
-    {resto.length ? <details className="siio-plegado">
-      <summary>Las demás licitaciones activas ({resto.length})</summary>
+    </table></div> : <p className="siio-nota">No hay licitaciones activas.</p>}
+    {presentadas.length ? <details className="siio-plegado">
+      <summary>Presentadas, esperando resultado ({presentadas.length})</summary>
       <div className="siio-tabla-wrap"><table className="siio-tabla">
-        <thead><tr><th>Proceso</th><th>Cierra</th><th>Decisión</th><th>Estado</th><th className="num">Valor del contrato</th></tr></thead>
-        <tbody>{resto.map(item => <tr key={item.id}>
+        <thead><tr><th>Proceso</th><th>Cerró</th><th className="num">Valor del contrato</th></tr></thead>
+        <tbody>{presentadas.map(item => <tr key={item.id}>
           <td><span className="nombre">{item.entity}</span></td>
           <td>{closingDateLabel(item.deadline_at)}</td>
-          <td>{item.decision === 'go' ? 'Presentarse' : 'Pendiente'}</td>
-          <td>{ESTADO_OFERTA[item.offer_status || ''] || '—'}</td>
           <td className="num"><strong>{millions(item.total_value)}</strong></td>
         </tr>)}</tbody>
       </table></div>
@@ -78,7 +92,10 @@ function ForecastAlDia({ summary }: { summary: CommercialSummary }) {
   const total = filas.reduce((suma, fila) => ({ open: suma.open + fila.open, stale: suma.stale + fila.stale, monthly_value: suma.monthly_value + fila.monthly_value }), { open: 0, stale: 0, monthly_value: 0 });
   const mayor = Math.max(1, ...filas.map(fila => fila.stale));
   return <section className="siio-panel" aria-label="¿El forecast está al día?">
-    <h2>¿El forecast está al día? {total.stale ? <span className="siio-conteo">{total.stale}</span> : null}</h2>
+    <div className="siio-sub" style={{ marginBottom: 2 }}>
+      <h2>¿El forecast está al día? {total.stale ? <span className="siio-conteo">{total.stale}</span> : null}</h2>
+      <span className="siio-chip vivo">A hoy</span>
+    </div>
     <p className="siio-nota" style={{ margin: '4px 0 8px' }}>Leads abiertos de clientes privados (sin licitaciones), medidos hoy en el CRM. Sin gestión: más de {summary.pipeline.stale_days} días sin una interacción registrada. Lo que no se actualiza en el CRM es lo que la Torre ve.</p>
     <div className="siio-tabla-wrap"><table className="siio-tabla apilable">
       <thead><tr><th>Comercial</th><th className="num">Abiertas</th><th className="num total">Sin gestión en {summary.pipeline.stale_days} días</th><th className="num">Valor al mes</th></tr></thead>
@@ -101,9 +118,19 @@ function ComercialPrivado({ summary, followups, today }: { summary: CommercialSu
   const cumplimiento = sales.ytd_attainment;
   const hasta = sales.closed_months ? `ene–${MESES_CORTOS[sales.closed_months - 1]}` : String(sales.year);
   const paradas = pipeline.stale_large;
-  return <section className="siio-panel" aria-label="Comercial privado">
-    <h2>Comercial privado</h2>
-    <div className="siio-cifras siio-cifras-2" style={{ marginTop: 8 }}>
+  // El mes en curso contra su meta, como en la Portada: va a hoy, así que no se pinta de rojo.
+  const mesActual = today.slice(0, 7);
+  const delMes = sales.by_month.find(fila => fila.month === mesActual) || null;
+  const nombreDelMes = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][Number(mesActual.slice(5, 7)) - 1] || '';
+  return <section className="siio-panel" aria-label="¿Cómo va lo comercial?">
+    <div className="siio-sub" style={{ marginBottom: 2 }}>
+      <h2>¿Cómo va lo comercial?</h2>
+      <span className="siio-chip vivo">A hoy</span>
+    </div>
+    <p className="siio-nota">Clientes privados, sin licitaciones; valor mensual del servicio.</p>
+    <div className="siio-cifras siio-cifras-3" style={{ marginTop: 8 }}>
+      <CifraKit etiqueta={`Vendido en ${nombreDelMes}, a hoy`} valor={millions(delMes?.approved_monthly_value || 0)}
+        nota={delMes?.goal ? <>{porcentaje(delMes.approved_monthly_value, delMes.goal)} de la meta del mes ({millions(delMes.goal)})</> : 'sin meta cargada para el mes'} />
       <CifraKit etiqueta={`Ventas nuevas ${hasta}`} valor={millions(sales.ytd_monthly_value)} tono={cumplimiento !== null && cumplimiento < 0.9 ? 'mal' : undefined}
         nota={cumplimiento === null ? 'valor mensual del servicio · sin meta cargada' : <><strong>{Math.round(cumplimiento * 100)} %</strong> de la meta ({millions(sales.ytd_goal)}) · valor mensual del servicio</>} />
       <CifraKit etiqueta="Pipeline ponderado" valor={millions(pipeline.weighted_monthly_value)}
@@ -141,7 +168,7 @@ function SeguimientosConFecha({ semana, abiertos, vencidos, onVer }: { semana: E
     {asuntos.length ? <ol className="siio-decision" style={{ marginTop: 6 }}>
       {asuntos.map(asunto => <li key={asunto.key}>
         <button type="button" onClick={onVer} aria-label={asunto.vencido ? 'Vencido' : 'Por vencer'}>
-          <span className={`siio-plazo ${asunto.vencido ? 'alta' : 'media'}`}>
+          <span className={`siio-plazo${asunto.vencido ? ' alta' : ''}`}>
             <strong>{asunto.dias === null ? '—' : asunto.dias < 0 ? `hace ${dias(-asunto.dias)}` : asunto.dias === 0 ? 'hoy' : dias(asunto.dias)}</strong>
             <small>{asunto.vencido ? 'vencido' : 'vence'}</small>
           </span>
@@ -162,11 +189,9 @@ export function SiioPestanaComercial({ summary, state, semana, followups, today,
   if (state === 'loading') return <p className="siio-nota">Cargando datos del CRM…</p>;
   if (state === 'error' || !summary) return <p className="siio-alert-text">No se pudieron cargar los datos del CRM. El resto de la Torre sigue disponible.</p>;
   return <>
-    <Licitaciones summary={summary} followups={followups} today={today} />
+    <ComercialPrivado summary={summary} followups={followups} today={today} />
     <ForecastAlDia summary={summary} />
-    <div className="siio-dos-col">
-      <ComercialPrivado summary={summary} followups={followups} today={today} />
-      <SeguimientosConFecha semana={semana} abiertos={abiertos} vencidos={vencidos} onVer={onVerSeguimientos} />
-    </div>
+    <Licitaciones summary={summary} followups={followups} today={today} />
+    <SeguimientosConFecha semana={semana} abiertos={abiertos} vencidos={vencidos} onVer={onVerSeguimientos} />
   </>;
 }

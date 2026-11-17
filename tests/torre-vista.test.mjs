@@ -110,7 +110,9 @@ test('comercial y licitaciones calcan la maqueta: plazo en ficha, forecast por c
   const comercial = read('src/siio/SiioPestanaComercial.tsx');
   const vista = read('src/siio/SiioExecutiveView.tsx');
   assert.match(vista, /className="siio-pantalla" role="tabpanel" aria-label="Comercial y licitaciones"/);
-  assert.match(comercial, /export const PLAZO_ALTO = 12;/);
+  // La misma ventana que la Portada: 15 días (contrato del 15-nov).
+  assert.match(comercial, /export const PLAZO_ALTO = 15;/);
+  assert.match(read('verticales/gerencial/siio-commercial-summary.js'), /const DECISION_WINDOW_DAYS = 15;/);
   assert.match(comercial, /<FichaPlazo item=\{item\} \/>/);
   // ¿El forecast está al día? con nombre: la columna protagonista es lo que lleva más de 30 días sin gestión.
   assert.match(comercial, /¿El forecast está al día\?/);
@@ -280,4 +282,20 @@ test('clientes con las reglas de la Portada (Juan, 16-nov): preguntas, periodo c
   // Cada margen con el del mes anterior; el precio por hora con el costo de referencia.
   assert.match(torre, /className="siio-antes"/);
   assert.match(torre, /<small>costo: \{pesos\(costoHora\)\}<\/small>/);
+});
+
+test('comercial y licitaciones con las reglas de la Portada (Juan, 17-nov): su orden, preguntas y una lista por fecha', () => {
+  const comercial = read('src/siio/SiioPestanaComercial.tsx');
+  // El orden de la Portada: cómo va lo comercial, el forecast y las licitaciones.
+  const orden = ['<ComercialPrivado', '<ForecastAlDia', '<Licitaciones', '<SeguimientosConFecha'].map(x => comercial.lastIndexOf(x));
+  assert.ok(orden.every((pos, i) => pos > 0 && (i === 0 || pos > orden[i - 1])), 'en el orden de la Portada');
+  assert.match(comercial, /<h2>¿Cómo va lo comercial\?<\/h2>/);
+  assert.match(comercial, /Vendido en \$\{nombreDelMes\}, a hoy/);
+  // Licitaciones: una sola lista por fecha de cierre y la decisión de cada una en su ficha.
+  assert.match(comercial, /localeCompare\(String\(y\.deadline_at \|\| '9999'\)\)/);
+  assert.match(comercial, /Por decidir GO \/ NO-GO/);
+  assert.match(comercial, /GO · \{ESTADO_OFERTA/);
+  assert.match(comercial, /<summary>Presentadas, esperando resultado/);
+  // El ámbar no se usa para urgencia: la ficha de plazo es roja o neutra.
+  assert.doesNotMatch(comercial, /'alta' : 'media'/);
 });
