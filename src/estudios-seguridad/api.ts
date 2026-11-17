@@ -34,7 +34,7 @@ export type Comparison = {
 // Migración 209: vigencia del estudio y revaloración (Héctor: mínimo cada 6 meses, máximo cada 3 años).
 export type Validity = {
   estado: 'sin_aprobar' | 'vigente' | 'por_vencer' | 'vencido'; aprobado: string | null; vence: string | null; dias: number | null; meses: number;
-  revalorar: Array<{ motivo: 'pedida' | 'siniestro' | 'indicador'; fecha: string; detalle: string; riesgo?: number }>;
+  revalorar: Array<{ motivo: 'pedida' | 'siniestro' | 'indicador'; fecha: string; detalle: string; riesgo?: number }>; original?: string | null;
 };
 // Copia de RENEWAL_OPTIONS en verticales/estudios-seguridad/vigencia.js.
 export const RENEWAL_OPTIONS = [
@@ -52,7 +52,7 @@ export type Study = StudySummaryRow & {
   external_context?: string | null; criminal_groups?: string | null; internal_context?: string | null;
   context_sources?: Array<{ nombre: string; url: string | null; fecha: string | null }>;
   securityops_puesto_id?: string | null; securityops_requested_at?: string | null;
-  renewal_months?: number; revaluation_requested_at?: string | null; revaluation_note?: string | null;
+  renewal_months?: number; original_study_date?: string | null; revaluation_requested_at?: string | null; revaluation_note?: string | null;
 };
 
 export type Zone = { id: string; name: string; description: string | null; position: number };

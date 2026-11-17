@@ -15,7 +15,7 @@ const STUDY = {
 };
 
 test('la vigencia: desde la aprobación, por la frecuencia del estudio, con aviso a 60 días', () => {
-  assert.deepEqual(studyValidity({ renewal_months: 12 }), { estado: 'sin_aprobar', aprobado: null, vence: null, dias: null, meses: 12, revalorar: [] });
+  assert.deepEqual(studyValidity({ renewal_months: 12 }), { estado: 'sin_aprobar', aprobado: null, vence: null, dias: null, meses: 12, revalorar: [], original: null });
   const approvedAt = '2026-08-31T20:00:00Z';
   const at = day => new Date(`${day}T17:00:00Z`);
   assert.equal(studyValidity({ renewal_months: 6 }, { approvedAt, now: at('2026-09-01') }).vence, '2027-02-28', 'fin de mes: el último día del mes de llegada');
@@ -96,4 +96,29 @@ test('la lista trae lo que necesita el tablero: entrega pendiente y recomendacio
   await pg.query(`update public.psi_security_study_actions set status = 'cumplida' where description = 'Control de salida'`);
   row = (await listStudies(db)).find(item => item.id === study.id);
   assert.deepEqual([row.delivered, row.overdue_actions], [true, { nuestras: 0, cliente: 1 }]);
+});
+
+// Migración 228 (Juan, 2026-11-17): un estudio incorporado de una matriz anterior (PCP, febrero de 2025, cada 2 años)
+// vence contando desde la fecha original, no desde que se aprobó en la plataforma; y el informe lo dice.
+test('estudio incorporado: la vigencia corre desde la fecha del estudio original', async () => {
+  const approvedAt = '2026-11-20T15:00:00Z';
+  const now = new Date('2026-11-25T15:00:00Z');
+  assert.equal(studyValidity({ renewal_months: 24 }, { approvedAt, now }).vence, '2028-11-20', 'hecho aquí: desde la aprobación');
+  const incorporated = studyValidity({ renewal_months: 24, original_study_date: '2025-02-01' }, { approvedAt, now });
+  assert.deepEqual([incorporated.vence, incorporated.estado, incorporated.original], ['2027-02-01', 'vigente', '2025-02-01']);
+  assert.equal(studyValidity({ renewal_months: 24, original_study_date: '2025-02-01' }, { approvedAt, now: new Date('2027-01-10T15:00:00Z') }).estado, 'por_vencer');
+
+  const pg = await database();
+  const db = supabaseOver(pg);
+  const study = await createStudy(db, { ...STUDY, renewal_months: 24 }, PREPARER);
+  await assert.rejects(updateStudy(db, study.id, { original_study_date: '2025-13-40' }, PREPARER), /Fecha del estudio original/);
+  await updateStudy(db, study.id, { original_study_date: '2025-02-01' }, PREPARER);
+  await addRisk(db, study.id, { title: 'Hurto de mercancía', probability: 2, impact_company: 2 }, PREPARER);
+  for (const [action, who] of [['enviar', PREPARER], ['marcar_revisado', REVIEWER], ['aprobar', APPROVER]]) await transitionStudy(db, study.id, { action }, who);
+  const detail = await getStudy(db, study.id);
+  assert.equal(detail.validity.vence, '2027-02-01');
+  const { snapshot } = buildSnapshot(detail);
+  const text = JSON.stringify(buildStudyReport(snapshot, { version: 1, sha256: 'a'.repeat(64), approvedAt: '2026-11-20T15:00:00Z', approverName: 'Alba', preparerName: 'Ana' }).blocks);
+  assert.match(text, /corresponde al realizado el 1 de febrero de 2025, incorporado a la plataforma/);
+  assert.match(text, /a más tardar el 1 de febrero de 2027/);
 });

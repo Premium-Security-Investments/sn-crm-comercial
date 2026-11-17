@@ -210,6 +210,7 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
         <h2>{study.code} · {study.title}</h2>
         <p className="es-muted">{study.client_name}{study.client_nit ? ` · NIT ${study.client_nit}` : ''} · {study.site_name}{study.site_city ? `, ${study.site_city}` : ''}{study.site_source === 'manual' ? ' (sede escrita a mano)' : ''}</p>
         <p className="es-muted">Visita: {fmtDate(study.visit_date)} · Metodología: {METHODOLOGY_LABELS[study.methodology_id] || study.methodology_id}</p>
+        {study.original_study_date ? <p className="es-muted">Incorporado de un estudio anterior, del {fmtDate(study.original_study_date)}: la vigencia se cuenta desde esa fecha.</p> : null}
       </div>
       <span className="badge">{STATUS_LABELS[study.status]}</span>
     </div>
@@ -267,15 +268,15 @@ const METHODOLOGY_LABELS: Record<string, string> = {
 
 function GeneralDataEditor({ study, onSaved }: { study: StudyDetail['study']; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ title: study.title, visit_date: study.visit_date ? String(study.visit_date).slice(0, 10) : '', scope: study.scope || '' });
+  const [form, setForm] = useState({ title: study.title, visit_date: study.visit_date ? String(study.visit_date).slice(0, 10) : '', scope: study.scope || '', original_study_date: study.original_study_date ? String(study.original_study_date).slice(0, 10) : '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  if (!open) return <button type="button" className="es-link" onClick={() => setOpen(true)}>Editar título, fecha de visita y alcance</button>;
+  if (!open) return <button type="button" className="es-link" onClick={() => setOpen(true)}>Editar título, fechas y alcance</button>;
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true); setError('');
     try {
-      await updateStudy(study.id, { title: form.title, visit_date: form.visit_date || null, scope: form.scope || null });
+      await updateStudy(study.id, { title: form.title, visit_date: form.visit_date || null, scope: form.scope || null, original_study_date: form.original_study_date || null });
       setOpen(false);
       onSaved();
     } catch (reason) { setError(message(reason)); } finally { setBusy(false); }
@@ -284,6 +285,8 @@ function GeneralDataEditor({ study, onSaved }: { study: StudyDetail['study']; on
     <label>Título<input value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} required minLength={3} maxLength={200} /></label>
     <label>Fecha de la visita<input type="date" value={form.visit_date} onChange={event => setForm({ ...form, visit_date: event.target.value })} /></label>
     <label>Alcance<textarea rows={3} value={form.scope} onChange={event => setForm({ ...form, scope: event.target.value })} maxLength={4000} /></label>
+    <label>Fecha del estudio original (sólo si se incorpora de una matriz anterior)<input type="date" value={form.original_study_date} onChange={event => setForm({ ...form, original_study_date: event.target.value })} />
+      <small className="es-muted">Con esta fecha, la vigencia se cuenta desde el estudio original y no desde la aprobación en la plataforma.</small></label>
     {error ? <p className="es-error" role="alert">{error}</p> : null}
     <div className="es-actions"><button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button><button type="button" className="secondary" onClick={() => setOpen(false)} disabled={busy}>Cancelar</button></div>
   </form>;

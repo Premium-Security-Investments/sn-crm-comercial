@@ -141,6 +141,8 @@ export async function updateStudy(db, id, body = {}, profile, now = new Date()) 
   if (body.scope !== undefined) patch.scope = text(body.scope, { field: 'Alcance', max: 4000 });
   if (body.visit_date !== undefined) patch.visit_date = isoDate(body.visit_date, 'Fecha de visita');
   if (body.renewal_months !== undefined) patch.renewal_months = renewal(body.renewal_months);
+  // Migración 228: la fecha del estudio original, si se incorporó de una matriz anterior (vacío = hecho aquí).
+  if (body.original_study_date !== undefined) patch.original_study_date = body.original_study_date ? isoDate(body.original_study_date, 'Fecha del estudio original') : null;
   if (body.previous_study_id !== undefined) patch.previous_study_id = await validatePrevious(db, current, body.previous_study_id);
   Object.assign(patch, cleanCharacterization(body));
   if (body.client_source !== undefined || body.site_source !== undefined) {
