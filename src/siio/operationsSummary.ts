@@ -42,6 +42,12 @@ export type OperationsRegionalRow = {
   status: 'en_uso' | 'parcial' | 'en_implementacion';
 };
 
+export type Semana = { novedadesCriticas: number; aprovisionamientos: number; noLlego: number; revistas: number; revistasCanceladas: number; jornadas: number; jornadasTarde: number };
+const METRICAS_SEMANA: Record<string, keyof Semana> = {
+  novedades_criticas_7d: 'novedadesCriticas', aprovisionamientos_7d: 'aprovisionamientos', aprovisionamientos_no_llego_7d: 'noLlego',
+  revistas_7d: 'revistas', revistas_canceladas_7d: 'revistasCanceladas', jornadas_noche_7d: 'jornadas', jornadas_tarde_7d: 'jornadasTarde',
+};
+
 export type OperationsSummary = {
   extractedAt: string | null;
   currentMonth: string;
@@ -52,6 +58,8 @@ export type OperationsSummary = {
   clients: OperationsClientRow[];
   totals: { current: OperationsFigures; previous: OperationsFigures; puestosSinCobertura: number };
   readings: string[];
+  // Los últimos 7 días completos (extractor v3, 2026-11-17): null en corridas anteriores, que no las traían.
+  semana: Semana | null;
 };
 
 const METRIC_FIELD: Record<string, keyof OperationsFigures> = {
@@ -170,5 +178,8 @@ export function deriveOperationsSummary(rows: SiioOperationsMetric[]): Operation
     readings.push(`SecurityOps se usa hoy${where || ' en ninguna regional'}; ${puestos.toLocaleString('es-CO')} puestos en ${pending.length} ${pending.length === 1 ? 'regional siguen' : 'regionales siguen'} en implementación, sin cifras de cumplimiento.`);
   }
 
-  return { extractedAt, currentMonth, previousMonth, provisionsUntil, regionals, coveredRegionals, clients: clientRows, totals, readings };
+  const filasSemana = snapshotRows.filter(row => row.period_month === currentMonth && row.client_key === 'total' && row.regional === 'TODAS' && METRICAS_SEMANA[row.metric]);
+  const semana: Semana | null = filasSemana.length ? filasSemana.reduce((acc, row) => ({ ...acc, [METRICAS_SEMANA[row.metric]]: Number(row.value) || 0 }),
+    { novedadesCriticas: 0, aprovisionamientos: 0, noLlego: 0, revistas: 0, revistasCanceladas: 0, jornadas: 0, jornadasTarde: 0 }) : null;
+  return { extractedAt, currentMonth, previousMonth, provisionsUntil, regionals, coveredRegionals, clients: clientRows, totals, readings, semana };
 }

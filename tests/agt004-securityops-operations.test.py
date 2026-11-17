@@ -1,6 +1,7 @@
 import datetime as dt
 import importlib.util
 import json
+import os
 import unittest
 from pathlib import Path
 
@@ -172,6 +173,65 @@ class SqlTest(unittest.TestCase):
         self.assertIn("'regla con ''comilla'''", sql)
         self.assertIn("'ARA d''X'", sql)
         self.assertIn("'SRC-OPS-SECURITYOPS'", sql)
+
+
+
+class SemanaTest(unittest.TestCase):
+    """«¿Qué falló?» de la pestaña Operación: los últimos 7 días completos de Bogotá (2026-11-17)."""
+
+    def setUp(self):
+        raw = raw_fixture()
+        raw['novedades'] += [
+            {'puestoId': 'p1', 'createdAt': '2026-10-10T15:00:00Z', 'status': 'completado', 'prioridad': 'critica'},
+            {'puestoId': 'p1', 'createdAt': '2026-10-11T15:00:00Z', 'status': 'completado', 'prioridad': 'media'},
+            {'puestoId': 'p1', 'createdAt': '2026-10-14T04:00:00Z', 'status': 'completado', 'prioridad': 'alta'},  # 13-oct en Bogotá
+            {'puestoId': 'p1', 'createdAt': '2026-10-01T15:00:00Z', 'status': 'completado', 'prioridad': 'critica'},  # fuera de la semana
+        ]
+        raw['aprovisionamientos'] += [
+            {'puestoId': 'p1', 'fecha': '2026-10-10', 'estado': 'camion_no_llego'},
+            {'puestoId': 'p1', 'fecha': '2026-10-12', 'estado': 'descargado'},
+        ]
+        raw['revistas_noche'] = [
+            {'puestoId': 'p1', 'asignadaAt': '2026-10-12T03:00:00Z', 'estado': 'hecha'},
+            {'puestoId': 'p1', 'asignadaAt': '2026-10-12T04:00:00Z', 'estado': 'cancelada'},
+        ]
+        raw['jornadas_noche'] = [
+            {'regional': 'BOGOTA', 'inicioAt': '2026-10-12T02:10:00Z', 'minutosTarde': 10},
+            {'regional': 'BOGOTA', 'inicioAt': '2026-10-13T02:00:00Z', 'minutosTarde': 0},
+        ]
+        self.rows, _ = ops.aggregate(raw, NOW)
+
+    def test_semana_cuenta_los_ultimos_siete_dias_completos(self):
+        mes = '2026-10-01'
+        self.assertEqual(metric(self.rows, mes, 'total', 'TODAS', 'novedades_criticas_7d'), 2)
+        self.assertEqual(metric(self.rows, mes, 'ara', 'TODAS', 'novedades_criticas_7d'), 2)
+        self.assertEqual(metric(self.rows, mes, 'total', 'TODAS', 'aprovisionamientos_7d'), 2)
+        self.assertEqual(metric(self.rows, mes, 'total', 'TODAS', 'aprovisionamientos_no_llego_7d'), 1)
+        self.assertEqual(metric(self.rows, mes, 'total', 'TODAS', 'revistas_7d'), 2)
+        self.assertEqual(metric(self.rows, mes, 'total', 'TODAS', 'revistas_canceladas_7d'), 1)
+        self.assertEqual(metric(self.rows, mes, 'total', 'BOGOTA', 'jornadas_noche_7d'), 2)
+        self.assertEqual(metric(self.rows, mes, 'total', 'TODAS', 'jornadas_tarde_7d'), 1)
+
+    def test_las_metricas_nuevas_estan_en_la_migracion(self):
+        sql = open(os.path.join(os.path.dirname(__file__), '..', 'supabase', 'migrations', '227_securityops_diario_y_semana.sql'), encoding='utf-8').read()
+        for r in self.rows:
+            self.assertIn(f"'{r['metric']}'", sql)
+
+
+class DiariaTest(unittest.TestCase):
+    def test_no_vuelve_a_extraer_antes_de_veinte_horas(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile('w', delete=False) as fh:
+            fh.write(dt.datetime.now(dt.timezone.utc).isoformat())
+        llamado = []
+        original = ops.extract
+        ops.extract = lambda since: llamado.append(since) or {}
+        try:
+            self.assertEqual(ops.diaria('2026-08-01', fh.name), 0)
+        finally:
+            ops.extract = original
+            os.unlink(fh.name)
+        self.assertEqual(llamado, [], 'con una carga reciente no toca SecurityOps')
 
 
 if __name__ == '__main__':
