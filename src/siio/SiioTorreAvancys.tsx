@@ -30,6 +30,8 @@ type MesPyg = {
 type Saldo = { saldo: number; facturas: number };
 export type CreditoAvancys = { numero: string | null; banco: string | null; monto: number; saldo: number; tasa_periodo: number; meses_por_periodo: number; tasa_ea: number | null; cuotas_por_pagar: number; desembolso: string | null; fecha_final: string | null; proxima_cuota: { fecha: string; valor: number } | null };
 export type Creditos = { error?: string; registradas?: CreditoAvancys[]; saldo_registrado?: number; deuda_contable?: number; sin_registrar?: { tercero: string; contable: number; registrado: number; diferencia: number }[] };
+type MotivoNotas = { valor: number; notas: number };
+export type NotasCredito = { error?: string; desde?: string; meses?: Record<string, { no_prestado: MotivoNotas; correccion: MotivoNotas; otro: MotivoNotas; sin_motivo: MotivoNotas; clientes: { cliente: string; no_prestado: number; sin_motivo: number }[] }> };
 type FotoCartera = { fecha: string; total: number; vencido: number; mas_30: number };
 type Cartera = { error?: string; hoy?: string; hace_un_mes?: FotoCartera | null; total?: Saldo; vencido?: Saldo; tramos?: ({ tramo: string } & Saldo)[]; deudores?: { cliente: string; vencido: number; facturas: number }[]; heredado_yeminus?: Saldo; consignaciones_sin_identificar?: { saldo: number; partidas: number } };
 type RubroEjecucion = { clave: string; etiqueta: string; ejecutado: number; pct: number | null; presupuesto: number | null; diferencia: number | null };
@@ -52,6 +54,7 @@ type Torre = {
   primera_linea?: string | null;
   clientes?: Clientes | null;
   cartera?: Cartera | null;
+  notas_credito?: NotasCredito | null;
   lineas_pyg?: LineaPyg[];
   pyg?: MesPyg[];
   bloqueo_contable?: string | null;
@@ -71,7 +74,7 @@ const nombreMes = (mes?: string | null) => {
   return `${MESES[numero - 1]} ${anio}`;
 };
 // Lo que redondea a cero millones se escribe $0 M, sin el signo menos.
-const millones = (valor: number) => `${Math.round(valor / 1e6) < 0 ? '−' : ''}$${Math.round(Math.abs(valor) / 1e6).toLocaleString('es-CO')} M`;
+export const millones = (valor: number) => `${Math.round(valor / 1e6) < 0 ? '−' : ''}$${Math.round(Math.abs(valor) / 1e6).toLocaleString('es-CO')} M`;
 const pesos = (valor: number) => `$${Math.round(Math.abs(valor)).toLocaleString('es-CO')}`;
 const pct = (parte: number, base: number) => (base ? `${(Math.round((parte / base) * 1000) / 10).toLocaleString('es-CO').replace('-', '−')} %` : '—');
 const hora = (valor?: string) => (valor
@@ -164,12 +167,12 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
 export type TorreAvancys = ReturnType<typeof useTorreAvancys>;
 
 
-export type PestanaTorre = 'portada' | 'resultados' | 'clientes' | 'cartera' | 'comercial' | 'vigia' | 'parametros' | 'fuentes';
+export type PestanaTorre = 'portada' | 'resultados' | 'clientes' | 'cartera' | 'comercial' | 'operacion' | 'vigia' | 'parametros' | 'fuentes';
 
 // Nombre de cliente para leer: sin los códigos de Avancys («[AREA ADMINISTRACION] [891411663] …»), sin la
 // sociedad al final y, si viene en mayúscula sostenida, en tipo oración con las palabras cortas en minúscula.
 const PALABRAS_MENORES = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'el', 'en', 'para']);
-const sinCodigo = (nombre: string) => {
+export const sinCodigo = (nombre: string) => {
   const limpio = nombre.replace(/^(\s*\[[^\]]*\]\s*)+/, '').replace(/(\s+(S\.?\s?A\.?\s?S?\.?|LTDA\.?|E\.?S\.?P\.?))+$/i, '').trim();
   if (limpio !== limpio.toUpperCase()) return limpio;
   return limpio.toLowerCase().split(/\s+/).map((palabra, i) => (i && PALABRAS_MENORES.has(palabra) ? palabra : palabra.charAt(0).toUpperCase() + palabra.slice(1))).join(' ');
