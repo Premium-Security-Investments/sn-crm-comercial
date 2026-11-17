@@ -23,10 +23,12 @@ import re
 import subprocess
 import sys
 import unicodedata
+import os
+import urllib.parse
 import urllib.request
 from collections import defaultdict
 
-EXTRACTOR_VERSION = 'agt004-ops-v2'
+EXTRACTOR_VERSION = 'agt004-ops-v3'
 PROJECT = 'security-ops-e8534'
 SOURCE_ID = 'SRC-OPS-SECURITYOPS'
 SUPABASE_REF = 'tyfzjqzcpgwcjnxozaaf'
@@ -54,12 +56,18 @@ FIELDS = {
     # Marcas de cliente. `zonas` lleva el nombre del coordinador: solo se conserva el número.
     'config': ['tipo', 'nombre', 'zonas', 'puestos', 'activa'],
     'puesto_visits': ['puestoId', 'arrivalAt', 'status', 'tipoVisita'],
-    'novedades': ['puestoId', 'createdAt', 'status'],
+    'novedades': ['puestoId', 'createdAt', 'status', 'prioridad'],
     'reportes_fallas': ['puestoId', 'sap', 'createdAt', 'estado', 'respondidoAt'],
     'visitas_tecnico': ['puestoId', 'sap', 'fecha', 'status'],
     'aprovisionamientos': ['puestoId', 'sap', 'regional', 'fecha', 'estado', 'anulado'],
     'rondas': ['puestoId', 'iniciadaEn', 'status'],
+    # Noche de Bogotá (2026-11-17): revistas de los motorizados y sus jornadas (sin el motorizado: solo cuántas y tarde).
+    'revistas_noche': ['puestoId', 'asignadaAt', 'estado'],
+    'jornadas_noche': ['regional', 'inicioAt', 'minutosTarde'],
 }
+# La semana de «¿Qué falló?»: los últimos 7 días completos de Bogotá, contados el día de la extracción.
+DIAS_SEMANA = 7
+NOVEDAD_GRAVE = {'critica', 'alta'}
 
 
 # ---------------------------------------------------------------- lógica pura (probada)
@@ -131,6 +139,17 @@ def make_client_of(brands):
 def regional_of(value):
     r = str(value or '').strip().upper()
     return r[:60] if r else 'SIN REGIONAL'
+
+
+def local_day(value):
+    """Día de Bogotá (UTC−5) de una marca de tiempo; una fecha sola se toma tal cual."""
+    s = str(value or '')
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
+        return s
+    try:
+        return (dt.datetime.fromisoformat(s.replace('Z', '+00:00')) - dt.timedelta(hours=5)).strftime('%Y-%m-%d')
+    except ValueError:
+        return None
 
 
 def month_of(value):
@@ -242,6 +261,40 @@ def aggregate(raw, now, local_today=None):
         if not pid:
             unmatched['rondas'] += 1
 
+    # La semana: se cuenta en el mes de la extracción con sufijo _7d (la pestaña Operación la muestra como «la semana»).
+    desde_semana = (dt.date.fromisoformat(local_today) - dt.timedelta(days=DIAS_SEMANA)).isoformat()
+
+    def en_semana(valor):
+        dia = local_day(valor)
+        return bool(dia) and desde_semana <= dia < local_today
+
+    for n in raw['novedades']:
+        if n.get('status') != 'borrador' and en_semana(n.get('createdAt')) and n.get('prioridad') in NOVEDAD_GRAVE:
+            _, client, regional = resolve(n)
+            add(current_month, client, regional, 'novedades_criticas_7d')
+    for a in raw['aprovisionamientos']:
+        if a.get('anulado') is True or not en_semana(a.get('fecha')):
+            continue
+        _, client, regional = resolve(a, fallback_client='ara')
+        add(current_month, client, regional, 'aprovisionamientos_7d')
+        if a.get('estado') == 'camion_no_llego':
+            add(current_month, client, regional, 'aprovisionamientos_no_llego_7d')
+    for r in raw.get('revistas_noche', []):
+        if not en_semana(r.get('asignadaAt')):
+            continue
+        _, client, regional = resolve(r)
+        add(current_month, client, regional, 'revistas_7d')
+        if r.get('estado') == 'cancelada':
+            add(current_month, client, regional, 'revistas_canceladas_7d')
+    for j in raw.get('jornadas_noche', []):
+        # La jornada es del motorizado, no de un cliente: va solo al total.
+        if not en_semana(j.get('inicioAt')):
+            continue
+        for r in (regional_of(j.get('regional')), 'TODAS'):
+            counts[(current_month, 'total', r, 'jornadas_noche_7d')] += 1
+            if (j.get('minutosTarde') or 0) > 0:
+                counts[(current_month, 'total', r, 'jornadas_tarde_7d')] += 1
+
     for (month, client, regional), pids in visited.items():
         counts[(month, client, regional, 'puestos_visitados')] = len(pids)
 
@@ -307,7 +360,25 @@ def _value(f):
     return v
 
 
+def _token_cuenta_de_servicio(ruta):
+    """Token de solo lectura con la cuenta de servicio de SecurityOps (roles/datastore.viewer)."""
+    import jwt  # PyJWT, el mismo que usa /root/.vigia-firestore/leer.py
+    with open(ruta, encoding='utf-8') as fh:
+        cred = json.load(fh)
+    ahora = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    afirmacion = jwt.encode({'iss': cred['client_email'], 'scope': 'https://www.googleapis.com/auth/datastore',
+                             'aud': 'https://oauth2.googleapis.com/token', 'iat': ahora, 'exp': ahora + 3600},
+                            cred['private_key'], algorithm='RS256')
+    datos = urllib.parse.urlencode({'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion': afirmacion}).encode()
+    with urllib.request.urlopen(urllib.request.Request('https://oauth2.googleapis.com/token', data=datos), timeout=60) as resp:
+        return json.load(resp)['access_token']
+
+
 def _token():
+    # Desde 2026-11-17 la cuenta de servicio (la sesión personal de gcloud se revocó el 2026-10-24).
+    ruta = os.environ.get('SECURITYOPS_KEY_FILE') or os.environ.get('ESTUDIOS_SECURITYOPS_KEY_FILE')
+    if ruta and os.path.exists(ruta):
+        return _token_cuenta_de_servicio(ruta)
     gcloud = '/root/google-cloud-sdk/bin/gcloud'
     out = subprocess.run([gcloud, 'auth', 'application-default', 'print-access-token'], capture_output=True, text=True)
     if not out.stdout.strip():
@@ -361,9 +432,68 @@ def extract(since):
         'visitas_tecnico': _run_query(token, 'visitas_tecnico', _range('fecha', since, '9999-12-31', 'stringValue')),
         'aprovisionamientos': _run_query(token, 'aprovisionamientos', _range('fecha', since, '9999-12-31', 'stringValue')),
         'rondas': _run_query(token, 'rondas', _range('iniciadaEn', start_ts, end_ts, 'timestampValue')),
+        'revistas_noche': _run_query(token, 'revistas_noche', _range('asignadaAt', start_ts, end_ts, 'timestampValue')),
+        'jornadas_noche': _run_query(token, 'jornadas_noche', _range('inicioAt', start_ts, end_ts, 'timestampValue')),
     }
     # reportes_fallas trae todo el histórico para los abiertos; los creados se cuentan desde `since`.
     return raw
+
+
+# ---------------------------------------------------------------- carga directa y corrida diaria
+
+def _supabase(path, method='GET', body=None, prefer=None):
+    url = (os.environ.get('SUPABASE_URL') or os.environ.get('NEXT_PUBLIC_SUPABASE_URL') or '').rstrip('/')
+    llave = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or ''
+    if not url or not llave:
+        raise SystemExit('Falta SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en el ambiente del trabajo.')
+    headers = {'apikey': llave, 'Authorization': 'Bearer ' + llave, 'Content-Type': 'application/json'}
+    if prefer:
+        headers['Prefer'] = prefer
+    req = urllib.request.Request(f'{url}/rest/v1/{path}', method=method, headers=headers,
+                                 data=json.dumps(body).encode() if body is not None else None)
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        texto = resp.read().decode() or 'null'
+    return json.loads(texto)
+
+
+def load(payload):
+    """Carga una corrida nueva (la vista siio_operations_metrics_current lee siempre la última)."""
+    run = payload['run']
+    creada = _supabase('siio_operations_runs', 'POST', [{'source_id': SOURCE_ID, 'extracted_at': run['extracted_at'],
+                       'extractor_version': run['extractor_version'], 'client_rule': run['client_rule'], 'summary': run['summary']}],
+                       prefer='return=representation')
+    run_id = creada[0]['id']
+    filas = [{'run_id': run_id, **{k: r[k] for k in ('period_month', 'client_key', 'client_label', 'regional', 'metric', 'value')}} for r in payload['metrics']]
+    for i in range(0, len(filas), 500):
+        _supabase('siio_operations_metrics', 'POST', filas[i:i + 500], prefer='return=minimal')
+    return run_id, len(filas)
+
+
+# Una vez al día: el trabajo se encadena a uno que corre seguido y sale enseguida si ya cargó en las últimas horas.
+HORAS_ENTRE_CORRIDAS = 20
+
+
+def diaria(since, marca):
+    ahora = dt.datetime.now(dt.timezone.utc)
+    try:
+        ultima = dt.datetime.fromisoformat(open(marca, encoding='utf-8').read().strip())
+        if ahora - ultima < dt.timedelta(hours=HORAS_ENTRE_CORRIDAS):
+            return 0
+    except (OSError, ValueError):
+        pass
+    raw = extract(since)
+    rows, summary = aggregate(raw, ahora)
+    rows = [r for r in rows if r['period_month'] >= since]
+    summary['desde'] = since
+    summary['filas'] = len(rows)
+    payload = {'run': {'extracted_at': ahora.isoformat(timespec='seconds'), 'extractor_version': EXTRACTOR_VERSION,
+                       'client_rule': CLIENT_RULE, 'summary': summary}, 'metrics': rows}
+    run_id, n = load(payload)
+    with open(marca, 'w', encoding='utf-8') as fh:
+        fh.write(ahora.isoformat(timespec='seconds'))
+    semana = {r['metric']: r['value'] for r in rows if r['client_key'] == 'total' and r['regional'] == 'TODAS' and r['metric'].endswith('_7d')}
+    print(json.dumps({'corrida': run_id, 'filas': n, 'semana': semana}, ensure_ascii=False))
+    return 0
 
 
 def main(argv=None):
@@ -372,11 +502,19 @@ def main(argv=None):
     e = sub.add_parser('extract')
     e.add_argument('--since', default='2026-04-01')
     e.add_argument('--out', required=True)
+    d = sub.add_parser('diaria', help='extrae y carga si la última carga tiene más de %d horas' % HORAS_ENTRE_CORRIDAS)
+    d.add_argument('--since', default=None, help='primer mes (AAAA-MM-01); por defecto, tres meses atrás')
+    d.add_argument('--marca', default=os.environ.get('AGT004_MARCA', '/var/lib/agt004-operaciones/ultima'))
     s = sub.add_parser('sql')
     s.add_argument('payload')
     s.add_argument('--out', required=True)
     args = ap.parse_args(argv)
 
+    if args.cmd == 'diaria':
+        hoy = dt.date.today()
+        mes = hoy.month - 3
+        since = args.since or dt.date(hoy.year + (mes - 1) // 12, (mes - 1) % 12 + 1, 1).isoformat()
+        return diaria(since, args.marca)
     if args.cmd == 'extract':
         now = dt.datetime.now(dt.timezone.utc)
         raw = extract(args.since)

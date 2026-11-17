@@ -1,0 +1,38 @@
+[Unit]
+Description=AGT-004 Operaciones: cifras de SecurityOps para la pestaña Operación de la Torre (una vez al día)
+After=network-online.target estudios-seguridad-securityops.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Mismo ambiente que el trabajo de Estudios de Seguridad (SUPABASE_URL y la llave de servicio del CRM).
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+Environment=SECURITYOPS_KEY_FILE=/root/.vigia-firestore/clave.json
+StateDirectory=agt004-operaciones
+Environment=AGT004_MARCA=/var/lib/agt004-operaciones/ultima
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/python3 -I /opt/psi-comercial/app/scripts/agt004_securityops_operations.py diaria
+
+# Se encadena con Wants desde estudios-seguridad-securityops (corre cada dos minutos y ya lee SecurityOps con la misma
+# cuenta): no hay reloj nuevo (regla del 2026-11-11). El script sale enseguida si cargó hace menos de 20 horas, sin tocar
+# la red. Lee SecurityOps con la cuenta de servicio vigia-operaciones-lectura (roles/datastore.viewer: no puede escribir)
+# y escribe sólo en siio_operations_runs y siio_operations_metrics (migraciones 128 y 227). A Firestore se le piden
+# únicamente los campos de FIELDS: fechas, estados y el enlace al puesto; nada de nombres, cédulas ni GPS.
+#
+# La ruta real (release) la pone el drop-in `10-release.conf`, como en los demás trabajos.
+ProtectHome=tmpfs
+BindReadOnlyPaths=/root/.vigia-firestore
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+TimeoutStartSec=900

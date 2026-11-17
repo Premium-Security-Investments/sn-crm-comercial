@@ -1,6 +1,6 @@
 import { CifraKit, millones, sinCodigo, type NotasCredito } from './SiioTorreAvancys';
 import { SiioOperationsDetail } from './SiioOperationsPanel';
-import { monthLabel, provisionRate, regionalName, type OperationsSummary } from './operationsSummary';
+import { monthLabel, provisionRate, regionalName, type OperationsSummary, type Semana } from './operationsSummary';
 
 // Operación (definida con Juan el 2026-11-17): cinco preguntas, con las reglas de la Portada. La 1 queda reservada hasta
 // que haya fuente (la Programación del SIIO no se usa; Juan consigue el dato). Las notas crédito salen en vivo de Avancys;
@@ -56,7 +56,17 @@ function NotasDelMes({ notas, hoy }: { notas: NotasCredito | null | undefined; h
   </>;
 }
 
-// 3. ¿Qué falló? Lo que SecurityOps registra en el mes, con la fecha de la extracción.
+// 3. ¿Qué falló? La semana (últimos 7 días completos) cuando la extracción la trae; si no, el mes.
+function LaSemana({ semana }: { semana: Semana }) {
+  const pctNoLlego = semana.aprovisionamientos ? semana.noLlego / semana.aprovisionamientos : 0;
+  return <div className="siio-cifras siio-cifras-4">
+    <CifraKit etiqueta="Novedades críticas o altas" valor={cuenta(semana.novedadesCriticas)} tono={semana.novedadesCriticas ? 'mal' : undefined} nota="registradas por supervisores y motorizados" />
+    <CifraKit etiqueta="El camión no llegó" valor={cuenta(semana.noLlego)} tono={pctNoLlego >= 0.05 ? 'mal' : undefined} nota={`de ${cuenta(semana.aprovisionamientos)} aperturas de descargue nocturno`} />
+    <CifraKit etiqueta="Revistas canceladas" valor={cuenta(semana.revistasCanceladas)} tono={semana.revistas && semana.revistasCanceladas / semana.revistas >= 0.1 ? 'mal' : undefined} nota={`de ${cuenta(semana.revistas)} revistas nocturnas`} />
+    <CifraKit etiqueta="Motorizados que empezaron tarde" valor={cuenta(semana.jornadasTarde)} tono={semana.jornadas && semana.jornadasTarde / semana.jornadas >= 0.5 ? 'mal' : undefined} nota={`de ${cuenta(semana.jornadas)} jornadas de noche`} />
+  </div>;
+}
+
 function QueFallo({ ops }: { ops: OperationsSummary }) {
   const actual = ops.totals.current;
   const tasa = provisionRate(actual);
@@ -80,7 +90,7 @@ export function SiioPestanaOperacion({ notas, ops, hoy = new Date() }: { notas: 
   const ciegas = ops?.regionals.filter(r => r.status !== 'en_uso') || [];
   const mesNotas = nombreMes(mesAnterior(hoy.toISOString().slice(0, 7)));
   return <>
-    {dias !== null && dias >= DIAS_EXTRACCION_VIEJA ? <div className="siio-aviso-mes" role="note"><p><strong>Las cifras de SecurityOps son del {corte}: tienen {dias} días.</strong> La extracción no está corriendo sola todavía; mientras tanto, lo de las preguntas 3, 4 y 5 puede haber cambiado.</p></div> : null}
+    {dias !== null && dias >= DIAS_EXTRACCION_VIEJA ? <div className="siio-aviso-mes" role="note"><p><strong>Las cifras de SecurityOps son del {corte}: tienen {dias} días.</strong> La extracción diaria no ha corrido; mientras tanto, lo de las preguntas 3, 4 y 5 puede haber cambiado · <strong>Innovación</strong>.</p></div> : null}
 
     <section className="siio-panel" aria-label="¿Estamos prestando el servicio que cobramos?">
       <Encabezado pregunta="¿Estamos prestando el servicio que cobramos?" periodo="Sin fuente todavía" tono="confirmar" />
@@ -93,8 +103,9 @@ export function SiioPestanaOperacion({ notas, ops, hoy = new Date() }: { notas: 
     </section>
 
     <section className="siio-panel" aria-label="¿Qué falló?">
-      <Encabezado pregunta="¿Qué falló?" periodo={periodoOps} tono={dias !== null && dias >= DIAS_EXTRACCION_VIEJA ? 'confirmar' : 'vivo'} />
-      {ops ? <QueFallo ops={ops} /> : <p className="siio-nota">Sin cifras de SecurityOps cargadas.</p>}
+      <Encabezado pregunta="¿Qué falló?" periodo={ops?.semana && corte ? `Últimos 7 días · SecurityOps al ${corte}` : periodoOps} tono={dias !== null && dias >= DIAS_EXTRACCION_VIEJA ? 'confirmar' : 'vivo'} />
+      {ops?.semana ? <LaSemana semana={ops.semana} /> : null}
+      {ops ? <>{ops.semana ? <p className="siio-nota" style={{ margin: '10px 0 6px' }}>En lo que va de {monthLabel(ops.currentMonth)}:</p> : null}<QueFallo ops={ops} /></> : <p className="siio-nota">Sin cifras de SecurityOps cargadas.</p>}
     </section>
 
     <section className="siio-panel" aria-label="¿La atención técnica está al día?">
