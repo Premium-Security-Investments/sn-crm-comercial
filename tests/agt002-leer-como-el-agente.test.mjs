@@ -235,3 +235,35 @@ test('el trabajo de borradores corre el pase y sólo lee SharePoint', () => {
   const pass = readFileSync(new URL('../verticales/licitaciones/agt002-nuestras-observaciones-sharepoint.js', import.meta.url), 'utf8');
   assert.doesNotMatch(pass, /subir\.py|uploader|--reemplazar/);
 });
+
+// Juan, 17-nov: Katherine marcó «Hecho» en Mi día al radicar las observaciones de la DEAJ (4:59 p. m.), sin constancia en
+// la carpeta. Vig-IA lo recibe con su nombre y su hora; sólo cuentan los plazos de observaciones.
+test('los «Hecho» de Mi día sobre plazos de observaciones llegan con quién y cuándo; los demás no', async () => {
+  const { agt002RadicacionesMarcadasForModel } = await import('../verticales/licitaciones/agt002-nuestras-observaciones.js');
+  const hechos = [
+    { item_key: 'opp|OBSERVATIONS|2026-11-17T17:00:00-05:00', done_by: 'k', done_at: '2026-11-17T21:59:35Z' },
+    { item_key: 'opp|PROJECT_OBSERVATIONS|2026-11-06T17:00:00-05:00', done_by: 'k', done_at: '2026-11-06T21:00:00Z' },
+    { item_key: 'opp|SUBMISSION|2026-11-24T09:00:00-05:00', done_by: 'k', done_at: '2026-11-17T22:00:00Z' },
+  ];
+  assert.deepEqual(agt002RadicacionesMarcadasForModel(hechos, new Map([['k', 'Katherine Valencia Buitrago']])), [
+    { tipo: 'radicacion_marcada_en_mi_dia', tramite: 'Observaciones al pliego definitivo', plazo: '2026-11-17T17:00:00-05:00', marcada_por: 'Katherine Valencia Buitrago', marcada_el: '2026-11-17T21:59:35Z' },
+    { tipo: 'radicacion_marcada_en_mi_dia', tramite: 'Observaciones al proyecto de pliego', plazo: '2026-11-06T17:00:00-05:00', marcada_por: 'Katherine Valencia Buitrago', marcada_el: '2026-11-06T21:00:00Z' },
+  ]);
+  assert.match(AGT002_NUESTRAS_OBSERVACIONES_POLICY, /marcado en Mi día/);
+  assert.match(AGT002_NUESTRAS_OBSERVACIONES_POLICY, /radicada según <marcada_por>/);
+});
+
+test('la lectura junta cartas y marcas de Mi día; si Mi día falla, siguen las cartas', async () => {
+  const tabla = rows => ({ select() { return this; }, eq() { return this; }, in() { return this; }, then: resolve => resolve({ data: rows, error: null }) });
+  const carta = L('carta', 'OBSERVACIONES_DEFINITIVO.pdf');
+  const db = caeMiDia => ({
+    from(name) {
+      if (name === 'psi_tender_mi_dia_hechos') { if (caeMiDia) throw new Error('caída'); return tabla([{ item_key: 'o1|OBSERVATIONS|2026-11-17T17:00:00-05:00', done_by: 'k', done_at: '2026-11-17T21:59:35Z' }]); }
+      if (name === 'psi_sales_profiles') return tabla([{ id: 'k', full_name: 'Katherine Valencia Buitrago' }]);
+      if (name === 'psi_tender_document_versions') return tabla([carta]);
+      return tabla([OK('carta', 'OBSERVACIÓN 2 …')]);
+    },
+  });
+  assert.deepEqual((await loadAgt002NuestrasObservaciones(db(false), { opportunityId: 'o1' })).map(item => item.tipo), ['carta', 'radicacion_marcada_en_mi_dia']);
+  assert.deepEqual((await loadAgt002NuestrasObservaciones(db(true), { opportunityId: 'o1' })).map(item => item.tipo), ['carta']);
+});
