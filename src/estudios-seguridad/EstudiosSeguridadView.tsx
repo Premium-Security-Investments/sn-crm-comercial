@@ -18,7 +18,7 @@ import { GuidedPanel } from './GuidedPanel';
 import { BowTieView, ControlDetailsEditor } from './BowTie';
 import {
   IMPACT_SCALE, controlScale, NIVEL_LABELS, NIVEL_ORDER, PROBABILITY_SCALE, PROBABILITY_SCALE_DESCRIBED, RENEWAL_OPTIONS, STATUS_LABELS,
-  addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateRisk,
+  addAction, addRisk, addZone, clientPosts, createStudy, deleteAction, deleteRisk, deleteZone, evidenceUrls, getStudy, listStudies, searchClients, updateAction, updateRisk, updateStudy,
   type Action, type Catalog, type ClientOption, type Evidence, type Nivel, type PostsResult, type ProbabilitySuggestions, type Risk, type RiskDraft, type StudyDetail, type StudySummaryRow, type Zone,
 } from './api';
 
@@ -209,11 +209,12 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
       <div>
         <h2>{study.code} · {study.title}</h2>
         <p className="es-muted">{study.client_name}{study.client_nit ? ` · NIT ${study.client_nit}` : ''} · {study.site_name}{study.site_city ? `, ${study.site_city}` : ''}{study.site_source === 'manual' ? ' (sede escrita a mano)' : ''}</p>
-        <p className="es-muted">Visita: {fmtDate(study.visit_date)} · Metodología {study.methodology_id}</p>
+        <p className="es-muted">Visita: {fmtDate(study.visit_date)} · Metodología: {METHODOLOGY_LABELS[study.methodology_id] || study.methodology_id}</p>
       </div>
       <span className="badge">{STATUS_LABELS[study.status]}</span>
     </div>
     {study.scope ? <p className="es-scope">{study.scope}</p> : null}
+    {editable ? <GeneralDataEditor study={study} onSaved={reload} /> : null}
     <ValidityLine studyId={study.id} validity={detail.validity} renewalMonths={study.renewal_months ?? 24} editable={editable} canRequest={Boolean(detail.entrega?.can)} onChanged={reload} />
     {error ? <p className="es-error" role="alert">{error}</p> : null}
     {detail.review ? <ReviewPanel review={detail.review} /> : null}
@@ -258,9 +259,40 @@ function StudyFile({ studyId, onBack }: { studyId: string; onBack: () => void })
   </section>;
 }
 
+// Primer estudio real (Juan, 2026-11-17): la fecha de visita, el alcance y el título sólo se ponían al crear el estudio.
+const METHODOLOGY_LABELS: Record<string, string> = {
+  'guia-calificacion-2026': 'guía de calificación 5 × 5 (sede Medellín, 2026)',
+  'matriz-5x5-v1': 'matriz 5 × 5, primera versión',
+};
+
+function GeneralDataEditor({ study, onSaved }: { study: StudyDetail['study']; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ title: study.title, visit_date: study.visit_date ? String(study.visit_date).slice(0, 10) : '', scope: study.scope || '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!open) return <button type="button" className="es-link" onClick={() => setOpen(true)}>Editar título, fecha de visita y alcance</button>;
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true); setError('');
+    try {
+      await updateStudy(study.id, { title: form.title, visit_date: form.visit_date || null, scope: form.scope || null });
+      setOpen(false);
+      onSaved();
+    } catch (reason) { setError(message(reason)); } finally { setBusy(false); }
+  };
+  return <form className="es-card es-form" onSubmit={save} aria-label="Datos generales del estudio">
+    <label>Título<input value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} required minLength={3} maxLength={200} /></label>
+    <label>Fecha de la visita<input type="date" value={form.visit_date} onChange={event => setForm({ ...form, visit_date: event.target.value })} /></label>
+    <label>Alcance<textarea rows={3} value={form.scope} onChange={event => setForm({ ...form, scope: event.target.value })} maxLength={4000} /></label>
+    {error ? <p className="es-error" role="alert">{error}</p> : null}
+    <div className="es-actions"><button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button><button type="button" className="secondary" onClick={() => setOpen(false)} disabled={busy}>Cancelar</button></div>
+  </form>;
+}
+
 function SummaryRow({ label, counts }: { label: string; counts: Partial<Record<Nivel, number>> }) {
   const present = NIVEL_ORDER.filter(nivel => counts[nivel]);
-  return <div className="es-summary-row"><span>{label}</span>{present.length ? present.map(nivel => <NivelBadge key={nivel} nivel={nivel} value={counts[nivel]} />) : <span className="es-muted">—</span>}</div>;
+  // Son cuántos riesgos hay en cada nivel, no una magnitud: "10 riesgos tolerables", no "10 · Tolerable".
+  return <div className="es-summary-row"><span>{label}</span>{present.length ? present.map(nivel => <span key={nivel} className={`es-nivel es-nivel-${nivel}`}>{counts[nivel]} {counts[nivel] === 1 ? 'riesgo' : 'riesgos'} · {NIVEL_LABELS[nivel]}</span>) : <span className="es-muted">—</span>}</div>;
 }
 
 function ZonesBlock({ studyId, zones, editable, onChanged, onError }: { studyId: string; zones: Zone[]; editable: boolean; onChanged: () => void; onError: (text: string) => void }) {
@@ -457,8 +489,9 @@ function RiskItem({ studyId, risk, zoneLabel, zones, catalog, suggestions, actio
       <span>Residual <NivelBadge nivel={v.residual.nivel} value={v.residual.magnitud} /></span>
       <small className="es-muted">P actual {risk.probability} · impacto {v.impacto}{v.residual.escogida ? ` · P residual ${v.residual.probabilidad}` : ''}</small>
     </div>
-    {risk.current_control ? <p><span className="es-label">Control existente:</span> {risk.current_control}</p> : null}
-    {risk.proposed_control ? <p><span className="es-label">Control propuesto:</span> {risk.proposed_control}</p> : null}
+    {risk.causes ? <p className="es-multiline"><span className="es-label">Causas:</span>{'\n'}{risk.causes}</p> : null}
+    {risk.current_control ? <p className="es-multiline"><span className="es-label">Control existente:</span>{'\n'}{risk.current_control}</p> : null}
+    {risk.proposed_control ? <p className="es-multiline"><span className="es-label">Control propuesto:</span>{'\n'}{risk.proposed_control}</p> : null}
     {risk.risk_owner ? <p><span className="es-label">Dueño del riesgo:</span> {risk.risk_owner}</p> : null}
     <BowTieView risk={risk} />
     {evidence ? <EvidenceStrip studyId={studyId} items={evidence} urls={urls} riskId={risk.id} editable={editable} label="Evidencia" onChanged={onChanged} /> : null}
@@ -483,11 +516,42 @@ function ActionsBlock({ studyId, riskId, actions, editable, onChanged, onError }
   const remove = async (action: Action) => {
     try { await deleteAction(studyId, action.id); onChanged(); } catch (reason) { onError(message(reason)); }
   };
+  // Primer estudio real (2026-11-17): las acciones sólo se podían quitar; ahora se completan (responsable, fecha…).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [edit, setEdit] = useState(draft);
+  const startEdit = (action: Action) => {
+    setEditingId(action.id);
+    setEdit({ description: action.description, owner_label: action.owner_label || '', due_date: action.due_date ? String(action.due_date).slice(0, 10) : '', priority: action.priority, responsible_party: action.responsible_party || 'seguridad_nacional' });
+  };
+  const saveEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingId) return;
+    setBusy(true);
+    try {
+      await updateAction(studyId, editingId, { description: edit.description, owner_label: edit.owner_label || null, due_date: edit.due_date || null, priority: edit.priority, responsible_party: edit.responsible_party });
+      setEditingId(null);
+      onChanged();
+    } catch (reason) { onError(message(reason)); } finally { setBusy(false); }
+  };
   return <div className="es-plan">
     <span className="es-label">Plan de tratamiento</span>
     {actions.length ? <ul>{actions.map(action => <li key={action.id}>
-      {action.description} <small className="es-muted">· {action.owner_label || 'sin responsable'}{action.responsible_party === 'cliente' ? ' (cliente)' : ''} · {action.due_date ? fmtDate(action.due_date) : 'sin fecha'} · prioridad {action.priority}</small>
-      {editable ? <button type="button" className="es-link" onClick={() => remove(action)} aria-label={`Quitar la acción ${action.description}`}>Quitar</button> : null}
+      {editingId === action.id ? <form className="es-grid-4" onSubmit={saveEdit} aria-label="Editar acción">
+        <label>Acción<input value={edit.description} onChange={event => setEdit({ ...edit, description: event.target.value })} required minLength={3} maxLength={1000} /></label>
+        <label>Responsable<input value={edit.owner_label} onChange={event => setEdit({ ...edit, owner_label: event.target.value })} maxLength={120} placeholder="Persona o área" /></label>
+        <label>A cargo de
+          <select value={edit.responsible_party} onChange={event => setEdit({ ...edit, responsible_party: event.target.value as NonNullable<Action['responsible_party']> })}>
+            <option value="seguridad_nacional">Seguridad Nacional (pasa a Seguimiento gerencial)</option>
+            <option value="cliente">El cliente (sólo queda en el plan del informe)</option>
+          </select>
+        </label>
+        <label>Fecha compromiso<input type="date" value={edit.due_date} onChange={event => setEdit({ ...edit, due_date: event.target.value })} /></label>
+        <label>Prioridad<select value={edit.priority} onChange={event => setEdit({ ...edit, priority: event.target.value as Action['priority'] })}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></label>
+        <div className="es-actions"><button type="submit" disabled={busy}>Guardar</button><button type="button" className="secondary" onClick={() => setEditingId(null)}>Cancelar</button></div>
+      </form> : <>
+        {action.description} <small className="es-muted">· {action.owner_label || 'sin responsable'}{action.responsible_party === 'cliente' ? ' (cliente)' : ''} · {action.due_date ? fmtDate(action.due_date) : 'sin fecha'} · prioridad {action.priority}</small>
+        {editable ? <> <button type="button" className="es-link" onClick={() => startEdit(action)} aria-label={`Editar la acción ${action.description}`}>Editar</button> <button type="button" className="es-link" onClick={() => remove(action)} aria-label={`Quitar la acción ${action.description}`}>Quitar</button></> : null}
+      </>}
     </li>)}</ul> : <small className="es-muted"> Sin acciones.</small>}
     {editable && !open ? <button type="button" className="es-link" onClick={() => setOpen(true)}>+ Acción</button> : null}
     {open ? <form className="es-grid-4" onSubmit={add} aria-label="Nueva acción">
