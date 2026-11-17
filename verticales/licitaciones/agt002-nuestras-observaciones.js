@@ -26,6 +26,32 @@ export function isAgt002OurRadicationReceipt(version) {
   return version?.origin === 'propio' && version?.current === true && RECEIPT.test(String(version?.name || ''));
 }
 
+// La otra prueba: quien radica marca «Hecho» en Mi día sobre el plazo de observaciones (Katherine, DEAJ, 17-nov 4:59 p. m.,
+// sin constancia en la carpeta). Es su declaración: va con su nombre y su hora. La clave del ítem es
+// `<oportunidad>|<tipo de plazo>|<fecha del plazo>` (mi día de licitaciones, #711).
+const MI_DIA_TRAMITES = Object.freeze({
+  OBSERVATIONS: 'Observaciones al pliego definitivo',
+  PROJECT_OBSERVATIONS: 'Observaciones al proyecto de pliego',
+});
+
+/** Los «Hecho» de Mi día sobre los plazos de observaciones, para el modelo. Pura. */
+export function agt002RadicacionesMarcadasForModel(hechos, nombres = new Map()) {
+  return (hechos || [])
+    .map(hecho => {
+      const [, kind, plazo] = String(hecho?.item_key || '').split('|');
+      if (!MI_DIA_TRAMITES[kind]) return null;
+      return {
+        tipo: 'radicacion_marcada_en_mi_dia',
+        tramite: MI_DIA_TRAMITES[kind],
+        plazo: plazo || null,
+        marcada_por: nombres.get(hecho.done_by) || null,
+        marcada_el: hecho.done_at ?? null,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(b.marcada_el || '').localeCompare(String(a.marcada_el || '')));
+}
+
 /** ¿Es una carta de observaciones nuestra? Por origen declarado y nombre. Pura. */
 export function isAgt002OurObservationLetter(version) {
   const name = String(version?.name || '');
@@ -71,8 +97,25 @@ export function agt002NuestrasObservacionesForModel(versions, extractionRows) {
   return letters.length ? [...letters, ...receipts] : [];
 }
 
-/** Lee las cartas de la oportunidad. Si algo falla, devuelve [] y el análisis sigue sin ellas. */
+async function loadRadicacionesMarcadas(database, opportunityId) {
+  try {
+    const { data: hechos, error } = await database.from('psi_tender_mi_dia_hechos').select('item_key,done_by,done_at').eq('opportunity_id', opportunityId);
+    if (error || !hechos?.length) return [];
+    const ids = [...new Set(hechos.map(hecho => hecho.done_by).filter(Boolean))];
+    const { data: perfiles } = ids.length ? await database.from('psi_sales_profiles').select('id,full_name').in('id', ids) : { data: [] };
+    return agt002RadicacionesMarcadasForModel(hechos, new Map((perfiles || []).map(perfil => [perfil.id, perfil.full_name])));
+  } catch {
+    return [];
+  }
+}
+
+/** Lee las cartas, las constancias y los «Hecho» de Mi día de la oportunidad. Si algo falla, el análisis sigue sin eso. */
 export async function loadAgt002NuestrasObservaciones(database, { opportunityId }) {
+  const marcadas = await loadRadicacionesMarcadas(database, opportunityId);
+  return [...(await loadLettersAndReceipts(database, opportunityId)), ...marcadas];
+}
+
+async function loadLettersAndReceipts(database, opportunityId) {
   try {
     const { data: versions, error } = await database.from('psi_tender_document_versions')
       .select('id,name,origin,current,created_at').eq('opportunity_id', opportunityId).eq('current', true).eq('origin', 'propio');
@@ -89,4 +132,4 @@ export async function loadAgt002NuestrasObservaciones(database, { opportunityId 
   }
 }
 
-export const AGT002_NUESTRAS_OBSERVACIONES_POLICY = ' NUESTRAS OBSERVACIONES. nuestras_observaciones trae, con tipo "carta", el texto de las cartas de observaciones que la empresa redactó para este proceso (nombre del archivo y fecha de carga al expediente) y, con tipo "constancia_de_radicacion", las constancias de radicación que haya. No son reglas del proceso. Que una carta esté aquí NO prueba que se haya presentado a la entidad: sólo lo prueba una constancia de radicación cuya fecha y proceso correspondan a esa carta. Si no hay constancia para una carta, diga "nuestra carta del <fecha> (radicación por confirmar)" y ponga como pendiente confirmar la radicación antes del plazo; nunca escriba que ya se radicó. Úselas así: (1) cuando la carta de un tercero pida algo que ya pide una carta nuestra, dígalo en el hallazgo ("lo mismo pide nuestra observación N de <carta>"), porque dos solicitudes iguales pesan más ante la entidad, y no recomiende redactarlo de nuevo; (2) en un pendiente, no proponga observar algo que ya está en nuestras cartas: el pendiente es asegurar su radicación (si no hay constancia) y leer la respuesta de la entidad; (3) cuando la entidad responda, compare su respuesta con lo que pedimos y diga si lo aceptó, lo negó o no lo contestó.';
+export const AGT002_NUESTRAS_OBSERVACIONES_POLICY = ' NUESTRAS OBSERVACIONES. nuestras_observaciones trae, con tipo "carta", el texto de las cartas de observaciones que la empresa redactó para este proceso (nombre del archivo y fecha de carga al expediente); con tipo "constancia_de_radicacion", las constancias de radicación que haya; y con tipo "radicacion_marcada_en_mi_dia", los trámites de observaciones (tramite y plazo) que la persona que radica marcó como hechos en Mi día (marcada_por, marcada_el). No son reglas del proceso. Que una carta esté aquí NO prueba que se haya presentado a la entidad. Una carta cuenta como radicada si hay una constancia cuya fecha y proceso le correspondan, o si su trámite está marcado en Mi día: en ese caso dígalo con nombre y hora ("radicada según <marcada_por>, Mi día, <marcada_el en hora de Colombia>"). Si no hay ni constancia ni marca, diga "nuestra carta del <fecha> (radicación por confirmar)" y ponga como pendiente confirmar la radicación antes del plazo; nunca escriba que ya se radicó. Úselas así: (1) cuando la carta de un tercero pida algo que ya pide una carta nuestra, dígalo en el hallazgo ("lo mismo pide nuestra observación N de <carta>"), porque dos solicitudes iguales pesan más ante la entidad, y no recomiende redactarlo de nuevo; (2) en un pendiente, no proponga observar algo que ya está en nuestras cartas: el pendiente es asegurar su radicación (si no hay constancia) y leer la respuesta de la entidad; (3) cuando la entidad responda, compare su respuesta con lo que pedimos y diga si lo aceptó, lo negó o no lo contestó.';
