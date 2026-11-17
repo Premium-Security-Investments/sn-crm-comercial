@@ -42,6 +42,14 @@ export function selectAgt002OurLettersToIngest(files, existing = []) {
     .sort((a, b) => String(b.modificado_en || '').localeCompare(String(a.modificado_en || '')));
 }
 
+// El reanálisis que pide la carga lo autoriza una persona, no Vig-IA (a nombre del agente, la admisión responde 42501,
+// `evidence_package_forbidden`: 17-nov, Manizales y Pereira). Como en el cambio de fase: quien convirtió la oportunidad.
+async function convertedBy(database, opportunityId) {
+  const { data } = await database.from('psi_tender_processing_jobs').select('requested_by,created_at')
+    .eq('opportunity_id', opportunityId).order('created_at', { ascending: true }).limit(1);
+  return data?.[0]?.requested_by || null;
+}
+
 const MIME = name => (/\.pdf$/i.test(name) ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
 /**
@@ -80,7 +88,8 @@ export async function runAgt002OurObservationsPass(database, { listing, download
       }
       if (!prepared.length) continue;
       budget -= prepared.length;
-      const result = await ingest({ opportunityId: folder.opportunity_id, opportunity, actorProfileId, files: prepared, proposeCompanyFacts: false });
+      const analysisRequestedBy = await convertedBy(database, folder.opportunity_id);
+      const result = await ingest({ opportunityId: folder.opportunity_id, opportunity, actorProfileId, files: prepared, proposeCompanyFacts: false, ...(analysisRequestedBy ? { analysisRequestedBy } : {}) });
       events.push({
         event: 'agt002_nuestras_observaciones_cargadas', opportunity_id: folder.opportunity_id, cartas: prepared.length,
         estados: (result?.upload_results || []).map(item => item.status), reanalisis: Boolean(result?.analysis_request?.requested),
