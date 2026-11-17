@@ -94,3 +94,18 @@ test('lo ilegible queda como «gap» ocr_ilegible, y lo leído por la primera ve
   const okViejo = { ...viejo, extracted_text: 'abc', text_hash: createHash('sha256').update('abc').digest('hex'), char_count: 3 };
   assert.equal(selectCanonicalExtractionsByDocumentVersion([GAP('cdp'), okViejo, nuevo]).get('cdp').id, 'v2');
 });
+
+// 2026-11-17: con 423 PDF vigentes, un solo `.in()` armaba una URL de ~16 KB y la conexión se cortaba («fetch failed»):
+// el OCR falló en cada pase desde el 15-nov. Las extracciones se piden en tandas de 100.
+test('las extracciones se piden en tandas de 100 identificadores y un error corta la lectura', async () => {
+  const { selectByIdsInChunks } = await import('../verticales/licitaciones/tender-document-ocr.js');
+  const ids = Array.from({ length: 250 }, (_, i) => `v${i}`);
+  const tandas = [];
+  const query = () => ({ in: async (column, list) => { tandas.push([column, list.length]); return { data: list.map(id => ({ document_version_id: id })), error: null }; } });
+  const { data, error } = await selectByIdsInChunks(query, ids);
+  assert.equal(error, null);
+  assert.equal(data.length, 250);
+  assert.deepEqual(tandas, [['document_version_id', 100], ['document_version_id', 100], ['document_version_id', 50]]);
+  const failing = () => ({ in: async () => ({ data: null, error: { code: 'x' } }) });
+  assert.deepEqual(await selectByIdsInChunks(failing, ids), { data: null, error: { code: 'x' } });
+});
