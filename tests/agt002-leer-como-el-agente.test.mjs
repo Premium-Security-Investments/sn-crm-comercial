@@ -177,6 +177,7 @@ function syncDb({ versions = [] } = {}) {
     from(name) {
       if (name === 'psi_tender_filing_folders') return chain([{ opportunity_id: 'o1', folder_path: BASE, status: 'creada' }, { opportunity_id: 'o2', folder_path: 'x', status: 'creada' }]);
       if (name === 'psi_sales_opportunities') return chain([{ id: 'o1', company_name: 'DEAJ' }, { id: 'o2', company_name: 'Archivada', archived_at: '2026-11-01' }]);
+      if (name === 'psi_tender_processing_jobs') return { ...chain([{ requested_by: 'juan', created_at: '2026-11-01' }]), order() { return this; }, limit() { return this; } };
       return chain(versions);
     },
   };
@@ -197,6 +198,8 @@ test('el pase carga nuestras cartas como «propio», sin proponer datos a la fic
   assert.equal(ingested[0].opportunityId, 'o1');
   assert.equal(ingested[0].actorProfileId, 'vigia');
   assert.equal(ingested[0].proposeCompanyFacts, false);
+  // La carga queda a nombre de Vig-IA; el reanálisis, a nombre de quien convirtió la oportunidad.
+  assert.equal(ingested[0].analysisRequestedBy, 'juan');
   assert.deepEqual(ingested[0].files.map(file => [file.name, file.origin, file.mime_type]), [['OBSERVACIONES_PLIEGO_DEFINITIVO.pdf', 'propio', 'application/pdf']]);
   assert.equal(Buffer.from(ingested[0].files[0].content_base64, 'base64').toString(), '%PDF carta');
   assert.deepEqual(events, [{ event: 'agt002_nuestras_observaciones_cargadas', opportunity_id: 'o1', cartas: 1, estados: ['new'], reanalisis: true }]);

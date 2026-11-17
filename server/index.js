@@ -8455,7 +8455,7 @@ app.post('/api/tender-documents-upload-url', async (req, res) => {
 // cadena lo trata como `third_party`, que es lo prudente.
 const TENDER_DOCUMENTS_PER_UPLOAD = 8;
 
-export async function ingestTenderDossierDocuments(database, { opportunityId, opportunity, actorProfileId, files: incomingFiles, proposeCompanyFacts = true } = {}) {
+export async function ingestTenderDossierDocuments(database, { opportunityId, opportunity, actorProfileId, files: incomingFiles, proposeCompanyFacts = true, analysisRequestedBy = actorProfileId } = {}) {
   // El guard viaja con el trabajo, no con la ruta: así ningún llamador —tampoco el runner del servidor de tareas—
   // puede tocar Storage ni el expediente antes de que la fundación de análisis documental esté disponible.
   await requireTenderAnalysisFoundation(database);
@@ -8586,7 +8586,8 @@ export async function ingestTenderDossierDocuments(database, { opportunityId, op
   if (uploaded.some(item => item.status === 'new' || item.status === 'updated')) {
     try {
       // F11 (auditoría Fiscalía): si todavía no hay análisis, la carga pide el inicial completo, no sólo el incremental.
-      const requested = await requestAgt002AnalysisAfterUpload(database, { opportunityId, requestedBy: actorProfileId });
+      // Un análisis lo autoriza una persona: cuando carga un agente, quien lo llama dice a nombre de quién (analysisRequestedBy).
+      const requested = await requestAgt002AnalysisAfterUpload(database, { opportunityId, requestedBy: analysisRequestedBy || actorProfileId });
       analysisRequest = { requested: requested.requested, already_open: requested.alreadyOpen, state: requested.status?.state || null };
     } catch (requestError) {
       analysisRequest = { requested: false, reason: requestError?.reason || null, message: String(requestError?.message || 'No fue posible pedir el análisis.').slice(0, 300) };

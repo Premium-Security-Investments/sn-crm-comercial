@@ -24,6 +24,19 @@ const generation = Number(/@(\d+)$/.exec(TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION)
 export const TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION = `tender-document-ocr-tesseract-osd@${generation + 2}`;
 export const TENDER_DOCUMENT_OCR_PARSER = 'tesseract-spa';
 const MIN_CHARS = 80;
+// Las listas largas de identificadores van en tandas. Con 423 PDF vigentes, un solo `.in()` arma una URL de ~16 KB que
+// la conexión corta («fetch failed»): el OCR de lo escaneado falló en cada pase desde el 2026-11-15 a las 19:01 sin
+// leer nada (visto el 17-nov). 100 identificadores son ~4 KB.
+export const TENDER_OCR_IDS_PER_QUERY = 100;
+export async function selectByIdsInChunks(query, ids, size = TENDER_OCR_IDS_PER_QUERY) {
+  const rows = [];
+  for (let start = 0; start < ids.length; start += size) {
+    const { data, error } = await query().in('document_version_id', ids.slice(start, start + size));
+    if (error) return { data: null, error };
+    rows.push(...(data || []));
+  }
+  return { data: rows, error: null };
+}
 const isPdf = version => /pdf/i.test(String(version.mime_type || '')) || /\.pdf$/i.test(String(version.name || ''));
 
 /** Versiones vigentes de PDF cuya lectura canónica no tiene texto y que el OCR no ha intentado. Pura. */
@@ -115,8 +128,8 @@ export async function runTenderDocumentOcrPass(database, { limit = 3, bucket = '
   if (vError) throw vError;
   const pdfIds = (versions || []).filter(isPdf).map(row => row.id);
   if (!pdfIds.length) return [{ event: 'tender_ocr_idle' }];
-  const { data: extractions, error: eError } = await database.from('psi_tender_document_extractions')
-    .select('id,document_version_id,extractor_version,status,extracted_text,text_hash,char_count,created_at').in('document_version_id', pdfIds);
+  const { data: extractions, error: eError } = await selectByIdsInChunks(() => database.from('psi_tender_document_extractions')
+    .select('id,document_version_id,extractor_version,status,extracted_text,text_hash,char_count,created_at'), pdfIds);
   if (eError) throw eError;
   const candidates = selectOcrCandidates(versions || [], extractions || [], { limit });
   if (!candidates.length) return [{ event: 'tender_ocr_idle' }];
@@ -217,8 +230,8 @@ export async function runTenderDocumentImageTextPass(database, { limit = 3, buck
   if (vError) throw vError;
   const pdfIds = (versions || []).filter(isPdf).map(row => row.id);
   if (!pdfIds.length) return [{ event: 'tender_image_text_idle' }];
-  const { data: extractions, error: eError } = await database.from('psi_tender_document_extractions')
-    .select('id,document_version_id,extractor_version,status,extracted_text,text_hash,char_count,created_at').in('document_version_id', pdfIds);
+  const { data: extractions, error: eError } = await selectByIdsInChunks(() => database.from('psi_tender_document_extractions')
+    .select('id,document_version_id,extractor_version,status,extracted_text,text_hash,char_count,created_at'), pdfIds);
   if (eError) throw eError;
   const candidates = selectImageTextCandidates(versions || [], extractions || [], { limit });
   if (!candidates.length) return [{ event: 'tender_image_text_idle' }];

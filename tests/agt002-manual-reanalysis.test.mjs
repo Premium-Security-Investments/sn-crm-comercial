@@ -285,6 +285,6 @@ test('F11: otro motivo de rechazo no se tapa con el completo', async () => {
 
 test('F11: la carga de documentos usa la función nueva (Vercel y servidor)', () => {
   for (const file of ['../api/[...path].js', '../server/index.js']) {
-    assert.match(readSourceF11(new URL(file, import.meta.url), 'utf8'), /const requested = await requestAgt002AnalysisAfterUpload\(database, \{ opportunityId, requestedBy: actorProfileId \}\);/);
+    assert.match(readSourceF11(new URL(file, import.meta.url), 'utf8'), /const requested = await requestAgt002AnalysisAfterUpload\(database, \{ opportunityId, requestedBy: analysisRequestedBy \|\| actorProfileId \}\);/);
   }
 });
