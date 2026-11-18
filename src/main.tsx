@@ -552,7 +552,7 @@ function PasswordResetScreen({ onDone }: { onDone: () => void }) {
   </IngresoMarca>;
 }
 
-function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
+function LoginScreen(_props: { siioMode?: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [aviso, setAviso] = useState<{ tipo: 'error' | 'info'; texto: string } | null>(null);
@@ -572,12 +572,12 @@ function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
     const { error } = await supabaseBrowser.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
     setAviso(error ? { tipo: 'error', texto: error.message } : { tipo: 'info', texto: 'Te enviamos un enlace para restablecer la clave. Revisa tu correo.' });
   };
-  return <IngresoMarca titulo="Iniciar sesión" subtitulo={siioMode ? 'Ingresa con tu usuario autorizado para revisar la Torre de Control.' : 'Ingresa con el usuario que te asignaron.'}>
+  return <IngresoMarca titulo="Iniciar sesión" subtitulo="Ingresa tus credenciales para continuar.">
     <form onSubmit={submit}>
       {aviso && <AvisoIngreso tipo={aviso.tipo}>{aviso.texto}</AvisoIngreso>}
       <label>Correo electrónico<span className="sn-ingreso-campo"><Mail aria-hidden="true" /><input type="email" required autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="usuario@seguridadnacional.co" /></span></label>
-      <label>Clave<span className="sn-ingreso-campo"><Lock aria-hidden="true" /><input type="password" required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" /></span></label>
-      <button type="button" className="sn-ingreso-olvido" onClick={resetPassword}>Olvidé mi clave</button>
+      <label>Contraseña<span className="sn-ingreso-campo"><Lock aria-hidden="true" /><input type="password" required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" /></span></label>
+      <button type="button" className="sn-ingreso-olvido" onClick={resetPassword}>¿Olvidaste tu contraseña?</button>
       <button className="sn-ingreso-entrar" disabled={ingresando}>{ingresando ? 'Verificando…' : <>Acceder al sistema<ChevronRight aria-hidden="true" /></>}</button>
     </form>
   </IngresoMarca>;

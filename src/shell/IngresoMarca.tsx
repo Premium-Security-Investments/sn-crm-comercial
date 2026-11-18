@@ -50,6 +50,7 @@ export function IngresoMarca({ titulo, subtitulo, children }: { titulo: string; 
         {children}
         <footer className="sn-ingreso-pie">
           <p>© {new Date().getFullYear()} Seguridad Nacional Ltda. · SIIO</p>
+          <p className="sn-ingreso-version">{import.meta.env.SIIO_VERSION}</p>
         </footer>
       </div>
     </main>

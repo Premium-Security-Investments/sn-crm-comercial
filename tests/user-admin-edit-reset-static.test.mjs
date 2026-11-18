@@ -10,7 +10,7 @@ function assert(condition, message) {
 }
 
 assert(src.includes('resetPasswordForEmail'), 'Login debe ofrecer recuperación de contraseña con Supabase resetPasswordForEmail.');
-assert(src.includes('Olvidé mi clave'), 'Login debe mostrar acción visible "Olvidé mi clave".');
+assert(src.includes('¿Olvidaste tu contraseña?'), 'Login debe mostrar acción visible "¿Olvidaste tu contraseña?".');
 assert(src.includes('PasswordResetScreen'), 'App debe mostrar pantalla para definir nueva clave después del enlace de recuperación.');
 assert(src.includes('supabaseBrowser.auth.updateUser'), 'Recuperación debe guardar la nueva clave con Supabase updateUser.');
 assert(src.includes('PASSWORD_RECOVERY'), 'App debe detectar evento PASSWORD_RECOVERY de Supabase.');
