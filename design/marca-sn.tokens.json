@@ -1,0 +1,908 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "$description": "Sistema de diseño de la marca Seguridad Nacional Ltda., el MISMO de SecurityOps. Valores copiados de SecurityOps (tailwind.config.js y src/components/marca/) en el commit 81a5ed2 (release 1.8.164, 2026-11-18): propuesta visual aprobada por el dueño el 17-nov-2026. Si SecurityOps cambia un valor, se cambia aquí; este archivo no inventa tonos. Formato: Design Tokens Community Group ($value/$type).",
+  "$extensions": {
+    "sn.fuente": {
+      "repositorio": "Premium-Security-Investments/SecurityOps",
+      "commit": "81a5ed2fac7b21030c4d06b10139dd7b12a06342",
+      "archivos": [
+        "tailwind.config.js",
+        "src/main.jsx",
+        "src/pages/auth/Login.jsx",
+        "src/components/marca/index.js",
+        "src/components/marca/clases.js",
+        "src/components/marca/sobreAzul.js",
+        "src/components/marca/fondo.js",
+        "src/components/marca/Boton.jsx",
+        "src/components/marca/Estado.jsx",
+        "src/components/marca/Aviso.jsx",
+        "src/components/marca/Cifra.jsx",
+        "src/components/marca/Hoja.jsx",
+        "src/components/marca/HojaModal.jsx",
+        "src/components/marca/Campo.jsx",
+        "src/components/marca/Pestanas.jsx",
+        "src/components/marca/TituloPagina.jsx",
+        "src/components/marca/CabeceraApp.jsx",
+        "src/components/marca/BarraInferior.jsx"
+      ]
+    },
+    "sn.reglas": {
+      "azulParaMandar": "Cabecera, navegación y pestañas van en azul. Es la marca y dice siempre dónde se está.",
+      "blancoParaTrabajar": "Formularios, listas y tablas van en hojas blancas sobre la mesa clara (color.mesa). Se leen igual al sol que en el monitor.",
+      "amarilloSoloParaActuar": "El botón principal (UNO por pantalla) y lo que pide atención (contador de pestaña, una cifra). Nunca de adorno.",
+      "nuncaBlancoSobreAmarillo": "Blanco sobre #FFE001 es 1,3:1 y no se lee. Sobre amarillo la letra es azul (13:1).",
+      "estadosNoSonAmarillos": "Ningún estado ni aviso usa el amarillo de marca: el amarillo es la acción. El aviso es ámbar con letra oscura.",
+      "colorYPalabraJuntos": "Un estado lleva siempre su palabra al lado; no se adivina por el tono.",
+      "errorNoEsAmarillo": "El error es rojo; el amarillo significa «adelante».",
+      "contrasteMinimo": "Texto pequeño a 4,5:1 como mínimo; los grises se midieron, no se eligieron a ojo.",
+      "unaCifraAmarilla": "En una fila de cifras, solo la que pide atención va en amarillo.",
+      "rayaDelTitulo": "La raya amarilla corta bajo el título es el único amarillo que no es acción: subraya dónde se está.",
+      "neutrosConTinte": "Los neutros no son los grises de Tailwind: llevan tinte del azul de marca."
+    }
+  },
+  "color": {
+    "$type": "color",
+    "azul": {
+      "$value": "#001C3C",
+      "$description": "Azul corporativo: cabecera, navegación, pestañas, letra sobre amarillo."
+    },
+    "azul-hondo": {
+      "$value": "#000F22",
+      "$description": "Un escalón por debajo del azul: profundidad y velo de los modales (al 60 %)."
+    },
+    "azul-superficie": {
+      "$value": "#06284A",
+      "$description": "La tarjeta levantada sobre el azul; pestaña elegida; círculo de iniciales."
+    },
+    "azul-campo": {
+      "$value": "#041F3D",
+      "$description": "Interior de un campo de texto encima del azul."
+    },
+    "azul-campo-foco": {
+      "$value": "#05244A",
+      "$description": "Campo encima del azul al enfocarlo (valor del ingreso, sin ficha en Tailwind)."
+    },
+    "amarillo": {
+      "$value": "#FFE001",
+      "$description": "ACENTO de acción. Nunca de fondo bajo letra blanca."
+    },
+    "sobre-azul": {
+      "apagado": {
+        "$value": "#8FA6C2",
+        "$description": "Gris encima del azul: rótulos. 5,3:1 sobre azul."
+      },
+      "tenue": {
+        "$value": "#7C92AE",
+        "$description": "Gris encima de la tarjeta azul. 4,7:1 sobre azul-superficie."
+      },
+      "claro": {
+        "$value": "#C9D6E6",
+        "$description": "Texto secundario encima del azul: pestañas sin elegir."
+      },
+      "icono-campo": {
+        "$value": "#5E7897",
+        "$description": "Icono dentro de un campo encima del azul (ingreso)."
+      },
+      "marcador": {
+        "$value": "#7A93B6",
+        "$description": "Placeholder de un campo encima del azul (ingreso)."
+      },
+      "rojo": {
+        "$value": "#FF5A5A",
+        "$description": "Error encima del azul (raya y borde; fondo al 10 %)."
+      },
+      "letra-error": {
+        "$value": "#FFC9C9",
+        "$description": "Letra del error encima del azul."
+      },
+      "linea": {
+        "$value": "rgba(255, 255, 255, 0.10)",
+        "$description": "Borde de campos y fichas encima del azul."
+      },
+      "divisor": {
+        "$value": "rgba(255, 255, 255, 0.15)",
+        "$description": "Divisor vertical de la cabecera; borde del botón fantasma."
+      }
+    },
+    "mesa": {
+      "$value": "#EDF1F6",
+      "$description": "Fondo de la página, debajo de las hojas blancas."
+    },
+    "hoja": {
+      "$value": "#FFFFFF",
+      "$description": "La hoja blanca donde se trabaja."
+    },
+    "campo": {
+      "$value": "#FBFCFE",
+      "$description": "Interior de un campo en reposo; al enfocarlo pasa a blanco."
+    },
+    "tinta": {
+      "$value": "#0B1F35",
+      "$description": "Texto principal."
+    },
+    "tinta-2": {
+      "$value": "#4A5D74",
+      "$description": "Rótulos de campo y texto secundario."
+    },
+    "tinta-3": {
+      "$value": "#5C6C82",
+      "$description": "Notas y fechas. 5,35:1 sobre blanco y 4,72:1 sobre la mesa."
+    },
+    "linea": {
+      "$value": "#D6DEE8",
+      "$description": "Borde de hojas y campos."
+    },
+    "linea-2": {
+      "$value": "#E6EBF1",
+      "$description": "Separador dentro de una hoja."
+    },
+    "neutro-f": {
+      "$value": "#E9EEF4",
+      "$description": "Fondo de estado neutro y hover de botón discreto."
+    },
+    "estado": {
+      "ok": {
+        "$value": "#13744F"
+      },
+      "ok-f": {
+        "$value": "#E1F3EA"
+      },
+      "aviso": {
+        "$value": "#8A5300",
+        "$description": "Ámbar de estado, para letra. No es el amarillo de marca."
+      },
+      "aviso-f": {
+        "$value": "#FFF1CC"
+      },
+      "aviso-barra": {
+        "$value": "#D99A00",
+        "$description": "La raya de un aviso ámbar."
+      },
+      "critico": {
+        "$value": "#B4232B"
+      },
+      "critico-f": {
+        "$value": "#FCE6E7"
+      },
+      "critico-borde": {
+        "$value": "#E7A9AD",
+        "$description": "Contorno del botón de peligro."
+      },
+      "info": {
+        "$value": "#1A4F94"
+      },
+      "info-f": {
+        "$value": "#E3ECF8"
+      },
+      "violeta": {
+        "$value": "#5B3BA6",
+        "$description": "Lo que está en cotizaciones."
+      },
+      "violeta-f": {
+        "$value": "#EEE8FA"
+      }
+    }
+  },
+  "fuente": {
+    "$type": "fontFamily",
+    "marca": {
+      "$value": [
+        "Montserrat",
+        "Inter",
+        "system-ui",
+        "sans-serif"
+      ],
+      "$description": "SOLO titulares, rótulos de identidad y botones. Cargada en 600 y 700, alojada localmente (@fontsource/montserrat, subconjunto latino)."
+    },
+    "texto": {
+      "$value": [
+        "Inter",
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "sans-serif"
+      ],
+      "$description": "Todo el texto corrido."
+    },
+    "codigo": {
+      "$value": [
+        "ui-monospace",
+        "SFMono-Regular",
+        "Menlo",
+        "monospace"
+      ],
+      "$description": "Códigos (SAP, TECLIN-0042…): monoespaciada del sistema."
+    }
+  },
+  "peso": {
+    "$type": "fontWeight",
+    "semibold": {
+      "$value": 600
+    },
+    "bold": {
+      "$value": 700,
+      "$description": "Donde la propuesta pide 800 va 700: 800 no está cargado."
+    }
+  },
+  "tamano": {
+    "$type": "dimension",
+    "rotulo-cifra": {
+      "$value": {
+        "value": 9.5,
+        "unit": "px"
+      }
+    },
+    "rotulo-cabecera": {
+      "$value": {
+        "value": 10,
+        "unit": "px"
+      }
+    },
+    "rotulo-campo": {
+      "$value": {
+        "value": 10.5,
+        "unit": "px"
+      }
+    },
+    "rotulo-pagina": {
+      "$value": {
+        "value": 11,
+        "unit": "px"
+      }
+    },
+    "estado": {
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      }
+    },
+    "boton": {
+      "$value": {
+        "value": 13,
+        "unit": "px"
+      }
+    },
+    "pestana": {
+      "$value": {
+        "value": 13.5,
+        "unit": "px"
+      }
+    },
+    "aviso": {
+      "$value": {
+        "value": 13.5,
+        "unit": "px"
+      }
+    },
+    "entrada": {
+      "$value": {
+        "value": 14.5,
+        "unit": "px"
+      }
+    },
+    "entrada-sobre-azul": {
+      "$value": {
+        "value": 16,
+        "unit": "px"
+      },
+      "$description": "16 px: por debajo iOS amplía la pantalla al enfocar."
+    },
+    "titulo-hoja": {
+      "$value": {
+        "value": 15,
+        "unit": "px"
+      }
+    },
+    "titulo-modal": {
+      "$value": {
+        "value": 19,
+        "unit": "px"
+      }
+    },
+    "titulo-pagina": {
+      "$value": {
+        "value": 24,
+        "unit": "px"
+      }
+    },
+    "cifra": {
+      "$value": {
+        "value": 28,
+        "unit": "px"
+      }
+    }
+  },
+  "espaciado-letra": {
+    "$type": "dimension",
+    "boton": {
+      "$value": {
+        "value": 0.08,
+        "unit": "em"
+      }
+    },
+    "boton-sobre-azul": {
+      "$value": {
+        "value": 0.09,
+        "unit": "em"
+      }
+    },
+    "rotulo-campo": {
+      "$value": {
+        "value": 0.16,
+        "unit": "em"
+      }
+    },
+    "rotulo-cifra": {
+      "$value": {
+        "value": 0.16,
+        "unit": "em"
+      }
+    },
+    "rotulo-sobre-azul": {
+      "$value": {
+        "value": 0.18,
+        "unit": "em"
+      }
+    },
+    "rotulo-pagina": {
+      "$value": {
+        "value": 0.2,
+        "unit": "em"
+      }
+    }
+  },
+  "radio": {
+    "$type": "dimension",
+    "campo": {
+      "$value": {
+        "value": 9,
+        "unit": "px"
+      }
+    },
+    "hoja": {
+      "$value": {
+        "value": 10,
+        "unit": "px"
+      },
+      "$description": "Hojas, botones, avisos y cifras."
+    },
+    "barra-pestanas": {
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      }
+    },
+    "modal-escritorio": {
+      "$value": {
+        "value": 14,
+        "unit": "px"
+      }
+    },
+    "modal-telefono": {
+      "$value": {
+        "value": 22,
+        "unit": "px"
+      },
+      "$description": "Solo las esquinas de arriba: la hoja sube desde abajo."
+    },
+    "pastilla": {
+      "$value": {
+        "value": 9999,
+        "unit": "px"
+      }
+    }
+  },
+  "alto-minimo": {
+    "$type": "dimension",
+    "boton": {
+      "$value": {
+        "value": 46,
+        "unit": "px"
+      }
+    },
+    "entrada": {
+      "$value": {
+        "value": 44,
+        "unit": "px"
+      }
+    },
+    "entrada-sobre-azul": {
+      "$value": {
+        "value": 52,
+        "unit": "px"
+      },
+      "$description": "Dedo con guante."
+    },
+    "boton-sobre-azul": {
+      "$value": {
+        "value": 54,
+        "unit": "px"
+      }
+    },
+    "objetivo-tactil": {
+      "$value": {
+        "value": 44,
+        "unit": "px"
+      },
+      "$description": "Ninguna acción por debajo de 44 × 44 (la equis del modal, la acción de un aviso a 40)."
+    }
+  },
+  "foco": {
+    "$description": "Anillo amarillo de 3 px con desfase de 2 px y filo azul de 2 px debajo: así el amarillo siempre queda contra el azul y se ve sobre la hoja y sobre la cabecera. Va con outline, no solo con sombra, para pintarse encima de los vecinos.",
+    "contorno": {
+      "$type": "border",
+      "$value": {
+        "color": "{color.amarillo}",
+        "width": {
+          "value": 3,
+          "unit": "px"
+        },
+        "style": "solid"
+      }
+    },
+    "desfase": {
+      "$type": "dimension",
+      "$value": {
+        "value": 2,
+        "unit": "px"
+      }
+    },
+    "filo": {
+      "$type": "border",
+      "$value": {
+        "color": "{color.azul}",
+        "width": {
+          "value": 2,
+          "unit": "px"
+        },
+        "style": "solid"
+      }
+    }
+  },
+  "fondo-azul": {
+    "$description": "La banda azul de la marca: retícula de 48 px con líneas blancas al 3,5 % y el escudo del logo como marca de agua (cabecera: 150 × 181 px, a 170 px del borde derecho, opacidad 6 %).",
+    "reticula": {
+      "$type": "dimension",
+      "$value": {
+        "value": 48,
+        "unit": "px"
+      }
+    },
+    "linea-reticula": {
+      "$type": "color",
+      "$value": "rgba(255, 255, 255, 0.035)"
+    },
+    "opacidad-escudo": {
+      "$type": "number",
+      "$value": 0.06
+    }
+  },
+  "componente": {
+    "$description": "Las piezas de SecurityOps (src/components/marca). Cada una referencia los tokens de arriba.",
+    "cabecera": {
+      "fondo": {
+        "$type": "color",
+        "$value": "{color.azul}"
+      },
+      "rotulo-app": {
+        "$type": "color",
+        "$value": "{color.sobre-azul.apagado}",
+        "$description": "«SecurityOps» / nombre de la app, mayúsculas 10 px, tracking 0,2 em."
+      },
+      "perfil": {
+        "$type": "color",
+        "$value": "#FFFFFF",
+        "$description": "Nombre del perfil en Montserrat 15 px bold."
+      },
+      "iniciales-fondo": {
+        "$type": "color",
+        "$value": "{color.azul-superficie}"
+      },
+      "iniciales-letra": {
+        "$type": "color",
+        "$value": "{color.amarillo}"
+      }
+    },
+    "titulo-pagina": {
+      "$description": "Rótulo pequeño en mayúsculas encima (tinta-3), título Montserrat 24 px bold (tinta) y raya amarilla de 3 × 56 px debajo.",
+      "raya": {
+        "$type": "color",
+        "$value": "{color.amarillo}"
+      }
+    },
+    "hoja": {
+      "fondo": {
+        "$type": "color",
+        "$value": "{color.hoja}"
+      },
+      "borde": {
+        "$type": "color",
+        "$value": "{color.linea}"
+      },
+      "relleno": {
+        "$type": "dimension",
+        "$value": {
+          "value": 20,
+          "unit": "px"
+        }
+      }
+    },
+    "boton": {
+      "$description": "UN solo primario por pantalla. Primario, secundario y peligro: Montserrat 13 px bold mayúsculas.",
+      "primario": {
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.amarillo}"
+        },
+        "letra": {
+          "$type": "color",
+          "$value": "{color.azul}"
+        }
+      },
+      "secundario": {
+        "fondo": {
+          "$type": "color",
+          "$value": "#FFFFFF"
+        },
+        "letra": {
+          "$type": "color",
+          "$value": "{color.azul}"
+        },
+        "borde": {
+          "$type": "color",
+          "$value": "{color.azul}"
+        }
+      },
+      "peligro": {
+        "fondo": {
+          "$type": "color",
+          "$value": "#FFFFFF"
+        },
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.critico}"
+        },
+        "borde": {
+          "$type": "color",
+          "$value": "{color.estado.critico-borde}"
+        }
+      },
+      "discreto": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.tinta-2}"
+        },
+        "hover": {
+          "$type": "color",
+          "$value": "{color.neutro-f}"
+        }
+      },
+      "fantasma": {
+        "$description": "El que va encima del azul, en la cabecera.",
+        "letra": {
+          "$type": "color",
+          "$value": "{color.sobre-azul.claro}"
+        },
+        "borde": {
+          "$type": "color",
+          "$value": "{color.sobre-azul.divisor}"
+        }
+      }
+    },
+    "campo": {
+      "$description": "Rótulo en mayúsculas 10,5 px (tinta-2). En reposo casi blanco con borde suave; al enfocar, borde azul, fondo blanco y anillo amarillo al 45 %.",
+      "fondo": {
+        "$type": "color",
+        "$value": "{color.campo}"
+      },
+      "borde": {
+        "$type": "color",
+        "$value": "{color.linea}"
+      },
+      "borde-foco": {
+        "$type": "color",
+        "$value": "{color.azul}"
+      },
+      "requerido": {
+        "$type": "color",
+        "$value": "{color.estado.critico}"
+      }
+    },
+    "segmentado": {
+      "$description": "Pocas opciones a la vista (radios reales). La elegida en azul con letra blanca.",
+      "elegido-fondo": {
+        "$type": "color",
+        "$value": "{color.azul}"
+      },
+      "elegido-letra": {
+        "$type": "color",
+        "$value": "#FFFFFF"
+      }
+    },
+    "pestanas": {
+      "$description": "Barra azul; la elegida en azul-superficie con subrayado amarillo de 2 px; contador amarillo con letra azul, solo si es mayor que 0.",
+      "fondo": {
+        "$type": "color",
+        "$value": "{color.azul}"
+      },
+      "activa": {
+        "$type": "color",
+        "$value": "{color.azul-superficie}"
+      },
+      "inactiva-letra": {
+        "$type": "color",
+        "$value": "{color.sobre-azul.claro}"
+      },
+      "subrayado": {
+        "$type": "color",
+        "$value": "{color.amarillo}"
+      }
+    },
+    "estado": {
+      "$description": "Pastilla con punto del color de la letra y la palabra siempre al lado. Seis clases: dicen QUÉ CLASE de estado es, no qué palabra lleva.",
+      "nuevo": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.info}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.info-f}"
+        },
+        "$description": "Acaba de entrar."
+      },
+      "curso": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.aviso}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.aviso-f}"
+        },
+        "$description": "Alguien está en ello."
+      },
+      "cotizacion": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.violeta}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.violeta-f}"
+        },
+        "$description": "En cotizaciones."
+      },
+      "ok": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.ok}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.ok-f}"
+        },
+        "$description": "Terminado bien."
+      },
+      "mal": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.critico}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.critico-f}"
+        },
+        "$description": "Denegado o fallido."
+      },
+      "neutro": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.tinta-2}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.neutro-f}"
+        },
+        "$description": "Pendiente o cerrado."
+      }
+    },
+    "aviso": {
+      "$description": "Banda con raya de 4 px a la izquierda, el mensaje y, si hay algo que hacer, la acción subrayada al final.",
+      "info": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.info}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.info-f}"
+        },
+        "raya": {
+          "$type": "color",
+          "$value": "{color.estado.info}"
+        }
+      },
+      "aviso": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.aviso}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.aviso-f}"
+        },
+        "raya": {
+          "$type": "color",
+          "$value": "{color.estado.aviso-barra}"
+        }
+      },
+      "critico": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.critico}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.critico-f}"
+        },
+        "raya": {
+          "$type": "color",
+          "$value": "{color.estado.critico}"
+        }
+      },
+      "ok": {
+        "letra": {
+          "$type": "color",
+          "$value": "{color.estado.ok}"
+        },
+        "fondo": {
+          "$type": "color",
+          "$value": "{color.estado.ok-f}"
+        },
+        "raya": {
+          "$type": "color",
+          "$value": "{color.estado.ok}"
+        }
+      }
+    },
+    "cifra": {
+      "$description": "Baldosa azul con rótulo apagado y valor Montserrat 28 px tabular. «amarilla» solo para LA cifra que pide atención.",
+      "fondo": {
+        "$type": "color",
+        "$value": "{color.azul}"
+      },
+      "rotulo": {
+        "$type": "color",
+        "$value": "{color.sobre-azul.apagado}"
+      },
+      "valor": {
+        "$type": "color",
+        "$value": "#FFFFFF"
+      },
+      "valor-atencion": {
+        "$type": "color",
+        "$value": "{color.amarillo}"
+      }
+    },
+    "modal": {
+      "$description": "Hoja que sube desde abajo en el teléfono (esquinas de arriba 22 px) y centrada en escritorio (14 px). Pie fijo con los botones y safe-area-inset-bottom.",
+      "velo": {
+        "$type": "color",
+        "$value": "rgba(0, 15, 34, 0.60)"
+      },
+      "separador": {
+        "$type": "color",
+        "$value": "{color.linea-2}"
+      }
+    },
+    "ingreso": {
+      "$description": "La pantalla de ingreso (SecurityOps src/pages/auth/Login.jsx, dirección «centro de mando» elegida por el dueño el 12-nov-2026): azul en TODO el campo con la retícula; en escritorio dos columnas, panel de marca al 58 % y formulario al 42 %. El panel lleva el logo real (366-530 px), «SISTEMA DE INTEGRACIÓN Y CONTROL» en mayúsculas 11-12,5 px tracking 0,24 em, la raya amarilla de 3 px, el titular en Montserrat bold 34/42/50 px con el remate en peso normal y gris apagado, una línea de apoyo y un pie con tres datos que la pantalla PUEDE saber sin sesión: la hora local del equipo en amarillo, y dos datos del servicio. Nunca una luz de «sistema en línea»: antes de entrar no se puede saber. La tarjeta del formulario: azul-superficie, borde blanco al 10 %, radio 16 px, relleno 36-44 px, sombra 0 30px 70px rgba(0,0,0,.42), ancho 404-500 px; en el teléfono va sin tarjeta, con el logo centrado (248 px) y la hora en una pastilla. Campos con icono (sobre, candado) de 52-56 px y letra de 16 px, enlace «¿Olvidaste tu contraseña?» a la derecha, UN botón amarillo de 54-58 px con flecha, y mientras espera dice cuánto puede tardar. Error en rojo con raya; sesión abierta de otra cuenta en amarillo translúcido (la única excepción al amarillo-solo-botón, porque pide decidir). Pie: © año, empresa · sistema, y la versión en monoespaciada.",
+      "fondo": {
+        "$type": "color",
+        "$value": "{color.azul}"
+      },
+      "tarjeta": {
+        "$type": "color",
+        "$value": "{color.azul-superficie}"
+      },
+      "tarjeta-borde": {
+        "$type": "color",
+        "$value": "{color.sobre-azul.linea}"
+      },
+      "tarjeta-radio": {
+        "$type": "dimension",
+        "$value": {
+          "value": 16,
+          "unit": "px"
+        }
+      },
+      "tarjeta-sombra": {
+        "$type": "shadow",
+        "$value": {
+          "color": "rgba(0, 0, 0, 0.42)",
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 30,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 70,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        }
+      },
+      "panel-marca-ancho": {
+        "$type": "number",
+        "$value": 0.58
+      },
+      "opacidad-escudo": {
+        "$type": "number",
+        "$value": 0.04,
+        "$description": "Escudo gigante (729 × 880 px) asomado por la izquierda del panel; 0,045 en el teléfono."
+      },
+      "titular-remate": {
+        "$type": "color",
+        "$value": "{color.sobre-azul.apagado}"
+      },
+      "apoyo": {
+        "$type": "color",
+        "$value": "{color.sobre-azul.tenue}"
+      },
+      "hora": {
+        "$type": "color",
+        "$value": "{color.amarillo}"
+      },
+      "pie-rotulo": {
+        "$type": "color",
+        "$value": "{color.sobre-azul.apagado}",
+        "$description": "SecurityOps usa #6B7D93 (4,04:1 sobre el azul, por debajo de su propia regla de 4,5:1); SIIO usa el apagado medido (5,3:1)."
+      },
+      "pie-divisor": {
+        "$type": "color",
+        "$value": "#1E2B3C"
+      },
+      "version": {
+        "$type": "color",
+        "$value": "{color.sobre-azul.tenue}",
+        "$description": "SecurityOps usa #4C5D71 (2,21:1 sobre la tarjeta, no se lee); SIIO usa el tenue (4,67:1)."
+      },
+      "sesion-abierta-borde": {
+        "$type": "color",
+        "$value": "rgba(255, 224, 1, 0.35)"
+      },
+      "sesion-abierta-fondo": {
+        "$type": "color",
+        "$value": "rgba(255, 224, 1, 0.07)"
+      },
+      "autocompletado": {
+        "$type": "color",
+        "$value": "{color.azul-campo}",
+        "$description": "Chrome pinta el campo autocompletado de #E8F0FE (se ve en la captura de SecurityOps del 18-nov). En SIIO se fuerza el azul-campo con letra blanca (-webkit-autofill + box-shadow inset), para que el campo no cambie de color al autocompletar."
+      }
+    },
+    "barra-inferior": {
+      "$description": "Navegación del teléfono: blanca, pegada abajo; la sección actual en azul con filo amarillo y aria-current=\"page\".",
+      "fondo": {
+        "$type": "color",
+        "$value": "#FFFFFF"
+      },
+      "activa": {
+        "$type": "color",
+        "$value": "{color.azul}"
+      },
+      "filo": {
+        "$type": "color",
+        "$value": "{color.amarillo}"
+      }
+    }
+  }
+}

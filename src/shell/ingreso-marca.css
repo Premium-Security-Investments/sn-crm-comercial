@@ -1,0 +1,99 @@
+/* Pantalla de ingreso con la marca de SecurityOps. Valores de design/marca-sn.tokens.json. */
+.sn-ingreso{
+  --sn-azul:#001C3C;--sn-azul-superficie:#06284A;--sn-azul-campo:#041F3D;--sn-azul-campo-foco:#05244A;
+  --sn-amarillo:#FFE001;--sn-apagado:#8FA6C2;--sn-tenue:#7C92AE;--sn-icono:#5E7897;--sn-marcador:#7A93B6;
+  --sn-rojo:#FF5A5A;--sn-letra-error:#FFC9C9;--sn-linea:rgba(255,255,255,.10);
+  position:relative;min-height:100vh;display:flex;overflow:hidden;color:#fff;
+  font-family:Montserrat,Inter,system-ui,sans-serif;
+  background-color:var(--sn-azul);
+  background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+  background-size:48px 48px;
+}
+.sn-ingreso *{box-sizing:border-box}
+
+/* Panel de marca (escritorio) */
+.sn-ingreso-marca{position:relative;width:58%;display:flex;flex-direction:column;justify-content:center;padding:64px 76px}
+.sn-ingreso-escudo{position:absolute;pointer-events:none;left:-200px;top:-90px;width:729px;height:880px;
+  background:url('/marca/logo-sn.png') no-repeat;background-size:2573px 915px;opacity:.04}
+.sn-ingreso-marca-cuerpo{position:relative;z-index:1}
+.sn-ingreso-logo{display:block;width:366px;height:auto}
+.sn-ingreso-sistema{margin:20px 0 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.24em;color:var(--sn-apagado)}
+.sn-ingreso-raya{margin-top:20px;width:56px;height:3px;background:var(--sn-amarillo)}
+.sn-ingreso-titular{margin:32px 0 0;max-width:36rem;font-size:34px;font-weight:700;line-height:1.15;letter-spacing:-.02em;color:#fff}
+.sn-ingreso-titular span{display:block;font-weight:400;color:var(--sn-apagado)}
+.sn-ingreso-apoyo{margin:20px 0 0;max-width:28rem;font-size:14px;line-height:1.65;color:var(--sn-tenue)}
+.sn-ingreso-datos{margin:56px 0 0;display:flex;align-items:stretch;gap:32px;font-size:11px}
+.sn-ingreso-datos>div+div{padding-left:32px;border-left:1px solid #1E2B3C}
+.sn-ingreso-datos dt{font-weight:700;text-transform:uppercase;letter-spacing:.18em;color:var(--sn-apagado)}
+.sn-ingreso-datos dd{margin:6px 0 0;font-size:18px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+.sn-ingreso-datos dd.sn-ingreso-hora{color:var(--sn-amarillo)}
+
+/* Columna del formulario */
+.sn-ingreso-columna{position:relative;z-index:1;width:42%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 40px}
+.sn-ingreso-movil{display:none}
+.sn-ingreso-tarjeta{width:100%;max-width:404px;background:var(--sn-azul-superficie);border:1px solid var(--sn-linea);border-radius:16px;padding:36px;box-shadow:0 30px 70px rgba(0,0,0,.42)}
+.sn-ingreso-tarjeta h2{margin:0;font-size:21px;font-weight:700;letter-spacing:-.01em;color:#fff}
+.sn-ingreso-subtitulo{margin:6px 0 28px;font-size:13.5px;color:var(--sn-apagado)}
+.sn-ingreso-tarjeta form{display:flex;flex-direction:column;gap:18px}
+.sn-ingreso-tarjeta label{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;color:var(--sn-apagado)}
+.sn-ingreso-campo{position:relative;display:block;margin-top:10px}
+.sn-ingreso-campo svg{position:absolute;left:16px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--sn-icono);pointer-events:none}
+/* 52 px y 16 px de letra: dedo con guante, y por debajo de 16 px iOS amplía al enfocar. */
+.sn-ingreso-tarjeta input{width:100%;height:52px;margin:0;padding:0 16px 0 46px;border-radius:10px;border:1px solid var(--sn-linea);
+  background:var(--sn-azul-campo);color:#fff;font:500 16px Inter,system-ui,sans-serif;letter-spacing:normal;text-transform:none;box-shadow:none;transition:border-color .15s,background-color .15s,box-shadow .15s}
+.sn-ingreso-tarjeta input::placeholder{color:var(--sn-marcador);font-weight:400}
+.sn-ingreso-tarjeta input:focus{outline:none;border-color:var(--sn-amarillo);background:var(--sn-azul-campo-foco);box-shadow:0 0 0 3px rgba(255,224,1,.2)}
+/* Chrome pinta el autocompletado de #E8F0FE: el campo conserva el azul. */
+.sn-ingreso-tarjeta input:-webkit-autofill,.sn-ingreso-tarjeta input:-webkit-autofill:hover,.sn-ingreso-tarjeta input:-webkit-autofill:focus{
+  -webkit-text-fill-color:#fff;caret-color:#fff;-webkit-box-shadow:0 0 0 1000px var(--sn-azul-campo) inset;transition:background-color 9999s}
+.sn-ingreso-olvido{align-self:flex-end;margin:-4px 0 0;padding:6px 2px;min-height:auto;border:0;background:none;box-shadow:none;
+  font:400 13px Montserrat,Inter,system-ui,sans-serif;letter-spacing:normal;text-transform:none;color:var(--sn-apagado);cursor:pointer;white-space:normal}
+.sn-ingreso-olvido:hover{color:var(--sn-amarillo);background:none;filter:none}
+/* El único relleno amarillo de la pantalla: letra azul (13:1), nunca blanca. */
+.sn-ingreso-entrar{width:100%;height:54px;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:10px;border:0;border-radius:10px;
+  background:var(--sn-amarillo);color:var(--sn-azul);box-shadow:none;font:700 14px Montserrat,Inter,system-ui,sans-serif;text-transform:uppercase;letter-spacing:.09em;cursor:pointer}
+.sn-ingreso-entrar:hover{filter:brightness(1.05);background:var(--sn-amarillo)}
+.sn-ingreso-entrar:disabled{cursor:not-allowed;background:rgba(255,255,255,.10);color:var(--sn-apagado);filter:none}
+.sn-ingreso-entrar svg{width:18px;height:18px}
+.sn-ingreso-olvido:focus-visible,.sn-ingreso-entrar:focus-visible{outline:3px solid var(--sn-amarillo);outline-offset:2px;box-shadow:0 0 0 2px var(--sn-azul)}
+.sn-ingreso-espera{margin:0;text-align:center;font-size:12px;color:var(--sn-tenue)}
+.sn-ingreso-aviso{padding:13px 15px;border-radius:10px;font:400 14px Inter,system-ui,sans-serif;line-height:1.45}
+.sn-ingreso-aviso-error{border:1px solid rgba(255,90,90,.3);border-left:3px solid var(--sn-rojo);background:rgba(255,90,90,.10);color:var(--sn-letra-error)}
+.sn-ingreso-aviso-info{border:1px solid var(--sn-linea);border-left:3px solid var(--sn-apagado);background:rgba(255,255,255,.04);color:#fff}
+.sn-ingreso-pie{margin-top:32px;padding-top:24px;border-top:1px solid rgba(255,255,255,.07);text-align:center}
+.sn-ingreso-pie p{margin:0;font-size:11px;color:var(--sn-tenue)}
+
+@media (min-width:1280px){
+  .sn-ingreso-marca{padding:64px 104px}
+  .sn-ingreso-logo{width:440px}
+  .sn-ingreso-sistema{font-size:12.5px}
+  .sn-ingreso-raya{width:80px}
+  .sn-ingreso-titular{max-width:42rem;font-size:42px;margin-top:40px}
+  .sn-ingreso-apoyo{font-size:16px;max-width:32rem}
+  .sn-ingreso-datos{margin-top:80px;gap:48px;font-size:12px}
+  .sn-ingreso-datos>div+div{padding-left:48px}
+  .sn-ingreso-datos dd{font-size:24px}
+  .sn-ingreso-tarjeta{max-width:460px;padding:44px}
+  .sn-ingreso-tarjeta h2{font-size:25px}
+  .sn-ingreso-subtitulo{font-size:14.5px;margin-bottom:32px}
+  .sn-ingreso-tarjeta input{height:56px}
+  .sn-ingreso-entrar{height:58px}
+}
+@media (min-width:1536px){
+  .sn-ingreso-marca{padding:64px 150px}
+  .sn-ingreso-logo{width:530px}
+  .sn-ingreso-titular{max-width:56rem;font-size:50px}
+  .sn-ingreso-tarjeta{max-width:500px}
+}
+/* Teléfono y tableta: sin panel; logo centrado y el formulario al aire, sin caja dentro de caja. */
+@media (max-width:1023px){
+  .sn-ingreso{flex-direction:column}
+  .sn-ingreso-marca{display:none}
+  .sn-ingreso-columna{width:100%;justify-content:flex-start;padding:32px 24px}
+  .sn-ingreso-movil{position:relative;display:flex;flex-direction:column;align-items:center;padding:16px 0 32px;text-align:center}
+  .sn-ingreso-movil img{width:248px;max-width:100%;height:auto}
+  .sn-ingreso-movil .sn-ingreso-sistema{margin-top:16px;font-size:10px;letter-spacing:.22em}
+  .sn-ingreso-pastilla-hora{margin-top:16px;padding:6px 14px;border:1px solid var(--sn-linea);border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--sn-amarillo);font-variant-numeric:tabular-nums}
+  .sn-ingreso-tarjeta{max-width:460px;background:none;border:0;box-shadow:none;padding:0}
+}
+@media (prefers-reduced-motion:reduce){.sn-ingreso *{transition:none!important}}

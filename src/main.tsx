@@ -11,6 +11,8 @@ import { isModulePermissionEligible } from '../module-access.js';
 import { agt002UnavailableMessage } from '../verticales/licitaciones/agt002-reanalysis-error-message.js';
 import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
+import { AvisoIngreso, IngresoMarca } from './shell/IngresoMarca';
+import { ChevronRight, Lock, Mail } from 'lucide-react';
 import { AgentsView } from './platform/AgentsView';
 import { EstudiosSeguridadView } from './estudios-seguridad/EstudiosSeguridadView';
 import { TendersModule } from './tenders/TendersModule';
@@ -539,48 +541,46 @@ function PasswordResetScreen({ onDone }: { onDone: () => void }) {
     setStatus('Clave actualizada. Ya puedes continuar en el CRM.');
     onDone();
   };
-  return <div className="login-shell">
-    <form className="login-card" onSubmit={submit}>
-      <span className="eyebrow">Seguridad Nacional Ltda</span>
-      <h1>Restablecer clave</h1>
-      <p>Ingresa la nueva clave para tu usuario del CRM Comercial.</p>
-      <label>Nueva clave<input type="password" required minLength={8} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" /></label>
-      <label>Confirmar clave<input type="password" required minLength={8} value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="Repite la clave" /></label>
-      <button>Actualizar clave</button>
-      {status && <small>{status}</small>}
+  const esError = !['Define una nueva clave de mínimo 8 caracteres.', 'Actualizando clave…', 'Clave actualizada. Ya puedes continuar en el CRM.'].includes(status);
+  return <IngresoMarca titulo="Restablecer clave" subtitulo="Ingresa la nueva clave para tu usuario del SIIO.">
+    <form onSubmit={submit}>
+      {status && <AvisoIngreso tipo={esError ? 'error' : 'info'}>{status}</AvisoIngreso>}
+      <label>Nueva clave<span className="sn-ingreso-campo"><Lock aria-hidden="true" /><input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" /></span></label>
+      <label>Confirmar clave<span className="sn-ingreso-campo"><Lock aria-hidden="true" /><input type="password" required minLength={8} autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="Repite la clave" /></span></label>
+      <button className="sn-ingreso-entrar">Actualizar clave<ChevronRight aria-hidden="true" /></button>
     </form>
-  </div>;
+  </IngresoMarca>;
 }
 
 function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [status, setStatus] = useState('');
+  const [aviso, setAviso] = useState<{ tipo: 'error' | 'info'; texto: string } | null>(null);
+  const [ingresando, setIngresando] = useState(false);
   const normalizedEmail = email.trim().toLowerCase();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus('Ingresando…');
+    setAviso(null);
+    setIngresando(true);
     const { error } = await supabaseBrowser.auth.signInWithPassword({ email: normalizedEmail, password });
-    setStatus(error ? error.message : 'Sesión iniciada.');
+    setIngresando(false);
+    if (error) setAviso({ tipo: 'error', texto: error.message === 'Invalid login credentials' ? 'Correo o clave incorrectos.' : error.message });
   };
   const resetPassword = async () => {
-    if (!normalizedEmail) { setStatus('Escribe tu correo electrónico para enviarte el enlace de recuperación.'); return; }
-    setStatus('Enviando recuperación…');
+    if (!normalizedEmail) { setAviso({ tipo: 'info', texto: 'Escribe tu correo electrónico para enviarte el enlace de recuperación.' }); return; }
+    setAviso({ tipo: 'info', texto: 'Enviando recuperación…' });
     const { error } = await supabaseBrowser.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
-    setStatus(error ? error.message : 'Te enviamos un enlace para restablecer la clave. Revisa tu correo.');
+    setAviso(error ? { tipo: 'error', texto: error.message } : { tipo: 'info', texto: 'Te enviamos un enlace para restablecer la clave. Revisa tu correo.' });
   };
-  return <div className="login-shell">
-    <form className="login-card" onSubmit={submit}>
-      <span className="eyebrow">SIIO · Seguridad Nacional</span>
-      <h1>{siioMode ? 'Ingreso a Torre de Control' : 'Ingreso al SIIO'}</h1>
-      <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes y decisiones.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
-      <label>Correo electrónico<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
-      <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
-      <button>Ingresar</button>
-      <button type="button" className="secondary" onClick={resetPassword}>Olvidé mi clave</button>
-      {status && <small>{status}</small>}
+  return <IngresoMarca titulo="Iniciar sesión" subtitulo={siioMode ? 'Ingresa con tu usuario autorizado para revisar la Torre de Control.' : 'Ingresa con el usuario que te asignaron.'}>
+    <form onSubmit={submit}>
+      {aviso && <AvisoIngreso tipo={aviso.tipo}>{aviso.texto}</AvisoIngreso>}
+      <label>Correo electrónico<span className="sn-ingreso-campo"><Mail aria-hidden="true" /><input type="email" required autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="usuario@seguridadnacional.co" /></span></label>
+      <label>Clave<span className="sn-ingreso-campo"><Lock aria-hidden="true" /><input type="password" required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" /></span></label>
+      <button type="button" className="sn-ingreso-olvido" onClick={resetPassword}>Olvidé mi clave</button>
+      <button className="sn-ingreso-entrar" disabled={ingresando}>{ingresando ? 'Verificando…' : <>Acceder al sistema<ChevronRight aria-hidden="true" /></>}</button>
     </form>
-  </div>;
+  </IngresoMarca>;
 }
 // Subtítulo de cada pantalla: el área del menú a la que pertenece (decisión de Juan, 2026-10-09).
 function areaFor(route: Route) {
