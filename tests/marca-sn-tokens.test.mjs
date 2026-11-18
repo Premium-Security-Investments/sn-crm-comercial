@@ -64,6 +64,10 @@ test('el texto pequeño cumple 4,5:1 donde el sistema lo promete', () => {
     ['componente.boton.primario.letra', 'componente.boton.primario.fondo'],
     ['componente.boton.peligro.letra', 'componente.boton.peligro.fondo'],
     ['componente.cifra.valor-atencion', 'componente.cifra.fondo'],
+    ['componente.ingreso.pie-rotulo', 'componente.ingreso.fondo'],
+    ['componente.ingreso.version', 'componente.ingreso.tarjeta'],
+    ['componente.ingreso.apoyo', 'componente.ingreso.tarjeta'],
+    ['componente.ingreso.hora', 'componente.ingreso.fondo'],
     ...['nuevo', 'curso', 'cotizacion', 'ok', 'mal', 'neutro'].map((v) => [`componente.estado.${v}.letra`, `componente.estado.${v}.fondo`]),
     ...['info', 'aviso', 'critico', 'ok'].map((v) => [`componente.aviso.${v}.letra`, `componente.aviso.${v}.fondo`]),
   ];
