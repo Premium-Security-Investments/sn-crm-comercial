@@ -174,7 +174,7 @@ export async function listStudies(db, now = new Date()) {
   // entregas pendientes y recomendaciones vencidas.
   const [versions, secops, deliveries, actions] = await Promise.all([
     db.from('psi_security_study_versions').select('study_id, version, approved_at'),
-    db.from('psi_security_study_securityops').select('study_id, puesto_id, status, summary'),
+    db.from('psi_security_study_securityops').select('study_id, puesto_id, status, summary, alerts'),
     db.from('psi_security_study_deliveries').select('study_id, version'),
     db.from(ACTION_TABLE).select('study_id, due_date, status, responsible_party').in('status', ['pendiente', 'en_curso']),
   ]);

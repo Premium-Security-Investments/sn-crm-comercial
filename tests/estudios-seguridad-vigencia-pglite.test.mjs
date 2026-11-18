@@ -35,6 +35,19 @@ test('revalorar: un pedido o un siniestro POSTERIOR a la aprobación; lo anterio
   assert.match(after.revalorar[1].detalle, /2 novedades de prioridad alta o crítica/);
 });
 
+// La alerta temprana (Juan, 2026-11-18, por lo que pidió John Fredy): una «Alerta de Riesgos» de SecurityOps posterior a la
+// aprobación obliga a actualizar el análisis; la anterior ya pudo entrar al estudio.
+test('revalorar: una Alerta de Riesgos POSTERIOR a la aprobación; la anterior no', () => {
+  const approvedAt = '2026-10-01T15:00:00Z';
+  const ops = alerts => ({ data: { status: 'ok', summary: {}, alerts } });
+  const antes = { id: 'a1', fecha: '2026-09-20', riesgo: 'Reja de la ventana dañada' };
+  assert.deepEqual(studyValidity({}, { approvedAt, securityops: ops([antes]) }).revalorar, []);
+  const despues = studyValidity({}, { approvedAt, securityops: ops([{ id: 'a3', fecha: '2026-11-03', riesgo: 'Árbol podrido sobre la bodega' }, antes, { id: 'a2', fecha: '2026-10-15', riesgo: 'Reja principal dañada' }]) });
+  assert.deepEqual(despues.revalorar.map(item => [item.motivo, item.fecha]), [['alerta', '2026-11-03']]);
+  assert.match(despues.revalorar[0].detalle, /2 Alertas de Riesgos en SecurityOps después de la aprobación \(la última, 2026-11-03: «Árbol podrido sobre la bodega»\)/);
+  assert.deepEqual(studyValidity({}, { approvedAt, securityops: { data: { status: 'error', alerts: [{ fecha: '2026-11-03', riesgo: 'x' }] } } }).revalorar, [], 'si la sincronización falló, no se lee');
+});
+
 test('en la plataforma: la frecuencia se guarda, la lista y la ficha muestran la vigencia, y el informe la dice', async () => {
   const pg = await database();
   const db = supabaseOver(pg);
@@ -53,9 +66,16 @@ test('en la plataforma: la frecuencia se guarda, la lista y la ficha muestran la
   const detail = await getStudy(db, study.id);
   assert.equal(detail.validity.vence, listed.validity.vence);
 
+  // La lista del tablero también ve la Alerta de Riesgos posterior a la aprobación.
+  await pg.query(`update public.psi_security_studies set securityops_puesto_id = 'P-1' where id = $1`, [study.id]);
+  await pg.query(`insert into public.psi_security_study_securityops (study_id, puesto_id, status, alerts) values ($1, 'P-1', 'ok', $2::jsonb)`,
+    [study.id, JSON.stringify([{ id: 'a1', fecha: '2099-01-01', riesgo: 'Reja principal dañada' }])]);
+  assert.deepEqual((await listStudies(db)).find(row => row.id === study.id).validity.revalorar.map(item => item.motivo), ['alerta']);
+  assert.deepEqual((await getStudy(db, study.id)).validity.revalorar.map(item => item.motivo), ['alerta']);
+
   await assert.rejects(requestRevaluation(db, detail.study, { note: '' }), /motivo/);
   await requestRevaluation(db, detail.study, { note: 'El cliente amplió la bodega 3' });
-  assert.equal((await getStudy(db, study.id)).validity.revalorar[0].detalle, 'El cliente amplió la bodega 3');
+  assert.equal((await getStudy(db, study.id)).validity.revalorar.find(item => item.motivo === 'pedida').detalle, 'El cliente amplió la bodega 3');
 
   const { snapshot } = buildSnapshot(detail);
   assert.equal(snapshot.estudio.renovacion_meses, 6);
