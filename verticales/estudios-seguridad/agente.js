@@ -20,7 +20,10 @@ import { addRisk, addZone, cleanRiskInput, getStudy, probabilityChecker } from '
 import { QUESTIONS, questionByCode } from './preguntas.js';
 import { saveAnswer } from './recorrido.js';
 
-export const FIELD_NOTE_TIMEOUT_MS = 75_000;
+// 110 s (Juan, 2026-11-18): en la prueba del 17-nov una visita completa contada de una vez tardó 58–65 s, a un paso de
+// los 75 s de antes; lo que tarda es escribir la propuesta, no leer el recorrido. Cabe en el puente (120 s), en la
+// función de Vercel (180 s) y en la reserva de la corrida (2 minutos, migración 181).
+export const FIELD_NOTE_TIMEOUT_MS = 110_000;
 export const FIELD_NOTE_MAX_CHARS = 4000;
 export const FIELD_NOTE_MAX_RISKS = 12;
 export const FIELD_NOTE_MAX_ANSWERS = 40;
