@@ -1,6 +1,6 @@
 // Estudios de Seguridad Física: estadística de delitos desde los datos abiertos de la Policía (Juan, 2026-11-14:
-// "esto me gusta"). Con la fuente simulada: el municipio no se adivina, se cuentan 12 meses al último corte con su
-// comparación, y al volver a traer se reemplaza sólo lo de esta fuente.
+// "esto me gusta"). Con la fuente simulada: el municipio no se adivina, se cuentan 12 meses al último corte de cada
+// delito con su comparación, y al volver a traer se reemplaza sólo lo de esta fuente.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addCharacterizationRow, editableStudy, loadCharacterization } from '../verticales/estudios-seguridad/caracterizacion.js';
@@ -19,6 +19,7 @@ const MUNICIPIOS = [
   { cod_muni: '99999', municipio: 'LA UNION', departamento: 'NARIÑO' },
   { cod_muni: '88888', municipio: 'LA UNION', departamento: 'VALLE DEL CAUCA' },
 ];
+const RESIDENCIAS = DELITOS_POLICIA.find(item => item.nombre === 'Hurto a residencias');
 function fuente() {
   const pedidos = [];
   const fetchImpl = async url => {
@@ -29,9 +30,11 @@ function fuente() {
     if (select.startsWith('cod_muni')) {
       const nombre = /= '([^']+)'/.exec(where)[1];
       body = MUNICIPIOS.filter(item => item.municipio === nombre || item.municipio.startsWith(`${nombre} `));
-    } else if (select.startsWith('max')) body = [{ corte: '2026-09-30T00:00:00.000' }];
-    else {
-      const actual = where.includes("> '2025-09-30");
+    } else if (select.startsWith('max')) {
+      // Hurto a residencias va un mes atrasado y su último hecho no cae en fin de mes: se cuenta hasta el 31 de agosto.
+      body = [{ corte: url.pathname.includes(RESIDENCIAS.id) ? '2026-08-14T00:00:00.000' : '2026-09-30T00:00:00.000' }];
+    } else {
+      const actual = where.includes("> '2025-09-30") || where.includes("> '2025-08-31");
       const indice = DELITOS_POLICIA.findIndex(item => url.pathname.includes(item.id));
       body = [{ n: String(actual ? 100 + indice : 100) }];
     }
@@ -65,6 +68,17 @@ test('trae 12 meses al corte con la comparación; reemplaza sólo lo suyo; ciuda
   assert.equal(rows.find(row => row.crime.startsWith('Hurto a comercio')).crime, 'Hurto a comercio (+1 % frente al año anterior)');
   assert.ok(hurto.source.startsWith(FUENTE_POLICIA) && hurto.source.includes('PEREIRA (RISARALDA), 2025-09-30 a 2026-09-30'));
   assert.equal(String(hurto.cutoff_date).slice(0, 10) === '2026-09-30' || hurto.cutoff_date instanceof Date, true);
+
+  // Cada delito con su propio corte: al atrasado no le falta un mes, y la pantalla lo nombra.
+  const residencias = rows.find(row => row.crime.startsWith('Hurto a residencias'));
+  const dia = value => (value instanceof Date ? value.toISOString() : String(value)).slice(0, 10);
+  assert.equal(dia(residencias.cutoff_date), '2026-08-31');
+  assert.equal(dia(hurto.cutoff_date), '2026-09-30');
+  assert.ok(residencias.source.includes('2025-08-31 a 2026-08-31'));
+  assert.ok(pedidos.some(item => item.dataset === `${RESIDENCIAS.id}.json` && item.where.includes("fecha_hecho > '2025-08-31T00:00:00' AND fecha_hecho <= '2026-08-31T00:00:00'")));
+  assert.equal(residencias.crime, `Hurto a residencias (+${Math.round(DELITOS_POLICIA.indexOf(RESIDENCIAS))} % frente al año anterior)`);
+  assert.equal(result.corte, '2026-09-30');
+  assert.deepEqual(result.atrasados, [{ delito: 'Hurto a residencias', corte: '2026-08-31' }]);
 
   const again = await traerEstadisticaPolicia(db, study.id, {}, { fetchImpl, editableStudy });
   assert.equal(again.reemplazadas, DELITOS_POLICIA.length);

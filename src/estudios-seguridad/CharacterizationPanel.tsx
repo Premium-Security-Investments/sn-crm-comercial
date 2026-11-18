@@ -155,8 +155,8 @@ function RowsEditor({ studyId, section, title, header, rows, fields, editable, e
   </div>;
 }
 
-// Trae los delitos del municipio de los datos abiertos de la Policía: 12 meses al último corte y su comparación con el
-// año anterior. Reemplaza lo que vino de esa fuente antes; lo escrito a mano se queda.
+// Trae los delitos del municipio de los datos abiertos de la Policía: 12 meses al último corte de cada delito y su
+// comparación con el año anterior. Reemplaza lo que vino de esa fuente antes; lo escrito a mano se queda.
 function FromPolice({ studyId, city, onChanged }: { studyId: string; city: string | null; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
@@ -168,7 +168,8 @@ function FromPolice({ studyId, city, onChanged }: { studyId: string; city: strin
       if ('escoger' in result && result.escoger) { setOptions(result.opciones); setNote('Hay varios municipios con ese nombre: escoja cuál.'); return; }
       setOptions([]);
       if (!('municipio' in result)) return;
-      setNote(`Delitos de ${result.municipio.municipio} entre ${result.desde} y ${result.corte}, según la Policía.${result.reemplazadas ? ' Reemplazó la consulta anterior.' : ''}`);
+      const atrasados = (result.atrasados || []).map(item => `${item.delito.toLowerCase()} hasta ${item.corte}`).join('; ');
+      setNote(`Delitos de ${result.municipio.municipio} entre ${result.desde} y ${result.corte}, según la Policía.${atrasados ? ` La Policía aún no publica el último mes de algunos: ${atrasados}; esos se cuentan 12 meses hasta ahí.` : ''}${result.reemplazadas ? ' Reemplazó la consulta anterior.' : ''}`);
       onChanged();
     } catch (reason) { setNote(message(reason)); } finally { setBusy(false); }
   };

@@ -229,7 +229,7 @@ export const deleteCharacterizationRow = (studyId: string, section: Characteriza
 // Estadística de delitos desde los datos abiertos de la Policía (2026-11-14). Si la ciudad es ambigua, devuelve opciones.
 export type MunicipioPolicia = { cod_muni: string; municipio: string; departamento: string | null };
 export const fetchPoliceStats = (studyId: string, body: { cod_muni?: string; municipio?: string } = {}) =>
-  api<{ escoger: true; opciones: MunicipioPolicia[] } | { escoger?: false; municipio: MunicipioPolicia; corte: string; desde: string; filas: unknown[]; reemplazadas: number }>(
+  api<{ escoger: true; opciones: MunicipioPolicia[] } | { escoger?: false; municipio: MunicipioPolicia; corte: string; desde: string; filas: unknown[]; reemplazadas: number; atrasados?: { delito: string; corte: string }[] }>(
     `${BASE}/${encodeURIComponent(studyId)}/estadistica-policia`, json('POST', body));
 export const seedPostsFromAvancys = (studyId: string) =>
   api<{ added: number; already: number; found: number }>(`${BASE}/${encodeURIComponent(studyId)}/dispositivo-desde-avancys`, { method: 'POST' });

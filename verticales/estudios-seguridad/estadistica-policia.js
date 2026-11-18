@@ -67,22 +67,26 @@ export async function buscarMunicipio(city, { fetchImpl = fetch } = {}) {
 }
 
 const dia = value => String(value || '').slice(0, 10);
-function haceUnAno(isoDay) {
-  const [y, m, d] = isoDay.split('-').map(Number);
-  return new Date(Date.UTC(y - 1, m - 1, d)).toISOString().slice(0, 10);
+const finDeMes = (y, m) => new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); // m: 1–12
+/** El último día del mes del último hecho publicado: los conjuntos se publican por mes completo. */
+function cierreDelMes(isoDay) {
+  const [y, m] = isoDay.split('-').map(Number);
+  return finDeMes(y, m);
+}
+/** El mismo fin de mes, un año antes (2028-02-29 → 2027-02-28). */
+function haceUnAno(isoMonthEnd) {
+  const [y, m] = isoMonthEnd.split('-').map(Number);
+  return finDeMes(y - 1, m);
 }
 
 /**
- * Las cifras de cada delito en el municipio: los 12 meses hasta el último corte publicado y los 12 anteriores.
- * Devuelve { corte, desde, filas: [{ delito, cantidad, anterior }] }.
+ * Las cifras de cada delito en el municipio: los 12 meses hasta el último mes que publicó ESE conjunto y los 12
+ * anteriores. Los conjuntos no van al día por igual (el 17-nov-2026 hurto a residencias llegaba a septiembre y hurto a
+ * personas a octubre); con un solo corte, al rezagado le faltaba un mes y su comparación salía falsa.
+ * Devuelve { corte, desde, filas: [{ delito, cantidad, anterior, corte, desde }] }; corte y desde son los más recientes.
  */
 export async function estadisticaDelMunicipio(codMuni, { fetchImpl = fetch } = {}) {
   if (!/^\d{5}$/.test(String(codMuni || ''))) throw fail('Código de municipio inválido.');
-  const [{ corte } = {}] = await consultar(fetchImpl, REFERENCIA, { $select: 'max(fecha_hecho) as corte' });
-  const fin = dia(corte);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fin)) throw fail('La fuente no dice hasta qué fecha tiene datos.', 503);
-  const desde = haceUnAno(fin);
-  const antes = haceUnAno(desde);
   const suma = async (dataset, from, to) => {
     const [fila] = await consultar(fetchImpl, dataset, {
       $select: 'sum(cantidad) as n',
@@ -90,10 +94,15 @@ export async function estadisticaDelMunicipio(codMuni, { fetchImpl = fetch } = {
     });
     return Math.round(Number(fila?.n) || 0);
   };
-  const filas = await Promise.all(DELITOS_POLICIA.map(async delito => ({
-    delito: delito.nombre, cantidad: await suma(delito.id, desde, fin), anterior: await suma(delito.id, antes, desde),
-  })));
-  return { corte: fin, desde, filas };
+  const filas = await Promise.all(DELITOS_POLICIA.map(async delito => {
+    const [{ corte: ultimo } = {}] = await consultar(fetchImpl, delito.id, { $select: 'max(fecha_hecho) as corte' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia(ultimo))) throw fail(`La fuente no dice hasta qué fecha tiene datos de ${delito.nombre.toLowerCase()}.`, 503);
+    const corte = cierreDelMes(dia(ultimo));
+    const desde = haceUnAno(corte);
+    return { delito: delito.nombre, cantidad: await suma(delito.id, desde, corte), anterior: await suma(delito.id, haceUnAno(desde), desde), corte, desde };
+  }));
+  const corte = filas.map(fila => fila.corte).sort().at(-1);
+  return { corte, desde: haceUnAno(corte), filas };
 }
 
 const tendencia = (actual, anterior) => (anterior === 0 ? (actual ? 'antes 0' : '') : actual === anterior ? 'igual al año anterior'
@@ -117,7 +126,7 @@ export async function traerEstadisticaPolicia(db, studyId, body = {}, { fetchImp
     [municipio] = opciones;
   }
   const { corte, desde, filas } = await estadisticaDelMunicipio(municipio.cod_muni, { fetchImpl });
-  const fuente = `${FUENTE_POLICIA}: ${municipio.municipio}${municipio.departamento ? ` (${municipio.departamento})` : ''}, ${desde} a ${corte}`.slice(0, 300);
+  const fuente = fila => `${FUENTE_POLICIA}: ${municipio.municipio}${municipio.departamento ? ` (${municipio.departamento})` : ''}, ${fila.desde} a ${fila.corte}`.slice(0, 300);
   const table = 'psi_security_study_crime_stats';
   const { data: existing, error: readError } = await db.from(table).select('id, source, position').eq('study_id', study.id);
   if (readError) throw readError;
@@ -129,9 +138,11 @@ export async function traerEstadisticaPolicia(db, studyId, body = {}, { fetchImp
   let position = Math.max(0, ...(existing || []).filter(row => !previas.includes(row)).map(row => row.position));
   const rows = filas.map(fila => ({
     study_id: study.id, crime: `${fila.delito}${tendencia(fila.cantidad, fila.anterior) ? ` (${tendencia(fila.cantidad, fila.anterior)})` : ''}`.slice(0, 160),
-    count: fila.cantidad, source: fuente, cutoff_date: corte, position: ++position,
+    count: fila.cantidad, source: fuente(fila), cutoff_date: fila.corte, position: ++position,
   }));
   const { data, error } = await db.from(table).insert(rows).select('*');
   if (error) throw error;
-  return { municipio, corte, desde, filas: data || [], reemplazadas: previas.length };
+  // Los que van atrasados frente al corte más reciente: la pantalla los nombra para que nadie compare meses distintos.
+  const atrasados = filas.filter(fila => fila.corte !== corte).map(fila => ({ delito: fila.delito, corte: fila.corte }));
+  return { municipio, corte, desde, filas: data || [], reemplazadas: previas.length, atrasados };
 }
