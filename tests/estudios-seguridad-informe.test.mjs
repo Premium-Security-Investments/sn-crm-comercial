@@ -6,12 +6,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AGT002_DOCUMENT_TEMPLATE_PATH } from '../verticales/licitaciones/agt002-document-render.js';
-import { buildStudyReportFodt, imageSize } from '../verticales/estudios-seguridad/render-informe.js';
+import { studyReportSkeleton } from '../verticales/estudios-seguridad/plantilla-informe.js';
+import { buildStudyReportFodt, imageSize, skeletonFor } from '../verticales/estudios-seguridad/render-informe.js';
 import { buildStudyReport, generalEvaluation, heatmapBlock, treatmentPriorities } from '../verticales/estudios-seguridad/informe.js';
 import { valorarRiesgo } from '../verticales/estudios-seguridad/metodologia.js';
 
-const skeleton = readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8');
+const skeleton = studyReportSkeleton();
 // PNG de 2×1 píxeles y cabecera JPEG con SOF0 de 640×480.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGP4z8DAwMDAwAAAD/4B/0vZ8a8AAAAASUVORK5CYII=', 'base64');
 const JPEG_HEAD = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x01, 0xe0, 0x02, 0x80, 0x03]);
@@ -39,7 +39,7 @@ function snapshot() {
 const META = { version: 2, sha256: 'd'.repeat(64), approvedAt: '2026-10-30T15:00:00Z', approverName: 'Alba', preparerName: 'Álvaro Analista' };
 const IMG = { base64: PNG.toString('base64'), mime: 'image/png', width: 2, height: 1 };
 
-test('la estructura del informe de HADA, con fotos y mapas, sobre la plantilla corporativa', () => {
+test('la estructura del informe de HADA, con fotos y mapas, sobre la plantilla propia del estudio', () => {
   const report = buildStudyReport(snapshot(), META, { logo: IMG, f1: IMG });
   const fodt = buildStudyReportFodt(skeleton, report);
   const order = ['ESTUDIO DE SEGURIDAD FÍSICA', 'Contenido', 'Introducción', 'Marco legal', 'Decreto 356 de 1994', 'Metodología', 'Contexto externo e interno', 'Diagnóstico y evaluación de riesgos', 'Evaluación general', 'Medición comparativa del riesgo', 'R1 · Infiltración de personal', 'Recomendaciones de seguridad', 'R2 · Contaminación de carga', 'Diseño del plan estratégico de seguridad', 'Priorización del tratamiento', 'Control documental y trazabilidad', 'Mapa de criticidad general', 'Escalonamiento o cadena de mando', 'Informes, registro y seguimiento', 'Álvaro Analista'];
@@ -49,7 +49,7 @@ test('la estructura del informe de HADA, con fotos y mapas, sobre la plantilla c
     assert.ok(found > at - 1 && found !== -1, `falta o está fuera de orden: ${piece}`);
     at = found;
   }
-  assert.equal((fodt.match(/<draw:image draw:mime-type="image\/png">/g) || []).length, 2 + 2, 'logo y foto de R1, más las dos del membrete');
+  assert.equal(fodt.split(IMG.base64).length - 1, 2, 'el logo del cliente y la foto de R1');
   assert.ok(fodt.includes('Cliente &lt;de&gt; Prueba &amp; Cía'), 'el texto se escapa');
   assert.ok(fodt.includes('Registrado a partir de la nota de campo'), 'el origen agente se dice en la ficha');
   assert.ok(fodt.includes('EsCelda_critico'), 'R2 actual 25 crítico pinta su celda en rojo');
@@ -99,4 +99,25 @@ test('priorización del tratamiento en tres grupos, del plan de la sede Medellí
   assert.ok(fodt.includes('Magnitud del riesgo residual (estimada)'));
   assert.ok(fodt.includes('no un resultado verificado'));
   assert.ok(!/Magnitud del riesgo residual<\//.test(fodt), 'ningún residual sin la palabra estimado');
+});
+
+// Formato visual del preliminar de SecurityOps (Juan, 2026-11-18): portada con la ficha del puesto, banda con el título
+// en las páginas interiores, tablas numeradas y fichas seguidas, sin un salto de página por riesgo.
+test('formato del preliminar: portada primero, tablas numeradas, fichas sin saltos y recomendaciones sin repetir', () => {
+  const report = buildStudyReport(snapshot(), META, {});
+  assert.equal(report.blocks[0].kind, 'cover');
+  assert.deepEqual(report.blocks[0].rows.find(row => row[0] === 'Nivel de riesgo actual'), ['Nivel de riesgo actual', 'Crítico (1 de 2 riesgos en ese nivel)']);
+  assert.equal(report.header, 'Estudio de seguridad · Planta · Barranquilla');
+  assert.throws(() => buildStudyReportFodt(skeleton, { blocks: [{ kind: 'paragraph', text: 'x' }, report.blocks[0]] }), /primer bloque/);
+  const fodt = buildStudyReportFodt(skeletonFor(report), report);
+  assert.ok(fodt.includes('Estudio de seguridad · Planta · Barranquilla'), 'la banda lleva el título del estudio');
+  assert.ok(fodt.includes('Tabla 1') && fodt.includes('Tabla 2'), 'las tablas con título se numeran solas');
+  const fichas = report.blocks.findIndex(entry => entry.kind === 'h1' && entry.text === 'Fichas de riesgo');
+  const plan = report.blocks.findIndex(entry => entry.kind === 'h1' && entry.text === 'Diseño del plan estratégico de seguridad');
+  assert.ok(fichas > 0 && !report.blocks.slice(fichas, plan).some(entry => entry.kind === 'page_break'), 'las fichas van seguidas');
+  // R1 tiene una acción con el mismo texto del control propuesto: sale una vez, con su responsable.
+  const recs = report.blocks.slice(fichas, plan).filter(entry => entry.kind === 'list').flatMap(entry => entry.items);
+  assert.equal(recs.filter(item => item.startsWith('Reevaluación anual')).length, 1);
+  assert.ok(report.blocks.some(entry => entry.kind === 'note' && /Calificación del control propuesto: Altamente confiable/.test(entry.text)));
+  assert.ok(report.blocks.some(entry => entry.kind === 'cards'), 'tarjetas de cifras en la evaluación general');
 });

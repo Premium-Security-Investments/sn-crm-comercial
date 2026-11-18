@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { addAction, addRisk, createStudy, getStudy } from '../verticales/estudios-seguridad/estudios.js';
 import { transitionStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { loadLetters, markLetterSent, requestLetter, runLetterBatch } from '../verticales/estudios-seguridad/cartas.js';
-import { AGT002_DOCUMENT_TEMPLATE_PATH } from '../verticales/licitaciones/agt002-document-render.js';
+import { studyReportSkeleton } from '../verticales/estudios-seguridad/plantilla-informe.js';
 import { buildStudyReportFodt } from '../verticales/estudios-seguridad/render-informe.js';
 import { APPROVER, PREPARER, REVIEWER, database, supabaseOver } from './helpers/estudios-seguridad-db.mjs';
 
@@ -74,7 +74,7 @@ test('el servidor de tareas la arma con el membrete, la sube a la carpeta del es
   assert.match(text, /15 de diciembre de 2026 \(vencida\)/);
   assert.match(text, /2 novedades de prioridad alta o crítica \(la última, el 10 de enero de 2027\) y 1 alerta de riesgo/);
   assert.ok(!text.includes('Ronda cada hora'), 'lo nuestro no va en la carta al cliente');
-  assert.ok(buildStudyReportFodt(readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8'), deps.reports[0]).includes('Ing. Pérez'), 'pasa la validación del generador con membrete');
+  assert.ok(buildStudyReportFodt(studyReportSkeleton(), deps.reports[0]).includes('Ing. Pérez'), 'pasa la validación del generador con membrete');
 
   const [ready] = (await loadLetters(db, study, PREPARER, NOW)).letters;
   assert.deepEqual([ready.status, ready.file_url], ['lista', 'https://sharepoint.test/carta.pdf']);
