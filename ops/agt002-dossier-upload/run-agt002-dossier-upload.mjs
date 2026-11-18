@@ -9,7 +9,8 @@
 //
 // Usa la MISMA secuencia gobernada que la ruta web (`ingestTenderDossierDocuments`): versionado por contenido,
 // extracción tipada, nota en la línea de tiempo, snapshot y reanálisis incremental. El actor es la identidad
-// técnica de Vig-IA, no una persona: queda registrado que lo cargó el agente.
+// técnica de Vig-IA, no una persona: queda registrado que lo cargó el agente. El reanálisis, en cambio, lo pide quien
+// convirtió la oportunidad: a nombre de Vig-IA la admisión lo rechaza (42501, como en la carga de nuestras cartas).
 //
 // Uso:
 //   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \
@@ -67,6 +68,7 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 
 const api = await import('../../api/[...path].js');
 const { AGT002_VIGIA_AGENT_PROFILE_ID } = await import('../../verticales/licitaciones/agt002-phase-change-followup.js');
+const { agt002OpportunityConvertedBy } = await import('../../verticales/licitaciones/agt002-nuestras-observaciones-sharepoint.js');
 const { normalizeTenderDocumentOrigin } = await import('../../verticales/licitaciones/tender-document-origin.js');
 const { createClient } = await import('@supabase/supabase-js');
 const database = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
@@ -114,12 +116,14 @@ try {
   // F10 (auditoría Fiscalía): la secuencia procesa hasta 8 por envío; antes el resto se perdía sin aviso. Van en tandas.
   let result = null;
   const results = [];
+  const analysisRequestedBy = await agt002OpportunityConvertedBy(database, args.opportunityId);
   for (let start = 0; start < files.length; start += 8) {
     result = await api.ingestTenderDossierDocuments(database, {
       opportunityId: args.opportunityId,
       opportunity,
       actorProfileId: AGT002_VIGIA_AGENT_PROFILE_ID,
       files: files.slice(start, start + 8),
+      ...(analysisRequestedBy ? { analysisRequestedBy } : {}),
     });
     results.push(...(result.upload_results || []));
   }

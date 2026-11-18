@@ -230,3 +230,27 @@ test('la carpeta lleva la ficha y el índice de procesos al principio cuando se 
   const sinFicha = await armarAgt002CarpetaDelProceso(baseDeDatos(versiones), { tenderId: 't1' });
   assert.equal(sinFicha.archivos[0].ruta, '00_INDICE.md');
 });
+
+test('una carta de 05_nuestro no cuenta como radicada sin «Hecho» de Mi día ni constancia (Pereira, 18-nov)', async () => {
+  const versiones = [
+    { id: 'v1', name: 'OBSERVACIONES_LP-01-2026_DSAJ_PEREIRA_SEGURIDAD_NACIONAL.docx', document_type: 'otro', origin: 'propio', created_at: '2026-11-17T20:22:00Z', extracted_text: 'Observación 1' },
+    { id: 'v2', name: 'OBSERVACIONES_PLIEGO_DEFINITIVO_LP-01-2026.pdf', document_type: 'otro', origin: 'propio', created_at: '2026-11-18T04:54:00Z', extracted_text: 'Observación 1' },
+  ];
+  const otras = { psi_public_tenders: [{ id: 't1', converted_opportunity_id: 'o1' }] };
+  const sinMarca = await armarAgt002CarpetaDelProceso(baseDeDatos(versiones, [], otras), { tenderId: 't1' });
+  const indice = sinMarca.archivos.find(a => a.ruta === '00_INDICE.md').texto;
+  assert.doesNotMatch(indice, /lo que radicó/);
+  assert.match(indice, /## Qué radicamos/);
+  assert.match(indice, /ningún trámite de observaciones marcado/);
+  assert.match(indice, /OBSERVACIONES_LP-01-2026_DSAJ_PEREIRA_SEGURIDAD_NACIONAL\.txt: radicación por confirmar/);
+  assert.match(AGT002_CARPETA_POLICY, /NO prueba que se haya radicado/);
+
+  const conMarca = await armarAgt002CarpetaDelProceso(baseDeDatos(versiones, [], {
+    ...otras,
+    psi_tender_mi_dia_hechos: [{ item_key: 'o1|OBSERVATIONS|2026-11-18', done_by: 'p1', done_at: '2026-11-18T23:00:00Z' }],
+    psi_sales_profiles: [{ id: 'p1', full_name: 'Katherine Valencia' }],
+  }), { tenderId: 't1' });
+  const indiceConMarca = conMarca.archivos.find(a => a.ruta === '00_INDICE.md').texto;
+  assert.match(indiceConMarca, /PLIEGO_DEFINITIVO_LP-01-2026\.txt \(observaciones al pliego definitivo\): radicada según Katherine Valencia/);
+  assert.match(indiceConMarca, /OBSERVACIONES_LP-01-2026_DSAJ_PEREIRA_SEGURIDAD_NACIONAL\.txt: radicación por confirmar/);
+});

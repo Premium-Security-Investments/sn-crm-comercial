@@ -4,6 +4,7 @@
 import { selectCanonicalExtractionsByDocumentVersion } from './tender-document-extraction-persistence.js';
 import { AGT002_CARPETA_MAX_ARCHIVOS, AGT002_CARPETA_MAX_BYTES } from '../../agt002-mesa-carpeta-contrato.js';
 import { armarAgt002FichaDelProceso, armarAgt002IndiceDeProcesos } from './agt002-ficha-del-proceso.js';
+import { loadAgt002RadicacionesMarcadas } from './agt002-nuestras-observaciones.js';
 import { esDocumentoDeRespuestas, leerAgt002RespuestasPorObservacion, respuestasPorObservacionMarkdown } from './agt002-respuestas-por-observacion.js';
 
 // Lo que manda primero. Las respuestas, actas e informes de la entidad hoy se clasifican como «otro»: el nombre los separa.
@@ -32,7 +33,35 @@ export const AGT002_CARPETA_POLICY = [
   '(5) junto a cada documento de respuestas puede haber un archivo «… - por observacion.md» con cada observación ya separada (quién, qué pidió, qué decidió la entidad), las nuestras primero: úsalo primero y confirma la frase en el documento original. Sin ese archivo, esas respuestas vienen de tablas de dos columnas (lo que pidió el observante y lo que respondió la entidad) y el texto puede venir intercalado línea por línea: separa una columna de la otra antes de concluir, y nunca tomes como respuesta a una observación una frase que pertenece a otra;',
   '(6) antes de decir que algo no consta, no está o viene cortado, búscalo otra vez con otras palabras y en las otras carpetas; si después de eso no aparece, dilo y di qué buscaste.',
   'Cita el archivo y la frase literal que sostiene cada conclusión. Lo de 06_terceros es contexto, nunca regla del proceso.',
+  'NUESTRAS CARTAS. Lo de 05_nuestro son documentos de la empresa (cartas, borradores, constancias); que una carta esté ahí NO prueba que se haya radicado. Cuenta como radicada sólo si la sección «Qué radicamos» de 00_INDICE.md trae una constancia o una marca de Mi día para ese trámite, o si la entidad responde en 02 una observación de SEGURIDAD NACIONAL; dilo con esa prueba. Si no, llámala «nuestro borrador del <fecha> (radicación por confirmar)» y nunca hables de lo que la entidad respondió a «nuestras observaciones» de ese trámite.',
 ].join(' ');
+
+// Lo que prueba que radicamos (18-nov: la Mesa ofreció resumir lo que el Acta 78 de Pereira respondió a «nuestras
+// observaciones» al proyecto, que nunca se radicaron: el borrador estaba en 05 y el índice decía que 05 era lo radicado).
+const TRAMITE_DEL_NOMBRE = [[/proyecto/i, 'Observaciones al proyecto de pliego'], [/definitiv/i, 'Observaciones al pliego definitivo']];
+
+function queRadicamos(entradas, marcadas) {
+  const nuestras = entradas.filter(({ carpeta }) => carpeta === '05_nuestro');
+  const constancias = nuestras.filter(({ doc }) => /constancia/i.test(doc.name));
+  const cartas = nuestras.filter(({ doc }) => /observaci/i.test(doc.name) && !/constancia/i.test(doc.name));
+  const marcado = tramite => marcadas.find(marca => marca.tramite === tramite);
+  return [
+    '## Qué radicamos',
+    '',
+    'Una carta de 05_nuestro sólo está radicada si aquí hay prueba: una marca «Hecho» de Mi día (la pone quien radica) o una constancia.',
+    ...(marcadas.length
+      ? marcadas.map(marca => `- Mi día: «${marca.tramite}» (plazo ${marca.plazo || 'sin fecha'}) marcado como hecho por ${marca.marcada_por || 'sin nombre'} el ${marca.marcada_el || 'sin fecha'}.`)
+      : ['- Mi día: ningún trámite de observaciones marcado como hecho.']),
+    ...(constancias.length ? constancias.map(({ ruta }) => `- Constancia: ${ruta}.`) : ['- Constancias: ninguna en la carpeta.']),
+    ...cartas.map(({ ruta, doc }) => {
+      const tramite = TRAMITE_DEL_NOMBRE.find(([patron]) => patron.test(doc.name))?.[1];
+      const marca = tramite ? marcado(tramite) : null;
+      const estado = marca ? `radicada según ${marca.marcada_por || 'Mi día'} (Mi día)` : constancias.length ? 'ver si alguna constancia le corresponde' : 'radicación por confirmar';
+      return `- Carta ${ruta}${tramite ? ` (${tramite.toLowerCase()})` : ''}: ${estado}.`;
+    }),
+    '',
+  ];
+}
 
 function nombreDeArchivo(nombre, usados) {
   const base = String(nombre || 'documento').normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -96,15 +125,21 @@ export async function armarAgt002CarpetaDelProceso(database, { tenderId, now = n
   }
 
   entradas.sort((a, b) => a.ruta.localeCompare(b.ruta, 'es'));
+  let tender = null;
+  try { tender = (await database.from('psi_public_tenders').select('converted_opportunity_id').eq('id', tenderId).maybeSingle()).data; }
+  catch { tender = null; }
+  const marcadas = entradas.some(({ carpeta }) => carpeta === '05_nuestro')
+    ? await loadAgt002RadicacionesMarcadas(database, tender?.converted_opportunity_id) : [];
   const indice = [
     '# Índice de la carpeta del proceso',
     '',
     'Una línea por documento vigente: carpeta/archivo, nombre original, tipo y origen en el CRM, fecha de carga y tamaño.',
-    'Orden de autoridad: 01 (pliego definitivo y adendas) manda sobre 04 (estudios previos); 02 trae lo que la entidad respondió o decidió; 05 es lo que radicó Seguridad Nacional; 06 son documentos de terceros (contexto, nunca regla).',
+    'Orden de autoridad: 01 (pliego definitivo y adendas) manda sobre 04 (estudios previos); 02 trae lo que la entidad respondió o decidió; 05 son documentos de Seguridad Nacional (cartas, borradores, constancias: estar ahí no prueba que se radicó, ver «Qué radicamos»); 06 son documentos de terceros (contexto, nunca regla).',
     '',
     ...entradas.map(({ ruta, doc, texto }) => `- ${ruta} | ${doc.name} | ${doc.document_type || 'sin tipo'} | ${doc.origin || 'sin dato'} | ${String(doc.created_at || '').slice(0, 10)} | ${texto.length} caracteres`),
     ...(omitidos.length ? ['', `Quedaron fuera por tamaño (${omitidos.length}): ${omitidos.map(({ doc }) => doc.name).join('; ')}.`] : []),
     '',
+    ...(entradas.some(({ carpeta }) => carpeta === '05_nuestro') ? queRadicamos(entradas, marcadas) : []),
   ].join('\n');
 
   // Las respuestas ya separadas por observación (paso 3): junto a su documento original. Sin la 217, nada.
@@ -123,7 +158,6 @@ export async function armarAgt002CarpetaDelProceso(database, { tenderId, now = n
   try { ficha = await armarAgt002FichaDelProceso(database, { tenderId, hoy }); }
   catch (error) { ficha = null; console.warn('agt002_mesa_ficha_unavailable', { event: 'agt002_mesa_ficha_unavailable', code: error?.code || 'ficha_failed' }); }
   try {
-    const { data: tender } = await database.from('psi_public_tenders').select('converted_opportunity_id').eq('id', tenderId).maybeSingle();
     procesos = await armarAgt002IndiceDeProcesos(database, { hoy, actual: tender?.converted_opportunity_id || null });
   } catch (error) { procesos = null; console.warn('agt002_mesa_procesos_unavailable', { event: 'agt002_mesa_procesos_unavailable', code: error?.code || 'procesos_failed' }); }
 
