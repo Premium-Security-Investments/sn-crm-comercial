@@ -1,8 +1,9 @@
 // AGT-002 — mejora 6 (encargo desde Terminal): la fecha de presentación se pone sola.
 //
 // En Terminal (TT-SPO-07, 3-nov) la fecha se puso a mano en diez anexos, uno por uno, y la carta de presentación quedó
-// sin ella porque el archivo estaba bloqueado. La línea «Ciudad, fecha» de un documento de la oferta es la ciudad de la
-// sede principal y el día del cierre en Colombia: la pone el servidor, no el modelo.
+// sin ella porque el archivo estaba bloqueado. La línea «Ciudad, fecha» de un documento de la oferta es la ciudad donde se
+// radica si allí tenemos sede o agencia (si no, la sede principal; Katherine, 17-nov) y el día del cierre en Colombia:
+// la pone el servidor, no el modelo.
 //
 // Sólo la línea de ciudad y fecha. Una fecha dentro del cuerpo («a los [DÍA] del mes de [MES]») no se toca: en Terminal
 // el [MES] del período de aportes no era la fecha del documento y llenarlo con noviembre habría sido un error.
@@ -36,15 +37,40 @@ export function agt002LineaCiudadFecha({ ciudad, cierre }) {
   return `${ciudadLimpia}, ${numero} de ${MESES[mes - 1]} de ${anio}`;
 }
 
-/** Lee la ciudad de la sede principal y el cierre del proceso. Sin alguno de los dos, devuelve null. */
+const clave = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/\bd\.?\s*c\.?/g, '').replace(/[^a-z ]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * La ciudad de la carta (Katherine, 17-nov): la ciudad donde se radica, si allí tenemos sede o agencia autorizada; si
+ * no, la de la sede principal. Una agencia con la autorización pendiente no cuenta. Bogotá se escribe «Bogotá D.C.».
+ */
+export function agt002CiudadDeRadicacion({ sedes = [], ciudadProceso = null, departamentoProceso = null, entidad = null } = {}) {
+  const principal = sedes.find(sede => sede?.is_main)?.city || null;
+  const autorizadas = sedes.filter(sede => sede?.city && !/^\s*pendiente/i.test(String(sede.supervigilancia_authorization || '')));
+  // SECOP a veces trae la ciudad como «No Definido» (Manizales, Rama Bogotá): se busca entonces en el departamento
+  // («Distrito Capital de Bogotá») y, por último, en el nombre de la entidad («… de Manizales»).
+  const destino = clave(ciudadProceso);
+  const enTexto = texto => { const t = ` ${clave(texto)} `; return autorizadas.find(sede => t.includes(` ${clave(sede.city)} `)); };
+  const local = (destino && destino !== 'no definido' ? autorizadas.find(sede => clave(sede.city) === destino) : null)
+    || ((!destino || destino === 'no definido') ? enTexto(departamentoProceso) || enTexto(entidad) : null);
+  const ciudad = (local || null)?.city || principal;
+  if (!ciudad) return null;
+  return clave(ciudad) === 'bogota' ? 'Bogotá D.C.' : ciudad;
+}
+
+/** Lee las sedes, la ciudad del proceso y su cierre. Sin ciudad o sin cierre, devuelve null. */
 export async function agt002LeerCiudadFechaDePresentacion(database, { tenderId }) {
   if (!database || typeof database.from !== 'function' || !tenderId) return null;
-  const [sede, proceso] = await Promise.all([
-    database.from('psi_company_sites').select('city').eq('is_main', true).limit(1).maybeSingle(),
-    database.from('psi_public_tenders').select('deadline_at,raw').eq('id', tenderId).maybeSingle(),
+  const [sedes, proceso] = await Promise.all([
+    database.from('psi_company_sites').select('city,is_main,supervigilancia_authorization'),
+    database.from('psi_public_tenders').select('city,dept,entity,deadline_at,raw').eq('id', tenderId).maybeSingle(),
   ]).catch(() => [null, null]);
   const raw = proceso?.data?.raw && typeof proceso.data.raw === 'object' ? proceso.data.raw : {};
-  return agt002LineaCiudadFecha({ ciudad: sede?.data?.city, cierre: raw.deadline || proceso?.data?.deadline_at });
+  const ciudad = agt002CiudadDeRadicacion({
+    sedes: Array.isArray(sedes?.data) ? sedes.data : [],
+    ciudadProceso: proceso?.data?.city, departamentoProceso: proceso?.data?.dept, entidad: proceso?.data?.entity,
+  });
+  return agt002LineaCiudadFecha({ ciudad, cierre: raw.deadline || proceso?.data?.deadline_at });
 }
 
 /**

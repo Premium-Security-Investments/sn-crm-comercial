@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { agt002AplicarMembrete2026, agt002Membrete2026 } from './agt002-membrete-2026.js';
 
 export const AGT002_DOCUMENT_TEMPLATE_PATH = fileURLToPath(new URL('./plantillas/membrete-seguridad-nacional.fodt', import.meta.url));
 export const AGT002_DOCUMENT_LIMITS = Object.freeze({ blocks: 200, text: 4000, items: 60, rows: 80, columns: 8, lines: 8 });
@@ -190,6 +191,7 @@ export function agt002DocumentFileName(value) {
  */
 export async function renderAgt002Docx(document, {
   templatePath = AGT002_DOCUMENT_TEMPLATE_PATH, soffice = '/usr/bin/soffice', timeoutMs = 90_000, run = promisify(execFile),
+  membrete = agt002Membrete2026,
 } = {}) {
   const fodt = buildAgt002DocumentFodt(await readFile(templatePath, 'utf8'), document);
   const dir = await mkdtemp(path.join(tmpdir(), 'agt002-doc-'));
@@ -201,7 +203,8 @@ export async function renderAgt002Docx(document, {
     if (!bytes || bytes.length < 1000 || bytes.subarray(0, 2).toString('latin1') !== 'PK') {
       throw new Agt002DocumentError('AGT002_DOCUMENT_CONVERSION_FAILED', 'LibreOffice no produjo el Word.');
     }
-    return bytes;
+    // Membrete «SN 2026» (Katherine, 17-nov): se cambian encabezado, pie y márgenes; el cuerpo queda igual.
+    return membrete ? agt002AplicarMembrete2026(bytes, await membrete()) : bytes;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

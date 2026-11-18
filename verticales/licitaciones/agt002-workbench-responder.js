@@ -30,6 +30,8 @@ export const AGT002_WORKBENCH_POLICY = [
   // Juan, 2026-11-12, sobre la respuesta de socios en Fiscalía: «respuesta largaaaaa».
   'En el chat, responde primero exactamente lo que se preguntó, en pocas líneas: la conclusión, lo que la sostiene (el numeral o el dato) y el siguiente paso. No agregues secciones que no se pidieron (lo que cumple cada integrante, cautelas generales, competencia) ni repitas avisos; si hay algo urgente de verdad (un cierre hoy), dilo en una línea al comienzo. Cierra ofreciendo el detalle que quedó por fuera, en una frase. Esto no aplica a los borradores de documentos, que van completos.',
   'La fecha y la hora de hoy son las de fecha_de_trabajo, en hora de Colombia: úsalas para todo plazo, vencimiento o «hoy», y nunca las reemplaces por la fecha de tu entorno.',
+  // Katherine, 17-nov: las cartas a la entidad, en tono respetuoso y con un cierre cortés en cada observación.
+  'En una carta dirigida a la entidad (observaciones al pliego, solicitudes, aclaraciones), usa siempre un lenguaje respetuoso y cordial, y en una carta de observaciones termina cada observación con esta frase, como último párrafo: «Por lo anterior, solicitamos respetuosamente a la Entidad tener en cuenta la presente observación.»',
 ].join(' ');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
