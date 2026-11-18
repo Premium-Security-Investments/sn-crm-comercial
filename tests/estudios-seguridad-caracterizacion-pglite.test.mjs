@@ -10,7 +10,7 @@ import { completeEvidenceUpload, requestEvidenceUpload } from '../verticales/est
 import { buildSnapshot } from '../verticales/estudios-seguridad/flujo.js';
 import { buildStudyReport } from '../verticales/estudios-seguridad/informe.js';
 import { ESCALAS, controlWord } from '../verticales/estudios-seguridad/plantilla.js';
-import { AGT002_DOCUMENT_TEMPLATE_PATH } from '../verticales/licitaciones/agt002-document-render.js';
+import { studyReportSkeleton } from '../verticales/estudios-seguridad/plantilla-informe.js';
 import { buildStudyReportFodt } from '../verticales/estudios-seguridad/render-informe.js';
 import { PREPARER, database, supabaseOver } from './helpers/estudios-seguridad-db.mjs';
 
@@ -118,7 +118,7 @@ test('el informe toma cada dato de su lugar: caracterización, dispositivo, cont
   const { snapshot, sha256 } = buildSnapshot(await getStudy(db, study.id));
   assert.equal(snapshot.riesgos[0].proceso_cliente, 'Gestión Humana');
   assert.equal(snapshot.caracterizacion.grupos_delincuenciales, 'Los Costeños.');
-  const fodt = buildStudyReportFodt(readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8'), buildStudyReport(snapshot, { version: 1, sha256, approvedAt: '2026-10-30T15:00:00Z', approverName: 'Alba', preparerName: 'Álvaro' }));
+  const fodt = buildStudyReportFodt(studyReportSkeleton(), buildStudyReport(snapshot, { version: 1, sha256, approvedAt: '2026-10-30T15:00:00Z', approverName: 'Alba', preparerName: 'Álvaro' }));
   for (const expected of ['Introducción', 'Manufactura de jabones desde 1956.', 'Contexto externo', 'Extorsión', 'Grupos y organizaciones delincuenciales', 'Dispositivo de seguridad', 'Cold Process', 'Procesos internos analizados', 'Gestión Humana', 'Humano – Procedimental – Estratégico', 'Medianamente confiable · Medianamente eficaz · Medianamente eficiente', 'Confiable · Eficaz · Eficiente', 'Escalonamiento o cadena de mando', '3105210260', 'Muy leve', 'Crítico']) {
     assert.ok(fodt.includes(expected), `falta en el informe: ${expected}`);
   }

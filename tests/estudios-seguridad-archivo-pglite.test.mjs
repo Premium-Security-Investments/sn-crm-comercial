@@ -12,7 +12,7 @@ import { completeEvidenceUpload, requestEvidenceUpload } from '../verticales/est
 import { loadWorkflow, transitionStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { ARCHIVE_BASE_PATH, archiveFolderPath, buildStudyReport, sharepointSafeName } from '../verticales/estudios-seguridad/informe.js';
 import { parseUploadOutput, runArchiveBatch } from '../verticales/estudios-seguridad/archivo.js';
-import { AGT002_DOCUMENT_TEMPLATE_PATH } from '../verticales/licitaciones/agt002-document-render.js';
+import { studyReportSkeleton } from '../verticales/estudios-seguridad/plantilla-informe.js';
 import { buildStudyReportFodt } from '../verticales/estudios-seguridad/render-informe.js';
 import { APPROVER, PREPARER, REVIEWER, database, supabaseOver } from './helpers/estudios-seguridad-db.mjs';
 
@@ -141,7 +141,7 @@ test('el informe cabe en el generador con membrete y dice lo que se aprobó', as
   const { data: [version] } = await db.from('psi_security_study_versions').select('version, snapshot, snapshot_sha256, approved_at').eq('study_id', study.id);
   const report = buildStudyReport(version.snapshot, { version: 1, sha256: version.snapshot_sha256, approvedAt: version.approved_at, approverName: 'Alba Aprobadora', preparerName: 'Ana Preparadora', reviewerName: 'Rubén Revisor' });
   // Pasa la validación real del generador (bloques, filas, columnas, textos) sobre la plantilla corporativa.
-  const fodt = buildStudyReportFodt(readFileSync(AGT002_DOCUMENT_TEMPLATE_PATH, 'utf8'), report);
+  const fodt = buildStudyReportFodt(studyReportSkeleton(), report);
   assert.match(fodt, /ESTUDIO DE SEGURIDAD FÍSICA/);
   assert.match(fodt, /Evaluación general/);
   assert.match(fodt, /ningún riesgo bajaría de nivel y el nivel residual estimado más alto es tolerable/, 'la evaluación general se calcula, no suma magnitudes y no queda cortada');
