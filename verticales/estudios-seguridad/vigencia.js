@@ -3,8 +3,9 @@
 // Héctor Martínez (reunión del 2026-11-11): "como mínimo cada 6 meses y como máximo cada 3 años", según el puesto, y
 // antes si cambian las instalaciones o hay un siniestro: "el estudio de seguridad es el que nos blinda". Aquí sólo hay
 // cálculo: la fecha de vencimiento sale de la aprobación de la última versión y la frecuencia del estudio; la
-// revaloración la piden una persona (cambio de instalaciones), las novedades graves de SecurityOps posteriores o el
-// indicador por riesgo (las novedades de la sede ya superan la probabilidad calificada; sugerencia.js).
+// revaloración la piden una persona (cambio de instalaciones), las novedades graves de SecurityOps posteriores, una
+// «Alerta de Riesgos» posterior (la alerta temprana: Juan, 2026-11-18, por lo que pidió John Fredy) o el indicador por
+// riesgo (las novedades de la sede ya superan la probabilidad calificada; sugerencia.js).
 import { riskIndicators } from './sugerencia.js';
 
 export const RENEWAL_OPTIONS = Object.freeze([
@@ -50,6 +51,14 @@ export function studyValidity(study, { approvedAt = null, securityops = null, ri
   const graves = (securityops?.data?.status === 'ok' ? securityops.data.summary?.novedades?.altas_fechas || [] : []).filter(day => day > aprobado).sort();
   if (graves.length) {
     revalorar.push({ motivo: 'siniestro', fecha: graves.at(-1), detalle: `${graves.length} ${graves.length === 1 ? 'novedad' : 'novedades'} de prioridad alta o crítica en SecurityOps después de la aprobación (la última, ${graves.at(-1)}).` });
+  }
+  // La alerta temprana (John Fredy, reunión del 2026-11-17): el supervisor o el coordinador avisó que algo está por
+  // materializarse, y eso obliga a actualizar el análisis de riesgos, no esperar a la renovación.
+  const alertas = (securityops?.data?.status === 'ok' ? securityops.data.alerts || [] : [])
+    .filter(item => String(item?.fecha || '') > aprobado).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  if (alertas.length) {
+    const ultima = alertas.at(-1);
+    revalorar.push({ motivo: 'alerta', fecha: ultima.fecha, detalle: `${alertas.length} ${alertas.length === 1 ? 'Alerta de Riesgos' : 'Alertas de Riesgos'} en SecurityOps después de la aprobación (la última, ${ultima.fecha}: «${String(ultima.riesgo || '').slice(0, 160)}»).` });
   }
   // Indicador por riesgo: las novedades de la sede superan la probabilidad calificada.
   for (const item of risks ? riskIndicators({ risks, catalog, securityops }) : []) {

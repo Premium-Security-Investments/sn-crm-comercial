@@ -34,7 +34,7 @@ export type Comparison = {
 // Migración 209: vigencia del estudio y revaloración (Héctor: mínimo cada 6 meses, máximo cada 3 años).
 export type Validity = {
   estado: 'sin_aprobar' | 'vigente' | 'por_vencer' | 'vencido'; aprobado: string | null; vence: string | null; dias: number | null; meses: number;
-  revalorar: Array<{ motivo: 'pedida' | 'siniestro' | 'indicador'; fecha: string; detalle: string; riesgo?: number }>; original?: string | null;
+  revalorar: Array<{ motivo: 'pedida' | 'siniestro' | 'alerta' | 'indicador'; fecha: string; detalle: string; riesgo?: number }>; original?: string | null;
 };
 // Copia de RENEWAL_OPTIONS en verticales/estudios-seguridad/vigencia.js.
 export const RENEWAL_OPTIONS = [
