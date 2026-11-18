@@ -52,3 +52,9 @@ test('el runner no inventa el origen ni lo deduce del nombre', async () => {
   assert.ok(!/origin: 'entidad'|origin: "entidad"/.test(source), 'ningún origen por defecto en el código');
   assert.match(source, /AGT002_VIGIA_AGENT_PROFILE_ID/, 'el actor es la identidad técnica del agente, no una persona');
 });
+
+test('el reanálisis de la carga manual lo pide quien convirtió la oportunidad, no Vig-IA', async () => {
+  const runner = await readFile(RUNNER, 'utf8');
+  assert.match(runner, /agt002OpportunityConvertedBy\(database, args\.opportunityId\)/);
+  assert.match(runner, /\.\.\.\(analysisRequestedBy \? \{ analysisRequestedBy \} : \{\}\)/);
+});

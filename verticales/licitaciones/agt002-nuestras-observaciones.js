@@ -97,7 +97,9 @@ export function agt002NuestrasObservacionesForModel(versions, extractionRows) {
   return letters.length ? [...letters, ...receipts] : [];
 }
 
-async function loadRadicacionesMarcadas(database, opportunityId) {
+/** Los «Hecho» de Mi día sobre los plazos de observaciones de la oportunidad. Si algo falla, nada. */
+export async function loadAgt002RadicacionesMarcadas(database, opportunityId) {
+  if (!opportunityId) return [];
   try {
     const { data: hechos, error } = await database.from('psi_tender_mi_dia_hechos').select('item_key,done_by,done_at').eq('opportunity_id', opportunityId);
     if (error || !hechos?.length) return [];
@@ -111,7 +113,7 @@ async function loadRadicacionesMarcadas(database, opportunityId) {
 
 /** Lee las cartas, las constancias y los «Hecho» de Mi día de la oportunidad. Si algo falla, el análisis sigue sin eso. */
 export async function loadAgt002NuestrasObservaciones(database, { opportunityId }) {
-  const marcadas = await loadRadicacionesMarcadas(database, opportunityId);
+  const marcadas = await loadAgt002RadicacionesMarcadas(database, opportunityId);
   return [...(await loadLettersAndReceipts(database, opportunityId)), ...marcadas];
 }
 
