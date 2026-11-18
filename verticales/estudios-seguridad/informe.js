@@ -275,28 +275,6 @@ export function buildStudyReport(snapshot, meta, images = {}) {
       ['Elaborado por', 'Dirección Nacional de Operaciones y Gestión de Riesgos — Seguridad Nacional Ltda.'],
     ] });
 
-  // Resumen ejecutivo (formato del preliminar; Juan, 2026-11-18): lo que el lector necesita en una página, calculado
-  // de los mismos datos del estudio; no dice nada que el resto del informe no diga.
-  if (risks.length) {
-    chapter('Resumen ejecutivo');
-    const plan = snapshot.acciones.filter(action => action.estado !== 'descartada');
-    const attention = risks.filter(risk => risk.valoracion.actual.nivel !== metodologia.niveles[0].codigo);
-    blocks.push({ kind: 'cards', items: [
-      { label: 'Riesgos identificados', value: String(risks.length), detail: `${new Set(risks.map(risk => risk.zona).filter(Boolean)).size || 'sin'} escenarios físicos` },
-      { label: 'Requieren tratamiento', value: String(attention.length), detail: 'sobre el nivel aceptable hoy' },
-      { label: 'Acciones del plan', value: String(plan.length), detail: `${plan.filter(action => action.a_cargo === 'cliente').length} a cargo del cliente` },
-    ] });
-    p(`**Nivel de riesgo actual: ${overallLevel(risks)}.** ${generalEvaluation(risks)}`);
-    const top = [...risks].sort((a, b) => b.valoracion.actual.magnitud - a.valoracion.actual.magnitud).slice(0, 3);
-    h2('Riesgos principales');
-    list(top.map(risk => clip(`R${risk.numero} · ${risk.riesgo} — ${level(risk.valoracion.actual)} hoy; ${level(risk.valoracion.residual)} estimado con los controles propuestos.`, 400)));
-    const first = top.flatMap(risk => plan.filter(action => action.riesgo === risk.id).slice(0, 1).map(action => ({ risk, action }))).slice(0, 3);
-    if (first.length) {
-      h2('Lo primero que hay que hacer');
-      blocks.push({ kind: 'list', numbered: true, items: first.map(({ risk, action }) => clip(`${action.accion} (R${risk.numero}; ${action.responsable || 'sin responsable'}${action.a_cargo === 'cliente' ? ', a cargo del cliente' : ''}).`, 700)) });
-    }
-  }
-
   // Introducción.
   chapter('Introducción');
   if (caracter.descripcion_cliente) p(clip(caracter.descripcion_cliente, 5000));
@@ -361,6 +339,15 @@ export function buildStudyReport(snapshot, meta, images = {}) {
   p(`Se identificaron ${risks.length} riesgos en ${new Set(risks.map(risk => risk.zona).filter(Boolean)).size || 'los'} escenarios físicos${clientProcesses.length ? ` y ${clientProcesses.length} procesos` : ''}.`);
   list(risks.map(risk => clip(`R${risk.numero}. ${risk.riesgo}`, 300)));
   h2('Evaluación general');
+  if (risks.length) {
+    const atention = risks.filter(risk => risk.valoracion.actual.nivel !== metodologia.niveles[0].codigo).length;
+    const plan = snapshot.acciones.filter(action => action.estado !== 'descartada');
+    blocks.push({ kind: 'cards', items: [
+      { label: 'Riesgos identificados', value: String(risks.length), detail: `${new Set(risks.map(risk => risk.zona).filter(Boolean)).size || 'sin'} escenarios físicos` },
+      { label: 'Requieren tratamiento', value: String(atention), detail: 'sobre el nivel aceptable hoy' },
+      { label: 'Acciones del plan', value: String(plan.length), detail: `${plan.filter(action => action.a_cargo === 'cliente').length} a cargo del cliente` },
+    ] });
+  }
   p(generalEvaluation(risks));
   if (risks.length) {
     blocks.push({ kind: 'table', title: 'Medición comparativa del riesgo', widths: [0.78, 1.0, 1.82, 0.85, 0.88, 0.88, 0.88], header: ['Código', 'Proceso', 'Riesgo', 'Actual', 'Residual estimado', 'Reducción', 'Resultado'], rows: risks.slice(0, 120).map(risk => {
