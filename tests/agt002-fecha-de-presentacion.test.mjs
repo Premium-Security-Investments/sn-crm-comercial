@@ -36,10 +36,16 @@ function wordMinimo() {
 }
 
 function baseDeMentira({ ciudad = 'Pereira', cierre = '2026-11-04T15:00:00Z', sedes = null, proceso = {} } = {}) {
-  const filas = { psi_company_sites: sedes || (ciudad ? [{ city: ciudad, is_main: true }] : []), psi_public_tenders: cierre ? { deadline_at: cierre, raw: {}, ...proceso } : null };
+  const lista = sedes || (ciudad ? [{ city: ciudad, is_main: true }] : []);
   const consulta = tabla => {
-    const q = { select: () => q, eq: () => q, limit: () => q, maybeSingle: async () => ({ data: filas[tabla], error: null }),
-      then: (resolve, reject) => Promise.resolve({ data: filas[tabla], error: null }).then(resolve, reject) };
+    if (tabla === 'psi_public_tenders') {
+      const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: cierre ? { deadline_at: cierre, raw: {}, ...proceso } : null, error: null }) };
+      return q;
+    }
+    let principal = null;
+    const q = { select: () => q, limit: () => q, eq: (_campo, valor) => { principal = valor; return q; },
+      maybeSingle: async () => ({ data: lista.find(sede => sede.is_main) || null, error: null }),
+      then: (resolve, reject) => Promise.resolve({ data: lista.filter(sede => Boolean(sede.is_main) === principal), error: null }).then(resolve, reject) };
     return q;
   };
   return { from: consulta, storage: { from: () => ({ upload: async () => ({ error: null }) }) } };

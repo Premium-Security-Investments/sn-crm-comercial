@@ -61,13 +61,19 @@ export function agt002CiudadDeRadicacion({ sedes = [], ciudadProceso = null, dep
 /** Lee las sedes, la ciudad del proceso y su cierre. Sin ciudad o sin cierre, devuelve null. */
 export async function agt002LeerCiudadFechaDePresentacion(database, { tenderId }) {
   if (!database || typeof database.from !== 'function' || !tenderId) return null;
-  const [sedes, proceso] = await Promise.all([
-    database.from('psi_company_sites').select('city,is_main,supervigilancia_authorization'),
+  // La sede principal, como antes; las agencias, aparte: si no se pueden leer, la carta sale con la sede principal.
+  const [principal, agencias, proceso] = await Promise.all([
+    database.from('psi_company_sites').select('city').eq('is_main', true).limit(1).maybeSingle(),
+    Promise.resolve(database.from('psi_company_sites').select('city,is_main,supervigilancia_authorization').eq('is_main', false)).catch(() => null),
     database.from('psi_public_tenders').select('city,dept,entity,deadline_at,raw').eq('id', tenderId).maybeSingle(),
-  ]).catch(() => [null, null]);
+  ]).catch(() => [null, null, null]);
   const raw = proceso?.data?.raw && typeof proceso.data.raw === 'object' ? proceso.data.raw : {};
+  const sedes = [
+    ...(principal?.data?.city ? [{ city: principal.data.city, is_main: true }] : []),
+    ...(Array.isArray(agencias?.data) ? agencias.data.filter(sede => !sede?.is_main) : []),
+  ];
   const ciudad = agt002CiudadDeRadicacion({
-    sedes: Array.isArray(sedes?.data) ? sedes.data : [],
+    sedes,
     ciudadProceso: proceso?.data?.city, departamentoProceso: proceso?.data?.dept, entidad: proceso?.data?.entity,
   });
   return agt002LineaCiudadFecha({ ciudad, cierre: raw.deadline || proceso?.data?.deadline_at });
