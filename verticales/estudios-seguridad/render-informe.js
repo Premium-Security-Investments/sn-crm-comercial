@@ -110,6 +110,8 @@ const PARAGRAPH_STYLES = [
   ['EsCeldaTexto', 'fo:margin-top="0in" fo:margin-bottom="0in" fo:line-height="115%"'],
   ['EsCeldaCentro', 'fo:margin-top="0in" fo:margin-bottom="0in" fo:text-align="center"'],
   ['EsTarjetaTexto', 'fo:margin-top="0in" fo:margin-bottom="0.02in"'],
+  ['EsPortadaIndiceTitulo', 'fo:margin-left="1in" fo:margin-right="1in" fo:margin-top="0.35in" fo:margin-bottom="0.1in" fo:padding-top="0.12in" fo:border-top="0.75pt solid #d1d5db"', `fo:font-size="12pt" fo:font-weight="bold" fo:color="${PALETA.azul}"`],
+  ['EsPortadaIndice', 'fo:margin-left="1in" fo:margin-right="1in" fo:margin-top="0in" fo:margin-bottom="0.05in"', 'fo:font-size="10pt" fo:color="#374151"'],
   ['EsIndice', 'fo:margin-left="0.9in" fo:margin-top="0in" fo:margin-bottom="0.07in" fo:padding-bottom="0.04in" fo:border-bottom="0.5pt dotted #d1d5db"', 'fo:font-size="10.5pt" fo:font-weight="bold"'],
 ].map(([name, props, textProps]) => paraStyle(name, props, textProps)).join('');
 
@@ -226,7 +228,9 @@ function cover(entry, index) {
       if (!Array.isArray(row) || row.length !== 2) fail(`portada fila ${at}: debe tener etiqueta y valor.`);
       return [escapeXml(text(String(row[0]), `portada ${at}`)), escapeXml(text(String(row[1] ?? '—'), `portada ${at}`, { optional: true }) || '—')];
     }),
-  }) + (entry.logo ? image({ ...entry.logo, caption: '' }, index) : '') + '<text:p text:style-name="EsInicioCuerpo"/>';
+  }) + (entry.logo ? image({ ...entry.logo, caption: '' }, index) : '')
+    + (Array.isArray(entry.contents) && entry.contents.length ? paragraph('EsPortadaIndiceTitulo', 'Contenido') + entry.contents.slice(0, 30).map((item, at) => paragraph('EsPortadaIndice', text(item, `portada.contents.${at}`))).join('') : '')
+    + '<text:p text:style-name="EsInicioCuerpo"/>';
 }
 
 function block(entry, index, counter) {
