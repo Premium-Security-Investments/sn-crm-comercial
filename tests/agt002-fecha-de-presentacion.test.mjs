@@ -35,10 +35,17 @@ function wordMinimo() {
   return zip.toBuffer();
 }
 
-function baseDeMentira({ ciudad = 'Pereira', cierre = '2026-11-04T15:00:00Z' } = {}) {
-  const fila = { psi_company_sites: ciudad ? { city: ciudad } : null, psi_public_tenders: cierre ? { deadline_at: cierre, raw: {} } : null };
+function baseDeMentira({ ciudad = 'Pereira', cierre = '2026-11-04T15:00:00Z', sedes = null, proceso = {} } = {}) {
+  const lista = sedes || (ciudad ? [{ city: ciudad, is_main: true }] : []);
   const consulta = tabla => {
-    const q = { select: () => q, eq: () => q, limit: () => q, maybeSingle: async () => ({ data: fila[tabla], error: null }) };
+    if (tabla === 'psi_public_tenders') {
+      const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: cierre ? { deadline_at: cierre, raw: {}, ...proceso } : null, error: null }) };
+      return q;
+    }
+    let principal = null;
+    const q = { select: () => q, limit: () => q, eq: (_campo, valor) => { principal = valor; return q; },
+      maybeSingle: async () => ({ data: lista.find(sede => sede.is_main) || null, error: null }),
+      then: (resolve, reject) => Promise.resolve({ data: lista.filter(sede => Boolean(sede.is_main) === principal), error: null }).then(resolve, reject) };
     return q;
   };
   return { from: consulta, storage: { from: () => ({ upload: async () => ({ error: null }) }) } };
@@ -59,4 +66,23 @@ test('sin cierre registrado, la fecha queda en amarillo y el aviso llega a lo qu
   const metadata = await producir({ input, document: { title: 'Carta', blocks: [{ kind: 'paragraph', text: 'x' }] } });
   assert.match(metadata.avisos[0], /fecha de presentación quedó en amarillo/);
   assert.match(metadata.falta[0], /fecha de presentación quedó en amarillo/);
+});
+
+// Katherine (17-nov): la ciudad de la carta es la de radicación si allí tenemos sede o agencia; si no, Pereira.
+test('ciudad de radicación: Terminal en Bogotá sale «Bogotá D.C.» porque allí tenemos agencia; sin agencia, Pereira', async () => {
+  const { agt002CiudadDeRadicacion } = await import('../verticales/licitaciones/agt002-fecha-de-presentacion.js');
+  const sedes = [
+    { city: 'Pereira', is_main: true },
+    { city: 'Bogotá', is_main: false, supervigilancia_authorization: 'Agencia autorizada por Resolución SVSP 2020-0049297' },
+    { city: 'Manizales', is_main: false, supervigilancia_authorization: 'Agencia autorizada' },
+    { city: 'Armenia', is_main: false, supervigilancia_authorization: 'Pendiente de resolución de la SVSP' },
+  ];
+  assert.equal(agt002CiudadDeRadicacion({ sedes, ciudadProceso: 'Bogotá' }), 'Bogotá D.C.');
+  assert.equal(agt002CiudadDeRadicacion({ sedes, ciudadProceso: 'No Definido', departamentoProceso: 'No Definido', entidad: 'Rama Judicial Dirección Seccional de Administración Judicial de Manizales' }), 'Manizales');
+  assert.equal(agt002CiudadDeRadicacion({ sedes, ciudadProceso: 'Armenia' }), 'Pereira', 'una agencia pendiente no cuenta');
+  assert.equal(agt002CiudadDeRadicacion({ sedes, ciudadProceso: 'Barranquilla' }), 'Pereira');
+  let enviado;
+  const producir = createAgt002DraftDocumentProducer({ database: baseDeMentira({ sedes, proceso: { city: 'Bogotá', dept: 'Distrito Capital de Bogotá', entity: 'TERMINAL DE TRANSPORTE S.A' } }), bridgeClient: { renderDocument: async ({ document }) => { enviado = document; return { bytes: wordMinimo(), sha256: 'x' }; } } });
+  await producir({ input, document: { title: 'Anexo 1', blocks: [{ kind: 'paragraph', text: 'x' }] } });
+  assert.equal(enviado.city_date, 'Bogotá D.C., 4 de noviembre de 2026');
 });

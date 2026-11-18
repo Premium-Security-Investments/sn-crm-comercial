@@ -31,6 +31,7 @@ import { runTenderOfficialValuesReview } from './tender-official-values.js';
 import { runAgt002CompanyEvidenceWatch } from './agt002-company-evidence-watch.js';
 import { runAgt002SharepointEvidenceWatch } from './agt002-sharepoint-evidence-diff.js';
 import { runAgt002DiscardedPhaseWatch } from './agt002-discarded-phase-watch.js';
+import { readAgt002InitialAnalysisReport } from './agt002-initial-analysis-report.js';
 import { agt002AlertItems, agt002AlertsOutboxSummary, bogotaDay, bogotaTime, buildAgt002AlertsOutbox } from './agt002-licitaciones-alerts.js';
 
 export const AGT002_ALERTS_STATE_DIR = '/var/lib/agt002-licitaciones-alerts';
@@ -82,11 +83,26 @@ export async function listRecentAgt002PhaseChangeDetections(database, { now = ne
   return result;
 }
 
-async function opportunityInfo(database, opportunityIds) {
+/** El próximo plazo del cronograma del análisis vigente, después de `now`. Puro. */
+export function agt002NextDeadline(deadlines, now = new Date()) {
+  return (deadlines || [])
+    .filter(deadline => deadline?.value && deadline.certainty !== 'CONTRADICTED' && Date.parse(deadline.value) > now.getTime())
+    .sort((a, b) => Date.parse(a.value) - Date.parse(b.value))
+    .map(deadline => ({ label: deadline.label || deadline.kind || 'Plazo del cronograma', value: deadline.value }))[0] || null;
+}
+
+// Además de entidad y valor, la etapa: la fase de SECOP, el cierre y el próximo plazo del cronograma (Katherine, 17-nov:
+// el aviso debe decir en qué etapa vamos). Si el análisis no se puede leer, el aviso sale sin el próximo plazo.
+async function opportunityInfo(database, opportunityIds, { now = new Date(), readReport = readAgt002InitialAnalysisReport } = {}) {
   const info = new Map();
   for (const id of opportunityIds) {
-    const { data } = await database.from('psi_public_tenders').select('entity,value,title,converted_opportunity_id').eq('converted_opportunity_id', id).maybeSingle();
-    info.set(id, { entity: data?.entity || null, value: data?.value ?? null, title: data?.title || '' });
+    const { data } = await database.from('psi_public_tenders').select('entity,value,title,status,deadline_at,converted_opportunity_id').eq('converted_opportunity_id', id).maybeSingle();
+    let nextDeadline = null;
+    try {
+      const report = await readReport(database, id);
+      if (report?.available && report.report) nextDeadline = agt002NextDeadline(report.report.deadlines, now);
+    } catch { /* sin próximo plazo */ }
+    info.set(id, { entity: data?.entity || null, value: data?.value ?? null, title: data?.title || '', phase: data?.status || null, closeAt: data?.deadline_at || null, nextDeadline });
   }
   return info;
 }
@@ -221,7 +237,7 @@ export async function runAgt002PhaseChangeReview(database, {
   const items = agt002AlertItems(agt002ReviewFacts({ documentEvents, analysisEvents, results, detections: freshDetections, reopenEvents }), { day })
     .filter((item, index, list) => !reported[item.key] && list.findIndex(other => other.key === item.key) === index);
   if (!items.length) { log({ event: 'agt002_licitaciones_alerts_nothing_new', run_id: runId }); return { runId, outbox: null, items: [] }; }
-  const opportunities = await opportunityInfo(database, [...new Set(items.map(item => item.opportunityId))]);
+  const opportunities = await opportunityInfo(database, [...new Set(items.map(item => item.opportunityId))], { now });
   const outbox = buildAgt002AlertsOutbox({ runId, generatedAt: now.toISOString(), slot: bogotaTime(now.toISOString()), items, opportunities });
   // Lo informado se guarda ANTES del outbox (atómico): una falla nunca produce un correo repetido con otro id. Si el
   // outbox no se puede escribir, se restaura lo anterior y la novedad sale en la revisión siguiente.

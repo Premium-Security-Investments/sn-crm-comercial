@@ -42,13 +42,57 @@ function whatPublished(change) {
   return change?.change === 'republication' ? 'una versión nueva del proceso' : offer ? 'el pliego definitivo (fase de oferta)' : 'una fase nueva del proceso';
 }
 
+// Por qué Vig-IA no pudo traer sola los documentos. Katherine (17-nov): el aviso viejo («SECOP cambió de fase hace unos 3
+// días…») no decía qué significaba la fase, en qué etapa estaba el proceso ni por qué importaba. Ahora el aviso dice
+// qué pasó, por qué importa, en qué etapa va el cronograma y qué hacer (reviewLines).
 const REVIEW_TEXT = {
-  documents_missing: 'SECOP cambió de fase hace unos 3 días y datos.gov.co todavía no publica los documentos nuevos. Hay que revisar en SECOP y subirlos a mano.',
-  documents_unstable: 'La lista de documentos en datos.gov.co sigue cambiando desde hace unos 3 días. Hay que revisar en SECOP y subirlos a mano.',
-  documents_incomplete: 'Los documentos nuevos que muestra datos.gov.co están incompletos. Hay que revisar en SECOP y subirlos a mano.',
+  documents_missing: 'Vig-IA no pudo traer sola esos documentos: hace unos 3 días que los datos abiertos de SECOP (datos.gov.co), de donde los baja, no los publican.',
+  documents_unstable: 'Vig-IA no pudo traer sola esos documentos: hace unos 3 días que la lista de documentos en los datos abiertos de SECOP sigue cambiando y no es confiable.',
+  documents_incomplete: 'Vig-IA no pudo traer sola esos documentos: los datos abiertos de SECOP muestran solo una parte de ellos.',
   // Mejora 15: la misma tanda sigue sin poder bajarse después de unos 3 días de reintentos.
-  import_failing: 'Hace unos 3 días que los documentos nuevos de SECOP no se pueden bajar (se sigue reintentando). Hay que revisar en SECOP y subirlos a mano.',
+  import_failing: 'Vig-IA no pudo traer sola esos documentos: hace unos 3 días que SECOP no deja bajarlos (se sigue reintentando).',
 };
+// Por qué importa, según lo que publicó SECOP.
+function whyItMatters(change) {
+  const offer = /presentaci[oó]n de oferta/i.test(`${change?.newPhase || ''} ${change?.ref || ''}`);
+  if (change?.change === 'republication') return 'Una versión nueva del proceso puede traer adendas o cambios de fechas, requisitos o valores.';
+  if (change?.change === 'documents') return 'Suelen ser adendas, respuestas a observaciones o informes de evaluación, que pueden cambiar plazos, requisitos o el resultado.';
+  if (offer) return 'Es el pliego definitivo: con él pueden cambiar requisitos, fechas y valores, empieza a correr el plazo de observaciones al definitivo y queda fijado el cierre.';
+  return 'Cada fase nueva trae documentos de la entidad (adendas, respuestas a observaciones o informes) que pueden cambiar plazos o requisitos.';
+}
+const LONG_DAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const LONG_MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+/** '2026-11-20T23:59:00-05:00' → 'viernes 20 de noviembre, 11:59 p. m.' (hora de Bogotá; sin hora si es medianoche UTC de una fecha). */
+export function bogotaLongLabel(iso) {
+  const ms = Date.parse(iso || '');
+  if (!Number.isFinite(ms)) return '';
+  // Medianoche UTC es una fecha sin hora (memoria «cierre de sólo fecha»): se lee en UTC para no correrla un día.
+  const onlyDate = /T00:00:00(\.000)?(Z|[+-]00:00)$/.test(String(iso)) || /^\d{4}-\d{2}-\d{2}$/.test(String(iso));
+  const local = new Date(onlyDate ? ms : ms - BOGOTA_OFFSET_MS);
+  const date = `${LONG_DAYS[local.getUTCDay()]} ${local.getUTCDate()} de ${LONG_MONTHS[local.getUTCMonth()]}`;
+  if (onlyDate) return date;
+  const hours = local.getUTCHours(); const minutes = String(local.getUTCMinutes()).padStart(2, '0');
+  return `${date}, ${hours % 12 || 12}:${minutes} ${hours < 12 ? 'a. m.' : 'p. m.'}`;
+}
+// En qué etapa va el proceso: la fase que muestra SECOP, el próximo plazo del cronograma (del análisis vigente) y el cierre.
+function stageLine(info, change) {
+  const parts = [];
+  const phase = change?.newPhase || info?.phase;
+  if (phase) parts.push(`SECOP muestra el proceso en «${phase}»`);
+  if (info?.nextDeadline?.label && info.nextDeadline.value) parts.push(`el próximo plazo del cronograma es «${info.nextDeadline.label}», el ${bogotaLongLabel(info.nextDeadline.value)}`);
+  if (info?.closeAt) parts.push(`el cierre está previsto para el ${bogotaLongLabel(info.closeAt)}`);
+  if (!parts.length) return null;
+  return `En qué vamos: ${parts.join('; ')}.`;
+}
+function reviewLines(fact, info) {
+  const lines = [`Qué pasó: SECOP publicó ${whatPublished(fact.change || fact)}${fact.change?.newPhase ? ` (fase «${fact.change.newPhase}»)` : ''}. ${REVIEW_TEXT[fact.review] || 'Requiere revisión humana.'}`];
+  lines.push(`Por qué importa: ${whyItMatters(fact.change || fact)}`);
+  const stage = stageLine(info, fact.change);
+  if (stage) lines.push(stage);
+  const url = fact.change?.url || fact.url;
+  lines.push(`Qué hacer: entrar al proceso en SECOP${url ? ` (${url})` : ''}, bajar los documentos que se publicaron en esta fase y cargarlos en la oportunidad del CRM con origen «entidad». Con eso Vig-IA los lee, actualiza el análisis y el cronograma.`);
+  return lines;
+}
 const ANALYSIS_TEXT = {
   launched: 'Se lanzó el reanálisis automático con los documentos vigentes (sin los archivados). Tarda unos 10 minutos; el resultado llega en el siguiente aviso.',
   safety_limit: 'El reanálisis quedó pendiente porque se alcanzó el límite técnico de seguridad del día. Se intenta mañana; conviene revisar si hay un error.',
@@ -80,7 +124,7 @@ export function agt002AlertItems({ detections = [], reopens = [], documents = []
   return items;
 }
 
-function itemLines(item) {
+function itemLines(item, info) {
   const fact = item.fact;
   switch (item.type) {
     case 'link':
@@ -100,7 +144,7 @@ function itemLines(item) {
       if (fact.status === 'NEEDS_ATTENTION') return ['El reanálisis quedó en espera de atención. Si termina, el resultado final llega en otro aviso.'];
       return ['El reanálisis no terminó bien. Requiere revisión humana en el CRM.'];
     case 'review':
-      return [REVIEW_TEXT[fact.review] || 'Requiere revisión humana.'];
+      return reviewLines(fact, info);
     case 'failure':
       return ['No se pudieron bajar todos los documentos nuevos de SECOP; se reintenta en la próxima revisión.'];
     default:
@@ -124,7 +168,7 @@ export function buildAgt002AlertsOutbox({ runId, generatedAt, slot, items = [], 
   const blocks = [...byOpportunity.entries()].map(([opportunityId, list]) => {
     const info = opportunities.get(opportunityId) || {};
     const name = `${info.entity || 'Entidad por confirmar'} — ${formatCop(info.value)}`;
-    const lines = [...list].sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type)).flatMap(itemLines);
+    const lines = [...list].sort((a, b) => ORDER.indexOf(a.type) - ORDER.indexOf(b.type)).flatMap(item => itemLines(item, info));
     return { opportunityId, name, title: info.title || '', url: `${appUrl}/#/detail/${encodeURIComponent(opportunityId)}`, lines };
   });
   const day = bogotaDay(generatedAt);

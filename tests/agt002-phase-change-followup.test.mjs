@@ -1084,3 +1084,27 @@ test('mejora 15: la falla de una tanda se informa una sola vez y a los ~3 días 
   const items = agt002AlertItems({ reviews: [{ opportunityId: 'opp-sns', noticeUid: 'n', review: 'import_failing' }, { opportunityId: 'opp-sns', noticeUid: 'n', review: 'import_failing' }] }, { day: '2026-11-02' });
   assert.equal(new Set(items.map(item => item.key)).size, 1);
 });
+
+// Katherine (17-nov): el aviso de revisión debe decir qué pasó, por qué importa, en qué etapa vamos y qué hacer.
+test('correo de revisión: qué pasó, por qué importa, en qué vamos y qué hacer', async () => {
+  const { agt002NextDeadline } = await import('../verticales/licitaciones/agt002-phase-change-review.js');
+  const now = new Date('2026-11-18T12:00:00Z');
+  const next = agt002NextDeadline([
+    { kind: 'OBSERVATIONS', label: 'Observaciones al pliego definitivo', value: '2026-11-17T17:00:00-05:00', certainty: 'CONFIRMED' },
+    { kind: 'SUBMISSION', label: 'Cierre', value: '2026-11-25T16:00:00-05:00', certainty: 'CONFIRMED' },
+    { kind: 'OBSERVATION_RESPONSES', label: 'Respuesta a observaciones', value: '2026-11-19T18:00:00-05:00', certainty: 'CONFIRMED' },
+    { kind: 'ADDENDA', label: 'Adendas', value: '2026-11-18T19:00:00-05:00', certainty: 'CONTRADICTED' },
+  ], now);
+  assert.deepEqual(next, { label: 'Respuesta a observaciones', value: '2026-11-19T18:00:00-05:00' });
+  const items = alerts.agt002AlertItems({
+    reviews: [{ opportunityId: 'opp-ftic', noticeUid: NOTICE, review: 'documents_missing', change: { change: 'phase', newPhase: 'Presentación de oferta', ref: 'FTIC-LP-003-2026', url: NEW_URL } }],
+  }, { day: '2026-11-18' });
+  const opportunities = new Map([['opp-ftic', { entity: 'FONDO UNICO', value: 4250000000, title: 'Vigilancia', phase: 'Presentación de observaciones', closeAt: '2026-11-25T21:00:00+00:00', nextDeadline: next }]]);
+  const { text } = alerts.buildAgt002AlertsOutbox({ runId: 'r9', generatedAt: '2026-11-18T12:00:00.000Z', slot: '07:00', items, opportunities }).messages[0];
+  assert.match(text, /Qué pasó: SECOP publicó el pliego definitivo \(fase de oferta\) \(fase «Presentación de oferta»\)\. Vig-IA no pudo traer sola esos documentos/);
+  assert.match(text, /Por qué importa: Es el pliego definitivo: con él pueden cambiar requisitos, fechas y valores/);
+  assert.match(text, /En qué vamos: SECOP muestra el proceso en «Presentación de oferta»; el próximo plazo del cronograma es «Respuesta a observaciones», el jueves 19 de noviembre, 6:00 p\. m\.; el cierre está previsto para el miércoles 25 de noviembre, 4:00 p\. m\./);
+  assert.match(text, /Qué hacer: entrar al proceso en SECOP \(https?:\/\/[^)]+\), bajar los documentos .* con origen «entidad»/);
+  assert.doesNotMatch(text, /Hay que revisar en SECOP y subirlos a mano/);
+  assert.equal(alerts.bogotaLongLabel('2026-12-02T00:00:00Z'), 'miércoles 2 de diciembre', 'una fecha sin hora no se corre un día');
+});
