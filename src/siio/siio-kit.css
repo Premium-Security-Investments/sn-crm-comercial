@@ -382,3 +382,46 @@
 .siio-dashboard .siio-cifras .ref.bien{color:var(--bien)}
 .siio-dashboard .siio-cifras .ref.mal{color:var(--mal)}
 .siio-dashboard .siio-tramos .siio-magnitud i{margin-left:0}
+
+/* Pregúntele a Vig-IA (AGT-001, Juan 2026-11-19): caja de pregunta, respuesta con aviso arriba, cifras, lista y
+   «¿Cómo lo calculé?». Una sola acción principal por pantalla: «Preguntar». */
+.siio-dashboard .siio-vigia-preguntas{display:grid;gap:14px;margin-bottom:22px}
+.siio-dashboard .siio-vigia-caja{display:grid;gap:12px}
+.siio-dashboard .siio-vigia-fila{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.siio-dashboard .siio-vigia-fila textarea{flex:999 1 320px;min-width:0;min-height:46px;box-sizing:border-box;padding:11px 13px;border:1px solid var(--linea-fuerte);border-radius:9px;background:#fbfcfe;color:var(--tinta);font:inherit;font-size:14.5px;line-height:1.4;resize:vertical}
+.siio-dashboard .siio-vigia-fila textarea:focus{border-color:var(--accion);outline:none;box-shadow:0 0 0 3px rgba(27,100,242,.15)}
+.siio-dashboard .siio-vigia-fila .siio-boton-primario{flex:1 0 130px;min-height:46px}
+.siio-dashboard .siio-vigia-fila .siio-boton-primario:disabled{opacity:.55;cursor:default}
+.siio-dashboard .siio-vigia-sobre{margin:0 0 8px;font-size:13px;color:var(--suave)}
+.siio-dashboard .siio-vigia-ejemplos{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.siio-dashboard .siio-vigia-ejemplo{min-height:34px;padding:0 12px;border:1px solid var(--linea-fuerte);border-radius:999px;background:var(--panel);color:var(--tinta);font:inherit;font-size:13px;cursor:pointer}
+.siio-dashboard .siio-vigia-ejemplo:hover{border-color:var(--accion);color:var(--accion-oscuro)}
+.siio-dashboard .siio-vigia-respuesta{display:grid;gap:14px}
+.siio-dashboard .siio-vigia-respuesta>header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;align-items:baseline}
+.siio-dashboard .siio-vigia-respuesta>header h3{font-size:16px;flex:1 1 320px;min-width:0}
+.siio-dashboard .siio-vigia-respuesta>header .siio-nota{flex-basis:100%;margin:0}
+.siio-dashboard .siio-vigia-respuesta .siio-aviso-mes{margin:0}
+.siio-dashboard .siio-vigia-cifras{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:10px}
+.siio-dashboard .siio-cifra.atencion{border-color:var(--accion);box-shadow:inset 0 0 0 1px var(--accion)}
+.siio-dashboard .siio-vigia-texto{margin:0;font-size:14.5px;line-height:1.6;color:var(--texto);white-space:pre-line}
+.siio-dashboard .siio-vigia-tabla{display:grid;gap:8px}
+.siio-dashboard .siio-vigia-tabla h4,.siio-dashboard .siio-vigia-faltantes h4,.siio-dashboard .siio-vigia-aprende h4{font-size:14px}
+.siio-dashboard .siio-vigia-tabla .siio-nota{margin:0}
+.siio-dashboard .siio-vigia-acciones{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.siio-dashboard .siio-boton-secundario{min-height:40px;padding:0 14px;border:1px solid var(--accion);border-radius:9px;background:var(--panel);color:var(--accion-oscuro);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.siio-dashboard .siio-boton-secundario:hover{background:#eef4ff}
+.siio-dashboard .siio-vigia-faltantes ul,.siio-dashboard .siio-vigia-calculo ol,.siio-dashboard .siio-vigia-aprende ul{margin:6px 0 0;padding-left:20px;font-size:13.5px;line-height:1.65;color:var(--texto)}
+.siio-dashboard .siio-vigia-calculo{border-top:1px solid var(--linea);padding-top:12px}
+.siio-dashboard .siio-vigia-calculo summary{cursor:pointer;font-size:13.5px;font-weight:700;color:var(--accion-oscuro)}
+.siio-dashboard .siio-vigia-calculo .siio-nota{margin:8px 0 0}
+.siio-dashboard .siio-vigia-anteriores{display:grid;gap:8px}
+.siio-dashboard .siio-vigia-anteriores h3{font-size:14px}
+.siio-dashboard .siio-vigia-anteriores ul{list-style:none;margin:0;padding:0}
+.siio-dashboard .siio-vigia-anteriores li+li{border-top:1px solid var(--linea)}
+.siio-dashboard .siio-vigia-anteriores li button{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;width:100%;min-height:44px;padding:10px 4px;border:0;background:none;text-align:left;font:inherit;color:var(--tinta);cursor:pointer}
+.siio-dashboard .siio-vigia-anteriores li button span{font-size:14px;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.siio-dashboard .siio-vigia-anteriores li button small{font-size:12px;color:var(--sutil)}
+.siio-dashboard .siio-vigia-anteriores li button:hover span{color:var(--accion-oscuro)}
+.siio-dashboard .siio-vigia-aprende summary{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;cursor:pointer}
+.siio-dashboard .siio-vigia-aprende summary h3{display:inline;font-size:14px}
+.siio-dashboard .siio-vigia-aprende-cuerpo{display:grid;gap:16px;margin-top:12px}

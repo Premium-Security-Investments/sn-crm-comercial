@@ -1,0 +1,39 @@
+[Unit]
+Description=AGT-001 Pregúntele a Vig-IA: contesta las preguntas de los directivos en la Torre (residente, una a la vez)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Mismo usuario y sesión de Claude que el puente de AGT-001 (/opt/agt001-bridge/.claude): la sesión vence cada ~30 días.
+User=agt001-bridge
+Group=agt001-bridge
+Environment=HOME=/opt/agt001-bridge
+Environment=CLAUDE_CONFIG_DIR=/opt/agt001-bridge/.claude
+# SUPABASE_URL y la llave de servicio del CRM: el mismo ambiente de los trabajos de AGT-002 y AGT-004.
+EnvironmentFile=/etc/psi-comercial/agt002-radar-reconciliation.env
+# Credenciales de SOLO LECTURA: systemd las copia a $CREDENTIALS_DIRECTORY, legibles solo por este servicio.
+LoadCredential=avancys:/root/.vigia-odoo/conexion.json
+LoadCredential=securityops:/root/.vigia-firestore/clave.json
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node --no-warnings /opt/psi-comercial/app/ops/agt001-preguntas/run-agt001-preguntas.mjs
+# La ruta real (release) la pone el drop-in 10-release.conf, como en los demás trabajos.
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/agt001-bridge/.claude
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CPUQuota=100%
+MemoryMax=1500M
+
+[Install]
+WantedBy=multi-user.target

@@ -15,6 +15,7 @@ import { SiioLoQueFalta } from './SiioLoQueFalta';
 import { SiioFuentesAlDia } from './SiioFuentesAlDia';
 import { SiioPestanaOperacion } from './SiioPestanaOperacion';
 import { SiioRecommendations } from './SiioRecommendations';
+import { SiioPreguntas } from './SiioPreguntas';
 import { SiioPestanaParametros } from './SiioParametros';
 import { SiioPestanaCartera, SiioPestanaClientes, SiioPestanaResultados, SiioPortada, useTorreAvancys, type PestanaTorre } from './SiioTorreAvancys';
 import type { SiioFinancialMetric } from '../siioExecutive';
@@ -134,6 +135,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
         abiertos={openFollowups.length} vencidos={lateFollowups.length} onVerSeguimientos={() => onNavigate(navigateSiioView('seguimiento'))} />
     </section> : null}
     {pestana === 'vigia' ? <section className="siio-pantalla" role="tabpanel" aria-label="Vig-IA">
+      {/* Pregúntele a Vig-IA (Juan, 2026-11-19): arriba la caja de preguntas; las recomendaciones de la semana siguen debajo. */}
+      <SiioPreguntas />
       <SiioRecommendations canGenerate={['admin', 'gerencia'].includes(payload.currentProfile?.role)} followups={followups.data} today={today} onCreateFollowup={setFollowupDraft} />
       {followupDraft?.origin_type === 'recomendacion_ia' ? <FollowupComposer key={followupDraft.origin_ref || followupDraft.title} draft={followupDraft} onCancel={() => setFollowupDraft(null)} onSaved={() => { setFollowupDraft(null); void followups.reload(); }} /> : null}
     </section> : null}
