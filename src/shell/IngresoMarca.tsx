@@ -29,8 +29,8 @@ export function IngresoMarca({ titulo, subtitulo, children }: { titulo: string; 
         <img src={LOGO} alt="Seguridad Nacional Ltda." width="366" height="130" className="sn-ingreso-logo" />
         <p className="sn-ingreso-sistema">Sistema Interno de Inteligencia Operativa</p>
         <div className="sn-ingreso-raya" aria-hidden="true" />
-        <h1 className="sn-ingreso-titular">Vender, licitar y decidir<span>en un solo sistema.</span></h1>
-        <p className="sn-ingreso-apoyo">Oportunidades, procesos públicos, estudios de seguridad y la Torre de Control, con Vig-IA trabajando a su lado.</p>
+        <h1 className="sn-ingreso-titular">Torre de Control<span>para la toma de decisiones.</span></h1>
+        <p className="sn-ingreso-apoyo">Clientes, licitaciones, estudios de seguridad y gerencia, con <span className="sn-ingreso-sin-corte">Vig-IA</span> trabajando a su lado.</p>
         <dl className="sn-ingreso-datos">
           <div><dt>Hora local del equipo</dt><dd className="sn-ingreso-hora">{hora}</dd></div>
           <div><dt>Operación</dt><dd>24 / 7</dd></div>
@@ -50,7 +50,6 @@ export function IngresoMarca({ titulo, subtitulo, children }: { titulo: string; 
         {children}
         <footer className="sn-ingreso-pie">
           <p>© {new Date().getFullYear()} Seguridad Nacional Ltda. · SIIO</p>
-          <p className="sn-ingreso-version">{import.meta.env.SIIO_VERSION}</p>
         </footer>
       </div>
     </main>

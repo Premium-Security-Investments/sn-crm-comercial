@@ -8,8 +8,6 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),
       'import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-      // La versión del pie del ingreso: el commit que Vercel desplegó (como la v1.8.x de SecurityOps).
-      'import.meta.env.SIIO_VERSION': JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'local'),
     },
     server: {
       proxy: {

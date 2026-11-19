@@ -21,8 +21,10 @@
 .sn-ingreso-raya{margin-top:20px;width:56px;height:3px;background:var(--sn-amarillo)}
 .sn-ingreso-titular{margin:32px 0 0;max-width:36rem;font-size:34px;font-weight:700;line-height:1.15;letter-spacing:-.02em;color:#fff}
 .sn-ingreso-titular span{display:block;font-weight:400;color:var(--sn-apagado)}
+.sn-ingreso-sin-corte{white-space:nowrap}
 .sn-ingreso-apoyo{margin:20px 0 0;max-width:28rem;font-size:14px;line-height:1.65;color:var(--sn-tenue)}
-.sn-ingreso-datos{margin:56px 0 0;display:flex;align-items:stretch;gap:32px;font-size:11px}
+.sn-ingreso-datos{margin:56px 0 0;display:flex;flex-wrap:wrap;align-items:stretch;gap:16px 32px;font-size:11px}
+.sn-ingreso-datos dt,.sn-ingreso-datos dd{white-space:nowrap}
 .sn-ingreso-datos>div+div{padding-left:32px;border-left:1px solid #1E2B3C}
 .sn-ingreso-datos dt{font-weight:700;text-transform:uppercase;letter-spacing:.18em;color:var(--sn-apagado)}
 .sn-ingreso-datos dd{margin:6px 0 0;font-size:18px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
@@ -62,8 +64,9 @@
 .sn-ingreso-aviso-info{border:1px solid var(--sn-linea);border-left:3px solid var(--sn-apagado);background:rgba(255,255,255,.04);color:#fff}
 .sn-ingreso-pie{margin-top:32px;padding-top:24px;border-top:1px solid rgba(255,255,255,.07);text-align:center}
 .sn-ingreso-pie p{margin:0;font-size:11px;color:var(--sn-tenue)}
-.sn-ingreso-pie .sn-ingreso-version{margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em}
 
+/* Angosto: si un dato baja de fila no arrastra la raya divisoria. */
+@media (max-width:1279px){.sn-ingreso-datos>div+div{padding-left:0;border-left:0}}
 @media (min-width:1280px){
   .sn-ingreso-marca{padding:64px 104px}
   .sn-ingreso-logo{width:440px}
@@ -71,9 +74,7 @@
   .sn-ingreso-raya{width:80px}
   .sn-ingreso-titular{max-width:42rem;font-size:42px;margin-top:40px}
   .sn-ingreso-apoyo{font-size:16px;max-width:32rem}
-  .sn-ingreso-datos{margin-top:80px;gap:48px;font-size:12px}
-  .sn-ingreso-datos>div+div{padding-left:48px}
-  .sn-ingreso-datos dd{font-size:24px}
+  .sn-ingreso-datos{margin-top:80px}
   .sn-ingreso-tarjeta{max-width:460px;padding:44px}
   .sn-ingreso-tarjeta h2{font-size:25px}
   .sn-ingreso-subtitulo{font-size:14.5px;margin-bottom:32px}
@@ -81,7 +82,10 @@
   .sn-ingreso-entrar{height:58px}
 }
 @media (min-width:1536px){
-  .sn-ingreso-marca{padding:64px 150px}
+  .sn-ingreso-datos{gap:16px 48px;font-size:12px}
+  .sn-ingreso-datos>div+div{padding-left:48px}
+  .sn-ingreso-datos dd{font-size:24px}
+  .sn-ingreso-marca{padding:64px 104px}
   .sn-ingreso-logo{width:530px}
   .sn-ingreso-titular{max-width:56rem;font-size:50px}
   .sn-ingreso-tarjeta{max-width:500px}
