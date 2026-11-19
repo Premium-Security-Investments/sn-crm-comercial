@@ -56,6 +56,9 @@ const diasDesde = (fecha: string, hoy: Date) => Math.max(0, Math.floor((Date.UTC
 // Días desde el último día del mes: «septiembre lleva 45 días» el 14 de noviembre. Un solo cálculo para la Portada,
 // Resultados y Fuentes, para que el mismo atraso no diga dos números distintos.
 export const diasDesdeFinDeMes = (mes: string, hoy: Date) => diasDesde(ultimoDia(mes), hoy);
+// El día en que un mes sin bloqueo de Contabilidad se da por cerrado (misma regla de avancys-torre.js: fin de mes
+// + DIAS_PARA_CERRAR, con la nómina completa). Octubre de 2026 → 2026-11-30.
+export const diaEnQueCierra = (mes: string) => new Date(Date.parse(`${ultimoDia(mes)}T00:00:00Z`) + DIAS_PARA_CERRAR * 86400000).toISOString().slice(0, 10);
 const millones = (valor: number) => `$${Math.round(Math.abs(valor) / 1e6).toLocaleString('es-CO')} M`;
 
 export function fuentesAlDia({ hoy, torre, excelHasta, forecast, historico, creditosManuales = [] }: EntradaFuentes): FuenteAlDia[] {

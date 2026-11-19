@@ -7,7 +7,7 @@ async function loadModule(relativePath) {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
 }
 
-const { deudaSinRegistrar, diasDesdeFinDeMes, fuentesAlDia } = await loadModule('../src/siio/fuentesAlDia.ts');
+const { deudaSinRegistrar, diaEnQueCierra, diasDesdeFinDeMes, fuentesAlDia } = await loadModule('../src/siio/fuentesAlDia.ts');
 const hoy = new Date('2026-11-14T15:00:00Z');
 const mes = (m, estado = 'cerrado', motivo = null, impuestos = 0) => ({ mes: m, estado, motivo, totales: { impuestos } });
 const torre = {
@@ -84,4 +84,10 @@ test('créditos: la deuda que no está como obligación en Avancys es atraso de 
   assert.deepEqual(deudaSinRegistrar(pendiente, [{ banco: '' }]).length, 2);
   const cubiertos = fuentesAlDia({ hoy, torre: conCreditos, excelHasta: '2026-08', forecast: null, historico: null, creditosManuales: [{ banco: 'Demo Uno' }, { banco: 'Dos' }] });
   assert.equal(cubiertos.some(f => f.clave === 'creditos'), false);
+});
+
+test('el día en que un mes sin bloqueo entra como cerrado: fin de mes + 30 días (regla de avancys-torre.js)', () => {
+  assert.equal(diaEnQueCierra('2026-10'), '2026-11-30');
+  assert.equal(diaEnQueCierra('2026-11'), '2026-12-30');
+  assert.equal(diaEnQueCierra('2027-01'), '2027-03-02');
 });

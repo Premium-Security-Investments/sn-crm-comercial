@@ -4,7 +4,7 @@ import { api } from '../apiClient';
 import { Badge } from './SiioUi';
 import { mesComparable, SiioPresupuesto } from './SiioPresupuesto';
 import type { FinancialPulse } from './financialPulse';
-import { diasDesdeFinDeMes, ultimoDia } from './fuentesAlDia';
+import { diaEnQueCierra, diasDesdeFinDeMes, ultimoDia } from './fuentesAlDia';
 import type { CommercialSummary } from './commercialSummary';
 
 // Las dos preguntas de plata de la Torre (plan del 2026-11-12), en vivo desde Avancys:
@@ -597,6 +597,8 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
   const torre = t.torre;
   const primero = torre?.primera_linea?.slice(0, 7) || '';
   const cerrados = (torre?.pyg || []).filter(fila => fila.estado === 'cerrado' && fila.mes >= primero).map(fila => fila.mes);
+  // Meses ya terminados que la regla de cierre todavía no deja entrar (el mes en curso no se anuncia: es obvio).
+  const porEntrar = (torre?.pyg || []).filter(fila => fila.estado === 'parcial' && fila.motivo !== 'Mes en curso' && fila.mes >= primero);
   const [elegido, setElegido] = useState('');
   const [porMes, setPorMes] = useState<Record<string, Clientes | 'cargando' | 'error'>>({});
   const mesClientes = elegido || torre?.mes_cerrado || cerrados[cerrados.length - 1] || '';
@@ -662,6 +664,11 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
     <div className="siio-aviso-mes" role="note">
       <p><strong>Cifras aproximadas.</strong> El ingreso de cada cliente es el real; el costo de vigilantes se calcula{costoElegido ? ` a ${pesos(costoElegido)} la hora` : ''} por las horas de sus puestos, y la supervisión y la administración se reparten por facturación. El costo exacto por cliente llega cuando Avancys programe los turnos.</p>
       {cierreElegido && cierreElegido.tono === 'confirmar' ? <p><strong>Contabilidad lleva {diasDesdeFinDeMes(mesClientes, hoy)} días sin cerrar {nombreMes(mesClientes).split(' ')[0]}.</strong> Las cifras pueden cambiar.</p> : null}
+      {/* Juan (2026-11-19) buscaba octubre y no sabía por qué faltaba: el mes que todavía no se da por cerrado se dice
+          arriba con el día en que entra, en vez de desaparecer en silencio. */}
+      {porEntrar.map(fila => <p key={fila.mes}><strong>{mayuscula(nombreMes(fila.mes).split(' ')[0])} todavía no aparece en estos clientes.</strong> {fila.motivo === 'La nómina del mes no está completa en la contabilidad'
+        ? 'Su nómina no está completa en la contabilidad: entra cuando esté completa'
+        : `Contabilidad todavía lo está registrando: entra solo el ${fechaCorta(diaEnQueCierra(fila.mes))}`}, o antes si Contabilidad lo cierra en Avancys.</p>)}
     </div>
     <section className="siio-panel" aria-label="Clientes que nos hacen perder">
       <h2>¿Qué clientes nos hacen perder?</h2>
