@@ -644,7 +644,7 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes, mes = null })
       if (Array.isArray(p.analytic_account_id)) ciudadDelProyecto.set(p.id, ciudadDeCuentaAnalitica(p.analytic_account_id[1]));
     }
   }
-  // La ciudad del puesto: la de la línea; si no la trae (medido el 2026-11-19: ~20 % de las líneas de vigilancia), la
+  // La ciudad del puesto: la de la línea; si no la trae (una parte de las líneas de vigilancia, medido el 2026-11-19), la
   // de la cuenta analítica del puesto y, si no, la del contrato.
   const ciudadDelPuesto = new Map();
   const puestos = [...new Set(filas.filter(f => sinCiudad(f) && Array.isArray(f.puesto_id)).map(f => f.puesto_id[0]))];
@@ -777,7 +777,7 @@ export async function centroDeCadaCiudad(ejecutar) {
 
 // Las bolsas de costo de la empresa (cuentas analíticas propias), según la cuenta contable de cada movimiento:
 //   vigilantes  → la nómina de los guardas (centros «…VIGILANTES» y la mano de obra directa 7201–7204 que esté en otro
-//                 centro: en Medellín, 110 vigilantes van al centro de Operaciones), por ciudad;
+//                 centro: en Medellín hay vigilantes cargados al centro de Operaciones), por ciudad;
 //   operacion   → supervisores y costos indirectos de vigilancia (7301–7304 y el resto de 72 y 73), por ciudad;
 //   tecnologia  → equipos, técnicos, monitoreo y gastos de medios tecnológicos (71, 7250, 7320, 52…);
 //   administracion → gastos de administración y ventas de vigilancia (51) y lo demás de 5, 6 y 7;
