@@ -1,0 +1,85 @@
+/* Marco de SIIO con la marca de SecurityOps. Valores de design/marca-sn.tokens.json.
+   Todo cuelga de .sn-marco para no tocar las reglas viejas de styles.css. */
+.sn-marco{
+  --sn-azul:#001C3C;--sn-azul-hondo:#000F22;--sn-azul-superficie:#06284A;--sn-amarillo:#FFE001;
+  --sn-apagado:#8FA6C2;--sn-claro:#C9D6E6;--sn-mesa:#EDF1F6;--sn-tinta:#0B1F35;--sn-tinta-3:#5C6C82;
+  --sn-cabecera-alto:72px;
+  grid-template-columns:256px minmax(0,1fr);grid-template-rows:var(--sn-cabecera-alto) minmax(0,1fr);
+  background:var(--sn-mesa);
+}
+
+/* ── La cabecera azul, a todo el ancho y fija ─────────────────────────────── */
+.sn-cabecera{grid-column:1/-1;position:sticky;top:0;z-index:30;height:var(--sn-cabecera-alto);overflow:hidden;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 24px;color:#fff;
+  background-color:var(--sn-azul);border-bottom:1px solid rgba(255,255,255,.10);
+  background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+  background-size:48px 48px}
+.sn-cabecera-escudo{position:absolute;pointer-events:none;right:170px;top:-50px;width:150px;height:181px;
+  background:url('/marca/logo-sn.png') no-repeat;background-size:529px 188px;opacity:.06}
+.sn-cabecera-marca{position:relative;display:flex;align-items:center;gap:14px;min-width:0}
+.sn-cabecera-logo{display:block;width:128px;height:auto;flex:0 0 auto}
+.sn-cabecera-divisor{width:1px;height:30px;background:rgba(255,255,255,.15);flex:0 0 auto}
+.sn-cabecera-sistema{min-width:0;font-family:Montserrat,Inter,system-ui,sans-serif}
+.sn-cabecera-sistema span{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.2em;color:var(--sn-apagado)}
+.sn-cabecera-sistema strong{display:block;font-size:15px;font-weight:700;line-height:1.25;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sn-cabecera-acciones{position:relative;display:flex;align-items:center;gap:12px}
+
+/* El botón del menú (teléfono): fantasma sobre el azul. */
+.sn-marco .sn-cabecera .topbar-menu-toggle{display:none;align-items:center;justify-content:center;width:44px;height:44px;padding:0;
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;background:transparent;color:var(--sn-claro);box-shadow:none}
+.sn-marco .sn-cabecera .topbar-menu-toggle:hover{background:rgba(255,255,255,.10);color:#fff}
+.sn-marco .sn-cabecera .topbar-menu-toggle svg{width:20px;height:20px}
+
+/* La ficha de la persona, encima del azul: las iniciales en amarillo, como en SecurityOps. */
+.sn-cabecera .user-menu-trigger{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.10);box-shadow:none;padding:5px 12px 5px 5px;font-size:13px}
+.sn-cabecera .user-menu-trigger:hover{background:rgba(255,255,255,.06)}
+.sn-cabecera .user-avatar{width:30px;height:30px;background:var(--sn-azul-superficie);color:var(--sn-amarillo);font-family:Montserrat,Inter,system-ui,sans-serif;font-size:12px;font-weight:700}
+.sn-cabecera .user-menu-panel{color:var(--sn-tinta)}
+
+/* ── El menú lateral azul, debajo de la cabecera ──────────────────────────── */
+.sn-marco .sidebar{position:sticky;top:var(--sn-cabecera-alto);height:calc(100vh - var(--sn-cabecera-alto));padding:20px 12px 12px;gap:12px;
+  background:var(--sn-azul);box-shadow:none;border-right:1px solid rgba(255,255,255,.06)}
+.sn-marco .nav-section+.nav-section{border-top:0;padding-top:14px}
+.sn-marco .nav-section-title{padding:4px 12px 6px;font-family:Montserrat,Inter,system-ui,sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.2em;color:var(--sn-apagado)}
+.sn-marco .nav-domain-groups a{position:relative;gap:12px;padding:10px 12px;border-radius:9px;color:var(--sn-claro);font-size:14px;font-weight:500;background:none;box-shadow:none}
+.sn-marco .nav-domain-groups a:hover{background:rgba(255,255,255,.05);color:#fff}
+/* La elegida: azul levantado y la raya amarilla de pie, la misma de la pestaña elegida. */
+.sn-marco .nav-domain-groups a.active{background:var(--sn-azul-superficie);color:#fff;box-shadow:none}
+.sn-marco .nav-domain-groups a.active::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:999px;background:var(--sn-amarillo)}
+.sn-marco .nav-domain-groups a:focus-visible{outline:3px solid var(--sn-amarillo);outline-offset:2px;box-shadow:0 0 0 2px var(--sn-azul)}
+.sn-menu-50{flex:0 0 auto;display:flex;justify-content:center;padding:16px 20px 4px;border-top:1px solid rgba(255,255,255,.10)}
+.sn-menu-50 img{display:block;width:7.5rem;height:auto;user-select:none}
+/* En pantallas bajas el logo le quitaría al menú el sitio que se usa. */
+@media (max-height:719px){.sn-menu-50{display:none}}
+
+/* ── El título de cada pantalla sobre la mesa clara ───────────────────────── */
+.sn-marco main{background:transparent}
+.sn-marco .topbar{flex-direction:row;flex-wrap:wrap;align-items:flex-end;margin-bottom:24px}
+.sn-titulo-pagina{display:grid;gap:8px}
+.sn-marco .topbar .sn-titulo-pagina p{margin:0;font-family:Montserrat,Inter,system-ui,sans-serif;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.2em;color:var(--sn-tinta-3)}
+.sn-marco .topbar .sn-titulo-pagina h1{margin:0;font-family:Montserrat,Inter,system-ui,sans-serif;font-size:26px;font-weight:700;line-height:1.2;letter-spacing:-.01em;color:var(--sn-tinta)}
+.sn-raya{display:block;width:56px;height:3px;background:var(--sn-amarillo)}
+/* La acción principal del área (Nueva oportunidad): amarillo con letra azul, nunca blanca. */
+.sn-marco .topbar-right>button,.sn-marco .topbar-right .topbar-actions>button{min-height:46px;padding:0 20px;border:0;border-radius:10px;background:var(--sn-amarillo);color:var(--sn-azul);box-shadow:none;
+  font-family:Montserrat,Inter,system-ui,sans-serif;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.sn-marco .topbar-right>button:hover{filter:brightness(1.05)}
+.sn-marco .topbar-right .topbar-actions>button:disabled{background:#E9EEF4;color:#4A5D74;filter:none}
+
+/* ── Teléfono y tableta: el menú es un cajón que sale por encima ──────────── */
+@media (max-width:1023px){
+  .sn-marco{grid-template-columns:minmax(0,1fr);--sn-cabecera-alto:64px}
+  .sn-cabecera{padding:0 12px;gap:10px}
+  .sn-cabecera-marca{gap:10px}
+  .sn-cabecera-logo{width:84px}
+  .sn-marco .sn-cabecera .topbar-menu-toggle{display:inline-flex;flex:0 0 auto}
+  .sn-marco .sidebar{position:fixed;top:0;left:0;height:100vh;width:min(288px,86vw);z-index:50;padding-top:20px;transform:translateX(-100%);transition:transform .2s ease}
+  .sn-marco .sidebar.sidebar-open{transform:translateX(0)}
+  .sn-marco .sidebar-backdrop{display:block;background:rgba(0,15,34,.6);z-index:45}
+  .sn-marco .topbar{flex-direction:row;align-items:flex-end;flex-wrap:wrap}
+}
+@media (max-width:520px){
+  .sn-cabecera-divisor,.sn-cabecera-escudo{display:none}
+  .sn-cabecera .user-menu-trigger{padding:5px}
+  .sn-marco .topbar .sn-titulo-pagina h1{font-size:22px}
+}
+@media (prefers-reduced-motion:reduce){.sn-marco .sidebar{transition:none}}
