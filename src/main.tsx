@@ -12,7 +12,8 @@ import { agt002UnavailableMessage } from '../verticales/licitaciones/agt002-rean
 import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { AvisoIngreso, IngresoMarca } from './shell/IngresoMarca';
-import { ChevronRight, Lock, Mail } from 'lucide-react';
+import { CabeceraMarca, LogoCincuentaAnos } from './shell/MarcoMarca';
+import { ChevronRight, Lock, Mail, Menu as MenuIcon } from 'lucide-react';
 import { AgentsView } from './platform/AgentsView';
 import { EstudiosSeguridadView } from './estudios-seguridad/EstudiosSeguridadView';
 import { TendersModule } from './tenders/TendersModule';
@@ -501,22 +502,25 @@ function App() {
   const currentProfile = viewData?.currentProfile || null;
   const realProfile = data?.currentProfile || null;
   const closeSidebar = () => setSidebarOpen(false);
-  return <div className={`app ${sidebarOpen ? 'sidebar-visible' : ''}`}>
+  // El marco con la marca de SecurityOps (design/marca-sn.tokens.json): cabecera azul arriba a todo el ancho,
+  // menú azul debajo y el título de cada pantalla con su raya amarilla sobre la mesa clara.
+  return <div className={`app sn-marco ${sidebarOpen ? 'sidebar-visible' : ''}`}>
+    <CabeceraMarca area={areaFor(route)} menu={<button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}><MenuIcon aria-hidden="true" /></button>}>
+      <UserMenu name={realProfile?.full_name || ''} email={session.user.email || ''} role={realProfile ? roleLabel(realProfile.role) : 'perfil'}
+        viewMode={realProfile && canUseCommercialView(realProfile) ? viewMode : undefined} onChangeViewMode={changeViewMode}
+        onRefresh={() => void refresh()} onSignOut={() => void supabaseBrowser.auth.signOut()} />
+    </CabeceraMarca>
     {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
     <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="Navegación principal">
-      <div className="brand"><small>Seguridad Nacional</small><em>Sistema Interno de Inteligencia Operativa</em></div>
       <div className="sidebar-nav-scroll"><Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} /></div>
       {/* Sesión, cambio de vista, Actualizar y Salir viven en el menú de perfil de arriba a la derecha (Juan, 2026-10-13). */}
+      <LogoCincuentaAnos />
     </aside>
     <main>
       <header className="topbar">
-        <button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}>☰</button>
-        <div><h1>{titleFor(route, currentProfile)}</h1><p>SIIO · {areaFor(route)}</p></div>
+        <div className="sn-titulo-pagina"><p>{fechaDeHoyBogota()}</p><h1>{titleFor(route, currentProfile)}</h1><span className="sn-raya" aria-hidden="true" /></div>
         <div className="topbar-right">
           {areaFor(route) === 'Comercial' && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
-          <UserMenu name={realProfile?.full_name || ''} email={session.user.email || ''} role={realProfile ? roleLabel(realProfile.role) : 'perfil'}
-            viewMode={realProfile && canUseCommercialView(realProfile) ? viewMode : undefined} onChangeViewMode={changeViewMode}
-            onRefresh={() => void refresh()} onSignOut={() => void supabaseBrowser.auth.signOut()} />
         </div>
       </header>
       {loading && <div className="notice">{siioShell ? 'Cargando Torre de Control…' : 'Cargando información comercial…'}</div>}
@@ -582,7 +586,11 @@ function LoginScreen(_props: { siioMode?: boolean }) {
     </form>
   </IngresoMarca>;
 }
-// Subtítulo de cada pantalla: el área del menú a la que pertenece (decisión de Juan, 2026-10-09).
+// El rótulo sobre el título de cada pantalla es la fecha de hoy en Bogotá, como en SecurityOps: el área ya la dice la cabecera azul.
+function fechaDeHoyBogota() {
+  return new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+}
+// El área del menú a la que pertenece cada pantalla (decisión de Juan, 2026-10-09); va en la cabecera azul.
 function areaFor(route: Route) {
   if (route.page === 'siio') return 'Gerencia';
   if (route.page === 'tenders') return 'Licitaciones';

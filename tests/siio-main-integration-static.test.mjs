@@ -6,6 +6,7 @@ const navPermissions = fs.readFileSync('src/navPermissions.ts', 'utf8');
 const dashboard = fs.readFileSync('src/siio/SiioDashboard.tsx', 'utf8');
 const navigation = fs.readFileSync('src/siio/SiioNavigation.tsx', 'utf8');
 const css = fs.readFileSync('src/styles.css', 'utf8');
+const marco = fs.readFileSync('src/shell/MarcoMarca.tsx', 'utf8');
 
 for (const marker of [
   "| 'siio'",
@@ -21,7 +22,7 @@ for (const marker of [
 
 assert.match(navPermissions, /title: 'Gerencia'[\s\S]{0,360}href: '#\/siio', label: 'Torre de Control', page: 'siio'/, 'Torre de Control debe vivir en el catálogo central de navegación.');
 assert.match(navPermissions, /title: 'Comercial'[\s\S]{0,360}href: '#\/dashboard2', label: 'Dashboard', page: 'dashboard2'/, 'Dashboard debe vivir en el catálogo central de navegación.');
-assert.match(main, /<div className="brand"><small>Seguridad Nacional<\/small><em>Sistema Interno de Inteligencia Operativa<\/em><\/div>/, 'la marca superior debe ser fija y usar el nombre corto de la empresa.');
+assert.match(marco, /<img src="\/marca\/logo-sn\.png" alt="Seguridad Nacional Ltda\."[\s\S]{0,400}<span>SIIO<\/span>/, 'la marca superior es la cabecera azul con el logo de la empresa y SIIO.');
 assert.match(main, /getVisibleNavGroups\(currentProfile\)[\s\S]{0,420}group\.items\.map\(item/, 'main debe renderizar las rutas visibles desde capacidades y no enlaces hardcoded.');
 assert.doesNotMatch(main, /href="#\/(?:siio|dashboard2)"/, 'main no debe duplicar enlaces SIIO/Dashboard fuera del catálogo.');
 
