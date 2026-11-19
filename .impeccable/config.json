@@ -1,0 +1,29 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/shell/ingreso-marca.css"
+        ],
+        "createdAt": "2026-11-18T22:08:30.657Z",
+        "reason": "Juan pidió el 18-nov replicar el diseño de SecurityOps; marca aprobada por el dueño el 17-nov (SecurityOps 81a5ed2, Aviso.jsx/Login.jsx usan la raya izquierda y Montserrat+Inter)"
+      },
+      {
+        "rule": "overused-font",
+        "value": "montserrat",
+        "createdAt": "2026-11-18T22:08:30.664Z",
+        "reason": "Juan pidió el 18-nov replicar el diseño de SecurityOps; marca aprobada por el dueño el 17-nov (SecurityOps 81a5ed2, Aviso.jsx/Login.jsx usan la raya izquierda y Montserrat+Inter)"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-11-18T22:08:30.673Z",
+        "reason": "Juan pidió el 18-nov replicar el diseño de SecurityOps; marca aprobada por el dueño el 17-nov (SecurityOps 81a5ed2, Aviso.jsx/Login.jsx usan la raya izquierda y Montserrat+Inter)"
+      }
+    ]
+  }
+}
