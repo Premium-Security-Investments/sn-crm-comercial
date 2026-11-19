@@ -228,7 +228,7 @@ type Aprox = {
   horas?: number;
   lineas?: number;
   lineas_con_horas?: number;
-  fondo?: { vigilantes: number; indirecto: number; ingresos_sin_cliente: number; centros_vigilantes: number };
+  fondo?: { vigilantes: number; indirecto: number; ingresos_sin_cliente: number; centros_vigilantes: number; operacion?: number; tecnologia?: number; administracion?: number; no_se_reparte?: number };
   ingresos_clientes?: number;
   clientes_con_ingreso?: number;
   clientes?: FilaAprox[];
@@ -263,7 +263,7 @@ function RentabilidadAproximada() {
   return <div className="siio-pulse-block">
     <h4>Rentabilidad aproximada por cliente</h4>
     <p className="siio-pulse-footnote">
-      Ingreso real de cada cliente. El costo de vigilantes se reparte por las horas de sus puestos de vigilancia física, según el horario de la orden de servicio (costo por hora promedio de la empresa); supervisión, operaciones y administración, por la facturación. Es una aproximación hasta que la programación de turnos se haga en Avancys.
+      Ingreso real de cada cliente. El costo de vigilantes (nómina de guardas según la cuenta contable, no el nombre del centro) se reparte por ciudad: cada ciudad con centro de vigilantes tiene su costo por hora, y las demás van al centro que paga a sus guardas según el contrato. Las horas pesan con los recargos de ley (nocturno 35 %, dominical y festivo). Supervisión y costos de operación, por las horas de la ciudad; monitoreo y medios tecnológicos, por el ingreso de monitoreo; administración, por la facturación. Intereses y renta no se reparten. Es una aproximación hasta que la programación de turnos se haga en Avancys.
     </p>
     <input type="month" value={mes} onChange={evento => setMes(evento.target.value)} aria-label="Mes" />
     {' '}<button type="button" onClick={() => void calcular()} disabled={estado === 'midiendo' || !mes}>
@@ -275,7 +275,7 @@ function RentabilidadAproximada() {
     {datos?.legible && f ? <>
       <p className="siio-pulse-source">
         {datos.mes} · aproximado. Costo de vigilantes {millones(f.vigilantes)} ({f.centros_vigilantes} centros) ÷ {Math.round(datos.horas ?? 0).toLocaleString('es-CO')} horas vendidas
-        {' '}= ${Math.round(Math.abs(datos.costo_por_hora ?? 0)).toLocaleString('es-CO')} por hora. Indirecto repartido por facturación: {millones(f.indirecto)}.
+        {' '}= ${Math.round(Math.abs(datos.costo_por_hora ?? 0)).toLocaleString('es-CO')} por hora. Indirecto: {millones(f.indirecto)}{f.administracion !== undefined ? ` (operación ${millones(f.operacion ?? 0)}, tecnología ${millones(f.tecnologia ?? 0)}, administración ${millones(f.administracion)}); no se reparte: ${millones(f.no_se_reparte ?? 0)}` : ''}.
         {' '}Ingresos en cuentas de la empresa, sin cliente: {millones(f.ingresos_sin_cliente)}.
       </p>
       {datos.fuentes_de_horas && datos.horas_por_dia ? <p className="siio-pulse-footnote">

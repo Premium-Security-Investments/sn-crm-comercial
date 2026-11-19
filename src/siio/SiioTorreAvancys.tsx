@@ -12,7 +12,7 @@ import type { CommercialSummary } from './commercialSummary';
 // Calcularlo contra Odoo tarda medio minuto; el servidor lo guarda 30 minutos.
 
 type Mes = { mes: string; ingresos: number; personal: number; otros_costos: number; margen: number; estado: 'cerrado' | 'parcial'; motivo: string | null };
-type Cliente = { cliente: string; ingresos: number; horas: number; costo_vigilantes: number; costo_indirecto: number; costo_directo: number; margen: number; precio_hora: number | null };
+type Cliente = { cliente: string; ingresos: number; horas: number; costo_vigilantes: number; costo_indirecto: number; costo_directo: number; margen: number; precio_hora: number | null; costo_hora?: number | null };
 type Clientes = { legible: boolean; motivo?: string; costo_por_hora?: number; horas?: number; clientes_con_ingreso?: number; ingresos_clientes?: number; fondo?: { ingresos_sin_cliente: number }; clientes?: Cliente[] };
 type LineaPyg = { clave: string; etiqueta: string; grupo: string; cuentas: string };
 type Totales = { ingresos: number; costos: number; margen_bruto: number; gastos: number; utilidad_ordinaria: number; no_operacional: number; antes_de_impuestos: number; impuestos: number; utilidad_neta: number };
@@ -646,7 +646,9 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
   const costoHora = Math.abs(datosDe(torre?.mes_cerrado || '') && typeof datosDe(torre?.mes_cerrado || '') === 'object' ? (datosDe(torre?.mes_cerrado || '') as Clientes).costo_por_hora ?? 0 : 0);
   const bajoCosto = (fila: { meses: Record<string, Cliente> }) => {
     const ultimo = [...ultimos].reverse().map(({ mes }) => fila.meses[mes]).find(Boolean);
-    return Boolean(costoHora && ultimo?.precio_hora && ultimo.precio_hora < costoHora);
+    // Desde el 19-nov cada cliente trae el costo por hora de los guardas de su ciudad; si no, el promedio de la empresa.
+    const costo = Math.abs(ultimo?.costo_hora ?? costoHora);
+    return Boolean(costo && ultimo?.precio_hora && ultimo.precio_hora < costo);
   };
   // Con las reglas de la Portada (Juan, 2026-11-16): las preguntas como en la Portada, el periodo de cada columna con su
   // cierre, lo que hay que saber antes de creerle arriba en ámbar y cada margen contra el mes anterior.
@@ -662,7 +664,7 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
   };
   return <>
     <div className="siio-aviso-mes" role="note">
-      <p><strong>Cifras aproximadas.</strong> El ingreso de cada cliente es el real; el costo de vigilantes se calcula{costoElegido ? ` a ${pesos(costoElegido)} la hora` : ''} por las horas de sus puestos, y la supervisión y la administración se reparten por facturación. El costo exacto por cliente llega cuando Avancys programe los turnos.</p>
+      <p><strong>Cifras aproximadas.</strong> El ingreso de cada cliente es el real. El costo de vigilantes sale de la nómina de la ciudad donde están sus puestos, por hora y con los recargos nocturnos y dominicales{costoElegido ? ` (promedio de la empresa: ${pesos(costoElegido)} la hora)` : ''}; la supervisión se reparte por las horas de cada ciudad, el monitoreo entre quienes lo facturan y la administración por facturación. Intereses e impuesto de renta no se le cargan a ningún cliente. El costo exacto llega cuando Avancys programe los turnos.</p>
       {cierreElegido && cierreElegido.tono === 'confirmar' ? <p><strong>Contabilidad lleva {diasDesdeFinDeMes(mesClientes, hoy)} días sin cerrar {nombreMes(mesClientes).split(' ')[0]}.</strong> Las cifras pueden cambiar.</p> : null}
       {/* Juan (2026-11-19) buscaba octubre y no sabía por qué faltaba: el mes que todavía no se da por cerrado se dice
           arriba con el día en que entra, en vez de desaparecer en silencio. */}
@@ -723,14 +725,15 @@ function DetalleClientes({ mes, datos, mesAntes = null, antes }: { mes: string; 
       Los 5 mayores concentran el {pct(cinco, total)} del ingreso. Primero los que pierden.{previo ? ` Debajo de cada margen, el de ${nombreMes(mesAntes).split(' ')[0]}.` : ''}
     </p>
     <div className="siio-tabla-wrap"><table className="siio-tabla apilable">
-      <thead><tr><th>Cliente</th><th className="num">Ingreso</th><th className="num">Peso</th><th className="num">Precio por hora{costoHora ? <small>costo: {pesos(costoHora)}</small> : null}</th><th className="num total">Margen (est.)</th></tr></thead>
+      <thead><tr><th>Cliente</th><th className="num">Ingreso</th><th className="num">Peso</th><th className="num">Precio por hora{costoHora ? <small>costo promedio: {pesos(costoHora)}</small> : null}</th><th className="num total">Margen (est.)</th></tr></thead>
       <tbody>{filas.map(fila => {
-        const bajo = Boolean(costoHora && fila.precio_hora && fila.precio_hora < costoHora);
+        const costoFila = Math.abs(fila.costo_hora ?? costoHora);
+        const bajo = Boolean(costoFila && fila.precio_hora && fila.precio_hora < costoFila);
         return <tr key={fila.cliente}>
           <td><span className="nombre">{sinCodigo(fila.cliente)}</span>{bajo ? <span className="siio-chip marca">bajo el costo</span> : null}</td>
           <td className="num" data-etiqueta="Ingreso"><strong>{millones(fila.ingresos)}</strong></td>
           <td className="num" data-etiqueta="Peso"><strong>{pct(fila.ingresos, total)}</strong></td>
-          <td className={`num${bajo ? ' mal' : ''}`} data-etiqueta="Precio por hora">{fila.precio_hora ? <strong>{pesos(fila.precio_hora)}</strong> : <small>sin horas</small>}</td>
+          <td className={`num${bajo ? ' mal' : ''}`} data-etiqueta="Precio por hora">{fila.precio_hora ? <><strong>{pesos(fila.precio_hora)}</strong>{fila.costo_hora ? <small>costo: {pesos(Math.abs(fila.costo_hora))}</small> : null}</> : <small>sin horas</small>}</td>
           <td className={`num total${fila.margen < 0 ? ' mal' : ''}`}><strong>{millones(fila.margen)}</strong><small>{pct(fila.margen, fila.ingresos)}</small>
             {previo ? <small className="siio-antes">{abrev}: {(() => { const a = previo.get(nitDe(fila.cliente) || fila.cliente); return a ? millones(a.margen) : '—'; })()}</small> : null}</td>
         </tr>;
