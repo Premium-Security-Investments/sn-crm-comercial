@@ -10,6 +10,7 @@
 // Solo lectura: login, search_count y fields_get. No escribe nada en Avancys.
 
 import { configuracionDeAvancys } from './avancys-odoo-lectura.js';
+import { lineaDeCuenta } from './avancys-pyg.js';
 
 // Lo que la Torre ya usa: se confirma que sigue abierto.
 export const MODELOS_EN_USO = Object.freeze([
@@ -486,6 +487,107 @@ export function horasDeLaModalidad(nombre) {
   return horas && horas <= 24 ? horas : null;
 }
 
+// ---- Reparto por ciudad y con recargos (Juan, 2026-11-19: «todo lo que pueda mejorar el dato, hágalo») ----
+
+// La ciudad de una cuenta analítica de Avancys: el tramo justo antes de la línea de negocio.
+// «SEGURIDAD NACIONAL LTDA--PEREIRA---VIGILANCIA FISICA VIGILANTES» → PEREIRA;
+// «JERONIMO MARTINS COLOMBIA S.A.S-02 - VALLE DEL CAUCA-CALI-VIGILANCIA FISICA-T1713 …» → CALI.
+export function normalizarCiudad(nombre) {
+  const texto = String(nombre || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
+    .replace(/\bD\.?\s*C\.?$/, '').replace(/[^A-Z ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return texto || null;
+}
+export function ciudadDeCuentaAnalitica(nombre) {
+  const encontrado = String(nombre || '').match(/-([^-]+?)-+(?:VIGILANCIA FISICA|VIGILANCIA ELECTRONICA|MONITOREO|COMERCIALIZACION|GPS)/i);
+  return encontrado ? normalizarCiudad(encontrado[1]) : null;
+}
+
+// Festivos de Colombia (Ley 51 de 1983, «Ley Emiliani»): los fijos, los que se corren al lunes y los que dependen de
+// la Pascua. Se calculan, no se escriben, para que enero de 2027 no dependa de que alguien actualice una lista.
+function pascua(anio) {
+  const a = anio % 19, b = Math.floor(anio / 100), c = anio % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return Date.UTC(anio, mes - 1, dia);
+}
+export function festivosDeColombia(anio) {
+  const dia = 86400000;
+  const iso = t => new Date(t).toISOString().slice(0, 10);
+  const alLunes = t => { const semana = new Date(t).getUTCDay(); return semana === 1 ? t : t + ((8 - semana) % 7) * dia; };
+  const p = pascua(anio);
+  const fijos = [[1, 1], [5, 1], [7, 20], [8, 7], [12, 8], [12, 25]].map(([m, d]) => Date.UTC(anio, m - 1, d));
+  const lunes = [[1, 6], [3, 19], [6, 29], [8, 15], [10, 12], [11, 1], [11, 11]].map(([m, d]) => alLunes(Date.UTC(anio, m - 1, d)));
+  const pascuales = [p - 3 * dia, p - 2 * dia, alLunes(p + 39 * dia), alLunes(p + 60 * dia), alLunes(p + 68 * dia)];
+  return new Set([...fijos, ...lunes, ...pascuales].map(iso));
+}
+
+// Recargos de ley (Ley 2466 de 2025): la hora nocturna va de 7 p. m. a 6 a. m. desde el 25-dic-2025 (antes, desde las
+// 9 p. m.) con 35 %; el dominical y festivo sube por tramos: 75 %, 80 % desde jul-2025, 90 % desde jul-2026, 100 % desde
+// jul-2027. Sólo sirven para repartir: el costo total de cada ciudad es el de Avancys; el recargo decide qué parte
+// le toca a un puesto de noche o de domingo frente a uno de día entre semana.
+export const RECARGO_NOCTURNO = 0.35;
+export function recargoDominical(mes) {
+  if (mes >= '2027-07') return 1;
+  if (mes >= '2026-07') return 0.9;
+  if (mes >= '2025-07') return 0.8;
+  return 0.75;
+}
+function horasNocturnasDelTramo(desde, hasta, inicioNoche) {
+  // Minuto a minuto sería exacto; con cuartos de hora sobra para repartir.
+  let nocturnas = 0;
+  const largo = hasta > desde ? hasta - desde : 24 - desde + hasta;
+  for (let t = 0; t < largo; t += 0.25) {
+    const hora = (desde + t) % 24;
+    if (hora >= inicioNoche || hora < 6) nocturnas += 0.25;
+  }
+  return { nocturnas, largo };
+}
+export function fraccionNocturna({ entrada = null, salida = null, modalidad = null, mes = '' }) {
+  const inicioNoche = mes && mes < '2025-12' ? 21 : 19;
+  const texto = String(modalidad || '').toUpperCase();
+  const tramos = texto.match(/\b(\d{1,2})(?::\d{2})?\s*-\s*(\d{1,2})(?::\d{2})?\s*\/\s*(\d{1,2})(?::\d{2})?\s*-\s*(\d{1,2})(?::\d{2})?\b/);
+  const partes = tramos ? [[Number(tramos[1]), Number(tramos[2])], [Number(tramos[3]), Number(tramos[4])]] : null;
+  const desde = aHoras(entrada);
+  const hasta = aHoras(salida);
+  const tramosDelTurno = partes || (desde !== null && hasta !== null && entrada !== false && salida !== false ? [[desde, hasta === desde ? desde + 24 : hasta]] : null);
+  if (!tramosDelTurno) return null;
+  let nocturnas = 0;
+  let total = 0;
+  for (const [a, b] of tramosDelTurno) {
+    const r = b - a === 24 ? { nocturnas: 24 - inicioNoche + 6, largo: 24 } : horasNocturnasDelTramo(a, b % 24, inicioNoche);
+    nocturnas += r.nocturnas;
+    total += r.largo;
+  }
+  return total > 0 ? nocturnas / total : null;
+}
+// De los días del mes en que el puesto presta servicio, qué parte es domingo o festivo. En Avancys `weekdays` usa
+// 1 = lunes … 7 = domingo y 8 = festivo; sin días, se toma que presta todos los días, festivos incluidos.
+export function fraccionDominical({ dias = [], festivos = false, mes }) {
+  if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) return null;
+  const [anio, numero] = mes.split('-').map(Number);
+  const feriados = festivosDeColombia(anio);
+  const lista = (dias || []).map(Number).filter(Boolean);
+  const todos = !lista.length;
+  const cubreFestivos = todos || festivos || lista.includes(8);
+  let cubiertos = 0;
+  let especiales = 0;
+  const ultimo = new Date(Date.UTC(anio, numero, 0)).getUTCDate();
+  for (let d = 1; d <= ultimo; d += 1) {
+    const fecha = new Date(Date.UTC(anio, numero - 1, d));
+    const semana = fecha.getUTCDay() || 7;
+    const feriado = feriados.has(fecha.toISOString().slice(0, 10));
+    const cubre = feriado ? cubreFestivos : (todos || lista.includes(semana));
+    if (!cubre) continue;
+    cubiertos += 1;
+    if (semana === 7 || feriado) especiales += 1;
+  }
+  return cubiertos ? especiales / cubiertos : null;
+}
+export function factorDeRecargos({ nocturna = 0, dominical = 0, mes }) {
+  return 1 + RECARGO_NOCTURNO * (nocturna || 0) + recargoDominical(mes) * (dominical || 0);
+}
+
 // Qué líneas cuentan en un mes (caso ARA, 2026-11-16): el servicio base que estuvo vigente en el mes; las adiciones y
 // los reemplazos sólo en el mes en que empiezan; las cancelaciones y las novedades en dinero no son horas. Antes se
 // sumaban todas las líneas activas hoy, iguales en todos los meses, y las cancelaciones agregaban horas en vez de quitar.
@@ -509,7 +611,7 @@ export function lineaCuentaEnElMes(fila, mes) {
 // Medido el 2026-11-12 sobre las 6.329 líneas activas: `duration` (horas por día) y
 // `dias_facturables` (días del mes) vienen en casi todas; `partner_id` solo en 8, por eso el cliente
 // sale del contrato; `horas_facturables` está vacío.
-const CAMPOS_HORARIO = ['partner_id', 'project_id', 'puesto_id', 'product_id', 'time_in', 'time_out', 'duration', 'dias_facturables', 'cantidad_vigilantes', 'operation', 'start_date', 'end_date', 'modality_id'];
+const CAMPOS_HORARIO = ['partner_id', 'project_id', 'puesto_id', 'product_id', 'time_in', 'time_out', 'duration', 'dias_facturables', 'cantidad_vigilantes', 'operation', 'start_date', 'end_date', 'modality_id', 'city_id', 'weekdays', 'holidays'];
 const PAGINA_ORDENES = 2000;
 
 export async function horariosDeVigilancia(ejecutar, { diasDelMes, mes = null }) {
@@ -530,14 +632,30 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes, mes = null })
   const vigilantes = [];
   // El cliente de la línea: el suyo, o el del contrato (project.project). La primera corrida real
   // (2026-11-12) dejó 7 líneas de miles: la mayoría no trae `partner_id` propio.
-  const proyectos = [...new Set(filas.filter(f => !Array.isArray(f.partner_id) && Array.isArray(f.project_id)).map(f => f.project_id[0]))];
+  // También se leen los contratos de las líneas sin ciudad: la cuenta analítica del contrato la dice.
+  const sinCiudad = fila => campos.includes('city_id') && !Array.isArray(fila.city_id);
+  const proyectos = [...new Set(filas.filter(f => (!Array.isArray(f.partner_id) || sinCiudad(f)) && Array.isArray(f.project_id)).map(f => f.project_id[0]))];
   const clienteDelProyecto = new Map();
+  const ciudadDelProyecto = new Map();
   for (let i = 0; i < proyectos.length; i += LOTE_CUENTAS) {
     const lote = proyectos.slice(i, i + LOTE_CUENTAS);
-    for (const p of (await ejecutar('project.project', 'search_read', [[['id', 'in', lote]]], { fields: ['partner_id'], limit: lote.length })) || []) {
+    for (const p of (await ejecutar('project.project', 'search_read', [[['id', 'in', lote]]], { fields: ['partner_id', 'analytic_account_id'], limit: lote.length })) || []) {
       if (Array.isArray(p.partner_id)) clienteDelProyecto.set(p.id, p.partner_id);
+      if (Array.isArray(p.analytic_account_id)) ciudadDelProyecto.set(p.id, ciudadDeCuentaAnalitica(p.analytic_account_id[1]));
     }
   }
+  // La ciudad del puesto: la de la línea; si no la trae (medido el 2026-11-19: ~20 % de las líneas de vigilancia), la
+  // de la cuenta analítica del puesto y, si no, la del contrato.
+  const ciudadDelPuesto = new Map();
+  const puestos = [...new Set(filas.filter(f => sinCiudad(f) && Array.isArray(f.puesto_id)).map(f => f.puesto_id[0]))];
+  try {
+    for (let i = 0; i < puestos.length; i += LOTE_CUENTAS) {
+      const lote = puestos.slice(i, i + LOTE_CUENTAS);
+      for (const p of (await ejecutar('hr.roster.puesto', 'search_read', [[['id', 'in', lote]]], { fields: ['analytic_account_id'], limit: lote.length })) || []) {
+        if (Array.isArray(p.analytic_account_id)) ciudadDelPuesto.set(p.id, ciudadDeCuentaAnalitica(p.analytic_account_id[1]));
+      }
+    }
+  } catch { /* sin el modelo de puestos, la ciudad sale del contrato o queda sin ciudad */ }
   const cuenta = { leidas: filas.length, cliente_por_contrato: 0, sin_cliente: 0, sin_producto: 0, sin_puesto: 0, fuera_del_mes: 0, novedades_sin_horas: 0, por_modalidad: 0 };
 
   for (const fila of filas) {
@@ -572,16 +690,31 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes, mes = null })
     if (horas) porDia.push(horas);
     const dias = Number(fila.dias_facturables) > 0 ? Math.min(Number(fila.dias_facturables), diasDelMes) : diasDelMes;
     if (Number(fila.cantidad_vigilantes) > 0) vigilantes.push(Number(fila.cantidad_vigilantes));
-    lineas.push({ cliente_id: fila.partner_id[0], cliente: String(fila.partner_id[1]), producto: producto || 'Sin producto', porDia: horas, dias, fuente });
+    const ciudad = (Array.isArray(fila.city_id) ? normalizarCiudad(fila.city_id[1]) : null)
+      || (Array.isArray(fila.puesto_id) ? ciudadDelPuesto.get(fila.puesto_id[0]) : null)
+      || (Array.isArray(fila.project_id) ? ciudadDelProyecto.get(fila.project_id[0]) : null)
+      || null;
+    const nocturna = fraccionNocturna({ entrada: fila.time_in, salida: fila.time_out, modalidad: Array.isArray(fila.modality_id) ? fila.modality_id[1] : null, mes });
+    const dominical = mes ? fraccionDominical({ dias: fila.weekdays, festivos: fila.holidays === true, mes }) : null;
+    lineas.push({ cliente_id: fila.partner_id[0], cliente: String(fila.partner_id[1]), producto: producto || 'Sin producto', porDia: horas, dias, fuente, ciudad, nocturna, dominical });
   }
 
   // La línea de vigilancia física sin horario recibe el promedio de las que sí lo tienen.
   const promedio = porDia.length ? porDia.reduce((suma, valor) => suma + valor, 0) / porDia.length : 24;
   let total = 0;
+  // Recargos: la línea sin horario o sin días recibe el promedio de las que sí los tienen.
+  const promedioDe = clave => {
+    const conDato = lineas.filter(linea => typeof linea[clave] === 'number');
+    return conDato.length ? conDato.reduce((suma, linea) => suma + linea[clave], 0) / conDato.length : 0;
+  };
+  const nocturnaPromedio = promedioDe('nocturna');
+  const dominicalPromedio = promedioDe('dominical');
   for (const linea of lineas) {
     if (!linea.fuente) { linea.porDia = promedio; linea.fuente = 'promedio'; }
     fuentes[linea.fuente] += 1;
     linea.horas = linea.porDia * linea.dias;
+    linea.factor = factorDeRecargos({ nocturna: linea.nocturna ?? nocturnaPromedio, dominical: linea.dominical ?? dominicalPromedio, mes: mes || '' });
+    linea.horas_ponderadas = linea.horas * linea.factor;
     total += linea.horas;
   }
   const ordenadas = [...porDia].sort((izq, der) => izq - der);
@@ -607,6 +740,89 @@ export async function horariosDeVigilancia(ejecutar, { diasDelMes, mes = null })
   };
 }
 
+// Qué centro paga la nómina de los guardas de cada ciudad: lo dice el contrato de cada uno (ciudad de desempeño y
+// cuenta analítica). Medido el 2026-11-19: Dosquebradas, La Virginia y Santa Rosa van a Pereira; Palmira, Tuluá y
+// Popayán a Cali; Riosucio y Manzanares a Manizales. Se toma la mayoría de los contratos vigentes de cada ciudad.
+export async function centroDeCadaCiudad(ejecutar) {
+  try {
+    const contratos = (await ejecutar('hr.contract', 'search_read', [[['state', '=', 'open']]], { fields: ['work_city_id', 'analytic_distribution_ids'] })) || [];
+    const ids = contratos.flatMap(c => c.analytic_distribution_ids || []);
+    const cuentaDe = new Map();
+    for (let i = 0; i < ids.length; i += LOTE_CUENTAS) {
+      const lote = ids.slice(i, i + LOTE_CUENTAS);
+      for (const d of (await ejecutar('hr.contract.analytic.distribution', 'search_read', [[['id', 'in', lote]]], { fields: ['analytic_account_id'], limit: lote.length })) || []) {
+        if (Array.isArray(d.analytic_account_id)) cuentaDe.set(d.id, String(d.analytic_account_id[1]));
+      }
+    }
+    const votos = new Map();
+    for (const contrato of contratos) {
+      const ciudad = Array.isArray(contrato.work_city_id) ? normalizarCiudad(contrato.work_city_id[1]) : null;
+      if (!ciudad) continue;
+      for (const id of contrato.analytic_distribution_ids || []) {
+        const nombre = cuentaDe.get(id);
+        // En el contrato la cuenta se ve como «[VFPEVI] … VIGILANCIA FISICA VIGILANTES - SEGURIDAD NACIONAL LTDA».
+        if (!nombre || !/\bVIGILANTES\b/i.test(nombre)) continue;
+        const centro = ciudadDeCuentaAnalitica(nombre);
+        if (!centro) continue;
+        const cuenta = votos.get(ciudad) || new Map();
+        cuenta.set(centro, (cuenta.get(centro) || 0) + 1);
+        votos.set(ciudad, cuenta);
+      }
+    }
+    return new Map([...votos].map(([ciudad, cuenta]) => [ciudad, [...cuenta].sort((a, b) => b[1] - a[1])[0][0]]));
+  } catch {
+    return new Map();
+  }
+}
+
+// Las bolsas de costo de la empresa (cuentas analíticas propias), según la cuenta contable de cada movimiento:
+//   vigilantes  → la nómina de los guardas (centros «…VIGILANTES» y la mano de obra directa 7201–7204 que esté en otro
+//                 centro: en Medellín, 110 vigilantes van al centro de Operaciones), por ciudad;
+//   operacion   → supervisores y costos indirectos de vigilancia (7301–7304 y el resto de 72 y 73), por ciudad;
+//   tecnologia  → equipos, técnicos, monitoreo y gastos de medios tecnológicos (71, 7250, 7320, 52…);
+//   administracion → gastos de administración y ventas de vigilancia (51) y lo demás de 5, 6 y 7;
+//   no se reparte → intereses y gastos no operacionales (53) e impuesto de renta (54): dependen de la empresa, no del cliente.
+export function bolsaDeCuenta({ codigo, nombre, centro }) {
+  const linea = lineaDeCuenta(codigo, nombre);
+  if (['financieros', 'otros_gastos', 'renta'].includes(linea)) return 'no_se_reparte';
+  if (CENTRO_VIGILANTES.test(centro) || linea === 'mod_vigilancia') return 'vigilantes';
+  if (['moi_vigilancia', 'cif_vigilancia'].includes(linea)) return 'operacion';
+  if (['equipos', 'mod_tecnicos', 'cif_mt', 'personal_mt', 'generales_mt'].includes(linea)) return 'tecnologia';
+  return 'administracion';
+}
+
+// Reparte una bolsa por ciudad según el peso de cada línea, conservando el total: cada ciudad con su propio costo por
+// unidad; las líneas sin ciudad (o de una ciudad sin bolsa) al promedio nacional; al final, un ajuste común para que
+// lo repartido sume exactamente lo que dice Avancys.
+export function repartirPorCiudad(bolsas, lineas, { peso, centroDe }) {
+  const total = [...bolsas.values()].reduce((suma, valor) => suma + valor, 0);
+  const pesoTotal = lineas.reduce((suma, linea) => suma + peso(linea), 0);
+  const asignado = new Map();
+  if (!total || !pesoTotal) return { asignado, ajuste: 1, cubierto: 0, tasas: new Map() };
+  const pesoDe = new Map();
+  for (const linea of lineas) {
+    const centro = centroDe(linea);
+    if (centro && bolsas.has(centro)) pesoDe.set(centro, (pesoDe.get(centro) || 0) + peso(linea));
+  }
+  const nacional = total / pesoTotal;
+  const tasas = new Map([...pesoDe].map(([centro, valor]) => [centro, valor ? bolsas.get(centro) / valor : nacional]));
+  let suma = 0;
+  let cubierto = 0;
+  for (const linea of lineas) {
+    const centro = centroDe(linea);
+    const tasa = centro && tasas.has(centro) ? tasas.get(centro) : nacional;
+    if (centro && tasas.has(centro)) cubierto += peso(linea);
+    const valor = peso(linea) * tasa;
+    asignado.set(linea, valor);
+    suma += valor;
+  }
+  const ajuste = suma ? total / suma : 1;
+  for (const [linea, valor] of asignado) asignado.set(linea, valor * ajuste);
+  return { asignado, ajuste, cubierto: cubierto / pesoTotal, tasas };
+}
+
+const codigoCompleto = valor => ((Array.isArray(valor) ? String(valor[1] || '') : '').match(/^\s*(\d+)/) || [])[1] || '';
+
 export async function rentabilidadAproximada(ejecutar, { mes }) {
   const rango = rangoDelMes(mes);
   if (!rango) return { legible: false, mes: mes || null, motivo: 'El mes debe venir como AAAA-MM.' };
@@ -623,53 +839,128 @@ export async function rentabilidadAproximada(ejecutar, { mes }) {
       const lote = ids.slice(i, i + LOTE_CUENTAS);
       for (const fila of (await ejecutar('account.analytic.account', 'search_read', [[['id', 'in', lote]]], { fields: ['partner_id', 'name'], limit: lote.length })) || []) datosDe.set(fila.id, fila);
     }
+    const esInterna = datos => {
+      const partner = Array.isArray(datos.partner_id) ? datos.partner_id : null;
+      return !partner || EMPRESA.test(String(partner[1])) || EMPRESA.test(String(datos.name || ''));
+    };
+    const internas = ids.filter(id => esInterna(datosDe.get(id) || {}));
 
     const clientes = new Map();
-    const fondo = { vigilantes: 0, indirecto: 0, ingresos_sin_cliente: 0, centros_vigilantes: 0 };
+    const fondo = { vigilantes: 0, operacion: 0, tecnologia: 0, administracion: 0, no_se_reparte: 0, indirecto: 0, ingresos_sin_cliente: 0, centros_vigilantes: 0 };
+    const cuentaCliente = new Map();
     for (const [id, montos] of porCuenta) {
       const datos = datosDe.get(id) || {};
-      const partner = Array.isArray(datos.partner_id) ? datos.partner_id : null;
-      const interna = !partner || EMPRESA.test(String(partner[1])) || EMPRESA.test(String(datos.name || ''));
-      const costo = montos.personal + montos.otros_costos;
-      if (interna) {
-        if (CENTRO_VIGILANTES.test(String(datos.name || ''))) { fondo.vigilantes += costo; fondo.centros_vigilantes += 1; }
-        else fondo.indirecto += costo;
+      if (esInterna(datos)) {
+        if (CENTRO_VIGILANTES.test(String(datos.name || ''))) fondo.centros_vigilantes += 1;
         fondo.ingresos_sin_cliente += montos.ingresos;
         continue;
       }
-      const fila = clientes.get(partner[0]) || { cliente: String(partner[1]), ingresos: 0, costo_directo: 0, horas: 0, lineas: 0, lineas_sin_horas: 0 };
+      const partner = datos.partner_id;
+      const fila = clientes.get(partner[0]) || { cliente: String(partner[1]), ingresos: 0, ingresos_monitoreo: 0, costo_directo: 0, horas: 0, horas_ponderadas: 0, lineas: 0, lineas_sin_horas: 0 };
       fila.ingresos += montos.ingresos;
-      fila.costo_directo += costo;
+      fila.costo_directo += montos.personal + montos.otros_costos;
       clientes.set(partner[0], fila);
+      cuentaCliente.set(id, partner[0]);
     }
 
-    // 2. Lo que se estima: horas de vigilancia física vendidas a cada cliente. El producto no dice
-    // las horas (medido el 2026-11-12: "VIGILANCIA FISICA SIN ARMA", "CON ARMA"…); el horario
-    // vive en la línea de la orden de servicio (`time_in`, `time_out`, `duration`, `weekdays`).
-    // Se leen las líneas activas hoy y cuentan las que estuvieron en servicio en el mes (lineaCuentaEnElMes).
+    // 2. Las bolsas de la empresa, por cuenta contable y por la ciudad del centro.
+    const idsCosto = cuentas.filter(c => c.clase === 'personal' || c.clase === 'otro_costo').flatMap(c => c.ids);
+    const bolsas = { vigilantes: new Map(), operacion: new Map() };
+    for (let i = 0; i < internas.length && idsCosto.length; i += LOTE_CUENTAS) {
+      const lote = internas.slice(i, i + LOTE_CUENTAS);
+      const grupos = (await ejecutar(LINEAS_ANALITICAS, 'read_group', [[...rango, ['account_id', 'in', lote], ['general_account_id', 'in', idsCosto]], ['amount:sum'], ['account_id', 'general_account_id']], { lazy: false })) || [];
+      for (const grupo of grupos) {
+        const centro = String(datosDe.get(Array.isArray(grupo.account_id) ? grupo.account_id[0] : null)?.name || '');
+        const puc = cuentaPuc(grupo.general_account_id);
+        const bolsa = bolsaDeCuenta({ codigo: codigoCompleto(grupo.general_account_id) || puc.codigo, nombre: puc.nombre, centro });
+        const monto = Number(grupo.amount) || 0;
+        fondo[bolsa] += monto;
+        if (bolsa === 'vigilantes' || bolsa === 'operacion') {
+          const ciudad = ciudadDeCuentaAnalitica(centro) || 'SIN CIUDAD';
+          bolsas[bolsa].set(ciudad, (bolsas[bolsa].get(ciudad) || 0) + monto);
+        }
+      }
+    }
+    fondo.indirecto = fondo.operacion + fondo.tecnologia + fondo.administracion;
+
+    // El ingreso de monitoreo de cada cliente, para repartirle lo de medios tecnológicos sólo a quien lo usa.
+    const idsMonitoreo = cuentas.filter(c => c.clase === 'ingreso' && lineaDeCuenta(c.codigo, c.nombre) === 'ing_monitoreo').flatMap(c => c.ids);
+    const idsClientes = [...cuentaCliente.keys()];
+    for (let i = 0; i < idsClientes.length && idsMonitoreo.length; i += LOTE_CUENTAS) {
+      const lote = idsClientes.slice(i, i + LOTE_CUENTAS);
+      const grupos = (await ejecutar(LINEAS_ANALITICAS, 'read_group', [[...rango, ['account_id', 'in', lote], ['general_account_id', 'in', idsMonitoreo]], ['amount:sum'], ['account_id']], { lazy: false })) || [];
+      for (const grupo of grupos) {
+        const cliente = clientes.get(cuentaCliente.get(Array.isArray(grupo.account_id) ? grupo.account_id[0] : null));
+        if (cliente) cliente.ingresos_monitoreo += Number(grupo.amount) || 0;
+      }
+    }
+
+    // 3. Lo que se estima: horas de vigilancia física vendidas a cada cliente, con su ciudad y sus recargos.
     const horario = await horariosDeVigilancia(ejecutar, { diasDelMes, mes });
     for (const linea of horario.lineas) {
-      const fila = clientes.get(linea.cliente_id) || { cliente: linea.cliente, ingresos: 0, costo_directo: 0, horas: 0, lineas: 0, lineas_sin_horas: 0 };
+      const fila = clientes.get(linea.cliente_id) || { cliente: linea.cliente, ingresos: 0, ingresos_monitoreo: 0, costo_directo: 0, horas: 0, horas_ponderadas: 0, lineas: 0, lineas_sin_horas: 0 };
       fila.lineas += 1;
       fila.horas += linea.horas;
+      fila.horas_ponderadas += linea.horas_ponderadas;
       if (linea.fuente === 'promedio') fila.lineas_sin_horas += 1;
       clientes.set(linea.cliente_id, fila);
     }
     const horasTotales = horario.horas;
 
-    // 3. El reparto.
-    const costoHora = horasTotales ? fondo.vigilantes / horasTotales : 0;
+    // 4. El reparto: vigilantes y operación por ciudad y por horas con recargos; tecnología por el ingreso de
+    // monitoreo; administración por la facturación. Sólo las ciudades con centro de vigilantes tienen tarifa propia;
+    // las demás van al centro que paga la nómina de sus guardas (el contrato lo dice) y, si no se sabe, al promedio.
+    const mapa = await centroDeCadaCiudad(ejecutar);
+    const centros = new Set(internas.map(id => String(datosDe.get(id)?.name || '')).filter(nombre => CENTRO_VIGILANTES.test(nombre)).map(ciudadDeCuentaAnalitica).filter(Boolean));
+    const centroDeCiudad = ciudad => (!ciudad ? null : centros.has(ciudad) ? ciudad : centros.has(mapa.get(ciudad)) ? mapa.get(ciudad) : null);
+    const consolidar = bolsa => {
+      const destino = new Map();
+      for (const [ciudad, monto] of bolsa) {
+        const centro = centroDeCiudad(ciudad) || 'NACIONAL';
+        destino.set(centro, (destino.get(centro) || 0) + monto);
+      }
+      return destino;
+    };
+    bolsas.vigilantes = consolidar(bolsas.vigilantes);
+    bolsas.operacion = consolidar(bolsas.operacion);
+    const centroDe = linea => centroDeCiudad(linea.ciudad);
+    const peso = linea => linea.horas_ponderadas ?? linea.horas;
+    const deVigilantes = repartirPorCiudad(bolsas.vigilantes, horario.lineas, { peso, centroDe });
+    const deOperacion = repartirPorCiudad(bolsas.operacion, horario.lineas, { peso, centroDe });
+    const porCliente = (reparto, campo) => {
+      for (const [linea, valor] of reparto.asignado) {
+        const fila = clientes.get(linea.cliente_id);
+        if (fila) fila[campo] = (fila[campo] || 0) + valor;
+      }
+    };
+    porCliente(deVigilantes, 'costo_vigilantes');
+    porCliente(deOperacion, 'costo_operacion');
+
     const ingresosClientes = [...clientes.values()].reduce((suma, fila) => suma + Math.max(fila.ingresos, 0), 0);
+    const ingresosMonitoreo = [...clientes.values()].reduce((suma, fila) => suma + Math.max(fila.ingresos_monitoreo, 0), 0);
+    const costoHora = horasTotales ? fondo.vigilantes / horasTotales : 0;
     const filas = [...clientes.values()].map(fila => {
-      const vigilantes = fila.horas * costoHora;
-      const indirecto = ingresosClientes ? fondo.indirecto * Math.max(fila.ingresos, 0) / ingresosClientes : 0;
+      const vigilantes = fila.costo_vigilantes || 0;
+      const operacion = fila.costo_operacion || 0;
+      const tecnologia = ingresosMonitoreo
+        ? fondo.tecnologia * Math.max(fila.ingresos_monitoreo, 0) / ingresosMonitoreo
+        : (ingresosClientes ? fondo.tecnologia * Math.max(fila.ingresos, 0) / ingresosClientes : 0);
+      const administracion = ingresosClientes ? fondo.administracion * Math.max(fila.ingresos, 0) / ingresosClientes : 0;
+      const indirecto = operacion + tecnologia + administracion;
       const margen = fila.ingresos + fila.costo_directo + vigilantes + indirecto;
-      return { ...fila, costo_vigilantes: vigilantes, costo_indirecto: indirecto, margen, precio_hora: fila.horas ? fila.ingresos / fila.horas : null };
+      return {
+        ...fila,
+        costo_vigilantes: vigilantes, costo_operacion: operacion, costo_tecnologia: tecnologia, costo_administracion: administracion,
+        costo_indirecto: indirecto, margen,
+        precio_hora: fila.horas ? fila.ingresos / fila.horas : null,
+        costo_hora: fila.horas ? vigilantes / fila.horas : null,
+      };
     }).sort((izq, der) => der.ingresos - izq.ingresos);
 
     return {
       legible: true,
       aproximado: true,
+      metodo: 'ciudad-y-recargos',
       mes,
       costo_por_hora: costoHora,
       horas: horasTotales,
@@ -680,6 +971,15 @@ export async function rentabilidadAproximada(ejecutar, { mes }) {
       vigilantes_por_linea: horario.vigilantes_por_linea,
       excluidas: horario.excluidas,
       lectura_de_ordenes: horario.cuenta,
+      reparto: {
+        horas_con_ciudad: horasTotales ? horario.lineas.filter(linea => linea.ciudad).reduce((suma, linea) => suma + linea.horas, 0) / horasTotales : 0,
+        vigilantes_con_costo_de_su_ciudad: deVigilantes.cubierto,
+        ajuste_vigilantes: deVigilantes.ajuste,
+        ajuste_operacion: deOperacion.ajuste,
+        costo_hora_ponderada_por_centro: Object.fromEntries([...deVigilantes.tasas].map(([ciudad, tasa]) => [ciudad, tasa * deVigilantes.ajuste])),
+        ciudades_mapeadas: mapa.size,
+        recargo_dominical: recargoDominical(mes),
+      },
       fondo,
       ingresos_clientes: ingresosClientes,
       clientes_con_ingreso: filas.filter(fila => fila.ingresos > 0).length,

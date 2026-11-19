@@ -285,9 +285,11 @@ test('clientes con las reglas de la Portada (Juan, 16-nov): preguntas, periodo c
   assert.match(torre, /<option key=\{mes\} value=\{mes\}>\{nombreMes\(mes\)\} · \{cierreDe\(t, mes, hoy\)\.texto\}<\/option>/);
   // Lo aproximado va arriba en el aviso, no en letra chica.
   assert.match(torre, /<strong>Cifras aproximadas\.<\/strong>/);
-  // Cada margen con el del mes anterior; el precio por hora con el costo de referencia.
+  // Cada margen con el del mes anterior; el precio por hora con el costo de referencia: el promedio en el título y,
+  // desde el 19-nov, el de la ciudad de cada cliente en su fila.
   assert.match(torre, /className="siio-antes"/);
-  assert.match(torre, /<small>costo: \{pesos\(costoHora\)\}<\/small>/);
+  assert.match(torre, /<small>costo promedio: \{pesos\(costoHora\)\}<\/small>/);
+  assert.match(torre, /<small>costo: \{pesos\(Math\.abs\(fila\.costo_hora\)\)\}<\/small>/);
 });
 
 test('comercial y licitaciones con las reglas de la Portada (Juan, 17-nov): su orden, preguntas y una lista por fecha', () => {
