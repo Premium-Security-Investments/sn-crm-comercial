@@ -67,7 +67,7 @@ test('el servidor de tareas la arma con el membrete, la sube a la carpeta del es
   await assert.rejects(markLetterSent(db, study, letter.id, { sent_on: '2027-01-20', sent_to: 'Ing. Pérez', sent_medium: 'correo' }, PREPARER, NOW), /no está lista/);
   const deps = fakeDeps();
   assert.deepEqual(await runLetterBatch(db, deps, () => {}, NOW), { processed: 1, ok: 1 });
-  assert.match(deps.uploads[0].path, /^99_Del_CRM\/Estudios_de_Seguridad\/EST-\d{4}-\d{4} Cliente de prueba S\.A\.S\. - Bodega principal\/Cartas\/EST-\d{4}-\d{4}_Carta_recomendacion_2027-01-20_[0-9a-f]{8}\.pdf$/);
+  assert.match(deps.uploads[0].path, /^06_Productos_PSI\/SIIO\/06 Estudios de Seguridad\/EST-\d{4}-\d{4} Cliente de prueba S\.A\.S\. - Bodega principal\/Cartas\/EST-\d{4}-\d{4}_Carta_recomendacion_2027-01-20_[0-9a-f]{8}\.pdf$/);
   const text = JSON.stringify(deps.reports[0].blocks);
   assert.match(text, /Asunto: seguimiento a las recomendaciones del estudio de seguridad EST-/);
   assert.match(text, /Reparar la malla norte/);

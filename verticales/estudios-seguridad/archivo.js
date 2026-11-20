@@ -3,7 +3,7 @@
 // Lo corre el trabajo del servidor de tareas (ops/estudios-seguridad/run-estudios-seguridad-archivo.mjs), cada minuto.
 // Por cada pedido que dejó una aprobación (migración 186): arma el informe con membrete desde la foto congelada, lo
 // pasa a PDF, baja las evidencias del depósito comprobando que su huella sea la de la versión, y sube el paquete a
-// 99_Del_CRM/Estudios_de_Seguridad/<estudio>/v<N>/. Las dependencias (generar Word, pasar a PDF, subir) se inyectan,
+// la carpeta del SIIO en SharePoint (ARCHIVE_BASE_PATH)/<estudio>/v<N>/. Las dependencias (generar Word, pasar a PDF, subir) se inyectan,
 // para probar el orden y las guardas sin tocar Microsoft.
 //
 // Guardas: nunca sobrescribe (si el archivo ya está, es de un intento anterior de este mismo pedido y se cuenta como

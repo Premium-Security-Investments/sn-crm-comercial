@@ -9,14 +9,15 @@
 // HADA la dejó cortada).
 //
 // Devuelve el informe como DATOS para verticales/estudios-seguridad/render-informe.js. Aquí también se decide dónde
-// queda el paquete en SharePoint: siempre bajo 99_Del_CRM/Estudios_de_Seguridad/.
+// queda el paquete en SharePoint: siempre bajo la carpeta del SIIO, 06_Productos_PSI/SIIO/06 Estudios de Seguridad/
+// (Juan, 2026-11-20: "debe ser una carpeta dentro de la carpeta SIIO"; antes 99_Del_CRM/Estudios_de_Seguridad/).
 
 import { METODOLOGIAS, METODOLOGIA_V1, nivelDeMagnitud } from './metodologia.js';
 import { RENEWAL_OPTIONS, studyValidity } from './vigencia.js';
 import { ESCALAS, PLANTILLAS, controlWord } from './plantilla.js';
 import { bowTie, controlNote } from './corbatin.js';
 
-export const ARCHIVE_BASE_PATH = '99_Del_CRM/Estudios_de_Seguridad';
+export const ARCHIVE_BASE_PATH = '06_Productos_PSI/SIIO/06 Estudios de Seguridad';
 const NIVEL = Object.freeze({ bajo: 'Bajo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico', aceptable: 'Aceptable', tolerable: 'Tolerable', inaceptable: 'Inaceptable' });
 // De más grave a menos grave; cada estudio sólo usa los niveles de su metodología.
 const CONFIANZA = Object.freeze({ alta: 'Alta', media: 'Media', baja: 'Baja' });

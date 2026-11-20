@@ -2,7 +2,7 @@
 //
 // Con la migración 186 real en PGlite y dependencias simuladas (Word, PDF, SharePoint): la aprobación deja el pedido en
 // la misma transacción; el trabajo arma el informe desde la versión congelada, comprueba la huella de cada evidencia,
-// sube todo bajo 99_Del_CRM/Estudios_de_Seguridad/ y cierra el pedido; lo fallido se reintenta hasta 3 veces.
+// sube todo bajo la carpeta del SIIO (06_Productos_PSI/SIIO/06 Estudios de Seguridad/) y cierra el pedido; lo fallido se reintenta hasta 3 veces.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -87,7 +87,7 @@ test('migración 186: la aprobación deja el pedido; el trabajo lo toma, lo cier
   assert.equal((await pg.query(`select to_regclass('public.psi_security_study_archives') as t`)).rows[0].t, null);
 });
 
-test('el trabajo arma el paquete desde la versión congelada, lo sube bajo 99_Del_CRM y deja la copia para descargar', async () => {
+test('el trabajo arma el paquete desde la versión congelada, lo sube a la carpeta del SIIO y deja la copia para descargar', async () => {
   const { db, study } = await approvedStudy();
   const deps = fakeDeps();
   const events = [];
@@ -105,7 +105,7 @@ test('el trabajo arma el paquete desde la versión congelada, lo sube bajo 99_De
     `${folder}/Estudio_EST-${new Date().getFullYear()}-0001_v1.json`,
     `${folder}/evidencias/01_R1_malla.jpg`,
   ]);
-  assert.ok(deps.uploads.every(item => item.relativePath.startsWith(`${ARCHIVE_BASE_PATH}/`)), 'nunca fuera de la carpeta del CRM');
+  assert.ok(deps.uploads.every(item => item.relativePath.startsWith(`${ARCHIVE_BASE_PATH}/`)), 'nunca fuera de la carpeta del SIIO');
   assert.deepEqual(Buffer.from(deps.uploads[3].bytes), Buffer.from(JPEG), 'la foto sube tal cual');
 
   const workflow = await loadWorkflow(db, (await getStudy(db, study.id)).study, APPROVER);
@@ -166,5 +166,5 @@ test('el informe cabe en el generador con membrete y dice lo que se aprobó', as
   assert.match(fodt, /Reparar la malla del costado norte/);
   assert.match(fodt, new RegExp(version.snapshot_sha256));
   assert.equal(sharepointSafeName('Cliente: "A" / B * C?. '), 'Cliente A B C');
-  assert.match(archiveFolderPath(version.snapshot, 1), /^99_Del_CRM\/Estudios_de_Seguridad\/EST-\d{4}-0001 Cliente Prueba S\.A\.S\. - Bodega 1 Zona Franca\/v1$/);
+  assert.match(archiveFolderPath(version.snapshot, 1), /^06_Productos_PSI\/SIIO\/06 Estudios de Seguridad\/EST-\d{4}-0001 Cliente Prueba S\.A\.S\. - Bodega 1 Zona Franca\/v1$/);
 });
