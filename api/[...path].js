@@ -20,6 +20,7 @@ import { saveAnswer as saveSecurityStudyAnswer } from '../verticales/estudios-se
 import { loadLetters as loadSecurityStudyLetters, markLetterSent as markSecurityStudyLetterSent, requestLetter as requestSecurityStudyLetter } from '../verticales/estudios-seguridad/cartas.js';
 import { canDeliver as canDeliverSecurityStudy, createShare as createSecurityStudyShare, loadDelivery as loadSecurityStudyDelivery, recordDelivery as recordSecurityStudyDelivery, renderPublicPage as renderSecurityStudyPublicPage, resolvePublicStudy as resolveSecurityStudyPublic, revokeShare as revokeSecurityStudyShare } from '../verticales/estudios-seguridad/entrega.js';
 import { addRiskFromSecurityOps, linkPuesto as linkSecurityOpsPuesto, requestRefresh as refreshSecurityOps, searchPuestos as searchSecurityOpsPuestos } from '../verticales/estudios-seguridad/securityops.js';
+import { reportDownloadUrl as securityStudyReportDownloadUrl } from '../verticales/estudios-seguridad/archivo.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
 import { askQuestion, deactivateKnowledge, listMyQuestions, loadLearning } from '../verticales/gerencial/vigia-preguntas.js';
@@ -3800,6 +3801,8 @@ securityStudyRoute('post', '/api/estudios-seguridad/:id/dispositivo-desde-avancy
 securityStudyRoute('post', '/api/estudios-seguridad/:id/evidencias/upload-url', (db, req) => requestSecurityStudyEvidenceUpload(db, req.params.id, req.body || {}));
 securityStudyRoute('post', '/api/estudios-seguridad/:id/evidencias', (db, req, profile) => completeSecurityStudyEvidence(db, req.params.id, req.body || {}, profile));
 securityStudyRoute('get', '/api/estudios-seguridad/:id/evidencias/urls', (db, req) => securityStudyEvidenceUrls(db, req.params.id));
+// El informe aprobado, directo desde el SIIO (Juan, 2026-11-20): enlace de un minuto, sin pasar por SharePoint.
+securityStudyRoute('get', '/api/estudios-seguridad/:id/versiones/:version/informe', (db, req) => securityStudyReportDownloadUrl(db, req.params.id, req.params.version));
 securityStudyRoute('delete', '/api/estudios-seguridad/:id/evidencias/:evidenceId', (db, req) => deleteSecurityStudyEvidence(db, req.params.id, req.params.evidenceId));
 
 // Recomendaciones de Vig-IA Gerencia: lunes automático (timer del servidor) y botón con tope diario.

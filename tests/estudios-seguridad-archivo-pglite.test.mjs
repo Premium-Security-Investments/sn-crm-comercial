@@ -11,7 +11,7 @@ import { addAction, addRisk, addZone, createStudy, getStudy } from '../verticale
 import { completeEvidenceUpload, requestEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { loadWorkflow, transitionStudy } from '../verticales/estudios-seguridad/flujo.js';
 import { ARCHIVE_BASE_PATH, archiveFolderPath, buildStudyReport, sharepointSafeName } from '../verticales/estudios-seguridad/informe.js';
-import { parseUploadOutput, runArchiveBatch } from '../verticales/estudios-seguridad/archivo.js';
+import { parseUploadOutput, reportDownloadUrl, runArchiveBatch } from '../verticales/estudios-seguridad/archivo.js';
 import { studyReportSkeleton } from '../verticales/estudios-seguridad/plantilla-informe.js';
 import { buildStudyReportFodt } from '../verticales/estudios-seguridad/render-informe.js';
 import { APPROVER, PREPARER, REVIEWER, database, supabaseOver } from './helpers/estudios-seguridad-db.mjs';
@@ -87,7 +87,7 @@ test('migración 186: la aprobación deja el pedido; el trabajo lo toma, lo cier
   assert.equal((await pg.query(`select to_regclass('public.psi_security_study_archives') as t`)).rows[0].t, null);
 });
 
-test('el trabajo arma el paquete desde la versión congelada y lo sube bajo 99_Del_CRM', async () => {
+test('el trabajo arma el paquete desde la versión congelada, lo sube bajo 99_Del_CRM y deja la copia para descargar', async () => {
   const { db, study } = await approvedStudy();
   const deps = fakeDeps();
   const events = [];
@@ -114,6 +114,18 @@ test('el trabajo arma el paquete desde la versión congelada y lo sube bajo 99_D
   assert.match(archive.report_url, /^https:\/\/sharepoint\.test\/.*\.pdf$/);
   assert.deepEqual(archive.files.map(file => file.tipo), ['informe_pdf', 'informe_word', 'estudio_json', 'foto']);
   assert.equal(JSON.stringify(events).includes('Prueba'), false, 'el registro no lleva nombres');
+
+  // Descargar desde el SIIO (Juan, 2026-11-20): la copia del PDF queda en el depósito privado y se entrega con un
+  // enlace de un minuto; la ruta sale de la base, no del navegador.
+  const copy = `security-study-evidence/informes/${study.id}/v1/Informe_EST-${new Date().getFullYear()}-0001_v1.pdf`;
+  assert.deepEqual(Buffer.from(db.objects.get(copy)), Buffer.from(deps.uploads[0].bytes), 'la copia es el mismo PDF que va a SharePoint');
+  const link = await reportDownloadUrl(db, study.id, '1');
+  assert.equal(link.url, `https://firmado.test/${copy}`);
+  assert.equal(link.expires_in, 60);
+  await assert.rejects(reportDownloadUrl(db, study.id, '2'), error => error.status === 404, 'una versión que no existe');
+  await assert.rejects(reportDownloadUrl(db, study.id, '../1'), error => error.status === 400);
+  db.objects.delete(copy);
+  await assert.rejects(reportDownloadUrl(db, study.id, 1), /todavía se está preparando/, 'sin copia, avisa en vez de romperse');
 
   // El JSON archivado es exactamente la versión aprobada: misma huella.
   const { data: [version] } = await db.from('psi_security_study_versions').select('snapshot_sha256').eq('study_id', study.id);

@@ -228,6 +228,9 @@ export const deleteCharacterizationRow = (studyId: string, section: Characteriza
   api(`${BASE}/${encodeURIComponent(studyId)}/${section}/${encodeURIComponent(rowId)}`, { method: 'DELETE' });
 // Estadística de delitos desde los datos abiertos de la Policía (2026-11-14). Si la ciudad es ambigua, devuelve opciones.
 export type MunicipioPolicia = { cod_muni: string; municipio: string; departamento: string | null };
+// El informe aprobado de una versión, desde el SIIO (2026-11-20): enlace de un minuto, sin pasar por SharePoint.
+export const fetchReportDownload = (studyId: string, version: number) =>
+  api<{ url: string; file_name: string; expires_in: number }>(`${BASE}/${encodeURIComponent(studyId)}/versiones/${version}/informe`);
 export const fetchPoliceStats = (studyId: string, body: { cod_muni?: string; municipio?: string } = {}) =>
   api<{ escoger: true; opciones: MunicipioPolicia[] } | { escoger?: false; municipio: MunicipioPolicia; corte: string; desde: string; filas: unknown[]; reemplazadas: number; atrasados?: { delito: string; corte: string }[] }>(
     `${BASE}/${encodeURIComponent(studyId)}/estadistica-policia`, json('POST', body));
