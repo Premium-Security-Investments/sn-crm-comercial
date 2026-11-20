@@ -9893,7 +9893,10 @@ export async function ensureProfileAuthAfterCommit(database, { targetProfileId, 
       if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
       result.invited = emailResult.sent;
     }
-    if (sendInvite) result.accessLink = await generateAccessLink(database, email, req, userMetadata);
+    // Cada enlace de recuperación nuevo anula el anterior. Generar el enlace para la pantalla DESPUÉS de mandar el correo
+    // dejaba muerto el del correo ("Email link is invalid or has expired", 19 y 20-nov-2026, perfil de Angie Soto). El
+    // enlace para compartir a mano sólo se genera cuando el correo no salió.
+    if (sendInvite && !result.invited) result.accessLink = await generateAccessLink(database, email, req, userMetadata);
   } catch (error) {
     console.error('Post-commit Auth provisioning failed', error);
     result.authWarning = 'El perfil quedó guardado, pero el acceso no pudo aprovisionarse. Reintente el envío desde Usuarios y permisos.';

@@ -279,10 +279,27 @@ const newAuthResult = await ensureProfileAuthAfterCommit({
 assert.equal(newCalls.filter(([kind]) => kind === 'create').length, 1, 'identidad nueva se crea una sola vez después del commit');
 assert.equal(newCalls.filter(([kind]) => kind === 'bind').length, 1, 'identidad nueva se vincula al perfil original antes de enviar acceso');
 assert.equal(newCalls.find(([kind]) => kind === 'create')[1].email_confirm, false, 'la identidad nace sin confirmar hasta obtener vínculo durable');
-assert.deepEqual(newCalls.map(([kind]) => kind), ['create', 'bind', 'confirm', 'reset', 'link'], 'orden seguro: crear sin confirmar, vincular, confirmar y luego enviar acceso');
+assert.deepEqual(newCalls.map(([kind]) => kind), ['create', 'bind', 'confirm', 'reset'], 'orden seguro: crear sin confirmar, vincular, confirmar y luego enviar acceso');
 assert.equal(newAuthResult.invited, true);
-assert.equal(newAuthResult.accessLink, 'https://auth.example.test/access');
+// Un enlace nuevo anula el del correo (perfil de Angie Soto, 19 y 20-nov-2026): con el correo enviado no se genera otro.
+assert.equal(newAuthResult.accessLink, null, 'con el correo enviado no se genera un segundo enlace que lo anule');
 assert.equal(newAuthResult.authWarning, null);
+
+const failedMailCalls = [];
+const failedMailResult = await ensureProfileAuthAfterCommit({
+  rpc: async () => ({ data: true, error: null }),
+  auth: {
+  admin: {
+    listUsers: async () => ({ data: { users: [{ id: 'm-auth', email: 'm@example.test', email_confirmed_at: 'now' }] }, error: null }),
+    createUser: async () => { throw new Error('no debe crear'); },
+    updateUserById: async () => { throw new Error('no debe sobrescribir'); },
+    generateLink: async () => { failedMailCalls.push('link'); return { data: { properties: { action_link: 'https://auth.example.test/manual' } }, error: null }; },
+  },
+  resetPasswordForEmail: async () => { failedMailCalls.push('reset'); return { error: { message: 'over_email_send_rate_limit' } }; },
+} }, { targetProfileId: 'm-profile', email: 'm@example.test', password: '', userMetadata: { role: 'comercial' }, active: true, sendInvite: true, req });
+assert.deepEqual(failedMailCalls, ['reset', 'link'], 'si el correo no salió, se genera el enlace para compartir a mano');
+assert.equal(failedMailResult.invited, false);
+assert.equal(failedMailResult.accessLink, 'https://auth.example.test/manual');
 
 const existingCalls = [];
 const existingUser = { id: 'existing-auth', email: 'existing@example.test', email_confirmed_at: 'now' };
