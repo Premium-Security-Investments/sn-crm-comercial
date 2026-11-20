@@ -5191,11 +5191,17 @@ app.get('/api/agt003/avancys/cobro-por-comercial', async (req, res) => {
       error.status = 400;
       throw error;
     }
-    const lector = crearLectorAvancys();
     res.set('Cache-Control', 'private, no-store');
+    // `guardada=1`: el último cálculo de ese mes, al instante (2026-11-20); el panel pide después el vivo.
+    if (req.query.guardada === '1') {
+      const guardado = await leerGuardado(requireDb(), `cobro:${mes}`);
+      if (guardado) return res.json(guardado);
+    }
+    const lector = crearLectorAvancys();
     if (!lector) return res.json({ mes, facturas: 0, estados: [], comerciales: [], as_of: null, motivo: 'Avancys no esta configurado en este ambiente.' });
-    const leido = await lector.cobroPorComercial({ mes });
-    return res.json({ ...leido, motivo: null });
+    const leido = { ...(await lector.cobroPorComercial({ mes })), motivo: null, medido_en: new Date().toISOString() };
+    await guardarTorre(requireDb(), `cobro:${mes}`, leido);
+    return res.json(leido);
   } catch (error) {
     if (error?.codigo) {
       return res.json({ mes: String(req.query.mes || ''), facturas: 0, estados: [], comerciales: [], as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });

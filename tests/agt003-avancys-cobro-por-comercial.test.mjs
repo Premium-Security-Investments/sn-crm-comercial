@@ -22,9 +22,23 @@ function odoo(facturas, clientes = {}) {
       if (modelo === 'res.partner') {
         const ids = (posicional[0].find(hoja => hoja[0] === 'id') || [])[2] || [];
         result = ids.map(id => ({ id, user_id: clientes[id] ?? false }));
+      } else if (metodo === 'read_group') {
+        // Desde el 2026-11-20 el lector agrupa las facturas por cliente, estado de pago y tipo (antes, una por una).
+        const grupos = new Map();
+        for (const fila of facturas) {
+          const clave = `${fila.partner_id[0]}|${fila.payment_state}|${fila.move_type}`;
+          const g = grupos.get(clave) || { partner_id: fila.partner_id, payment_state: fila.payment_state, move_type: fila.move_type, amount_untaxed: 0, amount_total: 0, amount_residual: 0, write_date: fila.write_date, __count: 0 };
+          g.amount_untaxed += fila.amount_untaxed; g.amount_total += fila.amount_total; g.amount_residual += fila.amount_residual; g.__count += 1;
+          grupos.set(clave, g);
+        }
+        result = [...grupos.values()];
       } else {
+        // Los grupos mezclados se leen con su cliente, estado y tipo.
+        const igual = campo => (posicional[0].find(hoja => Array.isArray(hoja) && hoja[0] === campo && hoja[1] === '=') || [])[2];
+        const [cliente, estado, tipo] = ['partner_id', 'payment_state', 'move_type'].map(igual);
+        const filtradas = facturas.filter(fila => (cliente === undefined || fila.partner_id[0] === cliente) && (estado === undefined || fila.payment_state === estado) && (tipo === undefined || fila.move_type === tipo));
         const desde = nombrado.offset || 0;
-        result = facturas.slice(desde, desde + nombrado.limit);
+        result = filtradas.slice(desde, desde + nombrado.limit);
       }
     }
     return { ok: true, status: 200, text: async () => JSON.stringify({ jsonrpc: '2.0', id: cuerpo.id, result }) };
@@ -57,8 +71,11 @@ test('pagado, parcial, pendiente y nota crédito, por comercial y por estado', a
   assert.deepEqual(r.estados.map(e => e.estado).sort(), ['in_payment', 'not_paid', 'paid', 'partial']);
   assert.ok(!r.comerciales.some(c => c.nombre === 'Marisol (facturación)'), 'quien hace la factura no es el comercial');
   assert.ok(pedidos.some(p => p.modelo === 'res.partner'), 'lee el comercial asignado al cliente');
-  const lectura = pedidos.find(p => p.modelo === 'account.move');
-  assert.ok(lectura.campos.includes('payment_state') && lectura.campos.includes('amount_residual'));
+  // Agrupadas: las pagadas y las sin pagar no se leen una por una; sólo el grupo con el pago parcial.
+  assert.ok(pedidos.some(p => p.modelo === 'account.move' && p.metodo === 'read_group'));
+  const lecturas = pedidos.filter(p => p.modelo === 'account.move' && p.metodo === 'search_read');
+  assert.equal(lecturas.length, 1, 'sólo se lee aparte el grupo pagado en parte');
+  assert.ok(lecturas[0].campos.includes('payment_state') && lecturas[0].campos.includes('amount_residual'));
 });
 
 test('la Torre no cambia: la facturación por cliente sigue pidiendo sólo sus campos', async () => {
@@ -74,7 +91,9 @@ test('el servidor lo expone sólo a quien ve el tablero comercial, y el tablero 
     const h = src.slice(src.indexOf("app.get('/api/agt003/avancys/cobro-por-comercial'"));
     const handler = h.slice(0, h.indexOf('\n});'));
     assert.match(handler, /requireCommercialBehaviorAccess\(currentProfile\);/);
-    assert.match(handler, /const leido = await lector\.cobroPorComercial\(\{ mes \}\);/);
+    assert.match(handler, /const leido = \{ \.\.\.\(await lector\.cobroPorComercial\(\{ mes \}\)\), motivo: null/);
+    // Desde el 2026-11-20 se guarda cada cálculo y el panel pide primero lo guardado.
+    assert.match(handler, /leerGuardado\(requireDb\(\), `cobro:\$\{mes\}`\)/);
     assert.match(handler, /motivo: `Avancys no respondio: \$\{error\.codigo\}`/, 'si Avancys no entrega el estado de pago, se dice');
   }
   const ui = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');

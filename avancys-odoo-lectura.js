@@ -487,15 +487,45 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
    * 2026-11-10: `invoice_user_id` es quien elabora la factura — una sola persona de facturación aparecía con 1.574 de
    * las 1.900 facturas de octubre y 10.252 millones —, así que no sirve para atribuir comisiones.
    */
+  // Las facturas del mes agrupadas por cliente, estado de pago y tipo, con sus sumas. Leerlas una por una tardaba ~37 s
+  // (medido el 2026-11-20: unas 2.000 facturas, ~18 ms cada una) y el tablero comercial lo pide al abrir.
+  async function agruparFacturas(dominio) {
+    const id = await autenticar();
+    const nombrado = { lazy: false, limit: 20000 };
+    if (config.companyId) nombrado.context = { allowed_company_ids: [config.companyId] };
+    const grupos = await rpc('object', 'execute_kw', [config.database, id, config.clave, MODELO.facturaPago, 'read_group',
+      [dominio, ['amount_untaxed:sum', 'amount_total:sum', 'amount_residual:sum', 'write_date:max'], ['partner_id', 'payment_state', 'move_type']], nombrado]);
+    if (!Array.isArray(grupos)) falla('AVANCYS_RESPUESTA_INVALIDA');
+    return grupos;
+  }
+
   async function cobroPorComercial({ mes }) {
     if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) falla('AVANCYS_MES_INVALIDO');
     const [anio, numeroMes] = String(mes).split('-').map(Number);
     const desde = `${mes}-01`;
     const hasta = new Date(Date.UTC(anio, numeroMes, 0)).toISOString().slice(0, 10);
-    const filas = await leer('facturaPago',
-      [['move_type', 'in', ['out_invoice', 'out_refund']], ['state', '=', 'posted'],
-       ['invoice_date', '>=', desde], ['invoice_date', '<=', hasta]],
-      { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+    const dominio = [['move_type', 'in', ['out_invoice', 'out_refund']], ['state', '=', 'posted'],
+      ['invoice_date', '>=', desde], ['invoice_date', '<=', hasta]];
+    // Cada grupo es exacto sin leer sus facturas cuando todas están pagadas (residual 0: proporción 1) o ninguna
+    // (residual igual al total: proporción 0). Los grupos mezclados —pagos parciales— se leen factura por factura.
+    const grupos = await agruparFacturas(dominio);
+    const filas = [];
+    const porLeer = [];
+    for (const g of grupos) {
+      const cuenta = Number(g.__count) || 0;
+      const total = Number(g.amount_total) || 0;
+      const residual = Number(g.amount_residual) || 0;
+      const exacto = total > 0 && (residual === 0 || Math.abs(residual - total) < 0.005);
+      if (!exacto) { porLeer.push(g); continue; }
+      // Una «fila» que representa al grupo entero: mismo cliente, estado y tipo; la proporción pagada es la del grupo.
+      filas.push({ partner_id: g.partner_id, payment_state: g.payment_state, move_type: g.move_type, amount_untaxed: Number(g.amount_untaxed) || 0,
+        amount_total: total, amount_residual: residual, write_date: g.write_date || null, __facturas: cuenta });
+    }
+    for (const g of porLeer) {
+      const cliente = unoAMuchos(g.partner_id);
+      const sub = [...dominio, ['partner_id', '=', cliente === null ? false : cliente], ['payment_state', '=', g.payment_state || false], ['move_type', '=', g.move_type]];
+      filas.push(...await leer('facturaPago', sub, { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 }));
+    }
 
     // El comercial de cada cliente, en una lectura por lotes de los clientes facturados.
     const idsCliente = [...new Set(filas.map(fila => unoAMuchos(fila.partner_id)).filter(id => id !== null))];
@@ -516,8 +546,9 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
       const proporcionPagada = total > 0 ? Math.min(1, Math.max(0, 1 - pendiente / total)) : 0;
       const pagadoSinIva = sinIva * proporcionPagada;
       const estado = texto(fila.payment_state) || 'sin_estado';
+      const facturas = fila.__facturas || 1;
       const e = estados.get(estado) || { estado, facturas: 0, facturado: 0 };
-      e.facturas += 1; e.facturado += sinIva;
+      e.facturas += facturas; e.facturado += sinIva;
       estados.set(estado, e);
       const asignado = comercialDelCliente.get(unoAMuchos(fila.partner_id));
       const idComercial = unoAMuchos(asignado);
@@ -527,7 +558,7 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
         nombre: Array.isArray(asignado) ? texto(asignado[1]) : null,
         facturas: 0, facturado: 0, pagado: 0, pendiente: 0,
       };
-      c.facturas += 1; c.facturado += sinIva; c.pagado += pagadoSinIva; c.pendiente += sinIva - pagadoSinIva;
+      c.facturas += facturas; c.facturado += sinIva; c.pagado += pagadoSinIva; c.pendiente += sinIva - pagadoSinIva;
       porComercial.set(clave, c);
     }
     const redondo = n => Math.round(n);
@@ -536,8 +567,8 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
       .sort((a, b) => b.facturado - a.facturado);
     return Object.freeze({
       mes,
-      facturas: filas.length,
-      recortado: filas.length >= MAX_FILAS_PAGINADO,
+      facturas: filas.reduce((suma, fila) => suma + (fila.__facturas || 1), 0),
+      recortado: false,
       estados: Object.freeze([...estados.values()].map(e => Object.freeze({ ...e, facturado: redondo(e.facturado) })).sort((a, b) => b.facturas - a.facturas)),
       comerciales: Object.freeze(comerciales),
       as_of: corteDe([filas]),

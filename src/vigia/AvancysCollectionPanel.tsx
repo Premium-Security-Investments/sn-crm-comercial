@@ -3,7 +3,7 @@ import { api } from '../apiClient';
 
 type Estado = { estado: string; facturas: number; facturado: number };
 type Comercial = { avancys_user_id: number | null; nombre: string | null; facturas: number; facturado: number; pagado: number; pendiente: number };
-type Cobro = { mes: string; facturas: number; recortado?: boolean; estados: Estado[]; comerciales: Comercial[]; as_of: string | null; motivo: string | null };
+type Cobro = { mes: string; facturas: number; recortado?: boolean; estados: Estado[]; comerciales: Comercial[]; as_of: string | null; motivo: string | null; medido_en?: string; desde_guardado?: boolean };
 
 const ESTADO_LABEL: Record<string, string> = {
   paid: 'Pagadas', in_payment: 'En proceso de pago', partial: 'Pagadas en parte', not_paid: 'Sin pagar', reversed: 'Reversadas',
@@ -25,17 +25,30 @@ export function AvancysCollectionPanel() {
   const [estado, setEstado] = useState<'inicio' | 'cargando' | 'listo' | 'error'>('inicio');
   const [datos, setDatos] = useState<Cobro | null>(null);
   const [error, setError] = useState('');
+  const [actualizando, setActualizando] = useState(false);
+  // Primero el último cálculo guardado (al instante) y después el vivo (2026-11-20, igual que la Torre).
   useEffect(() => {
     if (!abierto || !/^\d{4}-\d{2}$/.test(mes)) return;
     let vigente = true;
+    const url = `/api/agt003/avancys/cobro-por-comercial?mes=${encodeURIComponent(mes)}`;
     (async () => {
-      setEstado('cargando'); setError('');
+      setEstado('cargando'); setError(''); setDatos(null);
+      let tengo = false;
       try {
-        const r = await api<Cobro>(`/api/agt003/avancys/cobro-por-comercial?mes=${encodeURIComponent(mes)}`);
+        const guardado = await api<Cobro>(`${url}&guardada=1`);
+        if (!vigente) return;
+        setDatos(guardado); setEstado('listo'); tengo = true;
+        if (!guardado.desde_guardado) return;
+      } catch { /* sigue con el vivo */ }
+      setActualizando(true);
+      try {
+        const r = await api<Cobro>(url);
         if (vigente) { setDatos(r); setEstado('listo'); }
       } catch (err) {
-        if (!vigente) return;
+        if (!vigente || tengo) return;
         setError(err instanceof Error ? err.message : String(err)); setEstado('error');
+      } finally {
+        if (vigente) setActualizando(false);
       }
     })();
     return () => { vigente = false; };
@@ -49,6 +62,7 @@ export function AvancysCollectionPanel() {
     {estado === 'error' && <p className="muted">No fue posible consultar Avancys: {error}</p>}
     {estado === 'listo' && datos?.motivo && <p className="muted">{datos.motivo}</p>}
     {estado === 'listo' && datos && !datos.motivo && <>
+      {datos.desde_guardado ? <p className="muted">Cálculo del {datos.medido_en ? new Date(datos.medido_en).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : 'último cargue'}{actualizando ? ' · actualizando…' : ''}</p> : null}
       <p className="muted">{datos.facturas} facturas · {datos.estados.map(e => `${ESTADO_LABEL[e.estado] || e.estado}: ${e.facturas}`).join(' · ')}{datos.recortado ? ' · La lectura pudo quedar incompleta.' : ''}</p>
       <div className="tablewrap crm-readable-table avancys-cobro-table"><table><thead><tr><th>Comercial del cliente</th><th>Facturas</th><th>Facturado</th><th>Pagado</th><th>Pendiente</th></tr></thead>
         <tbody>{datos.comerciales.map(c => <tr key={String(c.avancys_user_id)}>
