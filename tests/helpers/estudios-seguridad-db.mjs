@@ -35,7 +35,9 @@ export function supabaseOver(pg, objects = new Map()) {
         async createSignedUploadUrl(path) { return { data: { token: `token-${path}`, path }, error: null }; },
         async download(path) { return objects.has(key(path)) ? { data: new Blob([objects.get(key(path))]), error: null } : { data: null, error: new Error('Object not found') }; },
         async remove(paths) { for (const path of paths) objects.delete(key(path)); return { data: paths, error: null }; },
-        async createSignedUrls(paths) { return { data: paths.map(path => ({ path, signedUrl: `https://firmado.test/${key(path)}` })), error: null }; },
+        async upload(path, bytes) { objects.set(key(path), Buffer.from(bytes)); return { data: { path }, error: null }; },
+        // Como el depósito real: firma igual, pero marca con error el archivo que no existe.
+        async createSignedUrls(paths) { return { data: paths.map(path => (objects.has(key(path)) || !path.startsWith('informes/') ? { path, signedUrl: `https://firmado.test/${key(path)}`, error: null } : { path, signedUrl: null, error: 'Either the requested object does not exist or you do not have access to it' })), error: null }; },
       };
     },
   };

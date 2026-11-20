@@ -3,7 +3,7 @@
 // Lo corre el trabajo del servidor de tareas (ops/estudios-seguridad/run-estudios-seguridad-archivo.mjs), cada minuto.
 // Por cada pedido que dejó una aprobación (migración 186): arma el informe con membrete desde la foto congelada, lo
 // pasa a PDF, baja las evidencias del depósito comprobando que su huella sea la de la versión, y sube el paquete a
-// 99_Del_CRM/Estudios_de_Seguridad/<estudio>/v<N>/. Las dependencias (generar Word, pasar a PDF, subir) se inyectan,
+// la carpeta del SIIO en SharePoint (ARCHIVE_BASE_PATH)/<estudio>/v<N>/. Las dependencias (generar Word, pasar a PDF, subir) se inyectan,
 // para probar el orden y las guardas sin tocar Microsoft.
 //
 // Guardas: nunca sobrescribe (si el archivo ya está, es de un intento anterior de este mismo pedido y se cuenta como
@@ -91,6 +91,11 @@ export async function archiveVersion(database, archive, deps, log = () => {}) {
   } catch { throw new ArchiveFailure('informe'); }
   try { pdf = await deps.toPdf(docx); } catch { throw new ArchiveFailure('pdf'); }
 
+  // Copia del PDF en el depósito privado del SIIO (Juan, 2026-11-20): el botón "Descargar el informe" la entrega sin
+  // pasar por SharePoint, que exige permisos del sitio de Innovación que los analistas no tienen. Si no se puede
+  // guardar, se registra y se sigue: SharePoint sigue siendo el archivo oficial.
+  await storeReportCopy(database, archive.study_id, version.version, names.pdf, pdf, log, archive.id);
+
   const folder = archiveFolderPath(snapshot, version.version);
   const json = Buffer.from(canonicalJson(snapshot), 'utf8');
   const files = [
@@ -109,6 +114,38 @@ export async function archiveVersion(database, archive, deps, log = () => {}) {
   // El estudio JSON debe ser exactamente la versión aprobada: su huella es la de la versión.
   if (sha256(json) !== version.snapshot_sha256) log({ event: 'estudios_archivo_huella_json_distinta', archive_id: archive.id });
   return { folder, reportUrl: uploaded[0].url, files: uploaded };
+}
+
+/** Dónde queda la copia del informe de una versión en el depósito privado. */
+export const reportCopyPath = (studyId, version, fileName) => `informes/${studyId}/v${version}/${fileName}`;
+export const REPORT_URL_TTL_SECONDS = 60;
+
+async function storeReportCopy(database, studyId, version, fileName, pdf, log, archiveId) {
+  try {
+    const { error } = await database.storage.from(EVIDENCE_BUCKET).upload(reportCopyPath(studyId, version, fileName), pdf, { contentType: 'application/pdf', upsert: true });
+    if (error) throw error;
+  } catch {
+    log({ event: 'estudios_archivo_copia_pdf_fallida', archive_id: archiveId });
+  }
+}
+
+/**
+ * El enlace de descarga del informe de una versión aprobada, de vida corta. La versión y el nombre salen de la base,
+ * no de lo que mande el navegador.
+ */
+export async function reportDownloadUrl(database, studyId, versionValue) {
+  const version = Number(versionValue);
+  if (!/^[0-9a-f-]{36}$/i.test(String(studyId)) || !Number.isInteger(version) || version < 1) throw Object.assign(new Error('Versión inválida.'), { status: 400 });
+  const { data: row, error } = await database.from('psi_security_study_versions').select('snapshot').eq('study_id', studyId).eq('version', version).maybeSingle();
+  if (error) throw error;
+  if (!row) throw Object.assign(new Error('Esa versión no existe o no está aprobada.'), { status: 404 });
+  const fileName = archiveFileNames(row.snapshot, version).pdf;
+  const path = reportCopyPath(studyId, version, fileName);
+  // Si la copia no existe, el depósito lo dice en el error de ese archivo: no hace falta bajarla para saberlo.
+  const { data: signed, error: signError } = await database.storage.from(EVIDENCE_BUCKET).createSignedUrls([path], REPORT_URL_TTL_SECONDS, { download: fileName });
+  if (signError) throw Object.assign(new Error('No se pudo preparar la descarga.'), { status: 503 });
+  if (!signed?.[0]?.signedUrl || signed[0].error) throw Object.assign(new Error('El informe todavía se está preparando: intente en unos minutos.'), { status: 404 });
+  return { url: signed[0].signedUrl, file_name: fileName, expires_in: REPORT_URL_TTL_SECONDS };
 }
 
 /** Una corrida: toma pedidos y cierra cada uno, bien o con su motivo. Sin pedidos no hace nada más. */

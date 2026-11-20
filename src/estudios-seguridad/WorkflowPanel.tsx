@@ -1,7 +1,7 @@
 // Estudios de Seguridad Física, tramo 3: revisión y aprobación. Cada botón aparece sólo si el servidor dice que esta
 // persona puede dar ese paso ahora; quien preparó el estudio nunca ve "Revisado" ni "Aprobar".
 import { useState } from 'react';
-import { ACTION_LABELS, transitionStudy, type StudyStatus, type Workflow, type WorkflowAction } from './api';
+import { ACTION_LABELS, fetchReportDownload, transitionStudy, type StudyStatus, type Workflow, type WorkflowAction } from './api';
 
 const message = (reason: unknown) => (reason instanceof Error ? reason.message : 'No se pudo completar el paso.');
 const when = (value: string) => new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date(value));
@@ -13,18 +13,37 @@ const BUTTONS: Array<{ action: WorkflowAction; label: string; tone?: 'secondary'
   { action: 'reabrir', label: 'Reabrir para corregir', tone: 'secondary', confirm: 'El estudio vuelve a borrador; la versión aprobada se conserva y la próxima aprobación será una versión nueva. ¿Reabrir?' },
 ];
 
-// Dónde quedó cada versión aprobada: el informe y las evidencias se suben solos a SharePoint al aprobar.
-function ArchiveLine({ archive }: { archive: Workflow['versions'][number]['archive'] }) {
+// Dónde quedó cada versión aprobada. El informe se descarga desde el SIIO (Juan, 2026-11-20): el enlace de SharePoint
+// exige permisos del sitio de Innovación que los analistas no tienen, y queda como archivo oficial.
+function DownloadReport({ studyId, version }: { studyId: string; version: number }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const download = async () => {
+    setBusy(true); setError('');
+    try {
+      const { url } = await fetchReportDownload(studyId, version);
+      window.location.assign(url);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'No se pudo descargar el informe.'); } finally { setBusy(false); }
+  };
+  return <>
+    <button type="button" onClick={() => void download()} disabled={busy}>{busy ? 'Preparando…' : 'Descargar el informe (PDF)'}</button>
+    {error ? <small className="es-error">{error}</small> : null}
+  </>;
+}
+
+function ArchiveLine({ studyId, version, archive }: { studyId: string; version: number; archive: Workflow['versions'][number]['archive'] }) {
   if (!archive) return null;
   if (archive.status === 'archivado') {
     const word = archive.files.find(file => file.tipo === 'informe_word');
     return <div className="es-archive">
-      {archive.report_url ? <a href={archive.report_url} target="_blank" rel="noopener noreferrer">Abrir el informe en SharePoint (PDF)</a> : <span>Archivado en SharePoint</span>}
+      <DownloadReport studyId={studyId} version={version} />
+      {archive.report_url ? <a href={archive.report_url} target="_blank" rel="noopener noreferrer">Ver en SharePoint</a> : <span>Archivado en SharePoint</span>}
       {word?.url ? <a href={word.url} target="_blank" rel="noopener noreferrer">Word</a> : null}
       <small className="es-muted">{archive.files.length} archivos</small>
     </div>;
   }
-  if (archive.status === 'fallido') return <div className="es-archive es-error">No se pudo archivar en SharePoint: {archive.error || 'error técnico'}. IT ya tiene el registro.</div>;
+  // Si SharePoint falló, el PDF puede estar igual en el SIIO: se ofrece la descarga.
+  if (archive.status === 'fallido') return <div className="es-archive es-error"><DownloadReport studyId={studyId} version={version} /> No se pudo archivar en SharePoint: {archive.error || 'error técnico'}. IT ya tiene el registro.</div>;
   return <div className="es-archive es-muted">{archive.status === 'procesando' ? 'Subiendo el informe y las evidencias a SharePoint…' : 'El informe se está preparando para subir a SharePoint.'}{archive.error ? ` Último intento: ${archive.error}.` : ''}</div>;
 }
 
@@ -69,7 +88,7 @@ export function WorkflowPanel({ studyId, status, preparedBy, workflow, onChanged
       <ul className="es-history">{workflow.versions.map(version => <li key={version.id}>
         <strong>Versión {version.version}</strong> · {when(version.approved_at)} · aprobó {name(version.approved_by)}
         <small className="es-muted"> · huella {version.snapshot_sha256.slice(0, 12)}…</small>
-        <ArchiveLine archive={version.archive} />
+        <ArchiveLine studyId={studyId} version={version.version} archive={version.archive} />
       </li>)}</ul>
     </div> : null}
     {workflow.events.length ? <div>
