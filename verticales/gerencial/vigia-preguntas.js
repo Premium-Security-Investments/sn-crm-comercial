@@ -12,6 +12,10 @@
 
 export const PREGUNTAS_TABLE = 'siio_vigia_preguntas';
 export const CONOCIMIENTO_TABLE = 'siio_vigia_conocimiento';
+export const CONVERSACIONES_TABLE = 'siio_vigia_conversaciones';
+export const CONVERSACIONES_VISIBLES = 60;
+// Desde aquí la pantalla sugiere abrir otra: cada mensaje relee la conversación entera y gasta más suscripción.
+export const MENSAJES_LARGA = 16;
 export const MAX_PREGUNTA = 600;
 export const PREGUNTAS_POR_DIA = 40;
 export const PREGUNTAS_VISIBLES = 30;
@@ -59,31 +63,90 @@ async function expirarAbandonadas(database, now) {
     .eq('status', 'leyendo').lt('started_at', limite);
 }
 
-const COLUMNAS_PREGUNTA = 'id,question,parent_id,status,answer,answer_table,failure_code,requested_at,started_at,finished_at,duration_ms';
+const COLUMNAS_PREGUNTA = 'id,question,parent_id,conversation_id,status,answer,answer_table,failure_code,progress,requested_at,started_at,finished_at,duration_ms';
 
-/** Registra una pregunta del perfil. Una a la vez por persona, y un tope diario para no agotar la suscripción. */
+export function tituloDeConversacion(pregunta) {
+  const texto = String(pregunta || '').replace(/\s+/g, ' ').trim();
+  return texto.length > 120 ? `${texto.slice(0, 117).trimEnd()}…` : texto;
+}
+
+async function conversacionPropia(database, profile, id) {
+  const filas = requireResult(await database.from(CONVERSACIONES_TABLE).select('id,title,created_at,last_message_at')
+    .eq('id', id).eq('asked_by', profile.id).limit(1)) || [];
+  if (!filas.length) throw fail('No se encontró la conversación.', 404, 'VIGIA_CONVERSACION_NO_EXISTE');
+  return filas[0];
+}
+
+/**
+ * Registra un mensaje del perfil. Sin `conversation_id` abre una conversación nueva (Juan, 2026-11-20: sólo cuando el
+ * directivo presiona «Nueva conversación»); con él, sigue esa conversación. Un mensaje a la vez por persona, y un tope
+ * diario para no agotar la suscripción.
+ */
 export async function askQuestion(database, profile, body = {}, now = new Date()) {
   if (!profile?.id) throw fail('Inicie sesión para preguntar.', 401);
   const question = limpiarPregunta(body.question);
-  const parentId = typeof body.parent_id === 'string' && body.parent_id ? body.parent_id : null;
+  const conversacionPedida = typeof body.conversation_id === 'string' && body.conversation_id ? body.conversation_id : null;
   await expirarAbandonadas(database, now);
 
   const abiertas = requireResult(await database.from(PREGUNTAS_TABLE).select('id')
     .eq('asked_by', profile.id).in('status', ['pendiente', 'leyendo']).limit(1)) || [];
-  if (abiertas.length) throw fail('Vig-IA todavía está contestando su pregunta anterior. Espere a que termine.', 409, 'VIGIA_PREGUNTA_EN_CURSO');
+  if (abiertas.length) throw fail('Vig-IA todavía está contestando su mensaje anterior. Espere a que termine.', 409, 'VIGIA_PREGUNTA_EN_CURSO');
 
   const hoy = requireResult(await database.from(PREGUNTAS_TABLE).select('id')
     .eq('asked_by', profile.id).gte('requested_at', bogotaDayStart(now).toISOString())) || [];
   if (hoy.length >= PREGUNTAS_POR_DIA) throw fail(`Ya hizo ${PREGUNTAS_POR_DIA} preguntas hoy. Vuelva mañana.`, 429, 'VIGIA_TOPE_DIARIO');
 
-  if (parentId) {
-    const padre = requireResult(await database.from(PREGUNTAS_TABLE).select('id').eq('id', parentId).eq('asked_by', profile.id).limit(1)) || [];
-    if (!padre.length) throw fail('No se encontró la respuesta sobre la que pregunta.', 404);
+  let conversationId = conversacionPedida;
+  let parentId = null;
+  if (conversacionPedida) {
+    await conversacionPropia(database, profile, conversacionPedida);
+    const ultima = requireResult(await database.from(PREGUNTAS_TABLE).select('id')
+      .eq('conversation_id', conversacionPedida).order('requested_at', { ascending: false }).limit(1)) || [];
+    parentId = ultima[0]?.id || null;
+  } else {
+    const nueva = requireResult(await database.from(CONVERSACIONES_TABLE)
+      .insert({ asked_by: profile.id, title: tituloDeConversacion(question), created_at: now.toISOString(), last_message_at: now.toISOString() })
+      .select('id').single());
+    conversationId = nueva.id;
   }
   const inserted = await database.from(PREGUNTAS_TABLE)
-    .insert({ asked_by: profile.id, question, parent_id: parentId, status: 'pendiente', requested_at: now.toISOString() })
+    .insert({ asked_by: profile.id, question, parent_id: parentId, conversation_id: conversationId, status: 'pendiente', requested_at: now.toISOString() })
     .select(COLUMNAS_PREGUNTA).single();
-  return requireResult(inserted);
+  const fila = requireResult(inserted);
+  await database.from(CONVERSACIONES_TABLE).update({ last_message_at: now.toISOString() }).eq('id', conversationId);
+  return fila;
+}
+
+/** Las conversaciones de ESTE perfil, la más reciente primero, con cuántos mensajes tiene cada una. */
+export async function listConversations(database, profile, now = new Date()) {
+  if (!profile?.id) throw fail('Inicie sesión.', 401);
+  await expirarAbandonadas(database, now);
+  const conversaciones = requireResult(await database.from(CONVERSACIONES_TABLE).select('id,title,created_at,last_message_at')
+    .eq('asked_by', profile.id).order('last_message_at', { ascending: false }).limit(CONVERSACIONES_VISIBLES)) || [];
+  const ids = conversaciones.map(c => c.id);
+  const mensajes = ids.length ? requireResult(await database.from(PREGUNTAS_TABLE).select('conversation_id,status')
+    .eq('asked_by', profile.id).in('conversation_id', ids)) || [] : [];
+  const cuenta = new Map();
+  const enCurso = new Set();
+  for (const m of mensajes) {
+    cuenta.set(m.conversation_id, (cuenta.get(m.conversation_id) || 0) + 1);
+    if (m.status === 'pendiente' || m.status === 'leyendo') enCurso.add(m.conversation_id);
+  }
+  return {
+    conversaciones: conversaciones.map(c => ({ ...c, mensajes: cuenta.get(c.id) || 0, en_curso: enCurso.has(c.id) })),
+    puede_ver_aprendizaje: esAdministrador(profile),
+    mensajes_larga: MENSAJES_LARGA,
+  };
+}
+
+/** Una conversación de ESTE perfil con todos sus mensajes, en orden. */
+export async function loadConversation(database, profile, id, now = new Date()) {
+  if (!profile?.id) throw fail('Inicie sesión.', 401);
+  await expirarAbandonadas(database, now);
+  const conversacion = await conversacionPropia(database, profile, id);
+  const mensajes = requireResult(await database.from(PREGUNTAS_TABLE).select(COLUMNAS_PREGUNTA)
+    .eq('conversation_id', id).eq('asked_by', profile.id).order('requested_at', { ascending: true }).limit(200)) || [];
+  return { conversacion, mensajes };
 }
 
 /** Las preguntas de ESTE perfil, la más reciente primero. Nadie ve las de otro. */

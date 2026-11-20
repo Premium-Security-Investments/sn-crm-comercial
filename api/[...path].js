@@ -22,7 +22,7 @@ import { canDeliver as canDeliverSecurityStudy, createShare as createSecurityStu
 import { addRiskFromSecurityOps, linkPuesto as linkSecurityOpsPuesto, requestRefresh as refreshSecurityOps, searchPuestos as searchSecurityOpsPuestos } from '../verticales/estudios-seguridad/securityops.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
-import { askQuestion, deactivateKnowledge, listMyQuestions, loadLearning } from '../verticales/gerencial/vigia-preguntas.js';
+import { askQuestion, deactivateKnowledge, listConversations, listMyQuestions, loadConversation, loadLearning } from '../verticales/gerencial/vigia-preguntas.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
 import { suggestAgt002DocumentRelevance } from '../verticales/licitaciones/agt002-document-relevance-suggestion.js';
@@ -646,6 +646,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/siio/preguntas': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'GET /api/siio/preguntas/aprendizaje': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/preguntas/conocimiento/:id/quitar': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/vigia/conversaciones': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/vigia/conversaciones/:id': ['siio', ACTIONS.SIIO_AREA_VIEW],
   'POST /api/siio/financial-imports/upload-url': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'POST /api/siio/financial-imports/process-upload': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
   'POST /api/siio/financial-imports/:id/validate': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
@@ -676,6 +678,9 @@ export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
   'POST /api/siio/preguntas': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'GET /api/siio/preguntas/aprendizaje': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/preguntas/conocimiento/:id/quitar': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  // Conversaciones (Juan, 2026-11-20): cada perfil ve solo las suyas.
+  'GET /api/siio/vigia/conversaciones': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/vigia/conversaciones/:id': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/upload-url': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/process-upload': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
   'POST /api/siio/financial-imports/:id/validate': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
@@ -3844,6 +3849,20 @@ app.get('/api/siio/preguntas/aprendizaje', async (req, res) => {
     const { profile } = await getAuthContext(req);
     requireSiioEndpointAccess(profile, 'GET /api/siio/preguntas/aprendizaje');
     res.json(await loadLearning(requireDb(), profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.get('/api/siio/vigia/conversaciones', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/vigia/conversaciones');
+    res.json(await listConversations(requireDb(), profile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.get('/api/siio/vigia/conversaciones/:id', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/vigia/conversaciones/:id');
+    res.json(await loadConversation(requireDb(), profile, req.params.id));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.post('/api/siio/preguntas/conocimiento/:id/quitar', async (req, res) => {

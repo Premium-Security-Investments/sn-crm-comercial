@@ -23,9 +23,15 @@ export const TABLAS_CRM = Object.freeze([
   'psi_public_tenders', 'psi_securityops_puestos', 'psi_vigilance_companies', 'psi_vigilance_participations',
   'psi_company_experience', 'psi_tender_lessons', 'psi_siio_cartera_fotos',
   'siio_financial_metrics', 'siio_operations_metrics', 'siio_strategic_opportunities', 'siio_followups',
+  // El análisis de licitaciones de AGT-002 (2026-11-20): sin estas tablas Vig-IA dijo que 7 de 13 licitaciones no tenían
+  // análisis, cuando 12 tenían corridas completas y 4 su expediente.
+  'psi_tender_analysis_runs', 'psi_agt002_pre_go_analysis_versions', 'psi_tender_dossier_items', 'psi_tender_dossier_item_actions',
+  'psi_tender_requirement_blocks', 'psi_tender_closure_acta_reason',
 ]);
 
-const db = new DatabaseSync(':memory:');
+// La base de trabajo dura lo que dura la conversación: el trabajador pasa un archivo por conversación (VIGIA_BASE) para
+// que «los de Medellín» use la tabla que ya se cargó. Sin él, en memoria.
+const db = new DatabaseSync(process.env.VIGIA_BASE || ':memory:');
 const cargas = [];
 
 // ---------- Avancys (Odoo 14, JSON-RPC) ----------
@@ -281,9 +287,19 @@ const HERRAMIENTAS = [
   },
   {
     name: 'sql',
-    description: `Consulta SQL (SQLite, solo SELECT o WITH) sobre las tablas que usted cargó. Devuelve hasta ${MAX_FILAS_SQL} filas y el total. Use date('now') con cuidado: Colombia es UTC-5.`,
+    description: `Consulta SQL (SQLite, solo SELECT o WITH) sobre las tablas que usted cargó en esta conversación (también las de mensajes anteriores). Devuelve hasta ${MAX_FILAS_SQL} filas y el total. Para contar personas use COUNT(DISTINCT …): un empleado puede tener varios registros. Use date('now') con cuidado: Colombia es UTC-5.`,
     inputSchema: { type: 'object', properties: { consulta: { type: 'string' } }, required: ['consulta'] },
     run: async ({ consulta }) => correrSql(consulta, MAX_FILAS_SQL),
+  },
+  {
+    name: 'tablas_cargadas',
+    description: 'Lista las tablas que ya están en la base de trabajo de esta conversación, con sus columnas y filas. Mírela antes de volver a cargar algo.',
+    inputSchema: { type: 'object', properties: {} },
+    run: async () => db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map(({ name }) => ({
+      tabla: name,
+      filas: db.prepare(`SELECT COUNT(*) AS n FROM ${columna(name)}`).get().n,
+      columnas: db.prepare(`PRAGMA table_info(${columna(name)})`).all().map(c => c.name),
+    })),
   },
   {
     name: 'preparar_tabla',
