@@ -34,7 +34,9 @@
 .sn-cabecera .user-menu-trigger{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.10);box-shadow:none;padding:5px 12px 5px 5px;font-size:13px}
 .sn-cabecera .user-menu-trigger:hover{background:rgba(255,255,255,.06)}
 .sn-cabecera .user-avatar{width:30px;height:30px;background:var(--sn-azul-superficie);color:var(--sn-amarillo);font-family:Montserrat,Inter,system-ui,sans-serif;font-size:12px;font-weight:700}
-.sn-cabecera .user-menu-panel{color:var(--sn-tinta)}
+/* La cabecera recorta (overflow:hidden) para que el escudo de fondo no se salga; con el panel en absoluto, el recorte
+   también se comía el menú del perfil (Juan, 2026-11-20). Fijo a la ventana, el recorte de la cabecera no lo alcanza. */
+.sn-cabecera .user-menu-panel{color:var(--sn-tinta);position:fixed;top:calc(var(--sn-cabecera-alto) + 8px);right:24px;max-width:calc(100vw - 24px)}
 
 /* ── El menú lateral azul, debajo de la cabecera ──────────────────────────── */
 .sn-marco .sidebar{position:sticky;top:var(--sn-cabecera-alto);height:calc(100vh - var(--sn-cabecera-alto));padding:20px 12px 12px;gap:12px;
@@ -69,6 +71,7 @@
 @media (max-width:1023px){
   .sn-marco{grid-template-columns:minmax(0,1fr);--sn-cabecera-alto:64px}
   .sn-cabecera{padding:0 12px;gap:10px}
+  .sn-cabecera .user-menu-panel{right:12px}
   .sn-cabecera-marca{gap:10px}
   .sn-cabecera-logo{width:84px}
   .sn-marco .sn-cabecera .topbar-menu-toggle{display:inline-flex;flex:0 0 auto}

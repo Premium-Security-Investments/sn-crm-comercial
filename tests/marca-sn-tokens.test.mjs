@@ -90,3 +90,11 @@ test('ningún estado ni aviso usa el amarillo de marca', () => {
     }
   }
 });
+
+// Juan (2026-11-20): el menú del perfil se abría detrás de la imagen y no se podía usar. La cabecera recorta
+// (overflow:hidden) para el escudo de fondo; el panel tiene que salir de ese recorte, fijo a la ventana.
+test('el menú del perfil no queda recortado por la cabecera azul', () => {
+  const css = readFileSync(new URL('../src/shell/marco-marca.css', import.meta.url), 'utf8');
+  assert.match(css, /\.sn-cabecera\{[^}]*overflow:hidden/, 'la cabecera sigue recortando el escudo');
+  assert.match(css, /\.sn-cabecera \.user-menu-panel\{[^}]*position:fixed;top:calc\(var\(--sn-cabecera-alto\) \+ 8px\)/);
+});
