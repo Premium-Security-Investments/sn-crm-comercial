@@ -436,3 +436,4 @@
 .siio-dashboard .siio-vigia-escribir .siio-boton-primario:disabled{opacity:.55;cursor:default}
 .siio-dashboard .siio-vigia-larga{margin:0}
 @media(max-width:760px){.siio-dashboard .siio-vigia-conversaciones{max-width:none}.siio-dashboard .siio-vigia-mensajes{max-height:none}.siio-dashboard .siio-vigia-usuario{max-width:92%}}
+.siio-dashboard .siio-estado-carga{margin:0 0 10px}

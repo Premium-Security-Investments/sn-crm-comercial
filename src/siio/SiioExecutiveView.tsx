@@ -17,7 +17,7 @@ import { SiioPestanaOperacion } from './SiioPestanaOperacion';
 import { SiioRecommendations } from './SiioRecommendations';
 import { SiioPreguntas } from './SiioPreguntas';
 import { SiioPestanaParametros } from './SiioParametros';
-import { SiioPestanaCartera, SiioPestanaClientes, SiioPestanaResultados, SiioPortada, useTorreAvancys, type PestanaTorre } from './SiioTorreAvancys';
+import { EstadoDeCarga, SiioPestanaCartera, SiioPestanaClientes, SiioPestanaResultados, SiioPortada, useTorreAvancys, type PestanaTorre } from './SiioTorreAvancys';
 import type { SiioFinancialMetric } from '../siioExecutive';
 import type { SiioBootstrapPayload, SiioRouteState } from './types';
 
@@ -117,6 +117,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate, fuentesExtr
       {PESTANAS.map(([clave, etiqueta]) => <button key={clave} type="button" role="tab" aria-selected={pestana === clave}
         className={pestana === clave ? 'active' : ''} onClick={() => setPestana(clave)}>{etiqueta}</button>)}
     </nav>
+    {/* Mientras llega el cálculo en vivo se ve el último guardado (Juan, 2026-11-20); la Portada lo dice en su cabeza. */}
+    {pestana !== 'portada' && (torre.actualizando || torre.errorVivo) ? <p className="siio-nota siio-estado-carga"><EstadoDeCarga t={torre} /></p> : null}
 
     {pestana === 'portada' ? <section role="tabpanel" aria-label="Portada">
       <SiioPortada t={torre} onIr={(destino, mes) => { if (mes) torre.setMes(mes); irA(destino); }} comercial={commercial} />
