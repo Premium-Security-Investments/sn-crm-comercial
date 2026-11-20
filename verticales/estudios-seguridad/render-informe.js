@@ -109,6 +109,8 @@ const PARAGRAPH_STYLES = [
   ['EsSalto', 'fo:break-before="page" fo:margin-top="0in" fo:margin-bottom="0in"', 'fo:font-size="2pt"'],
   ['EsCeldaTexto', 'fo:margin-top="0in" fo:margin-bottom="0in" fo:line-height="115%"'],
   ['EsCeldaCentro', 'fo:margin-top="0in" fo:margin-bottom="0in" fo:text-align="center"'],
+  // Después de una tabla sin nota: LibreOffice no respeta el margen inferior de la tabla y el párrafo queda pegado.
+  ['EsTrasTabla', 'fo:margin-top="0in" fo:margin-bottom="0in" fo:line-height="100%"', 'fo:font-size="6pt"'],
   ['EsTarjetaTexto', 'fo:margin-top="0in" fo:margin-bottom="0.02in"'],
   ['EsPortadaIndiceTitulo', 'fo:margin-left="1in" fo:margin-right="1in" fo:margin-top="0.35in" fo:margin-bottom="0.1in" fo:padding-top="0.12in" fo:border-top="0.75pt solid #d1d5db"', `fo:font-size="12pt" fo:font-weight="bold" fo:color="${PALETA.azul}"`],
   ['EsPortadaIndice', 'fo:margin-left="1in" fo:margin-right="1in" fo:margin-top="0in" fo:margin-bottom="0.05in"', 'fo:font-size="10pt" fo:color="#374151"'],
@@ -116,7 +118,7 @@ const PARAGRAPH_STYLES = [
 ].map(([name, props, textProps]) => paraStyle(name, props, textProps)).join('');
 
 const STYLES = `${PARAGRAPH_STYLES}${TEXT_STYLES}${CELL_STYLES}
-  <style:style style:name="EsTabla" style:family="table"><style:table-properties style:width="6.7in" table:align="margins" fo:margin-top="0.02in" fo:margin-bottom="0.06in"/></style:style>
+  <style:style style:name="EsTabla" style:family="table"><style:table-properties style:width="6.7in" table:align="margins" fo:margin-top="0.02in" fo:margin-bottom="0.14in"/></style:style>
   <style:style style:name="EsMapa" style:family="table"><style:table-properties style:width="5.6in" table:align="center" fo:margin-top="0.04in" fo:margin-bottom="0.04in"/></style:style>
   <style:style style:name="EsTarjetas" style:family="table"><style:table-properties style:width="6.7in" table:align="margins" fo:margin-top="0.06in" fo:margin-bottom="0.12in"/></style:style>
   <style:style style:name="EsColEje" style:family="table-column"><style:table-column-properties style:column-width="1.25in"/></style:style>
@@ -180,7 +182,7 @@ function table(entry, index, counter) {
       + band
       + (header.length ? `<table:table-header-rows>${row(header, true, 'encabezado')}</table:table-header-rows>` : '')
       + rows.map((values, at) => row(values, false, at)).join('')
-      + '</table:table>' + note,
+      + '</table:table>' + (note || '<text:p text:style-name="EsTrasTabla"/>'),
   };
 }
 

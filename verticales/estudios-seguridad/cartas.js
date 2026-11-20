@@ -125,7 +125,7 @@ export function buildLetterReport(letter, snapshot, { approvedAt, requesterName,
   p(`**Asunto: seguimiento a las recomendaciones del estudio de seguridad ${study.codigo}**`);
   p(`Respetados señores:`);
   p(`En el estudio de seguridad física ${study.codigo}, aprobado el ${longDate(day(approvedAt))}${deliveredOn ? ` y socializado con ustedes el ${longDate(deliveredOn)}` : ''}, Seguridad Nacional Ltda. recomendó las medidas que se relacionan a continuación, a cargo de ${clientEnd} A la fecha de esta comunicación, según nuestros registros, siguen pendientes:`);
-  blocks.push({ kind: 'table', header: ['Riesgo', 'Recomendación', 'Fecha compromiso', 'Estado'], rows: letter.items.map(item => [
+  blocks.push({ kind: 'table', widths: [1.6, 3.0, 1.2, 0.9], header: ['Riesgo', 'Recomendación', 'Fecha compromiso', 'Estado'], rows: letter.items.map(item => [
     `${item.riesgo}${item.riesgo_nombre ? ` · ${item.riesgo_nombre}` : ''}${item.nivel ? ` (${NIVEL[item.nivel] || item.nivel})` : ''}`.slice(0, 300),
     String(item.accion).slice(0, 600), item.fecha ? `${longDate(item.fecha)}${item.vencida ? ' (vencida)' : ''}` : 'Sin fecha', STATUS_WORD[item.estado] || item.estado,
   ]) });
@@ -144,7 +144,8 @@ export function buildLetterReport(letter, snapshot, { approvedAt, requesterName,
   blocks.push({ kind: 'signature', text: 'Cordialmente,' });
   blocks.push({ kind: 'spacer' });
   blocks.push({ kind: 'signature', text: `**${requesterName || 'Seguridad Nacional Ltda.'}**\nSeguridad Nacional Ltda.` });
-  return { blocks };
+  // La banda de la plantilla dice qué es el documento: una carta de seguimiento, no el estudio.
+  return { blocks, header: `Seguimiento al estudio de seguridad ${study.codigo} · ${client}`.slice(0, 120) };
 }
 
 export function letterPath(snapshot, letter, now = new Date()) {
