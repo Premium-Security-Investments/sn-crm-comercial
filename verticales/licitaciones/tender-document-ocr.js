@@ -116,6 +116,49 @@ function extractionParams(version, { text, pages }) {
   };
 }
 
+// ---- Huella de los pases (2026-11-20) ------------------------------------------------------------------------------
+// Elegir candidatos exige leer el texto de todas las lecturas (la regla de buena forma compara el hash con el texto), y
+// eso, cada 2 minutos y casi siempre para nada, era la carga más pesada de la base del CRM. La huella son conteos y
+// fechas, sin texto: si no cambió desde el último pase que no encontró nada, no hay candidatos nuevos y el pase se salta.
+export const HUELLAS_TABLE = 'psi_agt002_pase_huellas';
+export const PASE_COMPLETO_CADA_MS = 60 * 60_000;
+
+async function contarYUltima(database, tabla, filtrar = consulta => consulta) {
+  const { count, error } = await filtrar(database.from(tabla).select('id', { count: 'exact', head: true }));
+  if (error) throw error;
+  const { data, error: e2 } = await filtrar(database.from(tabla).select('created_at')).order('created_at', { ascending: false }).limit(1);
+  if (e2) throw e2;
+  return `${count ?? 0}:${data?.[0]?.created_at || '-'}`;
+}
+
+export async function huellaDeDocumentos(database, ids, extractor) {
+  const versiones = await contarYUltima(database, 'psi_tender_document_versions', consulta => consulta.eq('current', true).in('opportunity_id', ids));
+  const lecturas = await contarYUltima(database, 'psi_tender_document_extractions');
+  const oportunidades = createHash('sha256').update([...ids].sort().join(',')).digest('hex').slice(0, 16);
+  return `${extractor}|o:${ids.length}:${oportunidades}|v:${versiones}|e:${lecturas}`;
+}
+
+/** true si el último pase completo de `pase` no encontró candidatos con esta misma huella y fue hace menos de una hora. */
+export async function paseSinCambios(database, pase, huella, ahora = Date.now()) {
+  try {
+    const { data, error } = await database.from(HUELLAS_TABLE).select('huella,completo_en').eq('pase', pase).limit(1);
+    if (error || !data?.length) return false;
+    return data[0].huella === huella && ahora - Date.parse(data[0].completo_en) < PASE_COMPLETO_CADA_MS;
+  } catch {
+    return false;
+  }
+}
+
+export async function recordarPaseSinCandidatos(database, pase, huella, ahora = new Date()) {
+  try {
+    await database.from(HUELLAS_TABLE).upsert({ pase, huella, completo_en: ahora.toISOString() }, { onConflict: 'pase' });
+  } catch { /* sin tabla, el pase siguiente corre completo: igual que antes */ }
+}
+
+async function olvidarPase(database, pase) {
+  try { await database.from(HUELLAS_TABLE).delete().eq('pase', pase); } catch { /* nada */ }
+}
+
 /** Un pase: hasta `limit` PDF sin texto de licitaciones no archivadas. Devuelve eventos; nunca lanza por un documento. */
 export async function runTenderDocumentOcrPass(database, { limit = 3, bucket = 'tender-documents', ocr = ocrPdfBuffer, onText = null } = {}) {
   const { data: opportunities, error: oppError } = await database.from('psi_sales_opportunities').select('id')
@@ -123,16 +166,26 @@ export async function runTenderDocumentOcrPass(database, { limit = 3, bucket = '
   if (oppError) throw oppError;
   const ids = (opportunities || []).map(row => row.id);
   if (!ids.length) return [{ event: 'tender_ocr_idle' }];
+  const huella = await huellaDeDocumentos(database, ids, TENDER_DOCUMENT_OCR_EXTRACTOR_VERSION).catch(() => null);
+  if (huella && await paseSinCambios(database, 'ocr', huella)) return [{ event: 'tender_ocr_idle', sin_cambios: true }];
   const { data: versions, error: vError } = await database.from('psi_tender_document_versions')
     .select('id,opportunity_id,tender_id,name,mime_type,storage_path,current,extracted_text,actor_id,created_at,origin').eq('current', true).in('opportunity_id', ids);
   if (vError) throw vError;
   const pdfIds = (versions || []).filter(isPdf).map(row => row.id);
-  if (!pdfIds.length) return [{ event: 'tender_ocr_idle' }];
+  if (!pdfIds.length) {
+    if (huella) await recordarPaseSinCandidatos(database, 'ocr', huella);
+    return [{ event: 'tender_ocr_idle' }];
+  }
   const { data: extractions, error: eError } = await selectByIdsInChunks(() => database.from('psi_tender_document_extractions')
     .select('id,document_version_id,extractor_version,status,extracted_text,text_hash,char_count,created_at'), pdfIds);
   if (eError) throw eError;
   const candidates = selectOcrCandidates(versions || [], extractions || [], { limit });
-  if (!candidates.length) return [{ event: 'tender_ocr_idle' }];
+  if (!candidates.length) {
+    if (huella) await recordarPaseSinCandidatos(database, 'ocr', huella);
+    return [{ event: 'tender_ocr_idle' }];
+  }
+  // Con candidatos, el pase siguiente vuelve a mirar todo: puede quedar trabajo después de estos.
+  await olvidarPase(database, 'ocr');
   const events = [];
   for (const version of candidates) {
     try {
@@ -224,17 +277,26 @@ export async function runTenderDocumentImageTextPass(database, { limit = 3, buck
   if (oppError) throw oppError;
   const ids = (opportunities || []).map(row => row.id);
   if (!ids.length) return [{ event: 'tender_image_text_idle' }];
+  const huella = await huellaDeDocumentos(database, ids, TENDER_DOCUMENT_IMAGE_TEXT_EXTRACTOR_VERSION).catch(() => null);
+  if (huella && await paseSinCambios(database, 'imagenes', huella)) return [{ event: 'tender_image_text_idle', sin_cambios: true }];
   const { data: versions, error: vError } = await database.from('psi_tender_document_versions')
     .select('id,opportunity_id,tender_id,name,mime_type,storage_path,current,actor_id,created_at,origin')
     .eq('current', true).eq('origin', 'tercero').in('opportunity_id', ids);
   if (vError) throw vError;
   const pdfIds = (versions || []).filter(isPdf).map(row => row.id);
-  if (!pdfIds.length) return [{ event: 'tender_image_text_idle' }];
+  if (!pdfIds.length) {
+    if (huella) await recordarPaseSinCandidatos(database, 'imagenes', huella);
+    return [{ event: 'tender_image_text_idle' }];
+  }
   const { data: extractions, error: eError } = await selectByIdsInChunks(() => database.from('psi_tender_document_extractions')
     .select('id,document_version_id,extractor_version,status,extracted_text,text_hash,char_count,created_at'), pdfIds);
   if (eError) throw eError;
   const candidates = selectImageTextCandidates(versions || [], extractions || [], { limit });
-  if (!candidates.length) return [{ event: 'tender_image_text_idle' }];
+  if (!candidates.length) {
+    if (huella) await recordarPaseSinCandidatos(database, 'imagenes', huella);
+    return [{ event: 'tender_image_text_idle' }];
+  }
+  await olvidarPase(database, 'imagenes');
   const canonical = selectCanonicalExtractionsByDocumentVersion(extractions || []);
   const events = [];
   for (const version of candidates) {
