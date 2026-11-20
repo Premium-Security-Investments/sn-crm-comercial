@@ -148,7 +148,8 @@ test('parámetros calca la maqueta y los créditos salen de Avancys; a mano solo
   assert.match(parametros, /Lo que no está en Avancys \(lo deja aquí Tesorería\)/);
   assert.doesNotMatch(parametros, /Badge/, 'estados con el chip del kit');
   assert.match(read('src/siio/SiioExecutiveView.tsx'), /<SiioPestanaParametros creditos=\{torre\.torre\?\.creditos \?\? null\} \/>/);
-  assert.match(read('avancys-torre.js'), /creditos = await creditosAvancys\(ejecutar, \{ hoy: ahora\(\)\.toISOString\(\)\.slice\(0, 10\) \}\);/);
+  // Desde el 20-nov los créditos se leen en paralelo con lo demás (la Torre tardaba 187 s).
+  assert.match(read('avancys-torre.js'), /const enCreditos = creditosAvancys\(ejecutar, \{ hoy \}\)\.catch\(conError\);/);
 });
 
 test('vig-ia calca la maqueta: ficha de prioridad, porqué, fuentes y lo que no pudo evaluar', () => {
@@ -172,7 +173,8 @@ test('portada opción A (Juan, 15-nov): el mes anterior con su cierre, cuatro ci
   assert.match(torre, /texto: `Sin cierre formal · \$\{dias\} \$\{dias === 1 \? 'día' : 'días'\}`/);
   assert.match(torre, /return t\.realDe\(anterior\) \? anterior : t\.torre\?\.mes_cerrado \|\| null;/);
   // Clientes del mes de la portada: con la Torre si es el último cerrado; si no, con la ruta de la pestaña Clientes.
-  assert.match(torre, /api<Clientes>\(`\/api\/siio\/avancys\/rentabilidad-aproximada\?mes=\$\{encodeURIComponent\(mes\)\}`\)/);
+  // Desde el 20-nov, primero lo guardado y después el vivo (conGuardado), aquí y en la pestaña Clientes.
+  assert.equal((torre.match(/conGuardado<Clientes>\(`\/api\/siio\/avancys\/rentabilidad-aproximada\?mes=\$\{encodeURIComponent\(mes\)\}`/g) || []).length, 2);
   // Ninguna cifra real escrita en el código.
   assert.doesNotMatch(torre, /8,7 %|48 %/);
   assert.doesNotMatch(read('src/siio/SiioExecutiveView.tsx'), /SiioRequiereDecision|licitacionesPorDecidir/, 'la lista de decisiones se volvió renglones de la Portada');
@@ -330,7 +332,8 @@ test('notas crédito por mes: clasifica, detecta la refacturación con redondeo 
   const ejecutar = async (modelo, metodo, args) => {
     if (metodo === 'read') return [{ id: 9, amount_untaxed_signed: 500 }];
     const tipo = args[0].find(f => f[0] === 'move_type')[2];
-    if (tipo === 'out_invoice') return [{ invoice_date: '2026-10-02', amount_untaxed_signed: 1000000005, commercial_partner_id: [2, 'CLIENTE B'] }];
+    // Desde el 20-nov las facturas llegan agrupadas por cliente y día (antes, una por una: hasta 150 s).
+    if (metodo === 'read_group') return [{ __count: 1, amount_untaxed_signed: 1000000005, commercial_partner_id: [2, 'CLIENTE B'], __range: { 'invoice_date:day': { from: '2026-10-02' } } }];
     return [
       { ref: 'SERVICIO NO PRESTADO', invoice_date: '2026-10-05', amount_untaxed_signed: -3000000, commercial_partner_id: [1, 'CLIENTE A'], reversed_entry_id: false },
       { ref: '', invoice_date: '2026-10-02', amount_untaxed_signed: -1000000000, commercial_partner_id: [2, 'CLIENTE B'], reversed_entry_id: false },

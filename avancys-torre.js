@@ -99,23 +99,26 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
     const primerMesCompleto = primerDia.endsWith('-01') ? primerDia.slice(0, 7) : sumarMeses(primerDia.slice(0, 7), 1);
     if (primerMesCompleto > desde) desde = primerMesCompleto;
   }
+  // Lo que no depende del resultado del mes arranca de una vez, en paralelo (2026-11-20: la Torre tardaba 187 s, una
+  // consulta detrás de otra). Cada parte que falla se dice en su sitio y no tumba las demás.
+  const hoy = ahora().toISOString().slice(0, 10);
+  const conError = error => ({ error: String(error?.message || error).split('\n')[0].slice(0, 200) });
+  const enCartera = carteraVencida(ejecutar, { hoy }).catch(conError);
+  const enNotas = notasCreditoPorMes(ejecutar, { desde: `${sumarMeses(mesActual, -3)}-01` }).catch(conError);
+  const enCreditos = creditosAvancys(ejecutar, { hoy }).catch(conError);
+  // ¿Hay turnos programados en Avancys? Sin programación no hay costo por puesto ni por cliente: la Torre lo dice
+  // en «¿Las fuentes están al día?». El módulo está instalado; si la consulta falla, no se afirma nada.
+  const enProgramaciones = Promise.resolve().then(() => ejecutar('hr.roster.programacion', 'search_count', [[]]))
+    .then(cuenta => (Number.isFinite(cuenta) ? cuenta : null)).catch(() => null);
   // El resultado de la empresa sale de la contabilidad general con las líneas del PYG de Finanzas y
   // la provisión de ingresos mes vencido (avancys-pyg.js). Las líneas analíticas quedan para el
   // detalle por cliente: no todo el gasto pasa por ellas.
-  const pyg = await estadoDeResultados(ejecutar, { desde, hasta: sumarMeses(mesActual, 1), devengado });
   // Fecha de bloqueo del periodo en Avancys: cuando Contabilidad la usa, manda sobre la regla de días.
-  let bloqueo = null;
-  try {
-    const [empresa] = (await ejecutar('res.company', 'search_read', [[]], { fields: ['period_lock_date'], limit: 1 })) || [];
-    bloqueo = empresa?.period_lock_date || null;
-  } catch { bloqueo = null; }
-  // ¿Hay turnos programados en Avancys? Sin programación no hay costo por puesto ni por cliente: la Torre lo dice
-  // en «¿Las fuentes están al día?». El módulo está instalado; si la consulta falla, no se afirma nada.
-  let programaciones = null;
-  try {
-    const cuenta = await ejecutar('hr.roster.programacion', 'search_count', [[]]);
-    programaciones = Number.isFinite(cuenta) ? cuenta : null;
-  } catch { programaciones = null; }
+  const [pyg, bloqueo] = await Promise.all([
+    estadoDeResultados(ejecutar, { desde, hasta: sumarMeses(mesActual, 1), devengado }),
+    Promise.resolve().then(() => ejecutar('res.company', 'search_read', [[]], { fields: ['period_lock_date'], limit: 1 }))
+      .then(filas => (filas || [])[0]?.period_lock_date || null).catch(() => null),
+  ]);
   const meses = marcarMeses(pyg.map(fila => ({
     mes: fila.mes,
     ingresos: fila.totales.ingresos,
@@ -126,26 +129,10 @@ export async function calcularTorre(ejecutar, { ahora = () => new Date(), deveng
   const estadoDe = new Map(meses.map(fila => [fila.mes, fila]));
   const cerrados = meses.filter(fila => fila.estado === 'cerrado');
   const mesCerrado = cerrados.at(-1)?.mes || null;
-  const clientes = mesCerrado ? await rentabilidadAproximada(ejecutar, { mes: mesCerrado }) : null;
-  let cartera;
-  try {
-    cartera = await carteraVencida(ejecutar, { hoy: ahora().toISOString().slice(0, 10) });
-  } catch (error) {
-    // La cartera no tumba el resultado ni los clientes: se dice que no se pudo leer.
-    cartera = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
-  }
-  let notasCredito = null;
-  try {
-    notasCredito = await notasCreditoPorMes(ejecutar, { desde: `${sumarMeses(mesActual, -3)}-01` });
-  } catch (error) {
-    notasCredito = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
-  }
-  let creditos = null;
-  try {
-    creditos = await creditosAvancys(ejecutar, { hoy: ahora().toISOString().slice(0, 10) });
-  } catch (error) {
-    creditos = { error: String(error?.message || error).split('\n')[0].slice(0, 200) };
-  }
+  const [clientes, cartera, notasCredito, creditos, programaciones] = await Promise.all([
+    mesCerrado ? rentabilidadAproximada(ejecutar, { mes: mesCerrado }) : null,
+    enCartera, enNotas, enCreditos, enProgramaciones,
+  ]);
   // Los meses incompletos se proyectan sobre el último mes cerrado; el mes en curso, además, con lo
   // contratado en las órdenes de servicio. Es una proyección y así se muestra.
   const base = pyg.find(fila => fila.mes === mesCerrado) || null;
@@ -198,6 +185,41 @@ export function motivoDeNotaCredito(referencia, anulaCompleta = false) {
 const MAX_CLIENTES_NOTAS = 8;
 // Mismo valor con diferencias de redondeo (medido: $5 en una reemisión de más de mil millones).
 const tolerancia = valor => Math.max(1000, Math.abs(Number(valor) || 0) * 0.0001);
+// Las facturas que pueden ser la refacturación de una nota: las del mismo cliente en la semana de la nota. Leerlas una
+// por una tardaba hasta 150 s (medido el 2026-11-20: más de 7.000 facturas en cuatro meses, ~20 ms cada una, y la Torre
+// pasaba del límite de 180 s de Vercel). Agrupadas por cliente y día cuestan ~3 s: el grupo de una sola factura ya trae
+// su valor exacto, y sólo los días con varias facturas de un cliente que tiene notas se leen una por una.
+export async function facturasParaRefacturacion(ejecutar, { desde, notas }) {
+  const clientes = [...new Set(notas.map(n => (Array.isArray(n.commercial_partner_id) ? n.commercial_partner_id[0] : null)).filter(Boolean))];
+  if (!clientes.length) return [];
+  const base = [['move_type', '=', 'out_invoice'], ['state', '=', 'posted'], ['invoice_date', '>=', desde], ['commercial_partner_id', 'in', clientes]];
+  const grupos = (await ejecutar('account.move', 'read_group', [base, ['amount_untaxed_signed:sum'], ['commercial_partner_id', 'invoice_date:day']], { lazy: false })) || [];
+  const semana = 7 * 86400000;
+  const cerca = (cliente, dia) => notas.some(n => Array.isArray(n.commercial_partner_id) && n.commercial_partner_id[0] === cliente
+    && Math.abs(Date.parse(n.invoice_date) - Date.parse(dia)) <= semana);
+  const facturas = [];
+  const porLeer = new Map();
+  for (const g of grupos) {
+    const cliente = Array.isArray(g.commercial_partner_id) ? g.commercial_partner_id : null;
+    // `invoice_date:day` llega como el día legible; el filtro del grupo (__range o __domain) trae la fecha ISO.
+    const dia = g.__range?.['invoice_date:day']?.from || (g.__domain || []).find(c => Array.isArray(c) && c[0] === 'invoice_date' && c[1] === '>=')?.[2];
+    if (!cliente || !dia || !cerca(cliente[0], dia)) continue;
+    if (g.__count === 1) facturas.push({ invoice_date: dia, amount_untaxed_signed: g.amount_untaxed_signed, commercial_partner_id: cliente });
+    else porLeer.set(`${cliente[0]}|${dia}`, { cliente: cliente[0], dia });
+  }
+  const pendientes = [...porLeer.values()];
+  for (let i = 0; i < pendientes.length; i += 40) {
+    const lote = pendientes.slice(i, i + 40);
+    // Dominio de Odoo en notación polaca: (cliente A y día 1) o (cliente B y día 2) o …
+    const condiciones = [];
+    for (let j = 0; j < lote.length - 1; j += 1) condiciones.push('|');
+    for (const { cliente, dia } of lote) condiciones.push('&', ['commercial_partner_id', '=', cliente], ['invoice_date', '=', dia]);
+    facturas.push(...((await ejecutar('account.move', 'search_read', [[['move_type', '=', 'out_invoice'], ['state', '=', 'posted'], ...condiciones]],
+      { fields: ['invoice_date', 'amount_untaxed_signed', 'commercial_partner_id'], limit: 2000 })) || []));
+  }
+  return facturas;
+}
+
 export async function notasCreditoPorMes(ejecutar, { desde }) {
   const notas = (await ejecutar('account.move', 'search_read', [[['move_type', '=', 'out_refund'], ['state', '=', 'posted'], ['invoice_date', '>=', desde]]],
     { fields: ['ref', 'invoice_date', 'amount_untaxed_signed', 'commercial_partner_id', 'reversed_entry_id'], limit: 5000 })) || [];
@@ -209,8 +231,7 @@ export async function notasCreditoPorMes(ejecutar, { desde }) {
   }
   // Una factura nueva al mismo cliente, por el mismo valor y en la misma semana, es una refacturación (caso medido: una
   // factura de un cliente grande anulada y reemitida el mismo día, sin motivo escrito ni enlace de reversión).
-  const facturas = (await ejecutar('account.move', 'search_read', [[['move_type', '=', 'out_invoice'], ['state', '=', 'posted'], ['invoice_date', '>=', desde]]],
-    { fields: ['invoice_date', 'amount_untaxed_signed', 'commercial_partner_id'], limit: 20000 })) || [];
+  const facturas = await facturasParaRefacturacion(ejecutar, { desde, notas });
   const refacturada = nota => facturas.some(f => Array.isArray(f.commercial_partner_id) && Array.isArray(nota.commercial_partner_id)
     && f.commercial_partner_id[0] === nota.commercial_partner_id[0]
     && Math.abs(Math.abs(Number(f.amount_untaxed_signed) || 0) - Math.abs(Number(nota.amount_untaxed_signed) || 0)) <= tolerancia(nota.amount_untaxed_signed)

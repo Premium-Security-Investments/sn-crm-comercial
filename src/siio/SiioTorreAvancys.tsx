@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { api } from '../apiClient';
 import { Badge } from './SiioUi';
@@ -13,7 +13,7 @@ import type { CommercialSummary } from './commercialSummary';
 
 type Mes = { mes: string; ingresos: number; personal: number; otros_costos: number; margen: number; estado: 'cerrado' | 'parcial'; motivo: string | null };
 type Cliente = { cliente: string; ingresos: number; horas: number; costo_vigilantes: number; costo_indirecto: number; costo_directo: number; margen: number; precio_hora: number | null; costo_hora?: number | null };
-type Clientes = { legible: boolean; motivo?: string; costo_por_hora?: number; horas?: number; clientes_con_ingreso?: number; ingresos_clientes?: number; fondo?: { ingresos_sin_cliente: number }; clientes?: Cliente[] };
+type Clientes = { legible: boolean; motivo?: string; costo_por_hora?: number; horas?: number; clientes_con_ingreso?: number; ingresos_clientes?: number; fondo?: { ingresos_sin_cliente: number }; clientes?: Cliente[]; medido_en?: string; desde_guardado?: boolean };
 type LineaPyg = { clave: string; etiqueta: string; grupo: string; cuentas: string };
 type Totales = { ingresos: number; costos: number; margen_bruto: number; gastos: number; utilidad_ordinaria: number; no_operacional: number; antes_de_impuestos: number; impuestos: number; utilidad_neta: number };
 type MesPyg = {
@@ -48,6 +48,7 @@ type Torre = {
   motivo?: string;
   medido_en?: string;
   desde_memoria?: boolean;
+  desde_guardado?: boolean;
   meses?: Mes[];
   mes_cerrado?: string | null;
   mes_anterior?: string | null;
@@ -99,16 +100,39 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
   const [torre, setTorre] = useState<Torre | null>(null);
   const [error, setError] = useState('');
   const [mesElegido, setMesElegido] = useState('');
+  // Al entrar se muestra el último cálculo guardado y, mientras tanto, se pide el vivo (Juan, 2026-11-20: «que al entrar
+  // esté cargada la información del último cargue y que se actualice después»). Si el vivo falla, queda lo guardado y
+  // se dice.
+  const [actualizando, setActualizando] = useState(false);
+  const [errorVivo, setErrorVivo] = useState('');
+  const hayDatos = useRef(false);
 
   async function cargar(refrescar = false) {
-    setEstado('cargando');
     setError('');
+    setErrorVivo('');
+    if (!hayDatos.current) setEstado('cargando');
+    if (!refrescar && !hayDatos.current) {
+      try {
+        const guardada = await api<Torre>('/api/siio/avancys/torre?guardada=1');
+        hayDatos.current = true;
+        setTorre(guardada);
+        setEstado('listo');
+        // Sin nada guardado, el servidor ya calculó en vivo: no se pide dos veces.
+        if (!guardada.desde_guardado) return;
+      } catch { /* sigue con el vivo */ }
+    }
+    setActualizando(true);
     try {
-      setTorre(await api<Torre>(`/api/siio/avancys/torre${refrescar ? '?refrescar=1' : ''}`));
+      const viva = await api<Torre>(`/api/siio/avancys/torre${refrescar ? '?refrescar=1' : ''}`);
+      hayDatos.current = true;
+      setTorre(viva);
       setEstado('listo');
     } catch (fallo) {
-      setError(fallo instanceof Error ? fallo.message : String(fallo));
-      setEstado('error');
+      const mensaje = fallo instanceof Error ? fallo.message : String(fallo);
+      if (hayDatos.current) setErrorVivo(mensaje);
+      else { setError(mensaje); setEstado('error'); }
+    } finally {
+      setActualizando(false);
     }
   }
   useEffect(() => { void cargar(); }, []);
@@ -159,7 +183,7 @@ export function useTorreAvancys(oficial: FinancialPulse | null) {
 
   const antesDeAvancys = Boolean(torre?.primera_linea && mes && mes < torre.primera_linea.slice(0, 7));
   return {
-    estado, error, torre, cargar, opciones, mes, setMes: setMesElegido, opcion, resumen: resumenDe(mes), resumenDe, realDe, oficialDe, mesPrevio,
+    estado, error, torre, cargar, actualizando, errorVivo, opciones, mes, setMes: setMesElegido, opcion, resumen: resumenDe(mes), resumenDe, realDe, oficialDe, mesPrevio,
     previo: mesPrevio ? resumenDe(mesPrevio) : null,
     antesDeAvancys, oficial,
   };
@@ -205,6 +229,33 @@ const CARTERA_VENCIDA_MAL = 0.3;
 export const VENTANA_LICITACIONES = 15;
 const A_LA_VISTA = 5;
 
+// Primero lo guardado (al instante) y después el vivo. Un mes cerrado casi no cambia: si lo guardado tiene menos de
+// REFRESCO_MES_MS no se vuelve a pedir a Avancys, que tarda unos 20 s por mes.
+const REFRESCO_MES_MS = 6 * 3600_000;
+async function conGuardado<T extends { desde_guardado?: boolean; medido_en?: string }>(url: string, { aplicar, fallar, vigenciaMs = REFRESCO_MES_MS }: { aplicar: (datos: T) => void; fallar: () => void; vigenciaMs?: number }) {
+  let tengo = false;
+  try {
+    const guardado = await api<T>(`${url}&guardada=1`);
+    aplicar(guardado);
+    tengo = true;
+    if (!guardado.desde_guardado) return;
+    const edad = guardado.medido_en ? Date.now() - Date.parse(guardado.medido_en) : Infinity;
+    if (edad < vigenciaMs) return;
+  } catch { /* sigue con el vivo */ }
+  try {
+    aplicar(await api<T>(url));
+  } catch {
+    if (!tengo) fallar();
+  }
+}
+
+/** «Cifras del martes 8:10 a. m. · actualizando…»: lo que se ve mientras llega el cálculo en vivo. */
+export function EstadoDeCarga({ t }: { t: TorreAvancys }) {
+  if (t.actualizando) return <span className="siio-chip vivo">{t.torre?.desde_guardado ? 'Mostrando el último cálculo · actualizando…' : 'Actualizando…'}</span>;
+  if (t.errorVivo) return <span className="siio-chip confirmar">No se pudo actualizar: se muestra el último cálculo</span>;
+  return null;
+}
+
 // La rentabilidad por cliente de un mes: la del último cerrado viene con la Torre; la de otro mes se pide con la ruta
 // de la pestaña Clientes.
 function useClientesDe(t: TorreAvancys, mes: string | null): Clientes | 'cargando' | 'error' | null {
@@ -214,9 +265,9 @@ function useClientesDe(t: TorreAvancys, mes: string | null): Clientes | 'cargand
     if (!mes || mes === cerrado) return;
     let vivo = true;
     setOtro('cargando');
-    api<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`)
-      .then(datos => { if (vivo) setOtro(datos); })
-      .catch(() => { if (vivo) setOtro('error'); });
+    void conGuardado<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`, {
+      aplicar: datos => { if (vivo) setOtro(datos); }, fallar: () => { if (vivo) setOtro(actual => (typeof actual === 'object' && actual ? actual : 'error')); },
+    });
     return () => { vivo = false; };
   }, [mes, cerrado]);
   if (!mes) return null;
@@ -386,7 +437,7 @@ export function SiioPortada({ t, onIr, comercial = null }: { t: TorreAvancys; on
       <span>Facturación, cartera y CRM: leídos hoy.</span><span className="ver">Ver Fuentes →</span></>} />);
 
   return <>
-    <p className="siio-portada-cabeza siio-nota">Avancys y CRM{torre?.medido_en ? ` leídos el ${hora(torre.medido_en).replace(/\.$/, '')}` : ''}<button type="button" className="siio-enlace" onClick={() => void t.cargar(true)}>Volver a leer</button></p>
+    <p className="siio-portada-cabeza siio-nota">Avancys y CRM{torre?.medido_en ? ` leídos el ${hora(torre.medido_en).replace(/\.$/, '')}` : ''}<EstadoDeCarga t={t} />{t.actualizando ? null : <button type="button" className="siio-enlace" onClick={() => void t.cargar(true)}>Volver a leer</button>}</p>
     <section className="siio-panel siio-portada" aria-label="Portada: siete preguntas">
       <ol>{renglones}</ol>
     </section>
@@ -608,9 +659,10 @@ export function SiioPestanaClientes({ t }: { t: TorreAvancys }) {
     for (const mes of cerrados) {
       if (mes === torre?.mes_cerrado || porMes[mes]) continue;
       setPorMes(actual => ({ ...actual, [mes]: 'cargando' }));
-      api<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`)
-        .then(datos => { if (vigente) setPorMes(actual => ({ ...actual, [mes]: datos })); })
-        .catch(() => { if (vigente) setPorMes(actual => ({ ...actual, [mes]: 'error' })); });
+      void conGuardado<Clientes>(`/api/siio/avancys/rentabilidad-aproximada?mes=${encodeURIComponent(mes)}`, {
+        aplicar: datos => { if (vigente) setPorMes(actual => ({ ...actual, [mes]: datos })); },
+        fallar: () => { if (vigente) setPorMes(actual => ({ ...actual, [mes]: 'error' })); },
+      });
     }
     return () => { vigente = false; };
   }, [cerrados.join(','), torre?.mes_cerrado]);

@@ -23,6 +23,7 @@ import { addRiskFromSecurityOps, linkPuesto as linkSecurityOpsPuesto, requestRef
 import { reportDownloadUrl as securityStudyReportDownloadUrl } from '../verticales/estudios-seguridad/archivo.js';
 import { completeEvidenceUpload as completeSecurityStudyEvidence, deleteEvidence as deleteSecurityStudyEvidence, evidenceUrls as securityStudyEvidenceUrls, requestEvidenceUpload as requestSecurityStudyEvidenceUpload } from '../verticales/estudios-seguridad/evidencias.js';
 import { generateRecommendations, loadRecommendations, setRecommendationFeedback } from '../verticales/gerencial/siio-recommendations.js';
+import { claveDeRentabilidad, guardar as guardarTorre, leerGuardado } from '../torre-guardada.js';
 import { askQuestion, deactivateKnowledge, listConversations, listMyQuestions, loadConversation, loadLearning } from '../verticales/gerencial/vigia-preguntas.js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../verticales/licitaciones/tender-document-text-extraction.js';
 import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../verticales/licitaciones/tender-document-extraction-persistence.js';
@@ -4868,19 +4869,35 @@ app.get('/api/siio/avancys/rentabilidad-aproximada', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'siio');
     res.set('Cache-Control', 'private, no-store');
-    res.json(await medirRentabilidadAproximada({ mes: typeof req.query.mes === 'string' ? req.query.mes : undefined }));
+    const mes = typeof req.query.mes === 'string' ? req.query.mes : undefined;
+    // `guardada=1`: el último cálculo de ese mes, al instante (Juan, 2026-11-20); la pantalla pide después el vivo.
+    if (req.query.guardada === '1') {
+      const guardado = await leerGuardado(requireDb(), claveDeRentabilidad(mes));
+      if (guardado) return res.json(guardado);
+    }
+    const datos = await medirRentabilidadAproximada({ mes });
+    await guardarTorre(requireDb(), claveDeRentabilidad(datos?.mes || mes), datos);
+    res.json(datos);
   } catch (error) { sendError(res, error, error?.status || 500); }
 });
 
 // La vista de gerencia de la Torre: resultado de los últimos meses y clientes del último mes
 // cerrado, en vivo desde Avancys. Se guarda 30 minutos en memoria; `refrescar=1` lo recalcula.
+// `guardada=1` devuelve al instante el último cálculo guardado en la base (Juan, 2026-11-20: «que al entrar esté
+// cargado lo del último cargue y que se actualice después»); cada cálculo en vivo que sale bien lo reemplaza.
 app.get('/api/siio/avancys/torre', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'siio');
     res.set('Cache-Control', 'private, no-store');
     // El presupuesto contra ejecución se arma aquí porque el mapeo y el presupuesto viven en Parámetros.
-    res.json(await agregarPresupuesto(requireDb(), await torreAvancys({ refrescar: req.query.refrescar === '1', db: requireDb() })));
+    if (req.query.guardada === '1') {
+      const guardada = await leerGuardado(requireDb(), 'torre');
+      if (guardada) return res.json(await agregarPresupuesto(requireDb(), guardada));
+    }
+    const torre = await torreAvancys({ refrescar: req.query.refrescar === '1', db: requireDb() });
+    if (!torre.desde_memoria) await guardarTorre(requireDb(), 'torre', torre);
+    res.json(await agregarPresupuesto(requireDb(), torre));
   } catch (error) { sendError(res, error, error?.status || 500); }
 });
 
