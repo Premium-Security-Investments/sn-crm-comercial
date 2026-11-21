@@ -104,7 +104,7 @@ test('menú: Programación aparece con su permiso y quien sólo tiene Programaci
 test('pantalla: sin rol ni áreas; con pestañas, plantillas y último ingreso', () => {
   assert.ok(!ui.includes('Alcance por áreas y subáreas'));
   assert.ok(!ui.includes("['colaborador','Colaborador']"));
-  for (const text of ['Pestañas que puede abrir', 'Empezar desde una plantilla', 'Solo consulta: ve, pero no cambia nada', 'Último ingreso', 'Pendiente de configurar en Programación']) assert.ok(ui.includes(text), text);
+  for (const text of ['Pestañas que puede abrir', 'Empezar desde una plantilla', 'Solo consulta: ve, pero no cambia nada', 'Último ingreso', 'Pendiente: falta rol y ciudad']) assert.ok(ui.includes(text), text);
 });
 
 test('migración 130: crea el permiso, da la entrada a quien ya está en Programación y deja auditoría', async () => {

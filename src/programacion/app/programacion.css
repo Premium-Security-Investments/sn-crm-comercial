@@ -37,9 +37,9 @@ button, input, select, textarea { font: inherit; }
 .sesion .salir { background: rgba(255, 255, 255, .08); color: #c7d5e9; box-shadow: none; padding: 8px; font-size: 13px; }
 
 .contenido { min-width: 0; padding: 26px 32px 60px; }
-.topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-.topbar h1 { margin: 0; font-size: 28px; letter-spacing: -.02em; color: #101a2b; }
-.topbar p { margin: 6px 0 0; color: #68758a; max-width: 760px; }
+.prog-encabezado { margin: 4px 0 18px; }
+.prog-encabezado h2 { margin: 0; font-size: 22px; letter-spacing: -.01em; color: #101a2b; }
+.prog-encabezado p { margin: 6px 0 0; color: #68758a; max-width: 760px; }
 
 /* Botones y campos (todos los de la app) */
 button { border: 0; background: linear-gradient(135deg, var(--blue), var(--blue-2)); color: #fff; padding: 10px 15px; border-radius: 11px; font-weight: 700;
@@ -140,7 +140,7 @@ button.fila:hover:not(:disabled) { border-color: #bfd3f5; filter: none; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi strong { font-size: 22px; }
   .card { padding: 14px; }
-  .topbar h1 { font-size: 22px; }
+  .prog-encabezado h2 { font-size: 20px; }
 }
 
 /* Perfil en la franja de arriba, siempre en el mismo lugar; ciudad arriba del menú lateral (2026-10-17). */
@@ -165,15 +165,8 @@ button.fila:hover:not(:disabled) { border-color: #bfd3f5; filter: none; }
 @media (max-width: 900px) { .menu-usuario-nombre { display: none; } .franja-superior { margin: 0 0 6px; } }
 
 
-/* Dentro del SIIO: barra de ciudad (las pantallas van en el menú lateral del SIIO, ProgramacionNav). */
-.prog-embebida { min-width: 0; }
-.prog-barra { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px 20px; margin-bottom: 18px; padding: 12px 14px; background: #fff;
-  border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 22px rgba(21, 38, 69, .06); }
-.prog-barra .ciudad-menu { display: grid; gap: 4px; min-width: 170px; color: var(--muted); background: none; border: 0; padding: 0; }
-.prog-barra .ciudad-menu span { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.prog-barra .ciudad-menu strong { color: var(--text); }
-.prog-barra .ciudad-menu select { background: #fff; color: var(--text); border: 1px solid #cfd9e8; }
-.prog-aviso { align-self: center; background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; box-shadow: none; padding: 7px 12px; font-size: 13px; }
+/* Dentro del SIIO: aviso de novedades por revisar (la ciudad va en el encabezado del SIIO, ver programacion-nav.css). */
+.prog-aviso { display: inline-block; margin: 0 0 12px; background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; box-shadow: none; padding: 7px 12px; font-size: 13px; }
 .prog-aviso:hover:not(:disabled) { background: #ffedd5; transform: none; filter: none; }
 .login-shell { min-height: 40vh; }
 }

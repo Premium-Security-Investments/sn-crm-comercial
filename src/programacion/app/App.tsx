@@ -49,8 +49,8 @@ export function ProgramacionView() {
             <>
               <h1 style={{ fontSize: 22 }}>Tu acceso está pendiente</h1>
               <p style={{ color: '#607089', margin: 0 }}>
-                Ya tienes la entrada a Programación ({sesion.user.email}). Falta que un administrador de Programación te
-                asigne qué haces y en qué ciudad, en la pestaña Usuarios. Avísale para que lo haga.
+                Ya tienes la entrada a Programación ({sesion.user.email}). Falta que quien administra el SIIO te asigne qué haces
+                y en qué ciudad, en Usuarios y permisos. Avísale para que lo haga.
               </p>
             </>
           ) : (

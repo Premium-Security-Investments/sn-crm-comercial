@@ -1,6 +1,7 @@
 // Sección Programación dentro del SIIO: ciudad, encabezado de cada pantalla y contenido. El menú de pantallas está
 // en el menú lateral del SIIO (ProgramacionNav).
 import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { MapPin } from 'lucide-react';
 import { db, type Acceso } from './supabase.ts';
 import { PAGINAS, anunciarRol, enlace, leerRuta, type Pagina } from './paginas.ts';
@@ -12,7 +13,6 @@ import { CalendarioPuesto } from './CalendarioPuesto.tsx';
 import { Clientes } from './Clientes.tsx';
 import { Maestros } from './Maestros.tsx';
 import { Cierre } from './Cierre.tsx';
-import { Accesos } from './Accesos.tsx';
 import { Simulador } from './Simulador.tsx';
 
 export function Inicio({ acceso, ciudad, ciudades, setCiudad }: {
@@ -27,7 +27,10 @@ export function Inicio({ acceso, ciudad, ciudades, setCiudad }: {
   useEffect(() => { anunciarRol(acceso.rol); return () => anunciarRol(null); }, [acceso.rol]);
   const setPagina = (p: Pagina, param?: string | number) => { window.location.hash = enlace(p, param); };
   const [pendientes, setPendientes] = useState(0);
-  const visibles = PAGINAS.filter((p) => !p.soloAdmin || acceso.rol === 'admin');
+  const visibles = PAGINAS;
+  // La ciudad va en el renglón del título del SIIO, a la derecha (Juan, 2026-11-21), por portal al encabezado.
+  const [destino, setDestino] = useState<HTMLElement | null>(null);
+  useEffect(() => { setDestino(document.getElementById('topbar-seccion')); }, []);
   const actual = visibles.find((p) => p.id === pagina) ?? visibles[0];
 
   useEffect(() => {
@@ -46,30 +49,27 @@ export function Inicio({ acceso, ciudad, ciudades, setCiudad }: {
     clientes: <Clientes key={ciudad} acceso={acceso} ciudad={ciudad} />,
     maestros: <Maestros key={ciudad} acceso={acceso} ciudad={ciudad} />,
     cierre: <Cierre key={ciudad} acceso={acceso} ciudad={ciudad} />,
-    accesos: <Accesos ciudades={ciudades} />,
     simulador: <Simulador key={ciudad} ciudad={ciudad} />,
   };
 
-  // Las secciones de Programación van en el menú lateral del SIIO, desplegable (Juan, 2026-11-21, como SecurityOps).
-  // Aquí queda la ciudad, arriba, que es lo primero que se escoge (Juan, 2026-10-17).
+  const selectorCiudad = (
+    <label className="prog-ciudad">
+      <span><MapPin size={14} aria-hidden="true" /> Ciudad</span>
+      {acceso.ciudad_id || ciudades.length < 2
+        ? <strong>{ciudades.find((c) => c.id === ciudad)?.nombre ?? ciudad}</strong>
+        : <select value={ciudad} onChange={(e) => setCiudad(e.target.value)} aria-label="Ciudad">
+            {ciudades.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>}
+    </label>
+  );
+  // Las pantallas de Programación van en el menú lateral del SIIO, desplegable (Juan, 2026-11-21, como SecurityOps).
   return (
     <div className="prog-embebida">
-      <div className="prog-barra">
-        <label className="ciudad-menu">
-          <span><MapPin size={14} aria-hidden="true" /> Ciudad</span>
-          {acceso.ciudad_id || ciudades.length < 2
-            ? <strong>{ciudades.find((c) => c.id === ciudad)?.nombre ?? ciudad}</strong>
-            : <select value={ciudad} onChange={(e) => setCiudad(e.target.value)} aria-label="Ciudad">
-                {ciudades.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>}
-        </label>
-        {pendientes > 0 && <button type="button" className="prog-aviso" onClick={() => setPagina('novedades')}>{pendientes} novedad{pendientes === 1 ? '' : 'es'} por revisar</button>}
-      </div>
-      <header className="topbar">
-        <div>
-          <h1>{actual.titulo}</h1>
-          <p>{actual.ayuda}</p>
-        </div>
+      {destino ? createPortal(selectorCiudad, destino) : selectorCiudad}
+      {pendientes > 0 && <button type="button" className="prog-aviso" onClick={() => setPagina('novedades')}>{pendientes} novedad{pendientes === 1 ? '' : 'es'} por revisar</button>}
+      <header className="prog-encabezado">
+        <h2>{actual.titulo}</h2>
+        <p>{actual.ayuda}</p>
       </header>
       {contenido[actual.id]}
     </div>
