@@ -8198,6 +8198,19 @@ app.post('/api/tender-dossier-workbench/messages', async (req, res) => {
     res.status(201).json(queued);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
+// La Mesa guarda en el expediente el aviso de cambio de cronograma que la persona pegó (Juan, 2026-11-20, DEAJ): entra
+// como documento de la entidad, por la misma carga gobernada de los documentos aportados, y pide el reanálisis a nombre
+// de quien lo pegó. Así el cronograma completo llega a Mi día igual que con la impresión de SECOP.
+function ingerirTextoDeLaMesa(database) {
+  return async ({ opportunityId, autorId, nombre, texto }) => {
+    const opportunity = await must(database.from('psi_sales_opportunities').select('id,company_name').eq('id', opportunityId).maybeSingle());
+    return ingestTenderDossierDocuments(database, {
+      opportunityId, opportunity: opportunity || { company_name: null }, actorProfileId: autorId, proposeCompanyFacts: false,
+      files: [{ name: nombre, mime_type: 'text/plain', document_type: 'otro', origin: 'entidad', content_base64: Buffer.from(String(texto), 'utf8').toString('base64') }],
+    });
+  };
+}
+
 // F4 (auditoría Fiscalía): el drain reclama primero el pedido de este mensaje; uno viejo atascado en la cola ya no
 // se lleva su turno. Los viejos los atiende el barrido periódico.
 async function drainAgt002WorkbenchAfterMessage(database, jobId = null) {
@@ -8206,6 +8219,7 @@ async function drainAgt002WorkbenchAfterMessage(database, jobId = null) {
     const drain = createAgt002WorkbenchDrain({
       database,
       environment: process.env,
+      ingerirDocumento: ingerirTextoDeLaMesa(database),
       ...(agt002WorkbenchWorkerTestBridgeClient ? { bridgeClient: agt002WorkbenchWorkerTestBridgeClient } : {}),
     });
     return await drain.runOnce({ preferredJobId: typeof jobId === 'string' ? jobId : null });
@@ -8268,6 +8282,7 @@ async function runAgt002WorkbenchDrainOnce(req, res) {
     const drain = createAgt002WorkbenchDrain({
       database,
       environment: process.env,
+      ingerirDocumento: ingerirTextoDeLaMesa(database),
       ...(agt002WorkbenchWorkerTestBridgeClient ? { bridgeClient: agt002WorkbenchWorkerTestBridgeClient } : {}),
     });
     const result = await drain.runOnce();

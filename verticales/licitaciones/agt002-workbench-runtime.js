@@ -3,6 +3,7 @@ import { createAgt002WorkbenchResponder } from './agt002-workbench-responder.js'
 import { createAgt002DraftDocumentProducer } from './agt002-workbench-document.js';
 import { resolverParaLector } from '../../catalogo-fuentes.js';
 import { loadAgt002LessonsForPrompt } from './agt002-company-lessons.js';
+import { leerConversacionDeLaMesa } from './agt002-mesa-conversacion.js';
 
 // Entrada 1 del catálogo de fuentes: lo que el servidor resuelve y estampa antes de llamar al
 // modelo. Son las tres que faltaban el 23-oct, cuando la Mesa inventó el nombre de la empresa
@@ -188,6 +189,8 @@ export function createAgt002WorkbenchRuntime({ environment = process.env } = {})
   return { config, responder };
 }
 
+const conversacionDe = input => ({ threadId: input.thread_id, originMessageId: input.origin_message_id, opportunityId: input.opportunity_id, tenderId: input.tender_id });
+
 function createDatabasePersistenceAdapter(database) {
   return {
     claimAgt002WorkbenchJob: args => claimAgt002WorkbenchJob(database, args),
@@ -205,7 +208,9 @@ function createDatabasePersistenceAdapter(database) {
  * (nunca un segundo trabajo por invocación) y devuelve únicamente estado y conteos
  * saneados — nunca el payload del trabajo ni contenido del modelo.
  */
-export function createAgt002WorkbenchDrain({ database, environment = process.env, bridgeClient } = {}) {
+// `ingerirDocumento({ opportunityId, autorId, nombre, texto })`: guarda un texto en el expediente y pide el reanálisis. Lo
+// inyecta el servidor (ingestTenderDossierDocuments vive allí); sin él, la Mesa actualiza el cierre pero no el resto.
+export function createAgt002WorkbenchDrain({ database, environment = process.env, bridgeClient, ingerirDocumento = null } = {}) {
   if (!database || typeof database.rpc !== 'function') throw new TypeError('database.rpc es obligatorio.');
 
   return Object.freeze({
@@ -244,11 +249,17 @@ export function createAgt002WorkbenchDrain({ database, environment = process.env
           const { data: mensaje } = await database.from('psi_agt002_workbench_messages')
             .select('author_id,author_kind,content,author:psi_sales_profiles(full_name)').eq('id', input.origin_message_id).maybeSingle();
           if (!mensaje || mensaje.author_kind !== 'human') return ['No hice cambios en el CRM: el pedido no viene de una persona.'];
+          // Lo que la persona pegó antes en el chat (el aviso de cambio de SECOP) también sirve de fuente literal.
+          let textosDeLaPersona = [mensaje.content];
+          try { textosDeLaPersona = (await leerConversacionDeLaMesa(database, conversacionDe(input))).textosDeLaPersona; } catch { /* con el mensaje solo */ }
           return ejecutarAgt002AccionesDeLaMesa(database, {
             acciones, mensaje: mensaje.content, opportunityId: input.opportunity_id, tenderId: input.tender_id,
             autorId: mensaje.author_id, autorNombre: mensaje.author?.full_name || null,
+            textosDeLaPersona, ingerirDocumento,
           });
         },
+        // La conversación previa del chat y el CRM de hoy (Juan, 2026-11-20): Vig-IA lee como el agente.
+        cargarConversacion: ({ input }) => leerConversacionDeLaMesa(database, conversacionDe(input)),
         resolveSources: ({ tenderId, message, documento }) => resolverParaLector(database, {
           lector: 'agt002.mesa',
           // El formato sólo se busca cuando hay un documento que escribir.

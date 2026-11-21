@@ -11,6 +11,10 @@
 // marca `raw.deadline_source = 'pliego'`. Desde ahí, ni la conciliación con SECOP ni la revisión de fases la cambian: si la
 // fuente trae otra, se anota como diferencia. Una adenda que mueva el cierre llega por el reanálisis, que trae la fecha
 // nueva y vuelve a mandar. Módulo puro salvo `aplicarCierresDelPliego`.
+//
+// Excepción (Juan, 2026-11-20, DEAJ): un cierre que una persona corrigió en la Mesa con el aviso de SECOP
+// (`raw.deadline_mesa`, agt002-mesa-cronograma.js) manda sobre un análisis anterior a la corrección; el primer análisis
+// posterior —el que lee el aviso guardado en el expediente— vuelve a mandar.
 
 import { readAgt002InitialAnalysisReport } from './agt002-initial-analysis-report.js';
 import { tenderSemanaDia } from './tender-semana.js';
@@ -35,10 +39,19 @@ export function cierreDelPliego(deadlines = []) {
   return { value, deadline_at: new Date(instants[0]).toISOString(), day: tenderSemanaDia(value), label: confirmed[0].label || null };
 }
 
+/** ¿Hay una corrección de la Mesa más nueva que el análisis? Sin fecha del análisis, manda la persona. Pura. */
+export function correccionDeLaMesaVigente(raw, analysisCreatedAt = null) {
+  const aplicada = Date.parse(raw?.deadline_mesa?.applied_at);
+  if (Number.isNaN(aplicada)) return false;
+  const analisis = Date.parse(analysisCreatedAt);
+  return Number.isNaN(analisis) || aplicada > analisis;
+}
+
 /** Lo que hay que escribir en `psi_public_tenders` para que mande el pliego; null si ya está así. */
-export function planCierrePliego(row, cierre, { analysisRunId = null, now = new Date().toISOString() } = {}) {
+export function planCierrePliego(row, cierre, { analysisRunId = null, analysisCreatedAt = null, now = new Date().toISOString() } = {}) {
   if (!row || !cierre?.day) return null;
   const raw = row.raw && typeof row.raw === 'object' ? row.raw : {};
+  if (correccionDeLaMesaVigente(raw, analysisCreatedAt)) return null;
   const same = cierreMandaElPliego(raw) && raw.deadline === cierre.day && Date.parse(row.deadline_at) === Date.parse(cierre.deadline_at);
   if (same) return null;
   return {
@@ -64,7 +77,7 @@ export async function aplicarCierresDelPliego(database, { now = () => new Date()
     : { data: [], error: null };
   if (opportunityError) throw opportunityError;
   const open = new Map((opportunities || []).filter(row => !row.archived_at && !row.deleted_at && !row.discarded_at && !row.lost_at).map(row => [row.id, row]));
-  const summary = { revisadas: 0, aplicadas: 0, sin_cierre_confirmado: 0, cerradas: 0, errores: [] };
+  const summary = { revisadas: 0, aplicadas: 0, sin_cierre_confirmado: 0, cerradas: 0, corregidas_en_mesa: 0, errores: [] };
   for (const row of tenders || []) {
     const opportunity = open.get(row.converted_opportunity_id);
     if (!opportunity) continue;
@@ -77,7 +90,8 @@ export async function aplicarCierresDelPliego(database, { now = () => new Date()
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(now()));
       const current = String(row.raw?.deadline || row.deadline_at || opportunity.expected_close_date || '').slice(0, 10);
       if (cierre.day < today && (!current || current < today)) { summary.cerradas += 1; continue; }
-      const patch = planCierrePliego(row, cierre, { analysisRunId: report.report.runId || null, now: now() });
+      if (correccionDeLaMesaVigente(row.raw, report.report.createdAt)) { summary.corregidas_en_mesa += 1; continue; }
+      const patch = planCierrePliego(row, cierre, { analysisRunId: report.report.runId || null, analysisCreatedAt: report.report.createdAt || null, now: now() });
       if (patch) {
         const { error: writeError } = await database.from('psi_public_tenders').update(patch).eq('id', row.id);
         if (writeError) throw writeError;
