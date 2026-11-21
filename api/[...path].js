@@ -9984,7 +9984,6 @@ app.get('/api/programacion-access', async (req, res) => {
 });
 // Usuarios y permisos → rol y ciudad en Programación (Juan, 2026-11-21: la pestaña Usuarios de Programación sobraba).
 // Lo asigna quien administra usuarios del SIIO; el servidor llama programacion.dar_acceso con la llave de servicio.
-const PROGRAMACION_ROLES = new Set(['coordinador', 'nomina', 'consulta', 'admin']);
 app.put('/api/programacion-access', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -9994,6 +9993,7 @@ app.put('/api/programacion-access', async (req, res) => {
     const rol = typeof req.body?.rol === 'string' ? req.body.rol : '';
     const ciudad = rol === 'admin' ? null : (typeof req.body?.ciudad_id === 'string' && req.body.ciudad_id.trim() ? req.body.ciudad_id.trim() : null);
     const activo = req.body?.activo !== false;
+    // PROGRAMACION_ROLES está declarada más abajo (const de módulo): se usa en tiempo de petición.
     if (!correo || !PROGRAMACION_ROLES.has(rol)) return res.status(400).json({ error: 'Indique el correo y un rol válido de Programación.' });
     if (rol !== 'admin' && !ciudad) return res.status(400).json({ error: 'Escoja la ciudad en Programación.' });
     const { data, error } = await requireDb().schema('programacion').rpc('dar_acceso', { p_correo: correo, p_rol: rol, p_ciudad: ciudad, p_activo: activo });
