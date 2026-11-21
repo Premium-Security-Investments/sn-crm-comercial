@@ -13,3 +13,10 @@
 .prog-nav-grupo a { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; color: #b9c8de; font-size: 13px; text-decoration: none; }
 .prog-nav-grupo a:hover { background: rgba(255, 255, 255, .08); color: #fff; }
 .prog-nav-grupo a.active { background: rgba(255, 255, 255, .12); color: #fff; box-shadow: inset 3px 0 0 #4db6ff; }
+
+/* Selector de ciudad de Programación en el renglón del título del SIIO (portal a #topbar-seccion). */
+.topbar-seccion:empty { display: none; }
+.prog-ciudad { display: flex; align-items: center; gap: 10px; margin: 0; color: #5d6b82; font-weight: 600; }
+.prog-ciudad > span { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.prog-ciudad strong { color: #172033; font-size: 15px; }
+.prog-ciudad select { width: auto; min-width: 160px; border: 1px solid #cfd9e8; border-radius: 11px; padding: 8px 12px; background: #fff; color: #172033; font: inherit; font-weight: 700; }

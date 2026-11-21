@@ -9982,6 +9982,25 @@ app.get('/api/programacion-access', async (req, res) => {
     res.json({ ciudades: data.ciudades, accesos: data.accesos });
   } catch (error) { sendAuthError(res, error); }
 });
+// Usuarios y permisos → rol y ciudad en Programación (Juan, 2026-11-21: la pestaña Usuarios de Programación sobraba).
+// Lo asigna quien administra usuarios del SIIO; el servidor llama programacion.dar_acceso con la llave de servicio.
+const PROGRAMACION_ROLES = new Set(['coordinador', 'nomina', 'consulta', 'admin']);
+app.put('/api/programacion-access', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+    const correo = typeof req.body?.correo === 'string' ? req.body.correo.trim().toLowerCase() : '';
+    const rol = typeof req.body?.rol === 'string' ? req.body.rol : '';
+    const ciudad = rol === 'admin' ? null : (typeof req.body?.ciudad_id === 'string' && req.body.ciudad_id.trim() ? req.body.ciudad_id.trim() : null);
+    const activo = req.body?.activo !== false;
+    if (!correo || !PROGRAMACION_ROLES.has(rol)) return res.status(400).json({ error: 'Indique el correo y un rol válido de Programación.' });
+    if (rol !== 'admin' && !ciudad) return res.status(400).json({ error: 'Escoja la ciudad en Programación.' });
+    const { data, error } = await requireDb().schema('programacion').rpc('dar_acceso', { p_correo: correo, p_rol: rol, p_ciudad: ciudad, p_activo: activo });
+    if (error) return res.status(400).json({ error: error.message || 'No se pudo guardar el acceso a Programación.' });
+    res.json({ ok: true, mensaje: typeof data === 'string' ? data : null });
+  } catch (error) { sendAuthError(res, error); }
+});
 app.all('/api/programacion-access', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 app.get('/api/users', async (req, res) => {

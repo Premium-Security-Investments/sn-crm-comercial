@@ -1,10 +1,10 @@
 // Las pantallas de Programación: las usa la sección (Inicio) y el menú lateral del SIIO (ProgramacionNav).
 import {
   LayoutDashboard, Inbox, CalendarClock, CalendarPlus, CalendarDays, Building2, Database, Calculator,
-  ShieldCheck, FlaskConical, type LucideIcon,
+  FlaskConical, type LucideIcon,
 } from 'lucide-react';
 
-export type Pagina = 'tablero' | 'novedades' | 'dia' | 'programar' | 'calendario' | 'clientes' | 'maestros' | 'cierre' | 'accesos' | 'simulador';
+export type Pagina = 'tablero' | 'novedades' | 'dia' | 'programar' | 'calendario' | 'clientes' | 'maestros' | 'cierre' | 'simulador';
 
 export interface DefPagina { id: Pagina; titulo: string; menu?: string; ayuda: string; icono: LucideIcon; seccion: string; soloAdmin?: boolean }
 export const PAGINAS: DefPagina[] = [
@@ -16,7 +16,6 @@ export const PAGINAS: DefPagina[] = [
   { id: 'clientes', titulo: 'Clientes', ayuda: 'Lo contratado por puesto y quién lo cubre en el periodo abierto.', icono: Building2, seccion: 'Gestión' },
   { id: 'maestros', titulo: 'Datos maestros', ayuda: 'Clientes, puestos, empleados y turnos tipo; cargue desde Avancys.', icono: Database, seccion: 'Gestión' },
   { id: 'cierre', titulo: 'Cierre y nómina', ayuda: 'Revisión, cálculo por guarda, listado para nómina y cierre del periodo.', icono: Calculator, seccion: 'Gestión' },
-  { id: 'accesos', titulo: 'Usuarios', ayuda: 'Qué hace cada persona en Programación y en qué ciudad. La entrada se da en el SIIO.', icono: ShieldCheck, seccion: 'Administración', soloAdmin: true },
   { id: 'simulador', titulo: 'Simulador de cálculo', menu: 'Simulador', ayuda: '¿Cuánto cuesta este cambio? Escoja un guarda real, cambie días y vea cuánto suben o bajan las extras y el costo.', icono: FlaskConical, seccion: 'Herramientas' },
 ];
 
@@ -31,8 +30,8 @@ export function leerRuta(): [Pagina, string | null] {
 
 export const enlace = (p: Pagina, param?: string | number) => `${PREFIJO}/${param !== undefined ? `${p}/${param}` : p}`;
 
-// El rol en Programación lo resuelve la sección (programacion.mi_acceso); el menú lo escucha para mostrar Usuarios
-// solo a los administradores de Programación.
+// El rol en Programación lo resuelve la sección (programacion.mi_acceso) y lo anuncia; hoy ninguna pantalla depende de
+// él en el menú (Usuarios se fue a Usuarios y permisos del SIIO), pero queda para las que lo necesiten.
 let rolActual: string | null = null;
 export const rolProgramacion = () => rolActual;
 export function anunciarRol(rol: string | null) {

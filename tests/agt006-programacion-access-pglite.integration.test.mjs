@@ -99,7 +99,10 @@ test('servidor: guarda programacion_access solo si viene en el cuerpo; la pantal
   assert.match(serverSource, /app\.get\('\/api\/programacion-access'[\s\S]{0,300}requireAction\(currentProfile, ACTIONS\.USERS_MANAGE/);
   assert.match(serverSource, /programacionAccess\.present \? await persistProgramacionAccess/);
   assert.equal(serverSource.match(/programacion_access_warning: programacionAccessWarning/g)?.length, 2, 'POST y PATCH devuelven el aviso');
-  // El rol y la ciudad se dan dentro de Programación; el SIIO sólo da la entrada y muestra el estado.
   assert.doesNotMatch(uiSource, /programacion_access: /);
-  assert.match(uiSource, /Pendiente de configurar en Programación/);
+  // Desde el 2026-11-21 el rol y la ciudad se dan en Usuarios y permisos del SIIO (Programación ya no tiene pestaña
+  // Usuarios): la pantalla los guarda con PUT /api/programacion-access, que solo administra usuarios del SIIO.
+  assert.match(uiSource, /Pendiente: falta rol y ciudad/);
+  assert.match(uiSource, /'\/api\/programacion-access', \{ method: 'PUT'/);
+  assert.match(serverSource, /app\.put\('\/api\/programacion-access'[\s\S]{0,300}requireAction\(currentProfile, ACTIONS\.USERS_MANAGE/);
 });

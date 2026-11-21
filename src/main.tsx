@@ -523,6 +523,8 @@ function App() {
       <header className="topbar">
         <div className="sn-titulo-pagina"><p>{fechaDeHoyBogota()}</p><h1>{titleFor(route, currentProfile)}</h1><span className="sn-raya" aria-hidden="true" /></div>
         <div className="topbar-right">
+          {/* Lugar para los controles de la sección abierta (p. ej. la ciudad en Programación), que llegan por portal. */}
+          <div id="topbar-seccion" className="topbar-seccion" />
           {areaFor(route) === 'Comercial' && canAccessRoute(currentProfile, 'new') && <NewOpportunityButton data={viewData} />}
         </div>
       </header>
@@ -3792,7 +3794,7 @@ export function normalizarWhatsapp(valor: string): string | null | undefined {
   const numero = /^3\d{9}$/.test(limpio) ? `+57${limpio}` : /^57\d{10}$/.test(limpio) ? `+${limpio}` : limpio;
   return /^\+[1-9]\d{7,14}$/.test(numero) ? numero : undefined;
 }
-type UserForm = { full_name: string; microsoft_email: string; whatsapp_phone: string; active: boolean; password: string; send_invite: boolean; access: TabsAccess; ai_usage_profile: string | null; legacy_role: string | null; existing_areas: AccessAssignment[] };
+type UserForm = { full_name: string; microsoft_email: string; whatsapp_phone: string; active: boolean; password: string; send_invite: boolean; access: TabsAccess; ai_usage_profile: string | null; legacy_role: string | null; existing_areas: AccessAssignment[]; prog_rol: string; prog_ciudad: string };
 const LEGACY_ROLE_NOTE: Record<string, string> = { director: 'Directivo', junta: 'Junta', colaborador: 'Colaborador' };
 function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
@@ -3800,11 +3802,11 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement | null>(null);
-  const emptyUserForm: UserForm = { full_name: '', microsoft_email: '', whatsapp_phone: '', active: true, password: '', send_invite: true, access: { ...EMPTY_TABS_ACCESS, tabs: [] }, ai_usage_profile: null, legacy_role: null, existing_areas: [] };
+  const emptyUserForm: UserForm = { full_name: '', microsoft_email: '', whatsapp_phone: '', active: true, password: '', send_invite: true, access: { ...EMPTY_TABS_ACCESS, tabs: [] }, ai_usage_profile: null, legacy_role: null, existing_areas: [], prog_rol: '', prog_ciudad: '' };
   // "Perfil de uso de IA": perfiles no archivados de la Plataforma de Agentes. Si la plataforma no responde, el campo se
   // deshabilita y no se envía (el servidor conserva el valor guardado).
   const [aiProfiles, setAiProfiles] = useState<{ status: 'loading' | 'ready' | 'error'; profiles: AiUsageProfileOption[] }>({ status: 'loading', profiles: [] });
-  // Estado en Programación (solo lectura aquí): qué rol y ciudad le dio Programación en su pestaña Usuarios.
+  // Estado en Programación: qué hace la persona y en qué ciudad. Se asigna aquí (Juan, 2026-11-21).
   const [progAccess, setProgAccess] = useState<ProgramacionAccessState>({ status: 'loading', ciudades: [], byProfile: {} });
   const [form, setForm] = useState<UserForm>(emptyUserForm);
   const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'tabs'|'seen'|'status'>>({ key: 'name', direction: 'asc' });
@@ -3839,7 +3841,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const programacionLabel = (user: Profile) => {
     if (!user.permissions?.includes(PROGRAMACION_PERMISSION)) return '—';
     const value = progAccess.byProfile[user.id];
-    if (!value) return progAccess.status === 'ready' ? 'Pendiente de configurar en Programación' : 'Sí';
+    if (!value) return progAccess.status === 'ready' ? 'Pendiente: falta rol y ciudad' : 'Sí';
     const rol = PROGRAMACION_ROLE_LABELS[value.rol] || value.rol;
     const ciudad = value.ciudad_id ? (progAccess.ciudades.find(item => item.id === value.ciudad_id)?.nombre || value.ciudad_id) : 'todas las ciudades';
     return `${rol} · ${ciudad}`;
@@ -3853,7 +3855,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const sortUsersBy = (key: typeof usersSortConfig.key) => setUsersSortConfig(current => nextSort(current, key));
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">No tiene autorización para administrar usuarios.</div>;
-  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, whatsapp_phone: user.whatsapp_phone ?? '', active: user.active, password: '', send_invite: false, access: tabsFromProfile(user), ai_usage_profile: user.ai_usage_profile ?? null, legacy_role: LEGACY_ROLE_NOTE[user.role] ? user.role : null, existing_areas: user.areas || [] }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
+  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, whatsapp_phone: user.whatsapp_phone ?? '', active: user.active, password: '', send_invite: false, access: tabsFromProfile(user), ai_usage_profile: user.ai_usage_profile ?? null, legacy_role: LEGACY_ROLE_NOTE[user.role] ? user.role : null, existing_areas: user.areas || [], prog_rol: progAccess.byProfile[user.id]?.rol ?? '', prog_ciudad: progAccess.byProfile[user.id]?.ciudad_id ?? '' }); setStatus('Editando usuario existente. Marca el envío de correo si debe definir o restablecer su acceso.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
   const cancelEdit = () => { setEditingUserId(null); setForm(emptyUserForm); setStatus(''); };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3871,9 +3873,16 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
       };
       const saved = await api<(Profile & { invited?: boolean; access_link?: string | null; auth_warning?: string | null; ai_usage_profile_warning?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
       const wasEditing = !!editingUserId;
+      // Rol y ciudad en Programación (Juan, 2026-11-21): después de guardar el usuario, porque dar_acceso exige que exista.
+      let progWarning = '';
+      if (form.access.tabs.includes('programacion') && form.prog_rol) {
+        try {
+          await api('/api/programacion-access', { method: 'PUT', body: JSON.stringify({ correo: form.microsoft_email, rol: form.prog_rol, ciudad_id: form.prog_rol === 'admin' ? null : form.prog_ciudad || null, activo: form.active }) });
+        } catch (err) { progWarning = ` Programación: ${err instanceof Error ? err.message : String(err)}`; }
+      }
       setForm(emptyUserForm); setEditingUserId(null); await load();
       const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Correo de acceso enviado.' : '');
-      const warning = `${saved.auth_warning ? ` ${saved.auth_warning}` : ''}${saved.ai_usage_profile_warning ? ` ${saved.ai_usage_profile_warning}` : ''}`;
+      const warning = `${saved.auth_warning ? ` ${saved.auth_warning}` : ''}${saved.ai_usage_profile_warning ? ` ${saved.ai_usage_profile_warning}` : ''}${progWarning}`;
       setStatus(wasEditing ? `Usuario actualizado.${mailStatus}${warning}` : `Usuario guardado.${mailStatus}${warning}`);
     } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); }
   };
@@ -3921,7 +3930,17 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         </fieldset>
         <fieldset className="access-area-card"><legend>Programación</legend>
           {tabBox('programacion', 'Programación de turnos')}
-          <small className="muted">Da la entrada. Qué hace y en qué ciudades se define dentro de Programación, en su pestaña Usuarios.</small>
+          {has('programacion') && progAccess.status === 'ready' && <div className="access-subarea">
+            <label>Qué hace<select value={form.prog_rol} onChange={e => setForm({ ...form, prog_rol: e.target.value })}>
+              <option value="">Sin asignar</option>
+              {Object.entries(PROGRAMACION_ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select></label>
+            {form.prog_rol !== 'admin' && <label>Ciudad<select value={form.prog_ciudad} onChange={e => setForm({ ...form, prog_ciudad: e.target.value })}>
+              <option value="">Escoja la ciudad</option>
+              {progAccess.ciudades.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select></label>}
+          </div>}
+          <small className="muted">Da la entrada y define qué hace la persona en Programación y en qué ciudad. El administrador ve todas las ciudades.</small>
         </fieldset>
         <fieldset className="access-area-card"><legend>IT · Administración</legend>{tabBox('usuarios', 'Usuarios y permisos · Agentes', readOnly)}<small className="muted">Administra el SIIO: da accesos a otras personas.</small></fieldset>
       </div></fieldset>
