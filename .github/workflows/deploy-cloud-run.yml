@@ -1,0 +1,82 @@
+name: deploy-cloud-run
+
+# Publica el SIIO en Google Cloud Run (proyecto psi-siio, us-east5) en cada push a main, en paralelo con Vercel.
+# Sin llaves: GitHub se identifica ante Google con Workload Identity Federation, que solo acepta este repositorio y
+# la rama main. Los secretos viven en Secret Manager; la configuración no secreta en deploy/cloud-run/siio.env.yaml.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: psi-siio
+  REGION: us-east5
+  SERVICE: siio
+  IMAGE: us-east5-docker.pkg.dev/psi-siio/siio/siio
+  WIF_PROVIDER: projects/651613857860/locations/global/workloadIdentityPools/github/providers/sn-crm-comercial
+  DEPLOYER: siio-deployer@psi-siio.iam.gserviceaccount.com
+  RUNTIME_SA: siio-runtime@psi-siio.iam.gserviceaccount.com
+  SUPABASE_URL: https://tyfzjqzcpgwcjnxozaaf.supabase.co
+  # Llave anónima de Supabase: es pública (la usa el navegador), la misma de Vercel.
+  SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5ZnpqcXpjcGd3Y2pueG96YWFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1NzYzOTksImV4cCI6MjA5MzE1MjM5OX0.cEEnlu8LjwVzOJu8iPrX9_bsHO_zP_aezpzSIKYd2nE
+  SECRETS: >-
+    SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,
+    AGT001_BRIDGE_HMAC_SECRET=AGT001_BRIDGE_HMAC_SECRET:latest,
+    AGT001_WEEKLY_SECRET=AGT001_WEEKLY_SECRET:latest,
+    AGT002_HETZNER_BRIDGE_HMAC_SECRET=AGT002_HETZNER_BRIDGE_HMAC_SECRET:latest,
+    AGT002_WORKBENCH_WORKER_SECRET=AGT002_WORKBENCH_WORKER_SECRET:latest,
+    AGT003_COPILOT_HMAC_SECRET=AGT003_COPILOT_HMAC_SECRET:latest,
+    AVANCYS_ODOO_API_KEY=AVANCYS_ODOO_API_KEY:latest,
+    CRON_SECRET=CRON_SECRET:latest,
+    TENDER_WORKER_SCHEDULER_SECRET=TENDER_WORKER_SCHEDULER_SECRET:latest
+
+jobs:
+  deploy:
+    name: deploy_cloud_run
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Construir y subir la imagen
+        run: |
+          gcloud auth configure-docker us-east5-docker.pkg.dev --quiet
+          docker build \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL" \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            -t "$IMAGE:${GITHUB_SHA::8}" .
+          docker push "$IMAGE:${GITHUB_SHA::8}"
+
+      - name: Publicar en Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --image "$IMAGE:${GITHUB_SHA::8}" \
+            --service-account "$RUNTIME_SA" \
+            --env-vars-file deploy/cloud-run/siio.env.yaml \
+            --set-secrets "$(echo "$SECRETS" | tr -d ' ')" \
+            --timeout 300 --memory 1Gi --cpu 1 --min-instances 0 --max-instances 3 --concurrency 40 \
+            --allow-unauthenticated --port 8080 --quiet
+
+      - name: Prueba de humo
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/")" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/tender-tracking")" = "401"
+          echo "Cloud Run OK: $URL"
