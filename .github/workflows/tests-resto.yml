@@ -32,3 +32,4 @@ jobs:
           node-version: '22'
       - run: corepack pnpm install --frozen-lockfile
       - run: corepack pnpm run test:resto
+      - run: corepack pnpm run test:programacion

@@ -93,7 +93,9 @@ test('menú: Programación aparece con su permiso y quien sólo tiene Programaci
   const programacion = { id: 'p', active: true, role: 'colaborador', permissions: ['modulo_programacion'] };
   const groups = getVisibleNavGroups(programacion);
   assert.deepEqual(groups.map(group => group.title), ['Programación']);
-  assert.equal(groups[0].items[0].external, true);
+  // Desde el 2026-11-21 Programación es una sección del SIIO, no un enlace externo.
+  assert.equal(groups[0].items[0].external, undefined);
+  assert.equal(groups[0].items[0].href, '#/programacion');
   const soloLicitaciones = { id: 'l', active: true, role: 'comercial', permissions: ['licitaciones'] };
   assert.ok(!getVisibleNavGroups(soloLicitaciones).some(group => group.items.some(item => item.page === 'home')));
   assert.notEqual(preferredLandingRoute(soloLicitaciones), 'home');
