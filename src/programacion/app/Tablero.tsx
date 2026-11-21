@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { db } from './supabase.ts';
-import type { Pagina } from './Inicio.tsx';
+import type { Pagina } from './paginas.ts';
 import { ResumenHabilitaciones } from './Habilitaciones.tsx';
 
 interface Tablero {

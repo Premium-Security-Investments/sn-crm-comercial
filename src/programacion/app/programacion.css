@@ -165,7 +165,7 @@ button.fila:hover:not(:disabled) { border-color: #bfd3f5; filter: none; }
 @media (max-width: 900px) { .menu-usuario-nombre { display: none; } .franja-superior { margin: 0 0 6px; } }
 
 
-/* Dentro del SIIO: barra de ciudad y pestañas en lugar del menú lateral propio. */
+/* Dentro del SIIO: barra de ciudad (las pantallas van en el menú lateral del SIIO, ProgramacionNav). */
 .prog-embebida { min-width: 0; }
 .prog-barra { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px 20px; margin-bottom: 18px; padding: 12px 14px; background: #fff;
   border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 22px rgba(21, 38, 69, .06); }
@@ -173,12 +173,7 @@ button.fila:hover:not(:disabled) { border-color: #bfd3f5; filter: none; }
 .prog-barra .ciudad-menu span { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .prog-barra .ciudad-menu strong { color: var(--text); }
 .prog-barra .ciudad-menu select { background: #fff; color: var(--text); border: 1px solid #cfd9e8; }
-.prog-pestanas { display: flex; flex-wrap: wrap; gap: 10px 18px; flex: 1; min-width: 0; }
-.prog-grupo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.prog-grupo-titulo { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .12em; color: #6f8bad; margin-right: 2px; }
-.prog-pestanas button { display: inline-flex; align-items: center; gap: 6px; background: #eef3fa; color: #1b355f; box-shadow: none; padding: 7px 11px; font-size: 13px; border-radius: 999px; }
-.prog-pestanas button:hover:not(:disabled) { background: #dce6f5; transform: none; filter: none; }
-.prog-pestanas button.activo { background: var(--navy); color: #fff; }
-.prog-pestanas .contador { background: #ef4444; color: #fff; border-radius: 999px; font-size: 11px; font-weight: 800; padding: 0 6px; }
+.prog-aviso { align-self: center; background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; box-shadow: none; padding: 7px 12px; font-size: 13px; }
+.prog-aviso:hover:not(:disabled) { background: #ffedd5; transform: none; filter: none; }
 .login-shell { min-height: 40vh; }
 }

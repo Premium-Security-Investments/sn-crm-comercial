@@ -17,6 +17,7 @@ import { ChevronRight, Lock, Mail, Menu as MenuIcon } from 'lucide-react';
 import { AgentsView } from './platform/AgentsView';
 import { EstudiosSeguridadView } from './estudios-seguridad/EstudiosSeguridadView';
 import { ProgramacionView } from './programacion/app/App';
+import { ProgramacionNav } from './programacion/app/ProgramacionNav';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
 import { TenderDetailNavigation, requestTenderDetailSection, resolveInitialTenderDetailSection, resolveTenderPhaseChangeNotices, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
@@ -635,7 +636,7 @@ function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfi
   };
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
-    {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => item.external ? <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer"><NavIcon href={item.href} /><span>{item.label}</span></a> : <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}><NavIcon href={item.href} /><span>{item.label}</span></a>)}</div>)}
+    {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => item.page === 'programacion' ? <ProgramacionNav key={item.href} label={item.label} onNavigate={handleNav} /> : item.external ? <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer"><NavIcon href={item.href} /><span>{item.label}</span></a> : <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}><NavIcon href={item.href} /><span>{item.label}</span></a>)}</div>)}
   </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
