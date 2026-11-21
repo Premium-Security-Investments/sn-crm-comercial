@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { canApproveTenderGoNoGo } from './permissions';
 import type { TendersModuleProps } from './types';
 import { AllyDetail, KINDS, ROLES, allyLabel as label, ownContact, type Company, type Participation } from './components/AllyDetail';
+import { latestRup, rupLine } from './components/AllyRupPanel';
 
 /**
  * Aliados para uniones temporales (encargo AGT-002 del 2026-11-09; Juan, 2026-11-09): la base de empresas de vigilancia
@@ -21,6 +22,12 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
   const [role, setRole] = useState('');
   const [query, setQuery] = useState('');
   const [onlySeen, setOnlySeen] = useState(false);
+  // Filtros de la ficha del RUP (233): liquidez y experiencia mínimas, endeudamiento máximo, sin multas y frecuencia en una ciudad.
+  const [minLiquidity, setMinLiquidity] = useState('');
+  const [maxDebt, setMaxDebt] = useState('');
+  const [minOwnSmmlv, setMinOwnSmmlv] = useState('');
+  const [noFines, setNoFines] = useState(false);
+  const [radioCity, setRadioCity] = useState('');
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -36,11 +43,17 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
     return (payload?.companies || []).filter(company => {
       if (role && company.role !== role) return false;
       if (onlySeen && !company.participations.length) return false;
+      const rup = latestRup(company.rup);
+      const atLeast = (value: number | null | undefined, wanted: string) => !wanted.trim() || (value !== null && value !== undefined && value >= Number(wanted.replace(',', '.')));
+      if (!atLeast(rup?.liquidity, minLiquidity) || !atLeast(rup?.smmlv_own, minOwnSmmlv)) return false;
+      if (maxDebt.trim() && !(rup?.debt_ratio !== null && rup?.debt_ratio !== undefined && rup.debt_ratio <= Number(maxDebt.replace(',', '.')))) return false;
+      if (noFines && !(rup && rup.has_fines === false && rup.has_sanctions !== true)) return false;
+      if (radioCity.trim() && !fold(company.radio_cities || '').includes(fold(radioCity.trim()))) return false;
       if (q && !fold(`${company.name} ${company.acronyms || ''} ${company.nit}`).includes(q)) return false;
       return wanted.every(city => company.cities.some(item => item.city_key.includes(city.replace(/[^a-z0-9 ]+/g, ' ').trim())));
     }).sort((a, b) => b.participations.length - a.participations.length || a.name.localeCompare(b.name));
-  }, [payload, cities, role, query, onlySeen]);
-  useEffect(() => { setPage(0); }, [cities, role, query, onlySeen]);
+  }, [payload, cities, role, query, onlySeen, minLiquidity, maxDebt, minOwnSmmlv, noFines, radioCity]);
+  useEffect(() => { setPage(0); }, [cities, role, query, onlySeen, minLiquidity, maxDebt, minOwnSmmlv, noFines, radioCity]);
 
   const toggle = (company: Company) => setOpen(open === company.nit ? null : company.nit);
 
@@ -62,6 +75,14 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
             <label>Empresa o NIT<input value={query} onChange={event => setQuery(event.target.value)} /></label>
             <label className="tender-allies-check"><input type="checkbox" checked={onlySeen} onChange={event => setOnlySeen(event.target.checked)} /> Sólo las vistas en procesos</label>
           </div>
+          <div className="tender-allies-filters tender-allies-rup-filters" aria-label="Filtros del RUP">
+            <label>Liquidez mínima<input inputMode="decimal" value={minLiquidity} onChange={event => setMinLiquidity(event.target.value)} placeholder="Ej. 2,73" /></label>
+            <label>Endeudamiento máximo<input inputMode="decimal" value={maxDebt} onChange={event => setMaxDebt(event.target.value)} placeholder="Ej. 0,60" /></label>
+            <label>Experiencia propia mínima (SMMLV)<input inputMode="numeric" value={minOwnSmmlv} onChange={event => setMinOwnSmmlv(event.target.value)} /></label>
+            <label>Frecuencia MinTIC en<input value={radioCity} onChange={event => setRadioCity(event.target.value)} placeholder="Bogotá" /></label>
+            <label className="tender-allies-check"><input type="checkbox" checked={noFines} onChange={event => setNoFines(event.target.checked)} /> Sin multas ni sanciones</label>
+          </div>
+          {(minLiquidity || maxDebt || minOwnSmmlv || noFines || radioCity) && <p className="muted">Los filtros del RUP sólo muestran empresas con el dato cargado: las que no tienen RUP o tienen el dato «sin dato» quedan por fuera.</p>}
           <p className="muted">{filtered.length} de {payload.companies.length} empresas.</p>
           <div className="tender-allies-scroll"><table className="tender-allies-table">
             <colgroup><col className="col-name" /><col className="col-cities" /><col className="col-role" /><col className="col-seen" /><col className="col-contact" /></colgroup>
@@ -83,7 +104,8 @@ function AllyRow({ company, isOpen, onToggle, children }: { company: Company; is
   return <>
     <tr className={isOpen ? 'is-open' : ''}>
       <th scope="row"><button type="button" className="tender-allies-name" aria-expanded={isOpen} onClick={onToggle}>{company.name}</button>{company.acronyms ? <small>{company.acronyms}</small> : null}
-        {/^SECOP/i.test(company.listing_source || '') && <small className="tender-allies-from-process">Entró desde un proceso (SECOP)</small>}</th>
+        {/^SECOP/i.test(company.listing_source || '') && <small className="tender-allies-from-process">Entró desde un proceso (SECOP)</small>}
+        {company.rup ? <small className="tender-allies-rup-line">{rupLine(company.rup)}</small> : null}</th>
       <td>{shown}{company.cities.length > 5 ? ` y ${company.cities.length - 5} más` : ''}</td>
       <td>{label(ROLES, company.role)}</td>
       <td>{company.participations.length || ''}</td>

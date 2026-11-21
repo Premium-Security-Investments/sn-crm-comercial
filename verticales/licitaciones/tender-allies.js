@@ -6,6 +6,8 @@
 // Pereira, Manizales y Cartago y la ficha tiene agencias con resolución en Bogotá, Medellín y Cali. Una oficina en el
 // listado no prueba la agencia para un pliego: eso lo dice cada candidato.
 
+import { parseRupText, rupPayload } from './aliados-rup.js';
+
 export const ALLY_ROLES = Object.freeze({
   sin_clasificar: 'Sin clasificar', aliado_potencial: 'Aliado potencial', aliado: 'Aliado', competidor: 'Competidor', descartado: 'Descartado', nosotros: 'Nosotros',
 });
@@ -61,13 +63,48 @@ async function all(database, table, select) {
 
 const COMPANY_COLUMNS = 'nit,dv,name,acronyms,representative,phone,email,license_resolution,listing_source,role,contact,notes,updated_at';
 const CONTACT_COLUMNS = 'contact_name,contact_title,contact_phone,contact_email';
-const missingColumn = error => String(error?.code || '') === '42703' || /contact_(name|title|phone|email)/.test(String(error?.message || ''));
+// Frecuencia MinTIC y SG-SST (233).
+const CAPABILITY_COLUMNS = 'radio_cities,radio_source,sgsst_pct,sgsst_date';
+const missingColumn = error => String(error?.code || '') === '42703' || /contact_(name|title|phone|email)|radio_(cities|source)|sgsst_(pct|date)/.test(String(error?.message || ''));
 const missingFunction = error => ['42883', 'PGRST202'].includes(String(error?.code || '').toUpperCase());
+// De la más completa a la más vieja: con la 233, con la 197, sólo la 196.
+const COMPANY_SELECTS = [`${COMPANY_COLUMNS},${CONTACT_COLUMNS},${CAPABILITY_COLUMNS}`, `${COMPANY_COLUMNS},${CONTACT_COLUMNS}`, COMPANY_COLUMNS];
 
-/** Las empresas con el contacto en cuatro campos (197); sin la 197, sin ellos. */
+/** Las empresas con el contacto en cuatro campos (197) y la frecuencia y el SG-SST (233); sin ellas, sin esos campos. */
 async function allCompanies(database) {
-  try { return await all(database, 'psi_vigilance_companies', `${COMPANY_COLUMNS},${CONTACT_COLUMNS}`); }
-  catch (error) { if (missingColumn(error)) return all(database, 'psi_vigilance_companies', COMPANY_COLUMNS); throw error; }
+  for (const [index, select] of COMPANY_SELECTS.entries()) {
+    try { return await all(database, 'psi_vigilance_companies', select); }
+    catch (error) { if (!missingColumn(error) || index === COMPANY_SELECTS.length - 1) throw error; }
+  }
+  return [];
+}
+
+// La ficha del RUP (233): el documento más reciente por fecha de corte. La lista no lleva los contratos; la ficha sí.
+const RUP_SUMMARY_COLUMNS = 'id,nit,source_kind,cut_date,total_assets,total_liabilities,current_assets,current_liabilities,equity,operating_income,roe,roa,liquidity,working_capital,debt_ratio,interest_coverage,has_fines,has_sanctions,has_disqualification,contracts_total,contracts_own,smmlv_total,smmlv_own,largest_own_smmlv,largest_own_client,has_guard_code,has_systems_code,document_name,created_at';
+const newestFirst = (a, b) => String(b.cut_date || '').localeCompare(String(a.cut_date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || ''));
+
+/** Lo que Vig-IA y Decidir necesitan del RUP de un socio; lo que no está cargado va null («sin dato»). */
+export function rupBrief(rup) {
+  const row = rup && rup.latest ? rup.latest : rup;
+  if (!row) return null;
+  return {
+    corte: row.cut_date || null, fuente: row.source_kind, liquidez: row.liquidity ?? null, capital_de_trabajo: row.working_capital ?? null,
+    endeudamiento: row.debt_ratio ?? null, multas: row.has_fines ?? null, sanciones: row.has_sanctions ?? null,
+    contratos_propios: row.contracts_own ?? null, smmlv_propios: row.smmlv_own ?? null, mayor_contrato_propio_smmlv: row.largest_own_smmlv ?? null,
+  };
+}
+
+/** El RUP más reciente de cada empresa. Sin la 233, ninguno. */
+async function latestRupByNit(database) {
+  try {
+    const rows = await all(database, 'psi_vigilance_company_rup', RUP_SUMMARY_COLUMNS);
+    const byNit = new Map();
+    for (const row of [...rows].sort(newestFirst)) if (!byNit.has(row.nit)) byNit.set(row.nit, row);
+    return byNit;
+  } catch (error) {
+    if (missingTable(error) || String(error?.code || '') === '42P01') return new Map();
+    throw error;
+  }
 }
 
 /** El PDF de la Superintendencia parte algunos correos con un espacio («expertoseguridad.co m.co»): se muestran sin él. */
@@ -102,6 +139,7 @@ export async function listAllies(database, { participationsSeed = [] } = {}) {
       all(database, 'psi_vigilance_participations', 'id,nit,company_label,entity,process_ref,opportunity_id,kind,detail,source,occurred_on,created_at'),
       loadParticipationLinks(database),
     ]);
+    const rups = await latestRupByNit(database);
     // Una unión temporal no se muestra aunque quede alguna en la base (Juan, 2026-11-15).
     const participations = loaded.filter(part => !isJointVenture(part.company_label)).map(part => linkParticipation(part, links));
     const citiesByNit = new Map();
@@ -115,7 +153,7 @@ export async function listAllies(database, { participationsSeed = [] } = {}) {
     for (const part of participations) if (part.nit) partsByNit.set(part.nit, [...(partsByNit.get(part.nit) || []), part]);
     return {
       installed: true,
-      companies: companies.map(company => ({ ...company, email: cleanEmail(company.email), contact_email: cleanEmail(company.contact_email), cities: citiesByNit.get(company.nit) || [], participations: partsByNit.get(company.nit) || [] })),
+      companies: companies.map(company => ({ ...company, email: cleanEmail(company.email), contact_email: cleanEmail(company.contact_email), cities: citiesByNit.get(company.nit) || [], participations: partsByNit.get(company.nit) || [], rup: rups.get(company.nit) || null })),
       participations_without_nit: participations.filter(part => !part.nit),
       seed_missing: missingSeedCount(participations, participationsSeed),
     };
@@ -130,8 +168,12 @@ export async function getAlly(database, nit) {
   const key = String(nit || '').replace(/\D/g, '');
   if (!/^[0-9]{6,12}$/.test(key)) throw fail('La empresa no es válida.', 400);
   const one = select => database.from('psi_vigilance_companies').select(select).eq('nit', key).maybeSingle();
-  let { data: company, error } = await one(`${COMPANY_COLUMNS},${CONTACT_COLUMNS}`);
-  if (error && missingColumn(error)) ({ data: company, error } = await one(COMPANY_COLUMNS));
+  let company = null;
+  let error = null;
+  for (const select of COMPANY_SELECTS) {
+    ({ data: company, error } = await one(select));
+    if (!error || !missingColumn(error)) break;
+  }
   if (error) throw mapError(error);
   if (!company) throw fail('Esa empresa no está en la base.', 404);
   const [{ data: offices, error: officesError }, { data: own, error: partsError }, links] = await Promise.all([
@@ -155,7 +197,47 @@ export async function getAlly(database, nit) {
     if (!String(office.city || '').trim() || !office.city_key || cities.some(item => item.city_key === office.city_key)) continue;
     cities.push({ city: office.city, city_key: office.city_key, department: office.department });
   }
-  return { ...company, email: cleanEmail(company.email), contact_email: cleanEmail(company.contact_email), cities, participations };
+  return { ...company, email: cleanEmail(company.email), contact_email: cleanEmail(company.contact_email), cities, participations, rup: await rupHistory(database, key) };
+}
+
+/** La historia de documentos del RUP de una empresa, el más reciente primero y con sus contratos. Sin la 233, null. */
+async function rupHistory(database, nit) {
+  const { data, error } = await database.from('psi_vigilance_company_rup').select(`${RUP_SUMMARY_COLUMNS},contracts`).eq('nit', nit);
+  if (error) { if (missingTable(error) || String(error?.code || '') === '42P01') return null; throw mapError(error); }
+  const rows = [...(data || [])].sort(newestFirst);
+  return rows.length ? { latest: rows[0], history: rows.map(({ contracts, ...rest }) => rest) } : null;
+}
+
+/**
+ * Guarda un PDF del RUP ya convertido a texto (consulta de ruppro o certificado de la Cámara). El NIT del documento tiene
+ * que ser el de la empresa: así nadie le carga a TAC el RUP de otra.
+ */
+export async function saveAllyRup(database, { actorId, nit, text, fileName = null, sha256 = null, storagePath = null }) {
+  const key = String(nit || '').replace(/\D/g, '');
+  if (!/^[0-9]{6,12}$/.test(key)) throw fail('La empresa no es válida.', 400);
+  const parsed = parseRupText(text);
+  if (parsed.nit && parsed.nit !== key) throw fail(`El documento es del NIT ${parsed.nit}, no de esta empresa (${key}).`, 400);
+  const payload = rupPayload(parsed, { fileName, sha256, storagePath });
+  const { data, error } = await database.rpc('psi_save_vigilance_rup', { p_actor_id: actorId, p_nit: key, p_payload: payload });
+  if (error) throw mapError(error);
+  return { saved: data, kind: parsed.kind, already_loaded: Boolean(data?.already_loaded) };
+}
+
+/** Frecuencia MinTIC (ciudades y fuente) y SG-SST (% y fecha) de una empresa (233). */
+export async function saveAllyCapabilities(database, { actorId, nit, body }) {
+  const key = String(nit || '').replace(/\D/g, '');
+  if (!/^[0-9]{6,12}$/.test(key)) throw fail('La empresa no es válida.', 400);
+  const pct = String(body?.sgsst_pct ?? '').trim().replace(',', '.');
+  if (pct && !(Number(pct) >= 0 && Number(pct) <= 100)) throw fail('El SG-SST va de 0 a 100.', 400);
+  const date = String(body?.sgsst_date || '').trim();
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw fail('La fecha del SG-SST no es válida.', 400);
+  const payload = {
+    radio_cities: String(body?.radio_cities || '').trim().slice(0, 500), radio_source: String(body?.radio_source || '').trim().slice(0, 500),
+    sgsst_pct: pct ? Number(pct) : '', sgsst_date: date,
+  };
+  const { data, error } = await database.rpc('psi_save_vigilance_capabilities', { p_actor_id: actorId, p_nit: key, p_payload: payload });
+  if (error) throw mapError(error);
+  return data;
 }
 
 /** Carga (o actualiza) el listado en tandas, sin tocar rol, contacto ni notas; la primera vez, también las participaciones. */
@@ -291,6 +373,8 @@ export function rankAllyCandidates(companies, { cityKeys, processRef = null, lim
         offices,
         size_note: offices >= LARGE_COMPANY_OFFICES ? `Grande: ${offices} ciudades con oficina; querrá liderar la unión.` : null,
         evidence: 'Oficina en el listado de la Superintendencia de Vigilancia; para el pliego hay que pedirle la resolución y el certificado de Cámara.',
+        // La ficha del RUP y lo que deciden los pliegos (233), para que Decidir y la Mesa no propongan un socio que no cumple.
+        rup: rupBrief(company.rup), radio_cities: company.radio_cities || null, sgsst_pct: company.sgsst_pct ?? null,
         _score: [covered.length === cityKeys.length ? 0 : 1, -covered.length, roleRank(company.role), competed > 0 ? 1 : 0, competed],
       };
     })

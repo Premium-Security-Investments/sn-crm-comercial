@@ -975,7 +975,7 @@ export async function resolverAliadosCandidatos(database, { tenderId, pregunta }
     return data || null;
   } });
   if (!board.applies) return vacio('la recomendación vigente no es «Solo en unión temporal»: no se arma lista de socios');
-  const socio = candidate => Object.freeze({ nombre: candidate.name, nit: candidate.nit, rol: candidate.role, cubre: candidate.covered, avisos: [candidate.warning, candidate.zone_warning, candidate.size_note].filter(Boolean), compitio_contra_nosotros_en_procesos: candidate.competed_against_us || 0 });
+  const socio = candidate => Object.freeze({ nombre: candidate.name, nit: candidate.nit, rol: candidate.role, cubre: candidate.covered, avisos: [candidate.warning, candidate.zone_warning, candidate.size_note].filter(Boolean), compitio_contra_nosotros_en_procesos: candidate.competed_against_us || 0, rup: candidate.rup || null, frecuencia_mintic_en: candidate.radio_cities || null, sgsst: candidate.sgsst_pct ?? null });
   return respuesta({
     nombre: 'aliados.candidatos',
     valor: Object.freeze({
