@@ -18,6 +18,8 @@ const CIERRE = /^presentaci[oó]n de (?:las )?ofertas$/i;
 export const AGT002_MESA_MAX_CAMBIOS = 20;
 
 const dos = n => String(n).padStart(2, '0');
+// «… 7:00 p. m.» ya termina en punto: no se le agrega otro.
+const conPunto = texto => (/\.$/.test(texto) ? texto : `${texto}.`);
 // Colombia no tiene horario de verano: UTC−5 todo el año.
 const enBogota = utc => `${new Date(Date.parse(utc) - 5 * 3600_000).toISOString().slice(0, 19)}-05:00`;
 
@@ -109,7 +111,10 @@ export async function actualizarCronogramaDesdeAviso(database, { opportunityId, 
     const { error } = await database.from('psi_sales_opportunities').update({ expected_close_date: dia }).eq('id', opportunityId);
     if (error) throw error;
     const anterior = movido?.anterior ? enBogota(movido.anterior) : cierre.desde;
-    lineas.push(`Moví el cierre: de ${fechaDelAviso(anterior)} a ${fechaDelAviso(cierre.hasta)}, en la licitación y en la oportunidad.`);
+    // DEAJ, 20-nov: el cierre ya estaba movido y la Mesa dijo «de 27-nov 9:00 a. m. a 27-nov 9:00 a. m.».
+    lineas.push(Date.parse(anterior) === Date.parse(cierre.hasta)
+      ? `El cierre ya estaba en ${fechaDelAviso(cierre.hasta)}; lo dejé marcado con el aviso de SECOP, en la licitación y en la oportunidad.`
+      : `Moví el cierre: de ${fechaDelAviso(anterior)} a ${fechaDelAviso(cierre.hasta)}, en la licitación y en la oportunidad.`);
   }
   const resumen = cambios.map(cambio => `${cambio.actividad}: ${fechaDelAviso(cambio.hasta)}`);
   let guardado = null;
@@ -125,9 +130,9 @@ export async function actualizarCronogramaDesdeAviso(database, { opportunityId, 
   }
   await database.rpc('psi_append_opportunity_observation_line', {
     p_opportunity_id: opportunityId,
-    p_line: `Vig-IA, a pedido de ${autorNombre || 'la persona'} en la Mesa (${fecha}): cronograma actualizado con el aviso de cambio de SECOP. ${resumen.join('; ')}.`,
+    p_line: `Vig-IA, a pedido de ${autorNombre || 'la persona'} en la Mesa (${fecha}): cronograma actualizado con el aviso de cambio de SECOP. ${conPunto(resumen.join('; '))}`,
   });
-  lineas.push(`Fechas nuevas según el aviso de SECOP: ${resumen.join('; ')}.`);
+  lineas.push(`Fechas nuevas según el aviso de SECOP: ${conPunto(resumen.join('; '))}`);
   lineas.push(guardado
     ? `Guardé el aviso en el expediente («${guardado.nombre}»)${guardado.pedido ? ' y pedí el reanálisis: cuando termine, Mi día queda con todas estas fechas' : '; el reanálisis no se pudo pedir solo, pídalo con el botón del proceso'}. Quedó la constancia en la oportunidad.`
     : 'No pude guardar el aviso en el expediente: las demás fechas llegan a Mi día cuando suba la impresión de «Información del procedimiento». Quedó la constancia en la oportunidad.');

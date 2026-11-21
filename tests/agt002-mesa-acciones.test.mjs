@@ -261,3 +261,15 @@ test('corregir el cierre en la Mesa mueve también el cierre con hora de la lici
   assert.equal(db.hecho.updates[1].deadline_at, '2026-11-27T14:00:00.000Z');
   assert.equal(db.hecho.updates[1].raw.deadline_mesa.fuente, 'aviso');
 });
+
+test('si el cierre ya estaba en la fecha del aviso, la Mesa lo dice así, y no pone dos puntos seguidos', async () => {
+  const db = baseDeDatosPorTabla({
+    psi_sales_opportunities: { id: 'o1', tender_offer_status: null },
+    psi_public_tenders: { id: 't1', deadline_at: '2026-11-27T14:00:00.000Z', raw: {} },
+  });
+  const lineas = await ejecutarAgt002AccionesDeLaMesa(db, { ...BASE, mensaje: 'actualice el cronograma completo', textosDeLaPersona: ['actualice el cronograma completo', AVISO_DEAJ],
+    acciones: [{ tipo: 'corregir', campo: 'cronograma', valor: 'x', fuente: '', pedido_literal: 'actualice el cronograma completo' }] });
+  assert.match(lineas[0], /^El cierre ya estaba en 27-nov-2026 9:00 a\. m\./);
+  assert.ok(!lineas[1].includes('m..'), lineas[1]);
+  assert.ok(!db.hecho.lineas[0].includes('m..'));
+});
