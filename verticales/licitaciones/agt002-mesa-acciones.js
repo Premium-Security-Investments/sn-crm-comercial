@@ -6,8 +6,9 @@
 //   * Si la persona lo pide en el mensaje, Vig-IA lo hace y lo dice («Anoté…», «Corregí… de A a B, según…»), con
 //     constancia en la oportunidad. Lo que dijo una persona no se vuelve a confirmar.
 //   * Si Vig-IA encuentra el error por su cuenta, no lo cambia: pregunta «¿lo corrijo?».
-//   * Sólo una lista corta: notas y decisiones de la ficha, presupuesto, fecha de cierre y contratista actual. Nunca la
-//     ficha de empresa, nunca una oferta ya presentada.
+//   * Sólo una lista corta: notas y decisiones de la ficha, presupuesto, fecha de cierre, contratista actual y el
+//     cronograma desde el aviso de cambio de SECOP (agt002-mesa-cronograma.js). Nunca la ficha de empresa, nunca una
+//     oferta ya presentada.
 // El servidor comprueba que la frase con que la persona lo pidió está en su mensaje; si no está, no se hace nada.
 //
 // Bloqueos (Juan, 2026-11-13, plan de la pestaña «Requisitos»): si la persona dice que algo del pliego nos inhabilita y
@@ -15,6 +16,7 @@
 import { REQUIREMENT_FOCUS } from './requirement-catalog.js';
 import { applyOfficialSourceLink } from './tender-phase-identity.js';
 import { noticeUidFromTenderUrl, recordAgt002PhaseChangeDetected } from './agt002-phase-change-followup.js';
+import { actualizarCronogramaDesdeAviso, moverCierreDeLaLicitacion } from './agt002-mesa-cronograma.js';
 
 /**
  * El enlace oficial de un proceso de SECOP II a partir de lo que la persona pegó (Juan, 2026-11-14: Rama Pereira cambió
@@ -69,7 +71,7 @@ export const AGT002_MESA_ACCIONES_SCHEMA = Object.freeze({
     required: ['tipo', 'campo', 'valor', 'fuente', 'pedido_literal'],
     properties: {
       tipo: { type: 'string', enum: ['anotar', 'corregir', 'bloqueo'] },
-      campo: { type: 'string', enum: ['', ...Object.keys(AGT002_MESA_CAMPOS), 'enlace_secop', ...Object.keys(AGT002_MESA_GRUPOS_BLOQUEO)] },
+      campo: { type: 'string', enum: ['', ...Object.keys(AGT002_MESA_CAMPOS), 'enlace_secop', 'cronograma', ...Object.keys(AGT002_MESA_GRUPOS_BLOQUEO)] },
       valor: { type: 'string', minLength: 1, maxLength: 1000 },
       fuente: { type: 'string', maxLength: 600 },
       pedido_literal: { type: 'string', minLength: 1, maxLength: 400 },
@@ -78,10 +80,12 @@ export const AGT002_MESA_ACCIONES_SCHEMA = Object.freeze({
 });
 
 export const AGT002_MESA_ACCIONES_POLICY = [
-  'ACCIONES. Puedes hacer dos cosas en el CRM, y sólo si la persona lo pide en ESTE mensaje: (a) anotar en la ficha del proceso una decisión o un hecho que ella dice (por ejemplo «yo me encargo de definir el socio», «no observamos el proyecto», «somos el contratista actual»): tipo «anotar», campo vacío, valor = la decisión en una frase clara en tercera persona;',
+  'ACCIONES. Puedes hacer estas cosas en el CRM, y sólo si la persona lo pide en ESTE mensaje: (a) anotar en la ficha del proceso una decisión o un hecho que ella dice (por ejemplo «yo me encargo de definir el socio», «no observamos el proyecto», «somos el contratista actual»): tipo «anotar», campo vacío, valor = la decisión en una frase clara en tercera persona;',
   '(b) corregir un dato del proceso que ella pide corregir: tipo «corregir», campo presupuesto (valor en pesos), cierre (AAAA-MM-DD) o contratista_actual, y fuente = el archivo de la carpeta y la frase literal que lo sostiene; búscalo en la carpeta antes de proponer el valor.',
   `(c) llevar a la pestaña Requisitos un requisito de este pliego que nos inhabilita, cuando la persona lo pide («anótelo como bloqueo», «llévelo a Requisitos»): tipo «bloqueo», campo = el grupo (${Object.entries(AGT002_MESA_GRUPOS_BLOQUEO).map(([key, title]) => `${key}: ${title}`).join('; ')}), valor = por qué nos inhabilita en una frase (qué piden y cómo estamos), fuente = el numeral y la frase literal del pliego; búscalo en la carpeta.`,
   '(d) cambiar el enlace de SECOP del proceso cuando la persona pega uno nuevo y pide usarlo («este es el enlace nuevo», «el proceso cambió de link»): tipo «corregir», campo enlace_secop, valor = el enlace tal como lo pegó; fuente vacía.',
+  // Juan, 2026-11-20 (DEAJ): pegó el aviso de cambio de SECOP y pidió «actualice el cronograma completo».
+  '(e) actualizar el cronograma del proceso cuando la persona pegó, en este mensaje o en uno anterior del chat (conversacion_previa), el aviso de cambio de SECOP («… ha cambiado desde \'…\' hasta \'…\'») y pide actualizarlo: tipo «corregir», campo cronograma, valor = las fechas que cambian en una frase, fuente vacía. El servidor toma el aviso literal del chat, mueve el cierre con su hora, lo guarda en el expediente y pide el reanálisis para que Mi día quede con todas las fechas; para esto no uses el campo cierre.',
   'En pedido_literal copia EXACTAMENTE las palabras del mensaje de la persona con que lo pide; si no lo pidió en este mensaje, no pongas ninguna acción. Si encuentras un dato equivocado por tu cuenta, no lo corrijas: dilo y pregunta «¿lo corrijo?». El servidor ejecuta las acciones y agrega al final de tu respuesta lo que hizo; no digas que ya lo hiciste.',
 ].join(' ');
 
@@ -133,7 +137,7 @@ async function cambiarEnlaceSecop(database, { accion, opportunityId, tenderId, a
  * Ejecuta las acciones que pidió la persona y devuelve las líneas para agregar a la respuesta. Nunca lanza: lo que no se
  * pudo hacer se dice.
  */
-export async function ejecutarAgt002AccionesDeLaMesa(database, { acciones, mensaje, opportunityId, tenderId, autorId, autorNombre, ahora = new Date() }) {
+export async function ejecutarAgt002AccionesDeLaMesa(database, { acciones, mensaje, opportunityId, tenderId, autorId, autorNombre, ahora = new Date(), textosDeLaPersona = null, ingerirDocumento = null }) {
   const lineas = [];
   const lista = Array.isArray(acciones) ? acciones.slice(0, AGT002_MESA_MAX_ACCIONES) : [];
   if (!lista.length) return lineas;
@@ -173,6 +177,16 @@ export async function ejecutarAgt002AccionesDeLaMesa(database, { acciones, mensa
         lineas.push(`Llevé a Requisitos, en «${grupo}»: ${motivo}`);
         continue;
       }
+      if (accion.tipo === 'corregir' && accion.campo === 'cronograma') {
+        const { data, error } = await database.from('psi_sales_opportunities').select('id,tender_offer_status').eq('id', opportunityId).maybeSingle();
+        if (error) throw error;
+        if (PRESENTADA.has(data?.tender_offer_status)) { lineas.push(`No actualicé el cronograma: la oferta ya está ${data.tender_offer_status} y eso no se toca desde la Mesa.`); continue; }
+        lineas.push(...await actualizarCronogramaDesdeAviso(database, {
+          opportunityId, tenderId, autorId, autorNombre, ahora, fecha, ingerirDocumento,
+          textosDeLaPersona: Array.isArray(textosDeLaPersona) && textosDeLaPersona.length ? textosDeLaPersona : [mensaje],
+        }));
+        continue;
+      }
       if (accion.tipo === 'corregir' && accion.campo === 'enlace_secop') {
         lineas.push(await cambiarEnlaceSecop(database, { accion, opportunityId, tenderId, autorNombre, fecha, ahora }));
         continue;
@@ -203,6 +217,11 @@ export async function ejecutarAgt002AccionesDeLaMesa(database, { acciones, mensa
       if (error) throw error;
       oportunidad = { ...oportunidad, ...cambios };
       const fuente = String(accion.fuente || '').trim().slice(0, 400);
+      // El cierre con hora de la licitación es el que leen Mi día y la Semana: se mueve junto con la fecha (DEAJ, 20-nov:
+      // la Mesa cambió la fecha de la oportunidad y Mi día siguió mostrando el día anterior).
+      if (campo.columna === 'expected_close_date') {
+        await moverCierreDeLaLicitacion(database, { tenderId, dia: valor, autorNombre, fuente: fuente || 'corrección pedida en la Mesa', ahora });
+      }
       await database.rpc('psi_append_opportunity_observation_line', {
         p_opportunity_id: opportunityId,
         p_line: `Vig-IA, a pedido de ${autorNombre || 'la persona'} en la Mesa (${fecha}): ${campo.nombre} pasó de ${campo.mostrar(anterior)} a ${campo.mostrar(valor)}.${fuente ? ` Fuente: ${fuente}.` : ''}`,

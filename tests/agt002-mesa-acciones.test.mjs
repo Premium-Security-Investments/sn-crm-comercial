@@ -173,3 +173,91 @@ test('la Mesa cambia el enlace de SECOP que la persona pega: licitación, «Link
   assert.match((await ejecutarAgt002AccionesDeLaMesa(database, { ...BASE, mensaje, acciones: [{ ...accion, valor: 'no sé' }] }))[0], /no es el enlace de un proceso/);
   assert.match(AGT002_MESA_ACCIONES_POLICY, /campo enlace_secop/);
 });
+
+// DEAJ LP-07-2026 (Juan, 2026-11-20): pegó el aviso de cambio de SECOP y, en el mensaje siguiente, pidió «la idea es que
+// actualice el cronograma completo». El servidor toma el aviso literal del chat, mueve el cierre con su hora, lo guarda
+// en el expediente (que pide el reanálisis) y deja la constancia.
+const AVISO_DEAJ = `Respuesta a las observaciones al Pliego de Condiciones ha cambiado desde '20/11/2026 6:00:00 PM ((UTC-05:00) Bogotá, Lima, Quito)' hasta '23/11/2026 6:00:00 PM ((UTC-05:00) Bogotá, Lima, Quito)'
+\tPlazo máximo para expedir adendas ha cambiado desde '20/11/2026 7:00:00 PM ((UTC-05:00) Bogotá, Lima, Quito)' hasta '23/11/2026 7:00:00 PM ((UTC-05:00) Bogotá, Lima, Quito)'
+\tPresentación de Ofertas ha cambiado desde '26/11/2026 9:00:00 AM ((UTC-05:00) Bogotá, Lima, Quito)' hasta '27/11/2026 9:00:00 AM ((UTC-05:00) Bogotá, Lima, Quito)'
+\tAudiencia de Adjudicación ha cambiado desde '11/12/2026 3:00:00 PM ((UTC-05:00) Bogotá, Lima, Quito)' hasta '14/12/2026 11:00:00 AM ((UTC-05:00) Bogotá, Lima, Quito)'
+\tEl campo del proceso Pago de salarios - Fecha de vigencia (desde) ha cambiado desde 12/15/2026 00:00:00 hasta 12/16/2026 00:00:00
+
+cambio el cronogramadel proceso podemos actualizar por favor`;
+
+test('lee el aviso de cambio de SECOP: las fechas del cronograma, en hora de Colombia, sin los campos del contrato', async () => {
+  const { leerAvisoDeCambioSecop, cierreDelAviso, fechaDelAviso } = await import('../verticales/licitaciones/agt002-mesa-cronograma.js');
+  const cambios = leerAvisoDeCambioSecop(AVISO_DEAJ);
+  assert.deepEqual(cambios.map(cambio => cambio.actividad), ['Respuesta a las observaciones al Pliego de Condiciones', 'Plazo máximo para expedir adendas', 'Presentación de Ofertas', 'Audiencia de Adjudicación']);
+  assert.equal(cambios[0].hasta, '2026-11-23T18:00:00-05:00');
+  assert.equal(cierreDelAviso(cambios).hasta, '2026-11-27T09:00:00-05:00');
+  assert.equal(fechaDelAviso('2026-12-14T11:00:00-05:00'), '14-dic-2026 11:00 a. m.');
+  assert.deepEqual(leerAvisoDeCambioSecop('la idea es que actualice el cronograma completo'), []);
+});
+
+function baseDeDatosPorTabla(filas) {
+  const hecho = { updates: [], lineas: [] };
+  return {
+    hecho,
+    rpc: async (nombre, args) => { hecho.lineas.push(args.p_line); return { error: null }; },
+    from: tabla => {
+      const q = {
+        select: () => q, eq: () => q,
+        maybeSingle: async () => ({ data: filas[tabla] ?? null, error: null }),
+        update: cambios => ({ eq: async () => { hecho.updates.push({ tabla, ...cambios }); return { error: null }; } }),
+      };
+      return q;
+    },
+  };
+}
+
+test('la Mesa actualiza el cronograma con el aviso que la persona pegó antes: cierre con hora, expediente y constancia', async () => {
+  const db = baseDeDatosPorTabla({
+    psi_sales_opportunities: { id: 'o1', tender_offer_status: null },
+    psi_public_tenders: { id: 't1', deadline_at: '2026-11-26T14:00:00.000Z', raw: { deadline_source: 'pliego', deadline: '2026-11-26' } },
+  });
+  const guardados = [];
+  const MENSAJE_NUEVO = 'la idea es que actualice el cronograma completo';
+  const lineas = await ejecutarAgt002AccionesDeLaMesa(db, { ...BASE, ahora: new Date('2026-11-21T03:36:00Z'), mensaje: MENSAJE_NUEVO,
+    textosDeLaPersona: [MENSAJE_NUEVO, AVISO_DEAJ],
+    ingerirDocumento: async args => { guardados.push(args); return { analysis_request: { requested: true } }; },
+    acciones: [{ tipo: 'corregir', campo: 'cronograma', valor: 'Cierre al 27-nov y respuestas al 23-nov', fuente: '', pedido_literal: 'actualice el cronograma completo' }] });
+  const licitacion = db.hecho.updates.find(update => update.tabla === 'psi_public_tenders');
+  assert.equal(licitacion.deadline_at, '2026-11-27T14:00:00.000Z');
+  assert.equal(licitacion.raw.deadline, '2026-11-27');
+  assert.equal(licitacion.raw.deadline_source, 'pliego', 'la fuente del pliego se conserva');
+  assert.equal(licitacion.raw.deadline_mesa.by, 'Juan Botero');
+  assert.equal(licitacion.raw.deadline_mesa.previous_deadline_at, '2026-11-26T14:00:00.000Z');
+  assert.deepEqual(db.hecho.updates.find(update => update.tabla === 'psi_sales_opportunities'), { tabla: 'psi_sales_opportunities', expected_close_date: '2026-11-27' });
+  assert.equal(guardados.length, 1);
+  assert.equal(guardados[0].nombre, 'Aviso de cambio de cronograma SECOP 2026-11-20 2236.txt');
+  assert.ok(guardados[0].texto.includes("hasta '27/11/2026 9:00:00 AM"), 'el aviso va literal');
+  assert.equal(guardados[0].autorId, 'p1');
+  assert.match(lineas[0], /^Moví el cierre: de 26-nov-2026 9:00 a\. m\. a 27-nov-2026 9:00 a\. m\./);
+  assert.match(lineas[1], /Respuesta a las observaciones al Pliego de Condiciones: 23-nov-2026 6:00 p\. m\./);
+  assert.match(lineas[2], /y pedí el reanálisis: cuando termine, Mi día queda con todas estas fechas/);
+  assert.match(db.hecho.lineas[0], /cronograma actualizado con el aviso de cambio de SECOP/);
+});
+
+test('sin aviso en el chat, o con la oferta presentada, el cronograma no se toca', async () => {
+  const sinAviso = baseDeDatosPorTabla({ psi_sales_opportunities: { id: 'o1', tender_offer_status: null } });
+  const [linea] = await ejecutarAgt002AccionesDeLaMesa(sinAviso, { ...BASE, mensaje: 'actualice el cronograma completo', textosDeLaPersona: ['actualice el cronograma completo'],
+    acciones: [{ tipo: 'corregir', campo: 'cronograma', valor: 'x', fuente: '', pedido_literal: 'actualice el cronograma completo' }] });
+  assert.match(linea, /no encontré en este chat el aviso de cambio de SECOP/);
+  const presentada = baseDeDatosPorTabla({ psi_sales_opportunities: { id: 'o1', tender_offer_status: 'presentada' } });
+  const [otra] = await ejecutarAgt002AccionesDeLaMesa(presentada, { ...BASE, mensaje: 'actualice el cronograma completo', textosDeLaPersona: ['actualice el cronograma completo', AVISO_DEAJ],
+    acciones: [{ tipo: 'corregir', campo: 'cronograma', valor: 'x', fuente: '', pedido_literal: 'actualice el cronograma completo' }] });
+  assert.match(otra, /la oferta ya está presentada/);
+  assert.equal(sinAviso.hecho.updates.length + presentada.hecho.updates.length, 0);
+});
+
+test('corregir el cierre en la Mesa mueve también el cierre con hora de la licitación, conservando la hora', async () => {
+  const db = baseDeDatosPorTabla({
+    psi_sales_opportunities: { id: 'o1', expected_close_date: '2026-11-26', tender_offer_status: null },
+    psi_public_tenders: { id: 't1', deadline_at: '2026-11-26T14:00:00.000Z', raw: { deadline_source: 'pliego' } },
+  });
+  await ejecutarAgt002AccionesDeLaMesa(db, { ...BASE, mensaje: 'corrija el cierre al 27', acciones: [{ tipo: 'corregir', campo: 'cierre', valor: '2026-11-27', fuente: 'aviso', pedido_literal: 'corrija el cierre' }] });
+  assert.deepEqual(db.hecho.updates[0], { tabla: 'psi_sales_opportunities', expected_close_date: '2026-11-27' });
+  assert.equal(db.hecho.updates[1].deadline_at, '2026-11-27T14:00:00.000Z');
+  assert.equal(db.hecho.updates[1].raw.deadline_mesa.fuente, 'aviso');
+});

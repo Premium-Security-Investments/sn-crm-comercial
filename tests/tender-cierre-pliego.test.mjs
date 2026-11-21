@@ -63,7 +63,7 @@ test('aplicar: escribe la fila del Radar y la fecha de cierre de la oportunidad'
   };
   const summary = await aplicarCierresDelPliego({ from: query });
   // Sin análisis listo no se escribe nada: el pliego sólo manda cuando Vig-IA lo leyó.
-  assert.deepEqual(summary, { revisadas: 1, aplicadas: 0, sin_cierre_confirmado: 1, cerradas: 0, errores: [] });
+  assert.deepEqual(summary, { revisadas: 1, aplicadas: 0, sin_cierre_confirmado: 1, cerradas: 0, corregidas_en_mesa: 0, errores: [] });
   assert.deepEqual(writes, []);
 });
 
@@ -74,4 +74,17 @@ test('la revisión de fases y el trabajo diario respetan la regla', () => {
   assert.match(server, /patch\.deadline && !pliego\.has\(opportunity\.id\)/);
   const runner = read('../ops/agt002-radar-reconciliation/run-agt002-radar-reconciliation.mjs');
   assert.ok(runner.indexOf('aplicarCierresDelPliego(database)') < runner.indexOf('reconciliation.runOnce()'), 'el pliego va antes que SECOP');
+});
+
+// DEAJ (Juan, 2026-11-20): el cierre que se corrigió en la Mesa con el aviso de SECOP no lo deshace un análisis anterior.
+test('una corrección de la Mesa manda sobre un análisis anterior; el análisis posterior vuelve a mandar', async () => {
+  const { correccionDeLaMesaVigente, planCierrePliego: plan } = await import('../verticales/licitaciones/tender-cierre-pliego.js');
+  const raw = { deadline_source: 'pliego', deadline: '2026-11-27', deadline_mesa: { applied_at: '2026-11-21T03:36:00.000Z' } };
+  const fila = { deadline_at: '2026-11-27T14:00:00.000Z', raw };
+  const cierreViejo = { value: '2026-11-26T09:00:00-05:00', deadline_at: '2026-11-26T14:00:00.000Z', day: '2026-11-26', label: null };
+  assert.equal(correccionDeLaMesaVigente(raw, '2026-11-20T03:40:11.865Z'), true);
+  assert.equal(plan(fila, cierreViejo, { analysisCreatedAt: '2026-11-20T03:40:11.865Z' }), null, 'el análisis del 19 no la deshace');
+  assert.equal(correccionDeLaMesaVigente(raw, '2026-11-21T04:10:00.000Z'), false);
+  assert.equal(plan(fila, cierreViejo, { analysisCreatedAt: '2026-11-21T04:10:00.000Z' }).deadline_at, '2026-11-26T14:00:00.000Z', 'un análisis posterior manda');
+  assert.equal(correccionDeLaMesaVigente({ deadline_source: 'pliego' }, '2026-11-20T03:40:11.865Z'), false, 'sin corrección, manda el pliego');
 });

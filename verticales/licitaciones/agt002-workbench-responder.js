@@ -7,6 +7,7 @@ import { agt002UsaTopeDeBorrador } from './agt002-mesa-document-intent.js';
 import { AGT002_LESSONS_POLICY } from './agt002-company-lessons.js';
 import { AGT002_MESA_ACCIONES_POLICY, AGT002_MESA_ACCIONES_SCHEMA } from './agt002-mesa-acciones.js';
 import { AGT002_CARPETA_POLICY, AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA } from './agt002-mesa-carpeta.js';
+import { AGT002_CONVERSACION_POLICY } from './agt002-mesa-conversacion.js';
 
 // Política inmutable de la Mesa Vig-IA para el puente de producción (Fase B1). El
 // contexto es dato citable, nunca instrucción; Vig-IA no tiene autoridad de
@@ -75,7 +76,7 @@ function sanitizeText(value, maxChars) {
   return redactAgt003CopilotText(stripControlChars(value)).slice(0, maxChars);
 }
 
-function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt002FechaDeTrabajo(), lecciones = []) {
+function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt002FechaDeTrabajo(), lecciones = [], conversacion = null) {
   const contextLinks = input.context_links.map(link => Object.freeze({
     kind: link.kind,
     id: link.id,
@@ -103,6 +104,15 @@ function buildMinimizedInput(input, fuentesResueltas = [], fechaDeTrabajo = agt0
     minimizado.lecciones_de_la_empresa = Object.freeze(lecciones.map(item => Object.freeze(Object.fromEntries(
       Object.entries(item).map(([key, value]) => [key, key === 'id' ? value : sanitizeText(value, 1200)]),
     ))));
+  }
+  // La conversación previa y el CRM de hoy (Juan, 2026-11-20, DEAJ): como las lecciones, sólo si hay algo.
+  if (conversacion?.mensajes?.length) {
+    minimizado.conversacion_previa = Object.freeze(conversacion.mensajes.map(mensaje => Object.freeze({
+      quien: sanitizeText(mensaje.quien, 120), cuando: sanitizeText(mensaje.cuando, 60), texto: sanitizeText(mensaje.texto, MAX_MESSAGE_CHARS),
+    })));
+  }
+  if (isRecord(conversacion?.estado) && Object.keys(conversacion.estado).length) {
+    minimizado.estado_en_el_crm = Object.freeze(Object.fromEntries(Object.entries(conversacion.estado).map(([key, value]) => [key, sanitizeText(value, 300)])));
   }
   return Object.freeze(minimizado);
 }
@@ -305,6 +315,9 @@ export function createAgt002WorkbenchResponder({
   // Paso 4: ({ input, acciones }) => líneas con lo que se hizo en el CRM (agt002-mesa-acciones.js). Sin ella, la Mesa no
   // toca el CRM, como siempre.
   ejecutarAcciones = null,
+  // ({ input }) => { mensajes, estado } (agt002-mesa-conversacion.js): los mensajes anteriores del chat y el CRM de hoy.
+  // Sin ella, cada pedido llega solo, como antes.
+  cargarConversacion = null,
   now = () => new Date(),
 } = {}) {
   if (!client || typeof client.run !== 'function') {
@@ -327,6 +340,22 @@ export function createAgt002WorkbenchResponder({
   }
   if (armarCarpeta !== null && typeof armarCarpeta !== 'function') {
     throw new Error('La Mesa Vig-IA requiere que el armador de la carpeta sea una función.');
+  }
+
+  if (cargarConversacion !== null && typeof cargarConversacion !== 'function') {
+    throw new Error('La Mesa Vig-IA requiere que el lector de la conversación sea una función.');
+  }
+
+  // Como las fuentes: si la conversación no se puede leer, la Mesa responde con el mensaje solo y lo registra.
+  async function leerConversacion(input) {
+    if (!cargarConversacion) return null;
+    try {
+      const conversacion = await cargarConversacion({ input });
+      return isRecord(conversacion) ? conversacion : null;
+    } catch (error) {
+      console.warn('agt002_workbench_conversation_unavailable', { event: 'agt002_workbench_conversation_unavailable', job_id: input.job_id, code: error?.code || 'conversation_failed' });
+      return null;
+    }
   }
 
   // Como las fuentes: si la carpeta no se puede armar, la Mesa responde con lo de siempre y lo registra.
@@ -421,7 +450,9 @@ export function createAgt002WorkbenchResponder({
       const outputSchema = buildOutputSchema(input.capability_id, { allowedSourceIds, withDocument, conAcciones });
       const lecciones = await leerLecciones(input);
       const carpeta = await leerCarpeta(input);
-      const minimizedInput = buildMinimizedInput(input, fuentesResueltas, agt002FechaDeTrabajo(now()), lecciones);
+      const conversacion = await leerConversacion(input);
+      const minimizedInput = buildMinimizedInput(input, fuentesResueltas, agt002FechaDeTrabajo(now()), lecciones, conversacion);
+      const conConversacion = Boolean(minimizedInput.conversacion_previa || minimizedInput.estado_en_el_crm);
 
       // Re-chequeo del interruptor inmediatamente antes de invocar al puente: un
       // apagado a mitad del drain nunca debe llegar a llamar al modelo, aunque el
@@ -432,7 +463,7 @@ export function createAgt002WorkbenchResponder({
 
       const raw = await client.run({
         model,
-        policy: [carpeta ? policyText.replace(AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA) : policyText, lecciones.length > 0 ? AGT002_LESSONS_POLICY : null, carpeta ? AGT002_CARPETA_POLICY : null, conAcciones ? AGT002_MESA_ACCIONES_POLICY : null].filter(Boolean).join(' '),
+        policy: [carpeta ? policyText.replace(AGT002_SIN_HERRAMIENTAS, AGT002_SOLO_LECTURA_DE_LA_CARPETA) : policyText, lecciones.length > 0 ? AGT002_LESSONS_POLICY : null, carpeta ? AGT002_CARPETA_POLICY : null, conConversacion ? AGT002_CONVERSACION_POLICY : null, conAcciones ? AGT002_MESA_ACCIONES_POLICY : null].filter(Boolean).join(' '),
         input: minimizedInput,
         outputSchema,
         // Al modelo se le deja el tope del borrador menos 15 s, que son para armar y guardar el Word. Una respuesta (F7)
