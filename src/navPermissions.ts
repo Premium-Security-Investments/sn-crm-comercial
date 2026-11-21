@@ -56,7 +56,6 @@ const goalWriterRoles = new Set(['admin', 'gerencia']);
 // Cotizar también: el servidor no deja cotizar al perfil de solo consulta (Juan, 2026-11-11).
 const writeOnlyPages = new Set<NavRoutePage>(['new', 'edit', 'users', 'goals', 'agents', 'quotes']);
 
-export const PROGRAMACION_APP_URL = 'https://main.dud08epu9vf89.amplifyapp.com';
 
 const navGroups: readonly NavGroupDefinition[] = [
   {
@@ -101,10 +100,11 @@ const navGroups: readonly NavGroupDefinition[] = [
     ],
   },
   {
-    // Aplicación aparte (AGT-006): se abre en otra pestaña. El SIIO sólo decide quién entra (Juan, 2026-10-15).
+    // Programación vive dentro del SIIO desde el 2026-11-21 (antes era una aplicación aparte en Amplify, AGT-006).
+    // El SIIO decide quién entra; el rol y la ciudad los asigna Programación en su pestaña Usuarios.
     title: 'Programación',
     items: [
-      { href: PROGRAMACION_APP_URL, label: 'Programación de turnos', page: 'programacion', external: true },
+      { href: '#/programacion', label: 'Programación de turnos', page: 'programacion' },
     ],
   },
   {
@@ -227,7 +227,7 @@ export function canAccessRoute(profile: NavProfile, page: NavRoutePage) {
 }
 
 // Prioridades y metas ya no son pantallas de llegada: se consultan desde el Dashboard comercial y Mi día.
-const LANDING_PRIORITY: NavRoutePage[] = ['siio', 'dashboard2', 'dashboard', 'opportunities', 'tenders', 'consultant', 'users'];
+const LANDING_PRIORITY: NavRoutePage[] = ['siio', 'dashboard2', 'dashboard', 'opportunities', 'tenders', 'consultant', 'users', 'programacion'];
 
 export function isInitialAppHash(hash: string) {
   return hash === '' || hash === '#' || hash === '#/';

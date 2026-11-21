@@ -20,7 +20,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   '#/agents': Bot,
   '#/users': ShieldCheck,
   // Programación de turnos (aplicación aparte).
-  'https://main.dud08epu9vf89.amplifyapp.com': CalendarClock,
+  '#/programacion': CalendarClock,
 };
 
 export function NavIcon({ href }: { href: string }) {
