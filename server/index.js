@@ -199,7 +199,7 @@ import { listAgt002Clarifications, recordAgt002Clarification } from '../vertical
 import { decideAgt002Lesson, listAgt002Lessons } from '../verticales/licitaciones/agt002-company-lessons.js';
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
-import { addParticipation, getAlly, listAllies, loadAlliesListing, updateAlly } from '../verticales/licitaciones/tender-allies.js';
+import { addParticipation, getAlly, listAllies, loadAlliesListing, saveAllyCapabilities, saveAllyRup, updateAlly } from '../verticales/licitaciones/tender-allies.js';
 import { buildAllyBoard, buildProcessParticipantsBoard } from '../verticales/licitaciones/tender-allies-board.js';
 import { presentExperiencePlan, proposeExperiencePlan } from '../verticales/licitaciones/tender-experience-plan.js';
 import { VIGILANCE_LISTING, VIGILANCE_LISTING_SOURCE } from '../data/aliados/listado-supervigilancia-2026-11-07.js';
@@ -589,6 +589,9 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-allies/load': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'POST /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'POST /api/tender-allies/participation': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'POST /api/tender-allies/rup-upload-url': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'POST /api/tender-allies/rup': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'POST /api/tender-allies/capabilities': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/candidates': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-experience-plan': ['tenders', ACTIONS.LICITACIONES_VIEW],
@@ -8975,6 +8978,59 @@ app.post('/api/tender-allies/participation', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
     res.status(201).json(await addParticipation(requireDb(), { actorId: currentProfile.id, body: req.body || {} }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// La ficha del RUP de cada aliado (Juan, 2026-11-21; migración 233): se sube el PDF de la consulta de ruppro o el
+// certificado de la Cámara, se lee y se guardan las cifras con su fecha de corte. El PDF sube directo al almacenamiento con
+// una URL firmada (como los documentos de las licitaciones); a la API sólo le llega la ruta.
+const allyRupPrefix = nit => `aliados/rup/${nit}/`;
+app.post('/api/tender-allies/rup-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const nit = String(req.body?.nit || '').replace(/\D/g, '');
+    if (!/^[0-9]{6,12}$/.test(nit)) throw clientInputError('La empresa no es válida.');
+    const name = cleanFileName(req.body?.name || 'rup.pdf');
+    if (!/\.pdf$/i.test(name)) throw clientInputError('Suba el PDF de la consulta de ruppro o del certificado del RUP.');
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError('Seleccione el PDF del RUP.');
+    if (size > 25 * 1024 * 1024) throw clientInputError('El PDF supera 25MB.');
+    const database = requireDb();
+    await ensureTenderBucket(database);
+    const path = `${allyRupPrefix(nit)}${Date.now()}-${name}`;
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(path);
+    if (error) throw error;
+    res.json({ path, token: data.token });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-allies/rup', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const nit = String(req.body?.nit || '').replace(/\D/g, '');
+    const storagePath = String(req.body?.storage_path || '');
+    if (!/^[0-9]{6,12}$/.test(nit) || !storagePath.startsWith(allyRupPrefix(nit)) || storagePath.includes('..')) throw clientInputError('Ruta del RUP inválida.');
+    const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1));
+    const database = requireDb();
+    const { data: blob, error: downloadError } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+    if (downloadError) throw downloadError;
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    if (!buffer.length) throw clientInputError('El PDF cargado está vacío.');
+    let text = '';
+    try { text = String(await extractTextFromTenderFile(buffer, name, 'application/pdf') || ''); } catch { text = ''; }
+    if (text.trim().length < 200) throw clientInputError('No se pudo leer el texto del PDF. Descargue de nuevo la consulta de ruppro (no una foto ni un escaneo).');
+    const sha256 = createHash('sha256').update(buffer).digest('hex');
+    res.status(201).json(await saveAllyRup(database, { actorId: currentProfile.id, nit, text, fileName: name, sha256, storagePath }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-allies/capabilities', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    res.json(await saveAllyCapabilities(requireDb(), { actorId: currentProfile.id, nit: req.body?.nit, body: req.body || {} }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
