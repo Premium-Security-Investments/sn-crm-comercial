@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { canApproveTenderGoNoGo } from './permissions';
 import type { TendersModuleProps } from './types';
 import { AllyDetail, KINDS, ROLES, allyLabel as label, ownContact, type Company, type Participation } from './components/AllyDetail';
-import { latestRup, rupLine } from './components/AllyRupPanel';
+import { latestRup, rupLine, RupproLink } from './components/AllyRupPanel';
 
 /**
  * Aliados para uniones temporales (encargo AGT-002 del 2026-11-09; Juan, 2026-11-09): la base de empresas de vigilancia
@@ -82,6 +82,7 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
             <label>Frecuencia MinTIC en<input value={radioCity} onChange={event => setRadioCity(event.target.value)} placeholder="Bogotá" /></label>
             <label className="tender-allies-check"><input type="checkbox" checked={noFines} onChange={event => setNoFines(event.target.checked)} /> Sin multas ni sanciones</label>
           </div>
+          <p className="muted tender-allies-ruppro">Los datos del RUP de cualquier empresa se bajan gratis por NIT en el portal de Colombia Compra; el PDF se carga en la ficha de la empresa. <RupproLink /></p>
           {(minLiquidity || maxDebt || minOwnSmmlv || noFines || radioCity) && <p className="muted">Los filtros del RUP sólo muestran empresas con el dato cargado: las que no tienen RUP o tienen el dato «sin dato» quedan por fuera.</p>}
           <p className="muted">{filtered.length} de {payload.companies.length} empresas.</p>
           <div className="tender-allies-scroll"><table className="tender-allies-table">

@@ -1229,7 +1229,7 @@ td.numeric-value{white-space:nowrap}
 @media(max-width:640px){.mi-dia-macro{grid-template-columns:1fr}.mi-dia-row{grid-template-columns:1fr auto;gap:4px 10px}.mi-dia-hora{grid-column:1/-1}.mi-dia-text{grid-column:1/-1}}
 /* Aliados: ficha del RUP y capacidades (233). */
 .ally-rup{grid-column:1/-1;display:grid;gap:10px;padding:12px;border:1px solid #e2eaf5;border-radius:12px;background:#fbfdff;min-width:0}
-.ally-rup-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.ally-rup-head button{padding:7px 12px;font-size:13px}
+.ally-rup-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.ally-rup-head button,.ally-rup-head a.button{padding:7px 12px;font-size:13px}.ally-rup-actions{display:flex;gap:8px;flex-wrap:wrap}.tender-allies-ruppro{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.ally-rup-actions a.button,.tender-allies-ruppro a.button{display:inline-flex;align-items:center;text-decoration:none;border-radius:11px;font-weight:800;white-space:nowrap;background:#e9eef7;color:#1b355f;border:1px solid #cbd9e8}.ally-rup-actions a.button:hover,.tender-allies-ruppro a.button:hover{background:#dce6f5}.tender-allies-ruppro a.button{padding:6px 12px;font-size:13px}
 .ally-rup>p{margin:0;font-size:12px}.ally-rup-source{color:#40516b;font-weight:600}
 .ally-rup-grid{display:grid;grid-template-columns:190px minmax(0,1fr);gap:4px 10px;margin:0;font-size:13px}.ally-rup-grid dd{margin:0;overflow-wrap:anywhere}
 .tender-allies-rup-line{display:block;color:#526173;font-size:12px}
