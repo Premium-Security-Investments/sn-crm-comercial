@@ -111,3 +111,42 @@ test('saveAllyCapabilities valida el SG-SST y la fecha', async () => {
   await assert.rejects(() => saveAllyCapabilities(fakeDb(), { actorId: 'u1', nit: '891502104', body: { sgsst_pct: '120' } }), /de 0 a 100/);
   await assert.rejects(() => saveAllyCapabilities(fakeDb(), { actorId: 'u1', nit: '891502104', body: { sgsst_date: '31/03/2026' } }), /fecha/);
 });
+
+// 22-nov: el servidor convierte el PDF con pdf-parse, no con pdftotext -layout: cada etiqueta y su valor en líneas
+// seguidas. La primera carga real (TAC, por Juan) guardó el pasivo vacío y 0 contratos propios. Los textos «-servidor»
+// salen de extractTenderDocumentText sobre los mismos PDF del 21-nov.
+test('consulta de ruppro con el texto del servidor (TAC): las mismas cifras que el texto en columnas', () => {
+  const layout = parseRupText(fixture('ruppro-tac-900448609'));
+  const server = parseRupText(fixture('ruppro-tac-900448609-servidor'));
+  assert.equal(server.nit, '900448609');
+  assert.equal(server.name, 'TAC SEGURIDAD LTDA');
+  assert.equal(server.cut_date, '2025-12-31');
+  assert.equal(server.total_assets, 22553291933);
+  assert.equal(server.total_liabilities, 8725803308);
+  assert.equal(server.equity, 22553291933 - 8725803308);
+  assert.equal(server.operating_income, 4540706763);
+  assert.equal(server.roe, 0.32);
+  assert.equal(server.has_fines, false);
+  assert.equal(server.has_disqualification, false);
+  // Lo único distinto: el texto del servidor trae completo el nombre del contratante que en columnas se corta.
+  const { largest_own_client: serverClient, ...serverRest } = summarizeRup(server);
+  const { largest_own_client: layoutClient, ...layoutRest } = summarizeRup(layout);
+  assert.deepEqual(serverRest, layoutRest);
+  assert.ok(serverClient.startsWith(layoutClient));
+  assert.equal(serverClient, 'SERVICIO ESPECIAL DE TRANSPORTE ESCOLAR Y DE TURISMO S A S');
+  assert.equal(summarizeRup(server).contracts_own, 19);
+  assert.equal(summarizeRup(server).debt_ratio, 0.387);
+});
+
+test('consulta de ruppro con el texto del servidor (Covisur): nombre en varias líneas y uniones temporales aparte', () => {
+  const parsed = parseRupText(fixture('ruppro-covisur-891502104-servidor'));
+  assert.equal(parsed.nit, '891502104');
+  assert.equal(parsed.name, 'COMPAÑIA DE VIGILANCIA COVISUR DE COLOMBIA LTDA.');
+  assert.equal(parsed.total_liabilities, 4738173338);
+  const summary = summarizeRup(parsed);
+  assert.equal(summary.debt_ratio, 0.318);
+  assert.equal(summary.contracts_total, 60);
+  assert.equal(summary.contracts_own, 31);
+  assert.equal(summary.largest_own_smmlv, 10431);
+  assert.ok(parsed.contracts.filter(item => item.own).every(item => /COVISUR/.test(item.contractor || '')));
+});
