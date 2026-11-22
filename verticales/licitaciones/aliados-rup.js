@@ -68,15 +68,19 @@ export function codesIn(block) {
 const ownContract = celebradoPor => /proponente/i.test(celebradoPor) && !/consorcio|uni[oó]n temporal|sociedad en las cuales/i.test(celebradoPor);
 
 /** Los contratos de la consulta de ruppro: «Secuencia del contrato: 001», «CELEBRADO POR … El proponente …». */
+// Dos formas del mismo texto: la de columnas (pdftotext -layout, la de las pruebas del 21-nov) trae los tres datos en una
+// línea; la del servidor (pdf-parse, la que corre al cargar el PDF) trae cada etiqueta y su valor en líneas seguidas.
 function contractsFromRuppro(text) {
   return String(text).split(/Secuencia del contrato:\s*/).slice(1).map(block => {
     const sequence = (/^(\d+)/.exec(block) || [])[1] || null;
-    const header = /CELEBRADO POR[^\n]*\n\s*(\S.*?)\s{2,}(\S.*?)\s{2,}(\S.*?)\s*\n/.exec(block);
+    const header = /CELEBRADO POR[^\n]*\n\s*(\S.*?)\s{2,}(\S.*?)\s{2,}(\S.*?)\s*\n/.exec(block)
+      || /CELEBRADO POR\s*\n([\s\S]*?)\n\s*NOMBRE DEL CONTRATISTA\s*\n([\s\S]*?)\n\s*NOMBRE DEL CONTRATANTE\s*\n([\s\S]*?)\n\s*VALOR EN SMMLV/i.exec(block);
+    const oneLine = value => value.replace(/\s+/g, ' ').trim();
     const value = /EJECUCI[ÓO]N\)\s*\n(?:[^\n]*\n)*?\s*([\d.]+(?:,\d+)?)\s*\n/.exec(block);
-    const celebrado = header ? header[1].trim() : '';
+    const celebrado = header ? oneLine(header[1]) : '';
     return {
-      sequence, own: ownContract(celebrado), contractor: header ? header[2].trim() : null,
-      client: header ? header[3].trim() : null, smmlv: value ? parseColombianNumber(value[1]) : null,
+      sequence, own: ownContract(celebrado), contractor: header ? oneLine(header[2]) : null,
+      client: header ? oneLine(header[3]) : null, smmlv: value ? parseColombianNumber(value[1]) : null,
       codes: codesIn(block.split(/C[ÓO]DIGOS UNSPSC/i)[1] || ''),
     };
   });
@@ -124,14 +128,17 @@ export function parseRupText(text) {
   const kind = detectRupKind(text);
   if (!kind) throw Object.assign(new Error('El PDF no es una consulta de ruppro ni un certificado del RUP de una Cámara de Comercio.'), { status: 400 });
   const source = String(text);
-  const nitMatch = kind === 'consulta_ruppro' ? /NIT del proveedor\s+(\d{6,12})/i.exec(source) : /\bNIT\s*:\s*(\d{6,12})/i.exec(source);
-  const nameMatch = kind === 'consulta_ruppro' ? /Nombre del proveedor\s+(.+?)\s{2,}/i.exec(source) : /\bQUE\s*:\s*([^\n]+)/i.exec(source);
+  const nitMatch = kind === 'consulta_ruppro' ? /NIT del proveedor\s*(\d{6,12})/i.exec(source) : /\bNIT\s*:\s*(\d{6,12})/i.exec(source);
+  const nameMatch = kind === 'consulta_ruppro' ? (/Nombre del proveedor[ \t]+(\S.*?)\s{2,}/i.exec(source) || /Nombre del proveedor([^\n]*(?:\n(?!Sigla)[^\n]*){0,3})\n\s*Sigla/i.exec(source)) : /\bQUE\s*:\s*([^\n]+)/i.exec(source);
   const cutMatch = /Fecha (?:de )?Corte(?: de la)? Informaci[óo]n(?: financiera)?\s*:?\s*(\d{1,4}\/\d{1,2}\/\d{1,4})/i.exec(source);
   const totalAssets = labeled(source, ['ACTIVO TOTAL']) ?? (kind === 'consulta_ruppro' ? parseColombianNumber((/ACTIVO TOTAL[^\n]*\n\s*(\$\s*[\d.,]+)/i.exec(source) || [])[1]) : null);
-  const totalLiabilities = labeled(source, ['PASIVO TOTAL']) ?? (kind === 'consulta_ruppro' ? parseColombianNumber((/ACTIVO TOTAL[^\n]*\n\s*\$\s*[\d.,]+\s+(\$\s*[\d.,]+)/i.exec(source) || [])[1]) : null);
+  const totalLiabilities = labeled(source, ['PASIVO TOTAL']) ?? (kind === 'consulta_ruppro'
+    ? parseColombianNumber((/ACTIVO TOTAL[^\n]*\n\s*\$\s*[\d.,]+[ \t]+(\$\s*[\d.,]+)/i.exec(source) || /PASIVO TOTAL[^\n]*\n\s*(\$\s*[\d.,]+)/i.exec(source) || [])[1])
+    : null);
   const currentAssets = labeled(source, ['ACTIVO CORRIENTE']);
   const currentLiabilities = labeled(source, ['PASIVO CORRIENTE']);
-  const equityLabeled = labeled(source, ['PATRIMONIO']);
+  // En la consulta de ruppro el patrimonio viene en $0 y la etiqueta «Patrimonio 32.00%» es la rentabilidad: se calcula.
+  const equityLabeled = kind === 'consulta_ruppro' ? null : labeled(source, ['PATRIMONIO']);
   const operatingIncome = labeled(source, ['UTILIDAD\\/?\\s*P[EÉ]RDIDA OPERACIONAL', 'Utilidad perdida operacional']);
   const interest = labeled(source, ['GASTOS DE INTERESES']);
   const pct = value => (value === null ? null : value > 1.5 ? value / 100 : value);
@@ -142,7 +149,7 @@ export function parseRupText(text) {
   return {
     kind,
     nit: nitMatch ? nitMatch[1] : null,
-    name: nameMatch ? nameMatch[1].trim() : null,
+    name: nameMatch ? nameMatch[1].replace(/\s+/g, ' ').trim() : null,
     cut_date: cutMatch ? isoDate(cutMatch[1]) : null,
     total_assets: totalAssets, total_liabilities: totalLiabilities,
     current_assets: currentAssets, current_liabilities: currentLiabilities,
