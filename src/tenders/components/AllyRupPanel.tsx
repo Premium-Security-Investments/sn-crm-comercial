@@ -32,9 +32,9 @@ const date = (value: string | null | undefined) => (value ? value.split('-').rev
 /** El portal gratuito de Colombia Compra donde se consulta el RUP de cualquier empresa por NIT (Juan, 2026-11-22). */
 export const RUPPRO_URL = 'https://ruppro.colombiacompra.gov.co/';
 
-/** El enlace al portal, para la lista y para la ficha. */
-export function RupproLink({ className = 'button secondary' }: { className?: string }) {
-  return <a className={className} href={RUPPRO_URL} target="_blank" rel="noreferrer">Abrir consulta del RUP (ruppro)</a>;
+/** El enlace al portal, para la lista y para la ficha: se ve como enlace (azul, subrayado, ↗), no como botón (Juan, 23-nov). */
+export function RupproLink({ text = 'Descargar el RUP en Colombia Compra' }: { text?: string }) {
+  return <a className="ruppro-link" href={RUPPRO_URL} target="_blank" rel="noreferrer" title="Abre ruppro.colombiacompra.gov.co en otra pestaña">{text} <span aria-hidden="true">↗</span><span className="sr-only"> (abre en otra pestaña)</span></a>;
 }
 
 const SOURCE: Record<string, string> = { consulta_ruppro: 'Consulta de ruppro', certificado_camara: 'Certificado de la Cámara' };
@@ -76,14 +76,13 @@ export function AllyRupPanel({ nit, rup, capabilities, canEdit, request, onSaved
     <div className="ally-rup-head">
       <strong>RUP y capacidades</strong>
       <span className="ally-rup-actions">
-        <RupproLink />
         {canEdit && <>
           <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void upload(file); }} />
           <button type="button" className="secondary" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? 'Leyendo…' : 'Cargar RUP (PDF)'}</button>
         </>}
       </span>
     </div>
-    <p className="muted">La consulta gratuita está en <a href={RUPPRO_URL} target="_blank" rel="noreferrer">ruppro.colombiacompra.gov.co</a>: se busca por NIT ({nit}), se descarga el PDF y se carga aquí. No trae la liquidez: para eso, el certificado del RUP de la Cámara.</p>
+    <p className="ruppro-hint"><RupproLink text="Descargar el RUP gratis en Colombia Compra" /> · busque el NIT <strong>{nit}</strong>, descargue el PDF y cárguelo aquí. La consulta gratuita no trae la liquidez: para eso, el certificado del RUP de la Cámara.</p>
     {message && <div className="notice" role="status">{message}</div>}
     {!latest ? <p className="muted">Todavía no se ha cargado el RUP de esta empresa.</p> : <>
       <p className="ally-rup-source">{SOURCE[latest.source_kind] || 'RUP'} · corte {date(latest.cut_date)}{latest.document_name ? ` · ${latest.document_name}` : ''}</p>

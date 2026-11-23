@@ -82,7 +82,7 @@ export function TenderAlliesView({ request, data, moduleNavigation }: TendersMod
             <label>Frecuencia MinTIC en<input value={radioCity} onChange={event => setRadioCity(event.target.value)} placeholder="Bogotá" /></label>
             <label className="tender-allies-check"><input type="checkbox" checked={noFines} onChange={event => setNoFines(event.target.checked)} /> Sin multas ni sanciones</label>
           </div>
-          <p className="muted tender-allies-ruppro">Los datos del RUP de cualquier empresa se bajan gratis por NIT en el portal de Colombia Compra; el PDF se carga en la ficha de la empresa. <RupproLink /></p>
+          <p className="ruppro-hint">¿Necesita el RUP de una empresa? <RupproLink /> · se busca por NIT y el PDF se carga en la ficha de la empresa.</p>
           {(minLiquidity || maxDebt || minOwnSmmlv || noFines || radioCity) && <p className="muted">Los filtros del RUP sólo muestran empresas con el dato cargado: las que no tienen RUP o tienen el dato «sin dato» quedan por fuera.</p>}
           <p className="muted">{filtered.length} de {payload.companies.length} empresas.</p>
           <div className="tender-allies-scroll"><table className="tender-allies-table">
