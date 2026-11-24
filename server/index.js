@@ -31,7 +31,7 @@ import { suggestAgt002DocumentRelevance } from '../verticales/licitaciones/agt00
 import { callCreateTenderProcessingJob, callManualTenderOpportunityCreation, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../verticales/licitaciones/tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../verticales/licitaciones/tender-phase-identity.js';
 import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../verticales/licitaciones/agt002-phase-change-followup.js';
-import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../verticales/licitaciones/tender-document-obsolescence.js';
+import { isIncorporatedAdendaVersion, planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../verticales/licitaciones/tender-document-obsolescence.js';
 import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../verticales/licitaciones/tender-process-family.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../verticales/licitaciones/tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../verticales/licitaciones/tender-competibility-policy.js';
@@ -6724,6 +6724,17 @@ async function archiveVersionsReplacedByUpload(database, { opportunityId, tender
   return { archived, doubts };
 }
 
+// Pereira (2026-11-24): «INCLUYE ADENDA PLIEGO…», «INCLUYE ADENDA Anexo No. 7…» y «INCLUYE ADENDA Anexo 8…» quedaron
+// vigentes junto a sus versiones anteriores y Vig-IA leyó las dos (garantía con el presupuesto viejo). Antes de cada
+// reanálisis se pasa a historial lo que una versión con adenda incorporada ya vigente reemplaza; misma regla que la carga.
+async function archiveVersionsSupersededByIncorporatedAdendas(database, { opportunityId, actorId }) {
+  const rows = await must(database.from('psi_tender_document_versions').select('name').eq('opportunity_id', opportunityId).eq('current', true));
+  const incomingNames = [...new Set((rows || []).map(row => row.name).filter(isIncorporatedAdendaVersion))];
+  if (!incomingNames.length) return { archived: [], doubts: [] };
+  const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+  return archiveVersionsReplacedByUpload(database, { opportunityId, tenderId, incomingNames, actorId });
+}
+
 async function importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze = true, phaseChange = null } = {}) {
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
@@ -8906,6 +8917,12 @@ app.post('/api/agt002-manual-reanalysis', async (req, res) => {
     const opportunityId = String(req.body?.opportunity_id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    try {
+      const replaced = await archiveVersionsSupersededByIncorporatedAdendas(database, { opportunityId, actorId: currentProfile?.id });
+      if (replaced.archived.length) console.log(JSON.stringify({ event: 'tender_reanalysis_archived_superseded', opportunity_id: opportunityId, archived: replaced.archived.map(item => item.name).slice(0, 20) }));
+    } catch (archiveError) {
+      console.warn('tender_reanalysis_archive_failed', { event: 'tender_reanalysis_archive_failed', opportunity_id: opportunityId, code: String(archiveError?.code || 'unknown').slice(0, 40) });
+    }
     res.set('Cache-Control', 'private, no-store');
     return res.json(await requestAgt002ManualReanalysis(database, { opportunityId, requestedBy: currentProfile?.id || '' }));
   } catch (error) { sendError(res, error, error?.status || 400); }
