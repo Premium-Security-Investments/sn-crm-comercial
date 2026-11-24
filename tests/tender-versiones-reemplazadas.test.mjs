@@ -40,3 +40,44 @@ test('la carga manual también pasa a historial lo que reemplaza, antes del cort
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
   assert.match(main, /Pasaron a historial porque llegó su versión definitiva:/);
 });
+
+// Pereira LP-01-2026 (2026-11-24): la Entidad publicó «INCLUYE ADENDA …» del pliego y de los anexos 7 y 8. Quedaron vigentes
+// junto a los anteriores y Vig-IA calculó la garantía con el presupuesto viejo y dijo no ver el Anexo 7 corregido.
+test('caso Pereira: la versión con la adenda incorporada reemplaza al pliego y a los anexos; avisos y actas quedan', () => {
+  const plan = planObsoleteTenderDocuments({
+    currentNames: [
+      'PLIEGO ELECTRONICO DEFINITIVO VIGILANCIA PRIVADA 2026-2027.pdf', 'Anexo No. 7 Comp Valor a Pagar y Oferta economica 2026-2027.xlsx',
+      'Anexo 8. Matriz Riesgos. Vigilancia 2026.xlsx', 'AVISO CONVOC PUBL N_2 PUBLICACION PLIEGO DEFINITIVO LP-01-2026.DOC.pdf',
+      'Acta RTAS OBSERVACIONES PLIEGO DEFINITIVO LP-01-2026.pdf', 'Anexo 9 SST Vigilancia.pdf', 'CDP 9526 U8 SERVICIO DE VIGILANCIA.pdf',
+    ],
+    incomingNames: [
+      'INCLUYE ADENDA PLIEGO ELECTRONICO DEFINITIVO VIGILANCIA PRIVADA 2026-2027.pdf', 'INCLUYE ADENDA Anexo No. 7 Comp Valor a Pagar y Oferta economica 2026-2027.xlsx',
+      'INCLUYE ADENDA Anexo 8. Matriz Riesgos. Vigilancia 2026.xlsx', 'AVISO CONVOC PUBL N_3 PUBLICACION PLIEGO DEFINITIVO LP-01-2026.pdf',
+    ],
+  });
+  assert.deepEqual(Object.fromEntries(plan.archive.map(item => [item.name, item.reason])), {
+    'PLIEGO ELECTRONICO DEFINITIVO VIGILANCIA PRIVADA 2026-2027.pdf': 'pliego_con_adenda_incorporada',
+    'Anexo No. 7 Comp Valor a Pagar y Oferta economica 2026-2027.xlsx': 'formato_con_version_nueva',
+    'Anexo 8. Matriz Riesgos. Vigilancia 2026.xlsx': 'formato_con_version_nueva',
+  });
+  assert.deepEqual(plan.doubts, []);
+});
+
+test('un pliego nuevo sin «incluye adenda» sigue siendo duda, no se archiva', () => {
+  const plan = planObsoleteTenderDocuments({
+    currentNames: ['PLIEGO ELECTRONICO DEFINITIVO VIGILANCIA PRIVADA 2026-2027.pdf'],
+    incomingNames: ['PLIEGO ELECTRONICO DEFINITIVO VIGILANCIA PRIVADA 2026-2027 v2.pdf'],
+  });
+  assert.deepEqual(plan.archive, []);
+  assert.equal(plan.doubts[0]?.reason, 'pliego_definitivo_reemplazado');
+});
+
+test('«Volver a analizar» pasa a historial lo que reemplaza una versión con adenda ya vigente, antes de pedir el análisis', () => {
+  for (const file of ['../api/[...path].js', '../server/index.js']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    const route = source.slice(source.indexOf("app.post('/api/agt002-manual-reanalysis'"));
+    const archive = route.indexOf('archiveVersionsSupersededByIncorporatedAdendas(database');
+    assert.ok(archive > 0 && archive < route.indexOf('requestAgt002ManualReanalysis(database'), `${file}: antes del pedido`);
+    assert.match(source, /filter\(isIncorporatedAdendaVersion\)/);
+  }
+});

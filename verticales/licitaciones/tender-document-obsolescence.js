@@ -6,6 +6,8 @@
 //   · el anexo técnico del borrador, cuando llega el definitivo (mismo anexo);
 //   · los formatos (oferta económica, factores de calidad, anexos editables), cuando llega su versión nueva.
 //   · cualquier documento cuando llega su versión marcada "Definitivo/Definitiva" de la misma familia (2026-10-20).
+//   · el pliego o formato cuando la Entidad publica la versión con la adenda incorporada: «INCLUYE ADENDA PLIEGO…» reemplaza
+//     a «PLIEGO…» (Pereira, 2026-11-24: Vig-IA leyó los dos y calculó la garantía con el presupuesto viejo).
 // Nunca se archivan, salvo por esa versión definitiva explícita: estudios previos, análisis del sector, CDP y
 // aprobaciones de Hacienda o vigencias futuras, avisos, respuestas a observaciones, adendas ni resoluciones (estos
 // cinco últimos, nunca). Si hay duda, NO se archiva y se dice en el aviso.
@@ -37,7 +39,14 @@ const EDITABLE = new Set(['doc', 'docx', 'xls', 'xlsx', 'odt', 'ods', 'zip']);
 const VERSION_WORDS = new Set(['definitivo', 'definitiva', 'definitivos', 'definitivas', 'final', 'vf', 'consolidado', 'consolidada',
   'actualizado', 'actualizada', 'ajustado', 'ajustada', 'modificado', 'modificada', 'nuevo', 'nueva', 'version', 'limpio', 'en',
   'firmado', 'firmada', 'suscrito', 'suscrita', 'rev', 'adenda', 'no', 'n', 'nro', 'lp', 'sa', 'cm', 'proceso', 'vigilancia',
-  'seguridad', 'privada', 'de', 'del', 'la', 'el', 'los', 'las', 'y', 'para', 'al', 'a', 'con']);
+  'seguridad', 'privada', 'de', 'del', 'la', 'el', 'los', 'las', 'y', 'para', 'al', 'a', 'con', 'incluye']);
+
+// «INCLUYE ADENDA …» / «… con adenda incorporada»: la Entidad publica el mismo documento con la adenda ya aplicada.
+const INCORPORATED_ADENDA = /\b(incluye adendas?|con adendas? incorporadas?|adendas? incorporadas?)\b/;
+/** ¿El nombre dice que es el documento con la adenda ya incorporada (no la adenda suelta)? */
+export function isIncorporatedAdendaVersion(name) {
+  return INCORPORATED_ADENDA.test(normalize(name));
+}
 
 /**
  * Tipo del documento para estas reglas. Un documento que LLEGA puede ser la versión consolidada de otro ("Anexo N°. 4
@@ -46,7 +55,7 @@ const VERSION_WORDS = new Set(['definitivo', 'definitiva', 'definitivos', 'defin
  */
 export function tenderDocumentObsolescenceKind(name, { incoming = false } = {}) {
   let text = normalize(name);
-  if (incoming) text = text.replace(/\badendas?(?: (?:no|n|nro))?(?: \d+)?\b/g, ' ').replace(/\bconsolidad[oa]\b/g, ' ').replace(/\s+/g, ' ').trim();
+  if (incoming) text = text.replace(/\bincluye\b|\bincorporadas?\b/g, ' ').replace(/\badendas?(?: (?:no|n|nro))?(?: \d+)?\b/g, ' ').replace(/\bconsolidad[oa]\b/g, ' ').replace(/\s+/g, ' ').trim();
   // Primero los protegidos: "Respuesta a observaciones al proyecto de pliego", "Aviso de convocatoria y proyecto de
   // pliego" o "Estudio previo y proyecto de pliego" nunca se archivan.
   if (NEVER_ARCHIVE.test(text)) return 'protected';
@@ -114,7 +123,9 @@ export function planObsoleteTenderDocuments({ currentNames = [], incomingNames =
     }
     if (kind === 'pliego') {
       const newer = incoming.find(doc => doc.kind === 'pliego' && doc.family === family);
-      if (newer) doubts.push({ name, candidate: newer.name, reason: 'pliego_definitivo_reemplazado' });
+      // Un pliego sólo reemplaza a otro cuando dice que trae la adenda incorporada; si no, queda como duda.
+      if (newer && isIncorporatedAdendaVersion(newer.name)) archive.push({ name, reason: 'pliego_con_adenda_incorporada', replacedBy: newer.name });
+      else if (newer) doubts.push({ name, candidate: newer.name, reason: 'pliego_definitivo_reemplazado' });
       continue;
     }
     const plain = normalize(name);
