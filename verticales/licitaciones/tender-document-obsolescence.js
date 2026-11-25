@@ -48,6 +48,66 @@ export function isIncorporatedAdendaVersion(name) {
   return INCORPORATED_ADENDA.test(normalize(name));
 }
 
+// Versión ajustada (DEAJ LP-07-2026, 2026-11-25): la Entidad republica «Pliego … Ajustado LP-07-2026 23112026.pdf»,
+// «Anexo ANS … Ajustado 23112026.pdf» o «Estudio de Mercado … - ajustado adenda.xlsx» sin decir «incluye adenda», y los
+// del 11-nov quedaban vigentes al lado. Marca de versión: ajustado, corregido, actualizado, adenda, o una fecha en el nombre.
+const REVISION_MARK = /\b(ajustad[oa]s?|corregid[oa]s?|actualizad[oa]s?|adendas?|incluye adendas?)\b/;
+/** Fecha escrita en el nombre («23112026», «11-11-26», «FINAL11-11-2026», «11.11.26») como AAAA-MM-DD, o null. */
+export function dateInDocumentName(name) {
+  const text = String(name || '').toLowerCase();
+  let m = /(?:^|[^\d])(\d{2})(\d{2})(20\d{2})(?!\d)/.exec(text);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = /(?:^|[^\d])(\d{1,2})[-_. ](\d{1,2})[-_. ](\d{2}|20\d{2})(?!\d)/.exec(text);
+  if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12 && Number(m[1]) >= 1 && Number(m[1]) <= 31) {
+    const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${year}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  }
+  return null;
+}
+/** ¿El nombre se presenta como versión revisada de otro (marca de versión o fecha)? */
+export function isRevisedVersion(name) {
+  return REVISION_MARK.test(normalize(name)) || Boolean(dateInDocumentName(name));
+}
+const FILE_GROUP = ext => (['xls', 'xlsx', 'ods', 'csv'].includes(ext) ? 'hoja' : ['doc', 'docx', 'odt'].includes(ext) ? 'texto' : ext);
+const sameFileGroup = (a, b) => FILE_GROUP(extensionOf(a)) === FILE_GROUP(extensionOf(b));
+const COMPATIBLE = new Set(['other', 'technical_annex', 'format']);
+/** Mismo documento con otro nombre: dos o más palabras en común y al menos el 60 % de las del nombre más corto. */
+function strongFamilyMatch(a, b) {
+  // Números de anexo o formato distintos («formato 1» frente a «formato 2») son documentos distintos.
+  const numbers = key => String(key || '').split(' ').filter(word => /^\d+$/.test(word)).sort().join(',');
+  if (numbers(a) !== numbers(b)) return false;
+  const left = String(a || '').split(' ').filter(word => word.length > 1);
+  const right = new Set(String(b || '').split(' ').filter(word => word.length > 1));
+  if (left.length < 2 || right.size < 2) return false;
+  const shared = left.filter(word => right.has(word)).length;
+  return shared >= 2 && shared / Math.min(left.length, right.size) >= 0.6;
+}
+/** Número de ítem al inicio del nombre («27. Formato …», «17 Formato …»): números distintos son documentos distintos. */
+function leadingItemNumber(name) {
+  const m = /^\s*(\d{1,3})\s*[-.)_ ]/.exec(String(name || ''));
+  return m ? Number(m[1]) : null;
+}
+function differentItemNumbers(a, b) {
+  const left = leadingItemNumber(a); const right = leadingItemNumber(b);
+  return left !== null && right !== null && left !== right;
+}
+const sharedWords = (a, b) => { const right = new Set(String(b || '').split(' ').filter(word => word.length > 1)); return String(a || '').split(' ').filter(word => word.length > 1 && right.has(word)).length; };
+/** Lo que le sobra al nombre del vigente no identifica otro documento («presupuesto oficial» sí lo identifica: Cali). */
+function extraWordsAreNotIdentifying(currentFamily, incomingFamily) {
+  const incomingWords = new Set(String(incomingFamily || '').split(' '));
+  return String(currentFamily || '').split(' ').filter(word => word && !incomingWords.has(word))
+    .every(word => word.length <= 4 || NON_IDENTIFYING.has(word) || /ajust|correg|actualiz/.test(word));
+}
+/** La llegada es una versión revisada del vigente: misma clase de archivo, familia fuerte y no es de fecha anterior. */
+function revisedReplacement(doc, name, kind, family) {
+  if (!isRevisedVersion(doc.name) || !sameFileGroup(doc.name, name) || differentItemNumbers(doc.name, name)) return false;
+  if (!(doc.kind === kind || (COMPATIBLE.has(doc.kind) && COMPATIBLE.has(kind)))) return false;
+  if (!strongFamilyMatch(doc.family, family) || !extraWordsAreNotIdentifying(family, doc.family)) return false;
+  const incomingDate = dateInDocumentName(doc.name);
+  const currentDate = dateInDocumentName(name);
+  return !(incomingDate && currentDate && incomingDate < currentDate);
+}
+
 /**
  * Tipo del documento para estas reglas. Un documento que LLEGA puede ser la versión consolidada de otro ("Anexo N°. 4
  * Oferta Economica Consolidado Adenda 03.xlsx"): para él no cuentan las palabras "adenda"/"consolidado". Un documento
@@ -123,8 +183,15 @@ export function planObsoleteTenderDocuments({ currentNames = [], incomingNames =
     }
     if (kind === 'pliego') {
       const newer = incoming.find(doc => doc.kind === 'pliego' && doc.family === family);
-      // Un pliego sólo reemplaza a otro cuando dice que trae la adenda incorporada; si no, queda como duda.
+      // Un pliego sólo reemplaza a otro cuando dice que trae la adenda incorporada o que es la versión ajustada (con
+      // fecha posterior); si no, queda como duda.
+      // Para un pliego no basta «adenda» o «consolidado» (DANE: el consolidado frente al definitivo es duda): debe decir
+      // «ajustado», «corregido» o «actualizado» y traer una fecha posterior a la del vigente.
+      const revised = incoming.find(doc => doc.kind === 'pliego' && revisedReplacement(doc, name, kind, family)
+        && /\b(ajustad[oa]s?|corregid[oa]s?|actualizad[oa]s?)\b/.test(normalize(doc.name))
+        && dateInDocumentName(doc.name) && dateInDocumentName(name) && dateInDocumentName(doc.name) > dateInDocumentName(name));
       if (newer && isIncorporatedAdendaVersion(newer.name)) archive.push({ name, reason: 'pliego_con_adenda_incorporada', replacedBy: newer.name });
+      else if (revised) archive.push({ name, reason: 'version_ajustada', replacedBy: revised.name });
       else if (newer) doubts.push({ name, candidate: newer.name, reason: 'pliego_definitivo_reemplazado' });
       continue;
     }
@@ -141,10 +208,28 @@ export function planObsoleteTenderDocuments({ currentNames = [], incomingNames =
         continue;
       }
     }
-    if (kind !== 'technical_annex' && kind !== 'format') continue;
+    if (kind !== 'technical_annex' && kind !== 'format') {
+      const revised = kind !== 'protected' && incoming.find(doc => revisedReplacement(doc, name, kind, family));
+      if (revised) archive.push({ name, reason: 'version_ajustada', replacedBy: revised.name });
+      continue;
+    }
     const same = incoming.find(doc => doc.kind === kind && doc.family === family && family);
     if (same) {
       archive.push({ name, reason: kind === 'technical_annex' ? 'anexo_tecnico_del_borrador' : 'formato_con_version_nueva', replacedBy: same.name });
+      continue;
+    }
+    // Un formato editable se reemplaza por el formato nuevo de la misma familia aunque cambie el nombre («Formato Propuesta
+    // Económica -FINAL 11.11.26s» → «Formato Propuesta Económica - columnas ampliadas (Nota 6)», DEAJ 23-nov).
+    const revised = incoming.find(doc => revisedReplacement(doc, name, kind, family));
+    if (revised) {
+      archive.push({ name, reason: 'version_ajustada', replacedBy: revised.name });
+      continue;
+    }
+    const renamed = kind === 'format' && incoming.find(doc => doc.kind === 'format' && sameFileGroup(doc.name, name)
+      && !differentItemNumbers(doc.name, name) && sharedWords(doc.family, family) >= 3
+      && strongFamilyMatch(doc.family, family) && extraWordsAreNotIdentifying(family, doc.family));
+    if (renamed) {
+      archive.push({ name, reason: 'formato_con_version_nueva', replacedBy: renamed.name });
       continue;
     }
     const similar = incoming.find(doc => (doc.kind === kind || doc.kind === 'technical_annex' || doc.kind === 'format') && overlaps(doc.family, family));

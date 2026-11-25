@@ -72,12 +72,50 @@ test('un pliego nuevo sin «incluye adenda» sigue siendo duda, no se archiva', 
   assert.equal(plan.doubts[0]?.reason, 'pliego_definitivo_reemplazado');
 });
 
-test('«Volver a analizar» pasa a historial lo que reemplaza una versión con adenda ya vigente, antes de pedir el análisis', () => {
+test('«Volver a analizar» repasa los vigentes en orden de llegada y pasa a historial lo reemplazado, antes de pedir el análisis', () => {
   for (const file of ['../api/[...path].js', '../server/index.js']) {
     const source = readFileSync(new URL(file, import.meta.url), 'utf8');
     const route = source.slice(source.indexOf("app.post('/api/agt002-manual-reanalysis'"));
-    const archive = route.indexOf('archiveVersionsSupersededByIncorporatedAdendas(database');
+    const archive = route.indexOf('archiveVersionsSupersededByLaterVersions(database');
     assert.ok(archive > 0 && archive < route.indexOf('requestAgt002ManualReanalysis(database'), `${file}: antes del pedido`);
-    assert.match(source, /filter\(isIncorporatedAdendaVersion\)/);
+    const fn = source.slice(source.indexOf('async function archiveVersionsSupersededByLaterVersions('));
+    assert.match(fn.slice(0, 2500), /sort\(\(a, b\) => String\(a\.created_at/);
+    assert.match(fn.slice(0, 3000), /planObsoleteTenderDocuments\(\{ currentNames: earlier, incomingNames \}\)/);
+    assert.match(fn.slice(0, 3000), /gap < 2 \* 60 \* 1000/);
   }
+});
+
+// DEAJ LP-07-2026 (2026-11-25): la Entidad republicó «… Ajustado 23112026» y otros nombres; los del 11-nov seguían vigentes.
+test('caso DEAJ: la versión ajustada con fecha posterior reemplaza a la anterior; protegidos y otros documentos quedan', () => {
+  const plan = planObsoleteTenderDocuments({
+    currentNames: [
+      'Pliego de Condiciones Definitivo FINAL11-11-26 LP-07-2026.pdf', 'Anexo tecnico serv de vigilancia privada AJUSTADO final 11-11-26 2026 - _1_.pdf',
+      'Anexo ANS Vigilancia Privada Ajustado FINAL11-11-2026 _1_.pdf', 'Formato Propuesta Econ_mica -FINAL 11.11.26s.xlsx',
+      '. Estudio de Mercado Mes Est_ndar - aAJUSTADO 11-11-26.xlsx', 'ANEXO CONDICIONES CONTRACTUALES VIGILANCIA AJUSTADO 11-11-26.docx',
+      '17 Formato de aceptaci_n  de cumplimiento del Anexo T_cnico _1_.docx', 'Respuesta Observaciones LP-07-2026 _11-11-26.pdf',
+      '2. Estudios Previos 16-10-26 F.pdf', '25. Formato Carta Presentaci_n Ofertas.docx', 'Matriz de riesgos ajustada 11-11-26.xlsx',
+    ],
+    incomingNames: [
+      'ADENDA No. 01 - LP 07 DE 2026.pdf', 'Pliego de Condiciones Definitivo Ajustado LP-07-2026 23112026.pdf', 'Anexo ANS Vigilancia Privada Ajustado 23112026.pdf',
+      'ANEXO CONDICIONES CONTRACTUALES VIGILANCIA AJUSTADO 23112026.docx', 'Anexo tecnico servicio de vigilancia privada - AJUSTADO 23112026.pdf',
+      'Estudio de Mercado Mes Estandar Vigilancia - ajustado adenda.xlsx', 'Formato Propuesta Econo_mica - columnas ampliadas _Nota 6_.xlsx',
+      'Respuesta Observaciones Pliego Definitivo LP-07-2026.pdf',
+    ],
+  });
+  assert.deepEqual(plan.archive.map(item => item.name).sort(), [
+    '. Estudio de Mercado Mes Est_ndar - aAJUSTADO 11-11-26.xlsx', 'ANEXO CONDICIONES CONTRACTUALES VIGILANCIA AJUSTADO 11-11-26.docx',
+    'Anexo ANS Vigilancia Privada Ajustado FINAL11-11-2026 _1_.pdf', 'Anexo tecnico serv de vigilancia privada AJUSTADO final 11-11-26 2026 - _1_.pdf',
+    'Formato Propuesta Econ_mica -FINAL 11.11.26s.xlsx', 'Pliego de Condiciones Definitivo FINAL11-11-26 LP-07-2026.pdf',
+  ]);
+  assert.deepEqual(plan.doubts, []);
+});
+
+test('versión ajustada: no confunde números, no reemplaza con una fecha anterior ni toca protegidos', () => {
+  const archive = (currentNames, incomingNames) => planObsoleteTenderDocuments({ currentNames, incomingNames }).archive;
+  assert.deepEqual(archive(['Formato 1 Oferta economica.xlsx'], ['Formato 2 Oferta economica ajustado.xlsx']), []);
+  assert.deepEqual(archive(['27. Formato cumplimiento SST.docx'], ['17 Formato de aceptaci_n  de cumplimiento del Anexo T_cnico _1_.docx']), []);
+  assert.deepEqual(archive(['Anexo 7 matriz riesgos.xlsx'], ['Anexo 8 matriz riesgos ajustada.xlsx']), []);
+  assert.deepEqual(archive(['Anexo ANS Ajustado 23112026.pdf'], ['Anexo ANS Ajustado 11-11-2026.pdf']), []);
+  assert.deepEqual(archive(['Respuesta Observaciones LP-07-2026 _11-11-26.pdf'], ['Respuesta Observaciones ajustado 23112026.pdf']), []);
+  assert.deepEqual(archive(['2. Estudios Previos 16-10-26 F.pdf'], ['Estudios Previos ajustados 23112026.pdf']), []);
 });
