@@ -96,7 +96,8 @@ test('la lista de Cotizar sólo trae las sueltas; la ligada sale de la lista y v
     const src = read(file);
     const get = src.slice(src.indexOf("app.get('/api/agt003/quotes'"));
     const handler = get.slice(0, get.indexOf('\n});'));
-    assert.match(handler, /query = query\.eq\('opportunity_id', opportunityId\);\n    \} else \{[\s\S]*?query = query\.is\('opportunity_id', null\);/);
+    assert.match(handler, /: query\.eq\('opportunity_id', opportunityId\);\n    \} else \{[\s\S]*?query = query\.is\('opportunity_id', null\);/);
+    assert.match(handler, /query\.or\(`opportunity_id\.eq\.\$\{opportunityId\},paired_opportunity_id\.eq\.\$\{opportunityId\}`\)/, 'la mixta también se ve en su segunda oportunidad');
   }
   const ui = read('../src/vigia/QuotesSection.tsx');
   assert.match(ui, /setQuotes\(list => \(list \|\| \[\]\)\.filter\(item => item\.id !== r\.id\)\);/);
