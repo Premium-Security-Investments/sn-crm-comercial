@@ -17,7 +17,7 @@ export function filterOpportunitySummaries(rows: TenderOpportunitySummary[], fil
     if (filter === 'go_authorized') return ['en_preparacion', 'lista_para_presentar', 'presentada'].includes(status) && row.decision === 'go';
     if (filter === 'in_preparation') return ['en_preparacion', 'lista_para_presentar'].includes(status);
     if (filter === 'submitted') return status === 'presentada';
-    return ['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(status);
+    return ['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada'].includes(status);
   });
 }
 

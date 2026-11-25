@@ -2140,7 +2140,7 @@ const businessEventLabels: Record<string, string> = {
   offer_preparation_started: 'Preparación de oferta iniciada', offer_submitted: 'Oferta presentada', awarded: 'Oferta adjudicada',
   not_awarded: 'Oferta no adjudicada', cancelled: 'Proceso cancelado', deserted: 'Proceso desierto',
 };
-const offerStatusLabels: Record<string, string> = { en_preparacion: 'En preparación', lista_para_presentar: 'Lista para presentar', presentada: 'Presentada', adjudicada: 'Adjudicada', no_adjudicada: 'No adjudicada', cerrada_no_go: 'Cerrada NO GO' };
+const offerStatusLabels: Record<string, string> = { en_preparacion: 'En preparación', lista_para_presentar: 'Lista para presentar', presentada: 'Presentada', adjudicada: 'Adjudicada', no_adjudicada: 'No adjudicada', cerrada_no_go: 'Cerrada NO GO', no_presentada: 'No se presentó' };
 function publicActuationLabel(value: string) { return businessEventLabels[value] || 'Hito del proceso'; }
 type TenderProcessHistoryItem = { id: string; title: string; createdAt: string; actor: string; note?: string | null; sourceUrl?: string | null };
 function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { opportunity: Opportunity; profiles: Profile[]; currentProfile: Profile }) {

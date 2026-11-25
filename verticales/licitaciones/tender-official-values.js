@@ -92,7 +92,7 @@ export function tenderClosingDayFromDeadlines(deadlines) {
 }
 
 const pesos = value => `$${Number(value).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
-const PRESENTED = new Set(['presentada', 'adjudicada', 'no_adjudicada', 'cerrada_no_go']);
+const PRESENTED = new Set(['presentada', 'adjudicada', 'no_adjudicada', 'cerrada_no_go', 'no_presentada']);
 
 /**
  * Lo que hay que cambiar en una oportunidad y las líneas de constancia. Pura: no lee ni escribe.

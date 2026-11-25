@@ -6,7 +6,7 @@
 import { readAgt002InitialAnalysisReport } from './agt002-initial-analysis-report.js';
 import { tenderSemanaDia, tenderSemanaTieneHora } from './tender-semana.js';
 
-const ESTADOS_CERRADOS = new Set(['cerrada_no_go', 'adjudicada', 'no_adjudicada']);
+const ESTADOS_CERRADOS = new Set(['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada']);
 const MAX_PENDIENTES = 12;
 const MAX_ACLARACIONES = 20;
 const MAX_HALLAZGOS = 8;

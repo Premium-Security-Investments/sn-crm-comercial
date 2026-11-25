@@ -58,7 +58,7 @@ test('la ruta y el aviso: solo con permiso de Licitaciones, primero en Mi día',
   const server = read('server/index.js');
   assert.equal(server, read('api/[...path].js'));
   assert.match(server, /'GET \/api\/tender-semana': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
-  assert.match(server, /\['cerrada_no_go', 'adjudicada', 'no_adjudicada'\]\.includes\(row\.tender_offer_status\)/);
+  assert.match(server, /\['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada'\]\.includes\(row\.tender_offer_status\)/);
   assert.match(server, /row\.stage_code !== 'descartado'/);
   // Desde el 2026-11-15 Mi día usa la vista de alertas (tender-mi-dia.test.mjs); esta ruta sigue disponible.
 });

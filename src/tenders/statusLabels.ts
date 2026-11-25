@@ -19,6 +19,7 @@ const offerLabels: Record<string, string> = {
   adjudicada: 'Adjudicada',
   no_adjudicada: 'No adjudicada',
   cerrada_no_go: 'Cerrada por NO GO',
+  no_presentada: 'No se presentó',
 };
 
 const decisionLabels: Record<string, string> = {
@@ -35,6 +36,7 @@ const preparationLabels: Record<string, string> = {
   adjudicada: 'Adjudicada',
   no_adjudicada: 'No adjudicada',
   cerrada_no_go: 'Cerrada por NO GO',
+  no_presentada: 'No se presentó',
 };
 
 const sharePointLabels: Record<string, string> = {
@@ -49,6 +51,7 @@ const sharePointLabels: Record<string, string> = {
 const tones: Record<string, TenderStatusTone> = {
   no_go: 'danger',
   cerrada_no_go: 'danger',
+  no_presentada: 'danger',
   no_adjudicada: 'danger',
   fallo_importacion: 'danger',
   error: 'danger',

@@ -103,7 +103,7 @@ export type TenderCompanyProfile = { legal_name?: string | null; nit?: string | 
 export type TenderCompanyDocument = { id: string; document_type: string; display_name: string; issued_at?: string | null; expires_at?: string | null; version: number; current: boolean; state: 'vigente' | 'vence_pronto' | 'vencido' | 'sin_vencimiento'; mime_type?: string | null; size_bytes: number; created_at: string; uploaded_by_name?: string | null; url?: string | null };
 export type TenderDossier = { tender_id?: string; opportunity_id: string; entity?: string; title?: string; source?: string; url?: string | null; document_count: number; missing_document_count: number; document_import_status: string; document_import_error?: string | null; go_no_go?: string | null; risk?: string | null; checklist_progress?: { total?: number; auto_generated?: number; human_required?: number } | null; preparation_status?: string | null; human_pending_count?: number; sharepoint_status?: string | null; sharepoint_url?: string | null; dossier_error?: string | null; documents_pending_source?: { reason_code: string; reason?: string | null; next_check_at?: string | null; attempt?: number; parked?: boolean } | null };
 export type TenderOpportunityFilter = 'all' | 'por_decidir' | 'en_curso' | 'cerradas' | 'archivadas' | 'pending_decision' | 'go_authorized' | 'in_preparation' | 'submitted' | 'closed';
-export type TenderOfferStatus = 'pendiente_decision' | 'en_preparacion' | 'lista_para_presentar' | 'presentada' | 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go';
+export type TenderOfferStatus = 'pendiente_decision' | 'en_preparacion' | 'lista_para_presentar' | 'presentada' | 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go' | 'no_presentada';
 export type TenderOpportunitySummary = TenderDossier & {
   recommendation: string;
   decision: 'go' | 'no_go' | null;
@@ -854,7 +854,7 @@ export type TenderOfferStatusTransition = {
   opportunity_id: string;
   tender_id: string;
   actor_id: string;
-  from_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'adjudicada' | 'no_adjudicada'>;
+  from_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'adjudicada' | 'no_adjudicada' | 'no_presentada'>;
   to_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'en_preparacion'>;
   note: string | null;
   changed_at: string;
@@ -880,7 +880,7 @@ export type TendersModuleProps = { view: TenderModuleView; data: TenderModuleDat
 /** Acta de cierre: arranca de la nota que escribió la persona al cerrar y Vig-IA la profundiza. */
 export type TenderClosureActaEntry = { titulo?: string | null; detalle?: string | null; fuente?: string | null };
 export type TenderClosureActaStatus = 'borrador' | 'confirmada';
-export type TenderClosureKind = 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go' | 'archivada';
+export type TenderClosureKind = 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go' | 'no_presentada' | 'archivada';
 export type TenderClosureNoteSource = 'archive_note' | 'status_transition' | 'no_go_justification' | 'manual';
 export type TenderClosureActa = {
   acta: {

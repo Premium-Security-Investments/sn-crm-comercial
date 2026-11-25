@@ -20,7 +20,7 @@ export const OPPORTUNITY_PRIMARY_FILTER_OPTIONS: readonly { value: TenderOpportu
 ];
 
 /** Estados de oferta terminales: el proceso ya cerró y no admite más trabajo. */
-const terminalOfferStatuses: readonly string[] = ['cerrada_no_go', 'adjudicada', 'no_adjudicada'];
+const terminalOfferStatuses: readonly string[] = ['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada'];
 
 type ClassifiableOpportunity = Partial<Pick<TenderOpportunitySummary, 'decision' | 'tender_offer_status' | 'archived_at'>> | null | undefined;
 

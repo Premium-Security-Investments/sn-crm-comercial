@@ -6,7 +6,7 @@ const TENDER_SERVICE = 'licitacion_publica';
 const STALE_DAYS = 30;
 // La misma ventana de la Portada (contrato aprobado por Juan el 2026-11-15): 15 días.
 const DECISION_WINDOW_DAYS = 15;
-const CLOSED_TENDER_STATUSES = new Set(['cerrada_no_go', 'adjudicada', 'no_adjudicada']);
+const CLOSED_TENDER_STATUSES = new Set(['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada']);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function amount(value) {

@@ -14,7 +14,7 @@ async function loadModule(relativePath) {
 const { classifyOpportunityStage } = await loadModule('../src/tenders/opportunityStage.ts');
 
 const decisions = [undefined, null, '', 'go', 'no_go', 'pendiente', 'GO', 'otra'];
-const statuses = [undefined, null, '', 'pendiente_decision', 'en_preparacion', 'lista_para_presentar', 'presentada', 'cerrada_no_go', 'adjudicada', 'no_adjudicada', 'desconocido'];
+const statuses = [undefined, null, '', 'pendiente_decision', 'en_preparacion', 'lista_para_presentar', 'presentada', 'cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada', 'desconocido'];
 
 test('paridad total con classifyOpportunityStage del frontend (todas las combinaciones)', () => {
   for (const decision of decisions) for (const tender_offer_status of statuses) {
@@ -25,14 +25,16 @@ test('paridad total con classifyOpportunityStage del frontend (todas las combina
   assert.equal(classifyTenderOpportunityStage(undefined), classifyOpportunityStage(undefined));
 });
 
-test('paridad con la migración 088 (estados terminales del CASE) y activa = Por decidir o En curso', () => {
-  const sql = readFileSync(new URL('../supabase/migrations/088_tender_opportunity_primary_stage_filters.sql', import.meta.url), 'utf8');
+test('paridad con la migración vigente del listado (234: estados terminales del CASE) y activa = Por decidir o En curso', () => {
+  // 234 (Juan, 2026-11-25): «no presentada» también cierra; redefine el listado de la 088 con ese estado.
+  const sql = readFileSync(new URL('../supabase/migrations/234_oferta_no_presentada_cierra.sql', import.meta.url), 'utf8');
   const terminal = sql.match(/coalesce\(o\.tender_offer_status, 'pendiente_decision'\) in \(([^)]*)\) then 'cerradas'/)[1].match(/'([^']+)'/g).map(v => v.slice(1, -1));
   assert.deepEqual(terminal, [...TENDER_OPPORTUNITY_TERMINAL_OFFER_STATUSES]);
   assert.equal(isActiveTenderOpportunityStage({ decision: null, tender_offer_status: 'pendiente_decision' }), true);
   assert.equal(isActiveTenderOpportunityStage({ decision: 'go', tender_offer_status: 'en_preparacion' }), true);
   assert.equal(isActiveTenderOpportunityStage({ decision: 'no_go' }), false);
   assert.equal(isActiveTenderOpportunityStage({ decision: 'go', tender_offer_status: 'adjudicada' }), false);
+  assert.equal(isActiveTenderOpportunityStage({ decision: 'go', tender_offer_status: 'no_presentada' }), false);
 });
 
 test('decisión vigente: la más reciente no reemplazada (misma regla que la migración 088)', () => {
