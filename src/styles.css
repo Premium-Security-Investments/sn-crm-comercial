@@ -675,7 +675,11 @@ td.numeric-value{white-space:nowrap}
 .view-mode-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}.view-mode-toggle button{min-height:34px;padding:6px 8px;border-radius:10px;font-size:12px;font-weight:850}.view-mode-toggle button.active{background:#1b64f2;color:#fff;border-color:#1b64f2}
 /* Dashboard comercial: tres preguntas */
 .dashboard-three-questions{gap:22px}.dashboard-question .v2-deal-row{grid-template-columns:minmax(0,1fr) minmax(130px,.34fr) auto}.dashboard-details>summary{cursor:pointer;font-weight:900;color:#10213d}.dashboard-details[open]>summary{margin-bottom:12px}.dashboard-footnote{margin:0;font-size:12.5px}.dashboard-simple-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}.dashboard-simple-list li{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}.dashboard-simple-list span{color:#526173;font-size:13px}
-.behavior-table table{min-width:980px}.behavior-table td small{color:#64748b}.behavior-explanation{font-size:12.5px;line-height:1.45;margin:0}
+.behavior-table table{min-width:760px;width:100%;table-layout:auto}.behavior-table td small{display:block;color:#64748b;font-size:12px;margin-top:2px}
+.behavior-table th{white-space:normal}.behavior-table th:nth-child(1),.behavior-table td:nth-child(1){width:34%}
+.dashboard-quality-line{margin:10px 0 0;padding:10px 14px;border-radius:12px;background:#f1f5f9;color:#334155;font-size:14px}
+.dashboard-quality-line.is-warning{background:#fff7e6;color:#7a4a00;border:1px solid #f3d9a4}
+.v2-deal-vigia{display:block;margin-top:4px;color:#1b4fd0;font-weight:600}.behavior-explanation{font-size:12.5px;line-height:1.45;margin:0}
 /* ===== Mi día del comercial (rediseño del 2026-10-22) =====
    Juan: "todo es como lo mismo, no hay jerarquías de nada, no hay divisiones". La respuesta es una sola
    superficie elevada —"Ahora"— y todo lo demás en filas planas sobre el fondo, con separadores reales.

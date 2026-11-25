@@ -152,3 +152,26 @@ test('el módulo es puro: sin red, base de datos, reloj implícito ni last_sign_
   assert.match(source, /auth\.users\.last_sign_in_at/, 'el comentario documenta por qué no se usa last_sign_in_at');
   assert.doesNotMatch(source.replace(/\/\/.*$/gm, ''), /last_sign_in_at/, 'el código no lee last_sign_in_at; sólo el comentario lo prohíbe');
 });
+
+// Juan, 2026-11-25: en el tablero sólo quien tiene cartera privada abierta; y un perfil reasignado cuenta desde su
+// fecha de inicio (Angie heredó el de Viviana: «último seguimiento hace 181 días» era historia de Viviana).
+test('tablero: sólo con cartera privada abierta; actividad desde activity_since', async () => {
+  const { buildCommercialBehavior } = await import('../src/vigia/commercial-behavior.js');
+  const now = new Date('2026-11-25T15:00:00Z');
+  const salespeople = [
+    { id: 'p-con', full_name: 'Con Cartera', role: 'comercial', activity_since: '2026-11-20' },
+    { id: 'p-sin', full_name: 'Sin Cartera', role: 'comercial' },
+    { id: 'p-lic', full_name: 'Solo Licitaciones', role: 'comercial' },
+  ];
+  const opportunities = [
+    { id: 'o1', owner_id: 'p-con', service_type_code: 'seguridad_fisica', stage_code: 'prospecto', next_action_at: '2026-11-30T15:00:00Z' },
+    { id: 'o2', owner_id: 'p-lic', service_type_code: 'licitacion_publica', stage_code: 'prospecto', next_action_at: '2026-11-30T15:00:00Z' },
+  ];
+  const interactions = [{ opportunity_id: 'o1', created_by: 'p-con', interaction_type: 'llamada', created_at: '2026-05-28T15:00:00Z' }];
+  const tablero = buildCommercialBehavior({ salespeople, opportunities, interactions, now, onlyWithPortfolio: true });
+  assert.deepEqual(tablero.rows.map(r => r.name), ['Con Cartera']);
+  assert.equal(tablero.rows[0].lastFollowUpAt, null, 'el seguimiento de mayo es de la persona anterior');
+  assert.equal(tablero.rows[0].activitySince, '2026-11-20');
+  const correo = buildCommercialBehavior({ salespeople, opportunities, interactions, now });
+  assert.equal(correo.rows.length, 3, 'el correo semanal sigue mostrando a todos');
+});
