@@ -32,7 +32,7 @@ export function enlaceSecopOficial(valor) {
 
 export const AGT002_MESA_GRUPOS_BLOQUEO = Object.freeze(Object.fromEntries(REQUIREMENT_FOCUS.map(focus => [focus.key, focus.title])));
 
-const PRESENTADA = new Set(['presentada', 'adjudicada', 'no_adjudicada', 'cerrada_no_go']);
+const PRESENTADA = new Set(['presentada', 'adjudicada', 'no_adjudicada', 'cerrada_no_go', 'no_presentada']);
 export const AGT002_MESA_MAX_ACCIONES = 5;
 
 const pesos = value => `$${Math.round(Number(value)).toLocaleString('es-CO')}`;

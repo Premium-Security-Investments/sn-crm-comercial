@@ -8,7 +8,7 @@ import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.
 import { selectCanonicalExtractionsByDocumentVersion } from './tender-document-extraction-persistence.js';
 
 export const AGT002_RESPUESTAS_MAX_INTENTOS = 3;
-const ESTADOS_CERRADOS = new Set(['cerrada_no_go', 'adjudicada', 'no_adjudicada']);
+const ESTADOS_CERRADOS = new Set(['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada']);
 const DECISIONES = ['acoge', 'acoge_parcialmente', 'no_acoge', 'aclara', 'otra'];
 // Un documento grande (DEAJ: 408 mil caracteres, unas cien observaciones) toma varios minutos; por debajo de esto no se intenta.
 export const AGT002_RESPUESTAS_MIN_MS = 4 * 60 * 1000;

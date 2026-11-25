@@ -10,7 +10,7 @@ const NEXT: Partial<Record<TenderOfferStatus, Array<{ status: TenderOfferStatus;
 };
 const label = (status: TenderOfferStatus) => ({
   pendiente_decision: 'Pendiente de decisión', en_preparacion: 'En preparación', lista_para_presentar: 'Lista para presentar',
-  presentada: 'Presentada', adjudicada: 'Adjudicada', no_adjudicada: 'No adjudicada', cerrada_no_go: 'Cerrada NO GO',
+  presentada: 'Presentada', adjudicada: 'Adjudicada', no_adjudicada: 'No adjudicada', cerrada_no_go: 'Cerrada NO GO', no_presentada: 'No se presentó',
 }[status] || status);
 const date = (value?: string | null) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Sin fecha';
 

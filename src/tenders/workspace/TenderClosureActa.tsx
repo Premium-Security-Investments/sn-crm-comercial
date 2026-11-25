@@ -6,6 +6,7 @@ const CLOSURE_LABELS: Record<string, string> = {
   adjudicada: 'Adjudicada',
   no_adjudicada: 'Presentada y no adjudicada',
   cerrada_no_go: 'Cerrada con NO-GO',
+  no_presentada: 'No se presentó',
   archivada: 'Archivada sin presentar',
 };
 const NOTE_SOURCE_LABELS: Record<string, string> = {
