@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { loadTenderMiDia, markTenderMiDiaHecho } from '../api';
-import type { TenderMiDia as TenderMiDiaPayload, TenderMiDiaAccion, TenderMiDiaActividad, TenderMiDiaPendiente, TenderRequest } from '../types';
+import type { TenderMiDia as TenderMiDiaPayload, TenderMiDiaAccion, TenderMiDiaActividad, TenderRequest } from '../types';
 import { formatDay, formatDeadline } from '../workspace/tenderWorkspaceFormat';
 
 const ACTIVIDAD: Record<TenderMiDiaActividad, string> = { observar: 'Observar', presentar: 'Presentar', tramitar: 'Tramitar', unirnos: 'Unirnos' };
@@ -22,7 +22,8 @@ function hora(value: string, tieneHora: boolean) {
   const comma = text.indexOf(', ');
   return comma >= 0 ? text.slice(comma + 2) : '—';
 }
-const isAccion = (item: TenderMiDiaAccion | TenderMiDiaPendiente): item is TenderMiDiaAccion => 'key' in item;
+/** «3 críticos abiertos»: lo que no se subsana o causa rechazo; el detalle se trabaja en el proceso. */
+const criticosTexto = (n: number) => (n === 1 ? '1 crítico abierto' : `${n} críticos abiertos`);
 
 function Tag({ actividad }: { actividad: TenderMiDiaActividad }) {
   return <span className={`mi-dia-tag is-${actividad}`}>{ACTIVIDAD[actividad]}</span>;
@@ -32,7 +33,8 @@ function Tag({ actividad }: { actividad: TenderMiDiaActividad }) {
  * Mi día de quien trabaja licitaciones (Juan, 2026-11-15; maqueta aprobada). Es una sección de alertas: sólo lo que vence
  * o es crítico, y cada cosa lleva a la página de su proceso, donde se trabaja. Arriba la frase de la semana; luego lo
  * general (las cuatro actividades) y el día a día (lo que hace la persona, con «Hecho»). Lo que publica la entidad va
- * plegado al final. Si no se puede leer, Mi día sigue igual: es un aviso, no una condición.
+ * plegado al final. Lo del expediente no se lista aquí: Presentar sólo cuenta, al lado de cada cierre, cuántas cosas
+ * críticas siguen abiertas (Juan, 2026-11-25). Si no se puede leer, Mi día sigue igual: es un aviso, no una condición.
  */
 export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest; onOpen: (opportunityId: string) => void; onGo: (hash: string) => void }) {
   const [data, setData] = useState<TenderMiDiaPayload | null>(null);
@@ -53,7 +55,7 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
 
   const row = (item: TenderMiDiaAccion) => <div key={item.key} className={`mi-dia-row${item.hecho ? ' is-done' : ''}`}>
     <span className="mi-dia-hora">{hora(item.value, item.tiene_hora)}</span>
-    <span className="mi-dia-text"><Tag actividad={item.actividad} />{item.texto} · {item.proceso} {goProcess(item.opportunity_id)}
+    <span className="mi-dia-text"><Tag actividad={item.actividad} />{item.texto} · {item.proceso}{item.criticos ? <> · <b>{criticosTexto(item.criticos)}</b></> : null} {goProcess(item.opportunity_id)}
       {item.hecho && <small className="muted"> — hecho{item.hecho.por ? ` por ${item.hecho.por}` : ''}</small>}</span>
     <span className="mi-dia-who">{item.responsable || '—'}</span>
     {data.hechos_disponible
@@ -65,7 +67,6 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
   const primero = frase.primero;
   const observar = a.observar;
   const presentar = a.presentar;
-  const critico = presentar.critico;
 
   return <section className="mi-dia" aria-label="Mi día de licitaciones">
     <p className="mi-dia-lead">
@@ -89,9 +90,11 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
       </article>
       <article className="mi-dia-card is-presentar">
         <h4>Presentar</h4>
-        <p className="mi-dia-n">{presentar.cierres === 1 ? '1 plazo' : `${presentar.cierres} plazos`} en 15 días</p>
-        {presentar.items.length ? <ul>{presentar.items.map(item => <li key={item.key}>{item.proceso} · {item.texto === 'Manifestar interés' ? 'interés ' : ''}{shortDay(item.day)}</li>)}</ul> : <p className="muted">Ningún cierre en 15 días.</p>}
-        {critico && <p className="mi-dia-next">Crítico: {critico.texto}{critico.proceso ? ` · ${critico.proceso}` : ''}{!isAccion(critico) && critico.vencido_hace ? ` (venció hace ${critico.vencido_hace} d)` : ''} {goProcess(critico.opportunity_id)}</p>}
+        <p className="mi-dia-n">{presentar.cierres === 1 ? '1 cierre' : `${presentar.cierres} cierres`} en 15 días</p>
+        {presentar.items.length ? <ul>{presentar.items.map(item => <li key={item.key} title={(item.criticos_titulos || []).join('\n') || undefined}>
+          {item.proceso} · {shortDay(item.day)}{item.tiene_hora ? `, ${hora(item.value, true)}` : ''}
+          {item.criticos ? <> · <b>{criticosTexto(item.criticos)}</b></> : null} {goProcess(item.opportunity_id)}
+        </li>)}</ul> : <p className="muted">Ningún cierre en 15 días.</p>}
       </article>
       <article className="mi-dia-card is-tramitar">
         <h4>Tramitar</h4>
@@ -113,15 +116,6 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
       <h4>{dayTitle(day.day, day.dias)}</h4>
       {day.items.length ? day.items.map(row) : <div className="mi-dia-row"><span className="mi-dia-hora">—</span><span className="muted">Nada para hoy.</span><span /><span /></div>}
     </div>)}
-    {data.pendientes.length > 0 && <div className="mi-dia-day">
-      <h4>Mis pendientes sin fecha de la entidad</h4>
-      {data.pendientes.map((item, index) => <div key={`${item.opportunity_id || 'req'}-${index}`} className="mi-dia-row">
-        <span className="mi-dia-hora">—</span>
-        <span className="mi-dia-text"><Tag actividad={item.actividad} />{item.texto}{item.proceso ? ` · ${item.proceso}` : ''}{item.vencido_hace ? <small className="muted"> (venció hace {item.vencido_hace} d)</small> : null} {item.destino === 'requisitos' ? goRequisitos : goProcess(item.opportunity_id)}</span>
-        <span className="mi-dia-who">{item.responsable || '—'}</span>
-        <span />
-      </div>)}
-    </div>}
     <details className="mi-dia-fold">
       <summary>La próxima semana ({data.proxima.length})</summary>
       {data.proxima.length ? data.proxima.map(item => <div key={item.key} className="mi-dia-row">

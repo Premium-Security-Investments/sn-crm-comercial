@@ -4,8 +4,10 @@
 // página de su proceso. Por eso no trae listas completas del expediente: sólo lo que vence o es crítico, cada cosa con
 // el proceso al que lleva. Dos niveles que conviven:
 //   1. Lo general — las cuatro actividades permanentes: Observar, Presentar, Tramitar y Unirnos.
-//   2. El día a día — lo que hace la persona: hoy y cada día de la semana (con «Hecho»), lo crítico sin fecha de la
-//      entidad, la próxima semana y, aparte, lo que publica la entidad (respuestas, adendas, audiencias).
+//   2. El día a día — lo que hace la persona: hoy y cada día de la semana (con «Hecho»), la próxima semana y, aparte,
+//      lo que publica la entidad (respuestas, adendas, audiencias).
+// Lo del expediente (lo que no se subsana o causa rechazo) y las alertas del cronograma viven en la ficha del proceso;
+// aquí sólo se cuentan al lado del cierre (Juan, 2026-11-25: «Mis pendientes» y la línea «Crítico» salen de Mi día).
 //
 // Antes, «Licitaciones: esta semana» mezclaba 23 hitos (17 de la entidad) y la cabecera decía «Hoy está despejado».
 // Módulo puro: el servidor le pasa los procesos abiertos, la pestaña Requisitos y lo marcado como hecho.
@@ -66,7 +68,7 @@ function ordenar(a, b) {
 
 /**
  * processes: [{ opportunity_id, entity, ref, responsable, offer_status, deadlines: [{ kind, value, label }],
- *   recomendacion, cronograma_faltante, criticos: [{ titulo, consecuencia, target_date, responsable }] }]
+ *   recomendacion, close_date, criticos: [{ titulo, consecuencia, target_date, responsable }] }]
  * requisitos: los focos de la pestaña Requisitos (buildRequirementFocus). hechos: [{ item_key, done_at, done_by_name }].
  */
 export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [], today } = {}) {
@@ -78,16 +80,16 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
 
   const acciones = [];
   const entidad = [];
-  const pendientes = [];
   const unirnos = [];
   for (const process of processes || []) {
     const proceso = nombreCorto(process.entity) || process.ref || 'Licitación';
     const base = { opportunity_id: process.opportunity_id, proceso, ref: process.ref || null };
     const seen = new Set();
     const presentada = process.offer_status === 'presentada';
-    // Fechas que una fuente posterior contradice (Barranquilla, 15-nov): no se anuncian como plazos; se pide confirmar.
-    const contradichas = (process.deadlines || []).filter(deadline => deadline?.certainty === 'CONTRADICTED');
+    // Lo crítico del expediente se trabaja en el proceso; al lado del cierre sólo va cuántos quedan abiertos.
+    const criticos = presentada ? [] : (process.criticos || []).map(item => String(item?.titulo || '').trim()).filter(Boolean);
     for (const deadline of process.deadlines || []) {
+      // Una fecha que una fuente posterior contradice (Barranquilla, 15-nov) no se anuncia; se confirma en el proceso.
       if (deadline?.certainty === 'CONTRADICTED') continue;
       const day = tenderSemanaDia(deadline?.value);
       if (!day || day < today || day > finProxima) continue;
@@ -103,27 +105,11 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
         const hecho = hechoPorClave.get(key) || null;
         acciones.push({ ...base, key, actividad: accion.actividad, texto: accion.texto, value: deadline.value, day, tiene_hora,
           dias: daysBetween(today, day), responsable: process.responsable || null,
+          ...(deadline.kind === 'SUBMISSION' ? { criticos: criticos.length, criticos_titulos: criticos.slice(0, 5) } : {}),
           hecho: hecho ? { at: hecho.done_at || null, por: hecho.done_by_name || null } : null });
       } else if (day <= finSemana) {
         entidad.push({ ...base, key, texto: String(deadline.label || deadline.kind || 'Fecha del cronograma').trim(), value: deadline.value, day, tiene_hora });
       }
-    }
-    // Lo que no se subsana o causa rechazo y sigue abierto va como alerta del proceso («sin fecha de la entidad»), nunca
-    // al día: en el día, «Presentar» es sólo el cierre de un proceso al que vamos (Juan, 2026-11-25: la póliza de
-    // seriedad de Barranquilla salía «hoy» y no es algo del día). El resto del expediente se trabaja en el proceso.
-    if (contradichas.length) {
-      pendientes.push({ ...base, actividad: 'presentar', texto: `Confirmar el cronograma en SECOP: ${contradichas.length === 1 ? 'una fecha del análisis está contradicha' : `${contradichas.length} fechas del análisis están contradichas`}`,
-        responsable: process.responsable || null, vencido_hace: null, destino: 'proceso' });
-    }
-    for (const item of presentada ? [] : process.criticos || []) {
-      const target = isDay(String(item.target_date || '').slice(0, 10)) ? String(item.target_date).slice(0, 10) : null;
-      const texto = `${item.titulo}${item.consecuencia === 'no_subsanable' ? ' (no se subsana)' : ' (causa rechazo)'}`;
-      pendientes.push({ ...base, actividad: 'presentar', texto, responsable: item.responsable || process.responsable || null,
-        vencido_hace: target && target < today ? daysBetween(target, today) : null, destino: 'proceso' });
-    }
-    if (process.cronograma_faltante) {
-      pendientes.push({ ...base, actividad: 'observar', texto: 'Falta el cronograma de SECOP: subir «Información del procedimiento»',
-        responsable: process.responsable || null, vencido_hace: null, destino: 'proceso' });
     }
     const cierre = (process.deadlines || []).filter(d => d?.kind === 'SUBMISSION').map(d => tenderSemanaDia(d.value)).filter(Boolean).sort()[0]
       || (isDay(String(process.close_date || '').slice(0, 10)) ? String(process.close_date).slice(0, 10) : null);
@@ -141,12 +127,6 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
   const tramitar = focos.map(focus => ({ key: focus.key, titulo: focus.title, estado: focus.status,
     sin_dato: (focus.upcoming || []).every(item => item.unknown), procesos: (focus.upcoming || []).length,
     primer_cierre: focus.upcoming?.[0]?.deadline || null }));
-  for (const focus of tramitar.filter(item => item.estado === 'iniciar' || item.estado === 'en_tramite')) {
-    pendientes.push({ opportunity_id: null, proceso: null, ref: null, actividad: 'tramitar',
-      texto: `${focus.titulo} (${focus.estado === 'en_tramite' ? 'en trámite' : 'iniciar trámite'})`, responsable: null,
-      vencido_hace: null, destino: 'requisitos' });
-  }
-
   const semana = acciones.filter(item => item.day <= finSemana);
   const proxima = acciones.filter(item => item.day > finSemana);
   const dias = [];
@@ -158,10 +138,8 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
 
   const observarSemana = semana.filter(item => item.actividad === 'observar');
   const observarProxima = proxima.filter(item => item.actividad === 'observar');
-  const cierres = acciones.filter(item => item.actividad === 'presentar' && item.day <= finPresentar && !item.key.includes('|CRITICO|'));
-  // Lo que no se subsana manda sobre cualquier otro aviso; después lo crítico con fecha y lo demás sin fecha.
-  const criticoPresentar = [...acciones.filter(item => item.key.includes('|CRITICO|') && !item.hecho), ...pendientes.filter(item => item.actividad === 'presentar')]
-    .sort((a, b) => Number(!a.texto.includes('(no se subsana)')) - Number(!b.texto.includes('(no se subsana)')))[0] || null;
+  // Presentar es sólo el cierre de un proceso al que vamos; la manifestación de interés va al día, no a esta tarjeta.
+  const cierres = acciones.filter(item => item.texto === 'Presentar la oferta (cierre)' && item.day <= finPresentar);
   const abiertas = list => list.filter(item => !item.hecho);
   const primero = abiertas(semana)[0] || null;
   const manifestaciones = abiertas(semana).filter(item => item.texto === 'Manifestar interés');
@@ -178,13 +156,12 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
     actividades: {
       observar: { esta_semana: observarSemana.length, proxima: observarProxima.length, items: observarSemana.slice(0, 4),
         proximo: abiertas(observarSemana)[0] || abiertas(observarProxima)[0] || null },
-      presentar: { cierres: cierres.length, items: cierres.slice(0, 4), critico: criticoPresentar },
+      presentar: { cierres: cierres.length, items: cierres.slice(0, 4) },
       tramitar: { por_tramitar: tramitar.filter(item => item.estado === 'iniciar' || item.estado === 'en_tramite').length,
         sin_dato: tramitar.filter(item => item.sin_dato).length, total: tramitar.length, items: tramitar.slice(0, 3) },
       unirnos: { total: unirnos.length, items: unirnos.slice(0, 4) },
     },
     dias,
-    pendientes,
     proxima,
     entidad,
   };
