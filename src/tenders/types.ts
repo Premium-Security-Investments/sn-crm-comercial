@@ -1127,6 +1127,12 @@ export type TenderMiDiaAccion = {
   value: string; day: string; tiene_hora: boolean; dias: number; responsable: string | null; hecho: { at: string | null; por: string | null } | null;
   /** Sólo en el cierre: cuántas cosas críticas del expediente siguen abiertas (el detalle está en el proceso). */
   criticos?: number; criticos_titulos?: string[];
+  /** Cierre cuya fecha contradice otra fuente: sale en Presentar «por confirmar en SECOP», nunca en el día. */
+  por_confirmar?: boolean;
+};
+export type TenderMiDiaPendiente = {
+  opportunity_id: string | null; proceso: string | null; ref: string | null; actividad: TenderMiDiaActividad; texto: string;
+  responsable: string | null; vencido_hace: number | null; destino: 'proceso' | 'requisitos';
 };
 export type TenderMiDiaEntidad = { key: string; opportunity_id: string; proceso: string; ref: string | null; texto: string; value: string; day: string; tiene_hora: boolean };
 export type TenderMiDiaTramite = { key: string; titulo: string; estado: string; sin_dato: boolean; procesos: number; primer_cierre: string | null };
@@ -1144,6 +1150,7 @@ export type TenderMiDia = {
     unirnos: { total: number; items: TenderMiDiaUnirnos[] };
   };
   dias: { day: string; dias: number; items: TenderMiDiaAccion[] }[];
+  pendientes: TenderMiDiaPendiente[];
   proxima: TenderMiDiaAccion[];
   entidad: TenderMiDiaEntidad[];
 };
