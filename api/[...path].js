@@ -5094,8 +5094,11 @@ app.get('/api/agt003/quotes', async (req, res) => {
     if (opportunityId) {
       await ensureOpportunityAccess(database, opportunityId, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
       query = query.eq('opportunity_id', opportunityId);
-    } else if (!globalCrmScopeRoles.has(currentProfile.role)) {
-      query = query.eq('created_by', currentProfile.id);
+    } else {
+      // Juan, 2026-11-25: la lista de Cotizar es de las cotizaciones sueltas; la que ya tiene oportunidad vive dentro
+      // de la oportunidad.
+      query = query.is('opportunity_id', null);
+      if (!globalCrmScopeRoles.has(currentProfile.role)) query = query.eq('created_by', currentProfile.id);
     }
     const { data, error } = await query;
     if (error) { if (error.code === '42P01') return res.json({ quotes: [], motivo: 'Las tablas del cotizador todavía no existen (migración 204).' }); throw error; }

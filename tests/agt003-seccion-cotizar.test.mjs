@@ -85,6 +85,20 @@ test('la lista de cotizaciones tiene Eliminar (con confirmación) y Asignar a op
   assert.match(ui, /window\.confirm\(`¿Eliminar la cotización/);
   assert.match(ui, /\{ method: 'DELETE' \}/);
   assert.match(ui, /\/api\/agt003\/quote\/link\?id=/);
-  assert.match(ui, /'Cambiar oportunidad' : 'Asignar a oportunidad'/);
+  assert.match(ui, />Asignar a oportunidad<\/button>/);
   assert.match(ui, />Eliminar<\/button>/);
+});
+
+// Juan, 2026-11-25: "las cotizaciones que ya tienen asignada una oportunidad deben salir de esa visual inicial y ya
+// viven dentro de la oportunidad".
+test('la lista de Cotizar sólo trae las sueltas; la ligada sale de la lista y vive en su oportunidad', () => {
+  for (const file of ['../server/index.js', '../api/[...path].js']) {
+    const src = read(file);
+    const get = src.slice(src.indexOf("app.get('/api/agt003/quotes'"));
+    const handler = get.slice(0, get.indexOf('\n});'));
+    assert.match(handler, /query = query\.eq\('opportunity_id', opportunityId\);\n    \} else \{[\s\S]*?query = query\.is\('opportunity_id', null\);/);
+  }
+  const ui = read('../src/vigia/QuotesSection.tsx');
+  assert.match(ui, /setQuotes\(list => \(list \|\| \[\]\)\.filter\(item => item\.id !== r\.id\)\);/);
+  assert.match(ui, /Las que ya tienen una se ven dentro de su oportunidad\./);
 });
