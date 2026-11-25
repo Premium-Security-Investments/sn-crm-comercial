@@ -10,6 +10,8 @@ export type BehaviorRow = {
   decisionsWeek: number;
   pendingDecisions: number;
   activeOpportunities: number;
+  openOpportunities: number;
+  activitySince: string | null;
   agendaPct: number | null;
   lastSeenAt: string | null;
   daysSinceSeen: number | null;

@@ -23,6 +23,12 @@
 //   atrasado  tiene oportunidades pendientes de decidir o su agenda al día está por debajo de `agendaOkPct`.
 //   al_dia    todo lo demás.
 //
+// Quién aparece (Juan, 2026-11-25): sólo quien tiene cartera privada abierta. Quien trabaja sólo licitaciones o
+// todavía no tiene oportunidades no se califica con esta vara («Al día» sin haber hecho nada engañaba).
+//
+// Desde cuándo cuenta (Juan, 2026-11-25): un perfil que se le reasigna a otra persona (Angie heredó el de Viviana)
+// trae `activity_since`; los seguimientos y decisiones anteriores son de la persona anterior y no cuentan.
+//
 // Nunca devuelve el texto de las interacciones (notas): sólo conteos y fechas.
 
 import { AGT002_TENDER_SERVICE_TYPE, isAgt003CommercialOpportunity } from './commercial-scope.js';
@@ -124,7 +130,7 @@ function compareRows(a, b) {
  * @param {Array<{user_id: string, period_month: string, sales_budget: number}>} input.goals
  * @param {Date} input.now
  */
-export function buildCommercialBehavior({ salespeople = [], opportunities = [], interactions = [], decisionLogs = [], lastSeen = [], goals = [], now = new Date(), rules = BEHAVIOR_RULES } = {}) {
+export function buildCommercialBehavior({ salespeople = [], opportunities = [], interactions = [], decisionLogs = [], lastSeen = [], goals = [], now = new Date(), rules = BEHAVIOR_RULES, onlyWithPortfolio = false } = {}) {
   const today = bogotaDay(now);
   const weekStart = bogotaWeekStart(now);
   const since30 = new Date((dayNumber(today) - 29) * DAY_MS).toISOString().slice(0, 10);
@@ -135,11 +141,13 @@ export function buildCommercialBehavior({ salespeople = [], opportunities = [], 
 
   const rows = list(salespeople).filter(person => person?.id).map(person => {
     const own = [...commercialById.values()].filter(o => o.owner_id === person.id);
+    const since = person.activity_since ? String(person.activity_since).slice(0, 10) : null;
+    const fromSince = value => !since || (bogotaDay(value) || '') >= since;
     const active = own.filter(o => !isTerminalStage(o.stage_code) && !isOutOfActivePipeline(o, now));
     const pending = pendingDecisions(own, now).length;
-    const followUps = list(interactions).filter(i => i?.created_by === person.id && followUpTypes.has(i.interaction_type) && commercialById.has(i.opportunity_id));
+    const followUps = list(interactions).filter(i => i?.created_by === person.id && followUpTypes.has(i.interaction_type) && commercialById.has(i.opportunity_id) && fromSince(i.created_at));
     const followUpDays = followUps.map(i => bogotaDay(i.created_at)).filter(Boolean);
-    const decisions = list(decisionLogs).filter(d => d?.changed_by === person.id && (d.field_name === undefined || d.field_name === 'decision') && commercialById.has(d.opportunity_id));
+    const decisions = list(decisionLogs).filter(d => d?.changed_by === person.id && (d.field_name === undefined || d.field_name === 'decision') && commercialById.has(d.opportunity_id) && fromSince(d.created_at));
     const lastFollowUpAt = followUps.reduce((acc, i) => latest(acc, i.created_at), null);
     const lastSeenAt = seenByProfile.get(person.id) || null;
     const row = {
@@ -152,6 +160,8 @@ export function buildCommercialBehavior({ salespeople = [], opportunities = [], 
       decisionsWeek: decisions.map(d => bogotaDay(d.created_at)).filter(day => day && day >= weekStart).length,
       pendingDecisions: pending,
       activeOpportunities: active.length,
+      openOpportunities: own.filter(o => !isTerminalStage(o.stage_code)).length,
+      activitySince: since,
       agendaPct: active.length ? Math.round(((active.length - pendingDecisions(active, now).length) / active.length) * 100) : null,
       lastSeenAt,
       daysSinceSeen: bogotaDaysSince(lastSeenAt, now),
@@ -159,7 +169,8 @@ export function buildCommercialBehavior({ salespeople = [], opportunities = [], 
     };
     return { ...row, role: person.role, ...statusFor(row, rules) };
   })
-    .filter(row => row.role === undefined || row.role === 'comercial' || row.activeOpportunities > 0)
+    // El tablero (onlyWithPortfolio) muestra sólo cartera privada abierta; el correo semanal sigue mostrando «Sin cartera».
+    .filter(row => (onlyWithPortfolio ? row.openOpportunities > 0 : row.role === undefined || row.role === 'comercial' || row.activeOpportunities > 0))
     .map(({ role: _role, ...row }) => row)
     .sort(compareRows);
 

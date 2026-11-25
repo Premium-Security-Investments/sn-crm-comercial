@@ -28,6 +28,7 @@ import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalys
 import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
 import { TenderMiDia, type TenderMiDiaResumen } from './tenders/components/TenderMiDia';
+import { classifyOpportunityStage } from './tenders/opportunityStage';
 import { VigiaDock } from './vigia/VigiaDock';
 import { TenderMyDayOfferReminder } from './tenders/components/TenderMyDayOfferReminder';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
@@ -2859,19 +2860,20 @@ function CommercialBehaviorTable() {
   if (!report) return <div className="notice">Cargando comportamiento del equipo…</div>;
   const rules = report.rules;
   return <>
-    <div className="tablewrap crm-readable-table behavior-table"><table><thead><tr><th>Comercial</th><th>Último seguimiento</th><th>Seguimientos semana / 30 d</th><th>Decisiones semana</th><th>Pendientes de decidir</th><th>% agenda al día</th><th>Último ingreso al CRM</th><th>Meta %</th><th>Estado</th></tr></thead><tbody>{report.rows.map(row => <tr key={row.profileId}>
-      <td><a href={ownerRoute(row.profileId)}><strong>{formatDisplayName(row.name)}</strong></a></td>
-      <td>{row.lastFollowUpAt ? fmtDate(row.lastFollowUpAt) : '—'}<br/><small>{sinceLabel(row.daysSinceFollowUp)}</small></td>
-      <td className="numeric-value">{row.followUpsWeek} / {row.followUps30d}</td>
-      <td className="numeric-value">{row.decisionsWeek}</td>
+    {/* Cinco columnas que se leen completas (Juan, 2026-11-25): los conteos de la semana y el último ingreso pasan a la
+        celda del nombre y al motivo del estado. */}
+    <div className="tablewrap crm-readable-table behavior-table"><table><thead><tr><th>Comercial</th><th>Último seguimiento</th><th>Pendientes de decidir</th><th>Agenda al día</th><th>Meta del mes</th><th>Estado</th></tr></thead><tbody>{report.rows.map(row => <tr key={row.profileId}>
+      <td><a href={ownerRoute(row.profileId)}><strong>{formatDisplayName(row.name)}</strong></a>
+        <small>{row.activeOpportunities} activas · {row.followUpsWeek} seguimientos esta semana</small>
+        <small>{row.lastSeenAt ? `Entró al CRM ${sinceLabel(row.daysSinceSeen)}` : 'Sin registro de ingreso al CRM'}{row.activitySince ? ` · cuenta desde el ${fmtDateOnly(row.activitySince)}` : ''}</small></td>
+      <td>{row.lastFollowUpAt ? fmtDate(row.lastFollowUpAt) : '—'}<small>{row.lastFollowUpAt ? sinceLabel(row.daysSinceFollowUp) : row.activitySince ? 'ninguno desde que entró' : 'sin registro'}</small></td>
       <td className="numeric-value"><strong>{row.pendingDecisions}</strong></td>
       <td className="numeric-value">{row.agendaPct === null ? '—' : `${row.agendaPct}%`}</td>
-      <td>{row.lastSeenAt ? fmtDate(row.lastSeenAt) : '—'}<br/><small>{row.lastSeenAt ? sinceLabel(row.daysSinceSeen) : 'sin registro'}</small></td>
       <td className="numeric-value">{row.goalPct === null ? 'Sin meta' : `${row.goalPct}%`}</td>
       <td><span title={row.reason}><Badge tone={BEHAVIOR_STATUS_TONES[row.status]}>{BEHAVIOR_STATUS_LABELS[row.status]}</Badge></span></td>
     </tr>)}</tbody></table></div>
-    {!report.rows.length && <EmptyState title="Sin comerciales en su alcance" text="Cuando haya comerciales con oportunidades aparecerá su comportamiento." />}
-    <p className="muted behavior-explanation">Inactivo: sin seguimientos ni ingresos al CRM en {rules.inactiveDays} días o más (si aún no hay registro de ingreso, no se marca inactivo). Atrasado: tiene oportunidades pendientes de decidir o menos del {rules.agendaOkPct}% de su agenda al día. Seguimientos = llamadas, correos, reuniones, WhatsApp y notas que el comercial registró en oportunidades comerciales (sin licitaciones); la semana empieza el lunes. Meta % = ventas aprobadas del mes contra su meta del mes.{report.lastSeenAvailable === false ? ' El registro de ingresos al CRM todavía no está activo.' : ''} Pase el cursor sobre el estado para ver el motivo. Regla {rules.version}.</p>
+    {!report.rows.length && <EmptyState title="Sin comerciales con cartera privada" text="Cuando un comercial tenga oportunidades privadas abiertas aparecerá aquí." />}
+    <p className="muted behavior-explanation">Sólo aparecen quienes tienen cartera privada abierta (las licitaciones se miden en su módulo). Inactivo: sin seguimientos ni ingresos al CRM en {rules.inactiveDays} días o más (si aún no hay registro de ingreso, no se marca inactivo). Atrasado: tiene oportunidades pendientes de decidir o menos del {rules.agendaOkPct}% de su agenda al día. Seguimientos = llamadas, correos, reuniones, WhatsApp y notas en oportunidades comerciales; la semana empieza el lunes. En un perfil que pasó a otra persona, la actividad cuenta desde su fecha de inicio.{report.lastSeenAvailable === false ? ' El registro de ingresos al CRM todavía no está activo.' : ''} Pase el cursor sobre el estado para ver el motivo. Regla {rules.version}.</p>
   </>;
 }
 
@@ -2883,7 +2885,10 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
   const commercialOpportunities = useMemo(() => allCommercialOpportunities.filter(o => !isOutOfActivePipeline(o, now)), [allCommercialOpportunities, now]);
   const deleteRequestRows = allCommercialOpportunities.filter(o => isDeleteRequested(o));
   const canResolveDelete = Boolean(data.currentProfile.permissions?.includes(DELETE_PERMISSION));
-  const activeTenderRows = tenderOpportunities.filter(o => !isTerminalStage(o.stage_code));
+  // Activas = por decidir o en curso, la misma regla del módulo de Licitaciones (Juan, 2026-11-25: «habla de 28 y
+  // activas tenemos como 14»): las cerradas con NO-GO, no presentadas, no adjudicadas y archivadas no cuentan.
+  const activeTenderRows = tenderOpportunities.filter(o => !isTerminalStage(o.stage_code)
+    && ['por_decidir', 'en_curso'].includes(classifyOpportunityStage({ tender_offer_status: o.tender_offer_status || undefined, archived_at: (o as { archived_at?: string | null }).archived_at || undefined })));
   const activeTenderValue = activeTenderRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const priorities = usePrioritiesById(true);
 
@@ -2901,7 +2906,8 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
   const activeRows = commercialOpportunities.filter(o => !isTerminalStage(o.stage_code));
   const totalPipeline = activeRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const weightedPipeline = activeRows.reduce((sum, o) => sum + Number(o.weighted_pipeline_value || 0), 0);
-  const negotiationRows = activeRows.map(o => {
+  // Sólo lo que puede cerrar pronto: Sustentación y Negociación (Juan, 2026-11-25: salían prospectos al 10 %).
+  const negotiationRows = activeRows.filter(o => o.stage_code === 'negociacion' || o.stage_code === 'sustentacion').map(o => {
     const probability = stageProbability.get(o.stage_code) || 0;
     return { ...o, probability, expected: Number(o.weighted_pipeline_value || 0) || Number(o.offer_value || 0) * probability };
   }).sort((a, b) => b.expected - a.expected || Number(b.offer_value || 0) - Number(a.offer_value || 0)).slice(0, 5);
@@ -2923,19 +2929,40 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
   const complianceTone = (pct: number | null) => pct === null ? 'amber' : pct >= 80 ? 'green' : pct >= 40 ? 'amber' : 'red';
 
   // 3. ¿Qué negocios empujar esta semana?
-  const stalledLargeRows = activeRows
-    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }))
-    .filter(row => ['overdue', 'missing'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 10)
+  // Una sola lista de negocios para mover (Juan, 2026-11-25): antes dos paneles (detenidos y urgentes de Vig-IA Comercial)
+  // repetían los mismos clientes, y también los de la pregunta 1. Entran los detenidos y los que Vig-IA Comercial marca urgentes,
+  // sin los que ya están arriba; de Vig-IA Comercial queda su recomendación sólo cuando es propia de ese negocio (una frase que
+  // se repite en varios no dice nada).
+  const shownAbove = new Set(negotiationRows.map(o => o.id));
+  const recommendationCount = priorities.list.reduce((map, item) => map.set(item.recommendation, (map.get(item.recommendation) || 0) + 1), new Map<string, number>());
+  const urgentIds = new Set(priorities.list.slice(0, 10).map(item => item.id));
+  const pushRows = activeRows
+    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at), priority: priorities.byId.get(o.id) || null }))
+    .filter(row => !shownAbove.has(row.opportunity.id) && (['overdue', 'missing'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 10 || urgentIds.has(row.opportunity.id)))
     .sort((a, b) => Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
-    .slice(0, 5);
+    .slice(0, 6)
+    .map(row => ({ ...row, vigia: row.priority && (recommendationCount.get(row.priority.recommendation) || 0) === 1 ? row.priority.recommendation : null }));
   const todayDay = bogotaDay(now) || '';
   const inFourteenDays = bogotaDay(new Date(now.getTime() + 14 * 86_400_000)) || '';
   const returningFrozenRows = allCommercialOpportunities
     .filter(o => isFrozen(o, now) && String(o.frozen_until || '').slice(0, 10) <= inFourteenDays)
     .sort((a, b) => String(a.frozen_until).localeCompare(String(b.frozen_until)));
+  // Las congeladas sin valor se resumen en una línea por comercial: diez filas en $0 eran ruido.
+  const returningValued = returningFrozenRows.filter(o => Number(o.offer_value || 0) > 0);
+  const returningZero = Array.from(returningFrozenRows.filter(o => !(Number(o.offer_value || 0) > 0)).reduce((map, o) => {
+    const key = formatDisplayName(o.owner_name || 'Sin comercial');
+    const day = String(o.frozen_until).slice(0, 10);
+    const row = map.get(key) || { owner: key, count: 0, first: day, last: day };
+    row.count++; if (day > row.last) row.last = day;
+    return map.set(key, row);
+  }, new Map<string, { owner: string; count: number; first: string; last: string }>()).values());
   const lossSince = bogotaDay(new Date(now.getTime() - 90 * 86_400_000)) || '';
+  // Sólo las perdidas (Juan, 2026-11-25): las descartadas son limpieza de cartera, no negocios perdidos, y salían como
+  // «Sin motivo registrado» encima de todo. Van aparte, en una línea.
+  const discardedRows = allCommercialOpportunities.filter(o => o.stage_code === 'descartado' && String(bogotaDay(o.discarded_at || o.updated_at) || '') >= lossSince);
+  const discardedValue = discardedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const lossReasonRows = Array.from(allCommercialOpportunities
-    .filter(o => (o.stage_code === 'perdido' || o.stage_code === 'descartado') && String(bogotaDay(o.lost_at || o.discarded_at || o.updated_at) || '') >= lossSince)
+    .filter(o => o.stage_code === 'perdido' && String(bogotaDay(o.lost_at || o.updated_at) || '') >= lossSince)
     .reduce((map, o) => {
       const key = o.loss_reason_code || 'sin_motivo';
       const row = map.get(key) || { key, label: o.loss_reason_name || data.lossReasons.find(reason => reason.code === o.loss_reason_code)?.name || 'Sin motivo registrado', count: 0, value: 0 };
@@ -2944,7 +2971,6 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
       map.set(key, row);
       return map;
     }, new Map<string, { key: string; label: string; count: number; value: number }>()).values()).sort((a, b) => b.count - a.count || b.value - a.value);
-  const urgentRows = priorities.list.slice(0, 5);
   // Renovaciones de todo el equipo cuyo contrato vence en 90 días o ya venció: la misma regla de Mi día.
   const teamRenewals = renewalsDue(allCommercialOpportunities, now);
 
@@ -2959,14 +2985,16 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
         <div className="v2-kpi-card blue"><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} oportunidades activas</span></div>
         <div className="v2-kpi-card purple"><small>Valor esperado</small><strong className="numeric-value">{fmtMoneyCompact(weightedPipeline)}</strong><span>Valor × probabilidad de la etapa</span></div>
       </div>
+      {/* La calidad de los datos cambia cómo se leen las cifras: va al lado de ellas, no al final (Juan, 2026-11-25). */}
+      <p className={`dashboard-quality-line${dataQuality.complete ? '' : ' is-warning'}`}>{dataQuality.complete ? 'Las oportunidades activas tienen valor, tipo de cliente y regional.' : <><strong>Ojo con las cifras:</strong> {dataQuality.summary}. El pipeline y el valor esperado no incluyen lo que no tiene valor.</>} El total del equipo sólo cuenta a quien tiene meta cargada.</p>
       <Panel title="Lo que está en negociación">
-        <p className="v2-panel-note">Las 5 oportunidades con mayor valor esperado (valor × probabilidad de la etapa).</p>
+        <p className="v2-panel-note">Las 5 en Sustentación o Negociación con mayor valor esperado (valor × probabilidad de la etapa): lo que puede cerrar pronto.</p>
         <div className="v2-deal-list">{negotiationRows.map(o => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
           <div><strong>{formatDisplayName(o.company_name)}</strong><small>{formatDisplayName(o.owner_name || 'Sin comercial')} · {o.stage_name}</small></div>
           <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>Valor esperado {fmtMoneyCompact(o.expected)}</small></div>
           <Badge tone={stageTone(o.stage_code)}>{Math.round(o.probability * 100)}%</Badge>
         </a>)}</div>
-        {!negotiationRows.length && <EmptyState title="Sin oportunidades activas" text="No hay oportunidades comerciales activas para cerrar la brecha." />}
+        {!negotiationRows.length && <EmptyState title="Nada en Sustentación ni Negociación" text="No hay oportunidades comerciales en las etapas que cierran pronto." />}
       </Panel>
       <details className="panel dashboard-details">
         <summary>Ventas por comercial y trimestre {year}</summary>
@@ -2986,7 +3014,6 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
       </details>
       <AvancysCollectionPanel />
       <AvancysCommissionsPanel />
-      <p className="muted dashboard-footnote">Calidad de datos: {dataQuality.complete ? 'las oportunidades activas tienen valor, tipo de cliente y regional.' : `${dataQuality.summary}. El pipeline y el valor esperado no incluyen lo que no tiene valor.`} El total del equipo sólo cuenta a quien tiene meta cargada.</p>
     </section>
 
     <section id="dashboard-q2" className="v2-component-block dashboard-question" aria-label="¿Quién necesita ayuda?">
@@ -2995,32 +3022,28 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
     </section>
 
     <section id="dashboard-q3" className="v2-component-block dashboard-question" aria-label="¿Qué negocios empujar esta semana?">
-      <div className="v2-section-heading"><span>Pregunta 3</span><h2>¿Qué negocios empujar esta semana?</h2><p>Negocios grandes detenidos, congeladas que vuelven pronto, por qué perdemos y lo más urgente según Vig-IA Comercial.</p></div>
+      <div className="v2-section-heading"><span>Pregunta 3</span><h2>¿Qué negocios empujar esta semana?</h2><p>Los negocios detenidos o que Vig-IA Comercial marca urgentes, sin repetir los de arriba; lo que vuelve pronto y por qué perdemos.</p></div>
       <div className="grid two dashboard-panels">
-        <Panel title="Grandes y detenidos">
-          <div className="v2-deal-list">{stalledLargeRows.map(row => <a className="v2-deal-row" key={row.opportunity.id} href={`#/detail/${row.opportunity.id}`}>
-            <div><strong>{formatDisplayName(row.opportunity.company_name)}</strong><small>{formatDisplayName(row.opportunity.owner_name || 'Sin comercial')} · {row.opportunity.stage_name}</small></div>
-            <div className="v2-deal-value"><strong>{fmtMoneyCompact(row.opportunity.offer_value)}</strong><small>{row.action.code === 'overdue' ? 'Gestión vencida' : row.action.code === 'missing' ? 'Sin próxima gestión' : `${row.inactiveDays} días sin seguimiento`}</small></div>
+        <Panel title="Negocios para mover">
+          <div className="v2-deal-list">{pushRows.map(row => <a className="v2-deal-row" key={row.opportunity.id} href={`#/detail/${row.opportunity.id}`}>
+            <div><strong>{formatDisplayName(row.opportunity.company_name)}</strong><small>{formatDisplayName(row.opportunity.owner_name || 'Sin comercial')} · {row.opportunity.stage_name}</small>{row.vigia && <small className="v2-deal-vigia">Vig-IA Comercial: {row.vigia}</small>}</div>
+            <div className="v2-deal-value"><strong>{fmtMoneyCompact(row.opportunity.offer_value)}</strong><small>{row.action.code === 'overdue' ? 'Gestión vencida' : row.action.code === 'missing' ? 'Sin próxima gestión' : Number(row.inactiveDays || 0) >= 10 ? `${row.inactiveDays} días sin seguimiento` : 'Urgente según Vig-IA Comercial'}</small></div>
           </a>)}</div>
-          {!stalledLargeRows.length && <EmptyState title="Nada detenido" text="No hay oportunidades vencidas, sin agenda o con 10+ días sin seguimiento." />}
+          {!pushRows.length && <EmptyState title="Nada detenido" text="No hay negocios vencidos, sin agenda, con 10+ días sin seguimiento ni urgentes, fuera de los de arriba." />}
         </Panel>
-        <Panel title="Lo más urgente (Vig-IA Comercial)">
-          {priorities.status === 'loading' || priorities.status === 'idle' ? <p className="muted">Cargando prioridades…</p> : priorities.status === 'error' ? <p className="muted">Las prioridades no están disponibles en este momento.</p> : <div className="v2-deal-list">{urgentRows.map(item => <a className="v2-deal-row" key={item.id} href={`#/detail/${item.id}`}>
-            <div><strong>{formatDisplayName(item.company_name)}</strong><small>{priorityReason(item)} · {item.recommendation}</small></div>
-            <div className="v2-deal-value"><strong>{fmtMoneyCompact(item.offer_value)}</strong><small>{formatDisplayName(item.owner_name || 'Sin comercial')}</small></div>
-          </a>)}{!urgentRows.length && <EmptyState title="Sin urgencias" text="Vig-IA Comercial no encontró oportunidades urgentes." />}</div>}
-        </Panel>
-        <Panel title="Renovaciones por vencer (90 días)">
-          {teamRenewals.length ? <ul className="dashboard-simple-list">{teamRenewals.map(({ opportunity: o, phrase }) => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>{phrase} · {formatDisplayName(o.owner_name || 'Sin comercial')}</span></li>)}</ul>
-            : <p className="muted">Ninguna renovación abierta vence en los próximos 90 días.</p>}
-        </Panel>
-        <Panel title="Congeladas que vuelven en 14 días">
-          {returningFrozenRows.length ? <ul className="dashboard-simple-list">{returningFrozenRows.map(o => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>vuelve el {fmtDateOnly(o.frozen_until)} · {formatDisplayName(o.owner_name || 'Sin comercial')} · {fmtMoneyCompact(o.offer_value)}</span></li>)}</ul> : <p className="muted">Ninguna congelada vuelve en los próximos 14 días.</p>}
-          <small className="muted">Hoy es {fmtDateOnly(todayDay)}.</small>
-        </Panel>
-        <Panel title="Por qué perdemos (últimos 90 días)">
-          {lossReasonRows.length ? <ul className="dashboard-simple-list">{lossReasonRows.map(row => <li key={row.key}><strong>{row.label}</strong> <span>{row.count} {row.count === 1 ? 'oportunidad' : 'oportunidades'} · {fmtMoneyCompact(row.value)}</span></li>)}</ul> : <p className="muted">Sin oportunidades perdidas o descartadas en los últimos 90 días.</p>}
-        </Panel>
+        <div className="stack">
+          {teamRenewals.length > 0 && <Panel title="Renovaciones por vencer (90 días)">
+            <ul className="dashboard-simple-list">{teamRenewals.map(({ opportunity: o, phrase }) => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>{phrase} · {formatDisplayName(o.owner_name || 'Sin comercial')}</span></li>)}</ul>
+          </Panel>}
+          {returningFrozenRows.length > 0 && <Panel title="Congeladas que vuelven en 14 días">
+            {returningValued.length > 0 && <ul className="dashboard-simple-list">{returningValued.map(o => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>vuelve el {fmtDateOnly(o.frozen_until)} · {formatDisplayName(o.owner_name || 'Sin comercial')} · {fmtMoneyCompact(o.offer_value)}</span></li>)}</ul>}
+            {returningZero.map(row => <p key={row.owner} className="muted">{row.count === 1 ? '1 sin valor' : `${row.count} sin valor`} de {row.owner} {row.first === row.last ? `vuelve el ${fmtDateOnly(row.first)}` : `vuelven entre el ${fmtDateOnly(row.first)} y el ${fmtDateOnly(row.last)}`}.</p>)}
+          </Panel>}
+          <Panel title="Por qué perdemos (últimos 90 días)">
+            {lossReasonRows.length ? <ul className="dashboard-simple-list">{lossReasonRows.map(row => <li key={row.key}><strong>{row.label}</strong> <span>{row.count} {row.count === 1 ? 'oportunidad' : 'oportunidades'} · {fmtMoneyCompact(row.value)}</span></li>)}</ul> : <p className="muted">Ninguna oportunidad perdida en los últimos 90 días.</p>}
+            {discardedRows.length > 0 && <p className="muted">Además, {discardedRows.length === 1 ? '1 descartada' : `${discardedRows.length} descartadas`} ({fmtMoneyCompact(discardedValue)}): limpieza de cartera, no negocios perdidos.</p>}
+          </Panel>
+        </div>
       </div>
     </section>
 

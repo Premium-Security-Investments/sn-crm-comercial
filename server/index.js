@@ -1320,10 +1320,16 @@ async function attachCommercialMetadata(database, rows) {
   if (baseResult.error) throw baseResult.error;
   if (profileResult.error) throw profileResult.error;
   const segmentById = new Map((baseResult.data || []).map(o => [o.id, o.customer_segment || null]));
+  // El estado de la oferta y el archivo de las licitaciones (2026-11-25): el tablero contaba como activas las
+  // cerradas con NO-GO y las archivadas. Sólo para las filas de licitación.
+  const tenderIds = list.filter(o => o?.service_type_code === 'licitacion_publica').map(o => o.id).filter(Boolean);
+  const tenderResult = tenderIds.length ? await database.from('psi_sales_opportunities').select('id,tender_offer_status,archived_at').in('id', tenderIds) : { data: [] };
+  if (tenderResult.error) throw tenderResult.error;
+  const tenderById = new Map((tenderResult.data || []).map(o => [o.id, { tender_offer_status: o.tender_offer_status ?? null, archived_at: o.archived_at ?? null }]));
   const profileById = new Map((profileResult.data || []).map(p => [p.id, p]));
   const enriched = list.map(o => {
     const owner = profileById.get(o.owner_id);
-    return { ...o, ...(clientProfileById.get(o.id) || {}), customer_segment: segmentById.get(o.id) ?? o.customer_segment ?? null, owner_commercial_area: owner?.commercial_area || null, owner_can_edit_customer_segment: !!owner?.can_edit_customer_segment };
+    return { ...o, ...(clientProfileById.get(o.id) || {}), ...(tenderById.get(o.id) || {}), customer_segment: segmentById.get(o.id) ?? o.customer_segment ?? null, owner_commercial_area: owner?.commercial_area || null, owner_can_edit_customer_segment: !!owner?.can_edit_customer_segment };
   });
   return Array.isArray(rows) ? enriched : enriched[0];
 }
@@ -4246,6 +4252,13 @@ export async function loadCommercialBehavior(database, profile, now = new Date()
     .map(({ id, full_name, role }) => ({ id, full_name, role }));
   const ids = salespeople.map(row => row.id);
   if (!ids.length) return buildCommercialBehavior({ salespeople, now });
+  // Desde cuándo cuenta la actividad de un perfil reasignado (migración 237). Sin la columna, cuenta todo.
+  {
+    const { data: since, error } = await database.from('psi_sales_profiles').select('id,activity_since').in('id', ids);
+    if (error && error.code !== '42703') throw error;
+    const sinceById = new Map((since || []).map(row => [row.id, row.activity_since || null]));
+    for (const person of salespeople) person.activity_since = sinceById.get(person.id) || null;
+  }
   const [viewRows, segmentRows] = await Promise.all([
     fetchVigiaRows(database, ids.slice().sort(), BEHAVIOR_OPPORTUNITY_SELECT),
     fetchVigiaCustomerSegments(database, ids.slice().sort()),
@@ -4291,6 +4304,7 @@ export async function loadCommercialBehavior(database, profile, now = new Date()
     lastSeen,
     goals,
     now,
+    onlyWithPortfolio: true,
   });
   return { ...report, lastSeenAvailable };
 }
