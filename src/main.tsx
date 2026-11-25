@@ -3188,10 +3188,10 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
       </div>}
   </section>;
 
-  // El chat de Vig-IA va en el panel fijo de la derecha (Juan, 2026-11-25), no al final de la página.
+  // El chat de Vig-IA Comercial va en el panel fijo de la derecha (Juan, 2026-11-25), no al final de la página.
   const vigiaChat = canRenderOpportunityCopilot(data.currentProfile, null) ? <VigiaChatRegistro onSaved={refresh} /> : null;
 
-  return <VigiaDock dock={vigiaChat} label="Contarle a Vig-IA">
+  return <VigiaDock dock={vigiaChat} label="Contarle a Vig-IA Comercial">
   <section className="stack my-day-home" aria-label="Mi día">
     <div className="my-day-head">
       <p className="my-day-dayline">{MY_DAY_DATE.format(now).replace(',', '')}</p>
