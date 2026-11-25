@@ -102,8 +102,8 @@ test('la ruta, la tabla de «Hecho» y Mi día', () => {
   assert.match(server, /cronograma_faltante: Boolean\(report\?\.available && cronogramaFaltante\(report\.report\)\),\n      criticos,/);
   assert.match(read('../supabase/migrations/224_mi_dia_licitaciones_hecho.sql'), /create table if not exists public\.psi_tender_mi_dia_hechos/);
   const main = read('../src/main.tsx');
-  assert.match(main, /LICITACIONES_VIEW\) && <TenderMiDia request=\{api\}/);
-  assert.match(main, /\{tendersOnly \? null : !opportunities\.length/);
+  assert.match(main, /<TenderMiDia request=\{api\}/);
+  assert.match(main, /const clientsSection = tendersOnly \? null : <section id="mi-dia-clientes"/);
   const component = read('../src/tenders/components/TenderMiDia.tsx');
   for (const text of ['Lo general · las cuatro actividades', 'El día a día · lo que hace usted', 'Mis pendientes sin fecha de la entidad', 'Ir al proceso →', 'Ir a Requisitos →', 'Lo que publica la entidad esta semana']) {
     assert.ok(component.includes(text), `falta «${text}»`);

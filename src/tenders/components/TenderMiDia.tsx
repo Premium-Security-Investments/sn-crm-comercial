@@ -36,12 +36,21 @@ function Tag({ actividad }: { actividad: TenderMiDiaActividad }) {
  * plegado al final. Presentar cuenta, al lado de cada cierre, cuántas cosas críticas siguen abiertas, y un cierre de
  * fecha dudosa sale «por confirmar en SECOP»; el detalle de lo crítico va en «Mis pendientes» (Juan, 2026-11-25). Si no se puede leer, Mi día sigue igual: es un aviso, no una condición.
  */
-export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest; onOpen: (opportunityId: string) => void; onGo: (hash: string) => void }) {
+/** Lo que Mi día necesita saber de licitaciones para su frase de arriba y para decidir qué sección va primero. */
+export type TenderMiDiaResumen = { hoy: number; primero: { proceso: string; texto: string; hora: string | null } | null };
+
+export function TenderMiDia({ request, onOpen, onGo, onSummary }: { request: TenderRequest; onOpen: (opportunityId: string) => void; onGo: (hash: string) => void; onSummary?: (resumen: TenderMiDiaResumen) => void }) {
   const [data, setData] = useState<TenderMiDiaPayload | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(() => loadTenderMiDia(request).then(setData, () => undefined), [request]);
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    if (!data || !onSummary) return;
+    const hoy = (data.dias.find(day => day.dias === 0)?.items || []).filter(item => !item.hecho);
+    const first = hoy[0];
+    onSummary({ hoy: hoy.length, primero: first ? { proceso: first.proceso, texto: first.texto, hora: first.tiene_hora ? hora(first.value, true) : null } : null });
+  }, [data, onSummary]);
   if (!data) return null;
 
   const toggle = async (item: TenderMiDiaAccion) => {

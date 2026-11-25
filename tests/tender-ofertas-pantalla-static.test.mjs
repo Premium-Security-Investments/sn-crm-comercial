@@ -17,7 +17,8 @@ test('el registro de radicación y resultado va junto al estado de la oferta', (
 
 test('indicadores en Oportunidades y aviso en Mi día', () => {
   assert.match(read('src/tenders/TenderOpportunitiesView.tsx'), /<TenderOfferIndicatorsPanel request=\{request\} \/>/);
-  assert.match(read('src/main.tsx'), /LICITACIONES_VIEW\) && <TenderMyDayOfferReminder/);
+  // Desde el 25-nov va dentro de la sección Licitaciones de Mi día, que sólo ve quien tiene Licitaciones.
+  assert.match(read('src/main.tsx'), /const tendersSection = seesTenders && <section id="mi-dia-licitaciones"[\s\S]*?<TenderMyDayOfferReminder/);
   const server = read('server/index.js');
   assert.match(server, /'POST \/api\/tender-offer-submission': \['tenders', ACTIONS\.LICITACIONES_GO_NO_GO_APPROVE\]/);
   assert.equal(server, read('api/[...path].js'));

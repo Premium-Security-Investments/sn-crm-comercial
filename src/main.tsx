@@ -27,7 +27,8 @@ import { TenderDecisionExperience } from './tenders/components/TenderDecisionExp
 import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalysis';
 import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
-import { TenderMiDia } from './tenders/components/TenderMiDia';
+import { TenderMiDia, type TenderMiDiaResumen } from './tenders/components/TenderMiDia';
+import { VigiaDock } from './vigia/VigiaDock';
 import { TenderMyDayOfferReminder } from './tenders/components/TenderMyDayOfferReminder';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
 import { TenderComplianceMatrixPanel } from './tenders/components/TenderComplianceMatrixPanel';
@@ -3072,6 +3073,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   // hay nada y pasa a ser la próxima conversación. La siguiente gestión se busca en toda la cartera, no sólo en
   // los 7 días: el vacío de la semana no debe dejar la pantalla muda.
   const isCalm = !pendingCount && !todayCount;
+  const [tenderResumen, setTenderResumen] = useState<TenderMiDiaResumen | null>(null);
   const nextTalk = useMemo(() => activeRows
     .filter(o => (bogotaDay(o.next_action_at as string) || '') > todayKey)
     .sort((a, b) => String(a.next_action_at).localeCompare(String(b.next_action_at)))[0] || null, [activeRows, todayKey]);
@@ -3112,23 +3114,36 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   // Quien sólo trabaja licitaciones (hoy, Katherine) no ve la parte comercial: le salía vacía y decía «Hoy está
   // despejado» con la semana llena de plazos (Juan, 2026-11-15).
   const tendersOnly = can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && !opportunities.some(o => isAgt003CommercialOpportunity(o));
+  const seesTenders = can(data.currentProfile, ACTIONS.LICITACIONES_VIEW);
+  const bothWorlds = seesTenders && !tendersOnly;
+  // Quien trabaja licitaciones y clientes privados ve dos secciones con título propio, y arriba una frase de cada una
+  // (Juan, 2026-11-25: «no se veía bien la separación; si un comercial tiene ambas debe quedar claro»). Va primero la
+  // que tenga algo para hoy; si las dos o ninguna, licitaciones.
+  const clientsToday = pendingCount + todayCount;
+  const clientsFirst = bothWorlds && clientsToday > 0 && !(tenderResumen && tenderResumen.hoy > 0);
+  const tenderLine = !tenderResumen ? 'cargando…'
+    : tenderResumen.hoy && tenderResumen.primero
+      ? `${tenderResumen.hoy === 1 ? '1 plazo hoy' : `${tenderResumen.hoy} plazos hoy`}. Lo primero: ${tenderResumen.primero.texto.toLowerCase()} · ${tenderResumen.primero.proceso}${tenderResumen.primero.hora ? `, ${tenderResumen.primero.hora}` : ''}.`
+      : 'sin plazos hoy.';
 
-  return <section className="stack my-day-home" aria-label="Mi día">
-    <div className="my-day-head">
-      <p className="my-day-dayline">{MY_DAY_DATE.format(now).replace(',', '')}</p>
-      {tendersOnly
-        ? <h2 className="my-day-headline">Mi día · {data.currentProfile.full_name?.split(/\s+/)[0] || 'licitaciones'}</h2>
-        : <><h2 className="my-day-headline">{headline}</h2>
-          {subline && <p className="my-day-subline">{subline}</p>}</>}
-    </div>
+  const tendersSection = seesTenders && <section id="mi-dia-licitaciones" className={`my-day-world is-tenders${bothWorlds ? '' : ' is-alone'}`} aria-label="Licitaciones">
+    {bothWorlds && <h2 className="my-day-world-h">Licitaciones</h2>}
     {/* Mi día de licitaciones (Juan, 2026-11-15, maqueta aprobada): alertas en dos niveles, las cuatro actividades y el
         día a día. Reemplaza la semana mezclada y la tarjeta de vencidos, que ahora van dentro como lo crítico. */}
-    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMiDia request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} onGo={go} />}
-    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOfferReminder request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
+    <TenderMiDia request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} onGo={go} onSummary={setTenderResumen} />
+    <TenderMyDayOfferReminder request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />
+  </section>;
+
+  const clientsSection = tendersOnly ? null : <section id="mi-dia-clientes" className={`my-day-world is-clients${bothWorlds ? '' : ' is-alone'}`} aria-label="Clientes privados">
+    {bothWorlds && <>
+      <h2 className="my-day-world-h">Clientes privados</h2>
+      <p className="my-day-world-lead">{headline}</p>
+      {subline && <p className="my-day-subline">{subline}</p>}
+    </>}
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}
-    {tendersOnly ? null : !opportunities.length
+    {!opportunities.length
       ? <section className="panel my-day-first">
         <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
         {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
@@ -3143,10 +3158,8 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
           <RenewalsDue items={renewals} />
           <RenewalsDue items={competitorContracts} title="Contratos de la competencia por vencer" />
           <WeekList upcoming={weekRows} />
-          {isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
         </div>
         <div className="my-day-side">
-          {!isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
           <section className="my-day-goal" aria-label="Meta del mes">
             <h3>Meta del mes</h3>
             {goal.budget ? <>
@@ -3174,6 +3187,27 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
         </details>}
       </div>}
   </section>;
+
+  // El chat de Vig-IA Comercial va en el panel fijo de la derecha (Juan, 2026-11-25), no al final de la página.
+  const vigiaChat = canRenderOpportunityCopilot(data.currentProfile, null) ? <VigiaChatRegistro onSaved={refresh} /> : null;
+
+  return <VigiaDock dock={vigiaChat} label="Contarle a Vig-IA Comercial">
+  <section className="stack my-day-home" aria-label="Mi día">
+    <div className="my-day-head">
+      <p className="my-day-dayline">{MY_DAY_DATE.format(now).replace(',', '')}</p>
+      {tendersOnly
+        ? <h2 className="my-day-headline">Mi día · {data.currentProfile.full_name?.split(/\s+/)[0] || 'licitaciones'}</h2>
+        : bothWorlds
+          ? <div className="my-day-worlds-lead">
+            <p><a href="#mi-dia-licitaciones" onClick={event => { event.preventDefault(); document.getElementById('mi-dia-licitaciones')?.scrollIntoView({ behavior: 'smooth' }); }}><strong>Licitaciones:</strong></a> {tenderLine}</p>
+            <p><a href="#mi-dia-clientes" onClick={event => { event.preventDefault(); document.getElementById('mi-dia-clientes')?.scrollIntoView({ behavior: 'smooth' }); }}><strong>Clientes privados:</strong></a> {headline}</p>
+          </div>
+          : <><h2 className="my-day-headline">{headline}</h2>
+            {subline && <p className="my-day-subline">{subline}</p>}</>}
+    </div>
+    {clientsFirst ? <>{clientsSection}{tendersSection}</> : <>{tendersSection}{clientsSection}</>}
+  </section>
+  </VigiaDock>;
 }
 
 // Vista del directivo sobre un consultor. El comercial trabaja desde MyDayHome (Mi día), no desde aquí.
