@@ -129,8 +129,8 @@ export function OpportunityDecisionForm({ opportunity, stages, lossReasons, comp
       {decision === 'advance' && <label>Nueva etapa<select required value={stageCode} onChange={e => setStageCode(e.target.value)}>
         <option value="">Seleccionar</option>{nextStages.map(stage => <option key={stage.code} value={stage.code}>{stage.code === 'aprobado' ? 'Ganada (aprobada)' : stage.name}</option>)}
       </select></label>}
-      {needsDate && <label>Próxima gestión<input type="date" required min={today} max={addDays(today, 90)} value={nextDay} onChange={e => setNextDay(e.target.value)} />
-        <span className="decision-quick-dates">{[2, 7, 15, 30].map(days => <button type="button" key={days} onClick={() => setNextDay(addDays(today, days))}>{days === 2 ? 'En 2 días' : days === 7 ? '1 semana' : days === 15 ? '15 días' : '1 mes'}</button>)}</span></label>}
+      {needsDate && <label className="decision-date">Próxima gestión<span className="decision-date-row"><input type="date" required min={today} max={addDays(today, 90)} value={nextDay} onChange={e => setNextDay(e.target.value)} />
+        <span className="decision-quick-dates">{[2, 7, 15, 30].map(days => <button type="button" key={days} onClick={() => setNextDay(addDays(today, days))}>{days === 2 ? 'En 2 días' : days === 7 ? '1 semana' : days === 15 ? '15 días' : '1 mes'}</button>)}</span></span></label>}
       {askValue && <label>Valor estimado (COP)<input inputMode="numeric" placeholder="Ej. 80000000" value={value} onChange={e => setValue(e.target.value)} /></label>}
       {decision === 'freeze' && <label>Congelar por<select value={freezeChoice} onChange={e => setFreezeChoice(e.target.value)}>
         {FREEZE_DAYS.map(days => <option key={days} value={String(days)}>{days} días (hasta {addDays(today, days).split('-').reverse().join('/')})</option>)}
