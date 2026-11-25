@@ -1263,3 +1263,21 @@ td.numeric-value{white-space:nowrap}
 .my-day-world-h{margin:0;font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#1b4fd0}
 .my-day-world.is-clients .my-day-world-h{color:#0f766e}
 .my-day-world-lead{margin:-8px 0 0;font-size:18px;font-weight:700;line-height:1.3;color:#172033;max-width:46ch}
+/* Formulario de decisión (Juan, 2026-11-25: «no se están aprovechando bien los espacios»): alineado con el título, las
+   cinco decisiones en una línea y «Pedir eliminar» como enlace discreto; contacto y valor lado a lado; la fecha con sus
+   atajos en una fila; notas de dos líneas. */
+.decision-form{container-type:inline-size}
+.decision-panel .decision-form{padding:10px 0 0}
+.decision-choices{align-items:center}
+.decision-choice.decision-request_delete{flex:0 0 auto;margin-left:auto;padding:6px 4px;border:0;background:transparent;color:#b91c1c;font-size:12.5px;font-weight:700;text-decoration:underline;box-shadow:none}
+.decision-choice.decision-request_delete.is-active{border:0;background:transparent;color:#7f1d1d}
+.decision-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px}
+.decision-fields .decision-date{grid-column:1 / -1;order:1}
+.decision-fields .decision-notes{order:2}
+.decision-date-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.decision-date-row input{flex:0 1 200px;min-width:160px}
+.decision-notes textarea{min-height:64px;resize:vertical}
+@container (max-width:420px){
+  .decision-fields{grid-template-columns:1fr}
+  .decision-choice.decision-request_delete{margin-left:0}
+}
