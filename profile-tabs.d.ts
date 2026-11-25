@@ -12,6 +12,7 @@ export type TabsAccess = {
   tender_lessons: boolean;
   study_review: boolean;
   study_approve: boolean;
+  model_quoter: boolean;
   read_only: boolean;
 };
 export type AreaAssignment = { area_code: string; subarea_code: string | null };

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Bot, Briefcase, Building2, CalendarClock, Calculator, ChevronDown, ClipboardCheck, FileCheck2, Gauge, LayoutDashboard, LogOut, Eye, Radar, RefreshCw, ShieldCheck, Sun, Target,
+  Bot, Briefcase, Building2, CalendarClock, Calculator, ChevronDown, ClipboardCheck, FileCheck2, Gauge, LayoutDashboard, LogOut, Eye, Radar, RefreshCw, Scale, ShieldCheck, Sun, Target,
   type LucideIcon,
 } from 'lucide-react';
 
 // Íconos del menú lateral, los mismos de SIIO Programación (lucide-react), por destino (Juan, 2026-10-13).
 const NAV_ICONS: Record<string, LucideIcon> = {
   '#/siio': Gauge,
+  '#/modelos': Scale,
   '#/home': Sun,
   '#/dashboard2': LayoutDashboard,
   '#/clients': Building2,

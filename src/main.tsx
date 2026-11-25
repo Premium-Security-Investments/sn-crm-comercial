@@ -11,6 +11,7 @@ import { isModulePermissionEligible } from '../module-access.js';
 import { agt002UnavailableMessage } from '../verticales/licitaciones/agt002-reanalysis-error-message.js';
 import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
+import { CotizadorModelos } from './siio/CotizadorModelos';
 import { AvisoIngreso, IngresoMarca } from './shell/IngresoMarca';
 import { CabeceraMarca, LogoCincuentaAnos } from './shell/MarcoMarca';
 import { ChevronRight, Lock, Mail, Menu as MenuIcon } from 'lucide-react';
@@ -139,7 +140,7 @@ type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string;
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-type Route = { page: 'home' | 'clients' | 'opportunities' | 'quotes' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'estudios' | 'programacion' | 'invalid'; id?: string };
+type Route = { page: 'home' | 'clients' | 'opportunities' | 'quotes' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'modelos' | 'agents' | 'estudios' | 'programacion' | 'invalid'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment' | 'client_deal_type'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; client_deal_type?: ClientDealType | ''; avancys_nit?: string; };
@@ -324,6 +325,7 @@ function parseRoute(): Route {
   if (page === 'home') return { page: 'home' };
   if (page === 'clients') return { page: 'clients' };
   if (page === 'opportunities') return { page: 'opportunities' };
+  if (page === 'modelos') return { page: 'modelos' };
   if (page === 'cotizar') return id ? { page: 'quotes', id: decodeURIComponent(id) } : { page: 'quotes' };
   if (page === 'tenders') return { page: 'tenders' };
   if (page === 'detail') return id ? { page: 'detail', id: decodeURIComponent(id) } : { page: 'invalid' };
@@ -597,7 +599,7 @@ function fechaDeHoyBogota() {
 }
 // El área del menú a la que pertenece cada pantalla (decisión de Juan, 2026-10-09); va en la cabecera azul.
 function areaFor(route: Route) {
-  if (route.page === 'siio') return 'Gerencia';
+  if (route.page === 'siio' || route.page === 'modelos') return 'Gerencia';
   if (route.page === 'tenders') return 'Licitaciones';
   if (route.page === 'users') return 'Administración';
   if (route.page === 'agents') return 'IT';
@@ -616,6 +618,7 @@ function titleFor(route: Route, profile?: Profile | null) {
   if (route.page === 'dashboard') return 'Dashboard';
   if (route.page === 'dashboard2') return 'Dashboard';
   if (route.page === 'siio') return 'Torre de Control';
+  if (route.page === 'modelos') return 'Cotizador de modelos';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return canWriteGoals(profile) ? 'Cargar metas' : 'Mis metas';
   if (route.page === 'alerts') return 'Prioridades Comerciales';
@@ -652,6 +655,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
   if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} refresh={refresh} />;
   if (route.page === 'siio') return <SiioDashboard currentProfile={data.currentProfile} />;
+  if (route.page === 'modelos') return <CotizadorModelos />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <VigiaCommercial
@@ -3897,7 +3901,11 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
       <label className="wide">Empezar desde una plantilla<select value="" onChange={e => { applyTemplate(e.target.value); }}><option value="">Elegir plantilla (opcional)…</option>{PROFILE_TEMPLATES.map(template => <option key={template.code} value={template.code}>{template.label}</option>)}</select><small className="muted">La plantilla solo marca casillas; después puede ajustarlas.</small></label>
       {form.legacy_role && <p className="muted wide">Esta persona tiene un perfil antiguo ({LEGACY_ROLE_NOTE[form.legacy_role]}). Al guardar queda exactamente con lo que esté marcado abajo.</p>}
       <fieldset className="access-scope wide"><legend>Pestañas que puede abrir</legend><p>Al marcar una pestaña con opciones, estas aparecen debajo.</p>{catalogStatus === 'loading' && <p className="muted">Cargando catálogo de accesos…</p>}{catalogStatus === 'error' && <p className="error">No fue posible cargar el catálogo de accesos. Actualiza la página antes de guardar.</p>}<div className="access-scope-grid">
-        <fieldset className="access-area-card"><legend>Gerencia</legend>{tabBox('torre', 'Torre de Control')}</fieldset>
+        <fieldset className="access-area-card"><legend>Gerencia</legend>{tabBox('torre', 'Torre de Control')}
+          {has('torre') && !readOnly && <div className="access-subarea">
+            <label className="checkline"><input type="checkbox" checked={access.model_quoter} onChange={e => setAccess({ model_quoter: e.target.checked })}/> Cotizador de modelos de servicio: precios, costos y márgenes de clientes</label>
+          </div>}
+        </fieldset>
         <fieldset className="access-area-card"><legend>Comercial</legend>
           {tabBox('dashboard', 'Dashboard')}
           {tabBox('oportunidades', 'Oportunidades')}
@@ -3944,7 +3952,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         </fieldset>
         <fieldset className="access-area-card"><legend>IT · Administración</legend>{tabBox('usuarios', 'Usuarios y permisos · Agentes', readOnly)}<small className="muted">Administra el SIIO: da accesos a otras personas.</small></fieldset>
       </div></fieldset>
-      <label className="checkline wide"><input type="checkbox" checked={readOnly} onChange={e => setAccess(e.target.checked ? { read_only: true, tabs: access.tabs.filter(tab => tab !== 'metas' && tab !== 'estudios' && tab !== 'usuarios'), copilot: false, edit_segment: false, delete_opportunities: false, tender_custody: false, tender_company: false, tender_lessons: false, study_review: false, study_approve: false, owns_opportunities: false, opportunity_scope: 'todas' } : { read_only: false })}/> Solo consulta: ve, pero no cambia nada</label>
+      <label className="checkline wide"><input type="checkbox" checked={readOnly} onChange={e => setAccess(e.target.checked ? { read_only: true, tabs: access.tabs.filter(tab => tab !== 'metas' && tab !== 'estudios' && tab !== 'usuarios'), copilot: false, edit_segment: false, delete_opportunities: false, tender_custody: false, tender_company: false, tender_lessons: false, study_review: false, study_approve: false, model_quoter: false, owns_opportunities: false, opportunity_scope: 'todas' } : { read_only: false })}/> Solo consulta: ve, pero no cambia nada</label>
       <label>Perfil de uso de IA<select value={form.ai_usage_profile || ''} disabled={aiProfiles.status !== 'ready'} onChange={e=>setForm({...form, ai_usage_profile: e.target.value || null})}><option value="">Sin perfil</option>{form.ai_usage_profile && !aiProfiles.profiles.some(profile => profile.profile_id === form.ai_usage_profile) && <option value={form.ai_usage_profile}>{aiProfiles.status === 'ready' ? `${form.ai_usage_profile} (archivado o inexistente)` : form.ai_usage_profile}</option>}{aiProfiles.profiles.map(profile => <option key={profile.profile_id} value={profile.profile_id}>{profile.display_name}</option>)}</select><small className="muted">{aiProfiles.status === 'error' ? 'La plataforma de agentes no responde: el campo queda deshabilitado y se conserva el perfil guardado.' : aiProfiles.status === 'loading' ? 'Cargando perfiles de uso…' : 'Define el cupo de IA por persona. Los perfiles se crean en IT → Agentes → Perfiles de uso.'}</small></label>
       <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
       {!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}

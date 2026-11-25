@@ -3472,6 +3472,70 @@ function filterPayrollAggregatesForManagement(rows) {
   return rows.filter(row => SIIO_MANAGEMENT_PAYROLL_VISIBILITY.has(row?.visibility_level));
 }
 
+// Cotizador de modelos de servicio (Gerencia, junto a la Torre; migración 235). Los datos del cliente viven solo en la
+// base. Hace falta la Torre y además el permiso de capacidad `siio_cotizador_modelos`: lleva precios, costos y márgenes.
+const SERVICE_MODEL_PERMISSION = 'siio_cotizador_modelos';
+const SERVICE_MODEL_PARAMS_MAX = 20000;
+function requireServiceModelAccess(profile) {
+  requireModuleAction(profile, 'siio');
+  if (profile?.role === 'junta' || profile?.role === 'director' || !hasPermission(profile, SERVICE_MODEL_PERMISSION)) {
+    const error = new Error('No tiene permiso para el cotizador de modelos de servicio.');
+    error.status = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+}
+function cleanServiceModelClient(value) {
+  const key = String(value ?? '').trim();
+  if (!/^[\p{L}\p{N}_ .-]{1,40}$/u.test(key)) {
+    const error = new Error('Cliente no válido.');
+    error.status = 400;
+    throw error;
+  }
+  return key;
+}
+app.get('/api/siio/cotizador-modelos', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireServiceModelAccess(profile);
+    const database = requireDb();
+    const clients = await database.from('psi_service_model_stores').select('client_key,cutoff').order('cutoff', { ascending: false }).limit(5000);
+    if (clients.error) {
+      if (siioFoundationUnavailable(clients.error)) return res.json({ disponible: false, clientes: [], cliente: null, corte: null, tiendas: [], escenarios: [] });
+      throw clients.error;
+    }
+    const keys = [...new Set((clients.data || []).map(row => row.client_key))];
+    const client = req.query.cliente ? cleanServiceModelClient(req.query.cliente) : keys[0] ?? null;
+    if (!client) return res.json({ disponible: true, clientes: [], cliente: null, corte: null, tiendas: [], escenarios: [] });
+    const cutoff = (clients.data || []).find(row => row.client_key === client)?.cutoff ?? null;
+    const [stores, scenarios] = await Promise.all([
+      must(database.from('psi_service_model_stores').select('zone,risk_level,new_store,guard_posts,contracted_value,unknown_shrink').eq('client_key', client).eq('cutoff', cutoff).limit(5000)),
+      must(database.from('psi_service_model_scenarios').select('id,name,params,is_baseline,created_at').eq('client_key', client).order('created_at', { ascending: false }).limit(100)),
+    ]);
+    res.json({
+      disponible: true, clientes: keys, cliente: client, corte: cutoff,
+      tiendas: (stores || []).map(row => ({ zona: row.zone, nivel: row.risk_level, nueva: row.new_store === true, puestos: Number(row.guard_posts) || 0, valor: Number(row.contracted_value) || 0, merma: Number(row.unknown_shrink) || 0 })),
+      escenarios: scenarios || [],
+    });
+  } catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/cotizador-modelos/escenarios', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireServiceModelAccess(profile);
+    const client = cleanServiceModelClient(req.body?.cliente);
+    const name = String(req.body?.nombre ?? '').trim();
+    if (name.length < 1 || name.length > 120) throw Object.assign(new Error('Ponga un nombre de 1 a 120 caracteres.'), { status: 400 });
+    const params = req.body?.params;
+    if (!params || typeof params !== 'object' || Array.isArray(params) || JSON.stringify(params).length > SERVICE_MODEL_PARAMS_MAX) {
+      throw Object.assign(new Error('Los supuestos del escenario no son válidos.'), { status: 400 });
+    }
+    const row = await must(requireDb().from('psi_service_model_scenarios')
+      .insert({ client_key: client, name, params, created_by: profile.id })
+      .select('id,name,params,is_baseline,created_at').single());
+    res.json(row);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 app.get('/api/siio/bootstrap', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
