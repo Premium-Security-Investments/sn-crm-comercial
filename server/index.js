@@ -3509,12 +3509,12 @@ app.get('/api/siio/cotizador-modelos', async (req, res) => {
     if (!client) return res.json({ disponible: true, clientes: [], cliente: null, corte: null, tiendas: [], escenarios: [] });
     const cutoff = (clients.data || []).find(row => row.client_key === client)?.cutoff ?? null;
     const [stores, scenarios] = await Promise.all([
-      must(database.from('psi_service_model_stores').select('zone,risk_level,new_store,guard_posts,monthly_value,unknown_shrink').eq('client_key', client).eq('cutoff', cutoff).limit(5000)),
+      must(database.from('psi_service_model_stores').select('zone,risk_level,new_store,guard_posts,contracted_value,unknown_shrink').eq('client_key', client).eq('cutoff', cutoff).limit(5000)),
       must(database.from('psi_service_model_scenarios').select('id,name,params,is_baseline,created_at').eq('client_key', client).order('created_at', { ascending: false }).limit(100)),
     ]);
     res.json({
       disponible: true, clientes: keys, cliente: client, corte: cutoff,
-      tiendas: (stores || []).map(row => ({ zona: row.zone, nivel: row.risk_level, nueva: row.new_store === true, puestos: Number(row.guard_posts) || 0, valor: Number(row.monthly_value) || 0, merma: Number(row.unknown_shrink) || 0 })),
+      tiendas: (stores || []).map(row => ({ zona: row.zone, nivel: row.risk_level, nueva: row.new_store === true, puestos: Number(row.guard_posts) || 0, valor: Number(row.contracted_value) || 0, merma: Number(row.unknown_shrink) || 0 })),
       escenarios: scenarios || [],
     });
   } catch (error) { sendAuthError(res, error); }

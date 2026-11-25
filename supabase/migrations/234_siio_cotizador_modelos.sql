@@ -32,7 +32,7 @@ create table if not exists public.psi_service_model_stores (
   risk_level text not null check (risk_level in ('A', 'B', 'C')),
   new_store boolean not null default false,
   guard_posts integer not null default 0 check (guard_posts >= 0),
-  monthly_value numeric(14, 3) not null default 0,
+  contracted_value numeric(14, 3) not null default 0,
   unknown_shrink numeric(14, 3) not null default 0,
   source text,
   created_at timestamptz not null default now(),
