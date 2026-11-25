@@ -126,7 +126,7 @@ export function CotizadorModelos() {
           <div className="cm-k"><small>Unidades de reacción</small><b>{entero(t.unidades)}</b><span>{entero(t.unidadesDia)} de día · {entero(t.unidadesNoche)} de noche</span></div>
         </div>
         <section className="cm-hoja"><h2>Hoy frente al modelo, por ciudad<small>Personal hoy = valor contratado de los puestos de guarda en tiendas</small></h2>
-          <div className="cm-tabla"><table><thead><tr><th>Ciudad</th><th>Tiendas</th><th>A / B / C</th><th>Guardas hoy → modelo</th><th>Unidades</th><th>Personal hoy</th><th>Personal modelo</th><th>Analítica</th><th>Total modelo</th><th>Frente a hoy</th></tr></thead>
+          <div className="cm-tabla"><table><thead><tr><th>Ciudad</th><th>Tiendas</th><th>Tiendas A / B / C</th><th>Guardas hoy → modelo</th><th>Unidades de reacción</th><th>Personal hoy</th><th>Personal modelo</th><th>Analítica</th><th>Total modelo</th><th>Frente a hoy</th></tr></thead>
             <tbody>{zonasOrdenadas.map(z => <tr key={z.zona} className={z.enModelo ? '' : 'cm-fuera'}><td>{z.zona}</td><td>{z.tiendas}</td><td>{z.A} / {z.B} / {z.C}</td><td>{z.puestos} → {z.guardasModelo}</td><td>{z.unidades}</td><td>{entero(z.valor)}</td><td>{entero(z.personalModelo)}</td><td>{entero(z.valorAnalitica)}</td><td>{entero(z.totalModelo)}</td><td className={z.enModelo ? tono(z.frenteAHoy) : ''}>{z.enModelo ? conSigno(z.frenteAHoy) : 'sin cambio'}</td></tr>)}</tbody>
             <tfoot><tr><td>Total en el modelo</td><td>{t.tiendas}</td><td>{t.A} / {t.B} / {t.C}</td><td>{t.puestos} → {t.guardasModelo}</td><td>{t.unidades}</td><td>{entero(t.valor)}</td><td>{entero(t.personalModelo)}</td><td>{entero(t.valorAnalitica)}</td><td>{entero(t.totalModelo)}</td><td className={tono(t.frenteAHoy)}>{conSigno(t.frenteAHoy)}</td></tr></tfoot>
           </table></div>
@@ -134,16 +134,16 @@ export function CotizadorModelos() {
         </section>
         <div className="cm-dos">
           <section className="cm-hoja"><h2>Opciones de precio<small>Lo que paga el cliente frente a hoy</small></h2>
-            <table><thead><tr><th>Opción</th><th>Analítica</th><th>Paga</th><th>Frente a hoy</th><th className="cm-solo-interna">Nuestro margen</th></tr></thead>
-              <tbody>{r.opciones.map(o => <tr key={o.codigo} className={o.codigo === opcion ? 'cm-sel' : ''}><td>{o.codigo}{o.codigo === 'E' ? ' (6 meses)' : ''}</td><td>{entero(o.valorAnalitica)}</td><td>{entero(o.paga - o.parteMerma)}{o.parteMerma ? ` + ${entero(o.parteMerma)}` : ''}</td><td className={tono(o.frenteAHoy)}>{conSigno(o.frenteAHoy)}</td><td className="cm-solo-interna">{entero(o.margen)} ({Math.round(o.margenPct * 100)} %)</td></tr>)}</tbody></table>
+            <div className="cm-tabla"><table><thead><tr><th>Opción</th><th>Analítica</th><th>Paga</th><th>Frente a hoy</th><th className="cm-solo-interna">Nuestro margen</th></tr></thead>
+              <tbody>{r.opciones.map(o => <tr key={o.codigo} className={o.codigo === opcion ? 'cm-sel' : ''}><td>{o.codigo}{o.codigo === 'E' ? ' (6 meses)' : ''}</td><td>{entero(o.valorAnalitica)}</td><td>{entero(o.paga - o.parteMerma)}{o.parteMerma ? ` + ${entero(o.parteMerma)}` : ''}</td><td className={tono(o.frenteAHoy)}>{conSigno(o.frenteAHoy)}</td><td className="cm-solo-interna">{entero(o.margen)} ({Math.round(o.margenPct * 100)} %)</td></tr>)}</tbody></table></div>
           </section>
           <section className="cm-hoja"><h2>Si la merma baja<small>Beneficio para el cliente con la opción elegida</small></h2>
-            <table><thead><tr><th>Merma baja</th><th>Merma evitada</th><th>Ahorro del modelo</th><th>Beneficio al mes</th><th>Al año</th></tr></thead>
+            <div className="cm-tabla"><table><thead><tr><th>Merma baja</th><th>Merma evitada</th><th>Ahorro del modelo</th><th>Beneficio al mes</th><th>Al año</th></tr></thead>
               <tbody>{r.escenariosMerma.map(m => {
                 const parte = opcion === 'E' ? m.evitada * s.opcionE.parteMerma : 0;
                 const beneficio = m.beneficio - parte;
                 return <tr key={m.reduccion} className={Math.abs(m.reduccion - s.reduccionMerma) < 1e-9 ? 'cm-sel' : ''}><td>{Math.round(m.reduccion * 100)} %</td><td>{entero(m.evitada)}</td><td>{entero(m.ahorroModelo)}</td><td className="cm-bien">{entero(beneficio)}</td><td>{entero(beneficio * 12)}</td></tr>;
-              })}</tbody></table>
+              })}</tbody></table></div>
           </section>
         </div>
         <section className="cm-hoja cm-interna"><h2>Nuestro lado <span className="cm-insignia">INTERNO · no se muestra al cliente</span></h2>
