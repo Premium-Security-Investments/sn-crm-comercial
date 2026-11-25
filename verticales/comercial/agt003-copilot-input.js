@@ -17,6 +17,11 @@ const OPPORTUNITY_FACT_FIELDS = [
   'expected_close_date',
   'next_action',
   'next_action_date',
+  // El contacto de la ficha (Juan, 2026-11-25): sin él, Vig-IA declaraba «sin decisor verificado» a clientes que lo
+  // tienen con nombre y cargo. Y si sigue congelada, cuándo.
+  'decision_maker',
+  'decision_maker_title',
+  'frozen_until',
   'observations',
 ];
 
