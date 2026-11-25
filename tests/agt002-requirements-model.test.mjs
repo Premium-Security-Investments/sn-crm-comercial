@@ -165,3 +165,17 @@ test('lo que una respuesta o adenda eliminó queda resuelto, citando dónde, y n
   const inferred = buildRequirementRows({ ...base, claims: [{ ...base.claims[0], type: 'marked_inference', evidenceStatus: 'INFERRED' }] })[0];
   assert.equal(inferred.withdrawn, false, 'una inferencia del modelo no basta: tiene que ser un hecho citado');
 });
+
+// Barranquilla LP-001-2026 (2026-11-25): el «;» dentro de un paréntesis partía la póliza de seriedad en dos tareas y la
+// segunda salía en Mi día empezando a mitad de frase («El estudio previo ajustado dice del presupuesto…»).
+test('un punto y coma dentro de un paréntesis no parte el requisito en dos tareas', async () => {
+  const { requirementSeedItems } = await import('../verticales/licitaciones/agt002-requirements-model.js');
+  const row = { key: 'CLM-REQ-SERIEDAD', area: 'Financiero', title: 'Garantía de seriedad', status: 'por_confirmar', rejection: true,
+    actions: ['Pedir la póliza'], sources: [{ documentName: 'Pliego', locator: 'num. 3-6 págs. 89-94' }],
+    demand: 'Garantía de seriedad de la oferta: 10% (el pliego dice del valor de la oferta; el estudio previo ajustado dice del presupuesto, cerca de $928.864.165), a favor de la Nación, vigente desde la presentación y 3 meses más.' };
+  const items = requirementSeedItems([row], '2026-12-01', '2026-11-25');
+  assert.equal(items.length, 1);
+  assert.match(items[0].title, /^Financiero · Garantía de seriedad/);
+  const varios = requirementSeedItems([{ ...row, key: 'X', demand: 'Documentos jurídicos: certificado de existencia; cédula del representante legal' }], '2026-12-01', '2026-11-25');
+  assert.equal(varios.length, 2, 'fuera de paréntesis el «;» sigue separando documentos');
+});

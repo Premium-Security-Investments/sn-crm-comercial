@@ -265,7 +265,11 @@ function splitDemand(demand, title) {
   const head = text.slice(0, colon).trim();
   const body = text.slice(colon + 1).replace(/\.\s*(?:Durante|Además|Nota)\b[\s\S]*$/, '').replace(/\.\s*$/, '');
   const others = OTHERS_TITLE.test(head) || OTHERS_TITLE.test(title || '');
-  let parts = body.split(/\s*;\s*(?:y\s+)?/);
+  // Un «;» dentro de un paréntesis no separa documentos (Barranquilla, 25-nov: «10 % (el pliego dice del valor de la
+  // oferta; el estudio previo ajustado dice del presupuesto…)» salía como dos tareas, la segunda empezando a mitad).
+  let depth = 0;
+  const protectedBody = [...body].map(ch => { if (ch === '(') depth += 1; if (ch === ')') depth = Math.max(0, depth - 1); return ch === ';' && depth > 0 ? '\u0000' : ch; }).join('');
+  let parts = protectedBody.split(/\s*;\s*(?:y\s+)?/).map(part => part.replace(/\u0000/g, ';'));
   // Por comas sólo cuando el título es «Otros…»; la «y» sólo parte si lo que sigue es otro documento («…TIC y
   // certificación del SG-SST»), no dentro de un nombre («seguridad y salud en el trabajo»).
   if (parts.length < 2 && others) parts = body.split(/\s*,\s*|\s+y\s+(?=(?:certific|autoriz|resoluci|p[oó]liza|licencia|registro|carta|permiso|copia|declaraci|antecedente|acta|formato|anexo|rut\b|consulta))/i);
