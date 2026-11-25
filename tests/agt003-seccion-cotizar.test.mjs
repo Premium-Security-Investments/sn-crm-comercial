@@ -59,3 +59,32 @@ test('la ficha de la oportunidad tiene el botón Cotizar y la lista de sus cotiz
   assert.match(ui, /<OpportunityQuotes opportunityId=\{o\.id\}/);
   assert.match(ui, /if \(page === 'cotizar'\) return id \? \{ page: 'quotes', id: decodeURIComponent\(id\) \} : \{ page: 'quotes' \};/);
 });
+
+// Juan, 2026-11-25: "se pueden guardar pero luego no se pueden eliminar; deberíamos tener un botón de eliminar y otro
+// de asignar a oportunidad".
+test('servidor: eliminar y ligar a oportunidad, sólo quien la hizo (o gerencia y administración)', () => {
+  for (const file of ['../server/index.js', '../api/[...path].js']) {
+    const src = read(file);
+    assert.ok(src.includes("'DELETE /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT]"));
+    assert.ok(src.includes("'POST /api/agt003/quote/link': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT]"));
+    const del = src.slice(src.indexOf("app.delete('/api/agt003/quote'"));
+    const delHandler = del.slice(0, del.indexOf('\n});'));
+    assert.match(delHandler, /requireQuoteWriter\(currentProfile\);/);
+    assert.match(delHandler, /requireQuoteOwner\(existing, currentProfile, 'Sólo quien hizo la cotización la puede eliminar\.'\);/);
+    assert.ok(delHandler.indexOf('requireQuoteOwner') < delHandler.indexOf(".delete()"), 'revisa el dueño antes de borrar');
+    const link = src.slice(src.indexOf("app.post('/api/agt003/quote/link'"));
+    const linkHandler = link.slice(0, link.indexOf('\n});'));
+    assert.match(linkHandler, /requireQuoteOwner\(existing, currentProfile,/);
+    assert.match(linkHandler, /ensureOpportunityAccess\(database, opportunityId, currentProfile, ACTIONS\.CRM_OPPORTUNITY_EDIT\)/);
+    assert.match(linkHandler, /licitacion_publica/, 'una licitación no se liga a una cotización');
+  }
+});
+
+test('la lista de cotizaciones tiene Eliminar (con confirmación) y Asignar a oportunidad', () => {
+  const ui = read('../src/vigia/QuotesSection.tsx');
+  assert.match(ui, /window\.confirm\(`¿Eliminar la cotización/);
+  assert.match(ui, /\{ method: 'DELETE' \}/);
+  assert.match(ui, /\/api\/agt003\/quote\/link\?id=/);
+  assert.match(ui, /'Cambiar oportunidad' : 'Asignar a oportunidad'/);
+  assert.match(ui, />Eliminar<\/button>/);
+});
