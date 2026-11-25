@@ -138,6 +138,7 @@ import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMME
 import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../verticales/licitaciones/tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../verticales/licitaciones/agt002-analysis-config.js';
+import { firebaseLoginProjectId, isFirebaseIdTokenFor, verifyFirebaseIdToken } from '../verticales/acceso/sesion-firebase.js';
 import { getAgt002VercelControlPlaneIdentity } from '../verticales/licitaciones/agt002-vercel-control-plane-identity.js';
 import { createAgt002AnalysisObservability } from '../verticales/licitaciones/agt002-analysis-observability.js';
 import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
@@ -1008,15 +1009,35 @@ export async function getAuthContext(req) {
     error.status = 401;
     throw error;
   }
-  const { data: userData, error: userError } = await database.auth.getUser(token);
-  if (userError || !userData?.user?.id) {
-    const error = new Error('Sesión inválida o vencida.');
-    error.status = 401;
-    throw error;
+  // Inicio de sesión común (opción A, 25-nov): con SIIO_FIREBASE_LOGIN_PROJECT definida también se acepta la sesión
+  // del directorio de SecurityOps; la persona se cruza por su correo de Microsoft. La sesión propia del SIIO no cambia.
+  const firebaseProject = firebaseLoginProjectId(process.env);
+  const viaFirebase = Boolean(firebaseProject && isFirebaseIdTokenFor(token, firebaseProject));
+  let userData;
+  if (viaFirebase) {
+    let identity;
+    try {
+      identity = await verifyFirebaseIdToken(token, { projectId: firebaseProject });
+    } catch (verifyError) {
+      console.warn('siio_firebase_session_rejected', { code: verifyError?.code || 'firebase_token_error' });
+      const error = new Error('Sesión inválida o vencida.');
+      error.status = 401;
+      throw error;
+    }
+    userData = { user: { id: `firebase:${identity.uid}`, email: identity.email, provider: 'firebase' } };
+  } else {
+    const { data, error: userError } = await database.auth.getUser(token);
+    if (userError || !data?.user?.id) {
+      const error = new Error('Sesión inválida o vencida.');
+      error.status = 401;
+      throw error;
+    }
+    userData = data;
   }
   let profile;
   try {
-    profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities').eq('auth_user_id', userData.user.id).maybeSingle());
+    const profileQuery = database.from('psi_sales_profiles').select('id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment,can_own_opportunities');
+    profile = await must((viaFirebase ? profileQuery.eq('microsoft_email', userData.user.email) : profileQuery.eq('auth_user_id', userData.user.id)).maybeSingle());
   } catch (error) {
     throw authContextUnavailable(error);
   }
