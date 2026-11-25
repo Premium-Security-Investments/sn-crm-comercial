@@ -15,7 +15,9 @@ test('lo crítico del expediente sale con la misma regla que Preparar', () => {
 
 test('en Mi día la ve sólo quien tiene Licitaciones; los demás comerciales no', () => {
   const main = read('../src/main.tsx');
-  assert.match(main, /\{can\(data\.currentProfile, ACTIONS\.LICITACIONES_VIEW\) && <TenderMiDia request=\{api\} onOpen=\{opportunityId => go\(`#\/detail\/\$\{opportunityId\}`\)\} onGo=\{go\} \/>\}/);
-  const myDay = main.slice(main.indexOf('function MyDayHome('));
-  assert.ok(myDay.indexOf('<TenderMiDia') < myDay.indexOf('my-day-lead-analysis'), 'va arriba, después del encabezado');
+  assert.match(main, /const seesTenders = can\(data\.currentProfile, ACTIONS\.LICITACIONES_VIEW\);/);
+  assert.match(main, /const tendersSection = seesTenders && <section id="mi-dia-licitaciones"/);
+  assert.match(main, /<TenderMiDia request=\{api\} onOpen=\{opportunityId => go\(`#\/detail\/\$\{opportunityId\}`\)\} onGo=\{go\} onSummary=\{setTenderResumen\} \/>/);
+  // Con licitaciones y clientes, va primero la sección que tenga algo hoy; si las dos o ninguna, licitaciones (25-nov).
+  assert.match(main, /\{clientsFirst \? <>\{clientsSection\}\{tendersSection\}<\/> : <>\{tendersSection\}\{clientsSection\}<\/>\}/);
 });

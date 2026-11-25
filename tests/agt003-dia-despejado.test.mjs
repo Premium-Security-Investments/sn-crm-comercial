@@ -70,8 +70,9 @@ test('la pantalla: el día despejado muestra la próxima conversación, no un av
     '"Esta semana" no repite lo que ya está arriba');
   assert.match(myDay, /Hoy está despejado\. Su próxima conversación es \$\{futureDayPhrase\(nextTalk\.next_action_at, now\)\}/);
   assert.match(myDay, /'Hoy está despejado\. No tiene ninguna conversación agendada\.'/, 'y sin nada agendado también lo dice');
-  // El chat baja a la columna principal: en la lateral terminaba pesando más que el contenido.
-  assert.match(myDay, /\{isCalm && canRenderOpportunityCopilot\(data\.currentProfile, null\) && <VigiaChatRegistro/);
+  // El chat va en el panel fijo de la derecha, siempre visible (Juan, 2026-11-25), no dentro de la lista del día.
+  assert.match(myDay, /const vigiaChat = canRenderOpportunityCopilot\(data\.currentProfile, null\) \? <VigiaChatRegistro onSaved=\{refresh\} \/> : null;/);
+  assert.match(myDay, /<VigiaDock dock=\{vigiaChat\} label="Contarle a Vig-IA">/);
 });
 
 test('la tarjeta sólo promete datos que Mi día ya tiene cargados', () => {

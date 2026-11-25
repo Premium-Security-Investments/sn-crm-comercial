@@ -1,0 +1,16 @@
+/* Panel fijo de Vig-IA (Juan, 2026-11-25). Celular primero: el chat se abre con un botón y se pone por encima. */
+.vigia-dock-layout{display:block}
+.vigia-dock-main{min-width:0}
+.vigia-dock{display:none}
+.vigia-dock-toggle{position:fixed;right:16px;bottom:16px;z-index:40;border-radius:999px;padding:12px 18px;font-weight:800;
+  background:#1b4fd0;color:#fff;border:0;box-shadow:0 10px 24px rgba(21,38,69,.25)}
+.vigia-dock-layout.is-open .vigia-dock{display:block;position:fixed;left:0;right:0;bottom:0;z-index:39;max-height:80vh;overflow:auto;
+  background:#f6f8fc;border-top:1px solid #dfe6f1;border-radius:18px 18px 0 0;box-shadow:0 -12px 32px rgba(21,38,69,.2);padding:14px 14px 72px}
+
+/* En computador: columna a la derecha que se queda quieta mientras la página baja. */
+@media (min-width:1100px){
+  .vigia-dock-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;align-items:start}
+  .vigia-dock,.vigia-dock-layout.is-open .vigia-dock{display:block;position:sticky;top:16px;left:auto;right:auto;bottom:auto;z-index:auto;
+    max-height:calc(100vh - 32px);overflow:auto;background:transparent;border:0;border-radius:0;box-shadow:none;padding:0}
+  .vigia-dock-toggle{display:none}
+}

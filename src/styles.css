@@ -1249,3 +1249,17 @@ td.numeric-value{white-space:nowrap}
 .ally-rup-grid{display:grid;grid-template-columns:190px minmax(0,1fr);gap:4px 10px;margin:0;font-size:13px}.ally-rup-grid dd{margin:0;overflow-wrap:anywhere}
 .tender-allies-rup-line{display:block;color:#526173;font-size:12px}
 @media(max-width:700px){.ally-rup-grid{grid-template-columns:minmax(0,1fr)}.ally-rup-grid dt{margin-top:6px}}
+
+/* Mi día con licitaciones y clientes privados (Juan, 2026-11-25): dos secciones con título y color propios, y arriba una
+   línea de cada una. Quien trabaja una sola cosa no ve títulos ni separación. */
+.my-day-worlds-lead{display:grid;gap:6px;font-size:16px;line-height:1.45;color:#172033}
+.my-day-worlds-lead p{margin:0}
+.my-day-worlds-lead a{text-decoration:none}
+.my-day-worlds-lead a strong{color:#1b4fd0}
+.my-day-worlds-lead a:hover strong{text-decoration:underline}
+.my-day-world{display:flex;flex-direction:column;gap:18px;scroll-margin-top:16px}
+.my-day-world:not(.is-alone){padding:18px 0 0;border-top:4px solid #1b4fd0}
+.my-day-world.is-clients:not(.is-alone){border-top-color:#0f766e}
+.my-day-world-h{margin:0;font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#1b4fd0}
+.my-day-world.is-clients .my-day-world-h{color:#0f766e}
+.my-day-world-lead{margin:-8px 0 0;font-size:18px;font-weight:700;line-height:1.3;color:#172033;max-width:46ch}
