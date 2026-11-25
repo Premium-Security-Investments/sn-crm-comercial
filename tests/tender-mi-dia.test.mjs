@@ -4,8 +4,8 @@ import test from 'node:test';
 import { buildTenderMiDia, miDiaClave, nombreCorto } from '../verticales/licitaciones/tender-mi-dia.js';
 
 // Mi día de licitaciones (Juan, 2026-11-15, maqueta aprobada): alertas en dos niveles. Lo que hace la persona va al día a
-// día con «Hecho»; lo que publica la entidad, aparte; y las cuatro actividades resumen la semana. Lo crítico del
-// expediente no se lista: sólo se cuenta al lado del cierre (Juan, 2026-11-25).
+// día con «Hecho»; lo que publica la entidad, aparte; lo crítico del expediente sin fecha, a «Mis pendientes» (y se
+// cuenta al lado del cierre); y las cuatro actividades resumen la semana.
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const today = '2026-11-15';
 const deaj = {
@@ -66,13 +66,17 @@ test('«Hecho» se marca por plazo y sale de la cuenta de la frase', () => {
   assert.equal(view.frase.primero.opportunity_id, 'pereira');
 });
 
-test('lo crítico del expediente se cuenta al lado del cierre y no se lista; no hay «Mis pendientes»', () => {
+test('lo crítico sin fecha va a pendientes con su proceso; el cronograma faltante también', () => {
+  const view = buildTenderMiDia({ processes: [pereira, { ...metro, cronograma_faltante: true }], today });
+  assert.deepEqual(view.pendientes.map(item => [item.opportunity_id, item.destino]), [['pereira', 'proceso'], ['metro', 'proceso']]);
+  assert.match(view.pendientes[1].texto, /Falta el cronograma/);
+});
+
+test('lo crítico se cuenta además al lado del cierre, y sólo en el cierre', () => {
   const conCierre = { ...pereira, deadlines: [...pereira.deadlines, { kind: 'SUBMISSION', value: '2026-11-27T16:00:00-05:00' }],
     criticos: [...pereira.criticos, { titulo: 'RUP en firme', consecuencia: 'causa_rechazo', target_date: '2026-11-10' }] };
-  const view = buildTenderMiDia({ processes: [conCierre, { ...metro, cronograma_faltante: true }], today });
-  assert.ok(!('pendientes' in view));
+  const view = buildTenderMiDia({ processes: [conCierre], today });
   const cierre = view.actividades.presentar.items[0];
-  assert.equal(cierre.opportunity_id, 'pereira');
   assert.equal(cierre.criticos, 2);
   assert.deepEqual(cierre.criticos_titulos, ['Garantía de seriedad', 'RUP en firme']);
   const observacion = view.dias.flatMap(day => day.items).find(item => item.opportunity_id === 'pereira');
@@ -95,16 +99,16 @@ test('la ruta, la tabla de «Hecho» y Mi día', () => {
   assert.equal(server, read('../api/[...path].js'));
   assert.match(server, /'GET \/api\/tender-mi-dia': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
   assert.match(server, /'POST \/api\/tender-mi-dia\/hecho': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
-  assert.match(server, /recomendacion: report\?\.available && report\.report \? report\.report\.recommendation\?\.label \|\| null : null,\n      criticos,/);
+  assert.match(server, /cronograma_faltante: Boolean\(report\?\.available && cronogramaFaltante\(report\.report\)\),\n      criticos,/);
   assert.match(read('../supabase/migrations/224_mi_dia_licitaciones_hecho.sql'), /create table if not exists public\.psi_tender_mi_dia_hechos/);
   const main = read('../src/main.tsx');
   assert.match(main, /LICITACIONES_VIEW\) && <TenderMiDia request=\{api\}/);
   assert.match(main, /\{tendersOnly \? null : !opportunities\.length/);
   const component = read('../src/tenders/components/TenderMiDia.tsx');
-  for (const text of ['Lo general · las cuatro actividades', 'El día a día · lo que hace usted', 'Ir al proceso →', 'Ir a Requisitos →', 'Lo que publica la entidad esta semana']) {
+  for (const text of ['Lo general · las cuatro actividades', 'El día a día · lo que hace usted', 'Mis pendientes sin fecha de la entidad', 'Ir al proceso →', 'Ir a Requisitos →', 'Lo que publica la entidad esta semana']) {
     assert.ok(component.includes(text), `falta «${text}»`);
   }
-  assert.ok(!component.includes('Mis pendientes sin fecha de la entidad'), '«Mis pendientes» salió de Mi día (Juan, 25-nov)');
+  assert.ok(component.includes('fecha por confirmar en SECOP'));
 });
 
 test('fechas contradichas: no se anuncian, se pide confirmar; sin oferta, el informe de evaluación no se observa', () => {
@@ -115,8 +119,16 @@ test('fechas contradichas: no se anuncian, se pide confirmar; sin oferta, el inf
     ] };
   const view = buildTenderMiDia({ processes: [barranquilla], today });
   assert.deepEqual([...view.dias.flatMap(day => day.items), ...view.proxima], []);
+  assert.deepEqual(view.pendientes.map(item => item.texto), ['Confirmar el cronograma en SECOP: una fecha del análisis está contradicha']);
+  // El cierre dudoso no se pierde (Juan, 25-nov): sale en Presentar «por confirmar», nunca en el día.
+  const cerca = buildTenderMiDia({ processes: [barranquilla], today: '2026-11-25' });
+  assert.deepEqual(cerca.actividades.presentar.items.map(item => [item.opportunity_id, item.day, item.por_confirmar]), [['baq', '2026-12-02', true]]);
+  assert.equal(cerca.actividades.presentar.cierres, 1);
+  assert.deepEqual([...cerca.dias.flatMap(day => day.items), ...cerca.proxima].filter(item => item.actividad === 'presentar'), []);
   const presentada = buildTenderMiDia({ processes: [{ ...barranquilla, offer_status: 'presentada', criticos: [{ titulo: 'RUP', consecuencia: 'causa_rechazo', target_date: '2026-11-01' }] }], today });
   assert.deepEqual(presentada.dias.flatMap(day => day.items).map(item => item.texto), ['Radicar observaciones al informe de evaluación']);
+  assert.ok(!presentada.pendientes.some(item => item.texto.startsWith('RUP')), 'ya presentada, el expediente no alerta');
+  assert.deepEqual(presentada.actividades.presentar.items, [], 'ya presentada, el cierre dudoso tampoco');
 });
 
 test('un requisito crítico con fecha no va al día: «Presentar» en el día es sólo el cierre (Juan, 25-nov)', () => {
@@ -128,4 +140,5 @@ test('un requisito crítico con fecha no va al día: «Presentar» en el día es
   assert.deepEqual(enElDia.map(item => item.texto), ['Presentar la oferta (cierre)']);
   assert.equal(enElDia[0].criticos, 1, 'el crítico se cuenta al lado del cierre');
   assert.deepEqual(view.actividades.presentar.items.map(item => item.criticos), [1]);
+  assert.ok(view.pendientes.some(item => item.texto.startsWith('Financiero · Garantía de seriedad') && item.destino === 'proceso'));
 });

@@ -33,8 +33,8 @@ function Tag({ actividad }: { actividad: TenderMiDiaActividad }) {
  * Mi día de quien trabaja licitaciones (Juan, 2026-11-15; maqueta aprobada). Es una sección de alertas: sólo lo que vence
  * o es crítico, y cada cosa lleva a la página de su proceso, donde se trabaja. Arriba la frase de la semana; luego lo
  * general (las cuatro actividades) y el día a día (lo que hace la persona, con «Hecho»). Lo que publica la entidad va
- * plegado al final. Lo del expediente no se lista aquí: Presentar sólo cuenta, al lado de cada cierre, cuántas cosas
- * críticas siguen abiertas (Juan, 2026-11-25). Si no se puede leer, Mi día sigue igual: es un aviso, no una condición.
+ * plegado al final. Presentar cuenta, al lado de cada cierre, cuántas cosas críticas siguen abiertas, y un cierre de
+ * fecha dudosa sale «por confirmar en SECOP»; el detalle de lo crítico va en «Mis pendientes» (Juan, 2026-11-25). Si no se puede leer, Mi día sigue igual: es un aviso, no una condición.
  */
 export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest; onOpen: (opportunityId: string) => void; onGo: (hash: string) => void }) {
   const [data, setData] = useState<TenderMiDiaPayload | null>(null);
@@ -93,6 +93,7 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
         <p className="mi-dia-n">{presentar.cierres === 1 ? '1 cierre' : `${presentar.cierres} cierres`} en 15 días</p>
         {presentar.items.length ? <ul>{presentar.items.map(item => <li key={item.key} title={(item.criticos_titulos || []).join('\n') || undefined}>
           {item.proceso} · {shortDay(item.day)}{item.tiene_hora ? `, ${hora(item.value, true)}` : ''}
+          {item.por_confirmar ? <> · <b>fecha por confirmar en SECOP</b></> : null}
           {item.criticos ? <> · <b>{criticosTexto(item.criticos)}</b></> : null} {goProcess(item.opportunity_id)}
         </li>)}</ul> : <p className="muted">Ningún cierre en 15 días.</p>}
       </article>
@@ -116,6 +117,15 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
       <h4>{dayTitle(day.day, day.dias)}</h4>
       {day.items.length ? day.items.map(row) : <div className="mi-dia-row"><span className="mi-dia-hora">—</span><span className="muted">Nada para hoy.</span><span /><span /></div>}
     </div>)}
+    {data.pendientes.length > 0 && <div className="mi-dia-day">
+      <h4>Mis pendientes sin fecha de la entidad</h4>
+      {data.pendientes.map((item, index) => <div key={`${item.opportunity_id || 'req'}-${index}`} className="mi-dia-row">
+        <span className="mi-dia-hora">—</span>
+        <span className="mi-dia-text"><Tag actividad={item.actividad} />{item.texto}{item.proceso ? ` · ${item.proceso}` : ''}{item.vencido_hace ? <small className="muted"> (venció hace {item.vencido_hace} d)</small> : null} {item.destino === 'requisitos' ? goRequisitos : goProcess(item.opportunity_id)}</span>
+        <span className="mi-dia-who">{item.responsable || '—'}</span>
+        <span />
+      </div>)}
+    </div>}
     <details className="mi-dia-fold">
       <summary>La próxima semana ({data.proxima.length})</summary>
       {data.proxima.length ? data.proxima.map(item => <div key={item.key} className="mi-dia-row">

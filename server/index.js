@@ -8081,6 +8081,7 @@ async function readTenderMiDia(database, currentProfile, now = new Date()) {
       responsable: ownerName.get(row.owner_id) || null, offer_status: row.tender_offer_status || null, close_date: row.expected_close_date || null,
       deadlines: report?.available && report.report ? report.report.deadlines || [] : [],
       recomendacion: report?.available && report.report ? report.report.recommendation?.label || null : null,
+      cronograma_faltante: Boolean(report?.available && cronogramaFaltante(report.report)),
       criticos,
     });
   }
