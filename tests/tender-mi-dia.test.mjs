@@ -142,3 +142,17 @@ test('un requisito crítico con fecha no va al día: «Presentar» en el día es
   assert.deepEqual(view.actividades.presentar.items.map(item => item.criticos), [1]);
   assert.ok(view.pendientes.some(item => item.texto.startsWith('Financiero · Garantía de seriedad') && item.destino === 'proceso'));
 });
+
+test('la manifestación para limitar a Mipymes no es tarea: queda como fecha de la entidad (Popayán, 25-nov)', () => {
+  const popayan = { opportunity_id: 'pop', entity: 'Rama Judicial  Dirección Seccional de Administración Judicial de Popayán', ref: 'LP 01 DE 2026',
+    deadlines: [
+      { kind: 'PROJECT_OBSERVATIONS', value: '2026-11-26T17:00:00-05:00', certainty: 'CONFIRMED', label: 'Plazo para presentar observaciones al proyecto de Pliego de Condiciones' },
+      { kind: 'OTHER', value: '2026-11-26T17:00:00-05:00', certainty: 'CONFIRMED', label: 'Plazo para manifestación de interés de limitar la convocatoria a Mypes y/o MiPymes' },
+    ] };
+  const metroInteres = { ...metro, deadlines: [{ kind: 'OTHER', value: '2026-11-27T23:59:00-05:00', label: 'Plazo para manifestación de Interés' }] };
+  const view = buildTenderMiDia({ processes: [popayan, metroInteres], today: '2026-11-25' });
+  const acciones = view.dias.flatMap(day => day.items);
+  assert.deepEqual(acciones.map(item => `${item.opportunity_id} ${item.texto}`), ['pop Radicar observaciones al proyecto', 'metro Manifestar interés']);
+  assert.deepEqual(view.entidad.map(item => item.texto), ['Plazo para manifestación de interés de limitar la convocatoria a Mypes y/o MiPymes']);
+  assert.deepEqual(view.frase.manifestaciones.map(item => item.opportunity_id), ['metro'], 'la de participar (Metro) sigue');
+});

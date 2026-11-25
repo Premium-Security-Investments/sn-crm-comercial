@@ -45,13 +45,17 @@ const ACCION_POR_TIPO = {
   SUBMISSION: { actividad: 'presentar', texto: 'Presentar la oferta (cierre)' },
 };
 const MANIFESTACION = /manifestaci[oó]n de inter[eé]s/i;
+// La manifestación para limitar la convocatoria a Mipymes/Mypes no es para participar: Seguridad Nacional es gran
+// empresa y no la hace (Popayán LP 01, 25-nov). Queda como fecha de la entidad, no como tarea.
+const LIMITAR_A_MIPYMES = /limitar|mi?pymes?|mypes?/i;
 // «Solo en unión temporal: …» es como Vig-IA dice que no vamos solos.
 const SOLO_CON_ALIADO = /^\s*solo (?:en|con) (?:uni[oó]n temporal|consorcio|aliad)/i;
 const RESUELTO = new Set(['resuelto', 'no_por_ahora']);
 
 function accionDe(deadline) {
   if (ACCION_POR_TIPO[deadline?.kind]) return ACCION_POR_TIPO[deadline.kind];
-  if (MANIFESTACION.test(String(deadline?.label || ''))) return { actividad: 'presentar', texto: 'Manifestar interés' };
+  const label = String(deadline?.label || '');
+  if (MANIFESTACION.test(label) && !LIMITAR_A_MIPYMES.test(label)) return { actividad: 'presentar', texto: 'Manifestar interés' };
   return null;
 }
 
