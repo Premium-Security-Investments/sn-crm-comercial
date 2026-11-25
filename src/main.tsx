@@ -2929,9 +2929,9 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
   const complianceTone = (pct: number | null) => pct === null ? 'amber' : pct >= 80 ? 'green' : pct >= 40 ? 'amber' : 'red';
 
   // 3. ¿Qué negocios empujar esta semana?
-  // Una sola lista de negocios para mover (Juan, 2026-11-25): antes dos paneles (detenidos y urgentes de Vig-IA)
-  // repetían los mismos clientes, y también los de la pregunta 1. Entran los detenidos y los que Vig-IA marca urgentes,
-  // sin los que ya están arriba; de Vig-IA queda su recomendación sólo cuando es propia de ese negocio (una frase que
+  // Una sola lista de negocios para mover (Juan, 2026-11-25): antes dos paneles (detenidos y urgentes de Vig-IA Comercial)
+  // repetían los mismos clientes, y también los de la pregunta 1. Entran los detenidos y los que Vig-IA Comercial marca urgentes,
+  // sin los que ya están arriba; de Vig-IA Comercial queda su recomendación sólo cuando es propia de ese negocio (una frase que
   // se repite en varios no dice nada).
   const shownAbove = new Set(negotiationRows.map(o => o.id));
   const recommendationCount = priorities.list.reduce((map, item) => map.set(item.recommendation, (map.get(item.recommendation) || 0) + 1), new Map<string, number>());
@@ -3022,12 +3022,12 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
     </section>
 
     <section id="dashboard-q3" className="v2-component-block dashboard-question" aria-label="¿Qué negocios empujar esta semana?">
-      <div className="v2-section-heading"><span>Pregunta 3</span><h2>¿Qué negocios empujar esta semana?</h2><p>Los negocios detenidos o que Vig-IA marca urgentes, sin repetir los de arriba; lo que vuelve pronto y por qué perdemos.</p></div>
+      <div className="v2-section-heading"><span>Pregunta 3</span><h2>¿Qué negocios empujar esta semana?</h2><p>Los negocios detenidos o que Vig-IA Comercial marca urgentes, sin repetir los de arriba; lo que vuelve pronto y por qué perdemos.</p></div>
       <div className="grid two dashboard-panels">
         <Panel title="Negocios para mover">
           <div className="v2-deal-list">{pushRows.map(row => <a className="v2-deal-row" key={row.opportunity.id} href={`#/detail/${row.opportunity.id}`}>
-            <div><strong>{formatDisplayName(row.opportunity.company_name)}</strong><small>{formatDisplayName(row.opportunity.owner_name || 'Sin comercial')} · {row.opportunity.stage_name}</small>{row.vigia && <small className="v2-deal-vigia">Vig-IA: {row.vigia}</small>}</div>
-            <div className="v2-deal-value"><strong>{fmtMoneyCompact(row.opportunity.offer_value)}</strong><small>{row.action.code === 'overdue' ? 'Gestión vencida' : row.action.code === 'missing' ? 'Sin próxima gestión' : Number(row.inactiveDays || 0) >= 10 ? `${row.inactiveDays} días sin seguimiento` : 'Urgente según Vig-IA'}</small></div>
+            <div><strong>{formatDisplayName(row.opportunity.company_name)}</strong><small>{formatDisplayName(row.opportunity.owner_name || 'Sin comercial')} · {row.opportunity.stage_name}</small>{row.vigia && <small className="v2-deal-vigia">Vig-IA Comercial: {row.vigia}</small>}</div>
+            <div className="v2-deal-value"><strong>{fmtMoneyCompact(row.opportunity.offer_value)}</strong><small>{row.action.code === 'overdue' ? 'Gestión vencida' : row.action.code === 'missing' ? 'Sin próxima gestión' : Number(row.inactiveDays || 0) >= 10 ? `${row.inactiveDays} días sin seguimiento` : 'Urgente según Vig-IA Comercial'}</small></div>
           </a>)}</div>
           {!pushRows.length && <EmptyState title="Nada detenido" text="No hay negocios vencidos, sin agenda, con 10+ días sin seguimiento ni urgentes, fuera de los de arriba." />}
         </Panel>

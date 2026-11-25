@@ -1313,16 +1313,19 @@ async function attachCommercialMetadata(database, rows) {
   const ids = list.map(o => o?.id).filter(Boolean);
   const ownerIds = Array.from(new Set(list.map(o => o?.owner_id).filter(Boolean)));
   const [baseResult, profileResult, clientProfileById] = await Promise.all([
-    // El estado de la oferta y el archivo de las licitaciones (2026-11-25): el tablero contaba como activas las
-    // cerradas con NO-GO y las archivadas.
-    ids.length ? database.from('psi_sales_opportunities').select('id,customer_segment,tender_offer_status,archived_at').in('id', ids) : Promise.resolve({ data: [] }),
+    ids.length ? database.from('psi_sales_opportunities').select('id,customer_segment').in('id', ids) : Promise.resolve({ data: [] }),
     ownerIds.length ? database.from('psi_sales_profiles').select('id,commercial_area,can_edit_customer_segment').in('id', ownerIds) : Promise.resolve({ data: [] }),
     readClientProfiles(database, ids)
   ]);
   if (baseResult.error) throw baseResult.error;
   if (profileResult.error) throw profileResult.error;
   const segmentById = new Map((baseResult.data || []).map(o => [o.id, o.customer_segment || null]));
-  const tenderById = new Map((baseResult.data || []).map(o => [o.id, { tender_offer_status: o.tender_offer_status ?? null, archived_at: o.archived_at ?? null }]));
+  // El estado de la oferta y el archivo de las licitaciones (2026-11-25): el tablero contaba como activas las
+  // cerradas con NO-GO y las archivadas. Sólo para las filas de licitación.
+  const tenderIds = list.filter(o => o?.service_type_code === 'licitacion_publica').map(o => o.id).filter(Boolean);
+  const tenderResult = tenderIds.length ? await database.from('psi_sales_opportunities').select('id,tender_offer_status,archived_at').in('id', tenderIds) : { data: [] };
+  if (tenderResult.error) throw tenderResult.error;
+  const tenderById = new Map((tenderResult.data || []).map(o => [o.id, { tender_offer_status: o.tender_offer_status ?? null, archived_at: o.archived_at ?? null }]));
   const profileById = new Map((profileResult.data || []).map(p => [p.id, p]));
   const enriched = list.map(o => {
     const owner = profileById.get(o.owner_id);
