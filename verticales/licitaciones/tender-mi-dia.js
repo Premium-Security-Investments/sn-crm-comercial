@@ -108,8 +108,9 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
         entidad.push({ ...base, key, texto: String(deadline.label || deadline.kind || 'Fecha del cronograma').trim(), value: deadline.value, day, tiene_hora });
       }
     }
-    // Lo que no se subsana o causa rechazo y sigue abierto: con fecha en las dos semanas va al día; vencido o sin fecha,
-    // a «sin fecha de la entidad». Nada más del expediente: el resto se trabaja en el proceso.
+    // Lo que no se subsana o causa rechazo y sigue abierto va como alerta del proceso («sin fecha de la entidad»), nunca
+    // al día: en el día, «Presentar» es sólo el cierre de un proceso al que vamos (Juan, 2026-11-25: la póliza de
+    // seriedad de Barranquilla salía «hoy» y no es algo del día). El resto del expediente se trabaja en el proceso.
     if (contradichas.length) {
       pendientes.push({ ...base, actividad: 'presentar', texto: `Confirmar el cronograma en SECOP: ${contradichas.length === 1 ? 'una fecha del análisis está contradicha' : `${contradichas.length} fechas del análisis están contradichas`}`,
         responsable: process.responsable || null, vencido_hace: null, destino: 'proceso' });
@@ -117,16 +118,8 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
     for (const item of presentada ? [] : process.criticos || []) {
       const target = isDay(String(item.target_date || '').slice(0, 10)) ? String(item.target_date).slice(0, 10) : null;
       const texto = `${item.titulo}${item.consecuencia === 'no_subsanable' ? ' (no se subsana)' : ' (causa rechazo)'}`;
-      if (target && target >= today && target <= finProxima) {
-        const key = miDiaClave(process.opportunity_id, 'CRITICO', `${target}:${item.titulo}`);
-        const hecho = hechoPorClave.get(key) || null;
-        acciones.push({ ...base, key, actividad: 'presentar', texto, value: target, day: target, tiene_hora: false,
-          dias: daysBetween(today, target), responsable: item.responsable || process.responsable || null,
-          hecho: hecho ? { at: hecho.done_at || null, por: hecho.done_by_name || null } : null });
-      } else if (!target || target < today) {
-        pendientes.push({ ...base, actividad: 'presentar', texto, responsable: item.responsable || process.responsable || null,
-          vencido_hace: target ? daysBetween(target, today) : null, destino: 'proceso' });
-      }
+      pendientes.push({ ...base, actividad: 'presentar', texto, responsable: item.responsable || process.responsable || null,
+        vencido_hace: target && target < today ? daysBetween(target, today) : null, destino: 'proceso' });
     }
     if (process.cronograma_faltante) {
       pendientes.push({ ...base, actividad: 'observar', texto: 'Falta el cronograma de SECOP: subir «Información del procedimiento»',

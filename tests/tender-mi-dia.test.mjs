@@ -111,3 +111,13 @@ test('fechas contradichas: no se anuncian, se pide confirmar; sin oferta, el inf
   assert.deepEqual(presentada.dias.flatMap(day => day.items).map(item => item.texto), ['Radicar observaciones al informe de evaluación']);
   assert.ok(!presentada.pendientes.some(item => item.texto.startsWith('RUP')), 'ya presentada, el expediente no alerta');
 });
+
+test('un requisito crítico con fecha no va al día: «Presentar» en el día es sólo el cierre (Juan, 25-nov)', () => {
+  const baq = { opportunity_id: 'baq', entity: 'Rama Judicial - Dirección Seccional de Administración Judicial de Barranquilla', ref: 'LP-001-2026', responsable: 'Katherine',
+    deadlines: [{ kind: 'SUBMISSION', value: '2026-12-01T10:00:00-05:00', certainty: 'CONFIRMED' }],
+    criticos: [{ titulo: 'Financiero · Garantía de seriedad', consecuencia: 'causa_rechazo', target_date: today }] };
+  const view = buildTenderMiDia({ processes: [baq], today });
+  const enElDia = [...view.dias.flatMap(day => day.items), ...view.proxima];
+  assert.ok(enElDia.every(item => item.texto === 'Presentar la oferta (cierre)'), JSON.stringify(enElDia.map(item => item.texto)));
+  assert.ok(view.pendientes.some(item => item.texto.startsWith('Financiero · Garantía de seriedad') && item.destino === 'proceso'));
+});
