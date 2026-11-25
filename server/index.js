@@ -90,6 +90,7 @@ import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
 import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, quoteTotals, ratesInEffect } from '../src/vigia/quote-engine.js';
 import { GUARD_OPPORTUNITY_TYPE, TECH_OPPORTUNITY_TYPE, opportunityValuesFromQuote } from '../src/vigia/quote-proposal.js';
+import { calcularComisiones } from '../src/vigia/comisiones.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
@@ -519,6 +520,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/avancys/cobro-por-comercial': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
+  'GET /api/agt003/avancys/comisiones': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
@@ -5404,6 +5406,37 @@ app.get('/api/agt003/avancys/cobro-por-comercial', async (req, res) => {
     if (error?.codigo) {
       return res.json({ mes: String(req.query.mes || ''), facturas: 0, estados: [], comerciales: [], as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });
     }
+    sendError(res, error, error?.status || 400);
+  }
+});
+
+// AGT-003 — comisiones por pagos recibidos (Juan, 2026-11-25): «se les paga por lo que ya haya pagado el cliente; si
+// paga parcial se le paga parcial». Lee de Avancys lo que entró a cartera en el mes y calcula con src/vigia/comisiones.js.
+// El salario mínimo sale de las tarifas del cotizador vigentes a la fecha de cada factura. Es una REFERENCIA: el número
+// que se paga es el de cartera. Mismo acceso que el cobro por comercial.
+app.get('/api/agt003/avancys/comisiones', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireCommercialBehaviorAccess(currentProfile);
+    const mes = String(req.query.mes || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(mes)) { const error = new Error('Debe indicar el mes en formato AAAA-MM.'); error.status = 400; throw error; }
+    res.set('Cache-Control', 'private, no-store');
+    const database = requireDb();
+    if (req.query.guardada === '1') {
+      const guardado = await leerGuardado(database, `comisiones:${mes}`);
+      if (guardado) return res.json(guardado);
+    }
+    const lector = crearLectorAvancys();
+    if (!lector) return res.json({ mes, comerciales: [], motivo: 'Avancys no esta configurado en este ambiente.' });
+    const leido = await lector.pagosDelMes({ mes });
+    const filasTarifa = (await readQuoteRates(database) || []).filter(row => row.kind === 'vigilancia');
+    const salarioMinimoDe = dia => normalizeGuardRates(ratesInEffect(filasTarifa, String(dia || '').slice(0, 10))?.params || DEFAULT_GUARD_RATES).smlmv;
+    const calculo = calcularComisiones({ recaudos: leido.recaudos, facturas: leido.facturas, servicioMensual: leido.servicioMensual, salarioMinimoDe });
+    const respuesta = { mes, ...calculo, recaudos: leido.recaudos.length, recortado: leido.recortado, as_of: leido.as_of, motivo: null, medido_en: new Date().toISOString() };
+    await guardarTorre(database, `comisiones:${mes}`, respuesta);
+    return res.json(respuesta);
+  } catch (error) {
+    if (error?.codigo) return res.json({ mes: String(req.query.mes || ''), comerciales: [], motivo: `Avancys no respondio: ${error.codigo}` });
     sendError(res, error, error?.status || 400);
   }
 });

@@ -80,6 +80,7 @@ import { CLOSURE_FORM_REQUIRED_TO_WIN } from './vigia/closure-form.js';
 import { competitorContractsDue, renewalsDue } from './vigia/renewal-alerts.js';
 import { dealMix } from './vigia/deal-mix.js';
 import { AvancysCollectionPanel } from './vigia/AvancysCollectionPanel';
+import { AvancysCommissionsPanel } from './vigia/AvancysCommissionsPanel';
 import { OpportunityQuotes, QuotesSection } from './vigia/QuotesSection';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
@@ -2983,6 +2984,7 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
         {!dealMixRows.length && <p className="muted">Sin ventas este año ni oportunidades activas.</p>}
       </details>
       <AvancysCollectionPanel />
+      <AvancysCommissionsPanel />
       <p className="muted dashboard-footnote">Calidad de datos: {dataQuality.complete ? 'las oportunidades activas tienen valor, tipo de cliente y regional.' : `${dataQuality.summary}. El pipeline y el valor esperado no incluyen lo que no tiene valor.`} El total del equipo sólo cuenta a quien tiene meta cargada.</p>
     </section>
 

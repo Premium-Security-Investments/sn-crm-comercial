@@ -1110,6 +1110,12 @@ td.numeric-value{white-space:nowrap}
 .avancys-cobro-table th:nth-child(1),.avancys-cobro-table td:nth-child(1){width:34%}
 .avancys-cobro-table th:nth-child(2),.avancys-cobro-table td:nth-child(2){width:10%;text-align:right}
 .avancys-cobro-table th:nth-child(n+3),.avancys-cobro-table td:nth-child(n+3){width:18.66%;text-align:right}
+/* Detalle de pagos de una comisión (2026-11-25): tabla propia, sin los anchos de la de afuera. */
+.avancys-cobro-table .commission-detail-row > td{padding:0 12px 14px;background:#fbfdff}
+.avancys-cobro-table .commission-detail-row table{table-layout:auto;min-width:860px;width:100%}
+.avancys-cobro-table .commission-detail-row th,.avancys-cobro-table .commission-detail-row td{width:auto;padding:8px 10px;font-size:13px;text-align:left}
+.avancys-cobro-table .commission-detail-row .money-cell,.avancys-cobro-table .commission-detail-row .numeric-value{text-align:right;white-space:nowrap}
+.avancys-cobro-table .commission-detail-row small{display:block;font-weight:400}
 .crm-readable-table.deal-mix-table table{min-width:520px;width:100%}
 .deal-mix-table th:nth-child(1),.deal-mix-table td:nth-child(1){width:46%}
 .deal-mix-table th:nth-child(n+2),.deal-mix-table td:nth-child(n+2){width:27%;text-align:right}

@@ -25,11 +25,16 @@ const CAMPOS = Object.freeze({
   // sólo esta lectura y no la facturación por cliente de la Torre, que usa `factura`.
   facturaPago: Object.freeze(['id', 'partner_id', 'invoice_user_id', 'amount_untaxed', 'amount_total', 'amount_residual', 'payment_state', 'move_type', 'invoice_date', 'write_date']),
   cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'state_id', 'write_date']),
+  // Comisiones por pagos recibidos (Juan, 2026-11-25): los abonos a cartera del mes y las facturas que nombran.
+  recaudo: Object.freeze(['id', 'date', 'name', 'ref', 'credit', 'journal_id', 'write_date']),
+  facturaComision: Object.freeze(['id', 'name', 'partner_id', 'amount_untaxed', 'amount_total', 'move_type', 'invoice_date', 'journal_id', 'write_date']),
 });
 
 const MODELO = Object.freeze({
   factura: 'account.move',
   facturaPago: 'account.move',
+  facturaComision: 'account.move',
+  recaudo: 'account.move.line',
   orden: 'project.service.order.line.invoice',
   puesto: 'hr.roster.puesto',
   contrato: 'project.project',
@@ -576,6 +581,107 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
   }
 
   /**
+   * Lo que entró a cartera en un mes y las facturas que paga (comisiones; Juan, 2026-11-25: «se les paga por lo que ya
+   * haya pagado el cliente; si paga parcial se le paga parcial»).
+   *
+   * Nuestro usuario de lectura no ve la conciliación parcial (`account.partial.reconcile`). Pero cada abono a la cuenta
+   * de clientes (1305) trae en su texto el número de la factura que paga («AV04134 - SN385199»). Medido el 2026-11-25
+   * contra el estado de pago de Avancys: en 2.656 de 2.718 facturas de septiembre y octubre la suma de esos abonos da
+   * exacta. La cuenta se filtra por código: filtrar por tipo de cuenta pide un permiso que no tenemos.
+   *
+   * Sólo diarios de banco, caja y cruces: una nota crédito (diario de ventas) baja la factura, no es un pago.
+   */
+  async function pagosDelMes({ mes }) {
+    if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) falla('AVANCYS_MES_INVALIDO');
+    const [anio, numeroMes] = String(mes).split('-').map(Number);
+    const desde = `${mes}-01`;
+    const hasta = new Date(Date.UTC(anio, numeroMes, 0)).toISOString().slice(0, 10);
+    const recaudos = await leer('recaudo',
+      [['account_id.code', '=like', '1305%'], ['credit', '>', 0], ['date', '>=', desde], ['date', '<=', hasta],
+       ['parent_state', '=', 'posted'], ['journal_id.type', 'in', ['bank', 'cash', 'general']]],
+      { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+
+    const numeros = new Set();
+    for (const r of recaudos) for (const ficha of `${r.name || ''} ${r.ref || ''}`.toUpperCase().match(/\b[A-Z]{1,4}\d{4,7}\b/g) || []) numeros.add(ficha);
+    const facturasLeidas = [];
+    const lista = [...numeros];
+    for (let i = 0; i < lista.length; i += 500) {
+      facturasLeidas.push(...await leer('facturaComision',
+        [['name', 'in', lista.slice(i, i + 500)], ['move_type', 'in', ['out_invoice', 'out_refund']], ['state', '=', 'posted']],
+        { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 }));
+    }
+
+    // El comercial que cuenta es el asignado al cliente, no quien hizo la factura (igual que el cobro por comercial).
+    const idsCliente = [...new Set(facturasLeidas.map(f => unoAMuchos(f.partner_id)).filter(id => id !== null))];
+    const comercialDelCliente = new Map();
+    for (let i = 0; i < idsCliente.length; i += 500) {
+      const lote = idsCliente.slice(i, i + 500);
+      for (const cliente of await leer('cliente', [['id', 'in', lote]], { limite: lote.length })) comercialDelCliente.set(cliente.id, cliente.user_id || false);
+    }
+
+    const facturas = {};
+    const mesesServicios = new Set();
+    const clientesServicios = new Set();
+    for (const f of facturasLeidas) {
+      const numero = texto(f.name);
+      if (!numero) continue;
+      const clienteId = unoAMuchos(f.partner_id);
+      const asignado = comercialDelCliente.get(clienteId);
+      const diario = Array.isArray(f.journal_id) ? texto(f.journal_id[1]) : null;
+      facturas[numero] = Object.freeze({
+        cliente_id: clienteId,
+        cliente: Array.isArray(f.partner_id) ? (texto(f.partner_id[1]) || '').replace(/^\[[^\]]*\]\s*/, '') : null,
+        comercial_id: unoAMuchos(asignado),
+        comercial: Array.isArray(asignado) ? texto(asignado[1]) : null,
+        sin_iva: Number(f.amount_untaxed) || 0,
+        total: Number(f.amount_total) || 0,
+        tipo: f.move_type,
+        fecha: f.invoice_date || null,
+        diario,
+      });
+      if (f.move_type === 'out_invoice' && f.invoice_date && /SERVICIOS/i.test(diario || '') && clienteId !== null) {
+        mesesServicios.add(String(f.invoice_date).slice(0, 7));
+        clientesServicios.add(clienteId);
+      }
+    }
+
+    // El valor mensual de cada cliente: lo facturado por Servicios en el mes de la factura pagada, neto de notas crédito.
+    const servicioMensual = {};
+    const meses = [...mesesServicios].sort();
+    const clientes = [...clientesServicios];
+    const leidasMensual = [];
+    if (meses.length) {
+      const [ultimoAnio, ultimoMes] = meses[meses.length - 1].split('-').map(Number);
+      const finUltimo = new Date(Date.UTC(ultimoAnio, ultimoMes, 0)).toISOString().slice(0, 10);
+      for (let i = 0; i < clientes.length; i += 300) {
+        const filas = await leer('facturaComision',
+          [['partner_id', 'in', clientes.slice(i, i + 300)], ['journal_id.name', 'ilike', 'SERVICIOS'], ['move_type', 'in', ['out_invoice', 'out_refund']],
+           ['state', '=', 'posted'], ['invoice_date', '>=', `${meses[0]}-01`], ['invoice_date', '<=', finUltimo]],
+          { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+        leidasMensual.push(...filas);
+        for (const f of filas) {
+          const clave = `${unoAMuchos(f.partner_id)}|${String(f.invoice_date).slice(0, 7)}`;
+          const monto = (Number(f.amount_untaxed) || 0) * (f.move_type === 'out_refund' ? -1 : 1);
+          servicioMensual[clave] = (servicioMensual[clave] || 0) + monto;
+        }
+      }
+    }
+
+    return Object.freeze({
+      mes,
+      recaudos: Object.freeze(recaudos.map(r => Object.freeze({
+        id: r.id, fecha: r.date, valor: Number(r.credit) || 0,
+        texto: [texto(r.name), texto(r.ref)].filter(Boolean).join(' '),
+        diario: Array.isArray(r.journal_id) ? texto(r.journal_id[1]) : null,
+      }))),
+      facturas: Object.freeze(facturas),
+      servicioMensual: Object.freeze(servicioMensual),
+      recortado: recaudos.length >= MAX_FILAS_PAGINADO,
+      as_of: corteDe([recaudos, facturasLeidas, leidasMensual]),
+    });
+  }
+
+  /**
    * Lo facturado en un mes, por cliente. Es lo que la Torre no tenía: su ingreso por cliente sale
    * hoy de una hoja que alguien importa, y que no es la facturación sino la provisión de cierre.
    *
@@ -717,5 +823,5 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
+  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, pagosDelMes, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
 }
