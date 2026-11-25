@@ -525,6 +525,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'PUT /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'DELETE /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'POST /api/agt003/quote/link': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'POST /api/agt003/quote/use-in-opportunity': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
@@ -5155,6 +5157,44 @@ app.put('/api/agt003/quote', async (req, res) => {
     await must(database.from('psi_quotes').update(patch).eq('id', id).select('id').single());
     await saveQuoteItems(database, id, input);
     res.json(await loadQuote(database, id, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+// Juan, 2026-11-25: "se pueden guardar pero luego no se pueden eliminar; deberíamos tener un botón de eliminar y otro
+// de asignar a oportunidad". Las dos acciones salen de la lista, sin abrir el editor. Sólo quien hizo la cotización
+// (o gerencia y administración) la borra o la liga. Borrar se lleva sus puestos y líneas (on delete cascade); el valor
+// que ya se pasó a una oportunidad se queda en la oportunidad.
+function requireQuoteOwner(quote, profile, message) {
+  if (quote.created_by !== profile.id && !globalCrmScopeRoles.has(profile.role)) { const error = new Error(message); error.status = 403; throw error; }
+}
+app.delete('/api/agt003/quote', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    const id = String(req.query.id || '').trim();
+    if (!id) { const error = new Error('Debe indicar la cotización.'); error.status = 400; throw error; }
+    const existing = await loadQuote(database, id, currentProfile);
+    requireQuoteOwner(existing, currentProfile, 'Sólo quien hizo la cotización la puede eliminar.');
+    await must(database.from('psi_quotes').delete().eq('id', id).select('id'));
+    res.json({ id, deleted: true });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/agt003/quote/link', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    const id = String(req.query.id || '').trim();
+    const opportunityId = typeof req.body?.opportunity_id === 'string' ? req.body.opportunity_id.trim() : '';
+    if (!id || !opportunityId) { const error = new Error('Debe indicar la cotización y la oportunidad.'); error.status = 400; throw error; }
+    const existing = await loadQuote(database, id, currentProfile);
+    requireQuoteOwner(existing, currentProfile, 'Sólo quien hizo la cotización la puede ligar a una oportunidad.');
+    const opportunity = await ensureOpportunityAccess(database, opportunityId, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    if (opportunity.service_type_code === 'licitacion_publica') { const error = new Error('Las licitaciones toman su valor del proceso, no de una cotización.'); error.status = 400; throw error; }
+    const patch = { opportunity_id: opportunity.id, updated_at: new Date().toISOString() };
+    if (!existing.client_name) patch.client_name = opportunity.company_name || null;
+    await must(database.from('psi_quotes').update(patch).eq('id', id).select('id').single());
+    res.json({ id, opportunity_id: opportunity.id, client_name: patch.client_name ?? existing.client_name ?? null });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

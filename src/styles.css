@@ -1146,6 +1146,10 @@ td.numeric-value{white-space:nowrap}
 .quote-list a,.quote-list li>span{display:flex;flex-direction:column;gap:2px;padding:12px 4px;color:inherit;text-decoration:none}
 .quote-list a:hover{background:#f5f9ff}
 .quote-list small{color:#5d6b82}
+.quote-list-item{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.quote-list-item>a{flex:1 1 260px;min-width:0}
+.quote-list-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 4px}
+.quote-list-actions select{width:220px;max-width:100%;padding-top:8px;padding-bottom:8px}
 .quote-kind{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .quote-kind span{font-weight:700;color:#31445f}
 .quote-kind button{background:#fff;color:#31445f;border:1px solid #cbd7e8}

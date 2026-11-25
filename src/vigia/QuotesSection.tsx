@@ -66,17 +66,55 @@ function QuoteList({ navigate, opportunities, opportunityId }: { navigate: (hash
     return () => { alive = false; };
   }, [opportunityId]);
   const opportunityName = (oid: string | null) => opportunities.find(o => o.id === oid)?.company_name || null;
+  // Juan, 2026-11-25: cada cotización guardada se puede eliminar y ligar a una oportunidad desde la lista.
+  const [linking, setLinking] = useState<{ id: string; opportunityId: string } | null>(null);
+  const [busy, setBusy] = useState('');
+  const commercialOptions = opportunities.filter(o => o.service_type_code !== 'licitacion_publica').sort((a, b) => a.company_name.localeCompare(b.company_name, 'es'));
+  const remove = async (q: QuoteSummary) => {
+    if (!window.confirm(`¿Eliminar la cotización de ${q.client_name || 'este cliente'}? No se puede deshacer.`)) return;
+    setBusy(q.id);
+    try {
+      await api(`/api/agt003/quote?id=${encodeURIComponent(q.id)}`, { method: 'DELETE' });
+      setQuotes(list => (list || []).filter(item => item.id !== q.id));
+      setNote('Cotización eliminada.');
+    } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } finally { setBusy(''); }
+  };
+  const link = async () => {
+    if (!linking?.opportunityId) return;
+    setBusy(linking.id);
+    try {
+      const r = await api<{ id: string; opportunity_id: string; client_name: string | null }>(`/api/agt003/quote/link?id=${encodeURIComponent(linking.id)}`, { method: 'POST', body: JSON.stringify({ opportunity_id: linking.opportunityId }) });
+      setQuotes(list => (list || []).map(item => (item.id === r.id ? { ...item, opportunity_id: r.opportunity_id, client_name: r.client_name } : item)));
+      setNote(`Cotización ligada a ${opportunityName(r.opportunity_id) || 'la oportunidad'}.`);
+      setLinking(null);
+    } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } finally { setBusy(''); }
+  };
   return <section className="panel">
     <div className="quote-list-head">
       <h2>{opportunityId ? 'Cotizaciones de esta oportunidad' : 'Cotizaciones'}</h2>
       <button type="button" onClick={() => navigate(`#/cotizar/nueva${opportunityId ? `?opportunity=${encodeURIComponent(opportunityId)}` : ''}`)}>Nueva cotización</button>
     </div>
-    {note && <p className="muted">{note}</p>}
+    {note && <p className="muted" role="status">{note}</p>}
     {quotes === null ? <p className="muted">Cargando…</p> : !quotes.length ? <p className="muted">Todavía no hay cotizaciones.</p>
-      : <ul className="quote-list">{quotes.map(q => <li key={q.id}><a href={`#/cotizar/${q.id}`}>
-        <strong>{q.client_name || 'Sin cliente'}</strong>
-        <small>{q.title ? `${q.title} · ` : ''}{opportunityName(q.opportunity_id) ? `Oportunidad: ${opportunityName(q.opportunity_id)} · ` : 'Sin oportunidad · '}Actualizada {day(q.updated_at)}</small>
-      </a></li>)}</ul>}
+      : <ul className="quote-list">{quotes.map(q => <li key={q.id} className="quote-list-item">
+        <a href={`#/cotizar/${q.id}`}>
+          <strong>{q.client_name || 'Sin cliente'}</strong>
+          <small>{q.title ? `${q.title} · ` : ''}{opportunityName(q.opportunity_id) ? `Oportunidad: ${opportunityName(q.opportunity_id)} · ` : 'Sin oportunidad · '}Actualizada {day(q.updated_at)}</small>
+        </a>
+        {linking?.id === q.id
+          ? <div className="quote-list-actions">
+            <select aria-label="Oportunidad" value={linking.opportunityId} onChange={e => setLinking({ id: q.id, opportunityId: e.target.value })}>
+              <option value="">Escoja la oportunidad…</option>
+              {commercialOptions.map(o => <option key={o.id} value={o.id}>{o.company_name}</option>)}
+            </select>
+            <button type="button" disabled={!linking.opportunityId || busy === q.id} onClick={() => void link()}>Ligar</button>
+            <button type="button" className="secondary" onClick={() => setLinking(null)}>Cancelar</button>
+          </div>
+          : <div className="quote-list-actions">
+            {!opportunityId && <button type="button" className="secondary" disabled={busy === q.id} onClick={() => setLinking({ id: q.id, opportunityId: q.opportunity_id || '' })}>{q.opportunity_id ? 'Cambiar oportunidad' : 'Asignar a oportunidad'}</button>}
+            <button type="button" className="danger" disabled={busy === q.id} onClick={() => void remove(q)}>Eliminar</button>
+          </div>}
+      </li>)}</ul>}
   </section>;
 }
 
