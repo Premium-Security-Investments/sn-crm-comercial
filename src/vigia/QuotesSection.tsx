@@ -4,7 +4,7 @@ import {
   DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, GUARD_DAY_TYPES, GUARD_MODALITIES, TECH_CATEGORIES, quoteGuardPost, quoteTechLine,
   type GuardDayType, type GuardModality, type GuardPostInput, type GuardRates, type QuoteTotals, type TechCategory, type TechLineInput, type TechRates,
 } from './quote-engine.js';
-import { opportunityValueFromQuote, pesos as proposalPesos, proposalContent } from './quote-proposal.js';
+import { opportunityValuesFromQuote, pesos as proposalPesos, proposalContent } from './quote-proposal.js';
 
 // AGT-003 — Sección Cotizar (entrega 3; Juan, 2026-11-11). Una sola sección para los dos cotizadores: vigilancia
 // (puestos, se cobra cada mes) y tecnología (equipos, insumos y mano de obra, se paga una vez). Se entra desde el menú
@@ -14,7 +14,8 @@ import { opportunityValueFromQuote, pesos as proposalPesos, proposalContent } fr
 type RateRow = { id?: string; kind: string; valid_from: string | null; params: Record<string, unknown>; notes?: string | null; created_at?: string };
 type RatesResponse = { today: string; canEdit: boolean; motivo: string | null; rates: { vigilancia: { current: RateRow; history: RateRow[] }; tecnologia: { current: RateRow; history: RateRow[] } } };
 type QuoteSummary = { id: string; opportunity_id: string | null; client_name: string | null; title: string | null; status: string; created_at: string; updated_at: string };
-type QuoteFull = QuoteSummary & { guardPosts: GuardPostInput[]; techLines: TechLineInput[]; totals: QuoteTotals };
+type QuoteFull = QuoteSummary & { guardPosts: GuardPostInput[]; techLines: TechLineInput[]; totals: QuoteTotals; paired_opportunity_id?: string | null; tech_delivery_terms?: string | null };
+type UseResult = { part: 'vigilancia' | 'tecnologia'; opportunity_id: string; company_name: string; service_type_code: string | null; previous_value?: number | null; offer_value?: number; created: boolean; skipped?: string };
 type OpportunityOption = { id: string; company_name: string; service_type_code?: string | null; stage_code?: string | null };
 export type QuoteSeller = { name: string; email?: string | null; phone?: string | null };
 
@@ -131,6 +132,7 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
   const presetOpportunity = useMemo(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.hash.split('?')[1] || '').get('opportunity') || ''), [quoteId]);
   const [clientName, setClientName] = useState('');
   const [title, setTitle] = useState('');
+  const [deliveryTerms, setDeliveryTerms] = useState('');
   const [opportunityId, setOpportunityId] = useState(presetOpportunity);
   const [kinds, setKinds] = useState<{ vigilancia: boolean; tecnologia: boolean }>({ vigilancia: true, tecnologia: false });
   const [posts, setPosts] = useState<GuardPostInput[]>([newPost()]);
@@ -155,12 +157,12 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
       try {
         const q = await api<QuoteFull>(`/api/agt003/quote?id=${encodeURIComponent(quoteId)}`);
         if (!alive) return;
-        setClientName(q.client_name || ''); setTitle(q.title || ''); setOpportunityId(q.opportunity_id || '');
+        setClientName(q.client_name || ''); setTitle(q.title || ''); setOpportunityId(q.opportunity_id || ''); setDeliveryTerms(q.tech_delivery_terms || '');
         setPosts(q.guardPosts.length ? q.guardPosts : [newPost()]);
         setLines(q.techLines.length ? q.techLines : [newLine()]);
         setKinds({ vigilancia: q.guardPosts.length > 0, tecnologia: q.techLines.length > 0 });
         setSaved(q);
-        setSavedBody(bodyOf({ clientName: q.client_name || '', title: q.title || '', opportunityId: q.opportunity_id || '', kinds: { vigilancia: q.guardPosts.length > 0, tecnologia: q.techLines.length > 0 }, posts: q.guardPosts, lines: q.techLines }));
+        setSavedBody(bodyOf({ clientName: q.client_name || '', title: q.title || '', opportunityId: q.opportunity_id || '', kinds: { vigilancia: q.guardPosts.length > 0, tecnologia: q.techLines.length > 0 }, posts: q.guardPosts, lines: q.techLines, deliveryTerms: q.tech_delivery_terms || '' }));
       } catch (err) { if (alive) setStatus(err instanceof Error ? err.message : String(err)); }
     })();
     return () => { alive = false; };
@@ -177,7 +179,7 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
   const setLine = (index: number, patch: Partial<TechLineInput>) => setLines(list => list.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   const toggleDay = (index: number, code: GuardDayType) => setPosts(list => list.map((p, i) => (i !== index ? p : { ...p, dayTypes: p.dayTypes.includes(code) ? p.dayTypes.filter(d => d !== code) : [...p.dayTypes, code] })));
 
-  const body = bodyOf({ clientName, title, opportunityId, kinds, posts, lines });
+  const body = bodyOf({ clientName, title, opportunityId, kinds, posts, lines, deliveryTerms });
   const dirty = !saved || body !== savedBody;
   // Lo que había al abrir el editor: una cotización nueva sin tocar no está "sin guardar" para efectos de avisar.
   const [pristineBody] = useState(body);
@@ -224,14 +226,16 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
   };
 
   const linkedOpportunity = opportunities.find(o => o.id === (saved?.opportunity_id || '')) || null;
-  const opportunityValue = saved ? opportunityValueFromQuote(saved.totals) : null;
-  const canUseInOpportunity = Boolean(saved?.opportunity_id && opportunityValue && !dirty && !CLOSED_STAGES.has(linkedOpportunity?.stage_code || ''));
+  const opportunityValues = saved ? opportunityValuesFromQuote(saved.totals) : null;
+  const canUseInOpportunity = Boolean(saved?.opportunity_id && opportunityValues && !dirty && !CLOSED_STAGES.has(linkedOpportunity?.stage_code || ''));
   const useInOpportunity = async () => {
     if (!saved || !canUseInOpportunity) return;
-    setSaving(true); setStatus('Pasando el valor a la oportunidad…');
+    setSaving(true); setStatus(opportunityValues?.mixed ? 'Pasando los valores a las dos oportunidades…' : 'Pasando el valor a la oportunidad…');
     try {
-      const r = await api<{ offer_value: number; previous_value: number | null; explanation: string }>(`/api/agt003/quote/use-in-opportunity?id=${encodeURIComponent(saved.id)}`, { method: 'POST', body: '{}' });
-      setStatus(`La oportunidad quedó en ${proposalPesos(r.offer_value)}${r.previous_value !== null ? ` (antes ${proposalPesos(Number(r.previous_value))})` : ''}.`);
+      const r = await api<{ results: UseResult[] }>(`/api/agt003/quote/use-in-opportunity?id=${encodeURIComponent(saved.id)}`, { method: 'POST', body: '{}' });
+      setStatus(r.results.map(useResultText).join(' '));
+      const paired = r.results.find(item => item.opportunity_id !== saved.opportunity_id);
+      if (paired) setSaved(current => (current ? { ...current, paired_opportunity_id: paired.opportunity_id } : current));
     } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); } finally { setSaving(false); }
   };
 
@@ -285,6 +289,10 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
     {kinds.tecnologia && <section className="panel">
       <h2>Medios tecnológicos · equipos, insumos y mano de obra</h2>
       <p className="muted">Escriba el costo unitario sin IVA; el precio sale con el margen del {Math.round(techRates.margin * 100)} %. La comisión se calcula sobre el precio de los equipos.</p>
+      <div className="form gridform">
+        <label className="wide">Entrega e instalación (opcional)<input value={deliveryTerms} maxLength={300} onChange={e => setDeliveryTerms(e.target.value)} placeholder="Ej. 20 días hábiles desde la orden de compra" /></label>
+      </div>
+      <p className="muted">Depende de cada proyecto. Si lo deja vacío, la propuesta dice que se acuerda con el cronograma del proyecto.</p>
       {lines.map((line, index) => {
         const result = lineResults[index];
         return <div className="quote-row" key={index}>
@@ -321,19 +329,32 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
         {status && <span role="status">{status}</span>}
         {proposalLink && <a href={proposalLink.url} download={proposalLink.filename} target="_blank" rel="noreferrer">¿No se descargó? Ábrala aquí</a>}
       </div>
-      {saved?.opportunity_id && opportunityValue && <div className="quote-opportunity-value">
-        <p><strong>Valor para la oportunidad{linkedOpportunity ? ` ${linkedOpportunity.company_name}` : ''}:</strong> {proposalPesos(opportunityValue.value)}. <span className="muted">{opportunityValue.explanation}</span></p>
+      {saved?.opportunity_id && opportunityValues && <div className="quote-opportunity-value">
+        {opportunityValues.mixed
+          ? <>
+            <p><strong>Valores para las oportunidades{linkedOpportunity ? ` de ${linkedOpportunity.company_name}` : ''}:</strong> seguridad física {proposalPesos(opportunityValues.guard!.value)} al mes y proyecto {proposalPesos(opportunityValues.tech!.value)} en total, antes de IVA.</p>
+            <p className="muted">La cotización es mixta: la vigilancia queda en la oportunidad de seguridad física y la tecnología en una de proyecto del mismo cliente, para seguirlas por separado. Si el cliente no tiene la de proyecto (o la de seguridad física), el sistema la crea.</p>
+          </>
+          : <p><strong>Valor para la oportunidad{linkedOpportunity ? ` ${linkedOpportunity.company_name}` : ''}:</strong> {proposalPesos((opportunityValues.guard || opportunityValues.tech)!.value)}. <span className="muted">{(opportunityValues.guard || opportunityValues.tech)!.explanation}</span></p>}
         {CLOSED_STAGES.has(linkedOpportunity?.stage_code || '')
           ? <p className="muted">La oportunidad ya está cerrada: su valor no se cambia desde aquí.</p>
-          : <button type="button" className="secondary" disabled={saving || !canUseInOpportunity} onClick={() => void useInOpportunity()}>{dirty ? 'Guarde los cambios para pasar el valor' : 'Pasar este valor a la oportunidad'}</button>}
+          : <button type="button" className="secondary" disabled={saving || !canUseInOpportunity} onClick={() => void useInOpportunity()}>{dirty ? 'Guarde los cambios para pasar el valor' : opportunityValues.mixed ? 'Pasar los valores a las dos oportunidades' : 'Pasar este valor a la oportunidad'}</button>}
         {saved.guardPosts.length > 0 && <p className="muted">Los puestos se traen al formulario de cierre desde la ficha de la oportunidad, con «Traer puestos de la cotización».</p>}
       </div>}
     </section>
   </div>;
 }
 
-function bodyOf({ clientName, title, opportunityId, kinds, posts, lines }: { clientName: string; title: string; opportunityId: string; kinds: { vigilancia: boolean; tecnologia: boolean }; posts: GuardPostInput[]; lines: TechLineInput[] }) {
-  return JSON.stringify({ client_name: clientName, title, opportunity_id: opportunityId || undefined, guardPosts: kinds.vigilancia ? posts : [], techLines: kinds.tecnologia ? lines : [] });
+function bodyOf({ clientName, title, opportunityId, kinds, posts, lines, deliveryTerms = '' }: { clientName: string; title: string; opportunityId: string; kinds: { vigilancia: boolean; tecnologia: boolean }; posts: GuardPostInput[]; lines: TechLineInput[]; deliveryTerms?: string }) {
+  return JSON.stringify({ client_name: clientName, title, opportunity_id: opportunityId || undefined, guardPosts: kinds.vigilancia ? posts : [], techLines: kinds.tecnologia ? lines : [], tech_delivery_terms: kinds.tecnologia ? deliveryTerms : '' });
+}
+
+/** Lo que pasó con cada oportunidad, en una frase. */
+function useResultText(item: UseResult) {
+  const what = item.part === 'vigilancia' ? 'Seguridad física' : 'Proyecto';
+  if (item.skipped) return `${what}: ${item.skipped}`;
+  const before = item.previous_value !== null && item.previous_value !== undefined && !item.created ? ` (antes ${proposalPesos(Number(item.previous_value))})` : '';
+  return `${what}: ${item.created ? 'se creó la oportunidad y quedó' : 'la oportunidad quedó'} en ${proposalPesos(Number(item.offer_value))}${before}.`;
 }
 
 /** Tarifas con vigencia (sólo administrador). Nunca se edita una vigencia: se agrega otra con su fecha. */

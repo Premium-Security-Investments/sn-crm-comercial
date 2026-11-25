@@ -9,9 +9,16 @@
 //     anticipo y 50 % contra entrega e instalación; garantía de equipos la del fabricante, mínimo un año; instalación
 //     en 15 días hábiles desde la orden.
 //   · Presentación de la empresa: sólo lo verificable, y el logo como es, con su frase ("Sabemos de seguridad").
-//   · Valor que pasa a la oportunidad (la oportunidad tiene un solo valor): vigilancia = lo mensual antes de IVA;
-//     tecnología = el total antes de IVA; mixta = lo mensual más la tecnología repartida en 12 meses.
+//   · Valor que pasa a la oportunidad: vigilancia = lo mensual antes de IVA; tecnología = el total antes de IVA.
 //   · Los puestos de la cotización pasan al formulario de cierre.
+//
+// Cambios de Juan (2026-11-25), con las respuestas del área comercial:
+//   · Validez: 30 días la vigilancia y 15 días la tecnología.
+//   · Vigilancia: se factura el mes por anticipado y la factura se paga a 30 días.
+//   · Garantía de los equipos: un año. Entrega e instalación: depende del proyecto (lo escribe el comercial).
+//   · Presentación: sólo lo verificable, con las sedes que tienen resolución de la Superintendencia.
+//   · Cotización mixta: ya no se suma. La vigilancia va a la oportunidad de seguridad física y la tecnología a una de
+//     tipo «proyecto», para seguir las dos líneas por separado (las divide el servidor).
 // Lo que la propuesta NO muestra nunca: el costo de los equipos ni el margen (son internos).
 
 import { GUARD_DAY_TYPES } from './quote-engine.js';
@@ -21,11 +28,13 @@ export const COMPANY = Object.freeze({
   tagline: 'Sabemos de seguridad',
   nit: '891.408.256-4',
   city: 'Pereira',
+  // Sede principal y agencias con resolución de la Superintendencia (psi_company_sites, 2026-11-25). Armenia no va:
+  // su resolución está pendiente.
+  agencies: Object.freeze(['Bogotá', 'Medellín', 'Cali', 'Manizales', 'Cartago']),
 });
 
-export const OFFER_VALIDITY_DAYS = 30;
-// Meses en que se reparte la tecnología cuando la cotización es mixta (Juan, 2026-11-16).
-export const MIXED_TECH_MONTHS = 12;
+export const GUARD_VALIDITY_DAYS = 30;
+export const TECH_VALIDITY_DAYS = 15;
 
 const MODALITY_LABEL = Object.freeze({ sin_arma: 'Sin arma', con_arma: 'Con arma', canino: 'Canino' });
 const CATEGORY_LABEL = Object.freeze({ equipo: 'Equipo', insumo: 'Insumos', mano_de_obra: 'Instalación y programación' });
@@ -67,24 +76,19 @@ export function scheduleLabel(post, result) {
 }
 
 /**
- * El valor que la cotización le pone a la oportunidad, que tiene uno solo. Siempre antes de IVA.
- * Devuelve `null` si la cotización no tiene nada.
+ * Los valores que la cotización le pone a sus oportunidades, siempre antes de IVA: la vigilancia (lo mensual) va a la
+ * de seguridad física y la tecnología (el total) a la de proyecto. Una cotización mixta trae los dos y el servidor los
+ * reparte en dos oportunidades (Juan, 2026-11-25). Devuelve `null` si la cotización no tiene nada.
  */
-export function opportunityValueFromQuote(totals) {
-  const monthly = totals.posts.length ? totals.monthly.subtotal : 0;
-  const oneTime = totals.lines.length ? totals.oneTime.subtotal : 0;
-  if (totals.posts.length && totals.lines.length) {
-    const techPerMonth = Math.round(oneTime / MIXED_TECH_MONTHS);
-    return {
-      value: monthly + techPerMonth,
-      basis: 'mixta',
-      explanation: `Vigilancia ${pesos(monthly)} al mes + tecnología ${pesos(oneTime)} repartida en ${MIXED_TECH_MONTHS} meses (${pesos(techPerMonth)}), antes de IVA.`,
-    };
-  }
-  if (totals.posts.length) return { value: monthly, basis: 'mensual', explanation: `Vigilancia ${pesos(monthly)} al mes, antes de IVA.` };
-  if (totals.lines.length) return { value: oneTime, basis: 'total', explanation: `Tecnología ${pesos(oneTime)} en total, antes de IVA.` };
-  return null;
+export function opportunityValuesFromQuote(totals) {
+  const guard = totals.posts.length ? { value: totals.monthly.subtotal, explanation: `Vigilancia ${pesos(totals.monthly.subtotal)} al mes, antes de IVA.` } : null;
+  const tech = totals.lines.length ? { value: totals.oneTime.subtotal, explanation: `Tecnología ${pesos(totals.oneTime.subtotal)} en total, antes de IVA.` } : null;
+  return guard || tech ? { guard, tech, mixed: Boolean(guard && tech) } : null;
 }
+
+/** Tipo de oportunidad que recibe la tecnología de una cotización mixta, y el que recibe la vigilancia. */
+export const TECH_OPPORTUNITY_TYPE = 'proyecto';
+export const GUARD_OPPORTUNITY_TYPE = 'seguridad_fisica';
 
 /**
  * Los puestos de la cotización en la forma del formulario de cierre (GGC-FO-001). El valor es el del puesto antes de
@@ -110,16 +114,19 @@ export function closurePostsFromQuote(guardPosts, results) {
 }
 
 /** Las condiciones comerciales que aplican, según lo que lleve la cotización. */
-export function proposalConditions({ hasGuard, hasTech, validUntil }) {
-  const list = [`Oferta válida por ${OFFER_VALIDITY_DAYS} días, hasta el ${longDate(validUntil)}.`];
+export function proposalConditions({ hasGuard, hasTech, today, deliveryTerms = '' }) {
+  const list = [];
   if (hasGuard) {
-    list.push('Vigilancia: se factura mes vencido y la factura se paga a 30 días.');
+    list.push(`Vigilancia: oferta válida por ${GUARD_VALIDITY_DAYS} días, hasta el ${longDate(addDays(today, GUARD_VALIDITY_DAYS))}.`);
+    list.push('Vigilancia: se factura mensualmente por anticipado y la factura se paga a 30 días.');
     list.push('Vigilancia: valores calculados con la tarifa vigente de la Superintendencia de Vigilancia y Seguridad Privada.');
   }
   if (hasTech) {
+    const terms = String(deliveryTerms || '').trim().replace(/\.$/, '');
+    list.push(`Medios tecnológicos: oferta válida por ${TECH_VALIDITY_DAYS} días, hasta el ${longDate(addDays(today, TECH_VALIDITY_DAYS))}.`);
     list.push('Medios tecnológicos: 50 % de anticipo con la orden de compra y 50 % contra entrega e instalación.');
-    list.push('Medios tecnológicos: entrega e instalación en 15 días hábiles contados desde la orden de compra.');
-    list.push('Medios tecnológicos: garantía de los equipos según el fabricante, mínimo un año.');
+    list.push(terms ? `Medios tecnológicos: entrega e instalación: ${terms}.` : 'Medios tecnológicos: entrega e instalación según el cronograma que se acuerde para el proyecto.');
+    list.push('Medios tecnológicos: garantía de los equipos de un año.');
   }
   return list;
 }
@@ -132,7 +139,8 @@ export function proposalContent({ quote, today, seller = null }) {
   const totals = quote.totals;
   const hasGuard = totals.posts.length > 0;
   const hasTech = totals.lines.length > 0;
-  const validUntil = addDays(today, OFFER_VALIDITY_DAYS);
+  // La oferta entera vence con la línea que vence primero.
+  const validUntil = addDays(today, hasTech ? TECH_VALIDITY_DAYS : GUARD_VALIDITY_DAYS);
   const guard = hasGuard ? {
     rows: quote.guardPosts.map((post, index) => {
       const result = totals.posts[index];
@@ -176,7 +184,7 @@ export function proposalContent({ quote, today, seller = null }) {
     intro: proposalIntro({ hasGuard, hasTech }),
     guard,
     tech,
-    conditions: proposalConditions({ hasGuard, hasTech, validUntil }),
+    conditions: proposalConditions({ hasGuard, hasTech, today, deliveryTerms: quote.tech_delivery_terms }),
     seller: seller && String(seller.name || '').trim() ? { name: String(seller.name).trim(), email: seller.email || null, phone: seller.phone || null } : null,
   };
 }
@@ -185,5 +193,7 @@ function proposalIntro({ hasGuard, hasTech }) {
   const what = hasGuard && hasTech
     ? 'el servicio de vigilancia y los medios tecnológicos'
     : hasGuard ? 'el servicio de vigilancia' : 'los medios tecnológicos';
-  return `Agradecemos la oportunidad de presentar nuestra propuesta para ${what} que se describen a continuación. ${COMPANY.name}, con sede principal en ${COMPANY.city}, presta servicios de vigilancia y seguridad privada.`;
+  const agencies = COMPANY.agencies;
+  const list = agencies.length > 1 ? `${agencies.slice(0, -1).join(', ')} y ${agencies[agencies.length - 1]}` : agencies[0];
+  return `Agradecemos la oportunidad de presentar nuestra propuesta para ${what} que se describen a continuación. ${COMPANY.name}, con sede principal en ${COMPANY.city} y agencias en ${list}, presta servicios de vigilancia y seguridad privada.`;
 }

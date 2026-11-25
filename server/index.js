@@ -89,7 +89,7 @@ import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
 import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, quoteTotals, ratesInEffect } from '../src/vigia/quote-engine.js';
-import { opportunityValueFromQuote } from '../src/vigia/quote-proposal.js';
+import { GUARD_OPPORTUNITY_TYPE, TECH_OPPORTUNITY_TYPE, opportunityValuesFromQuote } from '../src/vigia/quote-proposal.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
@@ -5098,6 +5098,21 @@ app.post('/api/agt003/quote-rates', async (req, res) => {
 // que se toma de las vigentes cada vez que se guarda. Quien la hizo la ve; gerencia y administración ven todas; si está
 // ligada a una oportunidad, también quien puede ver esa oportunidad.
 const QUOTE_SELECT = 'id,opportunity_id,client_name,title,status,guard_rates,tech_rates,created_by,created_at,updated_at';
+// Migración 236 (2026-11-25): la segunda oportunidad de una cotización mixta y el plazo de instalación. El código
+// funciona sin ella: lee sin esas columnas y no divide la cotización mixta.
+const QUOTE_SELECT_236 = `${QUOTE_SELECT},paired_opportunity_id,tech_delivery_terms`;
+let quoteColumns236 = null;
+async function hasQuoteColumns236(database) {
+  if (quoteColumns236) return true;
+  const { error } = await database.from('psi_quotes').select('paired_opportunity_id,tech_delivery_terms').limit(1);
+  if (error && (error.code === '42703' || /column/i.test(error.message || ''))) return false;
+  if (error) throw error;
+  quoteColumns236 = true;
+  return true;
+}
+function deliveryTermsOf(body) {
+  return typeof body?.tech_delivery_terms === 'string' ? body.tech_delivery_terms.trim().slice(0, 300) || null : undefined;
+}
 async function currentQuoteRates(database) {
   const rows = await readQuoteRates(database);
   const today = bogotaDay(new Date());
@@ -5121,11 +5136,15 @@ function quoteInput(body = {}) {
   return { guardPosts, techLines };
 }
 async function loadQuote(database, id, profile) {
-  const quote = await must(database.from('psi_quotes').select(QUOTE_SELECT).eq('id', id).maybeSingle());
+  const quote = await must(database.from('psi_quotes').select(await hasQuoteColumns236(database) ? QUOTE_SELECT_236 : QUOTE_SELECT).eq('id', id).maybeSingle());
   if (!quote) { const error = new Error('Cotización no encontrada.'); error.status = 404; throw error; }
   if (quote.created_by !== profile.id && !globalCrmScopeRoles.has(profile.role)) {
     if (!quote.opportunity_id) { const error = new Error('No tiene acceso a esta cotización.'); error.status = 403; throw error; }
-    await ensureOpportunityAccess(database, quote.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    try { await ensureOpportunityAccess(database, quote.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW); } catch (error) {
+      // Quien ve la segunda oportunidad de una cotización mixta también la ve.
+      if (!quote.paired_opportunity_id) throw error;
+      await ensureOpportunityAccess(database, quote.paired_opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    }
   }
   const [posts, lines] = await Promise.all([
     must(database.from('psi_quote_guard_posts').select('name,start_time,end_time,day_types,guards,modality,position').eq('quote_id', id).order('position', { ascending: true })),
@@ -5157,7 +5176,10 @@ app.get('/api/agt003/quotes', async (req, res) => {
     let query = database.from('psi_quotes').select('id,opportunity_id,client_name,title,status,created_by,created_at,updated_at').order('updated_at', { ascending: false }).limit(200);
     if (opportunityId) {
       await ensureOpportunityAccess(database, opportunityId, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
-      query = query.eq('opportunity_id', opportunityId);
+      // La cotización mixta también se ve en su segunda oportunidad (la de proyecto o la de seguridad física).
+      query = await hasQuoteColumns236(database)
+        ? query.or(`opportunity_id.eq.${opportunityId},paired_opportunity_id.eq.${opportunityId}`)
+        : query.eq('opportunity_id', opportunityId);
     } else {
       // Juan, 2026-11-25: la lista de Cotizar es de las cotizaciones sueltas; la que ya tiene oportunidad vive dentro
       // de la oportunidad.
@@ -5196,7 +5218,10 @@ app.post('/api/agt003/quotes', async (req, res) => {
       clientName ||= opportunity.company_name || '';
     }
     const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 200) || null : null;
-    const quote = await must(database.from('psi_quotes').insert({ opportunity_id: opportunityId, client_name: clientName || null, title, guard_rates: rates.guardRates, tech_rates: rates.techRates, created_by: currentProfile.id }).select('id').single());
+    const row = { opportunity_id: opportunityId, client_name: clientName || null, title, guard_rates: rates.guardRates, tech_rates: rates.techRates, created_by: currentProfile.id };
+    const terms = deliveryTermsOf(req.body);
+    if (terms !== undefined && await hasQuoteColumns236(database)) row.tech_delivery_terms = terms;
+    const quote = await must(database.from('psi_quotes').insert(row).select('id').single());
     await saveQuoteItems(database, quote.id, input);
     res.status(201).json(await loadQuote(database, quote.id, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -5215,6 +5240,8 @@ app.put('/api/agt003/quote', async (req, res) => {
     const patch = { guard_rates: rates.guardRates, tech_rates: rates.techRates, updated_at: new Date().toISOString() };
     if (typeof req.body?.client_name === 'string') patch.client_name = req.body.client_name.trim().slice(0, 200) || null;
     if (typeof req.body?.title === 'string') patch.title = req.body.title.trim().slice(0, 200) || null;
+    const terms = deliveryTermsOf(req.body);
+    if (terms !== undefined && await hasQuoteColumns236(database)) patch.tech_delivery_terms = terms;
     // Ligar a una oportunidad (una cotización rápida del menú que ya tiene cliente en el CRM).
     if (typeof req.body?.opportunity_id === 'string' && req.body.opportunity_id.trim() && req.body.opportunity_id.trim() !== existing.opportunity_id) {
       const opportunity = await ensureOpportunityAccess(database, req.body.opportunity_id.trim(), currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
@@ -5265,10 +5292,50 @@ app.post('/api/agt003/quote/link', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
-// AGT-003 — la cotización le pone el valor a su oportunidad (entrega 4; Juan, 2026-11-16). La oportunidad tiene un solo
-// valor: vigilancia = lo mensual antes de IVA; tecnología = el total antes de IVA; mixta = lo mensual más la tecnología
-// repartida en 12 meses (regla en src/vigia/quote-proposal.js). Se toma de la cotización GUARDADA, con sus tarifas, y
-// sólo en una oportunidad abierta: el valor de una ganada o perdida ya es historia de ventas.
+// AGT-003 — la cotización le pone el valor a su oportunidad (entrega 4; Juan, 2026-11-16): vigilancia = lo mensual antes
+// de IVA; tecnología = el total antes de IVA (regla en src/vigia/quote-proposal.js). Se toma de la cotización GUARDADA,
+// con sus tarifas, y sólo en oportunidades abiertas: el valor de una ganada o perdida ya es historia de ventas.
+//
+// Cotización mixta (Juan, 2026-11-25): "se deben hacer dos oportunidades diferentes o que el sistema las divida para
+// poder tener seguimiento de seguridad física y de proyectos independiente". La vigilancia va a la oportunidad de
+// seguridad física y la tecnología a una de tipo «proyecto» del mismo cliente. La segunda es, en este orden: la que la
+// cotización ya tiene guardada; una abierta del mismo cliente, del mismo comercial y del tipo que falta (la más
+// reciente); o una nueva que nace con los datos de la primera. Queda guardada en la cotización.
+async function findOrCreatePairedOpportunity(database, profile, quote, primary, serviceType) {
+  if (quote.paired_opportunity_id) {
+    const { data } = await database.from('psi_sales_opportunities').select('id,deleted_at').eq('id', quote.paired_opportunity_id).maybeSingle();
+    if (data && !data.deleted_at) return { opportunity: await ensureOpportunityAccess(database, data.id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT), created: false };
+  }
+  let query = database.from('psi_sales_opportunities').select('id').is('deleted_at', null).eq('owner_id', primary.owner_id)
+    .eq('service_type_code', serviceType).not('stage_code', 'in', '(aprobado,descartado,perdido)').neq('id', primary.id)
+    .order('updated_at', { ascending: false }).limit(1);
+  query = primary.client_id ? query.eq('client_id', primary.client_id) : query.eq('company_name', primary.company_name);
+  const [found] = await must(query);
+  if (found) return { opportunity: await ensureOpportunityAccess(database, found.id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT), created: false };
+
+  await requireOpportunityAction(database, profile, primary.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
+  const number = `SN-COT-${String(quote.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+  const payload = cleanOpportunity({
+    company_name: primary.company_name, owner_id: primary.owner_id, service_type_code: serviceType,
+    stage_code: primary.stage_code, next_action_at: primary.next_action_at, customer_segment: primary.customer_segment,
+    regional_nombre: primary.regional_nombre, sede: primary.sede, quote_city: primary.quote_city, economic_sector: primary.economic_sector,
+    decision_maker_name: primary.decision_maker_name, decision_maker_email: primary.decision_maker_email, decision_maker_phone: primary.decision_maker_phone,
+    observaciones: `Creada por el sistema al dividir la cotización mixta ${number}: ${serviceType === TECH_OPPORTUNITY_TYPE ? 'la tecnología' : 'la vigilancia'} se sigue aparte.`,
+    external_source: 'cotizador',
+  }, primary.regional_nombre);
+  const requestedClientId = primary.client_id || (await findClientMasterByName(database, primary.company_name))?.id || null;
+  const authorizedSiblingIds = await prepareClientForNewOpportunity(database, profile, payload, requestedClientId);
+  const created = await persistSalesOpportunity(database, {
+    mode: 'create', opportunityId: null, actorProfileId: profile.id, requestedClientId,
+    opportunity: payload, client: pickClientMasterFields(payload), authorizedSiblingIds,
+  });
+  return { opportunity: await ensureOpportunityAccess(database, created.id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT), created: true };
+}
+async function setOpportunityValue(database, opportunity, value, explanation, extra = {}) {
+  const before = await must(database.from('psi_sales_opportunities').select('offer_value').eq('id', opportunity.id).single());
+  await must(database.from('psi_sales_opportunities').update({ offer_value: value }).eq('id', opportunity.id).select('id').single());
+  return { opportunity_id: opportunity.id, company_name: opportunity.company_name, service_type_code: opportunity.service_type_code, previous_value: before?.offer_value ?? null, offer_value: value, explanation, created: false, ...extra };
+}
 app.post('/api/agt003/quote/use-in-opportunity', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -5279,11 +5346,26 @@ app.post('/api/agt003/quote/use-in-opportunity', async (req, res) => {
     const opportunity = await ensureOpportunityAccess(database, quote.opportunity_id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     if (opportunity.service_type_code === 'licitacion_publica') { const error = new Error('Las licitaciones toman su valor del proceso, no de una cotización.'); error.status = 400; throw error; }
     if (CHAT_CLOSED_STAGES.has(opportunity.stage_code)) { const error = new Error('La oportunidad ya está cerrada: su valor no se cambia desde una cotización.'); error.status = 409; throw error; }
-    const computed = opportunityValueFromQuote(quote.totals);
-    if (!computed) { const error = new Error('La cotización no tiene puestos ni líneas.'); error.status = 400; throw error; }
-    const before = await must(database.from('psi_sales_opportunities').select('offer_value').eq('id', opportunity.id).single());
-    await must(database.from('psi_sales_opportunities').update({ offer_value: computed.value }).eq('id', opportunity.id).select('id').single());
-    res.json({ opportunity_id: opportunity.id, previous_value: before?.offer_value ?? null, offer_value: computed.value, basis: computed.basis, explanation: computed.explanation });
+    const values = opportunityValuesFromQuote(quote.totals);
+    if (!values) { const error = new Error('La cotización no tiene puestos ni líneas.'); error.status = 400; throw error; }
+    if (!values.mixed) {
+      const only = values.guard || values.tech;
+      return res.json({ results: [await setOpportunityValue(database, opportunity, only.value, only.explanation, { part: values.guard ? 'vigilancia' : 'tecnologia' })] });
+    }
+    if (!await hasQuoteColumns236(database)) { const error = new Error('La división de cotizaciones mixtas todavía no está activa (migración 236).'); error.status = 409; throw error; }
+    // La primera oportunidad se queda con lo suyo: si es de proyecto, la tecnología; si no, la vigilancia.
+    const primaryIsTech = opportunity.service_type_code === TECH_OPPORTUNITY_TYPE;
+    const paired = await findOrCreatePairedOpportunity(database, currentProfile, quote, opportunity, primaryIsTech ? GUARD_OPPORTUNITY_TYPE : TECH_OPPORTUNITY_TYPE);
+    if (quote.paired_opportunity_id !== paired.opportunity.id) await must(database.from('psi_quotes').update({ paired_opportunity_id: paired.opportunity.id }).eq('id', quote.id).select('id').single());
+    const guardTarget = primaryIsTech ? paired.opportunity : opportunity;
+    const techTarget = primaryIsTech ? opportunity : paired.opportunity;
+    const results = [];
+    for (const [part, target, value] of [['vigilancia', guardTarget, values.guard], ['tecnologia', techTarget, values.tech]]) {
+      const created = target.id === paired.opportunity.id && paired.created;
+      if (CHAT_CLOSED_STAGES.has(target.stage_code)) { results.push({ part, opportunity_id: target.id, company_name: target.company_name, service_type_code: target.service_type_code, skipped: 'La oportunidad ya está cerrada: su valor no se cambió.', created }); continue; }
+      results.push(await setOpportunityValue(database, target, value.value, value.explanation, { part, created }));
+    }
+    res.json({ results });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
