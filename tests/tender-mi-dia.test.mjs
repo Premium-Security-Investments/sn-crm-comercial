@@ -4,8 +4,8 @@ import test from 'node:test';
 import { buildTenderMiDia, miDiaClave, nombreCorto } from '../verticales/licitaciones/tender-mi-dia.js';
 
 // Mi día de licitaciones (Juan, 2026-11-15, maqueta aprobada): alertas en dos niveles. Lo que hace la persona va al día a
-// día con «Hecho»; lo que publica la entidad, aparte; lo crítico del expediente sin fecha, a «Mis pendientes»; y las
-// cuatro actividades resumen la semana.
+// día con «Hecho»; lo que publica la entidad, aparte; y las cuatro actividades resumen la semana. Lo crítico del
+// expediente no se lista: sólo se cuenta al lado del cierre (Juan, 2026-11-25).
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const today = '2026-11-15';
 const deaj = {
@@ -47,8 +47,9 @@ test('las cuatro actividades y la frase de arriba', () => {
     requisitos: [{ key: 'sede', title: 'Sucursal en Bogotá', status: 'en_tramite', upcoming: [{ deadline: '2026-11-24', unknown: false }] },
       { key: 'res', title: 'Ya resuelto', status: 'resuelto', upcoming: [{ deadline: '2026-11-24' }] }] });
   assert.equal(view.actividades.observar.esta_semana, 2);
-  assert.equal(view.actividades.presentar.cierres, 2, 'el cierre de DEAJ y la manifestación de Metro, en 15 días');
-  assert.equal(view.actividades.presentar.critico.texto, 'Garantía de seriedad (no se subsana)');
+  assert.equal(view.actividades.presentar.cierres, 1, 'sólo el cierre de DEAJ: la manifestación de Metro no es un cierre');
+  assert.deepEqual(view.actividades.presentar.items.map(item => item.opportunity_id), ['deaj']);
+  assert.ok(!('critico' in view.actividades.presentar), 'sin línea «Crítico»: el expediente se trabaja en el proceso');
   assert.deepEqual(view.actividades.tramitar.items.map(item => item.titulo), ['Sucursal en Bogotá'], 'lo resuelto no sale');
   assert.deepEqual(view.actividades.unirnos.items.map(item => item.opportunity_id), ['deaj']);
   assert.equal(view.frase.observaciones, 2);
@@ -65,10 +66,17 @@ test('«Hecho» se marca por plazo y sale de la cuenta de la frase', () => {
   assert.equal(view.frase.primero.opportunity_id, 'pereira');
 });
 
-test('lo crítico sin fecha va a pendientes con su proceso; el cronograma faltante también', () => {
-  const view = buildTenderMiDia({ processes: [pereira, { ...metro, cronograma_faltante: true }], today });
-  assert.deepEqual(view.pendientes.map(item => [item.opportunity_id, item.destino]), [['pereira', 'proceso'], ['metro', 'proceso']]);
-  assert.match(view.pendientes[1].texto, /Falta el cronograma/);
+test('lo crítico del expediente se cuenta al lado del cierre y no se lista; no hay «Mis pendientes»', () => {
+  const conCierre = { ...pereira, deadlines: [...pereira.deadlines, { kind: 'SUBMISSION', value: '2026-11-27T16:00:00-05:00' }],
+    criticos: [...pereira.criticos, { titulo: 'RUP en firme', consecuencia: 'causa_rechazo', target_date: '2026-11-10' }] };
+  const view = buildTenderMiDia({ processes: [conCierre, { ...metro, cronograma_faltante: true }], today });
+  assert.ok(!('pendientes' in view));
+  const cierre = view.actividades.presentar.items[0];
+  assert.equal(cierre.opportunity_id, 'pereira');
+  assert.equal(cierre.criticos, 2);
+  assert.deepEqual(cierre.criticos_titulos, ['Garantía de seriedad', 'RUP en firme']);
+  const observacion = view.dias.flatMap(day => day.items).find(item => item.opportunity_id === 'pereira');
+  assert.ok(!('criticos' in observacion), 'la cuenta va sólo en el cierre');
 });
 
 test('ya presentada, el cierre no es una acción', () => {
@@ -87,15 +95,16 @@ test('la ruta, la tabla de «Hecho» y Mi día', () => {
   assert.equal(server, read('../api/[...path].js'));
   assert.match(server, /'GET \/api\/tender-mi-dia': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
   assert.match(server, /'POST \/api\/tender-mi-dia\/hecho': \['tenders', ACTIONS\.LICITACIONES_VIEW\]/);
-  assert.match(server, /cronograma_faltante: Boolean\(report\?\.available && cronogramaFaltante\(report\.report\)\),\n      criticos,/);
+  assert.match(server, /recomendacion: report\?\.available && report\.report \? report\.report\.recommendation\?\.label \|\| null : null,\n      criticos,/);
   assert.match(read('../supabase/migrations/224_mi_dia_licitaciones_hecho.sql'), /create table if not exists public\.psi_tender_mi_dia_hechos/);
   const main = read('../src/main.tsx');
   assert.match(main, /LICITACIONES_VIEW\) && <TenderMiDia request=\{api\}/);
   assert.match(main, /\{tendersOnly \? null : !opportunities\.length/);
   const component = read('../src/tenders/components/TenderMiDia.tsx');
-  for (const text of ['Lo general · las cuatro actividades', 'El día a día · lo que hace usted', 'Mis pendientes sin fecha de la entidad', 'Ir al proceso →', 'Ir a Requisitos →', 'Lo que publica la entidad esta semana']) {
+  for (const text of ['Lo general · las cuatro actividades', 'El día a día · lo que hace usted', 'Ir al proceso →', 'Ir a Requisitos →', 'Lo que publica la entidad esta semana']) {
     assert.ok(component.includes(text), `falta «${text}»`);
   }
+  assert.ok(!component.includes('Mis pendientes sin fecha de la entidad'), '«Mis pendientes» salió de Mi día (Juan, 25-nov)');
 });
 
 test('fechas contradichas: no se anuncian, se pide confirmar; sin oferta, el informe de evaluación no se observa', () => {
@@ -106,18 +115,17 @@ test('fechas contradichas: no se anuncian, se pide confirmar; sin oferta, el inf
     ] };
   const view = buildTenderMiDia({ processes: [barranquilla], today });
   assert.deepEqual([...view.dias.flatMap(day => day.items), ...view.proxima], []);
-  assert.deepEqual(view.pendientes.map(item => item.texto), ['Confirmar el cronograma en SECOP: una fecha del análisis está contradicha']);
   const presentada = buildTenderMiDia({ processes: [{ ...barranquilla, offer_status: 'presentada', criticos: [{ titulo: 'RUP', consecuencia: 'causa_rechazo', target_date: '2026-11-01' }] }], today });
   assert.deepEqual(presentada.dias.flatMap(day => day.items).map(item => item.texto), ['Radicar observaciones al informe de evaluación']);
-  assert.ok(!presentada.pendientes.some(item => item.texto.startsWith('RUP')), 'ya presentada, el expediente no alerta');
 });
 
 test('un requisito crítico con fecha no va al día: «Presentar» en el día es sólo el cierre (Juan, 25-nov)', () => {
   const baq = { opportunity_id: 'baq', entity: 'Rama Judicial - Dirección Seccional de Administración Judicial de Barranquilla', ref: 'LP-001-2026', responsable: 'Katherine',
     deadlines: [{ kind: 'SUBMISSION', value: '2026-12-01T10:00:00-05:00', certainty: 'CONFIRMED' }],
-    criticos: [{ titulo: 'Financiero · Garantía de seriedad', consecuencia: 'causa_rechazo', target_date: today }] };
-  const view = buildTenderMiDia({ processes: [baq], today });
+    criticos: [{ titulo: 'Financiero · Garantía de seriedad', consecuencia: 'causa_rechazo', target_date: '2026-11-25' }] };
+  const view = buildTenderMiDia({ processes: [baq], today: '2026-11-25' });
   const enElDia = [...view.dias.flatMap(day => day.items), ...view.proxima];
-  assert.ok(enElDia.every(item => item.texto === 'Presentar la oferta (cierre)'), JSON.stringify(enElDia.map(item => item.texto)));
-  assert.ok(view.pendientes.some(item => item.texto.startsWith('Financiero · Garantía de seriedad') && item.destino === 'proceso'));
+  assert.deepEqual(enElDia.map(item => item.texto), ['Presentar la oferta (cierre)']);
+  assert.equal(enElDia[0].criticos, 1, 'el crítico se cuenta al lado del cierre');
+  assert.deepEqual(view.actividades.presentar.items.map(item => item.criticos), [1]);
 });

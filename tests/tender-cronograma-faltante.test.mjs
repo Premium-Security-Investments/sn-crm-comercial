@@ -1,5 +1,6 @@
 // F17 (auditoría del piloto Fiscalía; Juan, 2026-11-09, opción A2): sin fecha de observaciones en el análisis, aviso en
-// Mi día y en la licitación hasta que se suba el cronograma de SECOP y el análisis la encuentre.
+// la licitación hasta que se suba el cronograma de SECOP y el análisis la encuentre. Desde el 2026-11-25 (Juan) el aviso
+// vive sólo en la ficha del proceso: Mi día ya no lista alertas del expediente ni del cronograma.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -23,8 +24,8 @@ test('el tablero pasa la marca a Mi día', () => {
   assert.equal(server, read('api/[...path].js'));
 });
 
-test('Mi día y la licitación muestran el aviso', () => {
-  assert.match(read('verticales/licitaciones/tender-mi-dia.js'), /Falta el cronograma de SECOP/);
+test('la licitación muestra el aviso; Mi día ya no', () => {
+  assert.doesNotMatch(read('verticales/licitaciones/tender-mi-dia.js'), /Falta el cronograma de SECOP/);
   const workspace = read('src/tenders/workspace/TenderWorkspace.tsx');
   assert.match(workspace, /cronogramaFaltante\(report\) \?/);
   assert.match(workspace, /if \(!rows\.length\) return missing;/);

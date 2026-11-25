@@ -1125,10 +1125,8 @@ export type TenderMiDiaActividad = 'observar' | 'presentar' | 'tramitar' | 'unir
 export type TenderMiDiaAccion = {
   key: string; opportunity_id: string; proceso: string; ref: string | null; actividad: TenderMiDiaActividad; texto: string;
   value: string; day: string; tiene_hora: boolean; dias: number; responsable: string | null; hecho: { at: string | null; por: string | null } | null;
-};
-export type TenderMiDiaPendiente = {
-  opportunity_id: string | null; proceso: string | null; ref: string | null; actividad: TenderMiDiaActividad; texto: string;
-  responsable: string | null; vencido_hace: number | null; destino: 'proceso' | 'requisitos';
+  /** Sólo en el cierre: cuántas cosas críticas del expediente siguen abiertas (el detalle está en el proceso). */
+  criticos?: number; criticos_titulos?: string[];
 };
 export type TenderMiDiaEntidad = { key: string; opportunity_id: string; proceso: string; ref: string | null; texto: string; value: string; day: string; tiene_hora: boolean };
 export type TenderMiDiaTramite = { key: string; titulo: string; estado: string; sin_dato: boolean; procesos: number; primer_cierre: string | null };
@@ -1141,12 +1139,11 @@ export type TenderMiDia = {
   };
   actividades: {
     observar: { esta_semana: number; proxima: number; items: TenderMiDiaAccion[]; proximo: TenderMiDiaAccion | null };
-    presentar: { cierres: number; items: TenderMiDiaAccion[]; critico: TenderMiDiaAccion | TenderMiDiaPendiente | null };
+    presentar: { cierres: number; items: TenderMiDiaAccion[] };
     tramitar: { por_tramitar: number; sin_dato: number; total: number; items: TenderMiDiaTramite[] };
     unirnos: { total: number; items: TenderMiDiaUnirnos[] };
   };
   dias: { day: string; dias: number; items: TenderMiDiaAccion[] }[];
-  pendientes: TenderMiDiaPendiente[];
   proxima: TenderMiDiaAccion[];
   entidad: TenderMiDiaEntidad[];
 };
