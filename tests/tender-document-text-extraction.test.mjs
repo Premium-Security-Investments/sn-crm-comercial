@@ -501,6 +501,15 @@ async function run() {
     assert.equal(result.metadata.error, null, 'el nombre de entrada duplicado hostil no debe persistir en metadata.error');
   }
 
+  // El carácter nulo de la capa de texto de algunos PDF no llega a Postgres (Dosquebradas, 25-nov-2026).
+  {
+    const result = await extractTenderDocumentText(Buffer.from('ANÁLISIS\u0000 DEL SECTOR\u0000', 'utf8'), 'analisis.txt', 'text/plain');
+    assert.equal(result.status, 'ok');
+    assert.equal(result.text.includes('\u0000'), false);
+    assert.equal(result.text, 'ANÁLISIS DEL SECTOR');
+    assert.equal(result.text_hash, sha256(result.text));
+  }
+
   console.log('tender-document-text-extraction.test.mjs OK');
 }
 

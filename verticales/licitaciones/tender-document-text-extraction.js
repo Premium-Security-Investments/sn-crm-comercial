@@ -452,7 +452,10 @@ function detectKind(filename, mime) {
 // Finalizes a successful parse: an oversized result becomes a typed gap
 // instead of being truncated, and an empty/whitespace-only result becomes a
 // typed gap instead of a fictitious `status: 'ok'` success.
-function finalizeSuccess({ text, parser, metadata = {}, isEmpty }) {
+function finalizeSuccess({ text: rawText, parser, metadata = {}, isEmpty }) {
+  // Postgres no guarda el carácter nulo en text/jsonb («unsupported Unicode escape sequence»). Algunos PDF lo traen
+  // en su capa de texto: el Análisis del Sector de Dosquebradas (25-nov) no se pudo cargar por eso. No es contenido.
+  const text = String(rawText ?? '').replace(/\u0000/g, '');
   const byteLength = Buffer.byteLength(text, 'utf8');
   if (byteLength > TENDER_DOCUMENT_MAX_EXTRACTED_TEXT_BYTES) {
     return gapResult({ parser, gapReason: 'extracted_text_size_exceeded' });
