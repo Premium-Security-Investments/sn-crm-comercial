@@ -513,6 +513,8 @@ function App() {
     <CabeceraMarca area={areaFor(route)} menu={<button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}><MenuIcon aria-hidden="true" /></button>}>
       <UserMenu name={realProfile?.full_name || ''} email={session.user.email || ''} role={realProfile ? roleLabel(realProfile.role) : 'perfil'}
         viewMode={realProfile && canUseCommercialView(realProfile) ? viewMode : undefined} onChangeViewMode={changeViewMode}
+        whatsapp={realProfile?.whatsapp_phone || null}
+        onSaveWhatsapp={realProfile && realProfile.identity_type !== 'agent' ? async value => { await api('/api/me/whatsapp', { method: 'PUT', body: JSON.stringify({ whatsapp_phone: value }) }); await refresh(); } : undefined}
         onRefresh={() => void refresh()} onSignOut={() => void supabaseBrowser.auth.signOut()} />
     </CabeceraMarca>
     {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
