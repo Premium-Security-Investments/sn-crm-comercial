@@ -899,6 +899,11 @@ td.numeric-value{white-space:nowrap}
 .user-menu-item{display:flex;align-items:center;gap:8px;background:none;color:#10213d;box-shadow:none;padding:8px 6px;border-radius:8px;font-weight:500;font-size:14px;text-align:left}
 .user-menu-item:hover{background:#f1f5f9}
 .user-menu-item.is-exit{color:#a12622}
+.user-menu-whatsapp{display:flex;flex-direction:column;gap:6px;padding:8px 6px}
+.user-menu-whatsapp label{display:flex;flex-direction:column;gap:4px;font-weight:700;font-size:13px;color:#10213d}
+.user-menu-whatsapp small{color:#5d6b82;font-size:12px;line-height:1.35}
+.user-menu-whatsapp .user-menu-error{color:#a12622}
+.user-menu-whatsapp-actions{display:flex;gap:8px}
 @media(max-width:900px){.user-menu-name{display:none}.topbar-right{margin-left:0}}
 /* Archivadas: consulta, no paso del proceso. */
 .opportunity-filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}

@@ -10529,6 +10529,28 @@ app.post('/api/users', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+// Juan, 2026-11-25: cada persona carga y corrige su propio WhatsApp desde el menú del perfil (sale en la propuesta
+// que se descarga en Cotizar). Sólo ese dato: nombre, correo, rol y áreas siguen siendo de Usuarios (administración),
+// porque de ellos dependen los accesos. Acepta el número como lo escribe un comercial ("300 123 4567"): diez dígitos
+// que empiezan por 3 son un celular de Colombia (+57); lo demás tiene que venir con su indicativo.
+export function selfWhatsappPhone(value) {
+  if (value === undefined || value === null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const digits = raw.replace(/[\s().-]/g, '');
+  const candidate = /^3\d{9}$/.test(digits) ? `+57${digits}` : /^57\d{10}$/.test(digits) ? `+${digits}` : digits;
+  try { return normalizeWhatsappPhone(candidate); } catch { throw accessValidationError('Escriba el celular con sus 10 dígitos (300 123 4567) o, si es de otro país, con su indicativo (+1 305 555 0100).'); }
+}
+app.put('/api/me/whatsapp', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!currentProfile?.id || currentProfile.identity_type === 'agent') { const error = new Error('Este perfil no tiene WhatsApp.'); error.status = 403; throw error; }
+    const whatsapp_phone = selfWhatsappPhone(req.body?.whatsapp_phone);
+    const database = requireDb();
+    const row = await must(database.from('psi_sales_profiles').update({ whatsapp_phone, updated_at: new Date().toISOString() }).eq('id', currentProfile.id).select('id,whatsapp_phone').single());
+    res.json({ whatsapp_phone: row.whatsapp_phone ?? null });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 app.patch('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
