@@ -84,8 +84,9 @@ function QuoteList({ navigate, opportunities, opportunityId }: { navigate: (hash
     setBusy(linking.id);
     try {
       const r = await api<{ id: string; opportunity_id: string; client_name: string | null }>(`/api/agt003/quote/link?id=${encodeURIComponent(linking.id)}`, { method: 'POST', body: JSON.stringify({ opportunity_id: linking.opportunityId }) });
-      setQuotes(list => (list || []).map(item => (item.id === r.id ? { ...item, opportunity_id: r.opportunity_id, client_name: r.client_name } : item)));
-      setNote(`Cotización ligada a ${opportunityName(r.opportunity_id) || 'la oportunidad'}.`);
+      // Ligada, sale de esta lista: desde ahora vive dentro de la oportunidad.
+      setQuotes(list => (list || []).filter(item => item.id !== r.id));
+      setNote(`Cotización ligada a ${opportunityName(r.opportunity_id) || 'la oportunidad'}: ahora está dentro de esa oportunidad.`);
       setLinking(null);
     } catch (err) { setNote(err instanceof Error ? err.message : String(err)); } finally { setBusy(''); }
   };
@@ -95,11 +96,12 @@ function QuoteList({ navigate, opportunities, opportunityId }: { navigate: (hash
       <button type="button" onClick={() => navigate(`#/cotizar/nueva${opportunityId ? `?opportunity=${encodeURIComponent(opportunityId)}` : ''}`)}>Nueva cotización</button>
     </div>
     {note && <p className="muted" role="status">{note}</p>}
-    {quotes === null ? <p className="muted">Cargando…</p> : !quotes.length ? <p className="muted">Todavía no hay cotizaciones.</p>
+    {!opportunityId && <p className="muted">Aquí están las cotizaciones sin oportunidad. Las que ya tienen una se ven dentro de su oportunidad.</p>}
+    {quotes === null ? <p className="muted">Cargando…</p> : !quotes.length ? <p className="muted">{opportunityId ? 'Todavía no hay cotizaciones.' : 'No hay cotizaciones sueltas.'}</p>
       : <ul className="quote-list">{quotes.map(q => <li key={q.id} className="quote-list-item">
         <a href={`#/cotizar/${q.id}`}>
           <strong>{q.client_name || 'Sin cliente'}</strong>
-          <small>{q.title ? `${q.title} · ` : ''}{opportunityName(q.opportunity_id) ? `Oportunidad: ${opportunityName(q.opportunity_id)} · ` : 'Sin oportunidad · '}Actualizada {day(q.updated_at)}</small>
+          <small>{q.title ? `${q.title} · ` : ''}Actualizada {day(q.updated_at)}</small>
         </a>
         {linking?.id === q.id
           ? <div className="quote-list-actions">
@@ -111,7 +113,7 @@ function QuoteList({ navigate, opportunities, opportunityId }: { navigate: (hash
             <button type="button" className="secondary" onClick={() => setLinking(null)}>Cancelar</button>
           </div>
           : <div className="quote-list-actions">
-            {!opportunityId && <button type="button" className="secondary" disabled={busy === q.id} onClick={() => setLinking({ id: q.id, opportunityId: q.opportunity_id || '' })}>{q.opportunity_id ? 'Cambiar oportunidad' : 'Asignar a oportunidad'}</button>}
+            {!opportunityId && <button type="button" className="secondary" disabled={busy === q.id} onClick={() => setLinking({ id: q.id, opportunityId: '' })}>Asignar a oportunidad</button>}
             <button type="button" className="danger" disabled={busy === q.id} onClick={() => void remove(q)}>Eliminar</button>
           </div>}
       </li>)}</ul>}
@@ -200,7 +202,7 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
         ? await api<QuoteFull>(`/api/agt003/quote?id=${encodeURIComponent(saved.id)}`, { method: 'PUT', body })
         : await api<QuoteFull>('/api/agt003/quotes', { method: 'POST', body });
       setSaved(result); setSavedBody(body);
-      setStatus(saved ? 'Guardada.' : 'Guardada. Queda en la lista de Cotizaciones.');
+      setStatus(saved ? 'Guardada.' : result.opportunity_id ? 'Guardada. Queda dentro de la oportunidad.' : 'Guardada. Queda en la lista de Cotizaciones.');
       if (!quoteId) navigate(`#/cotizar/${result.id}`);
       return result;
     } catch (err) {
@@ -312,7 +314,7 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
       </div>
       {monthly && <p><strong>Vigilancia, cada mes:</strong> subtotal {pesos(monthly.subtotal)} · AIU {pesos(monthly.aiu)} · IVA {pesos(monthly.iva)} · <strong>{pesos(monthly.total)}</strong></p>}
       {oneTime && <p><strong>Tecnología, pago único:</strong> subtotal {pesos(oneTime.subtotal)} · IVA {pesos(oneTime.iva)} · <strong>{pesos(oneTime.total)}</strong></p>}
-      {dirty && <p className="muted">Siguiente paso: guárdela y descargue la propuesta para el cliente. Guardada, queda en la lista de Cotizaciones y se puede ligar después a una oportunidad.</p>}
+      {dirty && <p className="muted">Siguiente paso: guárdela y descargue la propuesta para el cliente. Si escogió una oportunidad, queda dentro de ella; si no, queda en la lista de Cotizaciones y se liga después.</p>}
       <div className="formactions">
         <button type="button" disabled={saving} onClick={() => void downloadProposal()}>{dirty ? 'Guardar y descargar propuesta (PDF)' : 'Descargar propuesta (PDF)'}</button>
         <button type="button" className="secondary" disabled={saving || !dirty} onClick={() => void save()}>{saving ? 'Guardando…' : dirty ? 'Solo guardar' : 'Guardada'}</button>
